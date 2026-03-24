@@ -2,7 +2,8 @@
 set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-/Users/imhanbyeol/Development/Hanplanet}"
-PYTHON_BIN="${PYTHON_BIN:-$PROJECT_DIR/.venv/bin/python}"
+PYTHON_BIN="${PYTHON_BIN:-/usr/bin/python3}"
+export PYTHONPATH="${PYTHONPATH:-$PROJECT_DIR/.venv/lib/python3.9/site-packages}"
 MANAGE_PY="${MANAGE_PY:-$PROJECT_DIR/manage.py}"
 TOP_N="${TOP_N:-10}"
 SLOW_N="${SLOW_N:-20}"

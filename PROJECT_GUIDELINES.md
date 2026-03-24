@@ -202,7 +202,9 @@ Do not commit API keys or secrets. Production uses `DEBUG = False`.
 **macOS TCC (Full Disk Access) 주의사항:**
 - 외장 볼륨 접근 권한은 launchd 컨텍스트에서 쉘 래퍼를 통해 실행되면 TCC가 적용되지 않는다.
 - `.venv/bin/python`은 `#!/bin/sh` 쉘 스크립트이므로 launchd에서 실행 시 TCC가 `/bin/sh`로 인식한다.
-- 따라서 `com.hanplanet.gunicorn.plist`는 `.venv/bin/python` 대신 **`/usr/bin/python3`를 직접 호출**하고, `PYTHONPATH`로 venv site-packages를 지정한다.
+- 따라서 **모든 launchd plist는 `.venv/bin/python` 대신 `/usr/bin/python3`를 직접 호출**하고, `EnvironmentVariables`에 `PYTHONPATH`로 venv site-packages를 지정한다.
+  - 적용 대상: `com.hanplanet.gunicorn.plist`, `com.hanplanet.celery.plist`, `scripts/summarize-nginx-access-json.sh`
+  - PYTHONPATH 값: `/Users/imhanbyeol/Development/Hanplanet/.venv/lib/python3.9/site-packages`
 - 시스템 환경설정 → 개인 정보 보호 및 보안 → 전체 디스크 접근 권한에 `/usr/bin/python3`가 등록되어 있어야 한다.
 
 **외장 디스크 미연결 시:** `media/`, `forgejo/data/repositories/` 심볼릭 링크가 깨져 Django 500 에러 발생. 외장 디스크 연결 후 서비스 재시작 필요.

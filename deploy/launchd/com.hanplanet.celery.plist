@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/imhanbyeol/Development/Hanplanet/.venv/bin/python</string>
+        <string>/usr/bin/python3</string>
         <string>-m</string>
         <string>celery</string>
         <string>-A</string>
@@ -25,6 +25,8 @@
     <dict>
         <key>DJANGO_SETTINGS_MODULE</key>
         <string>config.settings</string>
+        <key>PYTHONPATH</key>
+        <string>/Users/imhanbyeol/Development/Hanplanet/.venv/lib/python3.9/site-packages</string>
     </dict>
 
     <key>KeepAlive</key>

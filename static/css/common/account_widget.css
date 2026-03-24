@@ -101,6 +101,35 @@ body.theme-dark .ui-auth-account-menu {
     display: none;
 }
 
+.ui-auth-account-admin-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    color: #888;
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+    z-index: 1;
+}
+.ui-auth-account-admin-btn:hover,
+.ui-auth-account-admin-btn:focus-visible {
+    background: rgba(0, 0, 0, 0.08);
+    color: #333;
+}
+body.theme-dark .ui-auth-account-admin-btn {
+    color: #aaa;
+}
+body.theme-dark .ui-auth-account-admin-btn:hover,
+body.theme-dark .ui-auth-account-admin-btn:focus-visible {
+    background: rgba(255, 255, 255, 0.1);
+    color: #eee;
+}
+
 .ui-auth-account-menu-item {
     border: 0;
     border-radius: 8px;

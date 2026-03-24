@@ -21,7 +21,7 @@ from django.db import transaction
 from django.conf import settings
 
 from .forgejo_client import ForgejoClient
-from .models import GitRepository, GitUserMapping
+from git.models import GitRepository, GitUserMapping
 
 logger = logging.getLogger(__name__)
 DOCS_PUBLIC_WRITE_GROUP_NAME = "__DOCS_PUBLIC_ALL__"

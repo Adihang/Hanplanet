@@ -67,6 +67,9 @@
     data-url-share-api-url="{{ handrive_api_url_share_url }}"
     data-write-url="{{ handrive_write_url }}"
     data-ui-lang="{{ ui_lang|default:'ko' }}"
+    data-map-create-api-url="{{ handrive_api_map_create_url }}"
+    data-map-editor-base-url="{{ handrive_map_editor_base_url }}"
+    data-map-viewer-base-url="{{ handrive_map_viewer_base_url }}"
 >
     <div class="ui-search-form handrive-list-search-form" id="handrive-list-search-form">
         <button
@@ -197,6 +200,7 @@
 {% endif %}
 
 {% include "popup/handrive/git_repo_modal.html" %}
+{% include "popup/handrive/map_create_modal.html" %}
 {% include "popup/handrive/confirm_modal.html" %}
 {% include "popup/handrive/url_share_modal.html" %}
 {% include "popup/handrive/auth_logout_modal.html" %}

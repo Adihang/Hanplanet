@@ -54,6 +54,8 @@
             typeMarker.classList.add("is-repo");
         } else if (settings.isBranch) {
             typeMarker.classList.add("is-branch");
+        } else if (settings.isMap) {
+            typeMarker.classList.add("is-map");
         } else if (settings.isEmpty) {
             typeMarker.classList.add("is-empty");
         }

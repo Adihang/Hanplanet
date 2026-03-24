@@ -7,7 +7,7 @@ Git Repository 서비스 계층
 """
 import re
 
-from .models import GitRepository
+from git.models import GitRepository
 
 
 _VALID_REPO_NAME = re.compile(r'^[a-zA-Z0-9._-]+$')

@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject
+from portfolio.models import PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject
 
 
 class PortfolioProfileForm(forms.ModelForm):

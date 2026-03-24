@@ -16,17 +16,9 @@ from django.utils import timezone
 from datetime import date, datetime
 from importlib import import_module
 
-from .models import (
-    Career,
-    HandriveAccessRule,
-    NavLink,
-    PortfolioActionButton,
-    PortfolioCareer,
-    PortfolioProfile,
-    PortfolioProject,
-    Stratagem_Hero_Score,
-    UserProfile,
-)
+from .models import HandriveAccessRule, NavLink, UserProfile
+from portfolio.models import Career, PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject
+from stratagem.models import Stratagem_Hero_Score
 from .handrive_views import (
     DOCS_EDIT_PERMISSION_CODE,
     HANDRIVE_EDITOR_GROUP_NAME,

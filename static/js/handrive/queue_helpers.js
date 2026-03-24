@@ -154,6 +154,29 @@
         });
     }
 
+    function formatQueueFileSize(bytes) {
+        var n = Number(bytes) || 0;
+        if (n < 1024) { return n + " B"; }
+        if (n < 1024 * 1024) { return (n / 1024).toFixed(1) + " KB"; }
+        if (n < 1024 * 1024 * 1024) { return (n / (1024 * 1024)).toFixed(1) + " MB"; }
+        return (n / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+    }
+
+    function formatQueueSpeed(bytesPerSec) {
+        var n = Number(bytesPerSec) || 0;
+        if (n < 1024) { return n.toFixed(0) + " B/s"; }
+        if (n < 1024 * 1024) { return (n / 1024).toFixed(1) + " KB/s"; }
+        return (n / (1024 * 1024)).toFixed(1) + " MB/s";
+    }
+
+    function formatQueueElapsed(startTime) {
+        if (!startTime) { return ""; }
+        var sec = Math.max(0, Math.floor((Date.now() - startTime) / 1000));
+        var m = Math.floor(sec / 60);
+        var s = sec % 60;
+        return m + ":" + (s < 10 ? "0" : "") + s;
+    }
+
     function createQueueListItem(item, options) {
         var settings = options || {};
         var documentRef = settings.documentRef || document;
@@ -161,25 +184,57 @@
         var getStatusLabel = settings.getStatusLabel || function () { return ""; };
         var getMetaLabel = settings.getMetaLabel || function () { return ""; };
 
+        var isFileUpload = item.kind !== "operation";
+        var isUploading = item.status === "uploading";
+
         var listItem = documentRef.createElement("li");
         listItem.className = "handrive-job-queue-item";
         listItem.dataset.status = item.status;
 
+        // ── 행 1: 파일명(좌) + 파일 용량(우) ───────────────────────────
         var head = documentRef.createElement("div");
         head.className = "handrive-job-queue-item-head";
 
         var name = documentRef.createElement("span");
         name.className = "handrive-job-queue-item-name";
         name.textContent = item.fileName;
+        head.appendChild(name);
+
+        var sizeText = isFileUpload
+            ? (item.fileSize > 0 ? formatQueueFileSize(item.fileSize) : "")
+            : (item.sizeDisplay || "");
+        if (sizeText) {
+            var sizeEl = documentRef.createElement("span");
+            sizeEl.className = "handrive-job-queue-item-size";
+            sizeEl.textContent = sizeText;
+            head.appendChild(sizeEl);
+        }
+
+        listItem.appendChild(head);
+
+        // ── 행 2: 속도·경과(좌, 업로드 중) + 상태(우) ─────────────────
+        var sub = documentRef.createElement("div");
+        sub.className = "handrive-job-queue-item-sub";
+
+        if (isFileUpload && isUploading && item.startTime) {
+            var speedEl = documentRef.createElement("span");
+            speedEl.className = "handrive-job-queue-item-speed";
+            var speedText = item.uploadSpeed > 0 ? formatQueueSpeed(item.uploadSpeed) : "";
+            var elapsedText = formatQueueElapsed(item.startTime);
+            speedEl.textContent = speedText && elapsedText
+                ? speedText + " · " + elapsedText
+                : speedText || elapsedText;
+            sub.appendChild(speedEl);
+        }
 
         var status = documentRef.createElement("span");
         status.className = "handrive-job-queue-item-status";
         status.textContent = getStatusLabel(item);
+        sub.appendChild(status);
 
-        head.appendChild(name);
-        head.appendChild(status);
-        listItem.appendChild(head);
+        listItem.appendChild(sub);
 
+        // ── 메타(경로) ─────────────────────────────────────────────────
         var meta = documentRef.createElement("div");
         meta.className = "handrive-job-queue-item-meta";
         meta.textContent = getMetaLabel(item);

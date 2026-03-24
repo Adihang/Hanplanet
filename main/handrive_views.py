@@ -63,7 +63,9 @@ from .views import (
 from .forgejo_client import ForgejoClient
 from .handrive.html_assets import load_local_html_companion_assets, load_repo_html_companion_assets
 from .handrive.preview import render_handrive_html_live_safely, render_handrive_office_preview_safely, render_handrive_pdf_safely
-from .models import HandriveAccessRule, HandriveLoginAttemptGuard, HandriveSharedLink, GitUserMapping, PortfolioProfile, UserProfile
+from .models import HandriveAccessRule, HandriveLoginAttemptGuard, HandriveSharedLink, HandriveUserQuota, UserProfile
+from git.models import GitUserMapping
+from portfolio.models import PortfolioProfile
 
 logger = logging.getLogger(__name__)
 GIT_BIN = "/usr/bin/git"
@@ -96,8 +98,32 @@ DOCS_META_TITLE = "HanDrive"
 DOCS_META_DESCRIPTION = "HanDrive workspace"
 DOCS_LOGIN_CAPTCHA_THRESHOLD = 1
 DOCS_UPLOAD_RATE_LIMIT_BYTES_PER_SECOND = 10 * 1024 * 1024
-DOCS_USER_SCOPED_QUOTA_BYTES = 1024 * 1024 * 1024
+DOCS_USER_SCOPED_QUOTA_BYTES = 1024 * 1024 * 1024  # 기본값 1GB
 DOCS_USER_SCOPED_ENTRY_LIMIT = 100
+
+
+def get_user_handrive_quota_bytes(user) -> int:
+    """사용자별 저장 용량을 반환한다. 어드민에서 매핑이 없으면 기본값(1GB)."""
+    try:
+        return user.handrive_quota.quota_bytes
+    except Exception:
+        return DOCS_USER_SCOPED_QUOTA_BYTES
+MAP_META_FILENAME = "_map_meta.json"
+MAP_DATA_FILENAME = "map.geojson"
+MAP_ICONS_DIR = "_icons"
+MAP_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff", ".tif", ".avif"})
+MAP_IMAGE_MIME_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
+    ".avif": "image/avif",
+}
 HANDRIVE_LOGIN_CAPTCHA_QUESTION_SESSION_KEY = "handrive_login_captcha_question"
 HANDRIVE_LOGIN_CAPTCHA_ANSWER_SESSION_KEY = "handrive_login_captcha_answer"
 DOCS_SIGNUP_FORBIDDEN_TERMS = (
@@ -276,7 +302,7 @@ DOCS_NON_EDITABLE_MEDIA_MODES = {
 
 DOCS_TEXT = {
     "ko": {
-        "list_title": "탐색기",
+        "list_title": "HanDrive",
         "write_button": "작성",
         "help_button": "도움말",
         "list_aria_label": "목록",
@@ -1099,6 +1125,15 @@ def build_entry(path_obj: Path) -> dict:
             data["size_display"] = format_handrive_bytes_display(total_bytes)
         except OSError:
             data["size_display"] = ""
+        map_meta_file = path_obj / MAP_META_FILENAME
+        if map_meta_file.is_file():
+            try:
+                meta = json.loads(map_meta_file.read_text(encoding="utf-8"))
+                if meta.get("type") == "map":
+                    data["is_map_folder"] = True
+                    data["map_base_image"] = meta.get("base_image", "")
+            except Exception:
+                pass
     else:
         data["slug_path"] = markdown_slug_from_relative(rel_path)
         try:
@@ -1652,7 +1687,7 @@ def _get_git_repo_for_relative_path(request, relative_path: str):
 
 def _sync_git_collaborators_from_forgejo(repo) -> None:
     """Forgejo collaborator 목록을 Django ``GitCollaborator`` 테이블과 동기화한다."""
-    from .models import GitCollaborator
+    from git.models import GitCollaborator
 
     owner_name = str(repo.forgejo_owner or getattr(repo.owner, "username", "") or "").strip()
     repo_name = str(repo.forgejo_repo_name or repo.repo_name or "").strip()
@@ -1716,7 +1751,7 @@ def _get_visible_git_repositories(request):
         setattr(request, "_visible_git_repo_permissions", {})
         return []
 
-    from .models import GitRepository
+    from git.models import GitRepository
 
     all_repos = list(
         GitRepository.objects.exclude(status="deleted")
@@ -2392,8 +2427,6 @@ def enforce_handrive_scoped_quota(
     extra_bytes: int = 0,
     extra_entries: int = 0,
 ) -> None:
-    if getattr(request.user, "is_superuser", False):
-        return
     scoped_root = get_handrive_scoped_quota_root(request, quota_path)
     if scoped_root is None:
         return
@@ -2403,8 +2436,10 @@ def enforce_handrive_scoped_quota(
     projected_bytes = current_bytes + repo_bytes + max(0, extra_bytes)
     projected_entries = current_entries + max(0, extra_entries)
 
-    if projected_bytes > DOCS_USER_SCOPED_QUOTA_BYTES:
-        raise ValueError("개인 폴더 용량이 1GB를 초과해 더 이상 업로드하거나 생성할 수 없습니다.")
+    user_quota_bytes = get_user_handrive_quota_bytes(request.user)
+    if projected_bytes > user_quota_bytes:
+        quota_display = format_handrive_bytes_display(user_quota_bytes)
+        raise ValueError(f"개인 폴더 용량이 {quota_display}를 초과해 더 이상 업로드하거나 생성할 수 없습니다.")
     if projected_entries > DOCS_USER_SCOPED_ENTRY_LIMIT:
         raise ValueError("개인 폴더의 하위 폴더/파일 수가 100개를 초과해 더 이상 업로드하거나 생성할 수 없습니다.")
 
@@ -2484,7 +2519,7 @@ def calculate_handrive_quota_breakdown(root_path: Path) -> tuple[int, int, dict[
 
 def calculate_handrive_repo_usage(user) -> tuple[int, int]:
     """유저의 활성 리포지토리 총 크기(bytes)와 리포 개수를 반환한다."""
-    from .models import GitRepository
+    from git.models import GitRepository
     total_bytes = 0
     total_repos = 0
     for repo in GitRepository.objects.filter(owner=user, status="active"):
@@ -2881,15 +2916,16 @@ def handrive_common_context(request, ui_lang):
             _quota_used, _, _breakdown = calculate_handrive_quota_breakdown(_quota_root)
             _repo_bytes, _repo_count = calculate_handrive_repo_usage(request.user)
             _total_used = _quota_used + _repo_bytes
+            _user_quota = get_user_handrive_quota_bytes(request.user)
             handrive_quota_used_bytes = _total_used
-            handrive_quota_total_bytes = DOCS_USER_SCOPED_QUOTA_BYTES
-            handrive_quota_percent = min(100, round(_total_used / DOCS_USER_SCOPED_QUOTA_BYTES * 100, 1))
+            handrive_quota_total_bytes = _user_quota
+            handrive_quota_percent = min(100, round(_total_used / _user_quota * 100, 1))
             handrive_quota_used_display = format_handrive_bytes_display(_total_used)
-            handrive_quota_total_display = format_handrive_bytes_display(DOCS_USER_SCOPED_QUOTA_BYTES)
-            _free_bytes = max(0, DOCS_USER_SCOPED_QUOTA_BYTES - _total_used)
+            handrive_quota_total_display = format_handrive_bytes_display(_user_quota)
+            _free_bytes = max(0, _user_quota - _total_used)
             handrive_quota_free_bytes = _free_bytes
             handrive_quota_free_display = format_handrive_bytes_display(_free_bytes)
-            handrive_quota_free_percent = round(_free_bytes / DOCS_USER_SCOPED_QUOTA_BYTES * 100, 2)
+            handrive_quota_free_percent = round(_free_bytes / _user_quota * 100, 2)
             handrive_quota_breakdown = [
                 {
                     "key": key,
@@ -2898,7 +2934,7 @@ def handrive_common_context(request, ui_lang):
                     "bytes": _breakdown[key]["bytes"],
                     "count": _breakdown[key]["count"],
                     "display": format_handrive_bytes_display(_breakdown[key]["bytes"]),
-                    "percent": round(_breakdown[key]["bytes"] / DOCS_USER_SCOPED_QUOTA_BYTES * 100, 2),
+                    "percent": round(_breakdown[key]["bytes"] / _user_quota * 100, 2),
                 }
                 for key, label, color in _DOCS_QUOTA_TYPE_META
             ]
@@ -2910,7 +2946,7 @@ def handrive_common_context(request, ui_lang):
                     "bytes": _repo_bytes,
                     "count": _repo_count,
                     "display": format_handrive_bytes_display(_repo_bytes),
-                    "percent": round(_repo_bytes / DOCS_USER_SCOPED_QUOTA_BYTES * 100, 2),
+                    "percent": round(_repo_bytes / _user_quota * 100, 2),
                 })
         else:
             handrive_quota_used_bytes = None
@@ -2978,6 +3014,12 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_acl_url": reverse("main:handrive_api_acl"),
             "handrive_api_acl_options_url": reverse("main:handrive_api_acl_options"),
             "handrive_api_url_share_url": reverse("main:handrive_api_url_share"),
+            "handrive_api_map_create_url": reverse("main:handrive_api_map_create"),
+            "handrive_api_map_data_url": reverse("main:handrive_api_map_data"),
+            "handrive_api_map_icon_upload_url": reverse("main:handrive_api_map_icon_upload"),
+            "handrive_api_map_image_url": reverse("main:handrive_api_map_image"),
+            "handrive_map_editor_base_url": "/handrive/map-editor/",
+            "handrive_map_viewer_base_url": "/handrive/map-viewer/",
             "handrive_can_edit": has_handrive_directory_write_access(request, ""),
             "handrive_can_manage_acl": is_handrive_acl_admin(request),
             "handrive_file_extension_options": get_handrive_save_extension_options(),
@@ -3625,7 +3667,7 @@ def _forgejo_server_logout(user):
     if not user or not user.is_authenticated:
         return
     try:
-        from main.models import GitUserMapping
+        from git.models import GitUserMapping
         mapping = GitUserMapping.objects.filter(user=user).first()
         if not mapping:
             return
@@ -5514,3 +5556,309 @@ def handrive_api_download(request):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
 
     return FileResponse(file_handle, as_attachment=True, filename=filename)
+
+
+# ---------------------------------------------------------------------------
+# 지도 (Map) API
+# ---------------------------------------------------------------------------
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_map_create(request):
+    """이미지 파일을 지도 폴더로 변환한다.
+
+    요청: {"image_path": "경로/이미지.png", "map_name": "지도명"}
+    - 같은 경로에 map_name 폴더를 생성한다.
+    - _map_meta.json 을 폴더 안에 기록한다.
+    - 이미지 파일을 폴더 안으로 이동한다.
+    응답: {"ok": true, "map_path": "경로/지도명", "base_image": "이미지.png"}
+    """
+    try:
+        payload = parse_json_body(request)
+        image_path_value = normalize_relative_path(payload.get("image_path"), allow_empty=False)
+        map_name = validate_name(payload.get("map_name"), for_file=False)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    try:
+        image_path, image_relative = resolve_path(image_path_value, must_exist=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=404)
+
+    if not image_path.is_file():
+        return json_error("이미지 파일이 아닙니다.", status=400)
+    if image_path.suffix.lower() not in MAP_IMAGE_EXTENSIONS:
+        return json_error("지원하지 않는 이미지 형식입니다.", status=400)
+    if not has_handrive_write_access(request, image_relative):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+    parent_dir = image_path.parent
+    parent_relative = relative_from_root(parent_dir)
+    if not has_handrive_directory_write_access(request, parent_relative):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+    map_folder = parent_dir / map_name
+    if map_folder.exists():
+        return json_error("같은 이름의 폴더가 이미 존재합니다.", status=409)
+
+    map_folder.mkdir(parents=False, exist_ok=False)
+    meta = {
+        "type": "map",
+        "base_image": image_path.name,
+        "created_at": timezone.now().isoformat(),
+    }
+    (map_folder / MAP_META_FILENAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    new_image_path = map_folder / image_path.name
+    image_path.rename(new_image_path)
+
+    map_folder_relative = relative_from_root(map_folder)
+    return JsonResponse({"ok": True, "map_path": map_folder_relative, "base_image": image_path.name})
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_map_data(request):
+    """지도 GeoJSON 데이터를 반환한다. GET: 읽기."""
+    try:
+        map_path_value = normalize_relative_path(request.GET.get("path"), allow_empty=False)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    try:
+        map_folder, map_relative = resolve_path(map_path_value, must_exist=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=404)
+
+    if not (map_folder / MAP_META_FILENAME).is_file():
+        return json_error("지도 폴더를 찾을 수 없습니다.", status=404)
+    if not has_handrive_read_access(request, map_relative):
+        return json_error("파일을 볼 권한이 없습니다.", status=403)
+
+    geojson_file = map_folder / MAP_DATA_FILENAME
+    if geojson_file.is_file():
+        try:
+            geojson_data = json.loads(geojson_file.read_text(encoding="utf-8"))
+        except Exception:
+            geojson_data = {"type": "FeatureCollection", "features": []}
+    else:
+        geojson_data = {"type": "FeatureCollection", "features": []}
+
+    return JsonResponse({"ok": True, "geojson": geojson_data})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_map_data_save(request):
+    """지도 GeoJSON 데이터를 저장한다. POST: 쓰기."""
+    try:
+        payload = parse_json_body(request)
+        map_path_value = normalize_relative_path(payload.get("path"), allow_empty=False)
+        geojson_data = payload.get("geojson")
+        if not isinstance(geojson_data, dict):
+            raise ValueError("GeoJSON 형식이 올바르지 않습니다.")
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    try:
+        map_folder, map_relative = resolve_path(map_path_value, must_exist=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=404)
+
+    if not (map_folder / MAP_META_FILENAME).is_file():
+        return json_error("지도 폴더를 찾을 수 없습니다.", status=404)
+    if not has_handrive_write_access(request, map_relative):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+    geojson_file = map_folder / MAP_DATA_FILENAME
+    geojson_file.write_text(json.dumps(geojson_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return JsonResponse({"ok": True})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_map_icon_upload(request):
+    """지도 폴더에 커스텀 아이콘 이미지를 업로드한다."""
+    map_path_value = request.POST.get("path", "").strip()
+    icon_file = request.FILES.get("icon")
+    if not icon_file:
+        return json_error("파일이 없습니다.", status=400)
+
+    try:
+        map_path_normalized = normalize_relative_path(map_path_value, allow_empty=False)
+        map_folder, map_relative = resolve_path(map_path_normalized, must_exist=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=400)
+
+    if not (map_folder / MAP_META_FILENAME).is_file():
+        return json_error("지도 폴더를 찾을 수 없습니다.", status=404)
+    if not has_handrive_write_access(request, map_relative):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+    suffix = Path(icon_file.name).suffix.lower()
+    if suffix not in MAP_IMAGE_EXTENSIONS:
+        return json_error("지원하지 않는 이미지 형식입니다.", status=400)
+
+    icons_dir = map_folder / MAP_ICONS_DIR
+    icons_dir.mkdir(exist_ok=True)
+
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", Path(icon_file.name).stem)
+    target = icons_dir / f"{safe_name}{suffix}"
+    # 중복 방지
+    counter = 1
+    while target.exists():
+        target = icons_dir / f"{safe_name}_{counter}{suffix}"
+        counter += 1
+
+    with target.open("wb") as f:
+        for chunk in icon_file.chunks():
+            f.write(chunk)
+
+    icon_path_relative = relative_from_root(target)
+    icon_api_url = f"/handrive/api/map-image/?path={quote(icon_path_relative)}"
+    return JsonResponse({"ok": True, "icon_path": icon_path_relative, "icon_url": icon_api_url})
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_map_image(request):
+    """지도 이미지를 인라인으로 서빙한다 (배경 이미지 및 아이콘용)."""
+    try:
+        normalized = normalize_relative_path(request.GET.get("path"), allow_empty=False)
+    except ValueError:
+        raise Http404
+
+    if not has_handrive_read_access(request, normalized):
+        raise PermissionDenied("파일을 볼 권한이 없습니다.")
+
+    try:
+        file_path, _ = resolve_path(normalized, must_exist=True)
+    except (ValueError, FileNotFoundError):
+        raise Http404
+
+    if not file_path.is_file():
+        raise Http404
+
+    suffix = file_path.suffix.lower()
+    if suffix not in MAP_IMAGE_EXTENSIONS:
+        raise Http404
+
+    content_type = MAP_IMAGE_MIME_TYPES.get(suffix, "application/octet-stream")
+    response = FileResponse(file_path.open("rb"), content_type=content_type)
+    response["Cache-Control"] = "private, max-age=3600"
+    return response
+
+
+@with_request_handrive_root
+def handrive_map_editor(request, map_path, ui_lang=None):
+    """맵 에디터 페이지를 렌더한다."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    context = handrive_common_context(request, resolved_lang)
+
+    try:
+        normalized = normalize_relative_path(map_path, allow_empty=False)
+        folder_path, _ = resolve_path(normalized, must_exist=True)
+    except (ValueError, FileNotFoundError):
+        raise Http404("지도 폴더를 찾을 수 없습니다.")
+
+    if not folder_path.is_dir():
+        raise Http404("지도 폴더를 찾을 수 없습니다.")
+
+    meta_file = folder_path / MAP_META_FILENAME
+    if not meta_file.is_file():
+        raise Http404("지도 폴더를 찾을 수 없습니다.")
+
+    try:
+        meta = json.loads(meta_file.read_text(encoding="utf-8"))
+    except Exception:
+        raise Http404("지도 메타 데이터를 읽을 수 없습니다.")
+
+    if not has_handrive_read_access(request, normalized):
+        raise PermissionDenied("파일을 볼 권한이 없습니다.")
+
+    base_image_name = meta.get("base_image", "")
+    image_rel_path = f"{normalized}/{base_image_name}" if base_image_name else ""
+    image_url = f"/handrive/api/map-image/?path={quote(image_rel_path)}" if image_rel_path else ""
+
+    icons_rel = []
+    icons_dir = folder_path / MAP_ICONS_DIR
+    if icons_dir.is_dir():
+        for icon_file in sorted(icons_dir.iterdir()):
+            if icon_file.is_file() and icon_file.suffix.lower() in MAP_IMAGE_EXTENSIONS:
+                icon_path_rel = relative_from_root(icon_file)
+                icons_rel.append({
+                    "name": icon_file.name,
+                    "url": f"/handrive/api/map-image/?path={quote(icon_path_rel)}",
+                    "path": icon_path_rel,
+                })
+
+    parent_path = str(Path(normalized).parent)
+    if parent_path in (".", ""):
+        parent_list_url = context["handrive_base_url"]
+    else:
+        parent_list_url = f"{context['handrive_base_url']}/{parent_path}/list"
+
+    context.update({
+        "map_path": normalized,
+        "map_name": Path(normalized).name,
+        "base_image_name": base_image_name,
+        "image_url": image_url,
+        "custom_icons": icons_rel,
+        "can_edit": has_handrive_write_access(request, normalized),
+        "map_viewer_url": f"/handrive/map-viewer/{normalized}",
+        "handrive_list_url": parent_list_url,
+    })
+    return render(request, "handrive/map_editor.html", context)
+
+
+@with_request_handrive_root
+def handrive_map_viewer(request, map_path, ui_lang=None):
+    """맵 뷰어 페이지를 렌더한다."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    context = handrive_common_context(request, resolved_lang)
+
+    try:
+        normalized = normalize_relative_path(map_path, allow_empty=False)
+        folder_path, _ = resolve_path(normalized, must_exist=True)
+    except (ValueError, FileNotFoundError):
+        raise Http404("지도 폴더를 찾을 수 없습니다.")
+
+    if not folder_path.is_dir():
+        raise Http404("지도 폴더를 찾을 수 없습니다.")
+
+    meta_file = folder_path / MAP_META_FILENAME
+    if not meta_file.is_file():
+        raise Http404("지도 폴더를 찾을 수 없습니다.")
+
+    try:
+        meta = json.loads(meta_file.read_text(encoding="utf-8"))
+    except Exception:
+        raise Http404("지도 메타 데이터를 읽을 수 없습니다.")
+
+    if not has_handrive_read_access(request, normalized):
+        raise PermissionDenied("파일을 볼 권한이 없습니다.")
+
+    base_image_name = meta.get("base_image", "")
+    image_rel_path = f"{normalized}/{base_image_name}" if base_image_name else ""
+    image_url = f"/handrive/api/map-image/?path={quote(image_rel_path)}" if image_rel_path else ""
+
+    parent_path = str(Path(normalized).parent)
+    if parent_path in (".", ""):
+        parent_list_url = context["handrive_base_url"]
+    else:
+        parent_list_url = f"{context['handrive_base_url']}/{parent_path}/list"
+
+    context.update({
+        "map_path": normalized,
+        "map_name": Path(normalized).name,
+        "base_image_name": base_image_name,
+        "image_url": image_url,
+        "can_edit": has_handrive_write_access(request, normalized),
+        "map_editor_url": f"/handrive/map-editor/{normalized}",
+        "handrive_list_url": parent_list_url,
+        "map_data_api_url": reverse("main:handrive_api_map_data"),
+        "map_icon_api_url": "/handrive/api/map-image/",
+    })
+    return render(request, "handrive/map_viewer.html", context)

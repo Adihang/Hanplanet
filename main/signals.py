@@ -12,7 +12,7 @@ from django.dispatch import receiver
 logger = logging.getLogger(__name__)
 
 
-@receiver(post_save, sender="main.PortfolioProfile")
+@receiver(post_save, sender="portfolio.PortfolioProfile")
 def on_portfolio_profile_saved(sender, instance, **kwargs):
     """프로필 사진이 변경/저장될 때마다 Forgejo 아바타 동기화."""
     from .git_tasks import sync_gitea_avatar_task
@@ -27,7 +27,7 @@ def on_portfolio_profile_saved(sender, instance, **kwargs):
         )
 
 
-@receiver(post_save, sender="main.GitUserMapping")
+@receiver(post_save, sender="git.GitUserMapping")
 def on_git_user_mapping_created(sender, instance, created, **kwargs):
     """GitUserMapping이 새로 생성될 때 현재 프로필 사진을 Forgejo에 동기화."""
     if not created:

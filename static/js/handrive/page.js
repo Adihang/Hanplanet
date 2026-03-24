@@ -1546,6 +1546,9 @@
         const aclOptionsApiUrl = root.dataset.aclOptionsApiUrl;
         const urlShareApiUrl = root.dataset.urlShareApiUrl;
         const writeUrl = root.dataset.writeUrl || "/handrive/write";
+        const mapCreateApiUrl = root.dataset.mapCreateApiUrl || "/handrive/api/map/create";
+        const mapEditorBaseUrl = root.dataset.mapEditorBaseUrl || "/handrive/map-editor/";
+        const mapViewerBaseUrl = root.dataset.mapViewerBaseUrl || "/handrive/map-viewer/";
         const pathBreadcrumbs = document.querySelector(".handrive-path-breadcrumbs");
         const pathCurrentSizeEl = document.querySelector(".handrive-path-current-size");
         const originalDirSizeText = pathCurrentSizeEl ? (pathCurrentSizeEl.textContent || "") : "";
@@ -1606,6 +1609,7 @@
         const contextNewDocButton = contextMenu ? contextMenu.querySelector('button[data-action="new-doc"]') : null;
         const contextPermissionsButton = contextMenu ? contextMenu.querySelector('button[data-action="permissions"]') : null;
         const contextGitCreateRepoButton = contextMenu ? contextMenu.querySelector('button[data-action="git-create-repo"]') : null;
+        const contextCreateMapButton = contextMenu ? contextMenu.querySelector('button[data-action="create-map"]') : null;
         const contextGitManageRepoButton = contextMenu ? contextMenu.querySelector('button[data-action="git-manage-repo"]') : null;
         const contextGitDeleteRepoButton = contextMenu ? contextMenu.querySelector('button[data-action="git-delete-repo"]') : null;
         const renameModal = document.getElementById("handrive-rename-modal");
@@ -1636,6 +1640,12 @@
         const gitRepoCloseButton = document.getElementById("handrive-git-repo-close-btn");
         const gitRepoRetryButton = document.getElementById("handrive-git-repo-retry-btn");
         const gitRepoTitle = document.getElementById("handrive-git-repo-title");
+        const mapCreateModal = document.getElementById("handrive-map-create-modal");
+        const mapCreateModalBackdrop = document.getElementById("handrive-map-create-modal-backdrop");
+        const mapCreateInput = document.getElementById("handrive-map-create-input");
+        const mapCreateTarget = document.getElementById("handrive-map-create-target");
+        const mapCreateCancelButton = document.getElementById("handrive-map-create-cancel-btn");
+        const mapCreateConfirmButton = document.getElementById("handrive-map-create-confirm-btn");
         const permissionModal = document.getElementById("handrive-permission-modal");
         const permissionModalBackdrop = document.getElementById("handrive-permission-modal-backdrop");
         const permissionTarget = document.getElementById("handrive-permission-target");
@@ -2801,6 +2811,7 @@
             setContextButtonVisible(contextGitCreateRepoButton, Boolean(visibility.gitCreateRepo));
             setContextButtonVisible(contextGitManageRepoButton, Boolean(visibility.gitManageRepo));
             setContextButtonVisible(contextGitDeleteRepoButton, Boolean(visibility.gitDeleteRepo));
+            setContextButtonVisible(contextCreateMapButton, Boolean(visibility.createMap));
             syncContextMenuDividers(contextMenu);
         }
 
@@ -3221,6 +3232,7 @@
                         slug_path: entry.slug_path || "",
                         name: getEntryEditableName(entry),
                         type: entry.type,
+                        size_display: entry.size_display || "",
                     };
                 }),
                 fileName: buildQueueItemLabel(normalizedEntries, operationType, {
@@ -3240,6 +3252,7 @@
                 isRepoDelete: Boolean(settings.repoDelete),
                 abortRequested: false,
                 abortController: null,
+                sizeDisplay: normalizedEntries.length === 1 ? (normalizedEntries[0].size_display || "") : "",
             };
             state.uploadQueueItems.push(item);
             state.uploadQueueDismissed = false;
@@ -3247,8 +3260,25 @@
             return item;
         }
 
+        let _uploadQueuePollTimer = null;
         function renderUploadQueue() {
             const items = state.uploadQueueItems.slice(-20);
+            const hasActiveUploads = items.some(function (item) {
+                return item.status === "uploading" && item.kind !== "operation";
+            });
+            if (hasActiveUploads) {
+                if (!_uploadQueuePollTimer) {
+                    _uploadQueuePollTimer = setTimeout(function () {
+                        _uploadQueuePollTimer = null;
+                        renderUploadQueue();
+                    }, 1000);
+                }
+            } else {
+                if (_uploadQueuePollTimer) {
+                    clearTimeout(_uploadQueuePollTimer);
+                    _uploadQueuePollTimer = null;
+                }
+            }
             renderUploadQueuePanel({
                 createQueueListItem: function (item) {
                     return createQueueListItem(item, {
@@ -3360,6 +3390,7 @@
                     gitCreateRepo: contextGitCreateRepoButton,
                     gitDeleteRepo: contextGitDeleteRepoButton,
                     gitManageRepo: contextGitManageRepoButton,
+                    createMap: contextCreateMapButton,
                     newDoc: contextNewDocButton,
                     newFolder: contextNewFolderButton,
                     open: contextOpenButton,
@@ -3409,6 +3440,9 @@
             }
             const file = item.file;
             const totalBytes = Math.max(1, file.size || 0);
+            item.startTime = Date.now();
+            item.uploadSpeed = 0;
+            item.uploadedBytes = 0;
             const totalChunks = Math.max(1, Math.ceil(totalBytes / uploadChunkSize));
             const uploadId = (window.crypto && window.crypto.randomUUID)
                 ? window.crypto.randomUUID()
@@ -3445,6 +3479,9 @@
                             const uploadedWithinChunk = Math.max(0, Math.min(event.loaded, chunkBlob.size));
                             const uploadedSoFar = Math.min(totalBytes, chunkStart + uploadedWithinChunk);
                             item.progress = Math.min(99, (uploadedSoFar / totalBytes) * 100);
+                            item.uploadedBytes = uploadedSoFar;
+                            const elapsedSec = Math.max(0.001, (Date.now() - (item.startTime || Date.now())) / 1000);
+                            item.uploadSpeed = uploadedSoFar / elapsedSec;
                             renderUploadQueue();
                         });
                     }
@@ -4341,6 +4378,10 @@
                 return;
             }
             if (entry.type === "dir") {
+                if (entry.is_map_folder) {
+                    window.location.href = (mapViewerBaseUrl || "/handrive/map-viewer/") + (entry.path || "");
+                    return;
+                }
                 window.location.href = buildListUrl(handriveBaseUrl, entry.path, handriveRootUrl);
                 return;
             }
@@ -4480,6 +4521,7 @@
                 isDir: entry.type === "dir",
                 isRepo: entry.type === "dir" && entry.git_repo,
                 isBranch: entry.type === "dir" && entry.git_branch_root,
+                isMap: entry.type === "dir" && entry.is_map_folder,
                 isEmpty: entry.type === "dir" && entry.has_children === false,
                 fileIconKey: fileIconKey,
                 isGenericFileIcon: entry.type === "file" && isGenericFileIconKey(fileIconKey),
@@ -4777,6 +4819,9 @@
                 if (action === "delete") {
                     deleteEntries(entries.length > 1 ? entries : entry).catch(alertError);
                 }
+                if (action === "create-map") {
+                    openMapCreateModal(entry);
+                }
                 if (action === "git-create-repo") {
                     openGitRepoModal(entry);
                 }
@@ -5045,6 +5090,62 @@
         if (gitRepoRetryButton) {
             gitRepoRetryButton.addEventListener("click", function () {
                 retryGitRepo().catch(alertError);
+            });
+        }
+        // ─────────────────────────────────────────────────────────────────
+
+        // 지도 생성 모달
+        let _mapCreateTargetEntry = null;
+
+        function openMapCreateModal(entry) {
+            if (!window.HandriveMapFlowHelpers) { return; }
+            _mapCreateTargetEntry = entry;
+            HandriveMapFlowHelpers.openMapCreateModal({
+                modal: mapCreateModal,
+                input: mapCreateInput,
+                target: mapCreateTarget,
+                entry: entry,
+                syncModalBodyState: syncModalBodyState,
+            });
+        }
+
+        function closeMapCreateModal() {
+            if (!window.HandriveMapFlowHelpers) { return; }
+            HandriveMapFlowHelpers.closeMapCreateModal({
+                modal: mapCreateModal,
+                syncModalBodyState: syncModalBodyState,
+            });
+        }
+
+        function submitMapCreate() {
+            if (!window.HandriveMapFlowHelpers) { return; }
+            HandriveMapFlowHelpers.submitMapCreate({
+                entry: _mapCreateTargetEntry,
+                input: mapCreateInput,
+                mapCreateApiUrl: mapCreateApiUrl,
+                mapEditorBaseUrl: mapEditorBaseUrl,
+                requestJson: requestJson,
+                buildPostOptions: buildPostOptions,
+                onClose: closeMapCreateModal,
+                onError: alertError,
+            });
+        }
+
+        if (mapCreateModalBackdrop) {
+            mapCreateModalBackdrop.addEventListener("click", closeMapCreateModal);
+        }
+        if (mapCreateCancelButton) {
+            mapCreateCancelButton.addEventListener("click", closeMapCreateModal);
+        }
+        if (mapCreateConfirmButton) {
+            mapCreateConfirmButton.addEventListener("click", submitMapCreate);
+        }
+        if (mapCreateInput) {
+            mapCreateInput.addEventListener("keydown", function (event) {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    submitMapCreate();
+                }
             });
         }
         // ─────────────────────────────────────────────────────────────────

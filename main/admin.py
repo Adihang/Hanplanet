@@ -18,26 +18,7 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 
 from .access_log_summary import BOT_UA_PATTERN, resolve_summary_dir, summary_markdown
-from .models import (
-    Career,
-    HandriveAccessRule,
-    GitCollaborator,
-    GitRepository,
-    GitUserMapping,
-    Hobby,
-    NavLink,
-    PortfolioActionButton,
-    PortfolioCareer,
-    PortfolioProfile,
-    PortfolioProject,
-    Project,
-    Project_Tag,
-    QuickLink,
-    Stratagem,
-    Stratagem_Class,
-    Stratagem_Hero_Score,
-    UserProfile,
-)
+from .models import HandriveAccessRule, HandriveUserQuota, NavLink, QuickLink, UserProfile
 
 
 ADMIN_LOGIN_CAPTCHA_QUESTION_SESSION_KEY = "admin_login_captcha_question"
@@ -130,45 +111,6 @@ class AdminCaptchaAuthenticationForm(AdminAuthenticationForm):
 
 admin.site.login_form = AdminCaptchaAuthenticationForm
 
-@admin.register(Project)
-class ProjectAdmin(admin.ModelAdmin):
-    list_display = ["title", "title_en", "create_date"]
-    fields = [
-        "order",
-        "title",
-        "title_en",
-        "banner_img",
-        "tags",
-        "content",
-        "content_en",
-        "create_date",
-    ]
-
-admin.site.register(Project_Tag)
-
-@admin.register(Career)
-class CareerAdmin(admin.ModelAdmin):
-    list_display = ["company", "company_en", "calculated_period", "join_date", "leave_date"]
-    fields = [
-        "order",
-        "company",
-        "company_en",
-        "position",
-        "content",
-        "content_en",
-        "join_date",
-        "leave_date",
-    ]
-
-    @admin.display(description="기간(자동 계산)")
-    def calculated_period(self, obj):
-        return obj.display_period
-
-@admin.register(Hobby)
-class HobbyAdmin(admin.ModelAdmin):
-    list_display = ['title']
-
-
 @admin.register(NavLink)
 class NavLinkAdmin(admin.ModelAdmin):
     list_display = ["order", "name", "url"]
@@ -192,37 +134,6 @@ class UserProfileAdmin(admin.ModelAdmin):
     ordering = ["user__username"]
 
 
-@admin.register(PortfolioProfile)
-class PortfolioProfileAdmin(admin.ModelAdmin):
-    list_display = ["user", "phone", "email", "updated_at"]
-    search_fields = ["user__username", "phone", "email", "main_title"]
-    ordering = ["user__username"]
-
-
-@admin.register(PortfolioCareer)
-class PortfolioCareerAdmin(admin.ModelAdmin):
-    list_display = ["user", "company", "position", "join_date", "leave_date", "order"]
-    search_fields = ["user__username", "company", "position"]
-    list_filter = ["user"]
-    ordering = ["user__username", "-order", "-id"]
-
-
-@admin.register(PortfolioProject)
-class PortfolioProjectAdmin(admin.ModelAdmin):
-    list_display = ["user", "number", "title", "create_date", "order"]
-    search_fields = ["user__username", "title", "title_en"]
-    list_filter = ["user"]
-    ordering = ["user__username", "-create_date", "-id"]
-
-
-@admin.register(PortfolioActionButton)
-class PortfolioActionButtonAdmin(admin.ModelAdmin):
-    list_display = ["user", "order", "label", "url", "updated_at"]
-    search_fields = ["user__username", "label", "url"]
-    list_filter = ["user"]
-    ordering = ["user__username", "order", "id"]
-
-
 @admin.register(HandriveAccessRule)
 class HandriveAccessRuleAdmin(admin.ModelAdmin):
     list_display = ["path", "updated_at", "read_subject_count", "write_subject_count"]
@@ -244,37 +155,41 @@ class HandriveAccessRuleAdmin(admin.ModelAdmin):
     def write_subject_count(self, obj):
         return obj.write_users.count() + obj.write_groups.count()
 
-admin.site.register(Stratagem_Class)
+class HandriveUserQuotaForm(forms.ModelForm):
+    quota_gb = forms.FloatField(
+        label="저장 용량 (GB)",
+        min_value=0.01,
+        help_text="기가바이트 단위로 입력. 예: 1 = 1GB, 0.5 = 512MB",
+    )
 
-@admin.register(Stratagem)
-class StratagemAdmin(admin.ModelAdmin):
-    list_display = ['name']
-    
-@admin.register(Stratagem_Hero_Score)
-class Stratagem_Hero_ScoreAdmin(admin.ModelAdmin):
-    list_display = ['name']
+    class Meta:
+        model = HandriveUserQuota
+        fields = ["user", "quota_gb"]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.fields["quota_gb"].initial = round(self.instance.quota_bytes / (1024 ** 3), 4)
 
-@admin.register(GitUserMapping)
-class GitUserMappingAdmin(admin.ModelAdmin):
-    list_display = ["user", "forgejo_username", "forgejo_user_id"]
-    search_fields = ["user__username", "forgejo_username"]
-
-
-@admin.register(GitRepository)
-class GitRepositoryAdmin(admin.ModelAdmin):
-    list_display = ["owner", "repo_name", "status", "handrive_path", "created_at", "updated_at"]
-    list_filter = ["status"]
-    search_fields = ["owner__username", "repo_name", "handrive_path"]
-    readonly_fields = ["forgejo_repo_id", "forgejo_clone_http_url", "forgejo_clone_ssh_url", "created_at", "updated_at"]
-    ordering = ["-created_at"]
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.quota_bytes = int(self.cleaned_data["quota_gb"] * (1024 ** 3))
+        if commit:
+            instance.save()
+        return instance
 
 
-@admin.register(GitCollaborator)
-class GitCollaboratorAdmin(admin.ModelAdmin):
-    list_display = ["repository", "user", "permission"]
-    list_filter = ["permission"]
-    search_fields = ["repository__repo_name", "user__username"]
+@admin.register(HandriveUserQuota)
+class HandriveUserQuotaAdmin(admin.ModelAdmin):
+    form = HandriveUserQuotaForm
+    list_display = ["user", "quota_display"]
+    search_fields = ["user__username", "user__email"]
+    ordering = ["user__username"]
+
+    @admin.display(description="저장 용량")
+    def quota_display(self, obj):
+        gb = obj.quota_bytes / (1024 ** 3)
+        return f"{gb:.2f} GB"
 
 
 LOG_DAYS_DEFAULT = 30

@@ -253,6 +253,7 @@
                 id: state.uploadQueueSequence,
                 file: file,
                 fileName: file.name || "untitled",
+                fileSize: file.size || 0,
                 targetDirPath: normalizedTargetDir,
                 status: "queued",
                 progress: 0,
@@ -262,6 +263,9 @@
                 commitMessage: commitMessage,
                 abortRequested: false,
                 xhr: null,
+                startTime: null,
+                uploadSpeed: 0,
+                uploadedBytes: 0,
             });
         });
         state.uploadQueueDismissed = false;

@@ -20,6 +20,8 @@ body.ui-page {
     --handrive-hover: var(--site-hover);
     --handrive-hover-strong: var(--site-hover-strong);
     --handrive-hover-button: var(--site-hover-button);
+    --handrive-surface: #ffffff;
+    --handrive-surface-subtle: #f5f5f5;
     --handrive-surface-toolbar: transparent;
     --handrive-surface-muted: var(--site-surface-muted);
     --handrive-surface-muted-strong: var(--site-surface-muted-strong);
@@ -86,6 +88,11 @@ body.ui-page {
     display: flex;
     flex-direction: column;
 }
+body.map-viewer-page,
+body.map-editor-page {
+    height: 100dvh;
+    overflow: hidden;
+}
 
 body.handrive-page.theme-dark,
 body.ui-page.theme-dark {
@@ -107,6 +114,8 @@ body.ui-page.theme-dark {
     --handrive-hover: rgba(255, 255, 255, 0.13);
     --handrive-hover-strong: rgba(255, 255, 255, 0.19);
     --handrive-hover-button: rgba(255, 255, 255, 0.13);
+    --handrive-surface: #2c2c2c;
+    --handrive-surface-subtle: #363636;
     --handrive-surface-toolbar: transparent;
     --handrive-surface-muted: rgba(40, 40, 40, 0.94);
     --handrive-surface-muted-strong: rgba(46, 46, 46, 0.96);
@@ -1215,10 +1224,36 @@ body.theme-dark .handrive-help-icon-symbol {
     white-space: nowrap;
 }
 
+.handrive-job-queue-item-size {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: var(--handrive-text-muted);
+    white-space: nowrap;
+}
+
+.handrive-job-queue-item-sub {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.handrive-job-queue-item-speed {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--handrive-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
 .handrive-job-queue-item-status {
     flex: 0 0 auto;
     font-size: 12px;
     color: var(--handrive-text-muted);
+    text-align: right;
 }
 
 .handrive-job-queue-item-meta {
@@ -2099,6 +2134,19 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     margin: 0;
     transform: scale(1.32);
     background-image: url("/static/icons/handrive/git-branch.svg");
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+}
+
+.handrive-item-type-icon.is-dir.is-map::before {
+    content: "";
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    margin: 0;
+    transform: scale(1.18);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f8ef7' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21'/%3E%3Cline x1='9' y1='3' x2='9' y2='18'/%3E%3Cline x1='15' y1='6' x2='15' y2='21'/%3E%3C/svg%3E");
     background-position: center;
     background-repeat: no-repeat;
     background-size: contain;

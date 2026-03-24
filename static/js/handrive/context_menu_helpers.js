@@ -55,6 +55,7 @@
             ? options.isEditableHandriveFileEntry
             : function () { return false; };
 
+        var IMAGE_EXTENSIONS_FOR_MAP = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff", ".tif", ".avif"];
         var flags = {
             open: false,
             download: false,
@@ -68,6 +69,7 @@
             gitCreateRepo: false,
             gitManageRepo: false,
             gitDeleteRepo: false,
+            createMap: false,
         };
 
         if (!targetEntry) {
@@ -120,6 +122,10 @@
         flags.gitCreateRepo = isDirectory && canWriteChildren && isEntryDeletable(targetEntry) && !hasGitRepo && !isGitVirtualEntry;
         flags.gitManageRepo = isDirectory && hasGitRepo && canManageRepo;
         flags.gitDeleteRepo = isSingleRepoDirectory && canDeleteRepo;
+        var entryExtension = !isDirectory && targetEntry.name
+            ? ("." + targetEntry.name.split(".").pop()).toLowerCase()
+            : "";
+        flags.createMap = !isDirectory && canEditEntry && IMAGE_EXTENSIONS_FOR_MAP.indexOf(entryExtension) !== -1 && !isGitVirtualEntry;
         return flags;
     }
 

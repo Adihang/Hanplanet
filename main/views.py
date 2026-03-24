@@ -4,22 +4,10 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from .forms import PortfolioActionButtonForm, PortfolioCareerForm, PortfolioProfileForm, PortfolioProjectForm
-from .models import (
-    Career,
-    GitUserMapping,
-    Hobby,
-    NavLink,
-    PortfolioActionButton,
-    PortfolioCareer,
-    PortfolioProfile,
-    PortfolioProject,
-    Project_Tag,
-    Project,
-    QuickLink,
-    Stratagem,
-    Stratagem_Hero_Score,
-    UserProfile,
-)
+from .models import NavLink, QuickLink, UserProfile
+from portfolio.models import Career, Hobby, PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject, Project, Project_Tag
+from stratagem.models import Stratagem, Stratagem_Hero_Score
+from git.models import GitUserMapping
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
@@ -3719,7 +3707,7 @@ def chat_with_ai(request, ui_lang=None):
 
 from urllib.parse import urlparse as _urlparse
 
-from .models import GitRepository, GitCollaborator, GitUserMapping, GitDeviceCode
+from git.models import GitRepository, GitCollaborator, GitUserMapping, GitDeviceCode
 from .git_service import GitRepositoryService
 from .forgejo_client import ForgejoClient
 
@@ -3937,7 +3925,7 @@ def _build_public_clone_url(forgejo_url: str) -> str:
 
 def _build_user_authed_clone_url(repo: "GitRepository", user) -> str:
     """Return a PAT-embedded clone URL for CLI use, or fall back to the public unauthenticated URL."""
-    from .models import GitUserMapping
+    from git.models import GitUserMapping
     public_url = _build_public_clone_url(repo.forgejo_clone_http_url)
     if not public_url:
         return ""

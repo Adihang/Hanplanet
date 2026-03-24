@@ -1,0 +1,905 @@
+{% extends 'base.html' %}
+{% block body_class %}handrive-page map-editor-page{% endblock %}
+{% block content %}
+{% include 'handrive/_assets_head.html' %}
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" crossorigin="">
+
+<style>
+.map-editor-wrap {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--handrive-bg, #f5f5f5);
+}
+.map-editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 20px 12px 10px;
+    background: var(--handrive-surface, #fff);
+    border-bottom: 1px solid var(--handrive-border, #e0e0e0);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+.map-editor-toolbar-title {
+    font-weight: 600;
+    font-size: 24px;
+    margin-right: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+.map-editor-toolbar-sep {
+    width: 1px;
+    height: 22px;
+    background: var(--handrive-border, #e0e0e0);
+    margin: 0 4px;
+    flex-shrink: 0;
+}
+.map-editor-toolbar .ui-btn {
+    flex-shrink: 0;
+}
+.map-editor-toolbar .ui-btn.is-active {
+    background: var(--handrive-accent, #4f8ef7);
+    color: #fff;
+    border-color: var(--handrive-accent, #4f8ef7);
+}
+.map-editor-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+#map-editor-container {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+.map-editor-side {
+    width: 220px;
+    min-width: 180px;
+    flex-shrink: 0;
+    background: var(--handrive-surface, #fff);
+    border-left: 1px solid var(--handrive-border, #e0e0e0);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.map-editor-side-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--handrive-border, #e0e0e0);
+    flex-shrink: 0;
+}
+.map-editor-side-tab {
+    flex: 1;
+    padding: 10px 6px;
+    font-size: 16px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--handrive-text-secondary, #888);
+    border-bottom: 2px solid transparent;
+}
+.map-editor-side-tab.is-active {
+    color: var(--handrive-accent, #4f8ef7);
+    border-bottom-color: var(--handrive-accent, #4f8ef7);
+    font-weight: 600;
+}
+.map-editor-side-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+.map-editor-side-panel[hidden] { display: none; }
+.map-editor-icon-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 10px;
+}
+.map-editor-icon-btn {
+    aspect-ratio: 1;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    background: var(--handrive-surface-subtle, #f5f5f5);
+    cursor: pointer;
+    font-size: 1.3em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: border-color 0.15s;
+}
+.map-editor-icon-btn.is-selected {
+    border-color: var(--handrive-accent, #4f8ef7);
+    background: color-mix(in srgb, var(--handrive-accent, #4f8ef7) 15%, var(--handrive-surface, #fff));
+}
+.map-editor-icon-btn img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 4px;
+}
+.map-editor-upload-btn {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-top: 8px;
+    box-sizing: border-box;
+    font-size: 16px;
+    padding: 8px 12px;
+}
+.map-editor-layers-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.map-editor-layer-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 6px;
+    border-radius: 5px;
+    font-size: 14px;
+    cursor: pointer;
+}
+.map-editor-layer-item:hover {
+    background: var(--handrive-surface-subtle, #f5f5f5);
+}
+.map-editor-layer-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+.map-editor-layer-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.map-editor-layer-delete {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--handrive-text-secondary, #888);
+    font-size: 1em;
+    padding: 0 2px;
+    line-height: 1;
+    flex-shrink: 0;
+    visibility: hidden;
+}
+.map-editor-layer-item:hover .map-editor-layer-delete {
+    visibility: visible;
+}
+/* 지도 위 툴팁 스타일 */
+.map-zone-label {
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    border: none;
+    box-shadow: none;
+    border-radius: 4px;
+    font-size: 1.17em;
+    padding: 2px 6px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+.map-zone-label::before { display: none; }
+.map-marker-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6em;
+    line-height: 1;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));
+}
+/* 이름 입력 팝업 */
+.map-name-popup-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.3);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.map-name-popup-overlay[hidden] { display: none; }
+.map-name-popup {
+    background: var(--handrive-bg);
+    border-radius: var(--handrive-radius-lg);
+    padding: 12px;
+    min-width: 260px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.map-name-popup h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+}
+.map-name-popup input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--handrive-border-heavy, #ccc);
+    border-radius: var(--handrive-radius-sm);
+    font-size: 16px;
+    box-sizing: border-box;
+    background: var(--handrive-bg);
+    color: var(--handrive-text, #222);
+}
+.map-name-popup-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+.map-save-status {
+    font-size: 0.78em;
+    color: var(--handrive-text-secondary, #888);
+    margin-left: auto;
+    flex-shrink: 0;
+}
+body.theme-dark .leaflet-popup-content-wrapper,
+body.theme-dark .leaflet-popup-tip {
+    background: var(--handrive-surface);
+    color: var(--handrive-text);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+}
+body.theme-dark .leaflet-container {
+    background: #1a1a1a;
+}
+</style>
+
+<div class="map-editor-wrap" id="map-editor-root"
+    data-map-path="{{ map_path }}"
+    data-base-image="{{ base_image_name }}"
+    data-image-url="{{ image_url }}"
+    data-can-edit="{% if can_edit %}1{% else %}0{% endif %}"
+    data-map-data-api="{{ handrive_api_map_data_url }}"
+    data-map-data-save-api="/handrive/api/map/data/save"
+    data-map-icon-upload-api="{{ handrive_api_map_icon_upload_url }}"
+    data-map-viewer-url="{{ map_viewer_url }}"
+    data-handrive-list-url="{{ handrive_list_url }}"
+>
+    <div class="map-editor-toolbar">
+        <span class="map-editor-toolbar-title" title="{{ map_name }}">{{ map_name }}</span>
+        <div class="map-editor-toolbar-sep"></div>
+        <button type="button" class="ui-btn" id="map-tool-select" title="선택 모드 (S)">선택</button>
+        <button type="button" class="ui-btn" id="map-tool-zone" title="구역 그리기 (Z)">구역 그리기</button>
+        <button type="button" class="ui-btn" id="map-tool-marker" title="마커 배치 (M)">마커 배치</button>
+        <div class="map-editor-toolbar-sep"></div>
+        {% if can_edit %}
+        <button type="button" class="ui-btn ui-btn-primary" id="map-save-btn">저장</button>
+        {% endif %}
+        <span class="map-save-status" id="map-save-status"></span>
+        <div class="map-editor-toolbar-sep"></div>
+        <a href="{{ map_viewer_url }}" class="ui-btn">뷰어로 보기</a>
+        <a href="{{ handrive_list_url }}" class="ui-btn">목록으로</a>
+    </div>
+
+    <div class="map-editor-body">
+        <div id="map-editor-container"></div>
+
+        <div class="map-editor-side">
+            <div class="map-editor-side-tabs">
+                <button type="button" class="map-editor-side-tab is-active" data-side-tab="icons">아이콘</button>
+                <button type="button" class="map-editor-side-tab" data-side-tab="layers">레이어</button>
+            </div>
+            <div class="map-editor-side-panel" id="map-side-icons">
+                <div style="font-size:14px;color:var(--handrive-text-secondary,#888);margin-bottom:6px;">프리셋</div>
+                <div class="map-editor-icon-grid" id="map-preset-icons"></div>
+                <div style="font-size:14px;color:var(--handrive-text-secondary,#888);margin:8px 0 6px;">커스텀</div>
+                <div class="map-editor-icon-grid" id="map-custom-icons"></div>
+                {% if can_edit %}
+                <label style="cursor:pointer;">
+                    <input type="file" id="map-icon-upload-input" accept="image/*" hidden>
+                    <span class="ui-btn map-editor-upload-btn">+ 아이콘 업로드</span>
+                </label>
+                {% endif %}
+            </div>
+            <div class="map-editor-side-panel" id="map-side-layers" hidden>
+                <ul class="map-editor-layers-list" id="map-layers-list"></ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 이름 입력 팝업 -->
+<div class="map-name-popup-overlay" id="map-name-popup-overlay" hidden>
+    <div class="map-name-popup">
+        <h4 id="map-name-popup-title">이름 입력</h4>
+        <input type="text" id="map-name-popup-input" placeholder="이름을 입력하세요" autocomplete="off">
+        <div class="map-name-popup-actions">
+            <button type="button" class="ui-btn" id="map-name-popup-cancel">취소</button>
+            <button type="button" class="ui-btn ui-btn-primary" id="map-name-popup-confirm">확인</button>
+        </div>
+    </div>
+</div>
+
+<!-- 마커 정보 팝업 -->
+<div class="map-name-popup-overlay" id="map-marker-popup-overlay" hidden>
+    <div class="map-name-popup">
+        <h4>마커 정보</h4>
+        <label style="font-size:0.82em;display:block;margin-bottom:6px;">이름
+            <input type="text" id="map-marker-popup-name" placeholder="마커 이름" autocomplete="off" style="margin-top:4px;">
+        </label>
+        <div class="map-name-popup-actions">
+            <button type="button" class="ui-btn ui-btn-danger" id="map-marker-popup-delete" style="margin-right:auto;color:#e53935;">삭제</button>
+            <button type="button" class="ui-btn" id="map-marker-popup-cancel">취소</button>
+            <button type="button" class="ui-btn ui-btn-primary" id="map-marker-popup-confirm">확인</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js" crossorigin=""></script>
+<script>
+(function () {
+    "use strict";
+
+    var root = document.getElementById("map-editor-root");
+    var mapPath = root.dataset.mapPath;
+    var imageUrl = root.dataset.imageUrl;
+    var canEdit = root.dataset.canEdit === "1";
+    var mapDataApi = root.dataset.mapDataApi;
+    var mapDataSaveApi = root.dataset.mapDataSaveApi;
+    var mapIconUploadApi = root.dataset.mapIconUploadApi;
+
+    // 프리셋 아이콘 목록
+    var PRESET_ICONS = [
+        {key:"pin", emoji:"📍"},
+        {key:"home", emoji:"🏠"},
+        {key:"store", emoji:"🏪"},
+        {key:"hospital", emoji:"🏥"},
+        {key:"school", emoji:"🏫"},
+        {key:"star", emoji:"⭐"},
+        {key:"flag", emoji:"🚩"},
+        {key:"warning", emoji:"⚠️"},
+        {key:"tree", emoji:"🌲"},
+        {key:"water", emoji:"💧"},
+        {key:"fire", emoji:"🔥"},
+        {key:"info", emoji:"ℹ️"},
+    ];
+
+    var map, imageOverlay, drawControl, drawnItems;
+    var imgWidth = 1000, imgHeight = 700;
+    var selectedIconKey = "pin";
+    var selectedIconEmoji = "📍";
+    var selectedIconUrl = null; // 커스텀 아이콘일 때
+    var currentTool = "select"; // select | zone | marker
+    var geojsonFeatures = []; // 저장된 Feature 배열
+    var layerMap = {}; // id -> {feature, layer}
+    var featureIdCounter = 1;
+    var pendingZoneLayer = null;
+    var markerPopupTarget = null;
+    var saveStatusEl = document.getElementById("map-save-status");
+
+    // 레이어 ID 생성
+    function nextId() { return "f" + (featureIdCounter++); }
+
+    // 도구 전환
+    var toolSelectBtn = document.getElementById("map-tool-select");
+    var toolZoneBtn = document.getElementById("map-tool-zone");
+    var toolMarkerBtn = document.getElementById("map-tool-marker");
+
+    function setTool(tool) {
+        currentTool = tool;
+        toolSelectBtn.classList.toggle("is-active", tool === "select");
+        toolZoneBtn.classList.toggle("is-active", tool === "zone");
+        toolMarkerBtn.classList.toggle("is-active", tool === "marker");
+        if (drawControl) {
+            if (tool === "zone") {
+                new L.Draw.Polygon(map, drawControl.options.draw.polygon).enable();
+            } else {
+                map.eachLayer(function(l) { if (l._drawAction) l._drawAction.disable(); });
+                if (L.Draw.Event) {
+                    // disable any active draw handler
+                }
+            }
+        }
+        map.getContainer().style.cursor = tool === "marker" ? "crosshair" : "";
+    }
+
+    toolSelectBtn.addEventListener("click", function() { setTool("select"); });
+    toolZoneBtn.addEventListener("click", function() { setTool("zone"); });
+    toolMarkerBtn.addEventListener("click", function() { setTool("marker"); });
+
+    // 키보드 단축키
+    document.addEventListener("keydown", function(e) {
+        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+        if (e.key === "s" || e.key === "S") setTool("select");
+        if (e.key === "z" || e.key === "Z") setTool("zone");
+        if (e.key === "m" || e.key === "M") setTool("marker");
+    });
+
+    // 지도 초기화 (이미지 로드 후)
+    var img = new Image();
+    img.onload = function() {
+        imgWidth = img.naturalWidth;
+        imgHeight = img.naturalHeight;
+        initMap();
+    };
+    img.onerror = function() { initMap(); };
+    img.src = imageUrl || "";
+
+    function initMap() {
+        map = L.map("map-editor-container", {
+            crs: L.CRS.Simple,
+            minZoom: -4,
+            maxZoom: 4,
+            zoomSnap: 0.25,
+            attributionControl: false,
+            scrollWheelZoom: false,
+        });
+
+        // Ctrl/Cmd + 스크롤 줌
+        map.getContainer().addEventListener("wheel", function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                var delta = e.deltaY > 0 ? -0.5 : 0.5;
+                map.setZoom(map.getZoom() + delta);
+            }
+        }, { passive: false });
+
+        var bounds = [[0, 0], [imgHeight, imgWidth]];
+        if (imageUrl) {
+            imageOverlay = L.imageOverlay(imageUrl, bounds).addTo(map);
+        }
+        map.fitBounds(bounds);
+
+        drawnItems = new L.FeatureGroup().addTo(map);
+
+        if (canEdit) {
+            drawControl = new L.Control.Draw({
+                edit: { featureGroup: drawnItems, edit: false, remove: false },
+                draw: {
+                    polygon: { shapeOptions: { color: "#4f8ef7", fillOpacity: 0.15, weight: 2 } },
+                    polyline: false,
+                    rectangle: false,
+                    circle: false,
+                    circlemarker: false,
+                    marker: false,
+                },
+            });
+            map.addControl(drawControl);
+
+            // 폴리곤 그리기 완료
+            map.on(L.Draw.Event.CREATED, function(e) {
+                if (e.layerType === "polygon") {
+                    pendingZoneLayer = e.layer;
+                    openNamePopup("구역 이름을 입력하세요", "", function(name) {
+                        if (!name) { pendingZoneLayer = null; return; }
+                        addZoneLayer(pendingZoneLayer, name);
+                        pendingZoneLayer = null;
+                        setTool("select");
+                        renderLayersList();
+                    });
+                }
+            });
+
+            // 지도 클릭: 마커 배치 모드
+            map.on("click", function(e) {
+                if (currentTool !== "marker") return;
+                placeMarker(e.latlng, selectedIconKey, selectedIconEmoji, selectedIconUrl, "");
+                renderLayersList();
+            });
+        }
+
+        // 데이터 로드
+        loadMapData();
+
+        // 사이드 탭 전환
+        document.querySelectorAll(".map-editor-side-tab").forEach(function(tab) {
+            tab.addEventListener("click", function() {
+                document.querySelectorAll(".map-editor-side-tab").forEach(function(t) { t.classList.remove("is-active"); });
+                tab.classList.add("is-active");
+                var panel = tab.dataset.sideTab;
+                document.getElementById("map-side-icons").hidden = panel !== "icons";
+                document.getElementById("map-side-layers").hidden = panel !== "layers";
+            });
+        });
+
+        renderPresetIcons();
+        renderCustomIcons({{ custom_icons|safe }});
+
+        // 아이콘 업로드
+        var iconUploadInput = document.getElementById("map-icon-upload-input");
+        if (iconUploadInput) {
+            iconUploadInput.addEventListener("change", function() {
+                if (!iconUploadInput.files || !iconUploadInput.files.length) return;
+                uploadIcon(iconUploadInput.files[0]);
+                iconUploadInput.value = "";
+            });
+        }
+
+        // 저장 버튼
+        var saveBtn = document.getElementById("map-save-btn");
+        if (saveBtn) {
+            saveBtn.addEventListener("click", saveMapData);
+        }
+    }
+
+    // ── 구역 추가 ──────────────────────────────────────────────────────────
+    function addZoneLayer(layer, name, id, existingColor) {
+        var fid = id || nextId();
+        var color = existingColor || randomColor();
+        layer.setStyle({ color: color, fillColor: color, fillOpacity: 0.15, weight: 2 });
+        layer.addTo(drawnItems);
+
+        var latlngs = layer.getLatLngs()[0];
+        var centroid = computeCentroid(latlngs);
+        var tooltip = L.tooltip({ permanent: true, direction: "center", className: "map-zone-label" })
+            .setContent(name)
+            .setLatLng(centroid);
+        tooltip.addTo(map);
+
+        layerMap[fid] = { type: "zone", name: name, color: color, layer: layer, tooltip: tooltip };
+
+        layer.on("click", function(e) {
+            if (currentTool !== "select") return;
+            L.DomEvent.stopPropagation(e);
+            openNamePopup("구역 이름 수정", name, function(newName) {
+                if (newName === null) return;
+                layerMap[fid].name = newName;
+                tooltip.setContent(newName);
+                renderLayersList();
+            });
+        });
+    }
+
+    // ── 마커 추가 ──────────────────────────────────────────────────────────
+    function placeMarker(latlng, iconKey, emoji, iconUrl, name, id) {
+        var fid = id || nextId();
+        var markerIcon = createLeafletIcon(emoji, iconUrl);
+        var marker = L.marker(latlng, { icon: markerIcon, draggable: canEdit }).addTo(drawnItems);
+
+        layerMap[fid] = { type: "marker", name: name, iconKey: iconKey, emoji: emoji, iconUrl: iconUrl, layer: marker };
+
+        marker.on("click", function(e) {
+            L.DomEvent.stopPropagation(e);
+            openMarkerPopup(fid);
+        });
+    }
+
+    function createLeafletIcon(emoji, iconUrl) {
+        var html;
+        if (iconUrl) {
+            html = '<div class="map-marker-icon"><img src="' + escHtml(iconUrl) + '" style="width:28px;height:28px;object-fit:contain;"></div>';
+        } else {
+            html = '<div class="map-marker-icon">' + escHtml(emoji || "📍") + '</div>';
+        }
+        return L.divIcon({ html: html, className: "", iconSize: [32, 32], iconAnchor: [16, 28] });
+    }
+
+    // ── 이름 팝업 ──────────────────────────────────────────────────────────
+    var namePopupOverlay = document.getElementById("map-name-popup-overlay");
+    var namePopupTitle = document.getElementById("map-name-popup-title");
+    var namePopupInput = document.getElementById("map-name-popup-input");
+    var namePopupCancel = document.getElementById("map-name-popup-cancel");
+    var namePopupConfirm = document.getElementById("map-name-popup-confirm");
+    var namePopupCallback = null;
+
+    function openNamePopup(title, value, callback) {
+        namePopupTitle.textContent = title;
+        namePopupInput.value = value || "";
+        namePopupCallback = callback;
+        namePopupOverlay.hidden = false;
+        setTimeout(function() { namePopupInput.focus(); namePopupInput.select(); }, 50);
+    }
+
+    function confirmNamePopup() {
+        var val = namePopupInput.value.trim();
+        namePopupOverlay.hidden = true;
+        if (namePopupCallback) { namePopupCallback(val); namePopupCallback = null; }
+    }
+
+    namePopupCancel.addEventListener("click", function() {
+        namePopupOverlay.hidden = true;
+        if (namePopupCallback) { namePopupCallback(null); namePopupCallback = null; }
+    });
+    namePopupConfirm.addEventListener("click", confirmNamePopup);
+    namePopupInput.addEventListener("keydown", function(e) {
+        if (e.key === "Enter") { e.preventDefault(); confirmNamePopup(); }
+        if (e.key === "Escape") { namePopupOverlay.hidden = true; if (namePopupCallback) { namePopupCallback(null); namePopupCallback = null; } }
+    });
+
+    // ── 마커 팝업 ──────────────────────────────────────────────────────────
+    var markerPopupOverlay = document.getElementById("map-marker-popup-overlay");
+    var markerPopupName = document.getElementById("map-marker-popup-name");
+    var markerPopupDelete = document.getElementById("map-marker-popup-delete");
+    var markerPopupCancel = document.getElementById("map-marker-popup-cancel");
+    var markerPopupConfirm = document.getElementById("map-marker-popup-confirm");
+
+    function openMarkerPopup(fid) {
+        var item = layerMap[fid];
+        if (!item) return;
+        markerPopupTarget = fid;
+        markerPopupName.value = item.name || "";
+        markerPopupOverlay.hidden = false;
+        setTimeout(function() { markerPopupName.focus(); }, 50);
+    }
+
+    markerPopupCancel.addEventListener("click", function() { markerPopupOverlay.hidden = true; markerPopupTarget = null; });
+    markerPopupConfirm.addEventListener("click", function() {
+        if (!markerPopupTarget) return;
+        layerMap[markerPopupTarget].name = markerPopupName.value.trim();
+        markerPopupOverlay.hidden = true;
+        markerPopupTarget = null;
+        renderLayersList();
+    });
+    markerPopupDelete.addEventListener("click", function() {
+        if (!markerPopupTarget) return;
+        var item = layerMap[markerPopupTarget];
+        if (item) {
+            drawnItems.removeLayer(item.layer);
+            delete layerMap[markerPopupTarget];
+        }
+        markerPopupOverlay.hidden = true;
+        markerPopupTarget = null;
+        renderLayersList();
+    });
+    markerPopupName.addEventListener("keydown", function(e) {
+        if (e.key === "Enter") { e.preventDefault(); markerPopupConfirm.click(); }
+    });
+
+    // ── 레이어 목록 렌더링 ─────────────────────────────────────────────────
+    var layersListEl = document.getElementById("map-layers-list");
+
+    function renderLayersList() {
+        layersListEl.innerHTML = "";
+        Object.keys(layerMap).forEach(function(fid) {
+            var item = layerMap[fid];
+            var li = document.createElement("li");
+            li.className = "map-editor-layer-item";
+
+            var icon = document.createElement("span");
+            icon.className = "map-editor-layer-icon";
+            if (item.type === "zone") {
+                icon.style.background = item.color || "#4f8ef7";
+            } else {
+                icon.textContent = item.emoji || "📍";
+                icon.style.fontSize = "1em";
+                icon.style.background = "none";
+                icon.style.width = "auto";
+            }
+
+            var nameEl = document.createElement("span");
+            nameEl.className = "map-editor-layer-name";
+            nameEl.textContent = item.name || "(이름 없음)";
+
+            var delBtn = document.createElement("button");
+            delBtn.className = "map-editor-layer-delete";
+            delBtn.textContent = "✕";
+            delBtn.title = "삭제";
+            delBtn.addEventListener("click", function(e) {
+                e.stopPropagation();
+                drawnItems.removeLayer(item.layer);
+                if (item.tooltip) { map.removeLayer(item.tooltip); }
+                delete layerMap[fid];
+                renderLayersList();
+            });
+
+            li.appendChild(icon);
+            li.appendChild(nameEl);
+            li.appendChild(delBtn);
+            li.addEventListener("click", function() {
+                if (item.type === "zone") { map.fitBounds(item.layer.getBounds()); }
+                else { map.panTo(item.layer.getLatLng()); }
+            });
+            layersListEl.appendChild(li);
+        });
+    }
+
+    // ── 프리셋 아이콘 렌더링 ───────────────────────────────────────────────
+    function renderPresetIcons() {
+        var grid = document.getElementById("map-preset-icons");
+        PRESET_ICONS.forEach(function(ic) {
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "map-editor-icon-btn" + (ic.key === selectedIconKey ? " is-selected" : "");
+            btn.textContent = ic.emoji;
+            btn.title = ic.key;
+            btn.addEventListener("click", function() {
+                selectedIconKey = ic.key;
+                selectedIconEmoji = ic.emoji;
+                selectedIconUrl = null;
+                document.querySelectorAll(".map-editor-icon-btn").forEach(function(b) { b.classList.remove("is-selected"); });
+                btn.classList.add("is-selected");
+                setTool("marker");
+            });
+            grid.appendChild(btn);
+        });
+    }
+
+    function renderCustomIcons(icons) {
+        var grid = document.getElementById("map-custom-icons");
+        grid.innerHTML = "";
+        (icons || []).forEach(function(ic) {
+            addCustomIconBtn(grid, ic.name, ic.url, ic.path);
+        });
+    }
+
+    function addCustomIconBtn(grid, name, url, path) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "map-editor-icon-btn";
+        btn.title = name;
+        var img = document.createElement("img");
+        img.src = url;
+        img.alt = name;
+        btn.appendChild(img);
+        btn.addEventListener("click", function() {
+            selectedIconKey = "custom:" + path;
+            selectedIconEmoji = "";
+            selectedIconUrl = url;
+            document.querySelectorAll(".map-editor-icon-btn").forEach(function(b) { b.classList.remove("is-selected"); });
+            btn.classList.add("is-selected");
+            setTool("marker");
+        });
+        grid.appendChild(btn);
+    }
+
+    // ── 아이콘 업로드 ──────────────────────────────────────────────────────
+    function uploadIcon(file) {
+        var formData = new FormData();
+        formData.append("path", mapPath);
+        formData.append("icon", file);
+        var csrfToken = getCsrfToken();
+        fetch(mapIconUploadApi, {
+            method: "POST",
+            headers: csrfToken ? { "X-CSRFToken": csrfToken } : {},
+            body: formData,
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.ok) {
+                var grid = document.getElementById("map-custom-icons");
+                addCustomIconBtn(grid, file.name, data.icon_url, data.icon_path);
+                // 업로드한 아이콘을 바로 선택
+                selectedIconKey = "custom:" + data.icon_path;
+                selectedIconEmoji = "";
+                selectedIconUrl = data.icon_url;
+                document.querySelectorAll(".map-editor-icon-btn").forEach(function(b) { b.classList.remove("is-selected"); });
+                grid.lastElementChild && grid.lastElementChild.classList.add("is-selected");
+                setTool("marker");
+            } else {
+                alert(data.error || "아이콘 업로드에 실패했습니다.");
+            }
+        })
+        .catch(function() { alert("아이콘 업로드 중 오류가 발생했습니다."); });
+    }
+
+    // ── GeoJSON 저장/불러오기 ──────────────────────────────────────────────
+    function layerMapToGeoJson() {
+        var features = [];
+        Object.keys(layerMap).forEach(function(fid) {
+            var item = layerMap[fid];
+            if (item.type === "zone") {
+                var coords = item.layer.getLatLngs()[0].map(function(ll) { return [ll.lng, ll.lat]; });
+                if (coords.length > 0) coords.push(coords[0]); // 닫기
+                features.push({
+                    type: "Feature",
+                    id: fid,
+                    geometry: { type: "Polygon", coordinates: [coords] },
+                    properties: { type: "zone", name: item.name, color: item.color },
+                });
+            } else if (item.type === "marker") {
+                var ll = item.layer.getLatLng();
+                features.push({
+                    type: "Feature",
+                    id: fid,
+                    geometry: { type: "Point", coordinates: [ll.lng, ll.lat] },
+                    properties: {
+                        type: "marker",
+                        name: item.name,
+                        iconKey: item.iconKey,
+                        emoji: item.emoji,
+                        iconUrl: item.iconUrl,
+                        group: getMarkerGroup(ll),
+                    },
+                });
+            }
+        });
+        return { type: "FeatureCollection", features: features };
+    }
+
+    function getMarkerGroup(latlng) {
+        // 마커가 속한 구역의 이름 반환
+        var group = "";
+        Object.keys(layerMap).forEach(function(fid) {
+            var item = layerMap[fid];
+            if (item.type === "zone") {
+                if (item.layer.getBounds().contains(latlng)) {
+                    group = item.name || "";
+                }
+            }
+        });
+        return group;
+    }
+
+    function loadMapData() {
+        var url = mapDataApi + "?path=" + encodeURIComponent(mapPath);
+        fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.ok || !data.geojson) return;
+            var features = (data.geojson.features || []);
+            features.forEach(function(f) {
+                if (!f.geometry || !f.properties) return;
+                var props = f.properties;
+                var fid = String(f.id || nextId());
+                // fid counter 보정
+                var num = parseInt(fid.replace("f", ""), 10);
+                if (!isNaN(num) && num >= featureIdCounter) featureIdCounter = num + 1;
+
+                if (f.geometry.type === "Polygon" && props.type === "zone") {
+                    var coords = (f.geometry.coordinates[0] || []).map(function(c) { return [c[1], c[0]]; });
+                    if (coords.length > 1) coords.pop(); // 마지막 닫힘점 제거
+                    var layer = L.polygon(coords);
+                    addZoneLayer(layer, props.name || "", fid, props.color);
+                } else if (f.geometry.type === "Point" && props.type === "marker") {
+                    var c = f.geometry.coordinates;
+                    var latlng = L.latLng(c[1], c[0]);
+                    placeMarker(latlng, props.iconKey || "pin", props.emoji || "📍", props.iconUrl || null, props.name || "", fid);
+                }
+            });
+            renderLayersList();
+        })
+        .catch(function() {});
+    }
+
+    function saveMapData() {
+        if (!canEdit) return;
+        var geojson = layerMapToGeoJson();
+        var csrfToken = getCsrfToken();
+        if (saveStatusEl) saveStatusEl.textContent = "저장 중...";
+        fetch(mapDataSaveApi, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+                "X-CSRFToken": csrfToken || "",
+            },
+            body: JSON.stringify({ path: mapPath, geojson: geojson }),
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (saveStatusEl) {
+                saveStatusEl.textContent = data.ok ? "저장 완료" : (data.error || "저장 실패");
+                setTimeout(function() { if (saveStatusEl) saveStatusEl.textContent = ""; }, 2000);
+            }
+        })
+        .catch(function() {
+            if (saveStatusEl) { saveStatusEl.textContent = "저장 오류"; setTimeout(function() { if (saveStatusEl) saveStatusEl.textContent = ""; }, 2000); }
+        });
+    }
+
+    // ── 유틸 ──────────────────────────────────────────────────────────────
+    function computeCentroid(latlngs) {
+        var lat = 0, lng = 0;
+        latlngs.forEach(function(ll) { lat += ll.lat; lng += ll.lng; });
+        return L.latLng(lat / latlngs.length, lng / latlngs.length);
+    }
+
+    function randomColor() {
+        var colors = ["#e53935","#8e24aa","#1e88e5","#00897b","#f4511e","#43a047","#6d4c41","#546e7a"];
+        return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    function getCsrfToken() {
+        var cookie = document.cookie.split(";").find(function(c) { return c.trim().startsWith("csrftoken="); });
+        return cookie ? cookie.trim().split("=")[1] : "";
+    }
+
+    function escHtml(str) {
+        return String(str || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+
+})();
+</script>
+{% endblock %}

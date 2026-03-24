@@ -59,6 +59,18 @@
     overflow: hidden;
     position: relative;
 }
+.map-loading-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--handrive-bg, #f5f5f5);
+}
+.map-loading-overlay.is-hidden {
+    display: none;
+}
 .map-editor-side {
     width: 220px;
     min-width: 180px;
@@ -93,8 +105,28 @@
     flex: 1;
     overflow-y: auto;
     padding: 10px;
+    position: relative;
 }
 .map-editor-side-panel[hidden] { display: none; }
+.map-editor-side-panel.is-icon-drop-target {
+    background: var(--handrive-drop-target-bg, rgba(34,197,94,0.12));
+}
+.map-editor-side-panel.is-icon-drop-target::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 2px var(--handrive-drop-target-border, #22c55e);
+    border-radius: 6px;
+    background-image:
+        linear-gradient(to right, var(--handrive-drop-target-border, #22c55e) 50%, transparent 50%),
+        linear-gradient(to right, var(--handrive-drop-target-border, #22c55e) 50%, transparent 50%),
+        linear-gradient(to bottom, var(--handrive-drop-target-border, #22c55e) 50%, transparent 50%),
+        linear-gradient(to bottom, var(--handrive-drop-target-border, #22c55e) 50%, transparent 50%);
+    background-position: 8px 8px, 8px calc(100% - 8px), 8px 8px, calc(100% - 8px) 8px;
+    background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+    background-size: 12px 2px, 12px 2px, 2px 12px, 2px 12px;
+}
 .map-editor-icon-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -125,13 +157,7 @@
     border-radius: 4px;
 }
 .map-editor-upload-btn {
-    display: flex;
-    justify-content: center;
-    width: 100%;
-    margin-top: 8px;
-    box-sizing: border-box;
-    font-size: 16px;
-    padding: 8px 12px;
+    color: var(--handrive-text-secondary, #888);
 }
 .map-editor-layers-list {
     list-style: none;
@@ -253,6 +279,55 @@ body.theme-dark .leaflet-popup-tip {
 body.theme-dark .leaflet-container {
     background: #1a1a1a;
 }
+/* 구역 그리기 vertex 마커: 흰 사각형 → 작은 원 */
+.leaflet-div-icon {
+    background: #fff;
+    border: 2px solid var(--handrive-accent, #4f8ef7);
+    border-radius: 50%;
+    width: 20px !important;
+    height: 20px !important;
+    margin-left: -10px !important;
+    margin-top: -10px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+.leaflet-touch-icon {
+    border-radius: 50%;
+}
+#map-editor-container.is-cursor-active * {
+    cursor: inherit !important;
+}
+/* 아이콘 삭제 확인 팝업 */
+.map-icon-delete-popup {
+    position: fixed;
+    z-index: 9999;
+    background: var(--handrive-surface, #fff);
+    border: 1px solid var(--handrive-border, #e0e0e0);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    padding: 12px 14px 10px;
+    min-width: 160px;
+    font-size: 0.88em;
+}
+.map-icon-delete-popup-msg {
+    margin-bottom: 10px;
+    color: var(--handrive-text, #222);
+    word-break: break-all;
+}
+.map-icon-delete-popup-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+}
+.map-icon-delete-popup .ui-btn-danger {
+    background: #e53935;
+    color: #fff;
+    border-color: #e53935;
+}
+.map-icon-delete-popup .ui-btn-danger:hover,
+.map-icon-delete-popup .ui-btn-danger:focus-visible {
+    background: #c62828;
+    border-color: #c62828;
+}
 </style>
 
 <div class="map-editor-wrap" id="map-editor-root"
@@ -263,18 +338,16 @@ body.theme-dark .leaflet-container {
     data-map-data-api="{{ handrive_api_map_data_url }}"
     data-map-data-save-api="/handrive/api/map/data/save"
     data-map-icon-upload-api="{{ handrive_api_map_icon_upload_url }}"
+    data-map-icon-delete-api="{{ handrive_api_map_icon_delete_url }}"
     data-map-viewer-url="{{ map_viewer_url }}"
     data-handrive-list-url="{{ handrive_list_url }}"
 >
     <div class="map-editor-toolbar">
         <span class="map-editor-toolbar-title" title="{{ map_name }}">{{ map_name }}</span>
         <div class="map-editor-toolbar-sep"></div>
-        <button type="button" class="ui-btn" id="map-tool-select" title="선택 모드 (S)">선택</button>
-        <button type="button" class="ui-btn" id="map-tool-zone" title="구역 그리기 (Z)">구역 그리기</button>
-        <button type="button" class="ui-btn" id="map-tool-marker" title="마커 배치 (M)">마커 배치</button>
-        <div class="map-editor-toolbar-sep"></div>
         {% if can_edit %}
-        <button type="button" class="ui-btn ui-btn-primary" id="map-save-btn">저장</button>
+        <button type="button" class="handrive-icon-btn" id="map-save-btn" title="저장" aria-label="저장"
+        ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="2"/><rect x="6" y="3" width="8" height="5" rx="1"/><rect x="6" y="11" width="8" height="6" rx="1"/><line x1="8" y1="4.5" x2="12" y2="4.5"/></svg></button>
         {% endif %}
         <span class="map-save-status" id="map-save-status"></span>
         <div class="map-editor-toolbar-sep"></div>
@@ -283,7 +356,11 @@ body.theme-dark .leaflet-container {
     </div>
 
     <div class="map-editor-body">
-        <div id="map-editor-container"></div>
+        <div id="map-editor-container">
+            <div class="map-loading-overlay" id="map-editor-loading">
+                <div class="handrive-list-loading-spinner"></div>
+            </div>
+        </div>
 
         <div class="map-editor-side">
             <div class="map-editor-side-tabs">
@@ -296,9 +373,9 @@ body.theme-dark .leaflet-container {
                 <div style="font-size:14px;color:var(--handrive-text-secondary,#888);margin:8px 0 6px;">커스텀</div>
                 <div class="map-editor-icon-grid" id="map-custom-icons"></div>
                 {% if can_edit %}
-                <label style="cursor:pointer;">
+                <label class="map-editor-icon-btn map-editor-upload-btn" title="아이콘 업로드" style="cursor:pointer;">
                     <input type="file" id="map-icon-upload-input" accept="image/*" hidden>
-                    <span class="ui-btn map-editor-upload-btn">+ 아이콘 업로드</span>
+                    <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/></svg>
                 </label>
                 {% endif %}
             </div>
@@ -349,27 +426,29 @@ body.theme-dark .leaflet-container {
     var mapDataApi = root.dataset.mapDataApi;
     var mapDataSaveApi = root.dataset.mapDataSaveApi;
     var mapIconUploadApi = root.dataset.mapIconUploadApi;
+    var mapIconDeleteApi = root.dataset.mapIconDeleteApi;
 
     // 프리셋 아이콘 목록
     var PRESET_ICONS = [
-        {key:"pin", emoji:"📍"},
-        {key:"home", emoji:"🏠"},
-        {key:"store", emoji:"🏪"},
-        {key:"hospital", emoji:"🏥"},
-        {key:"school", emoji:"🏫"},
-        {key:"star", emoji:"⭐"},
-        {key:"flag", emoji:"🚩"},
-        {key:"warning", emoji:"⚠️"},
-        {key:"tree", emoji:"🌲"},
-        {key:"water", emoji:"💧"},
-        {key:"fire", emoji:"🔥"},
-        {key:"info", emoji:"ℹ️"},
+        {key:"warning",  emoji:"⚠️"},
+        {key:"exclaim",  emoji:"❗"},
+        {key:"question", emoji:"❓"},
+        {key:"info",     emoji:"ℹ️"},
+        {key:"x",        emoji:"❌"},
+        {key:"check",    emoji:"✅"},
+        {key:"pin",      emoji:"📍"},
+        {key:"eye",      emoji:"👁️"},
+        {key:"box",      emoji:"📦"},
+        {key:"mine",     emoji:"💣"},
+        {key:"water",    emoji:"💧"},
+        {key:"fire",     emoji:"🔥"},
+        {key:"mountain", emoji:"⛰️"},
     ];
 
     var map, imageOverlay, drawControl, drawnItems;
     var imgWidth = 1000, imgHeight = 700;
-    var selectedIconKey = "pin";
-    var selectedIconEmoji = "📍";
+    var selectedIconKey = "warning";
+    var selectedIconEmoji = "⚠️";
     var selectedIconUrl = null; // 커스텀 아이콘일 때
     var currentTool = "select"; // select | zone | marker
     var geojsonFeatures = []; // 저장된 Feature 배열
@@ -382,52 +461,141 @@ body.theme-dark .leaflet-container {
     // 레이어 ID 생성
     function nextId() { return "f" + (featureIdCounter++); }
 
-    // 도구 전환
-    var toolSelectBtn = document.getElementById("map-tool-select");
-    var toolZoneBtn = document.getElementById("map-tool-zone");
-    var toolMarkerBtn = document.getElementById("map-tool-marker");
+    var mapContainer = document.getElementById("map-editor-container");
+    var cursorCache = {};
+    // 커서 크기: 20px, 핫스팟은 iconAnchor [16,20] 비례 (20px 기준 → 10, 13)
+    var CURSOR_SIZE = 20;
+    var CURSOR_HX = 10;
+    var CURSOR_HY = 13;
 
+    function applyImageCursor(dataUrl) {
+        if (currentTool === "marker") {
+            mapContainer.style.cursor = "url(" + dataUrl + ") " + CURSOR_HX + " " + CURSOR_HY + ", crosshair";
+        }
+    }
+
+    function resizeAndSetCursor(iconUrl) {
+        var absUrl = new URL(iconUrl, window.location.href).href;
+        if (cursorCache[absUrl]) { applyImageCursor(cursorCache[absUrl]); return; }
+        var img = new Image();
+        img.onload = function() {
+            try {
+                var canvas = document.createElement("canvas");
+                canvas.width = CURSOR_SIZE;
+                canvas.height = CURSOR_SIZE;
+                canvas.getContext("2d").drawImage(img, 0, 0, CURSOR_SIZE, CURSOR_SIZE);
+                var dataUrl = canvas.toDataURL();
+                cursorCache[absUrl] = dataUrl;
+                applyImageCursor(dataUrl);
+            } catch(e) {
+                cursorCache[absUrl] = absUrl;
+                applyImageCursor(absUrl);
+            }
+        };
+        img.onerror = function() { applyImageCursor(absUrl); };
+        img.src = absUrl;
+    }
+
+    function emojiToDataUrl(emoji) {
+        var cacheKey = "emoji:" + emoji;
+        if (cursorCache[cacheKey]) return cursorCache[cacheKey];
+        try {
+            var canvas = document.createElement("canvas");
+            canvas.width = CURSOR_SIZE;
+            canvas.height = CURSOR_SIZE;
+            var ctx = canvas.getContext("2d");
+            ctx.font = (CURSOR_SIZE * 0.85) + "px serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(emoji, CURSOR_SIZE / 2, CURSOR_SIZE / 2);
+            var dataUrl = canvas.toDataURL();
+            cursorCache[cacheKey] = dataUrl;
+            return dataUrl;
+        } catch(e) { return null; }
+    }
+
+    function setMapCursor(tool, iconUrl, emoji) {
+        if (tool === "marker") {
+            mapContainer.classList.add("is-cursor-active");
+            if (iconUrl) {
+                mapContainer.style.cursor = "crosshair";
+                resizeAndSetCursor(iconUrl);
+            } else if (emoji) {
+                var dataUrl = emojiToDataUrl(emoji);
+                if (dataUrl) {
+                    applyImageCursor(dataUrl);
+                } else {
+                    mapContainer.style.cursor = "crosshair";
+                }
+            } else {
+                mapContainer.style.cursor = "crosshair";
+            }
+        } else {
+            mapContainer.style.cursor = "";
+            mapContainer.classList.remove("is-cursor-active");
+        }
+    }
+
+    // 도구 전환
     function setTool(tool) {
         currentTool = tool;
-        toolSelectBtn.classList.toggle("is-active", tool === "select");
-        toolZoneBtn.classList.toggle("is-active", tool === "zone");
-        toolMarkerBtn.classList.toggle("is-active", tool === "marker");
         if (drawControl) {
             if (tool === "zone") {
                 new L.Draw.Polygon(map, drawControl.options.draw.polygon).enable();
             } else {
                 map.eachLayer(function(l) { if (l._drawAction) l._drawAction.disable(); });
-                if (L.Draw.Event) {
-                    // disable any active draw handler
-                }
             }
         }
-        map.getContainer().style.cursor = tool === "marker" ? "crosshair" : "";
+        setMapCursor(tool, selectedIconUrl, selectedIconEmoji);
     }
-
-    toolSelectBtn.addEventListener("click", function() { setTool("select"); });
-    toolZoneBtn.addEventListener("click", function() { setTool("zone"); });
-    toolMarkerBtn.addEventListener("click", function() { setTool("marker"); });
 
     // 키보드 단축키
     document.addEventListener("keydown", function(e) {
         if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
-        if (e.key === "s" || e.key === "S") setTool("select");
+        if (e.key === "Escape") setTool("select");
         if (e.key === "z" || e.key === "Z") setTool("zone");
         if (e.key === "m" || e.key === "M") setTool("marker");
     });
 
     // 지도 초기화 (이미지 로드 후)
-    var img = new Image();
-    img.onload = function() {
-        imgWidth = img.naturalWidth;
-        imgHeight = img.naturalHeight;
-        initMap();
-    };
-    img.onerror = function() { initMap(); };
-    img.src = imageUrl || "";
+    var loadedImageUrl = imageUrl || "";
+    function hideLoading() {
+        var overlay = document.getElementById("map-editor-loading");
+        if (overlay) { overlay.classList.add("is-hidden"); }
+    }
+
+    function loadImageWithProgress(url, onLoad, onError) {
+        if (!url) { onLoad(url); return; }
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", url, true);
+        xhr.responseType = "blob";
+        xhr.onload = function() {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                var blobUrl = URL.createObjectURL(xhr.response);
+                var img = new Image();
+                img.onload = function() {
+                    imgWidth = img.naturalWidth;
+                    imgHeight = img.naturalHeight;
+                    onLoad(blobUrl);
+                };
+                img.onerror = function() { onLoad(blobUrl); };
+                img.src = blobUrl;
+            } else {
+                onError();
+            }
+        };
+        xhr.onerror = function() { onError(); };
+        xhr.send();
+    }
+
+    loadImageWithProgress(
+        imageUrl,
+        function(blobUrl) { loadedImageUrl = blobUrl; initMap(); },
+        function() { initMap(); }
+    );
 
     function initMap() {
+        hideLoading();
         map = L.map("map-editor-container", {
             crs: L.CRS.Simple,
             minZoom: -4,
@@ -447,8 +615,8 @@ body.theme-dark .leaflet-container {
         }, { passive: false });
 
         var bounds = [[0, 0], [imgHeight, imgWidth]];
-        if (imageUrl) {
-            imageOverlay = L.imageOverlay(imageUrl, bounds).addTo(map);
+        if (loadedImageUrl) {
+            imageOverlay = L.imageOverlay(loadedImageUrl, bounds).addTo(map);
         }
         map.fitBounds(bounds);
 
@@ -517,6 +685,43 @@ body.theme-dark .leaflet-container {
             });
         }
 
+        // 아이콘 패널 드래그 앤 드롭
+        var iconPanel = document.getElementById("map-side-icons");
+        if (iconPanel && canEdit) {
+            var dragDepth = 0;
+            iconPanel.addEventListener("dragenter", function(e) {
+                if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files")) return;
+                e.preventDefault();
+                dragDepth++;
+                iconPanel.classList.add("is-icon-drop-target");
+            });
+            iconPanel.addEventListener("dragover", function(e) {
+                if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files")) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+            });
+            iconPanel.addEventListener("dragleave", function(e) {
+                if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files")) return;
+                dragDepth--;
+                if (dragDepth <= 0) {
+                    dragDepth = 0;
+                    iconPanel.classList.remove("is-icon-drop-target");
+                }
+            });
+            iconPanel.addEventListener("drop", function(e) {
+                e.preventDefault();
+                dragDepth = 0;
+                iconPanel.classList.remove("is-icon-drop-target");
+                var files = e.dataTransfer && e.dataTransfer.files;
+                if (!files || !files.length) return;
+                Array.from(files).forEach(function(file) {
+                    if (file.type.startsWith("image/")) {
+                        uploadIcon(file);
+                    }
+                });
+            });
+        }
+
         // 저장 버튼
         var saveBtn = document.getElementById("map-save-btn");
         if (saveBtn) {
@@ -573,7 +778,7 @@ body.theme-dark .leaflet-container {
         } else {
             html = '<div class="map-marker-icon">' + escHtml(emoji || "📍") + '</div>';
         }
-        return L.divIcon({ html: html, className: "", iconSize: [32, 32], iconAnchor: [16, 28] });
+        return L.divIcon({ html: html, className: "", iconSize: [32, 32], iconAnchor: [16, 20] });
     }
 
     // ── 이름 팝업 ──────────────────────────────────────────────────────────
@@ -661,6 +866,13 @@ body.theme-dark .leaflet-container {
             icon.className = "map-editor-layer-icon";
             if (item.type === "zone") {
                 icon.style.background = item.color || "#4f8ef7";
+            } else if (item.iconUrl) {
+                var iconImg = document.createElement("img");
+                iconImg.src = item.iconUrl;
+                iconImg.style.cssText = "width:20px;height:20px;object-fit:contain;display:block;";
+                icon.appendChild(iconImg);
+                icon.style.background = "none";
+                icon.style.width = "auto";
             } else {
                 icon.textContent = item.emoji || "📍";
                 icon.style.fontSize = "1em";
@@ -741,7 +953,97 @@ body.theme-dark .leaflet-container {
             btn.classList.add("is-selected");
             setTool("marker");
         });
+        btn.addEventListener("contextmenu", function(e) {
+            e.preventDefault();
+            showIconDeletePopup(btn, name, path, e.clientX, e.clientY);
+        });
         grid.appendChild(btn);
+    }
+
+    function showIconDeletePopup(btn, name, iconPath, clientX, clientY) {
+        closeIconDeletePopup();
+        var popup = document.createElement("div");
+        popup.className = "map-icon-delete-popup";
+        popup.id = "map-icon-delete-popup";
+
+        var msg = document.createElement("div");
+        msg.className = "map-icon-delete-popup-msg";
+        msg.textContent = "\u201c" + name + "\u201d \uc544\uc774\ucf58\uc744 \uc0ad\uc81c\ud560\uae4c\uc694?";
+        popup.appendChild(msg);
+
+        var actions = document.createElement("div");
+        actions.className = "map-icon-delete-popup-actions";
+
+        var cancelBtn = document.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "ui-btn";
+        cancelBtn.textContent = "\ucde8\uc18c";
+        cancelBtn.addEventListener("click", closeIconDeletePopup);
+
+        var confirmBtn = document.createElement("button");
+        confirmBtn.type = "button";
+        confirmBtn.className = "ui-btn ui-btn-danger";
+        confirmBtn.textContent = "\uc0ad\uc81c";
+        confirmBtn.addEventListener("click", function() {
+            closeIconDeletePopup();
+            deleteIcon(btn, iconPath);
+        });
+
+        actions.appendChild(cancelBtn);
+        actions.appendChild(confirmBtn);
+        popup.appendChild(actions);
+        document.body.appendChild(popup);
+
+        // 팝업이 화면 밖으로 나가지 않도록 위치 조정
+        var pw = popup.offsetWidth || 180;
+        var ph = popup.offsetHeight || 90;
+        var x = clientX, y = clientY;
+        if (x + pw > window.innerWidth - 8) x = window.innerWidth - pw - 8;
+        if (y + ph > window.innerHeight - 8) y = window.innerHeight - ph - 8;
+        popup.style.left = x + "px";
+        popup.style.top = y + "px";
+
+        setTimeout(function() {
+            document.addEventListener("mousedown", onOutsideClick);
+        }, 0);
+        function onOutsideClick(e) {
+            if (!popup.contains(e.target)) {
+                closeIconDeletePopup();
+                document.removeEventListener("mousedown", onOutsideClick);
+            }
+        }
+    }
+
+    function closeIconDeletePopup() {
+        var existing = document.getElementById("map-icon-delete-popup");
+        if (existing) existing.remove();
+    }
+
+    function deleteIcon(btn, iconPath) {
+        var csrfToken = getCsrfToken();
+        var formData = new FormData();
+        formData.append("icon_path", iconPath);
+        fetch(mapIconDeleteApi, {
+            method: "POST",
+            headers: csrfToken ? { "X-CSRFToken": csrfToken } : {},
+            body: formData,
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.ok) {
+                // 삭제한 아이콘이 선택 중이면 선택 해제
+                if (selectedIconKey === "custom:" + iconPath) {
+                    selectedIconKey = "";
+                    selectedIconUrl = "";
+                    selectedIconEmoji = "";
+                    setTool("select");
+                }
+                btn.remove();
+            } else {
+                alert(data.error || "\uc544\uc774\ucf58 \uc0ad\uc81c\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
+            }
+        })
+        .catch(function() { alert("\uc544\uc774\ucf58 \uc0ad\uc81c \uc911 \uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4."); });
     }
 
     // ── 아이콘 업로드 ──────────────────────────────────────────────────────

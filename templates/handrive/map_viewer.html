@@ -37,6 +37,19 @@
 #map-viewer-container {
     flex: 1;
     overflow: hidden;
+    position: relative;
+}
+.map-loading-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--handrive-bg, #f5f5f5);
+}
+.map-loading-overlay.is-hidden {
+    display: none;
 }
 /* 구역 레이블 */
 .map-zone-label {
@@ -90,7 +103,11 @@ body.theme-dark .leaflet-container {
         data-image-url="{{ image_url }}"
         data-map-data-api="{{ map_data_api_url }}"
         data-map-icon-api="{{ map_icon_api_url }}"
-    ></div>
+    >
+        <div class="map-loading-overlay" id="map-viewer-loading">
+            <div class="handrive-list-loading-spinner"></div>
+        </div>
+    </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
@@ -104,13 +121,45 @@ body.theme-dark .leaflet-container {
     var mapDataApi = container.dataset.mapDataApi;
 
     var imgWidth = 1000, imgHeight = 700;
+    var loadedImageUrl = imageUrl || "";
 
-    var img = new Image();
-    img.onload = function() { imgWidth = img.naturalWidth; imgHeight = img.naturalHeight; initMap(); };
-    img.onerror = function() { initMap(); };
-    img.src = imageUrl || "";
+    function hideLoading() {
+        var overlay = document.getElementById("map-viewer-loading");
+        if (overlay) { overlay.classList.add("is-hidden"); }
+    }
+
+    function loadImageWithProgress(url, onLoad, onError) {
+        if (!url) { onLoad(url); return; }
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", url, true);
+        xhr.responseType = "blob";
+        xhr.onload = function() {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                var blobUrl = URL.createObjectURL(xhr.response);
+                var img = new Image();
+                img.onload = function() {
+                    imgWidth = img.naturalWidth;
+                    imgHeight = img.naturalHeight;
+                    onLoad(blobUrl);
+                };
+                img.onerror = function() { onLoad(blobUrl); };
+                img.src = blobUrl;
+            } else {
+                onError();
+            }
+        };
+        xhr.onerror = function() { onError(); };
+        xhr.send();
+    }
+
+    loadImageWithProgress(
+        imageUrl,
+        function(blobUrl) { loadedImageUrl = blobUrl; initMap(); },
+        function() { initMap(); }
+    );
 
     function initMap() {
+        hideLoading();
         var map = L.map("map-viewer-container", {
             crs: L.CRS.Simple,
             minZoom: -4,
@@ -128,8 +177,8 @@ body.theme-dark .leaflet-container {
         }, { passive: false });
 
         var bounds = [[0, 0], [imgHeight, imgWidth]];
-        if (imageUrl) {
-            L.imageOverlay(imageUrl, bounds).addTo(map);
+        if (loadedImageUrl) {
+            L.imageOverlay(loadedImageUrl, bounds).addTo(map);
         }
         map.fitBounds(bounds);
 
@@ -187,7 +236,7 @@ body.theme-dark .leaflet-container {
         } else {
             html = '<div class="map-marker-icon">' + escHtml(emoji || "📍") + '</div>';
         }
-        return L.divIcon({ html: html, className: "", iconSize: [32, 32], iconAnchor: [16, 28] });
+        return L.divIcon({ html: html, className: "", iconSize: [32, 32], iconAnchor: [16, 20] });
     }
 
     function escHtml(str) {

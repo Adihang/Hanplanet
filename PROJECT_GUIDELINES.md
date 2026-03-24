@@ -188,6 +188,25 @@ Do not commit API keys or secrets. Production uses `DEBUG = False`.
 > - **판단 기준:** macOS 브라우저는 정상인데 Windows 브라우저만 Gitea 원본 CSS가 빠진 것처럼 보이면, 서버 렌더링보다 stale asset 캐시를 먼저 의심한다.
 > - **검증:** `curl -s https://git.hanplanet.com/ | sed -n '124,140p'` 로 실제 HTML의 CSS 링크 버전을 확인하고, `curl -I 'https://git.hanplanet.com/assets/css/index.css?v=<version>'` 로 새 URL이 `200`으로 내려오는지 확인한다.
 
+## 외장 스토리지 (APFS RAID 0)
+
+`media/`와 Gitea 저장소(`forgejo/data/repositories/`)는 외장 APFS RAID 0 볼륨에 위치한다.
+
+| 항목 | 경로 |
+|------|------|
+| 외장 볼륨 마운트 | `/Volumes/HANPLANET_HDD/` |
+| media 실경로 | `/Volumes/HANPLANET_HDD/Hanplanet/media/` |
+| Gitea repos 실경로 | `/Volumes/HANPLANET_HDD/Hanplanet/forgejo/data/repositories/` |
+| 프로젝트 내 심볼릭 링크 | `media/` → 위 media 경로, `forgejo/data/repositories/` → 위 repos 경로 |
+
+**macOS TCC (Full Disk Access) 주의사항:**
+- 외장 볼륨 접근 권한은 launchd 컨텍스트에서 쉘 래퍼를 통해 실행되면 TCC가 적용되지 않는다.
+- `.venv/bin/python`은 `#!/bin/sh` 쉘 스크립트이므로 launchd에서 실행 시 TCC가 `/bin/sh`로 인식한다.
+- 따라서 `com.hanplanet.gunicorn.plist`는 `.venv/bin/python` 대신 **`/usr/bin/python3`를 직접 호출**하고, `PYTHONPATH`로 venv site-packages를 지정한다.
+- 시스템 환경설정 → 개인 정보 보호 및 보안 → 전체 디스크 접근 권한에 `/usr/bin/python3`가 등록되어 있어야 한다.
+
+**외장 디스크 미연결 시:** `media/`, `forgejo/data/repositories/` 심볼릭 링크가 깨져 Django 500 에러 발생. 외장 디스크 연결 후 서비스 재시작 필요.
+
 ## Docker (미사용 — 참고용)
 
 > 현재 운영에서 Docker는 사용하지 않는다. 아래는 이전 설계 참고용.

@@ -25,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import uuid
 from contextvars import ContextVar
 from functools import wraps
@@ -4486,9 +4487,13 @@ def handrive_api_search(request):
     if not has_handrive_read_access(request, normalized_base):
         return json_error("파일을 볼 권한이 없습니다.", status=403)
 
-    normalized_query = query.lower()
+    # macOS 는 파일명을 NFD 로 저장하므로 쿼리도 NFC → NFD 방향으로 정규화해 비교한다.
+    normalized_query = unicodedata.normalize("NFC", query).lower()
     root = handrive_root_dir().resolve()
     matches = []
+
+    def _name_matches(name: str) -> bool:
+        return unicodedata.normalize("NFC", name).lower().find(normalized_query) != -1
 
     for dirpath, dirnames, filenames in os.walk(base_dir):
         # 숨김 디렉터리 스킵 (in-place 수정으로 하위 탐색도 차단)
@@ -4497,10 +4502,15 @@ def handrive_api_search(request):
         current_dir_path = Path(dirpath)
         rel_current = str(current_dir_path.relative_to(root)).replace("\\", "/")
 
+        # git repo 가상 마운트 경로는 아래 git 검색에서 별도로 처리한다.
+        if is_handrive_git_repo_mounted_path(request, rel_current) and current_dir_path != base_dir:
+            dirnames.clear()
+            continue
+
         # 현재 디렉터리 자체가 매칭되는지 (base_dir 자체는 제외)
         if current_dir_path != base_dir:
             dir_name = current_dir_path.name
-            if dir_name.lower().find(normalized_query) != -1:
+            if _name_matches(dir_name):
                 rel_dir = rel_current
                 if has_handrive_read_access(request, rel_dir):
                     try:
@@ -4524,7 +4534,7 @@ def handrive_api_search(request):
 
         # 파일 매칭
         for filename in filenames:
-            if filename.lower().find(normalized_query) != -1:
+            if _name_matches(filename):
                 file_path = current_dir_path / filename
                 rel_file = (rel_current + "/" + filename) if rel_current != "." else filename
                 if has_handrive_read_access(request, rel_file):
@@ -4547,6 +4557,77 @@ def handrive_api_search(request):
                         "share_url": "",
                     }
                     matches.append(entry)
+
+    # git 가상 경로 검색: 검색 범위에 포함되는 repo 를 재귀 탐색한다.
+    for repo in _get_visible_git_repositories(request):
+        if repo.status != "active":
+            continue
+        repo_root = _get_visible_git_repo_root_relative(request, repo)
+        # 검색 base 가 repo root 의 부모이거나 동일한 경우에만 탐색
+        if not (
+            normalized_base == ""
+            or repo_root == normalized_base
+            or repo_root.startswith(normalized_base + "/")
+            or normalized_base.startswith(repo_root + "/")
+        ):
+            continue
+
+        repo_permission = _get_git_repo_permission_for_request(request, repo)
+        can_write_repo = repo_permission in {"write", "admin", "owner"}
+
+        try:
+            branches = _git_repo_branches(repo)
+        except Exception:
+            continue
+
+        for branch_name in branches:
+            branch_segment = _encode_git_branch_segment(branch_name)
+            branch_prefix = f"{repo_root}/{branch_segment}"
+
+            try:
+                result = _run_git_repo_command(repo, "ls-tree", "-r", "-t", "-z", branch_name, text=False)
+            except Exception:
+                continue
+
+            payload = result.stdout or b""
+            for raw_item in payload.split(b"\x00"):
+                if not raw_item:
+                    continue
+                try:
+                    meta, path_bytes = raw_item.split(b"\t", 1)
+                    _mode, object_type, _sha = meta.decode("utf-8").split(" ", 2)
+                    git_path = path_bytes.decode("utf-8")
+                except Exception:
+                    continue
+
+                name = git_path.rsplit("/", 1)[-1]
+                if not name or name == ".gitkeep":
+                    continue
+                if not _name_matches(name):
+                    continue
+
+                is_tree = object_type == "tree"
+                entry_path = f"{branch_prefix}/{git_path}"
+                entry = {
+                    "name": name,
+                    "path": entry_path,
+                    "type": "dir" if is_tree else "file",
+                    "size_display": "",
+                    "can_edit": can_write_repo,
+                    "can_write_children": is_tree and can_write_repo,
+                    "can_delete": can_write_repo,
+                    "is_public_write": False,
+                    "is_url_only": False,
+                    "write_acl_labels": [],
+                    "git_repo_branch": branch_name,
+                    "requires_commit_message": True,
+                }
+                if is_tree:
+                    entry["has_children"] = True
+                else:
+                    entry["slug_path"] = entry_path
+                    entry["share_url"] = ""
+                matches.append(entry)
 
     return JsonResponse({"ok": True, "entries": matches})
 

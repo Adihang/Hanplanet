@@ -327,10 +327,12 @@
         var contextGitDeleteBranchButton = buttons.gitDeleteBranch || null;
         var contextCreateMapButton = buttons.createMap || null;
 
+        setContextButtonVisible(contextOpenButton, false);
         setContextButtonVisible(contextDownloadButton, false);
         setContextButtonVisible(contextUploadButton, false);
         setContextButtonVisible(contextEditButton, false);
         setContextButtonVisible(contextRenameButton, false);
+        setContextButtonVisible(contextDeleteButton, false);
         setContextButtonVisible(contextNewFolderButton, false);
         setContextButtonVisible(contextNewDocButton, false);
         setContextButtonVisible(contextPermissionsButton, false);

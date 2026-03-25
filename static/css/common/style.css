@@ -3017,6 +3017,106 @@ body.theme-dark .site-footer-sep {
     color: rgba(255, 255, 255, 0.32);
 }
 
+.site-footer-link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.site-legal-modal {
+    position: fixed;
+    z-index: var(--site-z-modal-top, 9000);
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.site-legal-modal[hidden] {
+    display: none;
+}
+
+.site-legal-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.site-legal-modal-dialog {
+    position: relative;
+    width: min(760px, 100%);
+    max-height: min(84vh, 820px);
+    border-radius: 12px;
+    background: #fff;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+body.theme-dark .site-legal-modal-dialog {
+    background: #1e1e1e;
+    color: #e5e5e5;
+}
+
+.site-legal-modal-close {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    background: none;
+    border: none;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 4px 6px;
+    border-radius: 6px;
+}
+
+.site-legal-modal-close:hover,
+.site-legal-modal-close:focus-visible {
+    background: rgba(0, 0, 0, 0.06);
+    color: #374151;
+}
+
+body.theme-dark .site-legal-modal-close:hover,
+body.theme-dark .site-legal-modal-close:focus-visible {
+    background: rgba(255, 255, 255, 0.1);
+    color: #f5f5f5;
+}
+
+.site-legal-modal-body {
+    padding: 28px 28px 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.site-legal-modal-title {
+    margin: 0 0 16px;
+    font-size: 20px;
+    font-weight: 700;
+    padding-right: 32px;
+}
+
+.site-legal-modal-content {
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.site-legal-modal-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    color: #9ca3af;
+    font-size: 14px;
+}
+
 .legal-page-content {
     padding-top: 24px;
     padding-bottom: 18px;

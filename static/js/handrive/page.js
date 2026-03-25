@@ -3417,6 +3417,7 @@
                 setContextButtonVisible: setContextButtonVisible,
                 t: t,
             });
+            syncContextMenuDividers(contextMenu);
 
             contextMenu.hidden = false;
             contextMenu.style.left = "0px";

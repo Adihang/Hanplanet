@@ -40,14 +40,14 @@ class ForgejoClient:
         if resp.status_code == 200:
             return resp.json()
 
-        if not email:
-            email = f"{username}@hanplanet.local"
+        local_email = f"{username}@hanplanet.local"
+        create_email = email if email else local_email
         resp = requests.post(
             f"{self._base_url}/api/v1/admin/users",
             headers=self._headers,
             json={
                 "username":             username,
-                "email":                email,
+                "email":                create_email,
                 "password":             secrets.token_urlsafe(24),
                 "must_change_password": False,
                 "source_id":            0,
@@ -56,7 +56,27 @@ class ForgejoClient:
             },
             timeout=15,
         )
-        resp.raise_for_status()
+        # 이메일 충돌(422)인 경우 로컬 placeholder 이메일로 재시도
+        if resp.status_code == 422 and create_email != local_email:
+            resp = requests.post(
+                f"{self._base_url}/api/v1/admin/users",
+                headers=self._headers,
+                json={
+                    "username":             username,
+                    "email":                local_email,
+                    "password":             secrets.token_urlsafe(24),
+                    "must_change_password": False,
+                    "source_id":            0,
+                    "login_name":           username,
+                    "send_notify":          False,
+                },
+                timeout=15,
+            )
+        if not resp.ok:
+            raise requests.HTTPError(
+                f"Failed to create Forgejo user {username!r}: {resp.status_code} {resp.text[:200]}",
+                response=resp,
+            )
         return resp.json()
 
     def _basic_auth_headers(self, username: str, password: str) -> dict:

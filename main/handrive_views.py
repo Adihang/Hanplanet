@@ -2805,7 +2805,10 @@ def build_handrive_help_url(ui_lang: str | None, handrive_base_url: str) -> str:
     if help_file is None:
         return handrive_base_url
 
-    help_relative = relative_from_root(help_file)
+    try:
+        help_relative = relative_from_root(help_file)
+    except ValueError:
+        return handrive_base_url
     help_slug = markdown_slug_from_relative(help_relative)
 
     if ui_lang in SUPPORTED_UI_LANGS:

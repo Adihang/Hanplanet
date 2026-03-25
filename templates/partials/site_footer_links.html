@@ -1,83 +1,20 @@
 <footer class="site-footer-links" aria-label="Legal links">
-    <button type="button" class="site-footer-link site-footer-link-btn" data-legal-popup-url="{{ privacy_url }}">Privacy Policy</button>
+    <a class="site-footer-link" href="{{ privacy_url }}">Privacy Policy</a>
     <span class="site-footer-sep">/</span>
-    <button type="button" class="site-footer-link site-footer-link-btn" data-legal-popup-url="{{ terms_url }}">Terms of Service</button>
+    <a class="site-footer-link" href="{{ terms_url }}">Terms of Service</a>
 </footer>
-
-<div class="site-legal-modal" id="site-legal-modal" hidden aria-modal="true" role="dialog" aria-label="Legal">
-    <div class="site-legal-modal-backdrop" id="site-legal-modal-backdrop"></div>
-    <div class="site-legal-modal-dialog">
-        <button type="button" class="site-legal-modal-close" id="site-legal-modal-close" aria-label="Close">&#x2715;</button>
-        <div class="site-legal-modal-body" id="site-legal-modal-body">
-            <div class="site-legal-modal-loading" id="site-legal-modal-loading"></div>
-        </div>
-    </div>
-</div>
 
 <script>
 (function () {
-    var modal = document.getElementById("site-legal-modal");
-    var modalBody = document.getElementById("site-legal-modal-body");
-    var modalLoading = document.getElementById("site-legal-modal-loading");
-    var closeBtn = document.getElementById("site-legal-modal-close");
-    var backdrop = document.getElementById("site-legal-modal-backdrop");
-    if (!modal || !modalBody || !closeBtn || !backdrop) { return; }
-
-    var previousFocus = null;
-
-    function openModal(url) {
-        previousFocus = document.activeElement;
-        modalBody.innerHTML = "";
-        var loading = document.createElement("div");
-        loading.className = "site-legal-modal-loading";
-        modalBody.appendChild(loading);
-        modal.removeAttribute("hidden");
-        closeBtn.focus();
-
-        fetch(url, { credentials: "same-origin", headers: { "X-Legal-Popup": "1" } })
-            .then(function (res) { return res.text(); })
-            .then(function (html) {
-                var parser = new DOMParser();
-                var doc = parser.parseFromString(html, "text/html");
-                var content = doc.querySelector(".legal-page-prose");
-                var title = doc.querySelector("h1.ui-title");
-                modalBody.innerHTML = "";
-                if (title) {
-                    var h = document.createElement("h2");
-                    h.className = "site-legal-modal-title";
-                    h.textContent = title.textContent;
-                    modalBody.appendChild(h);
-                }
-                if (content) {
-                    var article = document.createElement("div");
-                    article.className = "site-legal-modal-content ui-markdown";
-                    article.innerHTML = content.innerHTML;
-                    modalBody.appendChild(article);
-                }
-            })
-            .catch(function () {
-                modalBody.innerHTML = "";
-                var errDiv = document.createElement("div");
-                errDiv.className = "site-legal-modal-loading";
-                errDiv.textContent = "Failed to load content.";
-                modalBody.appendChild(errDiv);
-            });
-    }
-
-    function closeModal() {
-        modal.setAttribute("hidden", "");
-        if (previousFocus && previousFocus.focus) { previousFocus.focus(); }
-    }
-
-    closeBtn.addEventListener("click", closeModal);
-    backdrop.addEventListener("click", closeModal);
-    document.addEventListener("keydown", function (e) {
-        if (!modal.hasAttribute("hidden") && e.key === "Escape") { closeModal(); }
+    document.querySelectorAll(".site-footer-links .site-footer-link").forEach(function (link) {
+        link.addEventListener("click", function (e) {
+            e.preventDefault();
+            window.open(link.href, "_blank", "popup,width=900,height=700,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,status=no");
+        });
     });
-
-    document.querySelectorAll(".site-footer-link-btn[data-legal-popup-url]").forEach(function (btn) {
+    document.querySelectorAll("[data-legal-popup-url]").forEach(function (btn) {
         btn.addEventListener("click", function () {
-            openModal(btn.getAttribute("data-legal-popup-url"));
+            window.open(btn.getAttribute("data-legal-popup-url"), "_blank", "popup,width=900,height=700,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,status=no");
         });
     });
 })();

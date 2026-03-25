@@ -29,6 +29,8 @@
         <string>/Users/imhanbyeol/Development/Hanplanet/.venv/lib/python3.9/site-packages</string>
     </dict>
 
+    <key>WaitForPath</key>
+    <string>/Volumes/HANPLANET_HDD</string>
     <key>KeepAlive</key>
     <true/>
     <key>RunAtLoad</key>

@@ -3686,7 +3686,7 @@
         }
 
         function scheduleHoverExpand(targetDirPath) {
-            const normalizedPath = normalizePath(targetDirPath, false);
+            const normalizedPath = normalizePath(targetDirPath, true);
             if (!normalizedPath || state.expandedFolders.has(normalizedPath)) {
                 clearHoverExpandTimer();
                 return;
@@ -5818,6 +5818,8 @@
         const extensionPresetSet = new Set(extensionPresetValues);
         const scopedHomeDir = normalizePath(root.dataset.scopedHomeDir || "", true);
         const isSuperuser = root.dataset.isSuperuser === "1";
+        const handriveRootLabel = (root.dataset.handriveRootLabel || "HanDrive").trim() || "HanDrive";
+        const effectiveRootLabel = (isSuperuser && scopedHomeDir) ? "Hanplanet" : handriveRootLabel;
 
         const rawDirectories = getJsonScriptData("handrive-directory-data", []);
         const directories = [];

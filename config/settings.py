@@ -297,7 +297,7 @@ GLOBAL_RATE_LIMIT_EXEMPT_PATH_PREFIXES = tuple(
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
 MEDIA_URL = "/media/"
-MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+MEDIA_ROOT = "/Volumes/HANPLANET_HDD/Hanplanet/media"
 
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')

@@ -3507,6 +3507,34 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     grid-column: 1 / -1;
 }
 
+.handrive-field-checkbox-text {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.handrive-field-checkbox-consent {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.handrive-field-checkbox-consent input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.handrive-field-checkbox-links {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 6px;
+    margin-left: 28px;
+}
+
 .handrive-field input,
 .handrive-field select,
 .handrive-field textarea {
@@ -3734,8 +3762,13 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
 .handrive-login-actions {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: center;
     gap: 8px;
+}
+
+.handrive-login-actions .ui-btn {
+    flex: 1;
+    text-align: center;
 }
 
 .handrive-login-form input[type="password"]::-ms-reveal,

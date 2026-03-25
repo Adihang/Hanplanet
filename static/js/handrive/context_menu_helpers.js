@@ -69,6 +69,8 @@
             gitCreateRepo: false,
             gitManageRepo: false,
             gitDeleteRepo: false,
+            gitCreateBranch: false,
+            gitDeleteBranch: false,
             createMap: false,
         };
 
@@ -122,6 +124,8 @@
         flags.gitCreateRepo = isDirectory && canWriteChildren && isEntryDeletable(targetEntry) && !hasGitRepo && !isGitVirtualEntry;
         flags.gitManageRepo = isDirectory && hasGitRepo && canManageRepo;
         flags.gitDeleteRepo = isSingleRepoDirectory && canDeleteRepo;
+        flags.gitCreateBranch = Boolean(!isMultiSelection && targetEntry.git_branch_root && canWriteChildren);
+        flags.gitDeleteBranch = Boolean(!isMultiSelection && targetEntry.git_branch_root && canWriteChildren && targetEntry.git_repo_branch !== "main");
         var entryExtension = !isDirectory && targetEntry.name
             ? ("." + targetEntry.name.split(".").pop()).toLowerCase()
             : "";

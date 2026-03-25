@@ -52,6 +52,7 @@
     data-handrive-base-url="{{ handrive_base_url }}"
     data-handrive-root-url="{{ handrive_root_url }}"
     data-list-api-url="{{ handrive_api_list_url }}"
+    data-search-api-url="{{ handrive_api_search_url }}"
     data-save-api-url="{{ handrive_api_save_url }}"
     data-rename-api-url="{{ handrive_api_rename_url }}"
     data-delete-api-url="{{ handrive_api_delete_url }}"
@@ -200,6 +201,7 @@
 {% endif %}
 
 {% include "popup/handrive/git_repo_modal.html" %}
+{% include "popup/handrive/branch_create_modal.html" %}
 {% include "popup/handrive/map_create_modal.html" %}
 {% include "popup/handrive/confirm_modal.html" %}
 {% include "popup/handrive/url_share_modal.html" %}

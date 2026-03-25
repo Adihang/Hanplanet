@@ -3909,6 +3909,116 @@ def git_repo_retry(request, repo_id: int):
     return JsonResponse({"ok": True, "status": repo.status})
 
 
+@require_http_methods(["POST"])
+@login_required
+def git_branch_create(request, repo_id: int):
+    """Create a new branch from an existing branch in a Git repository."""
+    from git.models import GitCollaborator
+    from .handrive_views import _get_repo_storage_path, _git_repo_branches
+
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return _git_json_error("invalid JSON")
+
+    source_branch = (body.get("source_branch") or "").strip()
+    new_branch = (body.get("new_branch") or "").strip()
+
+    if not source_branch:
+        return _git_json_error("source_branch is required")
+    if not new_branch:
+        return _git_json_error("new_branch is required")
+
+    # owner 또는 write/admin 권한의 collaborator 만 허용
+    try:
+        repo = GitRepository.objects.get(id=repo_id, owner=request.user)
+    except GitRepository.DoesNotExist:
+        collab = GitCollaborator.objects.filter(
+            repository_id=repo_id, user=request.user, permission__in=("write", "admin")
+        ).select_related("repository").first()
+        if collab is None:
+            return _git_json_error("저장소를 찾을 수 없습니다.", status=404)
+        repo = collab.repository
+
+    if repo.status != "active":
+        return _git_json_error("저장소가 아직 준비되지 않았습니다.", status=409)
+
+    existing_branches = _git_repo_branches(repo)
+    if source_branch not in existing_branches:
+        return _git_json_error("원본 브랜치를 찾을 수 없습니다.", status=404)
+    if new_branch in existing_branches:
+        return _git_json_error("같은 이름의 브랜치가 이미 존재합니다.", status=409)
+
+    import re as _re
+    if not new_branch or _re.search(r'[\x00-\x1f\x7f ~^:?*\[\\]|\.\.|\.$|^@\{|@\{|//', new_branch) or new_branch.startswith(".") or new_branch.endswith("/") or new_branch.endswith(".lock"):
+        return _git_json_error("유효하지 않은 브랜치 이름입니다.")
+
+    import subprocess as _subprocess
+    from pathlib import Path as _Path
+    GIT_BIN = "/usr/bin/git"
+    repo_storage_path = _get_repo_storage_path(repo.owner, repo.repo_name)
+    result = _subprocess.run(
+        [GIT_BIN, f"--git-dir={repo_storage_path}", "branch", new_branch, source_branch],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return _git_json_error(result.stderr.strip() or "브랜치 생성에 실패했습니다.", status=500)
+
+    return JsonResponse({"ok": True, "branch": new_branch}, status=201)
+
+
+@require_http_methods(["DELETE"])
+@login_required
+def git_branch_delete(request, repo_id: int):
+    """Delete a branch from a Git repository. The 'main' branch cannot be deleted."""
+    from git.models import GitCollaborator
+    from .handrive_views import _get_repo_storage_path, _git_repo_branches
+
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return _git_json_error("invalid JSON")
+
+    branch = (body.get("branch") or "").strip()
+    if not branch:
+        return _git_json_error("branch is required")
+    if branch == "main":
+        return _git_json_error("main 브랜치는 삭제할 수 없습니다.", status=403)
+
+    try:
+        repo = GitRepository.objects.get(id=repo_id, owner=request.user)
+    except GitRepository.DoesNotExist:
+        collab = GitCollaborator.objects.filter(
+            repository_id=repo_id, user=request.user, permission__in=("write", "admin")
+        ).select_related("repository").first()
+        if collab is None:
+            return _git_json_error("저장소를 찾을 수 없습니다.", status=404)
+        repo = collab.repository
+
+    if repo.status != "active":
+        return _git_json_error("저장소가 아직 준비되지 않았습니다.", status=409)
+
+    existing_branches = _git_repo_branches(repo)
+    if branch not in existing_branches:
+        return _git_json_error("브랜치를 찾을 수 없습니다.", status=404)
+
+    import subprocess as _subprocess
+    GIT_BIN = "/usr/bin/git"
+    repo_storage_path = _get_repo_storage_path(repo.owner, repo.repo_name)
+    result = _subprocess.run(
+        [GIT_BIN, f"--git-dir={repo_storage_path}", "branch", "-D", branch],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return _git_json_error(result.stderr.strip() or "브랜치 삭제에 실패했습니다.", status=500)
+
+    return JsonResponse({"ok": True, "branch": branch})
+
+
 # ──────────────────────────────────────────────────────
 # Git API 헬퍼
 # ──────────────────────────────────────────────────────

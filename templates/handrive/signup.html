@@ -65,17 +65,19 @@
             <div class="handrive-login-error">{{ handrive_signup_form.email.errors|join:", " }}</div>
         {% endif %}
 
-        <label class="handrive-field handrive-field-full handrive-field-checkbox">
-            <span class="handrive-field-checkbox-control">
-                {{ handrive_signup_form.privacy_consent }}
-            </span>
-            <span class="handrive-field-checkbox-text">
-                {{ handrive_text.auth_privacy_consent_label }}
-                <a class="ui-path-link" href="{{ privacy_url }}" target="_blank" rel="noopener">Privacy Policy</a>
-                ·
-                <a class="ui-path-link" href="{{ terms_url }}" target="_blank" rel="noopener">Terms of Service</a>
-            </span>
-        </label>
+        <div class="handrive-field handrive-field-full handrive-field-checkbox">
+            <div class="handrive-field-checkbox-text">
+                <label class="handrive-field-checkbox-consent" for="id_privacy_consent">
+                    {{ handrive_signup_form.privacy_consent }}
+                    <span>{{ handrive_text.auth_privacy_consent_label }}</span>
+                </label>
+                <div class="handrive-field-checkbox-links">
+                    <a class="ui-path-link" href="{{ privacy_url }}" target="_blank" rel="noopener">Privacy Policy</a>
+                    ·
+                    <a class="ui-path-link" href="{{ terms_url }}" target="_blank" rel="noopener">Terms of Service</a>
+                </div>
+            </div>
+        </div>
         {% if handrive_signup_form.privacy_consent.errors %}
             <div class="handrive-login-error">{{ handrive_signup_form.privacy_consent.errors|join:", " }}</div>
         {% endif %}

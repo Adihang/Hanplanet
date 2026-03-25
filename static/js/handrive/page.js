@@ -1533,6 +1533,7 @@
         const handriveBaseUrl = root.dataset.handriveBaseUrl || "/handrive";
         const handriveRootUrl = root.dataset.handriveRootUrl || handriveBaseUrl;
         const listApiUrl = root.dataset.listApiUrl;
+        const searchApiUrl = root.dataset.searchApiUrl;
         const saveApiUrl = root.dataset.saveApiUrl;
         const renameApiUrl = root.dataset.renameApiUrl;
         const deleteApiUrl = root.dataset.deleteApiUrl;
@@ -1612,6 +1613,14 @@
         const contextCreateMapButton = contextMenu ? contextMenu.querySelector('button[data-action="create-map"]') : null;
         const contextGitManageRepoButton = contextMenu ? contextMenu.querySelector('button[data-action="git-manage-repo"]') : null;
         const contextGitDeleteRepoButton = contextMenu ? contextMenu.querySelector('button[data-action="git-delete-repo"]') : null;
+        const contextGitCreateBranchButton = contextMenu ? contextMenu.querySelector('button[data-action="git-create-branch"]') : null;
+        const contextGitDeleteBranchButton = contextMenu ? contextMenu.querySelector('button[data-action="git-delete-branch"]') : null;
+        const branchCreateModal = document.getElementById("handrive-branch-create-modal");
+        const branchCreateModalBackdrop = document.getElementById("handrive-branch-create-modal-backdrop");
+        const branchCreateTarget = document.getElementById("handrive-branch-create-target");
+        const branchCreateInput = document.getElementById("handrive-branch-create-input");
+        const branchCreateCancelButton = document.getElementById("handrive-branch-create-cancel-btn");
+        const branchCreateConfirmButton = document.getElementById("handrive-branch-create-confirm-btn");
         const renameModal = document.getElementById("handrive-rename-modal");
         const renameModalBackdrop = document.getElementById("handrive-rename-modal-backdrop");
         const renameInput = document.getElementById("handrive-rename-input");
@@ -1768,6 +1777,7 @@
             pendingContextUploadDir: "",
             searchQuery: "",
             searchResults: null,
+            searchGeneration: 0,
         };
 
         let activeListEditorSuggestions = [];
@@ -2811,6 +2821,8 @@
             setContextButtonVisible(contextGitCreateRepoButton, Boolean(visibility.gitCreateRepo));
             setContextButtonVisible(contextGitManageRepoButton, Boolean(visibility.gitManageRepo));
             setContextButtonVisible(contextGitDeleteRepoButton, Boolean(visibility.gitDeleteRepo));
+            setContextButtonVisible(contextGitCreateBranchButton, Boolean(visibility.gitCreateBranch));
+            setContextButtonVisible(contextGitDeleteBranchButton, Boolean(visibility.gitDeleteBranch));
             setContextButtonVisible(contextCreateMapButton, Boolean(visibility.createMap));
             syncContextMenuDividers(contextMenu);
         }
@@ -3390,6 +3402,8 @@
                     gitCreateRepo: contextGitCreateRepoButton,
                     gitDeleteRepo: contextGitDeleteRepoButton,
                     gitManageRepo: contextGitManageRepoButton,
+                    gitCreateBranch: contextGitCreateBranchButton,
+                    gitDeleteBranch: contextGitDeleteBranchButton,
                     createMap: contextCreateMapButton,
                     newDoc: contextNewDocButton,
                     newFolder: contextNewFolderButton,
@@ -4451,40 +4465,35 @@
             }
         }
 
-        async function collectSearchEntriesInDirectory(directoryPath, normalizedQuery, matches) {
-            await loadDirectory(directoryPath);
-            const directoryEntries = getCachedEntries(directoryPath);
-            for (const entry of directoryEntries) {
-                if (!entry) {
-                    continue;
-                }
-                if (entry.type === "file" && String(entry.name || "").toLocaleLowerCase().includes(normalizedQuery)) {
-                    matches.push(entry);
-                    continue;
-                }
-                if (entry.type === "dir") {
-                    await collectSearchEntriesInDirectory(entry.path, normalizedQuery, matches);
-                }
-            }
-        }
-
         async function applyListSearch() {
+            state.searchGeneration += 1;
+            const generation = state.searchGeneration;
             setListLoading(true);
             try {
-            syncSearchQueryFromInput();
-            const normalizedQuery = String(state.searchQuery || "").trim().toLocaleLowerCase();
-            if (!normalizedQuery) {
-                state.searchResults = null;
-                renderList();
-                return;
-            }
+                syncSearchQueryFromInput();
+                const query = String(state.searchQuery || "").trim();
+                if (!query) {
+                    if (generation === state.searchGeneration) {
+                        state.searchResults = null;
+                        renderList();
+                    }
+                    return;
+                }
 
-            const matches = [];
-            await collectSearchEntriesInDirectory(currentDir, normalizedQuery, matches);
-            state.searchResults = matches;
-            renderList();
+                state.searchResults = [];
+                renderList();
+
+                const params = new URLSearchParams({ path: currentDir, q: query });
+                const data = await requestJson(searchApiUrl + "?" + params.toString());
+                if (generation !== state.searchGeneration) {
+                    return;
+                }
+                state.searchResults = data.entries || [];
+                renderList();
             } finally {
-                setListLoading(false);
+                if (generation === state.searchGeneration) {
+                    setListLoading(false);
+                }
             }
         }
 
@@ -4831,6 +4840,12 @@
                 if (action === "git-delete-repo") {
                     deleteEntries(entry, { repoDelete: true }).catch(alertError);
                 }
+                if (action === "git-create-branch") {
+                    openBranchCreateModal(entry);
+                }
+                if (action === "git-delete-branch") {
+                    deleteBranch(entry).catch(alertError);
+                }
             });
         }
 
@@ -4899,6 +4914,102 @@
                     submitFolderCreate().catch(alertError);
                 }
             });
+        }
+
+        // ── 브랜치 생성 모달 ──────────────────────────────────────────────
+        var _branchCreateSourceEntry = null;
+
+        function setBranchCreateModalOpen(isOpen, entry) {
+            if (!branchCreateModal) { return; }
+            if (isOpen) {
+                _branchCreateSourceEntry = entry || null;
+                if (branchCreateTarget) {
+                    branchCreateTarget.textContent = entry ? entry.name : "";
+                }
+                if (branchCreateInput) {
+                    branchCreateInput.value = "";
+                }
+                branchCreateModal.hidden = false;
+                syncModalBodyState();
+                if (branchCreateInput) {
+                    branchCreateInput.focus();
+                }
+            } else {
+                _branchCreateSourceEntry = null;
+                branchCreateModal.hidden = true;
+                syncModalBodyState();
+            }
+        }
+
+        function openBranchCreateModal(entry) {
+            setBranchCreateModalOpen(true, entry);
+        }
+
+        async function submitBranchCreate() {
+            if (!_branchCreateSourceEntry) { return; }
+            const entry = _branchCreateSourceEntry;
+            const repoId = entry.git_repo_id;
+            const sourceBranch = entry.git_repo_branch;
+            const newBranch = (branchCreateInput ? branchCreateInput.value : "").trim();
+            if (!newBranch) {
+                if (branchCreateInput) { branchCreateInput.focus(); }
+                return;
+            }
+            if (!repoId || !sourceBranch) {
+                alertError(new Error("브랜치 정보를 확인할 수 없습니다."));
+                return;
+            }
+            setBranchCreateModalOpen(false);
+            const apiUrl = "/api/git/repos/" + repoId + "/branches/";
+            try {
+                await requestJson(apiUrl, buildPostOptions({ source_branch: sourceBranch, new_branch: newBranch }));
+                await loadDirectory(state.currentDir);
+            } catch (err) {
+                alertError(err);
+            }
+        }
+
+        if (branchCreateModalBackdrop) {
+            branchCreateModalBackdrop.addEventListener("click", function () {
+                setBranchCreateModalOpen(false);
+            });
+        }
+
+        if (branchCreateCancelButton) {
+            branchCreateCancelButton.addEventListener("click", function () {
+                setBranchCreateModalOpen(false);
+            });
+        }
+
+        if (branchCreateConfirmButton) {
+            branchCreateConfirmButton.addEventListener("click", function () {
+                submitBranchCreate().catch(alertError);
+            });
+        }
+
+        if (branchCreateInput) {
+            branchCreateInput.addEventListener("keydown", function (event) {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    submitBranchCreate().catch(alertError);
+                }
+            });
+        }
+
+        async function deleteBranch(entry) {
+            const repoId = entry.git_repo_id;
+            const branch = entry.git_repo_branch;
+            if (!repoId || !branch) { return; }
+            const confirmed = await requestConfirmDialog({
+                title: "브랜치 삭제",
+                message: "\"" + branch + "\" 브랜치를 삭제할까요?\n삭제된 브랜치는 복구할 수 없습니다.",
+                cancelText: t("cancel", "취소"),
+                confirmText: "삭제",
+            });
+            if (!confirmed) { return; }
+            const apiUrl = "/api/git/repos/" + repoId + "/branches/delete/";
+            await requestJson(apiUrl, Object.assign(buildPostOptions({ branch: branch }), { method: "DELETE" }));
+            await loadDirectory(state.currentDir);
         }
 
         // ── Git 리포지토리 생성 모달 ──────────────────────────────────────
@@ -5456,10 +5567,6 @@
             listSearchForm.addEventListener("submit", function (event) {
                 event.preventDefault();
                 event.stopPropagation();
-                applyListSearch().catch(alertError);
-            });
-
-            listSearchInput.addEventListener("input", function () {
                 applyListSearch().catch(alertError);
             });
 

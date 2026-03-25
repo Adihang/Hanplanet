@@ -12,6 +12,7 @@ from __future__ import annotations
 각기 다른 읽기/쓰기 경로로 분기한다.
 """
 
+import base64
 import io
 import logging
 import json
@@ -1520,7 +1521,8 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
     """실제 디렉터리 엔트리와 가상 repo root 엔트리를 함께 구성한다."""
     entries = []
     existing_entry_paths = set()
-    for child in sorted(directory.iterdir(), key=lambda p: (0 if p.is_dir() else 1, p.name.lower())):
+    _children = [directory / p.name for p in directory.resolve().iterdir()]
+    for child in sorted(_children, key=lambda p: (0 if p.is_dir() else 1, p.name.lower())):
         if child.is_dir():
             entry = build_entry(child)
             can_edit = False
@@ -2222,6 +2224,7 @@ def _build_git_virtual_entries(request, context) -> list[dict]:
                 "write_acl_labels": [],
                 "git_branch_root": True,
                 "git_repo_branch": branch_name,
+                "git_repo_id": repo.id,
                 "requires_commit_message": True,
             }
             for branch_name in _git_repo_branches(repo)
@@ -2714,7 +2717,7 @@ def is_handrive_share_auth_entry(request, fallback_url: str) -> bool:
 
 def get_global_help_root() -> Path:
     """헬프 파일은 사용자별이 아닌 전역 콘텐츠 — 슈퍼유저 여부와 무관하게 고정 경로 사용."""
-    return (Path(settings.MEDIA_ROOT) / "HanDrive" / MARKDOWN_HELP_DIRECTORY).resolve()
+    return Path(settings.MEDIA_ROOT) / "HanDrive" / MARKDOWN_HELP_DIRECTORY
 
 
 def get_markdown_help_candidates(ui_lang: str | None) -> list[Path]:
@@ -3002,6 +3005,7 @@ def handrive_common_context(request, ui_lang):
             "account_email": account_email,
             "account_profile_upload_url": account_profile_upload_url,
             "handrive_api_list_url": reverse("main:handrive_api_list"),
+            "handrive_api_search_url": reverse("main:handrive_api_search"),
             "handrive_api_save_url": reverse("main:handrive_api_save"),
             "handrive_api_preview_url": reverse("main:handrive_api_preview"),
             "handrive_api_rename_url": reverse("main:handrive_api_rename"),
@@ -3017,6 +3021,7 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_map_create_url": reverse("main:handrive_api_map_create"),
             "handrive_api_map_data_url": reverse("main:handrive_api_map_data"),
             "handrive_api_map_icon_upload_url": reverse("main:handrive_api_map_icon_upload"),
+            "handrive_api_map_icon_delete_url": reverse("main:handrive_api_map_icon_delete"),
             "handrive_api_map_image_url": reverse("main:handrive_api_map_image"),
             "handrive_map_editor_base_url": "/handrive/map-editor/",
             "handrive_map_viewer_base_url": "/handrive/map-viewer/",
@@ -3199,13 +3204,19 @@ def _resolve_handrive_post_login_url(request, ui_lang: str | None, fallback_next
     if fallback_path and not re.match(r"^/(?:(ko|en)/)?(?:docs|ide|handrive)(/|$)", fallback_path):
         return fallback_next_url
 
+    # lang 없는 handrive URL이면 lang 붙인 버전으로 교정
+    if ui_lang in SUPPORTED_UI_LANGS:
+        lang_base = reverse("main:handrive_root_lang", kwargs={"ui_lang": ui_lang})
+    else:
+        lang_base = reverse("main:handrive_root")
+
     landing_dir = get_handrive_initial_landing_dir(request)
     if user and user.is_authenticated and landing_dir:
         ensure_scoped_home_dir(landing_dir)
         if ui_lang in SUPPORTED_UI_LANGS:
             return reverse("main:handrive_list_lang", kwargs={"ui_lang": ui_lang, "folder_path": landing_dir})
         return reverse("main:handrive_list", kwargs={"folder_path": landing_dir})
-    return fallback_next_url
+    return lang_base
 
 
 class HandriveSignupForm(UserCreationForm):
@@ -3222,11 +3233,11 @@ class HandriveSignupForm(UserCreationForm):
         self.fields["privacy_consent"].error_messages = {
             "required": handrive_text.get("auth_privacy_consent_error", "개인정보 처리방침 및 이용약관 동의가 필요합니다."),
         }
-        self.fields["first_name"].widget.attrs.update({"autocomplete": "name"})
-        self.fields["email"].widget.attrs.update({"autocomplete": "email"})
-        self.fields["username"].widget.attrs.update({"autocomplete": "username"})
-        self.fields["password1"].widget.attrs.update({"autocomplete": "new-password"})
-        self.fields["password2"].widget.attrs.update({"autocomplete": "new-password"})
+        self.fields["username"].widget.attrs.update({"autocomplete": "username", "placeholder": "아이디를 입력하세요"})
+        self.fields["password1"].widget.attrs.update({"autocomplete": "new-password", "placeholder": "비밀번호 입력"})
+        self.fields["password2"].widget.attrs.update({"autocomplete": "new-password", "placeholder": "비밀번호 다시 입력"})
+        self.fields["first_name"].widget.attrs.update({"autocomplete": "name", "placeholder": "이름 입력"})
+        self.fields["email"].widget.attrs.update({"autocomplete": "email", "placeholder": "example@email.com"})
 
     def save(self, commit=True):
         user = super().save(commit=False)
@@ -3281,7 +3292,8 @@ def _ensure_forgejo_mapping_for_user(user):
 
     try:
         client = ForgejoClient()
-        gitea_user = client.ensure_user(user.username, getattr(user, "email", "") or "")
+        # 실제 이메일은 기존 Forgejo 계정과 충돌할 수 있으므로 placeholder 사용
+        gitea_user = client.ensure_user(user.username, "")
     except Exception:
         logger.exception("Failed to ensure Forgejo user for %s", getattr(user, "username", "unknown"))
         return mapping
@@ -3392,15 +3404,17 @@ def _attach_forgejo_login_session(response, user):
         logger.exception("Failed to persist Forgejo session for %s", getattr(user, "username", "unknown"))
         return response
 
-    response.set_cookie(
-        "i_like_gitea",
-        session_key,
-        domain=".hanplanet.com",
-        path="/",
-        secure=bool(getattr(settings, "DEFAULT_SECURE_TRANSPORT", True)),
-        httponly=True,
-        samesite="Lax",
-    )
+    _secure = bool(getattr(settings, "DEFAULT_SECURE_TRANSPORT", True))
+    shared_cookie_kwargs = dict(domain=".hanplanet.com", path="/", secure=_secure, samesite="Lax")
+
+    response.set_cookie("i_like_gitea", session_key, httponly=True, **shared_cookie_kwargs)
+
+    # 이전 SSO relay 쿠키 잔재 제거 — 이것이 남아있으면 footer.tmpl이
+    # OAuth2 재로그인 루프를 시작해 git.hanplanet.com에서 멈춰버림
+    # delete_cookie()는 domain/path만 지원 (secure/samesite 미지원)
+    response.delete_cookie("hp_relogin", domain=".hanplanet.com", path="/")
+    response.delete_cookie("hp_sso_return", domain=".hanplanet.com", path="/")
+
     return response
 
 
@@ -3502,7 +3516,7 @@ def handrive_login(request, ui_lang=None):
                 _clear_handrive_login_captcha(request)
                 auth_login(request, authed_user)
                 _trigger_gitea_password_sync(authed_user, form.cleaned_data.get("password", ""))
-                response = redirect(post_login_url)
+                response = redirect(_resolve_handrive_post_login_url(request, resolved_lang, next_url, authed_user))
                 return _attach_forgejo_login_session(response, authed_user)
             else:
                 login_error_message = handrive_text.get("auth_login_error", "아이디 또는 비밀번호를 확인해주세요.")
@@ -3516,7 +3530,7 @@ def handrive_login(request, ui_lang=None):
             _clear_handrive_login_captcha(request)
             auth_login(request, authed_user)
             _trigger_gitea_password_sync(authed_user, form.cleaned_data.get("password", ""))
-            response = redirect(post_login_url)
+            response = redirect(_resolve_handrive_post_login_url(request, resolved_lang, next_url, authed_user))
             return _attach_forgejo_login_session(response, authed_user)
         else:
             login_error_message = handrive_text.get("auth_login_error", "아이디 또는 비밀번호를 확인해주세요.")
@@ -3737,6 +3751,13 @@ def handrive_list(request, folder_path="", ui_lang=None):
                 )
             return redirect(reverse("main:handrive_list", kwargs={"folder_path": scoped_home_dir}))
         if not is_superuser and not is_path_in_handrive_scope(requested_dir, scoped_home_dir):
+            if not request.user.is_authenticated:
+                from urllib.parse import urlencode
+                if resolved_lang in SUPPORTED_UI_LANGS:
+                    login_url = reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang})
+                else:
+                    login_url = reverse("main:handrive_login")
+                return redirect(login_url + "?" + urlencode({"next": request.get_full_path()}))
             raise PermissionDenied("파일을 볼 권한이 없습니다.")
 
     try:
@@ -4442,6 +4463,92 @@ def handrive_api_list(request):
             "entries": entries,
         }
     )
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_search(request):
+    """디렉터리를 재귀 탐색하여 이름에 검색어가 포함된 엔트리를 반환한다."""
+    rel_path = request.GET.get("path", "")
+    query = request.GET.get("q", "").strip()
+
+    if not query:
+        return JsonResponse({"ok": True, "entries": []})
+
+    try:
+        base_dir, normalized_base = resolve_path(rel_path, must_exist=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=404)
+
+    if not base_dir.is_dir():
+        return json_error("폴더 경로가 아닙니다.", status=400)
+
+    if not has_handrive_read_access(request, normalized_base):
+        return json_error("파일을 볼 권한이 없습니다.", status=403)
+
+    normalized_query = query.lower()
+    root = handrive_root_dir().resolve()
+    matches = []
+
+    for dirpath, dirnames, filenames in os.walk(base_dir):
+        # 숨김 디렉터리 스킵 (in-place 수정으로 하위 탐색도 차단)
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+
+        current_dir_path = Path(dirpath)
+        rel_current = str(current_dir_path.relative_to(root)).replace("\\", "/")
+
+        # 현재 디렉터리 자체가 매칭되는지 (base_dir 자체는 제외)
+        if current_dir_path != base_dir:
+            dir_name = current_dir_path.name
+            if dir_name.lower().find(normalized_query) != -1:
+                rel_dir = rel_current
+                if has_handrive_read_access(request, rel_dir):
+                    try:
+                        has_children = any(current_dir_path.iterdir())
+                    except OSError:
+                        has_children = False
+                    entry = {
+                        "name": dir_name,
+                        "path": rel_dir,
+                        "type": "dir",
+                        "has_children": has_children,
+                        "size_display": "",
+                        "can_edit": has_handrive_write_access(request, rel_dir),
+                        "can_write_children": has_handrive_directory_write_access(request, rel_dir),
+                        "can_delete": has_handrive_write_access(request, rel_dir),
+                        "is_public_write": False,
+                        "is_url_only": is_handrive_url_only_enabled(request, rel_dir),
+                        "write_acl_labels": get_write_acl_display_labels(request, rel_dir),
+                    }
+                    matches.append(entry)
+
+        # 파일 매칭
+        for filename in filenames:
+            if filename.lower().find(normalized_query) != -1:
+                file_path = current_dir_path / filename
+                rel_file = (rel_current + "/" + filename) if rel_current != "." else filename
+                if has_handrive_read_access(request, rel_file):
+                    try:
+                        size = file_path.stat().st_size
+                        size_display = format_handrive_bytes_display(size)
+                    except OSError:
+                        size_display = ""
+                    entry = {
+                        "name": filename,
+                        "path": rel_file,
+                        "type": "file",
+                        "size_display": size_display,
+                        "can_edit": has_handrive_write_access(request, rel_file),
+                        "can_write_children": False,
+                        "can_delete": has_handrive_write_access(request, rel_file),
+                        "is_public_write": is_handrive_public_write_enabled(request, rel_file),
+                        "is_url_only": is_handrive_url_only_enabled(request, rel_file),
+                        "write_acl_labels": get_write_acl_display_labels(request, rel_file),
+                        "share_url": "",
+                    }
+                    matches.append(entry)
+
+    return JsonResponse({"ok": True, "entries": matches})
 
 
 @require_http_methods(["POST"])
@@ -5719,6 +5826,37 @@ def handrive_api_map_icon_upload(request):
     icon_path_relative = relative_from_root(target)
     icon_api_url = f"/handrive/api/map-image/?path={quote(icon_path_relative)}"
     return JsonResponse({"ok": True, "icon_path": icon_path_relative, "icon_url": icon_api_url})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_map_icon_delete(request):
+    """지도 폴더의 커스텀 아이콘 파일을 삭제한다."""
+    icon_path_value = request.POST.get("icon_path", "").strip()
+    if not icon_path_value:
+        return json_error("icon_path가 필요합니다.", status=400)
+
+    try:
+        icon_file, icon_relative = resolve_path(icon_path_value, must_exist=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=404)
+
+    if not icon_file.is_file():
+        return json_error("파일이 아닙니다.", status=400)
+
+    # 반드시 MAP_ICONS_DIR 내 파일이어야 함
+    if icon_file.parent.name != MAP_ICONS_DIR:
+        return json_error("아이콘 파일이 아닙니다.", status=400)
+
+    if icon_file.suffix.lower() not in MAP_IMAGE_EXTENSIONS:
+        return json_error("아이콘 파일이 아닙니다.", status=400)
+
+    if not has_handrive_write_access(request, icon_relative):
+        return json_error("파일을 삭제할 권한이 없습니다.", status=403)
+
+    icon_file.unlink()
+    return JsonResponse({"ok": True})
 
 
 @require_http_methods(["GET"])

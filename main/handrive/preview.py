@@ -81,11 +81,14 @@ def convert_office_bytes_to_pdf(file_extension: str, source_bytes: bytes, file_n
         work_dir = Path(tmp_dir)
         source_path = work_dir / f"source{suffix}"
         pdf_path = work_dir / "source.pdf"
+        user_install_dir = work_dir / "user-install"
+        user_install_dir.mkdir()
         try:
             source_path.write_bytes(source_bytes)
             result = subprocess.run(
                 [
                     soffice_bin,
+                    f"-env:UserInstallation=file://{user_install_dir}",
                     "--headless",
                     "--convert-to",
                     f"pdf:{pdf_filter}" if pdf_filter else "pdf",
@@ -121,11 +124,14 @@ def convert_office_bytes_to_html(file_extension: str, source_bytes: bytes) -> st
         work_dir = Path(tmp_dir)
         source_path = work_dir / f"source{suffix}"
         html_path = work_dir / "source.html"
+        user_install_dir = work_dir / "user-install"
+        user_install_dir.mkdir()
         try:
             source_path.write_bytes(source_bytes)
             result = subprocess.run(
                 [
                     soffice_bin,
+                    f"-env:UserInstallation=file://{user_install_dir}",
                     "--headless",
                     "--convert-to",
                     "html",

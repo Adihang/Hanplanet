@@ -1268,8 +1268,12 @@ body.theme-dark .handrive-help-icon-symbol {
     margin-top: 4px;
     font-size: 12px;
     line-height: 1.35;
-    color: var(--handrive-text-muted);
+    color: #dc2626;
     word-break: break-word;
+}
+
+body.theme-dark .handrive-job-queue-item-reason {
+    color: #facc15;
 }
 
 .handrive-job-queue-progress {

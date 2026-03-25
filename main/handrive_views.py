@@ -5336,7 +5336,10 @@ def handrive_api_preview(request):
             else:
                 title = Path(git_virtual["repo_relative_path"]).name
                 file_extension = Path(title).suffix.lower()
-                if is_handrive_non_editable_media_extension(file_extension):
+                if (
+                    is_handrive_non_editable_media_extension(file_extension)
+                    and resolve_handrive_render_profile(file_extension).get("mode") != DOCS_RENDER_MODE_OFFICE
+                ):
                     content = ""
                     rendered_html, render_profile = render_handrive_content(
                         content,

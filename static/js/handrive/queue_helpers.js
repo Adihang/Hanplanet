@@ -325,6 +325,7 @@
         var contextGitDeleteRepoButton = buttons.gitDeleteRepo || null;
         var contextGitCreateBranchButton = buttons.gitCreateBranch || null;
         var contextGitDeleteBranchButton = buttons.gitDeleteBranch || null;
+        var contextCreateMapButton = buttons.createMap || null;
 
         setContextButtonVisible(contextDownloadButton, false);
         setContextButtonVisible(contextUploadButton, false);
@@ -338,6 +339,7 @@
         setContextButtonVisible(contextGitDeleteRepoButton, false);
         setContextButtonVisible(contextGitCreateBranchButton, false);
         setContextButtonVisible(contextGitDeleteBranchButton, false);
+        setContextButtonVisible(contextCreateMapButton, false);
 
         if (!item) {
             setContextButtonVisible(contextOpenButton, false);

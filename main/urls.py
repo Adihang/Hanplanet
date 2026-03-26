@@ -182,4 +182,6 @@ urlpatterns = [
     path('git-auth/credential-helper/', views.git_credential_helper_download, name='git_credential_helper_download'),
     # Gitea SSO 릴레이: 로그인 후 Gitea 자동 로그인
     path('sso/gitea', handrive_views.handrive_gitea_sso_relay, name='gitea_sso_relay'),
+    path('logout/bridge', handrive_views.handrive_logout_bridge, name='handrive_logout_bridge'),
+    re_path(r'^(?P<ui_lang>ko|en)/logout/bridge/?$', handrive_views.handrive_logout_bridge, name='handrive_logout_bridge_lang'),
 ]

@@ -2,12 +2,27 @@
 <div role="main" aria-label="{{if .IsSigned}}{{ctx.Locale.Tr "dashboard"}}{{else}}{{ctx.Locale.Tr "home"}}{{end}}" class="page-content home">
 	<div class="tw-mb-8 tw-px-8">
 		<div class="center">
-			<img class="logo" width="220" height="220" src="{{AssetUrlPrefix}}/img/logo.svg" alt="{{ctx.Locale.Tr "logo"}}">
 			<div class="hero">
 				<h1 class="ui icon header title">
 					{{AppName}}
 				</h1>
 			</div>
+			{{if not .IsSigned}}
+			<div class="forgejo-home-auth-actions root-shortcuts-auth-actions">
+				<a
+					class="root-shortcuts-auth-btn"
+					href='https://www.hanplanet.com/{{if eq ctx.Locale.Lang "en-US"}}en{{else}}ko{{end}}/login/?next=https%3A%2F%2Fgit.hanplanet.com%2F'
+				>
+					{{if eq ctx.Locale.Lang "en-US"}}Login{{else}}로그인{{end}}
+				</a>
+				<a
+					class="root-shortcuts-auth-btn root-shortcuts-auth-btn-primary"
+					href='https://www.hanplanet.com/{{if eq ctx.Locale.Lang "en-US"}}en{{else}}ko{{end}}/signup/?next=https%3A%2F%2Fgit.hanplanet.com%2F'
+				>
+					{{if eq ctx.Locale.Lang "en-US"}}Sign Up{{else}}회원가입{{end}}
+				</a>
+			</div>
+			{{end}}
 		</div>
 	</div>
 </div>

@@ -63,6 +63,6 @@
 	{{template "custom/body_inner_pre" .}}
 	{{if .PageIsInstall}}<main class="page-content django" role="main"><div class="main main-surface-layer">{{end}}
 
-	{{if not .PageIsInstall}}
+	{{if and (not .PageIsInstall) (or .IsSigned (not .PageIsHome))}}
 		{{template "base/head_navbar" .}}
 	{{end}}

@@ -35,16 +35,27 @@
     } catch (e) {}
   })();
 
-  /* ── 로그인 페이지 → Hanplanet SSO 자동 리다이렉트 ─────── */
-  (function redirectLoginToSSO() {
+  function getHanplanetLoginUrl() {
+    var htmlLang = (document.documentElement && document.documentElement.lang) || '';
+    var lang = /^en(?:-|$)/i.test(htmlLang) ? 'en' : 'ko';
+    var target = 'https://git.hanplanet.com/';
+    try {
+      var url = new URL(window.location.href);
+      var redirectTo = url.searchParams.get('redirect_to') || '/';
+      target = new URL(redirectTo, 'https://git.hanplanet.com').toString();
+    } catch (e) {}
+    return 'https://www.hanplanet.com/' + lang + '/login/?next=' + encodeURIComponent(target);
+  }
+
+  /* ── 로그인 페이지 → Hanplanet 직접 로그인 자동 리다이렉트 ─────── */
+  (function redirectLoginToHanplanet() {
     var path = window.location.pathname;
     if (path === '/user/login' || path === '/user/login/') {
-      // 복귀 쿠키가 있으면 동기화 섹션에서 처리 — 여기서 가로채지 않음
-      if (/(?:^|;\s*)hp_logout_return=/.test(document.cookie) ||
-          /(?:^|;\s*)hp_sso_return=/.test(document.cookie)) {
+      // Hanplanet 로그아웃 직후 복귀는 동기화 섹션에서 처리
+      if (/(?:^|;\s*)hp_logout_return=/.test(document.cookie)) {
         return;
       }
-      window.location.replace('/user/oauth2/hanplanet?redirect_to=%2F');
+      window.location.replace(getHanplanetLoginUrl());
     }
   })();
 
@@ -124,12 +135,9 @@
     window.__initSiteNavResponsiveManager();
   }
 
-  /* ── www ↔ Forgejo 로그인/로그아웃 동기화 ── */
+  /* ── 레거시 복귀 쿠키 정리 ── */
   (function () {
     var sharedExpired = 'expires=Thu, 01 Jan 1970 00:00:00 UTC; domain=.hanplanet.com; path=/';
-    var localExpired  = 'expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/';
-    var csrf = (window.config && window.config.csrfToken) || '';
-    var isSignedIn = document.body.dataset.authenticated === '1';
 
     function getCookie(name) {
       try {
@@ -144,13 +152,6 @@
       } catch (e) { return null; }
     }
 
-    function clearLocalCookies() {
-      document.cookie.split(';').forEach(function(c) {
-        var name = c.split('=')[0].trim();
-        if (name) { document.cookie = name + '=; ' + localExpired; }
-      });
-    }
-
     function safeRedirect(url) {
       if (url && (/^https?:\/\/(www\.)?hanplanet\.com(\/|$)/.test(url) || /^\//.test(url))) {
         window.location.replace(url);
@@ -158,64 +159,10 @@
     }
 
     var logoutReturn = getCookie('hp_logout_return');
-    var ssoReturn    = getCookie('hp_sso_return');
 
-    console.log('[HP]', 'signed='+isSignedIn,
-      'logout='+getCookie('hp_logout'),
-      'relogin='+getCookie('hp_relogin'),
-      'sso_return='+ssoReturn,
-      'logout_return='+logoutReturn);
-
-    // ── 1순위: 로그아웃 완료 → www 복귀 ────────────────────────────
-    if (logoutReturn && !getCookie('hp_logout')) {
+    if (logoutReturn) {
       document.cookie = 'hp_logout_return=; ' + sharedExpired;
       safeRedirect(logoutReturn);
-      return;
-    }
-
-    // ── 2순위: SSO 로그인 완료 → www 복귀 ──────────────────────────
-    if (ssoReturn && isSignedIn) {
-      document.cookie = 'hp_sso_return=; ' + sharedExpired;
-      document.cookie = 'hp_relogin=; '   + sharedExpired;
-      safeRedirect(ssoReturn);
-      return;
-    }
-
-    // ── 3순위: 로그아웃 시작: hp_logout=1 ───────────────────────────
-    if (getCookie('hp_logout')) {
-      document.cookie = 'hp_logout=; ' + sharedExpired;
-      var lr = logoutReturn;
-      if (lr) document.cookie = 'hp_logout_return=; ' + sharedExpired;
-      // fetch로 Forgejo 세션 서버측 무효화 후 복귀 (200 OK 반환이므로 form submit 대신)
-      if (csrf) {
-        var fd2 = new FormData();
-        fd2.append('_csrf', csrf);
-        fetch('/user/logout', {method: 'POST', body: fd2, redirect: 'manual'})
-          .finally(function () {
-            clearLocalCookies();
-            safeRedirect(lr || 'https://www.hanplanet.com/');
-          });
-      } else {
-        clearLocalCookies();
-        safeRedirect(lr || 'https://www.hanplanet.com/');
-      }
-      return;
-    }
-
-    // ── 4순위: 계정 전환: hp_relogin=1 ──────────────────────────────
-    if (getCookie('hp_relogin')) {
-      if (isSignedIn && csrf) {
-        document.cookie = 'hp_relogin=; ' + sharedExpired;
-        var fd3 = new FormData();
-        fd3.append('_csrf', csrf);
-        fetch('/user/logout', {method: 'POST', body: fd3, redirect: 'manual'})
-          .finally(function () {
-            window.location.replace('/user/oauth2/hanplanet?redirect_to=%2F');
-          });
-      } else {
-        document.cookie = 'hp_relogin=; ' + sharedExpired;
-        window.location.replace('/user/oauth2/hanplanet?redirect_to=%2F');
-      }
       return;
     }
   })();

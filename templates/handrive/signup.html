@@ -89,4 +89,12 @@
     </form>
 </main>
 {% include "partials/site_footer_links.html" %}
+<script>
+    (function () {
+        const errorPopupMessage = "{{ handrive_signup_error_popup_message|default:''|escapejs }}";
+        if (errorPopupMessage) {
+            window.alert(errorPopupMessage);
+        }
+    })();
+</script>
 {% endblock %}

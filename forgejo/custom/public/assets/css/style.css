@@ -1224,6 +1224,15 @@ body.theme-dark .root-search-submit-icon {
     text-align: center;
 }
 
+.forgejo-home-auth-actions {
+    max-width: 280px;
+    margin: 20px auto 0;
+}
+
+.page-content.home .hero .ui.icon.header.title {
+    font-size: 60px;
+}
+
 .root-shortcuts-auth-actions {
     display: inline-flex;
     align-items: center;
@@ -1237,13 +1246,13 @@ body.theme-dark .root-search-submit-icon {
     align-items: center;
     justify-content: center;
     height: 34px;
-    padding: 0 12px;
+    padding: 8px 12px;
     border-radius: 10px;
     border: 1px solid var(--site-border-mid);
     background: var(--site-surface-muted);
     color: var(--site-text-strong);
     text-decoration: none;
-    font-size: 13px;
+    font-size: 18px;
     font-weight: 600;
     transition: background-color var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
 }
@@ -1788,6 +1797,7 @@ body.theme-dark {
     position: sticky;
     top: 0;
     z-index: calc(var(--site-z-popup, 3400) - 10);
+    flex-shrink: 0;
     min-height: var(--site-common-header-min-height);
     padding: var(--site-nav-padding-y) 18px;
     border-bottom: none;

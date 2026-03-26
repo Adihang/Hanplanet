@@ -74,6 +74,11 @@
 
 <script>
     (function () {
+        const errorPopupMessage = "{{ handrive_login_error_popup_message|default:''|escapejs }}";
+        if (errorPopupMessage) {
+            window.alert(errorPopupMessage);
+        }
+
         const loginForm = document.getElementById("handrive-login-form");
         const submitButton = document.getElementById("handrive-login-submit-btn");
         if (!loginForm || !submitButton) {

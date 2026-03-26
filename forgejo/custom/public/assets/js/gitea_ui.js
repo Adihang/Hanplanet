@@ -17,6 +17,29 @@
     return meta ? meta.getAttribute('content') : '';
   }
 
+  function getHanplanetBaseUrl() {
+    var host = window.location.hostname || '';
+    if (host === 'git.hanplanet.com') {
+      return 'https://www.hanplanet.com';
+    }
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://127.0.0.1:8000';
+    }
+    return 'https://www.hanplanet.com';
+  }
+
+  function buildLogoutBridgeUrl() {
+    var htmlLang = (document.documentElement && document.documentElement.lang) || '';
+    var lang = /^en(?:-|$)/i.test(htmlLang) ? 'en' : 'ko';
+    var bridge = getHanplanetBaseUrl() + '/' + lang + '/logout/bridge/';
+    return bridge + '?next=' + encodeURIComponent(window.location.href);
+  }
+
+  function interceptForgejoLogoutNavigation(event) {
+    event.preventDefault();
+    window.location.assign(buildLogoutBridgeUrl());
+  }
+
   async function submitLinkAction(button) {
     var url = button.getAttribute('data-url');
     if (!url) return;
@@ -80,6 +103,15 @@
   }
 
   document.addEventListener('click', function (event) {
+    var logoutLink = event.target.closest('a[href], button[data-url]');
+    if (logoutLink) {
+      var href = logoutLink.getAttribute('href') || logoutLink.getAttribute('data-url') || '';
+      if (/\/user\/logout\/?$/.test(href)) {
+        interceptForgejoLogoutNavigation(event);
+        return;
+      }
+    }
+
     var button = event.target.closest('.link-action[data-url]');
     if (!button) return;
 
@@ -89,4 +121,12 @@
     event.preventDefault();
     showModalConfirm(button, modalSelector);
   });
+
+  document.addEventListener('submit', function (event) {
+    var form = event.target;
+    if (!form || !form.getAttribute) return;
+    var action = form.getAttribute('action') || '';
+    if (!/\/user\/logout\/?$/.test(action)) return;
+    interceptForgejoLogoutNavigation(event);
+  }, true);
 })();

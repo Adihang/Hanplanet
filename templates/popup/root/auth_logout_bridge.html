@@ -19,22 +19,22 @@
     </style>
 </head>
 <body>
-    <form id="hp-git-logout-form" action="{{ git_logout_url }}" method="post" target="hp-git-logout-frame">
-        <input type="hidden" name="_csrf" value="{{ git_logout_csrf_token }}">
+    <form id="hp-auth-logout-bridge-form" action="{{ logout_url }}" method="post">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ logout_next_url }}">
     </form>
-    <iframe name="hp-git-logout-frame" hidden aria-hidden="true" tabindex="-1"></iframe>
     <script>
         (function () {
-            var nextUrl = "{{ git_logout_next_url|escapejs }}";
-            var form = document.getElementById('hp-git-logout-form');
+            var form = document.getElementById("hp-auth-logout-bridge-form");
             if (!form) {
-                window.location.replace(nextUrl);
+                window.location.replace("{{ logout_next_url|escapejs }}");
+                return;
+            }
+            if (typeof form.requestSubmit === "function") {
+                form.requestSubmit();
                 return;
             }
             form.submit();
-            window.setTimeout(function () {
-                window.location.replace(nextUrl);
-            }, 300);
         })();
     </script>
 </body>

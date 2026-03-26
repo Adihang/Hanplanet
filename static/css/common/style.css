@@ -867,6 +867,10 @@ body.theme-dark .root-auth-modal-dialog {
     font-weight: 700;
 }
 
+#root-auth-logout-title {
+    font-size: 20px;
+}
+
 .root-auth-modal-message {
     margin: 0;
     font-size: 16px;

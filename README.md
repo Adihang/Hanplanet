@@ -466,6 +466,7 @@ cd /Users/imhanbyeol/Development/Hanplanet
 ```json
 {
   "SECRET_KEY": "change-this-in-real-env",
+  "DISC": "hdd",
   "FORGEJO_BASE_URL": "http://localhost:3000",
   "FORGEJO_ADMIN_TOKEN": "gitea-admin-api-token",
   "PUBLIC_GIT_BASE_URL": "https://git.hanplanet.com",
@@ -482,6 +483,62 @@ cd /Users/imhanbyeol/Development/Hanplanet
 ```bash
 chmod 600 config/secrets.json
 ```
+
+### 4-1. 저장소 프로필 전환 (`DISC`)
+
+Hanplanet은 `config/secrets.json`의 `DISC` 값으로 저장소 위치를 전환합니다.
+
+- `DISC = "hdd"`
+  - 운영 기본값
+  - `MEDIA_ROOT` -> `/Volumes/HANPLANET_HDD/Hanplanet/media`
+  - `FORGEJO_REPOS_ROOT` -> `/Volumes/HANPLANET_HDD/Hanplanet/forgejo-repos`
+  - gunicorn / gitea / celery는 외장 스토리지를 기다린 뒤 실행
+- `DISC = "ssd"`
+  - 외장 디스크 장애 시 임시 운영 모드
+  - `MEDIA_ROOT` -> `/Users/imhanbyeol/temporary/hanplanet-ssd/media`
+  - `FORGEJO_REPOS_ROOT` -> `/Users/imhanbyeol/temporary/hanplanet-ssd/forgejo-repos`
+  - 외장 스토리지 대기 없이 바로 실행
+
+예시:
+
+```json
+{
+  "DISC": "ssd"
+}
+```
+
+`DISC`를 바꾼 뒤 즉시 적용하려면:
+
+```bash
+cd /Users/imhanbyeol/Development/Hanplanet
+mkdir -p /Users/imhanbyeol/temporary/hanplanet-ssd/media/HanDrive
+mkdir -p /Users/imhanbyeol/temporary/hanplanet-ssd/media/uploads
+mkdir -p /Users/imhanbyeol/temporary/hanplanet-ssd/forgejo-repos
+
+launchctl kickstart -k gui/$(id -u)/com.hanplanet.gunicorn
+launchctl kickstart -k gui/$(id -u)/com.hanplanet.gitea
+launchctl kickstart -k gui/$(id -u)/com.hanplanet.celery
+launchctl kickstart -k gui/$(id -u)/com.hanplanet.nginx
+```
+
+재부팅만으로 반영해도 되는가:
+
+- 된다. `gunicorn`, `gitea`, `celery`, `nginx` 모두 부팅 시 `DISC` 값을 읽는다.
+- 즉시 반영이 필요할 때만 위 `kickstart`를 실행하면 된다.
+
+확인:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://www.hanplanet.com/ko/login/
+curl -s -o /dev/null -w '%{http_code}\n' https://www.hanplanet.com/ko/signup/
+curl -s -o /dev/null -w '%{http_code}\n' https://git.hanplanet.com/user/login
+```
+
+참고:
+
+- `DISC`는 Django 설정, Gitea repo root, launchd 런처가 같이 읽습니다.
+- Gitea 런타임 설정 파일은 `/tmp/hanplanet_gitea_runtime.ini`에 생성됩니다.
+- nginx 런타임 설정 파일은 `/tmp/hanplanet_nginx_runtime.conf`에 생성됩니다.
 
 ### 5. 범퍼카 게임 서버 초기화
 

@@ -128,13 +128,11 @@ def _resolve_backup_retention_days():
 
 
 def _build_backup_target_paths():
-    base_dir = Path(getattr(settings, "BASE_DIR", Path(__file__).resolve().parent.parent))
     targets = [
-        base_dir / "db.sqlite3",
-        base_dir / "media",
-        base_dir / "config" / "secrets.json",
+        Path(str(getattr(settings, "MEDIA_ROOT", "") or "").strip()),
+        Path(str(getattr(settings, "FORGEJO_REPOS_ROOT", "") or "").strip()),
     ]
-    return [target for target in targets if target.exists()]
+    return [target for target in targets if str(target).strip() and target.exists()]
 
 
 def _backup_archive_path(backup_root, target_date):

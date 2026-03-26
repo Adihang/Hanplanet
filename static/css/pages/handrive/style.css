@@ -2417,6 +2417,10 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     mask-image: url("/static/icons/handrive/font.svg");
 }
 
+.handrive-item-type-icon.is-file[data-file-icon="exe"]::before {
+    background-image: url("/static/icons/handrive/exe.svg");
+}
+
 .handrive-context-menu {
     position: fixed;
     z-index: var(--site-z-popup);
@@ -3302,6 +3306,41 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
 .handrive-content[data-handrive-page="view"] > article.handrive-office .handrive-html-live-frame {
     height: 100%;
     min-height: max(720px, calc(100vh - 180px));
+}
+
+.handrive-unsupported-file {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 48px 24px;
+    min-height: min(60vh, 480px);
+}
+
+.handrive-unsupported-icon {
+    color: var(--handrive-text-muted, currentColor);
+    opacity: 0.4;
+    flex-shrink: 0;
+}
+
+.handrive-unsupported-icon-img {
+    opacity: 1;
+}
+
+.handrive-unsupported-name {
+    font-size: 0.95rem;
+    font-weight: 500;
+    word-break: break-all;
+    text-align: center;
+    color: var(--handrive-text-muted, currentColor);
+    opacity: 0.7;
+    max-width: 480px;
+}
+
+.handrive-list-preview-content.handrive-unsupported .handrive-unsupported-file {
+    min-height: 180px;
+    padding: 32px 16px;
 }
 
 .handrive-media {

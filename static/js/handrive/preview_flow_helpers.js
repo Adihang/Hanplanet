@@ -34,7 +34,8 @@
             renderMode === "office" ||
             renderMode === "media_image" ||
             renderMode === "media_video" ||
-            renderMode === "media_audio"
+            renderMode === "media_audio" ||
+            renderMode === "unsupported"
                 ? renderMode
                 : "plain_text";
         var normalizedRenderClass = String(renderClass || "").trim();

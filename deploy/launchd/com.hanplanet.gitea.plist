@@ -7,19 +7,14 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/opt/homebrew/bin/gitea</string>
-        <string>web</string>
-        <string>--work-path</string>
-        <string>/Users/imhanbyeol/Development/Hanplanet/forgejo</string>
-        <string>--config</string>
-        <string>/Users/imhanbyeol/Development/Hanplanet/forgejo/custom/conf/app.ini</string>
+        <string>/usr/bin/python3</string>
+        <string>/Users/imhanbyeol/Development/Hanplanet/scripts/launch_service_by_disc.py</string>
+        <string>gitea</string>
     </array>
 
     <key>WorkingDirectory</key>
     <string>/Users/imhanbyeol/Development/Hanplanet/forgejo</string>
 
-    <key>WaitForPath</key>
-    <string>/Volumes/HANPLANET_HDD</string>
     <key>KeepAlive</key>
     <true/>
     <key>RunAtLoad</key>

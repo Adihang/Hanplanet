@@ -5,17 +5,16 @@
     // tree/list UI. They are shared by path bar rendering and reload-after-mutation flows.
 
     function buildBreadcrumbItems(pathValue, options) {
-        // Breadcrumb generation understands scoped homes and superuser root browsing,
+        // Breadcrumb generation understands scoped homes,
         // so page rendering can stay agnostic about user/root path differences.
         var settings = options || {};
         var normalizePath = settings.normalizePath || function (value) { return value || ""; };
         var scopedHomeDir = settings.scopedHomeDir || "";
-        var isSuperuser = Boolean(settings.isSuperuser);
         var effectiveRootLabel = settings.effectiveRootLabel || "";
 
         var normalized = normalizePath(pathValue, true);
         var useScopedBreadcrumb = scopedHomeDir && (
-            !isSuperuser || !normalized || normalized === scopedHomeDir || normalized.startsWith(scopedHomeDir + "/")
+            !normalized || normalized === scopedHomeDir || normalized.startsWith(scopedHomeDir + "/")
         );
         if (useScopedBreadcrumb) {
             var homeParts = scopedHomeDir.split("/").filter(Boolean);
@@ -27,13 +26,6 @@
                 : scopedHomeDir;
 
             var crumbs = [];
-            if (isSuperuser) {
-                crumbs.push({
-                    label: effectiveRootLabel,
-                    path: "",
-                    isCurrent: effectivePath === "",
-                });
-            }
             crumbs.push({
                 label: homeLabel,
                 path: scopedHomeDir,
@@ -88,9 +80,6 @@
         var handriveBaseUrl = settings.handriveBaseUrl || "";
         var handriveRootUrl = settings.handriveRootUrl || "";
         var bindHandrivePathDropTargets = settings.bindHandrivePathDropTargets || function () {};
-        var isSuperuser = Boolean(settings.isSuperuser);
-        var scopedHomeDir = settings.scopedHomeDir || "";
-        var effectiveRootLabel = settings.effectiveRootLabel || "";
 
         if (!pathBreadcrumbs) {
             return;
@@ -98,18 +87,6 @@
 
         var fragment = documentRef.createDocumentFragment();
         var crumbs = buildBreadcrumbItems(pathValue);
-        if (isSuperuser && scopedHomeDir) {
-            var hasRootCrumb = crumbs.some(function (crumb) {
-                return crumb.path === "";
-            });
-            if (!hasRootCrumb) {
-                crumbs.unshift({
-                    label: effectiveRootLabel,
-                    path: "",
-                    isCurrent: false,
-                });
-            }
-        }
 
         crumbs.forEach(function (crumb, index) {
             if (index > 0) {

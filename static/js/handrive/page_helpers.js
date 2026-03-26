@@ -164,6 +164,9 @@
         if ([".ttf", ".otf", ".woff", ".woff2"].includes(extension)) {
             return "font";
         }
+        if (extension === ".exe") {
+            return "exe";
+        }
         return "file";
     }
 

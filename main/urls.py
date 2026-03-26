@@ -1,6 +1,6 @@
 from django.urls import path, re_path
 
-from . import handrive_views, views
+from . import handrive_views, sync_views, views
 
 app_name = 'main'
 
@@ -12,6 +12,21 @@ urlpatterns = [
     path("manifest.webmanifest", views.pwa_manifest, name="pwa_manifest"),
     path("service-worker.js", views.service_worker, name="service_worker"),
     path('', views.none, name='none'),
+
+    # ── Sync API (/api/sync/) ────────────────────────────────────────────────
+    path("api/sync/auth/token",   sync_views.sync_auth_token,   name="sync_auth_token"),
+    path("api/sync/auth/refresh", sync_views.sync_auth_refresh, name="sync_auth_refresh"),
+    path("api/sync/files",        sync_views.sync_files_list,   name="sync_files_list"),
+    path("api/sync/files/init-upload", sync_views.sync_files_init_upload, name="sync_files_init_upload"),
+    path("api/sync/files/complete",    sync_views.sync_files_complete,    name="sync_files_complete"),
+    path("api/sync/files/<uuid:file_id>/download-url", sync_views.sync_files_download_url, name="sync_files_download_url"),
+    path("api/sync/files/<uuid:file_id>",              sync_views.sync_files_delete,        name="sync_files_delete"),
+    path("api/sync/files/<uuid:file_id>/move",         sync_views.sync_files_move,          name="sync_files_move"),
+    path("api/sync/changes",      sync_views.sync_changes,      name="sync_changes"),
+    path("api/sync/storage-mode", sync_views.sync_storage_mode, name="sync_storage_mode"),
+    path("api/sync/me",           sync_views.sync_me,           name="sync_me"),
+    # ────────────────────────────────────────────────────────────────────────
+
     path('handrive', handrive_views.handrive_root, name='handrive_root'),
     path('handrive/', handrive_views.handrive_root),
     path('handrive/list', handrive_views.handrive_root, name='handrive_list_root'),
@@ -22,6 +37,8 @@ urlpatterns = [
     path('signup/', handrive_views.handrive_signup),
     path('login', handrive_views.handrive_login, name='handrive_login'),
     path('login/', handrive_views.handrive_login),
+    path('login/handrive', handrive_views.handrive_login_bridge, name='handrive_login_bridge'),
+    path('login/handrive/', handrive_views.handrive_login_bridge),
     path('logout', handrive_views.handrive_logout, name='handrive_logout'),
     path('logout/', handrive_views.handrive_logout),
     path('privacy', views.privacy_page, name='privacy_page'),

@@ -8,14 +8,8 @@
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>-m</string>
+        <string>/Users/imhanbyeol/Development/Hanplanet/scripts/launch_service_by_disc.py</string>
         <string>celery</string>
-        <string>-A</string>
-        <string>config</string>
-        <string>worker</string>
-        <string>-l</string>
-        <string>info</string>
-        <string>--concurrency=2</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -29,8 +23,6 @@
         <string>/Users/imhanbyeol/Development/Hanplanet/.venv/lib/python3.9/site-packages</string>
     </dict>
 
-    <key>WaitForPath</key>
-    <string>/Volumes/HANPLANET_HDD</string>
     <key>KeepAlive</key>
     <true/>
     <key>RunAtLoad</key>

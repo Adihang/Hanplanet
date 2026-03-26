@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block body_class %}handrive-page{% endblock %}
+{% block content %}
+{% include 'handrive/_assets_head.html' %}
+
+<div class="handrive-toolbar-wrap ui-toolbar-wrap">
+    <div class="handrive-shell ui-shell handrive-toolbar ui-toolbar">
+        <div class="handrive-toolbar-left ui-toolbar-left">
+            <h1 class="handrive-title ui-title">HanDrive 앱 연결</h1>
+        </div>
+    </div>
+</div>
+
+<main class="handrive-shell ui-shell handrive-content ui-content">
+    <div style="max-width:480px;margin:60px auto;padding:0 16px;text-align:center">
+        <div style="font-size:48px;margin-bottom:20px">✓</div>
+        <h2 style="font-size:20px;font-weight:700;margin-bottom:12px">{{ user.username }}님, 안녕하세요!</h2>
+        <p style="color:#666;font-size:14px;line-height:1.6">
+            HanDrive 데스크톱 앱에서 로그인 요청이 없습니다.<br>
+            앱의 설정 → <strong>다시 로그인</strong> 버튼을 눌러 주세요.
+        </p>
+    </div>
+</main>
+{% endblock %}

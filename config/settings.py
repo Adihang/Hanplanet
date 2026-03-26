@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
+from storage_profile import get_disc_mode, get_forgejo_repos_root, get_media_root
 
 mimetypes.add_type("application/javascript", ".js", strict=True)
 mimetypes.add_type("application/javascript", ".mjs", strict=True)
@@ -167,9 +168,25 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD         = 50
 CELERY_BROKER_TRANSPORT_OPTIONS           = {"visibility_timeout": 3600}
 
 # Forgejo 설정
+DISC = get_disc_mode()
 FORGEJO_BASE_URL    = load_optional_secret("FORGEJO_BASE_URL", "http://localhost:3000")
 FORGEJO_ADMIN_TOKEN = load_optional_secret("FORGEJO_ADMIN_TOKEN", "")
 PUBLIC_GIT_BASE_URL = load_optional_secret("PUBLIC_GIT_BASE_URL", "http://localhost:3000")
+FORGEJO_REPOS_ROOT  = str(get_forgejo_repos_root(DISC))
+
+# MinIO (S3 호환 오브젝트 스토리지) 설정
+MINIO_ENDPOINT        = load_optional_secret("MINIO_ENDPOINT", "localhost:9000")
+MINIO_ACCESS_KEY      = load_optional_secret("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY      = load_optional_secret("MINIO_SECRET_KEY", "minioadmin")
+MINIO_BUCKET          = load_optional_secret("MINIO_BUCKET", "handrive")
+MINIO_SECURE          = env_bool("MINIO_SECURE", default=False)
+MINIO_PUBLIC_ENDPOINT = load_optional_secret("MINIO_PUBLIC_ENDPOINT", MINIO_ENDPOINT)
+MINIO_PUBLIC_SECURE   = env_bool("MINIO_PUBLIC_SECURE", default=MINIO_SECURE)
+
+# Sync Client JWT 설정
+SYNC_JWT_SECRET              = load_optional_secret("SYNC_JWT_SECRET", SECRET_KEY)
+SYNC_JWT_ACCESS_EXP_SECONDS  = max(300, load_optional_int_secret("SYNC_JWT_ACCESS_EXP_SECONDS", 3600))
+SYNC_JWT_REFRESH_EXP_SECONDS = max(3600, load_optional_int_secret("SYNC_JWT_REFRESH_EXP_SECONDS", 86400 * 30))
 
 # Application definition
 
@@ -297,7 +314,7 @@ GLOBAL_RATE_LIMIT_EXEMPT_PATH_PREFIXES = tuple(
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
 MEDIA_URL = "/media/"
-MEDIA_ROOT = "/Volumes/HANPLANET_HDD/Hanplanet/media"
+MEDIA_ROOT = str(get_media_root(DISC))
 
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')

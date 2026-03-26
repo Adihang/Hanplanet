@@ -1069,6 +1069,7 @@ def _render_legal_page(request, ui_lang, *, title_ko: str, title_en: str, filena
         "meta_og_title": title_en if resolved_lang == "en" else title_ko,
         "meta_description": title_en if resolved_lang == "en" else title_ko,
         "meta_og_description": title_en if resolved_lang == "en" else title_ko,
+        "hide_global_nav": filename in {"Privacy_Policy.md", "Terms_of_Service.md"},
     }
     apply_ui_context(request, context, resolved_lang)
     return render(request, "main/legal_page.html", context)

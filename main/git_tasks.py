@@ -411,24 +411,6 @@ def import_repo_task(repo_id: int) -> None:
 
 
 @shared_task(bind=True, max_retries=2, ignore_result=True)
-def sync_gitea_password(self, user_id: int, raw_password: str):
-    """Django 로그인/회원가입 시 Gitea 비밀번호를 Django 비밀번호와 동기화.
-    GitUserMapping(= Gitea 계정)이 없으면 조용히 종료.
-    """
-    try:
-        mapping = GitUserMapping.objects.select_related("user").get(user_id=user_id)
-    except GitUserMapping.DoesNotExist:
-        return
-
-    try:
-        client = ForgejoClient()
-        client._set_user_password(mapping.forgejo_username, raw_password)
-    except Exception as exc:
-        logger.warning("sync_gitea_password failed for user_id=%s: %s", user_id, exc)
-        raise self.retry(exc=exc, countdown=10)
-
-
-@shared_task(bind=True, max_retries=2, ignore_result=True)
 def sync_gitea_avatar_task(self, user_id: int):
     """Hanplanet 프로필 사진 → Forgejo 아바타 동기화.
     프로필 사진이 없으면 placeholder PNG 사용.

@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -49,6 +50,60 @@ from .views import (
     resolve_ui_lang,
     should_return_github_link,
 )
+
+
+class MinioPresignedEndpointTests(TestCase):
+    @override_settings(
+        MINIO_ENDPOINT="localhost:9000",
+        MINIO_SECURE=False,
+        MINIO_PUBLIC_ENDPOINT="storage.hanplanet.com",
+        MINIO_PUBLIC_SECURE=True,
+        MINIO_ACCESS_KEY="test-access",
+        MINIO_SECRET_KEY="test-secret",
+        MINIO_BUCKET="handrive",
+    )
+    @mock.patch("main.minio_client.boto3.client")
+    def test_presigned_upload_uses_public_endpoint(self, mocked_client_factory):
+        mocked_client = mock.Mock()
+        mocked_client.generate_presigned_url.return_value = "https://storage.hanplanet.com/handrive/object"
+        mocked_client_factory.return_value = mocked_client
+
+        from .minio_client import generate_presigned_upload_url
+
+        url = generate_presigned_upload_url("1/example")
+
+        self.assertEqual(url, "https://storage.hanplanet.com/handrive/object")
+        _, kwargs = mocked_client_factory.call_args
+        self.assertEqual(kwargs["endpoint_url"], "https://storage.hanplanet.com")
+        self.assertEqual(kwargs["aws_access_key_id"], "test-access")
+        self.assertEqual(kwargs["aws_secret_access_key"], "test-secret")
+
+    @override_settings(
+        MINIO_ENDPOINT="localhost:9000",
+        MINIO_SECURE=False,
+        MINIO_PUBLIC_ENDPOINT="storage.hanplanet.com:9443",
+        MINIO_PUBLIC_SECURE=True,
+        MINIO_ACCESS_KEY="test-access",
+        MINIO_SECRET_KEY="test-secret",
+        MINIO_BUCKET="handrive",
+    )
+    @mock.patch("main.minio_client.boto3.client")
+    def test_presigned_download_preserves_public_host_and_port(self, mocked_client_factory):
+        mocked_client = mock.Mock()
+        mocked_client.generate_presigned_url.return_value = (
+            "https://storage.hanplanet.com:9443/handrive/object?X-Amz-SignedHeaders=host"
+        )
+        mocked_client_factory.return_value = mocked_client
+
+        from .minio_client import generate_presigned_download_url
+
+        url = generate_presigned_download_url("1/example")
+
+        parsed = urlparse(url)
+        self.assertEqual(parsed.scheme, "https")
+        self.assertEqual(parsed.netloc, "storage.hanplanet.com:9443")
+        _, kwargs = mocked_client_factory.call_args
+        self.assertEqual(kwargs["endpoint_url"], "https://storage.hanplanet.com:9443")
 
 
 class MarkdownSafetyTests(TestCase):

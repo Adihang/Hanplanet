@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.contrib.auth.models import Group
 from django.db import models
@@ -317,3 +319,84 @@ class UserProfile(models.Model):
     def __str__(self):
         mode = self.theme_mode or "auto"
         return f"{self.user} ({mode})"
+
+
+# ── Handrive Sync 모델 ─────────────────────────────────────────────────────────
+
+class SyncFile(models.Model):
+    """클라우드 드라이브 파일 메타데이터.
+
+    identity = id (UUID, 절대 변하지 않음)
+    path     = 현재 위치 (rename 시 path만 변경)
+    storage_key 형식: "{user_id}/{file_id}"
+    """
+    id                 = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user               = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sync_files")
+    path               = models.TextField(help_text="사용자 기준 상대 경로 (예: /docs/a.txt)")
+    size               = models.BigIntegerField()
+    hash               = models.CharField(max_length=64, help_text="SHA-256 hex digest")
+    version            = models.BigIntegerField(default=1, help_text="단조 증가 버전 (충돌 판단 기준)")
+    storage_key        = models.TextField(help_text="MinIO 오브젝트 키: {user_id}/{file_id}")
+    client_modified_at = models.BigIntegerField(help_text="클라이언트 제공 수정 시각 (ms, 참고용)")
+    server_modified_at = models.BigIntegerField(help_text="서버 기준 수정 시각 (ms, sync 판단 기준)")
+    deleted            = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = [("user", "path")]
+        indexes = [models.Index(fields=["user", "hash"])]
+        verbose_name = "Sync 파일"
+        verbose_name_plural = "Sync 파일"
+
+    def __str__(self):
+        return f"{self.user.username}:{self.path} (v{self.version})"
+
+
+class SyncChangeLog(models.Model):
+    """파일 변경 이력. cursor = id (PK, autoincrement) 기반으로 sync."""
+
+    TYPE_CREATE = "CREATE"
+    TYPE_UPDATE = "UPDATE"
+    TYPE_DELETE = "DELETE"
+    TYPE_MOVE   = "MOVE"
+    TYPE_CHOICES = [
+        (TYPE_CREATE, "생성"),
+        (TYPE_UPDATE, "수정"),
+        (TYPE_DELETE, "삭제"),
+        (TYPE_MOVE,   "이동/이름변경"),
+    ]
+
+    user       = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sync_change_logs")
+    file_id    = models.UUIDField(help_text="SyncFile.id (삭제 후에도 이력 유지를 위해 FK 미사용)")
+    path       = models.TextField(help_text="변경 시점의 파일 경로")
+    old_path   = models.TextField(null=True, blank=True, help_text="MOVE 시 이전 경로")
+    type       = models.CharField(max_length=10, choices=TYPE_CHOICES)
+    version    = models.BigIntegerField(help_text="변경 후 버전")
+    created_at = models.BigIntegerField(help_text="서버 Unix timestamp (ms)")
+
+    class Meta:
+        indexes = [models.Index(fields=["user", "created_at"])]
+        verbose_name = "Sync 변경 이력"
+        verbose_name_plural = "Sync 변경 이력"
+
+    def __str__(self):
+        return f"{self.user.username} {self.type} {self.path} (id={self.id})"
+
+
+class SyncUploadSession(models.Model):
+    """진행 중인 업로드 세션. complete-upload 후 삭제."""
+
+    upload_id   = models.CharField(max_length=100, primary_key=True)
+    user        = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sync_upload_sessions")
+    file_id     = models.UUIDField(help_text="업로드 대상 SyncFile.id")
+    path        = models.TextField()
+    size        = models.BigIntegerField()
+    hash        = models.CharField(max_length=64)
+    storage_key = models.TextField()
+    created_at  = models.BigIntegerField(help_text="서버 Unix timestamp (ms)")
+
+    class Meta:
+        verbose_name = "Sync 업로드 세션"
+        verbose_name_plural = "Sync 업로드 세션"
+
+    def __str__(self):
+        return f"{self.upload_id} ({self.user.username}:{self.path})"

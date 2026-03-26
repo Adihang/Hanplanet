@@ -11,6 +11,24 @@
     }
 
     const pageType = root.dataset.handrivePage;
+    const sharedOwnerUsername = String(root.dataset.handriveSharedOwnerUsername || "").trim();
+    const sharedSlug = String(root.dataset.handriveSharedSlug || "").trim();
+
+    function hasSharedContext() {
+        return Boolean(sharedOwnerUsername && sharedSlug);
+    }
+
+    function appendSharedQuery(url) {
+        const baseUrl = String(url || "").trim();
+        if (!baseUrl || !hasSharedContext()) {
+            return baseUrl;
+        }
+        const separator = baseUrl.indexOf("?") === -1 ? "?" : "&";
+        return baseUrl
+            + separator
+            + "share_owner=" + encodeURIComponent(sharedOwnerUsername)
+            + "&share_slug=" + encodeURIComponent(sharedSlug);
+    }
 
     // CSRF 토큰을 가져오는 함수
     function getCsrfToken() {
@@ -67,18 +85,18 @@
     function buildListUrl(baseUrl, relativePath, rootUrl) {
         const encoded = encodePathSegments(relativePath);
         if (!encoded) {
-            return rootUrl || baseUrl;
+            return appendSharedQuery(rootUrl || baseUrl);
         }
-        return baseUrl + "/" + encoded + "/list";
+        return appendSharedQuery(baseUrl + "/" + encoded + "/list");
     }
 
     // 보기 URL을 구축하는 함수
     function buildViewUrl(baseUrl, slugPath) {
         const encoded = encodePathSegments(slugPath);
         if (!encoded) {
-            return baseUrl;
+            return appendSharedQuery(baseUrl);
         }
-        return baseUrl + "/" + encoded;
+        return appendSharedQuery(baseUrl + "/" + encoded);
     }
 
     // 쓰기 URL을 구축하는 함수
@@ -360,7 +378,8 @@
             "handrive-media",
             "handrive-media-image",
             "handrive-media-video",
-            "handrive-media-audio"
+            "handrive-media-audio",
+            "handrive-unsupported"
         );
         const renderClasses = String(renderClass || "")
             .split(/\s+/)
@@ -414,6 +433,10 @@
                     targetElement.classList.add(className);
                 }
             });
+            return;
+        }
+        if (renderClasses.includes("handrive-unsupported")) {
+            targetElement.classList.add("handrive-unsupported");
             return;
         }
         if (renderMode === "markdown") {
@@ -1602,6 +1625,7 @@
         const contextMenu = document.getElementById("handrive-context-menu");
         const contextOpenButton = contextMenu ? contextMenu.querySelector('button[data-action="open"]') : null;
         const contextDownloadButton = contextMenu ? contextMenu.querySelector('button[data-action="download"]') : null;
+        const contextShareButton = contextMenu ? contextMenu.querySelector('button[data-action="share"]') : null;
         const contextUploadButton = contextMenu ? contextMenu.querySelector('button[data-action="upload"]') : null;
         const contextEditButton = contextMenu ? contextMenu.querySelector('button[data-action="edit"]') : null;
         const contextRenameButton = contextMenu ? contextMenu.querySelector('button[data-action="rename"]') : null;
@@ -1709,7 +1733,7 @@
         const currentDirGitCommitAuthorUsername = String(root.dataset.currentDirGitCommitAuthorUsername || "").trim();
         const accountProfileImageUrl = String(root.dataset.accountProfileImageUrl || "").trim();
         const handriveRootLabel = (root.dataset.handriveRootLabel || breadcrumbRootLabel || "HanDrive").trim() || "HanDrive";
-        const effectiveRootLabel = (isSuperuser && scopedHomeDir) ? "Hanplanet" : handriveRootLabel;
+        const effectiveRootLabel = handriveRootLabel;
         const initialEntries = getJsonScriptData("handrive-initial-entries", []);
         let currentDirGitRepo = getJsonScriptData("handrive-current-dir-git-repo", null);
 
@@ -2486,9 +2510,7 @@
                     scheduleSyncCurrentDirRowHeightWithSideHead();
                 },
                 loadContent: function (targetEntry) {
-                    const targetUrl = downloadApiUrl
-                        ? downloadApiUrl + '?path=' + encodeURIComponent(targetEntry.path)
-                        : '';
+                    const targetUrl = buildDownloadUrl(targetEntry.path);
                     if (!targetUrl) {
                         console.error('Error loading file content: download API URL is missing');
                         return Promise.resolve('');
@@ -2761,7 +2783,7 @@
                 entry: entry,
                 isPreviewableFileEntry: isPreviewableFileEntry,
                 normalizePath: normalizePath,
-                previewApiUrl: previewApiUrl,
+                previewApiUrl: appendSharedQuery(previewApiUrl),
                 previewContent: previewContent,
                 previewPanel: previewPanel,
                 previewTitle: previewTitle,
@@ -2811,6 +2833,7 @@
             });
             setContextButtonVisible(contextOpenButton, Boolean(visibility.open));
             setContextButtonVisible(contextDownloadButton, Boolean(visibility.download));
+            setContextButtonVisible(contextShareButton, Boolean(visibility.share && urlShareApiUrl));
             setContextButtonVisible(contextUploadButton, Boolean(visibility.upload));
             setContextButtonVisible(contextEditButton, Boolean(visibility.edit));
             setContextButtonVisible(contextRenameButton, Boolean(visibility.rename));
@@ -3039,7 +3062,7 @@
         async function loadDirectory(dirPath) {
             return loadDirectoryEntries(dirPath, {
                 getCachedEntries: getCachedEntries,
-                listApiUrl: listApiUrl,
+                listApiUrl: appendSharedQuery(listApiUrl),
                 normalizePath: normalizePath,
                 requestJson: requestJson,
                 state: state,
@@ -3049,7 +3072,7 @@
         async function refreshCurrentDirectory() {
             await refreshDirectoryEntries({
                 currentDir: currentDir,
-                listApiUrl: listApiUrl,
+                listApiUrl: appendSharedQuery(listApiUrl),
                 loadDirectory: loadDirectory,
                 normalizePath: normalizePath,
                 renderList: renderList,
@@ -3059,12 +3082,12 @@
         }
 
         async function toggleUrlShare(entry) {
-            if (!entry || entry.type !== "file" || !entry.can_edit || !urlShareApiUrl) {
+            if (!entry || entry.isCurrentFolder || !entry.can_edit || !urlShareApiUrl) {
                 return null;
             }
 
             const data = await requestJson(
-                urlShareApiUrl,
+                appendSharedQuery(urlShareApiUrl),
                 buildPostOptions({
                     path: entry.path,
                     enabled: !Boolean(entry.is_url_only),
@@ -3399,6 +3422,7 @@
                     deleteButton: contextDeleteButton,
                     download: contextDownloadButton,
                     edit: contextEditButton,
+                    share: contextShareButton,
                     gitCreateRepo: contextGitCreateRepoButton,
                     gitDeleteRepo: contextGitDeleteRepoButton,
                     gitManageRepo: contextGitManageRepoButton,
@@ -4420,7 +4444,7 @@
                 return "";
             }
             const query = new URLSearchParams({ path: pathValue || "" }).toString();
-            return query ? downloadApiUrl + "?" + query : downloadApiUrl;
+            return appendSharedQuery(query ? downloadApiUrl + "?" + query : downloadApiUrl);
         }
 
         function downloadEntries(entries) {
@@ -4485,7 +4509,7 @@
                 renderList();
 
                 const params = new URLSearchParams({ path: currentDir, q: query });
-                const data = await requestJson(searchApiUrl + "?" + params.toString());
+                const data = await requestJson(appendSharedQuery(searchApiUrl + "?" + params.toString()));
                 if (generation !== state.searchGeneration) {
                     return;
                 }
@@ -4800,6 +4824,24 @@
                 }
                 if (action === "download") {
                     downloadEntries(entries);
+                    return;
+                }
+                if (action === "share") {
+                    if (!entry || entry.isCurrentFolder || !entry.can_edit || !urlShareApiUrl) {
+                        return;
+                    }
+                    urlShareModal.open({
+                        isUrlOnly: Boolean(entry.is_url_only),
+                        shareUrl: entry.share_url || "",
+                        onToggle: async function (enabled) {
+                            const data = await requestJson(
+                                appendSharedQuery(urlShareApiUrl),
+                                buildPostOptions({ path: entry.path, enabled: enabled })
+                            );
+                            await refreshCurrentDirectory();
+                            return { isUrlOnly: Boolean(data.is_url_only), shareUrl: data.share_url || "" };
+                        },
+                    });
                     return;
                 }
                 if (action === "upload") {
@@ -5326,7 +5368,7 @@
                     shareUrl: selectedEntry.share_url || "",
                     onToggle: async function (enabled) {
                         const data = await requestJson(
-                            urlShareApiUrl,
+                            appendSharedQuery(urlShareApiUrl),
                             buildPostOptions({ path: selectedEntry.path, enabled: enabled })
                         );
                         await refreshCurrentDirectory();
@@ -5710,7 +5752,7 @@
                     shareUrl: initialShareUrl,
                     onToggle: async function (enabled) {
                         const data = await requestJson(
-                            urlShareApiUrl,
+                            appendSharedQuery(urlShareApiUrl),
                             buildPostOptions({ path: docPath, enabled: enabled })
                         );
                         if (!enabled) {
@@ -5819,7 +5861,7 @@
         const scopedHomeDir = normalizePath(root.dataset.scopedHomeDir || "", true);
         const isSuperuser = root.dataset.isSuperuser === "1";
         const handriveRootLabel = (root.dataset.handriveRootLabel || "HanDrive").trim() || "HanDrive";
-        const effectiveRootLabel = (isSuperuser && scopedHomeDir) ? "Hanplanet" : handriveRootLabel;
+        const effectiveRootLabel = handriveRootLabel;
 
         const rawDirectories = getJsonScriptData("handrive-directory-data", []);
         const directories = [];

@@ -59,6 +59,7 @@
         var flags = {
             open: false,
             download: false,
+            share: false,
             upload: false,
             edit: false,
             rename: false,
@@ -114,6 +115,7 @@
 
         flags.open = !isCurrentFolder;
         flags.download = !isCurrentFolder && !isDirectory;
+        flags.share = !isCurrentFolder && canEditEntry && !isGitVirtualEntry;
         flags.upload = isDirectory && canWriteChildren && !hasGitRepo;
         flags.edit = !isDirectory && canShowEditEntry;
         flags.rename = !isCurrentFolder && canEditEntry && !isPublicWriteFile && !hasGitRepo;

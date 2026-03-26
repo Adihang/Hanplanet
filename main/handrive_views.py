@@ -1124,6 +1124,11 @@ def render_handrive_content(
     markdown/plain text/media/office 렌더 경로를 한곳에서 통합하고,
     필요하면 source bytes 와 HTML companion asset 도 함께 사용한다.
     """
+    if request is not None and not (share_owner and share_slug):
+        shared_context = get_handrive_shared_access_context(request)
+        if shared_context:
+            share_owner = shared_context["owner_username"]
+            share_slug = shared_context["share_slug"]
     profile = resolve_handrive_render_profile(file_extension)
     if profile["css_class"] == "handrive-html":
         resolved_companion_css = companion_css or ""
@@ -1331,6 +1336,71 @@ def is_handrive_url_only_enabled(request, path_value: str | None) -> bool:
     )
 
 
+def get_handrive_shared_access_context(request):
+    """현재 요청이 유효한 HanDrive 공유 링크 컨텍스트인지 반환한다."""
+    cached = getattr(request, "_handrive_shared_access_context", None)
+    if cached is not None:
+        return cached
+
+    owner_username = str(
+        getattr(request, "_handrive_shared_owner_username", "")
+        or request.GET.get("share_owner", "")
+        or ""
+    ).strip()
+    share_slug = str(
+        getattr(request, "_handrive_shared_slug", "")
+        or request.GET.get("share_slug", "")
+        or ""
+    ).strip()
+
+    if not owner_username or not share_slug:
+        setattr(request, "_handrive_shared_access_context", False)
+        return None
+
+    shared_link = HandriveSharedLink.objects.select_related("owner").filter(
+        owner__username=owner_username,
+        share_slug=share_slug,
+    ).first()
+    if shared_link is None or not is_handrive_url_only_enabled(request, shared_link.path):
+        setattr(request, "_handrive_shared_access_context", False)
+        return None
+
+    try:
+        target_path, normalized_path = resolve_path(shared_link.path, must_exist=True)
+    except (ValueError, FileNotFoundError):
+        shared_link.delete()
+        setattr(request, "_handrive_shared_access_context", False)
+        return None
+
+    context = {
+        "owner_username": owner_username,
+        "share_slug": share_slug,
+        "shared_link": shared_link,
+        "root_path": normalized_path,
+        "target_path": target_path,
+        "is_dir": target_path.is_dir(),
+    }
+    setattr(request, "_handrive_shared_access_context", context)
+    return context
+
+
+def has_handrive_shared_read_access(request, path_value: str | None) -> bool:
+    """공유 링크 컨텍스트에서 현재 경로 읽기가 허용되는지 판정한다."""
+    shared_context = get_handrive_shared_access_context(request)
+    if not shared_context:
+        return False
+
+    normalized_path = normalize_relative_path(path_value, allow_empty=True)
+    shared_root = str(shared_context["root_path"] or "").strip()
+    if not shared_root:
+        return False
+    if normalized_path == shared_root:
+        return True
+    if not shared_context["is_dir"]:
+        return False
+    return normalized_path.startswith(shared_root + "/")
+
+
 def get_write_acl_display_labels(request, path_value: str | None) -> list[str]:
     """쓰기 권한 배지에 노출할 사용자/그룹 라벨을 만든다."""
     rule, _ = get_effective_handrive_acl_rule(request, path_value)
@@ -1405,6 +1475,8 @@ def user_matches_handrive_acl_rule(
 
 def has_handrive_read_access(request, path_value: str | None) -> bool:
     """주어진 경로를 읽을 수 있는지 최종 판정한다."""
+    if has_handrive_shared_read_access(request, path_value):
+        return True
     user = getattr(request, "user", None)
     if user and user.is_superuser:
         return True
@@ -1603,7 +1675,7 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                 can_read = has_handrive_read_access(request, entry["path"])
                 if not can_read and not can_edit:
                     continue
-                if is_handrive_url_only_enabled(request, entry["path"]) and not can_edit:
+                if is_handrive_url_only_enabled(request, entry["path"]) and not can_edit and not has_handrive_shared_read_access(request, entry["path"]):
                     continue
             if request is not None:
                 is_git_repo_root = is_handrive_git_repo_root_path(request, entry["path"])
@@ -1613,6 +1685,14 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                 entry["is_public_write"] = False
                 entry["is_url_only"] = is_handrive_url_only_enabled(request, entry["path"])
                 entry["write_acl_labels"] = get_write_acl_display_labels(request, entry["path"])
+                entry["share_url"] = ""
+                if entry["is_url_only"]:
+                    _link = HandriveSharedLink.objects.select_related("owner").filter(path=entry["path"]).first()
+                    if _link:
+                        _ui_lang = resolve_ui_lang(request, getattr(getattr(request, "resolver_match", None), "kwargs", {}).get("ui_lang"))
+                        entry["share_url"] = request.build_absolute_uri(
+                            build_handrive_shared_view_url(_ui_lang, _link.owner.username, _link.share_slug)
+                        )
             entries.append(entry)
             existing_entry_paths.add(entry["path"])
             continue
@@ -1625,7 +1705,7 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                 can_read = has_handrive_read_access(request, entry["path"])
                 if not can_read and not can_edit:
                     continue
-                if is_handrive_url_only_enabled(request, entry["path"]) and not can_edit:
+                if is_handrive_url_only_enabled(request, entry["path"]) and not can_edit and not has_handrive_shared_read_access(request, entry["path"]):
                     continue
             if request is not None:
                 entry["can_edit"] = can_edit
@@ -2887,6 +2967,13 @@ def build_handrive_shared_view_url(ui_lang: str | None, owner_username: str, sha
     return reverse("main:handrive_shared_view", kwargs={"owner_username": owner_username, "share_slug": share_slug})
 
 
+def append_handrive_share_query(url: str, owner_username: str = "", share_slug: str = "") -> str:
+    if not owner_username or not share_slug:
+        return url
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}share_owner={quote(owner_username)}&share_slug={quote(share_slug)}"
+
+
 def build_handrive_share_slug(relative_path: str) -> str:
     base_name = Path(markdown_slug_from_relative(relative_path)).name.strip()
     return base_name or "document"
@@ -3951,10 +4038,11 @@ def handrive_list(request, folder_path="", ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
+    shared_context = get_handrive_shared_access_context(request)
     is_superuser = bool(getattr(request.user, "is_superuser", False))
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     requested_dir = normalize_relative_path(folder_path, allow_empty=True)
-    if scoped_home_dir:
+    if scoped_home_dir and not shared_context:
         ensure_scoped_home_dir(scoped_home_dir)
         if not requested_dir:
             if resolved_lang in SUPPORTED_UI_LANGS:
@@ -4007,6 +4095,14 @@ def handrive_list(request, folder_path="", ui_lang=None):
     if not has_handrive_read_access(request, current_dir):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
 
+    shared_root_url = context["handrive_root_url"]
+    if shared_context:
+        shared_root_url = build_handrive_shared_view_url(
+            resolved_lang,
+            shared_context["owner_username"],
+            shared_context["share_slug"],
+        )
+
     current_dir_commit_meta = {"subject": "", "author_username": ""}
     if git_virtual is not None and git_virtual["kind"] == "branch_dir" and git_virtual["repo_relative_path"]:
         current_dir_commit_meta = _git_repo_latest_commit_meta(
@@ -4014,6 +4110,26 @@ def handrive_list(request, folder_path="", ui_lang=None):
             git_virtual["branch_name"],
             git_virtual["repo_relative_path"],
         )
+
+    breadcrumbs = _build_git_virtual_breadcrumbs(
+        request,
+        context["handrive_base_url"],
+        current_dir,
+        scoped_home_dir=scoped_home_dir,
+        root_url=shared_root_url,
+    )
+    if shared_context:
+        breadcrumbs = [
+            {
+                **crumb,
+                "url": append_handrive_share_query(
+                    crumb["url"],
+                    shared_context["owner_username"],
+                    shared_context["share_slug"],
+                ),
+            }
+            for crumb in breadcrumbs
+        ]
 
     context.update(
         {
@@ -4035,17 +4151,17 @@ def handrive_list(request, folder_path="", ui_lang=None):
             ),
             "current_dir_git_commit_message": current_dir_commit_meta.get("subject", ""),
             "current_dir_git_commit_author_username": current_dir_commit_meta.get("author_username", ""),
-            "breadcrumbs": _build_git_virtual_breadcrumbs(
-                request,
-                context["handrive_base_url"],
-                current_dir,
-                scoped_home_dir=scoped_home_dir,
-                root_url=context["handrive_root_url"],
-            ),
+            "breadcrumbs": breadcrumbs,
             "initial_entries": initial_entries,
             "current_dir_git_repo": _get_current_dir_git_repo(request, current_dir),
             "list_current_dir_size_display": current_dir_size_display,
             "page_help_html": build_page_help_html(resolved_lang, "list", handrive_text),
+            "hide_global_nav": bool(shared_context),
+            "is_handrive_shared_view": bool(shared_context),
+            "handrive_shared_owner_username": shared_context["owner_username"] if shared_context else "",
+            "handrive_shared_slug": shared_context["share_slug"] if shared_context else "",
+            "handrive_shared_root_path": shared_context["root_path"] if shared_context else "",
+            "handrive_root_url": shared_root_url,
         }
     )
     return render(request, "handrive/list.html", context)
@@ -4057,6 +4173,7 @@ def handrive_view(request, doc_path, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
+    shared_context = get_handrive_shared_access_context(request)
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     is_superuser = bool(getattr(request.user, "is_superuser", False))
 
@@ -4135,7 +4252,7 @@ def handrive_view(request, doc_path, ui_lang=None):
                 relative_path=relative_file_path,
                 request=request,
             )
-    if not is_superuser and not is_path_in_handrive_scope(relative_file_path, scoped_home_dir):
+    if not shared_context and not is_superuser and not is_path_in_handrive_scope(relative_file_path, scoped_home_dir):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
     if not has_handrive_read_access(request, relative_file_path):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
@@ -4153,6 +4270,34 @@ def handrive_view(request, doc_path, ui_lang=None):
                 build_handrive_shared_view_url(resolved_lang, _shared_link.owner.username, _shared_link.share_slug)
             )
 
+    shared_root_url = context["handrive_root_url"]
+    if shared_context:
+        shared_root_url = build_handrive_shared_view_url(
+            resolved_lang,
+            shared_context["owner_username"],
+            shared_context["share_slug"],
+        )
+
+    view_breadcrumbs = _build_git_virtual_breadcrumbs(
+        request,
+        context["handrive_base_url"],
+        parent_dir,
+        scoped_home_dir=scoped_home_dir,
+        root_url=shared_root_url,
+    )
+    if shared_context:
+        view_breadcrumbs = [
+            {
+                **crumb,
+                "url": append_handrive_share_query(
+                    crumb["url"],
+                    shared_context["owner_username"],
+                    shared_context["share_slug"],
+                ),
+            }
+            for crumb in view_breadcrumbs
+        ]
+
     context.update(
         {
             "doc_title": file_name,
@@ -4167,16 +4312,16 @@ def handrive_view(request, doc_path, ui_lang=None):
             "doc_content_html": rendered_content_html,
             "doc_content_mode": render_profile["mode"],
             "doc_content_class": render_profile["css_class"],
-            "view_breadcrumbs": _build_git_virtual_breadcrumbs(
-                request,
-                context["handrive_base_url"],
-                parent_dir,
-                scoped_home_dir=scoped_home_dir,
-                root_url=context["handrive_root_url"],
-            ),
+            "view_breadcrumbs": view_breadcrumbs,
             "view_current_file_name": file_name,
             "view_current_file_size_display": file_size_display,
             "page_help_html": build_page_help_html(resolved_lang, "view", handrive_text),
+            "hide_global_nav": bool(shared_context),
+            "is_handrive_shared_view": bool(shared_context),
+            "handrive_shared_owner_username": shared_context["owner_username"] if shared_context else "",
+            "handrive_shared_slug": shared_context["share_slug"] if shared_context else "",
+            "handrive_shared_root_path": shared_context["root_path"] if shared_context else "",
+            "handrive_root_url": shared_root_url,
         }
     )
     return render(request, "handrive/view.html", context)
@@ -4184,10 +4329,6 @@ def handrive_view(request, doc_path, ui_lang=None):
 
 @with_request_handrive_root
 def handrive_shared_view(request, owner_username, share_slug, ui_lang=None):
-    resolved_lang = resolve_ui_lang(request, ui_lang)
-    context = handrive_common_context(request, resolved_lang)
-    handrive_text = context["handrive_text"]
-
     shared_link = HandriveSharedLink.objects.select_related("owner").filter(
         owner__username=owner_username,
         share_slug=share_slug,
@@ -4197,18 +4338,29 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None):
     if not is_handrive_url_only_enabled(request, shared_link.path):
         raise Http404("공유 문서를 찾을 수 없습니다.")
 
+    setattr(request, "_handrive_shared_owner_username", owner_username)
+    setattr(request, "_handrive_shared_slug", share_slug)
+    setattr(request, "_handrive_shared_access_context", None)
+
     try:
-        file_path, relative_file_path = normalize_handrive_relative_path(shared_link.path, must_exist=True)
+        target_path, relative_path = resolve_path(shared_link.path, must_exist=True)
     except (ValueError, FileNotFoundError):
         shared_link.delete()
         raise Http404("공유 문서를 찾을 수 없습니다.")
 
-    content = load_handrive_source_content(file_path, request=request, relative_path=relative_file_path)
+    if target_path.is_dir():
+        return handrive_list(request, folder_path=relative_path, ui_lang=ui_lang)
+
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    context = handrive_common_context(request, resolved_lang)
+    handrive_text = context["handrive_text"]
+
+    content = load_handrive_source_content(target_path, request=request, relative_path=relative_path)
     rendered_content_html, render_profile = render_handrive_content(
         content,
-        file_path.suffix.lower(),
-        source_path=file_path,
-        relative_path=relative_file_path,
+        target_path.suffix.lower(),
+        source_path=target_path,
+        relative_path=relative_path,
         request=request,
         share_owner=owner_username,
         share_slug=share_slug,
@@ -4216,7 +4368,7 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None):
 
     context.update(
         {
-            "doc_title": file_path.name,
+            "doc_title": target_path.name,
             "doc_relative_path": "",
             "doc_slug_path": share_slug,
             "doc_parent_dir": "",
@@ -4233,8 +4385,8 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None):
                     "url": build_handrive_shared_view_url(resolved_lang, owner_username, share_slug),
                 }
             ],
-            "view_current_file_name": file_path.name,
-            "view_current_file_size_display": format_handrive_bytes_display(file_path.stat().st_size) if file_path.exists() else "",
+            "view_current_file_name": target_path.name,
+            "view_current_file_size_display": format_handrive_bytes_display(target_path.stat().st_size) if target_path.exists() else "",
             "page_help_html": build_page_help_html(resolved_lang, "view", handrive_text),
         }
     )
@@ -4591,10 +4743,12 @@ def handrive_api_url_share(request):
     except (ValueError, FileNotFoundError) as exc:
         return json_error(str(exc), status=400)
 
-    if not target_path_obj.is_file():
-        return json_error("파일만 url공유를 설정할 수 있습니다.", status=400)
-    if not has_handrive_write_access(request, rel_path):
-        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+    if target_path_obj.is_dir():
+        if not has_handrive_write_access(request, rel_path):
+            return json_error("폴더를 수정할 권한이 없습니다.", status=403)
+    else:
+        if not has_handrive_write_access(request, rel_path):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
     if not request.user.is_authenticated:
         return json_error("로그인한 사용자만 url공유를 설정할 수 있습니다.", status=403)
 
@@ -5597,6 +5751,7 @@ def handrive_api_upload_cancel(request):
 @with_request_handrive_root
 def handrive_api_preview(request):
     """목록 우측 미리보기 패널에서 사용할 HTML 조각을 반환한다."""
+    shared_context = get_handrive_shared_access_context(request)
     try:
         payload = parse_json_body(request)
         preview_relative_path = normalize_relative_path(payload.get("path"), allow_empty=True)
@@ -5634,6 +5789,8 @@ def handrive_api_preview(request):
                             source_path=file_path,
                             relative_path=relative_file_path,
                             request=request,
+                            share_owner=shared_context["owner_username"] if shared_context else "",
+                            share_slug=shared_context["share_slug"] if shared_context else "",
                         )
                     except Http404:
                         rendered_html = render_handrive_unsupported_safely(file_path.name, file_extension)
@@ -5653,6 +5810,8 @@ def handrive_api_preview(request):
                         source_path=Path(title),
                         relative_path=relative_file_path,
                         request=request,
+                        share_owner=shared_context["owner_username"] if shared_context else "",
+                        share_slug=shared_context["share_slug"] if shared_context else "",
                     )
                 else:
                     repo_file_bytes = _git_repo_read_file_bytes(
@@ -5677,6 +5836,8 @@ def handrive_api_preview(request):
                         companion_js=companion_js,
                         relative_path=relative_file_path,
                         request=request,
+                        share_owner=shared_context["owner_username"] if shared_context else "",
+                        share_slug=shared_context["share_slug"] if shared_context else "",
                     )
             return JsonResponse(
                 {
@@ -5958,17 +6119,7 @@ def handrive_api_download(request):
             )
         )
 
-    share_owner = request.GET.get("share_owner", "").strip()
-    share_slug = request.GET.get("share_slug", "").strip()
-    if share_owner and share_slug:
-        shared_link = HandriveSharedLink.objects.select_related("owner").filter(
-            owner__username=share_owner,
-            share_slug=share_slug,
-            path=rel_path,
-        ).first()
-        if shared_link is None:
-            raise PermissionDenied("파일을 볼 권한이 없습니다.")
-    elif not has_handrive_read_access(request, rel_path):
+    if not has_handrive_read_access(request, rel_path):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
 
     return FileResponse(file_handle, as_attachment=True, filename=filename)

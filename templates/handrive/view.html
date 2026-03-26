@@ -41,7 +41,7 @@
                         <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="4" r="2"/><circle cx="15" cy="16" r="2"/><circle cx="5" cy="10" r="2"/><line x1="7" y1="9" x2="13" y2="5"/><line x1="7" y1="11" x2="13" y2="15"/></svg>
                     </button>
                 {% endif %}
-                <a class="handrive-icon-btn" href="{{ handrive_api_download_url }}?path={{ doc_relative_path|urlencode }}" aria-label="{{ handrive_text.download_button }}" title="{{ handrive_text.download_button }}">
+                <a class="handrive-icon-btn" href="{{ handrive_api_download_url }}?path={{ doc_relative_path|urlencode }}{% if handrive_shared_owner_username and handrive_shared_slug %}&share_owner={{ handrive_shared_owner_username|urlencode }}&share_slug={{ handrive_shared_slug|urlencode }}{% endif %}" aria-label="{{ handrive_text.download_button }}" title="{{ handrive_text.download_button }}">
                     <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" y1="3" x2="10" y2="13"/><polyline points="6,9 10,13 14,9"/><line x1="4" y1="17" x2="16" y2="17"/></svg>
                 </a>
                 {% include "handrive/_auth_button.html" %}
@@ -72,6 +72,9 @@
     data-doc-share-url="{{ doc_share_url }}"
     data-parent-dir="{{ doc_parent_dir }}"
     data-ui-lang="{{ ui_lang|default:'ko' }}"
+    data-handrive-shared-owner-username="{{ handrive_shared_owner_username|default:'' }}"
+    data-handrive-shared-slug="{{ handrive_shared_slug|default:'' }}"
+    data-handrive-shared-root-path="{{ handrive_shared_root_path|default:'' }}"
 >
     <div class="handrive-view-zoom" id="handrive-view-zoom" hidden>
         <button class="handrive-view-zoom-btn" type="button" id="handrive-view-zoom-out" aria-label="{{ handrive_text.zoom_out_button }}">

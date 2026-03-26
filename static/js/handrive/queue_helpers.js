@@ -313,6 +313,7 @@
 
         var contextOpenButton = buttons.open || null;
         var contextDownloadButton = buttons.download || null;
+        var contextShareButton = buttons.share || null;
         var contextUploadButton = buttons.upload || null;
         var contextEditButton = buttons.edit || null;
         var contextRenameButton = buttons.rename || null;
@@ -329,6 +330,7 @@
 
         setContextButtonVisible(contextOpenButton, false);
         setContextButtonVisible(contextDownloadButton, false);
+        setContextButtonVisible(contextShareButton, false);
         setContextButtonVisible(contextUploadButton, false);
         setContextButtonVisible(contextEditButton, false);
         setContextButtonVisible(contextRenameButton, false);

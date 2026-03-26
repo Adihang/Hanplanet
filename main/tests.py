@@ -1763,6 +1763,57 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(payload["share_slug"], "public")
         self.assertTrue(payload["share_url"].endswith("/ko/handrive/share/url_share_api_editor/public"))
 
+    def test_folder_url_share_link_renders_shared_list_and_allows_descendant_download(self):
+        editor = self.create_handrive_editor("folder_share_editor")
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        shared_dir = handrive_root / "shared_folder"
+        shared_dir.mkdir(parents=True, exist_ok=True)
+        (shared_dir / "child.md").write_text("# child", encoding="utf-8")
+
+        self.client.force_login(editor)
+        response = self.client.post(
+            reverse("main:handrive_api_url_share"),
+            data=json.dumps({"path": "shared_folder", "enabled": True}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["owner_username"], "folder_share_editor")
+        self.assertTrue(payload["share_slug"])
+        self.assertTrue(
+            payload["share_url"].endswith(
+                f"/ko/handrive/share/{payload['owner_username']}/{payload['share_slug']}"
+            )
+        )
+
+        self.client.logout()
+
+        shared_list = self.client.get(payload["share_url"], follow=True)
+        self.assertEqual(shared_list.status_code, 200)
+        self.assertTrue(any(template.name == "handrive/list.html" for template in shared_list.templates))
+        self.assertEqual(shared_list.context["current_dir"], "shared_folder")
+
+        direct_list = self.client.get("/ko/handrive/shared_folder/list/")
+        self.assertIn(direct_list.status_code, {302, 403})
+
+        download_response = self.client.get(
+            reverse("main:handrive_api_download"),
+            data={
+                "path": "shared_folder/child.md",
+                "share_owner": payload["owner_username"],
+                "share_slug": payload["share_slug"],
+            },
+        )
+        self.assertEqual(download_response.status_code, 200)
+        self.assertEqual(b"".join(download_response.streaming_content), b"# child")
+
+        blocked_download = self.client.get(
+            reverse("main:handrive_api_download"),
+            data={"path": "shared_folder/child.md"},
+        )
+        self.assertEqual(blocked_download.status_code, 403)
+
     def test_handrive_root_for_superuser_defaults_to_user_folder(self):
         admin_user = self.user_model.objects.create_user(
             username="handrive_superuser_root",

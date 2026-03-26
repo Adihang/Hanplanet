@@ -390,7 +390,7 @@ body.theme-dark .leaflet-container {
 <div class="map-name-popup-overlay" id="map-name-popup-overlay" hidden>
     <div class="map-name-popup">
         <h4 id="map-name-popup-title">이름 입력</h4>
-        <input type="text" id="map-name-popup-input" placeholder="이름을 입력하세요" autocomplete="off">
+        <input type="text" id="map-name-popup-input" placeholder="{{ handrive_text.map_name_placeholder }}" autocomplete="off">
         <div class="map-name-popup-actions">
             <button type="button" class="ui-btn" id="map-name-popup-cancel">취소</button>
             <button type="button" class="ui-btn ui-btn-primary" id="map-name-popup-confirm">확인</button>
@@ -403,7 +403,7 @@ body.theme-dark .leaflet-container {
     <div class="map-name-popup">
         <h4>마커 정보</h4>
         <label style="font-size:0.82em;display:block;margin-bottom:6px;">이름
-            <input type="text" id="map-marker-popup-name" placeholder="마커 이름" autocomplete="off" style="margin-top:4px;">
+            <input type="text" id="map-marker-popup-name" placeholder="{{ handrive_text.map_marker_name_placeholder }}" autocomplete="off" style="margin-top:4px;">
         </label>
         <div class="map-name-popup-actions">
             <button type="button" class="ui-btn ui-btn-danger" id="map-marker-popup-delete" style="margin-right:auto;color:#e53935;">삭제</button>

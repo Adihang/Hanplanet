@@ -30,7 +30,7 @@ import uuid
 from contextvars import ContextVar
 from functools import wraps
 from pathlib import Path
-from urllib.parse import quote, urlparse, unquote
+from urllib.parse import parse_qs, quote, urlparse, unquote
 import httpx
 
 from django import forms
@@ -71,6 +71,8 @@ from portfolio.models import PortfolioProfile
 
 logger = logging.getLogger(__name__)
 GIT_BIN = "/usr/bin/git"
+FORGEJO_SESSION_HELPER_BINARY_NAME = "hanplanet_forgejo_session_blob"
+FORGEJO_AUTH_ERROR_CODE = "FORGEJO"
 
 DOCS_FILE_EXTENSION = ".md"
 DOCS_ALLOWED_FILE_EXTENSIONS = (
@@ -96,8 +98,8 @@ HANDRIVE_EDITOR_GROUP_NAME = "HandriveEditors"
 DOCS_EDIT_PERMISSION_CODE = "main.can_edit_docs"
 DOCS_PUBLIC_WRITE_GROUP_NAME = "__DOCS_PUBLIC_ALL__"
 DOCS_URL_ONLY_GROUP_NAME = "url-only"
-DOCS_META_TITLE = "HanDrive"
-DOCS_META_DESCRIPTION = "HanDrive workspace"
+DOCS_META_TITLE = "Hanplanet"
+DOCS_META_DESCRIPTION = "Hanplanet workspace"
 DOCS_LOGIN_CAPTCHA_THRESHOLD = 1
 DOCS_UPLOAD_RATE_LIMIT_BYTES_PER_SECOND = 10 * 1024 * 1024
 DOCS_USER_SCOPED_QUOTA_BYTES = 1024 * 1024 * 1024  # 기본값 1GB
@@ -159,11 +161,16 @@ DOCS_RENDER_MODE_MEDIA_IMAGE = "media_image"
 DOCS_RENDER_MODE_MEDIA_VIDEO = "media_video"
 DOCS_RENDER_MODE_MEDIA_AUDIO = "media_audio"
 DOCS_RENDER_MODE_OFFICE = "office"
+DOCS_RENDER_MODE_UNSUPPORTED = "unsupported"
 HANDRIVE_ACTIVE_ROOT_DIR: ContextVar[Path | None] = ContextVar("handrive_active_root_dir", default=None)
 HANDRIVE_ACTIVE_REQUEST: ContextVar[object | None] = ContextVar("handrive_active_request", default=None)
 DOCS_DEFAULT_RENDER_PROFILE = {
     "mode": DOCS_RENDER_MODE_PLAIN_TEXT,
     "css_class": "handrive-plain-text",
+}
+DOCS_UNSUPPORTED_RENDER_PROFILE = {
+    "mode": DOCS_RENDER_MODE_UNSUPPORTED,
+    "css_class": "handrive-unsupported",
 }
 DOCS_RENDER_PROFILES_BY_EXTENSION = {
     DOCS_FILE_EXTENSION: {
@@ -304,9 +311,11 @@ DOCS_NON_EDITABLE_MEDIA_MODES = {
 
 DOCS_TEXT = {
     "ko": {
-        "list_title": "HanDrive",
+        "list_title": "Files",
         "write_button": "작성",
         "help_button": "도움말",
+        "search_button": "검색",
+        "search_placeholder": "파일 검색",
         "list_aria_label": "목록",
         "menu_open": "열기",
         "menu_download": "다운로드",
@@ -315,7 +324,7 @@ DOCS_TEXT = {
         "menu_permissions": "권한",
         "menu_edit": "수정",
         "menu_delete": "삭제",
-        "menu_delete_repo": "Repo 삭제",
+        "menu_delete_repo": "Delete Repo",
         "menu_new_folder": "새 폴더",
         "menu_new_document": "새 파일",
         "rename_title": "이름 바꾸기",
@@ -339,7 +348,7 @@ DOCS_TEXT = {
         "apply": "변경",
         "edit_button": "수정",
         "delete_button": "삭제",
-        "delete_repo_button": "Repo 삭제",
+        "delete_repo_button": "Delete Repo",
         "download_button": "다운로드",
         "write_title_edit": "수정",
         "write_title_create": "새 파일",
@@ -365,15 +374,15 @@ DOCS_TEXT = {
         "editor_snippet_py_ifmain": "실행 블록",
         "editor_snippet_py_comment": "주석",
         "editor_snippet_js_function": "함수 템플릿",
-        "editor_snippet_js_if": "if 문",
+        "editor_snippet_js_if": "If Statement",
         "editor_snippet_js_comment": "주석",
         "editor_snippet_css_rule": "선택자 블록",
         "editor_snippet_css_media": "미디어 쿼리",
-        "editor_snippet_css_var": "CSS 변수",
+        "editor_snippet_css_var": "CSS Variable",
         "editor_snippet_json_pair": "키-값 항목",
         "editor_snippet_json_object": "객체 템플릿",
-        "editor_snippet_html_basic": "HTML 기본 구조",
-        "editor_snippet_html_div": "div 블록",
+        "editor_snippet_html_basic": "Basic HTML Structure",
+        "editor_snippet_html_div": "div Block",
         "markdown_placeholder_heading": "제목",
         "markdown_placeholder_bold": "강조 텍스트",
         "markdown_placeholder_italic": "기울임 텍스트",
@@ -406,6 +415,8 @@ DOCS_TEXT = {
         "file_extension_quick_label": "확장자 빠른 선택",
         "file_extension_custom_option": "직접 입력",
         "file_extension_placeholder": ".md",
+        "zoom_out_button": "축소",
+        "zoom_in_button": "확대",
         "content_label": "내용",
         "save_location_title": "저장 위치 선택",
         "close_label": "닫기",
@@ -419,6 +430,11 @@ DOCS_TEXT = {
         "folder_modal_title": "새 폴더 생성",
         "folder_name_label": "폴더명",
         "folder_name_placeholder": "폴더명 입력",
+        "branch_name_placeholder": "e.g. feature/my-work",
+        "map_create_placeholder": "지도 이름을 입력하세요",
+        "git_repo_name_placeholder": "my-repo (letters, numbers, ., -, _)",
+        "map_name_placeholder": "이름을 입력하세요",
+        "map_marker_name_placeholder": "마커 이름",
         "create_button": "생성",
         "create_folder_in_label": "생성 위치",
         "permission_title": "권한 설정",
@@ -427,9 +443,9 @@ DOCS_TEXT = {
         "permission_write_users": "쓰기 사용자",
         "permission_write_groups": "쓰기 그룹",
         "url_share_button": "공유",
-        "url_unshare_button": "url공유해제",
+        "url_unshare_button": "Disable URL Sharing",
         "url_share_title": "공유",
-        "url_share_enabled_label": "URL 공유",
+        "url_share_enabled_label": "URL Sharing",
         "url_share_label": "URL",
         "url_share_copy_button": "복사",
         "url_share_copied": "복사됨",
@@ -485,13 +501,13 @@ DOCS_TEXT = {
         "auth_logout_button": "로그아웃",
         "admin_button": "Admin",
         "ops_apply_static_and_restart_button": "Apply Static + Restart Gunicorn",
-        "auth_login_title": "HanDrive 로그인",
+        "auth_login_title": "Hanplanet Login",
         "auth_username_label": "아이디",
         "auth_password_label": "비밀번호",
         "auth_login_submit": "로그인",
         "auth_signup_button": "회원가입",
         "auth_previous_page": "이전 페이지",
-        "auth_signup_title": "HanDrive 회원가입",
+        "auth_signup_title": "Hanplanet Sign Up",
         "auth_signup_submit": "가입하기",
         "auth_name_label": "이름",
         "auth_email_label": "이메일 주소",
@@ -512,6 +528,8 @@ DOCS_TEXT = {
         "list_title": "Files",
         "write_button": "Write",
         "help_button": "Help",
+        "search_button": "Search",
+        "search_placeholder": "Search files",
         "list_aria_label": "File list",
         "menu_open": "Open",
         "menu_download": "Download",
@@ -560,15 +578,15 @@ DOCS_TEXT = {
         "editor_snippet_py_ifmain": "Run Block",
         "editor_snippet_py_comment": "Comment",
         "editor_snippet_js_function": "Function Template",
-        "editor_snippet_js_if": "If Statement",
+        "editor_snippet_js_if": "if 문",
         "editor_snippet_js_comment": "Comment",
         "editor_snippet_css_rule": "Selector Block",
         "editor_snippet_css_media": "Media Query",
-        "editor_snippet_css_var": "CSS Variable",
+        "editor_snippet_css_var": "CSS 변수",
         "editor_snippet_json_pair": "Key-Value Pair",
         "editor_snippet_json_object": "Object Template",
-        "editor_snippet_html_basic": "Basic HTML",
-        "editor_snippet_html_div": "div Block",
+        "editor_snippet_html_basic": "HTML 기본 구조",
+        "editor_snippet_html_div": "div 블록",
         "markdown_placeholder_heading": "Heading",
         "markdown_placeholder_bold": "bold text",
         "markdown_placeholder_italic": "italic text",
@@ -601,6 +619,8 @@ DOCS_TEXT = {
         "file_extension_quick_label": "Extension quick pick",
         "file_extension_custom_option": "Custom input",
         "file_extension_placeholder": ".md",
+        "zoom_out_button": "Zoom out",
+        "zoom_in_button": "Zoom in",
         "content_label": "Content",
         "save_location_title": "Choose Save Location",
         "close_label": "Close",
@@ -614,6 +634,11 @@ DOCS_TEXT = {
         "folder_modal_title": "Create Folder",
         "folder_name_label": "Folder name",
         "folder_name_placeholder": "Enter folder name",
+        "branch_name_placeholder": "e.g. feature/my-work",
+        "map_create_placeholder": "Enter map name",
+        "git_repo_name_placeholder": "my-repo (letters, numbers, ., -, _)",
+        "map_name_placeholder": "Enter a name",
+        "map_marker_name_placeholder": "Marker name",
         "create_button": "Create",
         "create_folder_in_label": "Create in",
         "permission_title": "Access Control",
@@ -622,9 +647,9 @@ DOCS_TEXT = {
         "permission_write_users": "Write Users",
         "permission_write_groups": "Write Groups",
         "url_share_button": "Share",
-        "url_unshare_button": "Unshare URL",
+        "url_unshare_button": "Disable URL Sharing",
         "url_share_title": "Share",
-        "url_share_enabled_label": "Share via URL",
+        "url_share_enabled_label": "URL Sharing",
         "url_share_label": "URL",
         "url_share_copy_button": "Copy",
         "url_share_copied": "Copied",
@@ -690,13 +715,13 @@ DOCS_TEXT = {
         "auth_logout_button": "Logout",
         "admin_button": "Admin",
         "ops_apply_static_and_restart_button": "Apply Static + Restart Gunicorn",
-        "auth_login_title": "HanDrive Login",
+        "auth_login_title": "Hanplanet Login",
         "auth_username_label": "Username",
         "auth_password_label": "Password",
         "auth_login_submit": "Login",
         "auth_signup_button": "Sign Up",
         "auth_previous_page": "Previous Page",
-        "auth_signup_title": "HanDrive Sign Up",
+        "auth_signup_title": "Hanplanet Sign Up",
         "auth_signup_submit": "Create account",
         "auth_name_label": "Name",
         "auth_email_label": "Email address",
@@ -724,12 +749,23 @@ def get_handrive_text(ui_lang: str | None) -> dict:
     return DOCS_TEXT[lang].copy()
 
 
+def _collect_allowed_return_hosts(request) -> set[str]:
+    """Hanplanet 인증 흐름에서 next 파라미터로 허용할 호스트를 모은다."""
+    allowed_hosts = {request.get_host()}
+
+    for candidate in (
+        getattr(settings, "PUBLIC_BASE_URL", ""),
+        getattr(settings, "PUBLIC_GIT_BASE_URL", ""),
+    ):
+        parsed = urlparse(str(candidate or "").strip())
+        if parsed.netloc:
+            allowed_hosts.add(parsed.netloc)
+
+    return {host for host in allowed_hosts if host}
+
+
 def get_request_handrive_root_dir(request=None) -> Path:
     """요청 사용자 기준 HanDrive root 를 계산한다."""
-    user = getattr(request, "user", None)
-    if user and user.is_authenticated and user.is_superuser:
-        return Path(settings.BASE_DIR).resolve()
-
     media_root = Path(settings.MEDIA_ROOT)
     root = media_root / "HanDrive"
     legacy_root = media_root / "docs"
@@ -930,6 +966,40 @@ def render_plain_text_safely(text: str) -> str:
     """plain text 를 안전한 ``pre/code`` HTML 로 감싼다."""
     escaped_text = escape(text or "")
     return mark_safe(f"<pre><code>{escaped_text}</code></pre>")
+
+
+_HANDRIVE_UNSUPPORTED_ICON_URLS: dict[str, str] = {
+    ".exe": "/static/icons/handrive/exe.svg",
+}
+
+_HANDRIVE_UNSUPPORTED_GENERIC_ICON = (
+    '<svg class="handrive-unsupported-icon" viewBox="0 0 24 24" width="48" height="48"'
+    ' fill="none" stroke="currentColor" stroke-width="1.5"'
+    ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>'
+    '<polyline points="14,2 14,8 20,8"/>'
+    "</svg>"
+)
+
+
+def render_handrive_unsupported_safely(file_name: str, file_extension: str = "") -> str:
+    """지원하지 않는 파일 형식을 아이콘 + 파일명으로 표시하는 HTML 조각을 반환한다."""
+    escaped_name = escape(str(file_name))
+    icon_url = _HANDRIVE_UNSUPPORTED_ICON_URLS.get(file_extension.lower() if file_extension else "")
+    if icon_url:
+        escaped_url = escape(icon_url)
+        icon_html = (
+            f'<img class="handrive-unsupported-icon handrive-unsupported-icon-img"'
+            f' src="{escaped_url}" width="64" height="64" alt="" aria-hidden="true">'
+        )
+    else:
+        icon_html = _HANDRIVE_UNSUPPORTED_GENERIC_ICON
+    return mark_safe(
+        f'<div class="handrive-unsupported-file">'
+        f"{icon_html}"
+        f'<span class="handrive-unsupported-name">{escaped_name}</span>'
+        f"</div>"
+    )
 
 
 def build_handrive_download_url(relative_path: str, share_owner: str = "", share_slug: str = "") -> str:
@@ -1840,7 +1910,7 @@ def _get_repo_restore_relative_path(owner, repo_name: str) -> str:
 
 def _get_repo_storage_path(owner, repo_name: str) -> Path:
     """Forgejo bare repo 의 실제 저장 경로를 반환한다."""
-    return (Path(settings.BASE_DIR) / "forgejo" / "data" / "repos" / owner.username / f"{repo_name}.git").resolve()
+    return (Path(settings.FORGEJO_REPOS_ROOT) / owner.username / f"{repo_name}.git").resolve()
 
 
 def _encode_git_branch_segment(branch_name: str) -> str:
@@ -2157,8 +2227,6 @@ def _build_git_virtual_breadcrumbs(request, base_url: str, current_path: str, *,
             scoped_home_dir=scoped_home_dir,
             root_label=get_handrive_root_label(request, scoped_home_dir),
             root_url=root_url,
-            include_root_parent=bool(getattr(request.user, "is_superuser", False) and scoped_home_dir),
-            root_parent_label=get_handrive_root_label(request, ""),
         )
 
     breadcrumbs = build_handrive_breadcrumbs(
@@ -2167,8 +2235,6 @@ def _build_git_virtual_breadcrumbs(request, base_url: str, current_path: str, *,
         scoped_home_dir=scoped_home_dir,
         root_label=get_handrive_root_label(request, scoped_home_dir),
         root_url=root_url,
-        include_root_parent=bool(getattr(request.user, "is_superuser", False) and scoped_home_dir),
-        root_parent_label=get_handrive_root_label(request, ""),
     )
     if context["kind"] == "repo_root":
         return breadcrumbs
@@ -2352,9 +2418,6 @@ def get_scoped_handrive_home_dir(request) -> str:
     if not username:
         return ""
     try:
-        # 어드민(superuser)의 root는 BASE_DIR이므로 media/HanDrive/users/{username} 경로를 사용
-        if user.is_superuser:
-            return normalize_relative_path(f"media/HanDrive/users/{username}", allow_empty=False)
         return normalize_relative_path(f"users/{username}", allow_empty=False)
     except ValueError:
         return ""
@@ -2365,12 +2428,6 @@ def get_handrive_initial_landing_dir(request) -> str:
     if not (user and user.is_authenticated):
         return get_scoped_handrive_home_dir(request)
     username = str(user.get_username() or "").strip()
-    if user.is_superuser and username:
-        try:
-            # 어드민(superuser)의 root는 BASE_DIR이므로 media/HanDrive/users/{username} 경로를 사용
-            return normalize_relative_path(f"media/HanDrive/users/{username}", allow_empty=False)
-        except ValueError:
-            return ""
     return get_scoped_handrive_home_dir(request)
 
 
@@ -2609,16 +2666,10 @@ def get_handrive_root_label(request, scoped_home_dir: str = "") -> str:
     if scoped_home_dir:
         home_parts = [part for part in scoped_home_dir.split("/") if part]
         return home_parts[-1] if home_parts else scoped_home_dir
-    user = getattr(request, "user", None)
-    if user and user.is_authenticated and user.is_superuser:
-        return "Hanplanet"
     return "HanDrive"
 
 
 def get_handrive_js_root_label(request, scoped_home_dir: str = "") -> str:
-    user = getattr(request, "user", None)
-    if user and user.is_authenticated and user.is_superuser:
-        return get_handrive_root_label(request, "")
     return get_handrive_root_label(request, scoped_home_dir)
 
 
@@ -2673,7 +2724,7 @@ def resolve_next_url(request, fallback_url: str) -> str:
     candidate = (request.POST.get("next") or request.GET.get("next") or "").strip()
     if candidate and url_has_allowed_host_and_scheme(
         url=candidate,
-        allowed_hosts={request.get_host()},
+        allowed_hosts=_collect_allowed_return_hosts(request),
         require_https=request.is_secure(),
     ):
         return candidate
@@ -2723,7 +2774,6 @@ def get_global_help_root() -> Path:
 
 def get_markdown_help_candidates(ui_lang: str | None) -> list[Path]:
     help_root = get_global_help_root()
-    handrive_root = handrive_root_dir()
     markdown_help_candidates: list[Path] = []
     if ui_lang == "en":
         markdown_help_candidates.append(help_root / MARKDOWN_HELP_FILENAME_EN)
@@ -2737,18 +2787,24 @@ def get_markdown_help_candidates(ui_lang: str | None) -> list[Path]:
         markdown_help_candidates.append(help_root / MARKDOWN_HELP_FILENAME_EN_DOT_LEGACY)
     markdown_help_candidates.append(help_root / MARKDOWN_HELP_FILENAME_LEGACY)
 
+    try:
+        handrive_root = handrive_root_dir()
+    except OSError:
+        handrive_root = None
+
     # Backward compatibility for older deployments that still have root-level help files.
-    if ui_lang == "en":
-        markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_EN)
-        markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_KO)
-        markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_EN_DOT_LEGACY)
-        markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_KO_DOT_LEGACY)
-    else:
-        markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_KO)
-        markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_EN)
-        markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_KO_DOT_LEGACY)
-        markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_EN_DOT_LEGACY)
-    markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_LEGACY)
+    if handrive_root is not None:
+        if ui_lang == "en":
+            markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_EN)
+            markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_KO)
+            markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_EN_DOT_LEGACY)
+            markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_KO_DOT_LEGACY)
+        else:
+            markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_KO)
+            markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_EN)
+            markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_KO_DOT_LEGACY)
+            markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_EN_DOT_LEGACY)
+        markdown_help_candidates.append(handrive_root / MARKDOWN_HELP_FILENAME_LEGACY)
     return markdown_help_candidates
 
 
@@ -2899,8 +2955,6 @@ def handrive_common_context(request, ui_lang):
         handrive_ops_apply_static_url = reverse("main:handrive_ops_apply_static")
     handrive_help_url = build_handrive_help_url(ui_lang, handrive_base_url)
     handrive_root_url = handrive_base_url
-    if request.user.is_authenticated and request.user.is_superuser:
-        handrive_root_url = f"{handrive_base_url}?root=1"
     if request.user.is_authenticated:
         profile = PortfolioProfile.objects.filter(user=request.user).only("profile_img").first()
         handrive_my_portfolio_url = reverse(
@@ -3061,9 +3115,6 @@ def handrive_csrf_failure(request, reason="", template_name="403_csrf.html"):
 @with_request_handrive_root
 def handrive_root(request, ui_lang=None):
     user = getattr(request, "user", None)
-    root_requested = str(request.GET.get("root", "") or "").strip().lower() in {"1", "true", "yes"}
-    if user and user.is_authenticated and user.is_superuser and root_requested:
-        return handrive_list(request, folder_path="", ui_lang=ui_lang)
     landing_dir = get_handrive_initial_landing_dir(request)
     if landing_dir:
         ensure_scoped_home_dir(landing_dir)
@@ -3214,6 +3265,9 @@ def _resolve_handrive_post_login_url(request, ui_lang: str | None, fallback_next
     else:
         lang_base = reverse("main:handrive_root")
 
+    if re.match(r"^/(?:(ko|en)/)?handrive/all/list/?$", fallback_path):
+        return lang_base
+
     landing_dir = get_handrive_initial_landing_dir(request)
     if user and user.is_authenticated and landing_dir:
         ensure_scoped_home_dir(landing_dir)
@@ -3272,19 +3326,6 @@ class HandriveSignupForm(UserCreationForm):
         return password
 
 
-def _trigger_gitea_password_sync(user, raw_password: str) -> None:
-    """로그인/회원가입 성공 후 Gitea 비밀번호를 비동기로 동기화.
-    GitUserMapping이 없는 유저(아직 git을 안 쓴 유저)는 조용히 스킵.
-    """
-    if not raw_password:
-        return
-    try:
-        from .git_tasks import sync_gitea_password
-        sync_gitea_password.delay(user.pk, raw_password)
-    except Exception:
-        pass  # Celery 없어도 로그인 막으면 안 됨
-
-
 def _ensure_forgejo_mapping_for_user(user):
     """Forgejo 계정이 없으면 만들고, GitUserMapping을 보장한다."""
     if not user or not user.is_authenticated:
@@ -3313,54 +3354,71 @@ def _ensure_forgejo_mapping_for_user(user):
     return mapping
 
 
+def _find_go_binary() -> str:
+    """Forgejo 세션 helper 빌드에 사용할 Go 바이너리 경로를 찾는다."""
+    go_bin = shutil.which("go")
+    if go_bin:
+        return go_bin
+
+    for candidate in ("/opt/homebrew/bin/go", "/usr/local/bin/go"):
+        if Path(candidate).exists():
+            return candidate
+
+    raise FileNotFoundError("go executable not found")
+
+
+def _forgejo_session_helper_source_path() -> Path:
+    return Path(settings.BASE_DIR) / "scripts" / "forgejo_session_blob.go"
+
+
+def _forgejo_session_helper_binary_path() -> Path:
+    return Path(tempfile.gettempdir()) / FORGEJO_SESSION_HELPER_BINARY_NAME
+
+
+def _ensure_forgejo_session_helper_binary() -> Path:
+    """고정 Go helper 바이너리를 준비한다. 소스가 바뀌면 다시 빌드한다."""
+    source_path = _forgejo_session_helper_source_path()
+    binary_path = _forgejo_session_helper_binary_path()
+
+    if not source_path.exists():
+        raise FileNotFoundError(f"forgejo session helper source missing: {source_path}")
+
+    needs_build = not binary_path.exists()
+    if not needs_build:
+        try:
+            needs_build = source_path.stat().st_mtime > binary_path.stat().st_mtime
+        except OSError:
+            needs_build = True
+
+    if not needs_build:
+        return binary_path
+
+    go_bin = _find_go_binary()
+    result = subprocess.run(
+        [go_bin, "build", "-o", str(binary_path), str(source_path)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "go build failed")
+    return binary_path
+
+
 def _build_forgejo_session_blob(user_id: int, username: str, has_two_factor_auth: bool = False) -> bytes | None:
     """Forgejo session 테이블에 넣을 gob blob을 생성한다."""
     if getattr(settings, "RUNNING_TESTS", False):
         return None
 
-    go_source = f"""
-package main
-
-import (
-    "bytes"
-    "encoding/base64"
-    "encoding/gob"
-    "fmt"
-)
-
-func main() {{
-    payload := map[interface{{}}]interface{{}}{{
-        "uid": int64({int(user_id)}),
-        "uname": {json.dumps(username)},
-        "userHasTwoFactorAuth": {str(bool(has_two_factor_auth)).lower()},
-    }}
-
-    var buf bytes.Buffer
-    if err := gob.NewEncoder(&buf).Encode(payload); err != nil {{
-        panic(err)
-    }}
-
-    fmt.Print(base64.StdEncoding.EncodeToString(buf.Bytes()))
-}}
-"""
-
-    helper_path = None
     try:
-        go_bin = shutil.which("go")
-        if not go_bin:
-            for candidate in ("/opt/homebrew/bin/go", "/usr/local/bin/go"):
-                if Path(candidate).exists():
-                    go_bin = candidate
-                    break
-        if not go_bin:
-            raise FileNotFoundError("go executable not found")
-
-        with tempfile.NamedTemporaryFile("w", suffix=".go", delete=False, encoding="utf-8") as handle:
-            handle.write(go_source)
-            helper_path = Path(handle.name)
-
+        helper_binary = _ensure_forgejo_session_helper_binary()
         result = subprocess.run(
-            [go_bin, "run", str(helper_path)],
+            [
+                str(helper_binary),
+                str(int(user_id)),
+                str(username),
+                str(bool(has_two_factor_auth)).lower(),
+            ],
             capture_output=True,
             text=True,
             timeout=30,
@@ -3371,19 +3429,44 @@ func main() {{
     except Exception:
         logger.exception("Failed to build Forgejo session blob for %s", username)
         return None
-    finally:
-        if helper_path is not None:
-            try:
-                helper_path.unlink(missing_ok=True)
-            except Exception:
-                pass
 
 
-def _attach_forgejo_login_session(response, user):
-    """Forgejo 웹 세션을 생성하고 i_like_gitea 쿠키를 응답에 심는다."""
+def _forgejo_db_path() -> Path:
+    """Forgejo SQLite DB 경로를 반환한다."""
+    return Path(settings.BASE_DIR) / "forgejo" / "data" / "gitea.db"
+
+
+def _persist_forgejo_session(session_key: str, session_blob: bytes, expiry: int) -> None:
+    """Forgejo session 테이블에 웹 세션을 저장한다."""
+    with sqlite3.connect(_forgejo_db_path()) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO session (key, data, expiry) VALUES (?, ?, ?)",
+            (session_key, session_blob, expiry),
+        )
+        conn.commit()
+
+
+def _delete_forgejo_session_artifacts(forgejo_user_id: int, forgejo_session_key: str = "") -> None:
+    """Forgejo 웹 로그인 흔적만 삭제한다. PAT/auth_token 은 유지한다."""
+    with sqlite3.connect(_forgejo_db_path(), timeout=1) as conn:
+        conn.execute("DELETE FROM oauth2_grant WHERE user_id = ?", (forgejo_user_id,))
+        if forgejo_session_key:
+            conn.execute("DELETE FROM session WHERE key = ?", (forgejo_session_key,))
+        conn.commit()
+
+
+def _build_forgejo_auth_error_message(ui_lang: str | None, error_code: str) -> str:
+    if (ui_lang or "").strip().lower() == "en":
+        return f"Login failed ({error_code})"
+    return f"로그인 실패 ({error_code})"
+
+
+def _prepare_forgejo_login_session(user) -> tuple[str | None, str | None]:
+    """Forgejo 세션 생성에 필요한 서버 상태를 미리 준비한다."""
     mapping = _ensure_forgejo_mapping_for_user(user)
-    if not mapping:
-        return response
+    if not mapping or not mapping.forgejo_user_id or not mapping.forgejo_username:
+        logger.error("Forgejo mapping missing for %s", getattr(user, "username", "unknown"))
+        return None, FORGEJO_AUTH_ERROR_CODE
 
     session_blob = _build_forgejo_session_blob(
         mapping.forgejo_user_id,
@@ -3391,95 +3474,202 @@ def _attach_forgejo_login_session(response, user):
         False,
     )
     if not session_blob:
-        return response
+        return None, FORGEJO_AUTH_ERROR_CODE
 
     session_key = secrets.token_hex(8)
     expiry = int(time.time()) + 60 * 60 * 24 * 30
-    db_path = Path(settings.BASE_DIR) / "forgejo" / "data" / "gitea.db"
 
     try:
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO session (key, data, expiry) VALUES (?, ?, ?)",
-                (session_key, session_blob, expiry),
-            )
-            conn.commit()
+        _persist_forgejo_session(session_key, session_blob, expiry)
     except Exception:
         logger.exception("Failed to persist Forgejo session for %s", getattr(user, "username", "unknown"))
-        return response
+        return None, FORGEJO_AUTH_ERROR_CODE
 
+    return session_key, None
+
+
+def _is_forgejo_oauth_handoff_url(target_url: str) -> bool:
+    """Gitea가 시작한 OIDC authorize handoff 인지 확인한다."""
+    parsed = urlparse(str(target_url or ""))
+    if parsed.path != "/o/authorize/":
+        return False
+
+    query = parse_qs(parsed.query)
+    return str(query.get("client_id", [""])[0]) == "gitea-hanplanet-sso"
+
+
+def _apply_forgejo_session_cookie(response, session_key: str):
+    """준비된 Forgejo session key 를 응답 쿠키에 반영한다."""
     _secure = bool(getattr(settings, "DEFAULT_SECURE_TRANSPORT", True))
     shared_cookie_kwargs = dict(domain=".hanplanet.com", path="/", secure=_secure, samesite="Lax")
-
+    if "i_like_gitea" in response.cookies:
+        del response.cookies["i_like_gitea"]
     response.set_cookie("i_like_gitea", session_key, httponly=True, **shared_cookie_kwargs)
-
-    # 이전 SSO relay 쿠키 잔재 제거 — 이것이 남아있으면 footer.tmpl이
-    # OAuth2 재로그인 루프를 시작해 git.hanplanet.com에서 멈춰버림
-    # delete_cookie()는 domain/path만 지원 (secure/samesite 미지원)
     response.delete_cookie("hp_relogin", domain=".hanplanet.com", path="/")
     response.delete_cookie("hp_sso_return", domain=".hanplanet.com", path="/")
-
     return response
 
 
-def _make_gitea_sso_url(post_login_url: str) -> str:
-    """로그인 성공 후 Gitea SSO 릴레이 URL로 감쌉니다."""
-    from urllib.parse import urlencode
-    public_git = getattr(settings, "PUBLIC_GIT_BASE_URL", "").rstrip("/")
-    if not public_git:
-        return post_login_url
-    return "/sso/gitea?" + urlencode({"next": post_login_url})
+def _attach_forgejo_login_session(response, user):
+    """Forgejo 웹 세션을 생성하고 i_like_gitea 쿠키를 응답에 심는다."""
+    session_key, error_code = _prepare_forgejo_login_session(user)
+    if error_code or not session_key:
+        return response
+    return _apply_forgejo_session_cookie(response, session_key)
+
+
+def _clear_forgejo_sync_cookies(response):
+    """Hanplanet/Forgejo 연동에 쓰는 공유 쿠키들을 응답에서 정리한다."""
+    response.delete_cookie("i_like_gitea", domain=".hanplanet.com", path="/")
+    response.delete_cookie("i_like_gitea", path="/")
+    response.delete_cookie("hp_logout", domain=".hanplanet.com", path="/")
+    response.delete_cookie("hp_logout_return", domain=".hanplanet.com", path="/")
+    response.delete_cookie("hp_relogin", domain=".hanplanet.com", path="/")
+    response.delete_cookie("hp_sso_return", domain=".hanplanet.com", path="/")
+    return response
+
+
+def _build_forgejo_redirect_base(target_url: str):
+    """Forgejo 연동 쿠키만 정리한 기본 redirect 응답을 만든다."""
+    response = redirect(target_url)
+    return _clear_forgejo_sync_cookies(response)
+
+
+def _build_forgejo_authenticated_redirect(target_url: str, user):
+    """레거시 연동 쿠키를 정리한 뒤 Forgejo 세션까지 붙인 redirect 응답을 만든다."""
+    response = _build_forgejo_redirect_base(target_url)
+    return _attach_forgejo_login_session(response, user)
+
+
+def _build_forgejo_logged_out_redirect(target_url: str):
+    """Forgejo 연동 쿠키를 정리한 로그아웃 redirect 응답을 만든다."""
+    response = _build_forgejo_redirect_base(target_url)
+    response.delete_cookie("_csrf", domain=".hanplanet.com", path="/")
+    response.delete_cookie("redirect_to", domain=".hanplanet.com", path="/")
+    response.delete_cookie("gitea_flash", domain=".hanplanet.com", path="/")
+    response.delete_cookie(settings.SESSION_COOKIE_NAME, path=getattr(settings, "SESSION_COOKIE_PATH", "/"))
+    return response
+
+
+def _build_post_hanplanet_login_response(target_url: str, user):
+    """로그인 후 direct Forgejo attach 와 OAuth handoff 를 구분한다."""
+    if _is_forgejo_oauth_handoff_url(target_url):
+        return redirect(target_url)
+    return _build_forgejo_authenticated_redirect(target_url, user)
+
+
+def _render_handrive_login_page(
+    request,
+    context,
+    form,
+    next_url: str,
+    login_error_message: str,
+    login_error_popup_message: str,
+    show_captcha: bool,
+    turnstile_site_key: str,
+    captcha_question: str,
+    auth_breadcrumb_url: str,
+    hide_global_nav: bool,
+):
+    handrive_text = context["handrive_text"]
+    return render(
+        request,
+        "handrive/login.html",
+        {
+            **context,
+            "handrive_login_form": form,
+            "handrive_login_next": next_url,
+            "handrive_login_error_message": login_error_message,
+            "handrive_login_error_popup_message": login_error_popup_message,
+            "handrive_login_show_captcha": show_captcha,
+            "handrive_turnstile_site_key": turnstile_site_key,
+            "handrive_login_captcha_question": captcha_question,
+            "handrive_api_login_captcha_status_url": reverse("main:handrive_api_login_captcha_status"),
+            "handrive_auth_breadcrumb_url": auth_breadcrumb_url,
+            "handrive_auth_breadcrumb_label": handrive_text.get("auth_previous_page", "Previous Page"),
+            "hide_global_nav": hide_global_nav,
+        },
+    )
+
+
+def _render_handrive_signup_page(
+    request,
+    context,
+    form,
+    next_url: str,
+    signup_error_message: str,
+    signup_error_popup_message: str,
+    auth_breadcrumb_url: str,
+    hide_global_nav: bool,
+):
+    handrive_text = context["handrive_text"]
+    return render(
+        request,
+        "handrive/signup.html",
+        {
+            **context,
+            "handrive_signup_form": form,
+            "handrive_signup_next": next_url,
+            "handrive_signup_error_message": signup_error_message,
+            "handrive_signup_error_popup_message": signup_error_popup_message,
+            "handrive_auth_breadcrumb_url": auth_breadcrumb_url,
+            "handrive_auth_breadcrumb_label": handrive_text.get("auth_previous_page", "Previous Page"),
+            "hide_global_nav": hide_global_nav,
+        },
+    )
 
 
 @require_http_methods(["GET"])
 def handrive_gitea_sso_relay(request):
-    """Hanplanet 로그인 후 Gitea OAuth2 로그인을 자동으로 시작합니다.
+    """레거시 Gitea SSO 릴레이 엔드포인트.
 
-    1. hp_sso_return 쿠키를 .hanplanet.com 도메인으로 설정 (Gitea 측에서 읽어 복귀)
-    2. Gitea OAuth2 엔드포인트로 리다이렉트 (이미 로그인된 상태이므로 즉시 승인됨)
+    이제 Hanplanet 로그인 응답에서 Forgejo 세션을 직접 생성하므로
+    git.hanplanet.com 경유 리다이렉트 없이 next 로 바로 복귀시킨다.
     """
     if not request.user.is_authenticated:
         return redirect("/ko/login")
 
-    next_url = request.GET.get("next", "/")
-    public_git = getattr(settings, "PUBLIC_GIT_BASE_URL", "").rstrip("/")
-    if not public_git:
-        return redirect(next_url)
+    next_url = resolve_next_url(request, "/")
+    return _build_forgejo_authenticated_redirect(next_url, request.user)
 
-    # 상대경로 → 절대 URL (git.hanplanet.com JS에서 window.location.replace 시 www로 복귀)
-    www_base = getattr(settings, "PUBLIC_BASE_URL", "https://www.hanplanet.com").rstrip("/")
-    if next_url.startswith("/"):
-        next_url = www_base + next_url
 
-    # git.hanplanet.com 경유 — hp_relogin=1 이 footer.tmpl JS에서 감지됨:
-    # 1) Forgejo에 다른 계정이 로그인 중이면 먼저 로그아웃 후 OAuth2 재시작
-    # 2) 이미 로그아웃 상태면 즉시 OAuth2 시작
-    response = redirect(public_git + "/")
-    cookie_kwargs = dict(max_age=120, domain=".hanplanet.com", path="/",
-                         secure=True, httponly=False, samesite="Lax")
-    response.set_cookie("hp_relogin", "1", **cookie_kwargs)
-    response.set_cookie("hp_sso_return", next_url, **cookie_kwargs)
-    response.delete_cookie("hp_logout", path="/", domain=".hanplanet.com")
-    response.delete_cookie("hp_logout_return", path="/", domain=".hanplanet.com")
-    return response
+@require_http_methods(["GET"])
+def handrive_logout_bridge(request, ui_lang=None):
+    """Gitea에서 Django 로그아웃으로 안전하게 넘기는 브리지 페이지."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    logout_url = reverse("main:handrive_logout_lang", kwargs={"ui_lang": resolved_lang})
+    next_url = resolve_next_url(
+        request,
+        reverse("main:none_lang", kwargs={"ui_lang": resolved_lang}),
+    )
+    return render(
+        request,
+        "popup/root/auth_logout_bridge.html",
+        {
+            "logout_url": logout_url,
+            "logout_next_url": next_url,
+        },
+    )
 
 
 @require_http_methods(["GET", "POST"])
-@with_request_handrive_root
 def handrive_login(request, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
-    post_login_url = context["handrive_base_url"]
     next_url = resolve_next_url(request, context["handrive_base_url"])
     auth_breadcrumb_url = resolve_auth_breadcrumb_url(request, context["handrive_base_url"])
     hide_global_nav = is_handrive_share_auth_entry(request, context["handrive_base_url"])
 
     if request.user.is_authenticated:
-        return redirect(post_login_url)
+        return _build_post_hanplanet_login_response(
+            _resolve_handrive_post_login_url(request, resolved_lang, next_url, request.user),
+            request.user,
+        )
 
     form = AuthenticationForm(request, data=request.POST or None)
     login_error_message = ""
+    login_error_popup_message = ""
     show_captcha = False
     captcha_question = ""
     
@@ -3516,12 +3706,35 @@ def handrive_login(request, ui_lang=None):
                 captcha_question = _build_handrive_login_captcha(request, refresh=True)
             elif form.is_valid():
                 authed_user = form.get_user()
+                target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, authed_user)
+                requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
+                forgejo_session_key = None
+                if requires_direct_attach:
+                    forgejo_session_key, forgejo_error_code = _prepare_forgejo_login_session(authed_user)
+                    if forgejo_error_code or not forgejo_session_key:
+                        login_error_message = _build_forgejo_auth_error_message(resolved_lang, forgejo_error_code or FORGEJO_AUTH_ERROR_CODE)
+                        login_error_popup_message = login_error_message
+                        captcha_question = _build_handrive_login_captcha(request, refresh=True) if show_captcha else ""
+                        return _render_handrive_login_page(
+                            request,
+                            context,
+                            form,
+                            next_url,
+                            login_error_message,
+                            login_error_popup_message,
+                            show_captcha,
+                            turnstile_site_key,
+                            captcha_question,
+                            auth_breadcrumb_url,
+                            hide_global_nav,
+                        )
                 _reset_handrive_login_guard(authed_user)
                 _clear_handrive_login_captcha(request)
                 auth_login(request, authed_user)
-                _trigger_gitea_password_sync(authed_user, form.cleaned_data.get("password", ""))
-                response = redirect(_resolve_handrive_post_login_url(request, resolved_lang, next_url, authed_user))
-                return _attach_forgejo_login_session(response, authed_user)
+                if not requires_direct_attach:
+                    return _build_post_hanplanet_login_response(target_url, authed_user)
+                response = _build_forgejo_redirect_base(target_url)
+                return _apply_forgejo_session_cookie(response, forgejo_session_key)
             else:
                 login_error_message = handrive_text.get("auth_login_error", "아이디 또는 비밀번호를 확인해주세요.")
                 captcha_question = _build_handrive_login_captcha(request, refresh=True)
@@ -3530,12 +3743,34 @@ def handrive_login(request, ui_lang=None):
                     show_captcha = _is_handrive_login_captcha_required(target_user)
         elif form.is_valid():
             authed_user = form.get_user()
+            target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, authed_user)
+            requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
+            forgejo_session_key = None
+            if requires_direct_attach:
+                forgejo_session_key, forgejo_error_code = _prepare_forgejo_login_session(authed_user)
+                if forgejo_error_code or not forgejo_session_key:
+                    login_error_message = _build_forgejo_auth_error_message(resolved_lang, forgejo_error_code or FORGEJO_AUTH_ERROR_CODE)
+                    login_error_popup_message = login_error_message
+                    return _render_handrive_login_page(
+                        request,
+                        context,
+                        form,
+                        next_url,
+                        login_error_message,
+                        login_error_popup_message,
+                        show_captcha,
+                        turnstile_site_key,
+                        captcha_question,
+                        auth_breadcrumb_url,
+                        hide_global_nav,
+                    )
             _reset_handrive_login_guard(authed_user)
             _clear_handrive_login_captcha(request)
             auth_login(request, authed_user)
-            _trigger_gitea_password_sync(authed_user, form.cleaned_data.get("password", ""))
-            response = redirect(_resolve_handrive_post_login_url(request, resolved_lang, next_url, authed_user))
-            return _attach_forgejo_login_session(response, authed_user)
+            if not requires_direct_attach:
+                return _build_post_hanplanet_login_response(target_url, authed_user)
+            response = _build_forgejo_redirect_base(target_url)
+            return _apply_forgejo_session_cookie(response, forgejo_session_key)
         else:
             login_error_message = handrive_text.get("auth_login_error", "아이디 또는 비밀번호를 확인해주세요.")
             if target_user is not None:
@@ -3543,25 +3778,22 @@ def handrive_login(request, ui_lang=None):
                 show_captcha = _is_handrive_login_captcha_required(target_user)
                 if show_captcha:
                     captcha_question = _build_handrive_login_captcha(request, refresh=True)
-    context.update(
-        {
-            "handrive_login_form": form,
-            "handrive_login_next": next_url,
-            "handrive_login_error_message": login_error_message,
-            "handrive_login_show_captcha": show_captcha,
-            "handrive_turnstile_site_key": turnstile_site_key,
-            "handrive_login_captcha_question": captcha_question,
-            "handrive_api_login_captcha_status_url": reverse("main:handrive_api_login_captcha_status"),
-            "handrive_auth_breadcrumb_url": auth_breadcrumb_url,
-            "handrive_auth_breadcrumb_label": handrive_text.get("auth_previous_page", "Previous Page"),
-            "hide_global_nav": hide_global_nav,
-        }
+    return _render_handrive_login_page(
+        request,
+        context,
+        form,
+        next_url,
+        login_error_message,
+        login_error_popup_message,
+        show_captcha,
+        turnstile_site_key,
+        captcha_question,
+        auth_breadcrumb_url,
+        hide_global_nav,
     )
-    return render(request, "handrive/login.html", context)
 
 
 @require_http_methods(["GET"])
-@with_request_handrive_root
 def handrive_api_login_captcha_status(request):
     username_value = request.GET.get("username", "")
     target_user = _resolve_handrive_login_target_user(username_value)
@@ -3575,7 +3807,6 @@ def handrive_api_login_captcha_status(request):
 
 
 @require_http_methods(["GET", "POST"])
-@with_request_handrive_root
 def handrive_signup(request, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
@@ -3585,10 +3816,14 @@ def handrive_signup(request, ui_lang=None):
     hide_global_nav = is_handrive_share_auth_entry(request, context["handrive_base_url"])
 
     if request.user.is_authenticated:
-        return redirect(next_url)
+        return _build_post_hanplanet_login_response(
+            _resolve_handrive_post_login_url(request, resolved_lang, next_url, request.user),
+            request.user,
+        )
 
     form = HandriveSignupForm(request.POST or None, ui_lang=resolved_lang)
     signup_error_message = ""
+    signup_error_popup_message = ""
     if request.method == "POST":
         if form.is_valid():
             user = form.save()
@@ -3605,7 +3840,10 @@ def handrive_signup(request, ui_lang=None):
                     scoped_home_dir = normalize_relative_path(f"users/{user.get_username()}", allow_empty=False)
                 except ValueError:
                     scoped_home_dir = ""
-            ensure_scoped_home_dir(scoped_home_dir)
+            try:
+                ensure_scoped_home_dir(scoped_home_dir)
+            except OSError:
+                logger.exception("Failed to initialize scoped HanDrive home for signup user %s", user.get_username())
             authed_user = authenticate(
                 request,
                 username=user.get_username(),
@@ -3613,75 +3851,58 @@ def handrive_signup(request, ui_lang=None):
             )
             if authed_user is None:
                 authed_user = user
+            target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, user)
+            requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
+            forgejo_session_key = None
+            if requires_direct_attach:
+                forgejo_session_key, forgejo_error_code = _prepare_forgejo_login_session(authed_user)
+                if forgejo_error_code or not forgejo_session_key:
+                    signup_error_message = _build_forgejo_auth_error_message(resolved_lang, forgejo_error_code or FORGEJO_AUTH_ERROR_CODE)
+                    signup_error_popup_message = signup_error_message
+                    return _render_handrive_signup_page(
+                        request,
+                        context,
+                        form,
+                        next_url,
+                        signup_error_message,
+                        signup_error_popup_message,
+                        auth_breadcrumb_url,
+                        hide_global_nav,
+                    )
             auth_login(request, authed_user)
-            _trigger_gitea_password_sync(authed_user, form.cleaned_data.get("password1", ""))
-            response = redirect(_resolve_handrive_post_login_url(request, resolved_lang, next_url, user))
-            return _attach_forgejo_login_session(response, authed_user)
+            if not requires_direct_attach:
+                return _build_post_hanplanet_login_response(target_url, authed_user)
+            response = _build_forgejo_redirect_base(target_url)
+            return _apply_forgejo_session_cookie(response, forgejo_session_key)
         signup_error_message = handrive_text.get("auth_signup_error", "회원가입 정보를 확인해주세요.")
-
-    context.update(
-        {
-            "handrive_signup_form": form,
-            "handrive_signup_next": next_url,
-            "handrive_signup_error_message": signup_error_message,
-            "handrive_auth_breadcrumb_url": auth_breadcrumb_url,
-            "handrive_auth_breadcrumb_label": handrive_text.get("auth_previous_page", "Previous Page"),
-            "hide_global_nav": hide_global_nav,
-        }
+    return _render_handrive_signup_page(
+        request,
+        context,
+        form,
+        next_url,
+        signup_error_message,
+        signup_error_popup_message,
+        auth_breadcrumb_url,
+        hide_global_nav,
     )
-    return render(request, "handrive/signup.html", context)
 
 
 @require_http_methods(["POST"])
 @csrf_protect
-@with_request_handrive_root
 def handrive_logout(request, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
     next_url = resolve_next_url(request, context["handrive_base_url"])
+    forgejo_session_key = str(request.COOKIES.get("i_like_gitea", "") or "").strip()
     # Forgejo 세션/토큰 서버사이드 선제 삭제 (로그아웃 전에 user 정보 참조)
-    _forgejo_server_logout(request.user)
+    _forgejo_server_logout(request.user, forgejo_session_key=forgejo_session_key)
     auth_logout(request)
-    git_logout_csrf_token = _fetch_gitea_logout_csrf_token()
-    if git_logout_csrf_token:
-        public_git = getattr(settings, "PUBLIC_GIT_BASE_URL", "").rstrip("/")
-        return render(
-            request,
-            "popup/root/git_logout_relay.html",
-            {
-                "git_logout_url": public_git + "/user/logout",
-                "git_logout_csrf_token": git_logout_csrf_token,
-                "git_logout_next_url": next_url,
-            },
-        )
-    return redirect(next_url)
+    return _build_forgejo_logged_out_redirect(next_url)
 
 
-def _fetch_gitea_logout_csrf_token() -> str:
-    """Forgejo 홈 HTML에서 로그아웃용 CSRF 토큰을 추출한다."""
-    public_git = getattr(settings, "PUBLIC_GIT_BASE_URL", "").rstrip("/")
-    if not public_git:
-        return ""
-    try:
-        response = httpx.get(f"{public_git}/", timeout=8, follow_redirects=True)
-        response.raise_for_status()
-    except Exception:
-        return ""
 
-    html = response.text or ""
-    patterns = [
-        r"csrfToken:\s*'([^']+)'",
-        r'csrfToken:\s*"([^"]+)"',
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, html)
-        if match:
-            return match.group(1)
-    return ""
-
-
-def _forgejo_server_logout(user):
-    """Forgejo DB에서 해당 유저의 auth_token, oauth2_grant, session을 삭제해 서버사이드 세션 무효화."""
+def _forgejo_server_logout(user, forgejo_session_key: str = ""):
+    """Forgejo DB에서 현재 브라우저 세션과 사용자 grant 를 삭제해 서버사이드 세션을 무효화한다."""
     if not user or not user.is_authenticated:
         return
     try:
@@ -3689,17 +3910,7 @@ def _forgejo_server_logout(user):
         mapping = GitUserMapping.objects.filter(user=user).first()
         if not mapping:
             return
-        forgejo_user_id = mapping.forgejo_user_id
-        import sqlite3 as _sqlite3
-        db_path = str(settings.BASE_DIR / "forgejo" / "data" / "gitea.db")
-        with _sqlite3.connect(db_path) as conn:
-            conn.execute("DELETE FROM auth_token WHERE user_id = ?", (forgejo_user_id,))
-            conn.execute("DELETE FROM oauth2_grant WHERE user_id = ?", (forgejo_user_id,))
-            conn.execute(
-                "DELETE FROM session WHERE CAST(data AS TEXT) LIKE ?",
-                (f'%"uid"%{forgejo_user_id}%',),
-            )
-            conn.commit()
+        _delete_forgejo_session_artifacts(mapping.forgejo_user_id, forgejo_session_key=forgejo_session_key)
     except Exception:
         pass  # 실패해도 www 로그아웃 및 클라이언트사이드 로그아웃은 정상 진행
 
@@ -3741,10 +3952,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
     is_superuser = bool(getattr(request.user, "is_superuser", False))
-    root_requested = str(request.GET.get("root", "") or "").strip().lower() in {"1", "true", "yes"}
     scoped_home_dir = get_scoped_handrive_home_dir(request)
-    if is_superuser and root_requested:
-        scoped_home_dir = ""
     requested_dir = normalize_relative_path(folder_path, allow_empty=True)
     if scoped_home_dir:
         ensure_scoped_home_dir(scoped_home_dir)
@@ -3790,7 +3998,10 @@ def handrive_list(request, folder_path="", ui_lang=None):
     else:
         if git_virtual["kind"] == "branch_file":
             raise Http404("폴더를 찾을 수 없습니다.")
-        initial_entries = _build_git_virtual_entries(request, git_virtual)
+        try:
+            initial_entries = _build_git_virtual_entries(request, git_virtual)
+        except RuntimeError:
+            raise Http404("Git 저장소를 찾을 수 없습니다.")
         current_dir_size_display = ""
 
     if not has_handrive_read_access(request, current_dir):
@@ -3872,14 +4083,18 @@ def handrive_view(request, doc_path, ui_lang=None):
                 request=request,
             )
         else:
-            content = load_handrive_source_content(file_path, request=request, relative_path=relative_file_path)
-            rendered_content_html, render_profile = render_handrive_content(
-                content,
-                file_extension,
-                source_path=file_path,
-                relative_path=relative_file_path,
-                request=request,
-            )
+            try:
+                content = load_handrive_source_content(file_path, request=request, relative_path=relative_file_path)
+                rendered_content_html, render_profile = render_handrive_content(
+                    content,
+                    file_extension,
+                    source_path=file_path,
+                    relative_path=relative_file_path,
+                    request=request,
+                )
+            except Http404:
+                rendered_content_html = render_handrive_unsupported_safely(file_path.name, file_extension)
+                render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
     else:
         if git_virtual["kind"] != "branch_file":
             raise Http404("파일을 찾을 수 없습니다.")
@@ -4455,7 +4670,10 @@ def handrive_api_list(request):
     else:
         if git_virtual["kind"] == "branch_file":
             return json_error("폴더 경로가 아닙니다.", status=400)
-        entries = _build_git_virtual_entries(request, git_virtual)
+        try:
+            entries = _build_git_virtual_entries(request, git_virtual)
+        except RuntimeError as exc:
+            return json_error(str(exc), status=500)
 
     if not has_handrive_read_access(request, normalized):
         return json_error("파일을 볼 권한이 없습니다.", status=403)
@@ -5408,14 +5626,18 @@ def handrive_api_preview(request):
                         request=request,
                     )
                 else:
-                    content = load_handrive_source_content(file_path, request=request, relative_path=relative_file_path)
-                    rendered_html, render_profile = render_handrive_content(
-                        content,
-                        file_extension,
-                        source_path=file_path,
-                        relative_path=relative_file_path,
-                        request=request,
-                    )
+                    try:
+                        content = load_handrive_source_content(file_path, request=request, relative_path=relative_file_path)
+                        rendered_html, render_profile = render_handrive_content(
+                            content,
+                            file_extension,
+                            source_path=file_path,
+                            relative_path=relative_file_path,
+                            request=request,
+                        )
+                    except Http404:
+                        rendered_html = render_handrive_unsupported_safely(file_path.name, file_extension)
+                        render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
                 title = file_path.name
             else:
                 title = Path(git_virtual["repo_relative_path"]).name
@@ -6087,3 +6309,54 @@ def handrive_map_viewer(request, map_path, ui_lang=None):
         "map_icon_api_url": "/handrive/api/map-image/",
     })
     return render(request, "handrive/map_viewer.html", context)
+
+
+# ── HanDrive 데스크톱 클라이언트 OAuth 브리지 ────────────────────────────────────
+
+@require_http_methods(["GET"])
+def handrive_login_bridge(request):
+    """HanDrive 데스크톱 클라이언트 브라우저 OAuth 브리지.
+
+    클라이언트가 브라우저를 통해 JWT 토큰을 받아가는 흐름:
+      1. 클라이언트 → 브라우저로 이 URL 오픈
+         /login/handrive?callback=http://127.0.0.1:PORT/auth&state=RANDOM
+      2. 미로그인 상태 → /login?next=현재경로 로 리다이렉트
+      3. 로그인 완료 → 이 뷰 재진입
+      4. callback URL(localhost만 허용)로 토큰 전달
+    """
+    from urllib.parse import urlencode, urlparse
+
+    callback = request.GET.get("callback", "").strip()
+    state = request.GET.get("state", "").strip()
+
+    # force_relogin=1: 현재 세션 로그아웃 후 로그인 페이지로
+    if request.GET.get("force_relogin") == "1":
+        if request.user.is_authenticated:
+            from django.contrib.auth import logout as _logout
+            _logout(request)
+        # force_relogin 제거한 동일 경로로 리다이렉트 (이제 미인증 → 로그인 페이지로)
+        params = {k: v for k, v in request.GET.items() if k != "force_relogin"}
+        target = request.path + ("?" + urlencode(params) if params else "")
+        return redirect("/login?" + urlencode({"next": target}))
+
+    if not request.user.is_authenticated:
+        return redirect("/login?" + urlencode({"next": request.get_full_path()}))
+
+    if callback:
+        parsed = urlparse(callback)
+        if parsed.hostname not in ("127.0.0.1", "localhost") or parsed.scheme != "http":
+            from django.http import HttpResponseBadRequest
+            return HttpResponseBadRequest("invalid callback: localhost http only")
+
+        from .sync_auth import issue_token_pair
+        tokens = issue_token_pair(request.user)
+        params = {
+            "access_token": tokens["access_token"],
+            "refresh_token": tokens["refresh_token"],
+            "state": state,
+        }
+        redirect_url = callback + "?" + urlencode(params)
+        return redirect(redirect_url)
+
+    # callback 없이 직접 접근: 안내 페이지
+    return render(request, "handrive/login_bridge.html", {"user": request.user})

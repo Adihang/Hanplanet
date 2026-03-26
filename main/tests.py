@@ -26,8 +26,16 @@ from .handrive_views import (
     DOCS_USER_SCOPED_ENTRY_LIMIT,
     DOCS_USER_SCOPED_QUOTA_BYTES,
     DOCS_URL_ONLY_GROUP_NAME,
+    _apply_forgejo_session_cookie,
+    _attach_forgejo_login_session,
+    _build_forgejo_authenticated_redirect,
+    _build_forgejo_logged_out_redirect,
     _build_forgejo_session_blob,
+    _delete_forgejo_session_artifacts,
+    _forgejo_db_path,
+    _forgejo_server_logout,
     _resolve_handrive_post_login_url,
+    get_handrive_text,
     get_handrive_upload_tmp_dir,
     get_handrive_public_write_group,
     is_handrive_editor,
@@ -203,6 +211,29 @@ class CareerPeriodCalculationTests(TestCase):
 
 
 class DataBackupRetentionTests(TestCase):
+    @override_settings(
+        MEDIA_ROOT="/Volumes/HANPLANET_HDD/Hanplanet/media",
+        FORGEJO_REPOS_ROOT="/Volumes/HANPLANET_HDD/Hanplanet/forgejo-repos",
+    )
+    def test_build_backup_targets_uses_media_and_forgejo_repos_roots(self):
+        scheduler = import_module("main.access_log_scheduler")
+
+        with mock.patch("pathlib.Path.exists", autospec=True) as mocked_exists:
+            mocked_exists.side_effect = lambda path_obj: str(path_obj) in {
+                "/Volumes/HANPLANET_HDD/Hanplanet/media",
+                "/Volumes/HANPLANET_HDD/Hanplanet/forgejo-repos",
+            }
+
+            targets = scheduler._build_backup_target_paths()
+
+        self.assertEqual(
+            targets,
+            [
+                Path("/Volumes/HANPLANET_HDD/Hanplanet/media"),
+                Path("/Volumes/HANPLANET_HDD/Hanplanet/forgejo-repos"),
+            ],
+        )
+
     def test_same_day_backup_cleanup_still_prunes_to_retention_limit(self):
         scheduler = import_module("main.access_log_scheduler")
         with TemporaryDirectory() as tmpdir:
@@ -238,6 +269,25 @@ class DataBackupRetentionTests(TestCase):
                     "hanplanet_data_2026-03-12.tar.gz",
                 ],
             )
+
+
+class HandriveI18nPlaceholderTests(TestCase):
+    def test_english_handrive_text_includes_placeholder_keys(self):
+        handrive_text = get_handrive_text("en")
+
+        self.assertEqual(handrive_text["search_placeholder"], "Search files")
+        self.assertEqual(handrive_text["branch_name_placeholder"], "e.g. feature/my-work")
+        self.assertEqual(handrive_text["map_create_placeholder"], "Enter map name")
+        self.assertEqual(handrive_text["git_repo_name_placeholder"], "my-repo (letters, numbers, ., -, _)")
+        self.assertEqual(handrive_text["map_name_placeholder"], "Enter a name")
+        self.assertEqual(handrive_text["map_marker_name_placeholder"], "Marker name")
+        self.assertEqual(handrive_text["zoom_out_button"], "Zoom out")
+        self.assertEqual(handrive_text["zoom_in_button"], "Zoom in")
+        self.assertEqual(handrive_text["list_title"], "Files")
+        self.assertEqual(handrive_text["menu_delete_repo"], "Delete Repo")
+        self.assertEqual(handrive_text["delete_repo_button"], "Delete Repo")
+        self.assertEqual(handrive_text["url_share_enabled_label"], "URL Sharing")
+        self.assertEqual(handrive_text["url_unshare_button"], "Disable URL Sharing")
 
 
 class ChatLanguageHelperTests(TestCase):
@@ -311,10 +361,8 @@ class LanguageUrlRoutingTests(TestCase):
 
 
 class HandriveSignupAutoLoginTests(TestCase):
-    @mock.patch("main.handrive_views._attach_forgejo_login_session")
-    @mock.patch("main.handrive_views._trigger_gitea_password_sync")
-    def test_signup_logs_user_in_immediately(self, mock_trigger_sync, mock_attach_session):
-        mock_attach_session.side_effect = lambda response, user: response
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_signup_logs_user_in_immediately(self, mock_prepare_session):
         response = self.client.post(
             reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
             data={
@@ -335,8 +383,55 @@ class HandriveSignupAutoLoginTests(TestCase):
             self.client.session["_auth_user_id"],
             str(get_user_model().objects.get(username="autologin_user").pk),
         )
-        mock_attach_session.assert_called_once()
-        mock_trigger_sync.assert_called_once()
+        mock_prepare_session.assert_called_once()
+        self.assertIn("i_like_gitea", response.cookies)
+
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=(None, "FORGEJO"))
+    def test_signup_blocks_django_login_when_forgejo_link_fails(self, mock_prepare_session):
+        response = self.client.post(
+            reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
+            data={
+                "username": "autologin_blocked_user",
+                "password1": "pw123456!!AA",
+                "password2": "pw123456!!AA",
+                "first_name": "Blocked",
+                "email": "blocked@example.com",
+                "privacy_consent": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "로그인 실패 (FORGEJO)")
+        self.assertNotIn("_auth_user_id", self.client.session)
+        mock_prepare_session.assert_called_once()
+
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session")
+    def test_signup_oauth_handoff_keeps_existing_gitea_session_cookie(self, mock_prepare_session):
+        next_url = (
+            "/o/authorize/?client_id=gitea-hanplanet-sso"
+            "&redirect_uri=https%3A%2F%2Fgit.hanplanet.com%2Fuser%2Foauth2%2Fhanplanet%2Fcallback"
+            "&response_type=code&scope=openid+profile+email&state=signup-oauth-state"
+        )
+        self.client.cookies["i_like_gitea"] = "existing-oauth-session"
+
+        response = self.client.post(
+            reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
+            data={
+                "username": "oauth_signup_user",
+                "password1": "pw123456!!AA",
+                "password2": "pw123456!!AA",
+                "first_name": "OAuth",
+                "email": "oauth-signup@example.com",
+                "privacy_consent": "on",
+                "next": next_url,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], next_url)
+        self.assertTrue("_auth_user_id" in self.client.session)
+        self.assertNotIn("i_like_gitea", response.cookies)
+        mock_prepare_session.assert_not_called()
 
     def test_signup_saves_privacy_and_terms_consent(self):
         self.client.post(
@@ -363,6 +458,7 @@ class LegalPageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "개인정보 처리방침")
         self.assertContains(response, "Privacy Policy")
+        self.assertNotContains(response, '<nav class="navbar ui-nav">', html=False)
 
     def test_terms_page_renders(self):
         response = self.client.get(reverse("main:terms_page_lang", kwargs={"ui_lang": "ko"}))
@@ -370,6 +466,7 @@ class LegalPageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "이용약관")
         self.assertContains(response, "Terms of Service")
+        self.assertNotContains(response, '<nav class="navbar ui-nav">', html=False)
 
     def test_licenses_page_renders(self):
         response = self.client.get(reverse("main:licenses_page_lang", kwargs={"ui_lang": "ko"}))
@@ -377,6 +474,7 @@ class LegalPageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "오픈소스 라이선스")
         self.assertContains(response, "Open Source Licenses")
+        self.assertContains(response, '<nav class="navbar ui-nav">', html=False)
         self.assertContains(response, "Django 5.0.1")
 
 
@@ -625,34 +723,212 @@ class HandriveAuthFlowTests(TestCase):
         self.assertNotContains(response, ">ide<", html=False)
 
     @mock.patch("main.handrive_views.subprocess.run")
-    @mock.patch("main.handrive_views.shutil.which", return_value=None)
     @mock.patch("main.handrive_views.settings.RUNNING_TESTS", False)
-    def test_build_forgejo_session_blob_prefers_homebrew_go(self, mock_which, mock_run):
+    def test_build_forgejo_session_blob_prefers_homebrew_go(self, mock_run):
         def fake_exists(self):
-            return str(self) == "/opt/homebrew/bin/go"
+            return str(self) in {
+                "/opt/homebrew/bin/go",
+                "/Users/imhanbyeol/Development/Hanplanet/scripts/forgejo_session_blob.go",
+            }
 
-        mock_run.return_value = mock.Mock(returncode=0, stdout="Zm9v")
+        mock_run.side_effect = [
+            mock.Mock(returncode=0, stdout=""),
+            mock.Mock(returncode=0, stdout="Zm9v"),
+        ]
         with mock.patch("main.handrive_views.Path.exists", fake_exists):
             blob = _build_forgejo_session_blob(123, "handrive_login_user")
 
         self.assertEqual(blob, b"foo")
-        self.assertEqual(mock_run.call_args.args[0][0], "/opt/homebrew/bin/go")
-        mock_which.assert_called_once_with("go")
+        build_cmd = mock_run.call_args_list[0].args[0]
+        exec_cmd = mock_run.call_args_list[1].args[0]
+        self.assertEqual(build_cmd[0], "/opt/homebrew/bin/go")
+        self.assertEqual(build_cmd[1:3], ["build", "-o"])
+        self.assertIn("forgejo_session_blob.go", build_cmd[-1])
+        self.assertIn("hanplanet_forgejo_session_blob", exec_cmd[0])
+
+    @mock.patch("main.handrive_views._persist_forgejo_session")
+    @mock.patch("main.handrive_views._build_forgejo_session_blob", return_value=b"blob")
+    @mock.patch("main.handrive_views._ensure_forgejo_mapping_for_user")
+    def test_attach_forgejo_login_session_uses_session_persist_helper(
+        self,
+        mock_ensure_mapping,
+        mock_build_blob,
+        mock_persist_session,
+    ):
+        response = self.client.get("/ko/login/")
+        mock_ensure_mapping.return_value = mock.Mock(
+            forgejo_user_id=123,
+            forgejo_username="handrive_login_user",
+        )
+
+        attached = _attach_forgejo_login_session(response, self.user)
+
+        self.assertIs(attached, response)
+        mock_build_blob.assert_called_once_with(123, "handrive_login_user", False)
+        mock_persist_session.assert_called_once()
+        self.assertIn("i_like_gitea", attached.cookies)
 
     @mock.patch("main.handrive_views._attach_forgejo_login_session")
-    @mock.patch("main.handrive_views._trigger_gitea_password_sync")
-    def test_docs_login_authenticates_non_staff_user(self, mock_trigger_sync, mock_attach_session):
+    def test_build_forgejo_authenticated_redirect_clears_sync_cookies_before_attach(self, mock_attach_session):
         mock_attach_session.side_effect = lambda response, user: response
+
+        response = _build_forgejo_authenticated_redirect("/ko/portfolio/", self.user)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/ko/portfolio/")
+        mock_attach_session.assert_called_once()
+        self.assertNotIn(settings.SESSION_COOKIE_NAME, response.cookies)
+        self.assertNotIn("_csrf", response.cookies)
+        self.assertNotIn("redirect_to", response.cookies)
+        self.assertNotIn("gitea_flash", response.cookies)
+        self.assertIn("hp_logout", response.cookies)
+        self.assertIn("hp_logout_return", response.cookies)
+        self.assertIn("hp_relogin", response.cookies)
+        self.assertIn("hp_sso_return", response.cookies)
+
+    def test_build_forgejo_logged_out_redirect_clears_sync_cookies(self):
+        response = _build_forgejo_logged_out_redirect("/ko/handrive/list/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/ko/handrive/list/")
+        self.assertIn("i_like_gitea", response.cookies)
+        self.assertIn("_csrf", response.cookies)
+        self.assertIn("redirect_to", response.cookies)
+        self.assertIn("gitea_flash", response.cookies)
+        self.assertIn(settings.SESSION_COOKIE_NAME, response.cookies)
+        self.assertIn("hp_logout", response.cookies)
+        self.assertIn("hp_logout_return", response.cookies)
+        self.assertIn("hp_relogin", response.cookies)
+        self.assertIn("hp_sso_return", response.cookies)
+
+    def test_apply_forgejo_session_cookie_overrides_prior_delete_cookie(self):
+        response = _build_forgejo_logged_out_redirect("/ko/handrive/all/list/")
+
+        attached = _attach_forgejo_login_session(response, self.user)
+
+        self.assertEqual(attached.cookies["i_like_gitea"].value, "")
+        self.assertEqual(str(attached.cookies["i_like_gitea"]["max-age"]), "0")
+
+        refreshed = _apply_forgejo_session_cookie(attached, "fresh-session-key")
+
+        self.assertEqual(refreshed.cookies["i_like_gitea"].value, "fresh-session-key")
+        self.assertEqual(refreshed.cookies["i_like_gitea"]["max-age"], "")
+
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_docs_login_authenticates_non_staff_user(self, mock_prepare_session):
+        response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/ko/handrive")
+        self.assertTrue("_auth_user_id" in self.client.session)
+        self.assertIn("i_like_gitea", response.cookies)
+        mock_prepare_session.assert_called_once()
+
+    @mock.patch(
+        "main.handrive_views._prepare_forgejo_login_session",
+        side_effect=[("forgejo-session-a", None), ("forgejo-session-b", None)],
+    )
+    def test_docs_login_after_logout_switches_authenticated_user(self, mock_prepare_session):
+        other_user = self.user_model.objects.create_user(
+            username="handrive_login_user_two",
+            password="pw123456",
+            is_staff=False,
+        )
+
+        first_login = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+        )
+        self.assertEqual(first_login.status_code, 302)
+        self.assertEqual(self.client.session["_auth_user_id"], str(self.user.pk))
+
+        logout_response = self.client.post(
+            "/ko/logout/",
+            data={"next": "/ko/handrive/all/list/"},
+        )
+        self.assertEqual(logout_response.status_code, 302)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+        second_login = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user_two", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+        )
+
+        self.assertEqual(second_login.status_code, 302)
+        self.assertEqual(second_login["Location"], "/ko/handrive")
+        self.assertEqual(self.client.session["_auth_user_id"], str(other_user.pk))
+        self.assertIn("i_like_gitea", second_login.cookies)
+        self.assertEqual(mock_prepare_session.call_count, 2)
+
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=(None, "FORGEJO"))
+    def test_docs_login_blocks_django_login_when_forgejo_link_fails(self, mock_prepare_session):
         response = self.client.post(
             "/ko/login/",
             data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/list/"},
         )
 
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "로그인 실패 (FORGEJO)")
+        self.assertNotIn("_auth_user_id", self.client.session)
+        mock_prepare_session.assert_called_once()
+
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session")
+    def test_docs_login_oauth_handoff_keeps_existing_gitea_session_cookie(self, mock_prepare_session):
+        next_url = (
+            "/o/authorize/?client_id=gitea-hanplanet-sso"
+            "&redirect_uri=https%3A%2F%2Fgit.hanplanet.com%2Fuser%2Foauth2%2Fhanplanet%2Fcallback"
+            "&response_type=code&scope=openid+profile+email&state=oauth-state"
+        )
+        self.client.cookies["i_like_gitea"] = "existing-oauth-session"
+
+        response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": next_url},
+        )
+
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], "/ko/handrive/list/")
+        self.assertEqual(response["Location"], next_url)
         self.assertTrue("_auth_user_id" in self.client.session)
+        self.assertNotIn("i_like_gitea", response.cookies)
+        mock_prepare_session.assert_not_called()
+
+    @mock.patch("main.handrive_views._attach_forgejo_login_session")
+    def test_docs_login_rehydrates_forgejo_session_for_authenticated_user(self, mock_attach_session):
+        mock_attach_session.side_effect = lambda response, user: response
+        self.client.force_login(self.user)
+        self.client.cookies["hp_logout"] = "1"
+        self.client.cookies["hp_logout_return"] = "https://www.hanplanet.com/ko/handrive/list/"
+        self.client.cookies["hp_relogin"] = "1"
+        self.client.cookies["hp_sso_return"] = "https://www.hanplanet.com/ko/"
+
+        response = self.client.get("/ko/login/?next=/ko/portfolio/handrive_login_user/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/ko/portfolio/handrive_login_user/")
         mock_attach_session.assert_called_once()
-        mock_trigger_sync.assert_called_once()
+        self.assertIn("hp_logout", response.cookies)
+        self.assertIn("hp_logout_return", response.cookies)
+        self.assertIn("hp_relogin", response.cookies)
+        self.assertIn("hp_sso_return", response.cookies)
+
+    @mock.patch("main.handrive_views._attach_forgejo_login_session")
+    def test_docs_login_authenticated_oauth_handoff_skips_direct_forgejo_attach(self, mock_attach_session):
+        next_url = (
+            "/o/authorize/?client_id=gitea-hanplanet-sso"
+            "&redirect_uri=https%3A%2F%2Fgit.hanplanet.com%2Fuser%2Foauth2%2Fhanplanet%2Fcallback"
+            "&response_type=code&scope=openid+profile+email&state=oauth-authenticated-state"
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get("/ko/login/", {"next": next_url})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], next_url)
+        self.assertNotIn("i_like_gitea", response.cookies)
+        mock_attach_session.assert_not_called()
 
     def test_resolve_handrive_post_login_url_keeps_portfolio_next(self):
         public_group, _ = Group.objects.get_or_create(name=DOCS_PUBLIC_WRITE_GROUP_NAME)
@@ -668,6 +944,18 @@ class HandriveAuthFlowTests(TestCase):
 
         self.assertEqual(resolved, "/ko/portfolio/handrive_login_user/")
 
+    def test_resolve_handrive_post_login_url_redirects_all_list_to_handrive_root(self):
+        request = RequestFactory().get("/ko/login/")
+
+        resolved = _resolve_handrive_post_login_url(
+            request,
+            "ko",
+            "/ko/handrive/all/list/",
+            self.user,
+        )
+
+        self.assertEqual(resolved, "/ko/handrive")
+
     def test_docs_logout_clears_session(self):
         self.client.force_login(self.user)
 
@@ -676,12 +964,91 @@ class HandriveAuthFlowTests(TestCase):
             data={"next": "/ko/handrive/list/"},
         )
 
-        self.assertIn(response.status_code, (200, 302))
-        if response.status_code == 302:
-            self.assertEqual(response["Location"], "/ko/handrive/list/")
-        else:
-            self.assertContains(response, "hp-git-logout-form")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/ko/handrive/list/")
         self.assertFalse("_auth_user_id" in self.client.session)
+
+    @override_settings(PUBLIC_GIT_BASE_URL="https://git.hanplanet.com")
+    @mock.patch("main.handrive_views._forgejo_server_logout")
+    def test_docs_logout_stays_on_hanplanet_and_clears_forgejo_sync_cookies(self, mock_forgejo_server_logout):
+        self.client.force_login(self.user)
+        self.client.cookies["i_like_gitea"] = "forgejo-session-key"
+        self.client.cookies["hp_logout"] = "1"
+        self.client.cookies["hp_logout_return"] = "https://www.hanplanet.com/ko/handrive/list/"
+        self.client.cookies["hp_relogin"] = "1"
+        self.client.cookies["hp_sso_return"] = "https://www.hanplanet.com/ko/"
+
+        response = self.client.post(
+            "/ko/logout/",
+            data={"next": "/ko/handrive/list/"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/ko/handrive/list/")
+        mock_forgejo_server_logout.assert_called_once_with(self.user, forgejo_session_key="forgejo-session-key")
+
+        self.assertIn("i_like_gitea", response.cookies)
+        self.assertIn("hp_logout", response.cookies)
+        self.assertIn("hp_logout_return", response.cookies)
+        self.assertIn("hp_relogin", response.cookies)
+        self.assertIn("hp_sso_return", response.cookies)
+        self.assertNotIn("https://git.hanplanet.com/", response["Location"])
+
+    @mock.patch("main.handrive_views._delete_forgejo_session_artifacts")
+    def test_forgejo_server_logout_uses_session_delete_helper(self, mock_delete_session_artifacts):
+        mapping = mock.Mock(forgejo_user_id=123)
+        with mock.patch("main.handrive_views.GitUserMapping.objects.filter") as mock_filter:
+            mock_filter.return_value.first.return_value = mapping
+            _forgejo_server_logout(self.user, forgejo_session_key="forgejo-session-key")
+
+        mock_delete_session_artifacts.assert_called_once_with(123, forgejo_session_key="forgejo-session-key")
+
+    def test_delete_forgejo_session_artifacts_keeps_auth_tokens_and_uses_short_db_timeout(self):
+        mock_conn = mock.MagicMock()
+        with mock.patch("main.handrive_views.sqlite3.connect", return_value=mock_conn) as mock_connect:
+            _delete_forgejo_session_artifacts(123, forgejo_session_key="forgejo-session-key")
+
+        mock_connect.assert_called_once_with(_forgejo_db_path(), timeout=1)
+        executed_sql = [call.args[0] for call in mock_conn.__enter__.return_value.execute.call_args_list]
+        self.assertEqual(
+            executed_sql,
+            [
+                "DELETE FROM oauth2_grant WHERE user_id = ?",
+                "DELETE FROM session WHERE key = ?",
+            ],
+        )
+
+    @mock.patch("main.handrive_views._attach_forgejo_login_session")
+    def test_legacy_gitea_sso_relay_now_reuses_direct_session_attach(self, mock_attach_session):
+        mock_attach_session.side_effect = lambda response, user: response
+        self.client.force_login(self.user)
+        self.client.cookies["hp_relogin"] = "1"
+        self.client.cookies["hp_sso_return"] = "https://www.hanplanet.com/ko/"
+
+        response = self.client.get("/sso/gitea?next=/ko/portfolio/handrive_login_user/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/ko/portfolio/handrive_login_user/")
+        mock_attach_session.assert_called_once()
+        self.assertIn("hp_relogin", response.cookies)
+        self.assertIn("hp_sso_return", response.cookies)
+
+    @override_settings(
+        PUBLIC_BASE_URL="https://www.hanplanet.com",
+        PUBLIC_GIT_BASE_URL="https://git.hanplanet.com",
+    )
+    def test_logout_bridge_accepts_gitea_absolute_next_url(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get("/ko/logout/bridge/?next=https://git.hanplanet.com/hanplanet/repo")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'action="/ko/logout/"', html=False)
+        self.assertContains(
+            response,
+            'value="https://git.hanplanet.com/hanplanet/repo"',
+            html=False,
+        )
 
     def test_docs_logout_csrf_failure_returns_forbidden(self):
         csrf_client = Client(enforce_csrf_checks=True)
@@ -1426,12 +1793,8 @@ class HandriveAccessRuleTests(TestCase):
         self.client.force_login(admin_user)
         response = self.client.get("/ko/handrive/?root=1")
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'data-current-dir=""')
-        self.assertContains(response, 'data-handrive-base-url="/ko/handrive"')
-        self.assertContains(response, ">Hanplanet<")
-        self.assertContains(response, "manage.py")
-        self.assertContains(response, "Apply Static + Restart Gunicorn")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/ko/handrive/users/handrive_superuser_direct_root/list")
 
     def test_docs_superuser_can_open_unscoped_root_file_directly(self):
         admin_user = self.user_model.objects.create_user(
@@ -1473,8 +1836,7 @@ class HandriveAccessRuleTests(TestCase):
         response = self.client.get("/ko/handrive/users/admin/list")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'href="/ko/handrive?root=1"')
-        self.assertContains(response, ">Hanplanet<")
+        self.assertContains(response, 'href="/ko/handrive/users/admin/list"')
         self.assertContains(response, ">admin<")
 
     def test_handrive_root_for_staff_user_keeps_scoped_home_dir(self):

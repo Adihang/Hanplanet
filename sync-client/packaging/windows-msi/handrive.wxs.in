@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product
+    Id="*"
+    Name="HanDrive"
+    Language="1033"
+    Version="@VERSION@"
+    Manufacturer="Hanplanet"
+    UpgradeCode="B3C06A86-7469-47FE-B242-45795075F0A5">
+    <Package
+      InstallerVersion="500"
+      Compressed="yes"
+      InstallScope="perUser" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="HanDriveIcon.ico" SourceFile="cmd/handrive/hanplanet.ico" />
+    <Property Id="ARPPRODUCTICON" Value="HanDriveIcon.ico" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="HanplanetDir" Name="Hanplanet">
+          <Directory Id="INSTALLDIR" Name="HanDrive" />
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="Hanplanet" />
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="cmpHandriveExe" Guid="D26791DD-3C36-4914-827C-90ACAEECE151">
+        <File
+          Id="filHandriveExe"
+          Source="handrive.exe"
+          KeyPath="yes" />
+      </Component>
+      <Component Id="cmpReadme" Guid="CAC76A67-B6DD-47C0-A09B-84C335770967">
+        <File
+          Id="filReadme"
+          Source="README-WINDOWS.txt"
+          Name="README-WINDOWS.txt"
+          KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="cmpStartMenuShortcut" Guid="F09BB4FC-52D7-441D-8522-CE807E1E5A31">
+        <Shortcut
+          Id="HanDriveStartMenuShortcut"
+          Name="HanDrive"
+          Description="Hanplanet cloud drive sync client"
+          Target="[INSTALLDIR]handrive.exe"
+          WorkingDirectory="INSTALLDIR"
+          Icon="HanDriveIcon.ico"
+          Advertise="no" />
+        <RemoveFolder Id="RemoveHanDriveProgramMenuDir" On="uninstall" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\Hanplanet\HanDrive"
+          Name="StartMenuShortcutInstalled"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="ProductFeature" Title="HanDrive" Level="1">
+      <ComponentRef Id="cmpHandriveExe" />
+      <ComponentRef Id="cmpReadme" />
+      <ComponentRef Id="cmpStartMenuShortcut" />
+    </Feature>
+  </Product>
+</Wix>

@@ -398,6 +398,7 @@ body.theme-dark .account-storage-bar:focus-visible .account-storage-bar-track {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    cursor: default;
 }
 
 body.theme-dark .account-storage-popup {
@@ -504,6 +505,43 @@ body.theme-dark .account-storage-popup-legend-dot-free {
     color: var(--handrive-text);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+}
+
+.handrive-icon-btn.account-storage-popup-download-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 40px;
+    height: 40px;
+    color: var(--handrive-text-secondary, var(--handrive-text));
+    background: transparent;
+    border: none;
+    border-radius: 0;
+}
+
+.handrive-icon-btn.account-storage-popup-download-btn svg {
+    width: 30px;
+    height: 30px;
+}
+
+.handrive-icon-btn.account-storage-popup-download-btn:hover,
+.handrive-icon-btn.account-storage-popup-download-btn:focus-visible {
+    background: transparent;
+    color: var(--handrive-text-stronger, var(--handrive-text));
+}
+
+body.theme-dark .handrive-icon-btn.account-storage-popup-download-btn {
+    background: transparent;
+}
+
+body.theme-dark .handrive-icon-btn.account-storage-popup-download-btn:hover,
+body.theme-dark .handrive-icon-btn.account-storage-popup-download-btn:focus-visible {
+    background: transparent;
+}
+
+.account-storage-popup-sync-btn {
+    width: 100%;
+    justify-content: center;
 }
 
 .account-storage-bar-track {
@@ -1131,9 +1169,14 @@ body.theme-dark .handrive-help-icon-symbol {
     overflow: hidden;
 }
 
+.handrive-job-queue-panel.is-collapsed {
+    gap: 0;
+    max-height: none;
+}
+
 .handrive-job-queue-head {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 8px;
 }
@@ -1158,6 +1201,15 @@ body.theme-dark .handrive-help-icon-symbol {
     white-space: nowrap;
 }
 
+.handrive-job-queue-head-actions {
+    flex: 0 0 auto;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.handrive-job-queue-toggle,
 .handrive-job-queue-close {
     flex: 0 0 auto;
     width: 36px;
@@ -1175,10 +1227,77 @@ body.theme-dark .handrive-help-icon-symbol {
     padding: 0;
 }
 
+.handrive-job-queue-close {
+    font-size: 0;
+}
+
+.handrive-job-queue-toggle-icon {
+    position: relative;
+    display: block;
+    width: 14px;
+    height: 14px;
+}
+
+.handrive-job-queue-toggle-icon::before {
+    content: "";
+    position: absolute;
+    left: 1px;
+    right: 1px;
+    top: 50%;
+    height: 2px;
+    transform: translateY(-50%);
+    border-radius: 999px;
+    background: currentColor;
+}
+
+.handrive-job-queue-toggle[aria-expanded="false"] .handrive-job-queue-toggle-icon::before {
+    top: 1px;
+    bottom: 1px;
+    height: auto;
+    transform: none;
+    border-radius: 2px;
+    border: 2px solid currentColor;
+    background: transparent;
+}
+
+.handrive-job-queue-close-icon {
+    position: relative;
+    display: block;
+    width: 14px;
+    height: 14px;
+}
+
+.handrive-job-queue-close-icon::before,
+.handrive-job-queue-close-icon::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    height: 14px;
+    border-radius: 999px;
+    background: currentColor;
+    transform-origin: center;
+}
+
+.handrive-job-queue-close-icon::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.handrive-job-queue-close-icon::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.handrive-job-queue-toggle:hover,
+.handrive-job-queue-toggle:focus-visible,
 .handrive-job-queue-close:hover,
 .handrive-job-queue-close:focus-visible {
     background: var(--handrive-hover-soft);
     color: var(--handrive-text-strong);
+}
+
+.handrive-job-queue-panel.is-collapsed .handrive-job-queue-list {
+    display: none;
 }
 
 .handrive-job-queue-list {
@@ -1652,6 +1771,15 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 
 .handrive-list-layout.is-portrait .handrive-list-preview-content {
     height: auto;
+    min-height: 0;
+}
+
+.handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-unsupported {
+    flex: 0 0 auto;
+    height: auto;
+}
+
+.handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-unsupported .handrive-unsupported-file {
     min-height: 0;
 }
 
@@ -3339,8 +3467,14 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
 }
 
 .handrive-list-preview-content.handrive-unsupported .handrive-unsupported-file {
+    margin-block: auto;
     min-height: 180px;
     padding: 32px 16px;
+}
+
+.handrive-list-preview-content.handrive-unsupported {
+    display: flex;
+    flex-direction: column;
 }
 
 .handrive-media {
@@ -3875,8 +4009,66 @@ body.handrive-modal-open {
 
 .handrive-save-modal-title {
     margin: 0;
-    font-size: 16px;
+    font-size: 20px;
     font-weight: 700;
+}
+
+.handrive-sync-modal-dialog {
+    width: min(920px, 100%);
+    min-height: min(680px, calc(100vh - 32px));
+}
+
+.handrive-sync-modal-head {
+    align-items: flex-start;
+}
+
+.handrive-sync-modal-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.handrive-sync-modal-description {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.45;
+    color: var(--handrive-text-muted);
+}
+
+.handrive-sync-modal-list-pane {
+    flex: 1 1 auto;
+    min-height: 0;
+    border: 1px solid var(--handrive-panel-border);
+    border-radius: var(--handrive-radius-lg);
+    overflow: auto;
+}
+
+.handrive-sync-modal-actions {
+    margin-top: auto;
+}
+
+.handrive-sync-item-checkbox-wrap {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 12px;
+    flex: 0 0 auto;
+}
+
+.handrive-sync-item-checkbox {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--theme-accent, #4a90d9);
+    cursor: pointer;
+}
+
+@media (max-width: 720px) {
+    .handrive-sync-modal-dialog {
+        min-height: calc(100vh - 24px);
+        padding: 10px;
+    }
 }
 
 .handrive-save-close-btn {
@@ -4174,7 +4366,9 @@ body.handrive-modal-open {
 .handrive-save-modal-actions-right {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 8px;
+    margin-left: auto;
 }
 
 .handrive-folder-modal {

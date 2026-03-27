@@ -18,20 +18,34 @@ import (
 // OpenBrowser는 Windows ShellExecuteW를 통해 URL을 기본 브라우저로 엽니다.
 // UAC 관리자 권한 상태에서도 정상 동작합니다.
 func OpenBrowser(rawURL string) {
-	urlPtr, err := syscall.UTF16PtrFromString(rawURL)
+	_, _ = shellOpen(rawURL)
+}
+
+// OpenPath는 Windows ShellExecuteW를 통해 파일/폴더를 엽니다.
+func OpenPath(path string) error {
+	_, err := shellOpen(path)
+	return err
+}
+
+func shellOpen(target string) (uintptr, error) {
+	urlPtr, err := syscall.UTF16PtrFromString(target)
 	if err != nil {
-		return
+		return 0, err
 	}
 	verbPtr, _ := syscall.UTF16PtrFromString("open")
 	shell32 := syscall.NewLazyDLL("shell32.dll")
 	shellExec := shell32.NewProc("ShellExecuteW")
-	shellExec.Call(
+	ret, _, _ := shellExec.Call(
 		0,
 		uintptr(unsafe.Pointer(verbPtr)),
 		uintptr(unsafe.Pointer(urlPtr)),
 		0, 0,
 		uintptr(syscall.SW_SHOWNORMAL),
 	)
+	if ret <= 32 {
+		return ret, fmt.Errorf("ShellExecuteW failed with code %d", ret)
+	}
+	return ret, nil
 }
 
 // BrowserLogin은 브라우저를 통한 OAuth-style 로그인을 수행합니다.
@@ -89,12 +103,19 @@ func BrowserLogin(serverURL, tokensPath string, forceRelogin bool) error {
 		w.Write([]byte(`<!DOCTYPE html>
 <html lang="ko">
 <head><meta charset="UTF-8"><title>HanDrive 로그인 완료</title>
-<style>body{font-family:-apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#eef2f7}
-.box{text-align:center;padding:48px 40px;background:#fff;border-radius:16px;box-shadow:0 6px 32px rgba(0,0,0,.10);max-width:360px}
-.icon{font-size:52px;margin-bottom:16px}h2{color:#0055b8;font-size:20px;margin-bottom:10px}
-p{color:#666;font-size:14px;line-height:1.6}</style></head>
+<meta name="color-scheme" content="light dark">
+<style>
+:root{color-scheme:light dark;--bg:#f3f3f3;--card:#ffffff;--text:#111111;--muted:#5f6b7a;--shadow:0 12px 32px rgba(15,23,42,.12)}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#222222;--card:#2c2c2c;--text:#f5f7fb;--muted:#c8c8c8;--shadow:0 18px 36px rgba(0,0,0,.38)}
+}
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px;background:var(--bg)}
+.box{text-align:center;padding:40px 34px;background:var(--card);border-radius:18px;box-shadow:var(--shadow);max-width:360px;width:100%}
+h2{color:var(--text);font-size:22px;line-height:1.2;margin:0 0 12px}
+p{color:var(--muted);font-size:14px;line-height:1.7;margin:0}
+</style></head>
 <body><div class="box">
-<div class="icon">&#x2705;</div>
 <h2>로그인 완료!</h2>
 <p>HanDrive에 성공적으로 로그인되었습니다.<br>이 창을 닫아도 됩니다.</p>
 </div></body></html>`))

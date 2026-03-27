@@ -28,6 +28,13 @@
                     <span class="account-storage-popup-legend-text">여유 공간 ({{ handrive_quota_free_display }})</span>
                 </div>
             </div>
+            {% if current_dir is not None %}
+            <button
+                type="button"
+                class="ui-btn ui-btn-primary account-storage-popup-sync-btn"
+                id="account-storage-popup-sync-btn"
+            >{% include 'partials/ui_i18n.html' with key='account_sync_open' %}</button>
+            {% endif %}
         </div>
     </div>
     <script>

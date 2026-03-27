@@ -162,7 +162,7 @@ func fetchMode(apiClient *api.Client, database *db.DB) string {
 // 오류 등으로 종료 시 현재 mode 를 그대로 반환합니다.
 func syncSession(cfg *config.Config, apiClient *api.Client, database *db.DB, syncDir, mode string) string {
 	q := queue.New(database)
-	eng := engine.New(syncDir, database, apiClient, q)
+	eng := engine.New(syncDir, database, apiClient, q, nil)
 
 	// 초기 sync (서버 ↔ 로컬 diff)
 	if err := eng.InitialSync(); err != nil {

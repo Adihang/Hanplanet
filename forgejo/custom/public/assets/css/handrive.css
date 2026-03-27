@@ -1044,9 +1044,14 @@ body.theme-dark .handrive-help-icon-symbol {
     overflow: hidden;
 }
 
+.handrive-job-queue-panel.is-collapsed {
+    gap: 0;
+    max-height: none;
+}
+
 .handrive-job-queue-head {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 8px;
 }
@@ -1071,6 +1076,15 @@ body.theme-dark .handrive-help-icon-symbol {
     white-space: nowrap;
 }
 
+.handrive-job-queue-head-actions {
+    flex: 0 0 auto;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.handrive-job-queue-toggle,
 .handrive-job-queue-close {
     flex: 0 0 auto;
     width: 36px;
@@ -1088,10 +1102,77 @@ body.theme-dark .handrive-help-icon-symbol {
     padding: 0;
 }
 
+.handrive-job-queue-close {
+    font-size: 0;
+}
+
+.handrive-job-queue-toggle-icon {
+    position: relative;
+    display: block;
+    width: 14px;
+    height: 14px;
+}
+
+.handrive-job-queue-toggle-icon::before {
+    content: "";
+    position: absolute;
+    left: 1px;
+    right: 1px;
+    top: 50%;
+    height: 2px;
+    transform: translateY(-50%);
+    border-radius: 999px;
+    background: currentColor;
+}
+
+.handrive-job-queue-toggle[aria-expanded="false"] .handrive-job-queue-toggle-icon::before {
+    top: 1px;
+    bottom: 1px;
+    height: auto;
+    transform: none;
+    border-radius: 2px;
+    border: 2px solid currentColor;
+    background: transparent;
+}
+
+.handrive-job-queue-close-icon {
+    position: relative;
+    display: block;
+    width: 14px;
+    height: 14px;
+}
+
+.handrive-job-queue-close-icon::before,
+.handrive-job-queue-close-icon::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    height: 14px;
+    border-radius: 999px;
+    background: currentColor;
+    transform-origin: center;
+}
+
+.handrive-job-queue-close-icon::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.handrive-job-queue-close-icon::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.handrive-job-queue-toggle:hover,
+.handrive-job-queue-toggle:focus-visible,
 .handrive-job-queue-close:hover,
 .handrive-job-queue-close:focus-visible {
     background: var(--handrive-hover-soft);
     color: var(--handrive-text-strong);
+}
+
+.handrive-job-queue-panel.is-collapsed .handrive-job-queue-list {
+    display: none;
 }
 
 .handrive-job-queue-list {
@@ -1532,6 +1613,24 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 .handrive-list-layout.is-portrait .handrive-list-preview-content {
     height: auto;
     min-height: 0;
+}
+
+.handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-unsupported {
+    flex: 0 0 auto;
+    height: auto;
+}
+
+.handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-unsupported .handrive-unsupported-file {
+    min-height: 0;
+}
+
+.handrive-list-preview-content.handrive-unsupported {
+    display: flex;
+    flex-direction: column;
+}
+
+.handrive-list-preview-content.handrive-unsupported .handrive-unsupported-file {
+    margin-block: auto;
 }
 
 .handrive-list-preview-placeholder {

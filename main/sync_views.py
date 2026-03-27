@@ -12,27 +12,45 @@
   GET    /api/sync/changes                      — 변경 이력 (cursor 기반)
 """
 import json
+import logging
+import hashlib
+import mimetypes
 import time
 import uuid as uuid_module
+from pathlib import Path
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Sum
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
+from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from main.minio_client import (
-    delete_object,
-    generate_presigned_download_url,
-    generate_presigned_upload_url,
+    get_object_bytes,
+    put_object_bytes,
 )
 from main.models import (
     HandriveUserQuota,
     SyncChangeLog,
     SyncFile,
     SyncUploadSession,
+    UserProfile,
 )
 from main.sync_auth import login_and_issue_tokens, refresh_access_token, require_sync_auth
+from main.handrive_views import (
+    _DOCS_QUOTA_TYPE_META,
+    calculate_handrive_quota_breakdown,
+    calculate_handrive_repo_usage,
+    format_handrive_bytes_display,
+    get_scoped_handrive_home_dir,
+    get_user_handrive_quota_bytes,
+    handrive_root_dir,
+    normalize_relative_path,
+    resolve_path,
+)
+
+logger = logging.getLogger(__name__)
 
 
 # ── 내부 유틸리티 ──────────────────────────────────────────────────────────────
@@ -61,6 +79,28 @@ def _json_body(request) -> dict:
         return {}
 
 
+def _get_sync_excluded_paths(user) -> list[str]:
+    profile = UserProfile.objects.filter(user=user).only("sync_excluded_paths").first()
+    raw_paths = profile.sync_excluded_paths if profile else []
+    if not isinstance(raw_paths, list):
+        return []
+    cleaned = []
+    seen = set()
+    for raw_path in raw_paths:
+        try:
+            normalized = normalize_relative_path(raw_path, allow_empty=True)
+            candidate, _ = resolve_path(normalized, must_exist=True)
+        except (ValueError, FileNotFoundError):
+            continue
+        if not (candidate.is_file() or candidate.is_dir()):
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        cleaned.append(normalized)
+    return cleaned
+
+
 def _check_quota(user, additional_bytes: int) -> bool:
     """쿼터 초과 여부 확인. True = 허용, False = 초과."""
     try:
@@ -76,6 +116,159 @@ def _check_quota(user, additional_bytes: int) -> bool:
         or 0
     )
     return used + additional_bytes <= quota_bytes
+
+
+def _get_sync_scope_relative_dir(user) -> str:
+    username = str(user.get_username() or "").strip()
+    if not username:
+        raise ValueError("sync user has no username")
+    return normalize_relative_path(f"users/{username}", allow_empty=False)
+
+
+def _resolve_sync_storage_path(user, relative_path: str, *, must_exist: bool) -> tuple[Path, str]:
+    scope_relative = _get_sync_scope_relative_dir(user)
+    normalized_rel = normalize_relative_path(relative_path, allow_empty=False)
+    sync_root = (handrive_root_dir() / scope_relative).resolve()
+    sync_root.mkdir(parents=True, exist_ok=True)
+    candidate = (sync_root / normalized_rel).resolve()
+    if candidate != sync_root and sync_root not in candidate.parents:
+        raise ValueError("허용되지 않은 경로입니다.")
+    if must_exist and not candidate.exists():
+        raise FileNotFoundError("경로를 찾을 수 없습니다.")
+    return candidate, normalized_rel
+
+
+def _hash_file(path_obj: Path) -> str:
+    digest = hashlib.sha256()
+    with path_obj.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _should_sync_index_file(path_obj: Path) -> bool:
+    return path_obj.is_file() and path_obj.name not in {".DS_Store"}
+
+
+def _ensure_sync_index_for_user(user) -> dict:
+    scope_relative = _get_sync_scope_relative_dir(user)
+    scope_root = (handrive_root_dir() / scope_relative).resolve()
+    scope_root.mkdir(parents=True, exist_ok=True)
+
+    existing_by_path = {
+        sync_file.path: sync_file
+        for sync_file in SyncFile.objects.filter(user=user)
+    }
+    seen_paths = set()
+    created = 0
+    updated = 0
+    deleted = 0
+    now_ms = _now_ms()
+
+    for file_path in sorted(scope_root.rglob("*"), key=lambda candidate: candidate.as_posix().lower()):
+        if not _should_sync_index_file(file_path):
+            continue
+
+        rel_path = file_path.relative_to(scope_root).as_posix()
+        seen_paths.add(rel_path)
+        stat = file_path.stat()
+        client_modified_at = int(stat.st_mtime * 1000)
+        existing = existing_by_path.get(rel_path)
+
+        if (
+            existing
+            and not existing.deleted
+            and existing.size == stat.st_size
+            and existing.client_modified_at == client_modified_at
+        ):
+            continue
+
+        file_hash = _hash_file(file_path)
+        file_bytes = file_path.read_bytes()
+        storage_key = existing.storage_key if existing and existing.storage_key else f"{user.id}/{uuid_module.uuid4()}"
+        put_object_bytes(
+            storage_key,
+            file_bytes,
+            content_type=mimetypes.guess_type(file_path.name)[0] or "application/octet-stream",
+        )
+
+        if existing:
+            existing.size = stat.st_size
+            existing.hash = file_hash
+            existing.version = existing.version + 1 if not existing.deleted else max(1, existing.version)
+            existing.storage_key = storage_key
+            existing.client_modified_at = client_modified_at
+            existing.server_modified_at = now_ms
+            existing.deleted = False
+            existing.save()
+            change_type = SyncChangeLog.TYPE_UPDATE if existing.version > 1 else SyncChangeLog.TYPE_CREATE
+            updated += 1
+            sync_file = existing
+        else:
+            try:
+                sync_file = SyncFile.objects.create(
+                    id=uuid_module.uuid4(),
+                    user=user,
+                    path=rel_path,
+                    size=stat.st_size,
+                    hash=file_hash,
+                    version=1,
+                    storage_key=storage_key,
+                    client_modified_at=client_modified_at,
+                    server_modified_at=now_ms,
+                    deleted=False,
+                )
+                change_type = SyncChangeLog.TYPE_CREATE
+                created += 1
+            except IntegrityError:
+                sync_file = SyncFile.objects.get(user=user, path=rel_path)
+                sync_file.size = stat.st_size
+                sync_file.hash = file_hash
+                sync_file.version += 1
+                sync_file.storage_key = storage_key
+                sync_file.client_modified_at = client_modified_at
+                sync_file.server_modified_at = now_ms
+                sync_file.deleted = False
+                sync_file.save()
+                change_type = SyncChangeLog.TYPE_UPDATE
+                updated += 1
+
+        SyncChangeLog.objects.create(
+            user=user,
+            file_id=sync_file.id,
+            path=sync_file.path,
+            type=change_type,
+            version=sync_file.version,
+            created_at=now_ms,
+        )
+
+    for rel_path, sync_file in existing_by_path.items():
+        if rel_path in seen_paths or sync_file.deleted:
+            continue
+        sync_file.deleted = True
+        sync_file.server_modified_at = now_ms
+        sync_file.version += 1
+        sync_file.save()
+        deleted += 1
+        SyncChangeLog.objects.create(
+            user=user,
+            file_id=sync_file.id,
+            path=sync_file.path,
+            type=SyncChangeLog.TYPE_DELETE,
+            version=sync_file.version,
+            created_at=now_ms,
+        )
+
+    if created or updated or deleted:
+        logger.info(
+            "[sync] index user=%s scope=%s created=%s updated=%s deleted=%s",
+            user.username,
+            scope_relative,
+            created,
+            updated,
+            deleted,
+        )
+    return {"created": created, "updated": updated, "deleted": deleted}
 
 
 def _auth_required(request):
@@ -129,8 +322,11 @@ def sync_files_list(request):
     if err:
         return err
 
+    _ensure_sync_index_for_user(user)
     files = SyncFile.objects.filter(user=user).order_by("path")
-    return JsonResponse({"files": [_file_to_dict(f) for f in files]})
+    excluded_paths = _get_sync_excluded_paths(user)
+    logger.info("[sync] list files user=%s count=%s", user.username, files.count())
+    return JsonResponse({"files": [_file_to_dict(f) for f in files], "excluded_paths": excluded_paths})
 
 
 # ── 업로드 ──────────────────────────────────────────────────────────────────────
@@ -194,18 +390,19 @@ def sync_files_init_upload(request):
             storage_key=storage_key,
             created_at=_now_ms(),
         )
+        logger.info(
+            "[sync] init-upload dedup user=%s path=%s size=%s storage_key=%s",
+            user.username,
+            path,
+            size,
+            storage_key,
+        )
         return JsonResponse({
             "skip_upload": True,
             "file_id": str(new_file_id),
             "upload_id": upload_id,
             "storage_key": storage_key,
         })
-
-    # 일반 업로드: presigned URL 발급
-    try:
-        upload_url = generate_presigned_upload_url(storage_key)
-    except Exception as e:
-        return JsonResponse({"error": f"storage error: {e}"}, status=502)
 
     SyncUploadSession.objects.create(
         upload_id=upload_id,
@@ -216,6 +413,20 @@ def sync_files_init_upload(request):
         hash=file_hash,
         storage_key=storage_key,
         created_at=_now_ms(),
+    )
+
+    # 현재 인프라가 미완성 상태여도 동작하도록 업로드는 Django proxy URL을 기본 사용한다.
+    upload_url = request.build_absolute_uri(
+        reverse("main:sync_upload_data", kwargs={"upload_id": upload_id})
+    )
+    logger.info(
+        "[sync] init-upload user=%s path=%s size=%s upload_id=%s storage_key=%s upload_url=%s",
+        user.username,
+        path,
+        size,
+        upload_id,
+        storage_key,
+        upload_url,
     )
 
     return JsonResponse({
@@ -302,7 +513,58 @@ def sync_files_complete(request):
         )
 
     session.delete()
+    logger.info(
+        "[sync] complete-upload user=%s path=%s version=%s file_id=%s change=%s",
+        user.username,
+        sync_file.path,
+        sync_file.version,
+        sync_file.id,
+        change_type,
+    )
     return JsonResponse(_file_to_dict(sync_file))
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def sync_upload_data(request, upload_id):
+    """PUT /api/sync/uploads/<upload_id>/data — Django proxy 업로드."""
+    user, err = _auth_required(request)
+    if err:
+        return err
+
+    try:
+        session = SyncUploadSession.objects.get(upload_id=upload_id, user=user)
+    except SyncUploadSession.DoesNotExist:
+        return JsonResponse({"error": "upload session not found"}, status=404)
+
+    body = request.body or b""
+    content_type = request.headers.get("Content-Type", "application/octet-stream")
+    try:
+        target_path, normalized_path = _resolve_sync_storage_path(user, session.path, must_exist=False)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(body)
+        put_object_bytes(session.storage_key, body, content_type=content_type)
+    except Exception as exc:
+        logger.exception(
+            "[sync] upload-data failed user=%s upload_id=%s path=%s storage_key=%s size=%s",
+            user.username,
+            upload_id,
+            session.path,
+            session.storage_key,
+            len(body),
+        )
+        return JsonResponse({"error": f"storage error: {exc}"}, status=502)
+
+    logger.info(
+        "[sync] upload-data ok user=%s upload_id=%s path=%s normalized=%s storage_key=%s size=%s",
+        user.username,
+        upload_id,
+        session.path,
+        normalized_path,
+        session.storage_key,
+        len(body),
+    )
+    return HttpResponse(status=200)
 
 
 # ── 다운로드 ────────────────────────────────────────────────────────────────────
@@ -320,12 +582,62 @@ def sync_files_download_url(request, file_id):
     except SyncFile.DoesNotExist:
         return JsonResponse({"error": "not found"}, status=404)
 
-    try:
-        url = generate_presigned_download_url(sync_file.storage_key)
-    except Exception as e:
-        return JsonResponse({"error": f"storage error: {e}"}, status=502)
-
+    url = request.build_absolute_uri(
+        reverse("main:sync_files_download_proxy", kwargs={"file_id": sync_file.id})
+    )
+    logger.info(
+        "[sync] download-url user=%s file_id=%s path=%s url=%s",
+        user.username,
+        sync_file.id,
+        sync_file.path,
+        url,
+    )
     return JsonResponse({"download_url": url})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def sync_files_download_proxy(request, file_id):
+    """GET /api/sync/files/<uuid>/download — Django proxy 다운로드."""
+    user, err = _auth_required(request)
+    if err:
+        return err
+
+    try:
+        sync_file = SyncFile.objects.get(id=file_id, user=user, deleted=False)
+    except SyncFile.DoesNotExist:
+        return JsonResponse({"error": "not found"}, status=404)
+
+    try:
+        actual_path, _ = _resolve_sync_storage_path(user, sync_file.path, must_exist=True)
+        data = actual_path.read_bytes()
+        source = "handrive"
+    except Exception:
+        try:
+            data = get_object_bytes(sync_file.storage_key)
+            source = "blob"
+        except Exception as exc:
+            logger.exception(
+                "[sync] download-proxy failed user=%s file_id=%s path=%s storage_key=%s",
+                user.username,
+                sync_file.id,
+                sync_file.path,
+                sync_file.storage_key,
+            )
+            return JsonResponse({"error": f"storage error: {exc}"}, status=502)
+
+    response = HttpResponse(data, content_type="application/octet-stream")
+    response["Content-Length"] = str(len(data))
+    response["Content-Disposition"] = f'attachment; filename="{sync_file.path.split("/")[-1]}"'
+    logger.info(
+        "[sync] download-proxy ok user=%s file_id=%s path=%s size=%s source=%s",
+        user.username,
+        sync_file.id,
+        sync_file.path,
+        len(data),
+        source,
+    )
+    return response
 
 
 # ── 삭제 ──────────────────────────────────────────────────────────────────────
@@ -341,6 +653,12 @@ def sync_files_delete(request, file_id):
     try:
         with transaction.atomic():
             sync_file = SyncFile.objects.select_for_update().get(id=file_id, user=user, deleted=False)
+            try:
+                target_path, _ = _resolve_sync_storage_path(user, sync_file.path, must_exist=False)
+                if target_path.exists():
+                    target_path.unlink()
+            except Exception:
+                logger.exception("[sync] delete physical file cleanup failed user=%s path=%s", user.username, sync_file.path)
             sync_file.deleted = True
             sync_file.server_modified_at = _now_ms()
             sync_file.save()
@@ -396,6 +714,16 @@ def sync_files_move(request, file_id):
                 return JsonResponse({"error": "path_conflict"}, status=409)
 
             old_path = sync_file.path
+            try:
+                source_path, _ = _resolve_sync_storage_path(user, old_path, must_exist=False)
+                target_file_path, normalized_target_path = _resolve_sync_storage_path(user, target_path, must_exist=False)
+                if source_path.exists():
+                    target_file_path.parent.mkdir(parents=True, exist_ok=True)
+                    source_path.replace(target_file_path)
+                target_path = normalized_target_path
+            except Exception:
+                logger.exception("[sync] move physical file failed user=%s old=%s new=%s", user.username, old_path, target_path)
+                return JsonResponse({"error": "storage move failed"}, status=502)
             now_ms = _now_ms()
             sync_file.path = target_path
             sync_file.version += 1
@@ -437,6 +765,7 @@ def sync_changes(request):
     except (ValueError, TypeError):
         cursor = 0
 
+    _ensure_sync_index_for_user(user)
     PAGE_SIZE = 200
     logs = (
         SyncChangeLog.objects.filter(user=user, id__gt=cursor)
@@ -455,9 +784,17 @@ def sync_changes(request):
         }
         for log in logs
     ]
+    excluded_paths = _get_sync_excluded_paths(user)
 
     next_cursor = changes[-1]["id"] if changes else cursor
-    return JsonResponse({"changes": changes, "next_cursor": next_cursor})
+    logger.info(
+        "[sync] changes user=%s cursor=%s returned=%s next_cursor=%s",
+        user.username,
+        cursor,
+        len(changes),
+        next_cursor,
+    )
+    return JsonResponse({"changes": changes, "next_cursor": next_cursor, "excluded_paths": excluded_paths})
 
 
 @require_http_methods(["GET"])
@@ -480,88 +817,62 @@ def sync_me(request):
             ]
         }
     """
-    from main.sync_auth import require_sync_auth
-    from main.models import SyncFile, HandriveUserQuota
-    import os
-
     user = require_sync_auth(request)
     if not user:
         return JsonResponse({"error": "unauthorized"}, status=401)
+    quota_total = get_user_handrive_quota_bytes(user)
+    scoped_home_dir = get_scoped_handrive_home_dir(request)
+    if scoped_home_dir:
+        quota_root, _ = resolve_path(scoped_home_dir, must_exist=False)
+        quota_used, _, quota_breakdown = calculate_handrive_quota_breakdown(quota_root)
+        repo_bytes, repo_count = calculate_handrive_repo_usage(user)
+        used_bytes = quota_used + repo_bytes
+        breakdown = [
+            {
+                "label": label,
+                "color": color,
+                "display": format_handrive_bytes_display(quota_breakdown[key]["bytes"]),
+                "bytes": quota_breakdown[key]["bytes"],
+                "percent": round(quota_breakdown[key]["bytes"] / quota_total * 100, 2) if quota_total else 0,
+            }
+            for key, label, color in _DOCS_QUOTA_TYPE_META
+            if quota_breakdown[key]["bytes"] > 0
+        ]
+        if repo_count > 0:
+            breakdown.append({
+                "label": "리포지토리",
+                "color": "#7c3aed",
+                "display": format_handrive_bytes_display(repo_bytes),
+                "bytes": repo_bytes,
+                "percent": round(repo_bytes / quota_total * 100, 2) if quota_total else 0,
+            })
+    else:
+        used_bytes = 0
+        breakdown = []
 
-    # 총 쿼터
-    try:
-        quota_total = user.handrive_quota.quota_bytes
-    except HandriveUserQuota.DoesNotExist:
-        quota_total = 10 * 1024 ** 3  # 기본 10 GB
-
-    # SyncFile 기준 사용량 (MinIO 오브젝트 스토리지)
-    TYPE_META = [
-        ("photo",    "사진",   "#f5b800",
-         {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".tif",
-          ".avif", ".heic", ".heif", ".ico", ".svg"}),
-        ("video",    "동영상", "#06d6a0",
-         {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v",
-          ".3gp", ".m2ts", ".ts", ".mts"}),
-        ("document", "문서",   "#ef476f",
-         {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-          ".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm"}),
-        ("audio",    "오디오", "#4361ee",
-         {".mp3", ".flac", ".wav", ".aac", ".ogg", ".m4a", ".wma"}),
-        ("other",    "기타",   "#adb5bd", set()),
-    ]
-
-    def classify_ext(path):
-        ext = os.path.splitext(path)[1].lower()
-        for key, _label, _color, exts in TYPE_META:
-            if ext in exts:
-                return key
-        return "other"
-
-    def fmt_bytes(n):
-        GB, MB, KB = 1024**3, 1024**2, 1024
-        if n >= GB:
-            v = round(n / GB, 1)
-            return f"{v:g} GB"
-        if n >= MB:
-            v = round(n / MB, 1)
-            return f"{v:g} MB"
-        if n >= KB:
-            v = round(n / KB, 1)
-            return f"{v:g} KB"
-        return f"{n} B"
-
-    files = SyncFile.objects.filter(user=user, deleted=False).values_list("path", "size")
-    byte_map = {k: 0 for k, *_ in TYPE_META}
-    for path, size in files:
-        byte_map[classify_ext(path)] += size
-
-    used_bytes = sum(byte_map.values())
     free_bytes = max(0, quota_total - used_bytes)
     percent = min(100, round(used_bytes / quota_total * 100, 1)) if quota_total else 0
 
-    breakdown = [
-        {
-            "label": label,
-            "color": color,
-            "display": fmt_bytes(byte_map[key]),
-            "bytes": byte_map[key],
-            "percent": round(byte_map[key] / quota_total * 100, 2) if quota_total else 0,
-        }
-        for key, label, color, _ in TYPE_META
-        if byte_map[key] > 0
-    ]
-
-    return JsonResponse({
+    payload = {
         "username": user.username,
         "quota_used_bytes": used_bytes,
         "quota_total_bytes": quota_total,
         "quota_percent": percent,
-        "quota_used_display": fmt_bytes(used_bytes),
-        "quota_total_display": fmt_bytes(quota_total),
-        "quota_free_display": fmt_bytes(free_bytes),
+        "quota_used_display": format_handrive_bytes_display(used_bytes),
+        "quota_total_display": format_handrive_bytes_display(quota_total),
+        "quota_free_display": format_handrive_bytes_display(free_bytes),
         "quota_free_percent": round(free_bytes / quota_total * 100, 2) if quota_total else 100,
         "quota_breakdown": breakdown,
-    })
+        "excluded_paths": _get_sync_excluded_paths(user),
+    }
+    logger.info(
+        "[sync] me user=%s used=%s total=%s breakdown_items=%s",
+        user.username,
+        used_bytes,
+        quota_total,
+        len(breakdown),
+    )
+    return JsonResponse(payload)
 
 
 @require_http_methods(["GET"])

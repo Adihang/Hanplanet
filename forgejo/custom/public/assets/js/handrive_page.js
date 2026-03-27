@@ -1439,6 +1439,7 @@
         const uploadQueuePanel = document.getElementById("handrive-job-queue-panel");
         const uploadQueueSummary = document.getElementById("handrive-job-queue-summary");
         const uploadQueueList = document.getElementById("handrive-job-queue-list");
+        const uploadQueueToggleButton = document.getElementById("handrive-job-queue-toggle");
         const uploadQueueCloseButton = document.getElementById("handrive-job-queue-close");
         const contextUploadInput = document.getElementById("handrive-context-upload-input");
         const defaultContextButtonLabels = {
@@ -1659,6 +1660,7 @@
             operationWorkerActive: false,
             uploadRefreshPending: false,
             uploadQueueDismissed: false,
+            uploadQueueCollapsed: false,
             uploadQueueContextItem: null,
             pendingContextUploadDir: "",
         };
@@ -3585,6 +3587,16 @@
                 return;
             }
             const items = state.uploadQueueItems.slice(-20);
+            uploadQueuePanel.classList.toggle("is-collapsed", state.uploadQueueCollapsed);
+            uploadQueueList.hidden = state.uploadQueueCollapsed;
+            if (uploadQueueToggleButton) {
+                const toggleLabel = state.uploadQueueCollapsed
+                    ? t("expand", "펼치기")
+                    : t("collapse", "접기");
+                uploadQueueToggleButton.setAttribute("aria-expanded", state.uploadQueueCollapsed ? "false" : "true");
+                uploadQueueToggleButton.setAttribute("aria-label", toggleLabel);
+                uploadQueueToggleButton.setAttribute("title", toggleLabel);
+            }
             if (items.length === 0) {
                 uploadQueuePanel.hidden = true;
                 uploadQueueList.innerHTML = "";
@@ -5905,6 +5917,13 @@
             event.preventDefault();
             enqueueUploadFiles(files, currentDir);
         });
+
+        if (uploadQueueToggleButton) {
+            uploadQueueToggleButton.addEventListener("click", function () {
+                state.uploadQueueCollapsed = !state.uploadQueueCollapsed;
+                renderUploadQueue();
+            });
+        }
 
         if (uploadQueueCloseButton) {
             uploadQueueCloseButton.addEventListener("click", function () {

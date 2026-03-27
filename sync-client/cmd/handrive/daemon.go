@@ -4,18 +4,25 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"os"
+	"sync/atomic"
 	"time"
 
 	"hanplanet/handsync/internal/api"
 	"hanplanet/handsync/internal/config"
 	"hanplanet/handsync/internal/db"
 	"hanplanet/handsync/internal/engine"
+	"hanplanet/handsync/internal/progress"
 	"hanplanet/handsync/internal/queue"
 	"hanplanet/handsync/internal/watcher"
 )
 
 const modeCheckInterval = 60 * time.Second
+
+var daemonWaitingForConfig atomic.Bool
+var transferProgress = progress.NewStore()
 
 // runDaemon은 sync 루프를 실행합니다.
 // ctx가 취소되면 정상 종료합니다.
@@ -24,7 +31,13 @@ func runDaemon(ctx context.Context) {
 	for {
 		cfg, err := config.Load()
 		if err != nil {
-			log.Printf("[daemon] config not ready (%v), retrying in 10s", err)
+			if errors.Is(err, os.ErrNotExist) {
+				if daemonWaitingForConfig.CompareAndSwap(false, true) {
+					log.Printf("[daemon] config not ready yet, waiting for initial setup")
+				}
+			} else {
+				log.Printf("[daemon] config load error: %v", err)
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -32,6 +45,7 @@ func runDaemon(ctx context.Context) {
 				continue
 			}
 		}
+		daemonWaitingForConfig.Store(false)
 
 		database, err := db.Open(config.DefaultConfigDir())
 		if err != nil {
@@ -41,7 +55,10 @@ func runDaemon(ctx context.Context) {
 
 		apiClient := api.NewClient(cfg.ServerURL, config.TokensPath())
 		currentMode := fetchMode(apiClient, database)
-		log.Printf("[daemon] starting — mode=%q  sync_dir=%s", currentMode, cfg.SyncDir)
+		username := resolveCurrentUsername(cfg)
+		effectiveSyncDir := ensureEffectiveSyncDir(cfg)
+		ensureSyncIdentity(database, currentMode, username)
+		log.Printf("[daemon] starting — mode=%q sync_root=%s sync_dir=%s username=%s", currentMode, cfg.SyncDir, effectiveSyncDir, username)
 
 		for {
 			select {
@@ -51,7 +68,7 @@ func runDaemon(ctx context.Context) {
 			default:
 			}
 
-			newMode := syncSession(ctx, cfg, apiClient, database, cfg.SyncDir, currentMode)
+			newMode := syncSession(ctx, cfg, apiClient, database, effectiveSyncDir, currentMode)
 			if ctx.Err() != nil {
 				database.Close()
 				return
@@ -74,7 +91,7 @@ func runDaemon(ctx context.Context) {
 // mode 가 변경되면 새 mode 를 반환합니다.
 func syncSession(ctx context.Context, cfg *config.Config, apiClient *api.Client, database *db.DB, syncDir, mode string) string {
 	q := queue.New(database)
-	eng := engine.New(syncDir, database, apiClient, q)
+	eng := engine.New(syncDir, database, apiClient, q, transferProgress)
 
 	if err := eng.InitialSync(); err != nil {
 		log.Printf("[session] initial sync error: %v", err)

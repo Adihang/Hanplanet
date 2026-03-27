@@ -106,6 +106,32 @@ DOCS_USER_SCOPED_QUOTA_BYTES = 1024 * 1024 * 1024  # 기본값 1GB
 DOCS_USER_SCOPED_ENTRY_LIMIT = 100
 
 
+def _sanitize_sync_excluded_paths(raw_paths, scoped_home_dir: str = "") -> list[str]:
+    if not isinstance(raw_paths, list):
+        return []
+
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw_path in raw_paths:
+        try:
+            normalized = normalize_relative_path(raw_path, allow_empty=True)
+        except ValueError:
+            continue
+        if scoped_home_dir and normalized and not is_path_in_handrive_scope(normalized, scoped_home_dir):
+            continue
+        try:
+            candidate, _ = resolve_path(normalized, must_exist=True)
+        except (ValueError, FileNotFoundError):
+            continue
+        if not (candidate.is_file() or candidate.is_dir()):
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        cleaned.append(normalized)
+    return cleaned
+
+
 def get_user_handrive_quota_bytes(user) -> int:
     """사용자별 저장 용량을 반환한다. 어드민에서 매핑이 없으면 기본값(1GB)."""
     try:
@@ -1660,6 +1686,86 @@ def delete_handrive_acl_rules_for_path(path_value: str) -> None:
     HandriveAccessRule.objects.filter(path__startswith=normalized + "/").delete()
 
 
+def _iter_updated_sync_excluded_paths_for_move(paths, source_path: str, destination_path: str):
+    source_normalized = normalize_relative_path(source_path, allow_empty=True)
+    destination_normalized = normalize_relative_path(destination_path, allow_empty=True)
+    seen: set[str] = set()
+    updated_paths: list[str] = []
+    changed = False
+
+    for raw_path in paths or []:
+        try:
+            normalized = normalize_relative_path(raw_path, allow_empty=True)
+        except ValueError:
+            normalized = raw_path
+
+        next_path = normalized
+        if normalized == source_normalized:
+            next_path = destination_normalized
+        elif source_normalized and isinstance(normalized, str) and normalized.startswith(source_normalized + "/"):
+            next_path = destination_normalized + normalized[len(source_normalized):]
+
+        if next_path in seen:
+            changed = True
+            continue
+        seen.add(next_path)
+        updated_paths.append(next_path)
+        if next_path != raw_path:
+            changed = True
+
+    return updated_paths, changed
+
+
+def move_handrive_sync_excluded_paths(source_path: str, destination_path: str) -> None:
+    source_normalized = normalize_relative_path(source_path, allow_empty=True)
+    destination_normalized = normalize_relative_path(destination_path, allow_empty=True)
+    if source_normalized == destination_normalized:
+        return
+
+    for profile in UserProfile.objects.only("id", "sync_excluded_paths"):
+        updated_paths, changed = _iter_updated_sync_excluded_paths_for_move(
+            profile.sync_excluded_paths,
+            source_normalized,
+            destination_normalized,
+        )
+        if not changed:
+            continue
+        profile.sync_excluded_paths = updated_paths
+        profile.save(update_fields=["sync_excluded_paths", "updated_at"])
+
+
+def delete_handrive_sync_excluded_paths_for_path(path_value: str) -> None:
+    normalized = normalize_relative_path(path_value, allow_empty=True)
+    for profile in UserProfile.objects.only("id", "sync_excluded_paths"):
+        seen: set[str] = set()
+        updated_paths: list[str] = []
+        changed = False
+        for raw_path in profile.sync_excluded_paths or []:
+            try:
+                candidate = normalize_relative_path(raw_path, allow_empty=True)
+            except ValueError:
+                candidate = raw_path
+
+            should_delete = candidate == normalized
+            if normalized and isinstance(candidate, str) and candidate.startswith(normalized + "/"):
+                should_delete = True
+            if should_delete:
+                changed = True
+                continue
+            if candidate in seen:
+                changed = True
+                continue
+            seen.add(candidate)
+            updated_paths.append(candidate)
+            if candidate != raw_path:
+                changed = True
+
+        if not changed:
+            continue
+        profile.sync_excluded_paths = updated_paths
+        profile.save(update_fields=["sync_excluded_paths", "updated_at"])
+
+
 def list_directory_entries(directory: Path, request=None) -> list[dict]:
     """실제 디렉터리 엔트리와 가상 repo root 엔트리를 함께 구성한다."""
     entries = []
@@ -3163,6 +3269,7 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_acl_url": reverse("main:handrive_api_acl"),
             "handrive_api_acl_options_url": reverse("main:handrive_api_acl_options"),
             "handrive_api_url_share_url": reverse("main:handrive_api_url_share"),
+            "handrive_api_sync_settings_url": reverse("main:handrive_api_sync_settings"),
             "handrive_api_map_create_url": reverse("main:handrive_api_map_create"),
             "handrive_api_map_data_url": reverse("main:handrive_api_map_data"),
             "handrive_api_map_icon_upload_url": reverse("main:handrive_api_map_icon_upload"),
@@ -4131,6 +4238,11 @@ def handrive_list(request, folder_path="", ui_lang=None):
             for crumb in breadcrumbs
         ]
 
+    sync_excluded_paths = []
+    if request.user.is_authenticated:
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        sync_excluded_paths = _sanitize_sync_excluded_paths(profile.sync_excluded_paths, scoped_home_dir)
+
     context.update(
         {
             "current_dir": current_dir,
@@ -4162,6 +4274,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
             "handrive_shared_slug": shared_context["share_slug"] if shared_context else "",
             "handrive_shared_root_path": shared_context["root_path"] if shared_context else "",
             "handrive_root_url": shared_root_url,
+            "sync_excluded_paths": sync_excluded_paths,
         }
     )
     return render(request, "handrive/list.html", context)
@@ -4801,6 +4914,28 @@ def handrive_api_url_share(request):
     )
 
 
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_sync_settings(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"ok": False, "error": "로그인이 필요합니다."}, status=401)
+
+    try:
+        payload = json.loads(request.body or "{}")
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "error": "잘못된 요청입니다."}, status=400)
+
+    scoped_home_dir = get_scoped_handrive_home_dir(request)
+    excluded_paths = _sanitize_sync_excluded_paths(payload.get("excluded_paths"), scoped_home_dir)
+
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    profile.sync_excluded_paths = excluded_paths
+    profile.save(update_fields=["sync_excluded_paths", "updated_at"])
+
+    return JsonResponse({"ok": True, "excluded_paths": excluded_paths})
+
+
 @require_http_methods(["GET"])
 @with_request_handrive_root
 def handrive_api_list(request):
@@ -5095,6 +5230,7 @@ def handrive_api_rename(request):
     relative_destination = relative_from_root(destination)
     move_handrive_acl_rules(source_relative, relative_destination)
     move_handrive_shared_links(source_relative, relative_destination)
+    move_handrive_sync_excluded_paths(source_relative, relative_destination)
 
     response = {
         "ok": True,
@@ -5243,6 +5379,7 @@ def handrive_api_delete(request):
                 if restore_path != target_path:
                     move_handrive_acl_rules(target_relative, restore_relative)
                     move_handrive_shared_links(target_relative, restore_relative)
+                    move_handrive_sync_excluded_paths(target_relative, restore_relative)
             git_repo.delete()
             deleted_paths.append(target_relative)
             continue
@@ -5255,6 +5392,7 @@ def handrive_api_delete(request):
             target_path.unlink()
         delete_handrive_acl_rules_for_path(target_relative)
         delete_handrive_shared_links_for_path(target_relative)
+        delete_handrive_sync_excluded_paths_for_path(target_relative)
         deleted_paths.append(target_relative)
 
     return JsonResponse({"ok": True, "deleted_paths": deleted_paths})
@@ -5384,6 +5522,7 @@ def handrive_api_move(request):
                 source_path.unlink()
             delete_handrive_acl_rules_for_path(source_relative)
             delete_handrive_shared_links_for_path(source_relative)
+            delete_handrive_sync_excluded_paths_for_path(source_relative)
 
             destination_relative = f"{git_virtual_target['repo_root']}/{git_virtual_target['branch_segment']}/{target_repo_relative}"
             response = {
@@ -5489,6 +5628,7 @@ def handrive_api_move(request):
     destination_relative = relative_from_root(destination_path)
     move_handrive_acl_rules(source_relative, destination_relative)
     move_handrive_shared_links(source_relative, destination_relative)
+    move_handrive_sync_excluded_paths(source_relative, destination_relative)
 
     response = {
         "ok": True,

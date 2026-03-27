@@ -127,6 +127,29 @@ def load_optional_int_secret(name, default):
             return default
     return default
 
+
+def load_optional_bool_secret(name, default=False):
+    from_env = os.environ.get(name)
+    if from_env is not None and str(from_env).strip():
+        return str(from_env).strip().lower() in {"1", "true", "yes", "on"}
+
+    if DEBUG:
+        return default
+
+    secrets_path = BASE_DIR / "config" / "secrets.json"
+    if secrets_path.exists():
+        try:
+            with secrets_path.open("r", encoding="utf-8") as file:
+                secrets = json.load(file)
+        except (OSError, json.JSONDecodeError):
+            return default
+        value = secrets.get(name)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+    return default
+
 # Ollama (local LLM) settings
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:latest")
@@ -179,9 +202,9 @@ MINIO_ENDPOINT        = load_optional_secret("MINIO_ENDPOINT", "localhost:9000")
 MINIO_ACCESS_KEY      = load_optional_secret("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY      = load_optional_secret("MINIO_SECRET_KEY", "minioadmin")
 MINIO_BUCKET          = load_optional_secret("MINIO_BUCKET", "handrive")
-MINIO_SECURE          = env_bool("MINIO_SECURE", default=False)
+MINIO_SECURE          = load_optional_bool_secret("MINIO_SECURE", default=False)
 MINIO_PUBLIC_ENDPOINT = load_optional_secret("MINIO_PUBLIC_ENDPOINT", MINIO_ENDPOINT)
-MINIO_PUBLIC_SECURE   = env_bool("MINIO_PUBLIC_SECURE", default=MINIO_SECURE)
+MINIO_PUBLIC_SECURE   = load_optional_bool_secret("MINIO_PUBLIC_SECURE", default=MINIO_SECURE)
 
 # Sync Client JWT 설정
 SYNC_JWT_SECRET              = load_optional_secret("SYNC_JWT_SECRET", SECRET_KEY)

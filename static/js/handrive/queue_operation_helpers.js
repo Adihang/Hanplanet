@@ -71,6 +71,7 @@
         var removeExpandedFoldersByDeletedPaths = settings.removeExpandedFoldersByDeletedPaths || function () {};
         var applySelection = settings.applySelection || function () {};
         var queueNeedsRefresh = settings.queueNeedsRefresh || function () {};
+        var onEntryDeleted = settings.onEntryDeleted || function () {};
         var t = settings.t || function (_, fallbackValue) { return fallbackValue || ""; };
 
         var entries = Array.isArray(item.entries) ? item.entries.slice() : [];
@@ -92,6 +93,7 @@
                 }),
                 { signal: controller.signal }
             ));
+            onEntryDeleted(entry.path);
             deletedPaths.push(entry.path);
             item.progress = ((index + 1) / totalCount) * 100;
             item.savedPath = entry.path;
@@ -114,6 +116,7 @@
         var renderUploadQueue = settings.renderUploadQueue || function () {};
         var applySelection = settings.applySelection || function () {};
         var queueNeedsRefresh = settings.queueNeedsRefresh || function () {};
+        var onEntryMoved = settings.onEntryMoved || function () {};
         var t = settings.t || function (_, fallbackValue) { return fallbackValue || ""; };
 
         var entries = Array.isArray(item.entries) ? item.entries.slice() : [];
@@ -136,6 +139,7 @@
                 { signal: controller.signal }
             ));
             var movedPath = data && data.path ? data.path : entry.path;
+            onEntryMoved(entry.path, movedPath);
             movedPaths.push(movedPath);
             item.progress = ((index + 1) / totalCount) * 100;
             item.savedPath = movedPath;

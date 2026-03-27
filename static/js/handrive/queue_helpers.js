@@ -274,7 +274,9 @@
         var uploadQueuePanel = settings.uploadQueuePanel || null;
         var uploadQueueList = settings.uploadQueueList || null;
         var uploadQueueSummary = settings.uploadQueueSummary || null;
+        var uploadQueueToggleButton = settings.uploadQueueToggleButton || null;
         var items = Array.isArray(settings.items) ? settings.items : [];
+        var collapsed = Boolean(settings.collapsed);
         var dismissed = Boolean(settings.dismissed);
         var t = settings.t || function (_, fallbackValue) { return fallbackValue || ""; };
         var createQueueListItem = settings.createQueueListItem || function () { return null; };
@@ -284,6 +286,19 @@
         if (!uploadQueuePanel || !uploadQueueList || !uploadQueueSummary) {
             return;
         }
+
+        uploadQueuePanel.classList.toggle("is-collapsed", collapsed);
+        uploadQueueList.hidden = collapsed;
+        if (uploadQueueToggleButton) {
+            var expanded = collapsed ? "false" : "true";
+            var toggleLabel = collapsed
+                ? t("expand", "펼치기")
+                : t("collapse", "접기");
+            uploadQueueToggleButton.setAttribute("aria-expanded", expanded);
+            uploadQueueToggleButton.setAttribute("aria-label", toggleLabel);
+            uploadQueueToggleButton.setAttribute("title", toggleLabel);
+        }
+
         if (items.length === 0) {
             uploadQueuePanel.hidden = true;
             uploadQueueList.innerHTML = "";

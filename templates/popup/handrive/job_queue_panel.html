@@ -4,7 +4,21 @@
             <h3 class="handrive-job-queue-title" id="handrive-job-queue-title">{{ handrive_text.job_queue_title }}</h3>
             <span class="handrive-job-queue-summary" id="handrive-job-queue-summary">{{ handrive_text.job_queue_empty }}</span>
         </div>
-        <button class="handrive-job-queue-close" id="handrive-job-queue-close" type="button" aria-label="{{ handrive_text.cancel }}" title="{{ handrive_text.cancel }}">×</button>
+        <div class="handrive-job-queue-head-actions">
+            <button
+                class="handrive-job-queue-toggle"
+                id="handrive-job-queue-toggle"
+                type="button"
+                aria-controls="handrive-job-queue-list"
+                aria-expanded="true"
+                aria-label="{% include 'partials/ui_i18n.html' with key='collapse' %}"
+                title="{% include 'partials/ui_i18n.html' with key='collapse' %}">
+                <span class="handrive-job-queue-toggle-icon" aria-hidden="true"></span>
+            </button>
+            <button class="handrive-job-queue-close" id="handrive-job-queue-close" type="button" aria-label="{% include 'partials/ui_i18n.html' with key='close' %}" title="{% include 'partials/ui_i18n.html' with key='close' %}">
+                <span class="handrive-job-queue-close-icon" aria-hidden="true"></span>
+            </button>
+        </div>
     </header>
     <ul class="handrive-job-queue-list" id="handrive-job-queue-list"></ul>
 </aside>

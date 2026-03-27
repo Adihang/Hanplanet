@@ -594,6 +594,24 @@ ollama serve
 | Gitea | `com.hanplanet.gitea` | [`deploy/launchd/com.hanplanet.gitea.plist`](./deploy/launchd/com.hanplanet.gitea.plist) |
 | Celery | `com.hanplanet.celery` | [`deploy/launchd/com.hanplanet.celery.plist`](./deploy/launchd/com.hanplanet.celery.plist) |
 | 범퍼카 게임 서버 | `com.hanplanet.bumpercar-spiky-server` | [`bumpercar-spiky-server/deploy/launchd/com.hanplanet.bumpercar-spiky-server.plist`](./bumpercar-spiky-server/deploy/launchd/com.hanplanet.bumpercar-spiky-server.plist) |
+| 외장 HDD 자동 마운트 | `com.hanplanet.mount-hanplanet-hdd` | `~/Library/LaunchAgents/com.hanplanet.mount-hanplanet-hdd.plist` |
+| 외장 HDD keepalive 카운터 | `com.hanplanet.external-hdd-keepalive` | `~/Library/LaunchAgents/com.hanplanet.external-hdd-keepalive.plist` |
+
+### 외장 HDD 유지 / 백업 위치
+
+- 외장 자동 마운트는 `launchd`의 `com.hanplanet.mount-hanplanet-hdd`가 담당합니다.
+- 외장 keepalive 카운터는 `launchd`의 `com.hanplanet.external-hdd-keepalive`가 담당합니다.
+  - 실행 파일: [`scripts/external_keepalive_counter.py`](./scripts/external_keepalive_counter.py)
+  - 실행 주기: 매 정각
+  - 기록 파일: `/Volumes/HANPLANET_HDD/Hanplanet/time.txt`
+  - 로그: 정상 실행 시 로그를 남기지 않고, 오류만 `/tmp/com.hanplanet.external-hdd-keepalive.log`에 기록합니다.
+- 일일 데이터 백업은 별도 `launchd` 작업이 아니라 Django/Gunicorn 프로세스 내부에서 돕니다.
+  - 시작 위치: [`main/apps.py`](./main/apps.py) -> [`main/access_log_scheduler.py`](./main/access_log_scheduler.py)
+  - 실제 실행 프로세스: `com.hanplanet.gunicorn`
+  - 백업 시각: 매일 `00:05` 이후 첫 스케줄 루프에서 1회
+  - 백업 대상: `MEDIA_ROOT`, `FORGEJO_REPOS_ROOT`
+  - 현재 백업 저장 경로: `/Volumes/HANPLANET_HDD/Hanplanet/back-up`
+  - 현재 보관 개수: 최근 3일치 (`hanplanet_data_YYYY-MM-DD.tar.gz`)
 
 ### 자주 쓰는 명령
 

@@ -89,12 +89,14 @@ func (w *Watcher) loop() {
 func (w *Watcher) handleEvent(event fsnotify.Event) {
 	absPath := event.Name
 	relPath := engine.RelPath(w.syncDir, absPath)
+	log.Printf("[watcher] event op=%s abs=%s rel=%s", event.Op.String(), absPath, relPath)
 
 	switch {
 	case event.Has(fsnotify.Create):
 		// 새 디렉토리면 감시 대상 추가
 		if fi, err := os.Stat(absPath); err == nil && fi.IsDir() {
 			_ = w.fsw.Add(absPath)
+			log.Printf("[watcher] added dir watch %s", absPath)
 			return
 		}
 		// rename 감지: 최근 삭제된 파일과 hash 비교
@@ -104,6 +106,7 @@ func (w *Watcher) handleEvent(event fsnotify.Event) {
 				Path:    relPath,
 				OldPath: move.path, // 이미 상대경로
 			})
+			log.Printf("[watcher] detected move old=%s new=%s", move.path, relPath)
 			return
 		}
 		w.queue.Enqueue(db.QueueItem{Type: queue.TypeUpload, Path: relPath})
@@ -121,10 +124,12 @@ func (w *Watcher) handleEvent(event fsnotify.Event) {
 			at:   time.Now(),
 		})
 		w.mu.Unlock()
+		log.Printf("[watcher] pending delete path=%s hash=%s", relPath, hash)
 
 		// debounce 후에도 CREATE가 안 오면 DELETE 처리
 		time.AfterFunc(renameDebounceDuration+10*time.Millisecond, func() {
 			if w.consumePendingDelete(relPath) {
+				log.Printf("[watcher] confirmed delete path=%s", relPath)
 				w.queue.Enqueue(db.QueueItem{Type: queue.TypeDelete, Path: relPath})
 			}
 		})

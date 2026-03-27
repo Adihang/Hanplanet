@@ -46,13 +46,13 @@
                         {% endif %}
                         <a class="minigame-link" href="{{ item.url }}">
                             <span class="minigame-link-image-wrap">
-                                <img class="minigame-link-image" src="" alt="{{ item.title }}" loading="lazy" hidden>
+                                <img class="minigame-link-image" src="{{ item.image_url|default:'' }}" alt="{{ item.title }}" loading="lazy" {% if not item.image_url %}hidden{% endif %}>
                             </span>
                             <span class="minigame-link-content" data-minigame-card data-meta-url="{{ item.url }}">
                                 <span class="minigame-link-head">
                                     <span class="minigame-link-title">{{ item.title }}</span>
                                 </span>
-                                <span class="minigame-link-description"></span>
+                                <span class="minigame-link-description" {% if not item.description %}hidden{% endif %}>{{ item.description|default:'' }}</span>
                             </span>
                         </a>
                     </div>
@@ -340,7 +340,9 @@
             const imageNode = cardLink ? cardLink.querySelector('.minigame-link-image') : null;
 
             if (imageWrap) {
-                imageWrap.classList.add('is-empty');
+                if (!imageNode || !imageNode.getAttribute('src')) {
+                    imageWrap.classList.add('is-empty');
+                }
             }
 
             fetch(requestUrl, { credentials: 'same-origin' })

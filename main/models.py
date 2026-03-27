@@ -300,6 +300,11 @@ class UserProfile(models.Model):
         default=dict,
         blank=True,
     )
+    sync_excluded_paths = models.JSONField(
+        "HanDrive 동기화 제외 경로",
+        default=list,
+        blank=True,
+    )
     privacy_policy_agreed_at = models.DateTimeField(
         "개인정보 처리방침 동의 시각",
         null=True,

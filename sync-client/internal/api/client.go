@@ -5,10 +5,29 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 )
+
+type progressReader struct {
+	reader     io.Reader
+	total      int64
+	read       int64
+	onProgress func(transferred, total int64)
+}
+
+func (p *progressReader) Read(buf []byte) (int, error) {
+	n, err := p.reader.Read(buf)
+	if n > 0 {
+		p.read += int64(n)
+		if p.onProgress != nil {
+			p.onProgress(p.read, p.total)
+		}
+	}
+	return n, err
+}
 
 // ServerFile은 서버의 SyncFile 응답입니다.
 type ServerFile struct {
@@ -20,6 +39,11 @@ type ServerFile struct {
 	ClientModifiedAt int64  `json:"client_modified_at"`
 	ServerModifiedAt int64  `json:"server_modified_at"`
 	Deleted          bool   `json:"deleted"`
+}
+
+type ListFilesResponse struct {
+	Files         []ServerFile `json:"files"`
+	ExcludedPaths []string     `json:"excluded_paths"`
 }
 
 // ChangeEntry는 /api/sync/changes 응답의 변경 항목입니다.
@@ -58,13 +82,19 @@ type CompleteUploadRequest struct {
 
 // ListFiles는 서버의 전체 파일 목록을 반환합니다.
 func (c *Client) ListFiles() ([]ServerFile, error) {
-	var result struct {
-		Files []ServerFile `json:"files"`
-	}
-	if err := c.doJSON("GET", "/api/sync/files", nil, &result); err != nil {
+	result, err := c.ListFilesWithExclusions()
+	if err != nil {
 		return nil, err
 	}
 	return result.Files, nil
+}
+
+func (c *Client) ListFilesWithExclusions() (*ListFilesResponse, error) {
+	var result ListFilesResponse
+	if err := c.doJSON("GET", "/api/sync/files", nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // InitUpload는 presigned 업로드 URL을 발급받습니다.
@@ -79,16 +109,28 @@ func (c *Client) InitUpload(req InitUploadRequest) (*InitUploadResponse, error) 
 
 // UploadToPresignedURL은 presigned URL에 파일을 직접 PUT 업로드합니다.
 func (c *Client) UploadToPresignedURL(uploadURL string, data []byte) error {
-	req, err := http.NewRequest("PUT", uploadURL, bytes.NewReader(data))
+	return c.UploadToPresignedURLWithProgress(uploadURL, data, nil)
+}
+
+func (c *Client) UploadToPresignedURLWithProgress(uploadURL string, data []byte, onProgress func(transferred, total int64)) error {
+	parsedURL, _ := url.Parse(uploadURL)
+	log.Printf("[api] upload url host=%s bytes=%d", parsedURL.Host, len(data))
+	reader := &progressReader{
+		reader:     bytes.NewReader(data),
+		total:      int64(len(data)),
+		onProgress: onProgress,
+	}
+	req, err := http.NewRequest("PUT", uploadURL, reader)
 	if err != nil {
 		return err
 	}
 	req.ContentLength = int64(len(data))
-	resp, err := c.http.Do(req)
+	resp, err := c.doAbsolute(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	log.Printf("[api] upload response host=%s status=%d", parsedURL.Host, resp.StatusCode)
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("presigned upload failed HTTP %d: %s", resp.StatusCode, string(body))
@@ -119,15 +161,46 @@ func (c *Client) DownloadURL(fileID string) (string, error) {
 
 // DownloadFile은 presigned URL에서 파일을 다운로드합니다.
 func (c *Client) DownloadFile(downloadURL string) ([]byte, error) {
-	resp, err := c.http.Get(downloadURL)
+	return c.DownloadFileWithProgress(downloadURL, nil)
+}
+
+func (c *Client) DownloadFileWithProgress(downloadURL string, onProgress func(transferred, total int64)) ([]byte, error) {
+	parsedURL, _ := url.Parse(downloadURL)
+	log.Printf("[api] download url host=%s", parsedURL.Host)
+	req, err := http.NewRequest("GET", downloadURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.doAbsolute(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	log.Printf("[api] download response host=%s status=%d", parsedURL.Host, resp.StatusCode)
 	if resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("download failed HTTP %d", resp.StatusCode)
 	}
-	return io.ReadAll(resp.Body)
+	total := resp.ContentLength
+	var out bytes.Buffer
+	buf := make([]byte, 64*1024)
+	var transferred int64
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			transferred += int64(n)
+			_, _ = out.Write(buf[:n])
+			if onProgress != nil {
+				onProgress(transferred, total)
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out.Bytes(), nil
 }
 
 // DeleteFile은 서버 파일을 soft delete합니다.
@@ -159,15 +232,16 @@ type QuotaItem struct {
 
 // UserInfo는 /api/sync/me 응답입니다.
 type UserInfo struct {
-	Username      string      `json:"username"`
-	UsedBytes     int64       `json:"quota_used_bytes"`
-	TotalBytes    int64       `json:"quota_total_bytes"`
-	Percent       float64     `json:"quota_percent"`
-	UsedDisplay   string      `json:"quota_used_display"`
-	TotalDisplay  string      `json:"quota_total_display"`
-	FreeDisplay   string      `json:"quota_free_display"`
-	FreePercent   float64     `json:"quota_free_percent"`
-	Breakdown     []QuotaItem `json:"quota_breakdown"`
+	Username     string      `json:"username"`
+	UsedBytes    int64       `json:"quota_used_bytes"`
+	TotalBytes   int64       `json:"quota_total_bytes"`
+	Percent      float64     `json:"quota_percent"`
+	UsedDisplay  string      `json:"quota_used_display"`
+	TotalDisplay string      `json:"quota_total_display"`
+	FreeDisplay  string      `json:"quota_free_display"`
+	FreePercent  float64     `json:"quota_free_percent"`
+	Breakdown    []QuotaItem `json:"quota_breakdown"`
+	ExcludedPaths []string   `json:"excluded_paths"`
 }
 
 // GetMe는 로그인 계정 정보와 용량 현황을 반환합니다.
@@ -192,13 +266,19 @@ func (c *Client) GetStorageMode() (string, error) {
 
 // GetChanges는 cursor 이후의 변경 이력을 반환합니다.
 func (c *Client) GetChanges(cursor int64) ([]ChangeEntry, int64, error) {
+	changes, nextCursor, _, err := c.GetChangesWithExclusions(cursor)
+	return changes, nextCursor, err
+}
+
+func (c *Client) GetChangesWithExclusions(cursor int64) ([]ChangeEntry, int64, []string, error) {
 	path := "/api/sync/changes?" + url.Values{"cursor": {strconv.FormatInt(cursor, 10)}}.Encode()
 	var result struct {
-		Changes    []ChangeEntry `json:"changes"`
-		NextCursor int64         `json:"next_cursor"`
+		Changes       []ChangeEntry `json:"changes"`
+		NextCursor    int64         `json:"next_cursor"`
+		ExcludedPaths []string      `json:"excluded_paths"`
 	}
 	if err := c.doJSON("GET", path, nil, &result); err != nil {
-		return nil, cursor, err
+		return nil, cursor, nil, err
 	}
-	return result.Changes, result.NextCursor, nil
+	return result.Changes, result.NextCursor, result.ExcludedPaths, nil
 }

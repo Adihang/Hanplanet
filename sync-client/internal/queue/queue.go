@@ -41,6 +41,7 @@ func (m *Manager) Enqueue(item db.QueueItem) {
 	defer m.mu.Unlock()
 
 	key := item.Type + ":" + item.Path
+	log.Printf("[queue] debounce enqueue type=%s path=%s old_path=%s", item.Type, item.Path, item.OldPath)
 	if t, ok := m.pending[key]; ok {
 		t.Stop()
 	}
@@ -50,6 +51,7 @@ func (m *Manager) Enqueue(item db.QueueItem) {
 		delete(m.pending, key)
 		m.mu.Unlock()
 
+		log.Printf("[queue] enqueue now type=%s path=%s old_path=%s", item.Type, item.Path, item.OldPath)
 		if err := m.db.EnqueueItem(item); err != nil {
 			log.Printf("[queue] enqueue error: %v", err)
 		}
@@ -58,6 +60,7 @@ func (m *Manager) Enqueue(item db.QueueItem) {
 
 // EnqueueImmediate는 debounce 없이 즉시 큐에 추가합니다 (초기 sync, DOWNLOAD 등).
 func (m *Manager) EnqueueImmediate(item db.QueueItem) error {
+	log.Printf("[queue] enqueue immediate type=%s path=%s old_path=%s", item.Type, item.Path, item.OldPath)
 	return m.db.EnqueueItem(item)
 }
 

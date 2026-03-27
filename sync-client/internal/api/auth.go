@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -141,6 +143,7 @@ func (c *Client) refreshAccess() error {
 // do는 인증 헤더를 포함한 HTTP 요청을 전송합니다. 401 시 자동으로 token 갱신 후 재시도.
 func (c *Client) do(method, path string, body []byte) (*http.Response, error) {
 	for attempt := 0; attempt < 2; attempt++ {
+		log.Printf("[api] %s %s attempt=%d body_bytes=%d", method, path, attempt+1, len(body))
 		req, err := http.NewRequest(method, c.serverURL+path, bytes.NewReader(body))
 		if err != nil {
 			return nil, err
@@ -152,15 +155,18 @@ func (c *Client) do(method, path string, body []byte) (*http.Response, error) {
 
 		resp, err := c.http.Do(req)
 		if err != nil {
+			log.Printf("[api] %s %s failed: %v", method, path, err)
 			return nil, err
 		}
 		if resp.StatusCode == 401 && attempt == 0 {
+			log.Printf("[api] %s %s got 401, refreshing token", method, path)
 			resp.Body.Close()
 			if err := c.refreshAccess(); err != nil {
 				return nil, fmt.Errorf("token refresh failed: %w", err)
 			}
 			continue
 		}
+		log.Printf("[api] %s %s status=%d", method, path, resp.StatusCode)
 		return resp, nil
 	}
 	return nil, fmt.Errorf("authentication failed after token refresh")
@@ -181,4 +187,34 @@ func (c *Client) doJSON(method, path string, body []byte, dst interface{}) error
 		return json.Unmarshal(raw, dst)
 	}
 	return nil
+}
+
+func (c *Client) isSameServer(target *url.URL) bool {
+	serverURL, err := url.Parse(c.serverURL)
+	if err != nil || target == nil {
+		return false
+	}
+	return serverURL.Scheme == target.Scheme && serverURL.Host == target.Host
+}
+
+func (c *Client) doAbsolute(req *http.Request) (*http.Response, error) {
+	for attempt := 0; attempt < 2; attempt++ {
+		if c.isSameServer(req.URL) {
+			req.Header.Set("Authorization", "Bearer "+c.tokens.getAccess())
+		}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode == 401 && attempt == 0 && c.isSameServer(req.URL) {
+			log.Printf("[api] absolute %s %s got 401, refreshing token", req.Method, req.URL.String())
+			resp.Body.Close()
+			if err := c.refreshAccess(); err != nil {
+				return nil, fmt.Errorf("token refresh failed: %w", err)
+			}
+			continue
+		}
+		return resp, nil
+	}
+	return nil, fmt.Errorf("authentication failed after token refresh")
 }

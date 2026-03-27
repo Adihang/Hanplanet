@@ -934,7 +934,7 @@
     function hasOpenHandriveModal() {
         return Boolean(
             document.querySelector(
-                ".handrive-rename-modal:not([hidden]), .handrive-save-modal:not([hidden]), .handrive-help-modal:not([hidden]), .handrive-folder-modal:not([hidden])"
+                ".handrive-rename-modal:not([hidden]), .handrive-save-modal:not([hidden]), .handrive-help-modal:not([hidden]), .handrive-folder-modal:not([hidden]), .handrive-sync-modal:not([hidden])"
             )
         );
     }
@@ -1688,9 +1688,16 @@
         const permissionWriteGroupsList = document.getElementById("handrive-permission-write-groups-list");
         const permissionCancelButton = document.getElementById("handrive-permission-cancel-btn");
         const permissionSaveButton = document.getElementById("handrive-permission-save-btn");
+        const syncLaunchButton = document.getElementById("account-storage-popup-sync-btn");
+        const syncModal = document.getElementById("handrive-sync-modal");
+        const syncModalBackdrop = document.getElementById("handrive-sync-modal-backdrop");
+        const syncList = document.getElementById("handrive-sync-list");
+        const syncCancelButton = document.getElementById("handrive-sync-cancel-btn");
+        const syncSaveButton = document.getElementById("handrive-sync-save-btn");
         const uploadQueuePanel = document.getElementById("handrive-job-queue-panel");
         const uploadQueueSummary = document.getElementById("handrive-job-queue-summary");
         const uploadQueueList = document.getElementById("handrive-job-queue-list");
+        const uploadQueueToggleButton = document.getElementById("handrive-job-queue-toggle");
         const uploadQueueCloseButton = document.getElementById("handrive-job-queue-close");
         const contextUploadInput = document.getElementById("handrive-context-upload-input");
         const defaultContextButtonLabels = {
@@ -1734,7 +1741,9 @@
         const accountProfileImageUrl = String(root.dataset.accountProfileImageUrl || "").trim();
         const handriveRootLabel = (root.dataset.handriveRootLabel || breadcrumbRootLabel || "HanDrive").trim() || "HanDrive";
         const effectiveRootLabel = handriveRootLabel;
+        const syncSettingsApiUrl = root.dataset.syncSettingsApiUrl || "";
         const initialEntries = getJsonScriptData("handrive-initial-entries", []);
+        const initialSyncExcludedPaths = getJsonScriptData("handrive-sync-excluded-paths", []);
         let currentDirGitRepo = getJsonScriptData("handrive-current-dir-git-repo", null);
 
         async function promptCommitMessage(targetPath) {
@@ -1797,11 +1806,15 @@
             operationWorkerActive: false,
             uploadRefreshPending: false,
             uploadQueueDismissed: false,
+            uploadQueueCollapsed: false,
             uploadQueueContextItem: null,
             pendingContextUploadDir: "",
             searchQuery: "",
             searchResults: null,
             searchGeneration: 0,
+            syncSavedUncheckedPaths: new Set(Array.isArray(initialSyncExcludedPaths) ? initialSyncExcludedPaths : []),
+            syncDraftUncheckedPaths: new Set(Array.isArray(initialSyncExcludedPaths) ? initialSyncExcludedPaths : []),
+            syncExpandedFolders: new Set(),
         };
 
         let activeListEditorSuggestions = [];
@@ -3327,6 +3340,7 @@
                         onOpenContextMenu: openUploadQueueContextMenu,
                     });
                 },
+                collapsed: state.uploadQueueCollapsed,
                 dismissed: state.uploadQueueDismissed,
                 items: items,
                 sortQueueItems: sortQueueItems,
@@ -3337,6 +3351,7 @@
                 uploadQueueList: uploadQueueList,
                 uploadQueuePanel: uploadQueuePanel,
                 uploadQueueSummary: uploadQueueSummary,
+                uploadQueueToggleButton: uploadQueueToggleButton,
             });
         }
 
@@ -3625,6 +3640,7 @@
                 applySelection: applySelection,
                 buildPostOptions: buildPostOptions,
                 deleteApiUrl: deleteApiUrl,
+                onEntryDeleted: removeSyncExcludedStateForDelete,
                 queueNeedsRefresh: queueNeedsRefresh,
                 removeExpandedFoldersByDeletedPaths: removeExpandedFoldersByDeletedPaths,
                 renderUploadQueue: renderUploadQueue,
@@ -3638,6 +3654,7 @@
                 applySelection: applySelection,
                 buildPostOptions: buildPostOptions,
                 moveApiUrl: moveApiUrl,
+                onEntryMoved: remapSyncExcludedStateForMove,
                 queueNeedsRefresh: queueNeedsRefresh,
                 renderUploadQueue: renderUploadQueue,
                 requestJson: requestJson,
@@ -3962,8 +3979,8 @@
             return parts[parts.length - 1] || effectiveRootLabel;
         }
 
-        function addCurrentDirectoryNode(fragment) {
-            const currentFolderEntry = {
+        function buildCurrentDirectoryEntry() {
+            return {
                 path: currentDir,
                 type: "dir",
                 isCurrentFolder: true,
@@ -3976,6 +3993,10 @@
                 git_branch_root: currentDirGitBranchRoot,
                 is_git_virtual: Boolean(currentDirGitRepo || currentDirGitBranchRoot || currentDirRequiresCommitMessage),
             };
+        }
+
+        function addCurrentDirectoryNode(fragment) {
+            const currentFolderEntry = buildCurrentDirectoryEntry();
 
             const item = document.createElement("li");
             item.className = "handrive-item handrive-current-dir-item";
@@ -4039,6 +4060,434 @@
             state.visibleEntryPaths.push(currentFolderEntry.path);
             item.appendChild(row);
             fragment.appendChild(item);
+        }
+
+        function isSyncPathChecked(pathValue) {
+            const normalized = normalizePath(pathValue, true);
+            for (const uncheckedPath of state.syncDraftUncheckedPaths) {
+                if (uncheckedPath === normalized) {
+                    return false;
+                }
+                if (uncheckedPath && normalized && normalized.startsWith(uncheckedPath + "/")) {
+                    return false;
+                }
+                if (normalized && uncheckedPath.startsWith(normalized + "/")) {
+                    return false;
+                }
+                if (!normalized && uncheckedPath) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function isSyncHiddenEntry(entry) {
+            return Boolean(
+                entry
+                && entry.type === "dir"
+                && (entry.git_repo || entry.git_branch_root || entry.is_git_virtual)
+            );
+        }
+
+        function pruneSyncUncheckedPaths(pathValue, options) {
+            const normalized = normalizePath(pathValue, true);
+            const settings = options || {};
+            const removeSelf = settings.removeSelf !== false;
+            const nextUncheckedPaths = new Set();
+
+            state.syncDraftUncheckedPaths.forEach(function (uncheckedPath) {
+                const isSelf = uncheckedPath === normalized;
+                const isDescendant = normalized
+                    ? uncheckedPath.startsWith(normalized + "/")
+                    : Boolean(uncheckedPath);
+                if ((removeSelf && isSelf) || isDescendant) {
+                    return;
+                }
+                nextUncheckedPaths.add(uncheckedPath);
+            });
+
+            state.syncDraftUncheckedPaths = nextUncheckedPaths;
+        }
+
+        function remapSyncUncheckedPathSetForMove(pathSet, sourcePath, destinationPath) {
+            const sourceNormalized = normalizePath(sourcePath, true);
+            const destinationNormalized = normalizePath(destinationPath, true);
+            if (!sourceNormalized || !destinationNormalized || sourceNormalized === destinationNormalized) {
+                return pathSet;
+            }
+
+            const nextPaths = new Set();
+            pathSet.forEach(function (rawPath) {
+                const normalized = normalizePath(rawPath, true);
+                if (normalized === sourceNormalized) {
+                    nextPaths.add(destinationNormalized);
+                    return;
+                }
+                if (normalized.startsWith(sourceNormalized + "/")) {
+                    nextPaths.add(destinationNormalized + normalized.slice(sourceNormalized.length));
+                    return;
+                }
+                nextPaths.add(normalized);
+            });
+            return nextPaths;
+        }
+
+        function pruneSyncUncheckedPathSetForDelete(pathSet, targetPath) {
+            const targetNormalized = normalizePath(targetPath, true);
+            const nextPaths = new Set();
+            pathSet.forEach(function (rawPath) {
+                const normalized = normalizePath(rawPath, true);
+                if (normalized === targetNormalized) {
+                    return;
+                }
+                if (targetNormalized && normalized.startsWith(targetNormalized + "/")) {
+                    return;
+                }
+                nextPaths.add(normalized);
+            });
+            return nextPaths;
+        }
+
+        function remapSyncExcludedStateForMove(sourcePath, destinationPath) {
+            state.syncSavedUncheckedPaths = remapSyncUncheckedPathSetForMove(
+                state.syncSavedUncheckedPaths,
+                sourcePath,
+                destinationPath
+            );
+            state.syncDraftUncheckedPaths = remapSyncUncheckedPathSetForMove(
+                state.syncDraftUncheckedPaths,
+                sourcePath,
+                destinationPath
+            );
+        }
+
+        function removeSyncExcludedStateForDelete(pathValue) {
+            state.syncSavedUncheckedPaths = pruneSyncUncheckedPathSetForDelete(
+                state.syncSavedUncheckedPaths,
+                pathValue
+            );
+            state.syncDraftUncheckedPaths = pruneSyncUncheckedPathSetForDelete(
+                state.syncDraftUncheckedPaths,
+                pathValue
+            );
+        }
+
+        async function collectSyncDescendantPaths(dirPath, visitedDirs) {
+            const normalizedDir = normalizePath(dirPath, true);
+            if (visitedDirs.has(normalizedDir)) {
+                return new Set();
+            }
+            visitedDirs.add(normalizedDir);
+
+            await loadDirectory(normalizedDir);
+            const descendantPaths = new Set();
+            const entries = getCachedEntries(normalizedDir);
+            for (const entry of entries) {
+                if (isSyncHiddenEntry(entry)) {
+                    continue;
+                }
+                descendantPaths.add(entry.path);
+                if (entry.type === "dir") {
+                    const childDescendants = await collectSyncDescendantPaths(entry.path, visitedDirs);
+                    childDescendants.forEach(function (pathValue) {
+                        descendantPaths.add(pathValue);
+                    });
+                }
+            }
+            return descendantPaths;
+        }
+
+        async function setSyncPathChecked(pathValue, checked, entryType) {
+            const normalized = normalizePath(pathValue, true);
+            if (!normalized && normalized !== "") {
+                return;
+            }
+            const isDir = entryType === "dir";
+            if (checked) {
+                if (isDir) {
+                    const descendantPaths = await collectSyncDescendantPaths(normalized, new Set());
+                    pruneSyncUncheckedPaths(normalized, { removeSelf: true });
+                    descendantPaths.forEach(function (descendantPath) {
+                        state.syncDraftUncheckedPaths.delete(descendantPath);
+                    });
+                } else {
+                    state.syncDraftUncheckedPaths.delete(normalized);
+                }
+                return;
+            }
+            if (isDir) {
+                const descendantPaths = await collectSyncDescendantPaths(normalized, new Set());
+                descendantPaths.forEach(function (descendantPath) {
+                    state.syncDraftUncheckedPaths.add(descendantPath);
+                });
+                state.syncDraftUncheckedPaths.delete(normalized);
+                return;
+            }
+            state.syncDraftUncheckedPaths.add(normalized);
+        }
+
+        function createSyncCheckbox(pathValue, entryType) {
+            const wrap = document.createElement("span");
+            wrap.className = "handrive-sync-item-checkbox-wrap";
+
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.className = "handrive-sync-item-checkbox";
+            checkbox.checked = isSyncPathChecked(pathValue);
+            checkbox.setAttribute("aria-label", getHandrivePathLabel(pathValue));
+            checkbox.addEventListener("click", function (event) {
+                event.stopPropagation();
+            });
+            checkbox.addEventListener("change", async function () {
+                checkbox.disabled = true;
+                try {
+                    await setSyncPathChecked(pathValue, checkbox.checked, entryType);
+                } finally {
+                    checkbox.disabled = false;
+                }
+                renderSyncModalList();
+            });
+
+            wrap.appendChild(checkbox);
+            return wrap;
+        }
+
+        async function collectSyncExcludedEntriesForDirectory(dirPath, visitedDirs) {
+            const normalizedDir = normalizePath(dirPath, true);
+            if (visitedDirs.has(normalizedDir)) {
+                return {
+                    excludedPaths: new Set(),
+                    totalFileCount: 0,
+                    excludedFileCount: 0,
+                };
+            }
+            visitedDirs.add(normalizedDir);
+
+            const excludedPaths = new Set();
+            let totalFileCount = 0;
+            let excludedFileCount = 0;
+            const entries = getCachedEntries(normalizedDir);
+            for (const entry of entries) {
+                if (isSyncHiddenEntry(entry)) {
+                    continue;
+                }
+                if (entry.type === "file") {
+                    totalFileCount += 1;
+                    if (!isSyncPathChecked(entry.path)) {
+                        excludedPaths.add(entry.path);
+                        excludedFileCount += 1;
+                    }
+                    continue;
+                }
+                if (entry.type === "dir") {
+                    await loadDirectory(entry.path);
+                    const childResult = await collectSyncExcludedEntriesForDirectory(entry.path, visitedDirs);
+                    childResult.excludedPaths.forEach(function (pathValue) {
+                        excludedPaths.add(pathValue);
+                    });
+                    totalFileCount += childResult.totalFileCount;
+                    excludedFileCount += childResult.excludedFileCount;
+
+                    if (
+                        childResult.totalFileCount > 0
+                        && childResult.excludedFileCount === childResult.totalFileCount
+                        && !isSyncPathChecked(entry.path)
+                    ) {
+                        childResult.excludedPaths.forEach(function (pathValue) {
+                            excludedPaths.delete(pathValue);
+                        });
+                        excludedPaths.add(entry.path);
+                    }
+                }
+            }
+
+            return {
+                excludedPaths: excludedPaths,
+                totalFileCount: totalFileCount,
+                excludedFileCount: excludedFileCount,
+            };
+        }
+
+        function addSyncCurrentDirectoryNode(fragment) {
+            const currentFolderEntry = buildCurrentDirectoryEntry();
+            const item = document.createElement("li");
+            item.className = "handrive-item handrive-current-dir-item";
+
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "handrive-item-row handrive-current-dir-row";
+            row.setAttribute("data-entry-path", currentFolderEntry.path);
+
+            const typeMarker = createTypeMarker({
+                isDir: true,
+                isRootAvatar: currentDirIsRoot,
+                accountProfileImageUrl: accountProfileImageUrl,
+                isRepo: currentDirIsGitRepoRoot,
+                isBranch: currentDirGitBranchRoot,
+                isEmpty: !currentDirHasChildren,
+            });
+
+            const nameWrap = document.createElement("span");
+            nameWrap.className = "handrive-item-name-wrap";
+
+            const name = document.createElement("span");
+            name.className = "handrive-item-name";
+            name.textContent = getCurrentFolderName(currentDir);
+
+            row.appendChild(typeMarker);
+            row.appendChild(nameWrap);
+            nameWrap.appendChild(name);
+
+            appendCurrentDirRepoName(nameWrap, currentDirGitRepo, {
+                showForBranchOrRepoInner: Boolean(currentDirGitBranchRoot || currentDirRequiresCommitMessage),
+            });
+            if (currentDirGitCommitMessage) {
+                currentFolderEntry.git_commit_message = currentDirGitCommitMessage;
+                currentFolderEntry.git_commit_author_username = currentDirGitCommitAuthorUsername;
+            }
+            appendEntryBadge(row, currentFolderEntry, t, appendBadgeWithPrefix);
+            row.appendChild(createSyncCheckbox(currentFolderEntry.path, currentFolderEntry.type));
+
+            row.addEventListener("click", function (event) {
+                if (event.button !== 0) {
+                    return;
+                }
+                event.preventDefault();
+            });
+
+            item.appendChild(row);
+            fragment.appendChild(item);
+        }
+
+        function addSyncEntryNode(entry, fragment, ancestorHasNextSiblings, isLastSibling) {
+            if (isSyncHiddenEntry(entry)) {
+                return;
+            }
+            const item = document.createElement("li");
+            item.className = "handrive-item";
+
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "handrive-item-row has-tree-prefix";
+            row.setAttribute("data-entry-path", entry.path);
+
+            const treePrefix = buildTreePrefixElement(ancestorHasNextSiblings, Boolean(isLastSibling));
+            const fileIconKey = entry.type === "file" ? getFileIconKey(entry.path) : "";
+            const typeMarker = createTypeMarker({
+                isDir: entry.type === "dir",
+                isRepo: entry.type === "dir" && entry.git_repo,
+                isBranch: entry.type === "dir" && entry.git_branch_root,
+                isMap: entry.type === "dir" && entry.is_map_folder,
+                isEmpty: entry.type === "dir" && entry.has_children === false,
+                fileIconKey: fileIconKey,
+                isGenericFileIcon: entry.type === "file" && isGenericFileIconKey(fileIconKey),
+            });
+
+            const name = document.createElement("span");
+            name.className = "handrive-item-name";
+            name.textContent = entry.name;
+
+            row.appendChild(typeMarker);
+            row.appendChild(name);
+            appendAclBadges(row, entry.write_acl_labels, 3);
+            appendEntryBadge(row, entry, t, appendBadgeWithPrefix);
+            row.appendChild(createSyncCheckbox(entry.path, entry.type));
+
+            row.addEventListener("click", function (event) {
+                if (event.button !== 0) {
+                    return;
+                }
+                event.preventDefault();
+                if (entry.type !== "dir") {
+                    return;
+                }
+                toggleSyncFolderExpansion(entry).catch(alertError);
+            });
+
+            item.appendChild(treePrefix);
+            item.appendChild(row);
+            fragment.appendChild(item);
+
+            if (entry.type === "dir" && state.syncExpandedFolders.has(entry.path)) {
+                const childEntries = getCachedEntries(entry.path);
+                const nextAncestorHasNextSiblings = (ancestorHasNextSiblings || []).slice();
+                nextAncestorHasNextSiblings.push(!isLastSibling);
+                childEntries.forEach(function (child, index) {
+                    addSyncEntryNode(child, fragment, nextAncestorHasNextSiblings, index === childEntries.length - 1);
+                });
+            }
+        }
+
+        async function toggleSyncFolderExpansion(entry) {
+            if (!entry || entry.type !== "dir") {
+                return;
+            }
+            if (state.syncExpandedFolders.has(entry.path)) {
+                state.syncExpandedFolders.delete(entry.path);
+                renderSyncModalList();
+                return;
+            }
+            await loadDirectory(entry.path);
+            state.syncExpandedFolders.add(entry.path);
+            renderSyncModalList();
+        }
+
+        function renderSyncModalList() {
+            if (!syncList) {
+                return;
+            }
+            syncList.innerHTML = "";
+            const fragment = document.createDocumentFragment();
+            const currentFolderEntry = buildCurrentDirectoryEntry();
+            if (!isSyncHiddenEntry(currentFolderEntry)) {
+                addSyncCurrentDirectoryNode(fragment);
+            }
+            const entries = getCachedEntries(currentDir).filter(function (entry) {
+                return !isSyncHiddenEntry(entry);
+            });
+            if (!entries.length) {
+                const emptyItem = document.createElement("li");
+                emptyItem.className = "handrive-item";
+                const emptyRow = document.createElement("div");
+                emptyRow.className = "handrive-item-row is-empty";
+                emptyRow.textContent = t("js_empty_documents", "문서가 없습니다.");
+                emptyItem.appendChild(emptyRow);
+                fragment.appendChild(emptyItem);
+                syncList.appendChild(fragment);
+                return;
+            }
+            entries.forEach(function (entry, index) {
+                addSyncEntryNode(entry, fragment, [], index === entries.length - 1);
+            });
+            syncList.appendChild(fragment);
+        }
+
+        function setSyncModalOpen(opened) {
+            if (!syncModal) {
+                return;
+            }
+            syncModal.hidden = !opened;
+            syncModalBodyState();
+            if (!opened) {
+                return;
+            }
+            state.syncDraftUncheckedPaths = new Set(state.syncSavedUncheckedPaths);
+            state.syncExpandedFolders = new Set(state.expandedFolders);
+            renderSyncModalList();
+        }
+
+        async function submitSyncSettings() {
+            if (!syncSettingsApiUrl) {
+                throw new Error(t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다."));
+            }
+            await loadDirectory(currentDir);
+            const collected = await collectSyncExcludedEntriesForDirectory(currentDir, new Set());
+            const excludedPaths = Array.from(collected.excludedPaths).sort();
+            const data = await requestJson(syncSettingsApiUrl, buildPostOptions({
+                excluded_paths: excludedPaths,
+            }));
+            state.syncSavedUncheckedPaths = new Set(Array.isArray(data && data.excluded_paths) ? data.excluded_paths : []);
+            setSyncModalOpen(false);
         }
 
         function setRenameModalOpen(opened, entry) {
@@ -4289,6 +4738,9 @@
             const renamedPath = data && data.path ? data.path : "";
             if (entry.type === "dir" && renamedPath) {
                 remapExpandedFoldersForRename(entry.path, renamedPath);
+            }
+            if (renamedPath) {
+                remapSyncExcludedStateForMove(entry.path, renamedPath);
             }
             applySelection([data && data.path ? data.path : ""], {
                 primaryPath: data && data.path ? data.path : "",
@@ -5466,6 +5918,10 @@
                     closeListMarkdownSnippetMenu();
                     return;
                 }
+                if (syncModal && !syncModal.hidden) {
+                    setSyncModalOpen(false);
+                    return;
+                }
                 closeContextMenu();
             }
         });
@@ -5567,10 +6023,51 @@
             enqueueUploadFiles(files, currentDir).catch(alertError);
         });
 
+        if (uploadQueueToggleButton) {
+            uploadQueueToggleButton.addEventListener("click", function () {
+                state.uploadQueueCollapsed = !state.uploadQueueCollapsed;
+                renderUploadQueue();
+            });
+        }
+
         if (uploadQueueCloseButton) {
             uploadQueueCloseButton.addEventListener("click", function () {
                 state.uploadQueueDismissed = true;
                 renderUploadQueue();
+            });
+        }
+
+        if (syncLaunchButton && syncModal) {
+            syncLaunchButton.hidden = false;
+            syncLaunchButton.addEventListener("click", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                setSyncModalOpen(true);
+            });
+        }
+
+        if (syncModalBackdrop) {
+            syncModalBackdrop.addEventListener("click", function () {
+                setSyncModalOpen(false);
+            });
+        }
+
+        if (syncCancelButton) {
+            syncCancelButton.addEventListener("click", function () {
+                setSyncModalOpen(false);
+            });
+        }
+
+        if (syncSaveButton) {
+            syncSaveButton.addEventListener("click", async function () {
+                syncSaveButton.disabled = true;
+                try {
+                    await submitSyncSettings();
+                } catch (error) {
+                    alertError(error);
+                } finally {
+                    syncSaveButton.disabled = false;
+                }
             });
         }
 

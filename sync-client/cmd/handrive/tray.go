@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/getlantern/systray"
@@ -26,17 +25,26 @@ func setupTray(exePath string, onSettingsSaved func()) {
 	systray.SetIcon(appIcon)
 	systray.SetTitle("HanDrive")
 	systray.SetTooltip("HanDrive — 동기화 중")
+	systray.SetOnTrayLeftClick(func() {
+		toggleTrayMenuPopup(exePath, onSettingsSaved)
+	})
+	systray.SetOnTrayRightClick(func() {
+		toggleTrayMenuPopup(exePath, onSettingsSaved)
+	})
 
 	// ── 계정 정보 (상단 고정) ──────────────────────────────────────────────
 	trayAccount = systray.AddMenuItem("로그인 중...", "")
 	trayAccount.Disable() // 클릭 불가 — 계정 아이디 표시용
 
 	trayStorage = systray.AddMenuItem("용량: 로딩 중...", "용량 현황 보기")
+	setTrayMenuState("로그인 중...", "용량: 로딩 중...")
 
 	systray.AddSeparator()
 
 	// ── 주요 동작 ──────────────────────────────────────────────────────────
-	mOpen    := systray.AddMenuItem("열기", "동기화 폴더를 탐색기로 열기")
+	mOpen := systray.AddMenuItem("열기", "동기화 폴더를 탐색기로 열기")
+	mLogs := systray.AddMenuItem("로그", "로그 폴더를 탐색기로 열기")
+	mSyncView := systray.AddMenuItem("동기화", "아직 동기화되지 않은 파일 보기")
 	mWebOpen := systray.AddMenuItem("웹으로 열기", "hanplanet.com/handrive 열기")
 
 	systray.AddSeparator()
@@ -52,8 +60,11 @@ func setupTray(exePath string, onSettingsSaved func()) {
 		if info == nil {
 			return
 		}
-		trayAccount.SetTitle(fmt.Sprintf("  %s", info.Username))
-		trayStorage.SetTitle(TrayStorageText(info))
+		accountTitle := info.Username
+		storageTitle := TrayStorageText(info)
+		trayAccount.SetTitle(accountTitle)
+		trayStorage.SetTitle(storageTitle)
+		setTrayMenuState(accountTitle, storageTitle)
 		systray.SetTooltip(fmt.Sprintf("HanDrive — %s · %s / %s",
 			info.Username, info.UsedDisplay, info.TotalDisplay))
 	})
@@ -64,6 +75,12 @@ func setupTray(exePath string, onSettingsSaved func()) {
 			select {
 			case <-mOpen.ClickedCh:
 				openLocalFolder()
+
+			case <-mLogs.ClickedCh:
+				openLogFolder(exePath)
+
+			case <-mSyncView.ClickedCh:
+				OpenSyncStatusPopup()
 
 			case <-mWebOpen.ClickedCh:
 				cfg, _ := config.Load()
@@ -95,14 +112,25 @@ func openLocalFolder() {
 		log.Printf("[tray] sync dir not configured: %v", err)
 		return
 	}
-	dir := filepath.FromSlash(cfg.SyncDir)
+	dir := filepath.FromSlash(ensureEffectiveSyncDir(cfg))
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		if mkErr := os.MkdirAll(dir, 0755); mkErr != nil {
 			log.Printf("[tray] cannot create sync dir: %v", mkErr)
 			return
 		}
 	}
-	if err := exec.Command("explorer", dir).Start(); err != nil {
+	if err := api.OpenPath(dir); err != nil {
 		log.Printf("[tray] explorer error: %v", err)
+	}
+}
+
+func openLogFolder(exePath string) {
+	logDir := effectiveLogDir(exePath)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		log.Printf("[tray] cannot create log dir: %v", err)
+		return
+	}
+	if err := api.OpenPath(logDir); err != nil {
+		log.Printf("[tray] log explorer error: %v", err)
 	}
 }

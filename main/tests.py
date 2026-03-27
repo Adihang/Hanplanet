@@ -1,5 +1,6 @@
 import base64
 import json
+import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
@@ -17,7 +18,7 @@ from django.utils import timezone
 from datetime import date, datetime
 from importlib import import_module
 
-from .models import HandriveAccessRule, NavLink, UserProfile
+from .models import HandriveAccessRule, NavLink, SyncFile, UserProfile
 from portfolio.models import Career, PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject
 from stratagem.models import Stratagem_Hero_Score
 from .handrive_views import (
@@ -104,6 +105,109 @@ class MinioPresignedEndpointTests(TestCase):
         self.assertEqual(parsed.netloc, "storage.hanplanet.com:9443")
         _, kwargs = mocked_client_factory.call_args
         self.assertEqual(kwargs["endpoint_url"], "https://storage.hanplanet.com:9443")
+
+
+class SyncStorageFallbackTests(TestCase):
+    def test_put_and_get_object_bytes_use_local_fallback_when_minio_is_down(self):
+        with TemporaryDirectory() as tmpdir:
+            with override_settings(MEDIA_ROOT=tmpdir):
+                fake_client = mock.Mock()
+                fake_client.put_object.side_effect = RuntimeError("minio down")
+                fake_client.get_object.side_effect = RuntimeError("minio down")
+
+                with mock.patch("main.minio_client.boto3.client", return_value=fake_client):
+                    from .minio_client import get_object_bytes, put_object_bytes
+
+                    put_object_bytes("1/example", b"hello world", content_type="text/plain")
+                    self.assertEqual(get_object_bytes("1/example"), b"hello world")
+                    self.assertTrue((Path(tmpdir) / "_sync_blobs" / "1" / "example").exists())
+
+
+class SyncIndexTests(TestCase):
+    def test_existing_handrive_file_is_indexed_for_sync(self):
+        user = get_user_model().objects.create_user(username="admin", password="pw")
+
+        with TemporaryDirectory() as tmpdir:
+            media_root = Path(tmpdir)
+            target_dir = media_root / "HanDrive" / "users" / "admin"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_file = target_dir / "notes.txt"
+            target_file.write_text("server file", encoding="utf-8")
+
+            with override_settings(MEDIA_ROOT=str(media_root)):
+                with mock.patch("main.minio_client.boto3.client") as mocked_client_factory:
+                    mocked_client = mock.Mock()
+                    mocked_client.put_object.side_effect = RuntimeError("minio down")
+                    mocked_client_factory.return_value = mocked_client
+
+                    from .sync_views import _ensure_sync_index_for_user
+
+                    summary = _ensure_sync_index_for_user(user)
+
+            self.assertEqual(summary["created"], 1)
+            sync_file = SyncFile.objects.get(user=user, path="notes.txt")
+            self.assertEqual(sync_file.size, target_file.stat().st_size)
+            self.assertEqual(sync_file.hash, hashlib.sha256(b"server file").hexdigest())
+
+
+class HandriveSyncSettingsTests(TestCase):
+    def test_sync_settings_requires_login(self):
+        response = self.client.post(
+            reverse("main:handrive_api_sync_settings"),
+            data=json.dumps({"excluded_paths": ["users/test/docs"]}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_sync_settings_persists_file_and_directory_paths(self):
+        user = get_user_model().objects.create_user(username="syncuser", password="pw123456")
+        with TemporaryDirectory() as tmpdir:
+            media_root = Path(tmpdir)
+            handrive_root = media_root / "HanDrive"
+            handrive_root.mkdir(parents=True, exist_ok=True)
+            valid_file = handrive_root / "notes.txt"
+            valid_file.write_text("hello", encoding="utf-8")
+            valid_dir = handrive_root / "folder"
+            valid_dir.mkdir()
+
+            with override_settings(MEDIA_ROOT=str(media_root)):
+                self.client.force_login(user)
+                response = self.client.post(
+                    reverse("main:handrive_api_sync_settings"),
+                    data=json.dumps({"excluded_paths": ["notes.txt", "notes.txt", "folder", "../bad"]}),
+                    content_type="application/json",
+                )
+
+            self.assertEqual(response.status_code, 200)
+            user.profile.refresh_from_db()
+            self.assertEqual(user.profile.sync_excluded_paths, ["notes.txt", "folder"])
+            self.assertEqual(response.json()["excluded_paths"], ["notes.txt", "folder"])
+
+    def test_sync_settings_respects_scoped_home_dir(self):
+        user = get_user_model().objects.create_user(username="scoped", password="pw123456")
+        group, _ = Group.objects.get_or_create(name=DOCS_PUBLIC_WRITE_GROUP_NAME)
+        user.groups.add(group)
+        with TemporaryDirectory() as tmpdir:
+            media_root = Path(tmpdir)
+            scoped_root = media_root / "HanDrive" / "users" / "scoped"
+            scoped_root.mkdir(parents=True, exist_ok=True)
+            (scoped_root / "docs.txt").write_text("ok", encoding="utf-8")
+            other_root = media_root / "HanDrive" / "users" / "other"
+            other_root.mkdir(parents=True, exist_ok=True)
+            (other_root / "docs.txt").write_text("no", encoding="utf-8")
+
+            with override_settings(MEDIA_ROOT=str(media_root)):
+                self.client.force_login(user)
+                response = self.client.post(
+                    reverse("main:handrive_api_sync_settings"),
+                    data=json.dumps({"excluded_paths": ["users/scoped/docs.txt", "users/other/docs.txt"]}),
+                    content_type="application/json",
+                )
+
+            self.assertEqual(response.status_code, 200)
+            user.profile.refresh_from_db()
+            self.assertEqual(user.profile.sync_excluded_paths, ["users/scoped/docs.txt"])
 
 
 class MarkdownSafetyTests(TestCase):
@@ -2018,6 +2122,29 @@ class HandriveAccessRuleTests(TestCase):
         self.assertTrue((handrive_root / "archive" / "public.md").exists())
         self.assertEqual(response.json().get("path"), "archive/public.md")
 
+    def test_docs_api_move_updates_sync_excluded_paths(self):
+        editor = self.create_handrive_editor("move_sync_editor")
+        profile, _ = UserProfile.objects.get_or_create(user=editor)
+        profile.sync_excluded_paths = ["restricted", "restricted/secret.md", "public.md"]
+        profile.save(update_fields=["sync_excluded_paths", "updated_at"])
+        self.client.force_login(editor)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "archive").mkdir(parents=True, exist_ok=True)
+
+        response = self.client.post(
+            reverse("main:handrive_api_move"),
+            data=json.dumps({"source_path": "restricted", "target_dir": "archive"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        editor.profile.refresh_from_db()
+        self.assertEqual(
+            editor.profile.sync_excluded_paths,
+            ["archive/restricted", "archive/restricted/secret.md", "public.md"],
+        )
+
     def test_docs_api_move_blocks_folder_move_into_descendant(self):
         editor = self.create_handrive_editor("move_descendant_editor")
         self.client.force_login(editor)
@@ -2696,6 +2823,23 @@ class HandriveAccessRuleTests(TestCase):
         self.assertTrue((handrive_root / "public.md").exists())
         self.assertFalse((handrive_root / "public_renamed.md").exists())
 
+    def test_docs_api_rename_updates_sync_excluded_paths(self):
+        editor = self.create_handrive_editor("rename_sync_editor")
+        profile, _ = UserProfile.objects.get_or_create(user=editor)
+        profile.sync_excluded_paths = ["public.md", "restricted/secret.md"]
+        profile.save(update_fields=["sync_excluded_paths", "updated_at"])
+        self.client.force_login(editor)
+
+        response = self.client.post(
+            reverse("main:handrive_api_rename"),
+            data=json.dumps({"path": "public.md", "new_name": "public_renamed"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        editor.profile.refresh_from_db()
+        self.assertEqual(editor.profile.sync_excluded_paths, ["public_renamed.md", "restricted/secret.md"])
+
     def test_public_writable_file_cannot_be_deleted(self):
         public_group = get_handrive_public_write_group()
         rule = HandriveAccessRule.objects.create(path="public.md")
@@ -2728,6 +2872,23 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse((handrive_root / "public.md").exists())
         self.assertFalse((handrive_root / "extra.md").exists())
+
+    def test_docs_api_delete_removes_sync_excluded_paths(self):
+        editor = self.create_handrive_editor("delete_sync_editor")
+        profile, _ = UserProfile.objects.get_or_create(user=editor)
+        profile.sync_excluded_paths = ["restricted", "restricted/secret.md", "public.md"]
+        profile.save(update_fields=["sync_excluded_paths", "updated_at"])
+        self.client.force_login(editor)
+
+        response = self.client.post(
+            reverse("main:handrive_api_delete"),
+            data=json.dumps({"path": "restricted"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        editor.profile.refresh_from_db()
+        self.assertEqual(editor.profile.sync_excluded_paths, ["public.md"])
 
     def test_docs_api_delete_bulk_rejects_when_public_writable_file_is_included(self):
         editor = self.create_handrive_editor("bulk_delete_public_block_editor")

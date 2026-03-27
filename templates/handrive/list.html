@@ -66,6 +66,7 @@
     data-acl-api-url="{{ handrive_api_acl_url }}"
     data-acl-options-api-url="{{ handrive_api_acl_options_url }}"
     data-url-share-api-url="{{ handrive_api_url_share_url }}"
+    data-sync-settings-api-url="{{ handrive_api_sync_settings_url }}"
     data-write-url="{{ handrive_write_url }}"
     data-ui-lang="{{ ui_lang|default:'ko' }}"
     data-handrive-shared-owner-username="{{ handrive_shared_owner_username|default:'' }}"
@@ -211,10 +212,12 @@
 {% include "popup/handrive/auth_logout_modal.html" %}
 {% include "popup/handrive/page_help_modal.html" %}
 {% include "popup/handrive/job_queue_panel.html" %}
+{% include "popup/handrive/sync_modal.html" %}
 <input id="handrive-context-upload-input" type="file" multiple hidden>
 
 {{ handrive_text|json_script:"handrive-i18n" }}
 {{ initial_entries|json_script:"handrive-initial-entries" }}
 {{ current_dir_git_repo|json_script:"handrive-current-dir-git-repo" }}
+{{ sync_excluded_paths|json_script:"handrive-sync-excluded-paths" }}
 {% include 'handrive/_assets_script.html' %}
 {% endblock %}

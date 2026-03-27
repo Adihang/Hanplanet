@@ -116,6 +116,22 @@ body.theme-dark .ui-auth-account-menu {
     transition: background 0.15s, color 0.15s;
     z-index: 1;
 }
+
+.ui-auth-account-admin-icon {
+    width: 36px;
+    height: 36px;
+    display: block;
+    background-color: currentColor;
+    -webkit-mask-image: url("/static/icons/admin.png");
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    -webkit-mask-size: contain;
+    mask-image: url("/static/icons/admin.png");
+    mask-repeat: no-repeat;
+    mask-position: center;
+    mask-size: contain;
+}
+
 .ui-auth-account-admin-btn:hover,
 .ui-auth-account-admin-btn:focus-visible {
     background: rgba(0, 0, 0, 0.08);

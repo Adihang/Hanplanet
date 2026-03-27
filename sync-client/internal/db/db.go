@@ -41,12 +41,12 @@ func (d *DB) Close() error { return d.sql.Close() }
 
 // FileRecord는 로컬 파일 동기화 상태입니다.
 type FileRecord struct {
-	Path      string
-	Hash      string
-	Size      int64
-	Version   int64
-	FileID    string
-	SyncedAt  int64
+	Path     string
+	Hash     string
+	Size     int64
+	Version  int64
+	FileID   string
+	SyncedAt int64
 }
 
 // UpsertFile은 파일 레코드를 삽입하거나 갱신합니다.
@@ -139,6 +139,14 @@ func (d *DB) PeekQueue(n int) ([]QueueItem, error) {
 		items = append(items, it)
 	}
 	return items, rows.Err()
+}
+
+// QueueSnapshot은 현재 큐 전체를 반환합니다.
+func (d *DB) QueueSnapshot(limit int) ([]QueueItem, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	return d.PeekQueue(limit)
 }
 
 // DequeueItem은 처리 완료된 아이템을 큐에서 제거합니다.

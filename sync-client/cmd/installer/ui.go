@@ -141,6 +141,7 @@ var (
 	pFillRect           = user32.NewProc("FillRect")
 	pDrawText           = user32.NewProc("DrawTextW")
 	pLoadCursor         = user32.NewProc("LoadCursorW")
+	pLoadIcon           = user32.NewProc("LoadIconW")
 	pMessageBox         = user32.NewProc("MessageBoxW")
 	pGetClientRect      = user32.NewProc("GetClientRect")
 	pGetWindowRect      = user32.NewProc("GetWindowRect")
@@ -515,7 +516,7 @@ func createAllControls(hwnd uintptr) {
 	home, _ := os.UserHomeDir()
 	wiz.p1Lbl1 = makeCtrl(hwnd, "STATIC", "설치 위치", ssLeft, lx, ey(0), lw, 16, 0)
 	wiz.p1Ed1 = makeCtrl(hwnd, "EDIT",
-		filepath.Join(os.Getenv("ProgramFiles"), "Hanplanet", "HanDrive"),
+		defaultInstallDir(),
 		esAutoHScroll|wsBorder|wsTabStop, lx, ey(0)+20, lw, 24, idInstDir)
 	wiz.p1Lbl2 = makeCtrl(hwnd, "STATIC", "서버 URL", ssLeft, lx, ey(1), lw, 16, 0)
 	wiz.p1Ed2 = makeCtrl(hwnd, "EDIT", "https://www.hanplanet.com",
@@ -811,7 +812,7 @@ func startProgress(isUpdate bool) {
 	}
 
 	if isUpdate {
-		installDir := filepath.Join(os.Getenv("ProgramFiles"), "Hanplanet", "HanDrive")
+		installDir := defaultInstallDir()
 		go func() {
 			done(RunUpdate(installDir, report))
 		}()
@@ -843,10 +844,11 @@ func RunWizard() {
 	wiz.hInstance, _, _ = pGetModuleHandle.Call(0)
 
 	// 기존 설치 감지
-	exePath := filepath.Join(os.Getenv("ProgramFiles"), "Hanplanet", "HanDrive", "handrive.exe")
+	exePath := defaultInstallDir()
+	exePath = filepath.Join(exePath, "handrive.exe")
 	wiz.isUpdate = isAlreadyInstalled(exePath)
 	if wiz.isUpdate {
-		wiz.installDir = filepath.Join(os.Getenv("ProgramFiles"), "Hanplanet", "HanDrive")
+		wiz.installDir = defaultInstallDir()
 		wiz.hdrTitle = "HanDrive 업데이트"
 		wiz.hdrSubtitle = "HanDrive를 최신 버전으로 업데이트합니다."
 	} else {
@@ -858,12 +860,15 @@ func RunWizard() {
 	className := u16("HanDriveSetup")
 	cb := syscall.NewCallback(wndProc)
 	cursor, _, _ := pLoadCursor.Call(0, idcArrow)
+	appIcon, _, _ := pLoadIcon.Call(wiz.hInstance, 1)
 	wcex := wndClassEx{
 		Style:      0x0002 | 0x0001, // CS_HREDRAW | CS_VREDRAW
 		WndProc:    cb,
 		Instance:   wiz.hInstance,
 		Background: uintptr(wiz.whiteBrush) + 1, // 나중에 WM_CREATE에서 사용하므로 임시
 		Cursor:     cursor,
+		Icon:       appIcon,
+		IconSm:     appIcon,
 		ClassName:  className,
 	}
 	wcex.Size = uint32(unsafe.Sizeof(wcex))

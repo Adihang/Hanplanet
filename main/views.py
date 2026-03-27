@@ -1494,21 +1494,29 @@ def minigame_page(request, ui_lang=None):
             "slug": "salvations-edge-4",
             "title": "Salvation's Edge 4",
             "url": reverse("main:Salvations_Edge_4_lang", kwargs={"ui_lang": resolved_lang}),
+            "description": "Raid-inspired rhythm and timing challenge." if is_english else "레이드 감성의 리듬/타이밍 챌린지.",
+            "image_url": build_public_absolute_url(static("icons/icon-192.png")),
         },
         {
             "slug": "stratagem-hero",
             "title": "Stratagem Hero",
             "url": reverse("main:Stratagem_Hero_lang", kwargs={"ui_lang": resolved_lang}),
+            "description": "Call stratagems fast and climb the scoreboard." if is_english else "스트라타젬을 빠르게 입력하고 점수판에 도전하세요.",
+            "image_url": build_public_absolute_url(static("icons/icon-192.png")),
         },
         {
             "slug": "bubble",
             "title": "Bubble",
             "url": reverse("main:bubble_lang", kwargs={"ui_lang": resolved_lang}),
+            "description": "A small color-pop playground." if is_english else "가볍게 즐기는 색감 버블 게임.",
+            "image_url": build_public_absolute_url(static("icons/icon-192.png")),
         },
         {
             "slug": "bumpercar-spiky",
             "title": "Bumper Car Spiky" if is_english else "범퍼카 스핔이",
             "url": reverse("main:bumpercar_spiky_lang", kwargs={"ui_lang": resolved_lang}),
+            "description": "Crash around a shared arena with Spiky." if is_english else "스핔이로 공용 경기장을 뛰어다니는 멀티플레이 범퍼카 게임.",
+            "image_url": build_public_absolute_url(static("Spikip/speaki_default/icon/main.png")),
         },
     ]
 
@@ -1573,17 +1581,26 @@ def bubble_page(request, ui_lang=None):
     return render(request, "fun/bubble.html", context)
 
 
+def _resolve_game_ws_url(request, game_slug="bumpercar-spiky"):
+    """Return the runtime websocket URL for the requested game and current host."""
+    host = (request.get_host() or "").split(":")[0].strip().lower()
+    is_local_host = host in {"localhost", "127.0.0.1"}
+    return str(
+        getattr(
+            settings,
+            "GAME_WS_LOCAL_URL" if is_local_host else "GAME_WS_PUBLIC_URL",
+            "ws://127.0.0.1:8081" if is_local_host else "wss://game.hanplanet.com",
+        )
+        or ("ws://127.0.0.1:8081" if is_local_host else "wss://game.hanplanet.com")
+    )
+
+
 def hanplanet_multiplayer_page(request, ui_lang=None):
     """Render the public bumpercar game page with runtime config, assets, and account UI data."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
-    host = (request.get_host() or "").split(":")[0].strip().lower()
     gameplay_settings = load_bumpercar_spiky_settings()
-
-    if host in {"localhost", "127.0.0.1"}:
-        ws_url = str(getattr(settings, "GAME_WS_LOCAL_URL", "ws://127.0.0.1:8081") or "ws://127.0.0.1:8081")
-    else:
-        ws_url = str(getattr(settings, "GAME_WS_PUBLIC_URL", "wss://game.hanplanet.com") or "wss://game.hanplanet.com")
+    ws_url = _resolve_game_ws_url(request, "bumpercar-spiky")
 
     ner_tracking_sound_dir = Path(settings.BASE_DIR) / "static" / "Spikip" / "ner" / "tracking"
     ner_tracking_sound_urls = []
@@ -1718,7 +1735,6 @@ def hanplanet_multiplayer_page(request, ui_lang=None):
     response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response["Pragma"] = "no-cache"
     return response
-
 
 @csrf_protect
 @require_http_methods(["POST"])
@@ -1971,6 +1987,8 @@ def game_auth_token(request, ui_lang=None):
     secret = str(getattr(settings, "GAME_JWT_SECRET", "") or "").strip()
     if not secret:
         return JsonResponse({"error": "game_jwt_secret_not_configured"}, status=503)
+    requested_game = str(request.GET.get("game") or "").strip().lower()
+    game_slug = "bumpercar-spiky"
 
     requested_skin = resolve_bumpercar_skin_name(request.user, request.GET.get("skin"))
     if request.user.is_authenticated:
@@ -1980,9 +1998,10 @@ def game_auth_token(request, ui_lang=None):
         if not guest_subject:
             guest_subject = f"guest-{secrets.token_hex(6)}"
             request.session["guest_game_subject"] = guest_subject
+        guest_display_name = "Spiky" if ui_lang == "en" else "스핔이"
         token = build_game_auth_token(
             subject=guest_subject,
-            display_name="스핔이",
+            display_name=guest_display_name,
             is_guest=True,
             skin_name=requested_skin,
         )
@@ -1990,7 +2009,7 @@ def game_auth_token(request, ui_lang=None):
         {
             "token": token,
             "expires_in": int(getattr(settings, "GAME_JWT_EXP_SECONDS", 300) or 300),
-            "ws_url": str(getattr(settings, "GAME_WS_PUBLIC_URL", "") or ""),
+            "ws_url": _resolve_game_ws_url(request, game_slug),
         }
     )
     response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -2230,6 +2249,13 @@ def service_worker(request):
 const STATIC_CACHE = 'hanplanet-static-v5';
 const PAGE_CACHE = 'hanplanet-page-v5';
 
+function canStoreInCache(request, response) {
+  if (!response || !response.ok || response.status === 206) {
+    return false;
+  }
+  return !request.headers.has('range');
+}
+
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
@@ -2255,12 +2281,16 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.pathname.startsWith('/static/')) {
+    if (request.headers.has('range')) {
+      event.respondWith(fetch(request));
+      return;
+    }
     event.respondWith(
       caches.open(STATIC_CACHE).then((cache) =>
         cache.match(request).then((cached) => {
           const fetched = fetch(request)
             .then((response) => {
-              if (response && response.ok) {
+              if (canStoreInCache(request, response)) {
                 cache.put(request, response.clone());
               }
               return response;
@@ -2277,7 +2307,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response && response.ok) {
+          if (canStoreInCache(request, response)) {
             const copy = response.clone();
             caches.open(PAGE_CACHE).then((cache) => cache.put(request, copy));
           }
@@ -4244,3 +4274,13 @@ def git_credential_helper_download(request):
     resp = HttpResponse(content, content_type="text/x-shellscript")
     resp["Content-Disposition"] = 'attachment; filename="git-credential-hanplanet"'
     return resp
+
+
+def handrive_sync_client_download(request, ui_lang=None):
+    """Download the bundled HanDrive Windows sync client executable."""
+    client_path = Path(settings.BASE_DIR) / "sync-client" / "handrive.exe"
+    if not client_path.exists():
+        return HttpResponse("클라이언트를 찾을 수 없습니다.", status=404)
+    response = FileResponse(client_path.open("rb"), as_attachment=True, filename="handrive.exe")
+    response["Content-Type"] = "application/vnd.microsoft.portable-executable"
+    return response

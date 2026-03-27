@@ -8,6 +8,7 @@ Hanplanet 서버와 로컬 폴더를 양방향 동기화하는 Go 클라이언�
 
 - [빌드](#빌드)
   - [Windows 설치파일 생성](#windows-설치파일-생성)
+  - [Windows MSI 생성](#windows-msi-생성)
   - [macOS 빌드](#macos-빌드)
 - [설치 (Windows)](#설치-windows)
 - [사용법](#사용법)
@@ -49,6 +50,24 @@ make build-windows
 > copy uninstall.ps1 cmd\installer\uninstall.ps1
 > go build -ldflags="-s -w" -o "Handsync Setup.exe" ./cmd/installer
 > ```
+
+### Windows MSI 생성
+
+`HanDrive-<version>.msi` 는 사용자 계정 기준으로 `%LocalAppData%\Hanplanet\HanDrive` 에 설치됩니다.
+
+```bash
+cd sync-client
+brew install msitools
+make build-windows-msi
+```
+
+완료되면 `sync-client/HanDrive-0.1.0.msi` 같은 파일이 생성됩니다.
+
+특징:
+
+1. 관리자 권한 없이 per-user 설치
+2. 시작 메뉴에 `HanDrive` 바로가기 생성
+3. 첫 실행 후 앱 내부 설정 화면에서 서버 URL, 동기화 폴더, 로그인 진행
 
 ### macOS 빌드
 

@@ -14,6 +14,7 @@
             data-game-client
             data-ws-url="{{ game_ws_url }}"
             data-token-url="{{ game_token_url }}"
+            data-game-slug="{{ game_slug|default:'bumpercar-spiky' }}"
             data-player-name="{{ game_player_name }}"
             data-skin-catalog='{{ game_skin_catalog_json }}'
             data-player-npc-icon-url="{% static_v 'Spikip/ner/icon/default.webp' %}"
@@ -84,7 +85,7 @@
                                     {% include "partials/account_widget.html" %}
                                 </div>
                                 {% endif %}
-                                <p class="multiplayer-start-kicker">Bumper Car Spiky</p>
+                                <p class="multiplayer-start-kicker">{{ multiplayer_kicker|default:"Bumper Car Spiky" }}</p>
                                 <h3 class="multiplayer-start-title">{{ multiplayer_title }}</h3>
                                 <p class="multiplayer-start-description">{{ multiplayer_description }}</p>
                                 <p class="multiplayer-start-skin-hint">
@@ -197,7 +198,7 @@
                             </div>
                             <div class="multiplayer-lives" data-game-shared-lives aria-label="{% include 'partials/ui_i18n.html' with key='bumpercar_shared_lives' %}">
                                 <img class="multiplayer-lives-icon" src="{% static_v 'Spikip/speaki_default/icon/main.png' %}" alt="">
-                                <span class="multiplayer-lives-count" data-game-shared-lives-count>x 3</span>
+                                <span class="multiplayer-lives-count" data-game-shared-lives-count>{{ multiplayer_hud_counter_text|default:"x 3" }}</span>
                             </div>
                         </div>
                         {% include "popup/fun/multiplayer_death_modal.html" %}
@@ -230,7 +231,7 @@
 
 {% include "popup/fun/multiplayer_idle_timeout_modal.html" %}
 <script src="{% static_v 'js/vendor/msgpack.min.js' %}" defer></script>
-<script src="{% static_v 'js/fun/bumpercar_spiky/multiplayer.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+<script src="{% static_v game_client_script_path|default:'js/fun/bumpercar_spiky/multiplayer.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
 {% include "popup/root/auth_logout_modal.html" %}
 <script src="{% static_v 'js/common/minigame_account_widget.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
 {% endblock %}

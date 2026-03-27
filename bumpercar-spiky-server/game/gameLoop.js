@@ -21,10 +21,20 @@ function valueUnchanged(curr, prev) {
 // 모든 연결된 클라이언트에 전체 엔티티 상태를 브로드캐스트한다.
 // world: 월드 시뮬레이션 인스턴스
 // wss: WebSocket 서버 인스턴스
-function startGameLoop(world, wss) {
+function startGameLoop(world, wss, clientFilter = null) {
     const intervalMs = Math.floor(1000 / TICK_RATE)
 
     setInterval(() => {
+        const activeClients = Array.from(wss.clients).filter((client) => (
+            client &&
+            client.readyState === 1 &&
+            client.player &&
+            (typeof clientFilter !== "function" || clientFilter(client))
+        ))
+        if (!activeClients.length) {
+            return
+        }
+
         // 1. 월드 시뮬레이션을 한 틱 진행
         world.update()
         const now = Date.now()
@@ -197,7 +207,7 @@ function startGameLoop(world, wss) {
         // 실제로 필요한 클라이언트가 있을 때만 lazy하게 인코딩한다.
         let fullStateSerialized = null
 
-        for (const client of wss.clients) {
+        for (const client of activeClients) {
             // 6. 오래 입력이 없는 연결은 종료
             if (client.player && now - (client.lastActiveInputAt || 0) >= IDLE_TIMEOUT_MS) {
                 if (client.readyState === 1) {

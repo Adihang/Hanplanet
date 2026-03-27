@@ -114,6 +114,7 @@ class Player {
             left: false,
             right: false,
             boost: false,
+            special: false,
             respawn: false,
             moveX: 0,
             moveY: 0

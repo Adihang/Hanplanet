@@ -149,7 +149,7 @@
     })();
     const rawWsUrl = root.getAttribute('data-ws-url') || '';
     const tokenUrl = root.getAttribute('data-token-url') || '';
-    const gameSlug = root.getAttribute('data-game-slug') || 'bumpercar-spiky';
+    const gameSlug = root.getAttribute('data-game-slug') || 'raise-speaki';
     const gameplaySettings = (function () {
         // Admin-tuned movement/combat values are injected through the page so runtime behavior matches server config.
         const rawValue = root.getAttribute('data-gameplay-settings') || '{}';
@@ -205,7 +205,8 @@
     const soundHearingRadius = 560;
     const inputSendIntervalMs = 33;
     const inputHeartbeatMs = 150;
-    const input = { up: false, down: false, left: false, right: false, boost: false, respawn: false };
+    const levelBoostDistanceScaleFactor = 1.1;
+    const input = { up: false, down: false, left: false, right: false, boost: false, special: false, respawn: false };
     const keyboardDirectionInput = { up: false, down: false, left: false, right: false };
     const joystickDirectionInput = { up: false, down: false, left: false, right: false };
     const joystickAnalogInput = { x: 0, y: 0 };
@@ -226,6 +227,7 @@
     let gameStarted = false;
     let selfId = '';
     let serverPlayers = [];
+    let levelDrops = [];
     // delta 수신 시 플레이어별 최신 full state를 유지하는 Map
     let serverPlayerMap = new Map();
     let renderPlayers = [];
@@ -263,6 +265,9 @@
     let selfDeathActive = false;
     let selfDeathRespawnReady = false;
     let selfLivesRemaining = Math.max(1, Number(gameplaySettings.user_lives || 3));
+    let selfLevel = 1;
+    let selfCurrentHealth = 1;
+    let selfMaxHealth = 1;
     let roundResetAnnouncementActive = false;
     let roundResetAnnouncementLatched = false;
     let selfDoubleMerged = false;
@@ -826,6 +831,7 @@
             left: Boolean(input.left),
             right: Boolean(input.right),
             boost: Boolean(input.boost),
+            special: Boolean(input.special),
             respawn: Boolean(input.respawn),
             moveX: Number(moveVector.dx.toFixed(4)),
             moveY: Number(moveVector.dy.toFixed(4))
@@ -1129,6 +1135,7 @@
     const handleIdleTimeoutDisconnect = function () {
         idleReconnectBlocked = true;
         serverPlayers = [];
+        levelDrops = [];
         serverPlayerMap.clear();
         renderPlayers = [];
         lastSentInputSignature = '';
@@ -1143,6 +1150,9 @@
         selfDeathActive = false;
         selfDeathRespawnReady = false;
         selfLivesRemaining = Math.max(1, Number(gameplaySettings.user_lives || 3));
+        selfLevel = 1;
+        selfCurrentHealth = 1;
+        selfMaxHealth = 1;
         roundResetAnnouncementActive = false;
         roundResetAnnouncementLatched = false;
         respawnRequestPending = false;
@@ -1174,6 +1184,7 @@
         mouseDirectionInput.right = false;
         syncDirectionalInput();
         input.boost = false;
+        input.special = false;
         encounterStage = 0;
         encounterAnnouncementKey = '';
         encounterCountdownSeconds = 0;
@@ -1181,7 +1192,7 @@
         encounterFinaleUntil = 0;
         stopBackgroundMusic();
         spectateTargetId = '';
-        setSharedLives(selfLivesRemaining);
+        setSharedLives(selfLevel, selfCurrentHealth, selfMaxHealth);
         setDeathModalState(false, false, selfLivesRemaining);
         setEncounterOverlayState();
         boostState = 'idle';
@@ -1521,14 +1532,38 @@
         }
     };
 
-    const setSharedLives = function (value) {
+    const setSharedLives = function (value, currentHealth, maxHealth, options) {
         if (!sharedLivesCountNode) {
             return;
         }
-        const safeLives = Math.max(0, Number(value || 0));
-        sharedLivesCountNode.textContent = 'x ' + safeLives;
+        const opts = options || {};
+        const safeLevel = Math.max(1, Number(value || 1));
+        const safeCurrentHealth = Math.max(0, Number(currentHealth || 0));
+        const safeMaxHealth = Math.max(1, Number(maxHealth || 1));
+        if (opts.levelText) {
+            sharedLivesCountNode.textContent = opts.levelText + ' · ' + safeCurrentHealth + '/' + safeMaxHealth;
+            return;
+        }
+        sharedLivesCountNode.textContent = 'Lv ' + safeLevel + ' · ' + safeCurrentHealth + '/' + safeMaxHealth;
     };
-    setSharedLives(selfLivesRemaining);
+    setSharedLives(selfLevel, selfCurrentHealth, selfMaxHealth);
+
+    const buildDoubleHudLevelText = function (player) {
+        if (!player || !player.doubleState || !Array.isArray(player.doubleState.units)) {
+            return '';
+        }
+        const aliveUnits = player.doubleState.units.filter(function (unit) {
+            const unitMaxHealth = Math.max(1, Math.round(Number(unit && unit.maxHealth || unit && unit.level || 1)));
+            const unitCurrentHealth = Math.max(0, Math.min(unitMaxHealth, Math.round(Number(unit && unit.currentHealth !== undefined ? unit.currentHealth : unit && unit.health || 0))));
+            return unitCurrentHealth > 0;
+        });
+        if (!aliveUnits.length) {
+            return '';
+        }
+        return 'Lv ' + aliveUnits.map(function (unit) {
+            return Math.max(1, Math.round(Number(unit && unit.level || 1)));
+        }).join('-');
+    };
 
     const syncFullscreenViewportSize = function () {
         const viewportWidth = window.visualViewport ? window.visualViewport.width : window.innerWidth;
@@ -1580,7 +1615,7 @@
     };
 
     const updateJoystickInput = function (clientX, clientY) {
-        if (!joystick || !joystickKnob) {
+        if (!joystick || !joystickKnob || selfDeathActive) {
             return;
         }
         const rect = joystick.getBoundingClientRect();
@@ -2318,7 +2353,11 @@
             const predictedUnit = predictedSelf.doubleState.units[unitIndex];
             const wasCollisionActive = Boolean(predictedUnit.collisionActive);
             const wasRecoveryActive = Boolean(predictedUnit.collisionRecoveryActive);
+            predictedUnit.level = unit.level;
             predictedUnit.health = unit.health;
+            predictedUnit.currentHealth = unit.currentHealth;
+            predictedUnit.maxHealth = unit.maxHealth;
+            predictedUnit.sizeMultiplier = unit.sizeMultiplier;
             predictedUnit.currentSpeed = unit.currentSpeed;
             predictedUnit.boostState = unit.boostState;
             predictedUnit.collisionActive = unit.collisionActive;
@@ -2716,6 +2755,7 @@
 
             if (payload && Array.isArray(payload.d)) {
                 const receivedAt = window.performance.now();
+                levelDrops = Array.isArray(payload.l) ? payload.l.slice() : [];
                 // 삭제된 플레이어 제거
                 if (Array.isArray(payload.r)) {
                     payload.r.forEach(function (id) { serverPlayerMap.delete(id); });
@@ -2771,14 +2811,28 @@
                     selfDeathRespawnReady = Boolean(selfPlayer.deathRespawnReady);
                     selfLivesRemaining = typeof selfPlayer.livesRemaining === 'number'
                         ? Math.max(0, selfPlayer.livesRemaining)
-                        : 0;
+                        : 1;
+                    selfLevel = typeof selfPlayer.level === 'number'
+                        ? Math.max(1, Math.round(Number(selfPlayer.level || 1)))
+                        : selfLevel;
+                    selfCurrentHealth = typeof selfPlayer.currentHealth === 'number'
+                        ? Math.max(0, Math.round(Number(selfPlayer.currentHealth || 0)))
+                        : selfCurrentHealth;
+                    selfMaxHealth = typeof selfPlayer.maxHealth === 'number'
+                        ? Math.max(1, Math.round(Number(selfPlayer.maxHealth || 1)))
+                        : selfMaxHealth;
                     if (!selfDeathActive) {
                         respawnRequestPending = false;
                         roundResetAnnouncementLatched = false;
                         manualStartAutoRespawnPending = false;
                     }
                     roundResetAnnouncementActive = Boolean(selfPlayer.roundResetAnnouncementActive);
-                    setSharedLives(selfLivesRemaining);
+                    const selfHudLevelText = selfSkinType === 'double'
+                        ? buildDoubleHudLevelText(selfPlayer)
+                        : '';
+                    setSharedLives(selfLevel, selfCurrentHealth, selfMaxHealth, {
+                        levelText: selfHudLevelText
+                    });
                     setDeathModalState(selfDeathActive, selfDeathRespawnReady, selfLivesRemaining);
                     if (defeatReceivedCountNode) {
                         defeatReceivedCountNode.textContent = String(selfPlayer.defeatReceivedCount || 0);
@@ -2839,6 +2893,7 @@
                         input.left = false;
                         input.right = false;
                         input.boost = false;
+                        input.special = false;
                         currentMoveSpeed = 0;
                         boostState = 'idle';
                         resetJoystick();
@@ -3099,8 +3154,13 @@
         return getPlayerSkinProfile(activeSelfSkinName || selectedSkinName).baseSpeed;
     };
 
+    const getLevelBoostDistanceMultiplier = function (level) {
+        const safeLevel = Math.max(1, Math.round(Number(level || 1)));
+        return Math.pow(levelBoostDistanceScaleFactor, safeLevel - 1);
+    };
+
     const getSelectedPlayerMaxBoostSpeed = function () {
-        return getPlayerSkinProfile(activeSelfSkinName || selectedSkinName).maxBoostSpeed;
+        return getPlayerSkinProfile(activeSelfSkinName || selectedSkinName).maxBoostSpeed * getLevelBoostDistanceMultiplier(selfLevel);
     };
 
     currentMoveSpeed = getSelectedPlayerBaseSpeed();
@@ -3119,6 +3179,11 @@
     const getPlayerHealthSegments = function (player) {
         if (Boolean(player.deathActive)) {
             return 0;
+        }
+        if (typeof player.currentHealth === 'number' || typeof player.maxHealth === 'number') {
+            const safeMaxHealth = Math.max(1, Math.round(Number(player.maxHealth || 1)));
+            const safeCurrentHealth = Math.max(0, Math.min(safeMaxHealth, Math.round(Number(player.currentHealth || 0))));
+            return safeCurrentHealth;
         }
         const skinProfile = getPlayerSkinProfile(player && player.skinName ? player.skinName : selectedSkinName);
         const defeatReceivedCount = typeof player.defeatReceivedCount === 'number'
@@ -3163,9 +3228,10 @@
         const npcBoostState = typeof player.boostState === 'string' ? player.boostState : 'idle';
         const isNpcChargeVisualActive = isNpc && (npcChargeWindupProgress > 0 || npcBoostState === 'charging');
         const isNpcDefeatIconActive = isNpc && isDefeatVisualActive && !isDeathVisualActive && npcDefeatDamageRatio >= 0.4;
+        const growthScale = isPumpkinNpc ? 1 : Math.max(0.6, Number(player && player.sizeMultiplier || 1));
         const spriteScale = isNpc
             ? (isNpcChargeVisualActive ? 2.0 : 2.8)
-            : ((skinProfile.type === 'pumkin' || isPumpkinNpc) ? 2 : 1);
+            : ((skinProfile.type === 'pumkin' || isPumpkinNpc) ? 2 : 1) * growthScale;
         const skinRuntime = (!isNpc || isPumpkinNpc) ? getSkinConfig(skinName) : null;
         let activeIcon = null;
         let activeIconReady = false;
@@ -3254,7 +3320,8 @@
                 ? Math.max(0, Number(currentMoveSpeed || 0))
                 : Math.max(0, Number(player.currentSpeed || 0));
             const playerBaseSpeed = skinProfile.baseSpeed;
-            const playerMaxBoostedSpeed = skinProfile.maxBoostSpeed;
+            const playerLevelForBoost = Math.max(1, Math.round(Number(player && player.level || selfLevel || 1)));
+            const playerMaxBoostedSpeed = skinProfile.maxBoostSpeed * getLevelBoostDistanceMultiplier(playerLevelForBoost);
             const boostRatio = Math.max(
                 0,
                 Math.min(
@@ -3493,7 +3560,7 @@
         } else if ((unit.boostState || 'idle') === 'charging' || (unit.boostState || 'idle') === 'cooldown') {
             const movementSpeed = Math.max(0, Number(unit.currentSpeed || 0));
             const playerBaseSpeed = getPlayerSkinProfile('double').baseSpeed;
-            const playerMaxBoostedSpeed = getPlayerSkinProfile('double').maxBoostSpeed;
+            const playerMaxBoostedSpeed = getPlayerSkinProfile('double').maxBoostSpeed * getLevelBoostDistanceMultiplier(unit.level);
             const boostRatio = Math.max(
                 0,
                 Math.min(0.999, (movementSpeed - playerBaseSpeed) / Math.max(1, playerMaxBoostedSpeed - playerBaseSpeed))
@@ -3524,7 +3591,12 @@
             ? Math.max(0, Number(currentMoveSpeed || 0))
             : Math.max(0, Number(player.currentSpeed || 0));
         const playerBaseSpeed = getPlayerSkinProfile('double').baseSpeed;
-        const playerMaxBoostedSpeed = getPlayerSkinProfile('double').maxBoostSpeed;
+        const mergedDisplayLevel = player && player.doubleState && Array.isArray(player.doubleState.units)
+            ? Math.max(1, player.doubleState.units.reduce(function (sum, unit) {
+                return sum + Math.max(1, Math.round(Number(unit && unit.level || 1)));
+            }, 0))
+            : Math.max(1, Math.round(Number(player && player.level || selfLevel || 1)));
+        const playerMaxBoostedSpeed = getPlayerSkinProfile('double').maxBoostSpeed * getLevelBoostDistanceMultiplier(mergedDisplayLevel);
         const boostRatio = Math.max(
             0,
             Math.min(
@@ -3608,6 +3680,30 @@
             return false;
         }
 
+        const getUnitLevel = function (unit) {
+            return Math.max(1, Math.round(Number(unit && unit.level || 1)));
+        };
+        const getUnitMaxHealth = function (unit) {
+            return Math.max(1, Math.round(Number(unit && unit.maxHealth || getUnitLevel(unit))));
+        };
+        const getUnitCurrentHealth = function (unit) {
+            return Math.max(0, Math.min(getUnitMaxHealth(unit), Math.round(Number(unit && unit.currentHealth !== undefined ? unit.currentHealth : unit && unit.health || 0))));
+        };
+        const drawUnitHealthBar = function (barX, barY, barWidth, segmentHeight, unit, fillStyle) {
+            const maxHealth = getUnitMaxHealth(unit);
+            const currentHealth = getUnitCurrentHealth(unit);
+            const segmentGap = Math.max(1, 1 * zoom);
+            const totalGap = segmentGap * Math.max(0, maxHealth - 1);
+            const segmentWidth = Math.max(3, (barWidth - totalGap) / maxHealth);
+            for (let segmentIndex = 0; segmentIndex < maxHealth; segmentIndex += 1) {
+                const segmentX = barX + segmentIndex * (segmentWidth + segmentGap);
+                ctx.fillStyle = segmentIndex < currentHealth
+                    ? 'rgba(34, 197, 94, 1)'
+                    : 'rgba(15, 23, 42, 0.28)';
+                ctx.fillRect(segmentX, barY, segmentWidth, segmentHeight);
+            }
+        };
+
         const unitBarColors = ['rgba(125, 211, 252, 0.98)', 'rgba(37, 99, 235, 0.98)'];
         const usesLeftFacingSprite = usesLeftFacingSpriteForPlayer(player);
         const deathFadeProgress = typeof player.deathFadeProgress === 'number' ? player.deathFadeProgress : 0;
@@ -3658,7 +3754,11 @@
 
             const x = (player.x - cameraX) * zoom;
             const y = (player.y - cameraY) * zoom;
-            const spriteHeight = playerSpriteHeight * zoom;
+            const mergedSizeUnits = aliveUnits.length ? aliveUnits : doubleState.units;
+            const mergedSizeMultiplier = mergedSizeUnits.reduce(function (sum, unit) {
+                return sum + Math.max(0.6, Number(unit && unit.sizeMultiplier || 1));
+            }, 0) / Math.max(1, mergedSizeUnits.length);
+            const spriteHeight = playerSpriteHeight * mergedSizeMultiplier * zoom;
             const mergedAspectRatio = activeIcon.naturalWidth && activeIcon.naturalHeight
                 ? (activeIcon.naturalWidth / activeIcon.naturalHeight)
                 : 1.48;
@@ -3678,8 +3778,6 @@
 
             if (!player.deathActive) {
                 const pairWidth = Math.max(30, defaultPlayerAspectRatio * playerSpriteHeight * zoom * 0.9);
-                const segmentGap = Math.max(1, 1 * zoom);
-                const segmentWidth = (pairWidth - segmentGap) / 2;
                 const segmentHeight = Math.max(4, 5 * zoom);
                 const barGap = Math.max(2, 3 * zoom);
                 const totalBarsWidth = pairWidth * 2 + barGap;
@@ -3689,15 +3787,8 @@
 
                 aliveUnits.slice(0, 2).forEach(function (unit, unitIndex) {
                     const barX = barsLeft + unitIndex * (pairWidth + barGap);
-                    const filledSegments = Math.max(0, Math.min(2, Number(unit.health || 0)));
                     ctx.save();
-                    for (let segmentIndex = 0; segmentIndex < 2; segmentIndex += 1) {
-                        const segmentX = barX + segmentIndex * (segmentWidth + segmentGap);
-                        ctx.fillStyle = segmentIndex < filledSegments
-                            ? 'rgba(34, 197, 94, 1)'
-                            : 'rgba(15, 23, 42, 0.28)';
-                        ctx.fillRect(segmentX, healthBarY, segmentWidth, segmentHeight);
-                    }
+                    drawUnitHealthBar(barX, healthBarY, pairWidth, segmentHeight, unit, unitBarColors[unitIndex % unitBarColors.length]);
                     const boostLockRemainingMs = Math.max(0, Number(unit.boostLockRemainingMs || 0));
                     const boostLockDurationMs = Math.max(0, Number(unit.boostLockDurationMs || 0));
                     const boostStateValue = String(unit.boostState || 'idle');
@@ -3711,6 +3802,10 @@
                     ctx.fillRect(barX, cooldownY, pairWidth, segmentHeight);
                     ctx.fillStyle = unitBarColors[unitIndex % unitBarColors.length];
                     ctx.fillRect(barX, cooldownY, pairWidth * cooldownRatio, segmentHeight);
+                    ctx.fillStyle = 'rgba(17, 24, 39, 0.92)';
+                    ctx.font = '700 11px Inter, Noto Sans KR, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Lv.' + getUnitLevel(unit), barX + pairWidth / 2, healthBarY - 3 * zoom);
                     ctx.restore();
                 });
 
@@ -3860,7 +3955,7 @@
                 }
             }
 
-            const spriteHeight = playerSpriteHeight * zoom;
+            const spriteHeight = playerSpriteHeight * Math.max(0.6, Number(unit.sizeMultiplier || 1)) * zoom;
             const spriteWidth = spriteHeight * defaultPlayerAspectRatio;
             const unitTrailActive = activeIconReady &&
                 !player.deathActive &&
@@ -3935,21 +4030,12 @@
 
             if (!player.deathActive && !unit.inactive) {
                 const healthBarWidth = Math.max(24, spriteWidth * 0.9);
-                const segmentGap = Math.max(1, 1 * zoom);
-                const segmentWidth = (healthBarWidth - segmentGap) / 2;
                 const segmentHeight = Math.max(4, 5 * zoom);
                 const barX = x - healthBarWidth / 2;
                 const barY = y + spriteHeight / 2 + 5 * zoom;
-                const healthSegmentsFilled = Math.max(0, Math.min(2, Number(unit.health || 0)));
 
                 ctx.save();
-                for (let segmentIndex = 0; segmentIndex < 2; segmentIndex += 1) {
-                    const segmentX = barX + segmentIndex * (segmentWidth + segmentGap);
-                    ctx.fillStyle = segmentIndex < healthSegmentsFilled
-                        ? 'rgba(34, 197, 94, 1)'
-                        : 'rgba(15, 23, 42, 0.28)';
-                    ctx.fillRect(segmentX, barY, segmentWidth, segmentHeight);
-                }
+                drawUnitHealthBar(barX, barY, healthBarWidth, segmentHeight, unit, unitBarColors[unitState.unitIndex % unitBarColors.length]);
                 const boostLockRemainingMs = Math.max(0, Number(unit.boostLockRemainingMs || 0));
                 const boostLockDurationMs = Math.max(0, Number(unit.boostLockDurationMs || 0));
                 const boostStateValue = String(unit.boostState || 'idle');
@@ -3972,7 +4058,7 @@
                     ctx.font = '800 15px Inter, Noto Sans KR, sans-serif';
                     ctx.textAlign = 'center';
                     ctx.fillText(
-                        splitUnitLabel,
+                        splitUnitLabel + ' Lv.' + getUnitLevel(unit),
                         x,
                         y - spriteHeight / 2 - 5 * zoom
                     );
@@ -4493,21 +4579,31 @@
             if (!isNpc) {
                 const skinProfile = getPlayerSkinProfile(player.skinName || 'default');
                 const pumpkinBaseSkinName = String(player.pumpkinBaseSkinName || '').trim().toLowerCase();
-                const playerMaxHealthSegments = isPumpkinNpc
+                const playerMaxHealthSegments = typeof player.maxHealth === 'number'
+                    ? Math.max(1, Math.round(Number(player.maxHealth || 1)))
+                    : isPumpkinNpc
                     ? PUMPKIN_NPC_HEALTH_SEGMENTS
                     : (pumpkinBaseSkinName === 'double_single'
                     ? 2
                     : skinProfile.maxHealthSegments);
-                const defeatReceivedCount = typeof player.defeatReceivedCount === 'number' ? Math.max(0, player.defeatReceivedCount) : 0;
                 const healthSegmentsFilled = isDeathVisualActive
                     ? 0
-                    : Math.max(0, playerMaxHealthSegments - (defeatReceivedCount % playerMaxHealthSegments || 0));
+                    : (typeof player.currentHealth === 'number'
+                        ? Math.max(0, Math.min(playerMaxHealthSegments, Math.round(Number(player.currentHealth || 0))))
+                        : Math.max(
+                            0,
+                            playerMaxHealthSegments - ((typeof player.defeatReceivedCount === 'number'
+                                ? Math.max(0, player.defeatReceivedCount)
+                                : 0) % playerMaxHealthSegments || 0)
+                        ));
                 if (!isDeathVisualActive) {
                     const defaultClassicHealthBarReferenceWidth = spriteWidth / Math.max(0.1, skinVisualScale);
                     const healthBarReferenceWidth = skinProfile.type === 'evolution'
                         ? (playerSpriteHeight * spriteScale * zoom * defaultPlayerAspectRatio)
                         : ((skinProfile.type === 'pumkin' || isPumpkinNpc)
-                            ? (playerSpriteHeight * zoom * defaultPlayerAspectRatio)
+                            ? (isPumpkinNpc
+                                ? (playerSpriteHeight * zoom * defaultPlayerAspectRatio)
+                                : spriteWidth)
                             : ((spriteState.skinRuntime && spriteState.skinRuntime.name === 'happy')
                                 ? defaultClassicHealthBarReferenceWidth
                                 : spriteWidth));
@@ -4559,6 +4655,7 @@
                     }
                 }
                 const labelText = typeof player.displayName === 'string' ? player.displayName.trim() : '';
+                const levelText = typeof player.level === 'number' ? ' Lv.' + Math.max(1, Math.round(Number(player.level || 1))) : '';
                 if (labelText) {
                     ctx.fillStyle = isDeathVisualActive
                         ? 'rgba(17, 24, 39, ' + Math.max(0, 0.92 * (1 - deathFadeProgress)) + ')'
@@ -4566,7 +4663,7 @@
                     ctx.font = '800 15px Inter, Noto Sans KR, sans-serif';
                     ctx.textAlign = 'center';
                     ctx.fillText(
-                        labelText,
+                        labelText + levelText,
                         x,
                         drawY - spriteHeight / 2 - (getPlayerSkinProfile(player.skinName || 'default').type === 'evolution' ? 9 * zoom : 5 * zoom)
                     );
@@ -4605,6 +4702,49 @@
             if (!visibleOverlayIds.has(playerId)) {
                 node.style.display = 'none';
             }
+        });
+    };
+
+    const drawLevelDrops = function (cameraX, cameraY, zoom) {
+        if (!Array.isArray(levelDrops) || !levelDrops.length) {
+            return;
+        }
+        const now = Date.now();
+        levelDrops.forEach(function (drop) {
+            const createdAt = Number(drop.createdAt || 0);
+            const spawnAnimDuration = 360;
+            const spawnProgress = createdAt > 0
+                ? Math.max(0, Math.min(1, (now - createdAt) / spawnAnimDuration))
+                : 1;
+            const easedSpawnProgress = 1 - Math.pow(1 - spawnProgress, 3);
+            const worldX = Number(drop.originX || drop.x || 0) + (Number(drop.x || 0) - Number(drop.originX || drop.x || 0)) * easedSpawnProgress;
+            const worldY = Number(drop.originY || drop.y || 0) + (Number(drop.y || 0) - Number(drop.originY || drop.y || 0)) * easedSpawnProgress;
+            const x = (worldX - cameraX) * zoom;
+            const y = (worldY - cameraY) * zoom;
+            const size = Math.max(12.6, 15.4 * zoom);
+            const fadeStartsAt = Number(drop.fadeStartsAt || 0);
+            const expiresAt = Number(drop.expiresAt || 0);
+            const remaining = Math.max(0, expiresAt - now);
+            const fadeDuration = Math.max(1, expiresAt - fadeStartsAt);
+            const alpha = now <= fadeStartsAt
+                ? 1
+                : Math.max(0, Math.min(1, remaining / fadeDuration));
+            const rotation = ((now - createdAt) / 2000) * Math.PI * 2;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.translate(x, y);
+            ctx.rotate(rotation);
+            ctx.fillStyle = 'rgba(249, 115, 22, 0.96)';
+            ctx.beginPath();
+            ctx.arc(0, 0, size * 0.42, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(120, 53, 15, 0.96)';
+            ctx.fillRect(-size * 0.08, -size * 0.58, size * 0.16, size * 0.26);
+            ctx.fillStyle = 'rgba(34, 197, 94, 0.96)';
+            ctx.beginPath();
+            ctx.ellipse(size * 0.22, -size * 0.5, size * 0.2, size * 0.12, -0.6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
         });
     };
 
@@ -4789,6 +4929,7 @@
                     current.velocityY = typeof serverPlayer.velocityY === 'number' ? serverPlayer.velocityY : 0;
                     current.facingAngle = typeof serverPlayer.facingAngle === 'number' ? serverPlayer.facingAngle : 0;
                     current.isDummy = Boolean(serverPlayer.isDummy);
+                    current.isNpc = Boolean(serverPlayer.isNpc);
                     current.isPumpkinNpc = Boolean(serverPlayer.isPumpkinNpc);
                     current.isHouse = Boolean(serverPlayer.isHouse);
                     current.houseStage = typeof serverPlayer.houseStage === 'number' ? serverPlayer.houseStage : 0;
@@ -4826,6 +4967,10 @@
                     current.pumpkinFadeOutActive = Boolean(serverPlayer.pumpkinFadeOutActive);
                     current.pumpkinFadeOutProgress = typeof serverPlayer.pumpkinFadeOutProgress === 'number' ? serverPlayer.pumpkinFadeOutProgress : 0;
                     current.defeatReceivedCount = typeof serverPlayer.defeatReceivedCount === 'number' ? serverPlayer.defeatReceivedCount : 0;
+                    current.level = typeof serverPlayer.level === 'number' ? serverPlayer.level : 1;
+                    current.currentHealth = typeof serverPlayer.currentHealth === 'number' ? serverPlayer.currentHealth : null;
+                    current.maxHealth = typeof serverPlayer.maxHealth === 'number' ? serverPlayer.maxHealth : null;
+                    current.sizeMultiplier = typeof serverPlayer.sizeMultiplier === 'number' ? serverPlayer.sizeMultiplier : 1;
                     current.boostLockRemainingMs = typeof serverPlayer.boostLockRemainingMs === 'number' ? serverPlayer.boostLockRemainingMs : 0;
                     current.boostLockDurationMs = typeof serverPlayer.boostLockDurationMs === 'number' ? serverPlayer.boostLockDurationMs : 0;
                     current.npcChargeWindupProgress = typeof serverPlayer.npcChargeWindupProgress === 'number'
@@ -4885,6 +5030,10 @@
                         pumpkinFadeOutActive: Boolean(serverPlayer.pumpkinFadeOutActive),
                         pumpkinFadeOutProgress: typeof serverPlayer.pumpkinFadeOutProgress === 'number' ? serverPlayer.pumpkinFadeOutProgress : 0,
                         defeatReceivedCount: typeof serverPlayer.defeatReceivedCount === 'number' ? serverPlayer.defeatReceivedCount : 0,
+                        level: typeof serverPlayer.level === 'number' ? serverPlayer.level : 1,
+                        currentHealth: typeof serverPlayer.currentHealth === 'number' ? serverPlayer.currentHealth : null,
+                        maxHealth: typeof serverPlayer.maxHealth === 'number' ? serverPlayer.maxHealth : null,
+                        sizeMultiplier: typeof serverPlayer.sizeMultiplier === 'number' ? serverPlayer.sizeMultiplier : 1,
                         boostLockRemainingMs: typeof serverPlayer.boostLockRemainingMs === 'number' ? serverPlayer.boostLockRemainingMs : 0,
                         boostLockDurationMs: typeof serverPlayer.boostLockDurationMs === 'number' ? serverPlayer.boostLockDurationMs : 0,
                         npcChargeWindupProgress: typeof serverPlayer.npcChargeWindupProgress === 'number'
@@ -4998,6 +5147,10 @@
                 current.pumpkinFadeOutActive = Boolean(serverPlayer.pumpkinFadeOutActive);
                 current.pumpkinFadeOutProgress = typeof serverPlayer.pumpkinFadeOutProgress === 'number' ? serverPlayer.pumpkinFadeOutProgress : 0;
                 current.defeatReceivedCount = typeof serverPlayer.defeatReceivedCount === 'number' ? serverPlayer.defeatReceivedCount : 0;
+                current.level = typeof serverPlayer.level === 'number' ? serverPlayer.level : 1;
+                current.currentHealth = typeof serverPlayer.currentHealth === 'number' ? serverPlayer.currentHealth : null;
+                current.maxHealth = typeof serverPlayer.maxHealth === 'number' ? serverPlayer.maxHealth : null;
+                current.sizeMultiplier = typeof serverPlayer.sizeMultiplier === 'number' ? serverPlayer.sizeMultiplier : 1;
                 current.boostLockRemainingMs = typeof serverPlayer.boostLockRemainingMs === 'number' ? serverPlayer.boostLockRemainingMs : 0;
                 current.boostLockDurationMs = typeof serverPlayer.boostLockDurationMs === 'number' ? serverPlayer.boostLockDurationMs : 0;
                 current.npcChargeWindupProgress = typeof serverPlayer.npcChargeWindupProgress === 'number'
@@ -5059,6 +5212,10 @@
                     pumpkinFadeOutActive: Boolean(serverPlayer.pumpkinFadeOutActive),
                     pumpkinFadeOutProgress: typeof serverPlayer.pumpkinFadeOutProgress === 'number' ? serverPlayer.pumpkinFadeOutProgress : 0,
                     defeatReceivedCount: typeof serverPlayer.defeatReceivedCount === 'number' ? serverPlayer.defeatReceivedCount : 0,
+                    level: typeof serverPlayer.level === 'number' ? serverPlayer.level : 1,
+                    currentHealth: typeof serverPlayer.currentHealth === 'number' ? serverPlayer.currentHealth : null,
+                    maxHealth: typeof serverPlayer.maxHealth === 'number' ? serverPlayer.maxHealth : null,
+                    sizeMultiplier: typeof serverPlayer.sizeMultiplier === 'number' ? serverPlayer.sizeMultiplier : 1,
                     boostLockRemainingMs: typeof serverPlayer.boostLockRemainingMs === 'number' ? serverPlayer.boostLockRemainingMs : 0,
                     boostLockDurationMs: typeof serverPlayer.boostLockDurationMs === 'number' ? serverPlayer.boostLockDurationMs : 0,
                     npcChargeWindupProgress: typeof serverPlayer.npcChargeWindupProgress === 'number'
@@ -5149,6 +5306,7 @@
         cameraY = Math.max(0, Math.min(maxCameraY, cameraY));
 
         drawGrid(cameraX, cameraY, effectiveZoom);
+        drawLevelDrops(cameraX, cameraY, effectiveZoom);
         drawPlayers(cameraX, cameraY, deltaSeconds, effectiveZoom);
         drawMinimap();
         updateConfetti(deltaSeconds, now);
@@ -5159,6 +5317,17 @@
     const handleKey = function (value) {
         // Keydown/keyup handlers are generated from one factory so boost and directional keys share the same send path.
         return function (event) {
+            const mapped = keyMap[event.key];
+            if (selfDeathActive && (event.key === ' ' || event.key === 'c' || event.key === 'C' || mapped)) {
+                event.preventDefault();
+                if (mapped) {
+                    keyboardDirectionInput[mapped] = false;
+                    syncDirectionalInput();
+                }
+                input.boost = false;
+                input.special = false;
+                return;
+            }
             if (event.key === ' ') {
                 event.preventDefault();
                 if (boostLockedActive) {
@@ -5174,7 +5343,13 @@
                 return;
             }
 
-            const mapped = keyMap[event.key];
+            if (event.key === 'c' || event.key === 'C') {
+                event.preventDefault();
+                input.special = value;
+                sendInputNow();
+                return;
+            }
+
             if (!mapped) {
                 return;
             }
@@ -5300,6 +5475,9 @@
     }
     if (joystick) {
         joystick.addEventListener('pointerdown', function (event) {
+            if (selfDeathActive) {
+                return;
+            }
             event.preventDefault();
             joystickPointerId = event.pointerId;
             if (joystick.setPointerCapture) {
@@ -5308,6 +5486,9 @@
             updateJoystickInput(event.clientX, event.clientY);
         });
         joystick.addEventListener('pointermove', function (event) {
+            if (selfDeathActive) {
+                return;
+            }
             if (event.pointerId !== joystickPointerId) {
                 return;
             }
@@ -5326,6 +5507,10 @@
     if (mobileBoostButton) {
         const setBoostState = function (value) {
             // Mobile boost button feeds the same input state as keyboard boost to avoid divergent control logic.
+            if (selfDeathActive) {
+                input.boost = false;
+                return;
+            }
             if (boostLockedActive) {
                 input.boost = false;
                 sendInputNow();

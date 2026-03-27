@@ -271,7 +271,7 @@ module.exports = {
      * @returns {object|null} 스폰된 펌킨 NPC, 실패 시 null
      */
     dropPumpkinFromPlayer(player, now, options = {}) {
-        if (!player || player.isNpc || player.isDummy || player.isHouse || player.isPumpkinNpc || !isPumpkinSkinPlayer(player)) {
+        if (!player || player.isNpc || player.isHouse || player.isPumpkinNpc || !isPumpkinSkinPlayer(player)) {
             return null
         }
         const dropX = this.clampToWorld(Number(options.x !== undefined ? options.x : player.x || 0))
@@ -450,7 +450,7 @@ module.exports = {
      * @returns {boolean} claim 성공 여부
      */
     claimPumpkinNpc(player, pumpkinNpc, now) {
-        const canClaimPumpkin = isClassicDefaultPlayer(player) || isSingleDoublePlayer(player)
+        const canClaimPumpkin = isClassicDefaultPlayer(player) || isSingleDoublePlayer(player) || Boolean(player && player.isDummy)
         if (!canClaimPumpkin || !pumpkinNpc || !pumpkinNpc.isPumpkinNpc || this.isPumpkinNpcFading(pumpkinNpc, now)) {
             return false
         }

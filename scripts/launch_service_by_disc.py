@@ -4,6 +4,9 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import signal
+import socket
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -49,6 +52,10 @@ def _wait_for_paths(paths: list[Path], timeout: int = 300, interval: float = 2.0
         time.sleep(interval)
 
 
+def _get_unready_paths(paths: list[Path]) -> list[Path]:
+    return [path for path in paths if not _is_path_ready(path)]
+
+
 def _ensure_ssd_paths() -> None:
     media_root = get_media_root("ssd")
     repos_root = get_forgejo_repos_root("ssd")
@@ -92,6 +99,52 @@ def _exec_command(command: list[str]) -> None:
     os.execv(command[0], command)
 
 
+def _is_tcp_port_listening(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex(("127.0.0.1", int(port))) == 0
+
+
+def _wait_for_port_state(port: int, *, should_listen: bool, timeout_seconds: float) -> bool:
+    deadline = time.monotonic() + max(0.1, float(timeout_seconds))
+    while time.monotonic() < deadline:
+        if _is_tcp_port_listening(port) == should_listen:
+            return True
+        time.sleep(0.1)
+    return _is_tcp_port_listening(port) == should_listen
+
+
+def _terminate_conflicting_gunicorn(port: int) -> None:
+    if not _is_tcp_port_listening(port):
+        return
+
+    pattern = "gunicorn config.wsgi:application --bind 127.0.0.1:8000"
+    try:
+        subprocess.run(
+            ["/usr/bin/pkill", "-TERM", "-f", pattern],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        pass
+
+    if _wait_for_port_state(port, should_listen=False, timeout_seconds=5):
+        return
+
+    try:
+        subprocess.run(
+            ["/usr/bin/pkill", "-KILL", "-f", pattern],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        pass
+
+    _wait_for_port_state(port, should_listen=False, timeout_seconds=2)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("service", choices={"gunicorn", "gitea", "celery", "nginx"})
@@ -100,10 +153,16 @@ def main() -> int:
     disc_mode = get_disc_mode()
     if disc_mode == "ssd":
         _ensure_ssd_paths()
+    elif args.service == "gunicorn":
+        pending = _get_unready_paths(get_required_storage_paths(disc_mode))
+        if pending:
+            joined = ", ".join(str(path) for path in pending)
+            print(f"[launch_service_by_disc] warning: continuing without ready storage paths: {joined}", file=sys.stderr)
     else:
         _wait_for_paths(get_required_storage_paths(disc_mode))
 
     if args.service == "gunicorn":
+        _terminate_conflicting_gunicorn(8000)
         _exec_command(
             [
                 "/usr/bin/python3",

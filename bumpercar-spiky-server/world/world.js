@@ -276,6 +276,7 @@ class World {
                 left: Boolean(input.left),
                 right: Boolean(input.right),
                 boost: Boolean(input.boost),
+                special: Boolean(input.special),
                 respawn: Boolean(input.respawn),
                 moveX,
                 moveY
@@ -287,6 +288,7 @@ class World {
                 left: false,
                 right: false,
                 boost: false,
+                special: false,
                 respawn: false,
                 moveX: 0,
                 moveY: 0

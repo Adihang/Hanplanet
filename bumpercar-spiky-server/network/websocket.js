@@ -31,9 +31,14 @@ function getClientIp(request) {
 
 // 연결 요청의 JWT 토큰을 검증하고 인증 결과 객체를 반환한다.
 // request: WebSocket 업그레이드 HTTP 요청 객체
-// world: 월드 인스턴스 (게스트 display ID 할당에 사용)
-// 반환값: { ok, reason?, connectionKey, userId, isGuest, skinName } 형태의 인증 결과 객체
-function getConnectionAuth(request, world) {
+function getWorldForGameSlug(worlds, gameSlug) {
+    const safeGameSlug = String(gameSlug || "").trim().toLowerCase() || "bumpercar-spiky"
+    return worlds[safeGameSlug] || worlds["bumpercar-spiky"] || Object.values(worlds)[0]
+}
+
+// worlds: 게임 slug -> 월드 인스턴스 맵
+// 반환값: { ok, reason?, connectionKey, userId, isGuest, skinName, gameSlug } 형태의 인증 결과 객체
+function getConnectionAuth(request, worlds) {
     const requestUrl = new URL(request.url, "ws://localhost")
     const token = requestUrl.searchParams.get("token")
     const verified = verifyToken(token)
@@ -46,6 +51,9 @@ function getConnectionAuth(request, world) {
         }
     }
 
+    const gameSlug = String(verified.payload?.game || "bumpercar-spiky").trim().toLowerCase() || "bumpercar-spiky"
+    const world = getWorldForGameSlug(worlds, gameSlug)
+
     return {
         ok: true,
         // connectionKey 는 재접속 시 진행도를 이어붙이는 기준 키다.
@@ -55,14 +63,15 @@ function getConnectionAuth(request, world) {
             ? world.getOrAssignGuestDisplayId(verified.userId || verified.payload?.sub || "")
             : verified.userId,
         isGuest: Boolean(verified.payload?.is_guest),
-        skinName: String(verified.payload?.selected_skin || "default").trim() || "default"
+        skinName: String(verified.payload?.selected_skin || "default").trim() || "default",
+        gameSlug: gameSlug,
     }
 }
 
 // WebSocket 서버를 생성하고 연결, 메시지, 종료 이벤트 핸들러를 등록한다.
-// world: 월드 인스턴스 (플레이어 추가/제거 및 입력 처리에 사용)
+// worlds: 게임 slug -> 월드 인스턴스 맵
 // 반환값: 생성된 WebSocket.Server 인스턴스
-function createServer(world) {
+function createServer(worlds) {
     const wss = new WebSocket.Server({
         port: PORT,
         perMessageDeflate: {
@@ -72,12 +81,14 @@ function createServer(world) {
     })
 
     wss.on("connection", (ws, request) => {
-        const auth = getConnectionAuth(request, world)
+        const auth = getConnectionAuth(request, worlds)
 
         if (!auth.ok) {
             ws.close(4001, auth.reason)
             return
         }
+
+        const world = getWorldForGameSlug(worlds, auth.gameSlug)
 
         const clientIp = getClientIp(request)
         if (auth.isGuest && clientIp) {
@@ -95,10 +106,14 @@ function createServer(world) {
 
         const id = auth.userId || Math.random().toString(36).slice(2)
         const connectionKey = auth.connectionKey || id
-        const player = world.addPlayer(connectionKey, id, { skinName: auth.skinName })
+        const player = world.addPlayer(connectionKey, id, {
+            skinName: auth.skinName,
+            isGuest: auth.isGuest,
+        })
 
         // 소켓 객체에 플레이어/유휴 판정 정보를 같이 붙여서 관리한다.
         ws.player = player
+        ws.gameSlug = auth.gameSlug
         ws.isGuest = auth.isGuest
         ws.clientIp = clientIp
         ws.lastActiveInputAt = Date.now()
@@ -135,7 +150,7 @@ function createServer(world) {
             const moveX = Number(parsed.moveX || 0)
             const moveY = Number(parsed.moveY || 0)
             const hasAnalogMovement = Number.isFinite(moveX) && Number.isFinite(moveY) && Math.hypot(moveX, moveY) > 0.01
-            if (Boolean(parsed.up) || Boolean(parsed.down) || Boolean(parsed.left) || Boolean(parsed.right) || hasAnalogMovement || Boolean(parsed.boost) || Boolean(parsed.respawn)) {
+            if (Boolean(parsed.up) || Boolean(parsed.down) || Boolean(parsed.left) || Boolean(parsed.right) || hasAnalogMovement || Boolean(parsed.boost) || Boolean(parsed.special) || Boolean(parsed.respawn)) {
                 ws.lastActiveInputAt = Date.now()
                 // 인간 유저의 마지막 실제 입력 시각을 따로 갱신해서
                 // "오래 무입력 시 라운드 초기화" 판정에 사용한다.

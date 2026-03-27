@@ -29,6 +29,7 @@ const {
 const {
     getBaseSpeedForPlayer,
     getMaxBoostedSpeedForPlayer,
+    getRaiseSpeakiBoostDistanceMultiplier,
     isDoubleSkinPlayer,
     isPumpkinSkinPlayer,
     getDoubleAliveUnitIndices,
@@ -370,6 +371,7 @@ module.exports = {
 
         const baseSpeed = getBaseSpeedForPlayer(player)
         const maxBoostSpeed = getMaxBoostedSpeedForPlayer(player)
+        const playerBoostScale = getRaiseSpeakiBoostDistanceMultiplier(player)
         const aliveIndices = getDoubleAliveUnitIndices(player)
         if (!aliveIndices.length) {
             return { dx: 0, dy: 0 }
@@ -477,14 +479,30 @@ module.exports = {
             } else if (unit.boostState === "charging") {
                 desiredDx = unit.boostDirectionX
                 desiredDy = unit.boostDirectionY
-                unit.currentSpeed = Math.min(maxBoostSpeed, unit.currentSpeed + BOOST_ACCELERATION_PER_SECOND * TICK_DELTA_SECONDS)
-                if (unit.currentSpeed >= maxBoostSpeed) {
+                const unitBoostScale = getRaiseSpeakiBoostDistanceMultiplier(unit)
+                const unitMaxBoostSpeed = Math.max(
+                    baseSpeed,
+                    maxBoostSpeed * (unitBoostScale / Math.max(0.0001, playerBoostScale))
+                )
+                const unitDeltaSpeed = Math.max(0, unitMaxBoostSpeed - baseSpeed)
+                const defaultDeltaSpeed = Math.max(0.0001, maxBoostSpeed - baseSpeed)
+                const unitBoostAcceleration = BOOST_ACCELERATION_PER_SECOND * (unitDeltaSpeed / defaultDeltaSpeed)
+                unit.currentSpeed = Math.min(unitMaxBoostSpeed, unit.currentSpeed + unitBoostAcceleration * TICK_DELTA_SECONDS)
+                if (unit.currentSpeed >= unitMaxBoostSpeed) {
                     unit.boostState = "cooldown"
                 }
             } else if (unit.boostState === "cooldown") {
                 desiredDx = unit.boostDirectionX
                 desiredDy = unit.boostDirectionY
-                unit.currentSpeed = Math.max(baseSpeed, unit.currentSpeed - BOOST_COOLDOWN_PER_SECOND * TICK_DELTA_SECONDS)
+                const unitBoostScale = getRaiseSpeakiBoostDistanceMultiplier(unit)
+                const unitMaxBoostSpeed = Math.max(
+                    baseSpeed,
+                    maxBoostSpeed * (unitBoostScale / Math.max(0.0001, playerBoostScale))
+                )
+                const unitDeltaSpeed = Math.max(0, unitMaxBoostSpeed - baseSpeed)
+                const defaultDeltaSpeed = Math.max(0.0001, maxBoostSpeed - baseSpeed)
+                const unitBoostCooldown = BOOST_COOLDOWN_PER_SECOND * (unitDeltaSpeed / defaultDeltaSpeed)
+                unit.currentSpeed = Math.max(baseSpeed, unit.currentSpeed - unitBoostCooldown * TICK_DELTA_SECONDS)
                 if (unit.currentSpeed <= baseSpeed) {
                     unit.currentSpeed = baseSpeed
                     unit.boostState = "idle"
@@ -671,9 +689,28 @@ module.exports = {
             }
         }
 
-        const hitUnitIndex = aliveIndices.length === 1
+        let hitUnitIndex = aliveIndices.length === 1
             ? aliveIndices[0]
             : this.getDoubleHitUnitIndex(player, normalX, normalY)
+        if (aliveIndices.length > 1 && !player.doubleMerged && defeatedByPlayer) {
+            let nearestUnitIndex = hitUnitIndex
+            let nearestDistance = Infinity
+            aliveIndices.forEach((unitIndex) => {
+                const unit = player.doubleUnits[unitIndex]
+                if (!unit || Number(unit.health || 0) <= 0) {
+                    return
+                }
+                const distance = Math.hypot(
+                    Number(unit.x || player.x || 0) - Number(defeatedByPlayer.x || 0),
+                    Number(unit.y || player.y || 0) - Number(defeatedByPlayer.y || 0)
+                )
+                if (distance < nearestDistance) {
+                    nearestDistance = distance
+                    nearestUnitIndex = unitIndex
+                }
+            })
+            hitUnitIndex = nearestUnitIndex
+        }
         const targetUnit = player.doubleUnits[hitUnitIndex] && Number(player.doubleUnits[hitUnitIndex].health || 0) > 0
             ? player.doubleUnits[hitUnitIndex]
             : player.doubleUnits[aliveIndices[0]]

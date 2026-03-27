@@ -26,6 +26,7 @@ const NPC_MAX_BOOSTED_SPEED_PER_SECOND = GAMEPLAY_SETTINGS.npc_max_boost_speed
 const NPC_MAX_HEALTH = GAMEPLAY_SETTINGS.npc_max_health
 const NPC_PHASE_TWO_HEALTH_RATIO = GAMEPLAY_SETTINGS.npc_phase_two_health_ratio
 const NPC_PHASE_THREE_HEALTH_RATIO = GAMEPLAY_SETTINGS.npc_phase_three_health_ratio
+const RAISE_SPEAKI_LEVEL_BOOST_SCALE_FACTOR = 1.1
 
 // NPC(네르)의 기본 이동 속도를 반환한다.
 // player.npcSpeedMultiplier 가 있으면 기본 속도에 곱해 반환하며, 최솟값은 0.1배다.
@@ -126,6 +127,9 @@ function getSingleDoublePlayerHealth(player) {
 // 펌킨 스킨 플레이어의 생명 세그먼트 수를 반환한다.
 // pumpkinBaseSkinName 이 "double_single" 이면 DOUBLE_UNIT_HEALTH, 아니면 기본 사망 트리거 횟수다.
 function getPumpkinLifeSegments(player) {
+    if (player && Number(player.raiseSpeakiMaxHealthSegments || 0) > 0) {
+        return Math.max(1, Math.round(Number(player.raiseSpeakiMaxHealthSegments || 1)))
+    }
     if (player && String(player.pumpkinBaseSkinName || "").trim().toLowerCase() === "double_single") {
         return DOUBLE_UNIT_HEALTH
     }
@@ -135,6 +139,9 @@ function getPumpkinLifeSegments(player) {
 // 플레이어의 공격 피해 배율을 반환한다.
 // double 스킨은 0.65배, 그 외 스킨은 1배다.
 function getPlayerAttackDamageScale(player) {
+    if (player && Number(player.raiseSpeakiAttackDamageScale || 0) > 0) {
+        return Math.max(0.1, Number(player.raiseSpeakiAttackDamageScale || 1))
+    }
     if (isDoubleSkinPlayer(player)) {
         return 0.65
     }
@@ -190,7 +197,15 @@ function getMaxBoostedSpeedForPlayer(player) {
     if (player && player.isNpc) {
         return NPC_MAX_BOOSTED_SPEED_PER_SECOND
     }
-    return getBaseSpeedForPlayer(player) * getCharacterGameplaySettings(player && player.skinName).max_boost_speed_multiplier
+    return getBaseSpeedForPlayer(player) * getCharacterGameplaySettings(player && player.skinName).max_boost_speed_multiplier * getRaiseSpeakiBoostDistanceMultiplier(player)
+}
+
+function getRaiseSpeakiBoostDistanceMultiplier(entity) {
+    const level = Math.max(1, Math.round(Number(entity && (entity.raiseSpeakiLevel || entity.level) || 1)))
+    if (!entity || Number(entity.raiseSpeakiLevel || entity.level || 0) <= 0) {
+        return 1
+    }
+    return Math.pow(RAISE_SPEAKI_LEVEL_BOOST_SCALE_FACTOR, level - 1)
 }
 
 // 플레이어의 스킨별 부스트 acceleration 을 반환한다.
@@ -232,6 +247,9 @@ function getCollisionSlowSpeedForPlayer(player) {
 // 플레이어가 사망 판정을 받기까지 누적해야 하는 피격 횟수(체력 세그먼트)를 반환한다.
 // 펌킨 스킨은 getPumpkinLifeSegments, 그 외 스킨은 캐릭터 설정값을 사용한다.
 function getPlayerDeathTriggerCount(player) {
+    if (player && Number(player.raiseSpeakiMaxHealthSegments || 0) > 0) {
+        return Math.max(1, Math.round(Number(player.raiseSpeakiMaxHealthSegments || 1)))
+    }
     if (!player || player.isNpc || player.isDummy) {
         return PLAYER_DEATH_TRIGGER_COUNT
     }
@@ -268,8 +286,9 @@ function getDummyPhase(player) {
     if (!player || !player.isDummy) {
         return 1
     }
-    const defeatsInCurrentLife = Number(player.defeatReceivedCount || 0) % PLAYER_DEATH_TRIGGER_COUNT
-    const remainingHealthSegments = Math.max(0, PLAYER_DEATH_TRIGGER_COUNT - defeatsInCurrentLife)
+    const deathTriggerCount = Math.max(1, getPlayerDeathTriggerCount(player))
+    const defeatsInCurrentLife = Number(player.defeatReceivedCount || 0) % deathTriggerCount
+    const remainingHealthSegments = Math.max(0, deathTriggerCount - defeatsInCurrentLife)
 
     if (remainingHealthSegments <= 1) {
         return 3
@@ -304,6 +323,7 @@ module.exports = {
     getMaxBoostedSpeedForPlayer,
     getBoostAccelerationForPlayer,
     getBoostCooldownForPlayer,
+    getRaiseSpeakiBoostDistanceMultiplier,
     getCollisionSlowSpeedForPlayer,
     getPlayerDeathTriggerCount,
     getNpcPhase,

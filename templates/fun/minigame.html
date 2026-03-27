@@ -39,10 +39,12 @@
             {% for item in minigame_links %}
                 <li>
                     <div class="minigame-link-shell">
-                        {% if request.user.is_authenticated and item.slug == "bumpercar-spiky" %}
-                            <button class="ui-btn minigame-link-stats-button" type="button" data-bumpercar-stats-open>
-                                {% include 'partials/ui_i18n.html' with key='account_bumpercar_stats_button' %}
-                            </button>
+                        {% if request.user.is_authenticated %}
+                            {% if item.slug == "bumpercar-spiky" or item.slug == "raise-speaki" %}
+                                <button class="ui-btn minigame-link-stats-button" type="button" data-bumpercar-stats-open>
+                                    {% include 'partials/ui_i18n.html' with key='account_bumpercar_stats_button' %}
+                                </button>
+                            {% endif %}
                         {% endif %}
                         <a class="minigame-link" href="{{ item.url }}">
                             <span class="minigame-link-image-wrap">

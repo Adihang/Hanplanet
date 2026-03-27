@@ -124,6 +124,15 @@ module.exports = {
         }
 
         if (player.isDummy) {
+            if (isPumpkinSkinPlayer(player)) {
+                this.applyPumpkinSkinBoostSplit(
+                    player,
+                    now,
+                    hitNormalX,
+                    hitNormalY,
+                    this.getWallBounceDistance(Math.max(Math.abs(player.lastMoveX || 0), Math.abs(player.lastMoveY || 0)))
+                )
+            }
             player.boostState = "idle"
             player.currentSpeed = DUMMY_BASE_SPEED_PER_SECOND
             player.boostDirectionX = 0

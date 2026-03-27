@@ -1359,7 +1359,14 @@ def get_bumpercar_spiky_connected_player_count():
     return max(0, int(payload.get("connectedPlayers", 0)))
 
 
-def build_game_auth_token(user=None, subject=None, display_name=None, is_guest=False, skin_name="default"):
+def build_game_auth_token(
+    user=None,
+    subject=None,
+    display_name=None,
+    is_guest=False,
+    skin_name="default",
+    game_slug="bumpercar-spiky",
+):
     """Mint the short-lived JWT used by the web client to authenticate with the game server."""
     now = int(time.time())
     header = {"alg": "HS256", "typ": "JWT"}
@@ -1378,6 +1385,7 @@ def build_game_auth_token(user=None, subject=None, display_name=None, is_guest=F
         "username": resolved_subject,
         "display_name": resolved_display_name,
         "is_guest": bool(is_guest),
+        "game": str(game_slug or "bumpercar-spiky").strip().lower() or "bumpercar-spiky",
         "selected_skin": resolve_bumpercar_skin_name(user, skin_name),
         "iat": now,
         "nbf": now,
@@ -1518,6 +1526,17 @@ def minigame_page(request, ui_lang=None):
             "description": "Crash around a shared arena with Spiky." if is_english else "스핔이로 공용 경기장을 뛰어다니는 멀티플레이 범퍼카 게임.",
             "image_url": build_public_absolute_url(static("Spikip/speaki_default/icon/main.png")),
         },
+        {
+            "slug": "raise-speaki",
+            "title": "Raise Speaki" if is_english else "스핔이 키우기",
+            "url": reverse("main:raise_speaki_lang", kwargs={"ui_lang": resolved_lang}),
+            "description": (
+                "Raise your Speaki and evolve it into Speaki."
+                if is_english
+                else "스핔이를 키워서 스피키로 진화시키세요!"
+            ),
+            "image_url": build_public_absolute_url(static("Spikip/speaki_default/icon/main.png")),
+        },
     ]
 
     context = {
@@ -1529,9 +1548,9 @@ def minigame_page(request, ui_lang=None):
         "meta_title": "Hanplanet Mini Games" if is_english else "Hanplanet 미니게임",
         "meta_og_title": "Hanplanet Mini Games" if is_english else "Hanplanet 미니게임",
         "meta_description": (
-            "Play browser mini games on Hanplanet, including Bubble, Stratagem Hero, and Bumper Car Spiky."
+            "Play browser mini games on Hanplanet, including Bubble, Stratagem Hero, Bumper Car Spiky, and Raise Speaki."
             if is_english
-            else "Hanplanet에서 Bubble, Stratagem Hero, 범퍼카 스핔이 같은 브라우저 미니게임을 즐겨보세요."
+            else "Hanplanet에서 Bubble, Stratagem Hero, 범퍼카 스핔이, 스핔이 키우기 같은 브라우저 미니게임을 즐겨보세요."
         ),
     }
     context["meta_og_description"] = context["meta_description"]
@@ -1595,12 +1614,20 @@ def _resolve_game_ws_url(request, game_slug="bumpercar-spiky"):
     )
 
 
-def hanplanet_multiplayer_page(request, ui_lang=None):
-    """Render the public bumpercar game page with runtime config, assets, and account UI data."""
-    resolved_lang = resolve_ui_lang(request, ui_lang)
+def _build_multiplayer_page_context(
+    request,
+    resolved_lang,
+    *,
+    game_slug,
+    page_title,
+    page_description,
+    multiplayer_kicker,
+    multiplayer_hud_counter_text,
+    game_client_script_path,
+):
     is_english = resolved_lang == "en"
     gameplay_settings = load_bumpercar_spiky_settings()
-    ws_url = _resolve_game_ws_url(request, "bumpercar-spiky")
+    ws_url = _resolve_game_ws_url(request, game_slug)
 
     ner_tracking_sound_dir = Path(settings.BASE_DIR) / "static" / "Spikip" / "ner" / "tracking"
     ner_tracking_sound_urls = []
@@ -1644,13 +1671,15 @@ def hanplanet_multiplayer_page(request, ui_lang=None):
         if is_authenticated
         else None
     )
-    page_title = "Bumper Car Spiky" if is_english else "범퍼카 스핔이"
-    page_description = "A multiplayer Spiky bumper car game." if is_english else "멀티플레이 가능한 스핔이 범퍼카 게임."
     context = {
         "ui_lang": resolved_lang,
         "page_title": page_title,
         "multiplayer_title": page_title,
         "multiplayer_description": page_description,
+        "multiplayer_kicker": multiplayer_kicker,
+        "multiplayer_hud_counter_text": multiplayer_hud_counter_text,
+        "game_slug": game_slug,
+        "game_client_script_path": game_client_script_path,
         "multiplayer_back_text": "Mini Game" if is_english else "미니게임",
         "handrive_login_url": reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}),
         "handrive_signup_url": reverse("main:handrive_signup_lang", kwargs={"ui_lang": resolved_lang}),
@@ -1731,6 +1760,51 @@ def hanplanet_multiplayer_page(request, ui_lang=None):
             "account_logout_url": reverse("main:handrive_logout_lang", kwargs={"ui_lang": resolved_lang}),
         })
     apply_ui_context(request, context, resolved_lang)
+    return context
+
+
+def hanplanet_multiplayer_page(request, ui_lang=None):
+    """Render the public bumpercar game page with runtime config, assets, and account UI data."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+    page_title = "Bumper Car Spiky" if is_english else "범퍼카 스핔이"
+    page_description = "A multiplayer Spiky bumper car game." if is_english else "멀티플레이 가능한 스핔이 범퍼카 게임."
+    context = _build_multiplayer_page_context(
+        request,
+        resolved_lang,
+        game_slug="bumpercar-spiky",
+        page_title=page_title,
+        page_description=page_description,
+        multiplayer_kicker="Bumper Car Spiky",
+        multiplayer_hud_counter_text="x 3",
+        game_client_script_path="js/fun/bumpercar_spiky/multiplayer.js",
+    )
+    response = render(request, "fun/Hanplanet_Multiplayer.html", context)
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    return response
+
+
+def raise_speaki_page(request, ui_lang=None):
+    """Render the Raise Speaki page with the same UI shell but a separate runtime."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+    page_title = "Raise Speaki" if is_english else "스핔이 키우기"
+    page_description = (
+        "Raise your Speaki and evolve it into Speaki."
+        if is_english
+        else "스핔이를 키워서 스피키로 진화시키세요!"
+    )
+    context = _build_multiplayer_page_context(
+        request,
+        resolved_lang,
+        game_slug="raise-speaki",
+        page_title=page_title,
+        page_description=page_description,
+        multiplayer_kicker=page_title,
+        multiplayer_hud_counter_text="Lv 1 · 1/1",
+        game_client_script_path="js/fun/raise_speaki/multiplayer.js",
+    )
     response = render(request, "fun/Hanplanet_Multiplayer.html", context)
     response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response["Pragma"] = "no-cache"
@@ -1988,11 +2062,11 @@ def game_auth_token(request, ui_lang=None):
     if not secret:
         return JsonResponse({"error": "game_jwt_secret_not_configured"}, status=503)
     requested_game = str(request.GET.get("game") or "").strip().lower()
-    game_slug = "bumpercar-spiky"
+    game_slug = "raise-speaki" if requested_game == "raise-speaki" else "bumpercar-spiky"
 
     requested_skin = resolve_bumpercar_skin_name(request.user, request.GET.get("skin"))
     if request.user.is_authenticated:
-        token = build_game_auth_token(request.user, skin_name=requested_skin)
+        token = build_game_auth_token(request.user, skin_name=requested_skin, game_slug=game_slug)
     else:
         guest_subject = request.session.get("guest_game_subject")
         if not guest_subject:
@@ -2004,6 +2078,7 @@ def game_auth_token(request, ui_lang=None):
             display_name=guest_display_name,
             is_guest=True,
             skin_name=requested_skin,
+            game_slug=game_slug,
         )
     response = JsonResponse(
         {

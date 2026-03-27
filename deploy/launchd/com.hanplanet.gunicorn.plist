@@ -9,8 +9,12 @@
     <string>/Users/imhanbyeol/Development/Hanplanet/scripts/launch_service_by_disc.py</string>
     <string>gunicorn</string>
   </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/imhanbyeol/Development/Hanplanet</string>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>DJANGO_SETTINGS_MODULE</key>
+    <string>config.settings</string>
     <key>PYTHONPATH</key>
     <string>/Users/imhanbyeol/Development/Hanplanet/.venv/lib/python3.9/site-packages</string>
   </dict>

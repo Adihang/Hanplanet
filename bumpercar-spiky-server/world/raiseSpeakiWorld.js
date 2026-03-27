@@ -197,16 +197,53 @@ class RaiseSpeakiWorld extends BaseWorld {
         return [{ player, unit: null, unitIndex: -1, x: Number(player.x || 0), y: Number(player.y || 0) }]
     }
 
+    shouldPreferRaiseSpeakiCollector(candidate, currentBest, candidateDistance, bestDistance) {
+        if (!candidate) {
+            return false
+        }
+        if (!currentBest) {
+            return true
+        }
+        if (candidateDistance + 0.001 < bestDistance) {
+            return true
+        }
+        if (candidateDistance > bestDistance + 0.001) {
+            return false
+        }
+        const candidatePlayer = candidate.player
+        const bestPlayer = currentBest.player
+        if (
+            candidatePlayer
+            && candidatePlayer === bestPlayer
+            && candidatePlayer.isDoubleSkin
+            && candidatePlayer.doubleMerged
+            && candidate.unit
+            && currentBest.unit
+        ) {
+            const candidateLevel = this.getRaiseSpeakiDoubleUnitLevel(candidate.unit)
+            const bestLevel = this.getRaiseSpeakiDoubleUnitLevel(currentBest.unit)
+            if (candidateLevel !== bestLevel) {
+                return candidateLevel < bestLevel
+            }
+            return Number(candidate.unitIndex) < Number(currentBest.unitIndex)
+        }
+        return false
+    }
+
     applyRaiseSpeakiLevelDropCollection(collector) {
         if (!collector || !collector.player) {
             return
         }
         if (collector.unit) {
+            const currentHealth = this.getRaiseSpeakiDoubleUnitCurrentHealth(collector.unit)
             const nextLevel = this.getRaiseSpeakiDoubleUnitLevel(collector.unit) + 1
             this.applyRaiseSpeakiDoubleUnitLevel(collector.unit, nextLevel, { preserveHealth: true })
+            collector.unit.health = Math.max(1, Math.min(nextLevel, currentHealth + 1))
             this.syncRaiseSpeakiPlayerStats(collector.player)
         } else {
+            const previousDamage = Math.max(0, Number(collector.player.defeatReceivedCount || 0))
             const nextLevel = Math.max(1, Number(collector.player.level || DEFAULT_LEVEL) + 1)
+            collector.player.defeatReceivedCount = Math.max(0, previousDamage - 1)
             this.applyRaiseSpeakiLevel(collector.player, nextLevel)
         }
         collector.player.playerWinVisualUntil = Date.now() + 350
@@ -239,7 +276,10 @@ class RaiseSpeakiWorld extends BaseWorld {
                 const collectorPoints = this.getRaiseSpeakiDropCollectorPoints(player)
                 collectorPoints.forEach((collector) => {
                     const distance = Math.hypot(Number(collector.x || 0) - Number(drop.x || 0), Number(collector.y || 0) - Number(drop.y || 0))
-                    if (distance <= RAISE_SPEAKI_LEVEL_DROP_PICKUP_RADIUS && distance < bestDistance) {
+                    if (
+                        distance <= RAISE_SPEAKI_LEVEL_DROP_PICKUP_RADIUS
+                        && this.shouldPreferRaiseSpeakiCollector(collector, bestCollector, distance, bestDistance)
+                    ) {
                         bestCollector = collector
                         bestDistance = distance
                     }
@@ -485,6 +525,16 @@ class RaiseSpeakiWorld extends BaseWorld {
             }
         } else if (player.isDoubleSkin) {
             this.syncRaiseSpeakiDoubleUnits(player)
+        }
+        if (player.isDoubleSkin) {
+            player.doubleMerged = true
+            player.doubleSeparationPhase = "merged"
+            player.doubleMergeLockUntil = 0
+            player.doubleSeparatedAt = 0
+            player.doubleDefeatProtectedUntil = 0
+            player.doubleDefeatProtectedById = ""
+            player.doubleSplitProtectedUntil = 0
+            player.doubleSplitProtectedById = ""
         }
         if (!preservePosition) {
             let spawnPosition

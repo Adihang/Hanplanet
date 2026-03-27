@@ -1943,6 +1943,23 @@
         playRandomSoundFromList(urls, 0.95, volume, playerId);
     };
 
+    const syncDoubleUnitAudioSnapshots = function (player) {
+        if (!player || !player.doubleState || !Array.isArray(player.doubleState.units)) {
+            return;
+        }
+        player.doubleState.units.forEach(function (unit, unitIndex) {
+            const audioId = player.id + ':double:' + unitIndex;
+            const unitHealth = Math.max(0, Number(unit && unit.currentHealth !== undefined ? unit.currentHealth : unit && unit.health || 0));
+            playerAudioStates.set(audioId, {
+                boostState: unit.boostState || 'idle',
+                collisionActive: Boolean(unit.collisionActive),
+                collisionVisualType: unit.collisionVisualType || 'win',
+                inactive: Boolean(unit.inactive),
+                health: unitHealth
+            });
+        });
+    };
+
     const processDoubleUnitSounds = function (player, listenerPlayer, isSelfPlayer) {
         if (!player || !player.doubleState || !Array.isArray(player.doubleState.units)) {
             return;
@@ -2059,8 +2076,12 @@
                     playRandomNerAccelerationSound(volume, player.id);
                 }
             } else if (player.id !== selfId && !player.isNpc && !player.isPumpkinNpc && !player.isDummy && !player.isHouse) {
-                if (getPlayerSkinProfile(player.skinName || 'default').type === 'double' && player.doubleState && !player.doubleState.merged) {
-                    processDoubleUnitSounds(player, listenerPlayer, false);
+                if (getPlayerSkinProfile(player.skinName || 'default').type === 'double' && player.doubleState) {
+                    if (!player.doubleState.merged && !player.deathActive) {
+                        processDoubleUnitSounds(player, listenerPlayer, false);
+                    } else {
+                        syncDoubleUnitAudioSnapshots(player);
+                    }
                 }
                 const volume = getSpatialVolume(listenerPlayer, player, 0.95);
                 const skinRuntime = getSkinConfig(player.skinName);
@@ -2400,11 +2421,15 @@
             const authoritativeUnit = authoritativeDoubleState.units[unitIndex];
             const predictedUnit = predictedSelf.doubleState.units[unitIndex];
             let desiredVector = { dx: 0, dy: 0 };
+            const authoritativeVelocityVector = normalizeVector(authoritativeUnit.velocityX || 0, authoritativeUnit.velocityY || 0);
+            const authoritativeUnitBoosting = authoritativeUnit.boostState === 'charging' || authoritativeUnit.boostState === 'cooldown';
 
             if (authoritativeUnit.collisionActive || authoritativeUnit.collisionRecoveryActive) {
                 desiredVector = normalizeVector(authoritativeUnit.velocityX || 0, authoritativeUnit.velocityY || 0);
+            } else if (authoritativeUnitBoosting && Math.hypot(authoritativeVelocityVector.dx, authoritativeVelocityVector.dy) > 0.001) {
+                desiredVector = authoritativeVelocityVector;
             } else if (aliveUnits.length === 1) {
-                if (usingBoostVector && (authoritativeUnit.boostState === 'charging' || authoritativeUnit.boostState === 'cooldown')) {
+                if (usingBoostVector && authoritativeUnitBoosting) {
                     desiredVector = normalizeVector(movementVector.dx, movementVector.dy);
                 } else if (localInputActive) {
                     desiredVector = normalizeVector(inputVector.dx, inputVector.dy);
@@ -2437,7 +2462,7 @@
                         }
                     }
                 }
-            } else if (usingBoostVector && (authoritativeUnit.boostState === 'charging' || authoritativeUnit.boostState === 'cooldown')) {
+            } else if (usingBoostVector && authoritativeUnitBoosting) {
                 desiredVector = normalizeVector(movementVector.dx, movementVector.dy);
             } else if (typeof authoritativeUnit.velocityX === 'number' || typeof authoritativeUnit.velocityY === 'number') {
                 desiredVector = normalizeVector(authoritativeUnit.velocityX || 0, authoritativeUnit.velocityY || 0);
@@ -2840,8 +2865,12 @@
                     if (defeatDealtCountNode) {
                         defeatDealtCountNode.textContent = String(selfPlayer.defeatDealtCount || 0);
                     }
-                    if (selfSkinType === 'double' && selfPlayer.doubleState && !selfPlayer.doubleState.merged) {
-                        processDoubleUnitSounds(selfPlayer, selfPlayer, true);
+                    if (selfSkinType === 'double' && selfPlayer.doubleState) {
+                        if (!selfPlayer.doubleState.merged && !selfPlayer.deathActive) {
+                            processDoubleUnitSounds(selfPlayer, selfPlayer, true);
+                        } else {
+                            syncDoubleUnitAudioSnapshots(selfPlayer);
+                        }
                     } else if (Boolean(selfPlayer.collisionActive) && !selfCollisionActive) {
                         if ((selfPlayer.collisionVisualType || 'win') === 'defeat') {
                             if (selfDoubleMerged) {
@@ -3159,8 +3188,30 @@
         return Math.pow(levelBoostDistanceScaleFactor, safeLevel - 1);
     };
 
+    const getDoubleMergedBoostLevel = function (player) {
+        const units = player && player.doubleState && Array.isArray(player.doubleState.units)
+            ? player.doubleState.units
+            : [];
+        const aliveUnits = units.filter(function (unit) {
+            return unit && !unit.inactive && Number(unit.health || 0) > 0;
+        });
+        const sourceUnits = aliveUnits.length ? aliveUnits : units;
+        if (!sourceUnits.length) {
+            return Math.max(1, Math.round(Number(player && player.level || selfLevel || 1)));
+        }
+        const totalLevel = sourceUnits.reduce(function (sum, unit) {
+            return sum + Math.max(1, Math.round(Number(unit && unit.level || 1)));
+        }, 0);
+        return Math.max(1, Math.round(totalLevel / sourceUnits.length));
+    };
+
     const getSelectedPlayerMaxBoostSpeed = function () {
-        return getPlayerSkinProfile(activeSelfSkinName || selectedSkinName).maxBoostSpeed * getLevelBoostDistanceMultiplier(selfLevel);
+        const skinName = activeSelfSkinName || selectedSkinName;
+        const skinProfile = getPlayerSkinProfile(skinName);
+        if (skinProfile.type === 'double' && predictedSelf && predictedSelf.doubleState) {
+            return skinProfile.maxBoostSpeed * getLevelBoostDistanceMultiplier(getDoubleMergedBoostLevel(predictedSelf));
+        }
+        return skinProfile.maxBoostSpeed * getLevelBoostDistanceMultiplier(selfLevel);
     };
 
     currentMoveSpeed = getSelectedPlayerBaseSpeed();
@@ -3320,7 +3371,9 @@
                 ? Math.max(0, Number(currentMoveSpeed || 0))
                 : Math.max(0, Number(player.currentSpeed || 0));
             const playerBaseSpeed = skinProfile.baseSpeed;
-            const playerLevelForBoost = Math.max(1, Math.round(Number(player && player.level || selfLevel || 1)));
+            const playerLevelForBoost = getPlayerSkinProfile(player && player.skinName ? player.skinName : selectedSkinName).type === 'double'
+                ? getDoubleMergedBoostLevel(player)
+                : Math.max(1, Math.round(Number(player && player.level || selfLevel || 1)));
             const playerMaxBoostedSpeed = skinProfile.maxBoostSpeed * getLevelBoostDistanceMultiplier(playerLevelForBoost);
             const boostRatio = Math.max(
                 0,
@@ -3591,11 +3644,7 @@
             ? Math.max(0, Number(currentMoveSpeed || 0))
             : Math.max(0, Number(player.currentSpeed || 0));
         const playerBaseSpeed = getPlayerSkinProfile('double').baseSpeed;
-        const mergedDisplayLevel = player && player.doubleState && Array.isArray(player.doubleState.units)
-            ? Math.max(1, player.doubleState.units.reduce(function (sum, unit) {
-                return sum + Math.max(1, Math.round(Number(unit && unit.level || 1)));
-            }, 0))
-            : Math.max(1, Math.round(Number(player && player.level || selfLevel || 1)));
+        const mergedDisplayLevel = getDoubleMergedBoostLevel(player);
         const playerMaxBoostedSpeed = getPlayerSkinProfile('double').maxBoostSpeed * getLevelBoostDistanceMultiplier(mergedDisplayLevel);
         const boostRatio = Math.max(
             0,

@@ -33,6 +33,7 @@ const {
     isPumpkinSkinPlayer,
     isClassicDefaultPlayer,
     isSingleDoublePlayer,
+    getDoubleAliveUnitIndices,
     getSingleDoublePlayerHealth,
     isPersistentHumanPlayer,
     isUserBoostAttacking,
@@ -278,12 +279,24 @@ module.exports = {
         const dropY = this.clampToWorld(Number(options.y !== undefined ? options.y : player.y || 0))
         const pumpkinBaseSkinName = String(player.pumpkinBaseSkinName || "").trim().toLowerCase()
         if (pumpkinBaseSkinName === "double_single") {
-            const pumpkinDefeats = Number(player.defeatReceivedCount || 0) % DOUBLE_UNIT_HEALTH
-            const remainingDoubleHealth = pumpkinDefeats === 0
-                ? DOUBLE_UNIT_HEALTH
-                : Math.max(0, DOUBLE_UNIT_HEALTH - pumpkinDefeats)
             const liveUnit = createDoubleUnitState(now)
-            liveUnit.health = remainingDoubleHealth
+            const restoredLevel = typeof this.getRaiseSpeakiCurrentHealth === "function"
+                ? Math.max(1, Math.round(Number(player.raiseSpeakiLevel || player.level || 1)))
+                : DOUBLE_UNIT_HEALTH
+            const restoredHealth = typeof this.getRaiseSpeakiCurrentHealth === "function"
+                ? Math.max(1, Math.min(restoredLevel, this.getRaiseSpeakiCurrentHealth(player)))
+                : (() => {
+                    const pumpkinDefeats = Number(player.defeatReceivedCount || 0) % DOUBLE_UNIT_HEALTH
+                    return pumpkinDefeats === 0
+                        ? DOUBLE_UNIT_HEALTH
+                        : Math.max(0, DOUBLE_UNIT_HEALTH - pumpkinDefeats)
+                })()
+            if (typeof this.applyRaiseSpeakiDoubleUnitLevel === "function") {
+                this.applyRaiseSpeakiDoubleUnitLevel(liveUnit, restoredLevel, { preserveHealth: false })
+                liveUnit.health = restoredHealth
+            } else {
+                liveUnit.health = restoredHealth
+            }
             liveUnit.x = dropX
             liveUnit.y = dropY
             const inactiveUnit = createDoubleUnitState(now)
@@ -411,6 +424,13 @@ module.exports = {
      * @returns {object|null} 스폰된 펌킨 NPC, 실패 시 null
      */
     applyPumpkinSkinBoostSplit(player, now, awayNormalX, awayNormalY, splitBounceMagnitude = null) {
+        const preservedRaiseSpeakiLevel = typeof this.applyRaiseSpeakiLevel === "function"
+            ? Math.max(1, Math.round(Number(player && (player.raiseSpeakiLevel || player.level) || 1)))
+            : 0
+        const preservedRaiseSpeakiHealth = typeof this.getRaiseSpeakiCurrentHealth === "function"
+            ? Math.max(0, this.getRaiseSpeakiCurrentHealth(player))
+            : 0
+        const preservedPumpkinBaseSkinName = String(player && player.pumpkinBaseSkinName || "").trim().toLowerCase()
         const pumpkinNpc = this.applyPumpkinSkinDefeatSplit(
             player,
             now,
@@ -422,6 +442,22 @@ module.exports = {
         )
         if (!pumpkinNpc) {
             return null
+        }
+        if (typeof this.applyRaiseSpeakiLevel === "function" && preservedRaiseSpeakiLevel > 0) {
+            if (preservedPumpkinBaseSkinName === "double_single" && player.isDoubleSkin && Array.isArray(player.doubleUnits)) {
+                const aliveIndices = getDoubleAliveUnitIndices(player)
+                const liveUnit = aliveIndices.length ? player.doubleUnits[aliveIndices[0]] : null
+                if (liveUnit && typeof this.applyRaiseSpeakiDoubleUnitLevel === "function") {
+                    this.applyRaiseSpeakiDoubleUnitLevel(liveUnit, preservedRaiseSpeakiLevel, { preserveHealth: false })
+                    liveUnit.health = Math.max(1, Math.min(preservedRaiseSpeakiLevel, preservedRaiseSpeakiHealth))
+                    if (typeof this.syncRaiseSpeakiPlayerStats === "function") {
+                        this.syncRaiseSpeakiPlayerStats(player)
+                    }
+                }
+            } else if (!player.isDoubleSkin) {
+                this.applyRaiseSpeakiLevel(player, preservedRaiseSpeakiLevel)
+                player.defeatReceivedCount = Math.max(0, preservedRaiseSpeakiLevel - preservedRaiseSpeakiHealth)
+            }
         }
         pumpkinNpc.defeatReceivedCount = Math.max(0, Number(pumpkinNpc.defeatReceivedCount || 0) - 1)
         pumpkinNpc.collisionVisualType = "win"
@@ -464,7 +500,16 @@ module.exports = {
             pumpkinNpc.pumpkinOriginalOwnerConnectionKey || pumpkinNpc.pumpkinOwnerConnectionKey || ""
         ).trim()
         const singleDoubleClaim = isSingleDoublePlayer(player)
+        const singleDoubleAliveIndices = singleDoubleClaim && Array.isArray(player.doubleUnits)
+            ? getDoubleAliveUnitIndices(player)
+            : []
+        const singleDoubleUnit = singleDoubleAliveIndices.length
+            ? player.doubleUnits[singleDoubleAliveIndices[0]]
+            : null
         const singleDoubleHealth = singleDoubleClaim ? getSingleDoublePlayerHealth(player) : 0
+        const singleDoubleLevel = singleDoubleClaim && typeof this.getRaiseSpeakiDoubleUnitLevel === "function"
+            ? this.getRaiseSpeakiDoubleUnitLevel(singleDoubleUnit)
+            : 0
         player.skinName = PUMPKIN_SKIN_NAME
         player.isPumpkinSkin = true
         player.isDoubleSkin = false
@@ -473,7 +518,12 @@ module.exports = {
         player.pumpkinBaseSkinName = singleDoubleClaim ? "double_single" : "default"
         player.pumpkinBaseDoubleHealth = singleDoubleClaim ? singleDoubleHealth : 0
         if (singleDoubleClaim) {
-            player.defeatReceivedCount = Math.max(0, DOUBLE_UNIT_HEALTH - singleDoubleHealth)
+            if (typeof this.applyRaiseSpeakiLevel === "function" && singleDoubleLevel > 0) {
+                this.applyRaiseSpeakiLevel(player, singleDoubleLevel)
+                player.defeatReceivedCount = Math.max(0, singleDoubleLevel - singleDoubleHealth)
+            } else {
+                player.defeatReceivedCount = Math.max(0, DOUBLE_UNIT_HEALTH - singleDoubleHealth)
+            }
             player.doubleMerged = false
             player.doubleSeparationPhase = "single"
             player.doubleMergeLockUntil = 0

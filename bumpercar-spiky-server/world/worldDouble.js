@@ -29,6 +29,7 @@ const {
 const {
     getBaseSpeedForPlayer,
     getMaxBoostedSpeedForPlayer,
+    getCharacterGameplaySettings,
     getRaiseSpeakiBoostDistanceMultiplier,
     isDoubleSkinPlayer,
     isPumpkinSkinPlayer,
@@ -370,8 +371,9 @@ module.exports = {
         }
 
         const baseSpeed = getBaseSpeedForPlayer(player)
-        const maxBoostSpeed = getMaxBoostedSpeedForPlayer(player)
-        const playerBoostScale = getRaiseSpeakiBoostDistanceMultiplier(player)
+        const skinMaxBoostMultiplier = getCharacterGameplaySettings(player && player.skinName).max_boost_speed_multiplier
+        const baseMaxBoostSpeed = baseSpeed * skinMaxBoostMultiplier
+        const baseDeltaSpeed = Math.max(0.0001, baseMaxBoostSpeed - baseSpeed)
         const aliveIndices = getDoubleAliveUnitIndices(player)
         if (!aliveIndices.length) {
             return { dx: 0, dy: 0 }
@@ -482,11 +484,10 @@ module.exports = {
                 const unitBoostScale = getRaiseSpeakiBoostDistanceMultiplier(unit)
                 const unitMaxBoostSpeed = Math.max(
                     baseSpeed,
-                    maxBoostSpeed * (unitBoostScale / Math.max(0.0001, playerBoostScale))
+                    baseMaxBoostSpeed * unitBoostScale
                 )
                 const unitDeltaSpeed = Math.max(0, unitMaxBoostSpeed - baseSpeed)
-                const defaultDeltaSpeed = Math.max(0.0001, maxBoostSpeed - baseSpeed)
-                const unitBoostAcceleration = BOOST_ACCELERATION_PER_SECOND * (unitDeltaSpeed / defaultDeltaSpeed)
+                const unitBoostAcceleration = BOOST_ACCELERATION_PER_SECOND * (unitDeltaSpeed / baseDeltaSpeed)
                 unit.currentSpeed = Math.min(unitMaxBoostSpeed, unit.currentSpeed + unitBoostAcceleration * TICK_DELTA_SECONDS)
                 if (unit.currentSpeed >= unitMaxBoostSpeed) {
                     unit.boostState = "cooldown"
@@ -497,11 +498,10 @@ module.exports = {
                 const unitBoostScale = getRaiseSpeakiBoostDistanceMultiplier(unit)
                 const unitMaxBoostSpeed = Math.max(
                     baseSpeed,
-                    maxBoostSpeed * (unitBoostScale / Math.max(0.0001, playerBoostScale))
+                    baseMaxBoostSpeed * unitBoostScale
                 )
                 const unitDeltaSpeed = Math.max(0, unitMaxBoostSpeed - baseSpeed)
-                const defaultDeltaSpeed = Math.max(0.0001, maxBoostSpeed - baseSpeed)
-                const unitBoostCooldown = BOOST_COOLDOWN_PER_SECOND * (unitDeltaSpeed / defaultDeltaSpeed)
+                const unitBoostCooldown = BOOST_COOLDOWN_PER_SECOND * (unitDeltaSpeed / baseDeltaSpeed)
                 unit.currentSpeed = Math.max(baseSpeed, unit.currentSpeed - unitBoostCooldown * TICK_DELTA_SECONDS)
                 if (unit.currentSpeed <= baseSpeed) {
                     unit.currentSpeed = baseSpeed

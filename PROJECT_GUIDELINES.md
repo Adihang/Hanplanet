@@ -25,6 +25,7 @@ PORT=8081 node server.js  # Dev (port 8080 is often occupied locally)
 ```
 
 **Static asset rollout rule:** After any change to `static/css/*`, `static/js/*`, or templates that reference them, always run `collectstatic` then restart gunicorn — never restart without collecting first.
+Even if `collectstatic --noinput` reports `0 static files copied`, treat that as "already up to date" and still restart gunicorn when you are doing an explicit production rollout.
 
 ### Production Deployment (launchd — no Docker)
 
@@ -45,6 +46,13 @@ Plist files: `deploy/launchd/` (Django, Gitea, Celery, Nginx) and `bumpercar-spi
 .venv/bin/python manage.py collectstatic --noinput
 launchctl kickstart -k gui/$(id -u)/com.hanplanet.gunicorn
 ```
+
+실운영 반영 체크 순서:
+1. `static/css/*`, `static/js/*`, 또는 이를 참조하는 템플릿을 수정했으면 먼저 `.venv/bin/python manage.py collectstatic --noinput` 실행
+2. 그 다음 `launchctl kickstart -k gui/$(id -u)/com.hanplanet.gunicorn` 실행
+3. 상태 확인: `launchctl print gui/$(id -u)/com.hanplanet.gunicorn | sed -n '1,30p'`
+4. `state = running` 인지 확인
+5. 브라우저에서 변경이 안 보이면 서버 반영 문제보다 브라우저 캐시를 먼저 의심하고 hard refresh로 확인
 
 **Game server 변경 후 운영 적용:**
 ```bash

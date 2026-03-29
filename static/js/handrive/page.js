@@ -206,6 +206,7 @@
     const appendCurrentDirRepoName = handriveListRenderHelpers.appendCurrentDirRepoName || function () {};
     const appendEntryBadge = handriveListRenderHelpers.appendEntryBadge || function () {};
     const buildTreePrefixElement = handriveListRenderHelpers.buildTreePrefixElement || function () { return document.createElement("span"); };
+    const createEntryMetaField = handriveListRenderHelpers.createEntryMetaField || function () { return document.createElement("span"); };
     const createTypeMarker = handriveListRenderHelpers.createTypeMarker || function () { return document.createElement("span"); };
     const handriveNavigationHelpers = window.HandriveNavigationHelpers || {};
     const buildNavigationBreadcrumbItems = handriveNavigationHelpers.buildBreadcrumbItems || function () { return []; };
@@ -1738,10 +1739,13 @@
         const currentDirGitBranchRoot = root.dataset.currentDirGitBranchRoot === "1";
         const currentDirGitCommitMessage = String(root.dataset.currentDirGitCommitMessage || "").trim();
         const currentDirGitCommitAuthorUsername = String(root.dataset.currentDirGitCommitAuthorUsername || "").trim();
+        const currentDirModifiedDisplay = String(root.dataset.currentDirModifiedDisplay || "").trim();
+        const currentDirSizeDisplay = String(root.dataset.currentDirSizeDisplay || "").trim();
         const accountProfileImageUrl = String(root.dataset.accountProfileImageUrl || "").trim();
         const handriveRootLabel = (root.dataset.handriveRootLabel || breadcrumbRootLabel || "HanDrive").trim() || "HanDrive";
         const effectiveRootLabel = handriveRootLabel;
         const syncSettingsApiUrl = root.dataset.syncSettingsApiUrl || "";
+        const sharedRootPath = normalizePath(root.dataset.handriveSharedRootPath || "", true);
         const initialEntries = getJsonScriptData("handrive-initial-entries", []);
         const initialSyncExcludedPaths = getJsonScriptData("handrive-sync-excluded-paths", []);
         let currentDirGitRepo = getJsonScriptData("handrive-current-dir-git-repo", null);
@@ -1752,8 +1756,8 @@
 
         function requiresCommitMessageForDirectory(pathValue) {
             var normalized = normalizePath(pathValue, true);
-            if (normalized === currentDir) {
-                return currentDirRequiresCommitMessage;
+            if (normalized === state.currentDir) {
+                return Boolean(getCurrentDirMeta().requires_commit_message);
             }
             var entry = state.entryByPath.get(normalized);
             return Boolean(entry && entry.requires_commit_message);
@@ -1768,6 +1772,22 @@
         // list 페이지 단일 상태 저장소.
         // 선택/컨텍스트 메뉴/확장 폴더/preview/upload queue 상태를 한곳에서 추적한다.
         const state = {
+            currentDir: currentDir,
+            currentDirMeta: {
+                path: currentDir,
+                is_root: currentDirIsRoot,
+                can_edit: currentDirCanEdit,
+                can_write_children: currentDirCanWriteChildren,
+                has_children: currentDirHasChildren,
+                is_git_repo_root: currentDirIsGitRepoRoot,
+                requires_commit_message: currentDirRequiresCommitMessage,
+                git_branch_root: currentDirGitBranchRoot,
+                git_commit_message: currentDirGitCommitMessage,
+                git_commit_author_username: currentDirGitCommitAuthorUsername,
+                modified_display: currentDirModifiedDisplay,
+                size_display: currentDirSizeDisplay,
+                git_repo: currentDirGitRepo,
+            },
             selectedPath: "",
             selectedPaths: new Set(),
             selectionAnchorPath: "",
@@ -1781,6 +1801,7 @@
             openingFolderPath: "",
             openingAnimationOrder: 0,
             directoryCache: new Map(),
+            directoryMetaCache: new Map(),
             aclOptionsLoaded: false,
             aclOptions: {
                 users: [],
@@ -1812,10 +1833,12 @@
             searchQuery: "",
             searchResults: null,
             searchGeneration: 0,
+            navigationGeneration: 0,
             syncSavedUncheckedPaths: new Set(Array.isArray(initialSyncExcludedPaths) ? initialSyncExcludedPaths : []),
             syncDraftUncheckedPaths: new Set(Array.isArray(initialSyncExcludedPaths) ? initialSyncExcludedPaths : []),
             syncExpandedFolders: new Set(),
         };
+        state.directoryMetaCache.set(currentDir, state.currentDirMeta);
 
         let activeListEditorSuggestions = [];
         let activeListEditorSuggestionIndex = -1;
@@ -2239,7 +2262,7 @@
             return true;
         }
 
-        state.directoryCache.set(currentDir, initialEntries);
+        state.directoryCache.set(state.currentDir, initialEntries);
 
         function closeContextMenu() {
             if (!contextMenu) {
@@ -2312,7 +2335,48 @@
             setTimeout(function() {
                 scheduleSyncCurrentDirRowHeightWithSideHead();
                 schedulePreviewBodyHeight();
+                updateListColumnVisibility();
             }, 10);
+        }
+
+        function updateListColumnVisibility() {
+            if (!listPane) {
+                scheduleSyncCurrentDirRowHeightWithSideHead();
+                return;
+            }
+
+            const hasTruncatedNameRow = function () {
+                const rows = listPane.querySelectorAll(".handrive-item-row");
+                for (let index = 0; index < rows.length; index += 1) {
+                    const row = rows[index];
+                    if (!row || row.offsetParent === null) {
+                        continue;
+                    }
+                    const nameWrap = row.querySelector(".handrive-item-name-wrap");
+                    const name = row.querySelector(".handrive-item-name");
+                    if (nameWrap && (nameWrap.scrollWidth - nameWrap.clientWidth) > 1) {
+                        return true;
+                    }
+                    if (name && (name.scrollWidth - name.clientWidth) > 1) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            listPane.classList.remove("is-hide-size", "is-hide-modified", "is-hide-badge");
+
+            if (hasTruncatedNameRow()) {
+                listPane.classList.add("is-hide-size");
+            }
+            if (hasTruncatedNameRow()) {
+                listPane.classList.add("is-hide-modified");
+            }
+            if (hasTruncatedNameRow()) {
+                listPane.classList.add("is-hide-badge");
+            }
+
+            scheduleSyncCurrentDirRowHeightWithSideHead();
         }
 
         // 디바운싱된 레이아웃 업데이트 함수
@@ -2915,7 +2979,7 @@
                 updatePathCurrentSize();
                 return;
             }
-            renderPathBreadcrumbs(state.selectedPath || currentDir);
+            renderPathBreadcrumbs(state.selectedPath || state.currentDir);
             renderList({ skipPreview: Boolean(settings.skipPreview) });
             updatePathCurrentSize();
         }
@@ -2931,7 +2995,7 @@
                     return;
                 }
             }
-            pathCurrentSizeEl.textContent = originalDirSizeText;
+            pathCurrentSizeEl.textContent = getCurrentDirMeta().size_display || originalDirSizeText;
         }
 
         function getSelectionRangeTo(entryPath) {
@@ -3082,9 +3146,17 @@
             });
         }
 
+        function syncCurrentDirectoryMetaFromCache(dirPath) {
+            const normalizedDirPath = normalizePath(dirPath, true);
+            const cachedMeta = state.directoryMetaCache.get(normalizedDirPath);
+            if (cachedMeta) {
+                applyCurrentDirectoryMeta(cachedMeta);
+            }
+        }
+
         async function refreshCurrentDirectory() {
             await refreshDirectoryEntries({
-                currentDir: currentDir,
+                currentDir: state.currentDir,
                 listApiUrl: appendSharedQuery(listApiUrl),
                 loadDirectory: loadDirectory,
                 normalizePath: normalizePath,
@@ -3092,6 +3164,86 @@
                 requestJson: requestJson,
                 state: state,
             });
+            syncCurrentDirectoryMetaFromCache(state.currentDir);
+            renderPathBreadcrumbs(state.currentDir);
+            updatePathCurrentSize();
+        }
+
+        function resetDirectoryScopedUi() {
+            state.selectedPath = "";
+            state.selectedPaths = new Set();
+            state.selectionAnchorPath = "";
+            state.contextTarget = null;
+            state.contextEntries = [];
+            state.expandedFolders = new Set();
+            state.openingFolderPath = "";
+            state.activePreviewPath = "";
+            state.activeRenderedPreviewPath = "";
+            state.searchQuery = "";
+            state.searchResults = null;
+            state.searchGeneration += 1;
+            if (listSearchInput) {
+                listSearchInput.value = "";
+            }
+            closeContextMenu();
+            clearPreviewPane();
+        }
+
+        function updateDirectoryHistory(dirPath, mode) {
+            const historyMode = mode || "push";
+            const normalizedDirPath = normalizePath(dirPath, true);
+            const targetUrl = (hasSharedContext() && sharedRootPath && normalizedDirPath === sharedRootPath)
+                ? handriveRootUrl
+                : buildListUrl(handriveBaseUrl, normalizedDirPath, handriveRootUrl);
+            const historyState = {
+                handriveListDir: normalizedDirPath,
+            };
+            if (historyMode === "replace") {
+                window.history.replaceState(historyState, "", targetUrl);
+                return;
+            }
+            window.history.pushState(historyState, "", targetUrl);
+        }
+
+        async function navigateToDirectory(dirPath, options) {
+            const settings = options || {};
+            const normalizedDirPath = normalizePath(dirPath, true);
+            const isSameDirectory = normalizedDirPath === state.currentDir;
+            if (isSameDirectory && !settings.forceReload) {
+                if (settings.historyMode === "replace") {
+                    updateDirectoryHistory(normalizedDirPath, "replace");
+                }
+                return;
+            }
+
+            state.navigationGeneration += 1;
+            const navigationGeneration = state.navigationGeneration;
+            resetDirectoryScopedUi();
+            setListLoading(true);
+            try {
+                await loadDirectory(normalizedDirPath);
+                if (navigationGeneration !== state.navigationGeneration) {
+                    return;
+                }
+                applyCurrentDirectoryMeta(
+                    state.directoryMetaCache.get(normalizedDirPath) || { path: normalizedDirPath }
+                );
+                renderPathBreadcrumbs(state.currentDir);
+                renderList();
+                updatePathCurrentSize();
+                if (settings.historyMode !== "skip") {
+                    updateDirectoryHistory(state.currentDir, settings.historyMode === "replace" ? "replace" : "push");
+                }
+            } catch (error) {
+                if (settings.historyMode === "replace") {
+                    updateDirectoryHistory(state.currentDir, "replace");
+                }
+                throw error;
+            } finally {
+                if (navigationGeneration === state.navigationGeneration) {
+                    setListLoading(false);
+                }
+            }
         }
 
         async function toggleUrlShare(entry) {
@@ -3979,24 +4131,77 @@
             return parts[parts.length - 1] || effectiveRootLabel;
         }
 
+        function getCurrentDirMeta() {
+            const cachedMeta = state.directoryMetaCache.get(state.currentDir);
+            if (cachedMeta && typeof cachedMeta === "object") {
+                state.currentDirMeta = Object.assign({}, state.currentDirMeta || {}, cachedMeta, {
+                    path: normalizePath(cachedMeta.path || state.currentDir, true),
+                });
+            }
+            return state.currentDirMeta || {};
+        }
+
+        function applyCurrentDirectoryMeta(meta) {
+            const normalizedPath = normalizePath(meta && meta.path !== undefined ? meta.path : state.currentDir, true);
+            const nextMeta = Object.assign({}, state.currentDirMeta || {}, meta || {}, { path: normalizedPath });
+            state.currentDir = normalizedPath;
+            state.currentDirMeta = nextMeta;
+            state.directoryMetaCache.set(normalizedPath, nextMeta);
+            root.dataset.currentDir = normalizedPath;
+            root.dataset.currentDirIsRoot = nextMeta.is_root ? "1" : "0";
+            root.dataset.currentDirCanEdit = nextMeta.can_edit ? "1" : "0";
+            root.dataset.currentDirCanWriteChildren = nextMeta.can_write_children ? "1" : "0";
+            root.dataset.currentDirHasChildren = nextMeta.has_children ? "1" : "0";
+            root.dataset.currentDirIsGitRepoRoot = nextMeta.is_git_repo_root ? "1" : "0";
+            root.dataset.currentDirRequiresCommitMessage = nextMeta.requires_commit_message ? "1" : "0";
+            root.dataset.currentDirGitBranchRoot = nextMeta.git_branch_root ? "1" : "0";
+            root.dataset.currentDirGitCommitMessage = nextMeta.git_commit_message || "";
+            root.dataset.currentDirGitCommitAuthorUsername = nextMeta.git_commit_author_username || "";
+            root.dataset.currentDirModifiedDisplay = nextMeta.modified_display || "";
+            root.dataset.currentDirSizeDisplay = nextMeta.size_display || "";
+            currentDirGitRepo = nextMeta.git_repo || null;
+        }
+
         function buildCurrentDirectoryEntry() {
+            const currentDirMeta = getCurrentDirMeta();
             return {
-                path: currentDir,
+                path: state.currentDir,
                 type: "dir",
                 isCurrentFolder: true,
-                can_edit: currentDirCanEdit,
-                can_write_children: currentDirCanWriteChildren,
-                can_delete: Boolean(currentDirGitRepo && currentDirIsGitRepoRoot),
-                requires_commit_message: currentDirRequiresCommitMessage,
-                git_repo: currentDirIsGitRepoRoot ? (currentDirGitRepo || null) : null,
-                git_repo_meta: currentDirGitRepo || null,
-                git_branch_root: currentDirGitBranchRoot,
-                is_git_virtual: Boolean(currentDirGitRepo || currentDirGitBranchRoot || currentDirRequiresCommitMessage),
+                can_edit: Boolean(currentDirMeta.can_edit),
+                can_write_children: Boolean(currentDirMeta.can_write_children),
+                can_delete: Boolean(currentDirMeta.git_repo && currentDirMeta.is_git_repo_root),
+                requires_commit_message: Boolean(currentDirMeta.requires_commit_message),
+                git_repo: currentDirMeta.is_git_repo_root ? (currentDirMeta.git_repo || null) : null,
+                git_repo_meta: currentDirMeta.git_repo || null,
+                git_branch_root: Boolean(currentDirMeta.git_branch_root),
+                is_git_virtual: Boolean(currentDirMeta.git_repo || currentDirMeta.git_branch_root || currentDirMeta.requires_commit_message),
+                modified_display: currentDirMeta.modified_display || "",
+                size_display: currentDirMeta.size_display || "",
             };
+        }
+
+        function appendEntryMetaColumns(row, entry) {
+            if (!row) {
+                return;
+            }
+            const safeEntry = entry || {};
+            row.appendChild(createEntryMetaField("handrive-item-modified", safeEntry.modified_display || ""));
+            row.appendChild(createEntryMetaField("handrive-item-size", safeEntry.size_display || ""));
+        }
+
+        function appendEntryBadgeSlot(row) {
+            if (!row) {
+                return;
+            }
+            const badgeSlot = document.createElement("span");
+            badgeSlot.className = "handrive-item-badge-slot";
+            row.appendChild(badgeSlot);
         }
 
         function addCurrentDirectoryNode(fragment) {
             const currentFolderEntry = buildCurrentDirectoryEntry();
+            const currentDirMeta = getCurrentDirMeta();
 
             const item = document.createElement("li");
             item.className = "handrive-item handrive-current-dir-item";
@@ -4013,16 +4218,16 @@
 
             const typeMarker = createTypeMarker({
                 isDir: true,
-                isRootAvatar: currentDirIsRoot,
+                isRootAvatar: Boolean(currentDirMeta.is_root),
                 accountProfileImageUrl: accountProfileImageUrl,
-                isRepo: currentDirIsGitRepoRoot,
-                isBranch: currentDirGitBranchRoot,
-                isEmpty: !currentDirHasChildren,
+                isRepo: Boolean(currentDirMeta.is_git_repo_root),
+                isBranch: Boolean(currentDirMeta.git_branch_root),
+                isEmpty: !currentDirMeta.has_children,
             });
 
             const name = document.createElement("span");
             name.className = "handrive-item-name";
-            name.textContent = getCurrentFolderName(currentDir);
+            name.textContent = getCurrentFolderName(state.currentDir);
 
             const nameWrap = document.createElement("span");
             nameWrap.className = "handrive-item-name-wrap";
@@ -4031,12 +4236,14 @@
             row.appendChild(nameWrap);
             nameWrap.appendChild(name);
 
-            appendCurrentDirRepoName(nameWrap, currentDirGitRepo, {
-                showForBranchOrRepoInner: Boolean(currentDirGitBranchRoot || currentDirRequiresCommitMessage),
+            appendCurrentDirRepoName(nameWrap, currentDirMeta.git_repo || null, {
+                showForBranchOrRepoInner: Boolean(currentDirMeta.git_branch_root || currentDirMeta.requires_commit_message),
             });
-            if (currentDirGitCommitMessage) {
-                currentFolderEntry.git_commit_message = currentDirGitCommitMessage;
-                currentFolderEntry.git_commit_author_username = currentDirGitCommitAuthorUsername;
+            appendEntryMetaColumns(row, currentFolderEntry);
+            appendEntryBadgeSlot(row);
+            if (currentDirMeta.git_commit_message) {
+                currentFolderEntry.git_commit_message = currentDirMeta.git_commit_message;
+                currentFolderEntry.git_commit_author_username = currentDirMeta.git_commit_author_username || "";
             }
             appendEntryBadge(row, currentFolderEntry, t, appendBadgeWithPrefix);
 
@@ -4310,6 +4517,7 @@
 
         function addSyncCurrentDirectoryNode(fragment) {
             const currentFolderEntry = buildCurrentDirectoryEntry();
+            const currentDirMeta = getCurrentDirMeta();
             const item = document.createElement("li");
             item.className = "handrive-item handrive-current-dir-item";
 
@@ -4320,11 +4528,11 @@
 
             const typeMarker = createTypeMarker({
                 isDir: true,
-                isRootAvatar: currentDirIsRoot,
+                isRootAvatar: Boolean(currentDirMeta.is_root),
                 accountProfileImageUrl: accountProfileImageUrl,
-                isRepo: currentDirIsGitRepoRoot,
-                isBranch: currentDirGitBranchRoot,
-                isEmpty: !currentDirHasChildren,
+                isRepo: Boolean(currentDirMeta.is_git_repo_root),
+                isBranch: Boolean(currentDirMeta.git_branch_root),
+                isEmpty: !currentDirMeta.has_children,
             });
 
             const nameWrap = document.createElement("span");
@@ -4332,18 +4540,20 @@
 
             const name = document.createElement("span");
             name.className = "handrive-item-name";
-            name.textContent = getCurrentFolderName(currentDir);
+            name.textContent = getCurrentFolderName(state.currentDir);
 
             row.appendChild(typeMarker);
             row.appendChild(nameWrap);
             nameWrap.appendChild(name);
 
-            appendCurrentDirRepoName(nameWrap, currentDirGitRepo, {
-                showForBranchOrRepoInner: Boolean(currentDirGitBranchRoot || currentDirRequiresCommitMessage),
+            appendCurrentDirRepoName(nameWrap, currentDirMeta.git_repo || null, {
+                showForBranchOrRepoInner: Boolean(currentDirMeta.git_branch_root || currentDirMeta.requires_commit_message),
             });
-            if (currentDirGitCommitMessage) {
-                currentFolderEntry.git_commit_message = currentDirGitCommitMessage;
-                currentFolderEntry.git_commit_author_username = currentDirGitCommitAuthorUsername;
+            appendEntryMetaColumns(row, currentFolderEntry);
+            appendEntryBadgeSlot(row);
+            if (currentDirMeta.git_commit_message) {
+                currentFolderEntry.git_commit_message = currentDirMeta.git_commit_message;
+                currentFolderEntry.git_commit_author_username = currentDirMeta.git_commit_author_username || "";
             }
             appendEntryBadge(row, currentFolderEntry, t, appendBadgeWithPrefix);
             row.appendChild(createSyncCheckbox(currentFolderEntry.path, currentFolderEntry.type));
@@ -4383,13 +4593,17 @@
                 isGenericFileIcon: entry.type === "file" && isGenericFileIconKey(fileIconKey),
             });
 
+            row.appendChild(typeMarker);
+            const nameWrap = document.createElement("span");
+            nameWrap.className = "handrive-item-name-wrap";
             const name = document.createElement("span");
             name.className = "handrive-item-name";
             name.textContent = entry.name;
-
-            row.appendChild(typeMarker);
-            row.appendChild(name);
+            nameWrap.appendChild(name);
+            row.appendChild(nameWrap);
+            appendEntryMetaColumns(row, entry);
             appendAclBadges(row, entry.write_acl_labels, 3);
+            appendEntryBadgeSlot(row);
             appendEntryBadge(row, entry, t, appendBadgeWithPrefix);
             row.appendChild(createSyncCheckbox(entry.path, entry.type));
 
@@ -4442,7 +4656,7 @@
             if (!isSyncHiddenEntry(currentFolderEntry)) {
                 addSyncCurrentDirectoryNode(fragment);
             }
-            const entries = getCachedEntries(currentDir).filter(function (entry) {
+            const entries = getCachedEntries(state.currentDir).filter(function (entry) {
                 return !isSyncHiddenEntry(entry);
             });
             if (!entries.length) {
@@ -4480,8 +4694,8 @@
             if (!syncSettingsApiUrl) {
                 throw new Error(t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다."));
             }
-            await loadDirectory(currentDir);
-            const collected = await collectSyncExcludedEntriesForDirectory(currentDir, new Set());
+            await loadDirectory(state.currentDir);
+            const collected = await collectSyncExcludedEntriesForDirectory(state.currentDir, new Set());
             const excludedPaths = Array.from(collected.excludedPaths).sort();
             const data = await requestJson(syncSettingsApiUrl, buildPostOptions({
                 excluded_paths: excludedPaths,
@@ -4873,7 +5087,7 @@
                     window.location.href = (mapViewerBaseUrl || "/handrive/map-viewer/") + (entry.path || "");
                     return;
                 }
-                window.location.href = buildListUrl(handriveBaseUrl, entry.path, handriveRootUrl);
+                navigateToDirectory(entry.path).catch(alertError);
                 return;
             }
             window.location.href = buildViewUrl(handriveBaseUrl, entry.slug_path || entry.path);
@@ -4960,7 +5174,7 @@
                 state.searchResults = [];
                 renderList();
 
-                const params = new URLSearchParams({ path: currentDir, q: query });
+                const params = new URLSearchParams({ path: state.currentDir, q: query });
                 const data = await requestJson(appendSharedQuery(searchApiUrl + "?" + params.toString()));
                 if (generation !== state.searchGeneration) {
                     return;
@@ -5013,14 +5227,18 @@
                 isGenericFileIcon: entry.type === "file" && isGenericFileIconKey(fileIconKey),
             });
 
+            row.appendChild(typeMarker);
+            const nameWrap = document.createElement("span");
+            nameWrap.className = "handrive-item-name-wrap";
             const name = document.createElement("span");
             name.className = "handrive-item-name";
             name.textContent = entry.name;
-
-            row.appendChild(typeMarker);
-            row.appendChild(name);
+            nameWrap.appendChild(name);
+            row.appendChild(nameWrap);
+            appendEntryMetaColumns(row, entry);
 
             appendAclBadges(row, entry.write_acl_labels, 3);
+            appendEntryBadgeSlot(row);
             appendEntryBadge(row, entry, t, appendBadgeWithPrefix);
 
             row.addEventListener("click", function (event) {
@@ -5142,7 +5360,7 @@
             const fragment = document.createDocumentFragment();
             const entries = state.searchQuery && Array.isArray(state.searchResults)
                 ? state.searchResults
-                : getCachedEntries(currentDir);
+                : getCachedEntries(state.currentDir);
             addCurrentDirectoryNode(fragment);
 
             if (entries.length === 0) {
@@ -5164,6 +5382,7 @@
                     ? state.selectionAnchorPath
                     : (state.selectedPath || "");
                 listContainer.appendChild(fragment);
+                updateListColumnVisibility();
                 if (!renderListOptions.skipPreview) { syncPreviewFromSelection(); }
                 state.openingFolderPath = "";
                 return;
@@ -5185,6 +5404,7 @@
                 ? state.selectionAnchorPath
                 : (state.selectedPath || "");
             listContainer.appendChild(fragment);
+            updateListColumnVisibility();
             if (!renderListOptions.skipPreview) { syncPreviewFromSelection(); }
             scheduleSyncCurrentDirRowHeightWithSideHead();
             state.openingFolderPath = "";
@@ -5233,11 +5453,9 @@
                         }
                         if (uploadQueueItem.kind === "operation") {
                             if (uploadQueueItem.operationType === "move" && (uploadQueueItem.savedPath || uploadQueueItem.targetDirPath)) {
-                                window.location.href = buildListUrl(
-                                    handriveBaseUrl,
-                                    getParentDirectory(uploadQueueItem.savedPath || "") || uploadQueueItem.targetDirPath,
-                                    handriveRootUrl
-                                );
+                                navigateToDirectory(
+                                    getParentDirectory(uploadQueueItem.savedPath || "") || uploadQueueItem.targetDirPath
+                                ).catch(alertError);
                             }
                             return;
                         }
@@ -5599,7 +5817,7 @@
             gitRepoFlowState.currentId = repoId;
             await gitRepoFlowPollStatus({
                 buildListUrl: buildListUrl,
-                currentDir: currentDir,
+                currentDir: state.currentDir,
                 getParentDirectory: getParentDirectory,
                 gitRepoModal: gitRepoModal,
                 gitRepoTitle: gitRepoTitle,
@@ -5974,7 +6192,7 @@
                 clearFileDragUiState();
                 enqueueUploadFiles(
                     event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files : [],
-                    currentDir
+                    state.currentDir
                 ).catch(alertError);
             });
         }
@@ -6020,7 +6238,7 @@
             }
 
             event.preventDefault();
-            enqueueUploadFiles(files, currentDir).catch(alertError);
+            enqueueUploadFiles(files, state.currentDir).catch(alertError);
         });
 
         if (uploadQueueToggleButton) {
@@ -6077,6 +6295,8 @@
         window.addEventListener("resize", closeListMarkdownSnippetMenu, { passive: true });
         window.addEventListener("resize", debouncedUpdateListLayoutMode, { passive: true });
         window.addEventListener("orientationchange", debouncedUpdateListLayoutMode, { passive: true });
+        window.addEventListener("resize", updateListColumnVisibility, { passive: true });
+        window.addEventListener("orientationchange", updateListColumnVisibility, { passive: true });
         window.addEventListener("resize", schedulePreviewBodyHeight, { passive: true });
         window.addEventListener("orientationchange", schedulePreviewBodyHeight, { passive: true });
 
@@ -6088,6 +6308,10 @@
         }
 
         if (window.ResizeObserver) {
+            if (listPane) {
+                const listPaneResizeObserver = new ResizeObserver(updateListColumnVisibility);
+                listPaneResizeObserver.observe(listPane);
+            }
             const toolbarWrap = document.querySelector(".handrive-toolbar-wrap");
             if (toolbarWrap) {
                 const listToolbarResizeObserver = new ResizeObserver(schedulePreviewBodyHeight);
@@ -6097,11 +6321,36 @@
 
         schedulePreviewBodyHeight();
 
+        updateDirectoryHistory(state.currentDir, "replace");
+
         if (pathBreadcrumbs) {
-            renderPathBreadcrumbs(currentDir);
+            pathBreadcrumbs.addEventListener("click", function (event) {
+                const link = event.target instanceof Element
+                    ? event.target.closest("a.handrive-path-link[data-handrive-dir]")
+                    : null;
+                if (!link) {
+                    return;
+                }
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                    return;
+                }
+                event.preventDefault();
+                navigateToDirectory(link.getAttribute("data-handrive-dir") || "").catch(alertError);
+            });
+            renderPathBreadcrumbs(state.currentDir);
         } else {
             bindHandrivePathDropTargets();
         }
+
+        window.addEventListener("popstate", function (event) {
+            const historyState = event.state || {};
+            if (!Object.prototype.hasOwnProperty.call(historyState, "handriveListDir")) {
+                return;
+            }
+            navigateToDirectory(historyState.handriveListDir || "", {
+                historyMode: "skip",
+            }).catch(alertError);
+        });
 
         if (listSearchForm && listSearchInput) {
             listSearchForm.addEventListener("submit", function (event) {
@@ -6128,6 +6377,7 @@
         // 초기화 시 약간의 지연 후 레이아웃 업데이트
         setTimeout(function() {
             updateListLayoutMode();
+            updateListColumnVisibility();
         }, 100);
         
         clearPreviewPane();
@@ -6136,7 +6386,7 @@
             ? String(new URLSearchParams(window.location.search).get("q") || "").trim()
             : "";
         setListLoading(true);
-        loadDirectory(currentDir)
+        loadDirectory(state.currentDir)
             .then(function () {
                 if (initialSearchQuery && listSearchInput) {
                     listSearchInput.value = initialSearchQuery;

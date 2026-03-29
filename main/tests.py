@@ -210,6 +210,45 @@ class HandriveSyncSettingsTests(TestCase):
             self.assertEqual(user.profile.sync_excluded_paths, ["users/scoped/docs.txt"])
 
 
+class HandriveListApiMetaTests(TestCase):
+    def test_handrive_api_list_returns_current_directory_meta(self):
+        user = get_user_model().objects.create_user(username="list_meta_user", password="pw123456")
+        editors_group, _ = Group.objects.get_or_create(name=HANDRIVE_EDITOR_GROUP_NAME)
+        content_type = ContentType.objects.get_for_model(NavLink)
+        permission, _ = Permission.objects.get_or_create(
+            content_type=content_type,
+            codename=DOCS_EDIT_PERMISSION_CODE.split(".", 1)[1],
+            defaults={"name": "Can edit HanDrive content"},
+        )
+        editors_group.permissions.set([permission])
+        user.groups.add(editors_group)
+
+        with TemporaryDirectory() as tmpdir:
+            media_root = Path(tmpdir)
+            handrive_root = media_root / "HanDrive"
+            shared_dir = handrive_root / "shared_meta"
+            shared_dir.mkdir(parents=True, exist_ok=True)
+            (shared_dir / "child.md").write_text("# child", encoding="utf-8")
+
+            with override_settings(MEDIA_ROOT=str(media_root)):
+                self.client.force_login(user)
+                response = self.client.get(
+                    reverse("main:handrive_api_list"),
+                    data={"path": "shared_meta"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["path"], "shared_meta")
+            self.assertTrue(any(entry.get("path") == "shared_meta/child.md" for entry in payload.get("entries", [])))
+            self.assertIn("directory_meta", payload)
+            self.assertEqual(payload["directory_meta"]["path"], "shared_meta")
+            self.assertTrue(payload["directory_meta"]["can_edit"])
+            self.assertTrue(payload["directory_meta"]["can_write_children"])
+            self.assertTrue(payload["directory_meta"]["has_children"])
+            self.assertFalse(payload["directory_meta"]["is_root"])
+
+
 class MarkdownSafetyTests(TestCase):
     def test_render_markdown_escapes_raw_html(self):
         rendered = render_markdown_safely("<script>alert(1)</script> **bold**")
@@ -286,6 +325,32 @@ class AddScoreViewTests(TestCase):
 
         limited = self.post_json({"name": "player", "score": 11})
         self.assertEqual(limited.status_code, 429)
+
+
+class TranslateTextViewTests(TestCase):
+    def test_translate_text_returns_ollama_translation(self):
+        with mock.patch("main.views.call_ollama", return_value="Hello world") as mocked_call:
+            response = self.client.post(
+                reverse("main:translate_text"),
+                data=json.dumps({"text": "안녕하세요", "source": "ko", "target": "en"}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["translation"], "Hello world")
+        self.assertEqual(response.json()["source"], "ko")
+        self.assertEqual(response.json()["target"], "en")
+        mocked_call.assert_called_once()
+
+    def test_translate_text_rejects_same_language_pair(self):
+        response = self.client.post(
+            reverse("main:translate_text"),
+            data=json.dumps({"text": "hello", "source": "en", "target": "en"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "Source and target languages must differ")
 
 
 @override_settings(
@@ -1589,6 +1654,17 @@ class HanplanetMultiplayerPageTests(TestCase):
         skin_catalog = json.loads(response.context["game_skin_catalog_json"])
         evolution_skin = next(skin for skin in skin_catalog if skin["name"] == "evolution")
         self.assertTrue(evolution_skin["unlocked"])
+
+    def test_raise_speaki_page_keeps_evolution_skin_locked_in_selector(self):
+        UserProfile.objects.create(user=self.user, bumpercar_spiky_stats={"game_clears": 1})
+        self.client.force_login(self.user)
+
+        response = self.client.get("/ko/fun/raise-speaki/")
+
+        self.assertEqual(response.status_code, 200)
+        skin_catalog = json.loads(response.context["game_skin_catalog_json"])
+        evolution_skin = next(skin for skin in skin_catalog if skin["name"] == "evolution")
+        self.assertFalse(evolution_skin["unlocked"])
 
     def test_multiplayer_page_marks_double_skin_unlocked_when_deaths_reach_twenty(self):
         UserProfile.objects.create(user=self.user, bumpercar_spiky_stats={"deaths": 20})

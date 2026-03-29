@@ -4,6 +4,20 @@
 {% elif key == "search_or_url" %}{% if ui_lang|default:'ko' == 'en' %}Keyword or URL{% else %}검색어 또는 URL{% endif %}
 {% elif key == "search_keyword_or_url" %}{% if ui_lang|default:'ko' == 'en' %}Enter a keyword or URL{% else %}검색어 또는 URL 입력{% endif %}
 {% elif key == "search_engine" %}{% if ui_lang|default:'ko' == 'en' %}Search engine{% else %}검색 엔진{% endif %}
+{% elif key == "ko_en_translator" %}{% if ui_lang|default:'ko' == 'en' %}Korean / English Translator{% else %}한/영 번역기{% endif %}
+{% elif key == "swap_languages" %}{% if ui_lang|default:'ko' == 'en' %}Swap languages{% else %}언어 바꾸기{% endif %}
+{% elif key == "translation_input" %}{% if ui_lang|default:'ko' == 'en' %}Text to translate{% else %}번역할 텍스트{% endif %}
+{% elif key == "translation_result" %}{% if ui_lang|default:'ko' == 'en' %}Translation result{% else %}번역 결과{% endif %}
+{% elif key == "translation_input_placeholder" %}{% if ui_lang|default:'ko' == 'en' %}Enter Korean or English text{% else %}한국어 또는 영어 문장을 입력하세요{% endif %}
+{% elif key == "translation_result_placeholder" %}{% if ui_lang|default:'ko' == 'en' %}Translation appears here{% else %}번역 결과가 여기에 표시됩니다{% endif %}
+{% elif key == "translation_placeholder_ko" %}{% if ui_lang|default:'ko' == 'en' %}Enter Korean{% else %}한국어 입력{% endif %}
+{% elif key == "translation_placeholder_en" %}{% if ui_lang|default:'ko' == 'en' %}Enter English{% else %}영어 입력{% endif %}
+{% elif key == "translation_placeholder_result" %}{% if ui_lang|default:'ko' == 'en' %}Translation result{% else %}번역 결과{% endif %}
+{% elif key == "translate" %}{% if ui_lang|default:'ko' == 'en' %}Translate{% else %}번역{% endif %}
+{% elif key == "translating" %}{% if ui_lang|default:'ko' == 'en' %}Translating...{% else %}번역 중...{% endif %}
+{% elif key == "translation_failed" %}{% if ui_lang|default:'ko' == 'en' %}Translation failed. Please try again.{% else %}번역에 실패했습니다. 다시 시도해 주세요.{% endif %}
+{% elif key == "copy" %}{% if ui_lang|default:'ko' == 'en' %}Copy{% else %}복사{% endif %}
+{% elif key == "copied" %}{% if ui_lang|default:'ko' == 'en' %}Copied{% else %}복사됨{% endif %}
 {% elif key == "stratagem_name_placeholder" %}{% if ui_lang|default:'ko' == 'en' %}Enter your name{% else %}이름을 입력하세요{% endif %}
 {% elif key == "login_hint_shortcuts" %}{% if ui_lang|default:'ko' == 'en' %}Sign in to save personal shortcuts.{% else %}로그인하면 개인 바로가기를 저장할 수 있습니다.{% endif %}
 {% elif key == "empty_shortcuts" %}{% if ui_lang|default:'ko' == 'en' %}No shortcuts yet.{% else %}아직 등록된 바로가기가 없습니다.{% endif %}

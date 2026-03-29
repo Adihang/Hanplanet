@@ -3125,7 +3125,7 @@
                 movementType: 'classic'
             },
             evolution: {
-                baseSpeedMultiplier: 0.8,
+                baseSpeedMultiplier: 1,
                 maxBoostSpeedMultiplier: defaultCharacterBoostSpeedMultiplier,
                 maxHealthSegments: 5,
                 type: 'evolution',

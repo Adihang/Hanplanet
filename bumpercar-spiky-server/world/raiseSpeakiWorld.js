@@ -15,6 +15,9 @@ const {
     DOUBLE_INACTIVE_FADE_MS,
     DOUBLE_SPLIT_PROBABILITY,
     DOUBLE_MERGED_SIDE_OFFSET,
+    DEFAULT_SKIN_NAME,
+    EVOLUTION_SKIN_NAME,
+    PUMPKIN_SKIN_NAME,
 } = require("../config/constants")
 const {
     DUMMY_BASE_SPEED_PER_SECOND,
@@ -32,6 +35,8 @@ const {
     getDummyPhase,
     getPlayerDeathTriggerCount,
     getDoubleAliveUnitIndices,
+    getBaseSpeedForPlayer,
+    getCollisionSlowSpeedForPlayer,
 } = require("./worldHelpers")
 const { postStatsUpdate } = require("../services/accountStats")
 
@@ -48,6 +53,7 @@ const RAISE_SPEAKI_LEVEL_DROP_LIFETIME_MS = 6000
 const RAISE_SPEAKI_LEVEL_DROP_SOLID_DURATION_MS = 3000
 const RAISE_SPEAKI_LEVEL_DROP_DRIFT_SPEED_PER_SECOND = 22
 const RAISE_SPEAKI_LEVEL_DROP_AI_DETECTION_RADIUS = 260
+const LEVEL_MOVE_SPEED_DECREASE_PER_LEVEL = 0.01
 
 class RaiseSpeakiWorld extends BaseWorld {
     constructor() {
@@ -348,6 +354,7 @@ class RaiseSpeakiWorld extends BaseWorld {
         unit.raiseSpeakiLevel = safeLevel
         unit.raiseSpeakiMaxHealthSegments = safeLevel
         unit.raiseSpeakiAttackDamage = safeLevel
+        unit.raiseSpeakiMoveSpeedMultiplier = Math.max(0.1, 1 - ((safeLevel - 1) * LEVEL_MOVE_SPEED_DECREASE_PER_LEVEL))
         unit.sizeMultiplier = Math.pow(LEVEL_SCALE_FACTOR, safeLevel - 1)
         unit.health = nextHealth
     }
@@ -374,6 +381,10 @@ class RaiseSpeakiWorld extends BaseWorld {
             const totalLevel = player.doubleUnits.reduce((sum, unit) => sum + this.getRaiseSpeakiDoubleUnitLevel(unit), 0)
             const totalHealth = player.doubleUnits.reduce((sum, unit) => sum + this.getRaiseSpeakiDoubleUnitCurrentHealth(unit), 0)
             const sizeScales = player.doubleUnits.map((unit) => Math.max(0.6, Number(unit && unit.sizeMultiplier || 1)))
+            const moveSpeedMultipliers = player.doubleUnits.map((unit) => {
+                const multiplier = Number(unit && unit.raiseSpeakiMoveSpeedMultiplier)
+                return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1
+            })
             player.level = Math.max(1, totalLevel)
             player.raiseSpeakiLevel = player.level
             player.raiseSpeakiMaxHealthSegments = Math.max(1, totalLevel)
@@ -384,10 +395,17 @@ class RaiseSpeakiWorld extends BaseWorld {
             player.sizeMultiplier = sizeScales.length
                 ? (sizeScales.reduce((sum, value) => sum + value, 0) / sizeScales.length)
                 : 1
+            player.raiseSpeakiMoveSpeedMultiplier = moveSpeedMultipliers.length
+                ? (moveSpeedMultipliers.reduce((sum, value) => sum + value, 0) / moveSpeedMultipliers.length)
+                : 1
+            player.baseSpeed = getBaseSpeedForPlayer(player)
+            player.collisionSlowSpeed = getCollisionSlowSpeedForPlayer(player)
             return
         }
         player.currentHealth = this.getRaiseSpeakiCurrentHealth(player)
         player.maxHealth = Math.max(1, Number(player.raiseSpeakiMaxHealthSegments || player.level || 1))
+        player.baseSpeed = getBaseSpeedForPlayer(player)
+        player.collisionSlowSpeed = getCollisionSlowSpeedForPlayer(player)
     }
 
     initializeRaiseSpeakiCombatState(player) {
@@ -487,12 +505,22 @@ class RaiseSpeakiWorld extends BaseWorld {
             return
         }
         const safeLevel = Math.min(MAX_LEVEL, Math.max(1, Math.round(Number(level || DEFAULT_LEVEL))))
+        const baseSkinName = String(player.initialSkinName || player.skinName || DEFAULT_SKIN_NAME).trim().toLowerCase() || DEFAULT_SKIN_NAME
+        const canEvolveSkin =
+            !player.isPumpkinNpc &&
+            baseSkinName !== PUMPKIN_SKIN_NAME
+        if (canEvolveSkin) {
+            player.skinName = safeLevel >= MAX_LEVEL ? EVOLUTION_SKIN_NAME : baseSkinName
+        }
         player.level = safeLevel
         player.raiseSpeakiLevel = safeLevel
         player.raiseSpeakiMaxHealthSegments = safeLevel
         player.raiseSpeakiAttackDamage = safeLevel
         player.raiseSpeakiAttackDamageScale = 1
-        player.sizeMultiplier = player.isPumpkinNpc ? 1 : Math.pow(LEVEL_SCALE_FACTOR, safeLevel - 1)
+        player.raiseSpeakiMoveSpeedMultiplier = Math.max(0.1, 1 - ((safeLevel - 1) * LEVEL_MOVE_SPEED_DECREASE_PER_LEVEL))
+        player.sizeMultiplier = player.isPumpkinNpc || player.skinName === EVOLUTION_SKIN_NAME
+            ? 1
+            : Math.pow(LEVEL_SCALE_FACTOR, safeLevel - 1)
         const currentDamage = Math.max(0, Number(player.defeatReceivedCount || 0))
         player.defeatReceivedCount = currentDamage
         this.syncRaiseSpeakiPlayerStats(player)

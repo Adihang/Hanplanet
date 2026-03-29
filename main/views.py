@@ -49,6 +49,7 @@ MAX_SCORE_SECONDS = 3600.0
 SUPPORTED_UI_LANGS = {"ko", "en"}
 UI_LANG_SESSION_KEY = "portfolio_ui_lang"
 SUPPORTED_ROOT_SEARCH_ENGINES = {"google", "youtube", "duckduckgo", "bing", "naver", "gpt", "claude", "gemini"}
+SUPPORTED_TRANSLATION_LANGS = {"ko", "en"}
 UI_LANG_PATH_PREFIX_PATTERN = re.compile(r"^/(ko|en)(/|$)")
 IDENTITY_IMPERSONATION_PATTERNS = [
     re.compile(
@@ -292,13 +293,14 @@ def _collect_bumpercar_skin_variant_dirs(skin_name, folder_name):
     )
 
 
-def _build_bumpercar_skin_catalog(ui_lang, account_stats=None, user=None):
+def _build_bumpercar_skin_catalog(ui_lang, account_stats=None, user=None, game_slug="bumpercar-spiky"):
     """Build the full skin catalog shown in the client, including unlock and asset metadata."""
     stats = normalize_bumpercar_spiky_account_stats(account_stats)
     total_game_clears = int(stats.get("game_clears", 0))
     total_play_seconds = int(stats.get("play_seconds", 0))
     is_english = ui_lang == "en"
     is_admin = bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+    normalized_game_slug = str(game_slug or "bumpercar-spiky").strip().lower() or "bumpercar-spiky"
     skin_specs = [
         {
             "name": "default",
@@ -380,14 +382,18 @@ def _build_bumpercar_skin_catalog(ui_lang, account_stats=None, user=None):
         {
             "name": "evolution",
             "display_name": "Speaki" if is_english else "스피키",
-            "unlock_condition": "Clear the game." if is_english else "게임 클리어",
+            "unlock_condition": (
+                "Unavailable"
+                if is_english and normalized_game_slug == "raise-speaki"
+                else ("사용불가" if normalized_game_slug == "raise-speaki" else ("Clear the game." if is_english else "게임 클리어"))
+            ),
             "description": (
                 "Only the strongest Spiky survived and evolved into bipedal form.\n"
                 "\"I think I've grown apart from my pumpkin friend.\""
                 if is_english
                 else "스핔이중 가장 강한 스핔이 만이 살아남아 이족보행으로 진화했습니다.\n\"호박친구하고 거리가 멀어진 거에요ㅠ\""
             ),
-            "unlocked": is_admin or total_game_clears >= 1,
+            "unlocked": normalized_game_slug != "raise-speaki" and (is_admin or total_game_clears >= 1),
         },
     ]
 
@@ -498,6 +504,7 @@ def resolve_bumpercar_skin_name(user=None, requested_skin_name=""):
         "ko",
         (profile.bumpercar_spiky_stats if profile else None),
         user=user,
+        game_slug="bumpercar-spiky",
     )
     unlocked_names = {
         str(skin["name"])
@@ -1664,8 +1671,12 @@ def _build_multiplayer_page_context(
         resolved_lang,
         profile.bumpercar_spiky_stats if profile else None,
         user=request.user,
+        game_slug=game_slug,
     )
     default_skin = next((skin for skin in skin_catalog if skin["name"] == "default"), skin_catalog[0])
+    multiplayer_meta_image = build_public_absolute_url(
+        static("Spikip/main.png" if game_slug == "raise-speaki" else "Spikip/speaki_default/icon/main.png")
+    )
     portfolio_profile = (
         PortfolioProfile.objects.filter(user=request.user).only("profile_img").first()
         if is_authenticated
@@ -1724,8 +1735,8 @@ def _build_multiplayer_page_context(
         "meta_og_title": page_title,
         "meta_site_name": page_title,
         "meta_description": page_description,
-        "meta_og_image": build_public_absolute_url(static("Spikip/speaki_default/icon/main.png")),
-        "meta_twitter_image": build_public_absolute_url(static("Spikip/speaki_default/icon/main.png")),
+        "meta_og_image": multiplayer_meta_image,
+        "meta_twitter_image": multiplayer_meta_image,
         "bumpercar_default_skin": default_skin,
         "show_account_bumpercar_spiky_stats": True,
         "game_encounter_stage_one_label": render_to_string("partials/ui_i18n.html", {"key": "multiplayer_encounter_stage_one", "ui_lang": resolved_lang}).strip(),
@@ -2182,6 +2193,7 @@ def none(request, ui_lang=None):
     context["handrive_login_url"] = f"{reverse('main:handrive_login_lang', kwargs={'ui_lang': resolved_lang})}?next={encoded_current_path}"
     context["handrive_signup_url"] = f"{reverse('main:handrive_signup_lang', kwargs={'ui_lang': resolved_lang})}?next={encoded_current_path}"
     context["handrive_logout_url"] = reverse("main:handrive_logout_lang", kwargs={"ui_lang": resolved_lang})
+    context["root_translate_api_url"] = reverse("main:translate_text_lang", kwargs={"ui_lang": resolved_lang})
     if request.user.is_authenticated:
         portfolio_profile = PortfolioProfile.objects.filter(user=request.user).only("profile_img").first()
         context["handrive_my_portfolio_url"] = reverse(
@@ -3807,6 +3819,79 @@ def chat_with_ai(request, ui_lang=None):
     except Exception as e:
         logger.error(f"Unexpected error in chat_with_ai: {str(e)}", exc_info=True)
         return JsonResponse({'error': 'An unexpected error occurred'}, status=500)
+
+
+def _normalize_translation_lang(raw_value, fallback):
+    """Map translation language input to the supported language set."""
+    value = str(raw_value or "").strip().lower()
+    return value if value in SUPPORTED_TRANSLATION_LANGS else fallback
+
+
+def _clean_translation_output(text):
+    """Trim common wrapper quotes/code fences so the UI gets plain translated text."""
+    cleaned = sanitize_text(text).strip()
+    if cleaned.startswith("```") and cleaned.endswith("```"):
+        cleaned = re.sub(r"^\s*```[^\n]*\n?", "", cleaned)
+        cleaned = re.sub(r"\n?```\s*$", "", cleaned)
+        cleaned = cleaned.strip()
+    return cleaned.strip().strip('"').strip("'").strip()
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+def translate_text(request, ui_lang=None):
+    """Translate short Korean/English text using the local Ollama chat endpoint."""
+    try:
+        resolve_ui_lang(request, ui_lang)
+        try:
+            data = json.loads(request.body)
+        except (json.JSONDecodeError, TypeError):
+            return JsonResponse({"error": "Invalid request data"}, status=400)
+
+        source_lang = _normalize_translation_lang(data.get("source"), "ko")
+        target_lang = _normalize_translation_lang(data.get("target"), "en")
+        source_text = sanitize_text(data.get("text", ""))
+
+        if source_lang == target_lang:
+            return JsonResponse({"error": "Source and target languages must differ"}, status=400)
+
+        if not is_valid_message(source_text):
+            return JsonResponse({"error": "Invalid text"}, status=400)
+
+        source_label = "Korean" if source_lang == "ko" else "English"
+        target_label = "Korean" if target_lang == "ko" else "English"
+        system_message = f"""
+        You are a precise bilingual translator.
+        Translate the user's text from {source_label} to {target_label}.
+        Rules:
+        - Output only the final translated text.
+        - Do not explain, annotate, summarize, or quote the input.
+        - Preserve meaning, tone, and formatting where possible.
+        - Keep URLs, code, product names, and proper nouns unchanged unless they naturally translate.
+        """
+        user_message = f"Translate this text from {source_label} to {target_label}:\n\n{source_text}"
+
+        try:
+            translated_text = _clean_translation_output(
+                call_ollama(system_message, [{"role": "user", "content": user_message}])
+            )
+        except Exception as error:
+            logger.error("Error calling Ollama translate endpoint: %s", str(error))
+            return JsonResponse({"error": "Error communicating with AI service"}, status=500)
+
+        if not translated_text:
+            return JsonResponse({"error": "Could not generate translation"}, status=500)
+
+        return JsonResponse(
+            {
+                "translation": translated_text,
+                "source": source_lang,
+                "target": target_lang,
+            }
+        )
+    except Exception as error:
+        logger.error("Unexpected error in translate_text: %s", str(error), exc_info=True)
+        return JsonResponse({"error": "An unexpected error occurred"}, status=500)
 # ──────────────────────────────────────────────────────
 # Git Integration API Views
 # ──────────────────────────────────────────────────────

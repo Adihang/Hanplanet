@@ -28,6 +28,14 @@ const NPC_PHASE_TWO_HEALTH_RATIO = GAMEPLAY_SETTINGS.npc_phase_two_health_ratio
 const NPC_PHASE_THREE_HEALTH_RATIO = GAMEPLAY_SETTINGS.npc_phase_three_health_ratio
 const RAISE_SPEAKI_LEVEL_BOOST_SCALE_FACTOR = 1.1
 
+function getRaiseSpeakiMoveSpeedMultiplier(entity) {
+    const explicitMultiplier = Number(entity && entity.raiseSpeakiMoveSpeedMultiplier)
+    if (Number.isFinite(explicitMultiplier) && explicitMultiplier > 0) {
+        return Math.max(0.1, explicitMultiplier)
+    }
+    return 1
+}
+
 // NPC(네르)의 기본 이동 속도를 반환한다.
 // player.npcSpeedMultiplier 가 있으면 기본 속도에 곱해 반환하며, 최솟값은 0.1배다.
 function getNpcBaseSpeed(player) {
@@ -67,7 +75,18 @@ function getCharacterGameplaySettings(skinName) {
 
 // 플레이어 스킨에 따른 기본 속도 배율을 반환한다.
 function getPlayerSpeedMultiplier(player) {
-    return getCharacterGameplaySettings(player && player.skinName).base_speed_multiplier
+    const skinName = String(player && player.skinName || "").trim().toLowerCase()
+    const initialSkinName = String(player && player.initialSkinName || "").trim().toLowerCase()
+    const effectiveSkinName = (
+        player &&
+        Number(player.raiseSpeakiLevel || 0) > 0 &&
+        skinName === EVOLUTION_SKIN_NAME &&
+        initialSkinName &&
+        initialSkinName !== EVOLUTION_SKIN_NAME
+    )
+        ? initialSkinName
+        : skinName
+    return getCharacterGameplaySettings(effectiveSkinName).base_speed_multiplier
 }
 
 // 플레이어 종류(NPC·더미·일반)에 따른 기본 이동 속도를 반환한다.
@@ -79,7 +98,7 @@ function getBaseSpeedForPlayer(player) {
     if (player && player.isDummy) {
         return DUMMY_BASE_SPEED_PER_SECOND
     }
-    return BASE_PLAYER_SPEED_PER_SECOND * getPlayerSpeedMultiplier(player)
+    return BASE_PLAYER_SPEED_PER_SECOND * getPlayerSpeedMultiplier(player) * getRaiseSpeakiMoveSpeedMultiplier(player)
 }
 
 // 플레이어가 "double" 스킨인지 여부를 반환한다.
@@ -307,6 +326,7 @@ function isPersistentHumanPlayer(player) {
 
 module.exports = {
     getNpcBaseSpeed,
+    getRaiseSpeakiMoveSpeedMultiplier,
     getCharacterGameplaySettings,
     getPlayerSpeedMultiplier,
     getBaseSpeedForPlayer,

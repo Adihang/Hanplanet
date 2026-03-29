@@ -139,6 +139,9 @@
         );
         var entries = Array.isArray(data.entries) ? data.entries : [];
         state.directoryCache.set(normalizedDirPath, entries);
+        if (state.directoryMetaCache && data && data.directory_meta) {
+            state.directoryMetaCache.set(normalizedDirPath, data.directory_meta);
+        }
         return entries;
     }
 
@@ -157,6 +160,9 @@
             listApiUrl + "?path=" + encodeURIComponent(currentDir)
         );
         state.directoryCache.set(currentDir, Array.isArray(data.entries) ? data.entries : []);
+        if (state.directoryMetaCache && data && data.directory_meta) {
+            state.directoryMetaCache.set(currentDir, data.directory_meta);
+        }
 
         var preserved = new Map();
         preserved.set(currentDir, state.directoryCache.get(currentDir));

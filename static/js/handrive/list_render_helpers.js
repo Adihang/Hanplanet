@@ -135,11 +135,19 @@
         nameWrap.appendChild(repoLabel);
     }
 
+    function createEntryMetaField(className, textValue) {
+        var metaLabel = document.createElement("span");
+        metaLabel.className = "handrive-item-meta-label " + String(className || "").trim();
+        metaLabel.textContent = String(textValue || "").trim();
+        return metaLabel;
+    }
+
     window.HandriveListRenderHelpers = {
         appendAclBadges: appendAclBadges,
         appendCurrentDirRepoName: appendCurrentDirRepoName,
         appendEntryBadge: appendEntryBadge,
         buildTreePrefixElement: buildTreePrefixElement,
+        createEntryMetaField: createEntryMetaField,
         createTypeMarker: createTypeMarker,
     };
 })();

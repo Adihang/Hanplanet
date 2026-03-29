@@ -47,6 +47,8 @@
     data-current-dir-git-branch-root="{% if current_dir_git_branch_root %}1{% else %}0{% endif %}"
     data-current-dir-git-commit-message="{{ current_dir_git_commit_message|default:''|escape }}"
     data-current-dir-git-commit-author-username="{{ current_dir_git_commit_author_username|default:''|escape }}"
+    data-current-dir-modified-display="{{ current_dir_modified_display|default:''|escape }}"
+    data-current-dir-size-display="{{ list_current_dir_size_display|default:''|escape }}"
     data-account-profile-image-url="{{ account_profile_image_url|default:''|escape }}"
     data-scoped-home-dir="{{ scoped_home_dir|default:'' }}"
     data-handrive-base-url="{{ handrive_base_url }}"

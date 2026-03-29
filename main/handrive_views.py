@@ -27,6 +27,7 @@ import tempfile
 import time
 import unicodedata
 import uuid
+from datetime import datetime
 from contextvars import ContextVar
 from functools import wraps
 from pathlib import Path
@@ -1212,7 +1213,14 @@ def build_entry(path_obj: Path) -> dict:
         "name": path_obj.name,
         "path": rel_path,
         "type": "dir" if is_dir else "file",
+        "modified_display": "",
     }
+    try:
+        stat_result = path_obj.stat()
+    except OSError:
+        stat_result = None
+    if stat_result is not None:
+        data["modified_display"] = format_handrive_modified_display_from_timestamp(stat_result.st_mtime)
 
     if is_dir:
         try:
@@ -1240,7 +1248,7 @@ def build_entry(path_obj: Path) -> dict:
     else:
         data["slug_path"] = markdown_slug_from_relative(rel_path)
         try:
-            data["size_display"] = format_handrive_bytes_display(path_obj.stat().st_size)
+            data["size_display"] = format_handrive_bytes_display(stat_result.st_size if stat_result is not None else path_obj.stat().st_size)
         except OSError:
             data["size_display"] = ""
 
@@ -1884,6 +1892,7 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                     "path": repo_path,
                     "type": "dir",
                     "has_children": True,
+                    "modified_display": format_handrive_modified_display(getattr(repo, "updated_at", None)),
                     "size_display": _repo_size_display,
                     "can_edit": False,
                     "can_write_children": False,
@@ -1931,6 +1940,62 @@ def _get_current_dir_git_repo(request, current_dir: str):
             "can_manage": permission in {"read", "write", "admin", "owner"},
         }
     return None
+
+
+def _build_handrive_directory_meta(request, current_dir: str, entries: list | None = None) -> dict:
+    """목록 페이지가 현재 디렉터리를 클라이언트에서 재구성할 수 있도록 메타데이터를 반환한다."""
+    normalized_dir = normalize_relative_path(current_dir, allow_empty=True)
+    scoped_home_dir = get_scoped_handrive_home_dir(request)
+    git_virtual = _get_git_virtual_context(request, normalized_dir)
+    current_dir_size_display = ""
+    current_dir_modified_display = ""
+    current_dir_commit_meta = {"subject": "", "author_username": "", "modified_display": ""}
+
+    if git_virtual is None:
+        directory, normalized_dir = resolve_path(normalized_dir, must_exist=True)
+        if not directory.is_dir():
+            raise FileNotFoundError("폴더를 찾을 수 없습니다.")
+        if directory.is_dir():
+            dir_bytes = calculate_handrive_quota_breakdown(directory)[0]
+            is_root = (scoped_home_dir and normalized_dir == scoped_home_dir) or (not scoped_home_dir and normalized_dir == "")
+            if is_root and request.user.is_authenticated:
+                repo_extra, _ = calculate_handrive_repo_usage(request.user)
+                dir_bytes += repo_extra
+            current_dir_size_display = format_handrive_bytes_display(dir_bytes)
+        try:
+            current_dir_modified_display = format_handrive_modified_display_from_timestamp(directory.stat().st_mtime)
+        except OSError:
+            current_dir_modified_display = ""
+    else:
+        if git_virtual["kind"] == "branch_file":
+            raise FileNotFoundError("폴더를 찾을 수 없습니다.")
+        if git_virtual["kind"] == "branch_dir" and git_virtual["repo_relative_path"]:
+            current_dir_commit_meta = _git_repo_latest_commit_meta(
+                git_virtual["repo"],
+                git_virtual["branch_name"],
+                git_virtual["repo_relative_path"],
+            )
+
+    effective_entries = entries if entries is not None else []
+    return {
+        "path": normalized_dir,
+        "is_root": bool((scoped_home_dir and normalized_dir == scoped_home_dir) or (not scoped_home_dir and normalized_dir == "")),
+        "can_edit": has_handrive_write_access(request, normalized_dir),
+        "can_write_children": has_handrive_directory_write_access(request, normalized_dir),
+        "has_children": bool(effective_entries),
+        "is_git_repo_root": is_handrive_git_repo_root_path(request, normalized_dir),
+        "requires_commit_message": bool(git_virtual is not None and git_virtual["kind"] == "branch_dir"),
+        "git_branch_root": bool(
+            git_virtual is not None
+            and git_virtual["kind"] == "branch_dir"
+            and not git_virtual["repo_relative_path"]
+        ),
+        "git_commit_message": current_dir_commit_meta.get("subject", ""),
+        "git_commit_author_username": current_dir_commit_meta.get("author_username", ""),
+        "modified_display": current_dir_commit_meta.get("modified_display", "") or current_dir_modified_display,
+        "size_display": current_dir_size_display,
+        "git_repo": _get_current_dir_git_repo(request, normalized_dir),
+    }
 
 
 def _get_git_repo_for_relative_path(request, relative_path: str):
@@ -2193,18 +2258,20 @@ def _git_repo_list_tree(repo, branch_name: str, repo_relative_path: str = "") ->
 
 def _git_repo_latest_commit_meta(repo, branch_name: str, repo_relative_path: str = "") -> dict[str, str]:
     """경로 기준 최신 커밋 subject/author 를 조회한다."""
-    args = ["log", "-1", "--format=%s%x1f%an", branch_name]
+    args = ["log", "-1", "--format=%s%x1f%an%x1f%ct", branch_name]
     normalized_path = normalize_relative_path(repo_relative_path, allow_empty=True)
     if normalized_path:
         args.extend(["--", normalized_path])
     result = _run_git_repo_command(repo, *args)
     output = (result.stdout or "").strip()
     if not output:
-        return {"subject": "", "author_username": ""}
-    subject, _, author_username = output.partition("\x1f")
+        return {"subject": "", "author_username": "", "modified_display": ""}
+    subject, _, remainder = output.partition("\x1f")
+    author_username, _, committed_at = remainder.partition("\x1f")
     return {
         "subject": str(subject or "").strip(),
         "author_username": str(author_username or "").strip(),
+        "modified_display": format_handrive_modified_display_from_timestamp(str(committed_at or "").strip()),
     }
 
 
@@ -2468,6 +2535,7 @@ def _build_git_virtual_entries(request, context) -> list[dict]:
                 "path": f"{repo_root}/{_encode_git_branch_segment(branch_name)}",
                 "type": "dir",
                 "has_children": True,
+                "modified_display": _git_repo_latest_commit_meta(repo, branch_name).get("modified_display", ""),
                 "size_display": "",
                 "can_edit": False,
                 "can_write_children": can_write_repo,
@@ -2491,6 +2559,7 @@ def _build_git_virtual_entries(request, context) -> list[dict]:
             "name": item["name"],
             "path": entry_path,
             "type": "dir" if item["type"] == "tree" else "file",
+            "modified_display": "",
             "size_display": item.get("size_display", ""),
             "can_edit": can_write_repo,
             "can_write_children": item["type"] == "tree" and can_write_repo,
@@ -2503,6 +2572,7 @@ def _build_git_virtual_entries(request, context) -> list[dict]:
         }
         repo_relative_entry_path = item["name"] if not context["repo_relative_path"] else f"{context['repo_relative_path']}/{item['name']}"
         commit_meta = _git_repo_latest_commit_meta(repo, context["branch_name"], repo_relative_entry_path)
+        entry["modified_display"] = commit_meta.get("modified_display", "")
         if item["type"] == "tree":
             entry["has_children"] = True
             entry["git_commit_message"] = commit_meta.get("subject", "")
@@ -2702,6 +2772,28 @@ def format_handrive_bytes_display(byte_count: int) -> str:
     elif byte_count >= KB:
         return f"{byte_count / KB:g} KB" if byte_count % KB == 0 else f"{round(byte_count / KB, 1):g} KB"
     return f"{byte_count} B"
+
+
+def format_handrive_modified_display(value) -> str:
+    if value is None:
+        return ""
+    try:
+        dt_value = value if isinstance(value, datetime) else None
+        if dt_value is None:
+            return ""
+        if timezone.is_naive(dt_value):
+            dt_value = timezone.make_aware(dt_value, timezone.get_current_timezone())
+        return timezone.localtime(dt_value).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return ""
+
+
+def format_handrive_modified_display_from_timestamp(timestamp_value) -> str:
+    try:
+        dt_value = datetime.fromtimestamp(float(timestamp_value), tz=timezone.get_current_timezone())
+    except Exception:
+        return ""
+    return format_handrive_modified_display(dt_value)
 
 
 _DOCS_QUOTA_TYPE_EXTS: dict[str, frozenset[str]] = {
@@ -4181,15 +4273,6 @@ def handrive_list(request, folder_path="", ui_lang=None):
         if not directory.is_dir():
             raise Http404("폴더를 찾을 수 없습니다.")
         initial_entries = list_directory_entries(directory, request=request)
-        if directory.is_dir():
-            _dir_bytes = calculate_handrive_quota_breakdown(directory)[0]
-            _is_root = (scoped_home_dir and current_dir == scoped_home_dir) or (not scoped_home_dir and current_dir == "")
-            if _is_root and request.user.is_authenticated:
-                _repo_extra, _ = calculate_handrive_repo_usage(request.user)
-                _dir_bytes += _repo_extra
-            current_dir_size_display = format_handrive_bytes_display(_dir_bytes)
-        else:
-            current_dir_size_display = ""
     else:
         if git_virtual["kind"] == "branch_file":
             raise Http404("폴더를 찾을 수 없습니다.")
@@ -4197,10 +4280,11 @@ def handrive_list(request, folder_path="", ui_lang=None):
             initial_entries = _build_git_virtual_entries(request, git_virtual)
         except RuntimeError:
             raise Http404("Git 저장소를 찾을 수 없습니다.")
-        current_dir_size_display = ""
 
     if not has_handrive_read_access(request, current_dir):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
+
+    directory_meta = _build_handrive_directory_meta(request, current_dir, initial_entries)
 
     shared_root_url = context["handrive_root_url"]
     if shared_context:
@@ -4208,14 +4292,6 @@ def handrive_list(request, folder_path="", ui_lang=None):
             resolved_lang,
             shared_context["owner_username"],
             shared_context["share_slug"],
-        )
-
-    current_dir_commit_meta = {"subject": "", "author_username": ""}
-    if git_virtual is not None and git_virtual["kind"] == "branch_dir" and git_virtual["repo_relative_path"]:
-        current_dir_commit_meta = _git_repo_latest_commit_meta(
-            git_virtual["repo"],
-            git_virtual["branch_name"],
-            git_virtual["repo_relative_path"],
         )
 
     breadcrumbs = _build_git_virtual_breadcrumbs(
@@ -4250,23 +4326,20 @@ def handrive_list(request, folder_path="", ui_lang=None):
             "current_path_label": current_dir or get_handrive_root_label(request, scoped_home_dir),
             "handrive_root_label": get_handrive_js_root_label(request, scoped_home_dir),
             "scoped_home_dir": scoped_home_dir,
-            "current_dir_is_root": bool((scoped_home_dir and current_dir == scoped_home_dir) or (not scoped_home_dir and current_dir == "")),
-            "current_dir_can_edit": has_handrive_write_access(request, current_dir),
-            "current_dir_can_write_children": has_handrive_directory_write_access(request, current_dir),
-            "current_dir_has_children": bool(initial_entries),
-            "current_dir_is_git_repo_root": is_handrive_git_repo_root_path(request, current_dir),
-            "current_dir_requires_commit_message": bool(git_virtual is not None and git_virtual["kind"] == "branch_dir"),
-            "current_dir_git_branch_root": bool(
-                git_virtual is not None
-                and git_virtual["kind"] == "branch_dir"
-                and not git_virtual["repo_relative_path"]
-            ),
-            "current_dir_git_commit_message": current_dir_commit_meta.get("subject", ""),
-            "current_dir_git_commit_author_username": current_dir_commit_meta.get("author_username", ""),
+            "current_dir_is_root": directory_meta["is_root"],
+            "current_dir_can_edit": directory_meta["can_edit"],
+            "current_dir_can_write_children": directory_meta["can_write_children"],
+            "current_dir_has_children": directory_meta["has_children"],
+            "current_dir_is_git_repo_root": directory_meta["is_git_repo_root"],
+            "current_dir_requires_commit_message": directory_meta["requires_commit_message"],
+            "current_dir_git_branch_root": directory_meta["git_branch_root"],
+            "current_dir_git_commit_message": directory_meta["git_commit_message"],
+            "current_dir_git_commit_author_username": directory_meta["git_commit_author_username"],
             "breadcrumbs": breadcrumbs,
             "initial_entries": initial_entries,
-            "current_dir_git_repo": _get_current_dir_git_repo(request, current_dir),
-            "list_current_dir_size_display": current_dir_size_display,
+            "current_dir_git_repo": directory_meta["git_repo"],
+            "list_current_dir_size_display": directory_meta["size_display"],
+            "current_dir_modified_display": directory_meta["modified_display"],
             "page_help_html": build_page_help_html(resolved_lang, "list", handrive_text),
             "hide_global_nav": bool(shared_context),
             "is_handrive_shared_view": bool(shared_context),
@@ -4967,11 +5040,17 @@ def handrive_api_list(request):
     if not has_handrive_read_access(request, normalized):
         return json_error("파일을 볼 권한이 없습니다.", status=403)
 
+    try:
+        directory_meta = _build_handrive_directory_meta(request, normalized, entries)
+    except (ValueError, FileNotFoundError):
+        return json_error("폴더를 찾을 수 없습니다.", status=404)
+
     return JsonResponse(
         {
             "ok": True,
             "path": normalized,
             "entries": entries,
+            "directory_meta": directory_meta,
         }
     )
 
@@ -5032,6 +5111,7 @@ def handrive_api_search(request):
                         "path": rel_dir,
                         "type": "dir",
                         "has_children": has_children,
+                        "modified_display": format_handrive_modified_display_from_timestamp(file_path.stat().st_mtime) if file_path.exists() else "",
                         "size_display": "",
                         "can_edit": has_handrive_write_access(request, rel_dir),
                         "can_write_children": has_handrive_directory_write_access(request, rel_dir),
@@ -5057,6 +5137,7 @@ def handrive_api_search(request):
                         "name": filename,
                         "path": rel_file,
                         "type": "file",
+                        "modified_display": format_handrive_modified_display_from_timestamp(file_path.stat().st_mtime),
                         "size_display": size_display,
                         "can_edit": has_handrive_write_access(request, rel_file),
                         "can_write_children": False,
@@ -5122,6 +5203,7 @@ def handrive_api_search(request):
                     "name": name,
                     "path": entry_path,
                     "type": "dir" if is_tree else "file",
+                    "modified_display": _git_repo_latest_commit_meta(repo, branch_name, git_path).get("modified_display", ""),
                     "size_display": "",
                     "can_edit": can_write_repo,
                     "can_write_children": is_tree and can_write_repo,

@@ -1857,6 +1857,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 .handrive-item {
     display: flex;
     align-items: stretch;
+    min-width: 0;
 }
 
 .handrive-item.is-entering {
@@ -1893,19 +1894,30 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-item-row {
-    width: auto;
+    --handrive-col-modified: max-content;
+    --handrive-col-size: max-content;
+    --handrive-col-badge: max-content;
+    width: 100%;
     flex: 1;
     min-width: 0;
-    display: flex;
+    display: grid;
     align-items: center;
     justify-content: flex-start;
     gap: 6px;
+    grid-template-columns:
+        auto
+        minmax(0, 1fr)
+        var(--handrive-col-modified)
+        var(--handrive-col-size)
+        auto
+        var(--handrive-col-badge);
     padding: 10px 14px;
     background: var(--handrive-bg);
     color: var(--handrive-text-strong);
     border: 0;
     text-align: left;
     cursor: pointer;
+    box-sizing: border-box;
 }
 
 .handrive-item-row:hover,
@@ -1941,10 +1953,10 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-item-name-wrap {
+    grid-column: 2;
     display: inline-flex;
     align-items: baseline;
     gap: 8px;
-    flex: 1 1 auto;
     min-width: 0;
 }
 
@@ -1977,6 +1989,22 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     flex: 0 1 auto;
     font-weight: 700;
     font-size: 18px;
+}
+
+.handrive-item-modified {
+    grid-column: 3;
+    min-width: 0;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.handrive-item-size {
+    grid-column: 4;
+    min-width: 0;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .handrive-item-tree-prefix {
@@ -2033,6 +2061,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-item-acl-list {
+    grid-column: 5;
     display: inline-flex;
     align-items: center;
     justify-content: flex-end;
@@ -2041,6 +2070,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     min-width: 0;
     max-width: 40%;
     overflow: hidden;
+    justify-self: end;
 }
 
 .handrive-item-acl-badge {
@@ -2092,6 +2122,40 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     gap: 6px;
     flex: 0 0 auto;
     min-width: 0;
+}
+
+.handrive-item-badge-slot {
+    grid-column: 6;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 0;
+    overflow: hidden;
+    justify-self: end;
+}
+
+.handrive-list-pane.is-hide-size .handrive-item-row {
+    --handrive-col-size: 0px;
+}
+
+.handrive-list-pane.is-hide-size .handrive-item-size {
+    display: none;
+}
+
+.handrive-list-pane.is-hide-modified .handrive-item-row {
+    --handrive-col-modified: 0px;
+}
+
+.handrive-list-pane.is-hide-modified .handrive-item-modified {
+    display: none;
+}
+
+.handrive-list-pane.is-hide-badge .handrive-item-row {
+    --handrive-col-badge: 0px;
+}
+
+.handrive-list-pane.is-hide-badge .handrive-item-badge-slot {
+    display: none;
 }
 
 .handrive-item-public-badge-prefix {

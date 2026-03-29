@@ -53,6 +53,49 @@
             </div>
         </form>
         <section
+            class="root-translate-panel"
+            data-root-translate-panel
+            data-translate-api-url="{{ root_translate_api_url }}"
+            data-translating-label="{% include 'partials/ui_i18n.html' with key='translating' %}"
+            data-translate-error-label="{% include 'partials/ui_i18n.html' with key='translation_failed' %}"
+            data-placeholder-ko="{% include 'partials/ui_i18n.html' with key='translation_placeholder_ko' %}"
+            data-placeholder-en="{% include 'partials/ui_i18n.html' with key='translation_placeholder_en' %}"
+            data-placeholder-result="{% include 'partials/ui_i18n.html' with key='translation_placeholder_result' %}"
+        >
+            <div class="root-translate-row">
+                <label class="root-search-sr-only" for="rootTranslateSourceInput">
+                    {% include 'partials/ui_i18n.html' with key='translation_input' %}
+                </label>
+                <textarea
+                    id="rootTranslateSourceInput"
+                    class="root-translate-textarea"
+                    data-root-translate-source
+                    rows="2"
+                    placeholder="{% include 'partials/ui_i18n.html' with key='translation_placeholder_ko' %}"
+                ></textarea>
+                <button
+                    type="button"
+                    class="root-translate-swap"
+                    data-root-translate-swap
+                    aria-label="{% include 'partials/ui_i18n.html' with key='swap_languages' %}"
+                    title="{% include 'partials/ui_i18n.html' with key='swap_languages' %}"
+                >
+                    <span aria-hidden="true">⇄</span>
+                </button>
+                <label class="root-search-sr-only" for="rootTranslateTargetOutput">
+                    {% include 'partials/ui_i18n.html' with key='translation_result' %}
+                </label>
+                <textarea
+                    id="rootTranslateTargetOutput"
+                    class="root-translate-textarea root-translate-textarea-output"
+                    data-root-translate-target
+                    rows="2"
+                    placeholder="{% include 'partials/ui_i18n.html' with key='translation_placeholder_result' %}"
+                    readonly
+                ></textarea>
+            </div>
+        </section>
+        <section
             class="root-shortcuts"
             data-root-shortcuts
             data-authenticated="{% if request.user.is_authenticated %}1{% else %}0{% endif %}"
@@ -88,4 +131,5 @@
 {% include "popup/root/auth_logout_modal.html" %}
 {% include "popup/root/search_engine_popup.html" %}
 <script src="{% static_v 'js/pages/none/root_search.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+<script src="{% static_v 'js/pages/none/root_translate.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
 {% endblock %}

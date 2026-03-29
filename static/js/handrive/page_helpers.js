@@ -17,6 +17,7 @@
         if (!normalizedBadgeText || !row) {
             return;
         }
+        var badgeContainer = row.querySelector(".handrive-item-badge-slot") || row;
         var wrap = document.createElement("span");
         wrap.className = "handrive-item-public-badge-wrap";
         var normalizedPrefixText = String(prefixText || "").trim();
@@ -30,7 +31,7 @@
         badge.className = "handrive-item-public-badge";
         badge.textContent = normalizedBadgeText;
         wrap.appendChild(badge);
-        row.appendChild(wrap);
+        badgeContainer.appendChild(wrap);
     }
 
     function getPathFileExtension(pathValue) {

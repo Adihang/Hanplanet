@@ -2004,7 +2004,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     min-width: 0;
     text-align: left;
     overflow: hidden;
-    text-overflow: ellipsis;
+    text-overflow: clip;
 }
 
 .handrive-item-tree-prefix {

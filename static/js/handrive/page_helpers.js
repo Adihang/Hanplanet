@@ -32,6 +32,11 @@
         badge.textContent = normalizedBadgeText;
         wrap.appendChild(badge);
         badgeContainer.appendChild(wrap);
+        if (typeof row.dispatchEvent === "function") {
+            row.dispatchEvent(new CustomEvent("handrive:badgecontentchange", {
+                bubbles: true,
+            }));
+        }
     }
 
     function getPathFileExtension(pathValue) {

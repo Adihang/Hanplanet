@@ -2363,7 +2363,16 @@
                         if (!element || element.offsetParent === null) {
                             return;
                         }
-                        const measuredWidth = Math.ceil(element.scrollWidth || 0);
+                        let measuredWidth = Math.ceil(element.scrollWidth || 0);
+                        if (column.cssVarName === "--handrive-list-col-badge") {
+                            const badgeContent = element.firstElementChild;
+                            measuredWidth = badgeContent
+                                ? Math.max(
+                                    Math.ceil(badgeContent.scrollWidth || 0),
+                                    Math.ceil(badgeContent.getBoundingClientRect().width || 0)
+                                )
+                                : 0;
+                        }
                         if (measuredWidth > maxWidthByVarName[column.cssVarName]) {
                             maxWidthByVarName[column.cssVarName] = measuredWidth;
                         }
@@ -2666,6 +2675,13 @@
                     clearListEditorSuggestion();
                 });
                 editorContentInput.addEventListener("keydown", function (event) {
+                    if ((event.metaKey || event.ctrlKey) && !event.altKey && String(event.key || "").toLowerCase() === "s") {
+                        event.preventDefault();
+                        if (editorSaveButton && !editorSaveButton.disabled) {
+                            editorSaveButton.click();
+                        }
+                        return;
+                    }
                     if (event.key === "Escape") {
                         clearListEditorSuggestion();
                         return;
@@ -6381,6 +6397,45 @@
             }
         }
 
+        if (listPane) {
+            listPane.addEventListener("handrive:badgecontentchange", function () {
+                window.requestAnimationFrame(updateListColumnVisibility);
+            });
+            if (window.MutationObserver) {
+                const badgeMutationObserver = new MutationObserver(function (mutations) {
+                    const hasBadgeMutation = mutations.some(function (mutation) {
+                        if (!(mutation.target instanceof Element)) {
+                            return false;
+                        }
+                        if (mutation.target.closest(".handrive-item-badge-slot")) {
+                            return true;
+                        }
+                        for (let index = 0; index < mutation.addedNodes.length; index += 1) {
+                            const node = mutation.addedNodes[index];
+                            if (node instanceof Element && node.closest(".handrive-item-badge-slot")) {
+                                return true;
+                            }
+                        }
+                        for (let index = 0; index < mutation.removedNodes.length; index += 1) {
+                            const node = mutation.removedNodes[index];
+                            if (node instanceof Element && (node.matches(".handrive-item-badge-slot") || node.querySelector(".handrive-item-badge-slot"))) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    });
+                    if (hasBadgeMutation) {
+                        window.requestAnimationFrame(updateListColumnVisibility);
+                    }
+                });
+                badgeMutationObserver.observe(listPane, {
+                    childList: true,
+                    characterData: true,
+                    subtree: true,
+                });
+            }
+        }
+
         schedulePreviewBodyHeight();
 
         updateDirectoryHistory(state.currentDir, "replace");
@@ -8313,6 +8368,13 @@
                 clearEditorSuggestion();
             });
             contentInput.addEventListener("keydown", function (event) {
+                if ((event.metaKey || event.ctrlKey) && !event.altKey && String(event.key || "").toLowerCase() === "s") {
+                    event.preventDefault();
+                    if (saveButton && !saveButton.disabled) {
+                        saveButton.click();
+                    }
+                    return;
+                }
                 if (event.key === "Escape") {
                     clearEditorSuggestion();
                     return;

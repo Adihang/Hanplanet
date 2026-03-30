@@ -281,6 +281,20 @@ body.ui-page .portfolio-print-btn {
     min-width: 0;
 }
 
+.handrive-toolbar-right:has(.account-storage-bar),
+.ui-toolbar-right:has(.account-storage-bar) {
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-template-areas:
+        ". account"
+        "actions account";
+    align-self: flex-start;
+    align-items: start;
+    justify-content: end;
+    column-gap: 8px;
+    row-gap: 3px;
+}
+
 .handrive-toolbar.handrive-toolbar-auto-collapsed .handrive-toolbar-actions,
 .ui-toolbar.ui-toolbar-auto-collapsed .ui-toolbar-actions {
     width: 100%;
@@ -290,6 +304,8 @@ body.ui-page .portfolio-print-btn {
 .handrive-toolbar.handrive-toolbar-auto-collapsed .handrive-toolbar-right,
 .ui-toolbar.ui-toolbar-auto-collapsed .ui-toolbar-right {
     width: 100%;
+    display: flex;
+    flex-direction: column;
     align-items: flex-end;
 }
 
@@ -314,7 +330,7 @@ body.ui-page .portfolio-print-btn {
 
 .ui-auth-account-floating {
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     align-items: center;
     justify-content: flex-end;
     position: relative;
@@ -322,18 +338,33 @@ body.ui-page .portfolio-print-btn {
     margin: 0;
 }
 
-.ui-toolbar-right:not(:has(.handrive-toolbar-actions > *)) .ui-auth-account-floating {
-    flex-direction: column;
+.ui-toolbar-right:has(.account-storage-bar) .ui-auth-account-floating,
+.handrive-toolbar-right:has(.account-storage-bar) .ui-auth-account-floating {
+    grid-area: account;
+    align-self: end;
+}
+
+.ui-toolbar-right .ui-auth-account-floating {
     align-items: flex-end;
     justify-content: flex-end;
 }
 
-.ui-toolbar-right:not(:has(.handrive-toolbar-actions > *)) .ui-auth-account-trigger {
+.ui-toolbar-right .ui-auth-account-floating:has(.account-storage-bar) .ui-auth-account-trigger {
     order: -1;
 }
 
-.ui-toolbar-right:not(:has(.handrive-toolbar-actions > *)) .account-storage-bar {
+.ui-toolbar-right .account-storage-bar {
     padding-right: 8px;
+}
+
+.handrive-toolbar-right:has(.account-storage-bar) .handrive-toolbar-actions,
+.handrive-toolbar-right:has(.account-storage-bar) .ui-toolbar-actions,
+.ui-toolbar-right:has(.account-storage-bar) .handrive-toolbar-actions,
+.ui-toolbar-right:has(.account-storage-bar) .ui-toolbar-actions {
+    grid-area: actions;
+    justify-self: end;
+    align-self: start;
+    margin-right: 0;
 }
 
 .account-storage-bar {
@@ -1989,21 +2020,23 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-item-modified {
-    min-width: 0;
-    width: var(--handrive-col-modified);
-    flex: 0 0 var(--handrive-col-modified);
+    min-width: var(--handrive-col-modified);
+    width: auto;
+    flex: 0 0 auto;
     text-align: left;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
 }
 
 .handrive-item-size {
-    min-width: 0;
-    width: var(--handrive-col-size);
-    flex: 0 0 var(--handrive-col-size);
+    min-width: var(--handrive-col-size);
+    width: auto;
+    flex: 0 0 auto;
     text-align: left;
-    overflow: hidden;
+    overflow: visible;
     text-overflow: clip;
+    white-space: nowrap;
 }
 
 .handrive-item-meta-trail {
@@ -2114,7 +2147,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     flex: 0 0 auto;
     min-width: 58px;
     height: 20px;
-    padding: 0 8px;
+    padding: 0;
     border-radius: 999px;
     border: 0;
     background: transparent;
@@ -2131,6 +2164,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     gap: 6px;
     flex: 0 0 auto;
     min-width: 0;
+    padding: 0 8px;
 }
 
 .handrive-item-badge-slot {
@@ -2141,6 +2175,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     width: var(--handrive-col-badge);
     flex: 0 0 var(--handrive-col-badge);
     overflow: hidden;
+    margin-left: 2px;
 }
 
 .handrive-list-pane.is-hide-size .handrive-item-row {
@@ -2866,7 +2901,8 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     line-height: 1.4;
 }
 
-.ui-markdown {
+.ui-markdown,
+.handrive-markdown {
     border: 0;
     border-radius: var(--handrive-radius-lg);
     background: var(--handrive-bg);
@@ -2879,22 +2915,31 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 .ui-markdown h1,
 .ui-markdown h2,
 .ui-markdown h3,
-.ui-markdown h4 {
+.ui-markdown h4,
+.handrive-markdown h1,
+.handrive-markdown h2,
+.handrive-markdown h3,
+.handrive-markdown h4 {
     margin-top: 0;
     color: var(--handrive-text-stronger);
 }
 
 .ui-markdown a,
-.ui-markdown a:visited {
+.ui-markdown a:visited,
+.handrive-markdown a,
+.handrive-markdown a:visited {
     color: var(--handrive-link);
 }
 
 .ui-markdown a:hover,
-.ui-markdown a:focus-visible {
+.ui-markdown a:focus-visible,
+.handrive-markdown a:hover,
+.handrive-markdown a:focus-visible {
     color: var(--handrive-text-strong);
 }
 
-.ui-markdown table {
+.ui-markdown table,
+.handrive-markdown table {
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
@@ -2902,7 +2947,9 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 }
 
 .ui-markdown th,
-.ui-markdown td {
+.ui-markdown td,
+.handrive-markdown th,
+.handrive-markdown td {
     border: 0;
     text-align: left;
     vertical-align: top;
@@ -2911,14 +2958,16 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     line-height: 1.45;
 }
 
-.ui-markdown th {
+.ui-markdown th,
+.handrive-markdown th {
     background: var(--handrive-surface-muted);
     color: var(--handrive-text-subtle);
     font-size: 16px;
     font-weight: 700;
 }
 
-.ui-markdown code {
+.ui-markdown code,
+.handrive-markdown code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 16px;
     border: 0;
@@ -2928,7 +2977,8 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     overflow-wrap: anywhere;
 }
 
-.ui-markdown pre {
+.ui-markdown pre,
+.handrive-markdown pre {
     margin: 8px 0 0;
     border: 0;
     border-radius: 8px;
@@ -2937,7 +2987,8 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     overflow: auto;
 }
 
-.ui-markdown pre code {
+.ui-markdown pre code,
+.handrive-markdown pre code {
     border: 0;
     border-radius: 0;
     background: transparent;
@@ -2946,7 +2997,8 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     line-height: 1.45;
 }
 
-.ui-markdown img {
+.ui-markdown img,
+.handrive-markdown img {
     max-width: 100%;
     height: auto;
 }
@@ -3480,6 +3532,15 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     flex-direction: column;
     min-height: 0;
     position: relative;
+    max-width: 1300px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.handrive-content[data-handrive-page="write"] {
+    max-width: 1300px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .handrive-content[data-handrive-page="view"] > article {
@@ -3520,16 +3581,17 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
 }
 
 .handrive-unsupported-file-icon {
-    width: 40px;
-    height: 40px;
+    width: 16px;
+    height: 16px;
     color: var(--handrive-text-muted, currentColor);
     opacity: 0.7;
     flex-shrink: 0;
+    transform: scale(3);
+    transform-origin: center center;
+    margin: 20px;
 }
 
 .handrive-unsupported-file-icon::before {
-    width: 36px;
-    height: 36px;
     margin: 0;
 }
 

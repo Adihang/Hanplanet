@@ -2573,6 +2573,7 @@
         function setPreviewActionTargets(entry) {
             previewSetActionTargets({
                 entry: entry,
+                previewRenderMode: state.activePreviewRenderMode || "",
                 previewDownloadButton: previewDownloadButton,
                 previewEditButton: previewEditButton,
                 previewDeleteButton: previewDeleteButton,
@@ -2829,6 +2830,7 @@
         function clearPreviewPane() {
             state.activePreviewPath = "";
             state.activeRenderedPreviewPath = "";
+            state.activePreviewRenderMode = "";
             state.previewRequestToken += 1;
             state.previewImageZoom = 1;
             setPreviewVisibility(false);

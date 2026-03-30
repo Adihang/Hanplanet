@@ -3519,14 +3519,18 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     min-height: min(60vh, 480px);
 }
 
-.handrive-unsupported-icon {
+.handrive-unsupported-file-icon {
+    width: 40px;
+    height: 40px;
     color: var(--handrive-text-muted, currentColor);
-    opacity: 0.4;
+    opacity: 0.7;
     flex-shrink: 0;
 }
 
-.handrive-unsupported-icon-img {
-    opacity: 1;
+.handrive-unsupported-file-icon::before {
+    width: 36px;
+    height: 36px;
+    margin: 0;
 }
 
 .handrive-unsupported-name {
@@ -3537,6 +3541,13 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     color: var(--handrive-text-muted, currentColor);
     opacity: 0.7;
     max-width: 480px;
+}
+
+.handrive-unsupported-message {
+    font-size: 1rem;
+    font-weight: 600;
+    text-align: center;
+    color: var(--handrive-text-strong, currentColor);
 }
 
 .handrive-list-preview-content.handrive-unsupported .handrive-unsupported-file {

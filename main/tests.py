@@ -2802,6 +2802,96 @@ class HandriveAccessRuleTests(TestCase):
         self.assertIn("**bold**", payload.get("html", ""))
         self.assertNotIn("<strong>bold</strong>", payload.get("html", ""))
 
+    def test_docs_api_preview_returns_unsupported_message_for_binary_file(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "notes.txt").write_bytes(b"\xff\xfe\x00\x00")
+        editor = self.create_handrive_editor("preview_unsupported_editor")
+        self.client.force_login(editor)
+
+        response = self.client.post(
+            reverse("main:handrive_api_preview"),
+            data=json.dumps({"path": "notes.txt"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("render_mode"), "unsupported")
+        self.assertIn("미리보기 미지원", payload.get("html", ""))
+
+    def test_docs_view_returns_unsupported_message_for_binary_file(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "notes.txt").write_bytes(b"\xff\xfe\x00\x00")
+        editor = self.create_handrive_editor("view_unsupported_editor")
+        self.client.force_login(editor)
+
+        response = self.client.get("/ko/docs/notes.txt/")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn("읽기 미지원", html)
+
+    def test_docs_api_preview_returns_unsupported_message_for_unknown_extension_file(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "archive.verylongunsupportedext").write_bytes(b"\xff\xfe\x00\x00")
+        editor = self.create_handrive_editor("preview_unknown_ext_editor")
+        self.client.force_login(editor)
+
+        response = self.client.post(
+            reverse("main:handrive_api_preview"),
+            data=json.dumps({"path": "archive.verylongunsupportedext"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("render_mode"), "unsupported")
+        self.assertIn("미리보기 미지원", payload.get("html", ""))
+
+    def test_docs_view_returns_unsupported_message_for_unknown_extension_file(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "archive.verylongunsupportedext").write_bytes(b"\xff\xfe\x00\x00")
+        editor = self.create_handrive_editor("view_unknown_ext_editor")
+        self.client.force_login(editor)
+
+        response = self.client.get("/ko/docs/archive.verylongunsupportedext/")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn("읽기 미지원", html)
+
+    def test_docs_api_preview_returns_unsupported_message_for_hidden_dotfile(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / ".DS_Store").write_bytes(b"\xff\xfe\x00\x00")
+        editor = self.create_handrive_editor("preview_dotfile_editor")
+        self.client.force_login(editor)
+
+        response = self.client.post(
+            reverse("main:handrive_api_preview"),
+            data=json.dumps({"path": ".DS_Store"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("render_mode"), "unsupported")
+        self.assertIn("미리보기 미지원", payload.get("html", ""))
+
+    def test_docs_view_returns_unsupported_message_for_hidden_dotfile(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / ".DS_Store").write_bytes(b"\xff\xfe\x00\x00")
+        editor = self.create_handrive_editor("view_dotfile_editor")
+        self.client.force_login(editor)
+
+        response = self.client.get("/ko/docs/.DS_Store/")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn("읽기 미지원", html)
+        self.assertIn("handrive-item-type-icon", html)
+        self.assertNotIn("handrive-unsupported-icon", html)
+        self.assertNotIn("/ko/handrive/write?path=.DS_Store", html)
+
     def test_docs_view_renders_image_preview_and_hides_edit_button(self):
         handrive_root = Path(settings.MEDIA_ROOT) / "docs"
         image_bytes = base64.b64decode(

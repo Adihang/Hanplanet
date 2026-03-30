@@ -46,6 +46,7 @@
             return;
         }
 
+        state.activePreviewRenderMode = normalizedRenderMode;
         previewContent.innerHTML = safeHtml;
         state.previewImageZoom = 1;
         applyHandriveCodeHighlighting(previewContent, normalizedRenderClass || "ui-markdown");

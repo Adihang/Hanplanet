@@ -431,6 +431,8 @@ DOCS_TEXT = {
         "list_preview_empty": "파일을 선택하면 미리보기가 표시됩니다.",
         "list_preview_loading": "미리보기를 불러오는 중...",
         "list_preview_error": "미리보기를 불러오지 못했습니다.",
+        "list_preview_unsupported": "미리보기 미지원",
+        "view_read_unsupported": "읽기 미지원",
         "list_button": "목록",
         "filename_label": "파일명",
         "filename_placeholder": "확장자 포함",
@@ -635,6 +637,8 @@ DOCS_TEXT = {
         "list_preview_empty": "Select a file to preview.",
         "list_preview_loading": "Loading preview...",
         "list_preview_error": "Failed to load preview.",
+        "list_preview_unsupported": "Preview unavailable",
+        "view_read_unsupported": "Read unavailable",
         "list_button": "List",
         "filename_label": "File name",
         "filename_placeholder": "Include extension",
@@ -885,23 +889,24 @@ def normalize_file_extension(extension: str | None, *, allow_empty: bool = False
 def normalize_handrive_relative_path(raw_path: str | None, must_exist: bool = True) -> tuple[Path, str]:
     """HanDrive 일반 문서 경로를 정규화하고 기본 확장자를 보정한다."""
     normalized = normalize_relative_path(raw_path, allow_empty=False)
-    suffix = Path(normalized).suffix.lower()
-    if suffix:
-        try:
-            normalize_file_extension(suffix)
-        except ValueError as exc:
-            raise FileNotFoundError("파일을 찾을 수 없습니다.") from exc
-    else:
-        normalized = f"{normalized}{DOCS_FILE_EXTENSION}"
+    normalized_path = Path(normalized)
+    suffix = normalized_path.suffix.lower()
+    normalized_name = normalized_path.name
+    if not suffix:
+        if must_exist:
+            try:
+                exact_path_obj, exact_rel_path = resolve_path(normalized, must_exist=True)
+                if exact_path_obj.is_file():
+                    return exact_path_obj, exact_rel_path
+            except FileNotFoundError:
+                pass
+        if not normalized_name.startswith("."):
+            normalized = f"{normalized}{DOCS_FILE_EXTENSION}"
 
     path_obj, rel_path = resolve_path(normalized, must_exist=must_exist)
     if must_exist:
         if not path_obj.is_file():
             raise FileNotFoundError("파일을 찾을 수 없습니다.")
-        try:
-            normalize_file_extension(path_obj.suffix.lower())
-        except ValueError as exc:
-            raise FileNotFoundError("파일을 찾을 수 없습니다.") from exc
 
     return path_obj, rel_path
 
@@ -1008,23 +1013,120 @@ _HANDRIVE_UNSUPPORTED_GENERIC_ICON = (
     "</svg>"
 )
 
+_HANDRIVE_GENERIC_FILE_ICON_KEYS = {
+    "file",
+    "image",
+    "video",
+    "audio",
+    "archive",
+    "pdf",
+    "text",
+    "word",
+    "excel",
+    "powerpoint",
+    "data",
+    "code",
+    "json",
+    "markdown",
+    "font",
+}
 
-def render_handrive_unsupported_safely(file_name: str, file_extension: str = "") -> str:
-    """지원하지 않는 파일 형식을 아이콘 + 파일명으로 표시하는 HTML 조각을 반환한다."""
+
+def get_handrive_file_icon_key(path_value: str) -> str:
+    """목록과 동일한 파일 아이콘 키를 서버 렌더에서도 재사용한다."""
+    extension = Path(str(path_value or "")).suffix.lower()
+    if not extension:
+        return "file"
+    if extension in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".avif", ".heic"}:
+        return "image"
+    if extension in {".mp4", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m4v"}:
+        return "video"
+    if extension in {".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac"}:
+        return "audio"
+    if extension in {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz"}:
+        return "archive"
+    if extension == ".pdf":
+        return "pdf"
+    if extension in {".md", ".txt", ".rtf"}:
+        return "text"
+    if extension in {".doc", ".docx"}:
+        return "word"
+    if extension in {".xls", ".xlsx"}:
+        return "excel"
+    if extension in {".ppt", ".pptx"}:
+        return "powerpoint"
+    if extension == ".json":
+        return "json"
+    if extension in {".js", ".mjs", ".cjs"}:
+        return "js"
+    if extension in {".ts", ".tsx"}:
+        return "ts"
+    if extension == ".jsx":
+        return "jsx"
+    if extension == ".py":
+        return "py"
+    if extension == ".java":
+        return "java"
+    if extension == ".kt":
+        return "kotlin"
+    if extension == ".swift":
+        return "swift"
+    if extension == ".go":
+        return "go"
+    if extension == ".rs":
+        return "rust"
+    if extension == ".rb":
+        return "ruby"
+    if extension == ".php":
+        return "php"
+    if extension == ".c":
+        return "c"
+    if extension in {".cpp", ".hpp", ".h"}:
+        return "cpp"
+    if extension == ".cs":
+        return "csharp"
+    if extension == ".scala":
+        return "scala"
+    if extension == ".sql":
+        return "data"
+    if extension in {".sh", ".zsh", ".bash"}:
+        return "shell"
+    if extension in {".html", ".htm"}:
+        return "html"
+    if extension in {".css", ".scss", ".sass", ".less"}:
+        return "css"
+    if extension == ".md":
+        return "markdown"
+    if extension in {".lua", ".dart", ".elm", ".ex", ".exs", ".erl", ".fs", ".fsx", ".groovy", ".jl", ".nim", ".pl", ".r", ".vb"}:
+        return "code"
+    if extension in {".ttf", ".otf", ".woff", ".woff2"}:
+        return "font"
+    if extension == ".exe":
+        return "exe"
+    return "file"
+
+
+def render_handrive_unsupported_safely(
+    file_name: str,
+    file_extension: str = "",
+    *,
+    message: str = "미리보기 미지원",
+) -> str:
+    """지원하지 않는 파일 형식을 아이콘 + 파일명 + 안내 문구로 표시하는 HTML 조각을 반환한다."""
     escaped_name = escape(str(file_name))
-    icon_url = _HANDRIVE_UNSUPPORTED_ICON_URLS.get(file_extension.lower() if file_extension else "")
-    if icon_url:
-        escaped_url = escape(icon_url)
-        icon_html = (
-            f'<img class="handrive-unsupported-icon handrive-unsupported-icon-img"'
-            f' src="{escaped_url}" width="64" height="64" alt="" aria-hidden="true">'
-        )
-    else:
-        icon_html = _HANDRIVE_UNSUPPORTED_GENERIC_ICON
+    escaped_message = escape(str(message or ""))
+    icon_key = get_handrive_file_icon_key(f"unsupported{file_extension or ''}")
+    icon_classes = "handrive-item-type-icon handrive-unsupported-file-icon is-file"
+    if icon_key in _HANDRIVE_GENERIC_FILE_ICON_KEYS:
+        icon_classes += " is-generic"
+    icon_html = (
+        f'<span class="{icon_classes}" data-file-icon="{escape(icon_key)}" aria-hidden="true"></span>'
+    )
     return mark_safe(
         f'<div class="handrive-unsupported-file">'
         f"{icon_html}"
         f'<span class="handrive-unsupported-name">{escaped_name}</span>'
+        f'<span class="handrive-unsupported-message">{escaped_message}</span>'
         f"</div>"
     )
 
@@ -1200,7 +1302,17 @@ def load_handrive_source_content(file_path: Path, *, request=None, relative_path
     try:
         return file_path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        if request is not None and relative_path and has_handrive_read_access(request, relative_path):
+        if request is not None:
+            raise Http404("파일을 읽을 수 없습니다.")
+        raise
+
+
+def decode_handrive_text_bytes(source_bytes: bytes, *, request=None, relative_path: str = "") -> str:
+    """UTF-8 텍스트로 읽을 수 없는 바이너리 파일은 읽기 미지원으로 처리한다."""
+    try:
+        return (source_bytes or b"").decode("utf-8")
+    except UnicodeDecodeError:
+        if request is not None:
             raise Http404("파일을 읽을 수 없습니다.")
         raise
 
@@ -4396,7 +4508,11 @@ def handrive_view(request, doc_path, ui_lang=None):
                     request=request,
                 )
             except Http404:
-                rendered_content_html = render_handrive_unsupported_safely(file_path.name, file_extension)
+                rendered_content_html = render_handrive_unsupported_safely(
+                    file_path.name,
+                    file_extension,
+                    message=handrive_text.get("view_read_unsupported", "읽기 미지원"),
+                )
                 render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
     else:
         if git_virtual["kind"] != "branch_file":
@@ -4420,24 +4536,36 @@ def handrive_view(request, doc_path, ui_lang=None):
                 request=request,
             )
         else:
-            content = ""
-            if resolve_handrive_render_profile(file_extension).get("mode") != DOCS_RENDER_MODE_OFFICE:
-                content = repo_file_bytes.decode("utf-8")
-            companion_css, companion_js = load_git_repo_html_companion_assets(
-                request,
-                git_virtual["repo"],
-                git_virtual["branch_name"],
-                git_virtual["repo_relative_path"],
-            )
-            rendered_content_html, render_profile = render_handrive_content(
-                content,
-                file_extension,
-                source_bytes=repo_file_bytes,
-                companion_css=companion_css,
-                companion_js=companion_js,
-                relative_path=relative_file_path,
-                request=request,
-            )
+            try:
+                content = ""
+                if resolve_handrive_render_profile(file_extension).get("mode") != DOCS_RENDER_MODE_OFFICE:
+                    content = decode_handrive_text_bytes(
+                        repo_file_bytes,
+                        request=request,
+                        relative_path=relative_file_path,
+                    )
+                companion_css, companion_js = load_git_repo_html_companion_assets(
+                    request,
+                    git_virtual["repo"],
+                    git_virtual["branch_name"],
+                    git_virtual["repo_relative_path"],
+                )
+                rendered_content_html, render_profile = render_handrive_content(
+                    content,
+                    file_extension,
+                    source_bytes=repo_file_bytes,
+                    companion_css=companion_css,
+                    companion_js=companion_js,
+                    relative_path=relative_file_path,
+                    request=request,
+                )
+            except Http404:
+                rendered_content_html = render_handrive_unsupported_safely(
+                    file_name,
+                    file_extension,
+                    message=handrive_text.get("view_read_unsupported", "읽기 미지원"),
+                )
+                render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
     if not shared_context and not is_superuser and not is_path_in_handrive_scope(relative_file_path, scoped_home_dir):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
     if not has_handrive_read_access(request, relative_file_path):
@@ -4492,7 +4620,8 @@ def handrive_view(request, doc_path, ui_lang=None):
             "doc_parent_dir": parent_dir,
             "doc_can_edit": has_handrive_write_access(request, relative_file_path),
             "doc_can_show_edit": has_handrive_write_access(request, relative_file_path)
-            and not is_handrive_non_editable_media_extension(file_extension),
+            and not is_handrive_non_editable_media_extension(file_extension)
+            and render_profile["mode"] != DOCS_RENDER_MODE_UNSUPPORTED,
             "doc_is_url_only": doc_is_url_only,
             "doc_share_url": doc_share_url,
             "doc_content_html": rendered_content_html,
@@ -4541,16 +4670,24 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None):
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
 
-    content = load_handrive_source_content(target_path, request=request, relative_path=relative_path)
-    rendered_content_html, render_profile = render_handrive_content(
-        content,
-        target_path.suffix.lower(),
-        source_path=target_path,
-        relative_path=relative_path,
-        request=request,
-        share_owner=owner_username,
-        share_slug=share_slug,
-    )
+    try:
+        content = load_handrive_source_content(target_path, request=request, relative_path=relative_path)
+        rendered_content_html, render_profile = render_handrive_content(
+            content,
+            target_path.suffix.lower(),
+            source_path=target_path,
+            relative_path=relative_path,
+            request=request,
+            share_owner=owner_username,
+            share_slug=share_slug,
+        )
+    except Http404:
+        rendered_content_html = render_handrive_unsupported_safely(
+            target_path.name,
+            target_path.suffix.lower(),
+            message=handrive_text.get("view_read_unsupported", "읽기 미지원"),
+        )
+        render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
 
     context.update(
         {
@@ -6015,7 +6152,11 @@ def handrive_api_preview(request):
                             share_slug=shared_context["share_slug"] if shared_context else "",
                         )
                     except Http404:
-                        rendered_html = render_handrive_unsupported_safely(file_path.name, file_extension)
+                        rendered_html = render_handrive_unsupported_safely(
+                            file_path.name,
+                            file_extension,
+                            message=get_handrive_text(resolve_ui_lang(request)).get("list_preview_unsupported", "미리보기 미지원"),
+                        )
                         render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
                 title = file_path.name
             else:
@@ -6041,26 +6182,38 @@ def handrive_api_preview(request):
                         git_virtual["branch_name"],
                         git_virtual["repo_relative_path"],
                     )
-                    content = ""
-                    if resolve_handrive_render_profile(file_extension).get("mode") != DOCS_RENDER_MODE_OFFICE:
-                        content = repo_file_bytes.decode("utf-8")
-                    companion_css, companion_js = load_git_repo_html_companion_assets(
-                        request,
-                        git_virtual["repo"],
-                        git_virtual["branch_name"],
-                        git_virtual["repo_relative_path"],
-                    )
-                    rendered_html, render_profile = render_handrive_content(
-                        content,
-                        file_extension,
-                        source_bytes=repo_file_bytes,
-                        companion_css=companion_css,
-                        companion_js=companion_js,
-                        relative_path=relative_file_path,
-                        request=request,
-                        share_owner=shared_context["owner_username"] if shared_context else "",
-                        share_slug=shared_context["share_slug"] if shared_context else "",
-                    )
+                    try:
+                        content = ""
+                        if resolve_handrive_render_profile(file_extension).get("mode") != DOCS_RENDER_MODE_OFFICE:
+                            content = decode_handrive_text_bytes(
+                                repo_file_bytes,
+                                request=request,
+                                relative_path=relative_file_path,
+                            )
+                        companion_css, companion_js = load_git_repo_html_companion_assets(
+                            request,
+                            git_virtual["repo"],
+                            git_virtual["branch_name"],
+                            git_virtual["repo_relative_path"],
+                        )
+                        rendered_html, render_profile = render_handrive_content(
+                            content,
+                            file_extension,
+                            source_bytes=repo_file_bytes,
+                            companion_css=companion_css,
+                            companion_js=companion_js,
+                            relative_path=relative_file_path,
+                            request=request,
+                            share_owner=shared_context["owner_username"] if shared_context else "",
+                            share_slug=shared_context["share_slug"] if shared_context else "",
+                        )
+                    except Http404:
+                        rendered_html = render_handrive_unsupported_safely(
+                            title,
+                            file_extension,
+                            message=get_handrive_text(resolve_ui_lang(request)).get("list_preview_unsupported", "미리보기 미지원"),
+                        )
+                        render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
             return JsonResponse(
                 {
                     "ok": True,

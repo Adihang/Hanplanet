@@ -103,9 +103,11 @@
         var isEditableHandriveFileEntry = settings.isEditableHandriveFileEntry || function () { return false; };
         var buildDownloadUrl = settings.buildDownloadUrl || function () { return ""; };
         var onEdit = settings.onEdit || function () {};
+        var previewRenderMode = String(settings.previewRenderMode || "").trim();
 
         var isFileEntry = Boolean(isPreviewableFileEntry(entry));
         var canEdit = Boolean(entry && entry.can_edit);
+        var canEditPreview = previewRenderMode !== "unsupported";
 
         if (previewDownloadButton) {
             if (!isFileEntry) {
@@ -123,7 +125,7 @@
         }
 
         if (previewEditButton) {
-            previewEditButton.hidden = !(isFileEntry && canEdit && isEditableHandriveFileEntry(entry));
+            previewEditButton.hidden = !(isFileEntry && canEdit && canEditPreview && isEditableHandriveFileEntry(entry));
             if (!previewEditButton.hidden) {
                 previewEditButton.onclick = function (event) {
                     event.preventDefault();

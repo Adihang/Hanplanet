@@ -4218,17 +4218,39 @@
                 return;
             }
             const safeEntry = entry || {};
-            row.appendChild(createEntryMetaField("handrive-item-modified", safeEntry.modified_display || ""));
-            row.appendChild(createEntryMetaField("handrive-item-size", safeEntry.size_display || ""));
+            const metaTrail = ensureEntryMetaTrail(row);
+            if (!metaTrail) {
+                return;
+            }
+            metaTrail.appendChild(createEntryMetaField("handrive-item-modified", safeEntry.modified_display || ""));
+            metaTrail.appendChild(createEntryMetaField("handrive-item-size", safeEntry.size_display || ""));
         }
 
         function appendEntryBadgeSlot(row) {
             if (!row) {
                 return;
             }
+            const metaTrail = ensureEntryMetaTrail(row);
+            if (!metaTrail) {
+                return;
+            }
             const badgeSlot = document.createElement("span");
             badgeSlot.className = "handrive-item-badge-slot";
-            row.appendChild(badgeSlot);
+            metaTrail.appendChild(badgeSlot);
+        }
+
+        function ensureEntryMetaTrail(row) {
+            if (!row) {
+                return null;
+            }
+            let metaTrail = row.querySelector(".handrive-item-meta-trail");
+            if (metaTrail) {
+                return metaTrail;
+            }
+            metaTrail = document.createElement("span");
+            metaTrail.className = "handrive-item-meta-trail";
+            row.appendChild(metaTrail);
+            return metaTrail;
         }
 
         function addCurrentDirectoryNode(fragment) {
@@ -4588,7 +4610,10 @@
                 currentFolderEntry.git_commit_author_username = currentDirMeta.git_commit_author_username || "";
             }
             appendEntryBadge(row, currentFolderEntry, t, appendBadgeWithPrefix);
-            row.appendChild(createSyncCheckbox(currentFolderEntry.path, currentFolderEntry.type));
+            const currentDirMetaTrail = ensureEntryMetaTrail(row);
+            if (currentDirMetaTrail) {
+                currentDirMetaTrail.appendChild(createSyncCheckbox(currentFolderEntry.path, currentFolderEntry.type));
+            }
 
             row.addEventListener("click", function (event) {
                 if (event.button !== 0) {
@@ -4637,7 +4662,10 @@
             appendAclBadges(row, entry.write_acl_labels, 3);
             appendEntryBadgeSlot(row);
             appendEntryBadge(row, entry, t, appendBadgeWithPrefix);
-            row.appendChild(createSyncCheckbox(entry.path, entry.type));
+            const metaTrail = ensureEntryMetaTrail(row);
+            if (metaTrail) {
+                metaTrail.appendChild(createSyncCheckbox(entry.path, entry.type));
+            }
 
             row.addEventListener("click", function (event) {
                 if (event.button !== 0) {

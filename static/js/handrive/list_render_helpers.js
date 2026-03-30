@@ -78,6 +78,7 @@
         if (labels.length === 0) {
             return;
         }
+        var metaTrail = row.querySelector(".handrive-item-meta-trail") || row;
         var aclLabelLimit = Number(limit) || 3;
         var aclWrap = document.createElement("span");
         aclWrap.className = "handrive-item-acl-list";
@@ -93,7 +94,7 @@
             overflowBadge.textContent = "+" + String(labels.length - aclLabelLimit);
             aclWrap.appendChild(overflowBadge);
         }
-        row.appendChild(aclWrap);
+        metaTrail.appendChild(aclWrap);
     }
 
     function appendEntryBadge(row, entry, translator, appendBadgeWithPrefix) {

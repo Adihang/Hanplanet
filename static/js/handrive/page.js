@@ -1599,6 +1599,7 @@
         // 편집기 관련 요소들
         const editorPanel = document.getElementById("handrive-list-editor");
         const editorHead = editorPanel ? editorPanel.querySelector(".handrive-list-editor-head") : null;
+        const editorBody = editorPanel ? editorPanel.querySelector(".handrive-list-editor-body") : null;
         const editorFilenameInput = document.getElementById("handrive-list-filename-input");
         const editorContentInput = document.getElementById("handrive-list-content-input");
         const editorCancelButton = document.getElementById("handrive-list-cancel-btn");
@@ -2335,6 +2336,7 @@
             setTimeout(function() {
                 scheduleSyncCurrentDirRowHeightWithSideHead();
                 schedulePreviewBodyHeight();
+                scheduleEditorBodyHeight();
                 updateListColumnVisibility();
             }, 10);
         }
@@ -2465,15 +2467,45 @@
             const layoutBorderH = (parseFloat(layoutStyle.borderTopWidth) || 0) + (parseFloat(layoutStyle.borderBottomWidth) || 0);
             const previewHead = previewPanel.querySelector(".handrive-list-preview-head");
             const previewHeadH = previewHead ? previewHead.getBoundingClientRect().height : 0;
-            // contentEl.clientHeight 는 previewBody 의 min-height 에 영향받을 수 있으므로
-            // viewport 기준으로 계산 (contentEl top 위치는 content 높이와 무관하게 안정적)
-            const viewportH = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-            const contentTop = contentEl.getBoundingClientRect().top;
-            const availableForBody = viewportH - contentTop - padTop - padBottom - searchH - searchMarginB - layoutBorderH - previewHeadH;
+            const availableForBody = contentEl.clientHeight - padTop - padBottom - searchH - searchMarginB - layoutBorderH - previewHeadH;
             const height = Math.max(0, Math.floor(availableForBody));
             previewBody.style.height = height + "px";
             previewBody.style.minHeight = height + "px";
             previewBody.style.maxHeight = height + "px";
+        }
+
+        let editorBodyHeightRafId = null;
+        function syncEditorBodyHeight() {
+            if (!editorPanel || !editorBody || !listLayout) {
+                return;
+            }
+            const isLandscape = listLayout.classList.contains("is-landscape");
+            const hasEditor = listLayout.classList.contains("has-editor");
+            if (!isLandscape || !hasEditor || editorPanel.hidden) {
+                editorBody.style.height = "";
+                editorBody.style.minHeight = "";
+                editorBody.style.maxHeight = "";
+                return;
+            }
+            const contentEl = listLayout.closest(".handrive-content, .ui-content");
+            if (!contentEl) {
+                return;
+            }
+            const contentStyle = window.getComputedStyle(contentEl);
+            const padTop = parseFloat(contentStyle.paddingTop) || 0;
+            const padBottom = parseFloat(contentStyle.paddingBottom) || 0;
+            const searchForm = contentEl.querySelector(".handrive-list-search-form");
+            const searchH = searchForm ? searchForm.getBoundingClientRect().height : 0;
+            const searchStyle = searchForm ? window.getComputedStyle(searchForm) : null;
+            const searchMarginB = searchStyle ? (parseFloat(searchStyle.marginBottom) || 0) : 0;
+            const layoutStyle = window.getComputedStyle(listLayout);
+            const layoutBorderH = (parseFloat(layoutStyle.borderTopWidth) || 0) + (parseFloat(layoutStyle.borderBottomWidth) || 0);
+            const editorHeadH = editorHead ? editorHead.getBoundingClientRect().height : 0;
+            const availableForBody = contentEl.clientHeight - padTop - padBottom - searchH - searchMarginB - layoutBorderH - editorHeadH;
+            const height = Math.max(0, Math.floor(availableForBody));
+            editorBody.style.height = height + "px";
+            editorBody.style.minHeight = height + "px";
+            editorBody.style.maxHeight = height + "px";
         }
         function schedulePreviewBodyHeight() {
             if (previewBodyHeightRafId !== null) {
@@ -2482,6 +2514,15 @@
             previewBodyHeightRafId = window.requestAnimationFrame(function () {
                 previewBodyHeightRafId = null;
                 syncPreviewBodyHeight();
+            });
+        }
+        function scheduleEditorBodyHeight() {
+            if (editorBodyHeightRafId !== null) {
+                return;
+            }
+            editorBodyHeightRafId = window.requestAnimationFrame(function () {
+                editorBodyHeightRafId = null;
+                syncEditorBodyHeight();
             });
         }
 
@@ -2549,6 +2590,7 @@
             if (isVisible) {
                 schedulePreviewBodyHeight();
             }
+            scheduleEditorBodyHeight();
         }
 
         function scrollPreviewIntoViewIfPortrait() {
@@ -2627,6 +2669,7 @@
                 onAfterChange: function () {
                     setPreviewVisibility(false);
                     scheduleSyncCurrentDirRowHeightWithSideHead();
+                    scheduleEditorBodyHeight();
                 },
                 loadContent: function (targetEntry) {
                     const targetUrl = buildDownloadUrl(targetEntry.path);
@@ -2651,7 +2694,10 @@
                 editorPanel: editorPanel,
                 previewPanel: previewPanel,
                 listLayout: listLayout,
-                onAfterChange: scheduleSyncCurrentDirRowHeightWithSideHead,
+                onAfterChange: function () {
+                    scheduleSyncCurrentDirRowHeightWithSideHead();
+                    scheduleEditorBodyHeight();
+                },
             });
             cleanupEditorEvents();
             activeListEditorEntry = null;
@@ -5191,6 +5237,19 @@
             return appendSharedQuery(query ? downloadApiUrl + "?" + query : downloadApiUrl);
         }
 
+        function triggerDownload(targetUrl) {
+            if (!targetUrl) {
+                return;
+            }
+            const anchor = document.createElement("a");
+            anchor.href = targetUrl;
+            anchor.setAttribute("download", "");
+            anchor.style.display = "none";
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+        }
+
         function downloadEntries(entries) {
             if (!Array.isArray(entries) || entries.length === 0 || !downloadApiUrl) {
                 return;
@@ -5203,7 +5262,7 @@
                 if (!targetUrl) {
                     return;
                 }
-                window.open(targetUrl, "_blank", "noopener");
+                triggerDownload(targetUrl);
             });
         }
 
@@ -6377,6 +6436,8 @@
         window.addEventListener("orientationchange", updateListColumnVisibility, { passive: true });
         window.addEventListener("resize", schedulePreviewBodyHeight, { passive: true });
         window.addEventListener("orientationchange", schedulePreviewBodyHeight, { passive: true });
+        window.addEventListener("resize", scheduleEditorBodyHeight, { passive: true });
+        window.addEventListener("orientationchange", scheduleEditorBodyHeight, { passive: true });
 
         if (window.ResizeObserver && previewHead) {
             const previewHeadResizeObserver = new ResizeObserver(function () {
@@ -6392,7 +6453,10 @@
             }
             const toolbarWrap = document.querySelector(".handrive-toolbar-wrap");
             if (toolbarWrap) {
-                const listToolbarResizeObserver = new ResizeObserver(schedulePreviewBodyHeight);
+                const listToolbarResizeObserver = new ResizeObserver(function () {
+                    schedulePreviewBodyHeight();
+                    scheduleEditorBodyHeight();
+                });
                 listToolbarResizeObserver.observe(toolbarWrap);
             }
         }
@@ -6437,6 +6501,7 @@
         }
 
         schedulePreviewBodyHeight();
+        scheduleEditorBodyHeight();
 
         updateDirectoryHistory(state.currentDir, "replace");
 

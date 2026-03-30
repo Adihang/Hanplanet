@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block body_class %}handrive-page{% endblock %}
+{% block body_class %}handrive-page handrive-view-page{% endblock %}
 {% block content %}
 {% include 'handrive/_assets_head.html' %}
 
@@ -61,6 +61,7 @@
 
 <main
     class="handrive-shell ui-shell handrive-content ui-content"
+    data-scroll-y-priority
     data-handrive-page="view"
     data-handrive-base-url="{{ handrive_base_url }}"
     data-handrive-root-url="{{ handrive_root_url }}"

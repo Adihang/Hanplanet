@@ -1219,7 +1219,7 @@ body.theme-dark .root-search-submit-icon {
 .root-shortcuts-empty {
     margin: 0;
     color: var(--site-text-subtle);
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.35;
     text-align: center;
 }
@@ -1245,14 +1245,13 @@ body.theme-dark .root-search-submit-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    height: 34px;
     padding: 8px 12px;
     border-radius: 10px;
     border: 1px solid var(--site-border-mid);
     background: var(--site-surface-muted);
     color: var(--site-text-strong);
     text-decoration: none;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 600;
     transition: background-color var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
 }
@@ -3074,7 +3073,7 @@ body.portfolio-page.theme-dark .career_cards hr {
     align-items: center;
     justify-content: center;
     gap: 10px;
-    padding: 14px 16px 22px;
+    padding: 0 0 16px;
     font-size: 14px;
     color: #6b7280;
     flex: 0 0 auto;

@@ -4906,6 +4906,19 @@
             return query ? downloadApiUrl + "?" + query : downloadApiUrl;
         }
 
+        function triggerDownload(targetUrl) {
+            if (!targetUrl) {
+                return;
+            }
+            const anchor = document.createElement("a");
+            anchor.href = targetUrl;
+            anchor.setAttribute("download", "");
+            anchor.style.display = "none";
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+        }
+
         function downloadEntries(entries) {
             if (!Array.isArray(entries) || entries.length === 0 || !downloadApiUrl) {
                 return;
@@ -4918,7 +4931,7 @@
                 if (!targetUrl) {
                     return;
                 }
-                window.open(targetUrl, "_blank", "noopener");
+                triggerDownload(targetUrl);
             });
         }
 

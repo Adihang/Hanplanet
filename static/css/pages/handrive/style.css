@@ -94,6 +94,18 @@ body.map-editor-page {
     overflow: hidden;
 }
 
+body.handrive-view-page {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+}
+
+body.handrive-write-page {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+}
+
 body.handrive-page.theme-dark,
 body.ui-page.theme-dark {
     --handrive-bg: #222222;
@@ -1652,6 +1664,8 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-list-editor-body .handrive-editor-surface {
+    flex: 1 1 auto;
+    min-height: 0;
     border: 1px solid var(--handrive-border-heavy);
     background: var(--handrive-bg);
 }
@@ -3538,9 +3552,26 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
 }
 
 .handrive-content[data-handrive-page="write"] {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
     max-width: 1300px;
     margin-left: auto;
     margin-right: auto;
+}
+
+.handrive-content[data-handrive-page="write"] .handrive-form-grid {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.handrive-content[data-handrive-page="write"] .handrive-field:last-child {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .handrive-content[data-handrive-page="view"] > article {
@@ -3959,6 +3990,8 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
 }
 
 .handrive-content[data-handrive-page="write"] .handrive-editor-surface {
+    flex: 1 1 auto;
+    min-height: 0;
     border: 1px solid var(--handrive-border-heavy);
     background: var(--handrive-bg);
 }

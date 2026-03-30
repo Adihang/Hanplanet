@@ -27,6 +27,32 @@
     let targetLang = 'en';
     let activeRequestId = 0;
 
+    const getTextareaNaturalHeight = function (element) {
+        const style = window.getComputedStyle(element);
+        const minHeight = parseFloat(style.minHeight) || 0;
+        const lineHeight = parseFloat(style.lineHeight) || ((parseFloat(style.fontSize) || 14) * 1.45);
+        const paddingY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+        const borderY = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+        const singleLineHeight = Math.ceil(lineHeight + paddingY + borderY);
+
+        if (!String(element.value || '').length) {
+            return Math.max(singleLineHeight, minHeight, 38);
+        }
+
+        element.style.height = '0px';
+        const naturalHeight = Math.ceil(element.scrollHeight + borderY);
+        return Math.max(singleLineHeight, naturalHeight, minHeight, 38);
+    };
+
+    const syncTextareaHeights = function () {
+        const nextHeight = Math.max(
+            getTextareaNaturalHeight(sourceInput),
+            getTextareaNaturalHeight(targetOutput)
+        );
+        sourceInput.style.height = String(nextHeight) + 'px';
+        targetOutput.style.height = String(nextHeight) + 'px';
+    };
+
     const syncPlaceholders = function () {
         sourceInput.setAttribute('placeholder', sourceLang === 'ko' ? placeholderKo : placeholderEn);
         targetOutput.setAttribute('placeholder', resultPlaceholder);
@@ -46,6 +72,7 @@
         sourceInput.value = targetOutput.value;
         targetOutput.value = previousSourceValue;
         syncPlaceholders();
+        syncTextareaHeights();
     };
 
     const requestTranslation = function () {
@@ -55,6 +82,7 @@
         if (!text) {
             targetOutput.value = '';
             targetOutput.setAttribute('placeholder', resultPlaceholder);
+            syncTextareaHeights();
             setBusy(false);
             return;
         }
@@ -62,6 +90,7 @@
         setBusy(true);
         targetOutput.value = '';
         targetOutput.setAttribute('placeholder', translatingLabel);
+        syncTextareaHeights();
 
         window.fetch(apiUrl, {
             method: 'POST',
@@ -94,6 +123,7 @@
                 if (!targetOutput.value) {
                     targetOutput.setAttribute('placeholder', resultPlaceholder);
                 }
+                syncTextareaHeights();
             })
             .catch(function (error) {
                 if (requestId !== activeRequestId) {
@@ -101,6 +131,7 @@
                 }
                 targetOutput.value = '';
                 targetOutput.setAttribute('placeholder', error && error.message ? error.message : translateErrorLabel);
+                syncTextareaHeights();
             })
             .finally(function () {
                 if (requestId !== activeRequestId) {
@@ -121,5 +152,12 @@
         }
     });
 
+    sourceInput.addEventListener('input', function () {
+        syncTextareaHeights();
+    });
+
+    window.addEventListener('resize', syncTextareaHeights, { passive: true });
+
     syncPlaceholders();
+    syncTextareaHeights();
 })();

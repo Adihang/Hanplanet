@@ -1464,6 +1464,8 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-list-editor-body .handrive-editor-surface {
+    flex: 1 1 auto;
+    min-height: 0;
     border: 1px solid var(--handrive-border-heavy);
     background: var(--handrive-bg);
 }

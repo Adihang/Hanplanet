@@ -1894,9 +1894,9 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-item-row {
-    --handrive-col-modified: max-content;
-    --handrive-col-size: max-content;
-    --handrive-col-badge: max-content;
+    --handrive-col-modified: var(--handrive-list-col-modified, max-content);
+    --handrive-col-size: var(--handrive-list-col-size, max-content);
+    --handrive-col-badge: var(--handrive-list-col-badge, max-content);
     width: 100%;
     flex: 1;
     min-width: 0;
@@ -1945,7 +1945,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 
 .handrive-current-dir-row {
     background: var(--handrive-hover-soft);
-    padding: var(--handrive-list-head-pad-y) var(--handrive-list-head-pad-x);
+    padding: 10px 14px;
     min-height: 48px;
     box-sizing: border-box;
     font-size: 16px;

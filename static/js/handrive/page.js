@@ -2345,6 +2345,37 @@
                 return;
             }
 
+            const syncSharedMetaColumnWidths = function () {
+                const maxWidthByVarName = {
+                    "--handrive-list-col-modified": 0,
+                    "--handrive-list-col-size": 0,
+                    "--handrive-list-col-badge": 0,
+                };
+                const columnMap = [
+                    { selector: ".handrive-item-modified", cssVarName: "--handrive-list-col-modified" },
+                    { selector: ".handrive-item-size", cssVarName: "--handrive-list-col-size" },
+                    { selector: ".handrive-item-badge-slot", cssVarName: "--handrive-list-col-badge" },
+                ];
+
+                columnMap.forEach(function (column) {
+                    const elements = listPane.querySelectorAll(column.selector);
+                    elements.forEach(function (element) {
+                        if (!element || element.offsetParent === null) {
+                            return;
+                        }
+                        const measuredWidth = Math.ceil(element.scrollWidth || 0);
+                        if (measuredWidth > maxWidthByVarName[column.cssVarName]) {
+                            maxWidthByVarName[column.cssVarName] = measuredWidth;
+                        }
+                    });
+                });
+
+                Object.keys(maxWidthByVarName).forEach(function (cssVarName) {
+                    const measuredWidth = maxWidthByVarName[cssVarName];
+                    listPane.style.setProperty(cssVarName, measuredWidth > 0 ? (String(measuredWidth) + "px") : "0px");
+                });
+            };
+
             const hasTruncatedNameRow = function () {
                 const rows = listPane.querySelectorAll(".handrive-item-row");
                 for (let index = 0; index < rows.length; index += 1) {
@@ -2365,6 +2396,7 @@
             };
 
             listPane.classList.remove("is-hide-size", "is-hide-modified", "is-hide-badge");
+            syncSharedMetaColumnWidths();
 
             if (hasTruncatedNameRow()) {
                 listPane.classList.add("is-hide-size");

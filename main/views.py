@@ -1527,6 +1527,17 @@ def minigame_page(request, ui_lang=None):
             "image_url": build_public_absolute_url(static("icons/icon-192.png")),
         },
         {
+            "slug": "text-bubble",
+            "title": "Text Bubble" if is_english else "텍스트 버블",
+            "url": reverse("main:text_bubble_lang", kwargs={"ui_lang": resolved_lang}),
+            "description": (
+                "Floating bubbles carve up a live text field."
+                if is_english
+                else "떠다니는 버블이 텍스트 흐름을 갈라놓는 실험적인 페이지."
+            ),
+            "image_url": build_public_absolute_url(static("icons/icon-192.png")),
+        },
+        {
             "slug": "bumpercar-spiky",
             "title": "Bumper Car Spiky" if is_english else "범퍼카 스핔이",
             "url": reverse("main:bumpercar_spiky_lang", kwargs={"ui_lang": resolved_lang}),
@@ -1555,9 +1566,9 @@ def minigame_page(request, ui_lang=None):
         "meta_title": "Hanplanet Mini Games" if is_english else "Hanplanet 미니게임",
         "meta_og_title": "Hanplanet Mini Games" if is_english else "Hanplanet 미니게임",
         "meta_description": (
-            "Play browser mini games on Hanplanet, including Bubble, Stratagem Hero, Bumper Car Spiky, and Raise Speaki."
+            "Play browser mini games on Hanplanet, including Bubble, Text Bubble, Stratagem Hero, Bumper Car Spiky, and Raise Speaki."
             if is_english
-            else "Hanplanet에서 Bubble, Stratagem Hero, 범퍼카 스핔이, 스핔이 키우기 같은 브라우저 미니게임을 즐겨보세요."
+            else "Hanplanet에서 Bubble, Text Bubble, Stratagem Hero, 범퍼카 스핔이, 스핔이 키우기 같은 브라우저 미니게임을 즐겨보세요."
         ),
     }
     context["meta_og_description"] = context["meta_description"]
@@ -1613,12 +1624,13 @@ def text_bubble_page(request, ui_lang=None):
     is_english = resolved_lang == "en"
     context = {
         "ui_lang": resolved_lang,
-        "page_title": "Text Bubble" if is_english else "텍스트 버블",
+        "page_title": "Text Bubble" if is_english else "책먹는 스핔이",
         "page_description": (
             "Bubbles float through a New York Times article, reshaping the text around them."
             if is_english
-            else "버블이 뉴욕타임즈 기사 사이를 떠다니며 텍스트를 밀어냅니다."
+            else "타임지의 기사를 책처럼 볼 수 있습니다\n하지만 그때 스핔이가 나타났다."
         ),
+        "page_image_url": build_public_absolute_url(static("img/text-bubble.png")),
     }
     return render(request, "fun/text-bubble.html", context)
 
@@ -1654,14 +1666,15 @@ def nyt_article_api(request):
         if not articles:
             return JsonResponse({"text": "No articles available.", "count": 0})
 
-        selected = random.sample(articles, min(5, len(articles)))
+        selected = random.sample(articles, min(12, len(articles)))
         parts = []
         for a in selected:
             parts.append(a["title"])
             parts.append(a["description"])
 
-        text = "\n\n".join(parts)
-        return JsonResponse({"text": text, "count": len(selected)})
+        text = "  ".join(parts)
+        first_title = selected[0]["title"] if selected else ""
+        return JsonResponse({"text": text, "count": len(selected), "title": first_title})
 
     except Exception as exc:
         logger.warning("NYT RSS fetch failed: %s", exc)

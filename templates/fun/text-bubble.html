@@ -6,6 +6,13 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <meta name="description" content="{{ page_description }}">
+    <meta property="og:title" content="{{ page_title }} | Hanplanet">
+    <meta property="og:description" content="{{ page_description }}">
+    <meta property="og:image" content="{{ page_image_url }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ page_title }} | Hanplanet">
+    <meta name="twitter:description" content="{{ page_description }}">
+    <meta name="twitter:image" content="{{ page_image_url }}">
     <meta name="author" content="Hanplanet">
     <meta name="robots" content="noindex">
     {% include "partials/pwa.html" %}
@@ -22,6 +29,7 @@
             padding: 0;
             overflow: hidden;
             background: rgb(248, 245, 238);
+            cursor: none;
         }
 
         #textBubbleCanvas {
@@ -33,83 +41,76 @@
             height: 100%;
         }
 
-        .tb-header {
+        #speakiCursor {
             position: fixed;
             top: 0;
             left: 0;
-            right: 0;
-            height: 52px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 20px;
-            z-index: 10;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.10);
-            background: rgba(248, 245, 238, 0.82);
-            backdrop-filter: blur(6px);
-            -webkit-backdrop-filter: blur(6px);
-        }
-
-        .tb-logo {
-            font-family: "Times New Roman", Times, Georgia, serif;
-            font-size: 20px;
-            font-weight: 700;
-            letter-spacing: -0.01em;
-            color: #111;
+            width: 84px;
+            height: 84px;
+            pointer-events: none;
             user-select: none;
-        }
-
-        .tb-header-right {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .tb-loading {
-            font-family: Georgia, serif;
-            font-size: 13px;
-            color: #888;
+            transform-origin: 50% 50%;
+            z-index: 20;
             opacity: 0;
-            transition: opacity 0.2s;
+            will-change: transform, opacity;
+        }
+
+        #pageTurnOverlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 15;
             pointer-events: none;
         }
-
-        .tb-refresh {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            border: 1px solid rgba(0, 0, 0, 0.15);
-            background: transparent;
-            color: #444;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background 0.15s, transform 0.2s;
-            user-select: none;
+        #turnBook {
+            position: relative;
         }
-
-        .tb-refresh:hover {
-            background: rgba(0, 0, 0, 0.06);
-            transform: rotate(30deg);
-        }
-
-        .tb-refresh:active {
-            transform: rotate(180deg);
+        #turnBook .page {
+            padding: 0;
+            margin: 0;
         }
     </style>
+    <script src="{% static_v 'js/vendor/jquery.min.js' %}"></script>
+    <script src="{% static_v 'js/vendor/turn.min.js' %}"></script>
 </head>
 <body>
     <canvas id="textBubbleCanvas"></canvas>
-
-    <div class="tb-header">
-        <span class="tb-logo">The New York Times</span>
-        <div class="tb-header-right">
-            <span class="tb-loading" id="tbLoading">Loading…</span>
-            <button class="tb-refresh" id="tbRefresh" title="New article" aria-label="Fetch new article">↻</button>
-        </div>
+    <div id="pageTurnOverlay">
+        <div id="turnBook"></div>
     </div>
+    <img
+        id="speakiCursor"
+        src="{% static_v 'Spikip/speaki_default/icon/main.png' %}"
+        alt=""
+        aria-hidden="true"
+    >
+
+    <script>
+        window.__textBubbleBubbleAssetUrl = "{% static_v 'Spikip/speaki_pumkin/icon/pumkin.png' %}";
+        window.__textBubbleCursorAssets = {
+            defaultSets: [
+                ["{% static_v 'Spikip/speaki_default/icon/default/1/1.png' %}", "{% static_v 'Spikip/speaki_default/icon/default/1/2.png' %}"],
+                ["{% static_v 'Spikip/speaki_default/icon/default/2/12.png' %}", "{% static_v 'Spikip/speaki_default/icon/default/2/13.png' %}"],
+                ["{% static_v 'Spikip/speaki_default/icon/default/3/14.png' %}", "{% static_v 'Spikip/speaki_default/icon/default/3/15.png' %}"]
+            ],
+            crashSets: [
+                ["{% static_v 'Spikip/speaki_default/icon/crash/1/1.png' %}", "{% static_v 'Spikip/speaki_default/icon/crash/1/2.png' %}"],
+                ["{% static_v 'Spikip/speaki_default/icon/crash/2/1.png' %}", "{% static_v 'Spikip/speaki_default/icon/crash/2/2.png' %}"],
+                ["{% static_v 'Spikip/speaki_default/icon/crash/3/1.png' %}", "{% static_v 'Spikip/speaki_default/icon/crash/3/2.png' %}"]
+            ],
+            defeatStages: [
+                "{% static_v 'Spikip/speaki_default/icon/defeat/1/1.png' %}",
+                "{% static_v 'Spikip/speaki_default/icon/defeat/1/2.png' %}",
+                "{% static_v 'Spikip/speaki_default/icon/defeat/1/3.png' %}"
+            ],
+            accStages: [
+                "{% static_v 'Spikip/speaki_default/icon/acc/1/1.png' %}",
+                "{% static_v 'Spikip/speaki_default/icon/acc/1/2.png' %}",
+                "{% static_v 'Spikip/speaki_default/icon/acc/1/3.png' %}"
+            ]
+        };
+    </script>
 
     <script type="module" src="{% static_v 'js/fun/text_bubble/page.js' %}"></script>
 </body>

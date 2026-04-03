@@ -1,9 +1,10 @@
 {% extends 'base.html' %}
+{% load static_versioned %}
 {% block body_class %}handrive-page map-viewer-page{% endblock %}
 {% block content %}
 {% include 'handrive/_assets_head.html' %}
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="{% static_v 'css/vendor/leaflet.css' %}">
 
 <style>
 .map-viewer-wrap {
@@ -18,7 +19,7 @@
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 20px 12px 10px;
+    padding: 12px;
     background: var(--handrive-surface, #fff);
     border-bottom: 1px solid var(--handrive-border, #e0e0e0);
     flex-shrink: 0;
@@ -68,7 +69,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.6em;
+    font-size: 1.85em;
     line-height: 1;
     filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));
 }
@@ -76,6 +77,16 @@
 .leaflet-popup-content-wrapper {
     border-radius: 8px;
     font-size: 0.88em;
+    max-width: 400px;
+}
+.leaflet-popup-content {
+    margin: 10px 15px;
+    max-width: 300px;
+}
+.leaflet-popup-content b + span {
+    border-top: 1px solid var(--handrive-border, #e0e0e0);
+    padding-top: 6px;
+    margin-top: 2px;
 }
 body.theme-dark .leaflet-popup-content-wrapper,
 body.theme-dark .leaflet-popup-tip {
@@ -86,6 +97,108 @@ body.theme-dark .leaflet-popup-tip {
 body.theme-dark .leaflet-container {
     background: #1a1a1a;
 }
+body.theme-dark .leaflet-bar,
+body.theme-dark .leaflet-bar a,
+body.theme-dark .leaflet-control-zoom-in,
+body.theme-dark .leaflet-control-zoom-out {
+    background: var(--handrive-surface);
+    border-color: var(--handrive-border);
+    color: var(--handrive-text);
+}
+body.theme-dark .leaflet-bar a:hover,
+body.theme-dark .leaflet-control-zoom-in:hover,
+body.theme-dark .leaflet-control-zoom-out:hover {
+    background: var(--handrive-surface-subtle, #2a2a2a);
+    color: var(--handrive-text);
+}
+body.theme-dark .leaflet-bar a.leaflet-disabled {
+    background: var(--handrive-surface);
+    color: var(--handrive-text-muted, #666);
+}
+/* 레이어 가시성 위젯 */
+.map-viewer-layers-widget {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 999;
+    pointer-events: auto;
+    background: var(--handrive-surface, #fff);
+    border: 1px solid var(--handrive-border, #e0e0e0);
+    border-radius: 8px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+    font-size: 13px;
+    color: var(--handrive-text, #222);
+    min-width: 160px;
+    max-width: 240px;
+    overflow: hidden;
+}
+.map-viewer-layers-toggle {
+    width: 100%;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--handrive-border, #e0e0e0);
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--handrive-text, #222);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    text-align: left;
+}
+.map-viewer-layers-toggle:hover { background: var(--handrive-surface-subtle, #f5f5f5); }
+.map-viewer-layers-widget.is-collapsed .map-viewer-layers-toggle {
+    border-bottom: none;
+}
+.map-viewer-layers-panel {
+    margin: 8px 10px;
+    max-height: 55vh;
+    overflow-y: auto;
+}
+.map-viewer-layers-widget.is-collapsed .map-viewer-layers-panel { display: none; }
+.map-viewer-layer-group { margin-bottom: 2px; }
+.map-viewer-layer-group + .map-viewer-layer-group {
+    border-top: 1px solid var(--handrive-border, #e0e0e0);
+    padding-top: 6px;
+    margin-top: 6px;
+}
+.map-viewer-layer-group-header {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 2px;
+    font-weight: 600;
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+}
+.map-viewer-layer-group-children { padding-left: 14px; }
+.map-viewer-layer-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 2px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.map-viewer-layer-row:hover { background: var(--handrive-surface-subtle, #f5f5f5); }
+.map-viewer-layer-row input[type="checkbox"] { flex-shrink: 0; cursor: pointer; }
+.map-viewer-layer-icon {
+    width: 13px;
+    height: 13px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.map-viewer-layer-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+}
 </style>
 
 <div class="map-viewer-wrap">
@@ -95,22 +208,59 @@ body.theme-dark .leaflet-container {
         <a href="{{ map_editor_url }}" class="handrive-icon-btn" title="편집" aria-label="편집"
         ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true"><path d="M3 17l1-4L13 3l3 3L7 16l-4 1z"/><line x1="11" y1="5" x2="14" y2="8"/><line x1="4" y1="13" x2="7" y2="16"/></svg></a>
         {% endif %}
+        <button type="button" class="handrive-icon-btn" id="map-viewer-share-btn" title="공유" aria-label="공유"
+        ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="5" r="2"/><circle cx="5" cy="10" r="2"/><circle cx="15" cy="15" r="2"/><line x1="7" y1="9" x2="13" y2="6"/><line x1="7" y1="11" x2="13" y2="14"/></svg></button>
+        {% if not shared_owner %}
         <a href="{{ handrive_list_url }}" class="handrive-icon-btn" title="목록으로" aria-label="목록으로"
         ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="15" x2="17" y2="15"/></svg></a>
+        {% endif %}
     </div>
+    <!-- 공유 팝업 -->
+    <div id="map-viewer-share-modal" class="handrive-rename-modal" hidden>
+        <div class="handrive-rename-modal-backdrop" id="map-viewer-share-modal-backdrop"></div>
+        <div class="handrive-rename-modal-dialog" role="dialog" aria-modal="true">
+            <h3 class="handrive-rename-title">공유</h3>
+            {% if url_share_api_url %}
+            <label class="handrive-url-share-toggle-label">
+                <input type="checkbox" id="map-viewer-share-toggle" {% if map_is_url_only %}checked{% endif %}>
+                <span>URL 공유 활성화</span>
+            </label>
+            {% endif %}
+            <div id="map-viewer-share-url-row" class="handrive-field handrive-field-full" {% if not map_is_url_only %}hidden{% endif %}>
+                <input type="text" id="map-viewer-share-url-input" value="{{ map_share_url }}" readonly>
+            </div>
+            <div class="handrive-rename-actions">
+                <button type="button" class="ui-btn" id="map-viewer-share-close">닫기</button>
+                <button type="button" class="ui-btn ui-btn-primary" id="map-viewer-share-copy-btn" {% if not map_is_url_only %}hidden{% endif %}>복사</button>
+            </div>
+        </div>
+    </div>
+
     <div id="map-viewer-container"
         data-map-path="{{ map_path }}"
         data-image-url="{{ image_url }}"
         data-map-data-api="{{ map_data_api_url }}"
         data-map-icon-api="{{ map_icon_api_url }}"
+        data-url-share-api="{{ url_share_api_url }}"
+        data-map-path-for-share="{{ map_path }}"
+        data-shared-owner="{{ shared_owner }}"
+        data-shared-slug="{{ shared_slug }}"
     >
         <div class="map-loading-overlay" id="map-viewer-loading">
             <div class="handrive-list-loading-spinner"></div>
         </div>
+        <div class="map-viewer-layers-widget" id="map-viewer-layers-widget" hidden>
+            <button type="button" class="map-viewer-layers-toggle" id="map-viewer-layers-toggle">
+                <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="15" x2="17" y2="15"/></svg>
+                레이어
+            </button>
+            <div class="map-viewer-layers-panel" id="map-viewer-layers-panel"></div>
+        </div>
+
     </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="{% static_v 'js/vendor/leaflet.js' %}"></script>
 <script>
 (function () {
     "use strict";
@@ -119,6 +269,14 @@ body.theme-dark .leaflet-container {
     var mapPath = container.dataset.mapPath;
     var imageUrl = container.dataset.imageUrl;
     var mapDataApi = container.dataset.mapDataApi;
+    var sharedOwner = container.dataset.sharedOwner || "";
+    var sharedSlug = container.dataset.sharedSlug || "";
+    function appendShared(url) {
+        if (!sharedOwner || !sharedSlug || !url) return url;
+        return url + (url.indexOf("?") >= 0 ? "&" : "?")
+            + "share_owner=" + encodeURIComponent(sharedOwner)
+            + "&share_slug=" + encodeURIComponent(sharedSlug);
+    }
 
     var imgWidth = 1000, imgHeight = 700;
     var loadedImageUrl = imageUrl || "";
@@ -153,7 +311,7 @@ body.theme-dark .leaflet-container {
     }
 
     loadImageWithProgress(
-        imageUrl,
+        appendShared(imageUrl),
         function(blobUrl) { loadedImageUrl = blobUrl; initMap(); },
         function() { initMap(); }
     );
@@ -166,15 +324,10 @@ body.theme-dark .leaflet-container {
             maxZoom: 4,
             zoomSnap: 0.25,
             attributionControl: false,
-            scrollWheelZoom: false,
+            scrollWheelZoom: true,
+            zoomControl: false,
         });
-
-        map.getContainer().addEventListener("wheel", function(e) {
-            if (e.ctrlKey || e.metaKey) {
-                e.preventDefault();
-                map.setZoom(map.getZoom() + (e.deltaY > 0 ? -0.5 : 0.5));
-            }
-        }, { passive: false });
+        L.control.zoom({ position: "topright" }).addTo(map);
 
         var bounds = [[0, 0], [imgHeight, imgWidth]];
         if (loadedImageUrl) {
@@ -182,46 +335,338 @@ body.theme-dark .leaflet-container {
         }
         map.fitBounds(bounds);
 
+        // 레이어 추적
+        var viewerLayerData = {}; // fid -> {type, name, color, emoji, groupId, leafletLayer, tooltipLayer, visible}
+        var viewerGroups = {};    // gid -> {name, fids:[]}
+
         // GeoJSON 로드
-        fetch(mapDataApi + "?path=" + encodeURIComponent(mapPath), {
+        fetch(appendShared(mapDataApi + "?path=" + encodeURIComponent(mapPath)), {
             headers: { "X-Requested-With": "XMLHttpRequest" }
         })
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (!data.ok || !data.geojson) return;
-            var features = data.geojson.features || [];
+            var geojson = data.geojson;
+
+            // 그룹 로드
+            if (geojson.groups) {
+                geojson.groups.forEach(function(g) {
+                    viewerGroups[g.id] = { name: g.name, desc: g.desc || "", imageUrl: g.imageUrl || null, fids: [] };
+                });
+            }
+
+            var features = geojson.features || [];
+            var fidCounter = 1;
             features.forEach(function(f) {
                 if (!f.geometry || !f.properties) return;
                 var props = f.properties;
+                var fid = String(f.id || ("f" + (fidCounter++)));
 
                 if (f.geometry.type === "Polygon" && props.type === "zone") {
                     var coords = (f.geometry.coordinates[0] || []).map(function(c) { return [c[1], c[0]]; });
                     if (coords.length > 1) coords.pop();
                     var color = props.color || "#4f8ef7";
-                    var layer = L.polygon(coords, { color: color, fillColor: color, fillOpacity: 0.15, weight: 2 }).addTo(map);
-                    if (props.name) {
+                    var zoneIconVisible = props.iconVisible !== false;
+                    var layer = L.polygon(coords, { color: color, fillColor: color, fillOpacity: zoneIconVisible ? 0.15 : 0, opacity: zoneIconVisible ? 1 : 0, weight: 2 }).addTo(map);
+                    var tooltipLayer = null;
+                    if (props.name && zoneIconVisible) {
                         var centroid = computeCentroid(layer.getLatLngs()[0]);
-                        L.tooltip({ permanent: true, direction: "center", className: "map-zone-label" })
+                        tooltipLayer = L.tooltip({ permanent: true, direction: "center", className: "map-zone-label" })
                             .setContent(props.name)
                             .setLatLng(centroid)
                             .addTo(map);
                     }
+                    if (props.name || props.desc || props.imageUrl) {
+                        var zoneLines = ["<div style='display:inline-block;max-width:380px;'>"];
+                        if (props.name) zoneLines.push("<b style='font-size:16px;white-space:nowrap;display:block;'>" + escHtml(props.name) + "</b>");
+                        if (props.desc) zoneLines.push("<span style='font-size:14px;white-space:pre-wrap;display:block;margin-top:6px;'>" + escHtml(props.desc) + "</span>");
+                        if (props.imageUrl) zoneLines.push("<img src='" + escHtml(appendShared(props.imageUrl)) + "' style='display:block;max-width:100%;max-height:180px;margin-top:8px;border-radius:4px;'>");
+                        zoneLines.push("</div>");
+                        layer.bindPopup(zoneLines.join(""), { maxWidth: 400 });
+                    }
+                    viewerLayerData[fid] = { type: "zone", name: props.name, color: color, groupId: props.groupId || null, leafletLayer: layer, tooltipLayer: tooltipLayer, visible: true, bindFid: props.bindFid || null };
+
                 } else if (f.geometry.type === "Point" && props.type === "marker") {
                     var c = f.geometry.coordinates;
                     var latlng = L.latLng(c[1], c[0]);
-                    var icon = createIcon(props.emoji, props.iconUrl);
+                    var iconVisible = props.iconVisible !== false;
+                    var icon = iconVisible ? createIcon(props.emoji, props.iconUrl) : L.divIcon({ html: '<div style="width:34px;height:34px;"></div>', className: "", iconSize: [37, 37], iconAnchor: [19, 23] });
                     var marker = L.marker(latlng, { icon: icon }).addTo(map);
-                    if (props.name || props.group) {
-                        var popupLines = [];
-                        if (props.name) popupLines.push("<b>" + escHtml(props.name) + "</b>");
-                        if (props.group) popupLines.push("<span style='color:#888;font-size:0.9em;'>" + escHtml(props.group) + "</span>");
-                        marker.bindPopup(popupLines.join("<br>"), { maxWidth: 200 });
+                    var markerLines = ["<div style='display:inline-block;max-width:380px;'>"];
+                    if (props.name) markerLines.push("<b style='font-size:16px;white-space:nowrap;display:block;'>" + escHtml(props.name) + "</b>");
+                    if (props.desc) markerLines.push("<span style='font-size:14px;white-space:pre-wrap;display:block;margin-top:6px;'>" + escHtml(props.desc) + "</span>");
+                    if (props.group) markerLines.push("<span style='color:#888;font-size:12px;display:block;margin-top:4px;'>" + escHtml(props.group) + "</span>");
+                    if (props.imageUrl) markerLines.push("<img src='" + escHtml(appendShared(props.imageUrl)) + "' style='display:block;max-width:100%;max-height:180px;margin-top:8px;border-radius:4px;'>");
+                    markerLines.push("</div>");
+                    if (markerLines.length > 2) marker.bindPopup(markerLines.join(""), { maxWidth: 400 });
+                    viewerLayerData[fid] = { type: "marker", name: props.name, emoji: props.emoji || "📍", groupId: props.groupId || null, leafletLayer: marker, tooltipLayer: null, visible: true, bindFid: props.bindFid || null };
+                }
+            });
+
+            // 그룹에 fid 배분
+            Object.keys(viewerLayerData).forEach(function(fid) {
+                var gid = viewerLayerData[fid].groupId;
+                if (gid && viewerGroups[gid]) viewerGroups[gid].fids.push(fid);
+            });
+
+            buildLayersWidget();
+
+            // 바인딩 클릭 핸들러: bindFid가 있는 레이어 클릭 시 대상으로 이동
+            Object.keys(viewerLayerData).forEach(function(fid) {
+                var d = viewerLayerData[fid];
+                if (!d.bindFid) return;
+                d.leafletLayer.on("click", function(e) {
+                    var target = viewerLayerData[d.bindFid];
+                    if (!target) return;
+                    L.DomEvent.stopPropagation(e);
+                    if (target.type === "zone") {
+                        map.fitBounds(target.leafletLayer.getBounds(), { animate: true, padding: [40, 40] });
+                    } else {
+                        map.setView(target.leafletLayer.getLatLng(), Math.max(map.getZoom(), 0), { animate: true });
                     }
+                    if (target.leafletLayer.getPopup && target.leafletLayer.getPopup()) {
+                        target.leafletLayer.openPopup();
+                    }
+                });
+            });
+
+            map.on("popupopen", function(e) {
+                var el = e.popup.getElement();
+                if (!el) return;
+                var content = el.querySelector(".leaflet-popup-content");
+                if (!content) return;
+                var maxW = 0;
+                content.querySelectorAll("b, span").forEach(function(child) {
+                    var prev = child.style.whiteSpace;
+                    child.style.whiteSpace = "nowrap";
+                    maxW = Math.max(maxW, child.scrollWidth);
+                    child.style.whiteSpace = prev;
+                });
+                if (maxW > 0) {
+                    content.style.width = Math.min(maxW + 4, 380) + "px";
                 }
             });
         })
         .catch(function() {});
+
+        function setLayerVisible(fid, visible) {
+            var d = viewerLayerData[fid];
+            if (!d) return;
+            d.visible = visible;
+            [d.leafletLayer, d.tooltipLayer].forEach(function(l) {
+                if (!l) return;
+                if (visible) { if (!map.hasLayer(l)) l.addTo(map); }
+                else { if (map.hasLayer(l)) map.removeLayer(l); }
+            });
+        }
+
+        function makeViewerLayerRow(fid, onToggle) {
+            var d = viewerLayerData[fid];
+            var row = document.createElement("label");
+            row.className = "map-viewer-layer-row";
+
+            var cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = true;
+            cb.dataset.fid = fid;
+            cb.addEventListener("change", function() {
+                setLayerVisible(fid, cb.checked);
+                if (onToggle) onToggle();
+            });
+
+            var iconEl = document.createElement("span");
+            iconEl.className = "map-viewer-layer-icon";
+            if (d.type === "zone") {
+                iconEl.style.background = d.color || "#4f8ef7";
+            } else {
+                iconEl.textContent = d.emoji || "📍";
+                iconEl.style.fontSize = "0.85em";
+            }
+
+            var nameEl = document.createElement("span");
+            nameEl.className = "map-viewer-layer-name";
+            nameEl.textContent = d.name || "(이름 없음)";
+
+            row.appendChild(cb);
+            row.appendChild(iconEl);
+            row.appendChild(nameEl);
+
+            row.addEventListener("contextmenu", function(e) {
+                e.preventDefault();
+                var center;
+                if (d.type === "zone") {
+                    center = computeCentroid(d.leafletLayer.getLatLngs()[0]);
+                } else {
+                    center = d.leafletLayer.getLatLng();
+                }
+                map.panTo(center);
+            });
+
+            return row;
+        }
+
+        function buildLayersWidget() {
+            var panel = document.getElementById("map-viewer-layers-panel");
+            var widget = document.getElementById("map-viewer-layers-widget");
+            if (!panel || !widget) return;
+
+            var hasFids = Object.keys(viewerLayerData).length > 0;
+            if (!hasFids) return;
+            widget.hidden = false;
+
+            // 그룹 렌더링
+            Object.keys(viewerGroups).forEach(function(gid) {
+                var grp = viewerGroups[gid];
+                if (!grp.fids.length) return;
+
+                var groupEl = document.createElement("div");
+                groupEl.className = "map-viewer-layer-group";
+
+                var header = document.createElement("label");
+                header.className = "map-viewer-layer-group-header";
+
+                var groupCb = document.createElement("input");
+                groupCb.type = "checkbox";
+                groupCb.checked = true;
+
+                var folderSpan = document.createElement("span");
+                folderSpan.textContent = "📁";
+                folderSpan.style.fontSize = "0.85em";
+
+                var groupName = document.createElement("span");
+                groupName.textContent = grp.name;
+                groupName.style.flex = "1";
+
+                header.appendChild(groupCb);
+                header.appendChild(folderSpan);
+                header.appendChild(groupName);
+                groupEl.appendChild(header);
+
+                var childrenEl = document.createElement("div");
+                childrenEl.className = "map-viewer-layer-group-children";
+
+                function updateGroupCb() {
+                    var allOn = grp.fids.every(function(f) { return viewerLayerData[f] && viewerLayerData[f].visible; });
+                    var anyOn = grp.fids.some(function(f) { return viewerLayerData[f] && viewerLayerData[f].visible; });
+                    groupCb.indeterminate = !allOn && anyOn;
+                    groupCb.checked = allOn;
+                }
+
+                grp.fids.forEach(function(fid) {
+                    childrenEl.appendChild(makeViewerLayerRow(fid, updateGroupCb));
+                });
+
+                groupCb.addEventListener("change", function() {
+                    grp.fids.forEach(function(fid) {
+                        setLayerVisible(fid, groupCb.checked);
+                        var itemCb = childrenEl.querySelector('[data-fid="' + fid + '"]');
+                        if (itemCb) itemCb.checked = groupCb.checked;
+                    });
+                });
+
+                header.addEventListener("contextmenu", function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!grp.name && !grp.desc && !grp.imageUrl) return;
+                    var lines = ["<div style='display:inline-block;max-width:380px;'>"];
+                    if (grp.name) lines.push("<b style='font-size:16px;white-space:nowrap;display:block;'>" + escHtml(grp.name) + "</b>");
+                    if (grp.desc) lines.push("<span style='font-size:14px;white-space:pre-wrap;display:block;margin-top:6px;'>" + escHtml(grp.desc) + "</span>");
+                    if (grp.imageUrl) lines.push("<img src='" + escHtml(appendShared(grp.imageUrl)) + "' style='display:block;max-width:100%;max-height:180px;margin-top:8px;border-radius:4px;'>");
+                    lines.push("</div>");
+                    if (lines.length <= 2) return;
+                    // 지도 중앙에 임시 팝업 표시
+                    L.popup({ maxWidth: 400 })
+                        .setLatLng(map.getCenter())
+                        .setContent(lines.join(""))
+                        .openOn(map);
+                });
+
+                groupEl.appendChild(childrenEl);
+                panel.appendChild(groupEl);
+            });
+
+            // 그룹 없는 아이템
+            Object.keys(viewerLayerData).forEach(function(fid) {
+                var d = viewerLayerData[fid];
+                if (d.groupId && viewerGroups[d.groupId]) return;
+                panel.appendChild(makeViewerLayerRow(fid, null));
+            });
+
+            // 토글 버튼
+            var toggleBtn = document.getElementById("map-viewer-layers-toggle");
+            if (toggleBtn) {
+                toggleBtn.addEventListener("click", function() {
+                    widget.classList.toggle("is-collapsed");
+                });
+            }
+        }
     }
+
+    // 공유 팝업
+    (function() {
+        var shareBtn = document.getElementById("map-viewer-share-btn");
+        var modal = document.getElementById("map-viewer-share-modal");
+        var backdrop = document.getElementById("map-viewer-share-modal-backdrop");
+        var closeBtn = document.getElementById("map-viewer-share-close");
+        var toggle = document.getElementById("map-viewer-share-toggle");
+        var urlRow = document.getElementById("map-viewer-share-url-row");
+        var urlInput = document.getElementById("map-viewer-share-url-input");
+        var copyBtn = document.getElementById("map-viewer-share-copy-btn");
+        var urlShareApi = container.dataset.urlShareApi || "";
+        var mapPathForShare = container.dataset.mapPathForShare || "";
+
+        if (!shareBtn || !modal) return;
+
+        function openModal() { modal.hidden = false; }
+        function closeModal() { modal.hidden = true; }
+
+        shareBtn.addEventListener("click", openModal);
+        closeBtn && closeBtn.addEventListener("click", closeModal);
+        backdrop.addEventListener("click", closeModal);
+        document.addEventListener("keydown", function(e) {
+            if (e.key === "Escape" && !modal.hidden) closeModal();
+        });
+
+        if (toggle && urlShareApi) {
+            toggle.addEventListener("change", function() {
+                var enabled = toggle.checked;
+                toggle.disabled = true;
+                fetch(urlShareApi, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest", "X-CSRFToken": (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "" },
+                    body: JSON.stringify({ path: mapPathForShare, enabled: enabled })
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var isOn = Boolean(data.is_url_only);
+                    toggle.checked = isOn;
+                    if (urlRow) urlRow.hidden = !isOn;
+                    if (urlInput && data.share_url) urlInput.value = data.share_url;
+                    if (copyBtn) copyBtn.textContent = "복사";
+                })
+                .catch(function() { toggle.checked = !enabled; })
+                .finally(function() { toggle.disabled = false; });
+            });
+        }
+
+        if (copyBtn && urlInput) {
+            copyBtn.addEventListener("click", function() {
+                var url = urlInput.value;
+                if (!url) return;
+                if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+                    navigator.clipboard.writeText(url).then(function() {
+                        copyBtn.textContent = "복사됨";
+                        setTimeout(function() { copyBtn.textContent = "복사"; }, 2000);
+                    }).catch(function() {});
+                } else {
+                    urlInput.select();
+                    document.execCommand("copy");
+                    copyBtn.textContent = "복사됨";
+                    setTimeout(function() { copyBtn.textContent = "복사"; }, 2000);
+                }
+            });
+        }
+    })();
 
     function computeCentroid(latlngs) {
         var lat = 0, lng = 0;
@@ -232,11 +677,11 @@ body.theme-dark .leaflet-container {
     function createIcon(emoji, iconUrl) {
         var html;
         if (iconUrl) {
-            html = '<div class="map-marker-icon"><img src="' + escHtml(iconUrl) + '" style="width:28px;height:28px;object-fit:contain;"></div>';
+            html = '<div class="map-marker-icon"><img src="' + escHtml(appendShared(iconUrl)) + '" style="width:32px;height:32px;object-fit:contain;"></div>';
         } else {
             html = '<div class="map-marker-icon">' + escHtml(emoji || "📍") + '</div>';
         }
-        return L.divIcon({ html: html, className: "", iconSize: [32, 32], iconAnchor: [16, 20] });
+        return L.divIcon({ html: html, className: "", iconSize: [37, 37], iconAnchor: [19, 23] });
     }
 
     function escHtml(str) {

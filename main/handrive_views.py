@@ -53,6 +53,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.safestring import mark_safe
 from django.views.csrf import csrf_failure as default_csrf_failure
 from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_http_methods
 
 from .views import (
@@ -188,6 +189,7 @@ DOCS_RENDER_MODE_MEDIA_IMAGE = "media_image"
 DOCS_RENDER_MODE_MEDIA_VIDEO = "media_video"
 DOCS_RENDER_MODE_MEDIA_AUDIO = "media_audio"
 DOCS_RENDER_MODE_OFFICE = "office"
+DOCS_RENDER_MODE_PDF = "pdf"
 DOCS_RENDER_MODE_UNSUPPORTED = "unsupported"
 HANDRIVE_ACTIVE_ROOT_DIR: ContextVar[Path | None] = ContextVar("handrive_active_root_dir", default=None)
 HANDRIVE_ACTIVE_REQUEST: ContextVar[object | None] = ContextVar("handrive_active_request", default=None)
@@ -247,6 +249,10 @@ DOCS_RENDER_PROFILES_BY_EXTENSION = {
     ".pptx": {
         "mode": DOCS_RENDER_MODE_OFFICE,
         "css_class": "handrive-office handrive-office-presentation",
+    },
+    ".pdf": {
+        "mode": DOCS_RENDER_MODE_PDF,
+        "css_class": "handrive-media handrive-media-pdf",
     },
     ".png": {
         "mode": DOCS_RENDER_MODE_MEDIA_IMAGE,
@@ -334,6 +340,7 @@ DOCS_NON_EDITABLE_MEDIA_MODES = {
     DOCS_RENDER_MODE_MEDIA_VIDEO,
     DOCS_RENDER_MODE_MEDIA_AUDIO,
     DOCS_RENDER_MODE_OFFICE,
+    DOCS_RENDER_MODE_PDF,
 }
 
 DOCS_TEXT = {
@@ -1269,6 +1276,16 @@ def render_handrive_content(
             companion_css=resolved_companion_css,
             companion_js=resolved_companion_js,
         )
+    elif profile["mode"] == DOCS_RENDER_MODE_PDF:
+        file_name = source_path.name if source_path is not None else "preview.pdf"
+        if relative_path:
+            encoded_path = quote(relative_path)
+            pdf_url = f"{reverse('main:handrive_api_pdf_preview')}?path={encoded_path}"
+            if share_owner and share_slug:
+                pdf_url += f"&share_owner={quote(share_owner)}&share_slug={quote(share_slug)}"
+        else:
+            pdf_url = ""
+        rendered = render_handrive_pdf_safely(b"", file_name=file_name, pdf_url=pdf_url)
     elif profile["mode"] == DOCS_RENDER_MODE_OFFICE:
         office_bytes = source_bytes
         if office_bytes is None and source_path is not None:
@@ -4664,6 +4681,8 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None):
         raise Http404("공유 문서를 찾을 수 없습니다.")
 
     if target_path.is_dir():
+        if (target_path / MAP_META_FILENAME).is_file():
+            return handrive_map_viewer(request, map_path=str(relative_path), ui_lang=ui_lang)
         return handrive_list(request, folder_path=relative_path, ui_lang=ui_lang)
 
     resolved_lang = resolve_ui_lang(request, ui_lang)
@@ -6130,7 +6149,8 @@ def handrive_api_preview(request):
                 return json_error("파일을 볼 권한이 없습니다.", status=403)
             if git_virtual is None:
                 file_extension = file_path.suffix.lower()
-                if resolve_handrive_render_profile(file_extension).get("mode") == DOCS_RENDER_MODE_OFFICE:
+                render_mode = resolve_handrive_render_profile(file_extension).get("mode")
+                if render_mode in (DOCS_RENDER_MODE_OFFICE, DOCS_RENDER_MODE_PDF):
                     content = ""
                     rendered_html, render_profile = render_handrive_content(
                         content,
@@ -6138,6 +6158,8 @@ def handrive_api_preview(request):
                         source_path=file_path,
                         relative_path=relative_file_path,
                         request=request,
+                        share_owner=shared_context["owner_username"] if shared_context else "",
+                        share_slug=shared_context["share_slug"] if shared_context else "",
                     )
                 else:
                     try:
@@ -6500,6 +6522,28 @@ def handrive_api_download(request):
     return FileResponse(file_handle, as_attachment=True, filename=filename)
 
 
+@require_http_methods(["GET"])
+@xframe_options_sameorigin
+@with_request_handrive_root
+def handrive_api_pdf_preview(request):
+    """PDF 파일을 inline으로 제공해 브라우저에서 바로 표시할 수 있게 한다."""
+    try:
+        rel_path = normalize_relative_path(request.GET.get("path"), allow_empty=False)
+    except ValueError:
+        raise Http404("파일을 찾을 수 없습니다.")
+    try:
+        file_path, rel_path = normalize_handrive_relative_path(request.GET.get("path"), must_exist=True)
+    except (ValueError, FileNotFoundError):
+        raise Http404("파일을 찾을 수 없습니다.")
+    if file_path.suffix.lower() != ".pdf":
+        raise Http404("PDF 파일이 아닙니다.")
+    if not has_handrive_read_access(request, rel_path):
+        raise PermissionDenied("파일을 볼 권한이 없습니다.")
+    response = FileResponse(file_path.open("rb"), content_type="application/pdf")
+    response["Content-Disposition"] = f"inline; filename*=UTF-8''{quote(file_path.name)}"
+    return response
+
+
 # ---------------------------------------------------------------------------
 # 지도 (Map) API
 # ---------------------------------------------------------------------------
@@ -6782,6 +6826,7 @@ def handrive_map_editor(request, map_path, ui_lang=None):
         "can_edit": has_handrive_write_access(request, normalized),
         "map_viewer_url": f"/handrive/map-viewer/{normalized}",
         "handrive_list_url": parent_list_url,
+        "hide_global_nav": True,
     })
     return render(request, "handrive/map_editor.html", context)
 
@@ -6823,16 +6868,35 @@ def handrive_map_viewer(request, map_path, ui_lang=None):
     else:
         parent_list_url = f"{context['handrive_base_url']}/{parent_path}/list"
 
+    can_edit = has_handrive_write_access(request, normalized)
+    map_is_url_only = is_handrive_url_only_enabled(request, normalized)
+    map_share_url = ""
+    if map_is_url_only:
+        _share_link = HandriveSharedLink.objects.select_related("owner").filter(path=normalized).first()
+        if _share_link:
+            map_share_url = request.build_absolute_uri(
+                build_handrive_shared_view_url(resolved_lang, _share_link.owner.username, _share_link.share_slug)
+            )
+
+    shared_owner = str(getattr(request, "_handrive_shared_owner_username", "") or "")
+    shared_slug = str(getattr(request, "_handrive_shared_slug", "") or "")
+
     context.update({
         "map_path": normalized,
         "map_name": Path(normalized).name,
         "base_image_name": base_image_name,
         "image_url": image_url,
-        "can_edit": has_handrive_write_access(request, normalized),
+        "can_edit": can_edit,
         "map_editor_url": f"/handrive/map-editor/{normalized}",
         "handrive_list_url": parent_list_url,
         "map_data_api_url": reverse("main:handrive_api_map_data"),
         "map_icon_api_url": "/handrive/api/map-image/",
+        "url_share_api_url": reverse("main:handrive_api_url_share") if can_edit else "",
+        "map_is_url_only": map_is_url_only,
+        "map_share_url": map_share_url,
+        "shared_owner": shared_owner,
+        "shared_slug": shared_slug,
+        "hide_global_nav": True,
     })
     return render(request, "handrive/map_viewer.html", context)
 

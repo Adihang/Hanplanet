@@ -1202,8 +1202,7 @@ body.theme-dark .handrive-help-icon-symbol {
     max-height: min(48vh, 420px);
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 12px;
+    gap: 0;
     border: 1px solid var(--handrive-border);
     border-radius: var(--handrive-radius-lg);
     background: var(--handrive-elevated-bg);
@@ -1213,7 +1212,6 @@ body.theme-dark .handrive-help-icon-symbol {
 }
 
 .handrive-job-queue-panel.is-collapsed {
-    gap: 0;
     max-height: none;
 }
 
@@ -1222,6 +1220,12 @@ body.theme-dark .handrive-help-icon-symbol {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--handrive-border);
+}
+
+.handrive-job-queue-panel.is-collapsed .handrive-job-queue-head {
+    border-bottom: none;
 }
 
 .handrive-job-queue-head-main {
@@ -1345,7 +1349,7 @@ body.theme-dark .handrive-help-icon-symbol {
 
 .handrive-job-queue-list {
     margin: 0;
-    padding: 0;
+    padding: 10px 12px;
     list-style: none;
     display: flex;
     flex-direction: column;
@@ -3752,16 +3756,28 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     min-height: max(720px, calc(100vh - 220px));
 }
 
+.handrive-list-preview-content.handrive-media-pdf .handrive-media-pdf-wrap {
+    flex: 1 1 auto;
+    min-height: max(720px, calc(100vh - 220px));
+    overflow-x: hidden;
+}
+
+.handrive-list-preview-content.handrive-media-pdf .handrive-media-pdf-element {
+    min-height: max(720px, calc(100vh - 220px));
+}
+
 /* 가로모드 미리보기: PDF를 article 전체에 채움
    position: absolute; inset: 0 으로 flex/height:100% 해석 문제를 우회
    handrive-office(pptx/docx/xlsx)도 PDF iframe으로 렌더되므로 동일 규칙 적용 */
 .handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-media,
+.handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-media-pdf,
 .handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-office {
     position: relative;
     overflow: auto;
 }
 
 .handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-media .handrive-media-pdf-wrap,
+.handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-media-pdf .handrive-media-pdf-wrap,
 .handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-office .handrive-media-pdf-wrap {
     position: absolute;
     inset: 0;

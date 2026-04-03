@@ -32,6 +32,7 @@
         var normalizedRenderMode =
             renderMode === "markdown" ||
             renderMode === "office" ||
+            renderMode === "pdf" ||
             renderMode === "media_image" ||
             renderMode === "media_video" ||
             renderMode === "media_audio" ||

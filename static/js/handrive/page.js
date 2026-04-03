@@ -380,6 +380,7 @@
             "handrive-media-image",
             "handrive-media-video",
             "handrive-media-audio",
+            "handrive-media-pdf",
             "handrive-unsupported"
         );
         const renderClasses = String(renderClass || "")
@@ -389,6 +390,7 @@
             renderMode === "media_image" ||
             renderMode === "media_video" ||
             renderMode === "media_audio" ||
+            renderMode === "pdf" ||
             renderClasses.includes("handrive-media")
         ) {
             targetElement.classList.add("handrive-media");
@@ -396,7 +398,8 @@
                 if (
                     className === "handrive-media-image" ||
                     className === "handrive-media-video" ||
-                    className === "handrive-media-audio"
+                    className === "handrive-media-audio" ||
+                    className === "handrive-media-pdf"
                 ) {
                     targetElement.classList.add(className);
                 }
@@ -5637,16 +5640,19 @@
                     if (!entry || entry.isCurrentFolder || !entry.can_edit || !urlShareApiUrl) {
                         return;
                     }
+                    function resolveShareUrl(rawUrl) {
+                        return rawUrl || "";
+                    }
                     urlShareModal.open({
                         isUrlOnly: Boolean(entry.is_url_only),
-                        shareUrl: entry.share_url || "",
+                        shareUrl: resolveShareUrl(entry.share_url),
                         onToggle: async function (enabled) {
                             const data = await requestJson(
                                 appendSharedQuery(urlShareApiUrl),
                                 buildPostOptions({ path: entry.path, enabled: enabled })
                             );
                             await refreshCurrentDirectory();
-                            return { isUrlOnly: Boolean(data.is_url_only), shareUrl: data.share_url || "" };
+                            return { isUrlOnly: Boolean(data.is_url_only), shareUrl: resolveShareUrl(data.share_url) };
                         },
                     });
                     return;

@@ -1,0 +1,38 @@
+<div class="map-name-popup-overlay" id="map-marker-popup-overlay" hidden>
+    <div class="map-name-popup">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
+            <h4 style="margin:0;">마커 정보</h4>
+            <label title="아이콘 표시" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;user-select:none;">
+                <input type="checkbox" id="map-marker-popup-icon-visible" checked style="margin:0;width:22px;height:22px;">
+                <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="10" cy="10" rx="8" ry="5"/><circle cx="10" cy="10" r="2.5"/></svg>
+            </label>
+        </div>
+        <div style="font-size:15px;margin-bottom:4px;">아이콘</div>
+        <div class="map-editor-icon-grid" id="map-marker-popup-icons" style="margin-bottom:10px;"></div>
+        <label style="font-size:15px;display:block;margin-bottom:6px;">이름
+            <input type="text" id="map-marker-popup-name" placeholder="{{ handrive_text.map_marker_name_placeholder }}" autocomplete="off" style="margin-top:4px;">
+        </label>
+        <label style="font-size:15px;display:block;margin-bottom:6px;">설명
+            <textarea id="map-marker-popup-desc" rows="3" placeholder="설명 (선택)" autocomplete="off" style="margin-top:4px;width:100%;box-sizing:border-box;resize:vertical;"></textarea>
+        </label>
+        <div style="margin-bottom:8px;">
+            <div style="font-size:15px;margin-bottom:4px;">이미지</div>
+            <div id="map-marker-popup-image-preview" style="display:none;margin-bottom:6px;position:relative;">
+                <img id="map-marker-popup-image-img" src="" style="max-width:100%;max-height:120px;border-radius:4px;display:block;">
+                <button type="button" id="map-marker-popup-image-remove" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.5);color:#fff;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;font-size:12px;line-height:1;padding:0;">✕</button>
+            </div>
+            <label class="ui-btn" style="cursor:pointer;font-size:15px;display:inline-flex;align-items:center;gap:5px;">
+                <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/></svg>
+                이미지 첨부
+                <input type="file" id="map-marker-popup-image-input" accept="image/*" hidden>
+            </label>
+        </div>
+        <div style="font-size:15px;color:var(--handrive-text-muted,#888);min-height:1em;" id="map-marker-popup-bind-display"></div>
+        <div class="map-name-popup-actions">
+            <button type="button" class="ui-btn ui-btn-danger" id="map-marker-popup-delete" style="margin-right:auto;color:#e53935;">삭제</button>
+            <button type="button" class="ui-btn" id="map-marker-popup-bind" title="다른 아이콘/구역과 연결">바인딩</button>
+            <button type="button" class="ui-btn" id="map-marker-popup-cancel">취소</button>
+            <button type="button" class="ui-btn ui-btn-primary" id="map-marker-popup-confirm">확인</button>
+        </div>
+    </div>
+</div>

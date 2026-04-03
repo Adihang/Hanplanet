@@ -1,10 +1,11 @@
 {% extends 'base.html' %}
+{% load static_versioned %}
 {% block body_class %}handrive-page map-editor-page{% endblock %}
 {% block content %}
 {% include 'handrive/_assets_head.html' %}
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" crossorigin="">
+<link rel="stylesheet" href="{% static_v 'css/vendor/leaflet.css' %}">
+<link rel="stylesheet" href="{% static_v 'css/vendor/leaflet.draw.css' %}">
 
 <style>
 .map-editor-wrap {
@@ -129,12 +130,13 @@
 }
 .map-editor-icon-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fill, 25px);
     gap: 6px;
     margin-bottom: 10px;
 }
 .map-editor-icon-btn {
-    aspect-ratio: 1;
+    width: 25px;
+    height: 25px;
     border: 2px solid transparent;
     border-radius: 6px;
     background: var(--handrive-surface-subtle, #f5f5f5);
@@ -145,12 +147,15 @@
     justify-content: center;
     padding: 0;
     transition: border-color 0.15s;
+    flex-shrink: 0;
 }
 .map-editor-icon-btn.is-selected {
     border-color: var(--handrive-accent, #4f8ef7);
     background: color-mix(in srgb, var(--handrive-accent, #4f8ef7) 15%, var(--handrive-surface, #fff));
 }
 .map-editor-icon-btn img {
+    max-width: 20px;
+    max-height: 20px;
     width: 100%;
     height: 100%;
     object-fit: contain;
@@ -181,6 +186,9 @@
     height: 16px;
     border-radius: 3px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 .map-editor-layer-name {
     flex: 1;
@@ -219,7 +227,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.6em;
+    font-size: 1.85em;
     line-height: 1;
     filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));
 }
@@ -238,7 +246,10 @@
     background: var(--handrive-bg);
     border-radius: var(--handrive-radius-lg);
     padding: 12px;
-    min-width: 260px;
+    width: min(500px, calc(100vw - 32px));
+    min-width: 300px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
     box-shadow: 0 4px 24px rgba(0,0,0,0.18);
     display: flex;
     flex-direction: column;
@@ -246,10 +257,11 @@
 }
 .map-name-popup h4 {
     margin: 0;
-    font-size: 16px;
+    font-size: 22px;
     font-weight: 700;
 }
-.map-name-popup input {
+.map-name-popup input,
+.map-name-popup textarea {
     width: 100%;
     padding: 10px;
     border: 1px solid var(--handrive-border-heavy, #ccc);
@@ -258,12 +270,57 @@
     box-sizing: border-box;
     background: var(--handrive-bg);
     color: var(--handrive-text, #222);
+    font-family: inherit;
 }
 .map-name-popup-actions {
     display: flex;
     gap: 8px;
     justify-content: flex-end;
 }
+/* 바인딩 picker */
+.map-bind-picker-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.3);
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.map-bind-picker-overlay[hidden] { display: none; }
+.map-bind-picker {
+    background: var(--handrive-bg);
+    border-radius: var(--handrive-radius-lg);
+    padding: 12px;
+    width: min(400px, calc(100vw - 32px));
+    max-height: min(70vh, 500px);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+}
+.map-bind-picker h4 { margin: 0; font-size: 15px; font-weight: 700; }
+.map-bind-picker-list {
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.map-bind-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--handrive-radius-sm);
+    cursor: pointer;
+    font-size: 0.9em;
+    border: 1px solid transparent;
+}
+.map-bind-picker-item:hover { background: var(--handrive-surface-subtle, #f5f5f5); }
+.map-bind-picker-item.is-selected { border-color: var(--handrive-accent, #4f8ef7); background: var(--handrive-surface-subtle, #f0f5ff); }
+.map-bind-picker-item-icon { font-size: 1.1em; flex-shrink: 0; width: 22px; text-align: center; }
+.map-bind-picker-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .map-save-status {
     font-size: 0.78em;
     color: var(--handrive-text-secondary, #888);
@@ -278,6 +335,34 @@ body.theme-dark .leaflet-popup-tip {
 }
 body.theme-dark .leaflet-container {
     background: #1a1a1a;
+}
+body.theme-dark .leaflet-bar,
+body.theme-dark .leaflet-bar a,
+body.theme-dark .leaflet-control-zoom-in,
+body.theme-dark .leaflet-control-zoom-out,
+body.theme-dark .leaflet-draw-toolbar a,
+body.theme-dark .leaflet-draw-actions a {
+    background: var(--handrive-surface);
+    border-color: var(--handrive-border);
+    color: var(--handrive-text);
+}
+body.theme-dark .leaflet-bar a:hover,
+body.theme-dark .leaflet-control-zoom-in:hover,
+body.theme-dark .leaflet-control-zoom-out:hover,
+body.theme-dark .leaflet-draw-toolbar a:hover,
+body.theme-dark .leaflet-draw-actions a:hover {
+    background: var(--handrive-surface-subtle, #2a2a2a);
+    color: var(--handrive-text);
+}
+body.theme-dark .leaflet-bar a.leaflet-disabled {
+    background: var(--handrive-surface);
+    color: var(--handrive-text-muted, #666);
+}
+body.theme-dark .leaflet-draw-toolbar a {
+    filter: invert(0.8) hue-rotate(180deg);
+}
+body.theme-dark .leaflet-draw-toolbar a:hover {
+    filter: invert(0.9) hue-rotate(180deg);
 }
 /* 구역 그리기 vertex 마커: 흰 사각형 → 작은 원 */
 .leaflet-div-icon {
@@ -327,6 +412,44 @@ body.theme-dark .leaflet-container {
 .map-icon-delete-popup .ui-btn-danger:focus-visible {
     background: #c62828;
     border-color: #c62828;
+}
+/* 레이어 그룹 & 드래그앤드롭 */
+.map-editor-layer-group { margin-bottom: 2px; }
+.map-editor-layer-group-header {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 6px;
+    border-radius: 5px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--handrive-text, #222);
+}
+.map-editor-layer-group-header:hover { background: var(--handrive-surface-subtle, #f5f5f5); }
+.map-editor-layer-group-arrow {
+    font-size: 0.65em;
+    width: 10px;
+    flex-shrink: 0;
+    color: var(--handrive-text-secondary, #888);
+}
+.map-editor-layer-group-children { padding-left: 10px; }
+.map-editor-layer-drag-handle {
+    cursor: grab;
+    color: var(--handrive-text-secondary, #bbb);
+    font-size: 0.9em;
+    flex-shrink: 0;
+    user-select: none;
+    line-height: 1;
+    padding: 0 1px;
+}
+.map-editor-layer-item.is-dragging { opacity: 0.35; }
+.map-editor-layer-item.is-drop-target,
+.map-editor-layer-group-header.is-drop-target {
+    background: color-mix(in srgb, var(--handrive-accent, #4f8ef7) 15%, transparent);
+    outline: 2px dashed var(--handrive-accent, #4f8ef7);
+    outline-offset: -2px;
+    border-radius: 5px;
 }
 </style>
 
@@ -386,35 +509,23 @@ body.theme-dark .leaflet-container {
     </div>
 </div>
 
-<!-- 이름 입력 팝업 -->
-<div class="map-name-popup-overlay" id="map-name-popup-overlay" hidden>
-    <div class="map-name-popup">
-        <h4 id="map-name-popup-title">이름 입력</h4>
-        <input type="text" id="map-name-popup-input" placeholder="{{ handrive_text.map_name_placeholder }}" autocomplete="off">
-        <div class="map-name-popup-actions">
-            <button type="button" class="ui-btn" id="map-name-popup-cancel">취소</button>
-            <button type="button" class="ui-btn ui-btn-primary" id="map-name-popup-confirm">확인</button>
+{% include 'popup/handrive/map_zone_popup.html' %}
+{% include 'popup/handrive/map_marker_popup.html' %}
+
+<div class="map-bind-picker-overlay" id="map-bind-picker-overlay" hidden>
+    <div class="map-bind-picker">
+        <h4>바인딩할 레이어 선택</h4>
+        <div class="map-bind-picker-list" id="map-bind-picker-list"></div>
+        <div class="map-bind-picker-actions">
+            <button type="button" class="ui-btn ui-btn-danger" id="map-bind-picker-clear" style="margin-right:auto;color:#e53935;">바인딩 해제</button>
+            <button type="button" class="ui-btn" id="map-bind-picker-cancel">취소</button>
+            <button type="button" class="ui-btn ui-btn-primary" id="map-bind-picker-confirm">확인</button>
         </div>
     </div>
 </div>
 
-<!-- 마커 정보 팝업 -->
-<div class="map-name-popup-overlay" id="map-marker-popup-overlay" hidden>
-    <div class="map-name-popup">
-        <h4>마커 정보</h4>
-        <label style="font-size:0.82em;display:block;margin-bottom:6px;">이름
-            <input type="text" id="map-marker-popup-name" placeholder="{{ handrive_text.map_marker_name_placeholder }}" autocomplete="off" style="margin-top:4px;">
-        </label>
-        <div class="map-name-popup-actions">
-            <button type="button" class="ui-btn ui-btn-danger" id="map-marker-popup-delete" style="margin-right:auto;color:#e53935;">삭제</button>
-            <button type="button" class="ui-btn" id="map-marker-popup-cancel">취소</button>
-            <button type="button" class="ui-btn ui-btn-primary" id="map-marker-popup-confirm">확인</button>
-        </div>
-    </div>
-</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js" crossorigin=""></script>
+<script src="{% static_v 'js/vendor/leaflet.js' %}"></script>
+<script src="{% static_v 'js/vendor/leaflet.draw.js' %}"></script>
 <script>
 (function () {
     "use strict";
@@ -458,15 +569,20 @@ body.theme-dark .leaflet-container {
     var markerPopupTarget = null;
     var saveStatusEl = document.getElementById("map-save-status");
 
+    // 그룹 데이터
+    var groups = {}; // gid -> {name, collapsed}
+    var groupIdCounter = 1;
+    var draggingFid = null;
+    function nextGroupId() { return "g" + (groupIdCounter++); }
+
     // 레이어 ID 생성
     function nextId() { return "f" + (featureIdCounter++); }
 
     var mapContainer = document.getElementById("map-editor-container");
     var cursorCache = {};
-    // 커서 크기: 20px, 핫스팟은 iconAnchor [16,20] 비례 (20px 기준 → 10, 13)
-    var CURSOR_SIZE = 20;
-    var CURSOR_HX = 10;
-    var CURSOR_HY = 13;
+    var CURSOR_SIZE = 32;
+    var CURSOR_HX = 16;
+    var CURSOR_HY = 20;
 
     function applyImageCursor(dataUrl) {
         if (currentTool === "marker") {
@@ -557,6 +673,12 @@ body.theme-dark .leaflet-container {
         if (e.key === "m" || e.key === "M") setTool("marker");
     });
 
+    // 맵 우클릭 → select 모드 (ESC 동작)
+    mapContainer.addEventListener("contextmenu", function(e) {
+        e.preventDefault();
+        setTool("select");
+    });
+
     // 지도 초기화 (이미지 로드 후)
     var loadedImageUrl = imageUrl || "";
     function hideLoading() {
@@ -602,17 +724,8 @@ body.theme-dark .leaflet-container {
             maxZoom: 4,
             zoomSnap: 0.25,
             attributionControl: false,
-            scrollWheelZoom: false,
+            scrollWheelZoom: true,
         });
-
-        // Ctrl/Cmd + 스크롤 줌
-        map.getContainer().addEventListener("wheel", function(e) {
-            if (e.ctrlKey || e.metaKey) {
-                e.preventDefault();
-                var delta = e.deltaY > 0 ? -0.5 : 0.5;
-                map.setZoom(map.getZoom() + delta);
-            }
-        }, { passive: false });
 
         var bounds = [[0, 0], [imgHeight, imgWidth]];
         if (loadedImageUrl) {
@@ -640,13 +753,13 @@ body.theme-dark .leaflet-container {
             map.on(L.Draw.Event.CREATED, function(e) {
                 if (e.layerType === "polygon") {
                     pendingZoneLayer = e.layer;
-                    openNamePopup("구역 이름을 입력하세요", "", function(name) {
+                    openNamePopup("구역 정보", "", function(name, desc, iconData, imageUrl, bindFid, iconVisible) {
                         if (!name) { pendingZoneLayer = null; return; }
-                        addZoneLayer(pendingZoneLayer, name);
+                        addZoneLayer(pendingZoneLayer, name, null, null, desc, iconData, iconVisible !== false);
                         pendingZoneLayer = null;
                         setTool("select");
                         renderLayersList();
-                    });
+                    }, null, true, "", true, {});
                 }
             });
 
@@ -730,10 +843,11 @@ body.theme-dark .leaflet-container {
     }
 
     // ── 구역 추가 ──────────────────────────────────────────────────────────
-    function addZoneLayer(layer, name, id, existingColor) {
+    function addZoneLayer(layer, name, id, existingColor, existingDesc, existingIconData, existingIconVisible) {
         var fid = id || nextId();
         var color = existingColor || randomColor();
-        layer.setStyle({ color: color, fillColor: color, fillOpacity: 0.15, weight: 2 });
+        var iconVisible = existingIconVisible !== false;
+        layer.setStyle({ color: color, fillColor: color, fillOpacity: iconVisible ? 0.15 : 0, opacity: iconVisible ? 1 : 0, weight: 2 });
         layer.addTo(drawnItems);
 
         var latlngs = layer.getLatLngs()[0];
@@ -741,29 +855,46 @@ body.theme-dark .leaflet-container {
         var tooltip = L.tooltip({ permanent: true, direction: "center", className: "map-zone-label" })
             .setContent(name)
             .setLatLng(centroid);
-        tooltip.addTo(map);
+        if (iconVisible) tooltip.addTo(map);
 
-        layerMap[fid] = { type: "zone", name: name, color: color, layer: layer, tooltip: tooltip };
+        var icd = existingIconData || {};
+        layerMap[fid] = { type: "zone", name: name, color: color, layer: layer, tooltip: tooltip, groupId: null, desc: existingDesc || "", iconKey: icd.iconKey || null, emoji: icd.emoji || null, iconUrl: icd.iconUrl || null, imageUrl: icd.imageUrl || null, iconVisible: iconVisible, bindFid: null };
 
         layer.on("click", function(e) {
             if (currentTool !== "select") return;
             L.DomEvent.stopPropagation(e);
-            openNamePopup("구역 이름 수정", name, function(newName) {
+            var item = layerMap[fid];
+            openNamePopup("구역 정보", item.name, function(newName, newDesc, iconData, imageUrl, bindFid, newIconVisible) {
                 if (newName === null) return;
-                layerMap[fid].name = newName;
-                tooltip.setContent(newName);
+                item.name = newName;
+                item.desc = newDesc;
+                item.iconKey = iconData.iconKey;
+                item.emoji = iconData.emoji;
+                item.iconUrl = iconData.iconUrl;
+                item.imageUrl = imageUrl || null;
+                item.bindFid = bindFid || null;
+                item.iconVisible = newIconVisible !== false;
+                layer.setStyle({ fillOpacity: item.iconVisible ? 0.15 : 0, opacity: item.iconVisible ? 1 : 0 });
+                if (item.iconVisible) { tooltip.setContent(newName); if (!map.hasLayer(tooltip)) tooltip.addTo(map); }
+                else { if (map.hasLayer(tooltip)) map.removeLayer(tooltip); }
                 renderLayersList();
-            });
+            }, function() {
+                drawnItems.removeLayer(layer);
+                if (tooltip) { map.removeLayer(tooltip); }
+                delete layerMap[fid];
+                renderLayersList();
+            }, true, item.desc, true, { iconKey: item.iconKey, emoji: item.emoji, iconUrl: item.iconUrl }, item.imageUrl, fid);
         });
     }
 
     // ── 마커 추가 ──────────────────────────────────────────────────────────
-    function placeMarker(latlng, iconKey, emoji, iconUrl, name, id) {
+    function placeMarker(latlng, iconKey, emoji, iconUrl, name, id, existingDesc, existingImageUrl, existingIconVisible) {
         var fid = id || nextId();
-        var markerIcon = createLeafletIcon(emoji, iconUrl);
+        var iconVisible = existingIconVisible !== false;
+        var markerIcon = iconVisible ? createLeafletIcon(emoji, iconUrl) : createInvisibleIcon();
         var marker = L.marker(latlng, { icon: markerIcon, draggable: canEdit }).addTo(drawnItems);
 
-        layerMap[fid] = { type: "marker", name: name, iconKey: iconKey, emoji: emoji, iconUrl: iconUrl, layer: marker };
+        layerMap[fid] = { type: "marker", name: name, iconKey: iconKey, emoji: emoji, iconUrl: iconUrl, layer: marker, groupId: null, desc: existingDesc || "", imageUrl: existingImageUrl || null, iconVisible: iconVisible, bindFid: null };
 
         marker.on("click", function(e) {
             L.DomEvent.stopPropagation(e);
@@ -771,14 +902,18 @@ body.theme-dark .leaflet-container {
         });
     }
 
+    function createInvisibleIcon() {
+        return L.divIcon({ html: '<div style="width:34px;height:34px;"></div>', className: "", iconSize: [37, 37], iconAnchor: [19, 23] });
+    }
+
     function createLeafletIcon(emoji, iconUrl) {
         var html;
         if (iconUrl) {
-            html = '<div class="map-marker-icon"><img src="' + escHtml(iconUrl) + '" style="width:28px;height:28px;object-fit:contain;"></div>';
+            html = '<div class="map-marker-icon"><img src="' + escHtml(iconUrl) + '" style="width:32px;height:32px;object-fit:contain;"></div>';
         } else {
             html = '<div class="map-marker-icon">' + escHtml(emoji || "📍") + '</div>';
         }
-        return L.divIcon({ html: html, className: "", iconSize: [32, 32], iconAnchor: [16, 20] });
+        return L.divIcon({ html: html, className: "", iconSize: [37, 37], iconAnchor: [19, 23] });
     }
 
     // ── 이름 팝업 ──────────────────────────────────────────────────────────
@@ -787,44 +922,173 @@ body.theme-dark .leaflet-container {
     var namePopupInput = document.getElementById("map-name-popup-input");
     var namePopupCancel = document.getElementById("map-name-popup-cancel");
     var namePopupConfirm = document.getElementById("map-name-popup-confirm");
+    var namePopupDeleteBtn = document.getElementById("map-name-popup-delete");
+    var namePopupDesc = document.getElementById("map-name-popup-desc");
+    var namePopupDescLabel = document.getElementById("map-name-popup-desc-label");
+    var namePopupIconSection = document.getElementById("map-name-popup-icon-section");
+    var namePopupIconsGrid = document.getElementById("map-name-popup-icons");
+    var namePopupSelIconKey = null;
+    var namePopupSelEmoji = null;
+    var namePopupSelIconUrl = null;
+    var namePopupSelImageUrl = null;
     var namePopupCallback = null;
+    var namePopupDeleteCallback = null;
+    var namePopupCurrentFid = null;
+    var namePopupIconVisibleCb = document.getElementById("map-name-popup-icon-visible");
 
-    function openNamePopup(title, value, callback) {
+    // 이미지 첨부 UI
+    var namePopupImageInput = document.getElementById("map-name-popup-image-input");
+    var namePopupImagePreview = document.getElementById("map-name-popup-image-preview");
+    var namePopupImageImg = document.getElementById("map-name-popup-image-img");
+    var namePopupImageRemove = document.getElementById("map-name-popup-image-remove");
+
+    function setNamePopupImagePreview(url) {
+        namePopupSelImageUrl = url || null;
+        if (url) {
+            namePopupImageImg.src = url;
+            namePopupImagePreview.style.display = "";
+        } else {
+            namePopupImageImg.src = "";
+            namePopupImagePreview.style.display = "none";
+        }
+    }
+
+    if (namePopupImageInput) {
+        namePopupImageInput.addEventListener("change", function() {
+            if (!namePopupImageInput.files || !namePopupImageInput.files.length) return;
+            uploadIcon(namePopupImageInput.files[0], function(url) {
+                setNamePopupImagePreview(url);
+            });
+            namePopupImageInput.value = "";
+        });
+    }
+    if (namePopupImageRemove) {
+        namePopupImageRemove.addEventListener("click", function() { setNamePopupImagePreview(null); });
+    }
+
+    function openNamePopup(title, value, callback, deleteCallback, showDesc, descValue, showIcon, iconData, imageUrl, fid) {
         namePopupTitle.textContent = title;
         namePopupInput.value = value || "";
         namePopupCallback = callback;
+        namePopupDeleteCallback = deleteCallback || null;
+        namePopupDeleteBtn.style.display = deleteCallback ? "" : "none";
+        namePopupDescLabel.style.display = showDesc ? "" : "none";
+        namePopupDesc.value = descValue || "";
+        namePopupIconSection.style.display = showIcon ? "" : "none";
+        var id = iconData || {};
+        namePopupSelIconKey = id.iconKey || null;
+        namePopupSelEmoji = id.emoji || null;
+        namePopupSelIconUrl = id.iconUrl || null;
+        setNamePopupImagePreview(imageUrl || null);
+        namePopupCurrentFid = fid || null;
+        namePopupCurrentBindFid = (fid && layerMap[fid]) ? (layerMap[fid].bindFid || null) : null;
+        if (namePopupIconVisibleCb) {
+            namePopupIconVisibleCb.checked = (fid && layerMap[fid]) ? (layerMap[fid].iconVisible !== false) : true;
+        }
+        updateBindDisplay(namePopupBindDisplay, namePopupCurrentBindFid);
+        if (namePopupBindBtn) namePopupBindBtn.style.display = fid ? "" : "none";
+        if (showIcon) {
+            renderPopupIconPicker(namePopupIconsGrid, namePopupSelIconKey, function(sel) {
+                namePopupSelIconKey = sel.iconKey;
+                namePopupSelEmoji = sel.emoji;
+                namePopupSelIconUrl = sel.iconUrl;
+            });
+        }
         namePopupOverlay.hidden = false;
         setTimeout(function() { namePopupInput.focus(); namePopupInput.select(); }, 50);
     }
 
     function confirmNamePopup() {
         var val = namePopupInput.value.trim();
+        var desc = namePopupDesc.value.trim();
+        var iconData = { iconKey: namePopupSelIconKey, emoji: namePopupSelEmoji, iconUrl: namePopupSelIconUrl };
+        var imageUrl = namePopupSelImageUrl || null;
+        var bindFid = namePopupCurrentBindFid || null;
+        var iconVisible = namePopupIconVisibleCb ? namePopupIconVisibleCb.checked : true;
         namePopupOverlay.hidden = true;
-        if (namePopupCallback) { namePopupCallback(val); namePopupCallback = null; }
+        if (namePopupCallback) { namePopupCallback(val, desc, iconData, imageUrl, bindFid, iconVisible); namePopupCallback = null; }
+        namePopupDeleteCallback = null;
     }
 
+    namePopupDeleteBtn.addEventListener("click", function() {
+        namePopupOverlay.hidden = true;
+        var cb = namePopupDeleteCallback;
+        namePopupCallback = null;
+        namePopupDeleteCallback = null;
+        if (cb) cb();
+    });
     namePopupCancel.addEventListener("click", function() {
         namePopupOverlay.hidden = true;
         if (namePopupCallback) { namePopupCallback(null); namePopupCallback = null; }
+        namePopupDeleteCallback = null;
     });
     namePopupConfirm.addEventListener("click", confirmNamePopup);
     namePopupInput.addEventListener("keydown", function(e) {
         if (e.key === "Enter") { e.preventDefault(); confirmNamePopup(); }
-        if (e.key === "Escape") { namePopupOverlay.hidden = true; if (namePopupCallback) { namePopupCallback(null); namePopupCallback = null; } }
+        if (e.key === "Escape") { namePopupOverlay.hidden = true; if (namePopupCallback) { namePopupCallback(null); namePopupCallback = null; } namePopupDeleteCallback = null; }
     });
 
     // ── 마커 팝업 ──────────────────────────────────────────────────────────
     var markerPopupOverlay = document.getElementById("map-marker-popup-overlay");
+    var markerPopupIconsGrid = document.getElementById("map-marker-popup-icons");
     var markerPopupName = document.getElementById("map-marker-popup-name");
+    var markerPopupDesc = document.getElementById("map-marker-popup-desc");
     var markerPopupDelete = document.getElementById("map-marker-popup-delete");
     var markerPopupCancel = document.getElementById("map-marker-popup-cancel");
     var markerPopupConfirm = document.getElementById("map-marker-popup-confirm");
+    var markerPopupSelIconKey = null;
+    var markerPopupSelEmoji = null;
+    var markerPopupSelIconUrl = null;
+    var markerPopupSelImageUrl = null;
+    var markerPopupIconVisibleCb = document.getElementById("map-marker-popup-icon-visible");
+
+    var markerPopupImageInput = document.getElementById("map-marker-popup-image-input");
+    var markerPopupImagePreview = document.getElementById("map-marker-popup-image-preview");
+    var markerPopupImageImg = document.getElementById("map-marker-popup-image-img");
+    var markerPopupImageRemove = document.getElementById("map-marker-popup-image-remove");
+
+    function setMarkerPopupImagePreview(url) {
+        markerPopupSelImageUrl = url || null;
+        if (url) {
+            markerPopupImageImg.src = url;
+            markerPopupImagePreview.style.display = "";
+        } else {
+            markerPopupImageImg.src = "";
+            markerPopupImagePreview.style.display = "none";
+        }
+    }
+
+    if (markerPopupImageInput) {
+        markerPopupImageInput.addEventListener("change", function() {
+            if (!markerPopupImageInput.files || !markerPopupImageInput.files.length) return;
+            uploadIcon(markerPopupImageInput.files[0], function(url) {
+                setMarkerPopupImagePreview(url);
+            });
+            markerPopupImageInput.value = "";
+        });
+    }
+    if (markerPopupImageRemove) {
+        markerPopupImageRemove.addEventListener("click", function() { setMarkerPopupImagePreview(null); });
+    }
 
     function openMarkerPopup(fid) {
         var item = layerMap[fid];
         if (!item) return;
         markerPopupTarget = fid;
+        markerPopupSelIconKey = item.iconKey;
+        markerPopupSelEmoji = item.emoji;
+        markerPopupSelIconUrl = item.iconUrl;
+        renderPopupIconPicker(markerPopupIconsGrid, item.iconKey, function(sel) {
+            markerPopupSelIconKey = sel.iconKey;
+            markerPopupSelEmoji = sel.emoji;
+            markerPopupSelIconUrl = sel.iconUrl;
+        });
         markerPopupName.value = item.name || "";
+        markerPopupDesc.value = item.desc || "";
+        setMarkerPopupImagePreview(item.imageUrl || null);
+        if (markerPopupIconVisibleCb) markerPopupIconVisibleCb.checked = item.iconVisible !== false;
+        markerPopupCurrentBindFid = item.bindFid || null;
+        updateBindDisplay(markerPopupBindDisplay, markerPopupCurrentBindFid);
         markerPopupOverlay.hidden = false;
         setTimeout(function() { markerPopupName.focus(); }, 50);
     }
@@ -832,7 +1096,16 @@ body.theme-dark .leaflet-container {
     markerPopupCancel.addEventListener("click", function() { markerPopupOverlay.hidden = true; markerPopupTarget = null; });
     markerPopupConfirm.addEventListener("click", function() {
         if (!markerPopupTarget) return;
-        layerMap[markerPopupTarget].name = markerPopupName.value.trim();
+        var item = layerMap[markerPopupTarget];
+        item.name = markerPopupName.value.trim();
+        item.desc = markerPopupDesc.value.trim();
+        item.iconKey = markerPopupSelIconKey;
+        item.emoji = markerPopupSelEmoji;
+        item.iconUrl = markerPopupSelIconUrl;
+        item.imageUrl = markerPopupSelImageUrl || null;
+        item.iconVisible = markerPopupIconVisibleCb ? markerPopupIconVisibleCb.checked : true;
+        item.bindFid = markerPopupCurrentBindFid || null;
+        item.layer.setIcon(item.iconVisible ? createLeafletIcon(item.emoji, item.iconUrl) : createInvisibleIcon());
         markerPopupOverlay.hidden = true;
         markerPopupTarget = null;
         renderLayersList();
@@ -852,58 +1125,417 @@ body.theme-dark .leaflet-container {
         if (e.key === "Enter") { e.preventDefault(); markerPopupConfirm.click(); }
     });
 
+    // ── 바인딩 picker ───────────────────────────────────────────────────────
+    var bindPickerOverlay = document.getElementById("map-bind-picker-overlay");
+    var bindPickerList = document.getElementById("map-bind-picker-list");
+    var bindPickerCancel = document.getElementById("map-bind-picker-cancel");
+    var bindPickerConfirm = document.getElementById("map-bind-picker-confirm");
+    var bindPickerClear = document.getElementById("map-bind-picker-clear");
+
+    // 현재 picker를 열게 한 fid, 선택된 fid
+    var bindPickerSourceFid = null;
+    var bindPickerSelectedFid = null;
+    var bindPickerOnConfirm = null;
+
+    function getLayerLabel(fid) {
+        var item = layerMap[fid];
+        if (!item) return fid;
+        var typeLabel = item.type === "zone" ? "구역" : "마커";
+        return "[" + typeLabel + "] " + (item.name || "(이름 없음)");
+    }
+
+    function getLayerIconText(fid) {
+        var item = layerMap[fid];
+        if (!item) return "";
+        if (item.type === "zone") return item.emoji || "▭";
+        return item.emoji || "📍";
+    }
+
+    function openBindPicker(sourceFid, currentBindFid, onConfirm) {
+        bindPickerSourceFid = sourceFid;
+        bindPickerSelectedFid = currentBindFid || null;
+        bindPickerOnConfirm = onConfirm;
+        bindPickerList.innerHTML = "";
+        Object.keys(layerMap).forEach(function(fid) {
+            if (fid === sourceFid) return;
+            var item = document.createElement("div");
+            item.className = "map-bind-picker-item" + (fid === bindPickerSelectedFid ? " is-selected" : "");
+            item.dataset.fid = fid;
+            var iconEl = document.createElement("span");
+            iconEl.className = "map-bind-picker-item-icon";
+            iconEl.textContent = getLayerIconText(fid);
+            var labelEl = document.createElement("span");
+            labelEl.textContent = getLayerLabel(fid);
+            item.appendChild(iconEl);
+            item.appendChild(labelEl);
+            item.addEventListener("click", function() {
+                bindPickerSelectedFid = fid;
+                bindPickerList.querySelectorAll(".map-bind-picker-item").forEach(function(el) {
+                    el.classList.toggle("is-selected", el.dataset.fid === fid);
+                });
+            });
+            bindPickerList.appendChild(item);
+        });
+        bindPickerOverlay.hidden = false;
+    }
+
+    bindPickerCancel.addEventListener("click", function() {
+        bindPickerOverlay.hidden = true;
+        bindPickerOnConfirm = null;
+    });
+    bindPickerClear.addEventListener("click", function() {
+        bindPickerOverlay.hidden = true;
+        if (bindPickerOnConfirm) { bindPickerOnConfirm(null); bindPickerOnConfirm = null; }
+    });
+    bindPickerConfirm.addEventListener("click", function() {
+        bindPickerOverlay.hidden = true;
+        if (bindPickerOnConfirm) { bindPickerOnConfirm(bindPickerSelectedFid); bindPickerOnConfirm = null; }
+    });
+
+    // 구역 팝업 바인딩 버튼
+    var namePopupBindBtn = document.getElementById("map-name-popup-bind");
+    var namePopupBindDisplay = document.getElementById("map-name-popup-bind-display");
+    var namePopupCurrentBindFid = null;
+    if (namePopupBindBtn) {
+        namePopupBindBtn.addEventListener("click", function() {
+            var sourceFid = null;
+            // 현재 열려있는 구역 팝업의 fid를 찾는다
+            Object.keys(layerMap).forEach(function(fid) {
+                var item = layerMap[fid];
+                if (item.type === "zone" && !namePopupOverlay.hidden) {
+                    // namePopupInput 값으로 매칭
+                    if (item.name === namePopupInput.value.trim() || namePopupCurrentFid === fid) {
+                        sourceFid = fid;
+                    }
+                }
+            });
+            openBindPicker(sourceFid, namePopupCurrentBindFid, function(selectedFid) {
+                namePopupCurrentBindFid = selectedFid;
+                updateBindDisplay(namePopupBindDisplay, selectedFid);
+            });
+        });
+    }
+
+    function updateBindDisplay(el, fid) {
+        if (!el) return;
+        el.textContent = fid ? ("바인딩: " + getLayerLabel(fid)) : "";
+    }
+
+    // 마커 팝업 바인딩 버튼
+    var markerPopupBindBtn = document.getElementById("map-marker-popup-bind");
+    var markerPopupBindDisplay = document.getElementById("map-marker-popup-bind-display");
+    var markerPopupCurrentBindFid = null;
+    if (markerPopupBindBtn) {
+        markerPopupBindBtn.addEventListener("click", function() {
+            openBindPicker(markerPopupTarget, markerPopupCurrentBindFid, function(selectedFid) {
+                markerPopupCurrentBindFid = selectedFid;
+                updateBindDisplay(markerPopupBindDisplay, selectedFid);
+            });
+        });
+    }
+
     // ── 레이어 목록 렌더링 ─────────────────────────────────────────────────
     var layersListEl = document.getElementById("map-layers-list");
 
+    function makeLayerItem(fid) {
+        var item = layerMap[fid];
+        var li = document.createElement("li");
+        li.className = "map-editor-layer-item";
+        li.draggable = true;
+        li.dataset.layerFid = fid;
+
+        var handle = document.createElement("span");
+        handle.className = "map-editor-layer-drag-handle";
+        handle.textContent = "⠿";
+        handle.title = "드래그해서 그룹화";
+
+        var icon = document.createElement("span");
+        icon.className = "map-editor-layer-icon";
+        if (item.type === "zone") {
+            if (item.iconUrl) {
+                var zoneImg = document.createElement("img");
+                zoneImg.src = item.iconUrl;
+                zoneImg.style.cssText = "max-width:20px;max-height:20px;object-fit:contain;display:block;";
+                icon.appendChild(zoneImg);
+            } else if (item.emoji) {
+                icon.textContent = item.emoji;
+                icon.style.fontSize = "1em";
+            } else {
+                icon.style.background = item.color || "#4f8ef7";
+            }
+        } else if (item.iconUrl) {
+            var iconImg = document.createElement("img");
+            iconImg.src = item.iconUrl;
+            iconImg.style.cssText = "width:20px;height:20px;object-fit:contain;display:block;";
+            icon.appendChild(iconImg);
+            icon.style.background = "none";
+            icon.style.width = "auto";
+        } else {
+            icon.textContent = item.emoji || "📍";
+            icon.style.fontSize = "1em";
+            icon.style.background = "none";
+            icon.style.width = "auto";
+        }
+
+        var nameEl = document.createElement("span");
+        nameEl.className = "map-editor-layer-name";
+        nameEl.textContent = item.name || "(이름 없음)";
+
+        var delBtn = document.createElement("button");
+        delBtn.className = "map-editor-layer-delete";
+        delBtn.textContent = "✕";
+        delBtn.title = "삭제";
+        delBtn.addEventListener("click", function(e) {
+            e.stopPropagation();
+            drawnItems.removeLayer(item.layer);
+            if (item.tooltip) { map.removeLayer(item.tooltip); }
+            delete layerMap[fid];
+            renderLayersList();
+        });
+
+        li.appendChild(handle);
+        li.appendChild(icon);
+        li.appendChild(nameEl);
+        li.appendChild(delBtn);
+
+        li.addEventListener("click", function() {
+            if (item.type === "zone") { map.fitBounds(item.layer.getBounds()); }
+            else { map.panTo(item.layer.getLatLng()); }
+        });
+
+        li.addEventListener("contextmenu", function(e) {
+            e.preventDefault();
+            if (item.type === "zone") {
+                openNamePopup("구역 정보", item.name, function(newName, newDesc, iconData, imageUrl) {
+                    if (newName === null) return;
+                    item.name = newName;
+                    item.desc = newDesc;
+                    item.iconKey = iconData.iconKey;
+                    item.emoji = iconData.emoji;
+                    item.iconUrl = iconData.iconUrl;
+                    item.imageUrl = imageUrl || null;
+                    if (item.tooltip) item.tooltip.setContent(newName);
+                    renderLayersList();
+                }, function() {
+                    drawnItems.removeLayer(item.layer);
+                    if (item.tooltip) { map.removeLayer(item.tooltip); }
+                    delete layerMap[fid];
+                    renderLayersList();
+                }, true, item.desc, true, { iconKey: item.iconKey, emoji: item.emoji, iconUrl: item.iconUrl }, item.imageUrl);
+            } else {
+                openMarkerPopup(fid);
+            }
+        });
+
+        // 드래그앤드롭
+        li.addEventListener("dragstart", function(e) {
+            draggingFid = fid;
+            e.dataTransfer.effectAllowed = "move";
+            setTimeout(function() { li.classList.add("is-dragging"); }, 0);
+        });
+        li.addEventListener("dragend", function() {
+            draggingFid = null;
+            li.classList.remove("is-dragging");
+            document.querySelectorAll(".is-drop-target").forEach(function(el) { el.classList.remove("is-drop-target"); });
+        });
+        li.addEventListener("dragover", function(e) {
+            if (!draggingFid || draggingFid === fid) return;
+            e.preventDefault();
+            e.stopPropagation();
+            li.classList.add("is-drop-target");
+        });
+        li.addEventListener("dragleave", function(e) {
+            if (!li.contains(e.relatedTarget)) li.classList.remove("is-drop-target");
+        });
+        li.addEventListener("drop", function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            li.classList.remove("is-drop-target");
+            if (!draggingFid || draggingFid === fid) return;
+            var srcFid = draggingFid;
+            var srcItem = layerMap[srcFid];
+            var dstItem = layerMap[fid];
+            draggingFid = null;
+            if (!srcItem || !dstItem) return;
+            var targetGid = dstItem.groupId;
+            if (targetGid && groups[targetGid]) {
+                srcItem.groupId = targetGid;
+                renderLayersList();
+            } else {
+                var newGid = nextGroupId();
+                openNamePopup("새 그룹 이름", "", function(name, desc, iconData) {
+                    if (name === null) return;
+                    groups[newGid] = { name: name || "그룹", collapsed: false, desc: desc || "", iconKey: null, emoji: null, iconUrl: null };
+                    layerMap[srcFid].groupId = newGid;
+                    dstItem.groupId = newGid;
+                    renderLayersList();
+                }, null, true, "", false, {});
+            }
+        });
+
+        return li;
+    }
+
     function renderLayersList() {
         layersListEl.innerHTML = "";
-        Object.keys(layerMap).forEach(function(fid) {
-            var item = layerMap[fid];
-            var li = document.createElement("li");
-            li.className = "map-editor-layer-item";
 
-            var icon = document.createElement("span");
-            icon.className = "map-editor-layer-icon";
-            if (item.type === "zone") {
-                icon.style.background = item.color || "#4f8ef7";
-            } else if (item.iconUrl) {
-                var iconImg = document.createElement("img");
-                iconImg.src = item.iconUrl;
-                iconImg.style.cssText = "width:20px;height:20px;object-fit:contain;display:block;";
-                icon.appendChild(iconImg);
-                icon.style.background = "none";
-                icon.style.width = "auto";
+        // 비어있는 그룹 정리
+        Object.keys(groups).forEach(function(gid) {
+            var hasItems = Object.keys(layerMap).some(function(fid) { return layerMap[fid].groupId === gid; });
+            if (!hasItems) delete groups[gid];
+        });
+
+        // 그룹별 fid 수집
+        var groupChildren = {};
+        var ungroupedFids = [];
+        Object.keys(layerMap).forEach(function(fid) {
+            var gid = layerMap[fid].groupId;
+            if (gid && groups[gid]) {
+                if (!groupChildren[gid]) groupChildren[gid] = [];
+                groupChildren[gid].push(fid);
             } else {
-                icon.textContent = item.emoji || "📍";
-                icon.style.fontSize = "1em";
-                icon.style.background = "none";
-                icon.style.width = "auto";
+                layerMap[fid].groupId = null;
+                ungroupedFids.push(fid);
+            }
+        });
+
+        // 그룹 렌더링
+        Object.keys(groups).forEach(function(gid) {
+            var grp = groups[gid];
+            var fids = groupChildren[gid] || [];
+
+            var groupEl = document.createElement("li");
+            groupEl.className = "map-editor-layer-group";
+
+            var header = document.createElement("div");
+            header.className = "map-editor-layer-group-header";
+            header.dataset.groupGid = gid;
+
+            var arrow = document.createElement("span");
+            arrow.className = "map-editor-layer-group-arrow";
+            arrow.textContent = grp.collapsed ? "▶" : "▼";
+
+            var folderSpan = document.createElement("span");
+            folderSpan.style.fontSize = "0.88em";
+            folderSpan.className = "map-editor-layer-icon";
+            if (grp.iconUrl) {
+                var grpImg = document.createElement("img");
+                grpImg.src = grp.iconUrl;
+                grpImg.style.cssText = "max-width:20px;max-height:20px;object-fit:contain;display:block;";
+                folderSpan.appendChild(grpImg);
+            } else if (grp.emoji) {
+                folderSpan.textContent = grp.emoji;
+            } else {
+                folderSpan.textContent = "📁";
             }
 
             var nameEl = document.createElement("span");
             nameEl.className = "map-editor-layer-name";
-            nameEl.textContent = item.name || "(이름 없음)";
+            nameEl.textContent = grp.name;
 
-            var delBtn = document.createElement("button");
-            delBtn.className = "map-editor-layer-delete";
-            delBtn.textContent = "✕";
-            delBtn.title = "삭제";
-            delBtn.addEventListener("click", function(e) {
+            var renameBtn = document.createElement("button");
+            renameBtn.type = "button";
+            renameBtn.className = "map-editor-layer-delete";
+            renameBtn.textContent = "✏";
+            renameBtn.title = "그룹 이름 변경";
+            renameBtn.style.visibility = "hidden";
+            renameBtn.addEventListener("click", function(e) {
                 e.stopPropagation();
-                drawnItems.removeLayer(item.layer);
-                if (item.tooltip) { map.removeLayer(item.tooltip); }
-                delete layerMap[fid];
+                openNamePopup("그룹 정보", grp.name, function(newName, desc, iconData, imageUrl) {
+                    if (newName === null) return;
+                    grp.name = newName || grp.name;
+                    grp.desc = desc || "";
+                    grp.iconKey = iconData.iconKey;
+                    grp.emoji = iconData.emoji;
+                    grp.iconUrl = iconData.iconUrl;
+                    grp.imageUrl = imageUrl || null;
+                    renderLayersList();
+                }, null, true, grp.desc || "", true, { iconKey: grp.iconKey, emoji: grp.emoji, iconUrl: grp.iconUrl }, grp.imageUrl);
+            });
+
+            var ungroupBtn = document.createElement("button");
+            ungroupBtn.type = "button";
+            ungroupBtn.className = "map-editor-layer-delete";
+            ungroupBtn.textContent = "✕";
+            ungroupBtn.title = "그룹 해제";
+            ungroupBtn.style.visibility = "hidden";
+            ungroupBtn.addEventListener("click", function(e) {
+                e.stopPropagation();
+                fids.forEach(function(fid) { if (layerMap[fid]) layerMap[fid].groupId = null; });
+                delete groups[gid];
                 renderLayersList();
             });
 
-            li.appendChild(icon);
-            li.appendChild(nameEl);
-            li.appendChild(delBtn);
-            li.addEventListener("click", function() {
-                if (item.type === "zone") { map.fitBounds(item.layer.getBounds()); }
-                else { map.panTo(item.layer.getLatLng()); }
+            header.appendChild(arrow);
+            header.appendChild(folderSpan);
+            header.appendChild(nameEl);
+            header.appendChild(renameBtn);
+            header.appendChild(ungroupBtn);
+
+            header.addEventListener("mouseenter", function() {
+                renameBtn.style.visibility = "visible";
+                ungroupBtn.style.visibility = "visible";
             });
-            layersListEl.appendChild(li);
+            header.addEventListener("mouseleave", function() {
+                renameBtn.style.visibility = "hidden";
+                ungroupBtn.style.visibility = "hidden";
+            });
+            header.addEventListener("click", function() {
+                grp.collapsed = !grp.collapsed;
+                renderLayersList();
+            });
+
+            header.addEventListener("contextmenu", function(e) {
+                e.preventDefault();
+                openNamePopup("그룹 정보", grp.name, function(newName, desc, iconData, imageUrl) {
+                    if (newName === null) return;
+                    grp.name = newName || grp.name;
+                    grp.desc = desc || "";
+                    grp.iconKey = iconData.iconKey;
+                    grp.emoji = iconData.emoji;
+                    grp.iconUrl = iconData.iconUrl;
+                    grp.imageUrl = imageUrl || null;
+                    renderLayersList();
+                }, null, true, grp.desc || "", true, { iconKey: grp.iconKey, emoji: grp.emoji, iconUrl: grp.iconUrl }, grp.imageUrl);
+            });
+
+            // 그룹 헤더 위로 드롭 → 그룹에 추가
+            header.addEventListener("dragover", function(e) {
+                if (!draggingFid) return;
+                e.preventDefault();
+                e.stopPropagation();
+                header.classList.add("is-drop-target");
+            });
+            header.addEventListener("dragleave", function(e) {
+                if (!header.contains(e.relatedTarget)) header.classList.remove("is-drop-target");
+            });
+            header.addEventListener("drop", function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                header.classList.remove("is-drop-target");
+                if (!draggingFid) return;
+                if (layerMap[draggingFid]) {
+                    layerMap[draggingFid].groupId = gid;
+                    renderLayersList();
+                }
+                draggingFid = null;
+            });
+
+            groupEl.appendChild(header);
+
+            if (!grp.collapsed) {
+                var childrenEl = document.createElement("ul");
+                childrenEl.className = "map-editor-layers-list map-editor-layer-group-children";
+                fids.forEach(function(fid) { childrenEl.appendChild(makeLayerItem(fid)); });
+                groupEl.appendChild(childrenEl);
+            }
+
+            layersListEl.appendChild(groupEl);
+        });
+
+        // 그룹 없는 아이템 렌더링
+        ungroupedFids.forEach(function(fid) {
+            layersListEl.appendChild(makeLayerItem(fid));
         });
     }
 
@@ -928,11 +1560,47 @@ body.theme-dark .leaflet-container {
         });
     }
 
+    var customIconsList = [];
+
     function renderCustomIcons(icons) {
+        customIconsList = icons || [];
         var grid = document.getElementById("map-custom-icons");
         grid.innerHTML = "";
-        (icons || []).forEach(function(ic) {
+        customIconsList.forEach(function(ic) {
             addCustomIconBtn(grid, ic.name, ic.url, ic.path);
+        });
+    }
+
+    function renderPopupIconPicker(container, currentIconKey, onSelect) {
+        container.innerHTML = "";
+        PRESET_ICONS.forEach(function(ic) {
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "map-editor-icon-btn" + (ic.key === currentIconKey ? " is-selected" : "");
+            btn.textContent = ic.emoji;
+            btn.title = ic.key;
+            btn.addEventListener("click", function() {
+                container.querySelectorAll(".map-editor-icon-btn").forEach(function(b) { b.classList.remove("is-selected"); });
+                btn.classList.add("is-selected");
+                onSelect({ iconKey: ic.key, emoji: ic.emoji, iconUrl: null });
+            });
+            container.appendChild(btn);
+        });
+        customIconsList.forEach(function(ic) {
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "map-editor-icon-btn" + ("custom:" + ic.path === currentIconKey ? " is-selected" : "");
+            btn.title = ic.name;
+            var img = document.createElement("img");
+            img.src = ic.url;
+            img.alt = ic.name;
+            btn.appendChild(img);
+            btn.addEventListener("click", function() {
+                container.querySelectorAll(".map-editor-icon-btn").forEach(function(b) { b.classList.remove("is-selected"); });
+                btn.classList.add("is-selected");
+                onSelect({ iconKey: "custom:" + ic.path, emoji: "", iconUrl: ic.url });
+            });
+            container.appendChild(btn);
         });
     }
 
@@ -1047,7 +1715,7 @@ body.theme-dark .leaflet-container {
     }
 
     // ── 아이콘 업로드 ──────────────────────────────────────────────────────
-    function uploadIcon(file) {
+    function uploadIcon(file, onSuccess) {
         var formData = new FormData();
         formData.append("path", mapPath);
         formData.append("icon", file);
@@ -1060,9 +1728,13 @@ body.theme-dark .leaflet-container {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.ok) {
+                if (onSuccess) {
+                    onSuccess(data.icon_url);
+                    return;
+                }
+                customIconsList.push({ name: file.name, url: data.icon_url, path: data.icon_path });
                 var grid = document.getElementById("map-custom-icons");
                 addCustomIconBtn(grid, file.name, data.icon_url, data.icon_path);
-                // 업로드한 아이콘을 바로 선택
                 selectedIconKey = "custom:" + data.icon_path;
                 selectedIconEmoji = "";
                 selectedIconUrl = data.icon_url;
@@ -1088,7 +1760,7 @@ body.theme-dark .leaflet-container {
                     type: "Feature",
                     id: fid,
                     geometry: { type: "Polygon", coordinates: [coords] },
-                    properties: { type: "zone", name: item.name, color: item.color },
+                    properties: { type: "zone", name: item.name, color: item.color, groupId: item.groupId || null, desc: item.desc || "", iconKey: item.iconKey || null, emoji: item.emoji || null, iconUrl: item.iconUrl || null, imageUrl: item.imageUrl || null, iconVisible: item.iconVisible !== false, bindFid: item.bindFid || null },
                 });
             } else if (item.type === "marker") {
                 var ll = item.layer.getLatLng();
@@ -1102,12 +1774,21 @@ body.theme-dark .leaflet-container {
                         iconKey: item.iconKey,
                         emoji: item.emoji,
                         iconUrl: item.iconUrl,
+                        groupId: item.groupId || null,
                         group: getMarkerGroup(ll),
+                        desc: item.desc || "",
+                        imageUrl: item.imageUrl || null,
+                        iconVisible: item.iconVisible !== false,
+                        bindFid: item.bindFid || null,
                     },
                 });
             }
         });
-        return { type: "FeatureCollection", features: features };
+        var groupsList = Object.keys(groups).map(function(gid) {
+            var g = groups[gid];
+            return { id: gid, name: g.name, desc: g.desc || "", iconKey: g.iconKey || null, emoji: g.emoji || null, iconUrl: g.iconUrl || null, imageUrl: g.imageUrl || null };
+        });
+        return { type: "FeatureCollection", features: features, groups: groupsList };
     }
 
     function getMarkerGroup(latlng) {
@@ -1130,6 +1811,14 @@ body.theme-dark .leaflet-container {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (!data.ok || !data.geojson) return;
+            // 그룹 먼저 로드
+            if (data.geojson.groups) {
+                data.geojson.groups.forEach(function(g) {
+                    groups[g.id] = { name: g.name, collapsed: false, desc: g.desc || "", iconKey: g.iconKey || null, emoji: g.emoji || null, iconUrl: g.iconUrl || null, imageUrl: g.imageUrl || null };
+                    var num = parseInt(String(g.id).replace("g", ""), 10);
+                    if (!isNaN(num) && num >= groupIdCounter) groupIdCounter = num + 1;
+                });
+            }
             var features = (data.geojson.features || []);
             features.forEach(function(f) {
                 if (!f.geometry || !f.properties) return;
@@ -1143,11 +1832,15 @@ body.theme-dark .leaflet-container {
                     var coords = (f.geometry.coordinates[0] || []).map(function(c) { return [c[1], c[0]]; });
                     if (coords.length > 1) coords.pop(); // 마지막 닫힘점 제거
                     var layer = L.polygon(coords);
-                    addZoneLayer(layer, props.name || "", fid, props.color);
+                    addZoneLayer(layer, props.name || "", fid, props.color, props.desc || "", { iconKey: props.iconKey || null, emoji: props.emoji || null, iconUrl: props.iconUrl || null, imageUrl: props.imageUrl || null }, props.iconVisible !== false);
+                    if (props.groupId && groups[props.groupId]) layerMap[fid].groupId = props.groupId;
+                    if (props.bindFid) layerMap[fid].bindFid = props.bindFid;
                 } else if (f.geometry.type === "Point" && props.type === "marker") {
                     var c = f.geometry.coordinates;
                     var latlng = L.latLng(c[1], c[0]);
-                    placeMarker(latlng, props.iconKey || "pin", props.emoji || "📍", props.iconUrl || null, props.name || "", fid);
+                    placeMarker(latlng, props.iconKey || "pin", props.emoji || "📍", props.iconUrl || null, props.name || "", fid, props.desc || "", props.imageUrl || null, props.iconVisible !== false);
+                    if (props.groupId && groups[props.groupId]) layerMap[fid].groupId = props.groupId;
+                    if (props.bindFid) layerMap[fid].bindFid = props.bindFid;
                 }
             });
             renderLayersList();

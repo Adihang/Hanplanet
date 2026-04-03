@@ -41,14 +41,17 @@ def _normalize_file_extension(extension: str | None, *, allow_empty: bool = Fals
     return value if value.startswith(".") else f".{value}"
 
 
-def render_handrive_pdf_safely(pdf_bytes: bytes, file_name: str = "preview.pdf") -> str:
-    """PDF 바이트를 base64 data URL iframe 으로 감싼다."""
-    encoded_pdf = base64.b64encode(pdf_bytes).decode("ascii")
-    pdf_data_url = f"data:application/pdf;base64,{encoded_pdf}#view=FitH"
+def render_handrive_pdf_safely(pdf_bytes: bytes, file_name: str = "preview.pdf", *, pdf_url: str = "") -> str:
+    """PDF를 iframe으로 렌더한다. pdf_url이 있으면 직접 URL로, 없으면 base64 data URL로."""
     safe_title = escape(file_name)
+    if pdf_url:
+        src = escape(pdf_url)
+    else:
+        encoded_pdf = base64.b64encode(pdf_bytes).decode("ascii")
+        src = f"data:application/pdf;base64,{encoded_pdf}#view=FitH"
     return mark_safe(
         '<div class="handrive-media-wrap handrive-media-pdf-wrap">'
-        f'<iframe class="handrive-media-element handrive-media-pdf-element" src="{pdf_data_url}" title="{safe_title}"></iframe>'
+        f'<iframe class="handrive-media-element handrive-media-pdf-element" src="{src}" title="{safe_title}"></iframe>'
         "</div>"
     )
 

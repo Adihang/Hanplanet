@@ -62,7 +62,9 @@
     font-size: 1.17em;
     padding: 2px 6px;
     white-space: nowrap;
-    pointer-events: none;
+    pointer-events: auto;
+    cursor: pointer;
+    user-select: none;
 }
 .map-zone-label::before { display: none; }
 .map-marker-icon {
@@ -77,16 +79,55 @@
 .leaflet-popup-content-wrapper {
     border-radius: 8px;
     font-size: 0.88em;
-    max-width: 400px;
 }
 .leaflet-popup-content {
     margin: 10px 15px;
-    max-width: 300px;
 }
-.leaflet-popup-content b + span {
+.map-viewer-popup {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    box-sizing: border-box;
+    min-width: 0;
+    overflow: hidden;
+}
+.map-viewer-popup-name {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.map-viewer-popup-desc {
+    font-size: 14px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-y: auto;
+    min-height: 0;
+}
+.map-viewer-popup-group {
+    color: #888;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.map-viewer-popup-name + .map-viewer-popup-desc,
+.map-viewer-popup-name + .map-viewer-popup-group,
+.map-viewer-popup-desc + .map-viewer-popup-group {
     border-top: 1px solid var(--handrive-border, #e0e0e0);
     padding-top: 6px;
     margin-top: 2px;
+}
+.map-viewer-popup-image {
+    display: block;
+    max-width: 100%;
+    max-height: 180px;
+    border-radius: 4px;
+}
+.map-viewer-popup.is-width-clamped .map-viewer-popup-desc {
+    overflow-y: auto;
 }
 body.theme-dark .leaflet-popup-content-wrapper,
 body.theme-dark .leaflet-popup-tip {
@@ -102,6 +143,8 @@ body.theme-dark .leaflet-bar a,
 body.theme-dark .leaflet-control-zoom-in,
 body.theme-dark .leaflet-control-zoom-out {
     background: var(--handrive-surface);
+    border-style: solid;
+    border-width: 1px;
     border-color: var(--handrive-border);
     color: var(--handrive-text);
 }
@@ -114,6 +157,12 @@ body.theme-dark .leaflet-control-zoom-out:hover {
 body.theme-dark .leaflet-bar a.leaflet-disabled {
     background: var(--handrive-surface);
     color: var(--handrive-text-muted, #666);
+}
+.leaflet-top.leaflet-left .leaflet-bar,
+.leaflet-top.leaflet-left .leaflet-bar a,
+.leaflet-top.leaflet-left .leaflet-control-zoom-in,
+.leaflet-top.leaflet-left .leaflet-control-zoom-out {
+    border-width: 1px;
 }
 /* 레이어 가시성 위젯 */
 .map-viewer-layers-widget {
@@ -278,8 +327,183 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             + "&share_slug=" + encodeURIComponent(sharedSlug);
     }
 
+    var popupMeasureCanvas = document.createElement("canvas");
+    var popupMeasureContext = popupMeasureCanvas.getContext("2d");
+
+    function measurePopupTextWidth(text, font) {
+        if (!popupMeasureContext) return 0;
+        popupMeasureContext.font = font;
+        return popupMeasureContext.measureText(String(text || "")).width;
+    }
+
+    function getPopupFonts() {
+        var bodyStyle = window.getComputedStyle(document.body);
+        var family = bodyStyle.fontFamily || "sans-serif";
+        return {
+            name: "600 16px " + family,
+            desc: "400 14px " + family,
+            group: "400 12px " + family
+        };
+    }
+
+    function measurePopupContentWidth(name, desc, group) {
+        var fonts = getPopupFonts();
+        var maxWidth = 0;
+        if (name) maxWidth = Math.max(maxWidth, measurePopupTextWidth(name, fonts.name));
+        if (desc) {
+            String(desc).split(/\r?\n/).forEach(function(line) {
+                maxWidth = Math.max(maxWidth, measurePopupTextWidth(line, fonts.desc));
+            });
+        }
+        if (group) {
+            maxWidth = Math.max(maxWidth, measurePopupTextWidth(group, fonts.group));
+        }
+        return maxWidth;
+    }
+
+    function getPopupLimits() {
+        var width = container ? container.clientWidth : 0;
+        var height = container ? container.clientHeight : 0;
+        return {
+            maxWidth: width ? Math.floor(width / 2) : 0,
+            maxHeight: height ? Math.floor(height / 2.5) : 0
+        };
+    }
+
+    function createPopupContent(data) {
+        var root = document.createElement("div");
+        root.className = "map-viewer-popup";
+        root.dataset.popupName = data.name || "";
+        root.dataset.popupDesc = data.desc || "";
+        root.dataset.popupGroup = data.group || "";
+        root.dataset.popupHasImage = data.imageUrl ? "1" : "";
+
+        if (data.name) {
+            var nameEl = document.createElement("div");
+            nameEl.className = "map-viewer-popup-name";
+            nameEl.textContent = data.name;
+            root.appendChild(nameEl);
+        }
+        if (data.desc) {
+            var descEl = document.createElement("div");
+            descEl.className = "map-viewer-popup-desc";
+            descEl.textContent = data.desc;
+            root.appendChild(descEl);
+        }
+        if (data.group) {
+            var groupEl = document.createElement("div");
+            groupEl.className = "map-viewer-popup-group";
+            groupEl.textContent = data.group;
+            root.appendChild(groupEl);
+        }
+        if (data.imageUrl) {
+            var imgEl = document.createElement("img");
+            imgEl.className = "map-viewer-popup-image";
+            imgEl.src = appendShared(data.imageUrl);
+            imgEl.alt = data.name || data.group || "";
+            root.appendChild(imgEl);
+        }
+
+        return root;
+    }
+
+    function sizePopupContent(popup) {
+        if (!popup || !popup.getElement) return;
+        var popupEl = popup.getElement();
+        if (!popupEl) return;
+        var content = popupEl.querySelector(".leaflet-popup-content");
+        if (!content) return;
+        var root = content.querySelector(".map-viewer-popup");
+        if (!root) return;
+
+        var limits = getPopupLimits();
+        if (!limits.maxWidth || !limits.maxHeight) return;
+
+        var name = root.dataset.popupName || "";
+        var desc = root.dataset.popupDesc || "";
+        var group = root.dataset.popupGroup || "";
+        var measuredWidth = measurePopupContentWidth(name, desc, group);
+        var nextWidth = Math.ceil(measuredWidth) + 14;
+        var finalWidth = Math.min(nextWidth, limits.maxWidth);
+
+        content.style.width = finalWidth + "px";
+        content.style.maxWidth = finalWidth + "px";
+        content.style.minWidth = finalWidth + "px";
+        content.style.maxHeight = limits.maxHeight + "px";
+        content.style.overflow = "hidden";
+
+        root.style.width = finalWidth + "px";
+        root.style.maxWidth = finalWidth + "px";
+        root.style.minWidth = finalWidth + "px";
+        root.style.maxHeight = limits.maxHeight + "px";
+        root.classList.toggle("is-width-clamped", nextWidth > limits.maxWidth);
+
+        var image = root.querySelector(".map-viewer-popup-image");
+        if (image) {
+            image.style.maxHeight = Math.max(120, Math.floor(limits.maxHeight / 2.2)) + "px";
+        }
+    }
+
+    function schedulePopupSizing(popup) {
+        if (!popup) return;
+        window.requestAnimationFrame(function() {
+            sizePopupContent(popup);
+            window.requestAnimationFrame(function() {
+                if (popup.update) popup.update();
+            });
+        });
+    }
+
+    function scheduleMapResize() {
+        if (!map) return;
+        map.invalidateSize({ animate: false });
+        if (openPopup) {
+            schedulePopupSizing(openPopup);
+        }
+    }
+
+    function openPopupAfterMapMove(layerData) {
+        if (!layerData || !layerData.leafletLayer || !layerData.leafletLayer.getPopup) return;
+        var popup = layerData.leafletLayer.getPopup();
+        if (!popup) return;
+        var finished = false;
+        function finish() {
+            if (finished) return;
+            finished = true;
+            syncLayerPopupAnchor(layerData);
+            layerData.leafletLayer.openPopup();
+        }
+        map.once("moveend", finish);
+        window.setTimeout(finish, 900);
+    }
+
+    function openSourceLayerLikeClick(layerData) {
+        if (!layerData || !layerData.leafletLayer) return;
+        if (layerData.type === "zone") {
+            focusZoneLayer(layerData.leafletLayer, function() {
+                syncLayerPopupAnchor(layerData);
+                if (layerData.leafletLayer.getPopup && layerData.leafletLayer.getPopup()) {
+                    layerData.leafletLayer.openPopup();
+                }
+            });
+            return;
+        }
+        if (map.flyTo) {
+            map.flyTo(layerData.leafletLayer.getLatLng(), Math.max(map.getZoom(), 0), {
+                animate: true,
+                duration: 0.75,
+                easeLinearity: 0.22
+            });
+        } else {
+            map.setView(layerData.leafletLayer.getLatLng(), Math.max(map.getZoom(), 0), { animate: true });
+        }
+        openPopupAfterMapMove(layerData);
+    }
+
     var imgWidth = 1000, imgHeight = 700;
     var loadedImageUrl = imageUrl || "";
+    var map = null;
+    var openPopup = null;
 
     function hideLoading() {
         var overlay = document.getElementById("map-viewer-loading");
@@ -318,7 +542,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 
     function initMap() {
         hideLoading();
-        var map = L.map("map-viewer-container", {
+        map = L.map("map-viewer-container", {
             crs: L.CRS.Simple,
             minZoom: -4,
             maxZoom: 4,
@@ -334,10 +558,16 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             L.imageOverlay(loadedImageUrl, bounds).addTo(map);
         }
         map.fitBounds(bounds);
+        window.requestAnimationFrame(function() {
+            scheduleMapResize();
+        });
 
         // 레이어 추적
         var viewerLayerData = {}; // fid -> {type, name, color, emoji, groupId, leafletLayer, tooltipLayer, visible}
         var viewerGroups = {};    // gid -> {name, fids:[]}
+        var viewerInboundBindSources = {}; // fid -> source fid
+        var viewerGroupCheckboxes = {}; // gid -> checkbox element
+        var viewerLayerCheckboxes = {};  // fid -> checkbox element
 
         // GeoJSON 로드
         fetch(appendShared(mapDataApi + "?path=" + encodeURIComponent(mapPath)), {
@@ -371,20 +601,24 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                     var tooltipLayer = null;
                     if (props.name && zoneIconVisible) {
                         var centroid = computeCentroid(layer.getLatLngs()[0]);
-                        tooltipLayer = L.tooltip({ permanent: true, direction: "center", className: "map-zone-label" })
+                        tooltipLayer = L.tooltip({ permanent: true, direction: "center", className: "map-zone-label", interactive: true })
                             .setContent(props.name)
                             .setLatLng(centroid)
                             .addTo(map);
                     }
                     if (props.name || props.desc || props.imageUrl) {
-                        var zoneLines = ["<div style='display:inline-block;max-width:380px;'>"];
-                        if (props.name) zoneLines.push("<b style='font-size:16px;white-space:nowrap;display:block;'>" + escHtml(props.name) + "</b>");
-                        if (props.desc) zoneLines.push("<span style='font-size:14px;white-space:pre-wrap;display:block;margin-top:6px;'>" + escHtml(props.desc) + "</span>");
-                        if (props.imageUrl) zoneLines.push("<img src='" + escHtml(appendShared(props.imageUrl)) + "' style='display:block;max-width:100%;max-height:180px;margin-top:8px;border-radius:4px;'>");
-                        zoneLines.push("</div>");
-                        layer.bindPopup(zoneLines.join(""), { maxWidth: 400 });
+                        layer.bindPopup(createPopupContent({
+                            name: props.name || "",
+                            desc: props.desc || "",
+                            imageUrl: props.imageUrl || ""
+                        }));
+                        syncLayerPopupAnchor({ type: "zone", leafletLayer: layer });
                     }
                     viewerLayerData[fid] = { type: "zone", name: props.name, color: color, groupId: props.groupId || null, leafletLayer: layer, tooltipLayer: tooltipLayer, visible: true, bindFid: props.bindFid || null };
+                    if (props.bindFid && !viewerInboundBindSources[props.bindFid]) {
+                        viewerInboundBindSources[props.bindFid] = fid;
+                    }
+                    bindZoneLabelClick(viewerLayerData[fid]);
 
                 } else if (f.geometry.type === "Point" && props.type === "marker") {
                     var c = f.geometry.coordinates;
@@ -392,14 +626,19 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                     var iconVisible = props.iconVisible !== false;
                     var icon = iconVisible ? createIcon(props.emoji, props.iconUrl) : L.divIcon({ html: '<div style="width:34px;height:34px;"></div>', className: "", iconSize: [37, 37], iconAnchor: [19, 23] });
                     var marker = L.marker(latlng, { icon: icon }).addTo(map);
-                    var markerLines = ["<div style='display:inline-block;max-width:380px;'>"];
-                    if (props.name) markerLines.push("<b style='font-size:16px;white-space:nowrap;display:block;'>" + escHtml(props.name) + "</b>");
-                    if (props.desc) markerLines.push("<span style='font-size:14px;white-space:pre-wrap;display:block;margin-top:6px;'>" + escHtml(props.desc) + "</span>");
-                    if (props.group) markerLines.push("<span style='color:#888;font-size:12px;display:block;margin-top:4px;'>" + escHtml(props.group) + "</span>");
-                    if (props.imageUrl) markerLines.push("<img src='" + escHtml(appendShared(props.imageUrl)) + "' style='display:block;max-width:100%;max-height:180px;margin-top:8px;border-radius:4px;'>");
-                    markerLines.push("</div>");
-                    if (markerLines.length > 2) marker.bindPopup(markerLines.join(""), { maxWidth: 400 });
+                    if (props.name || props.desc || props.group || props.imageUrl) {
+                        marker.bindPopup(createPopupContent({
+                            name: props.name || "",
+                            desc: props.desc || "",
+                            group: props.group || "",
+                            imageUrl: props.imageUrl || ""
+                        }));
+                        syncLayerPopupAnchor({ type: "marker", leafletLayer: marker });
+                    }
                     viewerLayerData[fid] = { type: "marker", name: props.name, emoji: props.emoji || "📍", groupId: props.groupId || null, leafletLayer: marker, tooltipLayer: null, visible: true, bindFid: props.bindFid || null };
+                    if (props.bindFid && !viewerInboundBindSources[props.bindFid]) {
+                        viewerInboundBindSources[props.bindFid] = fid;
+                    }
                 }
             });
 
@@ -414,36 +653,50 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             // 바인딩 클릭 핸들러: bindFid가 있는 레이어 클릭 시 대상으로 이동
             Object.keys(viewerLayerData).forEach(function(fid) {
                 var d = viewerLayerData[fid];
-                if (!d.bindFid) return;
+                if (!viewerInboundBindSources[fid]) return;
                 d.leafletLayer.on("click", function(e) {
-                    var target = viewerLayerData[d.bindFid];
-                    if (!target) return;
                     L.DomEvent.stopPropagation(e);
-                    if (target.type === "zone") {
-                        map.fitBounds(target.leafletLayer.getBounds(), { animate: true, padding: [40, 40] });
-                    } else {
-                        map.setView(target.leafletLayer.getLatLng(), Math.max(map.getZoom(), 0), { animate: true });
-                    }
-                    if (target.leafletLayer.getPopup && target.leafletLayer.getPopup()) {
-                        target.leafletLayer.openPopup();
-                    }
+                    var sourceFid = viewerInboundBindSources[fid];
+                    var sourceTarget = sourceFid ? viewerLayerData[sourceFid] : null;
+                    if (!sourceTarget) return;
+                    openSourceLayerLikeClick(sourceTarget);
                 });
             });
 
             map.on("popupopen", function(e) {
-                var el = e.popup.getElement();
-                if (!el) return;
-                var content = el.querySelector(".leaflet-popup-content");
-                if (!content) return;
-                var maxW = 0;
-                content.querySelectorAll("b, span").forEach(function(child) {
-                    var prev = child.style.whiteSpace;
-                    child.style.whiteSpace = "nowrap";
-                    maxW = Math.max(maxW, child.scrollWidth);
-                    child.style.whiteSpace = prev;
-                });
-                if (maxW > 0) {
-                    content.style.width = Math.min(maxW + 4, 380) + "px";
+                openPopup = e.popup || null;
+                var popupSource = e.popup && e.popup._source;
+                if (popupSource) {
+                    var sourceLayerData = null;
+                    Object.keys(viewerLayerData).some(function(fid) {
+                        var candidate = viewerLayerData[fid];
+                        if (candidate && candidate.leafletLayer === popupSource) {
+                            sourceLayerData = candidate;
+                            return true;
+                        }
+                        return false;
+                    });
+                    if (sourceLayerData) {
+                        syncLayerPopupAnchor(sourceLayerData);
+                    }
+                }
+                schedulePopupSizing(e.popup);
+            });
+            map.on("popupclose", function() {
+                openPopup = null;
+            });
+            map.on("resize", function() {
+                if (openPopup) {
+                    schedulePopupSizing(openPopup);
+                }
+            });
+            window.addEventListener("resize", function() {
+                scheduleMapResize();
+            }, { passive: true });
+
+            Object.keys(viewerLayerData).forEach(function(fid) {
+                if (viewerInboundBindSources[fid] && viewerLayerData[fid].leafletLayer && viewerLayerData[fid].leafletLayer.unbindPopup) {
+                    viewerLayerData[fid].leafletLayer.unbindPopup();
                 }
             });
         })
@@ -458,6 +711,42 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                 if (visible) { if (!map.hasLayer(l)) l.addTo(map); }
                 else { if (map.hasLayer(l)) map.removeLayer(l); }
             });
+            if (viewerLayerCheckboxes[fid]) {
+                viewerLayerCheckboxes[fid].checked = visible;
+            }
+            if (d.groupId) {
+                updateGroupCheckboxState(d.groupId);
+            }
+        }
+
+        function setGroupVisible(gid, visible) {
+            var grp = viewerGroups[gid];
+            if (!grp) return;
+            grp.fids.forEach(function(fid) {
+                setLayerVisible(fid, visible);
+            });
+            var groupCb = viewerGroupCheckboxes[gid];
+            if (groupCb) {
+                groupCb.checked = visible;
+                groupCb.indeterminate = false;
+            }
+        }
+
+        function toggleGroupVisible(gid) {
+            var groupCb = viewerGroupCheckboxes[gid];
+            var nextVisible = groupCb ? !groupCb.checked : true;
+            setGroupVisible(gid, nextVisible);
+            return nextVisible;
+        }
+
+        function updateGroupCheckboxState(gid) {
+            var grp = viewerGroups[gid];
+            var groupCb = viewerGroupCheckboxes[gid];
+            if (!grp || !groupCb) return;
+            var allOn = grp.fids.every(function(f) { return viewerLayerData[f] && viewerLayerData[f].visible; });
+            var anyOn = grp.fids.some(function(f) { return viewerLayerData[f] && viewerLayerData[f].visible; });
+            groupCb.indeterminate = !allOn && anyOn;
+            groupCb.checked = allOn;
         }
 
         function makeViewerLayerRow(fid, onToggle) {
@@ -469,6 +758,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             cb.type = "checkbox";
             cb.checked = true;
             cb.dataset.fid = fid;
+            viewerLayerCheckboxes[fid] = cb;
             cb.addEventListener("change", function() {
                 setLayerVisible(fid, cb.checked);
                 if (onToggle) onToggle();
@@ -509,6 +799,8 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             var panel = document.getElementById("map-viewer-layers-panel");
             var widget = document.getElementById("map-viewer-layers-widget");
             if (!panel || !widget) return;
+            viewerGroupCheckboxes = {};
+            viewerLayerCheckboxes = {};
 
             var hasFids = Object.keys(viewerLayerData).length > 0;
             if (!hasFids) return;
@@ -528,6 +820,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                 var groupCb = document.createElement("input");
                 groupCb.type = "checkbox";
                 groupCb.checked = true;
+                viewerGroupCheckboxes[gid] = groupCb;
 
                 var folderSpan = document.createElement("span");
                 folderSpan.textContent = "📁";
@@ -545,39 +838,28 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                 var childrenEl = document.createElement("div");
                 childrenEl.className = "map-viewer-layer-group-children";
 
-                function updateGroupCb() {
-                    var allOn = grp.fids.every(function(f) { return viewerLayerData[f] && viewerLayerData[f].visible; });
-                    var anyOn = grp.fids.some(function(f) { return viewerLayerData[f] && viewerLayerData[f].visible; });
-                    groupCb.indeterminate = !allOn && anyOn;
-                    groupCb.checked = allOn;
-                }
+                function updateGroupCb() { updateGroupCheckboxState(gid); }
 
                 grp.fids.forEach(function(fid) {
                     childrenEl.appendChild(makeViewerLayerRow(fid, updateGroupCb));
                 });
 
                 groupCb.addEventListener("change", function() {
-                    grp.fids.forEach(function(fid) {
-                        setLayerVisible(fid, groupCb.checked);
-                        var itemCb = childrenEl.querySelector('[data-fid="' + fid + '"]');
-                        if (itemCb) itemCb.checked = groupCb.checked;
-                    });
+                    setGroupVisible(gid, groupCb.checked);
                 });
 
                 header.addEventListener("contextmenu", function(e) {
                     e.preventDefault();
                     e.stopPropagation();
                     if (!grp.name && !grp.desc && !grp.imageUrl) return;
-                    var lines = ["<div style='display:inline-block;max-width:380px;'>"];
-                    if (grp.name) lines.push("<b style='font-size:16px;white-space:nowrap;display:block;'>" + escHtml(grp.name) + "</b>");
-                    if (grp.desc) lines.push("<span style='font-size:14px;white-space:pre-wrap;display:block;margin-top:6px;'>" + escHtml(grp.desc) + "</span>");
-                    if (grp.imageUrl) lines.push("<img src='" + escHtml(appendShared(grp.imageUrl)) + "' style='display:block;max-width:100%;max-height:180px;margin-top:8px;border-radius:4px;'>");
-                    lines.push("</div>");
-                    if (lines.length <= 2) return;
                     // 지도 중앙에 임시 팝업 표시
-                    L.popup({ maxWidth: 400 })
+                    L.popup()
                         .setLatLng(map.getCenter())
-                        .setContent(lines.join(""))
+                        .setContent(createPopupContent({
+                            name: grp.name || "",
+                            desc: grp.desc || "",
+                            imageUrl: grp.imageUrl || ""
+                        }))
                         .openOn(map);
                 });
 
@@ -681,7 +963,86 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         } else {
             html = '<div class="map-marker-icon">' + escHtml(emoji || "📍") + '</div>';
         }
-        return L.divIcon({ html: html, className: "", iconSize: [37, 37], iconAnchor: [19, 23] });
+        return L.divIcon({ html: html, className: "", iconSize: [37, 37], iconAnchor: [19, 23], popupAnchor: [0, -4] });
+    }
+
+    function focusZoneLayer(layer, onComplete) {
+        if (!map || !layer) {
+            if (typeof onComplete === "function") onComplete();
+            return;
+        }
+        var size = map.getSize();
+        var padding = [Math.round(size.x * 0.375), Math.round(size.y * 0.375)];
+        var finished = false;
+        function finish() {
+            if (finished) return;
+            finished = true;
+            if (typeof onComplete === "function") onComplete();
+        }
+        map.once("moveend", finish);
+        if (map.flyToBounds) {
+            map.flyToBounds(layer.getBounds(), {
+                animate: true,
+                duration: 0.85,
+                easeLinearity: 0.22,
+                paddingTopLeft: padding,
+                paddingBottomRight: padding
+            });
+        } else {
+            map.fitBounds(layer.getBounds(), {
+                animate: true,
+                paddingTopLeft: padding,
+                paddingBottomRight: padding
+            });
+        }
+        window.setTimeout(finish, 1100);
+    }
+
+    function bindZoneLabelClick(layerData) {
+        if (!layerData || layerData.type !== "zone" || !layerData.tooltipLayer) return;
+        function attachTooltipElement() {
+            var el = layerData.tooltipLayer.getElement && layerData.tooltipLayer.getElement();
+            if (!el || el._hanplanetZoneLabelBound) return;
+            el._hanplanetZoneLabelBound = true;
+            L.DomEvent.disableClickPropagation(el);
+                L.DomEvent.on(el, "click", function(e) {
+                    L.DomEvent.stop(e);
+                    focusZoneLayer(layerData.leafletLayer, function() {
+                        syncLayerPopupAnchor(layerData);
+                        if (layerData.leafletLayer.getPopup && layerData.leafletLayer.getPopup()) {
+                            layerData.leafletLayer.openPopup();
+                        }
+                    });
+                });
+                L.DomEvent.on(el, "contextmenu", function(e) {
+                    L.DomEvent.stop(e);
+                    focusZoneLayer(layerData.leafletLayer, function() {
+                        syncLayerPopupAnchor(layerData);
+                        if (layerData.leafletLayer.getPopup && layerData.leafletLayer.getPopup()) {
+                            layerData.leafletLayer.openPopup();
+                        }
+                    });
+                });
+            }
+        layerData.tooltipLayer.on("add", attachTooltipElement);
+        attachTooltipElement();
+    }
+
+    function getLayerPopupLatLng(layerData) {
+        if (!layerData || !layerData.leafletLayer) return null;
+        if (layerData.type === "zone") {
+            var zoneLatLngs = layerData.leafletLayer.getLatLngs()[0];
+            return zoneLatLngs && zoneLatLngs.length ? computeCentroid(zoneLatLngs) : null;
+        }
+        return layerData.leafletLayer.getLatLng();
+    }
+
+    function syncLayerPopupAnchor(layerData) {
+        if (!layerData || !layerData.leafletLayer || !layerData.leafletLayer.getPopup) return;
+        var popup = layerData.leafletLayer.getPopup();
+        var popupLatLng = getLayerPopupLatLng(layerData);
+        if (!popup || !popupLatLng) return;
+        popup.setLatLng(popupLatLng);
     }
 
     function escHtml(str) {

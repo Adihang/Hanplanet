@@ -1907,7 +1907,10 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
     """실제 디렉터리 엔트리와 가상 repo root 엔트리를 함께 구성한다."""
     entries = []
     existing_entry_paths = set()
-    _children = [directory / p.name for p in directory.resolve().iterdir()]
+    try:
+        _children = [directory / p.name for p in directory.resolve().iterdir()]
+    except (PermissionError, OSError):
+        _children = []
     for child in sorted(_children, key=lambda p: (0 if p.is_dir() else 1, p.name.lower())):
         if child.is_dir():
             entry = build_entry(child)
@@ -5461,7 +5464,8 @@ def handrive_api_rename(request):
     else:
         destination = parent / new_name
 
-    if destination.exists() and destination.resolve() != source_path.resolve():
+    same_path_case_change_only = destination.name.lower() == source_path.name.lower()
+    if destination.exists() and destination.resolve() != source_path.resolve() and not same_path_case_change_only:
         return json_error("같은 이름의 항목이 이미 존재합니다.", status=409)
 
     source_path.rename(destination)

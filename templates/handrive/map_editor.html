@@ -54,6 +54,7 @@
     display: flex;
     flex: 1;
     overflow: hidden;
+    position: relative;
 }
 #map-editor-container {
     flex: 1;
@@ -81,6 +82,51 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    transition: width 0.18s ease, min-width 0.18s ease, border-color 0.18s ease;
+}
+.map-editor-body.is-side-collapsed .map-editor-side {
+    width: 0;
+    min-width: 0;
+    border-left-color: transparent;
+}
+.map-editor-side-toggle {
+    position: absolute;
+    top: 12px;
+    right: 220px;
+    z-index: 1002;
+    width: 25px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 2px 0 0;
+    border: 1px solid var(--handrive-border, #e0e0e0);
+    border-right: none;
+    border-radius: 10px 0 0 10px;
+    background: var(--handrive-surface, #fff);
+    color: var(--handrive-text, #222);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+    cursor: pointer;
+    transition: right 0.18s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.map-editor-side-toggle:hover {
+    background: var(--handrive-surface-subtle, #f5f5f5);
+}
+.map-editor-side-toggle svg {
+    transition: transform 0.18s ease;
+    transform: rotate(180deg);
+}
+.map-editor-body.is-side-collapsed .map-editor-side-toggle {
+    right: 0;
+    border-right: none;
+    border-radius: 10px 0 0 10px;
+}
+.map-editor-body.is-side-collapsed .map-editor-side-toggle svg {
+    transform: rotate(0deg);
+}
+.map-editor-body.is-side-collapsed .map-editor-side > * {
+    opacity: 0;
+    pointer-events: none;
 }
 .map-editor-side-tabs {
     display: flex;
@@ -178,6 +224,10 @@
     font-size: 14px;
     cursor: pointer;
 }
+.map-editor-layer-item.is-selected {
+    background: rgba(79, 142, 247, 0.14);
+    box-shadow: inset 0 0 0 1px rgba(79, 142, 247, 0.55);
+}
 .map-editor-layer-item:hover {
     background: var(--handrive-surface-subtle, #f5f5f5);
 }
@@ -220,7 +270,9 @@
     font-size: 1.17em;
     padding: 2px 6px;
     white-space: nowrap;
-    pointer-events: none;
+    pointer-events: auto;
+    cursor: pointer;
+    user-select: none;
 }
 .map-zone-label::before { display: none; }
 .map-marker-icon {
@@ -320,6 +372,18 @@
 .map-bind-picker-item:hover { background: var(--handrive-surface-subtle, #f5f5f5); }
 .map-bind-picker-item.is-selected { border-color: var(--handrive-accent, #4f8ef7); background: var(--handrive-surface-subtle, #f0f5ff); }
 .map-bind-picker-item-icon { font-size: 1.1em; flex-shrink: 0; width: 22px; text-align: center; }
+.map-bind-picker-item-label {
+    flex: 1;
+    min-width: 0;
+}
+.map-bind-picker-item-meta {
+    margin-left: auto;
+    font-size: 14px;
+    color: var(--handrive-text-secondary, #888);
+    flex-shrink: 0;
+    cursor: pointer;
+    user-select: none;
+}
 .map-bind-picker-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .map-save-status {
     font-size: 0.78em;
@@ -336,6 +400,14 @@ body.theme-dark .leaflet-popup-tip {
 body.theme-dark .leaflet-container {
     background: #1a1a1a;
 }
+body.theme-dark .map-editor-side-toggle {
+    background: var(--handrive-surface);
+    border-color: var(--handrive-border);
+    color: var(--handrive-text);
+}
+body.theme-dark .map-editor-side-toggle:hover {
+    background: var(--handrive-surface-subtle, #2a2a2a);
+}
 body.theme-dark .leaflet-bar,
 body.theme-dark .leaflet-bar a,
 body.theme-dark .leaflet-control-zoom-in,
@@ -343,6 +415,8 @@ body.theme-dark .leaflet-control-zoom-out,
 body.theme-dark .leaflet-draw-toolbar a,
 body.theme-dark .leaflet-draw-actions a {
     background: var(--handrive-surface);
+    border-style: solid;
+    border-width: 1px;
     border-color: var(--handrive-border);
     color: var(--handrive-text);
 }
@@ -364,19 +438,55 @@ body.theme-dark .leaflet-draw-toolbar a {
 body.theme-dark .leaflet-draw-toolbar a:hover {
     filter: invert(0.9) hue-rotate(180deg);
 }
+.leaflet-top.leaflet-left .leaflet-bar,
+.leaflet-top.leaflet-left .leaflet-bar a,
+.leaflet-top.leaflet-left .leaflet-control-zoom-in,
+.leaflet-top.leaflet-left .leaflet-control-zoom-out,
+.leaflet-top.leaflet-left .leaflet-draw-toolbar a,
+.leaflet-top.leaflet-left .leaflet-draw-actions a {
+    border-width: 1px;
+}
+.leaflet-draw-toolbar .leaflet-draw-draw-polygon {
+    position: relative;
+    background-image: none;
+}
+.leaflet-draw-toolbar .leaflet-draw-draw-polygon::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    transform: translate(-50%, -50%);
+    background: currentColor;
+    clip-path: polygon(16% 24%, 54% 12%, 84% 34%, 76% 76%, 30% 88%, 10% 54%);
+}
+body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon,
+body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
+    filter: none;
+}
 /* 구역 그리기 vertex 마커: 흰 사각형 → 작은 원 */
 .leaflet-div-icon {
     background: #fff;
     border: 2px solid var(--handrive-accent, #4f8ef7);
     border-radius: 50%;
-    width: 20px !important;
-    height: 20px !important;
-    margin-left: -10px !important;
-    margin-top: -10px !important;
+    width: 14px !important;
+    height: 14px !important;
+    margin-left: -7px !important;
+    margin-top: -7px !important;
     box-shadow: 0 1px 4px rgba(0,0,0,0.25);
 }
 .leaflet-touch-icon {
     border-radius: 50%;
+}
+.leaflet-draw-guide-dash {
+    width: 12px;
+    height: 2px;
+    margin-left: -6px;
+    margin-top: -1px;
+    border-radius: 999px;
+    opacity: 0.8;
+    transform-origin: 50% 50%;
 }
 #map-editor-container.is-cursor-active * {
     cursor: inherit !important;
@@ -485,6 +595,11 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
             </div>
         </div>
 
+        <button type="button" class="map-editor-side-toggle" id="map-editor-side-toggle" aria-label="사이드 패널 접기" title="사이드 패널 접기">
+            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="12 4 6 10 12 16"></polyline>
+            </svg>
+        </button>
         <div class="map-editor-side">
             <div class="map-editor-side-tabs">
                 <button type="button" class="map-editor-side-tab is-active" data-side-tab="icons">아이콘</button>
@@ -530,7 +645,36 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
 (function () {
     "use strict";
 
+    if (window.L && L.Draw && L.Draw.Polyline && !L.Draw.Polyline.prototype._hanplanetGuideDashPatched) {
+        L.Draw.Polyline.prototype._drawGuide = function (pointA, pointB) {
+            var guideLength = Math.floor(Math.sqrt(Math.pow(pointB.x - pointA.x, 2) + Math.pow(pointB.y - pointA.y, 2)));
+            var spacing = this.options.guidelineDistance;
+            var maxLength = this.options.maxGuideLineLength;
+            var startOffset = guideLength > maxLength ? guideLength - maxLength : spacing;
+            var angle = Math.atan2(pointB.y - pointA.y, pointB.x - pointA.x);
+
+            if (!this._guidesContainer) {
+                this._guidesContainer = L.DomUtil.create("div", "leaflet-draw-guides", this._overlayPane);
+            }
+
+            for (var distance = startOffset; distance < guideLength; distance += spacing) {
+                var ratio = distance / guideLength;
+                var point = {
+                    x: Math.floor(pointA.x * (1 - ratio) + ratio * pointB.x),
+                    y: Math.floor(pointA.y * (1 - ratio) + ratio * pointB.y)
+                };
+                var dash = L.DomUtil.create("div", "leaflet-draw-guide-dash", this._guidesContainer);
+                dash.style.backgroundColor = this._errorShown ? this.options.drawError.color : this.options.shapeOptions.color;
+                L.DomUtil.setPosition(dash, point);
+                dash.style.transform += " rotate(" + angle + "rad)";
+            }
+        };
+        L.Draw.Polyline.prototype._hanplanetGuideDashPatched = true;
+    }
+
     var root = document.getElementById("map-editor-root");
+    var mapEditorBody = root.querySelector(".map-editor-body");
+    var mapEditorSideToggle = document.getElementById("map-editor-side-toggle");
     var mapPath = root.dataset.mapPath;
     var imageUrl = root.dataset.imageUrl;
     var canEdit = root.dataset.canEdit === "1";
@@ -567,6 +711,14 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
     var featureIdCounter = 1;
     var pendingZoneLayer = null;
     var markerPopupTarget = null;
+    var activeZoneEditFid = null;
+    var activeZoneDrag = null;
+    var suppressZoneClickFid = null;
+    var selectedLayerFid = null;
+    var copiedLayerPayload = null;
+    var undoHistory = [];
+    var redoHistory = [];
+    var isRestoringHistory = false;
     var saveStatusEl = document.getElementById("map-save-status");
 
     // 그룹 데이터
@@ -580,9 +732,29 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
 
     var mapContainer = document.getElementById("map-editor-container");
     var cursorCache = {};
-    var CURSOR_SIZE = 32;
-    var CURSOR_HX = 16;
-    var CURSOR_HY = 20;
+    var CURSOR_SIZE = 29;
+    var CURSOR_HX = 14;
+    var CURSOR_HY = 18;
+
+    function syncMapEditorSideToggle() {
+        if (!mapEditorBody || !mapEditorSideToggle) return;
+        var isCollapsed = mapEditorBody.classList.contains("is-side-collapsed");
+        mapEditorSideToggle.setAttribute("aria-label", isCollapsed ? "사이드 패널 펼치기" : "사이드 패널 접기");
+        mapEditorSideToggle.setAttribute("title", isCollapsed ? "사이드 패널 펼치기" : "사이드 패널 접기");
+    }
+
+    if (mapEditorSideToggle && mapEditorBody) {
+        mapEditorSideToggle.addEventListener("click", function() {
+            mapEditorBody.classList.toggle("is-side-collapsed");
+            syncMapEditorSideToggle();
+            if (map) {
+                window.setTimeout(function() {
+                    map.invalidateSize();
+                }, 190);
+            }
+        });
+        syncMapEditorSideToggle();
+    }
 
     function applyImageCursor(dataUrl) {
         if (currentTool === "marker") {
@@ -652,9 +824,277 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
         }
     }
 
+    function selectLayer(fid) {
+        selectedLayerFid = (fid && layerMap[fid]) ? fid : null;
+        renderLayersList();
+    }
+
+    function cloneHistoryState(state) {
+        return JSON.parse(JSON.stringify(state || { type: "FeatureCollection", features: [], groups: [] }));
+    }
+
+    function getCurrentHistorySnapshot() {
+        return cloneHistoryState(layerMapToGeoJson());
+    }
+
+    function resetHistoryState() {
+        undoHistory = [getCurrentHistorySnapshot()];
+        redoHistory = [];
+    }
+
+    function commitHistoryState() {
+        if (isRestoringHistory) return;
+        var snapshot = getCurrentHistorySnapshot();
+        var serialized = JSON.stringify(snapshot);
+        var lastSnapshot = undoHistory.length ? JSON.stringify(undoHistory[undoHistory.length - 1]) : null;
+        if (serialized === lastSnapshot) return;
+        undoHistory.push(snapshot);
+        if (undoHistory.length > 120) undoHistory.shift();
+        redoHistory = [];
+    }
+
+    function isEditableTextTarget(target) {
+        if (!target) return false;
+        var tagName = String(target.tagName || "").toUpperCase();
+        return tagName === "INPUT" || tagName === "TEXTAREA" || target.isContentEditable;
+    }
+
+    function refreshZoneTooltipPosition(fid) {
+        var item = layerMap[fid];
+        if (!item || item.type !== "zone" || !item.tooltip || !item.layer) return;
+        var latlngs = item.layer.getLatLngs()[0];
+        if (!latlngs || !latlngs.length) return;
+        item.tooltip.setLatLng(computeCentroid(latlngs));
+    }
+
+    function syncZoneEditGeometry(layer) {
+        if (!layer || !layer.getLatLngs || !layer.setLatLngs) return;
+        var latlngs = cloneLatLngStructure(layer.getLatLngs());
+        layer.setLatLngs(latlngs);
+        if (layer.redraw) {
+            layer.redraw();
+        }
+    }
+
+    function focusZoneLayer(layer, onComplete) {
+        if (!map || !layer) {
+            if (typeof onComplete === "function") onComplete();
+            return;
+        }
+        var size = map.getSize();
+        var padding = [Math.round(size.x * 0.375), Math.round(size.y * 0.375)];
+        var finished = false;
+        function finish() {
+            if (finished) return;
+            finished = true;
+            if (typeof onComplete === "function") onComplete();
+        }
+        map.once("moveend", finish);
+        map.fitBounds(layer.getBounds(), {
+            animate: true,
+            paddingTopLeft: padding,
+            paddingBottomRight: padding
+        });
+        window.setTimeout(finish, 320);
+    }
+
+    function bindZoneTooltipClick(fid) {
+        var item = layerMap[fid];
+        if (!item || item.type !== "zone" || !item.tooltip) return;
+        function attachTooltipElement() {
+            var el = item.tooltip.getElement && item.tooltip.getElement();
+            if (!el || el._hanplanetZoneLabelBound) return;
+            el._hanplanetZoneLabelBound = true;
+            L.DomEvent.disableClickPropagation(el);
+            L.DomEvent.on(el, "click", function(e) {
+                L.DomEvent.stop(e);
+                focusZoneLayer(item.layer, function() {
+                    selectLayer(fid);
+                    enableZoneShapeEdit(fid);
+                });
+            });
+            L.DomEvent.on(el, "contextmenu", function(e) {
+                L.DomEvent.stop(e);
+                focusZoneLayer(item.layer, function() {
+                    stopZoneDrag();
+                    disableActiveZoneShapeEdit();
+                    selectLayer(fid);
+                    openZonePopup(fid);
+                });
+            });
+        }
+        item.tooltip.on("add", attachTooltipElement);
+        attachTooltipElement();
+    }
+
+    function getEditorZoneStyle(color) {
+        return {
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.15,
+            opacity: 1,
+            weight: 2
+        };
+    }
+
+    function cloneLatLngStructure(latlngs) {
+        if (!Array.isArray(latlngs)) return latlngs;
+        return latlngs.map(function(entry) {
+            if (Array.isArray(entry)) return cloneLatLngStructure(entry);
+            return L.latLng(entry.lat, entry.lng, entry.alt);
+        });
+    }
+
+    function shiftLatLngStructure(latlngs, deltaLat, deltaLng) {
+        if (!Array.isArray(latlngs)) return latlngs;
+        return latlngs.map(function(entry) {
+            if (Array.isArray(entry)) return shiftLatLngStructure(entry, deltaLat, deltaLng);
+            return L.latLng(entry.lat + deltaLat, entry.lng + deltaLng, entry.alt);
+        });
+    }
+
+    function getZoneArea(layer) {
+        if (!layer || !layer.getLatLngs) return Number.POSITIVE_INFINITY;
+        var rings = layer.getLatLngs();
+        var latlngs = Array.isArray(rings) && Array.isArray(rings[0]) ? rings[0] : rings;
+        if (!latlngs || latlngs.length < 3) return Number.POSITIVE_INFINITY;
+        var area = 0;
+        for (var i = 0; i < latlngs.length; i++) {
+            var current = latlngs[i];
+            var next = latlngs[(i + 1) % latlngs.length];
+            area += (current.lng * next.lat) - (next.lng * current.lat);
+        }
+        return Math.abs(area) * 0.5;
+    }
+
+    function refreshZoneLayerPriority() {
+        var zoneItems = Object.keys(layerMap)
+            .map(function(fid) { return layerMap[fid]; })
+            .filter(function(item) { return item && item.type === "zone" && item.layer; })
+            .sort(function(a, b) { return getZoneArea(b.layer) - getZoneArea(a.layer); });
+
+        zoneItems.forEach(function(item) {
+            item.layer.bringToFront();
+            if (item.tooltip && map.hasLayer(item.tooltip)) {
+                item.tooltip.bringToFront();
+            }
+        });
+    }
+
+    function stopZoneDrag() {
+        if (!activeZoneDrag) return;
+        var finishedFid = activeZoneDrag.fid;
+        map.off("mousemove", onZoneDragMove);
+        document.removeEventListener("mouseup", onZoneDragEnd);
+        map.dragging.enable();
+        if (activeZoneDrag.moved) {
+            syncZoneEditGeometry(activeZoneDrag.layer);
+            refreshZoneTooltipPosition(finishedFid);
+            refreshZoneLayerPriority();
+            commitHistoryState();
+            suppressZoneClickFid = finishedFid;
+            window.setTimeout(function() {
+                if (suppressZoneClickFid === finishedFid) suppressZoneClickFid = null;
+            }, 0);
+        }
+        activeZoneDrag = null;
+    }
+
+    function onZoneDragMove(e) {
+        if (!activeZoneDrag || !e || !e.latlng) return;
+        var deltaLat = e.latlng.lat - activeZoneDrag.startLatLng.lat;
+        var deltaLng = e.latlng.lng - activeZoneDrag.startLatLng.lng;
+        var startPoint = map.latLngToContainerPoint(activeZoneDrag.startLatLng);
+        var currentPoint = map.latLngToContainerPoint(e.latlng);
+        if (!activeZoneDrag.moved && startPoint.distanceTo(currentPoint) < 3) return;
+        activeZoneDrag.moved = true;
+        activeZoneDrag.layer.setLatLngs(
+            shiftLatLngStructure(activeZoneDrag.originalLatLngs, deltaLat, deltaLng)
+        );
+        refreshZoneTooltipPosition(activeZoneDrag.fid);
+    }
+
+    function onZoneDragEnd() {
+        stopZoneDrag();
+    }
+
+    function startZoneDrag(fid, e) {
+        if (!canEdit || currentTool !== "select" || !e || !e.latlng) return;
+        var item = layerMap[fid];
+        if (!item || item.type !== "zone" || !item.layer) return;
+        disableActiveZoneShapeEdit();
+        stopZoneDrag();
+        activeZoneDrag = {
+            fid: fid,
+            layer: item.layer,
+            startLatLng: e.latlng,
+            originalLatLngs: cloneLatLngStructure(item.layer.getLatLngs()),
+            moved: false
+        };
+        map.dragging.disable();
+        map.on("mousemove", onZoneDragMove);
+        document.addEventListener("mouseup", onZoneDragEnd);
+    }
+
+    function disableActiveZoneShapeEdit() {
+        if (!activeZoneEditFid) return;
+        var activeItem = layerMap[activeZoneEditFid];
+        if (activeItem && activeItem.type === "zone" && activeItem.layer && activeItem.layer.editing) {
+            refreshZoneTooltipPosition(activeZoneEditFid);
+            activeItem.layer.editing.disable();
+            commitHistoryState();
+        }
+        activeZoneEditFid = null;
+    }
+
+    function enableZoneShapeEdit(fid) {
+        if (!canEdit) return;
+        if (!fid || !layerMap[fid] || layerMap[fid].type !== "zone") return;
+        if (activeZoneEditFid === fid) {
+            disableActiveZoneShapeEdit();
+            return;
+        }
+        disableActiveZoneShapeEdit();
+        var item = layerMap[fid];
+        if (!item.layer || !item.layer.editing) return;
+        item.layer.editing.enable();
+        activeZoneEditFid = fid;
+    }
+
+    function openZonePopup(fid) {
+        var item = layerMap[fid];
+        if (!item || item.type !== "zone") return;
+        selectLayer(fid);
+        openNamePopup("구역 정보", item.name, function(newName, newDesc, iconData, imageUrl, bindFid, newIconVisible) {
+            if (newName === null) return;
+            item.name = newName;
+            item.desc = newDesc;
+            item.iconKey = iconData.iconKey;
+            item.emoji = iconData.emoji;
+            item.iconUrl = iconData.iconUrl;
+            item.imageUrl = imageUrl || null;
+            item.bindFid = bindFid || null;
+            item.iconVisible = newIconVisible !== false;
+            item.layer.setStyle(getEditorZoneStyle(item.color));
+            item.tooltip.setContent(newName);
+            if (!map.hasLayer(item.tooltip)) item.tooltip.addTo(map);
+            renderLayersList();
+            commitHistoryState();
+        }, function() {
+            drawnItems.removeLayer(item.layer);
+            if (item.tooltip) { map.removeLayer(item.tooltip); }
+            delete layerMap[fid];
+            renderLayersList();
+            commitHistoryState();
+        }, true, item.desc, true, { iconKey: item.iconKey, emoji: item.emoji, iconUrl: item.iconUrl }, item.imageUrl, fid);
+    }
+
     // 도구 전환
     function setTool(tool) {
         currentTool = tool;
+        if (tool !== "select") {
+            disableActiveZoneShapeEdit();
+        }
         if (drawControl) {
             if (tool === "zone") {
                 new L.Draw.Polygon(map, drawControl.options.draw.polygon).enable();
@@ -665,9 +1105,205 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
         setMapCursor(tool, selectedIconUrl, selectedIconEmoji);
     }
 
+    function getPasteOffsetAnchorLatLng(latlng) {
+        if (!map || !latlng) return null;
+        var point = map.latLngToContainerPoint(latlng);
+        return map.containerPointToLatLng(point.add([24, 24]));
+    }
+
+    function buildCopiedLayerPayload(fid) {
+        var item = layerMap[fid];
+        if (!item) return null;
+        if (item.type === "zone") {
+            return {
+                type: "zone",
+                name: item.name,
+                color: item.color,
+                desc: item.desc || "",
+                iconKey: item.iconKey || null,
+                emoji: item.emoji || null,
+                iconUrl: item.iconUrl || null,
+                imageUrl: item.imageUrl || null,
+                iconVisible: item.iconVisible !== false,
+                bindFid: item.bindFid || null,
+                groupId: item.groupId || null,
+                latlngs: cloneLatLngStructure(item.layer.getLatLngs())
+            };
+        }
+        return {
+            type: "marker",
+            name: item.name,
+            desc: item.desc || "",
+            iconKey: item.iconKey || null,
+            emoji: item.emoji || null,
+            iconUrl: item.iconUrl || null,
+            imageUrl: item.imageUrl || null,
+            iconVisible: item.iconVisible !== false,
+            bindFid: item.bindFid || null,
+            groupId: item.groupId || null,
+            latlng: L.latLng(item.layer.getLatLng().lat, item.layer.getLatLng().lng, item.layer.getLatLng().alt)
+        };
+    }
+
+    function pasteCopiedLayer() {
+        if (!copiedLayerPayload || !map) return;
+        var newFid = null;
+        if (copiedLayerPayload.type === "zone") {
+            var sourceLatLngs = Array.isArray(copiedLayerPayload.latlngs[0]) ? copiedLayerPayload.latlngs[0] : copiedLayerPayload.latlngs;
+            var anchor = computeCentroid(sourceLatLngs);
+            var offsetAnchor = getPasteOffsetAnchorLatLng(anchor);
+            if (!offsetAnchor) return;
+            var shiftedLatLngs = shiftLatLngStructure(
+                copiedLayerPayload.latlngs,
+                offsetAnchor.lat - anchor.lat,
+                offsetAnchor.lng - anchor.lng
+            );
+            var polygonLatLngs = Array.isArray(shiftedLatLngs[0]) ? shiftedLatLngs[0] : shiftedLatLngs;
+            var newLayer = L.polygon(polygonLatLngs);
+            newFid = addZoneLayer(
+                newLayer,
+                copiedLayerPayload.name || "",
+                null,
+                copiedLayerPayload.color,
+                copiedLayerPayload.desc || "",
+                { iconKey: copiedLayerPayload.iconKey, emoji: copiedLayerPayload.emoji, iconUrl: copiedLayerPayload.iconUrl, imageUrl: copiedLayerPayload.imageUrl },
+                copiedLayerPayload.iconVisible !== false
+            );
+        } else if (copiedLayerPayload.type === "marker") {
+            var offsetLatLng = getPasteOffsetAnchorLatLng(copiedLayerPayload.latlng);
+            if (!offsetLatLng) return;
+            newFid = placeMarker(
+                offsetLatLng,
+                copiedLayerPayload.iconKey || "pin",
+                copiedLayerPayload.emoji || "📍",
+                copiedLayerPayload.iconUrl || null,
+                copiedLayerPayload.name || "",
+                null,
+                copiedLayerPayload.desc || "",
+                copiedLayerPayload.imageUrl || null,
+                copiedLayerPayload.iconVisible !== false
+            );
+        }
+        if (newFid && layerMap[newFid]) {
+            layerMap[newFid].groupId = copiedLayerPayload.groupId || null;
+            layerMap[newFid].bindFid = copiedLayerPayload.bindFid || null;
+            selectLayer(newFid);
+            renderLayersList();
+            commitHistoryState();
+        }
+    }
+
+    function clearEditorState() {
+        disableActiveZoneShapeEdit();
+        stopZoneDrag();
+        selectedLayerFid = null;
+        markerPopupTarget = null;
+        pendingZoneLayer = null;
+        Object.keys(layerMap).forEach(function(fid) {
+            var item = layerMap[fid];
+            if (!item) return;
+            if (item.tooltip && map && map.hasLayer(item.tooltip)) {
+                map.removeLayer(item.tooltip);
+            }
+            if (drawnItems && item.layer && drawnItems.hasLayer(item.layer)) {
+                drawnItems.removeLayer(item.layer);
+            }
+        });
+        layerMap = {};
+        groups = {};
+        featureIdCounter = 1;
+        groupIdCounter = 1;
+    }
+
+    function applyGeoJsonState(geojson) {
+        isRestoringHistory = true;
+        clearEditorState();
+        var state = cloneHistoryState(geojson);
+        if (state.groups) {
+            state.groups.forEach(function(g) {
+                groups[g.id] = { name: g.name, collapsed: false, desc: g.desc || "", iconKey: g.iconKey || null, emoji: g.emoji || null, iconUrl: g.iconUrl || null, imageUrl: g.imageUrl || null };
+                var groupNum = parseInt(String(g.id).replace("g", ""), 10);
+                if (!isNaN(groupNum) && groupNum >= groupIdCounter) groupIdCounter = groupNum + 1;
+            });
+        }
+        (state.features || []).forEach(function(f) {
+            if (!f.geometry || !f.properties) return;
+            var props = f.properties;
+            var fid = String(f.id || nextId());
+            var featureNum = parseInt(fid.replace("f", ""), 10);
+            if (!isNaN(featureNum) && featureNum >= featureIdCounter) featureIdCounter = featureNum + 1;
+
+            if (f.geometry.type === "Polygon" && props.type === "zone") {
+                var coords = (f.geometry.coordinates[0] || []).map(function(c) { return [c[1], c[0]]; });
+                if (coords.length > 1) coords.pop();
+                var zoneLayer = L.polygon(coords);
+                addZoneLayer(zoneLayer, props.name || "", fid, props.color, props.desc || "", { iconKey: props.iconKey || null, emoji: props.emoji || null, iconUrl: props.iconUrl || null, imageUrl: props.imageUrl || null }, props.iconVisible !== false);
+                if (props.groupId && groups[props.groupId]) layerMap[fid].groupId = props.groupId;
+                if (props.bindFid) layerMap[fid].bindFid = props.bindFid;
+            } else if (f.geometry.type === "Point" && props.type === "marker") {
+                var point = f.geometry.coordinates;
+                var markerLatLng = L.latLng(point[1], point[0]);
+                placeMarker(markerLatLng, props.iconKey || "pin", props.emoji || "📍", props.iconUrl || null, props.name || "", fid, props.desc || "", props.imageUrl || null, props.iconVisible !== false);
+                if (props.groupId && groups[props.groupId]) layerMap[fid].groupId = props.groupId;
+                if (props.bindFid) layerMap[fid].bindFid = props.bindFid;
+            }
+        });
+        renderLayersList();
+        refreshZoneLayerPriority();
+        isRestoringHistory = false;
+    }
+
+    function undoEditorChange() {
+        if (undoHistory.length <= 1) return;
+        var current = undoHistory.pop();
+        redoHistory.push(cloneHistoryState(current));
+        applyGeoJsonState(undoHistory[undoHistory.length - 1]);
+    }
+
+    function redoEditorChange() {
+        if (!redoHistory.length) return;
+        var next = redoHistory.pop();
+        undoHistory.push(cloneHistoryState(next));
+        applyGeoJsonState(next);
+    }
+
     // 키보드 단축키
     document.addEventListener("keydown", function(e) {
+        if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === "s") {
+            e.preventDefault();
+            saveMapData();
+            return;
+        }
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && String(e.key).toLowerCase() === "z" && !isEditableTextTarget(e.target)) {
+            e.preventDefault();
+            undoEditorChange();
+            return;
+        }
+        if (
+            (
+                ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === "y")
+                || ((e.metaKey || e.ctrlKey) && e.shiftKey && String(e.key).toLowerCase() === "z")
+            )
+            && !isEditableTextTarget(e.target)
+        ) {
+            e.preventDefault();
+            redoEditorChange();
+            return;
+        }
+        if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === "c" && !isEditableTextTarget(e.target)) {
+            if (!selectedLayerFid || !layerMap[selectedLayerFid]) return;
+            e.preventDefault();
+            copiedLayerPayload = buildCopiedLayerPayload(selectedLayerFid);
+            return;
+        }
+        if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === "v" && !isEditableTextTarget(e.target)) {
+            if (!copiedLayerPayload) return;
+            e.preventDefault();
+            pasteCopiedLayer();
+            return;
+        }
         if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+        if (e.key === "Escape") disableActiveZoneShapeEdit();
         if (e.key === "Escape") setTool("select");
         if (e.key === "z" || e.key === "Z") setTool("zone");
         if (e.key === "m" || e.key === "M") setTool("marker");
@@ -728,8 +1364,12 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
         });
 
         var bounds = [[0, 0], [imgHeight, imgWidth]];
+        var backgroundPane = map.createPane("imageBackgroundPane");
+        backgroundPane.style.zIndex = "200";
         if (loadedImageUrl) {
-            imageOverlay = L.imageOverlay(loadedImageUrl, bounds).addTo(map);
+            imageOverlay = L.imageOverlay(loadedImageUrl, bounds, {
+                pane: "imageBackgroundPane"
+            }).addTo(map);
         }
         map.fitBounds(bounds);
 
@@ -755,19 +1395,35 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
                     pendingZoneLayer = e.layer;
                     openNamePopup("구역 정보", "", function(name, desc, iconData, imageUrl, bindFid, iconVisible) {
                         if (!name) { pendingZoneLayer = null; return; }
-                        addZoneLayer(pendingZoneLayer, name, null, null, desc, iconData, iconVisible !== false);
+                        var createdFid = addZoneLayer(pendingZoneLayer, name, null, null, desc, iconData, iconVisible !== false);
                         pendingZoneLayer = null;
+                        selectLayer(createdFid);
                         setTool("select");
                         renderLayersList();
+                        commitHistoryState();
                     }, null, true, "", true, {});
+                }
+            });
+
+            map.on(L.Draw.Event.EDITVERTEX, function() {
+                if (!activeZoneEditFid) return;
+                var activeItem = layerMap[activeZoneEditFid];
+                if (!activeItem || !activeItem.layer) return;
+                refreshZoneTooltipPosition(activeZoneEditFid);
+                refreshZoneLayerPriority();
+                if (activeItem.layer.redraw) {
+                    activeItem.layer.redraw();
                 }
             });
 
             // 지도 클릭: 마커 배치 모드
             map.on("click", function(e) {
+                disableActiveZoneShapeEdit();
                 if (currentTool !== "marker") return;
-                placeMarker(e.latlng, selectedIconKey, selectedIconEmoji, selectedIconUrl, "");
+                var createdMarkerFid = placeMarker(e.latlng, selectedIconKey, selectedIconEmoji, selectedIconUrl, "");
+                selectLayer(createdMarkerFid);
                 renderLayersList();
+                commitHistoryState();
             });
         }
 
@@ -847,59 +1503,81 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
         var fid = id || nextId();
         var color = existingColor || randomColor();
         var iconVisible = existingIconVisible !== false;
-        layer.setStyle({ color: color, fillColor: color, fillOpacity: iconVisible ? 0.15 : 0, opacity: iconVisible ? 1 : 0, weight: 2 });
+        layer.setStyle(getEditorZoneStyle(color));
         layer.addTo(drawnItems);
 
         var latlngs = layer.getLatLngs()[0];
         var centroid = computeCentroid(latlngs);
-        var tooltip = L.tooltip({ permanent: true, direction: "center", className: "map-zone-label" })
+        var tooltip = L.tooltip({ permanent: true, direction: "center", className: "map-zone-label", interactive: true })
             .setContent(name)
             .setLatLng(centroid);
-        if (iconVisible) tooltip.addTo(map);
+        tooltip.addTo(map);
 
         var icd = existingIconData || {};
         layerMap[fid] = { type: "zone", name: name, color: color, layer: layer, tooltip: tooltip, groupId: null, desc: existingDesc || "", iconKey: icd.iconKey || null, emoji: icd.emoji || null, iconUrl: icd.iconUrl || null, imageUrl: icd.imageUrl || null, iconVisible: iconVisible, bindFid: null };
+        bindZoneTooltipClick(fid);
+        refreshZoneLayerPriority();
 
         layer.on("click", function(e) {
             if (currentTool !== "select") return;
             L.DomEvent.stopPropagation(e);
-            var item = layerMap[fid];
-            openNamePopup("구역 정보", item.name, function(newName, newDesc, iconData, imageUrl, bindFid, newIconVisible) {
-                if (newName === null) return;
-                item.name = newName;
-                item.desc = newDesc;
-                item.iconKey = iconData.iconKey;
-                item.emoji = iconData.emoji;
-                item.iconUrl = iconData.iconUrl;
-                item.imageUrl = imageUrl || null;
-                item.bindFid = bindFid || null;
-                item.iconVisible = newIconVisible !== false;
-                layer.setStyle({ fillOpacity: item.iconVisible ? 0.15 : 0, opacity: item.iconVisible ? 1 : 0 });
-                if (item.iconVisible) { tooltip.setContent(newName); if (!map.hasLayer(tooltip)) tooltip.addTo(map); }
-                else { if (map.hasLayer(tooltip)) map.removeLayer(tooltip); }
-                renderLayersList();
-            }, function() {
-                drawnItems.removeLayer(layer);
-                if (tooltip) { map.removeLayer(tooltip); }
-                delete layerMap[fid];
-                renderLayersList();
-            }, true, item.desc, true, { iconKey: item.iconKey, emoji: item.emoji, iconUrl: item.iconUrl }, item.imageUrl, fid);
+            if (suppressZoneClickFid === fid) {
+                suppressZoneClickFid = null;
+                return;
+            }
+            selectLayer(fid);
+            enableZoneShapeEdit(fid);
         });
+        layer.on("mousedown", function(e) {
+            if (!e.originalEvent || e.originalEvent.button !== 0) return;
+            L.DomEvent.stopPropagation(e);
+            startZoneDrag(fid, e);
+        });
+        layer.on("contextmenu", function(e) {
+            if (currentTool !== "select") return;
+            L.DomEvent.preventDefault(e);
+            L.DomEvent.stopPropagation(e);
+            stopZoneDrag();
+            disableActiveZoneShapeEdit();
+            selectLayer(fid);
+            openZonePopup(fid);
+        });
+        layer.on("edit", function() {
+            refreshZoneTooltipPosition(fid);
+            refreshZoneLayerPriority();
+            if (layer.redraw) {
+                layer.redraw();
+            }
+        });
+        return fid;
     }
 
     // ── 마커 추가 ──────────────────────────────────────────────────────────
     function placeMarker(latlng, iconKey, emoji, iconUrl, name, id, existingDesc, existingImageUrl, existingIconVisible) {
         var fid = id || nextId();
         var iconVisible = existingIconVisible !== false;
-        var markerIcon = iconVisible ? createLeafletIcon(emoji, iconUrl) : createInvisibleIcon();
+        var markerIcon = createLeafletIcon(emoji, iconUrl);
         var marker = L.marker(latlng, { icon: markerIcon, draggable: canEdit }).addTo(drawnItems);
 
         layerMap[fid] = { type: "marker", name: name, iconKey: iconKey, emoji: emoji, iconUrl: iconUrl, layer: marker, groupId: null, desc: existingDesc || "", imageUrl: existingImageUrl || null, iconVisible: iconVisible, bindFid: null };
 
         marker.on("click", function(e) {
+            disableActiveZoneShapeEdit();
             L.DomEvent.stopPropagation(e);
+            selectLayer(fid);
+        });
+        marker.on("contextmenu", function(e) {
+            L.DomEvent.preventDefault(e);
+            disableActiveZoneShapeEdit();
+            L.DomEvent.stopPropagation(e);
+            selectLayer(fid);
             openMarkerPopup(fid);
         });
+        marker.on("dragend", function() {
+            selectLayer(fid);
+            commitHistoryState();
+        });
+        return fid;
     }
 
     function createInvisibleIcon() {
@@ -1105,10 +1783,11 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
         item.imageUrl = markerPopupSelImageUrl || null;
         item.iconVisible = markerPopupIconVisibleCb ? markerPopupIconVisibleCb.checked : true;
         item.bindFid = markerPopupCurrentBindFid || null;
-        item.layer.setIcon(item.iconVisible ? createLeafletIcon(item.emoji, item.iconUrl) : createInvisibleIcon());
+        item.layer.setIcon(createLeafletIcon(item.emoji, item.iconUrl));
         markerPopupOverlay.hidden = true;
         markerPopupTarget = null;
         renderLayersList();
+        commitHistoryState();
     });
     markerPopupDelete.addEventListener("click", function() {
         if (!markerPopupTarget) return;
@@ -1120,6 +1799,7 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
         markerPopupOverlay.hidden = true;
         markerPopupTarget = null;
         renderLayersList();
+        commitHistoryState();
     });
     markerPopupName.addEventListener("keydown", function(e) {
         if (e.key === "Enter") { e.preventDefault(); markerPopupConfirm.click(); }
@@ -1135,6 +1815,7 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
     // 현재 picker를 열게 한 fid, 선택된 fid
     var bindPickerSourceFid = null;
     var bindPickerSelectedFid = null;
+    var bindPickerSelectedRole = "target"; // target | source
     var bindPickerOnConfirm = null;
 
     function getLayerLabel(fid) {
@@ -1154,8 +1835,29 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
     function openBindPicker(sourceFid, currentBindFid, onConfirm) {
         bindPickerSourceFid = sourceFid;
         bindPickerSelectedFid = currentBindFid || null;
+        bindPickerSelectedRole = "target";
         bindPickerOnConfirm = onConfirm;
         bindPickerList.innerHTML = "";
+
+        function getBindRoleLabel(fid) {
+            if (fid === bindPickerSelectedFid && bindPickerSelectedFid) {
+                return bindPickerSelectedRole === "source" ? "소스" : "타겟";
+            }
+            return "";
+        }
+
+        function syncBindPickerItemStates() {
+            bindPickerList.querySelectorAll(".map-bind-picker-item").forEach(function(el) {
+                var isSelected = el.dataset.fid === bindPickerSelectedFid;
+                el.classList.toggle("is-selected", isSelected);
+                var metaEl = el.querySelector(".map-bind-picker-item-meta");
+                if (metaEl) {
+                    metaEl.textContent = isSelected ? (bindPickerSelectedRole === "source" ? "소스" : "타겟") : "";
+                    metaEl.hidden = !isSelected;
+                }
+            });
+        }
+
         Object.keys(layerMap).forEach(function(fid) {
             if (fid === sourceFid) return;
             var item = document.createElement("div");
@@ -1165,17 +1867,31 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
             iconEl.className = "map-bind-picker-item-icon";
             iconEl.textContent = getLayerIconText(fid);
             var labelEl = document.createElement("span");
+            labelEl.className = "map-bind-picker-item-label";
             labelEl.textContent = getLayerLabel(fid);
+            var metaEl = document.createElement("span");
+            metaEl.className = "map-bind-picker-item-meta";
+            var roleLabel = getBindRoleLabel(fid);
+            metaEl.textContent = roleLabel;
+            metaEl.hidden = !roleLabel;
             item.appendChild(iconEl);
             item.appendChild(labelEl);
+            item.appendChild(metaEl);
             item.addEventListener("click", function() {
                 bindPickerSelectedFid = fid;
-                bindPickerList.querySelectorAll(".map-bind-picker-item").forEach(function(el) {
-                    el.classList.toggle("is-selected", el.dataset.fid === fid);
-                });
+                bindPickerSelectedRole = "target";
+                syncBindPickerItemStates();
+            });
+            metaEl.addEventListener("click", function(e) {
+                if (!fid || fid !== bindPickerSelectedFid) return;
+                e.preventDefault();
+                e.stopPropagation();
+                bindPickerSelectedRole = bindPickerSelectedRole === "source" ? "target" : "source";
+                syncBindPickerItemStates();
             });
             bindPickerList.appendChild(item);
         });
+        syncBindPickerItemStates();
         bindPickerOverlay.hidden = false;
     }
 
@@ -1189,7 +1905,19 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
     });
     bindPickerConfirm.addEventListener("click", function() {
         bindPickerOverlay.hidden = true;
-        if (bindPickerOnConfirm) { bindPickerOnConfirm(bindPickerSelectedFid); bindPickerOnConfirm = null; }
+        if (!bindPickerOnConfirm) return;
+        var sourceFid = bindPickerSourceFid;
+        var selectedFid = bindPickerSelectedFid;
+        if (selectedFid && bindPickerSelectedRole === "source") {
+            if (layerMap[selectedFid]) layerMap[selectedFid].bindFid = sourceFid || null;
+            if (layerMap[sourceFid]) layerMap[sourceFid].bindFid = null;
+            bindPickerOnConfirm(null);
+        } else {
+            bindPickerOnConfirm(selectedFid);
+        }
+        bindPickerOnConfirm = null;
+        renderLayersList();
+        commitHistoryState();
     });
 
     // 구역 팝업 바인딩 버튼
@@ -1240,7 +1968,7 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
     function makeLayerItem(fid) {
         var item = layerMap[fid];
         var li = document.createElement("li");
-        li.className = "map-editor-layer-item";
+        li.className = "map-editor-layer-item" + (selectedLayerFid === fid ? " is-selected" : "");
         li.draggable = true;
         li.dataset.layerFid = fid;
 
@@ -1291,6 +2019,7 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
             if (item.tooltip) { map.removeLayer(item.tooltip); }
             delete layerMap[fid];
             renderLayersList();
+            commitHistoryState();
         });
 
         li.appendChild(handle);
@@ -1299,6 +2028,7 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
         li.appendChild(delBtn);
 
         li.addEventListener("click", function() {
+            selectLayer(fid);
             if (item.type === "zone") { map.fitBounds(item.layer.getBounds()); }
             else { map.panTo(item.layer.getLatLng()); }
         });
@@ -1306,22 +2036,7 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
         li.addEventListener("contextmenu", function(e) {
             e.preventDefault();
             if (item.type === "zone") {
-                openNamePopup("구역 정보", item.name, function(newName, newDesc, iconData, imageUrl) {
-                    if (newName === null) return;
-                    item.name = newName;
-                    item.desc = newDesc;
-                    item.iconKey = iconData.iconKey;
-                    item.emoji = iconData.emoji;
-                    item.iconUrl = iconData.iconUrl;
-                    item.imageUrl = imageUrl || null;
-                    if (item.tooltip) item.tooltip.setContent(newName);
-                    renderLayersList();
-                }, function() {
-                    drawnItems.removeLayer(item.layer);
-                    if (item.tooltip) { map.removeLayer(item.tooltip); }
-                    delete layerMap[fid];
-                    renderLayersList();
-                }, true, item.desc, true, { iconKey: item.iconKey, emoji: item.emoji, iconUrl: item.iconUrl }, item.imageUrl);
+                openZonePopup(fid);
             } else {
                 openMarkerPopup(fid);
             }
@@ -1361,6 +2076,7 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
             if (targetGid && groups[targetGid]) {
                 srcItem.groupId = targetGid;
                 renderLayersList();
+                commitHistoryState();
             } else {
                 var newGid = nextGroupId();
                 openNamePopup("새 그룹 이름", "", function(name, desc, iconData) {
@@ -1369,6 +2085,7 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
                     layerMap[srcFid].groupId = newGid;
                     dstItem.groupId = newGid;
                     renderLayersList();
+                    commitHistoryState();
                 }, null, true, "", false, {});
             }
         });
@@ -1450,6 +2167,7 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
                     grp.iconUrl = iconData.iconUrl;
                     grp.imageUrl = imageUrl || null;
                     renderLayersList();
+                    commitHistoryState();
                 }, null, true, grp.desc || "", true, { iconKey: grp.iconKey, emoji: grp.emoji, iconUrl: grp.iconUrl }, grp.imageUrl);
             });
 
@@ -1464,6 +2182,7 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
                 fids.forEach(function(fid) { if (layerMap[fid]) layerMap[fid].groupId = null; });
                 delete groups[gid];
                 renderLayersList();
+                commitHistoryState();
             });
 
             header.appendChild(arrow);
@@ -1496,6 +2215,7 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
                     grp.iconUrl = iconData.iconUrl;
                     grp.imageUrl = imageUrl || null;
                     renderLayersList();
+                    commitHistoryState();
                 }, null, true, grp.desc || "", true, { iconKey: grp.iconKey, emoji: grp.emoji, iconUrl: grp.iconUrl }, grp.imageUrl);
             });
 
@@ -1517,6 +2237,7 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
                 if (layerMap[draggingFid]) {
                     layerMap[draggingFid].groupId = gid;
                     renderLayersList();
+                    commitHistoryState();
                 }
                 draggingFid = null;
             });
@@ -1810,42 +2531,17 @@ body.theme-dark .leaflet-draw-toolbar a:hover {
         fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } })
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            if (!data.ok || !data.geojson) return;
-            // 그룹 먼저 로드
-            if (data.geojson.groups) {
-                data.geojson.groups.forEach(function(g) {
-                    groups[g.id] = { name: g.name, collapsed: false, desc: g.desc || "", iconKey: g.iconKey || null, emoji: g.emoji || null, iconUrl: g.iconUrl || null, imageUrl: g.imageUrl || null };
-                    var num = parseInt(String(g.id).replace("g", ""), 10);
-                    if (!isNaN(num) && num >= groupIdCounter) groupIdCounter = num + 1;
-                });
+            if (data.ok && data.geojson) {
+                applyGeoJsonState(data.geojson);
+            } else {
+                applyGeoJsonState({ type: "FeatureCollection", features: [], groups: [] });
             }
-            var features = (data.geojson.features || []);
-            features.forEach(function(f) {
-                if (!f.geometry || !f.properties) return;
-                var props = f.properties;
-                var fid = String(f.id || nextId());
-                // fid counter 보정
-                var num = parseInt(fid.replace("f", ""), 10);
-                if (!isNaN(num) && num >= featureIdCounter) featureIdCounter = num + 1;
-
-                if (f.geometry.type === "Polygon" && props.type === "zone") {
-                    var coords = (f.geometry.coordinates[0] || []).map(function(c) { return [c[1], c[0]]; });
-                    if (coords.length > 1) coords.pop(); // 마지막 닫힘점 제거
-                    var layer = L.polygon(coords);
-                    addZoneLayer(layer, props.name || "", fid, props.color, props.desc || "", { iconKey: props.iconKey || null, emoji: props.emoji || null, iconUrl: props.iconUrl || null, imageUrl: props.imageUrl || null }, props.iconVisible !== false);
-                    if (props.groupId && groups[props.groupId]) layerMap[fid].groupId = props.groupId;
-                    if (props.bindFid) layerMap[fid].bindFid = props.bindFid;
-                } else if (f.geometry.type === "Point" && props.type === "marker") {
-                    var c = f.geometry.coordinates;
-                    var latlng = L.latLng(c[1], c[0]);
-                    placeMarker(latlng, props.iconKey || "pin", props.emoji || "📍", props.iconUrl || null, props.name || "", fid, props.desc || "", props.imageUrl || null, props.iconVisible !== false);
-                    if (props.groupId && groups[props.groupId]) layerMap[fid].groupId = props.groupId;
-                    if (props.bindFid) layerMap[fid].bindFid = props.bindFid;
-                }
-            });
-            renderLayersList();
+            resetHistoryState();
         })
-        .catch(function() {});
+        .catch(function() {
+            applyGeoJsonState({ type: "FeatureCollection", features: [], groups: [] });
+            resetHistoryState();
+        });
     }
 
     function saveMapData() {

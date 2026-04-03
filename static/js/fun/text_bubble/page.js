@@ -41,10 +41,10 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
     const wordSegmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
 
     // fun/bubble 동일 물리 상수
-    const POP_SENSITIVITY = 0.9;
+    const POP_SENSITIVITY = 0.5;
     const WALL_POP_SPEED   = 10.65 / POP_SENSITIVITY;
     const IMPACT_POP_SPEED = 9.65 / POP_SENSITIVITY;
-    const POINTER_DEFEAT_CURSOR_SPEED = 18; // px/frame — 커서가 이 속도 이상으로 버블에 부딪히면 defeat
+    const POINTER_DEFEAT_CURSOR_SPEED = IMPACT_POP_SPEED; // 버블 팝 충돌속도와 동일
     const POINTER_OCCUPY_RADIUS = 32;
     const GHOST_CURSOR_DRAG         = 0.991;
     const GHOST_CURSOR_WALL_BOUNCE  = 0.88;
@@ -84,9 +84,12 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
     const bubbles      = [];
     const dyingBubbles = []; // 팝 애니메이션 중인 버블 (스케일 업 플래시 → 페이드 아웃)
     const popRings     = []; // 팝 충격파 링 (확장 → 페이드)
-    const pointer      = { x: 0, y: 0, vx: 0, vy: 0, active: false };
-    const ghostCursor  = { x: 0, y: 0, vx: 0, vy: 0, active: false };
-    let lastGhostTrailX = 0, lastGhostTrailY = 0;
+    const pointer   = { x: 0, y: 0, vx: 0, vy: 0, active: false, held: false };
+    // spritePos: 커서 이미지 + 물리효과의 단일 위치
+    //   pointer.active → lerp로 커서 추적 (멀수록 빠름)
+    //   !pointer.active → 자율 드리프트 (ghost cursor 대체)
+    const spritePos = { x: 0, y: 0, vx: 0, vy: 0, drift: 1, phase: 0, initialized: false, movingAway: false };
+    let lastSpritePosTrailX = 0, lastSpritePosTrailY = 0;
     const pointerEchoes = [];
     const pointerVisual = {
         currentFlipX: 1,
@@ -106,9 +109,6 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         accStartedAt: 0,
         pointerMovedAt: 0
     };
-    let lastPointerTrailAt = 0;
-    let lastPointerTrailX = 0;
-    let lastPointerTrailY = 0;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     const clampUnit = v => Math.min(1, Math.max(0, v));
@@ -181,15 +181,24 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         const startedAt = nowMs();
         const until = startedAt + duration;
         if (state === 'defeat') {
-            pointerVisual.defeatStartedAt = startedAt;
+            // 이미 defeat 진행 중이면 startedAt 유지 (애니메이션 리셋 방지)
+            if (startedAt >= pointerVisual.defeatUntil) {
+                pointerVisual.defeatStartedAt = startedAt;
+            }
             pointerVisual.defeatUntil = until;
         } else if (state === 'acc') {
-            pointerVisual.accStartedAt = startedAt;
+            if (startedAt >= pointerVisual.accUntil) {
+                pointerVisual.accStartedAt = startedAt;
+            }
             pointerVisual.accUntil = until;
         } else if (state === 'crash') {
-            pointerVisual.crashStartedAt = startedAt;
+            // 이미 crash 진행 중이면 세트 유지, 새 충돌 시에만 랜덤 교체
+            const isNewCrash = startedAt >= pointerVisual.crashUntil;
+            if (isNewCrash) {
+                pointerVisual.crashStartedAt = startedAt;
+                pointerVisual.crashSetIndex = pickRandomIndex((cursorAssets.crashSets || []).length);
+            }
             pointerVisual.crashUntil = until;
-            pointerVisual.crashSetIndex = pickRandomIndex((cursorAssets.crashSets || []).length);
         }
     };
 
@@ -328,7 +337,7 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         canvas.width  = Math.floor(canvasW * dpr);
         canvas.height = Math.floor(canvasH * dpr);
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        leftColW  = Math.floor((canvasW - COL_H_MARGIN * 2 - COL_GUTTER) / 2);
+        leftColW  = Math.max(0, Math.floor((canvasW - COL_H_MARGIN * 2 - COL_GUTTER) / 2));
         leftColX  = COL_H_MARGIN;
         rightColX = leftColX + leftColW + COL_GUTTER;
         rightColW = leftColW;
@@ -432,19 +441,93 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
             (pointerVisual.targetFlipX - pointerVisual.currentFlipX) * Math.min(1, 18 * deltaSeconds);
     };
 
-    const drawPointerSprite = () => {
-        if (!cursorSprite) return;
+    const SPRITE_FOLLOW_K = 1.665; // lerp 강도 (높을수록 더 빠르게 따라옴)
 
-        if (!pointer.active && !ghostCursor.active) {
-            cursorSprite.style.opacity = '0';
-            return;
+    const updateSpritePos = (dt, time) => {
+        if (!spritePos.initialized) return;
+        const fs = dt / 16.666;
+
+        if (pointer.held) {
+            // 스프링 힘으로 커서 추적 — 튕겨난 속도가 유지되다가 점차 커서 방향으로 복귀
+            const k = SPRITE_FOLLOW_K * (pointerVisual.spriteState === 'acc' ? 2 : 1);
+            const ddx = pointer.x - spritePos.x;
+            const ddy = pointer.y - spritePos.y;
+
+            // 커서 방향으로 전환되는 순간 속도를 0.5배로 줄여 서서히 가속
+            const velDotCursor = spritePos.vx * ddx + spritePos.vy * ddy;
+            const nowMovingAway = velDotCursor < 0;
+            if (spritePos.movingAway && !nowMovingAway) {
+                spritePos.vx *= 0.5;
+                spritePos.vy *= 0.5;
+            }
+            spritePos.movingAway = nowMovingAway;
+
+            spritePos.vx += ddx * k * 0.004;
+            spritePos.vy += ddy * k * 0.004;
+            // 감쇠 (과도한 진동 방지)
+            spritePos.vx *= 0.88;
+            spritePos.vy *= 0.88;
+            spritePos.x += spritePos.vx * fs;
+            spritePos.y += spritePos.vy * fs;
+
+        } else {
+            // 자율 드리프트 (버블 4.5배 속도)
+            spritePos.vx += Math.sin(time * 0.0005 * spritePos.drift + spritePos.phase) * 0.0315;
+            spritePos.vy += Math.cos(time * 0.00042 * spritePos.drift + spritePos.phase) * 0.027;
+            spritePos.x += spritePos.vx * fs;
+            spritePos.y += spritePos.vy * fs;
+            spritePos.vx *= 0.986;
+            spritePos.vy *= 0.986;
         }
 
-        const px = pointer.active ? pointer.x : ghostCursor.x;
-        const py = pointer.active ? pointer.y : ghostCursor.y;
+        // 벽 바운스 (홀드/드리프트 공통)
+        {
+            const r   = POINTER_OCCUPY_RADIUS;
+            const spd = Math.hypot(spritePos.vx, spritePos.vy);
+            const wallState    = spd >= POINTER_DEFEAT_CURSOR_SPEED ? 'defeat' : 'crash';
+            const wallDuration = wallState === 'defeat' ? POINTER_DEFEAT_IMAGE_MS : POINTER_CRASH_IMAGE_MS;
+            if (spritePos.x < r) {
+                spritePos.x = r;
+                spritePos.vx = Math.abs(spritePos.vx) * GHOST_CURSOR_WALL_BOUNCE;
+                triggerPointerSpriteState(wallState, wallDuration);
+            } else if (spritePos.x > canvasW - r) {
+                spritePos.x = canvasW - r;
+                spritePos.vx = -Math.abs(spritePos.vx) * GHOST_CURSOR_WALL_BOUNCE;
+                triggerPointerSpriteState(wallState, wallDuration);
+            }
+            if (spritePos.y < r) {
+                spritePos.y = r;
+                spritePos.vy = Math.abs(spritePos.vy) * GHOST_CURSOR_WALL_BOUNCE;
+                triggerPointerSpriteState(wallState, wallDuration);
+            } else if (spritePos.y > canvasH - r) {
+                spritePos.y = canvasH - r;
+                spritePos.vy = -Math.abs(spritePos.vy) * GHOST_CURSOR_WALL_BOUNCE;
+                triggerPointerSpriteState(wallState, wallDuration);
+            }
+        }
+
+        // 잔상 에코 (공통)
+        {
+            const dx = spritePos.x - lastSpritePosTrailX;
+            const dy = spritePos.y - lastSpritePosTrailY;
+            if (dx * dx + dy * dy >= POINTER_TRAIL_MOVE_THRESHOLD * POINTER_TRAIL_MOVE_THRESHOLD) {
+                createPointerEcho(spritePos.x, spritePos.y);
+                lastSpritePosTrailX = spritePos.x;
+                lastSpritePosTrailY = spritePos.y;
+            }
+        }
+
+        setPointerVisualDirection(spritePos.vx, spritePos.vy);
+        if (Math.hypot(spritePos.vx, spritePos.vy) > POINTER_VISUAL_MIN_MOVE) {
+            pointerVisual.pointerMovedAt = nowMs();
+        }
+    };
+
+    const drawPointerSprite = () => {
+        if (!cursorSprite || !spritePos.initialized) return;
         cursorSprite.style.opacity = '1';
         cursorSprite.style.transform =
-            `translate(${px - POINTER_SPRITE_OFFSET_X}px, ${py - POINTER_SPRITE_OFFSET_Y}px) ` +
+            `translate(${spritePos.x - POINTER_SPRITE_OFFSET_X}px, ${spritePos.y - POINTER_SPRITE_OFFSET_Y}px) ` +
             `translate(-50%, -50%) rotate(${pointerVisual.currentRotation}rad) scale(${pointerVisual.currentFlipX}, 1)`;
     };
 
@@ -484,60 +567,6 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         }
     };
 
-    // ── Ghost cursor 물리 업데이트 ──────────────────────────────────────────────
-    const updateGhostCursor = (dt, time) => {
-        if (!ghostCursor.active) return;
-        const fs = dt / 16.666;
-
-        // 미세 드리프트
-        ghostCursor.vx += Math.sin(time * 0.00043) * 0.004;
-        ghostCursor.vy += Math.cos(time * 0.00037) * 0.003;
-
-        // 이동
-        ghostCursor.x += ghostCursor.vx * fs;
-        ghostCursor.y += ghostCursor.vy * fs;
-
-        // 드래그
-        ghostCursor.vx *= GHOST_CURSOR_DRAG;
-        ghostCursor.vy *= GHOST_CURSOR_DRAG;
-
-        // 방향 업데이트
-        setPointerVisualDirection(ghostCursor.vx, ghostCursor.vy);
-        pointerVisual.pointerMovedAt = nowMs();
-
-        // 벽 바운스
-        const r = POINTER_OCCUPY_RADIUS;
-        const ghostSpd = Math.hypot(ghostCursor.vx, ghostCursor.vy);
-        const wallState = ghostSpd >= POINTER_DEFEAT_CURSOR_SPEED ? 'defeat' : 'crash';
-        const wallDuration = wallState === 'defeat' ? POINTER_DEFEAT_IMAGE_MS : POINTER_CRASH_IMAGE_MS;
-        if (ghostCursor.x < r) {
-            ghostCursor.x = r;
-            ghostCursor.vx = Math.abs(ghostCursor.vx) * GHOST_CURSOR_WALL_BOUNCE;
-            triggerPointerSpriteState(wallState, wallDuration);
-        } else if (ghostCursor.x > canvasW - r) {
-            ghostCursor.x = canvasW - r;
-            ghostCursor.vx = -Math.abs(ghostCursor.vx) * GHOST_CURSOR_WALL_BOUNCE;
-            triggerPointerSpriteState(wallState, wallDuration);
-        }
-        if (ghostCursor.y < r) {
-            ghostCursor.y = r;
-            ghostCursor.vy = Math.abs(ghostCursor.vy) * GHOST_CURSOR_WALL_BOUNCE;
-            triggerPointerSpriteState(wallState, wallDuration);
-        } else if (ghostCursor.y > canvasH - r) {
-            ghostCursor.y = canvasH - r;
-            ghostCursor.vy = -Math.abs(ghostCursor.vy) * GHOST_CURSOR_WALL_BOUNCE;
-            triggerPointerSpriteState(wallState, wallDuration);
-        }
-
-        // 잔상 에코
-        const dx = ghostCursor.x - lastGhostTrailX;
-        const dy = ghostCursor.y - lastGhostTrailY;
-        if (dx * dx + dy * dy >= POINTER_TRAIL_MOVE_THRESHOLD * POINTER_TRAIL_MOVE_THRESHOLD) {
-            createPointerEcho(ghostCursor.x, ghostCursor.y);
-            lastGhostTrailX = ghostCursor.x;
-            lastGhostTrailY = ghostCursor.y;
-        }
-    };
 
     // ── Physics (fun/bubble / site.js 완전 동일) ──────────────────────────────
     const updatePhysics = (dt, time) => {
@@ -553,10 +582,11 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
             b.vx += Math.sin(time * 0.0005 * b.drift + b.phase) * 0.007;
             b.vy += Math.cos(time * 0.00042 * b.drift + b.phase) * 0.006;
 
-            if (pointer.active) {
+            // spritePos 반발 (항상 활성 — pointer/ghost 구분 없음)
+            if (spritePos.initialized) {
                 const collision = getBubbleCollisionRadii(b);
-                const dx = b.x - pointer.x;
-                const dy = b.y - pointer.y;
+                const dx = b.x - spritePos.x;
+                const dy = b.y - spritePos.y;
                 const reactRx = collision.rx + POINTER_REACTION;
                 const reactRy = collision.ry + POINTER_REACTION;
                 const scaledDx = dx / reactRx;
@@ -568,8 +598,8 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
                     const force = 0.42 + prox * prox * 0.72;
                     b.vx += (scaledDx / dist) * force;
                     b.vy += (scaledDy / dist) * force;
-                    const cursorSpd = Math.hypot(pointer.vx, pointer.vy);
-                    if (cursorSpd >= POINTER_DEFEAT_CURSOR_SPEED) {
+                    const spd = Math.hypot(spritePos.vx, spritePos.vy);
+                    if (spd >= POINTER_DEFEAT_CURSOR_SPEED) {
                         triggerPointerSpriteState('defeat', POINTER_DEFEAT_IMAGE_MS);
                     } else {
                         triggerPointerSpriteState('crash', POINTER_CRASH_IMAGE_MS);
@@ -583,10 +613,10 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
             b.vy *= 0.986;
             setBubbleVisualDirection(b, b.vx, b.vy);
 
-            if (pointer.active) {
+            if (spritePos.initialized) {
                 const collision = getBubbleCollisionRadii(b);
-                const dxA = b.x - pointer.x;
-                const dyA = b.y - pointer.y;
+                const dxA = b.x - spritePos.x;
+                const dyA = b.y - spritePos.y;
                 const keepRx = collision.rx + POINTER_KEEPOUT;
                 const keepRy = collision.ry + POINTER_KEEPOUT;
                 const scaledDxA = dxA / keepRx;
@@ -596,56 +626,26 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
                     const nx = scaledDxA / dA, ny = scaledDyA / dA;
                     b.x += nx * (1 - dA) * keepRx;
                     b.y += ny * (1 - dA) * keepRy;
-                    b.vx += nx * 1.55;      b.vy += ny * 1.55;
-                    const cursorSpd = Math.hypot(pointer.vx, pointer.vy);
-                    if (cursorSpd >= POINTER_DEFEAT_CURSOR_SPEED) {
+                    // spritePos 속도를 버블 법선 방향으로 반사, 0.7배 전달
+                    const spriteDotN = spritePos.vx * nx + spritePos.vy * ny;
+                    const reflectX = spritePos.vx - 2 * spriteDotN * nx;
+                    const reflectY = spritePos.vy - 2 * spriteDotN * ny;
+                    const reflectSpd = Math.hypot(reflectX, reflectY);
+                    const transfer = Math.max(reflectSpd * 0.7, 1.55);
+                    b.vx += nx * transfer; b.vy += ny * transfer;
+                    const spd = Math.hypot(spritePos.vx, spritePos.vy);
+                    if (spd >= POINTER_DEFEAT_CURSOR_SPEED) {
+                        poppedSet.add(b);
                         triggerPointerSpriteState('defeat', POINTER_DEFEAT_IMAGE_MS);
                     } else {
                         triggerPointerSpriteState('crash', POINTER_CRASH_IMAGE_MS);
                     }
-                }
-            }
-
-            // ghost cursor 반발 (포인터 비활성 시)
-            if (!pointer.active && ghostCursor.active) {
-                const collision = getBubbleCollisionRadii(b);
-                const gdx = b.x - ghostCursor.x;
-                const gdy = b.y - ghostCursor.y;
-                const gReactRx = collision.rx + POINTER_REACTION;
-                const gReactRy = collision.ry + POINTER_REACTION;
-                const gScaledDx = gdx / gReactRx;
-                const gScaledDy = gdy / gReactRy;
-                const gDSq = gScaledDx * gScaledDx + gScaledDy * gScaledDy;
-                if (gDSq < 1) {
-                    const gDist  = Math.max(Math.sqrt(gDSq), 0.0001);
-                    const gProx  = 1 - gDist;
-                    const gForce = 0.42 + gProx * gProx * 0.72;
-                    b.vx += (gScaledDx / gDist) * gForce;
-                    b.vy += (gScaledDy / gDist) * gForce;
-                    const gSpd = Math.hypot(ghostCursor.vx, ghostCursor.vy);
-                    if (gSpd >= POINTER_DEFEAT_CURSOR_SPEED) {
-                        triggerPointerSpriteState('defeat', POINTER_DEFEAT_IMAGE_MS);
-                    } else {
-                        triggerPointerSpriteState('crash', POINTER_CRASH_IMAGE_MS);
-                    }
-                }
-                const gKeepRx = collision.rx + POINTER_KEEPOUT;
-                const gKeepRy = collision.ry + POINTER_KEEPOUT;
-                const gDxA = b.x - ghostCursor.x;
-                const gDyA = b.y - ghostCursor.y;
-                const gSdx = gDxA / gKeepRx;
-                const gSdy = gDyA / gKeepRy;
-                const gDA  = Math.max(Math.sqrt(gSdx * gSdx + gSdy * gSdy), 0.0001);
-                if (gDA < 1) {
-                    const gnx = gSdx / gDA, gny = gSdy / gDA;
-                    b.x += gnx * (1 - gDA) * gKeepRx;
-                    b.y += gny * (1 - gDA) * gKeepRy;
-                    b.vx += gnx * 1.55;  b.vy += gny * 1.55;
-                    const gSpd = Math.hypot(ghostCursor.vx, ghostCursor.vy);
-                    if (gSpd >= POINTER_DEFEAT_CURSOR_SPEED) {
-                        triggerPointerSpriteState('defeat', POINTER_DEFEAT_IMAGE_MS);
-                    } else {
-                        triggerPointerSpriteState('crash', POINTER_CRASH_IMAGE_MS);
+                    // 버블 충돌 시 튕겨냄 — 홀드 중: 3배 강도, 비홀드: 0.8배
+                    const dot = spritePos.vx * (-nx) + spritePos.vy * (-ny);
+                    if (dot < 0) { // 버블 쪽으로 향하고 있을 때만
+                        const scale = pointer.held ? 1.5 : 0.8;
+                        spritePos.vx = (spritePos.vx - 2 * dot * (-nx)) * scale;
+                        spritePos.vy = (spritePos.vy - 2 * dot * (-ny)) * scale;
                     }
                 }
             }
@@ -812,10 +812,8 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
             if (r >= 0.5) pushSpan(d.x, d.y, r);
         });
 
-        if (pointer.active) {
-            pushSpan(pointer.x, pointer.y, POINTER_OCCUPY_RADIUS);
-        } else if (ghostCursor.active) {
-            pushSpan(ghostCursor.x, ghostCursor.y, POINTER_OCCUPY_RADIUS);
+        if (spritePos.initialized) {
+            pushSpan(spritePos.x, spritePos.y, POINTER_OCCUPY_RADIUS);
         }
 
         pointerEchoes.forEach(echo => {
@@ -1023,6 +1021,10 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         drawTextWithSpine(rightText, rightX, lineTop + LINE_ASCENT);
     };
 
+    const cursorGe = (a, b) =>
+        a.segmentIndex > b.segmentIndex ||
+        (a.segmentIndex === b.segmentIndex && a.graphemeIndex >= b.graphemeIndex);
+
     const drawShiftedLine = (lineTop, cursorState, cx, cw) => {
         const zones = getLinePushZones(lineTop, cx, cw);
         if (zones.length === 0) {
@@ -1034,6 +1036,11 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
 
         const segments = getAvailableSegments(zones, cx, cw);
         if (segments.length === 0) return cursorState;
+
+        // 전체 컬럼 폭 기준으로 이 행의 자연스러운 끝 위치를 미리 구함
+        // (hard break가 있으면 거기서 끝남) — 세그먼트 루프가 다음 단락으로 넘어가는 것을 막기 위해 사용
+        const probeLine = layoutNextLine(prepared, cursorState, cw);
+        if (!probeLine) return null;
 
         let nextCursor = cursorState;
         let drewAny = false;
@@ -1051,6 +1058,9 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
             drawTextWithSpine(line.text, segment.start, lineTop + LINE_ASCENT);
             nextCursor = line.end;
             drewAny = true;
+
+            // hard break(개행)에 도달했으면 이 행에서 더 이상 진행하지 않음
+            if (cursorGe(nextCursor, probeLine.end)) break;
         }
 
         return drewAny ? nextCursor : cursorState;
@@ -1058,7 +1068,7 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
 
     // ── Turn.js 페이지 넘김 애니메이션 ──────────────────────────────────────────
     // oldDataURL: 현재(이전) 캔버스 스냅샷, newDataURL: 다음 페이지 캔버스 스냅샷
-    const triggerPageTurnAnimation = (oldDataURL, newDataURL) => {
+    const triggerLandscapePageTurnAnimation = (oldDataURL, newDataURL) => {
         const $ = window.jQuery;
         if (!$ || !$.fn || !$.fn.turn) return;
 
@@ -1133,9 +1143,12 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         });
     };
 
+    const triggerPageTurnAnimation = (oldDataURL, newDataURL) => {
+        triggerLandscapePageTurnAnimation(oldDataURL, newDataURL);
+    };
+
     // ── Text layout + draw ────────────────────────────────────────────────────
-    // 좌/우 두 컬럼(책 레이아웃)으로 텍스트를 렌더링한다.
-    // 각 줄의 글자 위치는 버블 근처에서 좌우로 밀린다.
+    // 항상 좌/우 두 컬럼으로 렌더링한다.
     const drawText = () => {
         if (!prepared || !articleLoaded) return;
 
@@ -1146,23 +1159,20 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign    = 'left';
 
-        // 세로 구분선 + 책등 그림자
+        // 책등 그림자 + 구분선
         ctx.save();
-        // 왼쪽 페이지 우측 그림자 (spine 쪽으로 어두워짐)
         const shadowL = ctx.createLinearGradient(dividerX - SPINE_SHADOW_W, 0, dividerX, 0);
         shadowL.addColorStop(0,   'rgba(60,40,10,0)');
         shadowL.addColorStop(0.6, 'rgba(60,40,10,0.04)');
         shadowL.addColorStop(1,   'rgba(30,15,0,0.18)');
         ctx.fillStyle = shadowL;
         ctx.fillRect(dividerX - SPINE_SHADOW_W, 0, SPINE_SHADOW_W, canvasH);
-        // 오른쪽 페이지 좌측 그림자
         const shadowR = ctx.createLinearGradient(dividerX, 0, dividerX + SPINE_SHADOW_W, 0);
         shadowR.addColorStop(0,   'rgba(30,15,0,0.18)');
         shadowR.addColorStop(0.4, 'rgba(60,40,10,0.04)');
         shadowR.addColorStop(1,   'rgba(60,40,10,0)');
         ctx.fillStyle = shadowR;
         ctx.fillRect(dividerX, 0, SPINE_SHADOW_W, canvasH);
-        // 구분선 자체 — 화면 전체 높이
         ctx.globalAlpha = 0.28;
         ctx.strokeStyle = '#5a4a2a';
         ctx.lineWidth   = 1;
@@ -1174,16 +1184,17 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         ctx.fillStyle = TEXT_COLOR;
 
         const columns = [
-            { cx: leftColX,  cw: leftColW  },
-            { cx: rightColX, cw: rightColW }
+            { cx: leftColX,  cw: leftColW,  y: PAGE_MARGIN, h: textAreaBottom - PAGE_MARGIN },
+            { cx: rightColX, cw: rightColW, y: PAGE_MARGIN, h: textAreaBottom - PAGE_MARGIN }
         ];
 
         let cursor  = { segmentIndex: 0, graphemeIndex: 0 };
         let wrapped = false;
 
         for (const col of columns) {
-            let lineTop = PAGE_MARGIN;
-            while (lineTop + LINE_HEIGHT <= textAreaBottom) {
+            let lineTop = col.y;
+            const colBottom = col.y + col.h;
+            while (lineTop + LINE_HEIGHT <= colBottom) {
                 let nextCursor = drawShiftedLine(lineTop, cursor, col.cx, col.cw);
                 if (
                     !nextCursor ||
@@ -1209,9 +1220,8 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
             }
         }
 
-
         // ── footer 텍스트 ─────────────────────────────────────────────────────
-        const footerY    = textAreaBottom + 20; // baseline 기준 — 글자 위쪽 여백 ~10px
+        const footerY    = textAreaBottom + 20;
         const leftPageN  = (pageSpread - 1) * 2 + 1;
         const rightPageN = leftPageN + 1;
 
@@ -1220,18 +1230,9 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign    = 'left';
 
-        // 좌 footer: 기사 제목 + 페이지 번호 — 버블 밀림 반영
-        const leftFooterLineTop = textAreaBottom;
-        const leftZones    = getLinePushZones(leftFooterLineTop, leftColX, leftColW);
-        const leftSegs     = getAvailableSegments(leftZones, leftColX, leftColW);
-        const leftStartX   = leftSegs.length > 0 ? leftSegs[0].start : leftColX;
-        const leftEndX     = leftSegs.length > 0 ? leftSegs[leftSegs.length - 1].end : leftColX + leftColW;
-
-        // 좌 페이지 번호 — 컬럼 바깥쪽 끝(leftColX)
         ctx.textAlign = 'left';
         ctx.fillText(String(leftPageN), leftColX, footerY);
 
-        // 기사 제목 말줄임 — 좌 컬럼 중앙
         const maxTitleW = Math.max(0, leftColW - ctx.measureText(String(leftPageN)).width - 8);
         let titleText = articleTitle || '';
         if (titleText && ctx.measureText(titleText).width > maxTitleW) {
@@ -1243,28 +1244,11 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         const titleX = leftColX + ctx.measureText(String(leftPageN)).width + 8;
         drawTextWithSpine(titleText, titleX, footerY);
 
-        // 우 페이지 번호 — 컬럼 바깥쪽 끝(rightColX + rightColW)
         ctx.textAlign = 'right';
         ctx.fillText(String(rightPageN), rightColX + rightColW, footerY);
     };
 
     // ── 클릭으로 버블 팝 ──────────────────────────────────────────────────────
-    const removeBubbleAtPoint = (px, py) => {
-        for (let i = bubbles.length - 1; i >= 0; i--) {
-            const b    = bubbles[i];
-            const collision = getBubbleCollisionRadii(b);
-            const dx   = (px - b.x) / Math.max(collision.rx, 0.0001);
-            const dy   = (py - b.y) / Math.max(collision.ry, 0.0001);
-            if (dx * dx + dy * dy <= 1) {
-                createPopEffect(b);
-                bubbles.splice(i, 1);
-                triggerPointerSpriteState('defeat', POINTER_DEFEAT_IMAGE_MS);
-                // "전부 사라짐" 판정은 updateDyingBubbles에서 dying 소멸 후 처리
-                return true;
-            }
-        }
-        return false;
-    };
 
     // ── 메인 루프 ─────────────────────────────────────────────────────────────
     const frame = (time) => {
@@ -1278,9 +1262,9 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         ctx.fillRect(0, 0, canvasW, canvasH);
 
         if (!pageTurnActive) {
+            updateSpritePos(dt, time);
             updatePhysics(dt, time);
             updatePointerEchoes(dt);
-            updateGhostCursor(dt, time);
             updateDyingBubbles(dt);
             updatePopRings(dt);
             updatePointerVisualAnimation(dt / 1000);
@@ -1303,7 +1287,7 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
             const data = await res.json();
             const text = (data.text || '').trim() || 'No content available.';
             nextTitle    = (data.title || '').trim();
-            nextPrepared = prepareWithSegments(text, BODY_FONT);
+            nextPrepared = prepareWithSegments(text, BODY_FONT, { whiteSpace: 'pre-wrap' });
         } catch (_) {
             nextPrepared = prepareWithSegments('Could not connect to the article feed.', BODY_FONT);
         }
@@ -1351,54 +1335,43 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         pointer.vx = pointer.x - prevX;
         pointer.vy = pointer.y - prevY;
         pointer.active = true;
-        ghostCursor.active = false;
-        if (pointerVisual.spriteState !== 'crash' && pointerVisual.spriteState !== 'defeat') {
-            pointerVisual.pointerMovedAt = nowMs();
+        if (!spritePos.initialized) {
+            spritePos.x     = pointer.x;
+            spritePos.y     = pointer.y;
+            spritePos.drift = rnd(0.7, 1.4);
+            spritePos.phase = Math.random() * Math.PI * 2;
+            const ang = Math.random() * Math.PI * 2;
+            spritePos.vx = Math.cos(ang) * 4.5;
+            spritePos.vy = Math.sin(ang) * 4.5;
+            spritePos.initialized   = true;
+            lastSpritePosTrailX = spritePos.x;
+            lastSpritePosTrailY = spritePos.y;
         }
-        setPointerVisualDirection(pointer.x - prevX, pointer.y - prevY);
 
-        const dx = pointer.x - lastPointerTrailX;
-        const dy = pointer.y - lastPointerTrailY;
-        const movedEnough = (dx * dx + dy * dy) >= POINTER_TRAIL_MOVE_THRESHOLD * POINTER_TRAIL_MOVE_THRESHOLD;
-        if ((e.timeStamp - lastPointerTrailAt) >= POINTER_TRAIL_INTERVAL || movedEnough) {
-            createPointerEcho(pointer.x, pointer.y);
-            lastPointerTrailAt = e.timeStamp;
-            lastPointerTrailX = pointer.x;
-            lastPointerTrailY = pointer.y;
-        }
     }, { passive: true });
     window.addEventListener('pointerleave', () => {
-        ghostCursor.x  = pointer.x;
-        ghostCursor.y  = pointer.y;
-        ghostCursor.vx = pointer.vx;
-        ghostCursor.vy = pointer.vy;
-        ghostCursor.active = true;
-        lastGhostTrailX = pointer.x;
-        lastGhostTrailY = pointer.y;
         pointer.active = false;
-        drawPointerSprite();
+        pointer.held   = false;
     });
     window.addEventListener('blur', () => {
         pointer.active = false;
-        ghostCursor.active = false;
-        drawPointerSprite();
+        pointer.held   = false;
     });
     window.addEventListener('pointercancel', () => {
         pointer.active = false;
-        ghostCursor.active = false;
-        drawPointerSprite();
+        pointer.held   = false;
+    });
+    window.addEventListener('pointerup', e => {
+        if (!e.isPrimary || e.button !== 0) return;
+        pointer.held = false;
     });
     window.addEventListener('resize',            resizeCanvas, { passive: true });
     window.addEventListener('orientationchange', resizeCanvas, { passive: true });
 
     window.addEventListener('pointerdown', e => {
         if (!e.isPrimary || e.button !== 0) return;
+        pointer.held = true;
         triggerPointerSpriteState('acc', POINTER_ACC_IMAGE_MS);
-        const rect = canvas.getBoundingClientRect();
-        const lx = e.clientX - rect.left;
-        const ly = e.clientY - rect.top;
-        if (lx < 0 || ly < 0 || lx > rect.width || ly > rect.height) return;
-        removeBubbleAtPoint(lx, ly);
     }, { passive: true });
 
     rafId = requestAnimationFrame(frame);

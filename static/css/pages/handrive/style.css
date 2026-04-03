@@ -1220,8 +1220,7 @@ body.theme-dark .handrive-help-icon-symbol {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--handrive-border);
+    padding: 10px 12px;
 }
 
 .handrive-job-queue-panel.is-collapsed .handrive-job-queue-head {
@@ -1349,7 +1348,7 @@ body.theme-dark .handrive-help-icon-symbol {
 
 .handrive-job-queue-list {
     margin: 0;
-    padding: 10px 12px;
+    padding: 0 12px 10px;
     list-style: none;
     display: flex;
     flex-direction: column;

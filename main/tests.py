@@ -3059,6 +3059,23 @@ class HandriveAccessRuleTests(TestCase):
         editor.profile.refresh_from_db()
         self.assertEqual(editor.profile.sync_excluded_paths, ["public_renamed.md", "restricted/secret.md"])
 
+    def test_docs_api_rename_allows_case_only_name_change(self):
+        editor = self.create_handrive_editor("rename_case_editor")
+        self.client.force_login(editor)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        source_dir = handrive_root / "Ski map"
+        source_dir.mkdir(exist_ok=True)
+
+        response = self.client.post(
+            reverse("main:handrive_api_rename"),
+            data=json.dumps({"path": "Ski map", "new_name": "Ski Map"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("path"), "Ski Map")
+
     def test_public_writable_file_cannot_be_deleted(self):
         public_group = get_handrive_public_write_group()
         rule = HandriveAccessRule.objects.create(path="public.md")

@@ -1,0 +1,75 @@
+function clampFocusDuration(value) {
+    return Math.max(0.16, Math.min(0.85, value));
+}
+
+function getFocusTargetLatLng(layer) {
+    if (!layer) return null;
+    if (typeof layer.getBounds === "function") {
+        return layer.getBounds().getCenter();
+    }
+    if (typeof layer.getLatLng === "function") {
+        return layer.getLatLng();
+    }
+    return null;
+}
+
+function getOffsetFocusLatLng(map, targetLatLng, offsetY) {
+    if (!map || !targetLatLng || !map.latLngToContainerPoint || !map.containerPointToLatLng) return targetLatLng;
+    var point = map.latLngToContainerPoint(targetLatLng);
+    var offsetPoint = L.point(point.x, point.y - (offsetY || 0));
+    return map.containerPointToLatLng(offsetPoint);
+}
+
+function computeFocusDuration(map, targetLatLng) {
+    if (!map || !targetLatLng || !map.getCenter || !map.latLngToContainerPoint) return 0.35;
+    var fromPoint = map.latLngToContainerPoint(map.getCenter());
+    var toPoint = map.latLngToContainerPoint(targetLatLng);
+    var distancePx = fromPoint.distanceTo(toPoint);
+    return clampFocusDuration((0.16 + (Math.sqrt(distancePx) / 60)) / 1.5);
+}
+
+function getFocusAnimationOptions(map, targetLatLng) {
+    return {
+        animate: true,
+        duration: computeFocusDuration(map, targetLatLng),
+        easeLinearity: 0.22
+    };
+}
+
+function focusZoneLayerCommon(map, layer, onComplete) {
+    if (!map || !layer) {
+        if (typeof onComplete === "function") onComplete();
+        return;
+    }
+    if (map.stop) {
+        map.stop();
+    }
+    var size = map.getSize();
+    var padding = [Math.round(size.x * 0.375), Math.round(size.y * 0.375)];
+    var targetLatLng = getFocusTargetLatLng(layer);
+    var finishDelay = Math.round(computeFocusDuration(map, targetLatLng) * 1000) + 120;
+    var finished = false;
+    function finish() {
+        if (finished) return;
+        finished = true;
+        if (typeof onComplete === "function") onComplete();
+    }
+    map.once("moveend", finish);
+    window.requestAnimationFrame(function() {
+        window.requestAnimationFrame(function() {
+            if (map.flyToBounds) {
+                var options = getFocusAnimationOptions(map, targetLatLng);
+                options.paddingTopLeft = [padding[0], Math.max(72, Math.floor(padding[1] * 1.15))];
+                options.paddingBottomRight = [padding[0], Math.max(48, Math.floor(padding[1] * 0.7))];
+                map.flyToBounds(layer.getBounds(), options);
+            } else {
+                map.fitBounds(layer.getBounds(), {
+                    animate: true,
+                    paddingTopLeft: [padding[0], Math.max(72, Math.floor(padding[1] * 1.15))],
+                    paddingBottomRight: [padding[0], Math.max(48, Math.floor(padding[1] * 0.7))]
+                });
+            }
+        });
+    });
+    window.setTimeout(finish, finishDelay);
+}

@@ -20,6 +20,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.http import HttpResponse
 from django.urls import re_path
 from django.views.static import serve
 
@@ -31,7 +32,10 @@ urlpatterns = [
 
 
 def serve_with_cache(request, path, *, document_root, cache_control):
-    response = serve(request, path, document_root=document_root)
+    try:
+        response = serve(request, path, document_root=document_root)
+    except (OSError, PermissionError):
+        return HttpResponse("Storage unavailable", status=503)
     response["Cache-Control"] = cache_control
     return response
 

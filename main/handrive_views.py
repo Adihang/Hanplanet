@@ -44,7 +44,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -64,6 +64,7 @@ from .views import (
     render_markdown_safely,
     resolve_ui_lang,
 )
+from .restart_utils import restart_gunicorn_and_wait
 from .forgejo_client import ForgejoClient
 from .handrive.html_assets import load_local_html_companion_assets, load_repo_html_companion_assets
 from .handrive.preview import render_handrive_html_live_safely, render_handrive_office_preview_safely, render_handrive_pdf_safely
@@ -134,6 +135,93 @@ def _sanitize_sync_excluded_paths(raw_paths, scoped_home_dir: str = "") -> list[
     return cleaned
 
 
+def _storage_unavailable_response(request, exc: Exception | None = None):
+    message = "외장 저장소를 읽거나 쓸 수 없습니다."
+    if exc is not None:
+        logger.warning("HanDrive storage unavailable path=%s error=%s", getattr(request, "path", ""), exc)
+    if str(getattr(request, "path", "")).startswith("/handrive/api/"):
+        return JsonResponse({"error": message}, status=503)
+    return HttpResponse(message, status=503)
+
+
+def _map_image_relative_path_from_value(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+
+    parsed = urlparse(text)
+    if parsed.query:
+        query = parse_qs(parsed.query)
+        path_value = query.get("path", [""])[0].strip()
+        if path_value:
+            try:
+                return normalize_relative_path(unquote(path_value), allow_empty=False)
+            except ValueError:
+                return None
+
+    if "://" in text or text.startswith("/"):
+        return None
+
+    try:
+        return normalize_relative_path(text, allow_empty=False)
+    except ValueError:
+        return None
+
+
+def _collect_map_image_relative_paths(geojson_data: dict) -> set[str]:
+    collected: set[str] = set()
+
+    def add_value(value: object) -> None:
+        if isinstance(value, list):
+            for item in value:
+                add_value(item)
+            return
+        relative_path = _map_image_relative_path_from_value(value)
+        if relative_path:
+            collected.add(relative_path)
+
+    for feature in geojson_data.get("features") or []:
+        if not isinstance(feature, dict):
+            continue
+        props = feature.get("properties")
+        if not isinstance(props, dict):
+            continue
+        add_value(props.get("imageUrl"))
+        add_value(props.get("imageUrls"))
+        add_value(props.get("videoUrl"))
+        add_value(props.get("videoUrls"))
+
+    for group in geojson_data.get("groups") or []:
+        if not isinstance(group, dict):
+            continue
+        add_value(group.get("imageUrl"))
+        add_value(group.get("imageUrls"))
+        add_value(group.get("videoUrl"))
+        add_value(group.get("videoUrls"))
+
+    return collected
+
+
+def _prune_empty_parent_dirs(path_obj: Path, stop_at: Path) -> None:
+    current = path_obj.parent
+    stop_at = stop_at.resolve()
+    while current != stop_at and stop_at in current.parents:
+        try:
+            current.rmdir()
+        except OSError:
+            break
+        current = current.parent
+
+
+def _map_attachment_folder_name(raw_name: str | None) -> str:
+    folder_name = validate_name(raw_name, for_file=False)
+    if folder_name.lower() in {MAP_ICONS_DIR.lower(), MAP_IMAGE_ATTACHMENTS_DIR.lower()}:
+        raise ValueError("사용할 수 없는 이름입니다.")
+    return folder_name
+
+
 def get_user_handrive_quota_bytes(user) -> int:
     """사용자별 저장 용량을 반환한다. 어드민에서 매핑이 없으면 기본값(1GB)."""
     try:
@@ -143,7 +231,10 @@ def get_user_handrive_quota_bytes(user) -> int:
 MAP_META_FILENAME = "_map_meta.json"
 MAP_DATA_FILENAME = "map.geojson"
 MAP_ICONS_DIR = "_icons"
+MAP_IMAGE_ATTACHMENTS_DIR = "_images"
 MAP_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff", ".tif", ".avif"})
+MAP_VIDEO_EXTENSIONS = frozenset({".mp4", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m4v", ".ogv"})
+MAP_MEDIA_EXTENSIONS = MAP_IMAGE_EXTENSIONS | MAP_VIDEO_EXTENSIONS
 MAP_IMAGE_MIME_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -155,6 +246,16 @@ MAP_IMAGE_MIME_TYPES = {
     ".tiff": "image/tiff",
     ".tif": "image/tiff",
     ".avif": "image/avif",
+}
+MAP_VIDEO_MIME_TYPES = {
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".webm": "video/webm",
+    ".mkv": "video/x-matroska",
+    ".avi": "video/x-msvideo",
+    ".wmv": "video/x-ms-wmv",
+    ".m4v": "video/x-m4v",
+    ".ogv": "video/ogg",
 }
 HANDRIVE_LOGIN_CAPTCHA_QUESTION_SESSION_KEY = "handrive_login_captcha_question"
 HANDRIVE_LOGIN_CAPTCHA_ANSWER_SESSION_KEY = "handrive_login_captcha_answer"
@@ -829,7 +930,11 @@ def with_request_handrive_root(view_func):
     """요청 처리 동안 HanDrive root/request contextvar 를 주입한다."""
     @wraps(view_func)
     def _wrapped(request, *args, **kwargs):
-        token = HANDRIVE_ACTIVE_ROOT_DIR.set(get_request_handrive_root_dir(request))
+        try:
+            active_root = get_request_handrive_root_dir(request)
+        except (OSError, PermissionError) as exc:
+            return _storage_unavailable_response(request, exc)
+        token = HANDRIVE_ACTIVE_ROOT_DIR.set(active_root)
         request_token = HANDRIVE_ACTIVE_REQUEST.set(request)
         try:
             return view_func(request, *args, **kwargs)
@@ -4349,17 +4454,8 @@ def handrive_ops_apply_static(request, ui_lang=None):
         cwd=str(settings.BASE_DIR),
         check=True,
     )
-    subprocess.Popen(
-        [
-            "/bin/zsh",
-            "-lc",
-            "sleep 1; launchctl kickstart -k gui/$(id -u)/com.hanplanet.gunicorn >/tmp/hanplanet-gunicorn-restart.log 2>&1",
-        ],
-        cwd=str(settings.BASE_DIR),
-        start_new_session=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    if not restart_gunicorn_and_wait(timeout_seconds=180):
+        return json_error("gunicorn 재시작 후 응답 확인에 실패했습니다.", status=503)
     return redirect(next_url)
 
 
@@ -6662,8 +6758,41 @@ def handrive_api_map_data_save(request):
         return json_error("파일을 수정할 권한이 없습니다.", status=403)
 
     geojson_file = map_folder / MAP_DATA_FILENAME
-    geojson_file.write_text(json.dumps(geojson_data, ensure_ascii=False, indent=2), encoding="utf-8")
-    return JsonResponse({"ok": True})
+    previous_geojson: dict = {}
+    if geojson_file.is_file():
+        try:
+            previous_geojson = json.loads(geojson_file.read_text(encoding="utf-8"))
+        except Exception:
+            previous_geojson = {}
+
+    previous_media_paths = _collect_map_image_relative_paths(previous_geojson)
+    next_media_paths = _collect_map_image_relative_paths(geojson_data)
+    removable_media_paths = {
+        path for path in previous_media_paths - next_media_paths
+        if path.startswith(f"{map_relative}/") and f"/{MAP_IMAGE_ATTACHMENTS_DIR}/" in f"/{path}/"
+    }
+
+    try:
+        geojson_file.write_text(json.dumps(geojson_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except (OSError, PermissionError) as exc:
+        return _storage_unavailable_response(request, exc)
+
+    deleted_paths = []
+    for relative_path in sorted(removable_media_paths):
+        try:
+            image_path, _ = resolve_path(relative_path, must_exist=True)
+        except (ValueError, FileNotFoundError):
+            continue
+        if not image_path.is_file():
+            continue
+        try:
+            image_path.unlink()
+            deleted_paths.append(relative_path)
+            _prune_empty_parent_dirs(image_path, map_folder)
+        except (OSError, PermissionError) as exc:
+            logger.warning("HanDrive map media cleanup failed path=%s error=%s", relative_path, exc)
+
+    return JsonResponse({"ok": True, "deleted_images": deleted_paths})
 
 
 @require_http_methods(["POST"])
@@ -6702,13 +6831,72 @@ def handrive_api_map_icon_upload(request):
         target = icons_dir / f"{safe_name}_{counter}{suffix}"
         counter += 1
 
-    with target.open("wb") as f:
-        for chunk in icon_file.chunks():
-            f.write(chunk)
+    try:
+        with target.open("wb") as f:
+            for chunk in icon_file.chunks():
+                f.write(chunk)
+    except (OSError, PermissionError) as exc:
+        return _storage_unavailable_response(request, exc)
 
     icon_path_relative = relative_from_root(target)
     icon_api_url = f"/handrive/api/map-image/?path={quote(icon_path_relative)}"
     return JsonResponse({"ok": True, "icon_path": icon_path_relative, "icon_url": icon_api_url})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_map_attachment_upload(request):
+    """지도 폴더의 구역/아이콘 첨부 미디어를 이름 폴더에 업로드한다."""
+    map_path_value = request.POST.get("path", "").strip()
+    folder_name_value = request.POST.get("folder_name", "").strip()
+    image_file = request.FILES.get("image")
+    if not image_file:
+        return json_error("파일이 없습니다.", status=400)
+
+    try:
+        map_path_normalized = normalize_relative_path(map_path_value, allow_empty=False)
+        map_folder, map_relative = resolve_path(map_path_normalized, must_exist=True)
+        folder_name = _map_attachment_folder_name(folder_name_value)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=400)
+
+    if not (map_folder / MAP_META_FILENAME).is_file():
+        return json_error("지도 폴더를 찾을 수 없습니다.", status=404)
+    if not has_handrive_write_access(request, map_relative):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+    attachment_dir = map_folder / MAP_IMAGE_ATTACHMENTS_DIR / folder_name
+    attachment_dir.mkdir(parents=True, exist_ok=True)
+
+    suffix = Path(image_file.name).suffix.lower()
+    if suffix not in MAP_MEDIA_EXTENSIONS:
+        return json_error("지원하지 않는 이미지/영상 형식입니다.", status=400)
+
+    target = build_available_upload_path(attachment_dir, image_file.name)
+    try:
+        with target.open("wb") as f:
+            for chunk in image_file.chunks():
+                f.write(chunk)
+    except (OSError, PermissionError) as exc:
+        return _storage_unavailable_response(request, exc)
+
+    media_path_relative = relative_from_root(target)
+    media_api_url = f"/handrive/api/map-image/?path={quote(media_path_relative)}"
+    media_kind = "video" if suffix in MAP_VIDEO_EXTENSIONS else "image"
+    payload = {
+        "ok": True,
+        "media_path": media_path_relative,
+        "media_url": media_api_url,
+        "media_kind": media_kind,
+    }
+    if media_kind == "image":
+        payload["image_path"] = media_path_relative
+        payload["image_url"] = media_api_url
+    else:
+        payload["video_path"] = media_path_relative
+        payload["video_url"] = media_api_url
+    return JsonResponse(payload)
 
 
 @require_http_methods(["POST"])
@@ -6738,7 +6926,10 @@ def handrive_api_map_icon_delete(request):
     if not has_handrive_write_access(request, icon_relative):
         return json_error("파일을 삭제할 권한이 없습니다.", status=403)
 
-    icon_file.unlink()
+    try:
+        icon_file.unlink()
+    except (OSError, PermissionError) as exc:
+        return _storage_unavailable_response(request, exc)
     return JsonResponse({"ok": True})
 
 
@@ -6763,11 +6954,14 @@ def handrive_api_map_image(request):
         raise Http404
 
     suffix = file_path.suffix.lower()
-    if suffix not in MAP_IMAGE_EXTENSIONS:
+    if suffix not in MAP_MEDIA_EXTENSIONS:
         raise Http404
 
-    content_type = MAP_IMAGE_MIME_TYPES.get(suffix, "application/octet-stream")
-    response = FileResponse(file_path.open("rb"), content_type=content_type)
+    content_type = MAP_IMAGE_MIME_TYPES.get(suffix) or MAP_VIDEO_MIME_TYPES.get(suffix, "application/octet-stream")
+    try:
+        response = FileResponse(file_path.open("rb"), content_type=content_type)
+    except (OSError, PermissionError) as exc:
+        return _storage_unavailable_response(request, exc)
     response["Cache-Control"] = "private, max-age=3600"
     return response
 
@@ -6828,6 +7022,7 @@ def handrive_map_editor(request, map_path, ui_lang=None):
         "image_url": image_url,
         "custom_icons": icons_rel,
         "can_edit": has_handrive_write_access(request, normalized),
+        "handrive_api_map_image_upload_url": "/handrive/api/map/image-upload",
         "map_viewer_url": f"/handrive/map-viewer/{normalized}",
         "handrive_list_url": parent_list_url,
         "hide_global_nav": True,

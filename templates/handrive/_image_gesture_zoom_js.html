@@ -1,0 +1,303 @@
+function enableImageGestureZoom(imageEl, options) {
+    if (!imageEl) return;
+    if (imageEl._hanplanetGestureZoomBound) {
+        return;
+    }
+    imageEl._hanplanetGestureZoomBound = true;
+    var modal = options && options.modal ? options.modal : null;
+    var minScale = options && typeof options.minScale === "number" ? options.minScale : 1;
+    var maxScale = options && typeof options.maxScale === "number" ? options.maxScale : 4;
+    var lockState = null;
+    var state = {
+        scale: 1,
+        translateX: 0,
+        translateY: 0,
+        startScale: 1,
+        startTranslateX: 0,
+        startTranslateY: 0,
+        startDistance: 0,
+        startMidX: 0,
+        startMidY: 0,
+        pinchContentX: 0,
+        pinchContentY: 0,
+        pointers: new Map(),
+        activePointerId: null,
+        lastTapAt: 0,
+        lastTapX: 0,
+        lastTapY: 0
+    };
+
+    function getViewport() {
+        var rect = modal ? modal.getBoundingClientRect() : imageEl.parentElement.getBoundingClientRect();
+        return {
+            width: rect.width || window.innerWidth,
+            height: rect.height || window.innerHeight
+        };
+    }
+
+    function getBaseSize() {
+        return {
+            width: imageEl.offsetWidth || imageEl.naturalWidth || 1,
+            height: imageEl.offsetHeight || imageEl.naturalHeight || 1
+        };
+    }
+
+    function clampTranslate(x, y, scale) {
+        var base = getBaseSize();
+        var viewport = getViewport();
+        var halfX = Math.max(0, (base.width * scale - viewport.width) / 2);
+        var halfY = Math.max(0, (base.height * scale - viewport.height) / 2);
+        return {
+            x: Math.max(-halfX, Math.min(halfX, x)),
+            y: Math.max(-halfY, Math.min(halfY, y))
+        };
+    }
+
+    function applyTransform() {
+        var clamped = clampTranslate(state.translateX, state.translateY, state.scale);
+        state.translateX = clamped.x;
+        state.translateY = clamped.y;
+        imageEl.style.transformOrigin = "center center";
+        imageEl.style.transform = "translate3d(" + state.translateX + "px, " + state.translateY + "px, 0) scale(" + state.scale + ")";
+    }
+
+    function reset() {
+        state.scale = 1;
+        state.translateX = 0;
+        state.translateY = 0;
+        state.startScale = 1;
+        state.startTranslateX = 0;
+        state.startTranslateY = 0;
+        state.startDistance = 0;
+        state.startMidX = 0;
+        state.startMidY = 0;
+        state.pinchContentX = 0;
+        state.pinchContentY = 0;
+        state.pointers.clear();
+        state.activePointerId = null;
+        imageEl.style.transform = "translate3d(0, 0, 0) scale(1)";
+    }
+
+    function lockDocumentTouchZoom() {
+        if (lockState) return;
+        lockState = {
+            htmlTouchAction: document.documentElement.style.touchAction || "",
+            bodyTouchAction: document.body ? document.body.style.touchAction || "" : "",
+            htmlOverscroll: document.documentElement.style.overscrollBehavior || "",
+            bodyOverscroll: document.body ? document.body.style.overscrollBehavior || "" : ""
+        };
+        document.documentElement.style.touchAction = "none";
+        document.documentElement.style.overscrollBehavior = "none";
+        if (document.body) {
+            document.body.style.touchAction = "none";
+            document.body.style.overscrollBehavior = "none";
+        }
+    }
+
+    function unlockDocumentTouchZoom() {
+        if (!lockState) return;
+        document.documentElement.style.touchAction = lockState.htmlTouchAction;
+        document.documentElement.style.overscrollBehavior = lockState.htmlOverscroll;
+        if (document.body) {
+            document.body.style.touchAction = lockState.bodyTouchAction;
+            document.body.style.overscrollBehavior = lockState.bodyOverscroll;
+        }
+        lockState = null;
+    }
+
+    imageEl._hanplanetGestureZoomLock = function(locked) {
+        if (locked) {
+            lockDocumentTouchZoom();
+        } else {
+            unlockDocumentTouchZoom();
+        }
+    };
+
+    function setScale(nextScale, focusX, focusY) {
+        var base = getBaseSize();
+        var viewport = getViewport();
+        var clampedScale = Math.max(minScale, Math.min(maxScale, nextScale));
+        var targetX = state.translateX;
+        var targetY = state.translateY;
+
+        if (typeof focusX === "number" && typeof focusY === "number") {
+            var prevScale = state.scale || 1;
+            var contentX = (focusX - state.translateX) / prevScale;
+            var contentY = (focusY - state.translateY) / prevScale;
+            targetX = focusX - contentX * clampedScale;
+            targetY = focusY - contentY * clampedScale;
+        } else {
+            var currentRect = imageEl.getBoundingClientRect();
+            var currentCenterX = viewport.width / 2;
+            var currentCenterY = viewport.height / 2;
+            if (currentRect.width && currentRect.height) {
+                targetX = state.translateX + (currentCenterX - currentRect.left - currentRect.width / 2) * (clampedScale / state.scale);
+                targetY = state.translateY + (currentCenterY - currentRect.top - currentRect.height / 2) * (clampedScale / state.scale);
+            }
+        }
+
+        state.scale = clampedScale;
+        state.translateX = targetX;
+        state.translateY = targetY;
+        applyTransform();
+    }
+
+    function pointerMidpoint() {
+        var points = Array.from(state.pointers.values());
+        if (!points.length) return null;
+        var sumX = 0;
+        var sumY = 0;
+        points.forEach(function(point) {
+            sumX += point.x;
+            sumY += point.y;
+        });
+        return {
+            x: sumX / points.length,
+            y: sumY / points.length
+        };
+    }
+
+    function pointerDistance() {
+        var points = Array.from(state.pointers.values());
+        if (points.length < 2) return 0;
+        var dx = points[0].x - points[1].x;
+        var dy = points[0].y - points[1].y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function onPointerDown(event) {
+        if (!event) return;
+        if (modal && modal.hidden) return;
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+            imageEl.setPointerCapture(event.pointerId);
+        } catch (error) {}
+        state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        state.activePointerId = event.pointerId;
+
+        if (state.pointers.size === 2) {
+            var mid = pointerMidpoint();
+            state.startScale = state.scale;
+            state.startTranslateX = state.translateX;
+            state.startTranslateY = state.translateY;
+            state.startDistance = pointerDistance() || 1;
+            state.startMidX = mid.x;
+            state.startMidY = mid.y;
+            state.pinchContentX = (mid.x - state.translateX) / state.scale;
+            state.pinchContentY = (mid.y - state.translateY) / state.scale;
+        } else if (state.pointers.size === 1) {
+            state.startScale = state.scale;
+            state.startTranslateX = state.translateX;
+            state.startTranslateY = state.translateY;
+        }
+    }
+
+    function onPointerMove(event) {
+        if (!state.pointers.has(event.pointerId)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+        if (state.pointers.size >= 2) {
+            var distance = pointerDistance() || state.startDistance || 1;
+            var nextScale = state.startScale * (distance / (state.startDistance || distance));
+            var mid = pointerMidpoint();
+            state.scale = Math.max(minScale, Math.min(maxScale, nextScale));
+            state.translateX = mid.x - state.pinchContentX * state.scale;
+            state.translateY = mid.y - state.pinchContentY * state.scale;
+            applyTransform();
+            return;
+        }
+
+        if (state.scale > 1 && state.activePointerId === event.pointerId) {
+            var dx = event.clientX - (state.lastMoveX || event.clientX);
+            var dy = event.clientY - (state.lastMoveY || event.clientY);
+            state.translateX += dx;
+            state.translateY += dy;
+            state.lastMoveX = event.clientX;
+            state.lastMoveY = event.clientY;
+            applyTransform();
+        } else {
+            state.lastMoveX = event.clientX;
+            state.lastMoveY = event.clientY;
+        }
+    }
+
+    function onPointerUp(event) {
+        if (!state.pointers.has(event.pointerId)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        state.pointers.delete(event.pointerId);
+        try {
+            imageEl.releasePointerCapture(event.pointerId);
+        } catch (error) {}
+        if (state.pointers.size < 2) {
+            state.startDistance = 0;
+            state.pinchContentX = 0;
+            state.pinchContentY = 0;
+        }
+        if (state.pointers.size === 0) {
+            state.activePointerId = null;
+            state.lastMoveX = 0;
+            state.lastMoveY = 0;
+        }
+    }
+
+    function onWheel(event) {
+        if (!event) return;
+        if (!(event.ctrlKey || event.metaKey)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        var delta = event.deltaY || 0;
+        var factor = delta > 0 ? 0.92 : 1.08;
+        var point = { x: event.clientX, y: event.clientY };
+        setScale(state.scale * factor, point.x, point.y);
+    }
+
+    function onDoubleClick(event) {
+        if (!event) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (state.scale > 1) {
+            reset();
+            return;
+        }
+        setScale(2, event.clientX, event.clientY);
+    }
+
+    imageEl.style.touchAction = "none";
+    imageEl.style.cursor = "grab";
+    imageEl.addEventListener("pointerdown", onPointerDown, { passive: false });
+    imageEl.addEventListener("pointermove", onPointerMove, { passive: false });
+    imageEl.addEventListener("pointerup", onPointerUp, { passive: false });
+    imageEl.addEventListener("pointercancel", onPointerUp, { passive: false });
+    imageEl.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    imageEl.addEventListener("dblclick", onDoubleClick, { passive: false });
+    imageEl.addEventListener("load", reset);
+
+    if (modal) {
+        modal.style.touchAction = "none";
+        modal.addEventListener("touchstart", function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }, { passive: false, capture: true });
+        modal.addEventListener("touchmove", function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }, { passive: false, capture: true });
+        modal.addEventListener("gesturestart", function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }, { passive: false, capture: true });
+        modal.addEventListener("gesturechange", function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }, { passive: false, capture: true });
+        modal.addEventListener("transitionend", function() {
+            if (modal.hidden) reset();
+        });
+    }
+
+    reset();
+}

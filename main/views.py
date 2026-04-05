@@ -41,6 +41,8 @@ from urllib.request import Request, urlopen
 from pathlib import Path
 from types import SimpleNamespace
 
+from .restart_utils import restart_gunicorn_and_wait
+
 PORTFOLIO_DEFAULT_USERNAME = "HanbyelLim"
 
 MARKDOWN_EXTENSIONS = ["nl2br", "sane_lists", "tables", "fenced_code"]
@@ -1316,15 +1318,8 @@ def _to_admin_speed_multiplier(value, reference):
 
 def restart_bumpercar_spiky_runtime():
     """Restart both the Django site and the dedicated bumpercar runtime after admin changes."""
-    subprocess.Popen(
-        [
-            "/bin/zsh",
-            "-lc",
-            "sleep 1; launchctl kickstart -k gui/$(id -u)/com.hanplanet.gunicorn",
-        ],
-        cwd=str(settings.BASE_DIR),
-        start_new_session=True,
-    )
+    if not restart_gunicorn_and_wait(timeout_seconds=180):
+        raise RuntimeError("gunicorn 재시작 후 응답 확인에 실패했습니다.")
     subprocess.run(
         ["/bin/zsh", "-lc", "launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server"],
         check=True,
@@ -2007,7 +2002,7 @@ def bumpercar_spiky_admin_page(request, ui_lang=None):
             current_settings = save_bumpercar_spiky_settings(submitted_settings)
             restart_bumpercar_spiky_runtime()
             save_success = True
-        except (OSError, ValueError, subprocess.SubprocessError) as error:
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             logging.exception("Failed to save bumpercar spiky settings")
             save_error = str(error) or "save_failed"
 

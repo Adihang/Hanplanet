@@ -1,0 +1,114 @@
+function enableMapGestureZoom(map, container) {
+    if (!map || !container) return;
+
+    if (map.touchZoom && map.touchZoom.disable) {
+        map.touchZoom.disable();
+    }
+    if (map.scrollWheelZoom && map.scrollWheelZoom.enable) {
+        map.scrollWheelZoom.enable();
+    }
+    if (map.doubleClickZoom && map.doubleClickZoom.enable) {
+        map.doubleClickZoom.enable();
+    }
+
+    var pointers = new Map();
+    var pinch = {
+        active: false,
+        startDistance: 0,
+        startZoom: 0
+    };
+
+    function midpoint() {
+        var points = Array.from(pointers.values());
+        if (!points.length) return null;
+        var sumX = 0;
+        var sumY = 0;
+        points.forEach(function(point) {
+            sumX += point.x;
+            sumY += point.y;
+        });
+        return {
+            x: sumX / points.length,
+            y: sumY / points.length
+        };
+    }
+
+    function distance() {
+        var points = Array.from(pointers.values());
+        if (points.length < 2) return 0;
+        var dx = points[0].x - points[1].x;
+        var dy = points[0].y - points[1].y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function setDraggingEnabled(enabled) {
+        if (!map.dragging) return;
+        if (enabled) {
+            if (map.dragging.enable) map.dragging.enable();
+        } else {
+            if (map.dragging.disable) map.dragging.disable();
+        }
+    }
+
+    function onPointerDown(event) {
+        if (!event) return;
+        pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (pointers.size === 2) {
+            pinch.active = true;
+            pinch.startDistance = distance() || 1;
+            pinch.startZoom = map.getZoom();
+            setDraggingEnabled(false);
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    }
+
+    function onPointerMove(event) {
+        if (!pointers.has(event.pointerId)) return;
+        pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (!pinch.active || pointers.size < 2) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        var currentDistance = distance() || pinch.startDistance || 1;
+        var ratio = currentDistance / (pinch.startDistance || currentDistance);
+        var zoomDelta = Math.log(ratio) / Math.LN2;
+        var nextZoom = pinch.startZoom + zoomDelta;
+        var mid = midpoint();
+        if (!mid) return;
+        var latlng = map.containerPointToLatLng([mid.x, mid.y]);
+        map.setZoomAround(latlng, nextZoom, { animate: false });
+    }
+
+    function endPinch(event) {
+        if (!event || !pointers.has(event.pointerId)) return;
+        pointers.delete(event.pointerId);
+        if (pinch.active && pointers.size < 2) {
+            pinch.active = false;
+            pinch.startDistance = 0;
+            setDraggingEnabled(true);
+        }
+    }
+
+    function zoomFromWheel(event) {
+        if (!event || !(event.ctrlKey || event.metaKey)) return;
+        event.preventDefault();
+        event.stopPropagation();
+
+        var point = map.mouseEventToContainerPoint(event);
+        var delta = event.deltaY || 0;
+        var nextZoom = map.getZoom() - (delta / 240) * 0.8;
+
+        map.setZoomAround(point, nextZoom, {
+            animate: true,
+            duration: 0.16
+        });
+    }
+
+    container.addEventListener("pointerdown", onPointerDown, { passive: false });
+    container.addEventListener("pointermove", onPointerMove, { passive: false });
+    container.addEventListener("pointerup", endPinch, { passive: false });
+    container.addEventListener("pointercancel", endPinch, { passive: false });
+    container.addEventListener("wheel", zoomFromWheel, { capture: true, passive: false });
+}

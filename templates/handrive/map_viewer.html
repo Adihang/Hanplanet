@@ -14,6 +14,7 @@
     min-height: 0;
     overflow: hidden;
     background: var(--handrive-bg, #f5f5f5);
+    touch-action: none;
 }
 .map-viewer-toolbar {
     display: flex;
@@ -39,6 +40,8 @@
     flex: 1;
     overflow: hidden;
     position: relative;
+    touch-action: none;
+    overscroll-behavior: contain;
 }
 .map-loading-overlay {
     position: absolute;
@@ -101,10 +104,85 @@
 .map-viewer-popup-desc {
     font-size: 14px;
     line-height: 1.4;
-    white-space: pre-wrap;
-    word-break: break-word;
     overflow-y: auto;
     min-height: 0;
+    word-break: break-word;
+}
+.map-viewer-popup-desc p,
+.map-viewer-popup-desc ul,
+.map-viewer-popup-desc ol,
+.map-viewer-popup-desc blockquote,
+.map-viewer-popup-desc pre,
+.map-viewer-popup-desc table {
+    margin: 0.45em 0;
+}
+.map-viewer-popup-desc p:first-child,
+.map-viewer-popup-desc ul:first-child,
+.map-viewer-popup-desc ol:first-child,
+.map-viewer-popup-desc blockquote:first-child,
+.map-viewer-popup-desc pre:first-child,
+.map-viewer-popup-desc table:first-child {
+    margin-top: 0;
+}
+.map-viewer-popup-desc p:last-child,
+.map-viewer-popup-desc ul:last-child,
+.map-viewer-popup-desc ol:last-child,
+.map-viewer-popup-desc blockquote:last-child,
+.map-viewer-popup-desc pre:last-child,
+.map-viewer-popup-desc table:last-child {
+    margin-bottom: 0;
+}
+.map-viewer-popup-desc h1,
+.map-viewer-popup-desc h2,
+.map-viewer-popup-desc h3,
+.map-viewer-popup-desc h4,
+.map-viewer-popup-desc h5,
+.map-viewer-popup-desc h6 {
+    margin: 0.55em 0 0.25em;
+    line-height: 1.25;
+}
+.map-viewer-popup-desc h1:first-child,
+.map-viewer-popup-desc h2:first-child,
+.map-viewer-popup-desc h3:first-child,
+.map-viewer-popup-desc h4:first-child,
+.map-viewer-popup-desc h5:first-child,
+.map-viewer-popup-desc h6:first-child {
+    margin-top: 0;
+}
+.map-viewer-popup-desc ul,
+.map-viewer-popup-desc ol {
+    padding-left: 1.4em;
+}
+.map-viewer-popup-desc blockquote {
+    padding-left: 0.75em;
+    border-left: 3px solid var(--handrive-border, #e0e0e0);
+    color: var(--handrive-text-secondary, #666);
+}
+.map-viewer-popup-desc pre {
+    padding: 0.65em 0.8em;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.04);
+    overflow-x: auto;
+}
+.map-viewer-popup-desc code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.95em;
+    background: rgba(0, 0, 0, 0.05);
+    padding: 0 0.25em;
+    border-radius: 4px;
+}
+.map-viewer-popup-desc pre code {
+    background: transparent;
+    padding: 0;
+}
+.map-viewer-popup-desc a {
+    color: var(--handrive-accent, #4f8ef7);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.map-viewer-popup-desc img {
+    max-width: 100%;
+    height: auto;
 }
 .map-viewer-popup-group {
     color: #888;
@@ -113,9 +191,188 @@
     white-space: pre-wrap;
     word-break: break-word;
 }
+.map-image-viewer-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    touch-action: none;
+}
+.map-image-viewer-modal[hidden] {
+    display: none;
+}
+.map-image-viewer-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+    touch-action: none;
+}
+.map-image-viewer-modal-image {
+    position: relative;
+    z-index: 1;
+    max-width: 95vw;
+    max-height: 95vh;
+    width: auto;
+    height: auto;
+    display: block;
+    box-shadow: none;
+    border: none;
+    background: transparent;
+    cursor: zoom-out;
+    touch-action: none;
+}
+.map-media-viewer-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+}
+.map-media-viewer-modal[hidden] {
+    display: none;
+}
+.map-media-viewer-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+}
+.map-media-viewer-modal-close,
+.map-media-viewer-modal-nav {
+    position: absolute;
+    z-index: 2;
+    border: none;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+}
+.map-media-viewer-modal-close {
+    top: 16px;
+    right: 16px;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    font-size: 20px;
+    line-height: 1;
+}
+.map-media-viewer-modal-nav {
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px;
+    height: 72px;
+    border-radius: 14px;
+    font-size: 30px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease, opacity 0.15s ease;
+}
+.map-media-viewer-modal-nav:hover,
+.map-media-viewer-modal-close:hover {
+    background: rgba(0, 0, 0, 0.62);
+}
+.map-media-viewer-modal-nav:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+.map-media-viewer-modal-nav-prev {
+    left: 16px;
+}
+.map-media-viewer-modal-nav-next {
+    right: 16px;
+}
+.map-media-viewer-modal-stage {
+    position: relative;
+    z-index: 1;
+    width: min(95vw, 1280px);
+    height: min(95vh, 900px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: transparent;
+    pointer-events: none;
+}
+.map-media-viewer-modal-frame {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+    max-height: 100%;
+    pointer-events: auto;
+}
+.map-media-viewer-modal-slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.34s cubic-bezier(0.22, 0.61, 0.36, 1);
+    will-change: transform;
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    background: transparent;
+    pointer-events: none;
+}
+.map-media-viewer-modal-slide.is-active {
+    opacity: 1;
+    pointer-events: auto;
+}
+.map-media-viewer-modal-frame img,
+.map-media-viewer-modal-frame video,
+.map-media-viewer-modal-frame iframe {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    border: 0;
+    background: transparent;
+}
+.map-media-viewer-modal-frame video {
+    width: 100%;
+}
+.map-media-viewer-modal-frame .map-media-viewer-modal-close,
+.map-media-viewer-modal-frame .map-media-viewer-modal-nav {
+    position: absolute;
+    z-index: 3;
+    border: none;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    line-height: 1;
+    pointer-events: auto;
+}
+.map-media-viewer-modal-frame .map-media-viewer-modal-close {
+    top: 8px;
+    right: 8px;
+    font-size: 20px;
+}
+.map-media-viewer-modal-frame .map-media-viewer-modal-nav {
+    font-size: 42px;
+}
+.map-media-viewer-modal-frame .map-media-viewer-modal-nav-prev {
+    left: 8px;
+}
+.map-media-viewer-modal-frame .map-media-viewer-modal-nav-next {
+    right: 8px;
+}
 .map-viewer-popup-name + .map-viewer-popup-desc,
 .map-viewer-popup-name + .map-viewer-popup-group,
 .map-viewer-popup-desc + .map-viewer-popup-group {
+    border-top: 1px solid var(--handrive-border, #e0e0e0);
+    padding-top: 6px;
+    margin-top: 2px;
+}
+.map-viewer-popup-name + .map-viewer-popup-media,
+.map-viewer-popup-desc + .map-viewer-popup-media,
+.map-viewer-popup-group + .map-viewer-popup-media {
     border-top: 1px solid var(--handrive-border, #e0e0e0);
     padding-top: 6px;
     margin-top: 2px;
@@ -125,6 +382,118 @@
     max-width: 100%;
     max-height: 180px;
     border-radius: 4px;
+}
+.map-viewer-popup-images,
+.map-viewer-popup-media {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+}
+.map-viewer-popup-images .map-viewer-popup-image,
+.map-viewer-popup-media .map-viewer-popup-image {
+    flex: 0 0 auto;
+    width: 128px;
+    height: 96px;
+    object-fit: cover;
+    max-width: none;
+    max-height: none;
+}
+.map-viewer-popup-media-item {
+    position: relative;
+    flex: 0 0 auto;
+    width: 128px;
+    height: 96px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: rgba(0,0,0,0.05);
+    cursor: pointer;
+}
+.map-viewer-popup-media-item.is-video {
+    background: #000;
+}
+.map-viewer-popup-media-item img {
+    display: block;
+}
+.map-viewer-popup-media-item video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.map-viewer-popup-video-play {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(180deg, rgba(0,0,0,0.08), rgba(0,0,0,0.24));
+    color: #fff;
+    font-size: 30px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    pointer-events: none;
+}
+.map-viewer-popup-video-play::before {
+    content: "▶";
+}
+.map-viewer-popup-video-label {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    bottom: 6px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.42);
+    color: #fff;
+    font-size: 11px;
+    line-height: 1.2;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+.map-video-viewer-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+}
+.map-video-viewer-modal[hidden] {
+    display: none;
+}
+.map-video-viewer-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: transparent;
+}
+.map-video-viewer-modal-frame {
+    position: relative;
+    z-index: 1;
+    width: min(95vw, 1280px);
+    aspect-ratio: 16 / 9;
+    max-height: 95vh;
+    border: 0;
+    background: #000;
+    box-shadow: none;
+}
+.map-video-viewer-modal-video {
+    position: relative;
+    z-index: 1;
+    width: min(95vw, 1280px);
+    max-height: 95vh;
+    height: auto;
+    display: block;
+    box-shadow: none;
+    border: none;
+    background: #000;
 }
 .map-viewer-popup.is-width-clamped .map-viewer-popup-desc {
     overflow-y: auto;
@@ -164,6 +533,31 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 .leaflet-top.leaflet-left .leaflet-control-zoom-out {
     border-width: 1px;
 }
+.leaflet-control-zoom {
+    overflow: hidden;
+}
+.leaflet-control-zoom a.leaflet-control-zoom-in,
+.leaflet-control-zoom a.leaflet-control-zoom-out {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    line-height: 1 !important;
+    text-align: center;
+    text-indent: 0 !important;
+    padding: 0;
+    background-clip: padding-box;
+}
+.leaflet-control-zoom a.leaflet-control-zoom-in,
+.leaflet-control-zoom a.leaflet-control-zoom-out {
+    border: 1px solid var(--handrive-border, #e0e0e0);
+}
+.leaflet-control-zoom a.leaflet-control-zoom-in {
+    border-bottom-width: 1px;
+}
+.leaflet-control-zoom a.leaflet-control-zoom-out {
+    border-top-width: 1px;
+}
 /* 레이어 가시성 위젯 */
 .map-viewer-layers-widget {
     position: absolute;
@@ -185,7 +579,6 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
     width: 100%;
     background: none;
     border: none;
-    border-bottom: 1px solid var(--handrive-border, #e0e0e0);
     padding: 6px 10px;
     cursor: pointer;
     font-size: 13px;
@@ -196,11 +589,8 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
     text-align: left;
 }
 .map-viewer-layers-toggle:hover { background: var(--handrive-surface-subtle, #f5f5f5); }
-.map-viewer-layers-widget.is-collapsed .map-viewer-layers-toggle {
-    border-bottom: none;
-}
 .map-viewer-layers-panel {
-    margin: 8px 10px;
+    margin: 0 10px 8px;
     max-height: 55vh;
     overflow-y: auto;
 }
@@ -220,6 +610,11 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
     font-size: 12px;
     cursor: pointer;
     user-select: none;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+.map-viewer-layer-group-header:hover {
+    background: var(--handrive-surface-subtle, #f5f5f5);
 }
 .map-viewer-layer-group-children { padding-left: 14px; }
 .map-viewer-layer-row {
@@ -301,9 +696,24 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         <div class="map-viewer-layers-widget" id="map-viewer-layers-widget" hidden>
             <button type="button" class="map-viewer-layers-toggle" id="map-viewer-layers-toggle">
                 <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="15" x2="17" y2="15"/></svg>
-                레이어
             </button>
             <div class="map-viewer-layers-panel" id="map-viewer-layers-panel"></div>
+        </div>
+        <div class="map-image-viewer-modal" id="map-image-viewer-modal" hidden>
+            <div class="map-image-viewer-modal-backdrop" id="map-image-viewer-modal-backdrop"></div>
+            <img class="map-image-viewer-modal-image" id="map-image-viewer-modal-image" alt="">
+        </div>
+        <div class="map-video-viewer-modal" id="map-video-viewer-modal" hidden>
+            <div class="map-video-viewer-modal-backdrop" id="map-video-viewer-modal-backdrop"></div>
+            <iframe class="map-video-viewer-modal-frame" id="map-video-viewer-modal-frame" title="YouTube player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+            <video class="map-video-viewer-modal-video" id="map-video-viewer-modal-video" controls playsinline hidden></video>
+        </div>
+        <div class="map-media-viewer-modal" id="map-media-viewer-modal" hidden>
+            <div class="map-media-viewer-modal-backdrop" id="map-media-viewer-modal-backdrop"></div>
+            <div class="map-media-viewer-modal-stage" id="map-media-viewer-modal-stage">
+                <div class="map-media-viewer-modal-slide is-active" id="map-media-viewer-modal-slide-a"></div>
+                <div class="map-media-viewer-modal-slide" id="map-media-viewer-modal-slide-b"></div>
+            </div>
         </div>
 
     </div>
@@ -314,18 +724,402 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 (function () {
     "use strict";
 
+{% include 'handrive/_zone_focus_js.html' %}
+{% include 'handrive/_map_gesture_zoom_js.html' %}
+{% include 'handrive/_image_gesture_zoom_js.html' %}
+
     var container = document.getElementById("map-viewer-container");
     var mapPath = container.dataset.mapPath;
     var imageUrl = container.dataset.imageUrl;
     var mapDataApi = container.dataset.mapDataApi;
     var sharedOwner = container.dataset.sharedOwner || "";
     var sharedSlug = container.dataset.sharedSlug || "";
+    var imageViewerModal = document.getElementById("map-image-viewer-modal");
+    var imageViewerBackdrop = document.getElementById("map-image-viewer-modal-backdrop");
+    var imageViewerImage = document.getElementById("map-image-viewer-modal-image");
+    var videoViewerModal = document.getElementById("map-video-viewer-modal");
+    var videoViewerBackdrop = document.getElementById("map-video-viewer-modal-backdrop");
+    var videoViewerFrame = document.getElementById("map-video-viewer-modal-frame");
+    var videoViewerVideo = document.getElementById("map-video-viewer-modal-video");
+    var mediaViewerModal = document.getElementById("map-media-viewer-modal");
+    var mediaViewerBackdrop = document.getElementById("map-media-viewer-modal-backdrop");
+    var mediaViewerStage = document.getElementById("map-media-viewer-modal-stage");
+    var mediaViewerSlideA = document.getElementById("map-media-viewer-modal-slide-a");
+    var mediaViewerSlideB = document.getElementById("map-media-viewer-modal-slide-b");
+    var mediaViewerActiveSlide = 0;
+    var mediaViewerCurrentEntries = [];
+    var mediaViewerCurrentIndex = 0;
+    var mediaViewerAnimating = false;
+
     function appendShared(url) {
         if (!sharedOwner || !sharedSlug || !url) return url;
         return url + (url.indexOf("?") >= 0 ? "&" : "?")
             + "share_owner=" + encodeURIComponent(sharedOwner)
             + "&share_slug=" + encodeURIComponent(sharedSlug);
     }
+
+    function openImageViewer(url, alt) {
+        openMediaViewer([{
+            kind: "image",
+            src: url,
+            label: alt || ""
+        }], 0);
+        if (imageViewerImage && imageViewerImage._hanplanetGestureZoomLock) {
+            imageViewerImage._hanplanetGestureZoomLock(true);
+        }
+    }
+
+    function closeImageViewer() {
+        if (!imageViewerModal || !imageViewerImage) return;
+        if (imageViewerImage._hanplanetGestureZoomLock) {
+            imageViewerImage._hanplanetGestureZoomLock(false);
+        }
+        imageViewerModal.hidden = true;
+        imageViewerImage.src = "";
+        imageViewerImage.alt = "";
+        imageViewerImage.style.transform = "translate3d(0, 0, 0) scale(1)";
+    }
+
+    function openVideoViewer(source, title, kind) {
+        openMediaViewer([{
+            kind: kind === "youtube" ? "youtube" : "video",
+            src: source,
+            label: title || (kind === "youtube" ? "YouTube" : "영상")
+        }], 0);
+    }
+
+    function closeVideoViewer() {
+        if (!videoViewerModal) return;
+        videoViewerModal.hidden = true;
+        if (videoViewerFrame) {
+            videoViewerFrame.src = "";
+            videoViewerFrame.hidden = true;
+        }
+        if (videoViewerVideo) {
+            videoViewerVideo.pause();
+            videoViewerVideo.removeAttribute("src");
+            videoViewerVideo.load();
+            videoViewerVideo.hidden = true;
+        }
+    }
+
+    function getMediaViewerSlideElement(index) {
+        return index % 2 === 0 ? mediaViewerSlideA : mediaViewerSlideB;
+    }
+
+    function createMediaViewerButton(className, label, text) {
+        var button = document.createElement("button");
+        button.type = "button";
+        button.className = className;
+        button.id = label;
+        button.setAttribute("aria-label", text);
+        button.textContent = text === "닫기" ? "×" : text === "이전" ? "‹" : "›";
+        return button;
+    }
+
+    function appendMediaViewerControls(frame) {
+        if (!frame) return;
+        var closeBtn = createMediaViewerButton("map-media-viewer-modal-close", "map-media-viewer-modal-close", "닫기");
+        var prevBtn = createMediaViewerButton("map-media-viewer-modal-nav map-media-viewer-modal-nav-prev", "map-media-viewer-modal-prev", "이전");
+        var nextBtn = createMediaViewerButton("map-media-viewer-modal-nav map-media-viewer-modal-nav-next", "map-media-viewer-modal-next", "다음");
+        [closeBtn, prevBtn, nextBtn].forEach(function(button) {
+            ["pointerdown", "mousedown", "touchstart", "click"].forEach(function(type) {
+                button.addEventListener(type, function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                });
+            });
+        });
+        closeBtn.addEventListener("click", function() {
+            closeMediaViewer();
+        });
+        prevBtn.addEventListener("click", function() {
+            if (mediaViewerAnimating || mediaViewerCurrentIndex <= 0) return;
+            animateMediaViewerTo(mediaViewerCurrentIndex - 1, -1);
+        });
+        nextBtn.addEventListener("click", function() {
+            if (mediaViewerAnimating || mediaViewerCurrentIndex >= mediaViewerCurrentEntries.length - 1) return;
+            animateMediaViewerTo(mediaViewerCurrentIndex + 1, 1);
+        });
+        frame.appendChild(closeBtn);
+        frame.appendChild(prevBtn);
+        frame.appendChild(nextBtn);
+    }
+
+    function clearMediaViewerSlide(slide) {
+        if (!slide) return;
+        Array.from(slide.querySelectorAll("img")).forEach(function(img) {
+            if (img._hanplanetGestureZoomLock) {
+                img._hanplanetGestureZoomLock(false);
+            }
+        });
+        Array.from(slide.querySelectorAll("video")).forEach(function(video) {
+            try {
+                video.pause();
+            } catch (error) {}
+            video.removeAttribute("src");
+            try {
+                video.load();
+            } catch (error) {}
+        });
+        Array.from(slide.querySelectorAll("iframe")).forEach(function(iframe) {
+            iframe.src = "";
+        });
+        while (slide.firstChild) {
+            slide.removeChild(slide.firstChild);
+        }
+        slide.classList.remove("is-active");
+        slide.style.transform = "translate3d(0, 0, 0)";
+        slide.style.opacity = "0";
+        slide.style.pointerEvents = "none";
+    }
+
+    function renderMediaViewerEntry(slide, entry) {
+        if (!slide || !entry) return;
+        clearMediaViewerSlide(slide);
+        var frame = document.createElement("div");
+        frame.className = "map-media-viewer-modal-frame";
+        var title = entry.label || "";
+        if (entry.kind === "image") {
+            var img = document.createElement("img");
+            img.src = entry.src;
+            img.alt = title;
+            frame.appendChild(img);
+            enableImageGestureZoom(img, { modal: mediaViewerModal });
+            if (img._hanplanetGestureZoomLock) {
+                img._hanplanetGestureZoomLock(true);
+            }
+        } else if (entry.kind === "youtube") {
+            var iframe = document.createElement("iframe");
+            iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+            iframe.referrerPolicy = "strict-origin-when-cross-origin";
+            iframe.allowFullscreen = true;
+            iframe.title = title || "YouTube player";
+            iframe.src = "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(String(entry.src || "").trim()) + "?autoplay=1&rel=0&modestbranding=1";
+            frame.appendChild(iframe);
+        } else if (entry.kind === "video") {
+            var video = document.createElement("video");
+            video.src = entry.src;
+            video.controls = true;
+            video.playsInline = true;
+            video.autoplay = true;
+            video.preload = "auto";
+            frame.appendChild(video);
+        }
+        appendMediaViewerControls(frame);
+        slide.appendChild(frame);
+        slide.style.pointerEvents = "auto";
+    }
+
+    function updateMediaViewerControls() {
+        var hasMultiple = mediaViewerCurrentEntries.length > 1;
+        var atStart = mediaViewerCurrentIndex <= 0;
+        var atEnd = mediaViewerCurrentIndex >= mediaViewerCurrentEntries.length - 1;
+        var prevButtons = mediaViewerModal ? mediaViewerModal.querySelectorAll(".map-media-viewer-modal-nav-prev") : [];
+        var nextButtons = mediaViewerModal ? mediaViewerModal.querySelectorAll(".map-media-viewer-modal-nav-next") : [];
+        Array.from(prevButtons).forEach(function(button) {
+            button.hidden = !hasMultiple;
+            button.disabled = !hasMultiple || mediaViewerAnimating || atStart;
+        });
+        Array.from(nextButtons).forEach(function(button) {
+            button.hidden = !hasMultiple;
+            button.disabled = !hasMultiple || mediaViewerAnimating || atEnd;
+        });
+    }
+
+    function closeMediaViewer() {
+        if (!mediaViewerModal) return;
+        Array.from(mediaViewerModal.querySelectorAll("img")).forEach(function(img) {
+            if (img._hanplanetGestureZoomLock) {
+                img._hanplanetGestureZoomLock(false);
+            }
+        });
+        mediaViewerModal.hidden = true;
+        mediaViewerCurrentEntries = [];
+        mediaViewerCurrentIndex = 0;
+        mediaViewerAnimating = false;
+        clearMediaViewerSlide(mediaViewerSlideA);
+        clearMediaViewerSlide(mediaViewerSlideB);
+        updateMediaViewerControls();
+    }
+
+    function finishMediaViewerSwitch(nextIndex, direction, incomingSlide, outgoingSlide) {
+        mediaViewerCurrentIndex = nextIndex;
+        mediaViewerActiveSlide = incomingSlide === mediaViewerSlideA ? 0 : 1;
+        mediaViewerAnimating = false;
+        if (outgoingSlide) {
+            clearMediaViewerSlide(outgoingSlide);
+        }
+        if (incomingSlide) {
+            incomingSlide.classList.add("is-active");
+            incomingSlide.style.transform = "translate3d(0, 0, 0)";
+            incomingSlide.style.opacity = "1";
+            incomingSlide.style.pointerEvents = "auto";
+        }
+        if (incomingSlide && !incomingSlide.querySelector(".map-media-viewer-modal-close")) {
+            var frame = incomingSlide.querySelector(".map-media-viewer-modal-frame");
+            if (frame) appendMediaViewerControls(frame);
+        }
+        if (mediaViewerStage) {
+            mediaViewerStage.dataset.direction = "";
+        }
+        updateMediaViewerControls();
+    }
+
+    function animateMediaViewerTo(nextIndex, direction) {
+        if (!mediaViewerModal || mediaViewerAnimating) return;
+        if (nextIndex < 0 || nextIndex >= mediaViewerCurrentEntries.length || nextIndex === mediaViewerCurrentIndex) return;
+        var outgoingSlide = getMediaViewerSlideElement(mediaViewerActiveSlide);
+        var incomingSlide = getMediaViewerSlideElement(mediaViewerActiveSlide === 0 ? 1 : 0);
+        var incomingEntry = mediaViewerCurrentEntries[nextIndex];
+        var outgoingStart = "translate3d(0, 0, 0)";
+        var incomingStart = direction > 0 ? "translate3d(100%, 0, 0)" : "translate3d(-100%, 0, 0)";
+        var outgoingEnd = direction > 0 ? "translate3d(-100%, 0, 0)" : "translate3d(100%, 0, 0)";
+        var incomingEnd = "translate3d(0, 0, 0)";
+
+        mediaViewerAnimating = true;
+        if (mediaViewerStage) {
+            mediaViewerStage.dataset.direction = direction > 0 ? "next" : "prev";
+        }
+        renderMediaViewerEntry(incomingSlide, incomingEntry);
+        incomingSlide.classList.add("is-active");
+        incomingSlide.style.opacity = "1";
+        incomingSlide.style.transform = incomingStart;
+        outgoingSlide.classList.add("is-active");
+        outgoingSlide.style.opacity = "1";
+        outgoingSlide.style.transform = outgoingStart;
+
+        updateMediaViewerControls();
+
+        window.requestAnimationFrame(function() {
+            window.requestAnimationFrame(function() {
+                outgoingSlide.style.transform = outgoingEnd;
+                incomingSlide.style.transform = incomingEnd;
+                var finished = false;
+                function onDone() {
+                    if (finished) return;
+                    finished = true;
+                    outgoingSlide.removeEventListener("transitionend", onDone);
+                    finishMediaViewerSwitch(nextIndex, direction, incomingSlide, outgoingSlide);
+                }
+                outgoingSlide.addEventListener("transitionend", onDone);
+                incomingSlide.addEventListener("transitionend", onDone);
+                window.setTimeout(onDone, 320);
+            });
+        });
+    }
+
+    function openMediaViewer(entries, startIndex) {
+        if (!mediaViewerModal || !mediaViewerSlideA || !mediaViewerSlideB) return;
+        var normalizedEntries = Array.isArray(entries) ? entries.filter(function(entry) {
+            return entry && entry.src && entry.kind;
+        }) : [];
+        if (!normalizedEntries.length) return;
+        mediaViewerCurrentEntries = normalizedEntries;
+        mediaViewerCurrentIndex = Math.max(0, Math.min(startIndex || 0, normalizedEntries.length - 1));
+        mediaViewerAnimating = false;
+        clearMediaViewerSlide(mediaViewerSlideA);
+        clearMediaViewerSlide(mediaViewerSlideB);
+        mediaViewerActiveSlide = 0;
+        renderMediaViewerEntry(mediaViewerSlideA, mediaViewerCurrentEntries[mediaViewerCurrentIndex]);
+        mediaViewerSlideA.classList.add("is-active");
+        mediaViewerSlideA.style.transform = "translate3d(0, 0, 0)";
+        mediaViewerSlideA.style.opacity = "1";
+        mediaViewerSlideA.style.pointerEvents = "auto";
+        mediaViewerSlideB.style.pointerEvents = "none";
+        mediaViewerModal.hidden = false;
+        if (mediaViewerStage) {
+            mediaViewerStage.dataset.direction = "";
+        }
+        updateMediaViewerControls();
+    }
+
+    function swallowOverlayEvent(event) {
+        if (!event) return;
+        event.stopPropagation();
+    }
+
+    if (imageViewerBackdrop) {
+        imageViewerBackdrop.addEventListener("click", function(event) {
+            event.stopPropagation();
+            closeImageViewer();
+        });
+    }
+    if (imageViewerModal) {
+        imageViewerModal.addEventListener("click", function(event) {
+            event.stopPropagation();
+            if (!imageViewerImage || event.target !== imageViewerImage) {
+                closeImageViewer();
+            }
+        });
+    }
+    if (imageViewerImage) {
+        enableImageGestureZoom(imageViewerImage, { modal: imageViewerModal });
+        imageViewerImage.addEventListener("click", function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+        });
+    }
+    if (videoViewerBackdrop) {
+        videoViewerBackdrop.addEventListener("click", function(event) {
+            event.stopPropagation();
+            closeVideoViewer();
+        });
+    }
+    if (videoViewerModal) {
+        videoViewerModal.addEventListener("click", function(event) {
+            event.stopPropagation();
+            if (event.target === videoViewerModal || event.target === videoViewerBackdrop) {
+                closeVideoViewer();
+            }
+        });
+    }
+    if (videoViewerFrame) {
+        videoViewerFrame.addEventListener("click", function(event) {
+            event.stopPropagation();
+        });
+    }
+    if (mediaViewerBackdrop) {
+        mediaViewerBackdrop.addEventListener("click", function(event) {
+            event.stopPropagation();
+            closeMediaViewer();
+        });
+    }
+    if (mediaViewerModal) {
+        mediaViewerModal.addEventListener("click", function(event) {
+            event.stopPropagation();
+            if (!mediaViewerStage || event.target === mediaViewerModal || event.target === mediaViewerBackdrop) {
+                closeMediaViewer();
+            }
+        });
+    }
+    window.addEventListener("keydown", function(e) {
+        if (mediaViewerModal && !mediaViewerModal.hidden) {
+            if (e.key === "ArrowLeft") {
+                e.preventDefault();
+                if (mediaViewerCurrentIndex > 0) {
+                    animateMediaViewerTo(mediaViewerCurrentIndex - 1, -1);
+                }
+                return;
+            }
+            if (e.key === "ArrowRight") {
+                e.preventDefault();
+                if (mediaViewerCurrentIndex < mediaViewerCurrentEntries.length - 1) {
+                    animateMediaViewerTo(mediaViewerCurrentIndex + 1, 1);
+                }
+                return;
+            }
+        }
+        if (e.key === "Escape" && imageViewerModal && !imageViewerModal.hidden) {
+            closeImageViewer();
+        }
+        if (e.key === "Escape" && videoViewerModal && !videoViewerModal.hidden) {
+            closeVideoViewer();
+        }
+        if (e.key === "Escape" && mediaViewerModal && !mediaViewerModal.hidden) {
+            closeMediaViewer();
+        }
+    });
 
     var popupMeasureCanvas = document.createElement("canvas");
     var popupMeasureContext = popupMeasureCanvas.getContext("2d");
@@ -361,12 +1155,227 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         return maxWidth;
     }
 
+    function escapePopupHtml(value) {
+        return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function sanitizeMarkdownUrl(url) {
+        var value = String(url || "").trim();
+        if (!value) return "";
+        if (
+            /^https?:\/\//i.test(value) ||
+            /^mailto:/i.test(value) ||
+            /^\/(?!\/)/.test(value) ||
+            /^\.\.?\//.test(value) ||
+            /^#/.test(value)
+        ) {
+            return value;
+        }
+        return "";
+    }
+
+    function renderMarkdownInline(text) {
+        var source = escapePopupHtml(text);
+        var codeTokens = [];
+        source = source.replace(/`([^`\n]+)`/g, function(_, code) {
+            var token = "__MAP_VIEWER_CODE_" + codeTokens.length + "__";
+            codeTokens.push("<code>" + code + "</code>");
+            return token;
+        });
+        source = source.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, function(_, altText, url) {
+            var safeUrl = sanitizeMarkdownUrl(url);
+            if (!safeUrl) return escapePopupHtml(altText || "");
+            return '<img alt="' + escapePopupHtml(altText || "") + '" src="' + escapePopupHtml(safeUrl) + '">';
+        });
+        source = source.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, function(_, label, url) {
+            var safeUrl = sanitizeMarkdownUrl(url);
+            if (!safeUrl) return label;
+            return '<a href="' + escapePopupHtml(safeUrl) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
+        });
+        source = source.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
+        source = source.replace(/__([\s\S]+?)__/g, "<strong>$1</strong>");
+        source = source.replace(/(^|[^*])\*([^\n*][\s\S]*?)\*(?!\*)/g, function(_, prefix, content) {
+            return prefix + "<em>" + content + "</em>";
+        });
+        source = source.replace(/(^|[^_])_([^\n_][\s\S]*?)_(?!_)/g, function(_, prefix, content) {
+            return prefix + "<em>" + content + "</em>";
+        });
+        source = source.replace(/~~([\s\S]+?)~~/g, "<del>$1</del>");
+        source = source.replace(/__MAP_VIEWER_CODE_(\d+)__/g, function(_, idx) {
+            return codeTokens[Number(idx)] || "";
+        });
+        return source;
+    }
+
+    function renderMarkdownBlock(text) {
+        var normalized = String(text || "").replace(/\r\n?/g, "\n");
+        if (!normalized.trim()) {
+            return "";
+        }
+        var lines = normalized.split("\n");
+        var html = [];
+        var paragraphLines = [];
+        var listType = "";
+        var listItems = [];
+        var quoteLines = [];
+        var codeLines = [];
+        var codeFence = "";
+        var codeLang = "";
+
+        function flushParagraph() {
+            if (!paragraphLines.length) return;
+            html.push("<p>" + paragraphLines.map(renderMarkdownInline).join("<br>") + "</p>");
+            paragraphLines = [];
+        }
+
+        function flushList() {
+            if (!listItems.length) return;
+            var tag = listType === "ol" ? "ol" : "ul";
+            html.push("<" + tag + ">" + listItems.map(function(item) {
+                return "<li>" + renderMarkdownInline(item) + "</li>";
+            }).join("") + "</" + tag + ">");
+            listItems = [];
+            listType = "";
+        }
+
+        function flushQuote() {
+            if (!quoteLines.length) return;
+            html.push("<blockquote>" + quoteLines.map(renderMarkdownInline).join("<br>") + "</blockquote>");
+            quoteLines = [];
+        }
+
+        function flushCode() {
+            if (!codeLines.length) return;
+            var className = codeLang ? ' class="language-' + escapePopupHtml(codeLang) + '"' : "";
+            html.push("<pre><code" + className + ">" + escapePopupHtml(codeLines.join("\n")) + "</code></pre>");
+            codeLines = [];
+            codeFence = "";
+            codeLang = "";
+        }
+
+        function flushAll() {
+            flushParagraph();
+            flushList();
+            flushQuote();
+        }
+
+        lines.forEach(function(line) {
+            var trimmed = line.trim();
+
+            if (codeFence) {
+                if (trimmed.startsWith(codeFence)) {
+                    flushCode();
+                } else {
+                    codeLines.push(line);
+                }
+                return;
+            }
+
+            var fenceMatch = line.match(/^(\s*)(```+|~~~+)\s*([a-z0-9_-]+)?\s*$/i);
+            if (fenceMatch) {
+                flushAll();
+                codeFence = fenceMatch[2];
+                codeLang = fenceMatch[3] || "";
+                codeLines = [];
+                return;
+            }
+
+            if (!trimmed) {
+                flushAll();
+                return;
+            }
+
+            var headingMatch = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/);
+            if (headingMatch) {
+                flushAll();
+                html.push("<h" + headingMatch[1].length + ">" + renderMarkdownInline(headingMatch[2]) + "</h" + headingMatch[1].length + ">");
+                return;
+            }
+
+            if (/^\s{0,3}([-*_])\s*(\1\s*){2,}$/.test(line)) {
+                flushAll();
+                html.push("<hr>");
+                return;
+            }
+
+            var quoteMatch = line.match(/^\s{0,3}>\s?(.*)$/);
+            if (quoteMatch) {
+                flushParagraph();
+                flushList();
+                quoteLines.push(quoteMatch[1]);
+                return;
+            }
+            if (quoteLines.length) {
+                flushQuote();
+            }
+
+            var ulMatch = line.match(/^\s{0,3}[-*+]\s+(.+)$/);
+            if (ulMatch) {
+                flushParagraph();
+                if (listType && listType !== "ul") flushList();
+                listType = "ul";
+                listItems.push(ulMatch[1]);
+                return;
+            }
+
+            var olMatch = line.match(/^\s{0,3}\d+\.\s+(.+)$/);
+            if (olMatch) {
+                flushParagraph();
+                if (listType && listType !== "ol") flushList();
+                listType = "ol";
+                listItems.push(olMatch[1]);
+                return;
+            }
+
+            if (listItems.length) {
+                flushList();
+            }
+
+            paragraphLines.push(line);
+        });
+
+        flushAll();
+        if (codeFence) {
+            flushCode();
+        }
+        return html.join("");
+    }
+
+    function renderPopupDescription(text) {
+        return renderMarkdownBlock(text) || escapePopupHtml(text).replace(/\n/g, "<br>");
+    }
+
+    function extractYoutubeVideos(text) {
+        var source = String(text || "");
+        var pattern = /(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})(?:[?&#][^\s<]*)?/gi;
+        var seen = {};
+        var videos = [];
+        var match;
+        while ((match = pattern.exec(source)) !== null) {
+            var id = match[1];
+            if (seen[id]) {
+                continue;
+            }
+            seen[id] = true;
+            videos.push({
+                id: id,
+                thumb: "https://img.youtube.com/vi/" + encodeURIComponent(id) + "/hqdefault.jpg"
+            });
+        }
+        return videos;
+    }
+
     function getPopupLimits() {
         var width = container ? container.clientWidth : 0;
         var height = container ? container.clientHeight : 0;
         return {
-            maxWidth: width ? Math.floor(width / 2) : 0,
-            maxHeight: height ? Math.floor(height / 2.5) : 0
+            maxWidth: width ? Math.floor(width * 2 / 3) : 0,
+            maxHeight: width ? Math.floor(width / 2) : (height ? Math.floor(height / 2.5) : 0)
         };
     }
 
@@ -376,7 +1385,11 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         root.dataset.popupName = data.name || "";
         root.dataset.popupDesc = data.desc || "";
         root.dataset.popupGroup = data.group || "";
-        root.dataset.popupHasImage = data.imageUrl ? "1" : "";
+        var imageUrls = Array.isArray(data.imageUrls) ? data.imageUrls.filter(function(url) { return !!url; }) : (data.imageUrl ? [data.imageUrl] : []);
+        var videoUrls = Array.isArray(data.videoUrls) ? data.videoUrls.filter(function(url) { return !!url; }) : (data.videoUrl ? [data.videoUrl] : []);
+        var youtubeVideos = extractYoutubeVideos(data.desc || "");
+        var mediaEntries = [];
+        root.dataset.popupHasImage = (imageUrls.length || videoUrls.length || youtubeVideos.length) ? "1" : "";
 
         if (data.name) {
             var nameEl = document.createElement("div");
@@ -387,7 +1400,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         if (data.desc) {
             var descEl = document.createElement("div");
             descEl.className = "map-viewer-popup-desc";
-            descEl.textContent = data.desc;
+            descEl.innerHTML = renderPopupDescription(data.desc);
             root.appendChild(descEl);
         }
         if (data.group) {
@@ -396,12 +1409,79 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             groupEl.textContent = data.group;
             root.appendChild(groupEl);
         }
-        if (data.imageUrl) {
-            var imgEl = document.createElement("img");
-            imgEl.className = "map-viewer-popup-image";
-            imgEl.src = appendShared(data.imageUrl);
-            imgEl.alt = data.name || data.group || "";
-            root.appendChild(imgEl);
+        if (imageUrls.length || videoUrls.length || youtubeVideos.length) {
+            var imagesEl = document.createElement("div");
+            imagesEl.className = "map-viewer-popup-media";
+            imageUrls.forEach(function(imageUrl) {
+                var src = appendShared(imageUrl);
+                var mediaIndex = mediaEntries.length;
+                mediaEntries.push({ kind: "image", src: src, label: data.name || data.group || "" });
+                var imageItem = document.createElement("div");
+                imageItem.className = "map-viewer-popup-media-item";
+                var imgEl = document.createElement("img");
+                imgEl.className = "map-viewer-popup-image";
+                imgEl.src = src;
+                imgEl.alt = data.name || data.group || "";
+                imgEl.style.cursor = "zoom-in";
+                imgEl.addEventListener("click", function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openMediaViewer(mediaEntries, mediaIndex);
+                });
+                imageItem.appendChild(imgEl);
+                imagesEl.appendChild(imageItem);
+            });
+            videoUrls.forEach(function(videoUrl) {
+                var src = appendShared(videoUrl);
+                var mediaIndex = mediaEntries.length;
+                mediaEntries.push({ kind: "video", src: src, label: data.name || data.group || "영상" });
+                var videoItem = document.createElement("div");
+                videoItem.className = "map-viewer-popup-media-item is-video";
+                var videoEl = document.createElement("video");
+                videoEl.src = src;
+                videoEl.muted = true;
+                videoEl.playsInline = true;
+                videoEl.preload = "metadata";
+                videoEl.addEventListener("click", function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openMediaViewer(mediaEntries, mediaIndex);
+                });
+                var play = document.createElement("div");
+                play.className = "map-viewer-popup-video-play";
+                var label = document.createElement("div");
+                label.className = "map-viewer-popup-video-label";
+                label.textContent = "영상";
+                videoItem.appendChild(videoEl);
+                videoItem.appendChild(play);
+                videoItem.appendChild(label);
+                imagesEl.appendChild(videoItem);
+            });
+            youtubeVideos.forEach(function(video) {
+                var mediaIndex = mediaEntries.length;
+                mediaEntries.push({ kind: "youtube", src: video.id, label: data.name || "YouTube" });
+                var videoItem = document.createElement("div");
+                videoItem.className = "map-viewer-popup-media-item is-video";
+                var videoThumb = document.createElement("img");
+                videoThumb.className = "map-viewer-popup-image";
+                videoThumb.src = video.thumb;
+                videoThumb.alt = data.name || "YouTube";
+                var play = document.createElement("div");
+                play.className = "map-viewer-popup-video-play";
+                var label = document.createElement("div");
+                label.className = "map-viewer-popup-video-label";
+                label.textContent = "YouTube";
+                videoItem.addEventListener("click", function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openMediaViewer(mediaEntries, mediaIndex);
+                });
+                videoItem.appendChild(videoThumb);
+                videoItem.appendChild(play);
+                videoItem.appendChild(label);
+                imagesEl.appendChild(videoItem);
+            });
+            root.appendChild(imagesEl);
         }
 
         return root;
@@ -424,6 +1504,10 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         var group = root.dataset.popupGroup || "";
         var measuredWidth = measurePopupContentWidth(name, desc, group);
         var nextWidth = Math.ceil(measuredWidth) + 14;
+        var mediaEl = root.querySelector(".map-viewer-popup-media");
+        if (mediaEl) {
+            nextWidth = Math.max(nextWidth, 152);
+        }
         var finalWidth = Math.min(nextWidth, limits.maxWidth);
 
         content.style.width = finalWidth + "px";
@@ -438,9 +1522,8 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         root.style.maxHeight = limits.maxHeight + "px";
         root.classList.toggle("is-width-clamped", nextWidth > limits.maxWidth);
 
-        var image = root.querySelector(".map-viewer-popup-image");
-        if (image) {
-            image.style.maxHeight = Math.max(120, Math.floor(limits.maxHeight / 2.2)) + "px";
+        if (mediaEl) {
+            mediaEl.style.maxHeight = Math.max(120, Math.floor(limits.maxHeight / 2.2)) + "px";
         }
     }
 
@@ -462,7 +1545,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         }
     }
 
-    function openPopupAfterMapMove(layerData) {
+    function openPopupAfterMapMove(layerData, delayMs) {
         if (!layerData || !layerData.leafletLayer || !layerData.leafletLayer.getPopup) return;
         var popup = layerData.leafletLayer.getPopup();
         if (!popup) return;
@@ -474,7 +1557,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             layerData.leafletLayer.openPopup();
         }
         map.once("moveend", finish);
-        window.setTimeout(finish, 900);
+        window.setTimeout(finish, typeof delayMs === "number" ? delayMs : 900);
     }
 
     function openSourceLayerLikeClick(layerData) {
@@ -488,16 +1571,29 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             });
             return;
         }
+        var targetLatLng = layerData.leafletLayer.getLatLng();
+        var focusLatLng = getOffsetFocusLatLng(map, targetLatLng, Math.round((map.getSize && map.getSize().y ? map.getSize().y : 0) * 0.12));
+        var markerFocusDuration = computeFocusDuration(map, focusLatLng);
         if (map.flyTo) {
-            map.flyTo(layerData.leafletLayer.getLatLng(), Math.max(map.getZoom(), 0), {
+            map.flyTo(focusLatLng, Math.max(map.getZoom(), 0), {
                 animate: true,
-                duration: 0.75,
+                duration: markerFocusDuration,
                 easeLinearity: 0.22
             });
         } else {
-            map.setView(layerData.leafletLayer.getLatLng(), Math.max(map.getZoom(), 0), { animate: true });
+            map.setView(focusLatLng, Math.max(map.getZoom(), 0), { animate: true });
         }
-        openPopupAfterMapMove(layerData);
+        openPopupAfterMapMove(layerData, Math.round(markerFocusDuration * 1000) + 120);
+    }
+
+    function openZoneInteraction(layerData) {
+        if (!layerData || !layerData.leafletLayer) return;
+        focusZoneLayer(layerData.leafletLayer, function() {
+            syncLayerPopupAnchor(layerData);
+            if (layerData.leafletLayer.getPopup && layerData.leafletLayer.getPopup()) {
+                layerData.leafletLayer.openPopup();
+            }
+        });
     }
 
     var imgWidth = 1000, imgHeight = 700;
@@ -515,6 +1611,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         var xhr = new XMLHttpRequest();
         xhr.open("GET", url, true);
         xhr.responseType = "blob";
+        xhr.timeout = 15000;
         xhr.onload = function() {
             if (xhr.status >= 200 && xhr.status < 300) {
                 var blobUrl = URL.createObjectURL(xhr.response);
@@ -531,6 +1628,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             }
         };
         xhr.onerror = function() { onError(); };
+        xhr.ontimeout = function() { onError(); };
         xhr.send();
     }
 
@@ -540,7 +1638,14 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         function() { initMap(); }
     );
 
+    window.setTimeout(function() {
+        if (!map) {
+            initMap();
+        }
+    }, 20000);
+
     function initMap() {
+        if (map) return;
         hideLoading();
         map = L.map("map-viewer-container", {
             crs: L.CRS.Simple,
@@ -549,9 +1654,12 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             zoomSnap: 0.25,
             attributionControl: false,
             scrollWheelZoom: true,
+            touchZoom: false,
+            doubleClickZoom: true,
             zoomControl: false,
         });
         L.control.zoom({ position: "topright" }).addTo(map);
+        enableMapGestureZoom(map, document.getElementById("map-viewer-container"));
 
         var bounds = [[0, 0], [imgHeight, imgWidth]];
         if (loadedImageUrl) {
@@ -581,7 +1689,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             // 그룹 로드
             if (geojson.groups) {
                 geojson.groups.forEach(function(g) {
-                    viewerGroups[g.id] = { name: g.name, desc: g.desc || "", imageUrl: g.imageUrl || null, fids: [] };
+                    viewerGroups[g.id] = { name: g.name, desc: g.desc || "", imageUrl: g.imageUrl || null, imageUrls: g.imageUrls || (g.imageUrl ? [g.imageUrl] : []), videoUrl: g.videoUrl || null, videoUrls: g.videoUrls || (g.videoUrl ? [g.videoUrl] : []), fids: [], collapsed: true };
                 });
             }
 
@@ -606,12 +1714,15 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                             .setLatLng(centroid)
                             .addTo(map);
                     }
-                    if (props.name || props.desc || props.imageUrl) {
+                    if (props.name || props.desc || props.imageUrl || (props.imageUrls && props.imageUrls.length) || props.videoUrl || (props.videoUrls && props.videoUrls.length)) {
                         layer.bindPopup(createPopupContent({
                             name: props.name || "",
                             desc: props.desc || "",
-                            imageUrl: props.imageUrl || ""
-                        }));
+                            imageUrl: props.imageUrl || "",
+                            imageUrls: props.imageUrls || (props.imageUrl ? [props.imageUrl] : []),
+                            videoUrl: props.videoUrl || "",
+                            videoUrls: props.videoUrls || (props.videoUrl ? [props.videoUrl] : [])
+                        }), { autoPan: false, closeButton: false });
                         syncLayerPopupAnchor({ type: "zone", leafletLayer: layer });
                     }
                     viewerLayerData[fid] = { type: "zone", name: props.name, color: color, groupId: props.groupId || null, leafletLayer: layer, tooltipLayer: tooltipLayer, visible: true, bindFid: props.bindFid || null };
@@ -619,6 +1730,10 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                         viewerInboundBindSources[props.bindFid] = fid;
                     }
                     bindZoneLabelClick(viewerLayerData[fid]);
+                    layer.on("click", function(e) {
+                        L.DomEvent.stop(e);
+                        openZoneInteraction(viewerLayerData[fid]);
+                    });
 
                 } else if (f.geometry.type === "Point" && props.type === "marker") {
                     var c = f.geometry.coordinates;
@@ -626,13 +1741,16 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                     var iconVisible = props.iconVisible !== false;
                     var icon = iconVisible ? createIcon(props.emoji, props.iconUrl) : L.divIcon({ html: '<div style="width:34px;height:34px;"></div>', className: "", iconSize: [37, 37], iconAnchor: [19, 23] });
                     var marker = L.marker(latlng, { icon: icon }).addTo(map);
-                    if (props.name || props.desc || props.group || props.imageUrl) {
+                    if (props.name || props.desc || props.group || props.imageUrl || (props.imageUrls && props.imageUrls.length) || props.videoUrl || (props.videoUrls && props.videoUrls.length)) {
                         marker.bindPopup(createPopupContent({
                             name: props.name || "",
                             desc: props.desc || "",
                             group: props.group || "",
-                            imageUrl: props.imageUrl || ""
-                        }));
+                            imageUrl: props.imageUrl || "",
+                            imageUrls: props.imageUrls || (props.imageUrl ? [props.imageUrl] : []),
+                            videoUrl: props.videoUrl || "",
+                            videoUrls: props.videoUrls || (props.videoUrl ? [props.videoUrl] : [])
+                        }), { autoPan: false, closeButton: false });
                         syncLayerPopupAnchor({ type: "marker", leafletLayer: marker });
                     }
                     viewerLayerData[fid] = { type: "marker", name: props.name, emoji: props.emoji || "📍", groupId: props.groupId || null, leafletLayer: marker, tooltipLayer: null, visible: true, bindFid: props.bindFid || null };
@@ -783,13 +1901,21 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 
             row.addEventListener("contextmenu", function(e) {
                 e.preventDefault();
-                var center;
                 if (d.type === "zone") {
-                    center = computeCentroid(d.leafletLayer.getLatLngs()[0]);
+                    focusZoneLayer(d.leafletLayer);
                 } else {
-                    center = d.leafletLayer.getLatLng();
+                    var targetLatLng = d.leafletLayer.getLatLng();
+                    var duration = computeFocusDuration(map, targetLatLng);
+                    if (map.flyTo) {
+                        map.flyTo(targetLatLng, Math.max(map.getZoom(), 0), {
+                            animate: true,
+                            duration: duration,
+                            easeLinearity: 0.22
+                        });
+                    } else {
+                        map.panTo(targetLatLng);
+                    }
                 }
-                map.panTo(center);
             });
 
             return row;
@@ -814,8 +1940,12 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                 var groupEl = document.createElement("div");
                 groupEl.className = "map-viewer-layer-group";
 
-                var header = document.createElement("label");
+                var header = document.createElement("div");
                 header.className = "map-viewer-layer-group-header";
+
+                var arrow = document.createElement("span");
+                arrow.textContent = grp.collapsed ? "▶" : "▼";
+                arrow.style.fontSize = "0.9em";
 
                 var groupCb = document.createElement("input");
                 groupCb.type = "checkbox";
@@ -831,12 +1961,14 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                 groupName.style.flex = "1";
 
                 header.appendChild(groupCb);
+                header.appendChild(arrow);
                 header.appendChild(folderSpan);
                 header.appendChild(groupName);
                 groupEl.appendChild(header);
 
                 var childrenEl = document.createElement("div");
                 childrenEl.className = "map-viewer-layer-group-children";
+                childrenEl.hidden = !!grp.collapsed;
 
                 function updateGroupCb() { updateGroupCheckboxState(gid); }
 
@@ -848,17 +1980,27 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                     setGroupVisible(gid, groupCb.checked);
                 });
 
+                header.addEventListener("click", function(e) {
+                    if (e.target === groupCb) return;
+                    grp.collapsed = !grp.collapsed;
+                    arrow.textContent = grp.collapsed ? "▶" : "▼";
+                    childrenEl.hidden = !!grp.collapsed;
+                });
+
                 header.addEventListener("contextmenu", function(e) {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (!grp.name && !grp.desc && !grp.imageUrl) return;
+                    if (!grp.name && !grp.desc && !grp.imageUrl && !(grp.imageUrls && grp.imageUrls.length) && !grp.videoUrl && !(grp.videoUrls && grp.videoUrls.length)) return;
                     // 지도 중앙에 임시 팝업 표시
                     L.popup()
                         .setLatLng(map.getCenter())
                         .setContent(createPopupContent({
                             name: grp.name || "",
                             desc: grp.desc || "",
-                            imageUrl: grp.imageUrl || ""
+                            imageUrl: grp.imageUrl || "",
+                            imageUrls: grp.imageUrls || (grp.imageUrl ? [grp.imageUrl] : []),
+                            videoUrl: grp.videoUrl || "",
+                            videoUrls: grp.videoUrls || (grp.videoUrl ? [grp.videoUrl] : [])
                         }))
                         .openOn(map);
                 });
@@ -967,35 +2109,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
     }
 
     function focusZoneLayer(layer, onComplete) {
-        if (!map || !layer) {
-            if (typeof onComplete === "function") onComplete();
-            return;
-        }
-        var size = map.getSize();
-        var padding = [Math.round(size.x * 0.375), Math.round(size.y * 0.375)];
-        var finished = false;
-        function finish() {
-            if (finished) return;
-            finished = true;
-            if (typeof onComplete === "function") onComplete();
-        }
-        map.once("moveend", finish);
-        if (map.flyToBounds) {
-            map.flyToBounds(layer.getBounds(), {
-                animate: true,
-                duration: 0.85,
-                easeLinearity: 0.22,
-                paddingTopLeft: padding,
-                paddingBottomRight: padding
-            });
-        } else {
-            map.fitBounds(layer.getBounds(), {
-                animate: true,
-                paddingTopLeft: padding,
-                paddingBottomRight: padding
-            });
-        }
-        window.setTimeout(finish, 1100);
+        focusZoneLayerCommon(map, layer, onComplete);
     }
 
     function bindZoneLabelClick(layerData) {
@@ -1004,24 +2118,14 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             var el = layerData.tooltipLayer.getElement && layerData.tooltipLayer.getElement();
             if (!el || el._hanplanetZoneLabelBound) return;
             el._hanplanetZoneLabelBound = true;
-            L.DomEvent.disableClickPropagation(el);
+                L.DomEvent.disableClickPropagation(el);
                 L.DomEvent.on(el, "click", function(e) {
                     L.DomEvent.stop(e);
-                    focusZoneLayer(layerData.leafletLayer, function() {
-                        syncLayerPopupAnchor(layerData);
-                        if (layerData.leafletLayer.getPopup && layerData.leafletLayer.getPopup()) {
-                            layerData.leafletLayer.openPopup();
-                        }
-                    });
+                    openZoneInteraction(layerData);
                 });
                 L.DomEvent.on(el, "contextmenu", function(e) {
                     L.DomEvent.stop(e);
-                    focusZoneLayer(layerData.leafletLayer, function() {
-                        syncLayerPopupAnchor(layerData);
-                        if (layerData.leafletLayer.getPopup && layerData.leafletLayer.getPopup()) {
-                            layerData.leafletLayer.openPopup();
-                        }
-                    });
+                    openZoneInteraction(layerData);
                 });
             }
         layerData.tooltipLayer.on("add", attachTooltipElement);

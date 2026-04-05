@@ -72,6 +72,7 @@ urlpatterns = [
     path('handrive/api/map/data/save', handrive_views.handrive_api_map_data_save, name='handrive_api_map_data_save'),
     path('handrive/api/map/icon-upload', handrive_views.handrive_api_map_icon_upload, name='handrive_api_map_icon_upload'),
     path('handrive/api/map/icon-delete', handrive_views.handrive_api_map_icon_delete, name='handrive_api_map_icon_delete'),
+    path('handrive/api/map/image-upload', handrive_views.handrive_api_map_attachment_upload, name='handrive_api_map_attachment_upload'),
     path('handrive/api/map-image/', handrive_views.handrive_api_map_image, name='handrive_api_map_image'),
     path('handrive/api/login-captcha-status', handrive_views.handrive_api_login_captcha_status, name='handrive_api_login_captcha_status'),
     path('handrive/share/<str:owner_username>/<str:share_slug>', handrive_views.handrive_shared_view, name='handrive_shared_view'),

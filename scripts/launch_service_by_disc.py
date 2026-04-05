@@ -145,6 +145,38 @@ def _terminate_conflicting_gunicorn(port: int) -> None:
     _wait_for_port_state(port, should_listen=False, timeout_seconds=2)
 
 
+def _terminate_conflicting_nginx() -> None:
+    pattern = "/opt/homebrew/opt/nginx/bin/nginx -g daemon off; -c /tmp/hanplanet_nginx_runtime.conf"
+    try:
+        subprocess.run(
+            ["/usr/bin/pkill", "-TERM", "-f", pattern],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        pass
+
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        if not _is_tcp_port_listening(80) and not _is_tcp_port_listening(8080):
+            return
+        time.sleep(0.1)
+
+    try:
+        subprocess.run(
+            ["/usr/bin/pkill", "-KILL", "-f", pattern],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        pass
+
+    _wait_for_port_state(80, should_listen=False, timeout_seconds=2)
+    _wait_for_port_state(8080, should_listen=False, timeout_seconds=2)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("service", choices={"gunicorn", "gitea", "celery", "nginx"})
@@ -153,11 +185,6 @@ def main() -> int:
     disc_mode = get_disc_mode()
     if disc_mode == "ssd":
         _ensure_ssd_paths()
-    elif args.service == "gunicorn":
-        pending = _get_unready_paths(get_required_storage_paths(disc_mode))
-        if pending:
-            joined = ", ".join(str(path) for path in pending)
-            print(f"[launch_service_by_disc] warning: continuing without ready storage paths: {joined}", file=sys.stderr)
     else:
         _wait_for_paths(get_required_storage_paths(disc_mode))
 
@@ -194,6 +221,7 @@ def main() -> int:
         )
 
     if args.service == "nginx":
+        _terminate_conflicting_nginx()
         runtime_config = _build_nginx_runtime_config(disc_mode)
         _exec_command(
             [

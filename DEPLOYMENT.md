@@ -113,7 +113,7 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.gunicorn
 
 ```bash
 .venv/bin/python manage.py collectstatic --noinput
-launchctl kickstart -k gui/$(id -u)/com.hanplanet.gunicorn
+./scripts/restart_gunicorn_and_wait.py
 ```
 
 ---

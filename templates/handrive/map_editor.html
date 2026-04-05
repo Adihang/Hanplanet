@@ -15,6 +15,7 @@
     min-height: 0;
     overflow: hidden;
     background: var(--handrive-bg, #f5f5f5);
+    touch-action: none;
 }
 .map-editor-toolbar {
     display: flex;
@@ -60,11 +61,13 @@
     flex: 1;
     overflow: hidden;
     position: relative;
+    touch-action: none;
+    overscroll-behavior: contain;
 }
 .map-loading-overlay {
     position: absolute;
     inset: 0;
-    z-index: 1000;
+    z-index: 2000;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -72,6 +75,170 @@
 }
 .map-loading-overlay.is-hidden {
     display: none;
+}
+.map-image-viewer-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    touch-action: none;
+}
+.map-image-viewer-modal[hidden] {
+    display: none;
+}
+.map-image-viewer-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: transparent;
+    touch-action: none;
+}
+.map-image-viewer-modal-image {
+    position: relative;
+    z-index: 1;
+    max-width: 95vw;
+    max-height: 95vh;
+    width: auto;
+    height: auto;
+    display: block;
+    box-shadow: none;
+    border: none;
+    background: transparent;
+    cursor: zoom-out;
+    touch-action: none;
+}
+.map-video-viewer-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+}
+.map-video-viewer-modal[hidden] {
+    display: none;
+}
+.map-video-viewer-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: transparent;
+}
+.map-video-viewer-modal-video {
+    position: relative;
+    z-index: 1;
+    width: min(95vw, 1280px);
+    max-height: 95vh;
+    height: auto;
+    display: block;
+    box-shadow: none;
+    border: none;
+    background: #000;
+    cursor: zoom-out;
+}
+.map-popup-image-list {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    margin-bottom: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+}
+.map-popup-video-list {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    margin-bottom: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+}
+.map-popup-image-item {
+    position: relative;
+    flex: 0 0 auto;
+    width: 128px;
+    height: 96px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: rgba(0,0,0,0.03);
+}
+.map-popup-video-item {
+    position: relative;
+    flex: 0 0 auto;
+    width: 128px;
+    height: 96px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #000;
+}
+.map-popup-image-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    cursor: zoom-in;
+}
+.map-popup-video-item video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    cursor: zoom-in;
+}
+.map-popup-video-item::after {
+    content: "▶";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 28px;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+}
+.map-popup-image-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 20px;
+    height: 20px;
+    border: none;
+    border-radius: 50%;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+}
+.map-popup-video-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 20px;
+    height: 20px;
+    border: none;
+    border-radius: 50%;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
 }
 .map-editor-side {
     width: 220px;
@@ -571,6 +738,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     data-map-data-api="{{ handrive_api_map_data_url }}"
     data-map-data-save-api="/handrive/api/map/data/save"
     data-map-icon-upload-api="{{ handrive_api_map_icon_upload_url }}"
+    data-map-image-upload-api="{{ handrive_api_map_image_upload_url }}"
     data-map-icon-delete-api="{{ handrive_api_map_icon_delete_url }}"
     data-map-viewer-url="{{ map_viewer_url }}"
     data-handrive-list-url="{{ handrive_list_url }}"
@@ -590,9 +758,6 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
 
     <div class="map-editor-body">
         <div id="map-editor-container">
-            <div class="map-loading-overlay" id="map-editor-loading">
-                <div class="handrive-list-loading-spinner"></div>
-            </div>
         </div>
 
         <button type="button" class="map-editor-side-toggle" id="map-editor-side-toggle" aria-label="사이드 패널 접기" title="사이드 패널 접기">
@@ -621,6 +786,9 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 <ul class="map-editor-layers-list" id="map-layers-list"></ul>
             </div>
         </div>
+        <div class="map-loading-overlay" id="map-editor-loading">
+            <div class="handrive-list-loading-spinner"></div>
+        </div>
     </div>
 </div>
 
@@ -639,11 +807,24 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     </div>
 </div>
 
+<div class="map-image-viewer-modal" id="map-image-viewer-modal" hidden>
+    <div class="map-image-viewer-modal-backdrop" id="map-image-viewer-modal-backdrop"></div>
+    <img class="map-image-viewer-modal-image" id="map-image-viewer-modal-image" alt="">
+</div>
+<div class="map-video-viewer-modal" id="map-video-viewer-modal" hidden>
+    <div class="map-video-viewer-modal-backdrop" id="map-video-viewer-modal-backdrop"></div>
+    <video class="map-video-viewer-modal-video" id="map-video-viewer-modal-video" controls playsinline></video>
+</div>
+
 <script src="{% static_v 'js/vendor/leaflet.js' %}"></script>
 <script src="{% static_v 'js/vendor/leaflet.draw.js' %}"></script>
 <script>
 (function () {
     "use strict";
+
+{% include 'handrive/_zone_focus_js.html' %}
+{% include 'handrive/_map_gesture_zoom_js.html' %}
+{% include 'handrive/_image_gesture_zoom_js.html' %}
 
     if (window.L && L.Draw && L.Draw.Polyline && !L.Draw.Polyline.prototype._hanplanetGuideDashPatched) {
         L.Draw.Polyline.prototype._drawGuide = function (pointA, pointB) {
@@ -681,6 +862,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     var mapDataApi = root.dataset.mapDataApi;
     var mapDataSaveApi = root.dataset.mapDataSaveApi;
     var mapIconUploadApi = root.dataset.mapIconUploadApi;
+    var mapImageUploadApi = root.dataset.mapImageUploadApi;
     var mapIconDeleteApi = root.dataset.mapIconDeleteApi;
 
     // 프리셋 아이콘 목록
@@ -708,6 +890,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     var currentTool = "select"; // select | zone | marker
     var geojsonFeatures = []; // 저장된 Feature 배열
     var layerMap = {}; // id -> {feature, layer}
+    var layerOrder = []; // layer list / save order
     var featureIdCounter = 1;
     var pendingZoneLayer = null;
     var markerPopupTarget = null;
@@ -726,6 +909,40 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     var groupIdCounter = 1;
     var draggingFid = null;
     function nextGroupId() { return "g" + (groupIdCounter++); }
+    function ensureLayerOrder(fid) {
+        if (!fid) return;
+        if (layerOrder.indexOf(fid) === -1) layerOrder.push(fid);
+    }
+    function removeLayerFromOrder(fid) {
+        var idx = layerOrder.indexOf(fid);
+        if (idx !== -1) layerOrder.splice(idx, 1);
+    }
+    function moveLayerBefore(srcFid, dstFid) {
+        if (!srcFid || !dstFid || srcFid === dstFid) return;
+        var srcIdx = layerOrder.indexOf(srcFid);
+        var dstIdx = layerOrder.indexOf(dstFid);
+        if (srcIdx === -1 || dstIdx === -1) return;
+        layerOrder.splice(srcIdx, 1);
+        if (srcIdx < dstIdx) dstIdx -= 1;
+        layerOrder.splice(dstIdx, 0, srcFid);
+    }
+    function moveLayerToEndOfGroup(srcFid, gid) {
+        if (!srcFid || !gid) return;
+        var srcIdx = layerOrder.indexOf(srcFid);
+        if (srcIdx === -1) return;
+        var lastIdx = -1;
+        for (var i = 0; i < layerOrder.length; i += 1) {
+            var fid = layerOrder[i];
+            if (fid !== srcFid && layerMap[fid] && layerMap[fid].groupId === gid) lastIdx = i;
+        }
+        layerOrder.splice(srcIdx, 1);
+        if (lastIdx === -1) {
+            layerOrder.push(srcFid);
+            return;
+        }
+        if (srcIdx < lastIdx) lastIdx -= 1;
+        layerOrder.splice(lastIdx + 1, 0, srcFid);
+    }
 
     // 레이어 ID 생성
     function nextId() { return "f" + (featureIdCounter++); }
@@ -871,31 +1088,16 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         if (!layer || !layer.getLatLngs || !layer.setLatLngs) return;
         var latlngs = cloneLatLngStructure(layer.getLatLngs());
         layer.setLatLngs(latlngs);
+        if (layer.editing && typeof layer.editing._updateLatLngs === "function") {
+            layer.editing._updateLatLngs({ layer: layer });
+        }
         if (layer.redraw) {
             layer.redraw();
         }
     }
 
     function focusZoneLayer(layer, onComplete) {
-        if (!map || !layer) {
-            if (typeof onComplete === "function") onComplete();
-            return;
-        }
-        var size = map.getSize();
-        var padding = [Math.round(size.x * 0.375), Math.round(size.y * 0.375)];
-        var finished = false;
-        function finish() {
-            if (finished) return;
-            finished = true;
-            if (typeof onComplete === "function") onComplete();
-        }
-        map.once("moveend", finish);
-        map.fitBounds(layer.getBounds(), {
-            animate: true,
-            paddingTopLeft: padding,
-            paddingBottomRight: padding
-        });
-        window.setTimeout(finish, 320);
+        focusZoneLayerCommon(map, layer, onComplete);
     }
 
     function bindZoneTooltipClick(fid) {
@@ -1057,6 +1259,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         disableActiveZoneShapeEdit();
         var item = layerMap[fid];
         if (!item.layer || !item.layer.editing) return;
+        syncZoneEditGeometry(item.layer);
         item.layer.editing.enable();
         activeZoneEditFid = fid;
     }
@@ -1065,15 +1268,18 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         var item = layerMap[fid];
         if (!item || item.type !== "zone") return;
         selectLayer(fid);
-        openNamePopup("구역 정보", item.name, function(newName, newDesc, iconData, imageUrl, bindFid, newIconVisible) {
+        openNamePopup("구역 정보", item.name, function(newName, newDesc, iconData, imageUrl, imageUrls, videoUrl, videoUrls, bindFid, bindRole, newIconVisible) {
             if (newName === null) return;
             item.name = newName;
             item.desc = newDesc;
             item.iconKey = iconData.iconKey;
             item.emoji = iconData.emoji;
             item.iconUrl = iconData.iconUrl;
-            item.imageUrl = imageUrl || null;
-            item.bindFid = bindFid || null;
+            item.imageUrls = normalizeImageUrls(imageUrls);
+            item.imageUrl = item.imageUrls[0] || null;
+            item.videoUrls = normalizeVideoUrls(videoUrls);
+            item.videoUrl = item.videoUrls[0] || null;
+            applyExclusiveBinding(fid, bindFid || null, bindRole || "target");
             item.iconVisible = newIconVisible !== false;
             item.layer.setStyle(getEditorZoneStyle(item.color));
             item.tooltip.setContent(newName);
@@ -1081,12 +1287,29 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             renderLayersList();
             commitHistoryState();
         }, function() {
+            deleteLayerByFid(fid);
+        }, true, item.desc, true, { iconKey: item.iconKey, emoji: item.emoji, iconUrl: item.iconUrl }, item.imageUrls || item.imageUrl || [], item.videoUrls || item.videoUrl || [], fid);
+    }
+
+    function deleteLayerByFid(fid) {
+        var item = layerMap[fid];
+        if (!item) return;
+        if (item.type === "zone" && activeZoneEditFid === fid) {
+            disableActiveZoneShapeEdit();
+        }
+        if (item.layer && drawnItems.hasLayer(item.layer)) {
             drawnItems.removeLayer(item.layer);
-            if (item.tooltip) { map.removeLayer(item.tooltip); }
-            delete layerMap[fid];
-            renderLayersList();
-            commitHistoryState();
-        }, true, item.desc, true, { iconKey: item.iconKey, emoji: item.emoji, iconUrl: item.iconUrl }, item.imageUrl, fid);
+        }
+        if (item.tooltip && map && map.hasLayer(item.tooltip)) {
+            map.removeLayer(item.tooltip);
+        }
+        delete layerMap[fid];
+        removeLayerFromOrder(fid);
+        if (selectedLayerFid === fid) {
+            selectedLayerFid = null;
+        }
+        renderLayersList();
+        commitHistoryState();
     }
 
     // 도구 전환
@@ -1123,7 +1346,10 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 iconKey: item.iconKey || null,
                 emoji: item.emoji || null,
                 iconUrl: item.iconUrl || null,
+                imageUrls: normalizeImageUrls(item.imageUrls || item.imageUrl || []),
                 imageUrl: item.imageUrl || null,
+                videoUrls: normalizeVideoUrls(item.videoUrls || item.videoUrl || []),
+                videoUrl: item.videoUrl || null,
                 iconVisible: item.iconVisible !== false,
                 bindFid: item.bindFid || null,
                 groupId: item.groupId || null,
@@ -1137,7 +1363,10 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             iconKey: item.iconKey || null,
             emoji: item.emoji || null,
             iconUrl: item.iconUrl || null,
+            imageUrls: normalizeImageUrls(item.imageUrls || item.imageUrl || []),
             imageUrl: item.imageUrl || null,
+            videoUrls: normalizeVideoUrls(item.videoUrls || item.videoUrl || []),
+            videoUrl: item.videoUrl || null,
             iconVisible: item.iconVisible !== false,
             bindFid: item.bindFid || null,
             groupId: item.groupId || null,
@@ -1166,7 +1395,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 null,
                 copiedLayerPayload.color,
                 copiedLayerPayload.desc || "",
-                { iconKey: copiedLayerPayload.iconKey, emoji: copiedLayerPayload.emoji, iconUrl: copiedLayerPayload.iconUrl, imageUrl: copiedLayerPayload.imageUrl },
+                { iconKey: copiedLayerPayload.iconKey, emoji: copiedLayerPayload.emoji, iconUrl: copiedLayerPayload.iconUrl, imageUrls: copiedLayerPayload.imageUrls || [], imageUrl: copiedLayerPayload.imageUrl || null, videoUrls: copiedLayerPayload.videoUrls || [], videoUrl: copiedLayerPayload.videoUrl || null },
                 copiedLayerPayload.iconVisible !== false
             );
         } else if (copiedLayerPayload.type === "marker") {
@@ -1180,13 +1409,15 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 copiedLayerPayload.name || "",
                 null,
                 copiedLayerPayload.desc || "",
-                copiedLayerPayload.imageUrl || null,
+                copiedLayerPayload.imageUrls || copiedLayerPayload.imageUrl || [],
+                copiedLayerPayload.videoUrls || copiedLayerPayload.videoUrl || [],
                 copiedLayerPayload.iconVisible !== false
             );
         }
         if (newFid && layerMap[newFid]) {
             layerMap[newFid].groupId = copiedLayerPayload.groupId || null;
             layerMap[newFid].bindFid = copiedLayerPayload.bindFid || null;
+            ensureLayerOrder(newFid);
             selectLayer(newFid);
             renderLayersList();
             commitHistoryState();
@@ -1210,6 +1441,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             }
         });
         layerMap = {};
+        layerOrder = [];
         groups = {};
         featureIdCounter = 1;
         groupIdCounter = 1;
@@ -1221,11 +1453,14 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         var state = cloneHistoryState(geojson);
         if (state.groups) {
             state.groups.forEach(function(g) {
-                groups[g.id] = { name: g.name, collapsed: false, desc: g.desc || "", iconKey: g.iconKey || null, emoji: g.emoji || null, iconUrl: g.iconUrl || null, imageUrl: g.imageUrl || null };
+                var groupImageUrls = normalizeImageUrls(g.imageUrls || g.imageUrl || []);
+                var groupVideoUrls = normalizeVideoUrls(g.videoUrls || g.videoUrl || []);
+                groups[g.id] = { name: g.name, collapsed: false, desc: g.desc || "", iconKey: g.iconKey || null, emoji: g.emoji || null, iconUrl: g.iconUrl || null, imageUrls: groupImageUrls, imageUrl: groupImageUrls[0] || null, videoUrls: groupVideoUrls, videoUrl: groupVideoUrls[0] || null };
                 var groupNum = parseInt(String(g.id).replace("g", ""), 10);
                 if (!isNaN(groupNum) && groupNum >= groupIdCounter) groupIdCounter = groupNum + 1;
             });
         }
+        var orderSource = Array.isArray(state.order) ? state.order.slice() : [];
         (state.features || []).forEach(function(f) {
             if (!f.geometry || !f.properties) return;
             var props = f.properties;
@@ -1237,17 +1472,25 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 var coords = (f.geometry.coordinates[0] || []).map(function(c) { return [c[1], c[0]]; });
                 if (coords.length > 1) coords.pop();
                 var zoneLayer = L.polygon(coords);
-                addZoneLayer(zoneLayer, props.name || "", fid, props.color, props.desc || "", { iconKey: props.iconKey || null, emoji: props.emoji || null, iconUrl: props.iconUrl || null, imageUrl: props.imageUrl || null }, props.iconVisible !== false);
+                addZoneLayer(zoneLayer, props.name || "", fid, props.color, props.desc || "", { iconKey: props.iconKey || null, emoji: props.emoji || null, iconUrl: props.iconUrl || null, imageUrls: props.imageUrls || props.imageUrl || [], imageUrl: props.imageUrl || null, videoUrls: props.videoUrls || props.videoUrl || [], videoUrl: props.videoUrl || null }, props.iconVisible !== false);
                 if (props.groupId && groups[props.groupId]) layerMap[fid].groupId = props.groupId;
                 if (props.bindFid) layerMap[fid].bindFid = props.bindFid;
             } else if (f.geometry.type === "Point" && props.type === "marker") {
                 var point = f.geometry.coordinates;
                 var markerLatLng = L.latLng(point[1], point[0]);
-                placeMarker(markerLatLng, props.iconKey || "pin", props.emoji || "📍", props.iconUrl || null, props.name || "", fid, props.desc || "", props.imageUrl || null, props.iconVisible !== false);
+                placeMarker(markerLatLng, props.iconKey || "pin", props.emoji || "📍", props.iconUrl || null, props.name || "", fid, props.desc || "", props.imageUrls || props.imageUrl || [], props.videoUrls || props.videoUrl || [], props.iconVisible !== false);
                 if (props.groupId && groups[props.groupId]) layerMap[fid].groupId = props.groupId;
                 if (props.bindFid) layerMap[fid].bindFid = props.bindFid;
             }
         });
+        if (orderSource.length) {
+            layerOrder = orderSource.filter(function(fid) { return !!layerMap[fid]; });
+            Object.keys(layerMap).forEach(function(fid) {
+                if (layerOrder.indexOf(fid) === -1) layerOrder.push(fid);
+            });
+        } else {
+            layerOrder = Object.keys(layerMap);
+        }
         renderLayersList();
         refreshZoneLayerPriority();
         isRestoringHistory = false;
@@ -1300,6 +1543,12 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             if (!copiedLayerPayload) return;
             e.preventDefault();
             pasteCopiedLayer();
+            return;
+        }
+        if ((e.key === "Delete" || e.key === "Backspace") && !isEditableTextTarget(e.target)) {
+            if (!selectedLayerFid || !layerMap[selectedLayerFid]) return;
+            e.preventDefault();
+            deleteLayerByFid(selectedLayerFid);
             return;
         }
         if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
@@ -1361,7 +1610,10 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             zoomSnap: 0.25,
             attributionControl: false,
             scrollWheelZoom: true,
+            touchZoom: false,
+            doubleClickZoom: true,
         });
+        enableMapGestureZoom(map, document.getElementById("map-editor-container"));
 
         var bounds = [[0, 0], [imgHeight, imgWidth]];
         var backgroundPane = map.createPane("imageBackgroundPane");
@@ -1393,15 +1645,20 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             map.on(L.Draw.Event.CREATED, function(e) {
                 if (e.layerType === "polygon") {
                     pendingZoneLayer = e.layer;
-                    openNamePopup("구역 정보", "", function(name, desc, iconData, imageUrl, bindFid, iconVisible) {
+                    openNamePopup("구역 정보", "", function(name, desc, iconData, imageUrl, imageUrls, videoUrl, videoUrls, bindFid, bindRole, iconVisible) {
                         if (!name) { pendingZoneLayer = null; return; }
                         var createdFid = addZoneLayer(pendingZoneLayer, name, null, null, desc, iconData, iconVisible !== false);
+                        var createdItem = layerMap[createdFid];
+                        createdItem.imageUrls = normalizeImageUrls(imageUrls);
+                        createdItem.imageUrl = createdItem.imageUrls[0] || null;
+                        createdItem.videoUrls = normalizeVideoUrls(videoUrls);
+                        createdItem.videoUrl = createdItem.videoUrls[0] || null;
                         pendingZoneLayer = null;
                         selectLayer(createdFid);
                         setTool("select");
                         renderLayersList();
                         commitHistoryState();
-                    }, null, true, "", true, {});
+                    }, null, true, "", true, {}, [], [], null);
                 }
             });
 
@@ -1514,7 +1771,10 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         tooltip.addTo(map);
 
         var icd = existingIconData || {};
-        layerMap[fid] = { type: "zone", name: name, color: color, layer: layer, tooltip: tooltip, groupId: null, desc: existingDesc || "", iconKey: icd.iconKey || null, emoji: icd.emoji || null, iconUrl: icd.iconUrl || null, imageUrl: icd.imageUrl || null, iconVisible: iconVisible, bindFid: null };
+        var zoneImageUrls = normalizeImageUrls(icd.imageUrls || icd.imageUrl || []);
+        var zoneVideoUrls = normalizeVideoUrls(icd.videoUrls || icd.videoUrl || []);
+        layerMap[fid] = { type: "zone", name: name, color: color, layer: layer, tooltip: tooltip, groupId: null, desc: existingDesc || "", iconKey: icd.iconKey || null, emoji: icd.emoji || null, iconUrl: icd.iconUrl || null, imageUrls: zoneImageUrls, imageUrl: zoneImageUrls[0] || null, videoUrls: zoneVideoUrls, videoUrl: zoneVideoUrls[0] || null, iconVisible: iconVisible, bindFid: null };
+        ensureLayerOrder(fid);
         bindZoneTooltipClick(fid);
         refreshZoneLayerPriority();
 
@@ -1553,13 +1813,16 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     }
 
     // ── 마커 추가 ──────────────────────────────────────────────────────────
-    function placeMarker(latlng, iconKey, emoji, iconUrl, name, id, existingDesc, existingImageUrl, existingIconVisible) {
+    function placeMarker(latlng, iconKey, emoji, iconUrl, name, id, existingDesc, existingImageUrl, existingVideoUrl, existingIconVisible) {
         var fid = id || nextId();
         var iconVisible = existingIconVisible !== false;
         var markerIcon = createLeafletIcon(emoji, iconUrl);
         var marker = L.marker(latlng, { icon: markerIcon, draggable: canEdit }).addTo(drawnItems);
 
-        layerMap[fid] = { type: "marker", name: name, iconKey: iconKey, emoji: emoji, iconUrl: iconUrl, layer: marker, groupId: null, desc: existingDesc || "", imageUrl: existingImageUrl || null, iconVisible: iconVisible, bindFid: null };
+        var markerImageUrls = normalizeImageUrls(existingImageUrl || []);
+        var markerVideoUrls = normalizeVideoUrls(existingVideoUrl || []);
+        layerMap[fid] = { type: "marker", name: name, iconKey: iconKey, emoji: emoji, iconUrl: iconUrl, layer: marker, groupId: null, desc: existingDesc || "", imageUrls: markerImageUrls, imageUrl: markerImageUrls[0] || null, videoUrls: markerVideoUrls, videoUrl: markerVideoUrls[0] || null, iconVisible: iconVisible, bindFid: null };
+        ensureLayerOrder(fid);
 
         marker.on("click", function(e) {
             disableActiveZoneShapeEdit();
@@ -1609,42 +1872,333 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     var namePopupSelEmoji = null;
     var namePopupSelIconUrl = null;
     var namePopupSelImageUrl = null;
+    var namePopupSelImageUrls = [];
+    var namePopupSelVideoUrl = null;
+    var namePopupSelVideoUrls = [];
     var namePopupCallback = null;
     var namePopupDeleteCallback = null;
     var namePopupCurrentFid = null;
+    var namePopupOriginalBindFid = null;
+    var namePopupOriginalBindRole = "target";
+    var namePopupCurrentBindRole = "target";
     var namePopupIconVisibleCb = document.getElementById("map-name-popup-icon-visible");
 
     // 이미지 첨부 UI
     var namePopupImageInput = document.getElementById("map-name-popup-image-input");
+    var namePopupImageList = document.getElementById("map-name-popup-image-list");
     var namePopupImagePreview = document.getElementById("map-name-popup-image-preview");
     var namePopupImageImg = document.getElementById("map-name-popup-image-img");
     var namePopupImageRemove = document.getElementById("map-name-popup-image-remove");
+    var namePopupVideoInput = document.getElementById("map-name-popup-video-input");
+    var namePopupVideoList = document.getElementById("map-name-popup-video-list");
+    var namePopupVideoPreview = document.getElementById("map-name-popup-video-preview");
+    var namePopupVideoVideo = document.getElementById("map-name-popup-video-video");
+    var namePopupVideoRemove = document.getElementById("map-name-popup-video-remove");
+    var imageViewerModal = document.getElementById("map-image-viewer-modal");
+    var imageViewerBackdrop = document.getElementById("map-image-viewer-modal-backdrop");
+    var imageViewerImage = document.getElementById("map-image-viewer-modal-image");
+    var videoViewerModal = document.getElementById("map-video-viewer-modal");
+    var videoViewerBackdrop = document.getElementById("map-video-viewer-modal-backdrop");
+    var videoViewerVideo = document.getElementById("map-video-viewer-modal-video");
+
+    function openImageViewer(url, alt) {
+        if (!imageViewerModal || !imageViewerImage || !url) return;
+        imageViewerImage.src = url;
+        imageViewerImage.alt = alt || "";
+        imageViewerModal.hidden = false;
+        enableImageGestureZoom(imageViewerImage, { modal: imageViewerModal });
+        if (imageViewerImage._hanplanetGestureZoomLock) {
+            imageViewerImage._hanplanetGestureZoomLock(true);
+        }
+    }
+
+    function closeImageViewer() {
+        if (!imageViewerModal || !imageViewerImage) return;
+        if (imageViewerImage._hanplanetGestureZoomLock) {
+            imageViewerImage._hanplanetGestureZoomLock(false);
+        }
+        imageViewerModal.hidden = true;
+        imageViewerImage.src = "";
+        imageViewerImage.alt = "";
+        imageViewerImage.style.transform = "translate3d(0, 0, 0) scale(1)";
+    }
+
+    function openVideoViewer(url) {
+        if (!videoViewerModal || !videoViewerVideo || !url) return;
+        videoViewerVideo.src = url;
+        videoViewerModal.hidden = false;
+        if (typeof videoViewerVideo.play === "function") {
+            videoViewerVideo.play().catch(function() {});
+        }
+    }
+
+    function closeVideoViewer() {
+        if (!videoViewerModal || !videoViewerVideo) return;
+        videoViewerModal.hidden = true;
+        videoViewerVideo.pause();
+        videoViewerVideo.removeAttribute("src");
+        videoViewerVideo.load();
+    }
+
+    if (imageViewerBackdrop) {
+        imageViewerBackdrop.addEventListener("click", closeImageViewer);
+    }
+    if (imageViewerImage) {
+        imageViewerImage.addEventListener("click", function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+        });
+    }
+    if (videoViewerBackdrop) {
+        videoViewerBackdrop.addEventListener("click", closeVideoViewer);
+    }
+    window.addEventListener("keydown", function(e) {
+        if (e.key === "Escape" && imageViewerModal && !imageViewerModal.hidden) {
+            closeImageViewer();
+        }
+        if (e.key === "Escape" && videoViewerModal && !videoViewerModal.hidden) {
+            closeVideoViewer();
+        }
+    });
+
+    function normalizeImageUrls(value) {
+        if (!value) return [];
+        if (Array.isArray(value)) return value.filter(function(url) { return !!url; });
+        return [value].filter(function(url) { return !!url; });
+    }
+
+    function normalizeVideoUrls(value) {
+        if (!value) return [];
+        if (Array.isArray(value)) return value.filter(function(url) { return !!url; });
+        return [value].filter(function(url) { return !!url; });
+    }
+
+    function renderImageAttachmentList(container, imageUrls, onRemove) {
+        if (!container) return;
+        var urls = normalizeImageUrls(imageUrls);
+        container.innerHTML = "";
+        container.className = "map-popup-image-list";
+        container.style.display = urls.length ? "flex" : "none";
+        container.style.flexDirection = "row";
+        container.style.flexWrap = "nowrap";
+        container.style.gap = "8px";
+        container.style.overflowX = "auto";
+        container.style.overflowY = "hidden";
+        container.style.paddingBottom = "2px";
+        container.style.alignItems = "stretch";
+        container.style.maxWidth = "100%";
+        if (!urls.length) return;
+        urls.forEach(function(url, index) {
+            var item = document.createElement("div");
+            item.className = "map-popup-image-item";
+            var img = document.createElement("img");
+            img.src = url;
+            img.alt = "";
+            img.addEventListener("click", function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                openImageViewer(url, "");
+            });
+            item.appendChild(img);
+            var removeBtn = document.createElement("button");
+            removeBtn.type = "button";
+            removeBtn.textContent = "✕";
+            removeBtn.className = "map-popup-image-remove";
+            removeBtn.addEventListener("click", function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                onRemove(index);
+            });
+            item.appendChild(removeBtn);
+            container.appendChild(item);
+        });
+    }
+
+    function renderVideoAttachmentList(container, videoUrls, onRemove) {
+        if (!container) return;
+        var urls = normalizeVideoUrls(videoUrls);
+        container.innerHTML = "";
+        container.className = "map-popup-video-list";
+        container.style.display = urls.length ? "flex" : "none";
+        container.style.flexDirection = "row";
+        container.style.flexWrap = "nowrap";
+        container.style.gap = "8px";
+        container.style.overflowX = "auto";
+        container.style.overflowY = "hidden";
+        container.style.paddingBottom = "2px";
+        container.style.alignItems = "stretch";
+        container.style.maxWidth = "100%";
+        if (!urls.length) return;
+        urls.forEach(function(url, index) {
+            var item = document.createElement("div");
+            item.className = "map-popup-video-item";
+            var video = document.createElement("video");
+            video.src = url;
+            video.muted = true;
+            video.playsInline = true;
+            video.preload = "metadata";
+            video.addEventListener("click", function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                openVideoViewer(url);
+            });
+            item.appendChild(video);
+            var removeBtn = document.createElement("button");
+            removeBtn.type = "button";
+            removeBtn.textContent = "✕";
+            removeBtn.className = "map-popup-video-remove";
+            removeBtn.addEventListener("click", function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                onRemove(index);
+            });
+            item.appendChild(removeBtn);
+            container.appendChild(item);
+        });
+    }
+
+    function refreshNamePopupImageList() {
+        renderImageAttachmentList(namePopupImageList, namePopupSelImageUrls, function(index) {
+            namePopupSelImageUrls.splice(index, 1);
+            namePopupSelImageUrl = namePopupSelImageUrls[0] || null;
+            refreshNamePopupImageList();
+        });
+    }
+
+    function refreshNamePopupVideoList() {
+        renderVideoAttachmentList(namePopupVideoList, namePopupSelVideoUrls, function(index) {
+            namePopupSelVideoUrls.splice(index, 1);
+            namePopupSelVideoUrl = namePopupSelVideoUrls[0] || null;
+            refreshNamePopupVideoList();
+        });
+    }
+
+    function refreshMarkerPopupImageList() {
+        renderImageAttachmentList(markerPopupImageList, markerPopupSelImageUrls, function(index) {
+            markerPopupSelImageUrls.splice(index, 1);
+            markerPopupSelImageUrl = markerPopupSelImageUrls[0] || null;
+            refreshMarkerPopupImageList();
+        });
+    }
+
+    function refreshMarkerPopupVideoList() {
+        renderVideoAttachmentList(markerPopupVideoList, markerPopupSelVideoUrls, function(index) {
+            markerPopupSelVideoUrls.splice(index, 1);
+            markerPopupSelVideoUrl = markerPopupSelVideoUrls[0] || null;
+            refreshMarkerPopupVideoList();
+        });
+    }
+
+    function setPopupImageUrls(urls, stateKey) {
+        var normalized = normalizeImageUrls(urls);
+        if (stateKey === "name") {
+            namePopupSelImageUrls = normalized;
+            namePopupSelImageUrl = normalized[0] || null;
+            if (namePopupImagePreview) namePopupImagePreview.style.display = "none";
+            if (namePopupImageImg) namePopupImageImg.src = "";
+            refreshNamePopupImageList();
+        } else {
+            markerPopupSelImageUrls = normalized;
+            markerPopupSelImageUrl = normalized[0] || null;
+            if (markerPopupImagePreview) markerPopupImagePreview.style.display = "none";
+            if (markerPopupImageImg) markerPopupImageImg.src = "";
+            refreshMarkerPopupImageList();
+        }
+    }
+
+    function setPopupVideoUrls(urls, stateKey) {
+        var normalized = normalizeVideoUrls(urls);
+        if (stateKey === "name") {
+            namePopupSelVideoUrls = normalized;
+            namePopupSelVideoUrl = normalized[0] || null;
+            if (namePopupVideoPreview) namePopupVideoPreview.style.display = "none";
+            if (namePopupVideoVideo) namePopupVideoVideo.src = "";
+            refreshNamePopupVideoList();
+        } else {
+            markerPopupSelVideoUrls = normalized;
+            markerPopupSelVideoUrl = normalized[0] || null;
+            if (markerPopupVideoPreview) markerPopupVideoPreview.style.display = "none";
+            if (markerPopupVideoVideo) markerPopupVideoVideo.src = "";
+            refreshMarkerPopupVideoList();
+        }
+    }
 
     function setNamePopupImagePreview(url) {
         namePopupSelImageUrl = url || null;
+        namePopupSelImageUrls = url ? [url] : [];
+        if (namePopupImageList) namePopupImageList.style.display = "none";
         if (url) {
             namePopupImageImg.src = url;
             namePopupImagePreview.style.display = "";
+            namePopupImageImg.style.cursor = "zoom-in";
         } else {
             namePopupImageImg.src = "";
             namePopupImagePreview.style.display = "none";
         }
     }
+    function setNamePopupVideoPreview(url) {
+        namePopupSelVideoUrl = url || null;
+        namePopupSelVideoUrls = url ? [url] : [];
+        if (namePopupVideoList) namePopupVideoList.style.display = "none";
+        if (url) {
+            namePopupVideoVideo.src = url;
+            namePopupVideoPreview.style.display = "";
+        } else {
+            namePopupVideoVideo.src = "";
+            namePopupVideoPreview.style.display = "none";
+        }
+    }
+    if (namePopupImageImg) {
+        namePopupImageImg.addEventListener("click", function(e) {
+            if (!namePopupSelImageUrls.length) return;
+            e.preventDefault();
+            e.stopPropagation();
+            openImageViewer(namePopupSelImageUrls[0], "");
+        });
+    }
 
     if (namePopupImageInput) {
         namePopupImageInput.addEventListener("change", function() {
             if (!namePopupImageInput.files || !namePopupImageInput.files.length) return;
-            uploadIcon(namePopupImageInput.files[0], function(url) {
-                setNamePopupImagePreview(url);
+            Array.from(namePopupImageInput.files).forEach(function(file) {
+                uploadMapAttachment(file, "name", function(url, kind) {
+                    if (kind !== "image") return;
+                    var nextUrls = namePopupSelImageUrls.slice();
+                    nextUrls.push(url);
+                    setPopupImageUrls(nextUrls, "name");
+                });
             });
             namePopupImageInput.value = "";
         });
     }
     if (namePopupImageRemove) {
-        namePopupImageRemove.addEventListener("click", function() { setNamePopupImagePreview(null); });
+        namePopupImageRemove.addEventListener("click", function() {
+            setPopupImageUrls([], "name");
+            setNamePopupImagePreview(null);
+        });
+    }
+    if (namePopupVideoInput) {
+        namePopupVideoInput.addEventListener("change", function() {
+            if (!namePopupVideoInput.files || !namePopupVideoInput.files.length) return;
+            Array.from(namePopupVideoInput.files).forEach(function(file) {
+                uploadMapAttachment(file, "name", function(url, kind) {
+                    if (kind !== "video") return;
+                    var nextUrls = namePopupSelVideoUrls.slice();
+                    nextUrls.push(url);
+                    setPopupVideoUrls(nextUrls, "name");
+                });
+            });
+            namePopupVideoInput.value = "";
+        });
+    }
+    if (namePopupVideoRemove) {
+        namePopupVideoRemove.addEventListener("click", function() {
+            setPopupVideoUrls([], "name");
+            setNamePopupVideoPreview(null);
+        });
     }
 
-    function openNamePopup(title, value, callback, deleteCallback, showDesc, descValue, showIcon, iconData, imageUrl, fid) {
+    function openNamePopup(title, value, callback, deleteCallback, showDesc, descValue, showIcon, iconData, imageUrls, videoUrls, fid) {
         namePopupTitle.textContent = title;
         namePopupInput.value = value || "";
         namePopupCallback = callback;
@@ -1657,9 +2211,14 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         namePopupSelIconKey = id.iconKey || null;
         namePopupSelEmoji = id.emoji || null;
         namePopupSelIconUrl = id.iconUrl || null;
-        setNamePopupImagePreview(imageUrl || null);
+        setPopupImageUrls(imageUrls || [], "name");
+        setPopupVideoUrls(videoUrls || [], "name");
         namePopupCurrentFid = fid || null;
-        namePopupCurrentBindFid = (fid && layerMap[fid]) ? (layerMap[fid].bindFid || null) : null;
+        var bindState = getBindSelectionState(fid);
+        namePopupOriginalBindFid = bindState.fid;
+        namePopupOriginalBindRole = bindState.role;
+        namePopupCurrentBindFid = bindState.fid;
+        namePopupCurrentBindRole = bindState.role;
         if (namePopupIconVisibleCb) {
             namePopupIconVisibleCb.checked = (fid && layerMap[fid]) ? (layerMap[fid].iconVisible !== false) : true;
         }
@@ -1680,11 +2239,15 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         var val = namePopupInput.value.trim();
         var desc = namePopupDesc.value.trim();
         var iconData = { iconKey: namePopupSelIconKey, emoji: namePopupSelEmoji, iconUrl: namePopupSelIconUrl };
-        var imageUrl = namePopupSelImageUrl || null;
+        var imageUrls = namePopupSelImageUrls.slice();
+        var videoUrls = namePopupSelVideoUrls.slice();
+        var imageUrl = imageUrls[0] || null;
+        var videoUrl = videoUrls[0] || null;
         var bindFid = namePopupCurrentBindFid || null;
+        var bindRole = namePopupCurrentBindRole || "target";
         var iconVisible = namePopupIconVisibleCb ? namePopupIconVisibleCb.checked : true;
         namePopupOverlay.hidden = true;
-        if (namePopupCallback) { namePopupCallback(val, desc, iconData, imageUrl, bindFid, iconVisible); namePopupCallback = null; }
+        if (namePopupCallback) { namePopupCallback(val, desc, iconData, imageUrl, imageUrls, videoUrl, videoUrls, bindFid, bindRole, iconVisible); namePopupCallback = null; }
         namePopupDeleteCallback = null;
     }
 
@@ -1718,35 +2281,98 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     var markerPopupSelEmoji = null;
     var markerPopupSelIconUrl = null;
     var markerPopupSelImageUrl = null;
+    var markerPopupSelImageUrls = [];
+    var markerPopupSelVideoUrl = null;
+    var markerPopupSelVideoUrls = [];
     var markerPopupIconVisibleCb = document.getElementById("map-marker-popup-icon-visible");
+    var markerPopupCurrentBindFid = null;
+    var markerPopupCurrentBindRole = "target";
+    var markerPopupOriginalBindFid = null;
+    var markerPopupOriginalBindRole = "target";
 
     var markerPopupImageInput = document.getElementById("map-marker-popup-image-input");
+    var markerPopupImageList = document.getElementById("map-marker-popup-image-list");
     var markerPopupImagePreview = document.getElementById("map-marker-popup-image-preview");
     var markerPopupImageImg = document.getElementById("map-marker-popup-image-img");
     var markerPopupImageRemove = document.getElementById("map-marker-popup-image-remove");
+    var markerPopupVideoInput = document.getElementById("map-marker-popup-video-input");
+    var markerPopupVideoList = document.getElementById("map-marker-popup-video-list");
+    var markerPopupVideoPreview = document.getElementById("map-marker-popup-video-preview");
+    var markerPopupVideoVideo = document.getElementById("map-marker-popup-video-video");
+    var markerPopupVideoRemove = document.getElementById("map-marker-popup-video-remove");
 
     function setMarkerPopupImagePreview(url) {
         markerPopupSelImageUrl = url || null;
+        markerPopupSelImageUrls = url ? [url] : [];
+        if (markerPopupImageList) markerPopupImageList.style.display = "none";
         if (url) {
             markerPopupImageImg.src = url;
             markerPopupImagePreview.style.display = "";
+            markerPopupImageImg.style.cursor = "zoom-in";
         } else {
             markerPopupImageImg.src = "";
             markerPopupImagePreview.style.display = "none";
         }
     }
-
+    function setMarkerPopupVideoPreview(url) {
+        markerPopupSelVideoUrl = url || null;
+        markerPopupSelVideoUrls = url ? [url] : [];
+        if (markerPopupVideoList) markerPopupVideoList.style.display = "none";
+        if (url) {
+            markerPopupVideoVideo.src = url;
+            markerPopupVideoPreview.style.display = "";
+        } else {
+            markerPopupVideoVideo.src = "";
+            markerPopupVideoPreview.style.display = "none";
+        }
+    }
+    if (markerPopupImageImg) {
+        markerPopupImageImg.addEventListener("click", function(e) {
+            if (!markerPopupSelImageUrls.length) return;
+            e.preventDefault();
+            e.stopPropagation();
+            openImageViewer(markerPopupSelImageUrls[0], "");
+        });
+    }
     if (markerPopupImageInput) {
         markerPopupImageInput.addEventListener("change", function() {
             if (!markerPopupImageInput.files || !markerPopupImageInput.files.length) return;
-            uploadIcon(markerPopupImageInput.files[0], function(url) {
-                setMarkerPopupImagePreview(url);
+            Array.from(markerPopupImageInput.files).forEach(function(file) {
+                uploadMapAttachment(file, "marker", function(url, kind) {
+                    if (kind !== "image") return;
+                    var nextUrls = markerPopupSelImageUrls.slice();
+                    nextUrls.push(url);
+                    setPopupImageUrls(nextUrls, "marker");
+                });
             });
             markerPopupImageInput.value = "";
         });
     }
     if (markerPopupImageRemove) {
-        markerPopupImageRemove.addEventListener("click", function() { setMarkerPopupImagePreview(null); });
+        markerPopupImageRemove.addEventListener("click", function() {
+            setPopupImageUrls([], "marker");
+            setMarkerPopupImagePreview(null);
+        });
+    }
+    if (markerPopupVideoInput) {
+        markerPopupVideoInput.addEventListener("change", function() {
+            if (!markerPopupVideoInput.files || !markerPopupVideoInput.files.length) return;
+            Array.from(markerPopupVideoInput.files).forEach(function(file) {
+                uploadMapAttachment(file, "marker", function(url, kind) {
+                    if (kind !== "video") return;
+                    var nextUrls = markerPopupSelVideoUrls.slice();
+                    nextUrls.push(url);
+                    setPopupVideoUrls(nextUrls, "marker");
+                });
+            });
+            markerPopupVideoInput.value = "";
+        });
+    }
+    if (markerPopupVideoRemove) {
+        markerPopupVideoRemove.addEventListener("click", function() {
+            setPopupVideoUrls([], "marker");
+            setMarkerPopupVideoPreview(null);
+        });
     }
 
     function openMarkerPopup(fid) {
@@ -1763,9 +2389,14 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         });
         markerPopupName.value = item.name || "";
         markerPopupDesc.value = item.desc || "";
-        setMarkerPopupImagePreview(item.imageUrl || null);
+        setPopupImageUrls(item.imageUrls || item.imageUrl || [], "marker");
+        setPopupVideoUrls(item.videoUrls || item.videoUrl || [], "marker");
         if (markerPopupIconVisibleCb) markerPopupIconVisibleCb.checked = item.iconVisible !== false;
-        markerPopupCurrentBindFid = item.bindFid || null;
+        var markerBindState = getBindSelectionState(fid);
+        markerPopupOriginalBindFid = markerBindState.fid;
+        markerPopupOriginalBindRole = markerBindState.role;
+        markerPopupCurrentBindFid = markerBindState.fid;
+        markerPopupCurrentBindRole = markerBindState.role;
         updateBindDisplay(markerPopupBindDisplay, markerPopupCurrentBindFid);
         markerPopupOverlay.hidden = false;
         setTimeout(function() { markerPopupName.focus(); }, 50);
@@ -1780,9 +2411,12 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         item.iconKey = markerPopupSelIconKey;
         item.emoji = markerPopupSelEmoji;
         item.iconUrl = markerPopupSelIconUrl;
-        item.imageUrl = markerPopupSelImageUrl || null;
+        item.imageUrls = markerPopupSelImageUrls.slice();
+        item.imageUrl = markerPopupSelImageUrls[0] || null;
+        item.videoUrls = markerPopupSelVideoUrls.slice();
+        item.videoUrl = markerPopupSelVideoUrls[0] || null;
         item.iconVisible = markerPopupIconVisibleCb ? markerPopupIconVisibleCb.checked : true;
-        item.bindFid = markerPopupCurrentBindFid || null;
+        applyExclusiveBinding(markerPopupTarget, markerPopupCurrentBindFid || null, markerPopupCurrentBindRole || "target");
         item.layer.setIcon(createLeafletIcon(item.emoji, item.iconUrl));
         markerPopupOverlay.hidden = true;
         markerPopupTarget = null;
@@ -1791,15 +2425,9 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     });
     markerPopupDelete.addEventListener("click", function() {
         if (!markerPopupTarget) return;
-        var item = layerMap[markerPopupTarget];
-        if (item) {
-            drawnItems.removeLayer(item.layer);
-            delete layerMap[markerPopupTarget];
-        }
+        deleteLayerByFid(markerPopupTarget);
         markerPopupOverlay.hidden = true;
         markerPopupTarget = null;
-        renderLayersList();
-        commitHistoryState();
     });
     markerPopupName.addEventListener("keydown", function(e) {
         if (e.key === "Enter") { e.preventDefault(); markerPopupConfirm.click(); }
@@ -1832,15 +2460,76 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         return item.emoji || "📍";
     }
 
-    function openBindPicker(sourceFid, currentBindFid, onConfirm) {
+    function getInboundBindSourceFid(targetFid) {
+        if (!targetFid) return null;
+        var keys = Object.keys(layerMap);
+        for (var i = 0; i < keys.length; i += 1) {
+            var fid = keys[i];
+            var item = layerMap[fid];
+            if (item && item.bindFid === targetFid) return fid;
+        }
+        return null;
+    }
+
+    function getBindSelectionState(fid) {
+        var item = fid && layerMap[fid] ? layerMap[fid] : null;
+        if (!item) return { fid: null, role: "target" };
+        if (item.bindFid && layerMap[item.bindFid]) {
+            return { fid: item.bindFid, role: "target" };
+        }
+        var inboundSourceFid = getInboundBindSourceFid(fid);
+        if (inboundSourceFid) {
+            return { fid: inboundSourceFid, role: "source" };
+        }
+        return { fid: null, role: "target" };
+    }
+
+    function clearBindingState(fid) {
+        var state = getBindSelectionState(fid);
+        if (state.role === "source") {
+            if (state.fid && layerMap[state.fid]) {
+                layerMap[state.fid].bindFid = null;
+            }
+        } else if (state.role === "target") {
+            if (fid && layerMap[fid]) {
+                layerMap[fid].bindFid = null;
+            }
+        }
+    }
+
+    function applyExclusiveBinding(fid, selectedFid, selectedRole) {
+        if (!fid || !layerMap[fid]) return;
+        clearBindingState(fid);
+        if (selectedFid && layerMap[selectedFid]) {
+            clearBindingState(selectedFid);
+        }
+        if (!selectedFid || !layerMap[selectedFid]) return;
+        if (selectedRole === "source") {
+            layerMap[selectedFid].bindFid = fid;
+            layerMap[fid].bindFid = null;
+        } else {
+            layerMap[fid].bindFid = selectedFid;
+        }
+    }
+
+    function openBindPicker(sourceFid, currentBindFid, currentBindRole, onConfirm) {
         bindPickerSourceFid = sourceFid;
-        bindPickerSelectedFid = currentBindFid || null;
-        bindPickerSelectedRole = "target";
         bindPickerOnConfirm = onConfirm;
         bindPickerList.innerHTML = "";
 
+        var resolvedBindState = sourceFid ? getBindSelectionState(sourceFid) : { fid: null, role: "target" };
+        if (!resolvedBindState.fid && currentBindFid) {
+            resolvedBindState = { fid: currentBindFid, role: currentBindRole || "target" };
+        }
+        bindPickerSelectedFid = resolvedBindState.fid || null;
+        bindPickerSelectedRole = resolvedBindState.role || "target";
+
         function getBindRoleLabel(fid) {
             if (fid === bindPickerSelectedFid && bindPickerSelectedFid) {
+                var sourceItem = bindPickerSourceFid && layerMap[bindPickerSourceFid] ? layerMap[bindPickerSourceFid] : null;
+                var selectedItem = layerMap[fid] || null;
+                if (sourceItem && sourceItem.bindFid === fid) return "타겟";
+                if (selectedItem && selectedItem.bindFid === bindPickerSourceFid) return "소스";
                 return bindPickerSelectedRole === "source" ? "소스" : "타겟";
             }
             return "";
@@ -1901,20 +2590,16 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     });
     bindPickerClear.addEventListener("click", function() {
         bindPickerOverlay.hidden = true;
-        if (bindPickerOnConfirm) { bindPickerOnConfirm(null); bindPickerOnConfirm = null; }
+        applyExclusiveBinding(bindPickerSourceFid, null, null);
+        if (bindPickerOnConfirm) { bindPickerOnConfirm(null, null); bindPickerOnConfirm = null; }
     });
     bindPickerConfirm.addEventListener("click", function() {
         bindPickerOverlay.hidden = true;
         if (!bindPickerOnConfirm) return;
         var sourceFid = bindPickerSourceFid;
         var selectedFid = bindPickerSelectedFid;
-        if (selectedFid && bindPickerSelectedRole === "source") {
-            if (layerMap[selectedFid]) layerMap[selectedFid].bindFid = sourceFid || null;
-            if (layerMap[sourceFid]) layerMap[sourceFid].bindFid = null;
-            bindPickerOnConfirm(null);
-        } else {
-            bindPickerOnConfirm(selectedFid);
-        }
+        applyExclusiveBinding(sourceFid, selectedFid, selectedFid ? bindPickerSelectedRole : null);
+        bindPickerOnConfirm(selectedFid, selectedFid ? bindPickerSelectedRole : null);
         bindPickerOnConfirm = null;
         renderLayersList();
         commitHistoryState();
@@ -1926,19 +2611,10 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     var namePopupCurrentBindFid = null;
     if (namePopupBindBtn) {
         namePopupBindBtn.addEventListener("click", function() {
-            var sourceFid = null;
-            // 현재 열려있는 구역 팝업의 fid를 찾는다
-            Object.keys(layerMap).forEach(function(fid) {
-                var item = layerMap[fid];
-                if (item.type === "zone" && !namePopupOverlay.hidden) {
-                    // namePopupInput 값으로 매칭
-                    if (item.name === namePopupInput.value.trim() || namePopupCurrentFid === fid) {
-                        sourceFid = fid;
-                    }
-                }
-            });
-            openBindPicker(sourceFid, namePopupCurrentBindFid, function(selectedFid) {
+            var sourceFid = namePopupCurrentFid;
+            openBindPicker(sourceFid, namePopupCurrentBindFid, namePopupCurrentBindRole, function(selectedFid, selectedRole) {
                 namePopupCurrentBindFid = selectedFid;
+                namePopupCurrentBindRole = selectedRole || "target";
                 updateBindDisplay(namePopupBindDisplay, selectedFid);
             });
         });
@@ -1952,11 +2628,11 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     // 마커 팝업 바인딩 버튼
     var markerPopupBindBtn = document.getElementById("map-marker-popup-bind");
     var markerPopupBindDisplay = document.getElementById("map-marker-popup-bind-display");
-    var markerPopupCurrentBindFid = null;
     if (markerPopupBindBtn) {
         markerPopupBindBtn.addEventListener("click", function() {
-            openBindPicker(markerPopupTarget, markerPopupCurrentBindFid, function(selectedFid) {
+            openBindPicker(markerPopupTarget, markerPopupCurrentBindFid, markerPopupCurrentBindRole, function(selectedFid, selectedRole) {
                 markerPopupCurrentBindFid = selectedFid;
+                markerPopupCurrentBindRole = selectedRole || "target";
                 updateBindDisplay(markerPopupBindDisplay, selectedFid);
             });
         });
@@ -1975,7 +2651,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         var handle = document.createElement("span");
         handle.className = "map-editor-layer-drag-handle";
         handle.textContent = "⠿";
-        handle.title = "드래그해서 그룹화";
+        handle.title = "드래그해서 순서 변경";
 
         var icon = document.createElement("span");
         icon.className = "map-editor-layer-icon";
@@ -2015,11 +2691,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         delBtn.title = "삭제";
         delBtn.addEventListener("click", function(e) {
             e.stopPropagation();
-            drawnItems.removeLayer(item.layer);
-            if (item.tooltip) { map.removeLayer(item.tooltip); }
-            delete layerMap[fid];
-            renderLayersList();
-            commitHistoryState();
+            deleteLayerByFid(fid);
         });
 
         li.appendChild(handle);
@@ -2029,8 +2701,11 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
 
         li.addEventListener("click", function() {
             selectLayer(fid);
-            if (item.type === "zone") { map.fitBounds(item.layer.getBounds()); }
-            else { map.panTo(item.layer.getLatLng()); }
+            if (item.type === "zone") {
+                focusZoneLayer(item.layer);
+            } else {
+                map.panTo(item.layer.getLatLng());
+            }
         });
 
         li.addEventListener("contextmenu", function(e) {
@@ -2046,6 +2721,9 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         li.addEventListener("dragstart", function(e) {
             draggingFid = fid;
             e.dataTransfer.effectAllowed = "move";
+            if (e.dataTransfer.setData) {
+                e.dataTransfer.setData("text/plain", fid);
+            }
             setTimeout(function() { li.classList.add("is-dragging"); }, 0);
         });
         li.addEventListener("dragend", function() {
@@ -2067,27 +2745,10 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             e.stopPropagation();
             li.classList.remove("is-drop-target");
             if (!draggingFid || draggingFid === fid) return;
-            var srcFid = draggingFid;
-            var srcItem = layerMap[srcFid];
-            var dstItem = layerMap[fid];
+            moveLayerBefore(draggingFid, fid);
             draggingFid = null;
-            if (!srcItem || !dstItem) return;
-            var targetGid = dstItem.groupId;
-            if (targetGid && groups[targetGid]) {
-                srcItem.groupId = targetGid;
-                renderLayersList();
-                commitHistoryState();
-            } else {
-                var newGid = nextGroupId();
-                openNamePopup("새 그룹 이름", "", function(name, desc, iconData) {
-                    if (name === null) return;
-                    groups[newGid] = { name: name || "그룹", collapsed: false, desc: desc || "", iconKey: null, emoji: null, iconUrl: null };
-                    layerMap[srcFid].groupId = newGid;
-                    dstItem.groupId = newGid;
-                    renderLayersList();
-                    commitHistoryState();
-                }, null, true, "", false, {});
-            }
+            renderLayersList();
+            commitHistoryState();
         });
 
         return li;
@@ -2105,7 +2766,11 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         // 그룹별 fid 수집
         var groupChildren = {};
         var ungroupedFids = [];
+        var orderedFids = layerOrder.slice();
         Object.keys(layerMap).forEach(function(fid) {
+            if (orderedFids.indexOf(fid) === -1) orderedFids.push(fid);
+        });
+        orderedFids.forEach(function(fid) {
             var gid = layerMap[fid].groupId;
             if (gid && groups[gid]) {
                 if (!groupChildren[gid]) groupChildren[gid] = [];
@@ -2158,17 +2823,20 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             renameBtn.style.visibility = "hidden";
             renameBtn.addEventListener("click", function(e) {
                 e.stopPropagation();
-                openNamePopup("그룹 정보", grp.name, function(newName, desc, iconData, imageUrl) {
+                openNamePopup("그룹 정보", grp.name, function(newName, desc, iconData, imageUrl, imageUrls, videoUrl, videoUrls) {
                     if (newName === null) return;
                     grp.name = newName || grp.name;
                     grp.desc = desc || "";
                     grp.iconKey = iconData.iconKey;
                     grp.emoji = iconData.emoji;
                     grp.iconUrl = iconData.iconUrl;
-                    grp.imageUrl = imageUrl || null;
+                    grp.imageUrls = normalizeImageUrls(imageUrls);
+                    grp.imageUrl = grp.imageUrls[0] || null;
+                    grp.videoUrls = normalizeVideoUrls(videoUrls);
+                    grp.videoUrl = grp.videoUrls[0] || null;
                     renderLayersList();
                     commitHistoryState();
-                }, null, true, grp.desc || "", true, { iconKey: grp.iconKey, emoji: grp.emoji, iconUrl: grp.iconUrl }, grp.imageUrl);
+                }, null, true, grp.desc || "", true, { iconKey: grp.iconKey, emoji: grp.emoji, iconUrl: grp.iconUrl }, grp.imageUrls || grp.imageUrl || [], grp.videoUrls || grp.videoUrl || []);
             });
 
             var ungroupBtn = document.createElement("button");
@@ -2206,17 +2874,20 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
 
             header.addEventListener("contextmenu", function(e) {
                 e.preventDefault();
-                openNamePopup("그룹 정보", grp.name, function(newName, desc, iconData, imageUrl) {
+                openNamePopup("그룹 정보", grp.name, function(newName, desc, iconData, imageUrl, imageUrls, videoUrl, videoUrls) {
                     if (newName === null) return;
                     grp.name = newName || grp.name;
                     grp.desc = desc || "";
                     grp.iconKey = iconData.iconKey;
                     grp.emoji = iconData.emoji;
                     grp.iconUrl = iconData.iconUrl;
-                    grp.imageUrl = imageUrl || null;
+                    grp.imageUrls = normalizeImageUrls(imageUrls);
+                    grp.imageUrl = grp.imageUrls[0] || null;
+                    grp.videoUrls = normalizeVideoUrls(videoUrls);
+                    grp.videoUrl = grp.videoUrls[0] || null;
                     renderLayersList();
                     commitHistoryState();
-                }, null, true, grp.desc || "", true, { iconKey: grp.iconKey, emoji: grp.emoji, iconUrl: grp.iconUrl }, grp.imageUrl);
+                }, null, true, grp.desc || "", true, { iconKey: grp.iconKey, emoji: grp.emoji, iconUrl: grp.iconUrl }, grp.imageUrls || grp.imageUrl || [], grp.videoUrls || grp.videoUrl || []);
             });
 
             // 그룹 헤더 위로 드롭 → 그룹에 추가
@@ -2236,6 +2907,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 if (!draggingFid) return;
                 if (layerMap[draggingFid]) {
                     layerMap[draggingFid].groupId = gid;
+                    moveLayerToEndOfGroup(draggingFid, gid);
                     renderLayersList();
                     commitHistoryState();
                 }
@@ -2469,10 +3141,58 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         .catch(function() { alert("아이콘 업로드 중 오류가 발생했습니다."); });
     }
 
+    function getAttachmentFolderName(stateKey) {
+        var folderName = "";
+        if (stateKey === "marker") {
+            folderName = (markerPopupName && markerPopupName.value ? markerPopupName.value.trim() : "");
+            if (!folderName && markerPopupTarget && layerMap[markerPopupTarget]) {
+                folderName = (layerMap[markerPopupTarget].name || "").trim();
+            }
+        } else {
+            folderName = (namePopupInput && namePopupInput.value ? namePopupInput.value.trim() : "");
+            if (!folderName && namePopupCurrentFid && layerMap[namePopupCurrentFid]) {
+                folderName = (layerMap[namePopupCurrentFid].name || "").trim();
+            }
+        }
+        return folderName || "untitled";
+    }
+
+    function uploadMapAttachment(file, stateKey, onSuccess) {
+        if (!mapImageUploadApi) {
+            alert("이미지/영상 업로드 경로를 찾을 수 없습니다.");
+            return;
+        }
+        var formData = new FormData();
+        formData.append("path", mapPath);
+        formData.append("folder_name", getAttachmentFolderName(stateKey));
+        formData.append("image", file);
+        var csrfToken = getCsrfToken();
+        fetch(mapImageUploadApi, {
+            method: "POST",
+            headers: csrfToken ? { "X-CSRFToken": csrfToken } : {},
+            body: formData,
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.ok) {
+                if (onSuccess) {
+                    onSuccess(data.media_url || data.image_url || data.video_url || "", data.media_kind || (data.video_url ? "video" : "image"));
+                }
+            } else {
+                alert(data.error || "이미지/영상 업로드에 실패했습니다.");
+            }
+        })
+        .catch(function() { alert("이미지/영상 업로드 중 오류가 발생했습니다."); });
+    }
+
     // ── GeoJSON 저장/불러오기 ──────────────────────────────────────────────
     function layerMapToGeoJson() {
         var features = [];
+        var orderedFids = layerOrder.slice();
         Object.keys(layerMap).forEach(function(fid) {
+            if (orderedFids.indexOf(fid) === -1) orderedFids.push(fid);
+        });
+        orderedFids.forEach(function(fid) {
             var item = layerMap[fid];
             if (item.type === "zone") {
                 var coords = item.layer.getLatLngs()[0].map(function(ll) { return [ll.lng, ll.lat]; });
@@ -2481,7 +3201,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                     type: "Feature",
                     id: fid,
                     geometry: { type: "Polygon", coordinates: [coords] },
-                    properties: { type: "zone", name: item.name, color: item.color, groupId: item.groupId || null, desc: item.desc || "", iconKey: item.iconKey || null, emoji: item.emoji || null, iconUrl: item.iconUrl || null, imageUrl: item.imageUrl || null, iconVisible: item.iconVisible !== false, bindFid: item.bindFid || null },
+                    properties: { type: "zone", name: item.name, color: item.color, groupId: item.groupId || null, desc: item.desc || "", iconKey: item.iconKey || null, emoji: item.emoji || null, iconUrl: item.iconUrl || null, imageUrl: item.imageUrl || null, imageUrls: normalizeImageUrls(item.imageUrls || item.imageUrl || []), videoUrl: item.videoUrl || null, videoUrls: normalizeVideoUrls(item.videoUrls || item.videoUrl || []), iconVisible: item.iconVisible !== false, bindFid: item.bindFid || null },
                 });
             } else if (item.type === "marker") {
                 var ll = item.layer.getLatLng();
@@ -2499,6 +3219,9 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                         group: getMarkerGroup(ll),
                         desc: item.desc || "",
                         imageUrl: item.imageUrl || null,
+                        imageUrls: normalizeImageUrls(item.imageUrls || item.imageUrl || []),
+                        videoUrl: item.videoUrl || null,
+                        videoUrls: normalizeVideoUrls(item.videoUrls || item.videoUrl || []),
                         iconVisible: item.iconVisible !== false,
                         bindFid: item.bindFid || null,
                     },
@@ -2507,9 +3230,9 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         });
         var groupsList = Object.keys(groups).map(function(gid) {
             var g = groups[gid];
-            return { id: gid, name: g.name, desc: g.desc || "", iconKey: g.iconKey || null, emoji: g.emoji || null, iconUrl: g.iconUrl || null, imageUrl: g.imageUrl || null };
+            return { id: gid, name: g.name, desc: g.desc || "", iconKey: g.iconKey || null, emoji: g.emoji || null, iconUrl: g.iconUrl || null, imageUrl: g.imageUrl || null, imageUrls: normalizeImageUrls(g.imageUrls || g.imageUrl || []), videoUrl: g.videoUrl || null, videoUrls: normalizeVideoUrls(g.videoUrls || g.videoUrl || []) };
         });
-        return { type: "FeatureCollection", features: features, groups: groupsList };
+        return { type: "FeatureCollection", features: features, groups: groupsList, order: orderedFids };
     }
 
     function getMarkerGroup(latlng) {

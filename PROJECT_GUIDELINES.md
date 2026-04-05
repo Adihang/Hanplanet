@@ -100,7 +100,7 @@ This is a Django 5.0.1 portfolio + content management + multiplayer game platfor
 - Django issues JWT tokens at `/api/game-auth-token/`; game server verifies them
 - `world/world.js` — core game simulation; `world/spatialGrid.js` — AOI optimization
 
-**AI chatbot:** Ollama at `http://localhost:11434` (default model: `llama3.2:latest`), accessed via `/api/chat/`
+**AI chatbot:** Ollama at `http://localhost:11434` (default model: `qwen3.5:4b-mlx-bf16`), accessed via `/api/chat/`
 
 **Infrastructure:** Gunicorn → Nginx → Cloudflare Tunnel → hanplanet.com. 모두 launchd 네이티브 데몬으로 실행 (Docker 미사용).
 

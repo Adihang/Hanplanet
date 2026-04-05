@@ -3405,11 +3405,12 @@ def has_excessive_korean_text(text):
 
 def call_ollama(system_message, messages):
     """Send one non-streaming chat request to the local Ollama endpoint with conservative settings."""
-    base_url = getattr(settings, "OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-    model = getattr(settings, "OLLAMA_MODEL", "llama3.1")
+    base_url = getattr(settings, "OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+    model = getattr(settings, "OLLAMA_MODEL", "qwen3.5:4b-mlx-bf16")
     payload = {
         "model": model,
         "stream": False,
+        "think": False,
         "messages": [{"role": "system", "content": system_message}] + messages,
         # Reduce multilingual drift and random style changes.
         "options": {

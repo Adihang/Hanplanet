@@ -97,7 +97,7 @@ cd /Users/imhanbyeol/Development/Hanplanet/bumpercar-spiky-server
 PORT=8081 node server.js
 
 # Ollama (if needed)
-ollama pull llama3.2:latest
+ollama pull qwen3.5:4b-mlx-bf16
 ollama serve
 ```
 

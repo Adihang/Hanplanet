@@ -215,6 +215,21 @@ def _prune_empty_parent_dirs(path_obj: Path, stop_at: Path) -> None:
         current = current.parent
 
 
+def _iter_descendants_safely(root_path: Path):
+    """재귀 탐색 중 일부 항목에 접근할 수 없어도 전체 목록이 죽지 않게 한다."""
+    stack = [root_path]
+    while stack:
+        current = stack.pop()
+        try:
+            children = list(current.iterdir())
+        except (OSError, PermissionError):
+            continue
+        for child in sorted(children, key=lambda p: p.name.lower(), reverse=True):
+            yield child
+            if child.is_dir():
+                stack.append(child)
+
+
 def _map_attachment_folder_name(raw_name: str | None) -> str:
     folder_name = validate_name(raw_name, for_file=False)
     if folder_name.lower() in {MAP_ICONS_DIR.lower(), MAP_IMAGE_ATTACHMENTS_DIR.lower()}:
@@ -2885,7 +2900,10 @@ def list_all_directories(request=None) -> list[str]:
     directories = []
     if request is None or has_handrive_directory_write_access(request, ""):
         directories.append("")
-    for directory in sorted([p for p in root.rglob("*") if p.is_dir()], key=lambda p: p.as_posix().lower()):
+    for directory in sorted(
+        [p for p in _iter_descendants_safely(root) if p.is_dir()],
+        key=lambda p: p.as_posix().lower(),
+    ):
         rel_path = relative_from_root(directory)
         if request is not None and not has_handrive_directory_write_access(request, rel_path):
             continue
@@ -2964,7 +2982,7 @@ def calculate_handrive_tree_usage(root_path: Path) -> tuple[int, int]:
     if not root_path.exists():
         return total_bytes, total_entries
 
-    for path_obj in root_path.rglob("*"):
+    for path_obj in _iter_descendants_safely(root_path):
         total_entries += 1
         if path_obj.is_file():
             try:
@@ -3079,7 +3097,7 @@ def calculate_handrive_quota_breakdown(root_path: Path) -> tuple[int, int, dict[
     count_map = {k: 0 for k in type_keys}
     total_entries = 0
     if root_path.exists():
-        for path_obj in root_path.rglob("*"):
+        for path_obj in _iter_descendants_safely(root_path):
             total_entries += 1
             if path_obj.is_file():
                 tk = _handrive_quota_file_type(path_obj.suffix)
@@ -3103,7 +3121,7 @@ def calculate_handrive_repo_usage(user) -> tuple[int, int]:
         if not repo_path.exists():
             continue
         total_repos += 1
-        for path_obj in repo_path.rglob("*"):
+        for path_obj in _iter_descendants_safely(repo_path):
             if path_obj.is_file():
                 try:
                     total_bytes += path_obj.stat().st_size

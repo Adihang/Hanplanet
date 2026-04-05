@@ -38,15 +38,15 @@ def _is_path_ready(path: Path) -> bool:
         return False
 
 
-def _wait_for_paths(paths: list[Path], timeout: int = 300, interval: float = 2.0) -> None:
+def _wait_for_paths(paths: list[Path], timeout: int | None = 300, interval: float = 2.0) -> None:
     if not paths:
         return
-    deadline = time.monotonic() + timeout
+    deadline = None if timeout is None else time.monotonic() + timeout
     while True:
         pending = [path for path in paths if not _is_path_ready(path)]
         if not pending:
             return
-        if time.monotonic() >= deadline:
+        if deadline is not None and time.monotonic() >= deadline:
             joined = ", ".join(str(path) for path in pending)
             raise RuntimeError(f"timed out waiting for storage paths: {joined}")
         time.sleep(interval)
@@ -186,7 +186,7 @@ def main() -> int:
     if disc_mode == "ssd":
         _ensure_ssd_paths()
     else:
-        _wait_for_paths(get_required_storage_paths(disc_mode))
+        _wait_for_paths(get_required_storage_paths(disc_mode), timeout=None)
 
     if args.service == "gunicorn":
         _terminate_conflicting_gunicorn(8000)

@@ -11,37 +11,37 @@ function enableMapGestureZoom(map, container) {
         map.doubleClickZoom.enable();
     }
 
-    var pointers = new Map();
+    var touches = new Map();
     var pinch = {
         active: false,
         startDistance: 0,
         startZoom: 0
     };
 
-    function midpoint() {
-        var points = Array.from(pointers.values());
+    function touchMidpoint() {
+        var points = Array.from(touches.values());
         if (!points.length) return null;
-        var sumX = 0;
-        var sumY = 0;
+        var x = 0;
+        var y = 0;
         points.forEach(function(point) {
-            sumX += point.x;
-            sumY += point.y;
+            x += point.x;
+            y += point.y;
         });
         return {
-            x: sumX / points.length,
-            y: sumY / points.length
+            x: x / points.length,
+            y: y / points.length
         };
     }
 
-    function distance() {
-        var points = Array.from(pointers.values());
+    function touchDistance() {
+        var points = Array.from(touches.values());
         if (points.length < 2) return 0;
         var dx = points[0].x - points[1].x;
         var dy = points[0].y - points[1].y;
         return Math.sqrt(dx * dx + dy * dy);
     }
 
-    function setDraggingEnabled(enabled) {
+    function setDragging(enabled) {
         if (!map.dragging) return;
         if (enabled) {
             if (map.dragging.enable) map.dragging.enable();
@@ -50,44 +50,51 @@ function enableMapGestureZoom(map, container) {
         }
     }
 
-    function onPointerDown(event) {
-        if (!event) return;
-        pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-        if (pointers.size === 2) {
+    function onTouchStart(event) {
+        if (!event || !event.touches) return;
+        for (var i = 0; i < event.touches.length; i += 1) {
+            var touch = event.touches[i];
+            touches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
+        }
+        if (event.touches.length >= 2) {
             pinch.active = true;
-            pinch.startDistance = distance() || 1;
+            pinch.startDistance = touchDistance() || 1;
             pinch.startZoom = map.getZoom();
-            setDraggingEnabled(false);
+            setDragging(false);
             event.preventDefault();
             event.stopPropagation();
         }
     }
 
-    function onPointerMove(event) {
-        if (!pointers.has(event.pointerId)) return;
-        pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-        if (!pinch.active || pointers.size < 2) return;
-
+    function onTouchMove(event) {
+        if (!event || !event.touches) return;
+        for (var i = 0; i < event.touches.length; i += 1) {
+            var touch = event.touches[i];
+            touches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
+        }
+        if (!pinch.active || event.touches.length < 2) return;
         event.preventDefault();
         event.stopPropagation();
 
-        var currentDistance = distance() || pinch.startDistance || 1;
+        var currentDistance = touchDistance() || pinch.startDistance || 1;
         var ratio = currentDistance / (pinch.startDistance || currentDistance);
-        var zoomDelta = Math.log(ratio) / Math.LN2;
-        var nextZoom = pinch.startZoom + zoomDelta;
-        var mid = midpoint();
+        var nextZoom = pinch.startZoom + Math.log(ratio) / Math.LN2;
+        var mid = touchMidpoint();
         if (!mid) return;
         var latlng = map.containerPointToLatLng([mid.x, mid.y]);
         map.setZoomAround(latlng, nextZoom, { animate: false });
     }
 
-    function endPinch(event) {
-        if (!event || !pointers.has(event.pointerId)) return;
-        pointers.delete(event.pointerId);
-        if (pinch.active && pointers.size < 2) {
+    function onTouchEnd(event) {
+        if (!event || !event.changedTouches) return;
+        for (var i = 0; i < event.changedTouches.length; i += 1) {
+            var touch = event.changedTouches[i];
+            touches.delete(touch.identifier);
+        }
+        if (pinch.active && touches.size < 2) {
             pinch.active = false;
             pinch.startDistance = 0;
-            setDraggingEnabled(true);
+            setDragging(true);
         }
     }
 
@@ -106,9 +113,9 @@ function enableMapGestureZoom(map, container) {
         });
     }
 
-    container.addEventListener("pointerdown", onPointerDown, { passive: false });
-    container.addEventListener("pointermove", onPointerMove, { passive: false });
-    container.addEventListener("pointerup", endPinch, { passive: false });
-    container.addEventListener("pointercancel", endPinch, { passive: false });
+    container.addEventListener("touchstart", onTouchStart, { passive: false, capture: true });
+    container.addEventListener("touchmove", onTouchMove, { passive: false, capture: true });
+    container.addEventListener("touchend", onTouchEnd, { passive: false, capture: true });
+    container.addEventListener("touchcancel", onTouchEnd, { passive: false, capture: true });
     container.addEventListener("wheel", zoomFromWheel, { capture: true, passive: false });
 }

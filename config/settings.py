@@ -151,8 +151,9 @@ def load_optional_bool_secret(name, default=False):
     return default
 
 # Ollama (local LLM) settings
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:latest")
+# MLX-backed Ollama is the Apple Silicon default in this project.
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:4b-mlx-bf16")
 
 # Cloudflare Turnstile 설정 - 디버그 모드에서는 비활성화
 if DEBUG:

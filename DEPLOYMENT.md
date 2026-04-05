@@ -63,7 +63,7 @@ chmod 600 config/secrets.json
 - `PUBLIC_BASE_URL` (예: `https://hanplanet.com`)
 - `DJANGO_SERVE_FILES` (기본: `true`)
 - `OLLAMA_BASE_URL` (기본: `http://localhost:11434`)
-- `OLLAMA_MODEL` (기본: `llama3.2:latest`)
+- `OLLAMA_MODEL` (기본: `qwen3.5:4b-mlx-bf16`)
 - `GAME_JWT_SECRET`, `GAME_JWT_ISSUER`, `GAME_JWT_AUDIENCE`
 - `FORGEJO_BASE_URL`, `FORGEJO_ADMIN_TOKEN`, `PUBLIC_GIT_BASE_URL`
 
@@ -222,7 +222,7 @@ JWT 연동 (Django ↔ 게임 서버 값 반드시 동일):
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3.2:latest
+ollama pull qwen3.5:4b-mlx-bf16
 ```
 
 확인:

@@ -579,7 +579,7 @@ PORT=8081 node server.js
 필요하면 Ollama도 별도로 올립니다.
 
 ```bash
-ollama pull llama3.2:latest
+ollama pull qwen3.5:4b-mlx-bf16
 ollama serve
 ```
 

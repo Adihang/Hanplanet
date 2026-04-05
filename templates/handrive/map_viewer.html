@@ -635,6 +635,13 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden;
+}
+.map-viewer-layer-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 .map-viewer-layer-name {
     flex: 1;
@@ -1725,7 +1732,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                         }), { autoPan: false, closeButton: false });
                         syncLayerPopupAnchor({ type: "zone", leafletLayer: layer });
                     }
-                    viewerLayerData[fid] = { type: "zone", name: props.name, color: color, groupId: props.groupId || null, leafletLayer: layer, tooltipLayer: tooltipLayer, visible: true, bindFid: props.bindFid || null };
+                    viewerLayerData[fid] = { type: "zone", name: props.name, color: color, groupId: props.groupId || null, leafletLayer: layer, tooltipLayer: tooltipLayer, visible: true, bindFid: props.bindFid || null, iconKey: props.iconKey || null, emoji: props.emoji || null, iconUrl: props.iconUrl || null, iconVisible: props.iconVisible !== false };
                     if (props.bindFid && !viewerInboundBindSources[props.bindFid]) {
                         viewerInboundBindSources[props.bindFid] = fid;
                     }
@@ -1753,7 +1760,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                         }), { autoPan: false, closeButton: false });
                         syncLayerPopupAnchor({ type: "marker", leafletLayer: marker });
                     }
-                    viewerLayerData[fid] = { type: "marker", name: props.name, emoji: props.emoji || "📍", groupId: props.groupId || null, leafletLayer: marker, tooltipLayer: null, visible: true, bindFid: props.bindFid || null };
+                    viewerLayerData[fid] = { type: "marker", name: props.name, emoji: props.emoji || "📍", iconUrl: props.iconUrl || null, iconVisible: props.iconVisible !== false, groupId: props.groupId || null, leafletLayer: marker, tooltipLayer: null, visible: true, bindFid: props.bindFid || null };
                     if (props.bindFid && !viewerInboundBindSources[props.bindFid]) {
                         viewerInboundBindSources[props.bindFid] = fid;
                     }
@@ -1884,7 +1891,16 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 
             var iconEl = document.createElement("span");
             iconEl.className = "map-viewer-layer-icon";
-            if (d.type === "zone") {
+            if (d.iconUrl) {
+                var iconImg = document.createElement("img");
+                iconImg.src = appendShared(d.iconUrl);
+                iconImg.alt = "";
+                iconImg.setAttribute("aria-hidden", "true");
+                iconEl.appendChild(iconImg);
+            } else if (d.emoji) {
+                iconEl.textContent = d.emoji;
+                iconEl.style.fontSize = d.type === "zone" ? "0.78em" : "0.85em";
+            } else if (d.type === "zone") {
                 iconEl.style.background = d.color || "#4f8ef7";
             } else {
                 iconEl.textContent = d.emoji || "📍";

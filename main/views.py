@@ -3406,7 +3406,9 @@ def has_excessive_korean_text(text):
 def call_ollama(system_message, messages):
     """Send one non-streaming chat request to the local Ollama endpoint with conservative settings."""
     base_url = getattr(settings, "OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-    model = getattr(settings, "OLLAMA_MODEL", "qwen3.5:4b-mlx-bf16")
+    model = getattr(settings, "OLLAMA_MODEL", "").strip()
+    if not model:
+        raise RuntimeError("OLLAMA_MODEL is not configured")
     payload = {
         "model": model,
         "stream": False,

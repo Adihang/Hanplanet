@@ -307,6 +307,10 @@
     max-height: 100%;
     pointer-events: auto;
 }
+.map-media-viewer-modal-frame.is-youtube {
+    width: min(95vw, 1280px);
+    aspect-ratio: 16 / 9;
+}
 .map-media-viewer-modal-slide {
     position: absolute;
     inset: 0;
@@ -334,6 +338,12 @@
     height: auto;
     border: 0;
     background: transparent;
+}
+.map-media-viewer-modal-frame.is-youtube iframe {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
 }
 .map-media-viewer-modal-frame video {
     width: 100%;
@@ -904,6 +914,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             iframe.title = title || "YouTube player";
             iframe.src = "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(String(entry.src || "").trim()) + "?autoplay=1&rel=0&modestbranding=1";
             frame.appendChild(iframe);
+            frame.classList.add("is-youtube");
         } else if (entry.kind === "video") {
             var video = document.createElement("video");
             video.src = entry.src;

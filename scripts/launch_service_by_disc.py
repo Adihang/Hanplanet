@@ -23,6 +23,10 @@ from storage_profile import (  # noqa: E402
     get_required_storage_paths,
 )
 
+HDD_VOLUME_ROOT = Path("/Volumes/HANPLANET_HDD")
+HDD_MEDIA_SENTINEL = Path("HanDrive/help/list_en.md")
+HDD_REPOS_SENTINEL = Path("admin")
+
 
 def _is_path_ready(path: Path) -> bool:
     try:
@@ -36,6 +40,37 @@ def _is_path_ready(path: Path) -> bool:
         return True
     except (OSError, PermissionError):
         return False
+
+
+def _path_resolves_to(path: Path, target: Path) -> bool:
+    try:
+        return path.samefile(target)
+    except (OSError, RuntimeError, NotImplementedError):
+        try:
+            return path.resolve() == target.resolve()
+        except (OSError, RuntimeError):
+            return False
+
+
+def _is_hdd_storage_ready() -> bool:
+    media_root = get_media_root("hdd")
+    repos_root = get_forgejo_repos_root("hdd")
+    project_media_root = REPO_ROOT / "media"
+    project_repos_root = REPO_ROOT / "forgejo" / "data" / "repos"
+
+    probe_paths = [
+        media_root / HDD_MEDIA_SENTINEL,
+        repos_root / HDD_REPOS_SENTINEL,
+    ]
+    if not all(_is_path_ready(path) for path in probe_paths):
+        return False
+
+    if not _path_resolves_to(project_media_root, media_root):
+        return False
+    if not _path_resolves_to(project_repos_root, repos_root):
+        return False
+
+    return True
 
 
 def _wait_for_paths(paths: list[Path], timeout: int | None = 300, interval: float = 2.0) -> None:
@@ -61,6 +96,15 @@ def _ensure_ssd_paths() -> None:
     repos_root = get_forgejo_repos_root("ssd")
     for path in (media_root / "HanDrive", media_root / "uploads", repos_root):
         path.mkdir(parents=True, exist_ok=True)
+
+
+def _wait_for_hdd_storage_ready(timeout: int = 60, interval: float = 2.0) -> None:
+    deadline = time.monotonic() + max(1, timeout)
+    while time.monotonic() < deadline:
+        if _is_hdd_storage_ready():
+            return
+        time.sleep(interval)
+    raise RuntimeError("timed out waiting for external HDD data to become readable")
 
 
 def _build_gitea_runtime_config(disc_mode: str) -> Path:
@@ -186,7 +230,7 @@ def main() -> int:
     if disc_mode == "ssd":
         _ensure_ssd_paths()
     else:
-        _wait_for_paths(get_required_storage_paths(disc_mode), timeout=None)
+        _wait_for_hdd_storage_ready()
 
     if args.service == "gunicorn":
         _terminate_conflicting_gunicorn(8000)

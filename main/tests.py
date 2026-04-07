@@ -329,9 +329,9 @@ class AddScoreViewTests(TestCase):
 
 
 class TranslateTextViewTests(TestCase):
-    @override_settings(OLLAMA_BASE_URL="http://127.0.0.1:11434", OLLAMA_MODEL="qwen3.5:4b-mlx-bf16")
+    @override_settings(OLLAMA_BASE_URL="http://127.0.0.1:11434", OLLAMA_MODEL="gemma4:latest")
     @mock.patch("main.views.httpx.post")
-    def test_call_ollama_uses_configured_mlx_model(self, mocked_post):
+    def test_call_ollama_uses_configured_model(self, mocked_post):
         mocked_response = mock.Mock()
         mocked_response.raise_for_status.return_value = None
         mocked_response.json.return_value = {"message": {"content": "ok"}}
@@ -342,7 +342,7 @@ class TranslateTextViewTests(TestCase):
         response_text = call_ollama("system message", [{"role": "user", "content": "hello"}])
 
         self.assertEqual(response_text, "ok")
-        self.assertEqual(mocked_post.call_args.kwargs["json"]["model"], "qwen3.5:4b-mlx-bf16")
+        self.assertEqual(mocked_post.call_args.kwargs["json"]["model"], "gemma4:latest")
         self.assertFalse(mocked_post.call_args.kwargs["json"]["think"])
 
     def test_translate_text_returns_ollama_translation(self):
@@ -593,6 +593,66 @@ class HandriveUnreadableEntryTests(TestCase):
         self.assertEqual(total_bytes, 2)
         self.assertGreaterEqual(total_entries, 2)
         self.assertIn("document", breakdown)
+
+
+class LaunchServiceHddReadinessTests(TestCase):
+    def _build_hdd_layout(self):
+        launch_service = import_module("scripts.launch_service_by_disc")
+
+        tmpdir = TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        root = Path(tmpdir.name)
+
+        mount_root = root / "Volumes" / "HANPLANET_HDD"
+        external_media = mount_root / "Hanplanet" / "media"
+        external_repos = mount_root / "Hanplanet" / "forgejo-repos"
+        external_media_help = external_media / "HanDrive" / "help"
+        project_root = root / "repo"
+        project_media = project_root / "media"
+        project_repos = project_root / "forgejo" / "data" / "repos"
+
+        external_media_help.mkdir(parents=True, exist_ok=True)
+        (external_media_help / "list_en.md").write_text("help", encoding="utf-8")
+        external_repos.mkdir(parents=True, exist_ok=True)
+        (external_repos / "admin").mkdir(parents=True, exist_ok=True)
+        project_media.parent.mkdir(parents=True, exist_ok=True)
+        project_repos.parent.mkdir(parents=True, exist_ok=True)
+        project_media.symlink_to(external_media)
+        project_repos.symlink_to(external_repos)
+
+        return (
+            launch_service,
+            mount_root,
+            external_media,
+            external_repos,
+            project_root,
+            project_media,
+            project_repos,
+        )
+
+    def test_hdd_storage_ready_requires_external_volume_and_matching_symlinks(self):
+        launch_service, mount_root, external_media, external_repos, project_root, project_media, project_repos = self._build_hdd_layout()
+
+        with mock.patch.object(launch_service, "HDD_VOLUME_ROOT", mount_root), mock.patch.object(
+            launch_service, "REPO_ROOT", project_root
+        ), mock.patch.object(launch_service, "get_media_root", return_value=external_media), mock.patch.object(
+            launch_service, "get_forgejo_repos_root", return_value=external_repos
+        ), mock.patch("pathlib.PosixPath.is_mount", return_value=True):
+            self.assertTrue(launch_service._is_hdd_storage_ready())
+
+    def test_hdd_storage_ready_fails_when_project_paths_do_not_resolve_to_external_targets(self):
+        launch_service, mount_root, external_media, external_repos, project_root, project_media, project_repos = self._build_hdd_layout()
+        wrong_media = project_root / "wrong-media"
+        wrong_media.mkdir(parents=True, exist_ok=True)
+        project_media.unlink()
+        project_media.symlink_to(wrong_media)
+
+        with mock.patch.object(launch_service, "HDD_VOLUME_ROOT", mount_root), mock.patch.object(
+            launch_service, "REPO_ROOT", project_root
+        ), mock.patch.object(launch_service, "get_media_root", return_value=external_media), mock.patch.object(
+            launch_service, "get_forgejo_repos_root", return_value=external_repos
+        ), mock.patch("pathlib.PosixPath.is_mount", return_value=True):
+            self.assertFalse(launch_service._is_hdd_storage_ready())
 
 
 class HandriveI18nPlaceholderTests(TestCase):

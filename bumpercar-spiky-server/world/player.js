@@ -139,6 +139,7 @@ class Player {
         this.deathStartedAt = 0
         this.deathUntil = 0
         this.respawnRequested = false
+        this.freeRespawnAfterReset = false
         this.livesRemaining = PLAYER_STARTING_LIVES
         // defeat 통계는 패널 표시와 사망 트리거 계산에 같이 사용된다.
         this.defeatReceivedCount = 0

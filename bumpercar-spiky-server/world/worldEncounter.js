@@ -27,9 +27,9 @@ const {
     ENCOUNTER_ANNOUNCEMENT_STAGE_TWO,
     ENCOUNTER_ANNOUNCEMENT_STAGE_THREE,
     ENCOUNTER_ANNOUNCEMENT_FINALE,
-    PLAYER_STARTING_LIVES,
 } = require("../config/constants")
 const { isPersistentHumanPlayer } = require("./worldHelpers")
+const { PLAYER_STARTING_LIVES } = require("./worldSettings")
 const Player = require("./player")
 
 module.exports = {
@@ -271,7 +271,8 @@ module.exports = {
      * 네르 NPC와 중립 펌킨 NPC를 새로 스폰한다.
      * @param {number} now - 현재 타임스탬프 (ms)
      */
-    resetEncounterToInitial(now) {
+    resetEncounterToInitial(now, options = {}) {
+        const respawnHumans = options.respawnHumans !== false
         this.encounterStage = 0
         this.pendingRoundResetAt = 0
         this.encounterFinaleUntil = 0
@@ -304,8 +305,10 @@ module.exports = {
             savedProgress.collisionRecoveryUntil = 0
             savedProgress.boostDisabledStartedAt = 0
             savedProgress.boostDisabledUntil = 0
-            savedProgress.deathStartedAt = 0
-            savedProgress.deathUntil = 0
+            if (respawnHumans) {
+                savedProgress.deathStartedAt = 0
+                savedProgress.deathUntil = 0
+            }
             savedProgress.respawnRequested = false
         }
         for (const player of this.players.values()) {
@@ -316,7 +319,30 @@ module.exports = {
                 player.defeatReceivedCount = 0
                 player.defeatDealtCount = 0
                 player.livesRemaining = this.sharedLivesRemaining
-                this.respawnPlayer(player, now, { consumeSharedLife: false })
+                player.respawnRequested = false
+                player.input.respawn = false
+                if (respawnHumans) {
+                    this.respawnPlayer(player, now, { consumeSharedLife: false })
+                } else {
+                    player.freeRespawnAfterReset = true
+                    player.boostState = "idle"
+                    player.currentSpeed = 0
+                    player.boostDirectionX = 0
+                    player.boostDirectionY = 0
+                    player.lastMoveX = 0
+                    player.lastMoveY = 0
+                    player.input = {
+                        up: false,
+                        down: false,
+                        left: false,
+                        right: false,
+                        boost: false,
+                        respawn: false,
+                        moveX: 0,
+                        moveY: 0,
+                    }
+                    this.updateStoredPlayerProgress(player)
+                }
             }
         }
         this.addNerNpcPlayer()

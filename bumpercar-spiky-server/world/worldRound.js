@@ -83,7 +83,6 @@ module.exports = {
      * @returns {boolean}
      */
     areAllHumanPlayersOut() {
-        // 공용 목숨이 0 이고, 현재 살아 있는 인간 유저도 없을 때 라운드 종료로 본다.
         if (this.sharedLivesRemaining > 0) {
             return false
         }
@@ -91,22 +90,11 @@ module.exports = {
         const allPlayers = Array.from(this.players.values())
         const humanPlayers = allPlayers.filter((player) => isPersistentHumanPlayer(player))
 
-        // [DEBUG] 판정 근거 출력 — 확인 후 제거
-        const nonHuman = allPlayers.filter((p) => !isPersistentHumanPlayer(p))
-        console.log(`[areAllHumanPlayersOut] lives=${this.sharedLivesRemaining} humans=${humanPlayers.length} nonHuman=${nonHuman.map((p) => `${p.id}(npc=${p.isNpc},dummy=${p.isDummy},pumpkin=${p.isPumpkinNpc},house=${p.isHouse})`).join(",")}`)
-        humanPlayers.forEach((p) => console.log(`  human ${p.id}: dead=${this.isPlayerDead(p)} deathUntil=${p.deathUntil}`))
-
         if (!humanPlayers.length) {
             return false
         }
 
-        for (const player of humanPlayers) {
-            if (!this.isPlayerDead(player)) {
-                return false
-            }
-        }
-
-        return true
+        return humanPlayers.every((player) => this.isPlayerDead(player))
     },
 
     /**

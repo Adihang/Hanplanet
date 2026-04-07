@@ -192,6 +192,7 @@ class World {
             player.deathStartedAt = Number(savedProgress.deathStartedAt || 0)
             player.deathUntil = Number(savedProgress.deathUntil || 0)
             player.respawnRequested = Boolean(savedProgress.respawnRequested)
+            player.freeRespawnAfterReset = false
             player.lastActiveInputAt = Number(savedProgress.lastActiveInputAt || player.lastActiveInputAt || Date.now())
             const hasSavedDoubleState = Array.isArray(savedProgress.doubleUnits) && savedProgress.doubleUnits.length === DOUBLE_UNIT_COUNT
             if (hasSavedDoubleState && player.isDoubleSkin) {
@@ -331,7 +332,7 @@ class World {
                 if (allOut) {
                     // 공용 목숨이 0이 된 상태에서 전원 사망하면 항상 전체 인카운터를 초기화한다.
                     // 라운드만 리셋하면 encounterStage가 유지되어 배경색/BGM이 이전 페이즈에 남는다.
-                    this.resetEncounterToInitial(now)
+                    this.resetEncounterToInitial(now, { respawnHumans: false })
                     return
                 }
             }
@@ -387,7 +388,9 @@ class World {
                 }
 
                 if (player.respawnRequested && Number(this.sharedLivesRemaining || 0) > 0) {
-                    this.respawnPlayer(player, now)
+                    this.respawnPlayer(player, now, {
+                        consumeSharedLife: !player.freeRespawnAfterReset,
+                    })
                 }
                 continue
             }

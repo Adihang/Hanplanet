@@ -100,7 +100,7 @@ This is a Django 5.0.1 portfolio + content management + multiplayer game platfor
 - Django issues JWT tokens at `/api/game-auth-token/`; game server verifies them
 - `world/world.js` — core game simulation; `world/spatialGrid.js` — AOI optimization
 
-**AI chatbot:** Ollama at `http://localhost:11434` (default model: `qwen3.5:4b-mlx-bf16`), accessed via `/api/chat/`
+**AI chatbot:** Ollama at `http://localhost:11434` (default model: `gemma4:latest`, injected via `OLLAMA_MODEL`), accessed via `/api/chat/`
 
 **Infrastructure:** Gunicorn → Nginx → Cloudflare Tunnel → hanplanet.com. 모두 launchd 네이티브 데몬으로 실행 (Docker 미사용).
 
@@ -110,7 +110,7 @@ This is a Django 5.0.1 portfolio + content management + multiplayer game platfor
 
 Secrets go in `config/secrets.json` (git-ignored). Key env vars:
 - `DJANGO_DEBUG`, `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`
-- `OLLAMA_BASE_URL`, `OLLAMA_MODEL`
+- `OLLAMA_BASE_URL`, `OLLAMA_MODEL` (launchd sets `gemma4:latest` by default)
 - `GAME_JWT_SECRET`, `GAME_WS_PUBLIC_URL`
 - `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` (Cloudflare CAPTCHA)
 - `FORGEJO_BASE_URL` — Gitea 서버 주소 (기본: `http://localhost:3000`)

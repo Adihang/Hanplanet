@@ -15,6 +15,8 @@
   <dict>
     <key>DJANGO_SETTINGS_MODULE</key>
     <string>config.settings</string>
+    <key>OLLAMA_MODEL</key>
+    <string>gemma4:latest</string>
     <key>PYTHONPATH</key>
     <string>/Users/imhanbyeol/Development/Hanplanet/.venv/lib/python3.9/site-packages</string>
   </dict>

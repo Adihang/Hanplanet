@@ -66,6 +66,7 @@ module.exports = {
         player.boostDisabledUntil = Math.max(player.boostDisabledUntil || 0, player.deathUntil)
         player.lastMoveX = 0
         player.lastMoveY = 0
+        player.freeRespawnAfterReset = false
         if (defeatedByPlayer && defeatedByPlayer.isNpc) {
             defeatedByPlayer.npcWinVisualUntil = now + 3000
         }
@@ -127,6 +128,7 @@ module.exports = {
         player.boostDisabledUntil = Math.max(player.boostDisabledUntil || 0, player.deathUntil)
         player.lastMoveX = 0
         player.lastMoveY = 0
+        player.freeRespawnAfterReset = false
         player.dummyRetaliationTargetId = ""
         player.dummyState = "idle"
         player.dummyPhase = 1
@@ -292,6 +294,7 @@ module.exports = {
         player.deathStartedAt = 0
         player.deathUntil = 0
         player.respawnRequested = false
+        player.freeRespawnAfterReset = false
         if (player.isDoubleSkin) {
             player.doubleMerged = true
             player.doubleSeparationPhase = "merged"

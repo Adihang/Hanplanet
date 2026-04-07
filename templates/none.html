@@ -66,13 +66,17 @@
                 <label class="root-search-sr-only" for="rootTranslateSourceInput">
                     {% include 'partials/ui_i18n.html' with key='translation_input' %}
                 </label>
-                <textarea
-                    id="rootTranslateSourceInput"
-                    class="root-translate-textarea"
-                    data-root-translate-source
-                    rows="1"
-                    placeholder="{% include 'partials/ui_i18n.html' with key='translation_placeholder_ko' %}"
-                ></textarea>
+                <div class="root-translate-input-shell" data-root-translate-source-shell data-empty="1">
+                    <textarea
+                        id="rootTranslateSourceInput"
+                        class="root-translate-textarea root-translate-textarea-source"
+                        data-root-translate-source
+                        rows="1"
+                    ></textarea>
+                    <span class="root-translate-textarea-placeholder" data-root-translate-source-placeholder aria-hidden="true">
+                        {% include 'partials/ui_i18n.html' with key='translation_placeholder_ko' %}
+                    </span>
+                </div>
                 <button
                     type="button"
                     class="root-translate-swap"
@@ -82,17 +86,19 @@
                 >
                     <span aria-hidden="true">⇄</span>
                 </button>
-                <label class="root-search-sr-only" for="rootTranslateTargetOutput">
+                <label class="root-search-sr-only" id="rootTranslateTargetLabel">
                     {% include 'partials/ui_i18n.html' with key='translation_result' %}
                 </label>
-                <textarea
+                <article
                     id="rootTranslateTargetOutput"
-                    class="root-translate-textarea root-translate-textarea-output"
+                    class="ui-markdown root-translate-textarea root-translate-textarea-output"
                     data-root-translate-target
-                    rows="1"
-                    placeholder="{% include 'partials/ui_i18n.html' with key='translation_placeholder_result' %}"
-                    readonly
-                ></textarea>
+                    data-placeholder="{% include 'partials/ui_i18n.html' with key='translation_placeholder_result' %}"
+                    aria-live="polite"
+                    aria-labelledby="rootTranslateTargetLabel"
+                    aria-readonly="true"
+                    role="textbox"
+                ></article>
             </div>
         </section>
         <section

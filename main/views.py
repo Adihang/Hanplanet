@@ -3291,14 +3291,16 @@ def root_shortcuts_reorder(request, ui_lang=None):
 
 logger = logging.getLogger(__name__)
 
-def sanitize_text(text):
-    """Strip HTML-like tags from chat text and clamp message length to a small safe bound."""
+def sanitize_text(text, max_length=500):
+    """Strip HTML-like tags from text and optionally clamp message length."""
     if not text:
         return ""
     # Remove script tags and other HTML/JS
     text = re.sub(r'<[^>]*>', '', text)
-    # Limit message length
-    return text[:500]  # Limit to 500 characters
+    if max_length is None:
+        return text
+    # Limit message length when a caller wants a bounded prompt/input size.
+    return text[:max_length]
 
 def is_valid_message(text):
     """Return whether a sanitized chat message still contains meaningful text."""
@@ -3952,7 +3954,7 @@ def translate_text(request, ui_lang=None):
         # Translation direction follows the translator's current mode (sent by the client).
         source_lang = _normalize_translation_lang(data.get("source"), "ko")
         target_lang = _normalize_translation_lang(data.get("target"), "en")
-        source_text = sanitize_text(data.get("text", ""))
+        source_text = sanitize_text(data.get("text", ""), max_length=8000)
 
         if source_lang == target_lang:
             return JsonResponse({"error": "Source and target languages must differ"}, status=400)
@@ -4070,6 +4072,7 @@ def translate_text(request, ui_lang=None):
         return JsonResponse(
             {
                 "translation": translation,
+                "translation_html": str(render_markdown_safely(translation)),
                 "explanation": explanation,
                 "source": source_lang,
                 "target": target_lang,

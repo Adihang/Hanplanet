@@ -7,11 +7,13 @@
     }
 
     const sourceInput = panel.querySelector('[data-root-translate-source]');
+    const sourceInputShell = panel.querySelector('[data-root-translate-source-shell]');
+    const sourcePlaceholder = panel.querySelector('[data-root-translate-source-placeholder]');
     const targetOutput = panel.querySelector('[data-root-translate-target]');
     const swapButton = panel.querySelector('[data-root-translate-swap]');
     const apiUrl = String(panel.dataset.translateApiUrl || '').trim();
 
-    if (!sourceInput || !targetOutput || !swapButton || !apiUrl) {
+    if (!sourceInput || !sourceInputShell || !targetOutput || !swapButton || !apiUrl) {
         return;
     }
 
@@ -22,6 +24,303 @@
     const placeholderKo = String(panel.dataset.placeholderKo || '한국어');
     const placeholderEn = String(panel.dataset.placeholderEn || 'English');
     const resultPlaceholder = String(panel.dataset.placeholderResult || '번역 결과');
+    const escapeHtml = function (value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+
+    const highlightJavaScriptCode = function (source) {
+        const placeholders = [];
+
+        const putPlaceholder = function (tokenHtml) {
+            const token = '@@ROOT_TRANSLATE_JS_TOKEN_' + String(placeholders.length) + '@@';
+            placeholders.push(tokenHtml);
+            return token;
+        };
+
+        const restorePlaceholders = function (text) {
+            return text.replace(/@@ROOT_TRANSLATE_JS_TOKEN_(\d+)@@/g, function (_, indexText) {
+                const index = Number(indexText);
+                if (Number.isNaN(index) || index < 0 || index >= placeholders.length) {
+                    return '';
+                }
+                return placeholders[index];
+            });
+        };
+
+        let text = escapeHtml(source);
+        text = text.replace(/\/\*[\s\S]*?\*\//g, function (match) {
+            return putPlaceholder('<span class="root-translate-token-comment">' + match + '</span>');
+        });
+        text = text.replace(/(^|[^\S\r\n])\/\/[^\r\n]*/g, function (match) {
+            return putPlaceholder('<span class="root-translate-token-comment">' + match + '</span>');
+        });
+        text = text.replace(/(["'`])(?:\\[\s\S]|(?!\1)[^\\])*\1/g, function (match) {
+            return putPlaceholder('<span class="root-translate-token-string">' + match + '</span>');
+        });
+        text = text.replace(/\b(\d+(?:\.\d+)?(?:e[+-]?\d+)?)\b/gi, '<span class="root-translate-token-number">$1</span>');
+        text = text.replace(
+            /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|new|class|extends|import|from|export|default|try|catch|finally|throw|async|await|typeof|instanceof|in|of|void|delete)\b/g,
+            '<span class="root-translate-token-keyword">$1</span>'
+        );
+        text = text.replace(/\b(true|false|null|undefined|this|super)\b/g, '<span class="root-translate-token-literal">$1</span>');
+        text = text.replace(
+            /\b(Array|Object|String|Number|Boolean|Date|Math|JSON|Promise|Map|Set|RegExp|Error|console|window|document)\b/g,
+            '<span class="root-translate-token-builtin">$1</span>'
+        );
+        text = text.replace(/(\b[a-zA-Z_$][\w$]*)(\s*\()/g, '<span class="root-translate-token-function">$1</span>$2');
+        return restorePlaceholders(text);
+    };
+
+    const highlightCssCode = function (source) {
+        const placeholders = [];
+
+        const putPlaceholder = function (tokenHtml) {
+            const token = '@@ROOT_TRANSLATE_CSS_TOKEN_' + String(placeholders.length) + '@@';
+            placeholders.push(tokenHtml);
+            return token;
+        };
+
+        const restorePlaceholders = function (text) {
+            return text.replace(/@@ROOT_TRANSLATE_CSS_TOKEN_(\d+)@@/g, function (_, indexText) {
+                const index = Number(indexText);
+                if (Number.isNaN(index) || index < 0 || index >= placeholders.length) {
+                    return '';
+                }
+                return placeholders[index];
+            });
+        };
+
+        let text = escapeHtml(source);
+        text = text.replace(/\/\*[\s\S]*?\*\//g, function (match) {
+            return putPlaceholder('<span class="root-translate-token-comment">' + match + '</span>');
+        });
+        text = text.replace(/(["'])(?:\\[\s\S]|(?!\1)[^\\])*\1/g, function (match) {
+            return putPlaceholder('<span class="root-translate-token-string">' + match + '</span>');
+        });
+        text = text.replace(/(^|[}\s])([#.:\w\-\[\]=\*>\+\~,]+)(\s*\{)/g, function (_, p1, selectorText, p3) {
+            return p1 + '<span class="root-translate-token-selector">' + selectorText + '</span>' + p3;
+        });
+        text = text.replace(/(--[\w-]+)(\s*:)/g, '<span class="root-translate-token-variable">$1</span>$2');
+        text = text.replace(/([a-z-]+)(\s*:)/gi, '<span class="root-translate-token-property">$1</span>$2');
+        text = text.replace(/(:\s*)(#[0-9a-fA-F]{3,8}\b|rgba?\([^)]+\)|hsla?\([^)]+\)|\b[a-zA-Z]+\b)/g, '$1<span class="root-translate-token-value">$2</span>');
+        text = text.replace(/(-?\d+(?:\.\d+)?)(px|em|rem|vh|vw|%|deg|s|ms)?\b/g, '<span class="root-translate-token-number">$1$2</span>');
+        return restorePlaceholders(text);
+    };
+
+    const highlightJsonCode = function (source) {
+        const placeholders = [];
+
+        const putPlaceholder = function (tokenHtml) {
+            const token = '@@ROOT_TRANSLATE_JSON_TOKEN_' + String(placeholders.length) + '@@';
+            placeholders.push(tokenHtml);
+            return token;
+        };
+
+        const restorePlaceholders = function (text) {
+            return text.replace(/@@ROOT_TRANSLATE_JSON_TOKEN_(\d+)@@/g, function (_, indexText) {
+                const index = Number(indexText);
+                if (Number.isNaN(index) || index < 0 || index >= placeholders.length) {
+                    return '';
+                }
+                return placeholders[index];
+            });
+        };
+
+        let text = escapeHtml(source);
+        text = text.replace(/"(?:\\.|[^"\\])*"(?=\s*:)/g, function (match) {
+            return putPlaceholder('<span class="root-translate-token-key">' + match + '</span>');
+        });
+        text = text.replace(/"(?:\\.|[^"\\])*"/g, function (match) {
+            return putPlaceholder('<span class="root-translate-token-string">' + match + '</span>');
+        });
+        text = text.replace(/\b(-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)\b/gi, '<span class="root-translate-token-number">$1</span>');
+        text = text.replace(/\b(true|false|null)\b/g, '<span class="root-translate-token-literal">$1</span>');
+        text = text.replace(/([{}\[\],:])/g, '<span class="root-translate-token-punctuation">$1</span>');
+        return restorePlaceholders(text);
+    };
+
+    const highlightPythonCode = function (source) {
+        const placeholders = [];
+
+        const putPlaceholder = function (tokenHtml) {
+            const token = '@@ROOT_TRANSLATE_PY_TOKEN_' + String(placeholders.length) + '@@';
+            placeholders.push(tokenHtml);
+            return token;
+        };
+
+        const restorePlaceholders = function (text) {
+            return text.replace(/@@ROOT_TRANSLATE_PY_TOKEN_(\d+)@@/g, function (_, indexText) {
+                const index = Number(indexText);
+                if (Number.isNaN(index) || index < 0 || index >= placeholders.length) {
+                    return '';
+                }
+                return placeholders[index];
+            });
+        };
+
+        let text = escapeHtml(source);
+        text = text.replace(/("""[\s\S]*?"""|'''[\s\S]*?''')/g, function (match) {
+            return putPlaceholder('<span class="root-translate-token-string">' + match + '</span>');
+        });
+        text = text.replace(/#[^\r\n]*/g, function (match) {
+            return putPlaceholder('<span class="root-translate-token-comment">' + match + '</span>');
+        });
+        text = text.replace(/(["'])(?:\\[\s\S]|(?!\1)[^\\])*\1/g, function (match) {
+            return putPlaceholder('<span class="root-translate-token-string">' + match + '</span>');
+        });
+        text = text.replace(/(^|\s)(@[a-zA-Z_][\w.]*)/g, '$1<span class="root-translate-token-decorator">$2</span>');
+        text = text.replace(/\b(-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)\b/gi, '<span class="root-translate-token-number">$1</span>');
+        text = text.replace(
+            /\b(def|class|return|if|elif|else|for|while|break|continue|try|except|finally|raise|import|from|as|with|pass|yield|lambda|global|nonlocal|assert|del|in|is|and|or|not|async|await|match|case)\b/g,
+            '<span class="root-translate-token-keyword">$1</span>'
+        );
+        text = text.replace(/\b(True|False|None)\b/g, '<span class="root-translate-token-literal">$1</span>');
+        text = text.replace(
+            /\b(len|range|str|int|float|dict|list|set|tuple|print|open|type|isinstance|enumerate|zip|map|filter|sum|min|max|abs|sorted|reversed|any|all)\b/g,
+            '<span class="root-translate-token-builtin">$1</span>'
+        );
+        text = text.replace(/\b(def)\s+([a-zA-Z_][\w]*)/g, '$1 <span class="root-translate-token-function">$2</span>');
+        text = text.replace(/\b(class)\s+([a-zA-Z_][\w]*)/g, '$1 <span class="root-translate-token-class">$2</span>');
+        return restorePlaceholders(text);
+    };
+
+    const highlightHtmlCode = function (source) {
+        const placeholders = [];
+
+        const putPlaceholder = function (tokenHtml) {
+            const token = '@@ROOT_TRANSLATE_HTML_TOKEN_' + String(placeholders.length) + '@@';
+            placeholders.push(tokenHtml);
+            return token;
+        };
+
+        const restorePlaceholders = function (text) {
+            return text.replace(/@@ROOT_TRANSLATE_HTML_TOKEN_(\d+)@@/g, function (_, indexText) {
+                const index = Number(indexText);
+                if (Number.isNaN(index) || index < 0 || index >= placeholders.length) {
+                    return '';
+                }
+                return placeholders[index];
+            });
+        };
+
+        let text = escapeHtml(source);
+        text = text.replace(/&lt;!--[\s\S]*?--&gt;/g, function (match) {
+            return putPlaceholder('<span class="root-translate-token-comment">' + match + '</span>');
+        });
+        text = text.replace(/(["'])(?:\\[\s\S]|(?!\1)[^\\])*\1/g, function (match) {
+            return putPlaceholder('<span class="root-translate-token-string">' + match + '</span>');
+        });
+        text = text.replace(
+            /(&lt;\/?)([a-zA-Z][\w:-]*)([\s\S]*?)(&gt;)/g,
+            function (_, open, tagName, attributes, close) {
+                let highlightedAttributes = attributes.replace(
+                    /(\s)([a-zA-Z_:][\w:.-]*)(\s*=\s*)/g,
+                    '$1<span class="root-translate-token-attr">$2</span>$3'
+                );
+                return (
+                    '<span class="root-translate-token-punctuation">' + open + '</span>' +
+                    '<span class="root-translate-token-tag">' + tagName + '</span>' +
+                    highlightedAttributes +
+                    '<span class="root-translate-token-punctuation">' + close + '</span>'
+                );
+            }
+        );
+        return restorePlaceholders(text);
+    };
+
+    const detectCodeLanguageClass = function (codeNode) {
+        if (!codeNode || !(codeNode instanceof Element)) {
+            return '';
+        }
+        const classes = Array.from(codeNode.classList || []);
+        const languageClass = classes.find(function (className) {
+            return /^language-/i.test(className);
+        });
+        const languageValue = languageClass ? languageClass.replace(/^language-/i, '') : '';
+        const normalized = String(languageValue || '').toLowerCase();
+        if (normalized === 'js' || normalized === 'javascript' || normalized === 'mjs' || normalized === 'cjs') {
+            return 'javascript';
+        }
+        if (normalized === 'css') {
+            return 'css';
+        }
+        if (normalized === 'json' || normalized === 'jsonc') {
+            return 'json';
+        }
+        if (normalized === 'py' || normalized === 'python' || normalized === 'py3' || normalized === 'pyi') {
+            return 'python';
+        }
+        if (normalized === 'html' || normalized === 'xml' || normalized === 'svg') {
+            return 'html';
+        }
+        return '';
+    };
+
+    const applyTranslationCodeHighlighting = function (targetElement) {
+        if (!targetElement || !(targetElement instanceof Element)) {
+            return;
+        }
+        const codeNodes = targetElement.querySelectorAll('pre code');
+        codeNodes.forEach(function (codeNode) {
+            if (!(codeNode instanceof HTMLElement)) {
+                return;
+            }
+            if (codeNode.dataset.rootTranslateHighlighted === '1') {
+                return;
+            }
+            const source = codeNode.textContent || '';
+            const language = detectCodeLanguageClass(codeNode);
+            if (!language) {
+                codeNode.dataset.rootTranslateHighlighted = '1';
+                return;
+            }
+            if (language === 'javascript') {
+                codeNode.innerHTML = highlightJavaScriptCode(source);
+            } else if (language === 'css') {
+                codeNode.innerHTML = highlightCssCode(source);
+            } else if (language === 'json') {
+                codeNode.innerHTML = highlightJsonCode(source);
+            } else if (language === 'python') {
+                codeNode.innerHTML = highlightPythonCode(source);
+            } else if (language === 'html') {
+                codeNode.innerHTML = highlightHtmlCode(source);
+            }
+            codeNode.dataset.rootTranslateHighlighted = '1';
+        });
+    };
+
+    let heightSyncFrame = 0;
+
+    const scheduleTextareaHeightsSync = function () {
+        if (heightSyncFrame) {
+            window.cancelAnimationFrame(heightSyncFrame);
+        }
+        heightSyncFrame = window.requestAnimationFrame(function () {
+            heightSyncFrame = 0;
+            syncTextareaHeights();
+        });
+    };
+
+    const setRenderedOutput = function (html, fallbackText, rawText) {
+        const nextHtml = String(html || '').trim();
+        targetOutput.dataset.rawText = String(rawText || '');
+        if (nextHtml) {
+            targetOutput.innerHTML = nextHtml;
+            targetOutput.removeAttribute('data-empty');
+            applyTranslationCodeHighlighting(targetOutput);
+            scheduleTextareaHeightsSync();
+            return;
+        }
+        targetOutput.innerHTML = '';
+        targetOutput.setAttribute('data-empty', '1');
+        targetOutput.setAttribute('data-placeholder', fallbackText || resultPlaceholder);
+        scheduleTextareaHeightsSync();
+    };
 
     let sourceLang = 'ko';
     let targetLang = 'en';
@@ -36,26 +335,45 @@
         const singleLineHeight = Math.ceil(lineHeight + paddingY + borderY);
 
         if (!String(element.value || '').length) {
-            return Math.max(singleLineHeight, minHeight, 38);
+            return Math.max(singleLineHeight, minHeight);
         }
 
-        element.style.height = '0px';
+        element.style.height = 'auto';
         const naturalHeight = Math.ceil(element.scrollHeight + borderY);
-        return Math.max(singleLineHeight, naturalHeight, minHeight, 38);
+        return Math.max(singleLineHeight, naturalHeight, minHeight);
+    };
+
+    const getRenderedOutputNaturalHeight = function (element) {
+        const style = window.getComputedStyle(element);
+        const minHeight = parseFloat(style.minHeight) || 0;
+        const lineHeight = parseFloat(style.lineHeight) || ((parseFloat(style.fontSize) || 14) * 1.45);
+        const paddingY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+        const borderY = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+        const singleLineHeight = Math.ceil(lineHeight + paddingY + borderY);
+        if (element.dataset.empty === '1') {
+            return Math.max(singleLineHeight, minHeight);
+        }
+        const naturalHeight = Math.ceil(element.scrollHeight + borderY);
+        return Math.max(singleLineHeight, naturalHeight, minHeight);
     };
 
     const syncTextareaHeights = function () {
-        const nextHeight = Math.max(
-            getTextareaNaturalHeight(sourceInput),
-            getTextareaNaturalHeight(targetOutput)
-        );
-        sourceInput.style.height = String(nextHeight) + 'px';
-        targetOutput.style.height = String(nextHeight) + 'px';
+        const sourceHeight = Math.max(36, getTextareaNaturalHeight(sourceInput) - 3);
+        const outputHeight = Math.max(36, getRenderedOutputNaturalHeight(targetOutput) - 3);
+        sourceInputShell.style.height = '';
+        sourceInput.style.height = String(sourceHeight) + 'px';
+        targetOutput.style.height = String(outputHeight) + 'px';
     };
 
     const syncPlaceholders = function () {
-        sourceInput.setAttribute('placeholder', sourceLang === 'ko' ? placeholderKo : placeholderEn);
-        targetOutput.setAttribute('placeholder', resultPlaceholder);
+        if (sourcePlaceholder) {
+            sourcePlaceholder.textContent = sourceLang === 'ko' ? placeholderKo : placeholderEn;
+        }
+        targetOutput.setAttribute('data-placeholder', resultPlaceholder);
+    };
+
+    const syncSourcePlaceholderState = function () {
+        sourceInputShell.setAttribute('data-empty', sourceInput.value.length ? '0' : '1');
     };
 
     const setBusy = function (busy) {
@@ -67,12 +385,18 @@
         const nextSourceLang = targetLang;
         const nextTargetLang = sourceLang;
         const previousSourceValue = sourceInput.value;
+        const previousTranslationValue = String(targetOutput.dataset.rawText || '');
         sourceLang = nextSourceLang;
         targetLang = nextTargetLang;
-        sourceInput.value = targetOutput.value;
-        targetOutput.value = previousSourceValue;
+        sourceInput.value = previousTranslationValue;
+        syncSourcePlaceholderState();
+        setRenderedOutput(
+            previousSourceValue ? '<p>' + escapeHtml(previousSourceValue).replace(/\n/g, '<br>') + '</p>' : '',
+            resultPlaceholder,
+            previousSourceValue
+        );
         syncPlaceholders();
-        syncTextareaHeights();
+        scheduleTextareaHeightsSync();
     };
 
     const requestTranslation = function () {
@@ -80,17 +404,16 @@
         const requestId = activeRequestId + 1;
         activeRequestId = requestId;
         if (!text) {
-            targetOutput.value = '';
-            targetOutput.setAttribute('placeholder', resultPlaceholder);
-            syncTextareaHeights();
+            setRenderedOutput('', resultPlaceholder, '');
+            scheduleTextareaHeightsSync();
             setBusy(false);
             return;
         }
 
         setBusy(true);
-        targetOutput.value = '';
-        targetOutput.setAttribute('placeholder', translatingLabel);
-        syncTextareaHeights();
+        setRenderedOutput('', translatingLabel, '');
+        targetOutput.setAttribute('data-placeholder', translatingLabel);
+        scheduleTextareaHeightsSync();
 
         window.fetch(apiUrl, {
             method: 'POST',
@@ -119,19 +442,21 @@
                 if (requestId !== activeRequestId) {
                     return;
                 }
-                targetOutput.value = String(payload.translation || '');
-                if (!targetOutput.value) {
-                    targetOutput.setAttribute('placeholder', resultPlaceholder);
-                }
-                syncTextareaHeights();
+                const rawTranslation = String(payload.translation || '');
+                const renderedTranslation = String(payload.translation_html || '');
+                setRenderedOutput(
+                    renderedTranslation || (rawTranslation ? '<p>' + escapeHtml(rawTranslation).replace(/\n/g, '<br>') + '</p>' : ''),
+                    resultPlaceholder,
+                    rawTranslation
+                );
+                targetOutput.setAttribute('data-placeholder', resultPlaceholder);
             })
             .catch(function (error) {
                 if (requestId !== activeRequestId) {
                     return;
                 }
-                targetOutput.value = '';
-                targetOutput.setAttribute('placeholder', error && error.message ? error.message : translateErrorLabel);
-                syncTextareaHeights();
+                setRenderedOutput('', error && error.message ? error.message : translateErrorLabel, '');
+                targetOutput.setAttribute('data-placeholder', error && error.message ? error.message : translateErrorLabel);
             })
             .finally(function () {
                 if (requestId !== activeRequestId) {
@@ -153,11 +478,13 @@
     });
 
     sourceInput.addEventListener('input', function () {
-        syncTextareaHeights();
+        syncSourcePlaceholderState();
+        scheduleTextareaHeightsSync();
     });
 
-    window.addEventListener('resize', syncTextareaHeights, { passive: true });
+    window.addEventListener('resize', scheduleTextareaHeightsSync, { passive: true });
 
     syncPlaceholders();
-    syncTextareaHeights();
+    syncSourcePlaceholderState();
+    scheduleTextareaHeightsSync();
 })();

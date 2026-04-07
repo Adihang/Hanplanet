@@ -98,7 +98,7 @@ def _ensure_ssd_paths() -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
-def _wait_for_hdd_storage_ready(timeout: int = 60, interval: float = 2.0) -> None:
+def _wait_for_hdd_storage_ready(timeout: int = 300, interval: float = 2.0) -> None:
     deadline = time.monotonic() + max(1, timeout)
     while time.monotonic() < deadline:
         if _is_hdd_storage_ready():

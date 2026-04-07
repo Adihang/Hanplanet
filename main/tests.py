@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from django.contrib.auth.signals import user_logged_in
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.http import HttpRequest, HttpResponse
 from django.test import Client, RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.core.cache import cache, caches
@@ -355,9 +356,24 @@ class TranslateTextViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["translation"], "Hello world")
+        self.assertEqual(response.json()["translation_html"], "<p>Hello world</p>")
         self.assertEqual(response.json()["source"], "ko")
         self.assertEqual(response.json()["target"], "en")
         mocked_call.assert_called_once()
+
+    def test_translate_text_preserves_long_input_without_clamping(self):
+        long_text = "가" * 600
+        with mock.patch("main.views.call_ollama", return_value="Hello world") as mocked_call:
+            response = self.client.post(
+                reverse("main:translate_text"),
+                data=json.dumps({"text": long_text, "source": "ko", "target": "en"}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        user_prompt = mocked_call.call_args.args[1][0]["content"]
+        self.assertIn(long_text, user_prompt)
+        self.assertGreater(len(user_prompt), 500)
 
     def test_translate_text_prompt_includes_fixed_failure_output_rule(self):
         with mock.patch("main.views.call_ollama", return_value="Translation failed") as mocked_call:
@@ -442,6 +458,29 @@ class GlobalRateLimitMiddlewareTests(TestCase):
 
         self.assertNotEqual(first.status_code, 429)
         self.assertNotEqual(second.status_code, 429)
+
+
+class MediaServeRetryTests(TestCase):
+    def test_serve_with_cache_retries_transient_storage_errors(self):
+        from config.urls import serve_with_cache
+
+        request = HttpRequest()
+        request.method = "GET"
+        request.path = "/media/uploads/example.png"
+
+        response = HttpResponse(b"ok", content_type="image/png")
+
+        with mock.patch("config.urls.serve", side_effect=[OSError("temporary"), response]) as mocked_serve:
+            served = serve_with_cache(
+                request,
+                "uploads/example.png",
+                document_root="/tmp/media",
+                cache_control="public, max-age=60",
+            )
+
+        self.assertEqual(mocked_serve.call_count, 2)
+        self.assertEqual(served.status_code, 200)
+        self.assertEqual(served["Cache-Control"], "public, max-age=60")
 
 
 class CareerPeriodCalculationTests(TestCase):

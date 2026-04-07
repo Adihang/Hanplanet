@@ -15,6 +15,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from functools import partial
+import time
 
 from django.contrib import admin
 from django.urls import path, include
@@ -32,12 +33,17 @@ urlpatterns = [
 
 
 def serve_with_cache(request, path, *, document_root, cache_control):
-    try:
-        response = serve(request, path, document_root=document_root)
-    except (OSError, PermissionError):
-        return HttpResponse("Storage unavailable", status=503)
-    response["Cache-Control"] = cache_control
-    return response
+    for attempt in range(4):
+        try:
+            response = serve(request, path, document_root=document_root)
+            response["Cache-Control"] = cache_control
+            return response
+        except (OSError, PermissionError) as exc:
+            if attempt < 3:
+                time.sleep(0.15)
+                continue
+            break
+    return HttpResponse("Storage unavailable", status=503)
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -225,10 +225,15 @@ INSTALLED_APPS = [
     'portfolio',
     'stratagem',
     'git',
+    'ai',
     'corsheaders',
     'django_celery_results',
     'oauth2_provider',
 ]
+
+# Ollama proxy settings
+OLLAMA_BASE_URL = "http://localhost:11434"
+# OLLAMA_PROXY_API_KEY = "your-secret-key"  # 외부 접근 시 활성화 권장
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

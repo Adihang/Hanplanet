@@ -358,11 +358,13 @@
     };
 
     const syncTextareaHeights = function () {
+        sourceInput.style.height = 'auto';
         const sourceHeight = Math.max(36, getTextareaNaturalHeight(sourceInput) - 3);
         const outputHeight = Math.max(36, getRenderedOutputNaturalHeight(targetOutput) - 3);
+        const sharedHeight = Math.max(sourceHeight, outputHeight);
         sourceInputShell.style.height = '';
-        sourceInput.style.height = String(sourceHeight) + 'px';
-        targetOutput.style.height = String(outputHeight) + 'px';
+        sourceInput.style.height = String(sharedHeight) + 'px';
+        targetOutput.style.height = String(sharedHeight) + 'px';
     };
 
     const syncPlaceholders = function () {

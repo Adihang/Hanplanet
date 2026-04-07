@@ -24,48 +24,73 @@ node server.js            # Production mode
 PORT=8081 node server.js  # Dev (port 8080 is often occupied locally)
 ```
 
-**Static asset rollout rule:** After any change to `static/css/*`, `static/js/*`, or templates that reference them, always run `collectstatic` then restart gunicorn — never restart without collecting first.
-Even if `collectstatic --noinput` reports `0 static files copied`, treat that as "already up to date" and still restart gunicorn when you are doing an explicit production rollout.
+## Production Deployment (launchd)
 
-### Production Deployment (launchd — no Docker)
+> Docker는 사용하지 않는다. 모든 서비스는 macOS launchd 네이티브 데몬으로 실행.
 
-> Docker is **not in use**. All services run as native macOS launchd daemons.
+| Service | launchd label | 동작 | Restart |
+|---------|--------------|------|---------|
+| Django (gunicorn) | `com.hanplanet.gunicorn` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.gunicorn` |
+| Game server | `com.hanplanet.bumpercar-spiky-server` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server` |
+| Git server (Gitea) | `com.hanplanet.gitea` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.gitea` |
+| Celery worker | `com.hanplanet.celery` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.celery` |
+| Nginx | `com.hanplanet.nginx` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.nginx` |
+| HDD 마운트 | `com.hanplanet.mount-hanplanet-hdd` | RunAtLoad (1회) | `launchctl kickstart gui/$(id -u)/com.hanplanet.mount-hanplanet-hdd` |
+| 헬스체크 | `com.hanplanet.healthcheck` | 60초마다 | `launchctl kickstart gui/$(id -u)/com.hanplanet.healthcheck` |
+| HDD .DS_Store 정리 | `com.hanplanet.external-hdd-keepalive` | 600초마다 | `launchctl kickstart gui/$(id -u)/com.hanplanet.external-hdd-keepalive` |
 
-| Service | launchd label | Restart command |
-|---------|--------------|-----------------|
-| Django (gunicorn) | `com.hanplanet.gunicorn` | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.gunicorn` |
-| Game server | `com.hanplanet.bumpercar-spiky-server` | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server` |
-| Git server (Gitea) | `com.hanplanet.gitea` | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.gitea` |
-| Celery worker | `com.hanplanet.celery` | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.celery` |
-| Nginx | `com.hanplanet.nginx` | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.nginx` |
+**Plist 위치:**
+- `deploy/launchd/` — Django, Gitea, Celery, Nginx, 헬스체크 (저장소에 포함)
+- `bumpercar-spiky-server/deploy/launchd/` — 게임 서버
+- `~/Library/LaunchAgents/` only — HDD 마운트, HDD .DS_Store 정리 (저장소 미포함, 수동 설치)
 
-Plist files: `deploy/launchd/` (Django, Gitea, Celery, Nginx) and `bumpercar-spiky-server/deploy/launchd/` (game server).
+### Django 변경 후 운영 적용
 
-**Django 변경 후 운영 적용:**
 ```bash
 .venv/bin/python manage.py collectstatic --noinput
 ./scripts/restart_gunicorn_and_wait.py
 ```
 
-실운영 반영 체크 순서:
-1. `static/css/*`, `static/js/*`, 또는 이를 참조하는 템플릿을 수정했으면 먼저 `.venv/bin/python manage.py collectstatic --noinput` 실행
-2. 그 다음 `./scripts/restart_gunicorn_and_wait.py` 실행
-3. 상태 확인: `launchctl print gui/$(id -u)/com.hanplanet.gunicorn | sed -n '1,30p'`
-4. `state = running` 인지 확인
-5. 브라우저에서 변경이 안 보이면 서버 반영 문제보다 브라우저 캐시를 먼저 의심하고 hard refresh로 확인
+체크 순서:
+1. `static/css/*`, `static/js/*`, 또는 이를 참조하는 템플릿을 수정했으면 먼저 `collectstatic --noinput` 실행 (`0 copied` 여도 실행)
+2. `./scripts/restart_gunicorn_and_wait.py` 실행
+3. 상태 확인: `launchctl print gui/$(id -u)/com.hanplanet.gunicorn | sed -n '1,30p'` → `state = running` 확인
+4. 브라우저에서 변경이 안 보이면 서버 문제보다 브라우저 캐시를 먼저 의심 → hard refresh로 확인
 
-**Game server 변경 후 운영 적용:**
+### Game server 변경 후 운영 적용
+
 ```bash
-# bumpercar-spiky-server/ 에서 작업
 launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server
 # 확인: tail -f /tmp/bumpercar-spiky-server.log
 ```
 
-**Celery worker 변경 후 운영 적용:**
+### Celery worker 변경 후 운영 적용
+
 ```bash
 launchctl kickstart -k gui/$(id -u)/com.hanplanet.celery
 # 확인: tail -f log/celery.stdout.log
 ```
+
+### 헬스체크 (`com.hanplanet.healthcheck`)
+
+`scripts/healthcheck_and_restart.py` — 60초마다 실행:
+1. `https://www.hanplanet.com/` → **502** 감지: gunicorn 프로세스 자체가 다운된 상태
+2. `https://www.hanplanet.com/media/healthcheck.txt` → **503** 감지: gunicorn은 살아있지만 HDD 마운트 전에 시작돼 미디어를 못 읽는 상태
+
+두 경우 모두 `launchctl kickstart -k`로 gunicorn 재시작 후 HTTP 준비 확인. 쿨다운 180초.
+
+- 로그: `~/Library/Logs/hanplanet-healthcheck.out.log`
+- sentinel 파일: `/Volumes/HANPLANET_HDD/Hanplanet/media/healthcheck.txt`
+
+### HDD .DS_Store 정리 (`com.hanplanet.external-hdd-keepalive`)
+
+`scripts/cleanup_hdd_ds_store.py` — 600초마다 `/Volumes/HANPLANET_HDD/` 전체 재귀 탐색해 `.DS_Store` 삭제.
+
+- 로그: `/tmp/com.hanplanet.external-hdd-keepalive.stdout.log`
+
+### HDD 마운트 (`com.hanplanet.mount-hanplanet-hdd`)
+
+로그인 시 1회 `diskutil mount HANPLANET_HDD` 실행. HDD가 마운트되지 않은 채로 gunicorn이 먼저 뜨면 미디어 파일 503이 발생하며, 헬스체크가 이를 감지해 자동 재시작한다.
 
 ## Project Structure
 
@@ -102,7 +127,7 @@ This is a Django 5.0.1 portfolio + content management + multiplayer game platfor
 
 **AI chatbot:** Ollama at `http://localhost:11434` (default model: `gemma4:latest`, injected via `OLLAMA_MODEL`), accessed via `/api/chat/`
 
-**Infrastructure:** Gunicorn → Nginx → Cloudflare Tunnel → hanplanet.com. 모두 launchd 네이티브 데몬으로 실행 (Docker 미사용).
+**Infrastructure:** Gunicorn → Nginx → Cloudflare Tunnel → hanplanet.com
 
 **Git 서버:** Gitea (Homebrew, `/opt/homebrew/bin/gitea`, 포트 3000) + Celery Worker (Redis 브로커) — HanDrive 폴더를 Git 저장소로 변환하는 비동기 작업 처리.
 
@@ -151,8 +176,6 @@ Do not commit API keys or secrets. Production uses `DEBUG = False`.
 - Link related issues or deployment notes when relevant (e.g., migrations or `collectstatic`).
 
 ## Git 서버 (Gitea + Celery)
-
-> Docker 미사용. 모두 launchd로 관리.
 
 **구성:**
 - **Gitea** — Homebrew 설치 (`brew install gitea`), 포트 3000, SQLite DB
@@ -207,23 +230,15 @@ Do not commit API keys or secrets. Production uses `DEBUG = False`.
 | Gitea repos 실경로 | `/Volumes/HANPLANET_HDD/Hanplanet/forgejo/data/repositories/` |
 | 프로젝트 내 심볼릭 링크 | `media/` → 위 media 경로, `forgejo/data/repositories/` → 위 repos 경로 |
 
+**외장 디스크 미연결 시:** `media/`, `forgejo/data/repositories/` 심볼릭 링크가 깨져 Django 500/503 에러 발생. 헬스체크(`com.hanplanet.healthcheck`)가 503을 감지해 gunicorn을 자동 재시작한다. HDD 연결 없이는 재시작해도 복구되지 않으므로 디스크 연결 후 기다릴 것.
+
 **macOS TCC (Full Disk Access) 주의사항:**
 - 외장 볼륨 접근 권한은 launchd 컨텍스트에서 쉘 래퍼를 통해 실행되면 TCC가 적용되지 않는다.
 - `.venv/bin/python`은 `#!/bin/sh` 쉘 스크립트이므로 launchd에서 실행 시 TCC가 `/bin/sh`로 인식한다.
 - 따라서 **모든 launchd plist는 `.venv/bin/python` 대신 `/usr/bin/python3`를 직접 호출**하고, `EnvironmentVariables`에 `PYTHONPATH`로 venv site-packages를 지정한다.
-  - 적용 대상: `com.hanplanet.gunicorn.plist`, `com.hanplanet.celery.plist`, `scripts/summarize-nginx-access-json.sh`
+  - 적용 대상: `com.hanplanet.gunicorn.plist`, `com.hanplanet.celery.plist`, `com.hanplanet.healthcheck.plist`, `scripts/summarize-nginx-access-json.sh`
   - PYTHONPATH 값: `/Users/imhanbyeol/Development/Hanplanet/.venv/lib/python3.9/site-packages`
 - 시스템 환경설정 → 개인 정보 보호 및 보안 → 전체 디스크 접근 권한에 `/usr/bin/python3`가 등록되어 있어야 한다.
-
-**외장 디스크 미연결 시:** `media/`, `forgejo/data/repositories/` 심볼릭 링크가 깨져 Django 500 에러 발생. 외장 디스크 연결 후 서비스 재시작 필요.
-
-## Docker (미사용 — 참고용)
-
-> 현재 운영에서 Docker는 사용하지 않는다. 아래는 이전 설계 참고용.
-
-Container chain: `cloudflared → nginx → gunicorn(django)`.
-
-Key files: `docker-compose.yml`, `Dockerfile`, `docker/entrypoint.sh`, `docker/nginx/default.conf`, `docker/cloudflared/config.yml.example`, `.env.docker.example`.
 
 ## Access Logs
 

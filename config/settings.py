@@ -154,6 +154,9 @@ def load_optional_bool_secret(name, default=False):
 # The model is injected by launchd/env so the app code does not hardcode it.
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "").strip()
+# Ollama 프록시 API 키 — 외부에서 /ai/v1/* 에 접근할 때 필요한 인증 키
+# 환경변수로 주입하거나 여기서 직접 설정
+OLLAMA_PROXY_API_KEY = load_optional_secret("OLLAMA_PROXY_API_KEY", "")  # 비어있으면 인증 없음
 
 # Cloudflare Turnstile 설정 - 디버그 모드에서는 비활성화
 if DEBUG:
@@ -190,6 +193,13 @@ CELERY_TASK_ACKS_LATE                     = True
 CELERY_WORKER_PREFETCH_MULTIPLIER         = 1
 CELERY_WORKER_MAX_TASKS_PER_CHILD         = 50
 CELERY_BROKER_TRANSPORT_OPTIONS           = {"visibility_timeout": 3600}
+CELERY_BEAT_SCHEDULE = {
+    # 만료된 Django 세션 매일 새벽 3시 정리
+    "clearsessions-daily": {
+        "task": "main.tasks.clear_expired_sessions",
+        "schedule": 60 * 60 * 24,  # 24시간마다
+    },
+}
 
 # Forgejo 설정
 DISC = get_disc_mode()
@@ -231,10 +241,6 @@ INSTALLED_APPS = [
     'oauth2_provider',
 ]
 
-# Ollama proxy settings
-OLLAMA_BASE_URL = "http://localhost:11434"
-# OLLAMA_PROXY_API_KEY = "your-secret-key"  # 외부 접근 시 활성화 권장
-
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.gzip.GZipMiddleware",
@@ -259,6 +265,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "main.context_processors.site_meta_defaults",
             ],
         },
     },
@@ -395,6 +402,7 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # 디버그 모드에서는 HTTPS 리다이렉트 비활성화
 SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", default=False) if not DEBUG else False
 SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", default=DEFAULT_SECURE_TRANSPORT) if not DEBUG else False
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 3  # 3일
 CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", default=DEFAULT_SECURE_TRANSPORT) if not DEBUG else False
 SECURE_HSTS_SECONDS = int(
     os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "31536000" if DEFAULT_SECURE_TRANSPORT else "0")

@@ -11,7 +11,14 @@ class HanplanetAuthorizationView(oauth2_views.AuthorizationView):
     """Force anonymous OAuth authorize requests through Hanplanet's login page."""
 
     def dispatch(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
+        # session 의존 대신 실제 DB에서 유저 조회로 확실하게 검증
+        from django.contrib.auth import get_user_model
+        user_id = getattr(request.user, "pk", None)
+        if not user_id:
+            return self._redirect_to_hanplanet_login(request)
+        try:
+            self._authenticated_user = get_user_model().objects.get(pk=user_id)
+        except Exception:
             return self._redirect_to_hanplanet_login(request)
         return super().dispatch(request, *args, **kwargs)
 
@@ -21,6 +28,8 @@ class HanplanetAuthorizationView(oauth2_views.AuthorizationView):
         # which raises VariableDoesNotExist if missing — unlike standalone variables.
         ctx.setdefault("meta_canonical_url", self.request.build_absolute_uri(self.request.path))
         ctx.setdefault("meta_og_image", "https://www.hanplanet.com/static/icons/hanplanet-og-1200.png")
+        # 인증 중인 계정 표시
+        ctx["oauth_username"] = getattr(getattr(self, "_authenticated_user", None), "username", "")
         return ctx
 
     def handle_no_permission(self):

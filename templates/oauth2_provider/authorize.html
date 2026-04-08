@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block body_class %}oauth-authorize-page{% endblock %}
+{% block extra_head %}
+<style>
+    body.oauth-authorize-page {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: 1fr;
+        place-items: center;
+        background:
+            radial-gradient(circle at top left, color-mix(in srgb, var(--site-hover-soft) 86%, transparent) 0%, transparent 36%),
+            radial-gradient(circle at top right, color-mix(in srgb, var(--site-hover-strong) 54%, transparent) 0%, transparent 34%),
+            linear-gradient(180deg, color-mix(in srgb, var(--site-bg) 94%, var(--site-hover-soft)) 0%, var(--site-bg) 38%, color-mix(in srgb, var(--site-bg) 94%, var(--site-hover-soft)) 100%);
+        color: var(--site-text);
+    }
+
+    body.oauth-authorize-page .ui-nav {
+        display: none;
+    }
+
+    body.oauth-authorize-page .main {
+        display: grid;
+        place-items: center;
+        width: 100%;
+        min-height: 100vh;
+        padding: clamp(32px, 6vw, 72px) 18px;
+        box-sizing: border-box;
+    }
+
+    .oauth-authorize-shell {
+        width: min(100%, 660px);
+        margin: 0 auto;
+    }
+
+    .oauth-authorize-card {
+        width: 100%;
+        border-radius: 28px;
+        border: none;
+        background: color-mix(in srgb, var(--site-surface-muted) 92%, transparent);
+        box-shadow: none;
+        padding: clamp(24px, 4vw, 36px);
+        color: var(--site-text);
+    }
+
+    .oauth-authorize-main {
+        width: 100%;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+    }
+
+    .oauth-authorize-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--site-hover-soft);
+        color: var(--site-text-muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .oauth-authorize-title {
+        margin: 16px 0 10px;
+        color: var(--site-text-stronger);
+        font-size: clamp(28px, 4vw, 40px);
+        line-height: 1.12;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+    }
+
+    .oauth-authorize-lead {
+        margin: 0;
+        color: var(--site-text-muted);
+        font-size: 15px;
+        line-height: 1.6;
+    }
+
+    .oauth-authorize-app {
+        margin-top: 18px;
+        padding: 16px 18px;
+        border-radius: 20px;
+        border: none;
+        background: color-mix(in srgb, var(--site-surface-toolbar) 90%, transparent);
+    }
+
+    .oauth-authorize-app-label {
+        display: block;
+        color: var(--site-text-faint);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+    }
+
+    .oauth-authorize-app-name {
+        color: var(--site-text-strong);
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1.35;
+        word-break: break-word;
+    }
+
+    .oauth-authorize-section {
+        margin-top: 22px;
+    }
+
+    .oauth-authorize-section-title {
+        margin: 0 0 10px;
+        color: var(--site-text-strong);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.4;
+    }
+
+    .oauth-authorize-scopes {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 10px;
+    }
+
+    .oauth-authorize-scopes li {
+        position: relative;
+        padding-left: 20px;
+        color: var(--site-text-muted);
+        font-size: 14px;
+        line-height: 1.55;
+    }
+
+    .oauth-authorize-scopes li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0.65em;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--site-text-muted);
+        transform: translateY(-50%);
+        opacity: 0.6;
+    }
+
+    .oauth-authorize-errors {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        border: none;
+        background: color-mix(in srgb, #ff6b6b 11%, var(--site-surface-toolbar));
+        color: var(--site-text-stronger);
+    }
+
+    .oauth-authorize-errors h2,
+    .oauth-authorize-errors h3,
+    .oauth-authorize-errors p {
+        margin: 0;
+    }
+
+    .oauth-authorize-errors p + p {
+        margin-top: 8px;
+    }
+
+    .oauth-authorize-form-errors {
+        margin-top: 14px;
+        color: #ff6969;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .oauth-authorize-actions {
+        margin-top: 24px;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    .oauth-authorize-actions .ui-btn {
+        min-width: 120px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px 18px;
+        border-radius: 999px;
+        border: 1px solid var(--site-border);
+        background: color-mix(in srgb, var(--site-surface-toolbar) 92%, transparent);
+        color: var(--site-text-strong);
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1;
+        text-decoration: none;
+        cursor: pointer;
+        transition:
+            transform 140ms ease,
+            box-shadow 140ms ease,
+            border-color 140ms ease,
+            background-color 140ms ease,
+            color 140ms ease;
+    }
+
+    .oauth-authorize-actions .ui-btn:hover,
+    .oauth-authorize-actions .ui-btn:focus-visible {
+        transform: translateY(-1px);
+        border-color: color-mix(in srgb, var(--site-text-muted) 34%, var(--site-border));
+        background: color-mix(in srgb, var(--site-surface-toolbar) 96%, var(--site-hover-soft));
+        color: var(--site-text-stronger);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+        outline: none;
+    }
+
+    .oauth-authorize-actions .ui-btn.ui-btn-primary {
+        border-color: color-mix(in srgb, var(--site-hover-strong) 70%, var(--site-border));
+        background: var(--site-hover-strong);
+        color: #ffffff;
+        box-shadow: 0 12px 26px color-mix(in srgb, var(--site-hover-strong) 36%, transparent);
+    }
+
+    .oauth-authorize-actions .ui-btn.ui-btn-primary:hover,
+    .oauth-authorize-actions .ui-btn.ui-btn-primary:focus-visible {
+        border-color: color-mix(in srgb, var(--site-hover-strong) 82%, var(--site-border));
+        background: color-mix(in srgb, var(--site-hover-strong) 92%, #ffffff);
+        color: #ffffff;
+    }
+
+    body.theme-dark.oauth-authorize-page .oauth-authorize-card {
+        background: color-mix(in srgb, var(--site-surface-muted-strong) 94%, transparent);
+    }
+
+    body.theme-dark .oauth-authorize-app {
+        background: color-mix(in srgb, var(--site-surface-toolbar) 92%, transparent);
+    }
+
+    body.theme-dark .oauth-authorize-errors {
+        border-color: rgba(255, 136, 136, 0.28);
+        background: rgba(255, 110, 110, 0.12);
+    }
+
+    @media (max-width: 640px) {
+        .oauth-authorize-card {
+            border-radius: 22px;
+            padding: 22px 18px;
+        }
+
+        .oauth-authorize-actions {
+            justify-content: stretch;
+        }
+
+        .oauth-authorize-actions .ui-btn {
+            width: 100%;
+            min-width: 0;
+        }
+    }
+</style>
+{% endblock %}
+{% block content %}
+<main class="oauth-authorize-main">
+    <section class="oauth-authorize-shell">
+        <div class="oauth-authorize-card">
+            <span class="oauth-authorize-kicker">{% trans "OAuth Authorization" %}</span>
+            {% if not error %}
+                <h1 class="oauth-authorize-title">{% trans "Authorize" %} {{ application.name }}?</h1>
+                <p class="oauth-authorize-lead">
+                    {% trans "This application is requesting permission to access your Hanplanet account." %}
+                </p>
+
+                <div class="oauth-authorize-app" aria-label="{% trans "Application details" %}">
+                    <span class="oauth-authorize-app-label">{% trans "Application" %}</span>
+                    <div class="oauth-authorize-app-name">{{ application.name }}</div>
+                </div>
+
+                {% if oauth_username %}
+                <div class="oauth-authorize-app" aria-label="{% trans "Logged-in account" %}">
+                    <span class="oauth-authorize-app-label">{% trans "Account" %}</span>
+                    <div class="oauth-authorize-app-name">{{ oauth_username }}</div>
+                </div>
+                {% endif %}
+
+                <div class="oauth-authorize-section">
+                    <h2 class="oauth-authorize-section-title">{% trans "Requested permissions" %}</h2>
+                    <ul class="oauth-authorize-scopes">
+                        {% for scope in scopes %}
+                            <li>
+                                {% if scope == "openid" %}
+                                    OpenID Connect
+                                {% elif scope == "profile" %}
+                                    {% if ui_lang == "en" %}Profile information{% else %}프로필 정보{% endif %}
+                                {% elif scope == "email" %}
+                                    {% if ui_lang == "en" %}Email address{% else %}이메일 주소{% endif %}
+                                {% else %}
+                                    {{ scope }}
+                                {% endif %}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+                {% if form.errors or form.non_field_errors %}
+                    <div class="oauth-authorize-form-errors">
+                        {{ form.errors }}
+                        {{ form.non_field_errors }}
+                    </div>
+                {% endif %}
+
+                <form id="authorizationForm" method="post">
+                    {% csrf_token %}
+                    {% for field in form %}
+                        {% if field.is_hidden %}
+                            {{ field }}
+                        {% endif %}
+                    {% endfor %}
+                    <div class="oauth-authorize-actions">
+                        <button type="submit" class="ui-btn">{% trans "Cancel" %}</button>
+                        <button type="submit" class="ui-btn ui-btn-primary" name="allow">{% trans "Authorize" %}</button>
+                    </div>
+                </form>
+            {% else %}
+                <h1 class="oauth-authorize-title">{% trans "Authorization error" %}</h1>
+                <div class="oauth-authorize-errors">
+                    <p><strong>{{ error.error }}</strong></p>
+                    <p>{{ error.description }}</p>
+                </div>
+                <div class="oauth-authorize-actions">
+                    <a class="ui-btn ui-btn-primary" href="{% url 'main:none' %}">{% trans "Back to home" %}</a>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+</main>
+{% endblock %}

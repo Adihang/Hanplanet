@@ -15,6 +15,14 @@ class HanplanetAuthorizationView(oauth2_views.AuthorizationView):
             return self._redirect_to_hanplanet_login(request)
         return super().dispatch(request, *args, **kwargs)
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        # base.html uses these as filter arguments (|default:meta_canonical_url),
+        # which raises VariableDoesNotExist if missing — unlike standalone variables.
+        ctx.setdefault("meta_canonical_url", self.request.build_absolute_uri(self.request.path))
+        ctx.setdefault("meta_og_image", "https://www.hanplanet.com/static/icons/hanplanet-og-1200.png")
+        return ctx
+
     def handle_no_permission(self):
         prompt = self.request.GET.get("prompt")
         redirect_uri = self.request.GET.get("redirect_uri")

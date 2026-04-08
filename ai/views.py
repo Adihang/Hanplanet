@@ -21,18 +21,44 @@ _PROXY_API_KEY: str | None = getattr(settings, "OLLAMA_PROXY_API_KEY", None)
 
 
 def _check_auth(request: HttpRequest) -> HttpResponse | None:
-    """Return 401 if OLLAMA_PROXY_API_KEY is set and the request doesn't match."""
+    """Return 401 if the request is not authorised.
+
+    Accepts two forms of credentials:
+    - Static API key: Bearer token matches OLLAMA_PROXY_API_KEY
+    - OAuth2 access token: validated via the local /o/userinfo/ endpoint
+    """
     if not _PROXY_API_KEY:
         return None
+
     auth = request.headers.get("Authorization", "")
     token = auth.removeprefix("Bearer ").strip()
-    if token != _PROXY_API_KEY:
+
+    if not token:
         return HttpResponse(
             json.dumps({"error": {"message": "Unauthorized", "type": "auth_error"}}),
             status=401,
             content_type="application/json",
         )
-    return None
+
+    # 1) Static API key match
+    if token == _PROXY_API_KEY:
+        return None
+
+    # 2) OAuth2 access token — validate in-process via django-oauth-toolkit
+    try:
+        from oauth2_provider.models import AccessToken
+        from django.utils import timezone
+        access_token = AccessToken.objects.get(token=token)
+        if access_token.expires > timezone.now():
+            return None
+    except Exception:
+        pass
+
+    return HttpResponse(
+        json.dumps({"error": {"message": "Unauthorized", "type": "auth_error"}}),
+        status=401,
+        content_type="application/json",
+    )
 
 
 def _forward_headers(request: HttpRequest) -> dict[str, str]:

@@ -4236,6 +4236,10 @@ def handrive_login(request, ui_lang=None):
     hide_global_nav = is_handrive_share_auth_entry(request, context["handrive_base_url"])
 
     if request.user.is_authenticated:
+        # 세션 토큰이 없으면 새로 발급 (기존 세션 or 토큰 도입 이전 세션 대응)
+        if not request.session.get("_hp_session_token"):
+            token = _issue_session_token(request.user)
+            request.session["_hp_session_token"] = token
         return _build_post_hanplanet_login_response(
             _resolve_handrive_post_login_url(request, resolved_lang, next_url, request.user),
             request.user,

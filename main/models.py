@@ -315,6 +315,13 @@ class UserProfile(models.Model):
         null=True,
         blank=True,
     )
+    # 로그인마다 새 토큰 발급, 로그아웃 시 초기화 → 기존 세션 일괄 무효화
+    session_token = models.CharField(
+        "세션 토큰",
+        max_length=64,
+        blank=True,
+        default="",
+    )
     updated_at = models.DateTimeField("수정일", auto_now=True)
 
     class Meta:

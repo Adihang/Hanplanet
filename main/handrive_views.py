@@ -3723,8 +3723,31 @@ def _register_handrive_login_failure(user):
     guard.save(update_fields=["failed_attempts", "captcha_required", "updated_at"])
 
 
+def _issue_session_token(user) -> str:
+    """로그인 시 새 session_token 을 발급해 UserProfile 에 저장하고 반환한다."""
+    import secrets
+    token = secrets.token_hex(32)
+    try:
+        profile = user.profile
+        profile.session_token = token
+        profile.save(update_fields=["session_token"])
+    except Exception:
+        pass
+    return token
+
+
+def _revoke_session_token(user):
+    """로그아웃 시 session_token 을 초기화해 기존 세션을 모두 무효화한다."""
+    try:
+        profile = user.profile
+        profile.session_token = ""
+        profile.save(update_fields=["session_token"])
+    except Exception:
+        pass
+
+
 def _purge_stale_user_sessions(user):
-    """로그인 직전에 만료된 세션만 정리한다. (성능 문제로 유저별 전체 스캔 불가)"""
+    """로그인 직전에 만료된 세션만 정리한다."""
     try:
         from django.contrib.sessions.models import Session
         from django.utils import timezone
@@ -4282,7 +4305,9 @@ def handrive_login(request, ui_lang=None):
                 _reset_handrive_login_guard(authed_user)
                 _clear_handrive_login_captcha(request)
                 _purge_stale_user_sessions(authed_user)
+                token = _issue_session_token(authed_user)
                 auth_login(request, authed_user)
+                request.session["_hp_session_token"] = token
                 if not requires_direct_attach:
                     return _build_post_hanplanet_login_response(target_url, authed_user)
                 response = _build_forgejo_redirect_base(target_url)
@@ -4450,6 +4475,8 @@ def handrive_logout(request, ui_lang=None):
     forgejo_session_key = str(request.COOKIES.get("i_like_gitea", "") or "").strip()
     # Forgejo 세션/토큰 서버사이드 선제 삭제 (로그아웃 전에 user 정보 참조)
     _forgejo_server_logout(request.user, forgejo_session_key=forgejo_session_key)
+    # session_token 무효화 → 기존 세션이 남아있어도 OAuth dispatch에서 차단
+    _revoke_session_token(request.user)
     auth_logout(request)
     return _build_forgejo_logged_out_redirect(next_url)
 

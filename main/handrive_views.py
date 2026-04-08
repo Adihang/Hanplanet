@@ -3723,6 +3723,36 @@ def _register_handrive_login_failure(user):
     guard.save(update_fields=["failed_attempts", "captcha_required", "updated_at"])
 
 
+def _purge_stale_user_sessions(user):
+    """로그인 직전에 해당 유저의 기존 세션을 모두 삭제한다.
+
+    브라우저에 오래된 sessionid 쿠키가 남아있어도 서버에서 무효화되므로,
+    로그아웃 후 stale 세션으로 재인증되는 버그를 방지한다.
+    다른 기기의 세션도 지워지지만, 새 로그인이 시작되는 시점이므로
+    "현재 기기에서 로그인" 흐름과 일치한다.
+    """
+    if not user or not getattr(user, "pk", None):
+        return
+    try:
+        from django.contrib.sessions.backends.db import SessionStore
+        from django.contrib.sessions.models import Session
+        from django.utils import timezone
+
+        user_id_str = str(user.pk)
+        to_delete = []
+        for session in Session.objects.filter(expire_date__gt=timezone.now()).only("session_key"):
+            try:
+                store = SessionStore(session_key=session.session_key)
+                if store.get("_auth_user_id") == user_id_str:
+                    to_delete.append(session.session_key)
+            except Exception:
+                continue
+        if to_delete:
+            Session.objects.filter(session_key__in=to_delete).delete()
+    except Exception:
+        pass
+
+
 def _reset_handrive_login_guard(user):
     if user is None:
         return
@@ -4271,6 +4301,7 @@ def handrive_login(request, ui_lang=None):
                         )
                 _reset_handrive_login_guard(authed_user)
                 _clear_handrive_login_captcha(request)
+                _purge_stale_user_sessions(authed_user)
                 auth_login(request, authed_user)
                 if not requires_direct_attach:
                     return _build_post_hanplanet_login_response(target_url, authed_user)
@@ -4307,6 +4338,7 @@ def handrive_login(request, ui_lang=None):
                     )
             _reset_handrive_login_guard(authed_user)
             _clear_handrive_login_captcha(request)
+            _purge_stale_user_sessions(authed_user)
             auth_login(request, authed_user)
             if not requires_direct_attach:
                 return _build_post_hanplanet_login_response(target_url, authed_user)
@@ -4410,6 +4442,7 @@ def handrive_signup(request, ui_lang=None):
                         auth_breadcrumb_url,
                         hide_global_nav,
                     )
+            _purge_stale_user_sessions(authed_user)
             auth_login(request, authed_user)
             if not requires_direct_attach:
                 return _build_post_hanplanet_login_response(target_url, authed_user)
@@ -4437,42 +4470,9 @@ def handrive_logout(request, ui_lang=None):
     forgejo_session_key = str(request.COOKIES.get("i_like_gitea", "") or "").strip()
     # Forgejo 세션/토큰 서버사이드 선제 삭제 (로그아웃 전에 user 정보 참조)
     _forgejo_server_logout(request.user, forgejo_session_key=forgejo_session_key)
-    # 현재 세션만 아니라 이 유저의 모든 세션을 DB에서 삭제
-    # (브라우저가 오래된 sessionid 쿠키를 갖고 있어도 서버에서 무효화)
-    _flush_all_user_sessions(request.user)
     auth_logout(request)
     return _build_forgejo_logged_out_redirect(next_url)
 
-
-
-def _flush_all_user_sessions(user):
-    """해당 유저의 모든 Django 세션을 DB에서 삭제한다.
-
-    브라우저가 오래된 sessionid 쿠키를 갖고 있어도 서버에서 무효화되므로
-    로그아웃 후 stale 세션으로 재인증되는 버그를 방지한다.
-    """
-    if not user or not getattr(user, "pk", None):
-        return
-    try:
-        from django.contrib.sessions.backends.db import SessionStore
-        from django.contrib.sessions.models import Session
-        from django.utils import timezone
-        import json, base64, zlib
-
-        # 만료되지 않은 세션 중 _auth_user_id 가 일치하는 것을 모두 삭제
-        user_id_str = str(user.pk)
-        to_delete = []
-        for session in Session.objects.filter(expire_date__gt=timezone.now()):
-            try:
-                store = SessionStore(session_key=session.session_key)
-                if store.get("_auth_user_id") == user_id_str:
-                    to_delete.append(session.session_key)
-            except Exception:
-                continue
-        if to_delete:
-            Session.objects.filter(session_key__in=to_delete).delete()
-    except Exception:
-        pass  # 세션 삭제 실패해도 기본 logout 은 정상 진행
 
 
 def _forgejo_server_logout(user, forgejo_session_key: str = ""):

@@ -3724,31 +3724,11 @@ def _register_handrive_login_failure(user):
 
 
 def _purge_stale_user_sessions(user):
-    """로그인 직전에 해당 유저의 기존 세션을 모두 삭제한다.
-
-    브라우저에 오래된 sessionid 쿠키가 남아있어도 서버에서 무효화되므로,
-    로그아웃 후 stale 세션으로 재인증되는 버그를 방지한다.
-    다른 기기의 세션도 지워지지만, 새 로그인이 시작되는 시점이므로
-    "현재 기기에서 로그인" 흐름과 일치한다.
-    """
-    if not user or not getattr(user, "pk", None):
-        return
+    """로그인 직전에 만료된 세션만 정리한다. (성능 문제로 유저별 전체 스캔 불가)"""
     try:
-        from django.contrib.sessions.backends.db import SessionStore
         from django.contrib.sessions.models import Session
         from django.utils import timezone
-
-        user_id_str = str(user.pk)
-        to_delete = []
-        for session in Session.objects.filter(expire_date__gt=timezone.now()).only("session_key"):
-            try:
-                store = SessionStore(session_key=session.session_key)
-                if store.get("_auth_user_id") == user_id_str:
-                    to_delete.append(session.session_key)
-            except Exception:
-                continue
-        if to_delete:
-            Session.objects.filter(session_key__in=to_delete).delete()
+        Session.objects.filter(expire_date__lte=timezone.now()).delete()
     except Exception:
         pass
 

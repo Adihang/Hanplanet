@@ -197,11 +197,19 @@
         <div class="oauth-authorize-card">
             {% if connected %}
                 <span class="oauth-authorize-kicker">앱 연결</span>
-                <h1 class="oauth-authorize-title">연결 완료!</h1>
-                <p class="oauth-authorize-lead">
-                    {{ user.username }}님의 계정이 연결됐습니다.<br>
-                    이 창을 닫아도 됩니다.
-                </p>
+                {% if cancelled %}
+                    <h1 class="oauth-authorize-title">연결 취소</h1>
+                    <p class="oauth-authorize-lead">
+                        연결이 취소됐습니다.<br>
+                        이 창을 닫아도 됩니다.
+                    </p>
+                {% else %}
+                    <h1 class="oauth-authorize-title">연결 완료!</h1>
+                    <p class="oauth-authorize-lead">
+                        {{ user.username }}님의 계정이 연결됐습니다.<br>
+                        이 창을 닫아도 됩니다.
+                    </p>
+                {% endif %}
             {% elif state %}
                 <span class="oauth-authorize-kicker">앱 연결</span>
                 <h1 class="oauth-authorize-title">{{ client_name }} 연결?</h1>
@@ -228,13 +236,15 @@
                     </div>
                 </form>
                 <div id="oauth-result" style="display:none; margin-top:18px;">
-                    <h2 class="oauth-authorize-title" style="font-size:clamp(22px,3vw,28px)">연결 완료!</h2>
-                    <p class="oauth-authorize-lead">계정이 연결됐습니다. 이 창을 닫아도 됩니다.</p>
+                    <h2 id="result-title" class="oauth-authorize-title" style="font-size:clamp(22px,3vw,28px)"></h2>
+                    <p id="result-body" class="oauth-authorize-lead"></p>
                 </div>
                 <script>
                 (function () {
                     const form = document.getElementById('oauth-form');
                     const result = document.getElementById('oauth-result');
+                    const resultTitle = document.getElementById('result-title');
+                    const resultBody = document.getElementById('result-body');
                     const btnAllow = document.getElementById('btn-allow');
                     const btnCancel = document.getElementById('btn-cancel');
                     const csrf = form.querySelector('[name=csrfmiddlewaretoken]').value;
@@ -253,6 +263,13 @@
                                 credentials: 'same-origin',
                             });
                         } catch (e) {}
+                        if (action === 'allow') {
+                            resultTitle.textContent = '연결 완료!';
+                            resultBody.textContent = '계정이 연결됐습니다. 이 창을 닫아도 됩니다.';
+                        } else {
+                            resultTitle.textContent = '연결 취소';
+                            resultBody.textContent = '연결이 취소됐습니다. 이 창을 닫아도 됩니다.';
+                        }
                         form.style.display = 'none';
                         result.style.display = '';
                     }

@@ -7204,17 +7204,19 @@ def handrive_login_bridge(request):
 
     if request.method == "POST":
         action = request.POST.get("action", "")
-        if action != "allow":
-            return redirect("/")
         st = request.POST.get("state", "").strip()
         if st and len(st) <= 128:
             from django.core.cache import caches
-            from .sync_auth import issue_token_pair
-            tokens = issue_token_pair(request.user)
-            caches["rate_limit"].set(f"handrive_oauth_{st}", tokens, timeout=300)
+            if action == "allow":
+                from .sync_auth import issue_token_pair
+                tokens = issue_token_pair(request.user)
+                caches["rate_limit"].set(f"handrive_oauth_{st}", tokens, timeout=300)
+            else:
+                caches["rate_limit"].set(f"handrive_oauth_{st}", {"cancelled": True}, timeout=300)
         return render(request, "handrive/login_bridge.html", {
             "user": request.user,
             "connected": True,
+            "cancelled": action != "allow",
         })
 
     if state:
@@ -7248,4 +7250,6 @@ def handrive_callback_poll(request):
         return JsonResponse({"status": "pending"}, status=202)
 
     caches["rate_limit"].delete(f"handrive_oauth_{state}")
+    if tokens.get("cancelled"):
+        return JsonResponse({"status": "cancelled"})
     return JsonResponse(tokens)

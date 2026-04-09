@@ -11,20 +11,9 @@ class HanplanetAuthorizationView(oauth2_views.AuthorizationView):
     """Force anonymous OAuth authorize requests through Hanplanet's login page."""
 
     def dispatch(self, request, *args, **kwargs):
-        from django.contrib.auth import get_user_model
-        user_id = getattr(request.user, "pk", None)
-        if not user_id:
+        if not request.user.is_authenticated:
             return self._redirect_to_hanplanet_login(request)
-        try:
-            user = get_user_model().objects.get(pk=user_id)
-            # 세션에 심긴 토큰과 DB 토큰이 일치해야 유효한 로그인
-            session_token = request.session.get("_hp_session_token", "")
-            db_token = getattr(getattr(user, "profile", None), "session_token", "")
-            if not session_token or not db_token or session_token != db_token:
-                return self._redirect_to_hanplanet_login(request)
-            self._authenticated_user = user
-        except Exception:
-            return self._redirect_to_hanplanet_login(request)
+        self._authenticated_user = request.user
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):

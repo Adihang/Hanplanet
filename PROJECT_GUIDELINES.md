@@ -127,6 +127,12 @@ This is a Django 5.0.1 portfolio + content management + multiplayer game platfor
 
 **AI chatbot:** Ollama at `http://localhost:11434` (default model: `gemma4:latest`, injected via `OLLAMA_MODEL`), accessed via `/api/chat/`
 
+**OpenHarness AI 프록시:** Django `ai` 앱이 Ollama를 외부에 OpenAI-compatible API로 노출한다.
+- 엔드포인트: `https://hanplanet.com/ai/v1`
+- 인증: `Authorization: Bearer <OLLAMA_PROXY_API_KEY>` (secrets.json 참고)
+- 지원 경로: `POST /ai/v1/chat/completions`, `GET /ai/v1/models`
+- OpenHarness 설정: `oh setup` → OpenAI-compatible → Base URL `https://hanplanet.com/ai/v1` → API Key = `OLLAMA_PROXY_API_KEY` 값
+
 **Infrastructure:** Gunicorn → Nginx → Cloudflare Tunnel → hanplanet.com
 
 **Git 서버:** Gitea (Homebrew, `/opt/homebrew/bin/gitea`, 포트 3000) + Celery Worker (Redis 브로커) — HanDrive 폴더를 Git 저장소로 변환하는 비동기 작업 처리.
@@ -136,6 +142,7 @@ This is a Django 5.0.1 portfolio + content management + multiplayer game platfor
 Secrets go in `config/secrets.json` (git-ignored). Key env vars:
 - `DJANGO_DEBUG`, `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`
 - `OLLAMA_BASE_URL`, `OLLAMA_MODEL` (launchd sets `gemma4:latest` by default)
+- `OLLAMA_PROXY_API_KEY` — OpenHarness 프록시 인증 키 (secrets.json에 저장, 비어있으면 인증 없음)
 - `GAME_JWT_SECRET`, `GAME_WS_PUBLIC_URL`
 - `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` (Cloudflare CAPTCHA)
 - `FORGEJO_BASE_URL` — Gitea 서버 주소 (기본: `http://localhost:3000`)

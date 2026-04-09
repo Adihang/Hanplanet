@@ -23,6 +23,7 @@ from importlib import import_module
 from .models import HandriveAccessRule, NavLink, SyncFile, UserProfile
 from portfolio.models import Career, PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject
 from stratagem.models import Stratagem_Hero_Score
+from oauth2_provider.models import get_application_model
 from .handrive_views import (
     DOCS_EDIT_PERMISSION_CODE,
     HANDRIVE_EDITOR_GROUP_NAME,
@@ -52,7 +53,9 @@ from .views import (
     render_markdown_with_raw_html,
     resolve_ui_lang,
     should_return_github_link,
+    UI_LANG_SESSION_KEY,
 )
+from oauth2_provider.models import get_application_model
 
 
 class MinioPresignedEndpointTests(TestCase):
@@ -210,6 +213,89 @@ class HandriveSyncSettingsTests(TestCase):
             self.assertEqual(response.status_code, 200)
             user.profile.refresh_from_db()
             self.assertEqual(user.profile.sync_excluded_paths, ["users/scoped/docs.txt"])
+
+
+class OAuthAuthorizeTemplateTests(TestCase):
+    def test_authorize_redirects_anonymous_users_to_login(self):
+        response = self.client.get(
+            "/o/authorize/?response_type=code&client_id=gitea-hanplanet-sso&redirect_uri="
+            "https%3A%2F%2Fgit.hanplanet.com%2Fuser%2Foauth2%2Fhanplanet%2Fcallback&scope=openid+profile+email",
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("/ko/login?next="))
+
+    def test_authorize_redirects_anonymous_users_to_session_language_login(self):
+        session = self.client.session
+        session[UI_LANG_SESSION_KEY] = "en"
+        session.save()
+
+        response = self.client.get(
+            "/o/authorize/?response_type=code&client_id=gitea-hanplanet-sso&redirect_uri="
+            "https%3A%2F%2Fgit.hanplanet.com%2Fuser%2Foauth2%2Fhanplanet%2Fcallback&scope=openid+profile+email",
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("/en/login?next="))
+
+    def test_oauth_authorize_compat_path_redirects_anonymous_users_to_login(self):
+        response = self.client.get(
+            "/oauth/authorize/?response_type=code&client_id=gitea-hanplanet-sso&redirect_uri="
+            "https%3A%2F%2Fgit.hanplanet.com%2Fuser%2Foauth2%2Fhanplanet%2Fcallback&scope=openid+profile+email",
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("/ko/login?next="))
+
+    def test_authorize_error_page_renders_without_500(self):
+        user = get_user_model().objects.create_user(username="oauthuser", password="pw123456")
+        app = get_application_model().objects.create(
+            name="Test OAuth App",
+            user=user,
+            client_type="confidential",
+            authorization_grant_type="authorization-code",
+            redirect_uris="https://git.hanplanet.com/user/oauth2/hanplanet/callback",
+        )
+
+        client = Client(HTTP_HOST="hanplanet.com")
+        client.force_login(user)
+
+        response = client.get(
+            "/o/authorize/?response_type=code&client_id="
+            f"{app.client_id}&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=read"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "Mismatching redirect URI.", status_code=400)
+
+    def test_authorize_scopes_translate_in_english_session(self):
+        user = get_user_model().objects.create_user(username="oauthuser_en", password="pw123456")
+        app = get_application_model().objects.create(
+            name="Test OAuth App EN",
+            user=user,
+            client_type="confidential",
+            authorization_grant_type="authorization-code",
+            redirect_uris="https://git.hanplanet.com/user/oauth2/hanplanet/callback",
+        )
+
+        client = Client(HTTP_HOST="hanplanet.com")
+        session = client.session
+        session[UI_LANG_SESSION_KEY] = "en"
+        session.save()
+        client.force_login(user)
+
+        response = client.get(
+            "/o/authorize/?response_type=code&client_id="
+            f"{app.client_id}&redirect_uri=https%3A%2F%2Fgit.hanplanet.com%2Fuser%2Foauth2%2Fhanplanet%2Fcallback&scope=openid+profile+email",
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Profile information")
+        self.assertContains(response, "Email address")
 
 
 class HandriveListApiMetaTests(TestCase):

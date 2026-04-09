@@ -24,10 +24,12 @@ from django.conf.urls.static import static
 from django.http import HttpResponse
 from django.urls import re_path
 from django.views.static import serve
+from main.oauth_urls import oauth_compat_urlpatterns
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
+    path("o/", include("main.oauth_urls", namespace="oauth2_provider")),
+    path("oauth/", include((oauth_compat_urlpatterns, "oauth2_provider_compat"))),
     path('ai/', include('ai.urls')),
     path('', include('main.urls')),
 ]

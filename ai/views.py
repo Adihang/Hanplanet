@@ -54,6 +54,14 @@ def _check_auth(request: HttpRequest) -> HttpResponse | None:
     except Exception:
         pass
 
+    # 3) HanDrive sync JWT
+    try:
+        from main.sync_auth import verify_access_token
+        if verify_access_token(token) is not None:
+            return None
+    except Exception:
+        pass
+
     return HttpResponse(
         json.dumps({"error": {"message": "Unauthorized", "type": "auth_error"}}),
         status=401,

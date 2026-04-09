@@ -3726,13 +3726,17 @@ def _register_handrive_login_failure(user):
 def _issue_session_token(user) -> str:
     """로그인 시 새 session_token 을 발급해 UserProfile 에 저장하고 반환한다."""
     import secrets
+    import logging
+    log = logging.getLogger(__name__)
     token = secrets.token_hex(32)
     try:
-        profile = user.profile
+        from main.models import UserProfile
+        profile, _ = UserProfile.objects.get_or_create(user=user)
         profile.session_token = token
-        profile.save(update_fields=["session_token"])
-    except Exception:
-        pass
+        profile.save(update_fields=["session_token", "updated_at"])
+        log.warning("[_issue_session_token] saved token=%s for user=%s", token[:8], user.username)
+    except Exception as e:
+        log.warning("[_issue_session_token] FAILED user=%s error=%s", user.username, e)
     return token
 
 
@@ -4063,13 +4067,11 @@ def _prepare_forgejo_login_session(user) -> tuple[str | None, str | None]:
 
 
 def _is_forgejo_oauth_handoff_url(target_url: str) -> bool:
-    """Gitea가 시작한 OIDC authorize handoff 인지 확인한다."""
+    """OAuth authorize 페이지로의 리다이렉트인지 확인한다.
+    Forgejo SSO든 일반 OAuth 클라이언트든, /o/authorize/ 로 가는 경우
+    Forgejo 세션 직접 준비를 건너뛴다."""
     parsed = urlparse(str(target_url or ""))
-    if parsed.path != "/o/authorize/":
-        return False
-
-    query = parse_qs(parsed.query)
-    return str(query.get("client_id", [""])[0]) == "gitea-hanplanet-sso"
+    return parsed.path == "/o/authorize/"
 
 
 def _apply_forgejo_session_cookie(response, session_key: str):
@@ -4236,14 +4238,19 @@ def handrive_login(request, ui_lang=None):
     hide_global_nav = is_handrive_share_auth_entry(request, context["handrive_base_url"])
 
     if request.user.is_authenticated:
-        # 세션 토큰이 없으면 새로 발급 (기존 세션 or 토큰 도입 이전 세션 대응)
-        if not request.session.get("_hp_session_token"):
-            token = _issue_session_token(request.user)
-            request.session["_hp_session_token"] = token
-        return _build_post_hanplanet_login_response(
-            _resolve_handrive_post_login_url(request, resolved_lang, next_url, request.user),
-            request.user,
-        )
+        db_token = getattr(getattr(request.user, "profile", None), "session_token", "")
+        if db_token:
+            # 정상 로그인 상태 → next로 이동
+            if not request.session.get("_hp_session_token"):
+                request.session["_hp_session_token"] = db_token
+            return _build_post_hanplanet_login_response(
+                _resolve_handrive_post_login_url(request, resolved_lang, next_url, request.user),
+                request.user,
+            )
+        # db_token 없음 = 앱 레벨 로그아웃 상태 (다른 도메인/기기에서 로그아웃)
+        # → Django 세션 클리어, 리다이렉트 없이 즉시 로그인 폼 표시 (루프 방지)
+        from django.contrib.auth import logout as auth_logout
+        auth_logout(request)
 
     form = AuthenticationForm(request, data=request.POST or None)
     login_error_message = ""
@@ -4348,7 +4355,9 @@ def handrive_login(request, ui_lang=None):
             _reset_handrive_login_guard(authed_user)
             _clear_handrive_login_captcha(request)
             _purge_stale_user_sessions(authed_user)
+            token = _issue_session_token(authed_user)
             auth_login(request, authed_user)
+            request.session["_hp_session_token"] = token
             if not requires_direct_attach:
                 return _build_post_hanplanet_login_response(target_url, authed_user)
             response = _build_forgejo_redirect_base(target_url)
@@ -7164,28 +7173,28 @@ def handrive_map_viewer(request, map_path, ui_lang=None):
 
 # ── HanDrive 데스크톱 클라이언트 OAuth 브리지 ────────────────────────────────────
 
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "POST"])
 def handrive_login_bridge(request):
     """HanDrive 데스크톱 클라이언트 브라우저 OAuth 브리지.
 
     클라이언트가 브라우저를 통해 JWT 토큰을 받아가는 흐름:
       1. 클라이언트 → 브라우저로 이 URL 오픈
-         /login/handrive?callback=http://127.0.0.1:PORT/auth&state=RANDOM
+         /login/handrive?state=RANDOM[&client_name=앱이름]
       2. 미로그인 상태 → /login?next=현재경로 로 리다이렉트
-      3. 로그인 완료 → 이 뷰 재진입
-      4. callback URL(localhost만 허용)로 토큰 전달
+      3. 로그인 완료 → 이 뷰 재진입 → 확인 페이지 표시
+      4. 사용자가 "연결" 클릭(POST) → JWT 토큰 발급, 파일 캐시에 저장
+      5. 클라이언트가 /api/sync/auth/handrive-callback?state=... 폴링으로 토큰 수령
     """
-    from urllib.parse import urlencode, urlparse
+    from urllib.parse import urlencode
 
-    callback = request.GET.get("callback", "").strip()
     state = request.GET.get("state", "").strip()
+    client_name = request.GET.get("client_name", "데스크톱 앱").strip()
 
     # force_relogin=1: 현재 세션 로그아웃 후 로그인 페이지로
     if request.GET.get("force_relogin") == "1":
         if request.user.is_authenticated:
             from django.contrib.auth import logout as _logout
             _logout(request)
-        # force_relogin 제거한 동일 경로로 리다이렉트 (이제 미인증 → 로그인 페이지로)
         params = {k: v for k, v in request.GET.items() if k != "force_relogin"}
         target = request.path + ("?" + urlencode(params) if params else "")
         return redirect("/login?" + urlencode({"next": target}))
@@ -7193,21 +7202,50 @@ def handrive_login_bridge(request):
     if not request.user.is_authenticated:
         return redirect("/login?" + urlencode({"next": request.get_full_path()}))
 
-    if callback:
-        parsed = urlparse(callback)
-        if parsed.hostname not in ("127.0.0.1", "localhost") or parsed.scheme != "http":
-            from django.http import HttpResponseBadRequest
-            return HttpResponseBadRequest("invalid callback: localhost http only")
+    if request.method == "POST":
+        action = request.POST.get("action", "")
+        if action != "allow":
+            return redirect("/")
+        st = request.POST.get("state", "").strip()
+        if st and len(st) <= 128:
+            from django.core.cache import caches
+            from .sync_auth import issue_token_pair
+            tokens = issue_token_pair(request.user)
+            caches["rate_limit"].set(f"handrive_oauth_{st}", tokens, timeout=300)
+        return render(request, "handrive/login_bridge.html", {
+            "user": request.user,
+            "connected": True,
+        })
 
-        from .sync_auth import issue_token_pair
-        tokens = issue_token_pair(request.user)
-        params = {
-            "access_token": tokens["access_token"],
-            "refresh_token": tokens["refresh_token"],
+    if state:
+        # GET → 연결 확인 페이지
+        return render(request, "handrive/login_bridge.html", {
+            "user": request.user,
+            "client_name": client_name,
             "state": state,
-        }
-        redirect_url = callback + "?" + urlencode(params)
-        return redirect(redirect_url)
+        })
 
-    # callback 없이 직접 접근: 안내 페이지
+    # state 없이 직접 접근: 안내 페이지
     return render(request, "handrive/login_bridge.html", {"user": request.user})
+
+
+def handrive_callback_poll(request):
+    """HanDrive OAuth 토큰 폴링 엔드포인트.
+
+    클라이언트가 /login/handrive?state=STATE 로 브라우저를 열고,
+    사용자가 연결 버튼을 클릭한 뒤 발급된 JWT 토큰을 여기서 가져간다.
+    토큰은 1회 수령 즉시 캐시에서 삭제된다.
+    """
+    state = request.GET.get("state", "").strip()
+    if not state or len(state) > 128:
+        from django.http import HttpResponseBadRequest
+        return HttpResponseBadRequest("missing state")
+
+    from django.core.cache import caches
+    from django.http import JsonResponse
+    tokens = caches["rate_limit"].get(f"handrive_oauth_{state}")
+    if tokens is None:
+        return JsonResponse({"status": "pending"}, status=202)
+
+    caches["rate_limit"].delete(f"handrive_oauth_{state}")
+    return JsonResponse(tokens)

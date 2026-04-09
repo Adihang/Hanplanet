@@ -27,6 +27,7 @@ urlpatterns = [
     path("api/sync/changes",      sync_views.sync_changes,      name="sync_changes"),
     path("api/sync/storage-mode", sync_views.sync_storage_mode, name="sync_storage_mode"),
     path("api/sync/me",           sync_views.sync_me,           name="sync_me"),
+    path("api/sync/auth/handrive-callback", handrive_views.handrive_callback_poll, name="handrive_callback_poll"),
     # ────────────────────────────────────────────────────────────────────────
 
     path('handrive', handrive_views.handrive_root, name='handrive_root'),

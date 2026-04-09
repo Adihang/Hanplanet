@@ -194,6 +194,15 @@ def _stream_response(url: str, headers: dict, body: dict, username: str = "-", m
         total_chunks = 0
         with httpx.Client(timeout=300) as client:
             with client.stream("POST", url, headers=headers, json=body) as resp:
+                if resp.status_code != 200:
+                    body_bytes = resp.read()
+                    logger.error("ai.stream_error user=%s model=%s status=%s body=%s", username, model, resp.status_code, body_bytes[:200])
+                    yield (
+                        b"data: " +
+                        json.dumps({"error": {"message": f"Upstream error {resp.status_code}", "type": "proxy_error"}}).encode() +
+                        b"\n\ndata: [DONE]\n\n"
+                    )
+                    return
                 for chunk in resp.iter_bytes():
                     total_chunks += 1
                     yield chunk

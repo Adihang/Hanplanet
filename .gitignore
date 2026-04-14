@@ -63,5 +63,8 @@ forgejo/bin/
 forgejo/data/
 forgejo/log/
 
+# Local harness workspace
+/HanHarness/
+
 # Celery / application logs
 log/

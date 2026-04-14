@@ -665,3 +665,40 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server
 - [DEPLOYMENT.md](./DEPLOYMENT.md)
 - [bumpercar-spiky-server/README.md](./bumpercar-spiky-server/README.md)
 - [AGENTS.md](./AGENTS.md)
+
+## 커스텀 내역
+
+### 2026-04-10 — AI 프록시 / HanHarness 기능 추가 및 버그 수정
+
+**AI 토큰 사용량 로깅 (`ai/` 앱)**
+- `AITokenUsage` 모델 추가 — 유저별 스트리밍/논스트리밍 토큰 사용 기록
+- 스트리밍 응답에서 `stream_options: {include_usage: true}` 주입 → 마지막 청크에서 토큰 파싱 후 DB 저장
+- `tools` 파라미터가 있을 때는 `stream_options` 미주입 (Ollama 400 에러 방지)
+
+**HanHarness 사용 권한 및 5시간 토큰 쿼터 (`main/` 앱)**
+- `HandriveUserQuota` 모델에 `hanharness_enabled`, `hanharness_token_limit_5h` 컬럼 추가
+- 텀블링 윈도우 방식 5시간 세션 쿼터 적용 (0 = 무제한)
+- `/admin/` 에서 유저별 설정 가능
+
+**Admin UI**
+- `/admin/main/ai-usage/` — 날짜·유저·모델·이벤트 타입 필터 + 페이지네이션 포함 AI 사용 로그 뷰
+
+**Ollama `num_ctx` 고정**
+- `settings.OLLAMA_NUM_CTX = 16384` 추가, 모든 요청에 주입
+- `~/.local/bin/start-ollama.sh`: `OLLAMA_CONTEXT_LENGTH=16384`
+- `deploy/launchd/com.hanplanet.gunicorn.plist`: `OLLAMA_NUM_CTX=16384` 환경변수 추가
+
+**HanHarness 로딩 스피너 개선 (`HanHarness/src/openharness/ui/output.py`)**
+- 스피너에 경과 시간 및 누적 토큰 수 실시간 표시 (`Thinking...  3s  1.2k↓ 0.4k↑`)
+- 백그라운드 데몬 스레드가 매초 스피너 텍스트 갱신
+
+**HanHarness auto-compact 임계값 수정 (`HanHarness/src/openharness/services/compact/`)**
+- `get_context_window()`: Ollama 모델(gemma, llama, qwen 등)에 `OLLAMA_NUM_CTX` 반환
+- `get_autocompact_threshold()`: 고정값 대신 컨텍스트 크기 비례 계산으로 수정 (16384 ctx → 임계값 10240)
+
+**SSE keep-alive로 "incomplete chunked read" 에러 해결**
+- `ai/views.py`: `_stream_response`를 threading+queue 패턴으로 재작성
+  - 백그라운드 스레드가 Ollama 스트림 수신 → queue에 청크 삽입
+  - Django generator가 25초마다 `: ping\n\n` SSE 주석 전송 → nginx `proxy_read_timeout` 타이머 리셋
+- `nginx/nginx.autorun.conf`: `/ai/` 전용 location 블록 추가 (`proxy_buffering off`, `proxy_read_timeout 120s`)
+- `scripts/launch_service_by_disc.py`: gunicorn `--timeout 120` → `--timeout 360`

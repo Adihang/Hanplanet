@@ -154,6 +154,9 @@ def load_optional_bool_secret(name, default=False):
 # The model is injected by launchd/env so the app code does not hardcode it.
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "").strip()
+# Ollama 컨텍스트 윈도우 크기. 명시하지 않으면 Ollama가 모델 기본값(수천 토큰)을 사용해
+# 대화가 길어지면 400 에러가 발생할 수 있다. 0이면 주입하지 않음.
+OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", 16384))
 # Ollama 프록시 API 키 — 외부에서 /ai/v1/* 에 접근할 때 필요한 인증 키
 # 환경변수로 주입하거나 여기서 직접 설정
 OLLAMA_PROXY_API_KEY = load_optional_secret("OLLAMA_PROXY_API_KEY", "")  # 비어있으면 인증 없음
@@ -360,6 +363,12 @@ STATICFILES_DIRS = [os.path.join(BASE_DIR, "static")]
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'timestamped': {
+            'format': '%(asctime)s %(message)s',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
@@ -368,6 +377,7 @@ LOGGING = {
             'level': 'DEBUG',
             'class': 'logging.FileHandler',
             'filename': os.path.join(BASE_DIR, 'debug.log'),
+            'formatter': 'timestamped',
         },
     },
     'loggers': {

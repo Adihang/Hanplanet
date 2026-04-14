@@ -213,6 +213,16 @@ class HandriveUserQuota(models.Model):
         "저장 용량 (bytes)",
         help_text="사용자별 최대 저장 용량. 예: 1GB = 1073741824, 5GB = 5368709120",
     )
+    hanharness_enabled = models.BooleanField(
+        "HanHarness 사용 허용",
+        default=False,
+        help_text="활성화하면 이 사용자가 HanHarness를 통해 AI API를 사용할 수 있습니다.",
+    )
+    hanharness_token_limit_5h = models.PositiveIntegerField(
+        "5시간 토큰 제한",
+        default=0,
+        help_text="최근 5시간 내 사용 가능한 최대 토큰 수. 0이면 무제한.",
+    )
 
     class Meta:
         verbose_name = "HanDrive 사용자 저장 용량"

@@ -1,0 +1,190 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    &rsaquo; AI API 사용 로그
+</div>
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  .ai-usage-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-end;
+    margin: 12px 0 16px;
+    padding: 12px 16px;
+    background: var(--darkened-bg, #f8f8f8);
+    border-radius: 4px;
+  }
+  .ai-usage-filters label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.85em;
+    gap: 3px;
+  }
+  .ai-usage-filters select,
+  .ai-usage-filters input[type="number"] {
+    padding: 4px 6px;
+    border: 1px solid var(--border-color, #ccc);
+    border-radius: 3px;
+    font-size: 0.9em;
+    background: var(--body-bg, #fff);
+    color: var(--body-fg, #333);
+    min-width: 100px;
+  }
+  .ai-stats {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .ai-stat-card {
+    padding: 8px 16px;
+    background: var(--darkened-bg, #f8f8f8);
+    border-left: 3px solid var(--primary, #417690);
+    border-radius: 0 3px 3px 0;
+    font-size: 0.9em;
+  }
+  .ai-stat-card strong { font-size: 1.2em; }
+  #result_list td, #result_list th { white-space: nowrap; }
+  #result_list td.ai-detail { white-space: normal; max-width: 340px; font-size: 0.88em; color: var(--body-quiet-color, #666); }
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 0.78em;
+    font-weight: bold;
+    letter-spacing: 0.02em;
+  }
+  .badge-request   { background: #e3f0fb; color: #1a5276; }
+  .badge-usage     { background: #eafaf1; color: #1e8449; }
+  .badge-stream    { background: #fef9e7; color: #9a7d0a; }
+  .badge-error     { background: #fdedec; color: #922b21; }
+  .badge-models    { background: #f3e5f5; color: #6c3483; }
+  .badge-default   { background: #ecf0f1; color: #555; }
+  .no-ts { color: var(--body-quiet-color, #999); font-style: italic; font-size: 0.85em; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+
+  <div class="ai-stats">
+    <div class="ai-stat-card">
+      전체 이벤트 <strong>{{ total_count }}</strong>건
+    </div>
+    <div class="ai-stat-card">
+      최근 <strong>{{ days }}</strong>일
+    </div>
+  </div>
+
+  <form method="get" class="ai-usage-filters">
+    <label>
+      최근 일수
+      <input type="number" name="days" min="1" max="90" value="{{ days }}">
+    </label>
+    <label>
+      페이지 크기
+      <input type="number" name="per_page" min="10" max="200" value="{{ per_page }}">
+    </label>
+    <label>
+      사용자
+      <select name="user">
+        <option value="">전체</option>
+        {% for u in all_users %}
+        <option value="{{ u }}" {% if user_filter == u %}selected{% endif %}>{{ u }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      모델
+      <select name="model">
+        <option value="">전체</option>
+        {% for m in all_models %}
+        <option value="{{ m }}" {% if model_filter == m %}selected{% endif %}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      이벤트 유형
+      <select name="event">
+        <option value="">전체</option>
+        {% for ev in all_events %}
+        <option value="{{ ev }}" {% if event_filter == ev %}selected{% endif %}>{{ event_labels|default:ev }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div>
+      <button type="submit" class="button">적용</button>
+    </div>
+  </form>
+
+  <div class="results">
+    <table id="result_list">
+      <thead>
+        <tr>
+          <th>시각</th>
+          <th>유형</th>
+          <th>사용자</th>
+          <th>모델</th>
+          <th>상세</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>
+            {% if row.ts %}
+              {{ row.ts }}
+            {% else %}
+              <span class="no-ts">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.event == "ai.request" %}
+              <span class="badge badge-request">{{ row.event_label }}</span>
+            {% elif row.event == "ai.usage" %}
+              <span class="badge badge-usage">{{ row.event_label }}</span>
+            {% elif row.event == "ai.stream_done" %}
+              <span class="badge badge-stream">{{ row.event_label }}</span>
+            {% elif row.event == "ai.stream_error" %}
+              <span class="badge badge-error">{{ row.event_label }}</span>
+            {% elif row.event == "ai.models" %}
+              <span class="badge badge-models">{{ row.event_label }}</span>
+            {% else %}
+              <span class="badge badge-default">{{ row.event_label }}</span>
+            {% endif %}
+          </td>
+          <td>{{ row.user }}</td>
+          <td>{% if row.model != "-" %}{{ row.model }}{% else %}<span style="color:#aaa">—</span>{% endif %}</td>
+          <td class="ai-detail">{{ row.detail }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" style="text-align:center; padding: 20px; color: var(--body-quiet-color, #999);">
+            표시할 AI API 사용 로그가 없습니다.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if is_paginated %}
+  <p style="margin-top: 12px;">
+    페이지 {{ page_obj.number }} / {{ paginator.num_pages }}
+    {% if page_obj.has_previous %}
+      <a class="button" href="?p={{ page_obj.previous_page_number }}{% if base_query %}&{{ base_query }}{% endif %}">이전</a>
+    {% endif %}
+    {% if page_obj.has_next %}
+      <a class="button" href="?p={{ page_obj.next_page_number }}{% if base_query %}&{{ base_query }}{% endif %}">다음</a>
+    {% endif %}
+  </p>
+  {% endif %}
+
+</div>
+{% endblock %}

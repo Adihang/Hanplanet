@@ -1,5 +1,6 @@
 import gzip
 import json
+import re
 import secrets
 from collections import deque
 from datetime import datetime, timedelta
@@ -164,7 +165,7 @@ class HandriveUserQuotaForm(forms.ModelForm):
 
     class Meta:
         model = HandriveUserQuota
-        fields = ["user", "quota_gb"]
+        fields = ["user", "quota_gb", "hanharness_enabled", "hanharness_token_limit_5h"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -182,7 +183,7 @@ class HandriveUserQuotaForm(forms.ModelForm):
 @admin.register(HandriveUserQuota)
 class HandriveUserQuotaAdmin(admin.ModelAdmin):
     form = HandriveUserQuotaForm
-    list_display = ["user", "quota_display"]
+    list_display = ["user", "quota_display", "hanharness_enabled", "token_limit_display"]
     search_fields = ["user__username", "user__email"]
     ordering = ["user__username"]
 
@@ -190,6 +191,12 @@ class HandriveUserQuotaAdmin(admin.ModelAdmin):
     def quota_display(self, obj):
         gb = obj.quota_bytes / (1024 ** 3)
         return f"{gb:.2f} GB"
+
+    @admin.display(description="5시간 토큰 한도")
+    def token_limit_display(self, obj):
+        if obj.hanharness_token_limit_5h == 0:
+            return "무제한"
+        return f"{obj.hanharness_token_limit_5h:,}"
 
 
 LOG_DAYS_DEFAULT = 30
@@ -634,6 +641,160 @@ def translation_audit_view(request):
     return TemplateResponse(request, "admin/main/translation_audit.html", context)
 
 
+# ---------------------------------------------------------------------------
+# AI API Usage Log
+# ---------------------------------------------------------------------------
+
+_AI_LOG_TS_RE = re.compile(
+    r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (ai\.\w+)(?: (.*))?$'
+)
+_AI_LOG_NO_TS_RE = re.compile(
+    r'^(ai\.\w+)(?: (.*))?$'
+)
+_KV_RE = re.compile(r'(\w+)=(\S*)')
+
+_AI_EVENT_LABELS = {
+    "ai.request": "요청",
+    "ai.usage": "토큰 사용",
+    "ai.stream_done": "스트림 완료",
+    "ai.stream_error": "오류",
+    "ai.models": "모델 목록",
+}
+
+AI_USAGE_PER_PAGE_DEFAULT = 50
+AI_USAGE_PER_PAGE_MAX = 200
+AI_USAGE_SCAN_MAX = 10_000
+
+
+def _parse_ai_log_line(line):
+    """Return (timestamp_str|None, event, params_dict) or None if not an ai.* line."""
+    line = line.strip()
+    m = _AI_LOG_TS_RE.match(line)
+    if m:
+        ts, event, rest = m.group(1), m.group(2), m.group(3) or ""
+        return ts, event, dict(_KV_RE.findall(rest))
+    m = _AI_LOG_NO_TS_RE.match(line)
+    if m:
+        event, rest = m.group(1), m.group(2) or ""
+        return None, event, dict(_KV_RE.findall(rest))
+    return None
+
+
+def _load_ai_usage_rows(limit, days, user_filter=None, model_filter=None, event_filter=None):
+    log_path = Path(settings.BASE_DIR) / "debug.log"
+    if not log_path.exists():
+        return [], set(), set()
+
+    cutoff_str = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    raw = []
+    try:
+        with log_path.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                parsed = _parse_ai_log_line(line)
+                if parsed:
+                    raw.append(parsed)
+    except OSError:
+        return [], set(), set()
+
+    all_users = set()
+    all_models = set()
+    rows = []
+
+    for ts, event, params in reversed(raw):
+        if ts and ts < cutoff_str:
+            continue
+        user = params.get("user", "-")
+        model = params.get("model", "-")
+        all_users.add(user)
+        if model != "-":
+            all_models.add(model)
+
+        if user_filter and user != user_filter:
+            continue
+        if model_filter and model != model_filter:
+            continue
+        if event_filter and event != event_filter:
+            continue
+
+        # Build detail string per event type
+        if event == "ai.request":
+            detail = f"path={params.get('path', '-')}  stream={params.get('stream', '-')}"
+        elif event == "ai.usage":
+            detail = (
+                f"입력 {params.get('prompt_tokens', '-')} 토큰 / "
+                f"출력 {params.get('completion_tokens', '-')} 토큰 / "
+                f"합계 {params.get('total_tokens', '-')} 토큰"
+            )
+        elif event == "ai.stream_done":
+            detail = f"청크 {params.get('chunks', '-')}개"
+        elif event == "ai.stream_error":
+            detail = f"status={params.get('status', '-')}  body={params.get('body', '-')}"
+        else:
+            detail = ""
+
+        rows.append({
+            "ts": ts or "",
+            "event": event,
+            "event_label": _AI_EVENT_LABELS.get(event, event),
+            "user": user,
+            "model": model,
+            "detail": detail,
+        })
+
+        if len(rows) >= limit:
+            break
+
+    return rows, all_users, all_models
+
+
+def ai_usage_log_view(request):
+    days = _parse_int(request.GET.get("days"), 7, 1, 90)
+    per_page = _parse_int(request.GET.get("per_page"), AI_USAGE_PER_PAGE_DEFAULT, 10, AI_USAGE_PER_PAGE_MAX)
+    page_number = _parse_int(request.GET.get("p"), 1, 1, 999999)
+    user_filter = request.GET.get("user", "").strip() or None
+    model_filter = request.GET.get("model", "").strip() or None
+    event_filter = request.GET.get("event", "").strip() or None
+
+    scan_limit = min(page_number * per_page, AI_USAGE_SCAN_MAX)
+    rows, all_users, all_models = _load_ai_usage_rows(
+        limit=scan_limit,
+        days=days,
+        user_filter=user_filter,
+        model_filter=model_filter,
+        event_filter=event_filter,
+    )
+
+    paginator = Paginator(rows, per_page)
+    page_obj = paginator.get_page(page_number)
+
+    query_params = request.GET.copy()
+    query_params.pop("p", None)
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "AI API 사용 로그",
+        "subtitle": None,
+        "rows": page_obj.object_list,
+        "page_obj": page_obj,
+        "paginator": paginator,
+        "is_paginated": page_obj.has_other_pages(),
+        "days": days,
+        "per_page": per_page,
+        "base_query": query_params.urlencode(),
+        "total_count": paginator.count,
+        "all_users": sorted(all_users),
+        "all_models": sorted(all_models),
+        "all_events": sorted(_AI_EVENT_LABELS.keys()),
+        "event_labels": _AI_EVENT_LABELS,
+        "user_filter": user_filter or "",
+        "model_filter": model_filter or "",
+        "event_filter": event_filter or "",
+    }
+    return TemplateResponse(request, "admin/main/aiusage/ai_usage_log.html", context)
+
+
+# ---------------------------------------------------------------------------
+
 _original_admin_get_urls = admin.site.get_urls
 
 
@@ -669,6 +830,11 @@ def _get_admin_urls():
             "main/translation-audit/",
             admin.site.admin_view(translation_audit_view),
             name="main_translation_audit",
+        ),
+        path(
+            "main/ai-usage/",
+            admin.site.admin_view(ai_usage_log_view),
+            name="main_ai_usage_changelist",
         ),
     ]
     return custom_urls + urls

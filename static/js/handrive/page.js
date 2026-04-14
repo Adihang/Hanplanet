@@ -2459,6 +2459,16 @@
             if (!contentEl) {
                 return;
             }
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            const contentRect = contentEl.getBoundingClientRect();
+            const toolbarWrap = document.querySelector(".handrive-toolbar-wrap, .ui-toolbar-wrap");
+            const toolbarHeight = toolbarWrap && toolbarWrap.offsetParent !== null
+                ? toolbarWrap.getBoundingClientRect().height
+                : contentRect.top;
+            const footerLinks = document.querySelector(".site-footer-links");
+            const footerHeight = footerLinks && footerLinks.offsetParent !== null
+                ? footerLinks.getBoundingClientRect().height
+                : 0;
             const contentStyle = window.getComputedStyle(contentEl);
             const padTop = parseFloat(contentStyle.paddingTop) || 0;
             const padBottom = parseFloat(contentStyle.paddingBottom) || 0;
@@ -2470,7 +2480,7 @@
             const layoutBorderH = (parseFloat(layoutStyle.borderTopWidth) || 0) + (parseFloat(layoutStyle.borderBottomWidth) || 0);
             const previewHead = previewPanel.querySelector(".handrive-list-preview-head");
             const previewHeadH = previewHead ? previewHead.getBoundingClientRect().height : 0;
-            const availableForBody = contentEl.clientHeight - padTop - padBottom - searchH - searchMarginB - layoutBorderH - previewHeadH;
+            const availableForBody = viewportHeight - toolbarHeight - footerHeight - padTop - padBottom - searchH - searchMarginB - layoutBorderH - previewHeadH;
             const height = Math.max(0, Math.floor(availableForBody));
             previewBody.style.height = height + "px";
             previewBody.style.minHeight = height + "px";
@@ -2494,6 +2504,16 @@
             if (!contentEl) {
                 return;
             }
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            const contentRect = contentEl.getBoundingClientRect();
+            const toolbarWrap = document.querySelector(".handrive-toolbar-wrap, .ui-toolbar-wrap");
+            const toolbarHeight = toolbarWrap && toolbarWrap.offsetParent !== null
+                ? toolbarWrap.getBoundingClientRect().height
+                : contentRect.top;
+            const footerLinks = document.querySelector(".site-footer-links");
+            const footerHeight = footerLinks && footerLinks.offsetParent !== null
+                ? footerLinks.getBoundingClientRect().height
+                : 0;
             const contentStyle = window.getComputedStyle(contentEl);
             const padTop = parseFloat(contentStyle.paddingTop) || 0;
             const padBottom = parseFloat(contentStyle.paddingBottom) || 0;
@@ -2504,7 +2524,7 @@
             const layoutStyle = window.getComputedStyle(listLayout);
             const layoutBorderH = (parseFloat(layoutStyle.borderTopWidth) || 0) + (parseFloat(layoutStyle.borderBottomWidth) || 0);
             const editorHeadH = editorHead ? editorHead.getBoundingClientRect().height : 0;
-            const availableForBody = contentEl.clientHeight - padTop - padBottom - searchH - searchMarginB - layoutBorderH - editorHeadH;
+            const availableForBody = viewportHeight - toolbarHeight - footerHeight - padTop - padBottom - searchH - searchMarginB - layoutBorderH - editorHeadH;
             const height = Math.max(0, Math.floor(availableForBody));
             editorBody.style.height = height + "px";
             editorBody.style.minHeight = height + "px";
@@ -2699,6 +2719,7 @@
                 listLayout: listLayout,
                 onAfterChange: function () {
                     scheduleSyncCurrentDirRowHeightWithSideHead();
+                    schedulePreviewBodyHeight();
                     scheduleEditorBodyHeight();
                 },
             });
@@ -2720,6 +2741,18 @@
                     updateListEditorSuggestion();
                 });
                 editorContentInput.addEventListener("scroll", syncListEditorHighlightScroll, { passive: true });
+                let listEditorFontSize = 16;
+                editorContentInput.addEventListener("wheel", function (event) {
+                    if (!event.ctrlKey && !event.metaKey) return;
+                    event.preventDefault();
+                    const delta = event.deltaY < 0 ? 2 : -2;
+                    listEditorFontSize = Math.max(8, Math.min(40, listEditorFontSize + delta));
+                    editorContentInput.style.fontSize = listEditorFontSize + "px";
+                    if (editorHighlight) {
+                        editorHighlight.style.fontSize = listEditorFontSize + "px";
+                    }
+                    syncListEditorHighlightScroll();
+                }, { passive: false });
                 editorContentInput.addEventListener("click", function () {
                     clearListEditorSuggestion();
                 });
@@ -2863,7 +2896,7 @@
                 // 저장 직후에는 캐시를 무효화해 미리보기가 항상 최신 내용을 다시 불러오도록 한다.
                 state.previewCache.delete(sourcePath);
                 state.previewCache.delete(savedPath);
-                await refreshCurrentDirectory();
+                await refreshCurrentDirectory({ skipPreview: true });
                 switchToPreview();
 
                 const savedEntryFromList = state.entryByPath.get(savedPath) || null;
@@ -3253,13 +3286,16 @@
             }
         }
 
-        async function refreshCurrentDirectory() {
+        async function refreshCurrentDirectory(options) {
+            const settings = options || {};
             await refreshDirectoryEntries({
                 currentDir: state.currentDir,
                 listApiUrl: appendSharedQuery(listApiUrl),
                 loadDirectory: loadDirectory,
                 normalizePath: normalizePath,
-                renderList: renderList,
+                renderList: settings.skipPreview
+                    ? function () { renderList({ skipPreview: true }); }
+                    : renderList,
                 requestJson: requestJson,
                 state: state,
             });
@@ -6167,6 +6203,18 @@
             });
         }
 
+        if (previewContent) {
+            let listPreviewFontSize = 16;
+            previewContent.addEventListener("wheel", function (event) {
+                if (!event.ctrlKey && !event.metaKey) return;
+                if (previewContent.classList.contains("handrive-media")) return;
+                event.preventDefault();
+                const delta = event.deltaY < 0 ? 2 : -2;
+                listPreviewFontSize = Math.max(8, Math.min(40, listPreviewFontSize + delta));
+                previewContent.style.setProperty("--handrive-text-font-size", listPreviewFontSize + "px");
+            }, { passive: false });
+        }
+
         if (previewUrlShareButton) {
             previewUrlShareButton.addEventListener("click", function () {
                 const selectedEntries = getSelectedEntries();
@@ -6677,6 +6725,18 @@
             viewZoomInButton.addEventListener("click", function () {
                 setViewImageZoom(viewImageZoom + 0.25);
             });
+        }
+
+        const isTextArticle = contentArticle && !contentArticle.classList.contains("handrive-media");
+        if (isTextArticle) {
+            let viewTextFontSize = 16;
+            contentArticle.addEventListener("wheel", function (event) {
+                if (!event.ctrlKey && !event.metaKey) return;
+                event.preventDefault();
+                const delta = event.deltaY < 0 ? 2 : -2;
+                viewTextFontSize = Math.max(8, Math.min(40, viewTextFontSize + delta));
+                contentArticle.style.setProperty("--handrive-text-font-size", viewTextFontSize + "px");
+            }, { passive: false });
         }
 
         if (urlShareButton && urlShareApiUrl && docPath) {
@@ -8435,6 +8495,18 @@
                 updateEditorSuggestion();
             });
             contentInput.addEventListener("scroll", syncEditorHighlightScroll, { passive: true });
+            let editorFontSize = 16;
+            contentInput.addEventListener("wheel", function (event) {
+                if (!event.ctrlKey && !event.metaKey) return;
+                event.preventDefault();
+                const delta = event.deltaY < 0 ? 2 : -2;
+                editorFontSize = Math.max(8, Math.min(40, editorFontSize + delta));
+                contentInput.style.fontSize = editorFontSize + "px";
+                if (editorHighlight) {
+                    editorHighlight.style.fontSize = editorFontSize + "px";
+                }
+                syncEditorHighlightScroll();
+            }, { passive: false });
             contentInput.addEventListener("click", function () {
                 clearEditorSuggestion();
             });

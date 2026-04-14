@@ -1625,6 +1625,9 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 
 .handrive-list-preview-body {
     position: relative;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     padding: var(--handrive-preview-body-pad-y, 10px) 12px;
     display: flex;
     flex-direction: column;
@@ -1679,6 +1682,9 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-list-editor-body {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
@@ -2924,6 +2930,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     border-radius: var(--handrive-radius-lg);
     background: var(--handrive-bg);
     color: var(--handrive-text);
+    font-size: var(--handrive-text-font-size, 16px);
     padding: 0;
     line-height: 1.65;
     overflow-wrap: anywhere;
@@ -2933,12 +2940,52 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 .ui-markdown h2,
 .ui-markdown h3,
 .ui-markdown h4,
+.ui-markdown h5,
+.ui-markdown h6,
 .handrive-markdown h1,
 .handrive-markdown h2,
 .handrive-markdown h3,
-.handrive-markdown h4 {
+.handrive-markdown h4,
+.handrive-markdown h5,
+.handrive-markdown h6 {
     margin-top: 0;
     color: var(--handrive-text-stronger);
+}
+
+.ui-markdown h1,
+.handrive-markdown h1 {
+    font-size: 1.9em;
+    line-height: 1.2;
+}
+
+.ui-markdown h2,
+.handrive-markdown h2 {
+    font-size: 1.55em;
+    line-height: 1.22;
+}
+
+.ui-markdown h3,
+.handrive-markdown h3 {
+    font-size: 1.3em;
+    line-height: 1.25;
+}
+
+.ui-markdown h4,
+.handrive-markdown h4 {
+    font-size: 1.1em;
+    line-height: 1.3;
+}
+
+.ui-markdown h5,
+.handrive-markdown h5 {
+    font-size: 1em;
+    line-height: 1.35;
+}
+
+.ui-markdown h6,
+.handrive-markdown h6 {
+    font-size: 0.95em;
+    line-height: 1.4;
 }
 
 .ui-markdown a,
@@ -2963,6 +3010,19 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     margin: 0 0 12px;
 }
 
+.ui-markdown p,
+.ui-markdown ul,
+.ui-markdown ol,
+.ui-markdown li,
+.ui-markdown blockquote,
+.handrive-markdown p,
+.handrive-markdown ul,
+.handrive-markdown ol,
+.handrive-markdown li,
+.handrive-markdown blockquote {
+    font-size: inherit;
+}
+
 .ui-markdown th,
 .ui-markdown td,
 .handrive-markdown th,
@@ -2971,7 +3031,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     text-align: left;
     vertical-align: top;
     padding: 8px 10px;
-    font-size: 16px;
+    font-size: 1em;
     line-height: 1.45;
 }
 
@@ -2979,14 +3039,14 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 .handrive-markdown th {
     background: var(--handrive-surface-muted);
     color: var(--handrive-text-subtle);
-    font-size: 16px;
+    font-size: 1em;
     font-weight: 700;
 }
 
 .ui-markdown code,
 .handrive-markdown code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-    font-size: 16px;
+    font-size: 1em;
     border: 0;
     border-radius: 6px;
     background: var(--handrive-surface-muted);
@@ -3010,7 +3070,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     border-radius: 0;
     background: transparent;
     padding: 0;
-    font-size: 16px;
+    font-size: var(--handrive-text-font-size, 16px);
     line-height: 1.45;
 }
 
@@ -3025,6 +3085,8 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     border-radius: var(--handrive-radius-lg);
     background: var(--handrive-bg);
     color: var(--handrive-text);
+    font-size: var(--handrive-text-font-size, 16px);
+    font-family: inherit;
     padding: 0;
     line-height: 1.55;
     overflow-wrap: anywhere;
@@ -3046,8 +3108,8 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     background: transparent;
     padding: 0;
     color: inherit;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-    font-size: 16px;
+    font-family: inherit;
+    font-size: var(--handrive-text-font-size, 16px);
     line-height: 1.45;
     white-space: pre;
 }
@@ -3092,7 +3154,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     padding: 0;
     color: inherit;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-    font-size: 16px;
+    font-size: var(--handrive-text-font-size, 16px);
     line-height: 1.45;
     white-space: pre;
 }
@@ -4764,7 +4826,7 @@ body.handrive-modal-open {
 
     .ui-markdown th,
     .ui-markdown td {
-        font-size: 16px;
+        font-size: 1em;
         padding: 7px 8px;
     }
 

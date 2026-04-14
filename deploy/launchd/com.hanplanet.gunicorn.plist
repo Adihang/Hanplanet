@@ -17,6 +17,8 @@
     <string>config.settings</string>
     <key>OLLAMA_MODEL</key>
     <string>gemma4:latest</string>
+    <key>OLLAMA_NUM_CTX</key>
+    <string>16384</string>
     <key>PYTHONPATH</key>
     <string>/Users/imhanbyeol/Development/Hanplanet/.venv/lib/python3.9/site-packages</string>
   </dict>

@@ -245,7 +245,7 @@ def main() -> int:
                 "--chdir",
                 str(REPO_ROOT),
                 "--timeout",
-                "120",
+                "360",
             ]
         )
 

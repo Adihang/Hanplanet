@@ -77,6 +77,8 @@
     data-map-create-api-url="{{ handrive_api_map_create_url }}"
     data-map-editor-base-url="{{ handrive_map_editor_base_url }}"
     data-map-viewer-base-url="{{ handrive_map_viewer_base_url }}"
+    data-folder-icon-upload-api-url="{{ handrive_api_folder_icon_upload_url }}"
+    data-folder-icon-delete-api-url="{{ handrive_api_folder_icon_delete_url }}"
 >
     <div class="ui-search-form handrive-list-search-form" id="handrive-list-search-form">
         <button
@@ -209,6 +211,7 @@
 {% include "popup/handrive/git_repo_modal.html" %}
 {% include "popup/handrive/branch_create_modal.html" %}
 {% include "popup/handrive/map_create_modal.html" %}
+{% include "popup/handrive/folder_icon_modal.html" %}
 {% include "popup/handrive/confirm_modal.html" %}
 {% include "popup/handrive/url_share_modal.html" %}
 {% include "popup/handrive/auth_logout_modal.html" %}

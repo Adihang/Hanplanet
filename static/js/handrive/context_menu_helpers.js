@@ -73,6 +73,7 @@
             gitCreateBranch: false,
             gitDeleteBranch: false,
             createMap: false,
+            changeIcon: false,
         };
 
         if (!targetEntry) {
@@ -132,6 +133,14 @@
             ? ("." + targetEntry.name.split(".").pop()).toLowerCase()
             : "";
         flags.createMap = !isDirectory && canEditEntry && IMAGE_EXTENSIONS_FOR_MAP.indexOf(entryExtension) !== -1 && !isGitVirtualEntry;
+        flags.changeIcon = Boolean(
+            !isMultiSelection &&
+            isDirectory &&
+            !isCurrentFolder &&
+            canEditEntry &&
+            !hasGitRepo &&
+            !isGitVirtualEntry
+        );
         return flags;
     }
 

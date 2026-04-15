@@ -2376,6 +2376,44 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     z-index: 1;
 }
 
+.handrive-item-type-icon.is-dir.has-custom-icon {
+    position: relative;
+    overflow: hidden;
+}
+
+.handrive-item-type-icon.is-dir.has-custom-icon::before {
+    display: none;
+}
+
+.handrive-folder-custom-icon {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    border-radius: 2px;
+}
+
+.handrive-folder-icon-preview-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 0 4px;
+}
+
+.handrive-folder-icon-preview-img {
+    max-width: 64px;
+    max-height: 64px;
+    border-radius: 4px;
+    object-fit: contain;
+    border: 1px solid var(--handrive-border-mid);
+}
+
+.handrive-folder-icon-modal-dialog {
+    width: min(380px, 100%);
+}
+
 .handrive-item-type-icon.is-dir.is-repo::before {
     content: "";
     width: 18px;

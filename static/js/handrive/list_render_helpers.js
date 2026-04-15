@@ -67,6 +67,16 @@
             }
         }
 
+        if (settings.isDir && settings.customIconUrl) {
+            typeMarker.classList.add("has-custom-icon");
+            var customIconImg = document.createElement("img");
+            customIconImg.className = "handrive-folder-custom-icon";
+            customIconImg.src = settings.customIconUrl;
+            customIconImg.alt = "";
+            customIconImg.loading = "lazy";
+            typeMarker.appendChild(customIconImg);
+        }
+
         return typeMarker;
     }
 

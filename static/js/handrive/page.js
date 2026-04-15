@@ -1577,6 +1577,8 @@
         const mapCreateApiUrl = root.dataset.mapCreateApiUrl || "/handrive/api/map/create";
         const mapEditorBaseUrl = root.dataset.mapEditorBaseUrl || "/handrive/map-editor/";
         const mapViewerBaseUrl = root.dataset.mapViewerBaseUrl || "/handrive/map-viewer/";
+        const folderIconUploadApiUrl = root.dataset.folderIconUploadApiUrl || "";
+        const folderIconDeleteApiUrl = root.dataset.folderIconDeleteApiUrl || "";
         const pathBreadcrumbs = document.querySelector(".handrive-path-breadcrumbs");
         const pathCurrentSizeEl = document.querySelector(".handrive-path-current-size");
         const originalDirSizeText = pathCurrentSizeEl ? (pathCurrentSizeEl.textContent || "") : "";
@@ -1644,6 +1646,7 @@
         const contextGitDeleteRepoButton = contextMenu ? contextMenu.querySelector('button[data-action="git-delete-repo"]') : null;
         const contextGitCreateBranchButton = contextMenu ? contextMenu.querySelector('button[data-action="git-create-branch"]') : null;
         const contextGitDeleteBranchButton = contextMenu ? contextMenu.querySelector('button[data-action="git-delete-branch"]') : null;
+        const contextChangeIconButton = contextMenu ? contextMenu.querySelector('button[data-action="change-icon"]') : null;
         const branchCreateModal = document.getElementById("handrive-branch-create-modal");
         const branchCreateModalBackdrop = document.getElementById("handrive-branch-create-modal-backdrop");
         const branchCreateTarget = document.getElementById("handrive-branch-create-target");
@@ -1684,6 +1687,15 @@
         const mapCreateTarget = document.getElementById("handrive-map-create-target");
         const mapCreateCancelButton = document.getElementById("handrive-map-create-cancel-btn");
         const mapCreateConfirmButton = document.getElementById("handrive-map-create-confirm-btn");
+        const folderIconModal = document.getElementById("handrive-folder-icon-modal");
+        const folderIconModalBackdrop = document.getElementById("handrive-folder-icon-modal-backdrop");
+        const folderIconTarget = document.getElementById("handrive-folder-icon-target");
+        const folderIconFileInput = document.getElementById("handrive-folder-icon-file-input");
+        const folderIconPreviewWrap = document.getElementById("handrive-folder-icon-preview-wrap");
+        const folderIconPreviewImg = document.getElementById("handrive-folder-icon-preview-img");
+        const folderIconDeleteButton = document.getElementById("handrive-folder-icon-delete-btn");
+        const folderIconCancelButton = document.getElementById("handrive-folder-icon-cancel-btn");
+        const folderIconConfirmButton = document.getElementById("handrive-folder-icon-confirm-btn");
         const permissionModal = document.getElementById("handrive-permission-modal");
         const permissionModalBackdrop = document.getElementById("handrive-permission-modal-backdrop");
         const permissionTarget = document.getElementById("handrive-permission-target");
@@ -1798,6 +1810,7 @@
             contextTarget: null,
             contextEntries: [],
             renameTargetEntry: null,
+            folderIconTargetEntry: null,
             folderCreateParentEntry: null,
             permissionTargetEntry: null,
             permissionTargetEntries: [],
@@ -3056,6 +3069,7 @@
             setContextButtonVisible(contextGitCreateBranchButton, Boolean(visibility.gitCreateBranch));
             setContextButtonVisible(contextGitDeleteBranchButton, Boolean(visibility.gitDeleteBranch));
             setContextButtonVisible(contextCreateMapButton, Boolean(visibility.createMap));
+            setContextButtonVisible(contextChangeIconButton, Boolean(visibility.changeIcon && folderIconUploadApiUrl));
             syncContextMenuDividers(contextMenu);
         }
 
@@ -4751,6 +4765,7 @@
                 isEmpty: entry.type === "dir" && entry.has_children === false,
                 fileIconKey: fileIconKey,
                 isGenericFileIcon: entry.type === "file" && isGenericFileIconKey(fileIconKey),
+                customIconUrl: (entry.type === "dir" && entry.folder_icon_url) ? entry.folder_icon_url : "",
             });
 
             row.appendChild(typeMarker);
@@ -4893,6 +4908,28 @@
             const parentPath = entry && entry.path ? entry.path : "";
             const targetLabel = t("create_folder_in_label", "생성 위치") + ": " + getHandrivePathLabel(parentPath);
             modalSetFolderCreateModalOpen(folderCreateModal, folderCreateTarget, folderCreateInput, syncModalBodyState, true, state.folderCreateParentEntry, targetLabel);
+        }
+
+        function setFolderIconModalOpen(opened, entry) {
+            if (!folderIconModal) {
+                return;
+            }
+            folderIconModal.hidden = !opened;
+            syncModalBodyState();
+            if (!opened) {
+                if (folderIconFileInput) { folderIconFileInput.value = ""; }
+                if (folderIconPreviewWrap) { folderIconPreviewWrap.hidden = true; }
+                if (folderIconPreviewImg) { folderIconPreviewImg.src = ""; }
+                state.folderIconTargetEntry = null;
+                return;
+            }
+            state.folderIconTargetEntry = entry || null;
+            if (folderIconTarget) { folderIconTarget.textContent = entry ? entry.name : ""; }
+            const hasExistingIcon = Boolean(entry && entry.folder_icon_url);
+            if (folderIconDeleteButton) { folderIconDeleteButton.hidden = !hasExistingIcon; }
+            if (folderIconPreviewWrap) { folderIconPreviewWrap.hidden = !hasExistingIcon; }
+            if (folderIconPreviewImg && hasExistingIcon) { folderIconPreviewImg.src = entry.folder_icon_url; }
+            if (folderIconFileInput) { folderIconFileInput.value = ""; }
         }
 
         function renderPermissionItems(container, items, selectedIdSet, emptyMessage, options) {
@@ -5401,6 +5438,7 @@
                 isEmpty: entry.type === "dir" && entry.has_children === false,
                 fileIconKey: fileIconKey,
                 isGenericFileIcon: entry.type === "file" && isGenericFileIconKey(fileIconKey),
+                customIconUrl: (entry.type === "dir" && entry.folder_icon_url) ? entry.folder_icon_url : "",
             });
 
             row.appendChild(typeMarker);
@@ -5738,6 +5776,11 @@
                 if (action === "git-delete-branch") {
                     deleteBranch(entry).catch(alertError);
                 }
+                if (action === "change-icon") {
+                    if (entry && entry.type === "dir") {
+                        setFolderIconModalOpen(true, entry);
+                    }
+                }
             });
         }
 
@@ -5751,6 +5794,52 @@
                 }
                 enqueueUploadFiles(contextUploadInput.files, targetDirPath).catch(alertError);
                 contextUploadInput.value = "";
+            });
+        }
+
+        if (folderIconFileInput) {
+            folderIconFileInput.addEventListener("change", function () {
+                if (!folderIconFileInput.files || folderIconFileInput.files.length === 0) {
+                    if (folderIconPreviewWrap) { folderIconPreviewWrap.hidden = true; }
+                    return;
+                }
+                if (folderIconPreviewImg) { folderIconPreviewImg.src = URL.createObjectURL(folderIconFileInput.files[0]); }
+                if (folderIconPreviewWrap) { folderIconPreviewWrap.hidden = false; }
+            });
+        }
+
+        if (folderIconModalBackdrop) {
+            folderIconModalBackdrop.addEventListener("click", function () { setFolderIconModalOpen(false); });
+        }
+
+        if (folderIconCancelButton) {
+            folderIconCancelButton.addEventListener("click", function () { setFolderIconModalOpen(false); });
+        }
+
+        if (folderIconDeleteButton) {
+            folderIconDeleteButton.addEventListener("click", function () {
+                const entry = state.folderIconTargetEntry;
+                if (!entry || !folderIconDeleteApiUrl) { return; }
+                requestJson(folderIconDeleteApiUrl, buildPostOptions({ path: entry.path }))
+                    .then(function () { setFolderIconModalOpen(false); return refreshCurrentDirectory(); })
+                    .catch(alertError);
+            });
+        }
+
+        if (folderIconConfirmButton) {
+            folderIconConfirmButton.addEventListener("click", function () {
+                const entry = state.folderIconTargetEntry;
+                if (!entry || !folderIconUploadApiUrl) { return; }
+                if (!folderIconFileInput || !folderIconFileInput.files || folderIconFileInput.files.length === 0) {
+                    window.alert("이미지 파일을 선택해주세요.");
+                    return;
+                }
+                const formData = new FormData();
+                formData.append("path", entry.path);
+                formData.append("icon", folderIconFileInput.files[0]);
+                requestFormDataJson(folderIconUploadApiUrl, formData)
+                    .then(function () { setFolderIconModalOpen(false); return refreshCurrentDirectory(); })
+                    .catch(alertError);
             });
         }
 
@@ -6329,6 +6418,10 @@
                 }
                 if (syncModal && !syncModal.hidden) {
                     setSyncModalOpen(false);
+                    return;
+                }
+                if (folderIconModal && !folderIconModal.hidden) {
+                    setFolderIconModalOpen(false);
                     return;
                 }
                 closeContextMenu();

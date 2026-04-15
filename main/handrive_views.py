@@ -248,6 +248,7 @@ MAP_DATA_FILENAME = "map.geojson"
 MAP_ICONS_DIR = "_icons"
 MAP_IMAGE_ATTACHMENTS_DIR = "_images"
 MAP_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff", ".tif", ".avif"})
+FOLDER_ICON_EXTENSIONS = MAP_IMAGE_EXTENSIONS
 MAP_VIDEO_EXTENSIONS = frozenset({".mp4", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m4v", ".ogv"})
 MAP_MEDIA_EXTENSIONS = MAP_IMAGE_EXTENSIONS | MAP_VIDEO_EXTENSIONS
 MAP_IMAGE_MIME_TYPES = {
@@ -2059,6 +2060,15 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                         entry["share_url"] = request.build_absolute_uri(
                             build_handrive_shared_view_url(_ui_lang, _link.owner.username, _link.share_slug)
                         )
+                # 커스텀 폴더 아이콘 URL 주입
+                _uid = str(getattr(request.user, "id", "")) if request.user.is_authenticated else ""
+                if _uid:
+                    _stem = re.sub(r"[^a-zA-Z0-9._-]", "_", child.name)
+                    _icons_dir = Path(settings.MEDIA_ROOT) / "uploads" / _uid
+                    if any(_icons_dir.glob(f"{_stem}.*")):
+                        entry["folder_icon_url"] = (
+                            f"/handrive/api/folder-icon/?user_id={quote(_uid)}&folder_stem={quote(_stem)}"
+                        )
             entries.append(entry)
             existing_entry_paths.add(entry["path"])
             continue
@@ -3621,6 +3631,8 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_map_data_url": reverse("main:handrive_api_map_data"),
             "handrive_api_map_icon_upload_url": reverse("main:handrive_api_map_icon_upload"),
             "handrive_api_map_icon_delete_url": reverse("main:handrive_api_map_icon_delete"),
+            "handrive_api_folder_icon_upload_url": reverse("main:handrive_api_folder_icon_upload"),
+            "handrive_api_folder_icon_delete_url": reverse("main:handrive_api_folder_icon_delete"),
             "handrive_api_map_image_url": reverse("main:handrive_api_map_image"),
             "handrive_map_editor_base_url": "/handrive/map-editor/",
             "handrive_map_viewer_base_url": "/handrive/map-viewer/",
@@ -7002,6 +7014,112 @@ def handrive_api_map_icon_delete(request):
     except (OSError, PermissionError) as exc:
         return _storage_unavailable_response(request, exc)
     return JsonResponse({"ok": True})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_folder_icon_upload(request):
+    """폴더 커스텀 아이콘을 업로드한다."""
+    folder_path_value = request.POST.get("path", "").strip()
+    icon_file = request.FILES.get("icon")
+    if not icon_file:
+        return json_error("파일이 없습니다.", status=400)
+    try:
+        folder_path_normalized = normalize_relative_path(folder_path_value, allow_empty=False)
+        folder, folder_relative = resolve_path(folder_path_normalized, must_exist=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=400)
+    if not folder.is_dir():
+        return json_error("폴더를 찾을 수 없습니다.", status=404)
+    if not has_handrive_write_access(request, folder_relative):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+    suffix = Path(icon_file.name).suffix.lower()
+    if suffix not in FOLDER_ICON_EXTENSIONS:
+        return json_error("지원하지 않는 이미지 형식입니다.", status=400)
+    user_id = str(getattr(request.user, "id", "anon"))
+    icons_dir = Path(settings.MEDIA_ROOT) / "uploads" / user_id
+    icons_dir.mkdir(parents=True, exist_ok=True)
+    folder_stem = re.sub(r"[^a-zA-Z0-9._-]", "_", folder.name)
+    # 기존 아이콘 삭제
+    for old in icons_dir.glob(f"{folder_stem}.*"):
+        if old.suffix.lower() in FOLDER_ICON_EXTENSIONS:
+            try:
+                old.unlink()
+            except OSError:
+                pass
+    target = icons_dir / f"{folder_stem}{suffix}"
+    try:
+        with target.open("wb") as f:
+            for chunk in icon_file.chunks():
+                f.write(chunk)
+    except (OSError, PermissionError) as exc:
+        return _storage_unavailable_response(request, exc)
+    icon_url = f"/handrive/api/folder-icon/?user_id={quote(user_id)}&folder_stem={quote(folder_stem)}"
+    return JsonResponse({"ok": True, "icon_url": icon_url})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_folder_icon_delete(request):
+    """폴더 커스텀 아이콘을 삭제한다."""
+    folder_path_value = request.POST.get("path", "").strip()
+    if not folder_path_value:
+        return json_error("path가 필요합니다.", status=400)
+    try:
+        folder_path_normalized = normalize_relative_path(folder_path_value, allow_empty=False)
+        folder, folder_relative = resolve_path(folder_path_normalized, must_exist=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=400)
+    if not folder.is_dir():
+        return json_error("폴더를 찾을 수 없습니다.", status=404)
+    if not has_handrive_write_access(request, folder_relative):
+        return json_error("파일을 삭제할 권한이 없습니다.", status=403)
+    user_id = str(getattr(request.user, "id", "anon"))
+    icons_dir = Path(settings.MEDIA_ROOT) / "uploads" / user_id
+    folder_stem = re.sub(r"[^a-zA-Z0-9._-]", "_", folder.name)
+    deleted = False
+    for old_icon in icons_dir.glob(f"{folder_stem}.*"):
+        if old_icon.suffix.lower() in FOLDER_ICON_EXTENSIONS:
+            try:
+                old_icon.unlink()
+                deleted = True
+            except (OSError, PermissionError) as exc:
+                return _storage_unavailable_response(request, exc)
+    if not deleted:
+        return json_error("아이콘 파일을 찾을 수 없습니다.", status=404)
+    return JsonResponse({"ok": True})
+
+
+@require_http_methods(["GET"])
+def handrive_api_folder_icon_serve(request):
+    """폴더 커스텀 아이콘을 인라인으로 서빙한다."""
+    user_id = request.GET.get("user_id", "").strip()
+    folder_stem = request.GET.get("folder_stem", "").strip()
+    if not user_id or not folder_stem:
+        raise Http404
+    # Path traversal 방지
+    if not re.fullmatch(r"[0-9]+", user_id):
+        raise Http404
+    if not re.fullmatch(r"[a-zA-Z0-9._-]+", folder_stem):
+        raise Http404
+    icons_dir = Path(settings.MEDIA_ROOT) / "uploads" / user_id
+    icon_path = None
+    for candidate in icons_dir.glob(f"{folder_stem}.*"):
+        if candidate.suffix.lower() in FOLDER_ICON_EXTENSIONS and candidate.is_file():
+            icon_path = candidate
+            break
+    if icon_path is None:
+        raise Http404
+    suffix = icon_path.suffix.lower()
+    content_type = MAP_IMAGE_MIME_TYPES.get(suffix, "application/octet-stream")
+    try:
+        response = FileResponse(icon_path.open("rb"), content_type=content_type)
+    except (OSError, PermissionError):
+        raise Http404
+    response["Cache-Control"] = "private, max-age=300"
+    return response
 
 
 @require_http_methods(["GET"])

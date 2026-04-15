@@ -74,6 +74,7 @@ urlpatterns = [
     path('handrive/api/map/icon-upload', handrive_views.handrive_api_map_icon_upload, name='handrive_api_map_icon_upload'),
     path('handrive/api/map/icon-delete', handrive_views.handrive_api_map_icon_delete, name='handrive_api_map_icon_delete'),
     path('handrive/api/folder-icon', handrive_views.handrive_api_folder_icon_serve, name='handrive_api_folder_icon_serve'),
+    path('handrive/api/folder-icon/', handrive_views.handrive_api_folder_icon_serve),
     path('handrive/api/folder-icon/upload', handrive_views.handrive_api_folder_icon_upload, name='handrive_api_folder_icon_upload'),
     path('handrive/api/folder-icon/delete', handrive_views.handrive_api_folder_icon_delete, name='handrive_api_folder_icon_delete'),
     path('handrive/api/map/image-upload', handrive_views.handrive_api_map_attachment_upload, name='handrive_api_map_attachment_upload'),

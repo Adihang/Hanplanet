@@ -62,8 +62,10 @@ class Stratagem_Hero_Score(models.Model):
         if not self.pk:
             existing_score = Stratagem_Hero_Score.objects.filter(name=self.name).first()
             if existing_score:
-                existing_score.score = self.score
-                return existing_score.save(*args, **kwargs)
+                if self.score < existing_score.score:
+                    existing_score.score = self.score
+                    return existing_score.save(*args, **kwargs)
+                return  # 기존 기록이 더 좋으면 덮어쓰지 않음
         super().save(*args, **kwargs)
 
 

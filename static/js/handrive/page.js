@@ -226,6 +226,7 @@
     const modalReadCheckedIds = handriveModalHelpers.readCheckedIds || function () { return []; };
     const modalRenderPermissionItems = handriveModalHelpers.renderPermissionItems || function () {};
     const modalSetFolderCreateModalOpen = handriveModalHelpers.setFolderCreateModalOpen || function () {};
+    const modalSetFolderIconModalOpen = handriveModalHelpers.setFolderIconModalOpen || function () {};
     const modalSetPermissionModalOpen = handriveModalHelpers.setPermissionModalOpen || function (_, __, ___, ____, entries) { return entries || []; };
     const modalSetRenameModalOpen = handriveModalHelpers.setRenameModalOpen || function () {};
     const handriveEditorHelpers = window.HandriveEditorHelpers || {};
@@ -4914,9 +4915,16 @@
             if (!folderIconModal) {
                 return;
             }
-            folderIconModal.hidden = !opened;
-            syncModalBodyState();
             if (!opened) {
+                modalSetFolderIconModalOpen(
+                    folderIconModal,
+                    folderIconTarget,
+                    folderIconFileInput,
+                    syncModalBodyState,
+                    false,
+                    null,
+                    ""
+                );
                 if (folderIconFileInput) { folderIconFileInput.value = ""; }
                 if (folderIconPreviewWrap) { folderIconPreviewWrap.hidden = true; }
                 if (folderIconPreviewImg) { folderIconPreviewImg.src = ""; }
@@ -4924,7 +4932,15 @@
                 return;
             }
             state.folderIconTargetEntry = entry || null;
-            if (folderIconTarget) { folderIconTarget.textContent = entry ? entry.name : ""; }
+            modalSetFolderIconModalOpen(
+                folderIconModal,
+                folderIconTarget,
+                folderIconFileInput,
+                syncModalBodyState,
+                true,
+                state.folderIconTargetEntry,
+                entry ? entry.path : ""
+            );
             const hasExistingIcon = Boolean(entry && entry.folder_icon_url);
             if (folderIconDeleteButton) { folderIconDeleteButton.hidden = !hasExistingIcon; }
             if (folderIconPreviewWrap) { folderIconPreviewWrap.hidden = !hasExistingIcon; }
@@ -5778,8 +5794,11 @@
                 }
                 if (action === "change-icon") {
                     if (entry && entry.type === "dir") {
-                        setFolderIconModalOpen(true, entry);
+                        window.requestAnimationFrame(function () {
+                            setFolderIconModalOpen(true, entry);
+                        });
                     }
+                    return;
                 }
             });
         }

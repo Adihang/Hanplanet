@@ -32,12 +32,6 @@
     </head>
     <body>
         <div class="stratagem_page">
-            <div class="title">
-                <img class="stratagem_icon" src="{% static 'media/icon/Helldivers-2-Icon-PNG.png' %}" alt="Stratagem Icon"/>
-                <h3 class="title_text">Stratagem Hero</h3>
-                <img class="stratagem_icon" src="{% static 'media/icon/Helldivers-2-Icon-PNG.png' %}" alt="Stratagem Icon"/>
-            </div>
-            <hr class="stratagem_hr">
             <div class="stratagem_content">
                 <div class="stratagem_scoreboard">
                     <h1 class="scoreboard_text">Global Scoreboard</h1>
@@ -48,6 +42,9 @@
                             <h5 class="global_score_time">{{ score.score }}초</h5>
                         </div>
                         {% endfor %}
+                    </div>
+                    <div class="scoreboard_actions">
+                        <button class="ui-btn ui-btn-primary" id="scoreboard_replay_btn" type="button">다시 하기</button>
                     </div>
                 </div>
             </div>

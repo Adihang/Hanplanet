@@ -1,67 +1,117 @@
-// Stratagem Hero game page script. It handles command matching, scoring flow, and simple sound playback.
-// 사운드를 재생하는 비동기 함수
+// Stratagem Hero game page script.
+// One-at-a-time mode: shows one stratagem card at a time, with a real-time timer and remaining count.
+
+// ── Sound ──────────────────────────────────────────────────────────────────
 async function playSound(soundURL) {
     const soundEffect = new Audio(soundURL);
     await soundEffect.play();
 }
 
-// CSRF 토큰을 가져오는 함수
+// ── CSRF ───────────────────────────────────────────────────────────────────
 function getCSRFToken() {
-    // 점수 저장도 일반 Django POST 엔드포인트를 쓰므로 CSRF 토큰을 그대로 사용한다.
     return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 }
 
-// DOM이 로드되었을 때 실행되는 초기화 함수
-document.addEventListener('DOMContentLoaded', function() {
-    //스트라타잼 아이콘 생성
-    const stratagem_commands = document.querySelectorAll('.stratagem_command');
-    stratagem_commands.forEach(function(commandDiv) {
+// ── Game state ─────────────────────────────────────────────────────────────
+let queue = [];          // 순서대로 정렬된 카드 Element 배열
+let currentIdx = 0;      // 현재 표시 중인 카드 인덱스
+let typecommand = "";    // 현재 입력 중인 커맨드 문자열
+let startTime = null;    // performance.now() 기준 시작 시각
+let timerInterval = null;
+let seconds = 0;         // 최종 기록 (게임 완료 후)
+const TOTAL = 10;
+
+// ── Timer ──────────────────────────────────────────────────────────────────
+function startTimer() {
+    startTime = performance.now();
+    timerInterval = setInterval(() => {
+        const t = ((performance.now() - startTime) / 1000).toFixed(2);
+        const timerEl = document.querySelector('.game_timer');
+        if (timerEl) timerEl.textContent = `⏱ ${t}초`;
+    }, 50);
+}
+
+function stopTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    seconds = ((performance.now() - startTime) / 1000).toFixed(2);
+}
+
+// ── UI helpers ─────────────────────────────────────────────────────────────
+function updateStatusBar() {
+    const remaining = TOTAL - currentIdx;
+    const el = document.querySelector('.game_remaining');
+    if (el) el.textContent = `${remaining} / ${TOTAL}`;
+}
+
+function resetHighlights(card) {
+    if (!card) return;
+    card.querySelectorAll('.stratagem_command img').forEach(img => {
+        img.style.filter = 'none';
+    });
+}
+
+function updateHighlights(card, typedLength) {
+    if (!card) return;
+    card.querySelectorAll('.stratagem_command img').forEach(img => {
+        const id = parseInt(img.id);
+        img.style.filter = (typedLength - 1 >= id) ? 'sepia(100%)' : 'none';
+    });
+}
+
+function showScore() {
+    const scoreEl = document.querySelector('.score_time');
+    if (scoreEl) scoreEl.textContent = seconds + '초';
+
+    const statusBar = document.querySelector('.game_status_bar');
+    if (statusBar) statusBar.style.display = 'none';
+
+    const descBottom = document.querySelector('.description_bottom');
+    if (descBottom) descBottom.style.display = 'none';
+
+    const scorePanel = document.querySelector('.stratagem_score');
+    if (scorePanel) scorePanel.style.display = 'flex';
+}
+
+// ── Initialisation ─────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function () {
+    // 커맨드 화살표 이미지 생성
+    document.querySelectorAll('.stratagem_command').forEach(function (commandDiv) {
         const commandNumber = commandDiv.dataset.command;
-        commandNumber.toString().split('').forEach(function(digit, index) {
+        commandNumber.toString().split('').forEach(function (digit, index) {
             const img = document.createElement('img');
-            const id = `${index}`; // ID 생성
             img.src = `/static/media/icon/arrow${digit}.png`;
             img.alt = `arrow ${digit}`;
             img.classList.add('commend_arrow');
-            img.setAttribute('id', id); // ID 설정
+            img.setAttribute('id', String(index));
             commandDiv.appendChild(img);
         });
     });
 
-    // 모바일/터치 환경에서는 화면 버튼을 같은 키 입력 흐름으로 연결한다.
-    const arrowTop = document.querySelector('.arrow-top');
-    const arrowBottom = document.querySelector('.arrow-bottom');
-    const arrowLeft = document.querySelector('.arrow-left');
-    const arrowRight = document.querySelector('.arrow-right');
-    arrowTop.addEventListener('click', function() {
-        simulateKeyEvent('ArrowUp');
-    });
+    // 큐 초기화: 모든 카드 숨기고 첫 번째만 표시
+    queue = Array.from(document.querySelectorAll('.stratagem_card'));
+    queue.forEach(card => { card.style.display = 'none'; });
+    if (queue.length > 0) queue[0].style.display = '';
+    updateStatusBar();
 
-    arrowBottom.addEventListener('click', function() {
-        simulateKeyEvent('ArrowDown');
-    });
-
-    arrowLeft.addEventListener('click', function() {
-        simulateKeyEvent('ArrowLeft');
-    });
-
-    arrowRight.addEventListener('click', function() {
-        simulateKeyEvent('ArrowRight');
-    });
-    // 키보드 이벤트를 시뮬레이션하는 함수
+    // 모바일 d-pad 버튼 연결
     function simulateKeyEvent(key) {
-        // 모바일 화살표 버튼도 동일한 keydown 루프로 흘려보내 게임 규칙을 한 경로만 유지한다.
-        document.dispatchEvent(new KeyboardEvent('keydown', {'key': key}));
+        document.dispatchEvent(new KeyboardEvent('keydown', { 'key': key }));
     }
+    document.querySelector('.arrow-top')?.addEventListener('click', () => simulateKeyEvent('ArrowUp'));
+    document.querySelector('.arrow-bottom')?.addEventListener('click', () => simulateKeyEvent('ArrowDown'));
+    document.querySelector('.arrow-left')?.addEventListener('click', () => simulateKeyEvent('ArrowLeft'));
+    document.querySelector('.arrow-right')?.addEventListener('click', () => simulateKeyEvent('ArrowRight'));
 
-    // 게임 종료 후 점수 저장 버튼은 현재 초 기록을 서버에 제출한 뒤 scoreboard로 이동한다.
-    var input_score_button = document.getElementById('input_score_button');
+    // 점수 등록 버튼
+    const input_score_button = document.getElementById('input_score_button');
     if (input_score_button) {
-        input_score_button.addEventListener('click', ()=>{
+        input_score_button.addEventListener('click', () => {
             const textInputValue = document.getElementById('input_score_name').value;
-            const checkboxIsChecked = document.getElementById('input_score_checkbox').checked;
-            if (textInputValue.length > 0){
-                fetch('add_score/', { // Django URL 경로에 맞게 수정하세요.
+            if (textInputValue.length > 0) {
+                fetch('add_score/', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -69,153 +119,75 @@ document.addEventListener('DOMContentLoaded', function() {
                     },
                     body: JSON.stringify({ name: textInputValue, score: seconds })
                 }).then(response => response.json())
-                .then(data => {
-                    console.log('Success:', data);
-                })
-                .catch((error) => {
-                    console.error('Error:', error);
-                });
+                    .then(data => console.log('Success:', data))
+                    .catch(error => console.error('Error:', error));
             }
             location.href = 'Scoreboard/';
         });
-    } else {
-        console.log('Input score button not found');
     }
 });
 
-let typecommand = "";
-let soundSelect;
-let startTime;
-let allCardsHidden;
-let seconds;
+// ── Main game loop ─────────────────────────────────────────────────────────
+document.addEventListener('keydown', async function (event) {
+    const currentCard = queue[currentIdx];
+    if (!currentCard) return; // 게임 종료 상태
 
-// Main game loop: each key narrows the visible cards until one exact stratagem sequence matches.
-document.addEventListener('keydown', async function(event) {
-    // 현재 입력 문자열과 카드 명령 prefix를 비교해 후보 카드를 좁혀 나간다.
-    const find_remove_cards = document.querySelectorAll('.stratagem_card');
-    if (find_remove_cards.length != 0)
-    {
-        soundSelect = 0;
-        allCardsHidden = true
-        if ((find_remove_cards.length == 10) && (typecommand == "")) {
-            startTime = performance.now();
-            console.log(startTime);
-        }
-        const key = event.key; // 이벤트에서 키 값을 가져옵니다.
-        switch (key) {
-            case 'ArrowLeft':
-                typecommand += "1"
-                break;
-            case 'ArrowUp':
-                typecommand += "5"
-                break;
-            case 'ArrowRight':
-                typecommand += "3"
-                break;
-            case 'ArrowDown':
-                typecommand += "2"
-                break;
-            case 'a':
-                typecommand += "1"
-                break;
-            case 'w':
-                typecommand += "5"
-                break;
-            case 'd':
-                typecommand += "3"
-                break;
-            case 's':
-                typecommand += "2"
-                break;
-            default:
-                typecommand = ""
-        }
-        const stratagem_cards = document.querySelectorAll('.stratagem_card');
-        if (typecommand != ""){
-            stratagem_cards.forEach(function(card) {
-                const commandDiv = card.querySelector('.stratagem_command');
-                const command = commandDiv.dataset.command;
-                if (!command.startsWith(typecommand)) {
-                    if(typecommand.slice(0, -1) != command){
-                        card.style.display = 'none';
-                    }
+    // 유효 키 판별 (방향키 or WASD)
+    const key = event.key;
+    let digit = null;
+    switch (key) {
+        case 'ArrowLeft':  case 'a': digit = '1'; break;
+        case 'ArrowDown':  case 's': digit = '2'; break;
+        case 'ArrowRight': case 'd': digit = '3'; break;
+        case 'ArrowUp':    case 'w': digit = '5'; break;
+        default:
+            // 유효하지 않은 키 → 현재 입력 초기화
+            typecommand = '';
+            resetHighlights(currentCard);
+            return;
+    }
+
+    // 첫 입력 시 타이머 시작
+    if (startTime === null) startTimer();
+
+    typecommand += digit;
+    const command = currentCard.querySelector('.stratagem_command').dataset.command;
+
+    if (command.startsWith(typecommand)) {
+        // 올바른 prefix 입력
+        updateHighlights(currentCard, typecommand.length);
+
+        if (typecommand === command) {
+            // 완전 일치 → 카드 클리어
+            playSound('/static/media/mp3/stratagem/stratagem4.mp3');
+            setTimeout(() => {
+                currentCard.style.display = 'none';
+                resetHighlights(currentCard);
+                typecommand = '';
+                currentIdx++;
+                updateStatusBar();
+
+                if (currentIdx >= TOTAL) {
+                    // 모든 카드 클리어 → 게임 완료
+                    stopTimer();
+                    showScore();
                 } else {
-                    allCardsHidden = false;
-                    soundSelect = 1;
+                    // 다음 카드 표시
+                    queue[currentIdx].style.display = '';
                 }
-                if (typecommand == command) {
-                    playSound('/static/media/mp3/stratagem/stratagem4.mp3')
-                }
-            });
-            // 모든 카드가 숨겨진 상태인지 확인하고, 그렇다면 typecommand를 빈 문자열로 설정합니다.
-            if (allCardsHidden) { // 변수 이름 수정
-                // 잘못된 입력이면 현재 시도를 초기화하고 모든 카드를 다시 보여 준다.
-                const randomOption = Math.floor(Math.random() * 2);
-                if (randomOption === 0) {
-                    playSound('/static/media/mp3/stratagem/stratagem2.mp3')
-                } else {
-                    playSound('/static/media/mp3/stratagem/stratagem3.mp3')
-                }
-                typecommand = "";
-                const imgss = document.querySelectorAll('img');
-                imgss.forEach(function(img) {
-                    img.style.filter = 'none';
-                });
-                stratagem_cards.forEach(function(card) {
-                    card.style.display = ''; // 모든 카드를 다시 보이게 만듭니다.
-                });
-            }
+            }, 500);
+        } else {
+            // 부분 일치 → 입력 진행음
+            await playSound('/static/media/mp3/stratagem/stratagem1.mp3');
         }
-        const imgs = document.querySelectorAll('img');
-        const typecommandLength = typecommand.length;
-        imgs.forEach(function(img) {
-            const id = parseInt(img.id);
-            if (typecommandLength-1 >= id) {
-                // 이미지 색상 반전
-                img.style.filter = 'sepia(100%)';
-            } 
-        });
-        if (soundSelect == 1)
-        {
-            await playSound('/static/media/mp3/stratagem/stratagem1.mp3')
-        }
-        if (typecommand != ""){
-            find_remove_cards.forEach(function(card) {
-                const commandDiv = card.querySelector('.stratagem_command');
-                const command = commandDiv.dataset.command;
-                if (typecommand == command) {
-                    // 정답 카드는 잠깐 효과음을 보여준 뒤 제거해서 다음 카드로 진행한다.
-                    setTimeout(function() {
-                        card.remove();
-                        imgs.forEach(function(img) {
-                            img.style.filter = 'none';
-                        });
-                        stratagem_cards.forEach(function(card) {
-                            card.style.display = ''; // 모든 카드를 다시 보이게 만듭니다.
-                        });
-                        typecommand = "";
-                    }, 500);
-                }
-            });
-        }
-        setTimeout(function() {
-            const final_cards = document.querySelectorAll('.stratagem_card');
-            if (final_cards.length == 0) {
-                // 마지막 카드가 사라지는 시점을 기준으로 전체 기록 시간을 계산한다.
-                const endTime = performance.now();
-                const executionTime = endTime - startTime;
-                seconds = (executionTime / 1000).toFixed(2);
-                const timer = document.querySelector('.score_time');
-                timer.textContent = seconds + '초';
-
-                //도움말 표시 비활성화
-                const discription = document.querySelector('.discription');
-                discription.style.display = 'none';
-
-                //점수창 표시 활성화
-                const score = document.querySelector('.stratagem_score');
-                score.style.display = 'flex';
-            }
-        }, 501);
+    } else {
+        // 잘못된 입력 → 오류음 + 초기화
+        const randomOption = Math.floor(Math.random() * 2);
+        playSound(randomOption === 0
+            ? '/static/media/mp3/stratagem/stratagem2.mp3'
+            : '/static/media/mp3/stratagem/stratagem3.mp3'
+        );
+        typecommand = '';
+        resetHighlights(currentCard);
     }
 });

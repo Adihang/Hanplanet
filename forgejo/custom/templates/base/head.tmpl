@@ -56,6 +56,28 @@
 	{{template "custom/header" .}}
 </head>
 <body hx-headers='{"x-csrf-token": "{{.CsrfToken}}"}' hx-swap="outerHTML" hx-ext="morph" hx-push-url="false">
+	<script>
+		(function () {
+			try {
+				var cookieMatch = document.cookie.match(/(?:^|;\s*)portfolio_theme_mode=([^;]+)/);
+				var stored = (cookieMatch ? decodeURIComponent(cookieMatch[1]) : null) || window.localStorage.getItem('portfolio_theme_mode');
+				var prefersDark;
+				if (stored === 'dark') {
+					prefersDark = true;
+				} else if (stored === 'light') {
+					prefersDark = false;
+				} else {
+					prefersDark = Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+				}
+				document.body.classList.add('page', 'theme-preinit');
+				document.body.classList.toggle('theme-dark', prefersDark);
+				document.documentElement.style.colorScheme = prefersDark ? 'dark' : 'light';
+			} catch (e) {
+				document.body.classList.add('page', 'theme-preinit');
+				document.documentElement.style.colorScheme = 'light';
+			}
+		})();
+	</script>
 	{{template "custom/body_outer_pre" .}}
 
 	<noscript>{{ctx.Locale.Tr "enable_javascript"}}</noscript>

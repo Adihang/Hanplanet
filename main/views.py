@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from .forms import PortfolioActionButtonForm, PortfolioCareerForm, PortfolioProfileForm, PortfolioProjectForm
 from .models import NavLink, QuickLink, UserProfile
-from portfolio.models import Career, Hobby, PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject, Project, Project_Tag
+from portfolio.models import PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject, Project, Project_Tag, upload_to_portfolio_profile
 from stratagem.models import Stratagem, Stratagem_Hero_Score
 from git.models import GitUserMapping
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
@@ -2531,7 +2531,6 @@ def _build_portfolio_view_context(request, ui_lang, owner):
     context["profile_main_subtitle_html"] = render_markdown_with_raw_html(profile_main_subtitle_source)
     context["profile_phone_display"] = str(profile.phone or "").strip() or "+82-10-0000-0000"
     context["profile_email_display"] = str(profile.email or "").strip() or "your.email@example.com"
-    context["show_hobbys"] = owner.username == PORTFOLIO_DEFAULT_USERNAME
     is_own_portfolio = bool(
         request.user.is_authenticated
         and str(request.user.username or "") == str(owner.username or "")
@@ -2597,7 +2596,6 @@ def _build_portfolio_view_context(request, ui_lang, owner):
             for index, sample in enumerate(sample_projects)
         ]
     context["projects"] = projects
-    context["hobbys"] = Hobby.objects.all()
 
     action_buttons = list(PortfolioActionButton.objects.filter(user=owner).order_by("order", "id")[:3])
     context["portfolio_action_buttons"] = action_buttons
@@ -2646,8 +2644,15 @@ def account_profile_image_upload(request, ui_lang=None):
     profile, _ = PortfolioProfile.objects.get_or_create(user=request.user)
     uploaded_image = request.FILES.get("profile_img")
     if uploaded_image:
-        profile.profile_img = uploaded_image
+        storage = profile._meta.get_field("profile_img").storage
+        old_name = str(profile.profile_img.name or "").strip() if profile.profile_img else ""
+        target_name = upload_to_portfolio_profile(profile, uploaded_image.name)
+        if storage.exists(target_name):
+            storage.delete(target_name)
+        profile.profile_img.save(uploaded_image.name, uploaded_image, save=False)
         profile.save(update_fields=["profile_img"])
+        if old_name and old_name != target_name and storage.exists(old_name):
+            storage.delete(old_name)
 
     next_url = str(request.POST.get("next") or "").strip()
     if not next_url.startswith("/"):
@@ -2956,6 +2961,7 @@ def Stratagem_Hero_page(request, ui_lang=None):
     apply_ui_context(request, context, resolved_lang)
     all_stratagems = list(Stratagem.objects.all())
     context['stratagems'] = random.sample(all_stratagems, 10)
+    context['account_display_name'] = get_account_display_name(request.user)
     return render(request, 'fun/Stratagem_Hero.html', context)
 
 def Stratagem_Hero_Scoreboard_page(request, ui_lang=None):

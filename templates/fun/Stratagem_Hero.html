@@ -33,36 +33,29 @@
     </head>
     <body>
         <div class="stratagem_page">
-            <div class="title">
-                <img class="stratagem_icon" src="{% static 'media/icon/Helldivers-2-Icon-PNG.png' %}" alt="Stratagem Icon"/>
-                <h3 class="title_text">Stratagem Hero</h3>
-                <img class="stratagem_icon" src="{% static 'media/icon/Helldivers-2-Icon-PNG.png' %}" alt="Stratagem Icon"/>
-            </div>
-            <hr class="stratagem_hr">
             <div class="stratagem_content">
-                <h1 class="discription">
-                    조작 : 방향키 or WASD<br>
-                </h1>
                 <div class="stratagem_score">
                     <h1 class="score_text">Score</h1>
                     <h3 class="score_time">error</h3>
                     <div class="input_score">
-                        <div class="save_chack">
-                            <input class="input_score_checkbox" type="checkbox" id="input_score_checkbox" name="input_score_checkbox">
-                            <label for="input_score_checkbox">자동입력</label>
-                        </div>
                         <div class="input_name">
-                            <input class="input_score_name" id="input_score_name" type="text" placeholder="{% include 'partials/ui_i18n.html' with key='stratagem_name_placeholder' %}">
-                            <button class="input_score_button" id="input_score_button" type="button">등록</button>
+                            <input class="ui-input input_score_name" id="input_score_name" type="text"
+                                   placeholder="{% include 'partials/ui_i18n.html' with key='stratagem_name_placeholder' %}"
+                                   {% if account_display_name %}value="{{ account_display_name }}"{% endif %}>
+                            <button class="ui-btn ui-btn-primary input_score_button" id="input_score_button" type="button">등록</button>
                         </div>
                     </div>
                 </div>
                 <div class="stratagem_container">
+                    <div class="game_status_bar">
+                        <div class="game_timer">⏱ 0.00초</div>
+                        <div class="game_remaining">10 / 10</div>
+                    </div>
                     <ul class="stratagem_cards">
                         {% for stratagem in stratagems %}
                         <li class="stratagem_card">
                             <div class="stratagem_card_title">
-                                <img class="stratagem_icon" src="{{ stratagem.icon.url }}" alt="Stratagem Icon"/>
+                                <img class="stratagem_card_icon stratagem_icon" src="{{ stratagem.icon.url }}" alt="Stratagem Icon"/>
                                 <div class="stratagem_name">{{ stratagem.name }} </div>
                             </div>
                             <div class="stratagem_command" data-command="{{ stratagem.command }}"></div>
@@ -71,6 +64,7 @@
                     </ul>
                 </div>
             </div>
+            <div class="description_bottom">조작 : 방향키 or WASD</div>
             <div class="arrow_keypad">
                 <div class="row row-top">
                     <div class="arrow arrow-top"></div>

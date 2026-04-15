@@ -12,6 +12,7 @@ body {
     padding-bottom: 56px;
 }
 
+/* ── Page shell ─────────────────────────────────────────────────────────── */
 .stratagem_page {
     height: calc(100vh - 28px);
     width: 100%;
@@ -23,169 +24,153 @@ body {
     overflow: hidden;
 }
 
-.stratagem_content{
+/* ── Title ──────────────────────────────────────────────────────────────── */
+.title {
+    display: flex;
+    margin: 10px;
+    justify-content: center;
+    align-items: center;
+    align-content: center;
+    flex-shrink: 0;
+}
+.title_text {
+    padding-top: 10px;
+    padding-left: 10px;
+    padding-right: 10px;
+    font-size: clamp(2rem, 3vw, 38px);
+}
+
+/* ── Divider ────────────────────────────────────────────────────────────── */
+.stratagem_hr {
+    border-width: 2px;
+    color: white;
+    margin: 6px 0;
+    flex-shrink: 0;
+}
+
+/* ── Game status bar (timer + remaining count) ───────────────────────────── */
+.game_status_bar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 0 16px 10px;
+    flex-shrink: 0;
+}
+.game_timer {
+    font-size: clamp(1.3rem, 3vw, 1.7rem);
+    color: #ffd700;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+}
+.game_remaining {
+    font-size: clamp(0.9rem, 1.8vw, 1.1rem);
+    color: #aaaaaa;
+}
+
+/* ── Content area ───────────────────────────────────────────────────────── */
+.stratagem_content {
     flex: 1;
     min-height: 0;
     width: 100%;
     position: relative;
     overflow: hidden;
 }
-@media (min-width: 900px) {
-    .stratagem_container {
-        position: relative;
-        display: flex;
-        align-items: flex-start;
-        justify-content: flex-start;
-        height: 100%;
-        width: 100%;
-        min-width: 0;
-    }  
-    .stratagem_cards {
-        position: absolute;
-        justify-content: center;
-        align-items: center;
-        align-content: center;
-        height: 100%;
-        width: 100%;
-        overflow-x: hidden;
-        overflow-y: auto;
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-    }
-    .arrow_keypad {
-        display: none;
-    }
-    .stratagem_icon{
-        height: 50px;
-        width: 50px;
-        margin-right: 5px;
-        border-radius: 10%;
-    }
-    .stratagem_name {
-        font-size: 20px;
-        margin-right: 5px;
-    }  
-}
-@media (max-width: 899px) {
-    .stratagem_container {
-        position: relative;
-        display: flex;
-        align-items: flex-start;
-        justify-content: flex-start;
-        height: 100%;
-        width: 100%;
-        min-width: 0;
-    }  
-    .stratagem_content{
-        flex: 1;
-        min-height: 0;
-        position: relative;
-    }
-    .stratagem_cards {
-        position: absolute;
-        justify-content: center;
-        align-items: center;
-        align-content: center;
-        height: 100%;
-        width: 100%;
-        overflow-x: hidden;
-        overflow-y: auto;
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-    }
-    .arrow_keypad {
-        display: flex;
-        flex-direction: column; /* 자식 요소를 세로 방향으로 정렬 */
-        justify-content: center;
-        align-items: center;
-        align-content: center;
-        height: min(20vh, 180px);
-        width: 100%;
-        flex-shrink: 0;
-    }
-    .stratagem_icon{
-        height: 30px;
-        width: 30px;
-        margin-right: 2px;
-        border-radius: 10%;
-    }
-    .stratagem_name {
-        font-size: 15px;
-        margin-right: 5px;
-    }  
-    .commend_arrow{
-        height: 22px;
-        width: 22px;
-    }
-}
-title{
-    padding-left: 10px;
-}
 
-.stratagem_hr{
-    border-width: 2px;
-    color: white;
-    margin: 6px 0;
-    flex-shrink: 0;
-}
-.arrow {
-    margin: 10px;
-    width: 60px;
-    height: 60px;
-    background-size: contain;
-}
-.row {
-    display: flex; /* 각 행을 가로 방향으로 정렬 */
-    justify-content: center;
-    width: 100%; /* 부모 요소의 전체 너비 사용 */
-}
-.row-top {
+/* ── Card container & list ──────────────────────────────────────────────── */
+.stratagem_container {
     display: flex;
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
+    height: 100%;
     width: 100%;
 }
-.row-bottom {
+.stratagem_cards {
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
     width: 100%;
-} 
-.arrow-top {
-    order: -1;
-    background-image: url('/static/media/icon/arrow5.png');
-}  
-  
-.arrow-bottom {
-    order: 0;
-    background-image: url('/static/media/icon/arrow2.png');
-}  
-  
-.arrow-left {
-    order: 0;
-    background-image: url('/static/media/icon/arrow1.png');
-}  
-  
-.arrow-right {
-    order: 0;
-    background-image: url('/static/media/icon/arrow3.png');
-}  
-  
-.content {margin-top: 0px;margin-left: 0px;  
+    margin: 0;
+    padding: 0;
 }
 
-.global_score{
+/* ── Single card ────────────────────────────────────────────────────────── */
+.stratagem_card {
+    width: 100%;
+    padding: 12px 16px;
     display: flex;
-    margin: 5px;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
-    align-content: center;
+    gap: 14px;
 }
-.global_score_time{
-    color: yellow;
-    margin-left: 5px;
+.stratagem_card_title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
-.stratagem_score{
+
+/* ── Shared UI components (dark-theme) ──────────────────────────────────── */
+.ui-input {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
+    color: #fff;
+    padding: 8px 12px;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.ui-input::placeholder {
+    color: rgba(255, 255, 255, 0.35);
+}
+.ui-input:focus {
+    border-color: rgba(255, 255, 255, 0.6);
+}
+.ui-btn {
+    appearance: none;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    color: #fff;
+    padding: 8px 16px;
+    font-size: 15px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.ui-btn:hover,
+.ui-btn:focus-visible {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.5);
+}
+.ui-btn.ui-btn-primary {
+    background: #ffd700;
+    border-color: #ffd700;
+    color: #1a1a1a;
+    font-weight: 700;
+}
+.ui-btn.ui-btn-primary:hover,
+.ui-btn.ui-btn-primary:focus-visible {
+    background: #ffe84d;
+    border-color: #ffe84d;
+    color: #1a1a1a;
+}
+
+/* ── Score input area ────────────────────────────────────────────────────── */
+.input_score {
+    margin-top: 12px;
+}
+.input_name {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* ── Score overlay ──────────────────────────────────────────────────────── */
+.stratagem_score {
     z-index: 9999;
     position: absolute;
     display: none;
@@ -198,69 +183,57 @@ title{
     left: 50%;
     transform: translate(-50%, -50%);
 }
-.stratagem_scoreboard{
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-height: 0;
-}
-
-.scoreboard_text{
-    text-align: center;
-}
-
-.score_time{
+.score_time {
     color: yellow;
 }
-.discription{
-    position: absolute;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    align-content: center;
-    height: 30vh;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+
+/* ── Description at the bottom ─────────────────────────────────────────── */
+.description_bottom {
+    text-align: center;
     color: rgb(129, 129, 129);
-}
-
-.stratagem_card{
-    width: calc(100% - 20px);
-    padding: 5px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    align-content: center;
-}
-.stratagem_card_title {
-    max-width: 100%;
-    display: flex;
-    align-items: center;
-}
-
-
-ul{
-    list-style-type: none;
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-.title{
-    display: flex;
-    margin: 10px;
-    justify-content: center;
-    align-items: center;
-    align-content: center;
+    font-size: 0.85rem;
+    padding: 4px 0 2px;
     flex-shrink: 0;
 }
-.title_text{
-    padding-top: 10px;
-    padding-left: 10px;
-    padding-right: 10px;
-    font-size: clamp(2rem, 3vw, 38px);
+
+/* ── Mobile d-pad ───────────────────────────────────────────────────────── */
+.row {
+    display: flex;
+    justify-content: center;
+    width: 100%;
 }
+.row-top {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+}
+.row-bottom {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+}
+.arrow {
+    width: 64px;
+    height: 64px;
+    margin: 6px;
+    background-size: 70%;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background-color 0.1s;
+}
+.arrow:active {
+    background-color: rgba(255, 255, 255, 0.22);
+}
+.arrow-top    { background-image: url('/static/media/icon/arrow5.png'); }
+.arrow-bottom { background-image: url('/static/media/icon/arrow2.png'); }
+.arrow-left   { background-image: url('/static/media/icon/arrow1.png'); }
+.arrow-right  { background-image: url('/static/media/icon/arrow3.png'); }
+
+/* ── Footer ─────────────────────────────────────────────────────────────── */
 .minigame-footer {
     position: fixed;
     left: 0;
@@ -268,21 +241,133 @@ ul{
     bottom: 0;
     z-index: 5;
     padding: 0 12px 6px;
-    background: linear-gradient(to top, rgba(54, 54, 54, 0.96), rgba(54, 54, 54, 0.55), transparent);
+    background: none;
 }
-
 .minigame-footer .stratagem_hr {
     margin: 0 0 4px;
 }
-
-.lowtext{
+.lowtext {
     padding-left: 0;
 }
 
+/* ── Scoreboard page ────────────────────────────────────────────────────── */
+.stratagem_scoreboard {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    min-height: 0;
+}
+.scoreboard_text {
+    text-align: center;
+    flex-shrink: 0;
+}
 .global_scores {
     overflow-y: auto;
     min-height: 0;
     margin-top: 8px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(255, 255, 255, 0.35);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    column-gap: 32px;
+    row-gap: 4px;
+    width: 100%;
+    max-width: 420px;
+}
+.global_score {
+    display: contents;
+}
+.global_score_name {
+    margin: 0;
+    font-size: 1rem;
+}
+.global_score_time {
+    color: #ffd700;
+    margin: 0;
+    text-align: right;
+    font-size: 0.95rem;
+    white-space: nowrap;
+}
+.scoreboard_actions {
+    display: flex;
+    justify-content: center;
+    padding: 20px 0 8px;
+    flex-shrink: 0;
+}
+
+/* ── Misc ───────────────────────────────────────────────────────────────── */
+ul {
+    list-style-type: none;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* ── Desktop (≥ 900px) ──────────────────────────────────────────────────── */
+@media (min-width: 900px) {
+    .arrow_keypad {
+        display: none;
+    }
+    .description_bottom {
+        display: none; /* 데스크탑에서는 키보드 조작이 자명하므로 숨김 */
+    }
+    .stratagem_icon {
+        height: 50px;
+        width: 50px;
+        margin-right: 5px;
+        border-radius: 10%;
+    }
+    .stratagem_card_icon {
+        height: 72px;
+        width: 72px;
+    }
+    .stratagem_name {
+        font-size: clamp(1.2rem, 2vw, 1.6rem);
+        font-weight: 700;
+        margin-right: 5px;
+    }
+    .commend_arrow {
+        height: 36px;
+        width: 36px;
+    }
+}
+
+/* ── Mobile (≤ 899px) ───────────────────────────────────────────────────── */
+@media (max-width: 899px) {
+    .arrow_keypad {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        align-content: center;
+        height: min(18vh, 155px);
+        width: 100%;
+        flex-shrink: 0;
+        padding-bottom: 4px;
+    }
+    .stratagem_icon {
+        height: 30px;
+        width: 30px;
+        margin-right: 2px;
+        border-radius: 10%;
+    }
+    .stratagem_card_icon {
+        height: 54px;
+        width: 54px;
+    }
+    .stratagem_name {
+        font-size: clamp(1rem, 4vw, 1.3rem);
+        font-weight: 700;
+        margin-right: 5px;
+    }
+    .commend_arrow {
+        height: 28px;
+        width: 28px;
+    }
+    .arrow {
+        width: 56px;
+        height: 56px;
+        margin: 4px;
+    }
 }

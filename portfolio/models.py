@@ -5,7 +5,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from config.utils import make_new_path
+from config.utils import build_model_field_upload_path, build_user_profile_upload_path, make_new_path
 
 
 class OrderField(models.PositiveIntegerField):
@@ -24,19 +24,13 @@ def upload_to_project(instance, filename):
 
 
 def upload_to_portfolio_profile(instance, filename):
-    return make_new_path(
-        path_ext=filename,
-        dirname="uploads/contents/portfolio/profile",
-        new_filename=str(uuid.uuid4().hex),
-    )
+    username = getattr(getattr(instance, "user", None), "username", "") or "anon"
+    return build_user_profile_upload_path(username, filename)
 
 
 def upload_to_portfolio_project(instance, filename):
-    return make_new_path(
-        path_ext=filename,
-        dirname="uploads/contents/portfolio/project",
-        new_filename=str(uuid.uuid4().hex),
-    )
+    username = getattr(getattr(instance, "user", None), "username", "") or "anon"
+    return build_model_field_upload_path(username, "portfolioproject", "banner_img", filename)
 
 
 class Project_Tag(models.Model):

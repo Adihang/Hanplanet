@@ -56,6 +56,7 @@ from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_http_methods
 
+from config.utils import build_user_folder_icon_dir, sanitize_upload_segment
 from .views import (
     SUPPORTED_UI_LANGS,
     apply_ui_context,
@@ -2061,13 +2062,13 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                             build_handrive_shared_view_url(_ui_lang, _link.owner.username, _link.share_slug)
                         )
                 # 커스텀 폴더 아이콘 URL 주입
-                _uid = str(getattr(request.user, "id", "")) if request.user.is_authenticated else ""
-                if _uid:
-                    _stem = re.sub(r"[^a-zA-Z0-9._-]", "_", child.name)
-                    _icons_dir = Path(settings.MEDIA_ROOT) / "uploads" / _uid
+                _owner_key = get_folder_icon_owner_key_for_user(request.user)
+                if _owner_key and _owner_key != "anon":
+                    _stem = sanitize_upload_segment(child.name) or "folder"
+                    _icons_dir = Path(settings.MEDIA_ROOT) / build_user_folder_icon_dir(_owner_key)
                     if any(_icons_dir.glob(f"{_stem}.*")):
                         entry["folder_icon_url"] = (
-                            f"/handrive/api/folder-icon/?user_id={quote(_uid)}&folder_stem={quote(_stem)}"
+                            f"/handrive/api/folder-icon?owner_key={quote(_owner_key)}&folder_stem={quote(_stem)}"
                         )
             entries.append(entry)
             existing_entry_paths.add(entry["path"])
@@ -5059,6 +5060,26 @@ def json_error(message, status=400):
     return JsonResponse({"ok": False, "error": message}, status=status)
 
 
+def get_folder_icon_owner_key_for_user(user) -> str:
+    if not getattr(user, "is_authenticated", False):
+        return "anon"
+    username_key = sanitize_upload_segment(getattr(user, "username", ""))
+    if username_key:
+        return username_key
+    return "anon"
+
+
+def extract_folder_icon_path_value(request) -> str:
+    path_value = request.POST.get("path", "").strip()
+    if path_value:
+        return path_value
+    try:
+        payload = parse_json_body(request)
+    except ValueError:
+        return ""
+    return str(payload.get("path", "") or "").strip()
+
+
 def parse_id_list(raw_value, field_name: str) -> list[int]:
     if raw_value in (None, ""):
         return []
@@ -7037,10 +7058,10 @@ def handrive_api_folder_icon_upload(request):
     suffix = Path(icon_file.name).suffix.lower()
     if suffix not in FOLDER_ICON_EXTENSIONS:
         return json_error("지원하지 않는 이미지 형식입니다.", status=400)
-    user_id = str(getattr(request.user, "id", "anon"))
-    icons_dir = Path(settings.MEDIA_ROOT) / "uploads" / user_id
+    owner_key = get_folder_icon_owner_key_for_user(request.user)
+    icons_dir = Path(settings.MEDIA_ROOT) / build_user_folder_icon_dir(owner_key)
     icons_dir.mkdir(parents=True, exist_ok=True)
-    folder_stem = re.sub(r"[^a-zA-Z0-9._-]", "_", folder.name)
+    folder_stem = sanitize_upload_segment(folder.name) or "folder"
     # 기존 아이콘 삭제
     for old in icons_dir.glob(f"{folder_stem}.*"):
         if old.suffix.lower() in FOLDER_ICON_EXTENSIONS:
@@ -7055,7 +7076,7 @@ def handrive_api_folder_icon_upload(request):
                 f.write(chunk)
     except (OSError, PermissionError) as exc:
         return _storage_unavailable_response(request, exc)
-    icon_url = f"/handrive/api/folder-icon/?user_id={quote(user_id)}&folder_stem={quote(folder_stem)}"
+    icon_url = f"/handrive/api/folder-icon?owner_key={quote(owner_key)}&folder_stem={quote(folder_stem)}"
     return JsonResponse({"ok": True, "icon_url": icon_url})
 
 
@@ -7064,7 +7085,7 @@ def handrive_api_folder_icon_upload(request):
 @with_request_handrive_root
 def handrive_api_folder_icon_delete(request):
     """폴더 커스텀 아이콘을 삭제한다."""
-    folder_path_value = request.POST.get("path", "").strip()
+    folder_path_value = extract_folder_icon_path_value(request)
     if not folder_path_value:
         return json_error("path가 필요합니다.", status=400)
     try:
@@ -7076,9 +7097,9 @@ def handrive_api_folder_icon_delete(request):
         return json_error("폴더를 찾을 수 없습니다.", status=404)
     if not has_handrive_write_access(request, folder_relative):
         return json_error("파일을 삭제할 권한이 없습니다.", status=403)
-    user_id = str(getattr(request.user, "id", "anon"))
-    icons_dir = Path(settings.MEDIA_ROOT) / "uploads" / user_id
-    folder_stem = re.sub(r"[^a-zA-Z0-9._-]", "_", folder.name)
+    owner_key = get_folder_icon_owner_key_for_user(request.user)
+    icons_dir = Path(settings.MEDIA_ROOT) / build_user_folder_icon_dir(owner_key)
+    folder_stem = sanitize_upload_segment(folder.name) or "folder"
     deleted = False
     for old_icon in icons_dir.glob(f"{folder_stem}.*"):
         if old_icon.suffix.lower() in FOLDER_ICON_EXTENSIONS:
@@ -7095,16 +7116,16 @@ def handrive_api_folder_icon_delete(request):
 @require_http_methods(["GET"])
 def handrive_api_folder_icon_serve(request):
     """폴더 커스텀 아이콘을 인라인으로 서빙한다."""
-    user_id = request.GET.get("user_id", "").strip()
+    owner_key = request.GET.get("owner_key", "").strip()
     folder_stem = request.GET.get("folder_stem", "").strip()
-    if not user_id or not folder_stem:
+    if not owner_key or not folder_stem:
         raise Http404
     # Path traversal 방지
-    if not re.fullmatch(r"[0-9]+", user_id):
+    if not re.fullmatch(r"[a-zA-Z0-9._-]+", owner_key):
         raise Http404
     if not re.fullmatch(r"[a-zA-Z0-9._-]+", folder_stem):
         raise Http404
-    icons_dir = Path(settings.MEDIA_ROOT) / "uploads" / user_id
+    icons_dir = Path(settings.MEDIA_ROOT) / build_user_folder_icon_dir(owner_key)
     icon_path = None
     for candidate in icons_dir.glob(f"{folder_stem}.*"):
         if candidate.suffix.lower() in FOLDER_ICON_EXTENSIONS and candidate.is_file():

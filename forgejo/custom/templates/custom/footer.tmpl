@@ -17,7 +17,6 @@
 (function () {
   /* ── body.page + body.theme-dark — www base.html 공통 클래스 ── */
   document.body.classList.add('page');
-  document.body.classList.add('theme-preinit');
   document.body.dataset.authenticated = '{{if .IsSigned}}1{{else}}0{{end}}';
   (function () {
     try {
@@ -32,6 +31,7 @@
         prefersDark = Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
       }
       document.body.classList.toggle('theme-dark', prefersDark);
+      document.documentElement.style.colorScheme = prefersDark ? 'dark' : 'light';
     } catch (e) {}
   })();
 

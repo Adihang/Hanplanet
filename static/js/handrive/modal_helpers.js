@@ -46,6 +46,28 @@
         }
     }
 
+    function setFolderIconModalOpen(modal, folderIconTarget, folderIconFileInput, syncModalBodyState, opened, entry, targetLabel) {
+        if (!modal) {
+            return;
+        }
+        modal.hidden = !opened;
+        if (typeof syncModalBodyState === "function") {
+            syncModalBodyState();
+        }
+        if (!opened) {
+            if (folderIconFileInput) {
+                folderIconFileInput.value = "";
+            }
+            return;
+        }
+        if (folderIconTarget) {
+            folderIconTarget.textContent = targetLabel || "";
+        }
+        if (folderIconFileInput) {
+            folderIconFileInput.focus();
+        }
+    }
+
     function renderPermissionItems(container, items, selectedIdSet, emptyMessage, options) {
         if (!container) {
             return;
@@ -123,6 +145,7 @@
         readCheckedIds: readCheckedIds,
         renderPermissionItems: renderPermissionItems,
         setFolderCreateModalOpen: setFolderCreateModalOpen,
+        setFolderIconModalOpen: setFolderIconModalOpen,
         setPermissionModalOpen: setPermissionModalOpen,
         setRenameModalOpen: setRenameModalOpen,
     };

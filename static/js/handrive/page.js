@@ -14,6 +14,43 @@
     const sharedOwnerUsername = String(root.dataset.handriveSharedOwnerUsername || "").trim();
     const sharedSlug = String(root.dataset.handriveSharedSlug || "").trim();
 
+    window.addEventListener("message", function (event) {
+        const data = event && event.data && typeof event.data === "object" ? event.data : null;
+        if (!data || data.type !== "handrive-office-preview-size") {
+            return;
+        }
+        const width = Math.max(1, Math.ceil(Number(data.width) || 0));
+        const height = Math.max(1, Math.ceil(Number(data.height) || 0));
+        if (!width || !height) {
+            return;
+        }
+        const frames = Array.prototype.slice.call(document.querySelectorAll(".handrive-office .handrive-html-live-frame"));
+        const frame = frames.find(function (candidate) {
+            return candidate && candidate.contentWindow === event.source;
+        });
+        if (!frame) {
+            return;
+        }
+        const wrap = frame.closest(".handrive-html-live-wrap");
+        const article = frame.closest(".handrive-office");
+        const viewportWidth = Math.max(1, Number(article ? article.clientWidth : frame.clientWidth) || 0);
+        const appliedWidth = Math.max(viewportWidth, width);
+        if (event.source && typeof event.source.postMessage === "function") {
+            event.source.postMessage({
+                type: "handrive-office-preview-viewport",
+                width: viewportWidth,
+            }, "*");
+        }
+        if (wrap) {
+            wrap.style.width = appliedWidth + "px";
+            wrap.style.maxWidth = "none";
+            wrap.style.height = height + "px";
+        }
+        frame.style.width = appliedWidth + "px";
+        frame.style.maxWidth = "none";
+        frame.style.height = height + "px";
+    });
+
     function hasSharedContext() {
         return Boolean(sharedOwnerUsername && sharedSlug);
     }

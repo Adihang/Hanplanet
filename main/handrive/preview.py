@@ -401,13 +401,11 @@ html body {
     overflow-x: auto;
     overflow-y: auto;
     box-sizing: border-box;
-    display: inline-block;
-    width: max-content;
+    width: 100%;
     min-width: 100%;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Nanum Gothic", sans-serif;
     font-size: 14px;
     line-height: 1.45;
-    zoom: var(--handrive-office-zoom, 1);
 }
 html body div,
 html body table,
@@ -439,10 +437,17 @@ html body th {
     border: 1px solid #d0d7de;
     padding: 6px 8px;
     vertical-align: middle;
-    white-space: pre-wrap;
+    white-space: pre;
 }
 html body col {
     width: auto;
+}
+#handrive-office-zoom-viewport {
+    position: relative;
+    transform: translateZ(0);
+}
+#handrive-office-zoom-content {
+    transform-origin: top left;
 }
 """
             office_fit_js = """
@@ -453,6 +458,7 @@ html body col {
     var userZoom = 1;
     var scheduled = false;
     var root = document.documentElement;
+    var parentAvailableWidth = 0;
 
     function clamp(value, minValue, maxValue) {
         value = Number(value);
@@ -463,29 +469,66 @@ html body col {
     }
 
     function getAvailableWidth() {
-        return Math.max(1, Number(root.clientWidth || window.innerWidth || 0));
+        return Math.max(1, Number(parentAvailableWidth || root.clientWidth || window.innerWidth || 0));
+    }
+
+    function ensureZoomCanvas() {
+        var body = document.body;
+        if (!body) {
+            return null;
+        }
+        var viewport = document.getElementById("handrive-office-zoom-viewport");
+        var content = document.getElementById("handrive-office-zoom-content");
+        if (viewport && content) {
+            return { viewport: viewport, content: content };
+        }
+
+        var currentScript = document.currentScript || null;
+        viewport = document.createElement("div");
+        viewport.id = "handrive-office-zoom-viewport";
+        content = document.createElement("div");
+        content.id = "handrive-office-zoom-content";
+
+        Array.prototype.slice.call(body.childNodes).forEach(function (node) {
+            if (node === currentScript || node === viewport) {
+                return;
+            }
+            content.appendChild(node);
+        });
+        viewport.appendChild(content);
+        if (currentScript && currentScript.parentNode === body) {
+            body.insertBefore(viewport, currentScript);
+        } else {
+            body.appendChild(viewport);
+        }
+        return { viewport: viewport, content: content };
     }
 
     function normalizeTableSizing() {
+        var availableWidth = getAvailableWidth();
         var tables = Array.prototype.slice.call(document.querySelectorAll("table"));
         tables.forEach(function (table) {
             table.style.setProperty("width", "max-content");
-            table.style.setProperty("min-width", "100%");
+            table.style.setProperty("min-width", availableWidth + "px");
             table.style.setProperty("max-width", "none");
             table.style.setProperty("table-layout", "auto");
         });
     }
 
     function readUnscaledContentWidth() {
-        var previousZoom = root.style.getPropertyValue("--handrive-office-zoom");
-        root.style.setProperty("--handrive-office-zoom", "1");
+        var canvas = ensureZoomCanvas();
+        if (!canvas) {
+            return 1;
+        }
+        canvas.content.style.transform = "none";
+        canvas.content.style.width = "auto";
+        canvas.viewport.style.width = "auto";
         normalizeTableSizing();
 
-        var body = document.body;
         var width = Math.max(
             1,
-            Number(root.scrollWidth || 0),
-            Number(body ? body.scrollWidth : 0)
+            Number(canvas.content.scrollWidth || 0),
+            Number(canvas.content.offsetWidth || 0)
         );
         var tables = Array.prototype.slice.call(document.querySelectorAll("table"));
         tables.forEach(function (table) {
@@ -497,27 +540,52 @@ html body col {
             );
         });
 
-        if (previousZoom) {
-            root.style.setProperty("--handrive-office-zoom", previousZoom);
-        } else {
-            root.style.removeProperty("--handrive-office-zoom");
-        }
         return Math.max(1, width);
+    }
+
+    function readUnscaledContentHeight(canvas) {
+        if (!canvas) {
+            return 1;
+        }
+        canvas.content.style.transform = "none";
+        canvas.viewport.style.height = "auto";
+        return Math.max(
+            1,
+            Number(canvas.content.scrollHeight || 0),
+            Number(canvas.content.offsetHeight || 0)
+        );
     }
 
     function applyZoom(nextUserZoom) {
         userZoom = clamp(nextUserZoom, MIN_ZOOM, MAX_ZOOM);
+        var canvas = ensureZoomCanvas();
         var baseWidth = readUnscaledContentWidth();
+        var baseHeight = readUnscaledContentHeight(canvas);
         var availableWidth = getAvailableWidth();
         var fitZoom = clamp(availableWidth / baseWidth, MIN_ZOOM, MAX_FIT_ZOOM);
         var appliedZoom = clamp(fitZoom * userZoom, MIN_ZOOM, MAX_ZOOM);
+        var scaledWidth = Math.ceil(baseWidth * appliedZoom);
+        var scaledHeight = Math.ceil(baseHeight * appliedZoom);
 
         root.style.setProperty("--handrive-office-fit-zoom", String(fitZoom.toFixed(3)));
-        root.style.setProperty("--handrive-office-zoom", String(appliedZoom.toFixed(3)));
+        root.style.setProperty("--handrive-office-applied-zoom", String(appliedZoom.toFixed(3)));
+        if (canvas) {
+            canvas.content.style.width = baseWidth + "px";
+            canvas.content.style.transform = "scale(" + String(appliedZoom.toFixed(3)) + ")";
+            canvas.viewport.style.width = Math.max(availableWidth, scaledWidth) + "px";
+            canvas.viewport.style.height = scaledHeight + "px";
+        }
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+                type: "handrive-office-preview-size",
+                width: Math.max(availableWidth, scaledWidth),
+                height: scaledHeight
+            }, "*");
+        }
         if (document.body) {
             document.body.classList.toggle(
                 "is-handrive-office-overflowing",
-                baseWidth * appliedZoom > availableWidth + 1
+                scaledWidth > availableWidth + 1
             );
         }
     }
@@ -542,6 +610,18 @@ html body col {
     }, { passive: false });
 
     window.addEventListener("resize", scheduleFit, { passive: true });
+    window.addEventListener("message", function (event) {
+        var data = event && event.data && typeof event.data === "object" ? event.data : null;
+        if (!data || data.type !== "handrive-office-preview-viewport") {
+            return;
+        }
+        var nextParentAvailableWidth = Math.max(1, Number(data.width || 0));
+        if (Math.abs(nextParentAvailableWidth - parentAvailableWidth) < 1) {
+            return;
+        }
+        parentAvailableWidth = nextParentAvailableWidth;
+        scheduleFit();
+    });
     if (document.fonts && typeof document.fonts.ready === "object") {
         document.fonts.ready.then(scheduleFit).catch(function () {});
     }
@@ -558,13 +638,13 @@ html body col {
                 companion_css=office_override_css,
                 companion_js=office_fit_js,
             )
+        if extension == ".xlsx":
+            return mark_safe(_extract_xlsx_preview_html(source_bytes))
     pdf_bytes = convert_office_bytes_to_pdf(extension, source_bytes, f"preview{extension or '.docx'}")
     if pdf_bytes:
         return render_handrive_pdf_safely(pdf_bytes, f"preview{extension or '.pdf'}")
     if extension == ".docx":
         return mark_safe(_extract_docx_preview_html(source_bytes))
-    if extension == ".xlsx":
-        return mark_safe(_extract_xlsx_preview_html(source_bytes))
     if extension == ".pptx":
         return mark_safe(_extract_pptx_preview_html(source_bytes))
     if extension in {".doc", ".xls", ".ppt"}:

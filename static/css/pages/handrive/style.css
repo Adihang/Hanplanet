@@ -3248,11 +3248,11 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 .handrive-office-table th {
     padding: 8px 10px;
     border: 1px solid var(--handrive-border);
-    font-size: 14px;
+    font-size: var(--handrive-text-font-size, 14px);
     line-height: 1.4;
     vertical-align: top;
     text-align: left;
-    white-space: pre-wrap;
+    white-space: pre;
     background: var(--handrive-bg);
 }
 

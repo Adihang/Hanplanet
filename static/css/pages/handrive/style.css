@@ -3158,6 +3158,9 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 .handrive-js,
 .handrive-py,
 .handrive-office {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
     border: 0;
     border-radius: var(--handrive-radius-lg);
     background: var(--handrive-bg);
@@ -3200,6 +3203,8 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 .handrive-office {
     display: grid;
     gap: 14px;
+    overflow-x: auto;
+    overflow-y: auto;
 }
 
 .handrive-office > p,
@@ -3227,6 +3232,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 }
 
 .handrive-office-table-wrap {
+    max-width: 100%;
     overflow: auto;
 }
 
@@ -3580,11 +3586,15 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
 
 .handrive-html,
 .handrive-office {
-    overflow: hidden;
+    overflow: auto;
 }
 
 .handrive-html .handrive-html-live-wrap,
 .handrive-office .handrive-html-live-wrap {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
     border: 0;
     border-radius: 8px;
     background: #ffffff;
@@ -3596,6 +3606,9 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
 .handrive-html .handrive-html-live-frame,
 .handrive-office .handrive-html-live-frame {
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
     height: 100%;
     min-height: 720px;
     flex: 1 1 auto;
@@ -3629,6 +3642,10 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
 .handrive-list-preview-content.handrive-office {
     display: flex;
     flex-direction: column;
+    min-width: 0;
+    max-width: 100%;
+    overflow: auto;
+    touch-action: pan-x pan-y;
 }
 
 .handrive-list-preview-content.handrive-html .handrive-html-live-wrap,
@@ -3689,6 +3706,10 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
 .handrive-content[data-handrive-page="view"] > article.handrive-office {
     display: flex;
     flex-direction: column;
+    min-width: 0;
+    max-width: 100%;
+    overflow: auto;
+    touch-action: pan-x pan-y;
 }
 
 .handrive-content[data-handrive-page="view"] > article.handrive-html .handrive-html-live-wrap,

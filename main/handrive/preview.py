@@ -393,12 +393,16 @@ def render_handrive_office_preview_safely(file_extension: str, source_bytes: byt
 html, body {
     margin: 0;
     padding: 0;
+    width: 100%;
+    min-width: 0;
     background: #ffffff;
     color: #1f2328;
 }
 html body {
     padding: 14px;
     overflow-x: auto;
+    overflow-y: auto;
+    box-sizing: border-box;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Nanum Gothic", sans-serif;
     font-size: 14px;
     line-height: 1.45;
@@ -424,6 +428,7 @@ html body table {
     border-spacing: 0;
     width: max-content;
     min-width: 100%;
+    max-width: none;
     background: #ffffff;
 }
 html body td,
@@ -436,8 +441,164 @@ html body th {
 html body col {
     width: auto;
 }
+.handrive-office-scale-root {
+    position: relative;
+    min-width: 100%;
+}
+.handrive-office-scale-content {
+    transform-origin: 0 0;
+    will-change: transform;
+}
 """
-            return render_handrive_html_live_safely(html_text, companion_css=office_override_css)
+            office_fit_js = """
+(function () {
+    var MIN_ZOOM = 0.35;
+    var MAX_ZOOM = 3;
+    var MAX_FIT_ZOOM = 1.25;
+    var userZoom = 1;
+    var scheduled = false;
+    var html = document.documentElement;
+    var scaleRoot = null;
+    var scaleContent = null;
+
+    function clamp(value, minValue, maxValue) {
+        value = Number(value);
+        if (!Number.isFinite(value)) {
+            value = 1;
+        }
+        return Math.max(minValue, Math.min(maxValue, value));
+    }
+
+    function getAvailableWidth() {
+        var body = document.body;
+        var bodyStyle = body ? window.getComputedStyle(body) : null;
+        var paddingLeft = bodyStyle ? parseFloat(bodyStyle.paddingLeft) || 0 : 0;
+        var paddingRight = bodyStyle ? parseFloat(bodyStyle.paddingRight) || 0 : 0;
+        return Math.max(1, Number(html.clientWidth || window.innerWidth || 0) - paddingLeft - paddingRight);
+    }
+
+    function ensureScaleRoot() {
+        if (scaleRoot && scaleContent) {
+            return true;
+        }
+        var body = document.body;
+        if (!body) {
+            return false;
+        }
+        scaleRoot = document.createElement("div");
+        scaleRoot.className = "handrive-office-scale-root";
+        scaleContent = document.createElement("div");
+        scaleContent.className = "handrive-office-scale-content";
+
+        var currentScript = document.currentScript;
+        Array.prototype.slice.call(body.childNodes).forEach(function (node) {
+            if (node === currentScript || node === scaleRoot) {
+                return;
+            }
+            scaleContent.appendChild(node);
+        });
+        scaleRoot.appendChild(scaleContent);
+        if (currentScript && currentScript.parentNode === body) {
+            body.insertBefore(scaleRoot, currentScript);
+        } else {
+            body.appendChild(scaleRoot);
+        }
+        return true;
+    }
+
+    function readUnscaledSize() {
+        if (!ensureScaleRoot()) {
+            return { width: 1, height: 1 };
+        }
+        scaleRoot.style.width = "";
+        scaleRoot.style.height = "";
+        scaleContent.style.width = "";
+        scaleContent.style.transform = "scale(1)";
+
+        var width = Math.max(1, Number(scaleContent.scrollWidth || 0));
+        var height = Math.max(1, Number(scaleContent.scrollHeight || 0));
+        var tables = Array.prototype.slice.call(document.querySelectorAll("table"));
+        tables.forEach(function (table) {
+            var rect = table.getBoundingClientRect();
+            width = Math.max(
+                width,
+                Number(table.scrollWidth || 0),
+                Number(rect && rect.width ? rect.width : 0)
+            );
+            height = Math.max(
+                height,
+                Number(table.scrollHeight || 0),
+                Number(rect && rect.height ? rect.height : 0)
+            );
+        });
+
+        return { width: Math.max(1, width), height: Math.max(1, height) };
+    }
+
+    function applyZoom(nextUserZoom) {
+        if (!ensureScaleRoot()) {
+            return;
+        }
+        userZoom = clamp(nextUserZoom, MIN_ZOOM, MAX_ZOOM);
+        var baseSize = readUnscaledSize();
+        var baseWidth = baseSize.width;
+        var baseHeight = baseSize.height;
+        var availableWidth = getAvailableWidth();
+        var fitZoom = clamp(availableWidth / baseWidth, MIN_ZOOM, MAX_FIT_ZOOM);
+        var appliedZoom = clamp(fitZoom * userZoom, MIN_ZOOM, MAX_ZOOM);
+        var renderedWidth = Math.ceil(baseWidth * appliedZoom);
+        var renderedHeight = Math.ceil(baseHeight * appliedZoom);
+
+        html.style.setProperty("--handrive-office-fit-zoom", String(fitZoom.toFixed(3)));
+        html.style.setProperty("--handrive-office-zoom", String(appliedZoom.toFixed(3)));
+        scaleContent.style.width = String(Math.ceil(baseWidth)) + "px";
+        scaleContent.style.transform = "scale(" + String(appliedZoom.toFixed(3)) + ")";
+        scaleRoot.style.width = String(Math.max(availableWidth, renderedWidth)) + "px";
+        scaleRoot.style.height = String(renderedHeight) + "px";
+        if (document.body) {
+            document.body.classList.toggle(
+                "is-handrive-office-overflowing",
+                renderedWidth > availableWidth + 1
+            );
+        }
+    }
+
+    function scheduleFit() {
+        if (scheduled) {
+            return;
+        }
+        scheduled = true;
+        window.requestAnimationFrame(function () {
+            scheduled = false;
+            applyZoom(userZoom);
+        });
+    }
+
+    window.addEventListener("wheel", function (event) {
+        if (!event.ctrlKey && !event.metaKey) {
+            return;
+        }
+        event.preventDefault();
+        applyZoom(userZoom * (event.deltaY < 0 ? 1.1 : 0.9));
+    }, { passive: false });
+
+    window.addEventListener("resize", scheduleFit, { passive: true });
+    if (document.fonts && typeof document.fonts.ready === "object") {
+        document.fonts.ready.then(scheduleFit).catch(function () {});
+    }
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", scheduleFit, { once: true });
+    } else {
+        scheduleFit();
+    }
+    window.addEventListener("load", scheduleFit, { once: true });
+})();
+"""
+            return render_handrive_html_live_safely(
+                html_text,
+                companion_css=office_override_css,
+                companion_js=office_fit_js,
+            )
     pdf_bytes = convert_office_bytes_to_pdf(extension, source_bytes, f"preview{extension or '.docx'}")
     if pdf_bytes:
         return render_handrive_pdf_safely(pdf_bytes, f"preview{extension or '.pdf'}")

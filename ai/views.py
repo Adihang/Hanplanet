@@ -332,7 +332,7 @@ def _buffered_response(url: str, headers: dict, body: dict) -> HttpResponse:
 
 
 _STREAM_DONE = object()
-_KEEPALIVE_INTERVAL = 25  # 초 — nginx proxy_read_timeout(120s)보다 충분히 짧아야 함
+_KEEPALIVE_INTERVAL = 10  # 초 — client/proxy read timeout보다 충분히 짧아야 함
 
 
 def _stream_response(url: str, headers: dict, body: dict, username: str = "-", model: str = "-", user_obj=None) -> StreamingHttpResponse:
@@ -340,8 +340,8 @@ def _stream_response(url: str, headers: dict, body: dict, username: str = "-", m
 
     threading + queue 패턴으로 keep-alive를 구현한다.
     백그라운드 스레드가 Ollama로부터 청크를 수신해 queue에 넣고,
-    Django generator는 25초마다 타임아웃 시 ': ping' SSE 주석을 보내
-    nginx proxy_read_timeout 타이머를 리셋한다.
+    Django generator는 10초마다 타임아웃 시 ': ping' SSE 주석을 보내
+    client/proxy read timeout 타이머를 리셋한다.
     """
     # tools가 없을 때만 stream_options 추가.
     # Ollama는 tools + stream_options 조합을 지원하지 않아 400을 반환한다.
@@ -407,7 +407,7 @@ def _stream_response(url: str, headers: dict, body: dict, username: str = "-", m
             try:
                 item = chunk_queue.get(timeout=_KEEPALIVE_INTERVAL)
             except queue.Empty:
-                # 25초 동안 청크 없음 → SSE 주석 전송으로 nginx 타이머 리셋
+                # 청크 없음 → SSE 주석 전송으로 client/proxy 타이머 리셋
                 yield b": ping\n\n"
                 continue
             if item is _STREAM_DONE:
@@ -418,7 +418,7 @@ def _stream_response(url: str, headers: dict, body: dict, username: str = "-", m
         _generate(),
         content_type="text/event-stream",
     )
-    response["Cache-Control"] = "no-cache"
+    response["Cache-Control"] = "no-cache, no-transform"
     response["X-Accel-Buffering"] = "no"  # nginx 버퍼링 비활성화
     response["Access-Control-Allow-Origin"] = "*"
     return response

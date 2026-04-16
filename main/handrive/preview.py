@@ -393,8 +393,6 @@ def render_handrive_office_preview_safely(file_extension: str, source_bytes: byt
 html, body {
     margin: 0;
     padding: 0;
-    width: 100%;
-    min-width: 0;
     background: #ffffff;
     color: #1f2328;
 }
@@ -406,6 +404,7 @@ html body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Nanum Gothic", sans-serif;
     font-size: 14px;
     line-height: 1.45;
+    zoom: var(--handrive-office-zoom, 1);
 }
 html body div,
 html body table,
@@ -441,14 +440,6 @@ html body th {
 html body col {
     width: auto;
 }
-.handrive-office-scale-root {
-    position: relative;
-    min-width: 100%;
-}
-.handrive-office-scale-content {
-    transform-origin: 0 0;
-    will-change: transform;
-}
 """
             office_fit_js = """
 (function () {
@@ -457,9 +448,7 @@ html body col {
     var MAX_FIT_ZOOM = 1.25;
     var userZoom = 1;
     var scheduled = false;
-    var html = document.documentElement;
-    var scaleRoot = null;
-    var scaleContent = null;
+    var root = document.documentElement;
 
     function clamp(value, minValue, maxValue) {
         value = Number(value);
@@ -470,53 +459,19 @@ html body col {
     }
 
     function getAvailableWidth() {
-        var body = document.body;
-        var bodyStyle = body ? window.getComputedStyle(body) : null;
-        var paddingLeft = bodyStyle ? parseFloat(bodyStyle.paddingLeft) || 0 : 0;
-        var paddingRight = bodyStyle ? parseFloat(bodyStyle.paddingRight) || 0 : 0;
-        return Math.max(1, Number(html.clientWidth || window.innerWidth || 0) - paddingLeft - paddingRight);
+        return Math.max(1, Number(root.clientWidth || window.innerWidth || 0));
     }
 
-    function ensureScaleRoot() {
-        if (scaleRoot && scaleContent) {
-            return true;
-        }
+    function readUnscaledContentWidth() {
+        var previousZoom = root.style.getPropertyValue("--handrive-office-zoom");
+        root.style.setProperty("--handrive-office-zoom", "1");
+
         var body = document.body;
-        if (!body) {
-            return false;
-        }
-        scaleRoot = document.createElement("div");
-        scaleRoot.className = "handrive-office-scale-root";
-        scaleContent = document.createElement("div");
-        scaleContent.className = "handrive-office-scale-content";
-
-        var currentScript = document.currentScript;
-        Array.prototype.slice.call(body.childNodes).forEach(function (node) {
-            if (node === currentScript || node === scaleRoot) {
-                return;
-            }
-            scaleContent.appendChild(node);
-        });
-        scaleRoot.appendChild(scaleContent);
-        if (currentScript && currentScript.parentNode === body) {
-            body.insertBefore(scaleRoot, currentScript);
-        } else {
-            body.appendChild(scaleRoot);
-        }
-        return true;
-    }
-
-    function readUnscaledSize() {
-        if (!ensureScaleRoot()) {
-            return { width: 1, height: 1 };
-        }
-        scaleRoot.style.width = "";
-        scaleRoot.style.height = "";
-        scaleContent.style.width = "";
-        scaleContent.style.transform = "scale(1)";
-
-        var width = Math.max(1, Number(scaleContent.scrollWidth || 0));
-        var height = Math.max(1, Number(scaleContent.scrollHeight || 0));
+        var width = Math.max(
+            1,
+            Number(root.scrollWidth || 0),
+            Number(body ? body.scrollWidth : 0)
+        );
         var tables = Array.prototype.slice.call(document.querySelectorAll("table"));
         tables.forEach(function (table) {
             var rect = table.getBoundingClientRect();
@@ -525,40 +480,29 @@ html body col {
                 Number(table.scrollWidth || 0),
                 Number(rect && rect.width ? rect.width : 0)
             );
-            height = Math.max(
-                height,
-                Number(table.scrollHeight || 0),
-                Number(rect && rect.height ? rect.height : 0)
-            );
         });
 
-        return { width: Math.max(1, width), height: Math.max(1, height) };
+        if (previousZoom) {
+            root.style.setProperty("--handrive-office-zoom", previousZoom);
+        } else {
+            root.style.removeProperty("--handrive-office-zoom");
+        }
+        return Math.max(1, width);
     }
 
     function applyZoom(nextUserZoom) {
-        if (!ensureScaleRoot()) {
-            return;
-        }
         userZoom = clamp(nextUserZoom, MIN_ZOOM, MAX_ZOOM);
-        var baseSize = readUnscaledSize();
-        var baseWidth = baseSize.width;
-        var baseHeight = baseSize.height;
+        var baseWidth = readUnscaledContentWidth();
         var availableWidth = getAvailableWidth();
         var fitZoom = clamp(availableWidth / baseWidth, MIN_ZOOM, MAX_FIT_ZOOM);
         var appliedZoom = clamp(fitZoom * userZoom, MIN_ZOOM, MAX_ZOOM);
-        var renderedWidth = Math.ceil(baseWidth * appliedZoom);
-        var renderedHeight = Math.ceil(baseHeight * appliedZoom);
 
-        html.style.setProperty("--handrive-office-fit-zoom", String(fitZoom.toFixed(3)));
-        html.style.setProperty("--handrive-office-zoom", String(appliedZoom.toFixed(3)));
-        scaleContent.style.width = String(Math.ceil(baseWidth)) + "px";
-        scaleContent.style.transform = "scale(" + String(appliedZoom.toFixed(3)) + ")";
-        scaleRoot.style.width = String(Math.max(availableWidth, renderedWidth)) + "px";
-        scaleRoot.style.height = String(renderedHeight) + "px";
+        root.style.setProperty("--handrive-office-fit-zoom", String(fitZoom.toFixed(3)));
+        root.style.setProperty("--handrive-office-zoom", String(appliedZoom.toFixed(3)));
         if (document.body) {
             document.body.classList.toggle(
                 "is-handrive-office-overflowing",
-                renderedWidth > availableWidth + 1
+                baseWidth * appliedZoom > availableWidth + 1
             );
         }
     }

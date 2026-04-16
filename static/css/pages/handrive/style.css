@@ -3237,9 +3237,11 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 }
 
 .handrive-office-table {
-    width: 100%;
+    width: max-content;
     border-collapse: collapse;
     min-width: 320px;
+    max-width: none;
+    table-layout: auto;
 }
 
 .handrive-office-table td,

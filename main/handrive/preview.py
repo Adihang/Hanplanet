@@ -401,6 +401,9 @@ html body {
     overflow-x: auto;
     overflow-y: auto;
     box-sizing: border-box;
+    display: inline-block;
+    width: max-content;
+    min-width: 100%;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Nanum Gothic", sans-serif;
     font-size: 14px;
     line-height: 1.45;
@@ -428,6 +431,7 @@ html body table {
     width: max-content;
     min-width: 100%;
     max-width: none;
+    table-layout: auto;
     background: #ffffff;
 }
 html body td,
@@ -462,9 +466,20 @@ html body col {
         return Math.max(1, Number(root.clientWidth || window.innerWidth || 0));
     }
 
+    function normalizeTableSizing() {
+        var tables = Array.prototype.slice.call(document.querySelectorAll("table"));
+        tables.forEach(function (table) {
+            table.style.setProperty("width", "max-content");
+            table.style.setProperty("min-width", "100%");
+            table.style.setProperty("max-width", "none");
+            table.style.setProperty("table-layout", "auto");
+        });
+    }
+
     function readUnscaledContentWidth() {
         var previousZoom = root.style.getPropertyValue("--handrive-office-zoom");
         root.style.setProperty("--handrive-office-zoom", "1");
+        normalizeTableSizing();
 
         var body = document.body;
         var width = Math.max(

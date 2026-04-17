@@ -61,6 +61,8 @@
             data-placeholder-ko="{% include 'partials/ui_i18n.html' with key='translation_placeholder_ko' %}"
             data-placeholder-en="{% include 'partials/ui_i18n.html' with key='translation_placeholder_en' %}"
             data-placeholder-result="{% include 'partials/ui_i18n.html' with key='translation_placeholder_result' %}"
+            data-copy-label="{% include 'partials/ui_i18n.html' with key='copy' %}"
+            data-copied-label="{% include 'partials/ui_i18n.html' with key='copied' %}"
         >
             <div class="root-translate-row">
                 <label class="root-search-sr-only" for="rootTranslateSourceInput">
@@ -89,16 +91,31 @@
                 <label class="root-search-sr-only" id="rootTranslateTargetLabel">
                     {% include 'partials/ui_i18n.html' with key='translation_result' %}
                 </label>
-                <article
-                    id="rootTranslateTargetOutput"
-                    class="ui-markdown root-translate-textarea root-translate-textarea-output"
-                    data-root-translate-target
-                    data-placeholder="{% include 'partials/ui_i18n.html' with key='translation_placeholder_result' %}"
-                    aria-live="polite"
-                    aria-labelledby="rootTranslateTargetLabel"
-                    aria-readonly="true"
-                    role="textbox"
-                ></article>
+                <div class="root-translate-output-shell" data-root-translate-target-shell data-empty="1">
+                    <article
+                        id="rootTranslateTargetOutput"
+                        class="ui-markdown root-translate-textarea root-translate-textarea-output"
+                        data-root-translate-target
+                        data-placeholder="{% include 'partials/ui_i18n.html' with key='translation_placeholder_result' %}"
+                        aria-live="polite"
+                        aria-labelledby="rootTranslateTargetLabel"
+                        aria-readonly="true"
+                        role="textbox"
+                    ></article>
+                    <button
+                        type="button"
+                        class="root-translate-copy"
+                        data-root-translate-copy
+                        aria-label="{% include 'partials/ui_i18n.html' with key='copy' %}"
+                        title="{% include 'partials/ui_i18n.html' with key='copy' %}"
+                        disabled
+                    >
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="7" y="6" width="9" height="11" rx="1.5"></rect>
+                            <path d="M4 13V4.5C4 3.7 4.7 3 5.5 3H13"></path>
+                        </svg>
+                    </button>
+                </div>
             </div>
         </section>
         <section

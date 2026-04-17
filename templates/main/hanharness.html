@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block body_class %}hanharness-page{% endblock %}
+{% block content %}
+<main class="hanharness-shell">
+    <section class="hanharness-hero" aria-labelledby="hanharness-title">
+        <div class="hanharness-banner" aria-hidden="true">{{ hanharness_text.banner }}</div>
+        <div class="hanharness-hero-body">
+            <p class="hanharness-kicker">Hanplanet Utility</p>
+            <h1 id="hanharness-title">{{ hanharness_text.title }}</h1>
+            <p class="hanharness-subtitle">{{ hanharness_text.subtitle }}</p>
+            <div class="hanharness-actions">
+                <a class="hanharness-download-btn" href="{{ hanharness_download_url }}">
+                    <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <line x1="10" y1="3" x2="10" y2="12"></line>
+                        <polyline points="6,8 10,12 14,8"></polyline>
+                        <line x1="4" y1="17" x2="16" y2="17"></line>
+                    </svg>
+                    <span>{{ hanharness_text.download }}</span>
+                </a>
+                <a class="hanharness-secondary-link" href="{{ handrive_url }}">{{ hanharness_text.back_to_handrive }}</a>
+            </div>
+        </div>
+    </section>
+    <section class="hanharness-info" aria-labelledby="hanharness-info-title">
+        <h2 id="hanharness-info-title">{{ hanharness_text.intro_title }}</h2>
+        <p>{{ hanharness_text.intro_placeholder }}</p>
+    </section>
+</main>
+{% include "partials/site_footer_links.html" %}
+{% endblock %}

@@ -10,6 +10,8 @@
     const sourceInputShell = panel.querySelector('[data-root-translate-source-shell]');
     const sourcePlaceholder = panel.querySelector('[data-root-translate-source-placeholder]');
     const targetOutput = panel.querySelector('[data-root-translate-target]');
+    const targetOutputShell = panel.querySelector('[data-root-translate-target-shell]');
+    const copyButton = panel.querySelector('[data-root-translate-copy]');
     const swapButton = panel.querySelector('[data-root-translate-swap]');
     const apiUrl = String(panel.dataset.translateApiUrl || '').trim();
 
@@ -24,6 +26,10 @@
     const placeholderKo = String(panel.dataset.placeholderKo || '한국어');
     const placeholderEn = String(panel.dataset.placeholderEn || 'English');
     const resultPlaceholder = String(panel.dataset.placeholderResult || '번역 결과');
+    const copyLabel = String(panel.dataset.copyLabel || '복사');
+    const copiedLabel = String(panel.dataset.copiedLabel || '복사됨');
+    let copyResetTimer = 0;
+
     const escapeHtml = function (value) {
         return String(value || '')
             .replace(/&/g, '&amp;')
@@ -31,6 +37,68 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    };
+
+    const setCopyButtonState = function (hasText) {
+        if (!copyButton) {
+            return;
+        }
+        copyButton.disabled = !hasText;
+        copyButton.setAttribute('aria-label', copyLabel);
+        copyButton.setAttribute('title', copyLabel);
+        copyButton.classList.remove('is-copied');
+    };
+
+    const getCopyText = function () {
+        const rawText = String(targetOutput.dataset.rawText || '').trim();
+        if (rawText) {
+            return rawText;
+        }
+        return String(targetOutput.innerText || targetOutput.textContent || '').trim();
+    };
+
+    const writeClipboardText = function (text) {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+            const tempInput = document.createElement('textarea');
+            tempInput.value = text;
+            tempInput.setAttribute('readonly', 'readonly');
+            tempInput.style.position = 'fixed';
+            tempInput.style.left = '-9999px';
+            tempInput.style.top = '0';
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            try {
+                if (!document.execCommand('copy')) {
+                    throw new Error('copy failed');
+                }
+                resolve();
+            } catch (error) {
+                reject(error);
+            } finally {
+                document.body.removeChild(tempInput);
+            }
+        });
+    };
+
+    const showCopiedState = function () {
+        if (!copyButton) {
+            return;
+        }
+        if (copyResetTimer) {
+            window.clearTimeout(copyResetTimer);
+        }
+        copyButton.classList.add('is-copied');
+        copyButton.setAttribute('aria-label', copiedLabel);
+        copyButton.setAttribute('title', copiedLabel);
+        copyResetTimer = window.setTimeout(function () {
+            copyResetTimer = 0;
+            copyButton.classList.remove('is-copied');
+            copyButton.setAttribute('aria-label', copyLabel);
+            copyButton.setAttribute('title', copyLabel);
+        }, 1200);
     };
 
     const highlightJavaScriptCode = function (source) {
@@ -312,6 +380,10 @@
         if (nextHtml) {
             targetOutput.innerHTML = nextHtml;
             targetOutput.removeAttribute('data-empty');
+            if (targetOutputShell) {
+                targetOutputShell.setAttribute('data-empty', '0');
+            }
+            setCopyButtonState(Boolean(getCopyText()));
             applyTranslationCodeHighlighting(targetOutput);
             scheduleTextareaHeightsSync();
             return;
@@ -319,6 +391,10 @@
         targetOutput.innerHTML = '';
         targetOutput.setAttribute('data-empty', '1');
         targetOutput.setAttribute('data-placeholder', fallbackText || resultPlaceholder);
+        if (targetOutputShell) {
+            targetOutputShell.setAttribute('data-empty', '1');
+        }
+        setCopyButtonState(false);
         scheduleTextareaHeightsSync();
     };
 
@@ -472,6 +548,16 @@
         swapLanguages();
     });
 
+    if (copyButton) {
+        copyButton.addEventListener('click', function () {
+            const copyText = getCopyText();
+            if (!copyText) {
+                return;
+            }
+            writeClipboardText(copyText).then(showCopiedState).catch(function () {});
+        });
+    }
+
     sourceInput.addEventListener('keydown', function (event) {
         if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
@@ -488,5 +574,6 @@
 
     syncPlaceholders();
     syncSourcePlaceholderState();
+    setCopyButtonState(false);
     scheduleTextareaHeightsSync();
 })();

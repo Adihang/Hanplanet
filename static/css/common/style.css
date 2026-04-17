@@ -1073,6 +1073,16 @@ body.theme-dark .root-auth-modal-dialog {
     max-width: 100%;
 }
 
+.root-translate-output-shell {
+    position: relative;
+    min-width: 0;
+    width: auto;
+}
+
+.root-translate-output-shell .root-translate-textarea-output {
+    width: 100%;
+}
+
 .root-translate-textarea-placeholder {
     position: absolute;
     inset: 0;
@@ -1152,7 +1162,7 @@ body.theme-dark .root-auth-modal-dialog {
     min-height: 36px;
     background: color-mix(in srgb, var(--site-surface) 84%, var(--site-hover-soft));
     box-sizing: border-box;
-    padding: 6px 10px;
+    padding: 6px 42px 6px 10px;
     border: 1px solid var(--handrive-border, var(--site-border));
     border-radius: 16px;
     overflow: auto;
@@ -1160,6 +1170,39 @@ body.theme-dark .root-auth-modal-dialog {
     line-height: 1.5;
     color: var(--site-text-strong);
     overflow-wrap: anywhere;
+}
+
+.root-translate-copy {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--site-text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast), opacity var(--motion-fast);
+}
+
+.root-translate-copy:hover,
+.root-translate-copy:focus-visible {
+    background: var(--site-hover-soft);
+    color: var(--site-text-strong);
+}
+
+.root-translate-copy.is-copied {
+    color: var(--site-link, #2d6cdf);
+}
+
+.root-translate-copy:disabled {
+    opacity: 0;
+    pointer-events: none;
 }
 
 .root-translate-textarea-output:empty::before {
@@ -3655,6 +3698,155 @@ body.theme-dark .legal-page-prose td {
 body.theme-dark .legal-page-prose th {
     background: rgba(255, 255, 255, 0.05);
     color: rgba(255, 255, 255, 0.92);
+}
+
+.hanharness-page {
+    background: var(--site-bg);
+}
+
+.hanharness-shell {
+    width: min(1120px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 38px 0 72px;
+}
+
+.hanharness-hero {
+    position: relative;
+    min-height: 420px;
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+    border-radius: 8px;
+    background:
+        linear-gradient(130deg, rgba(17, 24, 39, 0.88), rgba(17, 24, 39, 0.46)),
+        radial-gradient(circle at 16% 18%, rgba(61, 220, 151, 0.28), transparent 34%),
+        linear-gradient(115deg, #1b2a30 0%, #244852 48%, #65734f 100%);
+    color: #ffffff;
+}
+
+.hanharness-banner {
+    position: absolute;
+    inset: auto 24px 18px auto;
+    color: rgba(255, 255, 255, 0.08);
+    font-size: clamp(54px, 12vw, 156px);
+    font-weight: 900;
+    line-height: 0.82;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.hanharness-hero-body {
+    position: relative;
+    z-index: 1;
+    width: min(680px, 100%);
+    padding: 44px;
+}
+
+.hanharness-kicker {
+    margin: 0 0 12px;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.hanharness-hero h1 {
+    margin: 0;
+    color: #ffffff;
+    font-size: clamp(42px, 8vw, 86px);
+    font-weight: 900;
+    line-height: 0.94;
+}
+
+.hanharness-subtitle {
+    margin: 18px 0 0;
+    max-width: 560px;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 18px;
+    line-height: 1.55;
+}
+
+.hanharness-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 28px;
+}
+
+.hanharness-download-btn,
+.hanharness-secondary-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 800;
+}
+
+.hanharness-download-btn {
+    padding: 0 18px;
+    background: #ffffff;
+    color: #162025;
+}
+
+.hanharness-download-btn:hover,
+.hanharness-download-btn:focus-visible {
+    color: #162025;
+    transform: translateY(-1px);
+}
+
+.hanharness-secondary-link {
+    padding: 0 14px;
+    color: rgba(255, 255, 255, 0.84);
+}
+
+.hanharness-secondary-link:hover,
+.hanharness-secondary-link:focus-visible {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.hanharness-info {
+    margin-top: 18px;
+    padding: 28px 0 0;
+    border-top: 1px solid var(--site-border);
+}
+
+.hanharness-info h2 {
+    margin: 0;
+    color: var(--site-text-strong);
+    font-size: 26px;
+    font-weight: 850;
+}
+
+.hanharness-info p {
+    margin: 10px 0 0;
+    color: var(--site-text-muted);
+    font-size: 16px;
+    line-height: 1.65;
+}
+
+@media (max-width: 700px) {
+    .hanharness-shell {
+        width: min(100% - 20px, 1120px);
+        padding-top: 16px;
+    }
+
+    .hanharness-hero {
+        min-height: 440px;
+    }
+
+    .hanharness-hero-body {
+        padding: 28px;
+    }
+
+    .hanharness-banner {
+        right: 12px;
+        bottom: 10px;
+    }
 }
 
 @media (max-width: 720px) {

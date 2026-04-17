@@ -22,6 +22,7 @@ import hashlib
 import hmac
 import time
 import subprocess
+import zipfile
 from django.utils import timezone
 from django.utils.safestring import mark_safe
 import markdown
@@ -1018,6 +1019,18 @@ def apply_ui_context(request, context, ui_lang):
             link for link in nav_links
             if str(getattr(link, "name", "") or "").strip().lower() not in removed_nav_names
         ]
+        hanharness_link = SimpleNamespace(
+            name="HanHarness",
+            url=f"/{ui_lang}/handrive/hanharness",
+        )
+        hanharness_inserted = False
+        for index, link in enumerate(resolved_links):
+            if str(getattr(link, "name", "") or "").strip().lower() == "handrive":
+                resolved_links.insert(index + 1, hanharness_link)
+                hanharness_inserted = True
+                break
+        if not hanharness_inserted:
+            resolved_links.append(hanharness_link)
 
         # Git 링크: 로그인 유저에게 본인 Forgejo 페이지로 연결
         if request.user.is_authenticated:
@@ -1039,6 +1052,7 @@ def apply_ui_context(request, context, ui_lang):
     except (OperationalError, ProgrammingError):
         context["nav_links"] = [
             {"name": "HanDrive", "url": "/handrive/list"},
+            {"name": "HanHarness", "url": f"/{ui_lang}/handrive/hanharness"},
             {"name": "Mini Game", "url": "/fun/minigame/"},
         ]
 
@@ -4653,6 +4667,68 @@ def git_credential_helper_download(request):
     resp = HttpResponse(content, content_type="text/x-shellscript")
     resp["Content-Disposition"] = 'attachment; filename="git-credential-hanplanet"'
     return resp
+
+
+def hanharness_page(request, ui_lang=None):
+    """Render the HanHarness product/download page."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    download_url = reverse("main:hanharness_download_lang", kwargs={"ui_lang": resolved_lang})
+    if resolved_lang == "en":
+        hanharness_text = {
+            "title": "HanHarness",
+            "banner": "HanHarness",
+            "subtitle": "A local harness utility for Hanplanet workflows.",
+            "download": "Download HanHarness",
+            "intro_title": "Introduction and usage",
+            "intro_placeholder": "Introduction and usage details will be added later.",
+            "back_to_handrive": "Open HanDrive",
+        }
+    else:
+        hanharness_text = {
+            "title": "HanHarness",
+            "banner": "HanHarness",
+            "subtitle": "Hanplanet 워크플로우를 위한 로컬 하네스 유틸리티입니다.",
+            "download": "HanHarness 다운로드",
+            "intro_title": "HanHarness 소개 및 사용법",
+            "intro_placeholder": "HanHarness 소개 및 사용법은 추후 추가됩니다.",
+            "back_to_handrive": "HanDrive 열기",
+        }
+    context = {
+        "hanharness_text": hanharness_text,
+        "hanharness_download_url": download_url,
+        "handrive_url": reverse("main:handrive_root_lang", kwargs={"ui_lang": resolved_lang}),
+        "meta_title": f"{hanharness_text['title']} | Hanplanet",
+        "meta_description": hanharness_text["subtitle"],
+        "meta_og_title": f"{hanharness_text['title']} | Hanplanet",
+        "meta_og_description": hanharness_text["subtitle"],
+    }
+    apply_ui_context(request, context, resolved_lang)
+    return render(request, "main/hanharness.html", context)
+
+
+def hanharness_download(request, ui_lang=None):
+    """Download the HanHarness executable stored on the external Hanplanet volume."""
+    del ui_lang
+    package_dir = Path("/Volumes/HANPLANET_HDD/Hanplanet/hanharness")
+    archive_path = package_dir.with_suffix(".zip")
+    if not package_dir.exists() or not package_dir.is_dir():
+        return HttpResponse("HanHarness 파일을 찾을 수 없습니다.", status=404)
+    source_mtime = max(
+        (path.stat().st_mtime for path in package_dir.rglob("*") if path.exists()),
+        default=package_dir.stat().st_mtime,
+    )
+    if not archive_path.exists() or archive_path.stat().st_mtime < source_mtime:
+        temp_archive_path = archive_path.with_suffix(".zip.tmp")
+        if temp_archive_path.exists():
+            temp_archive_path.unlink()
+        with zipfile.ZipFile(temp_archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+            for path in sorted(package_dir.rglob("*")):
+                if path.is_file():
+                    archive.write(path, Path(package_dir.name) / path.relative_to(package_dir))
+        temp_archive_path.replace(archive_path)
+    response = FileResponse(archive_path.open("rb"), as_attachment=True, filename="hanharness.zip")
+    response["Content-Type"] = "application/zip"
+    return response
 
 
 def handrive_sync_client_download(request, ui_lang=None):

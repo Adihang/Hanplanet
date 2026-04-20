@@ -785,6 +785,9 @@ class HandriveI18nPlaceholderTests(TestCase):
         handrive_text = get_handrive_text("ko")
 
         self.assertEqual(handrive_text["menu_delete_repo"], "Repo 삭제")
+        self.assertEqual(handrive_text["menu_create_repo"], "Repo 생성")
+        self.assertEqual(handrive_text["menu_manage_repo"], "Repo 관리")
+        self.assertEqual(handrive_text["menu_change_icon"], "아이콘 변경")
         self.assertEqual(handrive_text["delete_repo_button"], "Repo 삭제")
 
     def test_english_handrive_text_includes_placeholder_keys(self):
@@ -800,7 +803,13 @@ class HandriveI18nPlaceholderTests(TestCase):
         self.assertEqual(handrive_text["zoom_in_button"], "Zoom in")
         self.assertEqual(handrive_text["list_title"], "Files")
         self.assertEqual(handrive_text["menu_delete_repo"], "Delete Repo")
+        self.assertEqual(handrive_text["menu_create_repo"], "Create Repo")
+        self.assertEqual(handrive_text["menu_manage_repo"], "Manage Repo")
+        self.assertEqual(handrive_text["menu_change_icon"], "Change Icon")
         self.assertEqual(handrive_text["delete_repo_button"], "Delete Repo")
+        self.assertEqual(handrive_text["folder_icon_title"], "Change Icon")
+        self.assertEqual(handrive_text["git_repo_create_title"], "Create Git Repository")
+        self.assertEqual(handrive_text["git_repo_manage_title"], "Manage Git Repository")
         self.assertEqual(handrive_text["url_share_enabled_label"], "URL Sharing")
         self.assertEqual(handrive_text["url_unshare_button"], "Disable URL Sharing")
 
@@ -1152,8 +1161,8 @@ class PortfolioPerUserRoutingTests(TestCase):
         self.assertContains(response, "샘플 프로젝트")
         self.assertContains(response, "+82-10-0000-0000")
         self.assertContains(response, "your.email@example.com")
-        self.assertContains(response, "/static/icons/hanplanet.svg", html=False)
-        self.assertContains(response, "/static/icons/hanplanet-og-1200.png", html=False)
+        self.assertContains(response, "/static/media/icons/hanplanet.svg", html=False)
+        self.assertContains(response, "/static/media/icons/hanplanet-og-1200.png", html=False)
 
 
 class HandriveEditorPermissionTests(TestCase):

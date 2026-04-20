@@ -24,8 +24,8 @@ var siteShellTmpl = template.Must(template.New("site-shell").Parse(`<!DOCTYPE ht
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Noto+Sans+KR:wght@100..900&display=swap" rel="stylesheet">
-<link rel="icon" type="image/png" sizes="180x180" href="https://www.hanplanet.com/static/icons/pwa-180.png">
-<link rel="apple-touch-icon" sizes="180x180" href="https://www.hanplanet.com/static/icons/pwa-180.png">
+<link rel="icon" type="image/png" sizes="180x180" href="https://www.hanplanet.com/static/media/icons/pwa-180.png">
+<link rel="apple-touch-icon" sizes="180x180" href="https://www.hanplanet.com/static/media/icons/pwa-180.png">
 <link rel="stylesheet" type="text/css" href="https://www.hanplanet.com/static/css/vendor/bootstrap.min.css">
 <link rel="stylesheet" type="text/css" href="https://www.hanplanet.com/static/css/common/layout.css">
 <link rel="stylesheet" type="text/css" href="https://www.hanplanet.com/static/css/common/account_widget.css">

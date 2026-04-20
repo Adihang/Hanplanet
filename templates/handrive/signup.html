@@ -7,10 +7,10 @@
     <div class="handrive-shell ui-shell handrive-toolbar ui-toolbar">
         <div class="handrive-toolbar-left ui-toolbar-left">
             <h1 class="handrive-title ui-title">{{ handrive_text.auth_signup_button }}</h1>
-            <div class="handrive-subtitle ui-subtitle handrive-path-breadcrumbs ui-path-breadcrumbs">
-                <a class="handrive-path-link ui-path-link" href="{{ handrive_auth_breadcrumb_url|default:handrive_base_url }}">{{ handrive_auth_breadcrumb_label }}</a>
+            <div class="ui-subtitle ui-path-breadcrumbs">
+                <a class="ui-path-link" href="{{ handrive_auth_breadcrumb_url|default:handrive_base_url }}">{{ handrive_auth_breadcrumb_label }}</a>
                 <span class="handrive-path-sep ui-path-sep">/</span>
-                <span class="handrive-path-current ui-path-current">{{ handrive_text.auth_signup_button }}</span>
+                <span class="ui-path-current">{{ handrive_text.auth_signup_button }}</span>
             </div>
         </div>
     </div>

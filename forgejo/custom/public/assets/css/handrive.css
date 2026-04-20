@@ -2007,7 +2007,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-item-type-icon.is-file::before {
-    background-image: url("/static/icons/handrive/file.svg");
+    background-image: url("/static/media/icons/handrive/file.svg");
 }
 
 .handrive-item-type-icon.is-file.is-generic::before {
@@ -2026,135 +2026,135 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="file"]::before {
-    -webkit-mask-image: url("/static/icons/handrive/file.svg");
-    mask-image: url("/static/icons/handrive/file.svg");
+    -webkit-mask-image: url("/static/media/icons/handrive/file.svg");
+    mask-image: url("/static/media/icons/handrive/file.svg");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="image"]::before {
-    -webkit-mask-image: url("/static/icons/handrive/image.svg");
-    mask-image: url("/static/icons/handrive/image.svg");
+    -webkit-mask-image: url("/static/media/icons/handrive/image.svg");
+    mask-image: url("/static/media/icons/handrive/image.svg");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="video"]::before {
-    -webkit-mask-image: url("/static/icons/handrive/video.svg");
-    mask-image: url("/static/icons/handrive/video.svg");
+    -webkit-mask-image: url("/static/media/icons/handrive/video.svg");
+    mask-image: url("/static/media/icons/handrive/video.svg");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="audio"]::before {
-    -webkit-mask-image: url("/static/icons/handrive/audio.svg");
-    mask-image: url("/static/icons/handrive/audio.svg");
+    -webkit-mask-image: url("/static/media/icons/handrive/audio.svg");
+    mask-image: url("/static/media/icons/handrive/audio.svg");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="archive"]::before {
-    -webkit-mask-image: url("/static/icons/handrive/archive.svg");
-    mask-image: url("/static/icons/handrive/archive.svg");
+    -webkit-mask-image: url("/static/media/icons/handrive/archive.svg");
+    mask-image: url("/static/media/icons/handrive/archive.svg");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="pdf"]::before {
-    -webkit-mask-image: url("/static/icons/handrive/pdf.svg");
-    mask-image: url("/static/icons/handrive/pdf.svg");
+    -webkit-mask-image: url("/static/media/icons/handrive/pdf.svg");
+    mask-image: url("/static/media/icons/handrive/pdf.svg");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="text"]::before {
-    -webkit-mask-image: url("/static/icons/handrive/text.svg");
-    mask-image: url("/static/icons/handrive/text.svg");
+    -webkit-mask-image: url("/static/media/icons/handrive/text.svg");
+    mask-image: url("/static/media/icons/handrive/text.svg");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="data"]::before {
-    -webkit-mask-image: url("/static/icons/handrive/data.svg");
-    mask-image: url("/static/icons/handrive/data.svg");
+    -webkit-mask-image: url("/static/media/icons/handrive/data.svg");
+    mask-image: url("/static/media/icons/handrive/data.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="js"]::before {
-    background-image: url("/static/icons/handrive/js.svg");
+    background-image: url("/static/media/icons/handrive/js.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="ts"]::before {
-    background-image: url("/static/icons/handrive/ts.svg");
+    background-image: url("/static/media/icons/handrive/ts.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="jsx"]::before {
-    background-image: url("/static/icons/handrive/react.svg");
+    background-image: url("/static/media/icons/handrive/react.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="py"]::before {
-    background-image: url("/static/icons/handrive/python.svg");
+    background-image: url("/static/media/icons/handrive/python.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="java"]::before {
-    background-image: url("/static/icons/handrive/java.svg");
+    background-image: url("/static/media/icons/handrive/java.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="kotlin"]::before {
-    background-image: url("/static/icons/handrive/kotlin.svg");
+    background-image: url("/static/media/icons/handrive/kotlin.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="swift"]::before {
-    background-image: url("/static/icons/handrive/swift.svg");
+    background-image: url("/static/media/icons/handrive/swift.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="go"]::before {
-    background-image: url("/static/icons/handrive/go.svg");
+    background-image: url("/static/media/icons/handrive/go.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="rust"]::before {
-    background-image: url("/static/icons/handrive/rust.svg");
+    background-image: url("/static/media/icons/handrive/rust.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="ruby"]::before {
-    background-image: url("/static/icons/handrive/ruby.svg");
+    background-image: url("/static/media/icons/handrive/ruby.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="php"]::before {
-    background-image: url("/static/icons/handrive/php.svg");
+    background-image: url("/static/media/icons/handrive/php.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="c"]::before {
-    background-image: url("/static/icons/handrive/c.svg");
+    background-image: url("/static/media/icons/handrive/c.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="cpp"]::before {
-    background-image: url("/static/icons/handrive/cpp.svg");
+    background-image: url("/static/media/icons/handrive/cpp.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="csharp"]::before {
-    background-image: url("/static/icons/handrive/csharp.svg");
+    background-image: url("/static/media/icons/handrive/csharp.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="scala"]::before {
-    background-image: url("/static/icons/handrive/scala.svg");
+    background-image: url("/static/media/icons/handrive/scala.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="shell"]::before {
-    background-image: url("/static/icons/handrive/bash.svg");
+    background-image: url("/static/media/icons/handrive/bash.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="html"]::before {
-    background-image: url("/static/icons/handrive/html5.svg");
+    background-image: url("/static/media/icons/handrive/html5.svg");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="css"]::before {
-    background-image: url("/static/icons/handrive/css3.svg");
+    background-image: url("/static/media/icons/handrive/css3.svg");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="code"]::before {
-    -webkit-mask-image: url("/static/icons/handrive/file.svg");
-    mask-image: url("/static/icons/handrive/file.svg");
+    -webkit-mask-image: url("/static/media/icons/handrive/file.svg");
+    mask-image: url("/static/media/icons/handrive/file.svg");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="json"]::before {
-    -webkit-mask-image: url("/static/icons/handrive/data.svg");
-    mask-image: url("/static/icons/handrive/data.svg");
+    -webkit-mask-image: url("/static/media/icons/handrive/data.svg");
+    mask-image: url("/static/media/icons/handrive/data.svg");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="markdown"]::before {
-    -webkit-mask-image: url("/static/icons/handrive/text.svg");
-    mask-image: url("/static/icons/handrive/text.svg");
+    -webkit-mask-image: url("/static/media/icons/handrive/text.svg");
+    mask-image: url("/static/media/icons/handrive/text.svg");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="font"]::before {
-    -webkit-mask-image: url("/static/icons/handrive/font.svg");
-    mask-image: url("/static/icons/handrive/font.svg");
+    -webkit-mask-image: url("/static/media/icons/handrive/font.svg");
+    mask-image: url("/static/media/icons/handrive/font.svg");
 }
 
 .handrive-context-menu {

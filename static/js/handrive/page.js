@@ -13,6 +13,7 @@
     const pageType = root.dataset.handrivePage;
     const sharedOwnerUsername = String(root.dataset.handriveSharedOwnerUsername || "").trim();
     const sharedSlug = String(root.dataset.handriveSharedSlug || "").trim();
+    const sharedRootPath = String(root.dataset.handriveSharedRootPath || "").trim();
 
     window.addEventListener("message", function (event) {
         const data = event && event.data && typeof event.data === "object" ? event.data : null;
@@ -1180,6 +1181,7 @@
         const shareModal = document.getElementById("handrive-url-share-modal");
         const shareBackdrop = document.getElementById("handrive-url-share-modal-backdrop");
         const shareCheckbox = document.getElementById("handrive-url-share-enabled-checkbox");
+        const shareToggleLabel = shareCheckbox ? shareCheckbox.closest(".handrive-url-share-toggle-label") : null;
         const shareUrlRow = document.getElementById("handrive-url-share-url-row");
         const shareInput = document.getElementById("handrive-url-share-input");
         const shareCloseButton = document.getElementById("handrive-url-share-close-btn");
@@ -1195,12 +1197,26 @@
         let lastFocusedElement = null;
         let currentOnToggle = null;
         let isToggling = false;
+        let currentShareUrl = "";
+
+        function decodeUrlForDisplay(url) {
+            const rawUrl = String(url || "");
+            if (!rawUrl) {
+                return "";
+            }
+            try {
+                return decodeURI(rawUrl);
+            } catch (error) {
+                return rawUrl;
+            }
+        }
 
         function setUrlRowVisible(visible, url) {
+            currentShareUrl = visible ? String(url || "") : "";
             shareUrlRow.hidden = !visible;
             shareCopyButton.hidden = !visible;
             if (visible) {
-                shareInput.value = url || "";
+                shareInput.value = decodeUrlForDisplay(currentShareUrl);
             } else {
                 shareInput.value = "";
                 shareCopyButton.textContent = t("url_share_copy_button", "복사");
@@ -1214,6 +1230,10 @@
             shareModal.hidden = true;
             currentOnToggle = null;
             isToggling = false;
+            shareCheckbox.disabled = false;
+            if (shareToggleLabel) {
+                shareToggleLabel.hidden = false;
+            }
             shareCopyButton.textContent = t("url_share_copy_button", "복사");
             if (lastFocusedElement && typeof lastFocusedElement.focus === "function") {
                 lastFocusedElement.focus();
@@ -1223,7 +1243,7 @@
         }
 
         async function copyCurrentUrl() {
-            const value = shareInput.value || "";
+            const value = currentShareUrl || shareInput.value || "";
             if (!value) {
                 return;
             }
@@ -1242,19 +1262,29 @@
             }
         }
 
-        // options: { isUrlOnly: bool, shareUrl: string, onToggle: async (enabled) => { shareUrl, isUrlOnly } }
+        // options: { isUrlOnly: bool, shareUrl: string, readOnly: bool, onToggle: async (enabled) => { shareUrl, isUrlOnly } }
         function open(options) {
             const isUrlOnly = Boolean(options && options.isUrlOnly);
             const shareUrl = (options && options.shareUrl) || "";
-            currentOnToggle = (options && typeof options.onToggle === "function") ? options.onToggle : null;
+            const readOnly = Boolean(options && options.readOnly);
+            currentOnToggle = (!readOnly && options && typeof options.onToggle === "function") ? options.onToggle : null;
 
             shareCheckbox.checked = isUrlOnly;
-            setUrlRowVisible(isUrlOnly, shareUrl);
+            shareCheckbox.disabled = readOnly;
+            if (shareToggleLabel) {
+                shareToggleLabel.hidden = readOnly;
+            }
+            setUrlRowVisible(isUrlOnly || readOnly, shareUrl);
             shareCopyButton.textContent = t("url_share_copy_button", "복사");
             shareModal.hidden = false;
             lastFocusedElement = document.activeElement;
             syncHandriveModalBodyState();
             window.requestAnimationFrame(function () {
+                if (readOnly && shareInput) {
+                    shareInput.focus();
+                    shareInput.select();
+                    return;
+                }
                 shareCheckbox.focus();
             });
         }
@@ -1617,7 +1647,7 @@
         const mapViewerBaseUrl = root.dataset.mapViewerBaseUrl || "/handrive/map-viewer/";
         const folderIconUploadApiUrl = root.dataset.folderIconUploadApiUrl || "";
         const folderIconDeleteApiUrl = root.dataset.folderIconDeleteApiUrl || "";
-        const pathBreadcrumbs = document.querySelector(".handrive-path-breadcrumbs");
+        const pathBreadcrumbs = document.querySelector(".ui-path-breadcrumbs");
         const pathCurrentSizeEl = document.querySelector(".handrive-path-current-size");
         const originalDirSizeText = pathCurrentSizeEl ? (pathCurrentSizeEl.textContent || "") : "";
         const listLayout = document.getElementById("handrive-list-layout");
@@ -1662,7 +1692,7 @@
         const scopedHomeDir = normalizePath(root.dataset.scopedHomeDir || "", true);
         const isSuperuser = root.dataset.isSuperuser === "1";
         const initialBreadcrumbNode = pathBreadcrumbs
-            ? pathBreadcrumbs.querySelector(".handrive-path-link, .handrive-path-current")
+            ? pathBreadcrumbs.querySelector(".ui-path-link, .ui-path-current")
             : null;
         const breadcrumbRootLabel = (initialBreadcrumbNode && initialBreadcrumbNode.textContent
             ? initialBreadcrumbNode.textContent
@@ -2392,6 +2422,7 @@
                 schedulePreviewBodyHeight();
                 scheduleEditorBodyHeight();
                 updateListColumnVisibility();
+                syncSearchFormVisibility();
             }, 10);
         }
 
@@ -2485,10 +2516,37 @@
             layoutUpdateTimeout = setTimeout(updateListLayoutMode, 50);
         }
 
-        // preview body 높이를 content 실제 크기 기준으로 정확히 설정
-        // CSS calc 방식은 toolbar 실제 높이가 가변적이라 오차가 생기므로 JS로 처리
-        // hidden 상태에서 getBoundingClientRect()가 0을 반환하는 문제를 피하기 위해
-        // contentEl.clientHeight 에서 내부 요소들을 차감하는 방식 사용
+        function getFooterReservedHeight() {
+            const footerLinks = document.querySelector(".site-footer-links");
+            if (!footerLinks || footerLinks.offsetParent === null) {
+                return 0;
+            }
+            const footerRect = footerLinks.getBoundingClientRect();
+            const footerStyle = window.getComputedStyle(footerLinks);
+            const marginTop = parseFloat(footerStyle.marginTop) || 0;
+            const marginBottom = parseFloat(footerStyle.marginBottom) || 0;
+            return Math.max(0, footerRect.height + marginTop + marginBottom);
+        }
+
+        function getListSideBodyHeight(headElement) {
+            const contentEl = listLayout.closest(".handrive-content, .ui-content");
+            if (!contentEl) {
+                return 0;
+            }
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            const layoutRect = listLayout.getBoundingClientRect();
+            const contentStyle = window.getComputedStyle(contentEl);
+            const padBottom = parseFloat(contentStyle.paddingBottom) || 0;
+            const layoutStyle = window.getComputedStyle(listLayout);
+            const layoutBorderH = (parseFloat(layoutStyle.borderTopWidth) || 0) + (parseFloat(layoutStyle.borderBottomWidth) || 0);
+            const headHeight = headElement ? headElement.getBoundingClientRect().height : 0;
+            const footerReservedHeight = getFooterReservedHeight();
+            const availableForBody = viewportHeight - footerReservedHeight - layoutRect.top - padBottom - layoutBorderH - headHeight;
+            return Math.max(0, Math.floor(availableForBody));
+        }
+
+        // preview/editor body 높이를 실제 화면 배치 기준으로 맞춘다.
+        // 가로모드에서는 footer가 viewport 안에 남을 공간을 먼저 예약한 뒤 본문 높이를 정한다.
         let previewBodyHeightRafId = null;
         function syncPreviewBodyHeight() {
             if (!previewPanel || !listLayout) {
@@ -2506,33 +2564,8 @@
                 previewBody.style.maxHeight = "";
                 return;
             }
-            const contentEl = listLayout.closest(".handrive-content, .ui-content");
-            if (!contentEl) {
-                return;
-            }
-            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-            const contentRect = contentEl.getBoundingClientRect();
-            const toolbarWrap = document.querySelector(".handrive-toolbar-wrap, .ui-toolbar-wrap");
-            const toolbarHeight = toolbarWrap && toolbarWrap.offsetParent !== null
-                ? toolbarWrap.getBoundingClientRect().height
-                : contentRect.top;
-            const footerLinks = document.querySelector(".site-footer-links");
-            const footerHeight = footerLinks && footerLinks.offsetParent !== null
-                ? footerLinks.getBoundingClientRect().height
-                : 0;
-            const contentStyle = window.getComputedStyle(contentEl);
-            const padTop = parseFloat(contentStyle.paddingTop) || 0;
-            const padBottom = parseFloat(contentStyle.paddingBottom) || 0;
-            const searchForm = contentEl.querySelector(".handrive-list-search-form");
-            const searchH = searchForm ? searchForm.getBoundingClientRect().height : 0;
-            const searchStyle = searchForm ? window.getComputedStyle(searchForm) : null;
-            const searchMarginB = searchStyle ? (parseFloat(searchStyle.marginBottom) || 0) : 0;
-            const layoutStyle = window.getComputedStyle(listLayout);
-            const layoutBorderH = (parseFloat(layoutStyle.borderTopWidth) || 0) + (parseFloat(layoutStyle.borderBottomWidth) || 0);
             const previewHead = previewPanel.querySelector(".handrive-list-preview-head");
-            const previewHeadH = previewHead ? previewHead.getBoundingClientRect().height : 0;
-            const availableForBody = viewportHeight - toolbarHeight - footerHeight - padTop - padBottom - searchH - searchMarginB - layoutBorderH - previewHeadH;
-            const height = Math.max(0, Math.floor(availableForBody));
+            const height = getListSideBodyHeight(previewHead);
             previewBody.style.height = height + "px";
             previewBody.style.minHeight = height + "px";
             previewBody.style.maxHeight = height + "px";
@@ -2551,32 +2584,7 @@
                 editorBody.style.maxHeight = "";
                 return;
             }
-            const contentEl = listLayout.closest(".handrive-content, .ui-content");
-            if (!contentEl) {
-                return;
-            }
-            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-            const contentRect = contentEl.getBoundingClientRect();
-            const toolbarWrap = document.querySelector(".handrive-toolbar-wrap, .ui-toolbar-wrap");
-            const toolbarHeight = toolbarWrap && toolbarWrap.offsetParent !== null
-                ? toolbarWrap.getBoundingClientRect().height
-                : contentRect.top;
-            const footerLinks = document.querySelector(".site-footer-links");
-            const footerHeight = footerLinks && footerLinks.offsetParent !== null
-                ? footerLinks.getBoundingClientRect().height
-                : 0;
-            const contentStyle = window.getComputedStyle(contentEl);
-            const padTop = parseFloat(contentStyle.paddingTop) || 0;
-            const padBottom = parseFloat(contentStyle.paddingBottom) || 0;
-            const searchForm = contentEl.querySelector(".handrive-list-search-form");
-            const searchH = searchForm ? searchForm.getBoundingClientRect().height : 0;
-            const searchStyle = searchForm ? window.getComputedStyle(searchForm) : null;
-            const searchMarginB = searchStyle ? (parseFloat(searchStyle.marginBottom) || 0) : 0;
-            const layoutStyle = window.getComputedStyle(listLayout);
-            const layoutBorderH = (parseFloat(layoutStyle.borderTopWidth) || 0) + (parseFloat(layoutStyle.borderBottomWidth) || 0);
-            const editorHeadH = editorHead ? editorHead.getBoundingClientRect().height : 0;
-            const availableForBody = viewportHeight - toolbarHeight - footerHeight - padTop - padBottom - searchH - searchMarginB - layoutBorderH - editorHeadH;
-            const height = Math.max(0, Math.floor(availableForBody));
+            const height = getListSideBodyHeight(editorHead);
             editorBody.style.height = height + "px";
             editorBody.style.minHeight = height + "px";
             editorBody.style.maxHeight = height + "px";
@@ -2659,12 +2667,33 @@
             currentDirRow.style.minHeight = "";
         }
 
+        function syncSearchFormVisibility() {
+            if (!listSearchForm) return;
+            const isLandscape = listLayout.classList.contains("is-landscape");
+            const panelOpen = isLandscape && (
+                (previewPanel && !previewPanel.hidden) ||
+                (editorPanel && !editorPanel.hidden)
+            );
+            listSearchForm.classList.toggle("is-search-hidden", panelOpen);
+            const duration = 220;
+            const startTime = performance.now();
+            function tick() {
+                syncPreviewBodyHeight();
+                syncEditorBodyHeight();
+                if (performance.now() - startTime < duration) {
+                    window.requestAnimationFrame(tick);
+                }
+            }
+            window.requestAnimationFrame(tick);
+        }
+
         function setPreviewVisibility(isVisible) {
             previewSetVisibility(previewPanel, listLayout, isVisible, scheduleSyncCurrentDirRowHeightWithSideHead);
             if (isVisible) {
                 schedulePreviewBodyHeight();
             }
             scheduleEditorBodyHeight();
+            syncSearchFormVisibility();
         }
 
         function scrollPreviewIntoViewIfPortrait() {
@@ -2744,6 +2773,7 @@
                     setPreviewVisibility(false);
                     scheduleSyncCurrentDirRowHeightWithSideHead();
                     scheduleEditorBodyHeight();
+                    syncSearchFormVisibility();
                 },
                 loadContent: function (targetEntry) {
                     const targetUrl = buildDownloadUrl(targetEntry.path);
@@ -2772,6 +2802,7 @@
                     scheduleSyncCurrentDirRowHeightWithSideHead();
                     schedulePreviewBodyHeight();
                     scheduleEditorBodyHeight();
+                    syncSearchFormVisibility();
                 },
             });
             cleanupEditorEvents();
@@ -2990,7 +3021,8 @@
             }
             
             if (previewTitle) {
-                previewTitle.textContent = t("list_preview_title", "파일 미리보기");
+                const previewTitleText = previewTitle.querySelector(".handrive-list-preview-title-text") || previewTitle;
+                previewTitleText.textContent = t("list_preview_title", "파일 미리보기");
             }
             setPreviewActionTargets(null);
             applyRenderedContentModeClass(previewContent, "plain_text", "handrive-plain-text");
@@ -3293,6 +3325,48 @@
         }
 
         function buildBreadcrumbItems(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            const normalizedSharedRootPath = normalizePath(sharedRootPath, true);
+            if (hasSharedContext() && normalizedSharedRootPath) {
+                const effectivePath = normalizedPath && (
+                    normalizedPath === normalizedSharedRootPath ||
+                    normalizedPath.startsWith(normalizedSharedRootPath + "/")
+                )
+                    ? normalizedPath
+                    : normalizedSharedRootPath;
+                const rootParts = normalizedSharedRootPath.split("/").filter(Boolean);
+                const rootLabel = rootParts.length ? rootParts[rootParts.length - 1] : normalizedSharedRootPath;
+                const sharedBaseUrl = handriveRootUrl || "";
+                const crumbs = [
+                    {
+                        label: sharedOwnerUsername,
+                        path: normalizedSharedRootPath,
+                        url: sharedBaseUrl,
+                        isCurrent: false,
+                    },
+                    {
+                        label: rootLabel,
+                        path: normalizedSharedRootPath,
+                        url: sharedBaseUrl,
+                        isCurrent: effectivePath === normalizedSharedRootPath,
+                    },
+                ];
+                if (effectivePath === normalizedSharedRootPath) {
+                    return crumbs;
+                }
+                const childPath = effectivePath.slice(normalizedSharedRootPath.length + 1);
+                const childParts = childPath.split("/").filter(Boolean);
+                childParts.forEach(function (part, index) {
+                    const relativeChildPath = childParts.slice(0, index + 1).join("/");
+                    crumbs.push({
+                        label: part,
+                        path: normalizedSharedRootPath + "/" + relativeChildPath,
+                        url: sharedBaseUrl.replace(/\/$/, "") + "/" + encodePathSegments(relativeChildPath),
+                        isCurrent: index === childParts.length - 1,
+                    });
+                });
+                return crumbs;
+            }
             return buildNavigationBreadcrumbItems(pathValue, {
                 effectiveRootLabel: effectiveRootLabel,
                 isSuperuser: isSuperuser,
@@ -5337,7 +5411,8 @@
             }
             if (entry.type === "dir") {
                 if (entry.is_map_folder) {
-                    window.location.href = (mapViewerBaseUrl || "/handrive/map-viewer/") + (entry.path || "");
+                    const targetUrl = (mapViewerBaseUrl || "/handrive/map-viewer/") + (entry.path || "");
+                    window.location.href = appendSharedQuery(targetUrl);
                     return;
                 }
                 navigateToDirectory(entry.path).catch(alertError);
@@ -5519,6 +5594,10 @@
                 }
                 if (entry.type === "dir") {
                     if (event.detail === 1 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+                        if (hasSharedContext() && entry.is_map_folder) {
+                            openEntry(entry);
+                            return;
+                        }
                         toggleFolderExpansion(entry).catch(alertError);
                     }
                     return;
@@ -5619,6 +5698,16 @@
             if (!listContainer) {
                 return;
             }
+            const existingCurrentDirItem = listContainer.querySelector(".handrive-current-dir-item");
+            const existingCurrentDirRow = existingCurrentDirItem
+                ? existingCurrentDirItem.querySelector(".handrive-current-dir-row")
+                : null;
+            const savedCurrentDirPath = existingCurrentDirRow
+                ? (existingCurrentDirRow.dataset.entryPath || null)
+                : null;
+            if (existingCurrentDirItem) {
+                existingCurrentDirItem.remove();
+            }
             listContainer.innerHTML = "";
             state.openingAnimationOrder = 0;
             state.entryByPath = new Map();
@@ -5628,7 +5717,21 @@
             const entries = state.searchQuery && Array.isArray(state.searchResults)
                 ? state.searchResults
                 : getCachedEntries(state.currentDir);
-            addCurrentDirectoryNode(fragment);
+            const currentFolderEntryForReuse = buildCurrentDirectoryEntry();
+            if (existingCurrentDirItem && savedCurrentDirPath === currentFolderEntryForReuse.path) {
+                if (existingCurrentDirRow) {
+                    existingCurrentDirRow.classList.toggle("is-selected",
+                        state.selectedPaths.has(currentFolderEntryForReuse.path) ||
+                        normalizePath(currentFolderEntryForReuse.path, true) === state.activePreviewPath
+                    );
+                    state.entryRowByPath.set(currentFolderEntryForReuse.path, existingCurrentDirRow);
+                }
+                state.entryByPath.set(currentFolderEntryForReuse.path, currentFolderEntryForReuse);
+                state.visibleEntryPaths.push(currentFolderEntryForReuse.path);
+                fragment.appendChild(existingCurrentDirItem);
+            } else {
+                addCurrentDirectoryNode(fragment);
+            }
 
             if (entries.length === 0) {
                 const emptyItem = document.createElement("li");
@@ -5695,7 +5798,7 @@
             if (!moveApiUrl) {
                 return;
             }
-            const pathTargets = document.querySelectorAll(".handrive-path-link[data-handrive-dir], .handrive-path-current[data-handrive-dir]");
+            const pathTargets = document.querySelectorAll(".ui-path-link[data-handrive-dir], .ui-path-current[data-handrive-dir]");
             pathTargets.forEach(function (target) {
                 const targetDirPath = normalizePath(target.getAttribute("data-handrive-dir") || "", true);
                 bindDropTarget(target, targetDirPath);
@@ -5773,6 +5876,7 @@
                     urlShareModal.open({
                         isUrlOnly: Boolean(entry.is_url_only),
                         shareUrl: resolveShareUrl(entry.share_url),
+                        readOnly: Boolean(entry.share_is_inherited),
                         onToggle: async function (enabled) {
                             const data = await requestJson(
                                 appendSharedQuery(urlShareApiUrl),
@@ -6095,6 +6199,7 @@
                         syncModalBodyState: syncModalBodyState,
                         entry: nextEntry,
                         isManageMode: isManageMode,
+                        t: t,
                     });
                 },
                 showStatus: _showGitRepoStatus,
@@ -6106,10 +6211,12 @@
                         },
                         showStatus: _showGitRepoStatus,
                         state: gitRepoFlowState,
+                        t: t,
                     });
                 },
                 state: gitRepoFlowState,
                 stopPolling: _gitRepoStopPolling,
+                t: t,
             }).catch(function () {});
         }
 
@@ -6155,6 +6262,7 @@
                 requestJson: requestJson,
                 showStatus: _showGitRepoStatus,
                 state: gitRepoFlowState,
+                t: t,
             });
         }
 
@@ -6173,9 +6281,11 @@
                         },
                         showStatus: _showGitRepoStatus,
                         state: gitRepoFlowState,
+                        t: t,
                     });
                 },
                 state: gitRepoFlowState,
+                t: t,
             });
         }
 
@@ -6192,9 +6302,11 @@
                         },
                         showStatus: _showGitRepoStatus,
                         state: gitRepoFlowState,
+                        t: t,
                     });
                 },
                 state: gitRepoFlowState,
+                t: t,
             });
         }
 
@@ -6212,8 +6324,10 @@
                 var url = gitRepoCloneUrlInput ? gitRepoCloneUrlInput.value : "";
                 if (!url) return;
                 navigator.clipboard.writeText(url).then(function () {
-                    gitRepoCopyButton.textContent = "복사됨!";
-                    setTimeout(function () { gitRepoCopyButton.textContent = "복사"; }, 1500);
+                    gitRepoCopyButton.textContent = t("git_repo_copied_button", "복사됨!");
+                    setTimeout(function () {
+                        gitRepoCopyButton.textContent = t("git_repo_copy_button", "복사");
+                    }, 1500);
                 }).catch(function () {
                     if (gitRepoCloneUrlInput) {
                         gitRepoCloneUrlInput.select();
@@ -6372,6 +6486,7 @@
                 urlShareModal.open({
                     isUrlOnly: Boolean(selectedEntry.is_url_only),
                     shareUrl: selectedEntry.share_url || "",
+                    readOnly: Boolean(selectedEntry.share_is_inherited),
                     onToggle: async function (enabled) {
                         const data = await requestJson(
                             appendSharedQuery(urlShareApiUrl),
@@ -6649,6 +6764,20 @@
             previewHeadResizeObserver.observe(previewHead);
         }
 
+        if (previewTitle) {
+            const previewTitleText = previewTitle.querySelector(".handrive-list-preview-title-text");
+            if (previewTitleText) {
+                previewTitleText.addEventListener("dblclick", function () {
+                    const entry = state.activePreviewPath
+                        ? state.entryByPath.get(state.activePreviewPath) || null
+                        : null;
+                    if (entry) {
+                        openEntry(entry);
+                    }
+                });
+            }
+        }
+
         if (window.ResizeObserver) {
             if (listPane) {
                 const listPaneResizeObserver = new ResizeObserver(updateListColumnVisibility);
@@ -6661,6 +6790,14 @@
                     scheduleEditorBodyHeight();
                 });
                 listToolbarResizeObserver.observe(toolbarWrap);
+            }
+            const footerLinks = document.querySelector(".site-footer-links");
+            if (footerLinks) {
+                const listFooterResizeObserver = new ResizeObserver(function () {
+                    schedulePreviewBodyHeight();
+                    scheduleEditorBodyHeight();
+                });
+                listFooterResizeObserver.observe(footerLinks);
             }
         }
 
@@ -6711,7 +6848,7 @@
         if (pathBreadcrumbs) {
             pathBreadcrumbs.addEventListener("click", function (event) {
                 const link = event.target instanceof Element
-                    ? event.target.closest("a.handrive-path-link[data-handrive-dir]")
+                    ? event.target.closest("a.ui-path-link[data-handrive-dir]")
                     : null;
                 if (!link) {
                     return;
@@ -6894,6 +7031,7 @@
                 urlShareModal.open({
                     isUrlOnly: docIsUrlOnly,
                     shareUrl: initialShareUrl,
+                    readOnly: root.dataset.docShareIsInherited === "1",
                     onToggle: async function (enabled) {
                         const data = await requestJson(
                             appendSharedQuery(urlShareApiUrl),

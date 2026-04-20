@@ -120,7 +120,8 @@
 
         state.activePreviewPath = pathValue;
         if (previewTitle) {
-            previewTitle.textContent = entry.name || t("list_preview_title", "파일 미리보기");
+            var previewTitleText = previewTitle.querySelector(".handrive-list-preview-title-text") || previewTitle;
+            previewTitleText.textContent = entry.name || t("list_preview_title", "파일 미리보기");
         }
         setPreviewActionTargets(entry);
 
@@ -162,7 +163,8 @@
                 renderClass: renderClass,
             });
             if (previewTitle && data && typeof data.title === "string" && data.title.trim()) {
-                previewTitle.textContent = data.title;
+                var previewTitleText2 = previewTitle.querySelector(".handrive-list-preview-title-text") || previewTitle;
+                previewTitleText2.textContent = data.title;
             }
             renderPreviewHtml(entry, html, renderMode, renderClass);
             state.activeRenderedPreviewPath = pathValue;

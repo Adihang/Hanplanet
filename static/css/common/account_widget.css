@@ -122,11 +122,11 @@ body.theme-dark .ui-auth-account-menu {
     height: 36px;
     display: block;
     background-color: currentColor;
-    -webkit-mask-image: url("/static/icons/admin.png");
+    -webkit-mask-image: url("/static/media/icons/admin.png");
     -webkit-mask-repeat: no-repeat;
     -webkit-mask-position: center;
     -webkit-mask-size: contain;
-    mask-image: url("/static/icons/admin.png");
+    mask-image: url("/static/media/icons/admin.png");
     mask-repeat: no-repeat;
     mask-position: center;
     mask-size: contain;

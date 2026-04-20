@@ -8,13 +8,20 @@
         <div class="handrive-toolbar-left ui-toolbar-left">
             {% if is_handrive_shared_view %}
             <div class="ui-shared-head">
-                <div class="ui-shared-controls">
-                    {% include "partials/ui_controls_stack.html" %}
-                </div>
                 <div class="handrive-title-row ui-title-row">
                     <h1 class="handrive-title ui-title">{{ doc_title }}</h1>
                     <button class="handrive-help-icon-link" type="button" id="handrive-page-help-btn" aria-label="{{ handrive_text.help_button }}" title="{{ handrive_text.help_button }}"><span class="handrive-help-icon-symbol" aria-hidden="true"></span></button>
                 </div>
+            </div>
+            <div class="handrive-subtitle-wrap">
+                <div class="ui-subtitle ui-path-breadcrumbs">
+                    {% for crumb in view_breadcrumbs %}
+                        {% if not forloop.first %}<span class="handrive-path-sep ui-path-sep">/</span>{% endif %}
+                        <a class="ui-path-link" href="{{ crumb.url }}">{{ crumb.label }}</a>
+                    {% endfor %}
+                    <span class="handrive-path-sep ui-path-sep">/</span>
+                    <span class="ui-path-current">{{ view_current_file_name }}</span>
+                </div>{% if view_current_file_size_display %}<span class="handrive-path-current-size">{{ view_current_file_size_display }}</span>{% endif %}
             </div>
             {% else %}
             <div class="handrive-title-row ui-title-row">
@@ -22,19 +29,24 @@
                 <button class="handrive-help-icon-link" type="button" id="handrive-page-help-btn" aria-label="{{ handrive_text.help_button }}" title="{{ handrive_text.help_button }}"><span class="handrive-help-icon-symbol" aria-hidden="true"></span></button>
             </div>
             <div class="handrive-subtitle-wrap">
-                <div class="handrive-subtitle ui-subtitle handrive-path-breadcrumbs ui-path-breadcrumbs">
+                <div class="ui-subtitle ui-path-breadcrumbs">
                     {% for crumb in view_breadcrumbs %}
                         {% if not forloop.first %}<span class="handrive-path-sep ui-path-sep">/</span>{% endif %}
-                        <a class="handrive-path-link ui-path-link" href="{{ crumb.url }}">{{ crumb.label }}</a>
+                        <a class="ui-path-link" href="{{ crumb.url }}">{{ crumb.label }}</a>
                     {% endfor %}
                     <span class="handrive-path-sep ui-path-sep">/</span>
-                    <span class="handrive-path-current ui-path-current">{{ view_current_file_name }}</span>
+                    <span class="ui-path-current">{{ view_current_file_name }}</span>
                 </div>{% if view_current_file_size_display %}<span class="handrive-path-current-size">{{ view_current_file_size_display }}</span>{% endif %}
             </div>
             {% endif %}
         </div>
         <div class="handrive-toolbar-right ui-toolbar-right">
             {% include "handrive/_auth_account.html" %}
+            {% if is_handrive_shared_view and not user.is_authenticated %}
+            <div class="ui-shared-controls">
+                {% include "partials/ui_controls_stack.html" %}
+            </div>
+            {% endif %}
             <div class="handrive-toolbar-actions ui-toolbar-actions">
                 {% if doc_can_edit %}
                     <button class="handrive-icon-btn" type="button" id="handrive-url-share-btn" aria-label="{{ handrive_text.url_share_button }}" title="{{ handrive_text.url_share_button }}">
@@ -71,6 +83,7 @@
     data-doc-slug-path="{{ doc_slug_path }}"
     data-doc-is-url-only="{% if doc_is_url_only %}1{% else %}0{% endif %}"
     data-doc-share-url="{{ doc_share_url }}"
+    data-doc-share-is-inherited="{% if doc_share_is_inherited %}1{% else %}0{% endif %}"
     data-parent-dir="{{ doc_parent_dir }}"
     data-ui-lang="{{ ui_lang|default:'ko' }}"
     data-handrive-shared-owner-username="{{ handrive_shared_owner_username|default:'' }}"

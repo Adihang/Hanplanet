@@ -16,25 +16,55 @@
     background: var(--handrive-bg, #f5f5f5);
     touch-action: none;
 }
-.map-viewer-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 2px;
+	.map-viewer-toolbar {
+	    display: flex;
+	    align-items: center;
+	    gap: 2px;
     padding: 12px;
     background: var(--handrive-surface, #fff);
     border-bottom: 1px solid var(--handrive-border, #e0e0e0);
     flex-shrink: 0;
 }
-.map-viewer-toolbar-title {
-    font-weight: 600;
-    font-size: 24px;
-    flex: 1;
-    min-width: 0;
-    white-space: nowrap;
+		.map-viewer-toolbar-title {
+		    font-weight: 600;
+		    font-size: 24px;
+		    align-self: flex-end;
+	    flex: 1;
+	    min-width: 0;
+	    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    padding: 0 6px;
+	    padding: 0 6px;
+	    color: var(--handrive-text, #222);
+	}
+		.map-viewer-toolbar-right {
+		    display: flex;
+		    flex-direction: row;
+		    align-items: center;
+		    gap: 8px;
+		    flex-shrink: 0;
+		}
+	.map-viewer-toolbar-actions {
+	    display: flex;
+	    align-items: center;
+	    gap: 2px;
+	    justify-content: flex-end;
+	}
+	.map-viewer-background-select {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 1000;
+    width: min(240px, calc(100vw - 20px));
+    box-sizing: border-box;
+    min-width: 160px;
+    height: 32px;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: 8px;
+    background: var(--handrive-surface, #fff);
     color: var(--handrive-text, #222);
+    padding: 0 8px;
+    font-size: 13px;
 }
 #map-viewer-container {
     flex: 1;
@@ -70,6 +100,12 @@
     user-select: none;
 }
 .map-zone-label::before { display: none; }
+.map-layer-non-clickable,
+.map-layer-non-clickable.leaflet-interactive,
+.map-layer-non-clickable .map-marker-icon,
+.map-zone-label.map-layer-non-clickable {
+    cursor: default !important;
+}
 .map-marker-icon {
     display: flex;
     align-items: center;
@@ -582,8 +618,13 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
     font-size: 13px;
     color: var(--handrive-text, #222);
     min-width: 160px;
+    width: min(240px, calc(100vw - 20px));
     max-width: 240px;
+    box-sizing: border-box;
     overflow: hidden;
+}
+.map-viewer-background-select:not([hidden]) + .map-viewer-layers-widget {
+    top: 52px;
 }
 .map-viewer-layers-toggle {
     width: 100%;
@@ -662,20 +703,25 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 }
 </style>
 
-<div class="map-viewer-wrap">
-    <div class="map-viewer-toolbar">
-        <span class="map-viewer-toolbar-title" title="{{ map_name }}">{{ map_name }}</span>
-        {% if can_edit %}
-        <a href="{{ map_editor_url }}" class="handrive-icon-btn" title="편집" aria-label="편집"
-        ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true"><path d="M3 17l1-4L13 3l3 3L7 16l-4 1z"/><line x1="11" y1="5" x2="14" y2="8"/><line x1="4" y1="13" x2="7" y2="16"/></svg></a>
-        {% endif %}
-        <button type="button" class="handrive-icon-btn" id="map-viewer-share-btn" title="공유" aria-label="공유"
-        ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="5" r="2"/><circle cx="5" cy="10" r="2"/><circle cx="15" cy="15" r="2"/><line x1="7" y1="9" x2="13" y2="6"/><line x1="7" y1="11" x2="13" y2="14"/></svg></button>
-        {% if not shared_owner %}
-        <a href="{{ handrive_list_url }}" class="handrive-icon-btn" title="목록으로" aria-label="목록으로"
-        ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="15" x2="17" y2="15"/></svg></a>
-        {% endif %}
-    </div>
+	<div class="map-viewer-wrap">
+	    <div class="map-viewer-toolbar">
+	        <span class="map-viewer-toolbar-title" title="{{ map_name }}">{{ map_name }}</span>
+	        <div class="map-viewer-toolbar-right">
+	            <div class="map-viewer-toolbar-actions">
+	                {% if can_edit %}
+	                <a href="{{ map_editor_url }}" class="handrive-icon-btn" title="편집" aria-label="편집"
+	                ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true"><path d="M3 17l1-4L13 3l3 3L7 16l-4 1z"/><line x1="11" y1="5" x2="14" y2="8"/><line x1="4" y1="13" x2="7" y2="16"/></svg></a>
+	                {% endif %}
+	                <button type="button" class="handrive-icon-btn" id="map-viewer-share-btn" title="공유" aria-label="공유"
+	                ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="5" r="2"/><circle cx="5" cy="10" r="2"/><circle cx="15" cy="15" r="2"/><line x1="7" y1="9" x2="13" y2="6"/><line x1="7" y1="11" x2="13" y2="14"/></svg></button>
+	                {% if show_map_list_button %}
+	                <a href="{{ handrive_list_url }}" class="handrive-icon-btn" title="목록으로" aria-label="목록으로"
+	                ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="15" x2="17" y2="15"/></svg></a>
+	                {% endif %}
+	            </div>
+	            {% include "partials/ui_controls_stack.html" %}
+	        </div>
+	    </div>
     <!-- 공유 팝업 -->
     <div id="map-viewer-share-modal" class="handrive-rename-modal" hidden>
         <div class="handrive-rename-modal-backdrop" id="map-viewer-share-modal-backdrop"></div>
@@ -710,6 +756,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         <div class="map-loading-overlay" id="map-viewer-loading">
             <div class="handrive-list-loading-spinner"></div>
         </div>
+        <select class="map-viewer-background-select" id="map-viewer-background-select" hidden aria-label="맵 이미지 선택"></select>
         <div class="map-viewer-layers-widget" id="map-viewer-layers-widget" hidden>
             <button type="button" class="map-viewer-layers-toggle" id="map-viewer-layers-toggle">
                 <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="15" x2="17" y2="15"/></svg>
@@ -767,12 +814,57 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
     var mediaViewerCurrentEntries = [];
     var mediaViewerCurrentIndex = 0;
     var mediaViewerAnimating = false;
+    var backgroundSelect = document.getElementById("map-viewer-background-select");
+    var viewerLayerData = {}; // fid -> {type, name, color, emoji, groupId, leafletLayer, tooltipLayer, visible}
+    var viewerGroups = {};    // gid -> {name, fids:[]}
+    var viewerInboundBindSources = {}; // fid -> source fid
+    var viewerGroupCheckboxes = {}; // gid -> checkbox element
+    var viewerLayerCheckboxes = {};  // fid -> checkbox element
 
     function appendShared(url) {
         if (!sharedOwner || !sharedSlug || !url) return url;
         return url + (url.indexOf("?") >= 0 ? "&" : "?")
             + "share_owner=" + encodeURIComponent(sharedOwner)
             + "&share_slug=" + encodeURIComponent(sharedSlug);
+    }
+
+    function parseNumberValue(value, fallback) {
+        var parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function normalizeMapImageLayerSettings(settings) {
+        var normalized = {};
+        if (!settings || typeof settings !== "object") return normalized;
+        Object.keys(settings).forEach(function(imageId) {
+            var value = settings[imageId];
+            if (!value || typeof value !== "object") return;
+            normalized[imageId] = {
+                iconVisible: value.iconVisible !== false,
+                clickable: value.clickable !== false
+            };
+        });
+        return normalized;
+    }
+
+    function getViewerLayerMapImageSettings(layerData, imageId) {
+        if (!layerData) return { iconVisible: true, clickable: true };
+        var settings = normalizeMapImageLayerSettings(layerData.mapImageSettings);
+        var imageSettings = imageId && settings[imageId] ? settings[imageId] : null;
+        return {
+            iconVisible: imageSettings ? imageSettings.iconVisible !== false : layerData.baseIconVisible !== false,
+            clickable: imageSettings ? imageSettings.clickable !== false : layerData.baseClickable !== false
+        };
+    }
+
+    function imageUrlToRelativePath(url) {
+        try {
+            var parsed = new URL(url, window.location.origin);
+            var value = parsed.searchParams.get("path") || "";
+            return value ? decodeURIComponent(value) : "";
+        } catch (err) {
+            return "";
+        }
     }
 
     function openImageViewer(url, alt) {
@@ -1617,7 +1709,186 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
     var imgWidth = 1000, imgHeight = 700;
     var loadedImageUrl = imageUrl || "";
     var map = null;
+    var imageOverlay = null;
+    var mapImages = [];
+    var activeMapImageId = "";
     var openPopup = null;
+
+    function getLegacyMapImage() {
+        if (!imageUrl) return null;
+        return {
+            id: "base",
+            name: "기본 이미지",
+            url: imageUrl,
+            path: imageUrlToRelativePath(imageUrl),
+            x: 0,
+            y: 0,
+            width: imgWidth,
+            height: imgHeight,
+            naturalWidth: imgWidth,
+            naturalHeight: imgHeight
+        };
+    }
+
+    function normalizeMapImages(value) {
+        var source = Array.isArray(value) ? value : [];
+        var normalized = [];
+        source.forEach(function(item, index) {
+            if (!item || !item.url) return;
+            var width = parseNumberValue(item.width, parseNumberValue(item.naturalWidth, imgWidth));
+            var height = parseNumberValue(item.height, parseNumberValue(item.naturalHeight, imgHeight));
+            normalized.push({
+                id: String(item.id || ("bg" + index)),
+                name: String(item.name || "맵 이미지"),
+                url: String(item.url),
+                path: String(item.path || imageUrlToRelativePath(item.url) || ""),
+                x: parseNumberValue(item.x, 0),
+                y: parseNumberValue(item.y, 0),
+                width: width > 0 ? width : imgWidth,
+                height: height > 0 ? height : imgHeight,
+                naturalWidth: parseNumberValue(item.naturalWidth, width || imgWidth),
+                naturalHeight: parseNumberValue(item.naturalHeight, height || imgHeight)
+            });
+        });
+        if (!normalized.length) {
+            var legacy = getLegacyMapImage();
+            if (legacy) normalized.push(legacy);
+        }
+        return normalized;
+    }
+
+    function getActiveMapImage() {
+        return mapImages.find(function(item) { return item.id === activeMapImageId; }) || mapImages[0] || null;
+    }
+
+    function getMapImageDisplayName(item) {
+        var name = String((item && item.name) || "맵 이미지");
+        return name.replace(/\.[^.\\/]+$/, "") || name;
+    }
+
+    function mapImageBounds(item) {
+        var x = parseNumberValue(item && item.x, 0);
+        var y = parseNumberValue(item && item.y, 0);
+        var width = Math.max(1, parseNumberValue(item && item.width, imgWidth));
+        var height = Math.max(1, parseNumberValue(item && item.height, imgHeight));
+        return [[y, x], [y + height, x + width]];
+    }
+
+    function renderBackgroundSelect() {
+        if (!backgroundSelect) return;
+        backgroundSelect.innerHTML = "";
+        backgroundSelect.hidden = mapImages.length <= 1;
+        mapImages.forEach(function(item) {
+            var option = document.createElement("option");
+            option.value = item.id;
+            option.textContent = getMapImageDisplayName(item);
+            option.selected = item.id === activeMapImageId;
+            backgroundSelect.appendChild(option);
+        });
+    }
+
+    function setActiveMapImage(itemId, fitBounds) {
+        activeMapImageId = itemId || (mapImages[0] && mapImages[0].id) || "";
+        var item = getActiveMapImage();
+        if (!item || !map) {
+            renderBackgroundSelect();
+            return;
+        }
+        loadImageWithProgress(
+            appendShared(item.url),
+            function(blobUrl) {
+                item.loadedUrl = blobUrl;
+                var bounds = mapImageBounds(item);
+                if (imageOverlay && map.hasLayer(imageOverlay)) {
+                    map.removeLayer(imageOverlay);
+                }
+                imageOverlay = L.imageOverlay(blobUrl, bounds, { pane: "imageBackgroundPane" }).addTo(map);
+                imageOverlay.bringToBack();
+                if (fitBounds) {
+                    map.fitBounds(bounds);
+                }
+                applyViewerMapImageLayerSettings();
+                renderBackgroundSelect();
+                scheduleMapResize();
+            },
+            function() {
+                renderBackgroundSelect();
+            }
+        );
+    }
+
+    function createInvisibleViewerIcon() {
+        return L.divIcon({ html: '<div style="width:34px;height:34px;"></div>', className: "", iconSize: [37, 37], iconAnchor: [19, 23] });
+    }
+
+    function setLayerNonClickableClass(layer, isNonClickable) {
+        var el = layer && layer.getElement && layer.getElement();
+        if (el && el.classList) {
+            el.classList.toggle("map-layer-non-clickable", !!isNonClickable);
+        }
+    }
+
+    function ensureViewerZoneTooltip(layerData) {
+        if (!layerData || layerData.type !== "zone" || !layerData.name || !layerData.leafletLayer) return null;
+        if (!layerData.tooltipLayer) {
+            var centroid = computeCentroid(layerData.leafletLayer.getLatLngs()[0]);
+            layerData.tooltipLayer = L.tooltip({ permanent: true, direction: "center", className: "map-zone-label", interactive: true })
+                .setContent(layerData.name)
+                .setLatLng(centroid);
+            bindZoneLabelClick(layerData);
+        }
+        return layerData.tooltipLayer;
+    }
+
+    function syncViewerLayerPopupState(layerData) {
+        if (!layerData || !layerData.leafletLayer || !layerData.leafletLayer.bindPopup) return;
+        if (layerData.clickable === false) {
+            if (layerData.leafletLayer.closePopup) layerData.leafletLayer.closePopup();
+            if (layerData.leafletLayer.unbindPopup) layerData.leafletLayer.unbindPopup();
+            return;
+        }
+        if (layerData.fid && viewerInboundBindSources[layerData.fid]) {
+            if (layerData.leafletLayer.unbindPopup) layerData.leafletLayer.unbindPopup();
+            return;
+        }
+        if (layerData.popupHtml) {
+            layerData.leafletLayer.bindPopup(layerData.popupHtml, { autoPan: false, closeButton: false });
+            syncLayerPopupAnchor(layerData);
+        }
+    }
+
+    function applyViewerMapImageLayerSettings() {
+        Object.keys(viewerLayerData).forEach(function(fid) {
+            var d = viewerLayerData[fid];
+            var settings = getViewerLayerMapImageSettings(d, activeMapImageId);
+            d.iconVisible = settings.iconVisible;
+            d.clickable = settings.clickable;
+            var isNonClickable = d.clickable === false;
+            if (d.type === "zone") {
+                d.leafletLayer.setStyle({
+                    color: d.color,
+                    fillColor: d.color,
+                    fillOpacity: d.iconVisible ? 0.15 : 0,
+                    opacity: d.iconVisible ? 1 : 0,
+                    weight: 2
+                });
+                setLayerNonClickableClass(d.leafletLayer, isNonClickable);
+                var tooltip = ensureViewerZoneTooltip(d);
+                if (tooltip) {
+                    if (d.iconVisible && d.visible) {
+                        if (!map.hasLayer(tooltip)) tooltip.addTo(map);
+                    } else if (map.hasLayer(tooltip)) {
+                        map.removeLayer(tooltip);
+                    }
+                    setLayerNonClickableClass(tooltip, isNonClickable);
+                }
+            } else if (d.type === "marker") {
+                d.leafletLayer.setIcon(d.iconVisible ? createIcon(d.emoji, d.iconUrl) : createInvisibleViewerIcon());
+                setLayerNonClickableClass(d.leafletLayer, isNonClickable);
+            }
+            syncViewerLayerPopupState(d);
+        });
+    }
 
     function hideLoading() {
         var overlay = document.getElementById("map-viewer-loading");
@@ -1652,7 +1923,11 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 
     loadImageWithProgress(
         appendShared(imageUrl),
-        function(blobUrl) { loadedImageUrl = blobUrl; initMap(); },
+        function(blobUrl) {
+            loadedImageUrl = blobUrl;
+            mapImages = normalizeMapImages([]);
+            initMap();
+        },
         function() { initMap(); }
     );
 
@@ -1678,22 +1953,28 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         });
         L.control.zoom({ position: "topright" }).addTo(map);
         enableMapGestureZoom(map, document.getElementById("map-viewer-container"));
+        var backgroundPane = map.createPane("imageBackgroundPane");
+        backgroundPane.style.zIndex = "200";
 
-        var bounds = [[0, 0], [imgHeight, imgWidth]];
-        if (loadedImageUrl) {
-            L.imageOverlay(loadedImageUrl, bounds).addTo(map);
+        mapImages = normalizeMapImages(mapImages);
+        activeMapImageId = activeMapImageId || (mapImages[0] && mapImages[0].id) || "";
+        var initialImage = getActiveMapImage();
+        var bounds = mapImageBounds(initialImage || { x: 0, y: 0, width: imgWidth, height: imgHeight });
+        if (loadedImageUrl && initialImage) {
+            imageOverlay = L.imageOverlay(loadedImageUrl, bounds, { pane: "imageBackgroundPane" }).addTo(map);
         }
         map.fitBounds(bounds);
+        renderBackgroundSelect();
         window.requestAnimationFrame(function() {
             scheduleMapResize();
         });
 
         // 레이어 추적
-        var viewerLayerData = {}; // fid -> {type, name, color, emoji, groupId, leafletLayer, tooltipLayer, visible}
-        var viewerGroups = {};    // gid -> {name, fids:[]}
-        var viewerInboundBindSources = {}; // fid -> source fid
-        var viewerGroupCheckboxes = {}; // gid -> checkbox element
-        var viewerLayerCheckboxes = {};  // fid -> checkbox element
+        viewerLayerData = {}; // fid -> {type, name, color, emoji, groupId, leafletLayer, tooltipLayer, visible}
+        viewerGroups = {};    // gid -> {name, fids:[]}
+        viewerInboundBindSources = {}; // fid -> source fid
+        viewerGroupCheckboxes = {}; // gid -> checkbox element
+        viewerLayerCheckboxes = {};  // fid -> checkbox element
 
         // GeoJSON 로드
         fetch(appendShared(mapDataApi + "?path=" + encodeURIComponent(mapPath)), {
@@ -1703,6 +1984,9 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         .then(function(data) {
             if (!data.ok || !data.geojson) return;
             var geojson = data.geojson;
+            mapImages = normalizeMapImages(geojson.mapImages || []);
+            activeMapImageId = geojson.activeMapImageId || (mapImages[0] && mapImages[0].id) || "";
+            setActiveMapImage(activeMapImageId, false);
 
             // 그룹 로드
             if (geojson.groups) {
@@ -1722,7 +2006,12 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                     var coords = (f.geometry.coordinates[0] || []).map(function(c) { return [c[1], c[0]]; });
                     if (coords.length > 1) coords.pop();
                     var color = props.color || "#4f8ef7";
-                    var zoneIconVisible = props.iconVisible !== false;
+                    var zoneSettings = getViewerLayerMapImageSettings({
+                        baseIconVisible: props.iconVisible !== false,
+                        baseClickable: props.clickable !== false,
+                        mapImageSettings: props.mapImageSettings || {}
+                    }, activeMapImageId);
+                    var zoneIconVisible = zoneSettings.iconVisible;
                     var layer = L.polygon(coords, { color: color, fillColor: color, fillOpacity: zoneIconVisible ? 0.15 : 0, opacity: zoneIconVisible ? 1 : 0, weight: 2 }).addTo(map);
                     var tooltipLayer = null;
                     if (props.name && zoneIconVisible) {
@@ -1732,35 +2021,46 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                             .setLatLng(centroid)
                             .addTo(map);
                     }
+                    var zonePopupHtml = "";
                     if (props.name || props.desc || props.imageUrl || (props.imageUrls && props.imageUrls.length) || props.videoUrl || (props.videoUrls && props.videoUrls.length)) {
-                        layer.bindPopup(createPopupContent({
+                        zonePopupHtml = createPopupContent({
                             name: props.name || "",
                             desc: props.desc || "",
                             imageUrl: props.imageUrl || "",
                             imageUrls: props.imageUrls || (props.imageUrl ? [props.imageUrl] : []),
                             videoUrl: props.videoUrl || "",
                             videoUrls: props.videoUrls || (props.videoUrl ? [props.videoUrl] : [])
-                        }), { autoPan: false, closeButton: false });
-                        syncLayerPopupAnchor({ type: "zone", leafletLayer: layer });
+                        });
+                        if (zoneSettings.clickable !== false) {
+                            layer.bindPopup(zonePopupHtml, { autoPan: false, closeButton: false });
+                            syncLayerPopupAnchor({ type: "zone", leafletLayer: layer });
+                        }
                     }
-                    viewerLayerData[fid] = { type: "zone", name: props.name, color: color, groupId: props.groupId || null, leafletLayer: layer, tooltipLayer: tooltipLayer, visible: true, bindFid: props.bindFid || null, iconKey: props.iconKey || null, emoji: props.emoji || null, iconUrl: props.iconUrl || null, iconVisible: props.iconVisible !== false };
+                    viewerLayerData[fid] = { fid: fid, type: "zone", name: props.name, color: color, groupId: props.groupId || null, leafletLayer: layer, tooltipLayer: tooltipLayer, visible: true, bindFid: props.bindFid || null, iconKey: props.iconKey || null, emoji: props.emoji || null, iconUrl: props.iconUrl || null, baseIconVisible: props.iconVisible !== false, baseClickable: props.clickable !== false, mapImageSettings: normalizeMapImageLayerSettings(props.mapImageSettings), popupHtml: zonePopupHtml, iconVisible: zoneSettings.iconVisible, clickable: zoneSettings.clickable };
                     if (props.bindFid && !viewerInboundBindSources[props.bindFid]) {
                         viewerInboundBindSources[props.bindFid] = fid;
                     }
                     bindZoneLabelClick(viewerLayerData[fid]);
                     layer.on("click", function(e) {
                         L.DomEvent.stop(e);
+                        if (viewerLayerData[fid].clickable === false) return;
                         openZoneInteraction(viewerLayerData[fid]);
                     });
 
                 } else if (f.geometry.type === "Point" && props.type === "marker") {
                     var c = f.geometry.coordinates;
                     var latlng = L.latLng(c[1], c[0]);
-                    var iconVisible = props.iconVisible !== false;
+                    var markerSettings = getViewerLayerMapImageSettings({
+                        baseIconVisible: props.iconVisible !== false,
+                        baseClickable: props.clickable !== false,
+                        mapImageSettings: props.mapImageSettings || {}
+                    }, activeMapImageId);
+                    var iconVisible = markerSettings.iconVisible;
                     var icon = iconVisible ? createIcon(props.emoji, props.iconUrl) : L.divIcon({ html: '<div style="width:34px;height:34px;"></div>', className: "", iconSize: [37, 37], iconAnchor: [19, 23] });
                     var marker = L.marker(latlng, { icon: icon }).addTo(map);
+                    var markerPopupHtml = "";
                     if (props.name || props.desc || props.group || props.imageUrl || (props.imageUrls && props.imageUrls.length) || props.videoUrl || (props.videoUrls && props.videoUrls.length)) {
-                        marker.bindPopup(createPopupContent({
+                        markerPopupHtml = createPopupContent({
                             name: props.name || "",
                             desc: props.desc || "",
                             group: props.group || "",
@@ -1768,10 +2068,13 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                             imageUrls: props.imageUrls || (props.imageUrl ? [props.imageUrl] : []),
                             videoUrl: props.videoUrl || "",
                             videoUrls: props.videoUrls || (props.videoUrl ? [props.videoUrl] : [])
-                        }), { autoPan: false, closeButton: false });
-                        syncLayerPopupAnchor({ type: "marker", leafletLayer: marker });
+                        });
+                        if (markerSettings.clickable !== false) {
+                            marker.bindPopup(markerPopupHtml, { autoPan: false, closeButton: false });
+                            syncLayerPopupAnchor({ type: "marker", leafletLayer: marker });
+                        }
                     }
-                    viewerLayerData[fid] = { type: "marker", name: props.name, emoji: props.emoji || "📍", iconUrl: props.iconUrl || null, iconVisible: props.iconVisible !== false, groupId: props.groupId || null, leafletLayer: marker, tooltipLayer: null, visible: true, bindFid: props.bindFid || null };
+                    viewerLayerData[fid] = { fid: fid, type: "marker", name: props.name, emoji: props.emoji || "📍", iconUrl: props.iconUrl || null, baseIconVisible: props.iconVisible !== false, baseClickable: props.clickable !== false, mapImageSettings: normalizeMapImageLayerSettings(props.mapImageSettings), popupHtml: markerPopupHtml, iconVisible: markerSettings.iconVisible, clickable: markerSettings.clickable, groupId: props.groupId || null, leafletLayer: marker, tooltipLayer: null, visible: true, bindFid: props.bindFid || null };
                     if (props.bindFid && !viewerInboundBindSources[props.bindFid]) {
                         viewerInboundBindSources[props.bindFid] = fid;
                     }
@@ -1792,9 +2095,10 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                 if (!viewerInboundBindSources[fid]) return;
                 d.leafletLayer.on("click", function(e) {
                     L.DomEvent.stopPropagation(e);
+                    if (d.clickable === false) return;
                     var sourceFid = viewerInboundBindSources[fid];
                     var sourceTarget = sourceFid ? viewerLayerData[sourceFid] : null;
-                    if (!sourceTarget) return;
+                    if (!sourceTarget || sourceTarget.clickable === false) return;
                     openSourceLayerLikeClick(sourceTarget);
                 });
             });
@@ -1835,6 +2139,7 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                     viewerLayerData[fid].leafletLayer.unbindPopup();
                 }
             });
+            applyViewerMapImageLayerSettings();
         })
         .catch(function() {});
 
@@ -1842,11 +2147,14 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             var d = viewerLayerData[fid];
             if (!d) return;
             d.visible = visible;
-            [d.leafletLayer, d.tooltipLayer].forEach(function(l) {
-                if (!l) return;
-                if (visible) { if (!map.hasLayer(l)) l.addTo(map); }
-                else { if (map.hasLayer(l)) map.removeLayer(l); }
-            });
+            if (d.leafletLayer) {
+                if (visible) { if (!map.hasLayer(d.leafletLayer)) d.leafletLayer.addTo(map); }
+                else { if (map.hasLayer(d.leafletLayer)) map.removeLayer(d.leafletLayer); }
+            }
+            if (d.tooltipLayer) {
+                if (visible && d.iconVisible !== false) { if (!map.hasLayer(d.tooltipLayer)) d.tooltipLayer.addTo(map); }
+                else { if (map.hasLayer(d.tooltipLayer)) map.removeLayer(d.tooltipLayer); }
+            }
             if (viewerLayerCheckboxes[fid]) {
                 viewerLayerCheckboxes[fid].checked = visible;
             }
@@ -2119,6 +2427,12 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         }
     })();
 
+    if (backgroundSelect) {
+        backgroundSelect.addEventListener("change", function() {
+            setActiveMapImage(backgroundSelect.value, true);
+        });
+    }
+
     function computeCentroid(latlngs) {
         var lat = 0, lng = 0;
         latlngs.forEach(function(ll) { lat += ll.lat; lng += ll.lng; });
@@ -2148,10 +2462,12 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                 L.DomEvent.disableClickPropagation(el);
                 L.DomEvent.on(el, "click", function(e) {
                     L.DomEvent.stop(e);
+                    if (layerData.clickable === false) return;
                     openZoneInteraction(layerData);
                 });
                 L.DomEvent.on(el, "contextmenu", function(e) {
                     L.DomEvent.stop(e);
+                    if (layerData.clickable === false) return;
                     openZoneInteraction(layerData);
                 });
             }

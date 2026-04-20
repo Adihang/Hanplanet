@@ -1,19 +1,19 @@
 <div id="handrive-folder-icon-modal" class="handrive-rename-modal" hidden>
     <div class="handrive-rename-modal-backdrop" id="handrive-folder-icon-modal-backdrop"></div>
     <div class="handrive-rename-modal-dialog handrive-folder-icon-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-folder-icon-modal-title">
-        <h3 id="handrive-folder-icon-modal-title" class="handrive-rename-title">아이콘 변경</h3>
+        <h3 id="handrive-folder-icon-modal-title" class="handrive-rename-title">{{ handrive_text.folder_icon_title }}</h3>
         <div class="handrive-rename-target" id="handrive-folder-icon-target"></div>
         <div class="handrive-folder-icon-preview-wrap" id="handrive-folder-icon-preview-wrap" hidden>
             <img class="handrive-folder-icon-preview-img" id="handrive-folder-icon-preview-img" src="" alt="">
         </div>
         <label class="handrive-field handrive-field-full" for="handrive-folder-icon-file-input">
-            <span>이미지 파일 선택</span>
+            <span>{{ handrive_text.folder_icon_file_label }}</span>
             <input type="file" id="handrive-folder-icon-file-input" accept="image/*">
         </label>
         <div class="handrive-rename-actions">
-            <button type="button" class="ui-btn handrive-folder-icon-delete-btn" id="handrive-folder-icon-delete-btn" hidden>아이콘 삭제</button>
-            <button type="button" class="ui-btn" id="handrive-folder-icon-cancel-btn">취소</button>
-            <button type="button" class="ui-btn ui-btn-primary" id="handrive-folder-icon-confirm-btn">저장</button>
+            <button type="button" class="ui-btn handrive-folder-icon-delete-btn" id="handrive-folder-icon-delete-btn" hidden>{{ handrive_text.folder_icon_delete_button }}</button>
+            <button type="button" class="ui-btn" id="handrive-folder-icon-cancel-btn">{{ handrive_text.cancel }}</button>
+            <button type="button" class="ui-btn ui-btn-primary" id="handrive-folder-icon-confirm-btn">{{ handrive_text.save_button }}</button>
         </div>
     </div>
 </div>

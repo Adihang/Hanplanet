@@ -209,22 +209,33 @@ def _check_hanharness_quota(user_obj) -> HttpResponse | None:
     return None
 
 
-def _save_token_usage(user_obj, model: str, prompt_tokens: int, completion_tokens: int, total_tokens: int, is_stream: bool) -> None:
+def _save_token_usage(
+    user_obj,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    is_stream: bool,
+    request_user: str = "",
+    is_estimated: bool = False,
+) -> None:
     """Persist token usage to the DB (best-effort)."""
-    if user_obj is None or total_tokens == 0:
+    if total_tokens == 0:
         return
     try:
         from .models import AITokenUsage
         AITokenUsage.objects.create(
             user=user_obj,
+            request_user=request_user or getattr(user_obj, "username", ""),
             model_name=model,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
             is_stream=is_stream,
+            is_estimated=is_estimated,
         )
     except Exception:
-        logger.exception("Failed to save AITokenUsage for user=%s", getattr(user_obj, "username", "?"))
+        logger.exception("Failed to save AITokenUsage for user=%s", request_user or getattr(user_obj, "username", "?"))
 
 
 def _forward_headers(request: HttpRequest) -> dict[str, str]:
@@ -287,15 +298,22 @@ def ollama_proxy(request: HttpRequest, path: str) -> HttpResponse:
         else:
             resp = _buffered_response(target_url, headers, body)
             try:
-                usage = json.loads(resp.content).get("usage") or {}
+                payload = json.loads(resp.content)
+                usage = payload.get("usage") or {}
                 pt = usage.get("prompt_tokens", 0) or 0
                 ct = usage.get("completion_tokens", 0) or 0
                 tt = usage.get("total_tokens", 0) or 0
+                is_estimated = False
+                if not tt:
+                    pt = _estimate_prompt_tokens(body)
+                    ct = _estimate_tokens(_extract_completion_text(payload))
+                    tt = pt + ct
+                    is_estimated = bool(tt)
                 logger.info(
                     "ai.usage user=%s model=%s prompt_tokens=%s completion_tokens=%s total_tokens=%s",
                     username, model, pt or "-", ct or "-", tt or "-",
                 )
-                _save_token_usage(user_obj, model, pt, ct, tt, is_stream=False)
+                _save_token_usage(user_obj, model, pt, ct, tt, is_stream=False, request_user=username, is_estimated=is_estimated)
             except Exception:
                 pass
             return resp
@@ -335,6 +353,58 @@ _STREAM_DONE = object()
 _KEEPALIVE_INTERVAL = 10  # 초 — client/proxy read timeout보다 충분히 짧아야 함
 
 
+def _estimate_tokens(value) -> int:
+    """Rough fallback when the upstream response does not include usage."""
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    text = text.strip()
+    if not text:
+        return 0
+    return max(1, round(len(text) / 4))
+
+
+def _message_content_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                parts.append(str(item.get("text") or item.get("content") or ""))
+            else:
+                parts.append(str(item))
+        return "\n".join(part for part in parts if part)
+    if content is None:
+        return ""
+    return str(content)
+
+
+def _estimate_prompt_tokens(body: dict) -> int:
+    parts = []
+    for message in body.get("messages") or []:
+        if isinstance(message, dict):
+            parts.append(str(message.get("role") or ""))
+            parts.append(_message_content_text(message.get("content")))
+            if message.get("tool_calls"):
+                parts.append(json.dumps(message.get("tool_calls"), ensure_ascii=False, separators=(",", ":")))
+    if body.get("tools"):
+        parts.append(json.dumps(body.get("tools"), ensure_ascii=False, separators=(",", ":")))
+    return _estimate_tokens("\n".join(part for part in parts if part))
+
+
+def _extract_completion_text(data: dict) -> str:
+    parts = []
+    for choice in data.get("choices") or []:
+        delta = choice.get("delta") or {}
+        message = choice.get("message") or {}
+        for container in (delta, message):
+            content = container.get("content")
+            if content:
+                parts.append(_message_content_text(content))
+            if container.get("tool_calls"):
+                parts.append(json.dumps(container.get("tool_calls"), ensure_ascii=False, separators=(",", ":")))
+    return "".join(parts)
+
+
 def _stream_response(url: str, headers: dict, body: dict, username: str = "-", model: str = "-", user_obj=None) -> StreamingHttpResponse:
     """Forward request and stream SSE chunks back to the client.
 
@@ -349,9 +419,12 @@ def _stream_response(url: str, headers: dict, body: dict, username: str = "-", m
         body = {**body, "stream_options": {"include_usage": True}}
 
     chunk_queue: queue.Queue = queue.Queue()
+    estimated_prompt_tokens = _estimate_prompt_tokens(body)
 
     def _fetch_thread() -> None:
         total_chunks = 0
+        usage_saved = False
+        completion_parts = []
         try:
             with httpx.Client(timeout=300) as client:
                 with client.stream("POST", url, headers=headers, json=body) as resp:
@@ -372,16 +445,20 @@ def _stream_response(url: str, headers: dict, body: dict, username: str = "-", m
                         if line.startswith("data: ") and line != "data: [DONE]":
                             try:
                                 data = json.loads(line[6:])
+                                completion_text = _extract_completion_text(data)
+                                if completion_text:
+                                    completion_parts.append(completion_text)
                                 if usage := data.get("usage"):
                                     pt = usage.get("prompt_tokens", 0) or 0
                                     ct = usage.get("completion_tokens", 0) or 0
                                     tt = usage.get("total_tokens", 0) or 0
                                     if tt:
+                                        usage_saved = True
                                         logger.info(
                                             "ai.usage user=%s model=%s prompt_tokens=%s completion_tokens=%s total_tokens=%s",
                                             username, model, pt, ct, tt,
                                         )
-                                        _save_token_usage(user_obj, model, pt, ct, tt, is_stream=True)
+                                        _save_token_usage(user_obj, model, pt, ct, tt, is_stream=True, request_user=username)
                             except Exception:
                                 pass
                         chunk_queue.put((line + "\n\n").encode())
@@ -397,6 +474,24 @@ def _stream_response(url: str, headers: dict, body: dict, username: str = "-", m
                 b"\n\ndata: [DONE]\n\n"
             )
         finally:
+            if not usage_saved:
+                ct = _estimate_tokens("".join(completion_parts))
+                tt = estimated_prompt_tokens + ct
+                if tt:
+                    logger.info(
+                        "ai.usage user=%s model=%s prompt_tokens=%s completion_tokens=%s total_tokens=%s estimated=true",
+                        username, model, estimated_prompt_tokens or "-", ct or "-", tt,
+                    )
+                    _save_token_usage(
+                        user_obj,
+                        model,
+                        estimated_prompt_tokens,
+                        ct,
+                        tt,
+                        is_stream=True,
+                        request_user=username,
+                        is_estimated=True,
+                    )
             chunk_queue.put(_STREAM_DONE)
         logger.info("ai.stream_done user=%s model=%s chunks=%s", username, model, total_chunks)
 

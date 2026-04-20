@@ -21,19 +21,21 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 20px 12px 10px;
+    padding: 12px;
     background: var(--handrive-surface, #fff);
     border-bottom: 1px solid var(--handrive-border, #e0e0e0);
     flex-shrink: 0;
     flex-wrap: wrap;
 }
-.map-editor-toolbar-title {
-    font-weight: 600;
-    font-size: 24px;
-    margin-right: 8px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+		.map-editor-toolbar-title {
+		    font-weight: 600;
+		    font-size: 24px;
+		    align-self: flex-end;
+		    margin-right: 8px;
+		    min-width: 0;
+	    white-space: nowrap;
+	    overflow: hidden;
+	    text-overflow: ellipsis;
     max-width: 200px;
 }
 .map-editor-toolbar-sep {
@@ -43,11 +45,25 @@
     margin: 0 4px;
     flex-shrink: 0;
 }
-.map-editor-toolbar .ui-btn {
-    flex-shrink: 0;
-}
-.map-editor-toolbar .ui-btn.is-active {
-    background: var(--handrive-accent, #4f8ef7);
+	.map-editor-toolbar .ui-btn {
+	    flex-shrink: 0;
+	}
+		.map-editor-toolbar-right {
+		    display: flex;
+		    flex-direction: row;
+		    align-items: center;
+		    gap: 8px;
+		    margin-left: auto;
+		}
+	.map-editor-toolbar-actions {
+	    display: flex;
+	    align-items: center;
+	    gap: 8px;
+	    flex-wrap: wrap;
+	    justify-content: flex-end;
+	}
+	.map-editor-toolbar .ui-btn.is-active {
+	    background: var(--handrive-accent, #4f8ef7);
     color: #fff;
     border-color: var(--handrive-accent, #4f8ef7);
 }
@@ -442,6 +458,12 @@
     user-select: none;
 }
 .map-zone-label::before { display: none; }
+.map-layer-non-clickable,
+.map-layer-non-clickable.leaflet-interactive,
+.map-layer-non-clickable .map-marker-icon,
+.map-zone-label.map-layer-non-clickable {
+    cursor: default !important;
+}
 .map-marker-icon {
     display: flex;
     align-items: center;
@@ -728,6 +750,145 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     outline-offset: -2px;
     border-radius: 5px;
 }
+.map-background-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.map-background-source {
+    display: none;
+}
+.map-background-leaflet-control {
+    position: relative;
+}
+.map-background-popup-button {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: 6px;
+    background: var(--handrive-surface, #fff);
+    color: var(--handrive-text, #222);
+    box-shadow: 0 1px 5px rgba(0,0,0,0.18);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+}
+.map-background-popup-button:hover,
+.map-background-popup-button:focus-visible {
+    background: var(--handrive-surface-subtle, #f5f5f5);
+}
+.map-background-popup-panel {
+    position: absolute;
+    top: 0;
+    left: 42px;
+    width: min(360px, calc(100vw - 88px));
+    max-height: min(620px, calc(100vh - 170px));
+    overflow: auto;
+    padding: 10px;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: 10px;
+    background: var(--handrive-surface, #fff);
+    color: var(--handrive-text, #222);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.22);
+}
+.map-background-popup-panel[hidden] {
+    display: none;
+}
+.map-background-upload {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    padding: 0;
+    font-size: 22px;
+    line-height: 1;
+}
+.map-background-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: min(520px, calc(100vh - 260px));
+    overflow: auto;
+}
+.map-background-item {
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: 8px;
+    padding: 8px;
+    background: var(--handrive-surface, #fff);
+}
+.map-background-item.is-active {
+    border-color: var(--handrive-accent, #4f8ef7);
+}
+.map-background-item-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.map-background-item-name {
+    min-width: 0;
+    flex: 1;
+    height: 32px;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: 6px;
+    background: var(--handrive-surface, #fff);
+    color: var(--handrive-text, #222);
+    padding: 0 8px;
+    font-size: 13px;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.map-background-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+.map-background-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 11px;
+    color: var(--handrive-text-secondary, #777);
+}
+.map-background-field input {
+    width: 100%;
+    min-width: 0;
+    height: 28px;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: 6px;
+    background: var(--handrive-surface, #fff);
+    color: var(--handrive-text, #222);
+    padding: 0 6px;
+    font-size: 12px;
+    box-sizing: border-box;
+    cursor: text;
+}
+.map-background-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+.map-background-actions .ui-btn {
+    flex: 1;
+    min-height: 30px;
+    font-size: 12px;
+}
+.map-editor-wrap.is-map-image-adjusting #map-editor-container {
+    cursor: move;
+}
+.map-background-actions .ui-btn.is-active {
+    background: var(--handrive-accent, #4f8ef7);
+    border-color: var(--handrive-accent, #4f8ef7);
+    color: #fff;
+}
 </style>
 
 <div class="map-editor-wrap" id="map-editor-root"
@@ -742,19 +903,22 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     data-map-icon-delete-api="{{ handrive_api_map_icon_delete_url }}"
     data-map-viewer-url="{{ map_viewer_url }}"
     data-handrive-list-url="{{ handrive_list_url }}"
->
-    <div class="map-editor-toolbar">
-        <span class="map-editor-toolbar-title" title="{{ map_name }}">{{ map_name }}</span>
-        <div class="map-editor-toolbar-sep"></div>
-        {% if can_edit %}
-        <button type="button" class="handrive-icon-btn" id="map-save-btn" title="저장" aria-label="저장"
-        ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="2"/><rect x="6" y="3" width="8" height="5" rx="1"/><rect x="6" y="11" width="8" height="6" rx="1"/><line x1="8" y1="4.5" x2="12" y2="4.5"/></svg></button>
-        {% endif %}
-        <span class="map-save-status" id="map-save-status"></span>
-        <div class="map-editor-toolbar-sep"></div>
-        <a href="{{ map_viewer_url }}" class="ui-btn">뷰어로 보기</a>
-        <a href="{{ handrive_list_url }}" class="ui-btn">목록으로</a>
-    </div>
+	>
+	    <div class="map-editor-toolbar">
+	        <span class="map-editor-toolbar-title" title="{{ map_name }}">{{ map_name }}</span>
+	        <div class="map-editor-toolbar-right">
+	            <div class="map-editor-toolbar-actions">
+	                {% if can_edit %}
+	                <button type="button" class="handrive-icon-btn" id="map-save-btn" title="저장" aria-label="저장"
+	                ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="2"/><rect x="6" y="3" width="8" height="5" rx="1"/><rect x="6" y="11" width="8" height="6" rx="1"/><line x1="8" y1="4.5" x2="12" y2="4.5"/></svg></button>
+	                {% endif %}
+	                <span class="map-save-status" id="map-save-status"></span>
+	                <a href="{{ map_viewer_url }}" class="ui-btn">뷰어로 보기</a>
+	                <a href="{{ handrive_list_url }}" class="ui-btn">목록으로</a>
+	            </div>
+	            {% include "partials/ui_controls_stack.html" %}
+	        </div>
+	    </div>
 
     <div class="map-editor-body">
         <div id="map-editor-container">
@@ -788,8 +952,17 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         </div>
         <div class="map-loading-overlay" id="map-editor-loading">
             <div class="handrive-list-loading-spinner"></div>
-        </div>
-    </div>
+	    </div>
+	</div>
+
+	<div class="map-background-source" id="map-background-source">
+	    <div class="map-background-controls" id="map-background-controls">
+	        <div class="map-background-list" id="map-background-list"></div>
+	        {% if can_edit %}
+	        <input type="file" id="map-background-upload-input" accept="image/*" multiple hidden>
+	        {% endif %}
+	    </div>
+	</div>
 </div>
 
 {% include 'popup/handrive/map_zone_popup.html' %}
@@ -887,6 +1060,9 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
 
     var map, imageOverlay, drawControl, drawnItems;
     var imgWidth = 1000, imgHeight = 700;
+    var mapImages = [];
+    var activeMapImageId = "";
+    var mapImageIdCounter = 1;
     var selectedIconKey = "warning";
     var selectedIconEmoji = "⚠️";
     var selectedIconUrl = null; // 커스텀 아이콘일 때
@@ -904,8 +1080,16 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     var copiedLayerPayload = null;
     var undoHistory = [];
     var redoHistory = [];
-    var isRestoringHistory = false;
-    var saveStatusEl = document.getElementById("map-save-status");
+	    var isRestoringHistory = false;
+	    var saveStatusEl = document.getElementById("map-save-status");
+	    var backgroundControlsEl = document.getElementById("map-background-controls");
+	    var backgroundListEl = document.getElementById("map-background-list");
+	    var backgroundUploadInput = document.getElementById("map-background-upload-input");
+	    var backgroundControlInstalled = false;
+    var mapImageAdjustMode = false;
+    var mapImageAdjustItemId = "";
+    var mapImageAdjustDrag = null;
+    var mapImageAdjustHandlersInstalled = false;
 
     // 그룹 데이터
     var groups = {}; // gid -> {name, collapsed}
@@ -956,12 +1140,53 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     var CURSOR_HX = 14;
     var CURSOR_HY = 18;
 
-    function syncMapEditorSideToggle() {
-        if (!mapEditorBody || !mapEditorSideToggle) return;
-        var isCollapsed = mapEditorBody.classList.contains("is-side-collapsed");
-        mapEditorSideToggle.setAttribute("aria-label", isCollapsed ? "사이드 패널 펼치기" : "사이드 패널 접기");
-        mapEditorSideToggle.setAttribute("title", isCollapsed ? "사이드 패널 펼치기" : "사이드 패널 접기");
-    }
+	    function syncMapEditorSideToggle() {
+	        if (!mapEditorBody || !mapEditorSideToggle) return;
+	        var isCollapsed = mapEditorBody.classList.contains("is-side-collapsed");
+	        mapEditorSideToggle.setAttribute("aria-label", isCollapsed ? "사이드 패널 펼치기" : "사이드 패널 접기");
+	        mapEditorSideToggle.setAttribute("title", isCollapsed ? "사이드 패널 펼치기" : "사이드 패널 접기");
+	    }
+
+	    function installMapBackgroundControl() {
+	        if (!map || !backgroundControlsEl) return;
+	        if (backgroundControlInstalled) return;
+	        backgroundControlInstalled = true;
+	        var BackgroundControl = L.Control.extend({
+	            options: { position: "topleft" },
+	            onAdd: function() {
+	                var container = L.DomUtil.create("div", "leaflet-control map-background-leaflet-control");
+	                var button = L.DomUtil.create("button", "map-background-popup-button", container);
+	                button.type = "button";
+	                button.title = "맵 이미지";
+	                button.setAttribute("aria-label", "맵 이미지");
+	                button.setAttribute("aria-expanded", "false");
+	                button.innerHTML = '<svg viewBox="0 0 20 20" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2"></rect><circle cx="7.5" cy="8" r="1.2"></circle><path d="M5 14l3.2-3.2 2.4 2.4 1.8-1.8L15 14"></path></svg>';
+
+	                var panel = L.DomUtil.create("div", "map-background-popup-panel", container);
+	                panel.hidden = true;
+	                panel.appendChild(backgroundControlsEl);
+
+	                function setOpen(open) {
+	                    panel.hidden = !open;
+	                    button.setAttribute("aria-expanded", open ? "true" : "false");
+	                }
+
+	                L.DomEvent.disableClickPropagation(container);
+	                L.DomEvent.disableScrollPropagation(container);
+	                L.DomEvent.on(button, "click", function(event) {
+	                    L.DomEvent.preventDefault(event);
+	                    setOpen(panel.hidden);
+	                });
+	                L.DomEvent.on(document, "keydown", function(event) {
+	                    if (event.key === "Escape") {
+	                        setOpen(false);
+	                    }
+	                });
+	                return container;
+	            }
+	        });
+	        map.addControl(new BackgroundControl());
+	    }
 
     if (mapEditorSideToggle && mapEditorBody) {
         mapEditorSideToggle.addEventListener("click", function() {
@@ -1073,6 +1298,398 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         redoHistory = [];
     }
 
+    function parseNumberValue(value, fallback) {
+        var parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function normalizeMapImageLayerSettings(settings) {
+        var normalized = {};
+        if (!settings || typeof settings !== "object") return normalized;
+        Object.keys(settings).forEach(function(imageId) {
+            var value = settings[imageId];
+            if (!value || typeof value !== "object") return;
+            normalized[imageId] = {
+                iconVisible: value.iconVisible !== false,
+                clickable: value.clickable !== false
+            };
+        });
+        return normalized;
+    }
+
+    function getLayerMapImageSettings(item, imageId) {
+        if (!item) return { iconVisible: true, clickable: true };
+        var settings = normalizeMapImageLayerSettings(item.mapImageSettings);
+        var imageSettings = imageId && settings[imageId] ? settings[imageId] : null;
+        return {
+            iconVisible: imageSettings ? imageSettings.iconVisible !== false : item.iconVisible !== false,
+            clickable: imageSettings ? imageSettings.clickable !== false : item.clickable !== false
+        };
+    }
+
+    function setLayerMapImageSettings(item, imageId, values) {
+        if (!item || !imageId) return;
+        item.mapImageSettings = normalizeMapImageLayerSettings(item.mapImageSettings);
+        var current = getLayerMapImageSettings(item, imageId);
+        item.mapImageSettings[imageId] = {
+            iconVisible: values && Object.prototype.hasOwnProperty.call(values, "iconVisible") ? values.iconVisible !== false : current.iconVisible,
+            clickable: values && Object.prototype.hasOwnProperty.call(values, "clickable") ? values.clickable !== false : current.clickable
+        };
+    }
+
+    function nextMapImageId() {
+        return "bg" + (mapImageIdCounter++);
+    }
+
+    function imageUrlToRelativePath(url) {
+        try {
+            var parsed = new URL(url, window.location.origin);
+            var value = parsed.searchParams.get("path") || "";
+            return value ? decodeURIComponent(value) : "";
+        } catch (err) {
+            return "";
+        }
+    }
+
+    function getLegacyMapImage() {
+        if (!imageUrl) return null;
+        return {
+            id: "base",
+            name: root.dataset.baseImage || "기본 이미지",
+            url: imageUrl,
+            path: imageUrlToRelativePath(imageUrl),
+            x: 0,
+            y: 0,
+            width: imgWidth,
+            height: imgHeight,
+            naturalWidth: imgWidth,
+            naturalHeight: imgHeight
+        };
+    }
+
+    function normalizeMapImages(value) {
+        var source = Array.isArray(value) ? value : [];
+        var normalized = [];
+        source.forEach(function(item) {
+            if (!item || !item.url) return;
+            var id = String(item.id || nextMapImageId());
+            var width = parseNumberValue(item.width, parseNumberValue(item.naturalWidth, imgWidth));
+            var height = parseNumberValue(item.height, parseNumberValue(item.naturalHeight, imgHeight));
+            normalized.push({
+                id: id,
+                name: String(item.name || "맵 이미지"),
+                url: String(item.url),
+                path: String(item.path || imageUrlToRelativePath(item.url) || ""),
+                x: parseNumberValue(item.x, 0),
+                y: parseNumberValue(item.y, 0),
+                width: width > 0 ? width : imgWidth,
+                height: height > 0 ? height : imgHeight,
+                naturalWidth: parseNumberValue(item.naturalWidth, width || imgWidth),
+                naturalHeight: parseNumberValue(item.naturalHeight, height || imgHeight)
+            });
+            var numericId = parseInt(id.replace("bg", ""), 10);
+            if (!isNaN(numericId) && numericId >= mapImageIdCounter) mapImageIdCounter = numericId + 1;
+        });
+        if (!normalized.length) {
+            var legacy = getLegacyMapImage();
+            if (legacy) normalized.push(legacy);
+        }
+        return normalized;
+    }
+
+    function getActiveMapImage() {
+        return mapImages.find(function(item) { return item.id === activeMapImageId; }) || mapImages[0] || null;
+    }
+
+	    function mapImageBounds(item) {
+	        var x = parseNumberValue(item && item.x, 0);
+	        var y = parseNumberValue(item && item.y, 0);
+	        var width = Math.max(1, parseNumberValue(item && item.width, imgWidth));
+	        var height = Math.max(1, parseNumberValue(item && item.height, imgHeight));
+	        return [[y, x], [y + height, x + width]];
+	    }
+
+	    function applyLoadedMapImage(item, loadedUrl, fitBounds) {
+	        var bounds = mapImageBounds(item);
+	        if (imageOverlay && map.hasLayer(imageOverlay)) {
+	            map.removeLayer(imageOverlay);
+	        }
+	        imageOverlay = L.imageOverlay(loadedUrl, bounds, { pane: "imageBackgroundPane" }).addTo(map);
+	        imageOverlay.bringToBack();
+	        if (fitBounds) {
+	            map.fitBounds(bounds);
+	        }
+	        applyAllLayerMapImageSettings();
+	        renderMapImageList();
+	    }
+	
+	    function setActiveMapImage(itemId, fitBounds) {
+	        activeMapImageId = itemId || (mapImages[0] && mapImages[0].id) || "";
+	        var item = getActiveMapImage();
+	        if (!item || !map) {
+	            renderMapImageList();
+	            return;
+	        }
+	        if (item.loadedUrl) {
+	            applyLoadedMapImage(item, item.loadedUrl, fitBounds);
+	            return;
+	        }
+	        loadImageWithProgress(item.url, function(blobUrl) {
+	            if (activeMapImageId !== item.id) {
+	                return;
+	            }
+	            item.loadedUrl = blobUrl;
+	            item.naturalWidth = imgWidth;
+	            item.naturalHeight = imgHeight;
+	            if (!item.width || !item.height) {
+	                item.width = item.naturalWidth || imgWidth;
+	                item.height = item.naturalHeight || imgHeight;
+	            }
+	            applyLoadedMapImage(item, blobUrl, fitBounds);
+	        }, function() {
+	            renderMapImageList();
+	        });
+	    }
+
+    function updateActiveMapImageOverlay(fitBounds) {
+        var item = getActiveMapImage();
+        if (!item || !map || !imageOverlay) return;
+        var bounds = mapImageBounds(item);
+        imageOverlay.setBounds(bounds);
+        if (fitBounds) {
+            map.fitBounds(bounds);
+        }
+    }
+
+    function isMapImageAdjustControlTarget(target) {
+        return !!(target && target.closest && target.closest(".leaflet-control, button, a, input, select, textarea, label"));
+    }
+
+    function refreshMapImageAdjustUi() {
+        if (root) {
+            root.classList.toggle("is-map-image-adjusting", mapImageAdjustMode);
+        }
+        if (mapImageAdjustMode) {
+            mapContainer.style.cursor = "move";
+            mapContainer.classList.remove("is-cursor-active");
+        } else {
+            setMapCursor(currentTool, selectedIconUrl, selectedIconEmoji);
+        }
+    }
+
+    function startMapImageAdjustMode() {
+        if (!canEdit || !map || !getActiveMapImage()) return;
+        disableActiveZoneShapeEdit();
+        stopZoneDrag();
+        mapImageAdjustMode = true;
+        mapImageAdjustItemId = activeMapImageId;
+        mapImageAdjustDrag = null;
+        map.dragging.disable();
+        if (map.scrollWheelZoom) {
+            map.scrollWheelZoom.disable();
+        }
+        refreshMapImageAdjustUi();
+        renderMapImageList();
+    }
+
+    function finishMapImageAdjustMode(shouldCommit) {
+        if (!mapImageAdjustMode) return;
+        mapImageAdjustMode = false;
+        mapImageAdjustItemId = "";
+        mapImageAdjustDrag = null;
+        if (map) {
+            map.off("mousemove", onMapImageAdjustMove);
+            map.dragging.enable();
+            if (map.scrollWheelZoom) {
+                map.scrollWheelZoom.enable();
+            }
+        }
+        document.removeEventListener("mouseup", onMapImageAdjustEnd);
+        refreshMapImageAdjustUi();
+        renderMapImageList();
+        if (shouldCommit) {
+            commitHistoryState();
+        }
+    }
+
+    function onMapImageAdjustStart(event) {
+        if (!mapImageAdjustMode || !event || !event.latlng) return;
+        var originalEvent = event.originalEvent || {};
+        if (isMapImageAdjustControlTarget(originalEvent.target)) return;
+        var item = getActiveMapImage();
+        if (!item || item.id !== mapImageAdjustItemId) return;
+        L.DomEvent.preventDefault(originalEvent);
+        mapImageAdjustDrag = {
+            startLatLng: event.latlng,
+            startX: parseNumberValue(item.x, 0),
+            startY: parseNumberValue(item.y, 0)
+        };
+        map.dragging.disable();
+        map.on("mousemove", onMapImageAdjustMove);
+        document.addEventListener("mouseup", onMapImageAdjustEnd);
+    }
+
+    function onMapImageAdjustMove(event) {
+        if (!mapImageAdjustMode || !mapImageAdjustDrag || !event || !event.latlng) return;
+        var item = getActiveMapImage();
+        if (!item || item.id !== mapImageAdjustItemId) return;
+        item.x = mapImageAdjustDrag.startX + (event.latlng.lng - mapImageAdjustDrag.startLatLng.lng);
+        item.y = mapImageAdjustDrag.startY + (event.latlng.lat - mapImageAdjustDrag.startLatLng.lat);
+        updateActiveMapImageOverlay(false);
+    }
+
+    function onMapImageAdjustEnd() {
+        if (!mapImageAdjustDrag) return;
+        mapImageAdjustDrag = null;
+        if (map) {
+            map.off("mousemove", onMapImageAdjustMove);
+            map.dragging.disable();
+        }
+        document.removeEventListener("mouseup", onMapImageAdjustEnd);
+    }
+
+    function onMapImageAdjustWheel(event) {
+        if (!mapImageAdjustMode || isMapImageAdjustControlTarget(event.target)) return;
+        var item = getActiveMapImage();
+        if (!item || item.id !== mapImageAdjustItemId || !map) return;
+        event.preventDefault();
+        event.stopPropagation();
+        var anchor = map.mouseEventToLatLng(event);
+        var factor = Math.exp(-event.deltaY * 0.0015);
+        factor = Math.max(0.75, Math.min(1.333, factor));
+        var x = parseNumberValue(item.x, 0);
+        var y = parseNumberValue(item.y, 0);
+        var width = Math.max(1, parseNumberValue(item.width, imgWidth));
+        var height = Math.max(1, parseNumberValue(item.height, imgHeight));
+        item.x = anchor.lng - ((anchor.lng - x) * factor);
+        item.y = anchor.lat - ((anchor.lat - y) * factor);
+        item.width = Math.max(1, width * factor);
+        item.height = Math.max(1, height * factor);
+        updateActiveMapImageOverlay(false);
+    }
+
+    function installMapImageAdjustHandlers() {
+        if (!map || !mapContainer || mapImageAdjustHandlersInstalled) return;
+        mapImageAdjustHandlersInstalled = true;
+        map.on("mousedown", onMapImageAdjustStart);
+        mapContainer.addEventListener("wheel", onMapImageAdjustWheel, { passive: false });
+    }
+
+    function renderMapImageList() {
+        if (!backgroundListEl) return;
+        backgroundListEl.innerHTML = "";
+        if (!mapImages.length) {
+            var empty = document.createElement("div");
+            empty.style.color = "var(--handrive-text-secondary,#777)";
+            empty.style.fontSize = "13px";
+            empty.textContent = "등록된 맵 이미지가 없습니다.";
+            backgroundListEl.appendChild(empty);
+            return;
+        }
+        var item = getActiveMapImage();
+        if (!item) {
+            return;
+        }
+
+        var row = document.createElement("div");
+        row.className = "map-background-item is-active";
+
+        var head = document.createElement("div");
+        head.className = "map-background-item-head";
+        var name = document.createElement("select");
+        name.className = "map-background-item-name";
+        name.title = item.name;
+        name.setAttribute("aria-label", "맵 이미지 선택");
+        mapImages.forEach(function(optionItem) {
+            var option = document.createElement("option");
+            option.value = optionItem.id;
+            option.textContent = optionItem.name;
+            option.selected = optionItem.id === item.id;
+            name.appendChild(option);
+        });
+        name.addEventListener("change", function() {
+            if (name.value === activeMapImageId) {
+                return;
+            }
+            finishMapImageAdjustMode(true);
+            setActiveMapImage(name.value, true);
+            commitHistoryState();
+        });
+        head.appendChild(name);
+        if (canEdit && backgroundUploadInput) {
+            var uploadBtn = document.createElement("button");
+            uploadBtn.type = "button";
+            uploadBtn.className = "ui-btn map-background-upload";
+            uploadBtn.title = "맵 이미지 업로드";
+            uploadBtn.setAttribute("aria-label", "맵 이미지 업로드");
+            uploadBtn.textContent = "+";
+            uploadBtn.addEventListener("click", function() {
+                backgroundUploadInput.click();
+            });
+            head.appendChild(uploadBtn);
+        }
+        row.appendChild(head);
+
+        var grid = document.createElement("div");
+        grid.className = "map-background-grid";
+        [
+            ["x", "X"], ["y", "Y"], ["width", "너비"], ["height", "높이"]
+        ].forEach(function(pair) {
+            var key = pair[0];
+            var labelText = pair[1];
+            var label = document.createElement("label");
+            label.className = "map-background-field";
+            label.appendChild(document.createTextNode(labelText));
+            var input = document.createElement("input");
+            input.type = "number";
+            input.step = "1";
+            input.value = Math.round(parseNumberValue(item[key], key === "width" ? imgWidth : key === "height" ? imgHeight : 0));
+            input.addEventListener("change", function() {
+                item[key] = parseNumberValue(input.value, item[key] || 0);
+                if ((key === "width" || key === "height") && item[key] <= 0) item[key] = 1;
+                updateActiveMapImageOverlay(false);
+                commitHistoryState();
+            });
+            label.appendChild(input);
+            grid.appendChild(label);
+        });
+        row.appendChild(grid);
+
+        var actions = document.createElement("div");
+        actions.className = "map-background-actions";
+        var fitBtn = document.createElement("button");
+        fitBtn.type = "button";
+        var isAdjustingThisImage = mapImageAdjustMode && mapImageAdjustItemId === item.id;
+        fitBtn.className = "ui-btn" + (isAdjustingThisImage ? " is-active" : "");
+        fitBtn.textContent = isAdjustingThisImage ? "맞춤 저장" : "맞춤";
+        fitBtn.addEventListener("click", function() {
+            if (isAdjustingThisImage) {
+                finishMapImageAdjustMode(true);
+                return;
+            }
+            startMapImageAdjustMode();
+        });
+        actions.appendChild(fitBtn);
+        if (canEdit && mapImages.length > 1) {
+            var removeBtn = document.createElement("button");
+            removeBtn.type = "button";
+            removeBtn.className = "ui-btn ui-btn-danger";
+            removeBtn.textContent = "삭제";
+            removeBtn.addEventListener("click", function() {
+                if (mapImageAdjustMode && mapImageAdjustItemId === item.id) {
+                    finishMapImageAdjustMode(false);
+                }
+                mapImages = mapImages.filter(function(candidate) { return candidate.id !== item.id; });
+                activeMapImageId = (mapImages[0] && mapImages[0].id) || "";
+                setActiveMapImage(activeMapImageId, true);
+                commitHistoryState();
+            });
+            actions.appendChild(removeBtn);
+        }
+        row.appendChild(actions);
+        backgroundListEl.appendChild(row);
+    }
+
     function isEditableTextTarget(target) {
         if (!target) return false;
         var tagName = String(target.tagName || "").toUpperCase();
@@ -1140,6 +1757,56 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             opacity: 1,
             weight: 2
         };
+    }
+
+    function getEditorZoneHiddenStyle(color) {
+        return {
+            color: color,
+            fillColor: color,
+            fillOpacity: 0,
+            opacity: 0,
+            weight: 2
+        };
+    }
+
+    function setLayerNonClickableClass(layer, isNonClickable) {
+        var el = layer && layer.getElement && layer.getElement();
+        if (el && el.classList) {
+            el.classList.toggle("map-layer-non-clickable", !!isNonClickable);
+        }
+    }
+
+    function applyLayerMapImageSettings(fid) {
+        var item = layerMap[fid];
+        if (!item) return;
+        var settings = getLayerMapImageSettings(item, activeMapImageId);
+        item.iconVisible = settings.iconVisible;
+        item.clickable = settings.clickable;
+        var isNonClickable = settings.clickable === false;
+        if (item.type === "zone") {
+            if (item.layer && item.layer.setStyle) {
+                item.layer.setStyle(settings.iconVisible ? getEditorZoneStyle(item.color) : getEditorZoneHiddenStyle(item.color));
+                setLayerNonClickableClass(item.layer, isNonClickable);
+            }
+            if (item.tooltip) {
+                if (settings.iconVisible) {
+                    if (map && !map.hasLayer(item.tooltip)) item.tooltip.addTo(map);
+                    item.tooltip.setContent(item.name || "");
+                    refreshZoneTooltipPosition(fid);
+                } else if (map && map.hasLayer(item.tooltip)) {
+                    map.removeLayer(item.tooltip);
+                }
+                setLayerNonClickableClass(item.tooltip, isNonClickable);
+            }
+        } else if (item.type === "marker" && item.layer && item.layer.setIcon) {
+            item.layer.setIcon(settings.iconVisible ? createLeafletIcon(item.emoji, item.iconUrl) : createInvisibleIcon());
+            setLayerNonClickableClass(item.layer, isNonClickable);
+        }
+    }
+
+    function applyAllLayerMapImageSettings() {
+        Object.keys(layerMap).forEach(applyLayerMapImageSettings);
+        refreshZoneLayerPriority();
     }
 
     function cloneLatLngStructure(latlngs) {
@@ -1271,7 +1938,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         var item = layerMap[fid];
         if (!item || item.type !== "zone") return;
         selectLayer(fid);
-        openNamePopup("구역 정보", item.name, function(newName, newDesc, iconData, imageUrl, imageUrls, videoUrl, videoUrls, bindFid, bindRole, newIconVisible) {
+        openNamePopup("구역 정보", item.name, function(newName, newDesc, iconData, imageUrl, imageUrls, videoUrl, videoUrls, bindFid, bindRole, newIconVisible, newClickable) {
             if (newName === null) return;
             item.name = newName;
             item.desc = newDesc;
@@ -1284,9 +1951,10 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             item.videoUrl = item.videoUrls[0] || null;
             applyExclusiveBinding(fid, bindFid || null, bindRole || "target");
             item.iconVisible = newIconVisible !== false;
-            item.layer.setStyle(getEditorZoneStyle(item.color));
+            item.clickable = newClickable !== false;
+            setLayerMapImageSettings(item, activeMapImageId, { iconVisible: item.iconVisible, clickable: item.clickable });
+            applyLayerMapImageSettings(fid);
             item.tooltip.setContent(newName);
-            if (!map.hasLayer(item.tooltip)) item.tooltip.addTo(map);
             renderLayersList();
             commitHistoryState();
         }, function() {
@@ -1317,6 +1985,9 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
 
     // 도구 전환
     function setTool(tool) {
+        if (mapImageAdjustMode) {
+            finishMapImageAdjustMode(true);
+        }
         currentTool = tool;
         if (tool !== "select") {
             disableActiveZoneShapeEdit();
@@ -1354,6 +2025,8 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 videoUrls: normalizeVideoUrls(item.videoUrls || item.videoUrl || []),
                 videoUrl: item.videoUrl || null,
                 iconVisible: item.iconVisible !== false,
+                clickable: item.clickable !== false,
+                mapImageSettings: normalizeMapImageLayerSettings(item.mapImageSettings),
                 bindFid: item.bindFid || null,
                 groupId: item.groupId || null,
                 latlngs: cloneLatLngStructure(item.layer.getLatLngs())
@@ -1371,6 +2044,8 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             videoUrls: normalizeVideoUrls(item.videoUrls || item.videoUrl || []),
             videoUrl: item.videoUrl || null,
             iconVisible: item.iconVisible !== false,
+            clickable: item.clickable !== false,
+            mapImageSettings: normalizeMapImageLayerSettings(item.mapImageSettings),
             bindFid: item.bindFid || null,
             groupId: item.groupId || null,
             latlng: L.latLng(item.layer.getLatLng().lat, item.layer.getLatLng().lng, item.layer.getLatLng().alt)
@@ -1451,9 +2126,19 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     }
 
     function applyGeoJsonState(geojson) {
+        if (mapImageAdjustMode) {
+            finishMapImageAdjustMode(false);
+        }
         isRestoringHistory = true;
         clearEditorState();
         var state = cloneHistoryState(geojson);
+        mapImages = normalizeMapImages(state.mapImages || []);
+        activeMapImageId = state.activeMapImageId || (mapImages[0] && mapImages[0].id) || "";
+        if (map) {
+            setActiveMapImage(activeMapImageId, false);
+        } else {
+            renderMapImageList();
+        }
         if (state.groups) {
             state.groups.forEach(function(g) {
                 var groupImageUrls = normalizeImageUrls(g.imageUrls || g.imageUrl || []);
@@ -1476,12 +2161,18 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 if (coords.length > 1) coords.pop();
                 var zoneLayer = L.polygon(coords);
                 addZoneLayer(zoneLayer, props.name || "", fid, props.color, props.desc || "", { iconKey: props.iconKey || null, emoji: props.emoji || null, iconUrl: props.iconUrl || null, imageUrls: props.imageUrls || props.imageUrl || [], imageUrl: props.imageUrl || null, videoUrls: props.videoUrls || props.videoUrl || [], videoUrl: props.videoUrl || null }, props.iconVisible !== false);
+                layerMap[fid].clickable = props.clickable !== false;
+                layerMap[fid].mapImageSettings = normalizeMapImageLayerSettings(props.mapImageSettings);
+                applyLayerMapImageSettings(fid);
                 if (props.groupId && groups[props.groupId]) layerMap[fid].groupId = props.groupId;
                 if (props.bindFid) layerMap[fid].bindFid = props.bindFid;
             } else if (f.geometry.type === "Point" && props.type === "marker") {
                 var point = f.geometry.coordinates;
                 var markerLatLng = L.latLng(point[1], point[0]);
                 placeMarker(markerLatLng, props.iconKey || "pin", props.emoji || "📍", props.iconUrl || null, props.name || "", fid, props.desc || "", props.imageUrls || props.imageUrl || [], props.videoUrls || props.videoUrl || [], props.iconVisible !== false);
+                layerMap[fid].clickable = props.clickable !== false;
+                layerMap[fid].mapImageSettings = normalizeMapImageLayerSettings(props.mapImageSettings);
+                applyLayerMapImageSettings(fid);
                 if (props.groupId && groups[props.groupId]) layerMap[fid].groupId = props.groupId;
                 if (props.bindFid) layerMap[fid].bindFid = props.bindFid;
             }
@@ -1495,6 +2186,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             layerOrder = Object.keys(layerMap);
         }
         renderLayersList();
+        renderMapImageList();
         refreshZoneLayerPriority();
         isRestoringHistory = false;
     }
@@ -1618,15 +2310,21 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         });
         enableMapGestureZoom(map, document.getElementById("map-editor-container"));
 
-        var bounds = [[0, 0], [imgHeight, imgWidth]];
         var backgroundPane = map.createPane("imageBackgroundPane");
         backgroundPane.style.zIndex = "200";
-        if (loadedImageUrl) {
+        mapImages = normalizeMapImages(mapImages);
+        activeMapImageId = activeMapImageId || (mapImages[0] && mapImages[0].id) || "";
+        var initialImage = getActiveMapImage();
+        var bounds = mapImageBounds(initialImage || { x: 0, y: 0, width: imgWidth, height: imgHeight });
+        if (loadedImageUrl && initialImage) {
+            initialImage.loadedUrl = loadedImageUrl;
             imageOverlay = L.imageOverlay(loadedImageUrl, bounds, {
                 pane: "imageBackgroundPane"
             }).addTo(map);
         }
         map.fitBounds(bounds);
+        renderMapImageList();
+        installMapImageAdjustHandlers();
 
         drawnItems = new L.FeatureGroup().addTo(map);
 
@@ -1641,21 +2339,24 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                     circlemarker: false,
                     marker: false,
                 },
-            });
-            map.addControl(drawControl);
+	            });
+	            map.addControl(drawControl);
 
-            // 폴리곤 그리기 완료
-            map.on(L.Draw.Event.CREATED, function(e) {
+	            // 폴리곤 그리기 완료
+	            map.on(L.Draw.Event.CREATED, function(e) {
                 if (e.layerType === "polygon") {
                     pendingZoneLayer = e.layer;
-                    openNamePopup("구역 정보", "", function(name, desc, iconData, imageUrl, imageUrls, videoUrl, videoUrls, bindFid, bindRole, iconVisible) {
+                    openNamePopup("구역 정보", "", function(name, desc, iconData, imageUrl, imageUrls, videoUrl, videoUrls, bindFid, bindRole, iconVisible, clickable) {
                         if (!name) { pendingZoneLayer = null; return; }
                         var createdFid = addZoneLayer(pendingZoneLayer, name, null, null, desc, iconData, iconVisible !== false);
                         var createdItem = layerMap[createdFid];
+                        createdItem.clickable = clickable !== false;
+                        setLayerMapImageSettings(createdItem, activeMapImageId, { iconVisible: iconVisible !== false, clickable: clickable !== false });
                         createdItem.imageUrls = normalizeImageUrls(imageUrls);
                         createdItem.imageUrl = createdItem.imageUrls[0] || null;
                         createdItem.videoUrls = normalizeVideoUrls(videoUrls);
                         createdItem.videoUrl = createdItem.videoUrls[0] || null;
+                        applyLayerMapImageSettings(createdFid);
                         pendingZoneLayer = null;
                         selectLayer(createdFid);
                         setTool("select");
@@ -1684,11 +2385,12 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 selectLayer(createdMarkerFid);
                 renderLayersList();
                 commitHistoryState();
-            });
-        }
+	            });
+	        }
+	        installMapBackgroundControl();
 
-        // 데이터 로드
-        loadMapData();
+	        // 데이터 로드
+	        loadMapData();
 
         // 사이드 탭 전환
         document.querySelectorAll(".map-editor-side-tab").forEach(function(tab) {
@@ -1698,8 +2400,8 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 var panel = tab.dataset.sideTab;
                 document.getElementById("map-side-icons").hidden = panel !== "icons";
                 document.getElementById("map-side-layers").hidden = panel !== "layers";
-            });
-        });
+	            });
+	        });
 
         renderPresetIcons();
         renderCustomIcons({{ custom_icons|safe }});
@@ -1711,6 +2413,14 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 if (!iconUploadInput.files || !iconUploadInput.files.length) return;
                 uploadIcon(iconUploadInput.files[0]);
                 iconUploadInput.value = "";
+            });
+        }
+
+        if (backgroundUploadInput) {
+            backgroundUploadInput.addEventListener("change", function() {
+                if (!backgroundUploadInput.files || !backgroundUploadInput.files.length) return;
+                Array.from(backgroundUploadInput.files).forEach(uploadMapBackground);
+                backgroundUploadInput.value = "";
             });
         }
 
@@ -1776,7 +2486,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         var icd = existingIconData || {};
         var zoneImageUrls = normalizeImageUrls(icd.imageUrls || icd.imageUrl || []);
         var zoneVideoUrls = normalizeVideoUrls(icd.videoUrls || icd.videoUrl || []);
-        layerMap[fid] = { type: "zone", name: name, color: color, layer: layer, tooltip: tooltip, groupId: null, desc: existingDesc || "", iconKey: icd.iconKey || null, emoji: icd.emoji || null, iconUrl: icd.iconUrl || null, imageUrls: zoneImageUrls, imageUrl: zoneImageUrls[0] || null, videoUrls: zoneVideoUrls, videoUrl: zoneVideoUrls[0] || null, iconVisible: iconVisible, bindFid: null };
+        layerMap[fid] = { type: "zone", name: name, color: color, layer: layer, tooltip: tooltip, groupId: null, desc: existingDesc || "", iconKey: icd.iconKey || null, emoji: icd.emoji || null, iconUrl: icd.iconUrl || null, imageUrls: zoneImageUrls, imageUrl: zoneImageUrls[0] || null, videoUrls: zoneVideoUrls, videoUrl: zoneVideoUrls[0] || null, iconVisible: iconVisible, clickable: true, mapImageSettings: {}, bindFid: null };
         ensureLayerOrder(fid);
         bindZoneTooltipClick(fid);
         refreshZoneLayerPriority();
@@ -1824,7 +2534,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
 
         var markerImageUrls = normalizeImageUrls(existingImageUrl || []);
         var markerVideoUrls = normalizeVideoUrls(existingVideoUrl || []);
-        layerMap[fid] = { type: "marker", name: name, iconKey: iconKey, emoji: emoji, iconUrl: iconUrl, layer: marker, groupId: null, desc: existingDesc || "", imageUrls: markerImageUrls, imageUrl: markerImageUrls[0] || null, videoUrls: markerVideoUrls, videoUrl: markerVideoUrls[0] || null, iconVisible: iconVisible, bindFid: null };
+        layerMap[fid] = { type: "marker", name: name, iconKey: iconKey, emoji: emoji, iconUrl: iconUrl, layer: marker, groupId: null, desc: existingDesc || "", imageUrls: markerImageUrls, imageUrl: markerImageUrls[0] || null, videoUrls: markerVideoUrls, videoUrl: markerVideoUrls[0] || null, iconVisible: iconVisible, clickable: true, mapImageSettings: {}, bindFid: null };
         ensureLayerOrder(fid);
 
         marker.on("click", function(e) {
@@ -1885,6 +2595,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     var namePopupOriginalBindRole = "target";
     var namePopupCurrentBindRole = "target";
     var namePopupIconVisibleCb = document.getElementById("map-name-popup-icon-visible");
+    var namePopupClickableCb = document.getElementById("map-name-popup-clickable");
 
     // 이미지 첨부 UI
     var namePopupImageInput = document.getElementById("map-name-popup-image-input");
@@ -2222,8 +2933,12 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         namePopupOriginalBindRole = bindState.role;
         namePopupCurrentBindFid = bindState.fid;
         namePopupCurrentBindRole = bindState.role;
+        var currentMapImageSettings = fid && layerMap[fid] ? getLayerMapImageSettings(layerMap[fid], activeMapImageId) : { iconVisible: true, clickable: true };
         if (namePopupIconVisibleCb) {
-            namePopupIconVisibleCb.checked = (fid && layerMap[fid]) ? (layerMap[fid].iconVisible !== false) : true;
+            namePopupIconVisibleCb.checked = currentMapImageSettings.iconVisible !== false;
+        }
+        if (namePopupClickableCb) {
+            namePopupClickableCb.checked = currentMapImageSettings.clickable !== false;
         }
         updateBindDisplay(namePopupBindDisplay, namePopupCurrentBindFid);
         if (namePopupBindBtn) namePopupBindBtn.style.display = fid ? "" : "none";
@@ -2249,8 +2964,9 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         var bindFid = namePopupCurrentBindFid || null;
         var bindRole = namePopupCurrentBindRole || "target";
         var iconVisible = namePopupIconVisibleCb ? namePopupIconVisibleCb.checked : true;
+        var clickable = namePopupClickableCb ? namePopupClickableCb.checked : true;
         namePopupOverlay.hidden = true;
-        if (namePopupCallback) { namePopupCallback(val, desc, iconData, imageUrl, imageUrls, videoUrl, videoUrls, bindFid, bindRole, iconVisible); namePopupCallback = null; }
+        if (namePopupCallback) { namePopupCallback(val, desc, iconData, imageUrl, imageUrls, videoUrl, videoUrls, bindFid, bindRole, iconVisible, clickable); namePopupCallback = null; }
         namePopupDeleteCallback = null;
     }
 
@@ -2288,6 +3004,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     var markerPopupSelVideoUrl = null;
     var markerPopupSelVideoUrls = [];
     var markerPopupIconVisibleCb = document.getElementById("map-marker-popup-icon-visible");
+    var markerPopupClickableCb = document.getElementById("map-marker-popup-clickable");
     var markerPopupCurrentBindFid = null;
     var markerPopupCurrentBindRole = "target";
     var markerPopupOriginalBindFid = null;
@@ -2394,7 +3111,9 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         markerPopupDesc.value = item.desc || "";
         setPopupImageUrls(item.imageUrls || item.imageUrl || [], "marker");
         setPopupVideoUrls(item.videoUrls || item.videoUrl || [], "marker");
-        if (markerPopupIconVisibleCb) markerPopupIconVisibleCb.checked = item.iconVisible !== false;
+        var currentMapImageSettings = getLayerMapImageSettings(item, activeMapImageId);
+        if (markerPopupIconVisibleCb) markerPopupIconVisibleCb.checked = currentMapImageSettings.iconVisible !== false;
+        if (markerPopupClickableCb) markerPopupClickableCb.checked = currentMapImageSettings.clickable !== false;
         var markerBindState = getBindSelectionState(fid);
         markerPopupOriginalBindFid = markerBindState.fid;
         markerPopupOriginalBindRole = markerBindState.role;
@@ -2419,8 +3138,10 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         item.videoUrls = markerPopupSelVideoUrls.slice();
         item.videoUrl = markerPopupSelVideoUrls[0] || null;
         item.iconVisible = markerPopupIconVisibleCb ? markerPopupIconVisibleCb.checked : true;
+        item.clickable = markerPopupClickableCb ? markerPopupClickableCb.checked : true;
+        setLayerMapImageSettings(item, activeMapImageId, { iconVisible: item.iconVisible, clickable: item.clickable });
         applyExclusiveBinding(markerPopupTarget, markerPopupCurrentBindFid || null, markerPopupCurrentBindRole || "target");
-        item.layer.setIcon(createLeafletIcon(item.emoji, item.iconUrl));
+        applyLayerMapImageSettings(markerPopupTarget);
         markerPopupOverlay.hidden = true;
         markerPopupTarget = null;
         renderLayersList();
@@ -3188,6 +3909,53 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         .catch(function() { alert("이미지/영상 업로드 중 오류가 발생했습니다."); });
     }
 
+    function uploadMapBackground(file) {
+        if (!mapImageUploadApi) {
+            alert("맵 이미지 업로드 경로를 찾을 수 없습니다.");
+            return;
+        }
+        if (!file || !file.type || file.type.indexOf("image/") !== 0) {
+            alert("이미지 파일만 업로드할 수 있습니다.");
+            return;
+        }
+        var formData = new FormData();
+        formData.append("path", mapPath);
+        formData.append("folder_name", "_map_backgrounds");
+        formData.append("image", file);
+        var csrfToken = getCsrfToken();
+        fetch(mapImageUploadApi, {
+            method: "POST",
+            headers: csrfToken ? { "X-CSRFToken": csrfToken } : {},
+            body: formData,
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.ok || data.media_kind === "video") {
+                alert(data.error || "맵 이미지 업로드에 실패했습니다.");
+                return;
+            }
+            var uploadedUrl = data.image_url || data.media_url || "";
+            var uploadedPath = data.image_path || data.media_path || "";
+            var item = {
+                id: nextMapImageId(),
+                name: file.name,
+                url: uploadedUrl,
+                path: uploadedPath,
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+                naturalWidth: 0,
+                naturalHeight: 0
+            };
+            mapImages.push(item);
+            activeMapImageId = item.id;
+            setActiveMapImage(item.id, true);
+            commitHistoryState();
+        })
+        .catch(function() { alert("맵 이미지 업로드 중 오류가 발생했습니다."); });
+    }
+
     // ── GeoJSON 저장/불러오기 ──────────────────────────────────────────────
     function layerMapToGeoJson() {
         var features = [];
@@ -3204,7 +3972,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                     type: "Feature",
                     id: fid,
                     geometry: { type: "Polygon", coordinates: [coords] },
-                    properties: { type: "zone", name: item.name, color: item.color, groupId: item.groupId || null, desc: item.desc || "", iconKey: item.iconKey || null, emoji: item.emoji || null, iconUrl: item.iconUrl || null, imageUrl: item.imageUrl || null, imageUrls: normalizeImageUrls(item.imageUrls || item.imageUrl || []), videoUrl: item.videoUrl || null, videoUrls: normalizeVideoUrls(item.videoUrls || item.videoUrl || []), iconVisible: item.iconVisible !== false, bindFid: item.bindFid || null },
+                    properties: { type: "zone", name: item.name, color: item.color, groupId: item.groupId || null, desc: item.desc || "", iconKey: item.iconKey || null, emoji: item.emoji || null, iconUrl: item.iconUrl || null, imageUrl: item.imageUrl || null, imageUrls: normalizeImageUrls(item.imageUrls || item.imageUrl || []), videoUrl: item.videoUrl || null, videoUrls: normalizeVideoUrls(item.videoUrls || item.videoUrl || []), iconVisible: item.iconVisible !== false, clickable: item.clickable !== false, mapImageSettings: normalizeMapImageLayerSettings(item.mapImageSettings), bindFid: item.bindFid || null },
                 });
             } else if (item.type === "marker") {
                 var ll = item.layer.getLatLng();
@@ -3226,6 +3994,8 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                         videoUrl: item.videoUrl || null,
                         videoUrls: normalizeVideoUrls(item.videoUrls || item.videoUrl || []),
                         iconVisible: item.iconVisible !== false,
+                        clickable: item.clickable !== false,
+                        mapImageSettings: normalizeMapImageLayerSettings(item.mapImageSettings),
                         bindFid: item.bindFid || null,
                     },
                 });
@@ -3235,7 +4005,21 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             var g = groups[gid];
             return { id: gid, name: g.name, desc: g.desc || "", iconKey: g.iconKey || null, emoji: g.emoji || null, iconUrl: g.iconUrl || null, imageUrl: g.imageUrl || null, imageUrls: normalizeImageUrls(g.imageUrls || g.imageUrl || []), videoUrl: g.videoUrl || null, videoUrls: normalizeVideoUrls(g.videoUrls || g.videoUrl || []) };
         });
-        return { type: "FeatureCollection", features: features, groups: groupsList, order: orderedFids };
+        var mapImagesList = mapImages.map(function(item) {
+            return {
+                id: item.id,
+                name: item.name,
+                url: item.url,
+                path: item.path || imageUrlToRelativePath(item.url),
+                x: parseNumberValue(item.x, 0),
+                y: parseNumberValue(item.y, 0),
+                width: Math.max(1, parseNumberValue(item.width, imgWidth)),
+                height: Math.max(1, parseNumberValue(item.height, imgHeight)),
+                naturalWidth: parseNumberValue(item.naturalWidth, item.width || imgWidth),
+                naturalHeight: parseNumberValue(item.naturalHeight, item.height || imgHeight)
+            };
+        });
+        return { type: "FeatureCollection", features: features, groups: groupsList, order: orderedFids, mapImages: mapImagesList, activeMapImageId: activeMapImageId };
     }
 
     function getMarkerGroup(latlng) {

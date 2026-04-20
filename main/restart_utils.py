@@ -28,7 +28,11 @@ def wait_for_http_ready(url: str, timeout_seconds: int = 120, interval_seconds: 
         time.sleep(max(0.1, float(interval_seconds)))
 
 
-def restart_gunicorn_and_wait(*, timeout_seconds: int = 120, healthcheck_url: str = "http://127.0.0.1/") -> bool:
+def restart_gunicorn_and_wait(
+    *,
+    timeout_seconds: int = 120,
+    healthcheck_url: str = "http://127.0.0.1:8000/manifest.webmanifest",
+) -> bool:
     subprocess.run(
         [
             "/bin/zsh",

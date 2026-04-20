@@ -223,10 +223,15 @@ class HandriveUserQuota(models.Model):
         default=0,
         help_text="최근 5시간 내 사용 가능한 최대 토큰 수. 0이면 무제한.",
     )
+    scoped_entry_limit = models.PositiveIntegerField(
+        "파일/폴더 개수 제한",
+        default=0,
+        help_text="개인 폴더에 허용되는 최대 파일/폴더 수. 0이면 무제한. 설정 없으면 기본값(100개) 적용.",
+    )
 
     class Meta:
-        verbose_name = "HanDrive 사용자 저장 용량"
-        verbose_name_plural = "HanDrive 사용자 저장 용량"
+        verbose_name = "HanDrive 사용자 저장 용량/CLI 사용량"
+        verbose_name_plural = "HanDrive 사용자 저장 용량/CLI 사용량"
 
     def __str__(self):
         gb = self.quota_bytes / (1024 ** 3)

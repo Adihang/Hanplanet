@@ -7,15 +7,19 @@ class AITokenUsage(models.Model):
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="ai_token_usage",
+        null=True,
+        blank=True,
         verbose_name="사용자",
     )
+    request_user = models.CharField("요청자", max_length=150, db_index=True, blank=True, default="")
     model_name = models.CharField("모델", max_length=100)
     prompt_tokens = models.PositiveIntegerField("입력 토큰", default=0)
     completion_tokens = models.PositiveIntegerField("출력 토큰", default=0)
     total_tokens = models.PositiveIntegerField("합계 토큰", default=0)
     is_stream = models.BooleanField("스트리밍", default=False)
+    is_estimated = models.BooleanField("추정치", default=False)
     created_at = models.DateTimeField("요청 시각", auto_now_add=True, db_index=True)
 
     class Meta:
@@ -24,4 +28,5 @@ class AITokenUsage(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.user.username} / {self.model_name} / {self.total_tokens} tokens @ {self.created_at:%Y-%m-%d %H:%M}"
+        requester = self.request_user or getattr(self.user, "username", "-")
+        return f"{requester} / {self.model_name} / {self.total_tokens} tokens @ {self.created_at:%Y-%m-%d %H:%M}"

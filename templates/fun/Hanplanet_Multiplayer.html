@@ -17,13 +17,13 @@
             data-game-slug="{{ game_slug|default:'bumpercar-spiky' }}"
             data-player-name="{{ game_player_name }}"
             data-skin-catalog='{{ game_skin_catalog_json }}'
-            data-player-npc-icon-url="{% static_v 'Spikip/ner/icon/default.webp' %}"
-            data-player-npc-phase2-icon-url="{% static_v 'Spikip/ner/icon/Phase2.webp' %}"
-            data-player-npc-phase3-icon-url="{% static_v 'Spikip/ner/icon/Phase3.webp' %}"
-            data-player-npc-boost-icon-url="{% static_v 'Spikip/ner/icon/Ner_acceleration.png' %}"
-            data-player-npc-defeat1-icon-url="{% static_v 'Spikip/ner/icon/defeat1.webp' %}"
-            data-player-npc-defeat2-icon-url="{% static_v 'Spikip/ner/icon/defeat2.webp' %}"
-            data-player-npc-die-icon-url="{% static_v 'Spikip/ner/icon/die.webp' %}"
+            data-player-npc-icon-url="{% static_v 'media/Spikip/ner/icon/default.webp' %}"
+            data-player-npc-phase2-icon-url="{% static_v 'media/Spikip/ner/icon/Phase2.webp' %}"
+            data-player-npc-phase3-icon-url="{% static_v 'media/Spikip/ner/icon/Phase3.webp' %}"
+            data-player-npc-boost-icon-url="{% static_v 'media/Spikip/ner/icon/Ner_acceleration.png' %}"
+            data-player-npc-defeat1-icon-url="{% static_v 'media/Spikip/ner/icon/defeat1.webp' %}"
+            data-player-npc-defeat2-icon-url="{% static_v 'media/Spikip/ner/icon/defeat2.webp' %}"
+            data-player-npc-die-icon-url="{% static_v 'media/Spikip/ner/icon/die.webp' %}"
             data-player-ner-tracking-sound-urls='{{ game_ner_tracking_sound_urls_json }}'
             data-player-ner-acceleration-sound-urls='{{ game_ner_acceleration_sound_urls_json }}'
             data-player-ner-win-icon-urls='{{ game_ner_win_icon_urls_json }}'
@@ -175,7 +175,7 @@
                                     >
                                         <img
                                             class="multiplayer-top-button-image"
-                                            src="{% static_v 'icons/mob.png' %}"
+                                            src="{% static_v 'media/icons/mob.png' %}"
                                             alt=""
                                             aria-hidden="true"
                                         >
@@ -197,7 +197,7 @@
                                 <canvas class="multiplayer-minimap-canvas" width="160" height="160" data-game-minimap aria-label="Player minimap"></canvas>
                             </div>
                             <div class="multiplayer-lives" data-game-shared-lives aria-label="{% include 'partials/ui_i18n.html' with key='bumpercar_shared_lives' %}">
-                                <img class="multiplayer-lives-icon" src="{% static_v 'Spikip/speaki_default/icon/main.png' %}" alt="">
+                                <img class="multiplayer-lives-icon" src="{% static_v 'media/Spikip/speaki_default/icon/main.png' %}" alt="">
                                 <span class="multiplayer-lives-count" data-game-shared-lives-count>{{ multiplayer_hud_counter_text|default:"x 3" }}</span>
                             </div>
                         </div>

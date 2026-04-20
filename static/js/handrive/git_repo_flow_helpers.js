@@ -24,9 +24,10 @@
         var handriveBaseUrl = settings.handriveBaseUrl || "";
         var handriveRootUrl = settings.handriveRootUrl || "";
         var gitRepoTitle = settings.gitRepoTitle || null;
-        var gitRepoModal = settings.gitRepoModal || null;
-        var currentDir = settings.currentDir || "";
-        var onCurrentDirRepoActivate = settings.onCurrentDirRepoActivate || function () {};
+	        var gitRepoModal = settings.gitRepoModal || null;
+	        var currentDir = settings.currentDir || "";
+	        var onCurrentDirRepoActivate = settings.onCurrentDirRepoActivate || function () {};
+	        var t = settings.t || function (key, fallbackValue) { return fallbackValue; };
 
         try {
             var data = await requestJson(
@@ -36,12 +37,12 @@
             if (data.status === "active") {
                 stopPolling(state);
                 var remappedPath = data.handrive_path ? normalizePath(data.handrive_path, true) : "";
-                if (gitRepoTitle) {
-                    gitRepoTitle.textContent = "Git 리포지토리 관리";
-                }
-                showStatus(
-                    "연결된 리포지토리",
-                    false,
+	                if (gitRepoTitle) {
+	                    gitRepoTitle.textContent = t("git_repo_manage_title", "Git 리포지토리 관리");
+	                }
+	                showStatus(
+	                    t("git_repo_linked", "연결된 리포지토리"),
+	                    false,
                     data.clone_http_url_authed || data.clone_http_url || "",
                     data.gitea_web_url || ""
                 );
@@ -61,16 +62,16 @@
                 refreshCurrentDirectory().catch(function () {});
             } else if (data.status === "failed") {
                 stopPolling(state);
-                showStatus(
-                    "생성 실패: " + (data.error_message || "알 수 없는 오류"),
-                    true,
+	                showStatus(
+	                    t("git_repo_create_failed", "생성 실패") + ": " + (data.error_message || t("git_repo_unknown_error", "알 수 없는 오류")),
+	                    true,
                     null,
                     null
                 );
             }
         } catch (error) {
             stopPolling(state);
-            showStatus("상태 조회 중 오류가 발생했습니다.", true, null, null);
+	            showStatus(t("git_repo_status_error", "상태 조회 중 오류가 발생했습니다."), true, null, null);
         }
     }
 
@@ -80,14 +81,15 @@
         var settings = options || {};
         var state = settings.state || {};
         var intervalMs = Number(settings.intervalMs || 2000);
-        var pollStatus = settings.pollStatus || function () { return Promise.resolve(); };
-        var showStatus = settings.showStatus || function () {};
+	        var pollStatus = settings.pollStatus || function () { return Promise.resolve(); };
+	        var showStatus = settings.showStatus || function () {};
+	        var t = settings.t || function (key, fallbackValue) { return fallbackValue; };
 
         stopPolling(state);
         state.timer = setInterval(function () {
             pollStatus().catch(function () {
                 stopPolling(state);
-                showStatus("상태 조회 중 오류가 발생했습니다.", true, null, null);
+	                showStatus(t("git_repo_status_error", "상태 조회 중 오류가 발생했습니다."), true, null, null);
             });
         }, intervalMs);
     }
@@ -104,9 +106,10 @@
         var requestJson = settings.requestJson || function () { return Promise.resolve({}); };
         var showStatus = settings.showStatus || function () {};
         var startPolling = settings.startPolling || function () {};
-        var gitRepoTitle = settings.gitRepoTitle || null;
-        var gitRepoForm = settings.gitRepoForm || null;
-        var gitRepoNameInput = settings.gitRepoNameInput || null;
+	        var gitRepoTitle = settings.gitRepoTitle || null;
+	        var gitRepoForm = settings.gitRepoForm || null;
+	        var gitRepoNameInput = settings.gitRepoNameInput || null;
+	        var t = settings.t || function (key, fallbackValue) { return fallbackValue; };
 
         stopPollingFn();
         state.currentId = null;
@@ -127,9 +130,9 @@
                 { method: "GET" }
             );
             if (!data || !data.repo) {
-                if (gitRepoTitle) {
-                    gitRepoTitle.textContent = "Git 리포지토리 생성";
-                }
+	                if (gitRepoTitle) {
+	                    gitRepoTitle.textContent = t("git_repo_create_title", "Git 리포지토리 생성");
+	                }
                 if (gitRepoForm) {
                     gitRepoForm.hidden = false;
                 }
@@ -141,26 +144,26 @@
             var repo = data.repo;
             state.currentId = repo.id;
             if (repo.status === "active") {
-                showStatus(
-                    "연결된 리포지토리",
+	                showStatus(
+	                    t("git_repo_linked", "연결된 리포지토리"),
                     false,
                     repo.forgejo_clone_http_authed || repo.forgejo_clone_http || "",
                     repo.gitea_web_url || ""
                 );
             } else if (repo.status === "failed") {
-                showStatus(
-                    "생성 실패: " + (repo.error_message || "알 수 없는 오류"),
+	                showStatus(
+	                    t("git_repo_create_failed", "생성 실패") + ": " + (repo.error_message || t("git_repo_unknown_error", "알 수 없는 오류")),
                     true,
                     null,
                     null
                 );
             } else {
-                showStatus("생성 중...", false, null, null);
+	                showStatus(t("git_repo_creating", "생성 중..."), false, null, null);
                 startPolling();
             }
         } catch (error) {
             if (isManageMode) {
-                showStatus("저장소 정보를 불러올 수 없습니다. 페이지를 새로고침해주세요.", true, null, null);
+	                showStatus(t("git_repo_load_failed", "저장소 정보를 불러올 수 없습니다. 페이지를 새로고침해주세요."), true, null, null);
             } else {
                 if (gitRepoForm) {
                     gitRepoForm.hidden = false;
@@ -180,21 +183,22 @@
         var gitRepoModal = settings.gitRepoModal || null;
         var gitRepoNameInput = settings.gitRepoNameInput || null;
         var requestJson = settings.requestJson || function () { return Promise.resolve({}); };
-        var buildPostOptions = settings.buildPostOptions || function () { return {}; };
-        var showStatus = settings.showStatus || function () {};
-        var startPolling = settings.startPolling || function () {};
+	        var buildPostOptions = settings.buildPostOptions || function () { return {}; };
+	        var showStatus = settings.showStatus || function () {};
+	        var startPolling = settings.startPolling || function () {};
+	        var t = settings.t || function (key, fallbackValue) { return fallbackValue; };
 
         var entry = gitRepoModal ? gitRepoModal._targetEntry : null;
         if (!entry) {
             return;
         }
         var repoName = String(gitRepoNameInput ? gitRepoNameInput.value : "").trim();
-        if (!repoName) {
-            window.alert("리포지토리 이름을 입력해주세요.");
-            return;
-        }
+	        if (!repoName) {
+	            window.alert(t("git_repo_name_required", "리포지토리 이름을 입력해주세요."));
+	            return;
+	        }
 
-        showStatus("생성 중...", false, null, null);
+	        showStatus(t("git_repo_creating", "생성 중..."), false, null, null);
         try {
             var data = await requestJson(
                 "/api/git/repos/",
@@ -203,9 +207,9 @@
             state.currentId = data.repo ? data.repo.id : data.id;
             startPolling();
         } catch (error) {
-            showStatus(
-                "요청 실패: " + (error && error.message ? error.message : "알 수 없는 오류"),
-                false,
+	            showStatus(
+	                t("git_repo_request_failed", "요청 실패") + ": " + (error && error.message ? error.message : t("git_repo_unknown_error", "알 수 없는 오류")),
+	                false,
                 null,
                 null
             );
@@ -218,14 +222,15 @@
         var settings = options || {};
         var state = settings.state || {};
         var requestJson = settings.requestJson || function () { return Promise.resolve(); };
-        var buildPostOptions = settings.buildPostOptions || function () { return {}; };
-        var showStatus = settings.showStatus || function () {};
-        var startPolling = settings.startPolling || function () {};
+	        var buildPostOptions = settings.buildPostOptions || function () { return {}; };
+	        var showStatus = settings.showStatus || function () {};
+	        var startPolling = settings.startPolling || function () {};
+	        var t = settings.t || function (key, fallbackValue) { return fallbackValue; };
 
         if (!state.currentId) {
             return;
         }
-        showStatus("재시도 중...", false, null, null);
+	        showStatus(t("git_repo_retrying", "재시도 중..."), false, null, null);
         try {
             await requestJson(
                 "/api/git/repos/" + state.currentId + "/retry/",
@@ -233,9 +238,9 @@
             );
             startPolling();
         } catch (error) {
-            showStatus(
-                "재시도 실패: " + (error && error.message ? error.message : "알 수 없는 오류"),
-                true,
+	            showStatus(
+	                t("git_repo_retry_failed", "재시도 실패") + ": " + (error && error.message ? error.message : t("git_repo_unknown_error", "알 수 없는 오류")),
+	                true,
                 null,
                 null
             );

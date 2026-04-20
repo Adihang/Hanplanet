@@ -214,20 +214,20 @@ def normalize_bumpercar_spiky_account_stats(raw_stats=None):
 
 def _collect_bumpercar_skin_sound_urls(skin_name, folder_name):
     """Collect versioned sound URLs for one bumpercar skin asset folder."""
-    sound_dir = Path(settings.BASE_DIR) / "static" / "Spikip" / f"speaki_{skin_name}" / folder_name
+    sound_dir = Path(settings.BASE_DIR) / "static" / "media" / "Spikip" / f"speaki_{skin_name}" / folder_name
     if not sound_dir.exists():
         return []
 
     return [
-        _static_with_mtime_version(f"Spikip/speaki_{skin_name}/{folder_name}/{sound_file.name}")
+        _static_with_mtime_version(f"media/Spikip/speaki_{skin_name}/{folder_name}/{sound_file.name}")
         for sound_file in sorted(sound_dir.glob("*.mp3"))
     ]
 
 
 def _find_bumpercar_skin_icon_url(skin_name, *parts):
     """Resolve the first matching icon asset URL for a skin path fragment."""
-    icon_dir = Path(settings.BASE_DIR) / "static" / "Spikip" / f"speaki_{skin_name}" / "icon"
-    relative_dir = Path("Spikip") / f"speaki_{skin_name}" / "icon"
+    icon_dir = Path(settings.BASE_DIR) / "static" / "media" / "Spikip" / f"speaki_{skin_name}" / "icon"
+    relative_dir = Path("media/Spikip") / f"speaki_{skin_name}" / "icon"
     for part in parts:
         icon_dir /= str(part)
         relative_dir /= str(part)
@@ -246,7 +246,7 @@ def _find_bumpercar_skin_icon_url(skin_name, *parts):
 
 def _collect_bumpercar_skin_icon_urls(skin_name, folder_name, *parts):
     """Collect every icon URL for a skin state folder in stable display order."""
-    icon_dir = Path(settings.BASE_DIR) / "static" / "Spikip" / f"speaki_{skin_name}" / "icon" / folder_name
+    icon_dir = Path(settings.BASE_DIR) / "static" / "media" / "Spikip" / f"speaki_{skin_name}" / "icon" / folder_name
     for part in parts:
         icon_dir /= str(part)
     if not icon_dir.exists():
@@ -272,7 +272,7 @@ def _collect_bumpercar_skin_icon_urls(skin_name, folder_name, *parts):
 
     return [
         _static_with_mtime_version(
-            str(Path("Spikip") / f"speaki_{skin_name}" / "icon" / folder_name / Path(*[str(part) for part in parts]) / image_file.name)
+            str(Path("media/Spikip") / f"speaki_{skin_name}" / "icon" / folder_name / Path(*[str(part) for part in parts]) / image_file.name)
         )
         for image_file in sorted(image_files, key=_sort_key)
     ]
@@ -285,7 +285,7 @@ def _collect_bumpercar_skin_icon_sequence_urls(skin_name, folder_name, *parts):
 
 def _collect_bumpercar_skin_variant_dirs(skin_name, folder_name):
     """List child directories that represent grouped skin variants for one state folder."""
-    icon_dir = Path(settings.BASE_DIR) / "static" / "Spikip" / f"speaki_{skin_name}" / "icon" / folder_name
+    icon_dir = Path(settings.BASE_DIR) / "static" / "media" / "Spikip" / f"speaki_{skin_name}" / "icon" / folder_name
     if not icon_dir.exists():
         return []
 
@@ -957,7 +957,7 @@ def apply_ui_context(request, context, ui_lang):
     context["lang_switch_ko_url"] = build_lang_switch_url(request, "ko")
     context["lang_switch_en_url"] = build_lang_switch_url(request, "en")
     canonical_url = build_public_absolute_url(request.path)
-    default_meta_image = "https://www.hanplanet.com/static/icons/hanplanet-og-1200.png"
+    default_meta_image = "https://www.hanplanet.com/static/media/icons/hanplanet-og-1200.png"
     context["meta_robots"] = context.get("meta_robots", "index,follow")
     context["meta_site_name"] = context.get("meta_site_name", "Hanplanet")
     context["meta_canonical_url"] = context.get("meta_canonical_url", canonical_url)
@@ -1020,8 +1020,8 @@ def apply_ui_context(request, context, ui_lang):
             if str(getattr(link, "name", "") or "").strip().lower() not in removed_nav_names
         ]
         hanharness_link = SimpleNamespace(
-            name="HanHarness",
-            url=f"/{ui_lang}/handrive/hanharness",
+            name="CLI",
+            url=f"/{ui_lang}/handrive/cli",
         )
         hanharness_inserted = False
         for index, link in enumerate(resolved_links):
@@ -1052,7 +1052,7 @@ def apply_ui_context(request, context, ui_lang):
     except (OperationalError, ProgrammingError):
         context["nav_links"] = [
             {"name": "HanDrive", "url": "/handrive/list"},
-            {"name": "HanHarness", "url": f"/{ui_lang}/handrive/hanharness"},
+            {"name": "CLI", "url": f"/{ui_lang}/handrive/cli"},
             {"name": "Mini Game", "url": "/fun/minigame/"},
         ]
 
@@ -1519,21 +1519,21 @@ def minigame_page(request, ui_lang=None):
             "title": "Salvation's Edge 4",
             "url": reverse("main:Salvations_Edge_4_lang", kwargs={"ui_lang": resolved_lang}),
             "description": "Raid-inspired rhythm and timing challenge." if is_english else "레이드 감성의 리듬/타이밍 챌린지.",
-            "image_url": build_public_absolute_url(static("icons/icon-192.png")),
+            "image_url": build_public_absolute_url(static("media/icons/icon-192.png")),
         },
         {
             "slug": "stratagem-hero",
             "title": "Stratagem Hero",
             "url": reverse("main:Stratagem_Hero_lang", kwargs={"ui_lang": resolved_lang}),
             "description": "Call stratagems fast and climb the scoreboard." if is_english else "스트라타젬을 빠르게 입력하고 점수판에 도전하세요.",
-            "image_url": build_public_absolute_url(static("icons/icon-192.png")),
+            "image_url": build_public_absolute_url(static("media/icons/icon-192.png")),
         },
         {
             "slug": "bubble",
             "title": "Bubble",
             "url": reverse("main:bubble_lang", kwargs={"ui_lang": resolved_lang}),
             "description": "A small color-pop playground." if is_english else "가볍게 즐기는 색감 버블 게임.",
-            "image_url": build_public_absolute_url(static("icons/icon-192.png")),
+            "image_url": build_public_absolute_url(static("media/icons/icon-192.png")),
         },
         {
             "slug": "text-speaki",
@@ -1544,14 +1544,14 @@ def minigame_page(request, ui_lang=None):
                 if is_english
                 else "떠다니는 버블이 텍스트 흐름을 갈라놓는 실험적인 페이지."
             ),
-            "image_url": build_public_absolute_url(static("icons/icon-192.png")),
+            "image_url": build_public_absolute_url(static("media/icons/icon-192.png")),
         },
         {
             "slug": "bumpercar-spiky",
             "title": "Bumper Car Spiky" if is_english else "범퍼카 스핔이",
             "url": reverse("main:bumpercar_spiky_lang", kwargs={"ui_lang": resolved_lang}),
             "description": "Crash around a shared arena with Spiky." if is_english else "스핔이로 공용 경기장을 뛰어다니는 멀티플레이 범퍼카 게임.",
-            "image_url": build_public_absolute_url(static("Spikip/speaki_default/icon/main.png")),
+            "image_url": build_public_absolute_url(static("media/Spikip/speaki_default/icon/main.png")),
         },
         {
             "slug": "raise-speaki",
@@ -1562,7 +1562,7 @@ def minigame_page(request, ui_lang=None):
                 if is_english
                 else "스핔이를 키워서 스피키로 진화시키세요!"
             ),
-            "image_url": build_public_absolute_url(static("Spikip/speaki_default/icon/main.png")),
+            "image_url": build_public_absolute_url(static("media/Spikip/speaki_default/icon/main.png")),
         },
     ]
 
@@ -1639,7 +1639,7 @@ def text_bubble_page(request, ui_lang=None):
             if is_english
             else "타임지의 기사를 책처럼 볼 수 있습니다\n하지만 그때 스핔이가 나타났다."
         ),
-        "page_image_url": build_public_absolute_url(static("img/text-bubble.png")),
+        "page_image_url": build_public_absolute_url(static("media/img/text-bubble.png")),
     }
     return render(request, "fun/text-bubble.html", context)
 
@@ -1720,28 +1720,28 @@ def _build_multiplayer_page_context(
     gameplay_settings = load_bumpercar_spiky_settings()
     ws_url = _resolve_game_ws_url(request, game_slug)
 
-    ner_tracking_sound_dir = Path(settings.BASE_DIR) / "static" / "Spikip" / "ner" / "tracking"
+    ner_tracking_sound_dir = Path(settings.BASE_DIR) / "static" / "media" / "Spikip" / "ner" / "tracking"
     ner_tracking_sound_urls = []
     if ner_tracking_sound_dir.exists():
         ner_tracking_sound_urls = [
-            _static_with_mtime_version(f"Spikip/ner/tracking/{sound_file.name}")
+            _static_with_mtime_version(f"media/Spikip/ner/tracking/{sound_file.name}")
             for sound_file in sorted(ner_tracking_sound_dir.glob("*.mp3"))
         ]
-    ner_acceleration_sound_dir = Path(settings.BASE_DIR) / "static" / "Spikip" / "ner" / "acceleration"
+    ner_acceleration_sound_dir = Path(settings.BASE_DIR) / "static" / "media" / "Spikip" / "ner" / "acceleration"
     ner_acceleration_sound_urls = []
     if ner_acceleration_sound_dir.exists():
         ner_acceleration_sound_urls = [
-            _static_with_mtime_version(f"Spikip/ner/acceleration/{sound_file.name}")
+            _static_with_mtime_version(f"media/Spikip/ner/acceleration/{sound_file.name}")
             for sound_file in sorted(ner_acceleration_sound_dir.glob("*.mp3"))
         ]
-    ner_win_icon_dir = Path(settings.BASE_DIR) / "static" / "Spikip" / "ner" / "icon" / "win"
+    ner_win_icon_dir = Path(settings.BASE_DIR) / "static" / "media" / "Spikip" / "ner" / "icon" / "win"
     ner_win_icon_urls = []
     if ner_win_icon_dir.exists():
         ner_win_icon_files = []
         for pattern in ("*.webp", "*.gif", "*.png", "*.jpg", "*.jpeg"):
             ner_win_icon_files.extend(ner_win_icon_dir.glob(pattern))
         ner_win_icon_urls = [
-            _static_with_mtime_version(f"Spikip/ner/icon/win/{icon_file.name}")
+            _static_with_mtime_version(f"media/Spikip/ner/icon/win/{icon_file.name}")
             for icon_file in sorted(ner_win_icon_files, key=lambda path: path.name.lower())
         ]
 
@@ -1759,7 +1759,7 @@ def _build_multiplayer_page_context(
     )
     default_skin = next((skin for skin in skin_catalog if skin["name"] == "default"), skin_catalog[0])
     multiplayer_meta_image = build_public_absolute_url(
-        static("Spikip/main.png" if game_slug == "raise-speaki" else "Spikip/speaki_default/icon/main.png")
+        static("media/Spikip/main.png" if game_slug == "raise-speaki" else "Spikip/speaki_default/icon/main.png")
     )
     portfolio_profile = (
         PortfolioProfile.objects.filter(user=request.user).only("profile_img").first()
@@ -1804,17 +1804,17 @@ def _build_multiplayer_page_context(
         "game_ner_acceleration_sound_urls_json": mark_safe(json.dumps(ner_acceleration_sound_urls)),
         "game_ner_win_icon_urls_json": mark_safe(json.dumps(ner_win_icon_urls)),
         "game_ost_urls_json": mark_safe(json.dumps({
-            "1pa": _static_with_mtime_version("Spikip/ost/1pa.mp3"),
-            "1hou": _static_with_mtime_version("Spikip/ost/1hou.mp3"),
-            "2pa": _static_with_mtime_version("Spikip/ost/2pa.mp3"),
-            "2hou": _static_with_mtime_version("Spikip/ost/2hou.mp3"),
-            "3pa": _static_with_mtime_version("Spikip/ost/3pa.mp3"),
-            "3hou": _static_with_mtime_version("Spikip/ost/3hou.mp3"),
-            "ed": _static_with_mtime_version("Spikip/ost/ed.mp3"),
+            "1pa": _static_with_mtime_version("media/Spikip/ost/1pa.mp3"),
+            "1hou": _static_with_mtime_version("media/Spikip/ost/1hou.mp3"),
+            "2pa": _static_with_mtime_version("media/Spikip/ost/2pa.mp3"),
+            "2hou": _static_with_mtime_version("media/Spikip/ost/2hou.mp3"),
+            "3pa": _static_with_mtime_version("media/Spikip/ost/3pa.mp3"),
+            "3hou": _static_with_mtime_version("media/Spikip/ost/3hou.mp3"),
+            "ed": _static_with_mtime_version("media/Spikip/ost/ed.mp3"),
         })),
-        "game_house1_url": _static_with_mtime_version("Spikip/house/house1.webp"),
-        "game_house2_url": _static_with_mtime_version("Spikip/house/house2.webp"),
-        "game_house3_url": _static_with_mtime_version("Spikip/house/house3.webp"),
+        "game_house1_url": _static_with_mtime_version("media/Spikip/house/house1.webp"),
+        "game_house2_url": _static_with_mtime_version("media/Spikip/house/house2.webp"),
+        "game_house3_url": _static_with_mtime_version("media/Spikip/house/house3.webp"),
         "meta_title": page_title,
         "meta_og_title": page_title,
         "meta_site_name": page_title,
@@ -2393,13 +2393,13 @@ def pwa_manifest(request):
         "theme_color": "#0d6efd",
         "icons": [
             {
-                "src": "/static/icons/pwa-192.png",
+                "src": "/static/media/icons/pwa-192.png",
                 "type": "image/png",
                 "sizes": "192x192",
                 "purpose": "any maskable",
             },
             {
-                "src": "/static/icons/pwa-512.png",
+                "src": "/static/media/icons/pwa-512.png",
                 "type": "image/png",
                 "sizes": "512x512",
                 "purpose": "any maskable",
@@ -2417,14 +2417,46 @@ def service_worker(request):
     """Serve the root-scope service worker used for Hanplanet page and static caching."""
     # Keep service worker script dynamic at root scope so it can control "/".
     script = """
-const STATIC_CACHE = 'hanplanet-static-v5';
-const PAGE_CACHE = 'hanplanet-page-v5';
+const STATIC_CACHE = 'hanplanet-static-v8';
+const PAGE_CACHE = 'hanplanet-page-v8';
+
+function isDownloadRequest(url) {
+  return url.pathname.includes('/download/');
+}
 
 function canStoreInCache(request, response) {
   if (!response || !response.ok || response.status === 206) {
     return false;
   }
+  if (!['basic', 'default'].includes(response.type)) {
+    return false;
+  }
+  if (response.headers.has('content-disposition')) {
+    return false;
+  }
   return !request.headers.has('range');
+}
+
+function canStorePageInCache(request, response) {
+  if (!canStoreInCache(request, response)) {
+    return false;
+  }
+  const contentType = response.headers.get('content-type') || '';
+  return contentType.includes('text/html');
+}
+
+function putInCacheSafely(cache, request, response, pageOnly) {
+  if (!canStoreInCache(request, response)) {
+    return Promise.resolve();
+  }
+  if (pageOnly && !canStorePageInCache(request, response)) {
+    return Promise.resolve();
+  }
+  try {
+    return cache.put(request, response.clone()).catch(() => undefined);
+  } catch (err) {
+    return Promise.resolve();
+  }
 }
 
 self.addEventListener('install', (event) => {
@@ -2451,6 +2483,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  if (isDownloadRequest(url)) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   if (url.pathname.startsWith('/static/')) {
     if (request.headers.has('range')) {
       event.respondWith(fetch(request));
@@ -2459,13 +2496,19 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       caches.open(STATIC_CACHE).then((cache) =>
         cache.match(request).then((cached) => {
-          const fetched = fetch(request)
-            .then((response) => {
-              if (canStoreInCache(request, response)) {
-                cache.put(request, response.clone());
-              }
-              return response;
-            })
+	          const fetched = fetch(request)
+	            .then((response) => {
+	              let responseForCache = null;
+	              try {
+	                responseForCache = response.clone();
+	              } catch (err) {
+	                responseForCache = null;
+	              }
+	              if (responseForCache) {
+	                putInCacheSafely(cache, request, responseForCache);
+	              }
+	              return response;
+	            })
             .catch(() => cached);
           return cached || fetched;
         })
@@ -2476,14 +2519,19 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (canStoreInCache(request, response)) {
-            const copy = response.clone();
-            caches.open(PAGE_CACHE).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        })
+	      fetch(request)
+	        .then((response) => {
+	          let responseForCache = null;
+	          try {
+	            responseForCache = response.clone();
+	          } catch (err) {
+	            responseForCache = null;
+	          }
+	          if (responseForCache) {
+	            caches.open(PAGE_CACHE).then((cache) => putInCacheSafely(cache, request, responseForCache, true));
+	          }
+	          return response;
+	        })
         .catch(() => caches.open(PAGE_CACHE).then((cache) => cache.match(request)))
     );
   }
@@ -2539,7 +2587,7 @@ def _build_portfolio_view_context(request, ui_lang, owner):
     context["portfolio_owner"] = owner
     context["portfolio_profile"] = profile
     context["profile_image_url"] = (
-        profile.profile_img.url if profile.profile_img else static("icons/profile-placeholder.svg")
+        profile.profile_img.url if profile.profile_img else static("media/icons/profile-placeholder.svg")
     )
     context["profile_main_title_html"] = render_markdown_with_raw_html(profile_main_title_source)
     context["profile_main_subtitle_html"] = render_markdown_with_raw_html(profile_main_subtitle_source)
@@ -2603,7 +2651,7 @@ def _build_portfolio_view_context(request, ui_lang, owner):
                     kwargs={"ui_lang": ui_lang, "sample_id": index + 1},
                 ),
                 banner_img=None,
-                dummy_banner_url=static(f"icons/project-dummy-{index + 1}.svg"),
+                dummy_banner_url=static(f"media/icons/project-dummy-{index + 1}.svg"),
                 display_title=sample["title"],
                 tags=_DummyTagRelation(sample["tags"]),
             )
@@ -4675,27 +4723,31 @@ def hanharness_page(request, ui_lang=None):
     download_url = reverse("main:hanharness_download_lang", kwargs={"ui_lang": resolved_lang})
     if resolved_lang == "en":
         hanharness_text = {
-            "title": "HanHarness",
-            "banner": "HanHarness",
-            "subtitle": "A local harness utility for Hanplanet workflows.",
-            "download": "Download HanHarness",
+            "title": "HanPlanet CLI",
+            "banner": "HanPlanet CLI",
+            "subtitle": "An AI-powered coding assistant that runs in your terminal.",
+            "download_mac": "Download for macOS",
+            "download_win": "Download for Windows",
             "intro_title": "Introduction and usage",
             "intro_placeholder": "Introduction and usage details will be added later.",
             "back_to_handrive": "Open HanDrive",
         }
     else:
         hanharness_text = {
-            "title": "HanHarness",
-            "banner": "HanHarness",
-            "subtitle": "Hanplanet 워크플로우를 위한 로컬 하네스 유틸리티입니다.",
-            "download": "HanHarness 다운로드",
-            "intro_title": "HanHarness 소개 및 사용법",
-            "intro_placeholder": "HanHarness 소개 및 사용법은 추후 추가됩니다.",
+            "title": "HanPlanet CLI",
+            "banner": "HanPlanet CLI",
+            "subtitle": "터미널에서 동작하는 AI 코딩 어시스턴트입니다.",
+            "download_mac": "macOS 다운로드",
+            "download_win": "Windows 다운로드",
+            "intro_title": "HanPlanet CLI 소개 및 사용법",
+            "intro_placeholder": "HanPlanet CLI 소개 및 사용법은 추후 추가됩니다.",
             "back_to_handrive": "HanDrive 열기",
         }
+    download_windows_url = reverse("main:hanharness_download_windows_lang", kwargs={"ui_lang": resolved_lang})
     context = {
         "hanharness_text": hanharness_text,
         "hanharness_download_url": download_url,
+        "hanharness_download_windows_url": download_windows_url,
         "handrive_url": reverse("main:handrive_root_lang", kwargs={"ui_lang": resolved_lang}),
         "meta_title": f"{hanharness_text['title']} | Hanplanet",
         "meta_description": hanharness_text["subtitle"],
@@ -4706,29 +4758,34 @@ def hanharness_page(request, ui_lang=None):
     return render(request, "main/hanharness.html", context)
 
 
-def hanharness_download(request, ui_lang=None):
-    """Download the HanHarness executable stored on the external Hanplanet volume."""
-    del ui_lang
-    package_dir = Path("/Volumes/HANPLANET_HDD/Hanplanet/hanharness")
-    archive_path = package_dir.with_suffix(".zip")
-    if not package_dir.exists() or not package_dir.is_dir():
-        return HttpResponse("HanHarness 파일을 찾을 수 없습니다.", status=404)
-    source_mtime = max(
-        (path.stat().st_mtime for path in package_dir.rglob("*") if path.exists()),
-        default=package_dir.stat().st_mtime,
-    )
-    if not archive_path.exists() or archive_path.stat().st_mtime < source_mtime:
-        temp_archive_path = archive_path.with_suffix(".zip.tmp")
-        if temp_archive_path.exists():
-            temp_archive_path.unlink()
-        with zipfile.ZipFile(temp_archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-            for path in sorted(package_dir.rglob("*")):
-                if path.is_file():
-                    archive.write(path, Path(package_dir.name) / path.relative_to(package_dir))
-        temp_archive_path.replace(archive_path)
-    response = FileResponse(archive_path.open("rb"), as_attachment=True, filename="hanharness.zip")
+_CLI_DIR = Path("/Volumes/HANPLANET_HDD/Hanplanet/HanPlanet-CLI")
+_CLI_FILES = {
+    "macos": ("HanPlanet-CLI-macos-arm64.zip", "HanPlanet-CLI-macos-arm64.zip"),
+    "windows": ("HanPlanet-CLI-windows-x64.zip", "HanPlanet-CLI-windows-x64.zip"),
+}
+
+
+def _serve_cli_zip(platform):
+    filename, download_name = _CLI_FILES[platform]
+    archive_path = _CLI_DIR / filename
+    if not archive_path.exists():
+        return HttpResponse("HanPlanet CLI 파일을 찾을 수 없습니다.", status=404)
+    response = FileResponse(archive_path.open("rb"), as_attachment=True, filename=download_name)
     response["Content-Type"] = "application/zip"
+    response["Cache-Control"] = "no-store"
     return response
+
+
+def hanharness_download(request, ui_lang=None):
+    """Download HanPlanet CLI for macOS (Apple Silicon)."""
+    del ui_lang
+    return _serve_cli_zip("macos")
+
+
+def hanharness_download_windows(request, ui_lang=None):
+    """Download HanPlanet CLI for Windows (x64)."""
+    del ui_lang
+    return _serve_cli_zip("windows")
 
 
 def handrive_sync_client_download(request, ui_lang=None):

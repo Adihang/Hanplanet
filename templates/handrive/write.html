@@ -10,14 +10,14 @@
                 <h1 class="handrive-title ui-title">{% if write_mode == 'edit' %}{{ handrive_text.write_title_edit }}{% else %}{{ handrive_text.write_title_create }}{% endif %}</h1>
                 <button class="handrive-help-icon-link" type="button" id="handrive-page-help-btn" aria-label="{{ handrive_text.help_button }}" title="{{ handrive_text.help_button }}"><span class="handrive-help-icon-symbol" aria-hidden="true"></span></button>
             </div>
-            <div class="handrive-subtitle ui-subtitle handrive-path-breadcrumbs ui-path-breadcrumbs">
+            <div class="ui-subtitle ui-path-breadcrumbs">
                 {% for crumb in write_breadcrumbs %}
                     {% if not forloop.first %}<span class="handrive-path-sep ui-path-sep">/</span>{% endif %}
-                    <a class="handrive-path-link ui-path-link" href="{{ crumb.url }}">{{ crumb.label }}</a>
+                    <a class="ui-path-link" href="{{ crumb.url }}">{{ crumb.label }}</a>
                 {% endfor %}
                 {% if write_current_file_name %}
                     <span class="handrive-path-sep ui-path-sep">/</span>
-                    <span class="handrive-path-current ui-path-current">{{ write_current_file_name }}</span>
+                    <span class="ui-path-current">{{ write_current_file_name }}</span>
                 {% endif %}
             </div>
         </div>

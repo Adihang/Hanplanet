@@ -98,7 +98,7 @@
 
             if (crumb.isCurrent) {
                 var current = documentRef.createElement("span");
-                current.className = "handrive-path-current";
+                current.className = "ui-path-current";
                 current.setAttribute("data-handrive-dir", crumb.path);
                 current.textContent = crumb.label;
                 fragment.appendChild(current);
@@ -106,8 +106,8 @@
             }
 
             var link = documentRef.createElement("a");
-            link.className = "handrive-path-link";
-            link.href = buildListUrl(handriveBaseUrl, crumb.path, handriveRootUrl);
+            link.className = "ui-path-link";
+            link.href = crumb.url || buildListUrl(handriveBaseUrl, crumb.path, handriveRootUrl);
             link.setAttribute("data-handrive-dir", crumb.path);
             link.textContent = crumb.label;
             fragment.appendChild(link);

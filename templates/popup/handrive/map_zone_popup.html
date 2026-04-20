@@ -2,10 +2,16 @@
     <div class="map-name-popup">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
             <h4 id="map-name-popup-title">이름 입력</h4>
-            <label title="아이콘 표시" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;user-select:none;">
-                <input type="checkbox" id="map-name-popup-icon-visible" checked style="margin:0;width:22px;height:22px;">
-                <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="10" cy="10" rx="8" ry="5"/><circle cx="10" cy="10" r="2.5"/></svg>
-            </label>
+            <div style="display:inline-flex;align-items:center;gap:6px;">
+                <label title="클릭 가능" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;user-select:none;">
+                    <input type="checkbox" id="map-name-popup-clickable" checked style="margin:0;width:22px;height:22px;">
+                    <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3l5 7-3 .4 2 5.6-2.2.8-2-5.5-2.4 1.9L8 3z"/></svg>
+                </label>
+                <label title="아이콘/구역 표시" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;user-select:none;">
+                    <input type="checkbox" id="map-name-popup-icon-visible" checked style="margin:0;width:22px;height:22px;">
+                    <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="10" cy="10" rx="8" ry="5"/><circle cx="10" cy="10" r="2.5"/></svg>
+                </label>
+            </div>
         </div>
         <div id="map-name-popup-icon-section" style="display:none;">
             <div style="font-size:15px;margin-bottom:4px;">아이콘</div>

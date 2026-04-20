@@ -2134,7 +2134,7 @@ body.theme-dark .ui-pwa-install-icon {
     text-decoration: none;
     color: var(--theme-subtle);
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 900;
     letter-spacing: 0.12em;
     line-height: 1;
     padding: 4px 2px;
@@ -2143,6 +2143,13 @@ body.theme-dark .ui-pwa-install-icon {
     transition: color var(--motion-fast), border-color var(--motion-fast), opacity var(--motion-fast);
     cursor: pointer;
     font-family: inherit;
+    -webkit-font-smoothing: subpixel-antialiased;
+}
+
+body.theme-dark .ui-control-link,
+body.theme-dark .ui-lang-link {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 .ui-control-toggle .ui-control-link {

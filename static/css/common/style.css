@@ -2414,6 +2414,7 @@ body.theme-dark .ui-nav::after {
     display: flex;
     justify-content: flex-start;
     flex: 0 0 auto;
+    padding-bottom: 10px;
 }
 
 .ui-shared-controls .ui-controls-stack {
@@ -2501,7 +2502,7 @@ body.theme-dark .ui-pwa-install-icon {
     text-decoration: none;
     color: var(--theme-subtle);
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 900;
     letter-spacing: 0.12em;
     line-height: 1;
     padding: 4px 2px;
@@ -2509,6 +2510,13 @@ body.theme-dark .ui-pwa-install-icon {
     opacity: 0.8;
     transition: color var(--motion-fast), border-color var(--motion-fast), opacity var(--motion-fast);
     cursor: pointer;
+    -webkit-font-smoothing: subpixel-antialiased;
+}
+
+body.theme-dark .ui-control-link,
+body.theme-dark .ui-lang-link {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 .ui-control-toggle .ui-control-link {
@@ -3711,48 +3719,16 @@ body.theme-dark .legal-page-prose th {
 }
 
 .hanharness-hero {
-    position: relative;
-    min-height: 420px;
-    display: flex;
-    align-items: flex-end;
-    overflow: hidden;
-    border-radius: 8px;
-    background:
-        linear-gradient(130deg, rgba(17, 24, 39, 0.88), rgba(17, 24, 39, 0.46)),
-        radial-gradient(circle at 16% 18%, rgba(61, 220, 151, 0.28), transparent 34%),
-        linear-gradient(115deg, #1b2a30 0%, #244852 48%, #65734f 100%);
-    color: #ffffff;
-}
-
-.hanharness-banner {
-    position: absolute;
-    inset: auto 24px 18px auto;
-    color: rgba(255, 255, 255, 0.08);
-    font-size: clamp(54px, 12vw, 156px);
-    font-weight: 900;
-    line-height: 0.82;
-    pointer-events: none;
-    white-space: nowrap;
-}
-
-.hanharness-hero-body {
-    position: relative;
-    z-index: 1;
     width: min(680px, 100%);
-    padding: 44px;
-}
-
-.hanharness-kicker {
-    margin: 0 0 12px;
-    color: rgba(255, 255, 255, 0.72);
-    font-size: 13px;
-    font-weight: 800;
-    text-transform: uppercase;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
 }
 
 .hanharness-hero h1 {
     margin: 0;
-    color: #ffffff;
+    color: var(--site-text-strong);
     font-size: clamp(42px, 8vw, 86px);
     font-weight: 900;
     line-height: 0.94;
@@ -3761,58 +3737,55 @@ body.theme-dark .legal-page-prose th {
 .hanharness-subtitle {
     margin: 18px 0 0;
     max-width: 560px;
-    color: rgba(255, 255, 255, 0.82);
+    color: var(--site-text-muted);
     font-size: 18px;
     line-height: 1.55;
 }
 
-.hanharness-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
+.hanharness-download-group {
     margin-top: 28px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
 }
 
-.hanharness-download-btn,
-.hanharness-secondary-link {
+.hanharness-download-btn {
+    padding: 0 18px;
     min-height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
     border-radius: 8px;
+    background: var(--site-text-strong);
+    color: var(--site-bg);
     text-decoration: none;
     font-weight: 800;
 }
 
-.hanharness-download-btn {
-    padding: 0 18px;
-    background: #ffffff;
-    color: #162025;
-}
-
 .hanharness-download-btn:hover,
 .hanharness-download-btn:focus-visible {
-    color: #162025;
-    transform: translateY(-1px);
+    color: var(--site-bg);
 }
 
-.hanharness-secondary-link {
-    padding: 0 14px;
-    color: rgba(255, 255, 255, 0.84);
+.hanharness-download-btn--secondary {
+    background: transparent;
+    color: var(--site-text-strong);
+    box-shadow: inset 0 0 0 2px var(--site-text-strong);
 }
 
-.hanharness-secondary-link:hover,
-.hanharness-secondary-link:focus-visible {
-    color: #ffffff;
-    background: rgba(255, 255, 255, 0.12);
+.hanharness-download-btn--secondary:hover,
+.hanharness-download-btn--secondary:focus-visible {
+    color: var(--site-text-strong);
 }
 
 .hanharness-info {
-    margin-top: 18px;
-    padding: 28px 0 0;
-    border-top: 1px solid var(--site-border);
+    margin-top: 48px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
 }
 
 .hanharness-info h2 {
@@ -3829,23 +3802,167 @@ body.theme-dark .legal-page-prose th {
     line-height: 1.65;
 }
 
+.hanharness-info h3 {
+    margin: 40px 0 0;
+    color: var(--site-text-strong);
+    font-size: 20px;
+    font-weight: 800;
+}
+
+.hanharness-info h4 {
+    margin: 28px 0 0;
+    color: var(--site-text-strong);
+    font-size: 15px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.hanharness-info code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--site-surface-2, rgba(128,128,128,0.12));
+    color: var(--site-text-strong);
+    font-size: 0.88em;
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.hanharness-info-note {
+    margin: 10px 0 0;
+    padding: 10px 14px;
+    border-left: 3px solid var(--site-text-muted);
+    border-radius: 0 6px 6px 0;
+    background: var(--site-surface-2, rgba(128,128,128,0.07));
+    color: var(--site-text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.hanharness-feature-list {
+    margin: 12px 0 0;
+    padding-left: 20px;
+    color: var(--site-text-muted);
+    font-size: 16px;
+    line-height: 1.65;
+}
+
+.hanharness-feature-list li {
+    margin-top: 6px;
+}
+
+.hanharness-steps {
+    margin: 14px 0 0;
+    padding-left: 22px;
+    color: var(--site-text-muted);
+    font-size: 15px;
+    line-height: 1.65;
+}
+
+.hanharness-steps li {
+    margin-top: 12px;
+}
+
+.hanharness-code-wrap {
+    position: relative;
+    margin: 8px 0 0;
+}
+
+.hanharness-code-block {
+    margin: 0;
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: var(--site-surface-2, rgba(128,128,128,0.1));
+    overflow-x: auto;
+}
+
+.hanharness-code-block code {
+    padding: 0;
+    background: transparent;
+    color: var(--site-text-strong);
+    font-size: 13px;
+    white-space: pre;
+}
+
+.hanharness-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--site-text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+    flex-shrink: 0;
+}
+
+.hanharness-code-wrap:hover .hanharness-copy-btn {
+    opacity: 1;
+}
+
+.hanharness-copy-btn:hover {
+    background: var(--site-surface-3, rgba(128,128,128,0.15));
+    color: var(--site-text-strong);
+}
+
+.hanharness-copy-btn.copied {
+    opacity: 1;
+    color: var(--site-accent, #4a9eff);
+}
+
+.hanharness-copy-btn svg {
+    display: block;
+}
+
+.hanharness-cmd-table {
+    margin: 10px 0 0;
+    border-radius: 8px;
+    border: 1px solid var(--site-border, rgba(128,128,128,0.15));
+    overflow: hidden;
+}
+
+.hanharness-cmd-row {
+    display: grid;
+    grid-template-columns: minmax(200px, auto) 1fr;
+    gap: 12px;
+    padding: 9px 14px;
+    border-top: 1px solid var(--site-border, rgba(128,128,128,0.1));
+    font-size: 14px;
+    line-height: 1.5;
+    align-items: center;
+}
+
+.hanharness-cmd-row:first-child {
+    border-top: 0;
+}
+
+.hanharness-cmd-row code {
+    background: transparent;
+    padding: 0;
+    font-size: 13px;
+    color: var(--site-text-strong);
+    white-space: nowrap;
+}
+
+.hanharness-cmd-row span {
+    color: var(--site-text-muted);
+}
+
 @media (max-width: 700px) {
+    .hanharness-cmd-row {
+        grid-template-columns: 1fr;
+        gap: 2px;
+    }
     .hanharness-shell {
         width: min(100% - 20px, 1120px);
         padding-top: 16px;
-    }
-
-    .hanharness-hero {
-        min-height: 440px;
-    }
-
-    .hanharness-hero-body {
-        padding: 28px;
-    }
-
-    .hanharness-banner {
-        right: 12px;
-        bottom: 10px;
     }
 }
 

@@ -3,28 +3,266 @@
 {% block content %}
 <main class="hanharness-shell">
     <section class="hanharness-hero" aria-labelledby="hanharness-title">
-        <div class="hanharness-banner" aria-hidden="true">{{ hanharness_text.banner }}</div>
-        <div class="hanharness-hero-body">
-            <p class="hanharness-kicker">Hanplanet Utility</p>
-            <h1 id="hanharness-title">{{ hanharness_text.title }}</h1>
-            <p class="hanharness-subtitle">{{ hanharness_text.subtitle }}</p>
-            <div class="hanharness-actions">
-                <a class="hanharness-download-btn" href="{{ hanharness_download_url }}">
-                    <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <line x1="10" y1="3" x2="10" y2="12"></line>
-                        <polyline points="6,8 10,12 14,8"></polyline>
-                        <line x1="4" y1="17" x2="16" y2="17"></line>
-                    </svg>
-                    <span>{{ hanharness_text.download }}</span>
-                </a>
-                <a class="hanharness-secondary-link" href="{{ handrive_url }}">{{ hanharness_text.back_to_handrive }}</a>
-            </div>
+        <h1 id="hanharness-title">{{ hanharness_text.title }}</h1>
+        <p class="hanharness-subtitle">{{ hanharness_text.subtitle }}</p>
+        <div class="hanharness-download-group">
+            <a class="hanharness-download-btn" href="{{ hanharness_download_url }}">
+                <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <line x1="10" y1="3" x2="10" y2="12"></line>
+                    <polyline points="6,8 10,12 14,8"></polyline>
+                    <line x1="4" y1="17" x2="16" y2="17"></line>
+                </svg>
+                <span>{{ hanharness_text.download_mac }}</span>
+            </a>
+            <a class="hanharness-download-btn hanharness-download-btn--secondary" href="{{ hanharness_download_windows_url }}">
+                <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <line x1="10" y1="3" x2="10" y2="12"></line>
+                    <polyline points="6,8 10,12 14,8"></polyline>
+                    <line x1="4" y1="17" x2="16" y2="17"></line>
+                </svg>
+                <span>{{ hanharness_text.download_win }}</span>
+            </a>
         </div>
     </section>
+
     <section class="hanharness-info" aria-labelledby="hanharness-info-title">
-        <h2 id="hanharness-info-title">{{ hanharness_text.intro_title }}</h2>
-        <p>{{ hanharness_text.intro_placeholder }}</p>
+        {% if ui_lang == 'en' %}
+
+        <h2 id="hanharness-info-title">About HanPlanet CLI</h2>
+        <p>HanPlanet CLI is an AI-powered coding assistant that runs in your terminal. It integrates with the Hanplanet service and supports Claude, Ollama, and other AI backends. Use natural language to write code, edit files, run shell commands, search the web, and manage Git — all guided by the AI.</p>
+        <p class="hanharness-info-note">To use HanPlanet CLI, you need account access granted by an administrator.</p>
+        <ul class="hanharness-feature-list">
+            <li>44+ built-in tools: file editing, shell execution, web search, Git, MCP, background tasks, and more</li>
+            <li>Multi-provider: Hanplanet (Ollama), Claude (Anthropic), OpenAI, OpenRouter, GitHub Copilot, and any OpenAI-compatible API</li>
+            <li>Interactive TUI with conversation history, skills, memory, and agent coordination</li>
+            <li><code>ohmo</code> — a separate personal-agent CLI for long-running autonomous tasks</li>
+        </ul>
+
+        <h3>Installation</h3>
+        <p class="hanharness-info-note">Standalone builds are available for <strong>macOS Apple Silicon</strong> and <strong>Windows (x64)</strong>. No Python or Node.js installation needed.</p>
+
+        <h4>macOS (Apple Silicon)</h4>
+        <ol class="hanharness-steps">
+            <li>Click <strong>Download for macOS</strong> above and save <code>HanPlanet-CLI-macos-arm64.zip</code>.</li>
+            <li>Open Terminal and unzip the archive:
+                <div class="hanharness-code-block"><code>unzip ~/Downloads/HanPlanet-CLI-macos-arm64.zip -d ~/Downloads/</code></div>
+            </li>
+            <li>Move the entire app folder to <code>/opt</code>. Do not move only the executable; <code>_internal</code> must stay next to it:
+                <div class="hanharness-code-block"><code>sudo rm -rf /opt/HanPlanet-CLI
+sudo mkdir -p /opt
+sudo mv ~/Downloads/dist/HanPlanet-CLI /opt/HanPlanet-CLI</code></div>
+            </li>
+            <li>Grant execute permission:
+                <div class="hanharness-code-block"><code>chmod +x /opt/HanPlanet-CLI/hanplanet /opt/HanPlanet-CLI/ohmo</code></div>
+            </li>
+            <li>Create symlinks on your PATH:
+                <div class="hanharness-code-block"><code>sudo ln -sf /opt/HanPlanet-CLI/hanplanet /usr/local/bin/hanplanet
+sudo ln -sf /opt/HanPlanet-CLI/ohmo /usr/local/bin/ohmo</code></div>
+            </li>
+            <li>Verify the installation:
+                <div class="hanharness-code-block"><code>hanplanet --version
+hanplanet
+ohmo --help</code></div>
+            </li>
+            <li><strong>macOS Gatekeeper:</strong> On first launch, macOS may block the binary. Go to <strong>System Settings → Privacy &amp; Security</strong> and click <strong>"Allow Anyway"</strong>, then run again.</li>
+        </ol>
+
+        <h4>Windows (x64)</h4>
+        <ol class="hanharness-steps">
+            <li>Click <strong>Download for Windows</strong> above and save <code>HanPlanet-CLI-windows-x64.zip</code>.</li>
+            <li>Right-click the zip file and select <strong>Extract All</strong>, or use 7-Zip.</li>
+            <li>Open <strong>PowerShell</strong> in the extracted folder (where <code>hanplanet.exe</code> is located) and add the folder to your PATH:
+                <div class="hanharness-code-block"><code>$p=$PWD.Path; if(([Environment]::GetEnvironmentVariable("Path","User")) -notlike "*$p*"){[Environment]::SetEnvironmentVariable("Path",([Environment]::GetEnvironmentVariable("Path","User"))+";"+$p,"User")}</code></div>
+                <p style="margin:6px 0 0; font-size:13px; color:var(--site-text-muted);">⚠️ PowerShell only — does not work in Command Prompt (cmd). Restart your terminal after running.</p>
+            </li>
+            <li>Open <strong>PowerShell</strong> or <strong>Command Prompt</strong> in your desired project folder and run:
+                <div class="hanharness-code-block"><code>hanplanet</code></div>
+            </li>
+            <li>Keep <code>hanplanet.exe</code>, <code>ohmo.exe</code>, and <code>_internal</code> in the same <code>HanPlanet-CLI</code> folder. Do not move only the executable.</li>
+            <li><strong>Windows SmartScreen:</strong> On first launch, Windows may show a security warning. Click <strong>"More info" → "Run anyway"</strong>.</li>
+        </ol>
+
+        <h3>Usage</h3>
+
+        <h4>Initial setup</h4>
+        <p>Run <code>hanplanet setup</code> to choose a provider and authenticate. To use the Hanplanet Ollama backend, select <strong>OpenAI-Compatible</strong> and enter <code>https://hanplanet.com/ai/v1</code> as the base URL.</p>
+        <div class="hanharness-code-block"><code>hanplanet setup</code></div>
+
+        <h4>Starting a session</h4>
+        <div class="hanharness-code-block"><code>hanplanet               # Launch interactive TUI
+hanplanet -c            # Continue the most recent session
+hanplanet -p "Prompt"   # Non-interactive: run a prompt and exit</code></div>
+
+        <h4>Authentication commands</h4>
+        <div class="hanharness-cmd-table">
+            <div class="hanharness-cmd-row"><code>hanplanet auth login</code><span>Authenticate with a provider</span></div>
+            <div class="hanharness-cmd-row"><code>hanplanet auth status</code><span>Show current auth sources</span></div>
+            <div class="hanharness-cmd-row"><code>hanplanet auth logout</code><span>Clear stored credentials</span></div>
+            <div class="hanharness-cmd-row"><code>hanplanet auth switch</code><span>Switch active provider profile</span></div>
+        </div>
+
+        <h4>Provider management</h4>
+        <div class="hanharness-cmd-table">
+            <div class="hanharness-cmd-row"><code>hanplanet provider list</code><span>List configured provider profiles</span></div>
+            <div class="hanharness-cmd-row"><code>hanplanet provider use &lt;name&gt;</code><span>Switch to a profile</span></div>
+            <div class="hanharness-cmd-row"><code>hanplanet provider add &lt;name&gt;</code><span>Add a new provider profile</span></div>
+        </div>
+
+        <h4>Slash commands (inside the TUI)</h4>
+        <p>Type <code>/help</code> to see all available commands. Common ones:</p>
+        <div class="hanharness-cmd-table">
+            <div class="hanharness-cmd-row"><code>/model</code><span>View or change the active model</span></div>
+            <div class="hanharness-cmd-row"><code>/provider</code><span>View or switch provider profiles</span></div>
+            <div class="hanharness-cmd-row"><code>/config</code><span>View or edit settings</span></div>
+            <div class="hanharness-cmd-row"><code>/clear</code><span>Clear conversation history</span></div>
+            <div class="hanharness-cmd-row"><code>/cost</code><span>Show token usage and cost</span></div>
+            <div class="hanharness-cmd-row"><code>/diff</code><span>Show git diff</span></div>
+            <div class="hanharness-cmd-row"><code>/commit</code><span>Create a git commit</span></div>
+            <div class="hanharness-cmd-row"><code>/memory</code><span>Inspect or manage project memory</span></div>
+            <div class="hanharness-cmd-row"><code>/skills</code><span>List available skills</span></div>
+            <div class="hanharness-cmd-row"><code>/update</code><span>Pull latest updates and reinstall</span></div>
+        </div>
+
+        <h4>ohmo — Personal agent</h4>
+        <p><code>ohmo</code> is a separate agent that runs autonomously on long-horizon tasks using a persistent workspace (~/.ohmo).</p>
+        <div class="hanharness-code-block"><code>ohmo init              # Initialize ~/.ohmo workspace
+ohmo repl              # Start interactive personal-agent session
+ohmo print "Prompt"    # Non-interactive execution</code></div>
+
+        {% else %}
+
+        <h2 id="hanharness-info-title">소개</h2>
+        <p>HanPlanet CLI는 터미널에서 동작하는 AI 코딩 어시스턴트입니다. Hanplanet 서비스와 연동되며 Claude, Ollama 등 다양한 AI 백엔드를 지원합니다. 자연어로 코드 작성, 파일 편집, 셸 명령 실행, 웹 검색, Git 관리 등을 AI와 함께 처리할 수 있습니다.</p>
+        <p class="hanharness-info-note">HanPlanet CLI를 사용하려면 관리자에게서 계정 권한을 받아야 합니다.</p>
+        <ul class="hanharness-feature-list">
+            <li>44개 이상의 내장 도구: 파일 편집, 셸 실행, 웹 검색, Git, MCP, 백그라운드 태스크 등</li>
+            <li>멀티 프로바이더: Hanplanet(Ollama), Claude(Anthropic), OpenAI, OpenRouter, GitHub Copilot, OpenAI 호환 API 등</li>
+            <li>대화 히스토리, 스킬, 메모리, 멀티 에이전트 조율을 지원하는 인터랙티브 TUI</li>
+            <li><code>ohmo</code> — 장기 자율 태스크를 처리하는 별도의 개인 에이전트 CLI</li>
+        </ul>
+
+        <h3>설치 방법</h3>
+        <p class="hanharness-info-note"><strong>macOS Apple Silicon</strong> 및 <strong>Windows(x64)</strong> standalone 빌드를 제공합니다. Python이나 Node.js 설치가 필요 없습니다.</p>
+
+        <h4>macOS (Apple Silicon)</h4>
+        <ol class="hanharness-steps">
+            <li>위 <strong>macOS 다운로드</strong> 버튼을 눌러 <code>HanPlanet-CLI-macos-arm64.zip</code>을 저장합니다.</li>
+            <li>터미널을 열고 압축을 해제합니다:
+                <div class="hanharness-code-block"><code>unzip ~/Downloads/HanPlanet-CLI-macos-arm64.zip -d ~/Downloads/</code></div>
+            </li>
+            <li>앱 폴더 전체를 <code>/opt</code>로 옮깁니다. 실행 파일만 옮기면 안 됩니다. <code>_internal</code> 폴더가 실행 파일 옆에 있어야 합니다:
+                <div class="hanharness-code-block"><code>sudo rm -rf /opt/HanPlanet-CLI
+sudo mkdir -p /opt
+sudo mv ~/Downloads/dist/HanPlanet-CLI /opt/HanPlanet-CLI</code></div>
+            </li>
+            <li>실행 권한을 부여합니다:
+                <div class="hanharness-code-block"><code>chmod +x /opt/HanPlanet-CLI/hanplanet /opt/HanPlanet-CLI/ohmo</code></div>
+            </li>
+            <li>PATH에 symlink를 생성합니다:
+                <div class="hanharness-code-block"><code>sudo ln -sf /opt/HanPlanet-CLI/hanplanet /usr/local/bin/hanplanet
+sudo ln -sf /opt/HanPlanet-CLI/ohmo /usr/local/bin/ohmo</code></div>
+            </li>
+            <li>설치가 되었는지 확인합니다:
+                <div class="hanharness-code-block"><code>hanplanet --version
+hanplanet
+ohmo --help</code></div>
+            </li>
+            <li><strong>macOS Gatekeeper:</strong> 처음 실행 시 macOS가 차단할 수 있습니다. <strong>시스템 설정 → 개인 정보 보호 및 보안</strong>에서 <strong>"그래도 허용"</strong>을 클릭한 후 다시 실행하세요.</li>
+        </ol>
+
+        <h4>Windows (x64)</h4>
+        <ol class="hanharness-steps">
+            <li>위 <strong>Windows 다운로드</strong> 버튼을 눌러 <code>HanPlanet-CLI-windows-x64.zip</code>을 저장합니다.</li>
+            <li>zip 파일을 우클릭 후 <strong>모두 추출</strong>을 선택하거나 7-Zip으로 압축 해제합니다.</li>
+            <li>압축 해제된 폴더(<code>hanplanet.exe</code>이 있는)에서 <strong>PowerShell</strong>을 열고 폴더를 PATH에 추가합니다:
+                <div class="hanharness-code-block"><code>$p=$PWD.Path; if(([Environment]::GetEnvironmentVariable("Path","User")) -notlike "*$p*"){[Environment]::SetEnvironmentVariable("Path",([Environment]::GetEnvironmentVariable("Path","User"))+";"+$p,"User")}</code></div>
+                <p style="margin:6px 0 0; font-size:13px; color:var(--site-text-muted);">⚠️ PowerShell 전용 명령어입니다. 명령 프롬프트(cmd)에서는 동작하지 않습니다. 실행 후 터미널을 재시작하세요.</p>
+            </li>
+            <li>원하는 프로젝트 폴더에서 <strong>PowerShell</strong> 또는 <strong>명령 프롬프트</strong>를 열고 실행합니다:
+                <div class="hanharness-code-block"><code>hanplanet</code></div>
+            </li>
+            <li><code>hanplanet.exe</code>, <code>ohmo.exe</code>, <code>_internal</code>은 같은 <code>HanPlanet-CLI</code> 폴더 안에 있어야 합니다. 실행 파일만 따로 빼면 안 됩니다.</li>
+            <li><strong>Windows SmartScreen:</strong> 처음 실행 시 보안 경고가 표시될 수 있습니다. <strong>"추가 정보" → "실행"</strong>을 클릭하세요.</li>
+        </ol>
+
+        <h3>사용법</h3>
+
+        <h4>초기 설정</h4>
+        <p><code>hanplanet setup</code>을 실행해 프로바이더를 선택하고 인증합니다. Hanplanet Ollama 백엔드를 사용하려면 <strong>OpenAI-Compatible</strong>을 선택하고 Base URL에 <code>https://hanplanet.com/ai/v1</code>을 입력하세요.</p>
+        <div class="hanharness-code-block"><code>hanplanet setup</code></div>
+
+        <h4>세션 시작</h4>
+        <div class="hanharness-code-block"><code>hanplanet               # 인터랙티브 TUI 실행
+hanplanet -c            # 가장 최근 세션 이어서 시작
+hanplanet -p "프롬프트"  # 비대화형: 프롬프트 실행 후 종료</code></div>
+
+        <h4>인증 명령어</h4>
+        <div class="hanharness-cmd-table">
+            <div class="hanharness-cmd-row"><code>hanplanet auth login</code><span>프로바이더 인증</span></div>
+            <div class="hanharness-cmd-row"><code>hanplanet auth status</code><span>현재 인증 소스 확인</span></div>
+            <div class="hanharness-cmd-row"><code>hanplanet auth logout</code><span>저장된 인증 정보 삭제</span></div>
+            <div class="hanharness-cmd-row"><code>hanplanet auth switch</code><span>활성 프로바이더 프로필 전환</span></div>
+        </div>
+
+        <h4>프로바이더 관리</h4>
+        <div class="hanharness-cmd-table">
+            <div class="hanharness-cmd-row"><code>hanplanet provider list</code><span>프로바이더 프로필 목록</span></div>
+            <div class="hanharness-cmd-row"><code>hanplanet provider use &lt;name&gt;</code><span>프로필 전환</span></div>
+            <div class="hanharness-cmd-row"><code>hanplanet provider add &lt;name&gt;</code><span>새 프로바이더 프로필 추가</span></div>
+        </div>
+
+        <h4>슬래시 명령어 (TUI 내부)</h4>
+        <p>TUI 안에서 <code>/help</code>를 입력하면 전체 명령어를 확인할 수 있습니다. 주요 명령어:</p>
+        <div class="hanharness-cmd-table">
+            <div class="hanharness-cmd-row"><code>/model</code><span>활성 모델 확인 또는 변경</span></div>
+            <div class="hanharness-cmd-row"><code>/provider</code><span>프로바이더 프로필 확인 또는 전환</span></div>
+            <div class="hanharness-cmd-row"><code>/config</code><span>설정 확인 또는 편집</span></div>
+            <div class="hanharness-cmd-row"><code>/clear</code><span>대화 히스토리 초기화</span></div>
+            <div class="hanharness-cmd-row"><code>/cost</code><span>토큰 사용량 및 비용 확인</span></div>
+            <div class="hanharness-cmd-row"><code>/diff</code><span>Git diff 보기</span></div>
+            <div class="hanharness-cmd-row"><code>/commit</code><span>Git 커밋 생성</span></div>
+            <div class="hanharness-cmd-row"><code>/memory</code><span>프로젝트 메모리 확인 또는 관리</span></div>
+            <div class="hanharness-cmd-row"><code>/skills</code><span>사용 가능한 스킬 목록</span></div>
+            <div class="hanharness-cmd-row"><code>/update</code><span>최신 버전으로 업데이트</span></div>
+        </div>
+
+        <h4>ohmo — 개인 에이전트</h4>
+        <p><code>ohmo</code>는 <code>~/.ohmo</code> 워크스페이스를 기반으로 장기 태스크를 자율적으로 처리하는 별도의 에이전트입니다.</p>
+        <div class="hanharness-code-block"><code>ohmo init              # ~/.ohmo 워크스페이스 초기화
+ohmo repl              # 인터랙티브 개인 에이전트 세션 시작
+ohmo print "프롬프트"   # 비대화형 실행</code></div>
+
+        {% endif %}
     </section>
 </main>
 {% include "partials/site_footer_links.html" %}
+<script>
+(function () {
+    var copyIcon = '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M4 13H3a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>';
+    var checkIcon = '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4,10 8,14 16,6"/></svg>';
+
+    document.querySelectorAll('.hanharness-code-block').forEach(function (block) {
+        var btn = document.createElement('button');
+        btn.className = 'hanharness-copy-btn';
+        btn.setAttribute('aria-label', 'Copy');
+        btn.innerHTML = copyIcon;
+        btn.addEventListener('click', function () {
+            var text = block.querySelector('code').innerText;
+            navigator.clipboard.writeText(text).then(function () {
+                btn.innerHTML = checkIcon;
+                btn.classList.add('copied');
+                setTimeout(function () {
+                    btn.innerHTML = copyIcon;
+                    btn.classList.remove('copied');
+                }, 1500);
+            });
+        });
+        var wrap = document.createElement('div');
+        wrap.className = 'hanharness-code-wrap';
+        block.parentNode.insertBefore(wrap, block);
+        wrap.appendChild(block);
+        wrap.appendChild(btn);
+    });
+}());
+</script>
 {% endblock %}

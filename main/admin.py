@@ -165,7 +165,7 @@ class HandriveUserQuotaForm(forms.ModelForm):
 
     class Meta:
         model = HandriveUserQuota
-        fields = ["user", "quota_gb", "hanharness_enabled", "hanharness_token_limit_5h"]
+        fields = ["user", "quota_gb", "hanharness_enabled", "hanharness_token_limit_5h", "scoped_entry_limit"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -183,7 +183,7 @@ class HandriveUserQuotaForm(forms.ModelForm):
 @admin.register(HandriveUserQuota)
 class HandriveUserQuotaAdmin(admin.ModelAdmin):
     form = HandriveUserQuotaForm
-    list_display = ["user", "quota_display", "hanharness_enabled", "token_limit_display"]
+    list_display = ["user", "quota_display", "entry_limit_display", "hanharness_enabled", "token_limit_display"]
     search_fields = ["user__username", "user__email"]
     ordering = ["user__username"]
 
@@ -191,6 +191,12 @@ class HandriveUserQuotaAdmin(admin.ModelAdmin):
     def quota_display(self, obj):
         gb = obj.quota_bytes / (1024 ** 3)
         return f"{gb:.2f} GB"
+
+    @admin.display(description="파일/폴더 개수 제한")
+    def entry_limit_display(self, obj):
+        if obj.scoped_entry_limit == 0:
+            return "무제한"
+        return f"{obj.scoped_entry_limit:,}개"
 
     @admin.display(description="5시간 토큰 한도")
     def token_limit_display(self, obj):

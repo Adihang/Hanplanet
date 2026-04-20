@@ -10,15 +10,15 @@
     <meta name="robots" content="noindex">
     <meta property="og:title" content="{{ bubble_title }}">
     <meta property="og:description" content="{{ bubble_description }}">
-    <meta property="og:image" content="https://www.hanplanet.com{% static 'img/bubble_og_icon.svg' %}">
+    <meta property="og:image" content="https://www.hanplanet.com{% static 'media/img/bubble_og_icon.svg' %}">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:image" content="https://www.hanplanet.com{% static 'img/bubble_og_icon.svg' %}">
+    <meta name="twitter:image" content="https://www.hanplanet.com{% static 'media/img/bubble_og_icon.svg' %}">
     {% include "partials/pwa.html" %}
     {% include "partials/static_script_fallback.html" %}
     
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="shortcut icon" href="/favicon.ico">
-    <link rel="icon" type="image/png" href="{% static 'icons/pwa-192.png' %}">
+    <link rel="icon" type="image/png" href="{% static 'media/icons/pwa-192.png' %}">
     <link rel="stylesheet" type="text/css" href="{% static_v 'css/common/style.css' %}">
     <script src="{% static_v 'js/common/site.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <title>{{ page_title }} | Hanplanet</title>

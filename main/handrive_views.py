@@ -202,6 +202,12 @@ def _collect_map_image_relative_paths(geojson_data: dict) -> set[str]:
         add_value(group.get("videoUrl"))
         add_value(group.get("videoUrls"))
 
+    for map_image in geojson_data.get("mapImages") or []:
+        if not isinstance(map_image, dict):
+            continue
+        add_value(map_image.get("url"))
+        add_value(map_image.get("path"))
+
     return collected
 
 
@@ -244,6 +250,19 @@ def get_user_handrive_quota_bytes(user) -> int:
         return user.handrive_quota.quota_bytes
     except Exception:
         return DOCS_USER_SCOPED_QUOTA_BYTES
+
+
+def get_user_handrive_entry_limit(user) -> int | None:
+    """사용자별 파일/폴더 개수 제한을 반환한다.
+    - 설정 없음 → 기본값(100개)
+    - 0 → 무제한(None 반환)
+    - 양수 → 해당 값
+    """
+    try:
+        limit = user.handrive_quota.scoped_entry_limit
+        return None if limit == 0 else limit
+    except Exception:
+        return DOCS_USER_SCOPED_ENTRY_LIMIT
 MAP_META_FILENAME = "_map_meta.json"
 MAP_DATA_FILENAME = "map.geojson"
 MAP_ICONS_DIR = "_icons"
@@ -476,7 +495,10 @@ DOCS_TEXT = {
         "menu_permissions": "권한",
         "menu_edit": "수정",
         "menu_delete": "삭제",
+        "menu_create_repo": "Repo 생성",
+        "menu_manage_repo": "Repo 관리",
         "menu_delete_repo": "Repo 삭제",
+        "menu_change_icon": "아이콘 변경",
         "menu_new_folder": "새 폴더",
         "menu_new_document": "새 파일",
         "rename_title": "이름 바꾸기",
@@ -586,7 +608,27 @@ DOCS_TEXT = {
         "folder_name_placeholder": "폴더명 입력",
         "branch_name_placeholder": "e.g. feature/my-work",
         "map_create_placeholder": "지도 이름을 입력하세요",
+        "folder_icon_title": "아이콘 변경",
+        "folder_icon_file_label": "이미지 파일 선택",
+        "folder_icon_delete_button": "아이콘 삭제",
         "git_repo_name_placeholder": "my-repo (letters, numbers, ., -, _)",
+        "git_repo_create_title": "Git 리포지토리 생성",
+        "git_repo_manage_title": "Git 리포지토리 관리",
+        "git_repo_name_label": "리포지토리 이름",
+        "git_repo_linked": "연결된 리포지토리",
+        "git_repo_creating": "생성 중...",
+        "git_repo_create_failed": "생성 실패",
+        "git_repo_retrying": "재시도 중...",
+        "git_repo_retry_failed": "재시도 실패",
+        "git_repo_status_error": "상태 조회 중 오류가 발생했습니다.",
+        "git_repo_load_failed": "저장소 정보를 불러올 수 없습니다. 페이지를 새로고침해주세요.",
+        "git_repo_name_required": "리포지토리 이름을 입력해주세요.",
+        "git_repo_request_failed": "요청 실패",
+        "git_repo_unknown_error": "알 수 없는 오류",
+        "git_repo_copy_button": "복사",
+        "git_repo_copied_button": "복사됨!",
+        "git_repo_open_button": "관리 페이지",
+        "git_repo_retry_button": "재시도",
         "map_name_placeholder": "이름을 입력하세요",
         "map_marker_name_placeholder": "마커 이름",
         "create_button": "생성",
@@ -692,7 +734,10 @@ DOCS_TEXT = {
         "menu_permissions": "Permissions",
         "menu_edit": "Edit",
         "menu_delete": "Delete",
+        "menu_create_repo": "Create Repo",
+        "menu_manage_repo": "Manage Repo",
         "menu_delete_repo": "Delete Repo",
+        "menu_change_icon": "Change Icon",
         "menu_new_folder": "New Folder",
         "menu_new_document": "New File",
         "rename_title": "Rename",
@@ -792,7 +837,27 @@ DOCS_TEXT = {
         "folder_name_placeholder": "Enter folder name",
         "branch_name_placeholder": "e.g. feature/my-work",
         "map_create_placeholder": "Enter map name",
+        "folder_icon_title": "Change Icon",
+        "folder_icon_file_label": "Choose image file",
+        "folder_icon_delete_button": "Remove Icon",
         "git_repo_name_placeholder": "my-repo (letters, numbers, ., -, _)",
+        "git_repo_create_title": "Create Git Repository",
+        "git_repo_manage_title": "Manage Git Repository",
+        "git_repo_name_label": "Repository name",
+        "git_repo_linked": "Connected repository",
+        "git_repo_creating": "Creating...",
+        "git_repo_create_failed": "Create failed",
+        "git_repo_retrying": "Retrying...",
+        "git_repo_retry_failed": "Retry failed",
+        "git_repo_status_error": "An error occurred while checking status.",
+        "git_repo_load_failed": "Could not load repository information. Please refresh the page.",
+        "git_repo_name_required": "Please enter a repository name.",
+        "git_repo_request_failed": "Request failed",
+        "git_repo_unknown_error": "Unknown error",
+        "git_repo_copy_button": "Copy",
+        "git_repo_copied_button": "Copied!",
+        "git_repo_open_button": "Manage Page",
+        "git_repo_retry_button": "Retry",
         "map_name_placeholder": "Enter a name",
         "map_marker_name_placeholder": "Marker name",
         "create_button": "Create",
@@ -1130,7 +1195,7 @@ def render_plain_text_safely(text: str) -> str:
 
 
 _HANDRIVE_UNSUPPORTED_ICON_URLS: dict[str, str] = {
-    ".exe": "/static/icons/handrive/exe.svg",
+    ".exe": "/static/media/icons/handrive/exe.svg",
 }
 
 _HANDRIVE_UNSUPPORTED_GENERIC_ICON = (
@@ -2053,14 +2118,9 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                 entry["is_public_write"] = False
                 entry["is_url_only"] = is_handrive_url_only_enabled(request, entry["path"])
                 entry["write_acl_labels"] = get_write_acl_display_labels(request, entry["path"])
-                entry["share_url"] = ""
-                if entry["is_url_only"]:
-                    _link = HandriveSharedLink.objects.select_related("owner").filter(path=entry["path"]).first()
-                    if _link:
-                        _ui_lang = resolve_ui_lang(request, getattr(getattr(request, "resolver_match", None), "kwargs", {}).get("ui_lang"))
-                        entry["share_url"] = request.build_absolute_uri(
-                            build_handrive_shared_view_url(_ui_lang, _link.owner.username, _link.share_slug)
-                        )
+                share_info = build_handrive_existing_share_info(request, entry["path"])
+                entry["share_url"] = share_info["share_url"]
+                entry["share_is_inherited"] = share_info["share_is_inherited"]
                 # 커스텀 폴더 아이콘 URL 주입
                 _owner_key = get_folder_icon_owner_key_for_user(request.user)
                 if _owner_key and _owner_key != "anon":
@@ -2091,14 +2151,9 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                 entry["is_public_write"] = is_handrive_public_write_enabled(request, entry["path"])
                 entry["is_url_only"] = is_handrive_url_only_enabled(request, entry["path"])
                 entry["write_acl_labels"] = get_write_acl_display_labels(request, entry["path"])
-                entry["share_url"] = ""
-                if entry["is_url_only"]:
-                    _link = HandriveSharedLink.objects.select_related("owner").filter(path=entry["path"]).first()
-                    if _link:
-                        _ui_lang = resolve_ui_lang(request, getattr(getattr(request, "resolver_match", None), "kwargs", {}).get("ui_lang"))
-                        entry["share_url"] = request.build_absolute_uri(
-                            build_handrive_shared_view_url(_ui_lang, _link.owner.username, _link.share_slug)
-                        )
+                share_info = build_handrive_existing_share_info(request, entry["path"])
+                entry["share_url"] = share_info["share_url"]
+                entry["share_is_inherited"] = share_info["share_is_inherited"]
             entries.append(entry)
             existing_entry_paths.add(entry["path"])
 
@@ -3023,8 +3078,9 @@ def enforce_handrive_scoped_quota(
     if projected_bytes > user_quota_bytes:
         quota_display = format_handrive_bytes_display(user_quota_bytes)
         raise ValueError(f"개인 폴더 용량이 {quota_display}를 초과해 더 이상 업로드하거나 생성할 수 없습니다.")
-    if projected_entries > DOCS_USER_SCOPED_ENTRY_LIMIT:
-        raise ValueError("개인 폴더의 하위 폴더/파일 수가 100개를 초과해 더 이상 업로드하거나 생성할 수 없습니다.")
+    user_entry_limit = get_user_handrive_entry_limit(request.user)
+    if user_entry_limit is not None and projected_entries > user_entry_limit:
+        raise ValueError(f"개인 폴더의 하위 폴더/파일 수가 {user_entry_limit:,}개를 초과해 더 이상 업로드하거나 생성할 수 없습니다.")
 
 
 def format_handrive_bytes_display(byte_count: int) -> str:
@@ -3431,6 +3487,69 @@ def build_handrive_shared_view_url(ui_lang: str | None, owner_username: str, sha
     return reverse("main:handrive_shared_view", kwargs={"owner_username": owner_username, "share_slug": share_slug})
 
 
+def build_handrive_shared_view_child_url(
+    ui_lang: str | None,
+    owner_username: str,
+    share_slug: str,
+    child_path: str = "",
+) -> str:
+    base_url = build_handrive_shared_view_url(ui_lang, owner_username, share_slug)
+    normalized_child_path = normalize_relative_path(child_path, allow_empty=True)
+    if not normalized_child_path:
+        return base_url
+    return f"{base_url.rstrip('/')}/{quote(normalized_child_path)}"
+
+
+def build_handrive_shared_breadcrumbs(
+    request,
+    ui_lang: str | None,
+    shared_context: dict,
+    current_path: str,
+) -> list[dict]:
+    owner_username = str(shared_context.get("owner_username") or "")
+    share_slug = str(shared_context.get("share_slug") or "")
+    shared_root = normalize_relative_path(shared_context.get("root_path"), allow_empty=False)
+    normalized_current = normalize_relative_path(current_path, allow_empty=True)
+    if normalized_current != shared_root and not normalized_current.startswith(shared_root + "/"):
+        normalized_current = shared_root
+
+    base_url = build_handrive_shared_view_url(ui_lang, owner_username, share_slug)
+    root_label = Path(shared_root).name or shared_root
+    breadcrumbs = [
+        {
+            "label": owner_username,
+            "url": base_url,
+            "is_current": False,
+            "path": shared_root,
+        },
+        {
+            "label": root_label,
+            "url": base_url,
+            "is_current": normalized_current == shared_root,
+            "path": shared_root,
+        },
+    ]
+    if normalized_current == shared_root:
+        return breadcrumbs
+
+    relative_child_path = normalized_current[len(shared_root) + 1:]
+    child_parts = [part for part in relative_child_path.split("/") if part]
+    accumulated_parts = []
+    for index, part in enumerate(child_parts):
+        accumulated_parts.append(part)
+        child_path = "/".join(accumulated_parts)
+        absolute_path = f"{shared_root}/{child_path}"
+        breadcrumbs.append(
+            {
+                "label": part,
+                "url": build_handrive_shared_view_child_url(ui_lang, owner_username, share_slug, child_path),
+                "is_current": index == len(child_parts) - 1,
+                "path": absolute_path,
+            }
+        )
+    return breadcrumbs
+
+
 def append_handrive_share_query(url: str, owner_username: str = "", share_slug: str = "") -> str:
     if not owner_username or not share_slug:
         return url
@@ -3463,6 +3582,71 @@ def ensure_handrive_shared_link(path_value: str, owner) -> HandriveSharedLink:
         return shared_link
     share_slug = get_unique_handrive_share_slug(owner, path_value)
     return HandriveSharedLink.objects.create(path=path_value, owner=owner, share_slug=share_slug)
+
+
+def build_handrive_existing_share_info(request, path_value: str) -> dict:
+    """Return share URL details for direct or inherited URL-only links."""
+    empty = {"share_url": "", "share_is_inherited": False}
+    if not request or not path_value or not is_handrive_url_only_enabled(request, path_value):
+        return empty
+    try:
+        normalized_path = normalize_relative_path(path_value, allow_empty=False)
+    except ValueError:
+        return empty
+
+    ui_lang = resolve_ui_lang(request, getattr(getattr(request, "resolver_match", None), "kwargs", {}).get("ui_lang"))
+    shared_context = get_handrive_shared_access_context(request)
+    if shared_context:
+        shared_root = str(shared_context["root_path"] or "").strip()
+        if normalized_path == shared_root or normalized_path.startswith(shared_root + "/"):
+            child_path = "" if normalized_path == shared_root else normalized_path[len(shared_root) + 1:]
+            return {
+                "share_url": request.build_absolute_uri(
+                    build_handrive_shared_view_child_url(
+                        ui_lang,
+                        shared_context["owner_username"],
+                        shared_context["share_slug"],
+                        child_path,
+                    )
+                ),
+                "share_is_inherited": bool(child_path),
+            }
+
+    candidate_paths = [normalized_path]
+    parent_path = Path(normalized_path).parent
+    while str(parent_path) not in ("", "."):
+        candidate_paths.append(str(parent_path))
+        parent_path = parent_path.parent
+
+    shared_links = list(
+        HandriveSharedLink.objects.select_related("owner").filter(path__in=candidate_paths)
+    )
+    shared_link_by_path = {shared_link.path: shared_link for shared_link in shared_links}
+    shared_link = next(
+        (
+            shared_link_by_path[candidate_path]
+            for candidate_path in candidate_paths[1:]
+            if candidate_path in shared_link_by_path and is_handrive_url_only_enabled(request, candidate_path)
+        ),
+        None,
+    )
+    if shared_link is None and normalized_path in shared_link_by_path and is_handrive_url_only_enabled(request, normalized_path):
+        shared_link = shared_link_by_path[normalized_path]
+    if shared_link is None:
+        return empty
+
+    child_path = "" if shared_link.path == normalized_path else normalized_path[len(shared_link.path) + 1:]
+    return {
+        "share_url": request.build_absolute_uri(
+            build_handrive_shared_view_child_url(ui_lang, shared_link.owner.username, shared_link.share_slug, child_path)
+        ),
+        "share_is_inherited": bool(child_path),
+    }
+
+
+def build_handrive_existing_share_url(request, path_value: str) -> str:
+    """Return the absolute share URL for an existing URL-only link, including inherited folder shares."""
+    return build_handrive_existing_share_info(request, path_value)["share_url"]
 
 
 def move_handrive_shared_links(source_path: str, destination_path: str) -> None:
@@ -3858,6 +4042,12 @@ def _resolve_handrive_post_login_url(request, ui_lang: str | None, fallback_next
 
     if re.match(r"^/(?:(ko|en)/)?handrive/all/list/?$", fallback_path):
         return lang_base
+
+    # Preserve explicit shared-link destinations. The scoped landing directory is
+    # only a fallback for generic HanDrive entry points, not a replacement for
+    # a user-selected shared URL.
+    if re.match(r"^/(?:(ko|en)/)?handrive/share(?:/|$)", fallback_path):
+        return fallback_next_url
 
     landing_dir = get_handrive_initial_landing_dir(request)
     if user and user.is_authenticated and landing_dir:
@@ -4606,25 +4796,16 @@ def handrive_list(request, folder_path="", ui_lang=None):
             shared_context["share_slug"],
         )
 
-    breadcrumbs = _build_git_virtual_breadcrumbs(
-        request,
-        context["handrive_base_url"],
-        current_dir,
-        scoped_home_dir=scoped_home_dir,
-        root_url=shared_root_url,
-    )
     if shared_context:
-        breadcrumbs = [
-            {
-                **crumb,
-                "url": append_handrive_share_query(
-                    crumb["url"],
-                    shared_context["owner_username"],
-                    shared_context["share_slug"],
-                ),
-            }
-            for crumb in breadcrumbs
-        ]
+        breadcrumbs = build_handrive_shared_breadcrumbs(request, resolved_lang, shared_context, current_dir)
+    else:
+        breadcrumbs = _build_git_virtual_breadcrumbs(
+            request,
+            context["handrive_base_url"],
+            current_dir,
+            scoped_home_dir=scoped_home_dir,
+            root_url=shared_root_url,
+        )
 
     sync_excluded_paths = []
     if request.user.is_authenticated:
@@ -4653,7 +4834,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
             "list_current_dir_size_display": directory_meta["size_display"],
             "current_dir_modified_display": directory_meta["modified_display"],
             "page_help_html": build_page_help_html(resolved_lang, "list", handrive_text),
-            "hide_global_nav": bool(shared_context),
+            "hide_global_nav": bool(shared_context) and not request.user.is_authenticated,
             "is_handrive_shared_view": bool(shared_context),
             "handrive_shared_owner_username": shared_context["owner_username"] if shared_context else "",
             "handrive_shared_slug": shared_context["share_slug"] if shared_context else "",
@@ -4776,13 +4957,9 @@ def handrive_view(request, doc_path, ui_lang=None):
         parent_dir = ""
 
     doc_is_url_only = is_handrive_url_only_enabled(request, relative_file_path)
-    doc_share_url = ""
-    if doc_is_url_only:
-        _shared_link = HandriveSharedLink.objects.select_related("owner").filter(path=relative_file_path).first()
-        if _shared_link:
-            doc_share_url = request.build_absolute_uri(
-                build_handrive_shared_view_url(resolved_lang, _shared_link.owner.username, _shared_link.share_slug)
-            )
+    doc_share_info = build_handrive_existing_share_info(request, relative_file_path)
+    doc_share_url = doc_share_info["share_url"]
+    doc_share_is_inherited = doc_share_info["share_is_inherited"]
 
     shared_root_url = context["handrive_root_url"]
     if shared_context:
@@ -4792,25 +4969,16 @@ def handrive_view(request, doc_path, ui_lang=None):
             shared_context["share_slug"],
         )
 
-    view_breadcrumbs = _build_git_virtual_breadcrumbs(
-        request,
-        context["handrive_base_url"],
-        parent_dir,
-        scoped_home_dir=scoped_home_dir,
-        root_url=shared_root_url,
-    )
     if shared_context:
-        view_breadcrumbs = [
-            {
-                **crumb,
-                "url": append_handrive_share_query(
-                    crumb["url"],
-                    shared_context["owner_username"],
-                    shared_context["share_slug"],
-                ),
-            }
-            for crumb in view_breadcrumbs
-        ]
+        view_breadcrumbs = build_handrive_shared_breadcrumbs(request, resolved_lang, shared_context, parent_dir)
+    else:
+        view_breadcrumbs = _build_git_virtual_breadcrumbs(
+            request,
+            context["handrive_base_url"],
+            parent_dir,
+            scoped_home_dir=scoped_home_dir,
+            root_url=shared_root_url,
+        )
 
     context.update(
         {
@@ -4824,6 +4992,7 @@ def handrive_view(request, doc_path, ui_lang=None):
             and render_profile["mode"] != DOCS_RENDER_MODE_UNSUPPORTED,
             "doc_is_url_only": doc_is_url_only,
             "doc_share_url": doc_share_url,
+            "doc_share_is_inherited": doc_share_is_inherited,
             "doc_content_html": rendered_content_html,
             "doc_content_mode": render_profile["mode"],
             "doc_content_class": render_profile["css_class"],
@@ -4831,7 +5000,7 @@ def handrive_view(request, doc_path, ui_lang=None):
             "view_current_file_name": file_name,
             "view_current_file_size_display": file_size_display,
             "page_help_html": build_page_help_html(resolved_lang, "view", handrive_text),
-            "hide_global_nav": bool(shared_context),
+            "hide_global_nav": bool(shared_context) and not request.user.is_authenticated,
             "is_handrive_shared_view": bool(shared_context),
             "handrive_shared_owner_username": shared_context["owner_username"] if shared_context else "",
             "handrive_shared_slug": shared_context["share_slug"] if shared_context else "",
@@ -4843,7 +5012,7 @@ def handrive_view(request, doc_path, ui_lang=None):
 
 
 @with_request_handrive_root
-def handrive_shared_view(request, owner_username, share_slug, ui_lang=None):
+def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shared_subpath=""):
     shared_link = HandriveSharedLink.objects.select_related("owner").filter(
         owner__username=owner_username,
         share_slug=share_slug,
@@ -4863,10 +5032,26 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None):
         shared_link.delete()
         raise Http404("공유 문서를 찾을 수 없습니다.")
 
+    if shared_subpath:
+        if not target_path.is_dir():
+            raise Http404("공유 문서를 찾을 수 없습니다.")
+        try:
+            normalized_subpath = normalize_relative_path(shared_subpath, allow_empty=False)
+            requested_relative_path = normalize_relative_path(f"{relative_path}/{normalized_subpath}", allow_empty=False)
+            target_path, relative_path = resolve_path(requested_relative_path, must_exist=True)
+        except (ValueError, FileNotFoundError):
+            raise Http404("공유 문서를 찾을 수 없습니다.")
+        shared_root_path = normalize_relative_path(shared_link.path, allow_empty=False)
+        if relative_path != shared_root_path and not relative_path.startswith(shared_root_path + "/"):
+            raise Http404("공유 문서를 찾을 수 없습니다.")
+
     if target_path.is_dir():
         if (target_path / MAP_META_FILENAME).is_file():
             return handrive_map_viewer(request, map_path=str(relative_path), ui_lang=ui_lang)
         return handrive_list(request, folder_path=relative_path, ui_lang=ui_lang)
+
+    if shared_subpath:
+        return handrive_view(request, doc_path=relative_path, ui_lang=ui_lang)
 
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
@@ -4899,7 +5084,9 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None):
             "doc_parent_dir": "",
             "doc_can_edit": False,
             "doc_is_url_only": True,
-            "hide_global_nav": True,
+            "doc_share_url": request.build_absolute_uri(build_handrive_shared_view_url(resolved_lang, owner_username, share_slug)),
+            "doc_share_is_inherited": False,
+            "hide_global_nav": not request.user.is_authenticated,
             "is_handrive_shared_view": True,
             "doc_content_html": rendered_content_html,
             "doc_content_mode": render_profile["mode"],
@@ -5461,6 +5648,7 @@ def handrive_api_search(request):
             if _name_matches(dir_name):
                 rel_dir = rel_current
                 if has_handrive_read_access(request, rel_dir):
+                    share_info = build_handrive_existing_share_info(request, rel_dir)
                     try:
                         has_children = any(current_dir_path.iterdir())
                     except OSError:
@@ -5478,6 +5666,8 @@ def handrive_api_search(request):
                         "is_public_write": False,
                         "is_url_only": is_handrive_url_only_enabled(request, rel_dir),
                         "write_acl_labels": get_write_acl_display_labels(request, rel_dir),
+                        "share_url": share_info["share_url"],
+                        "share_is_inherited": share_info["share_is_inherited"],
                     }
                     matches.append(entry)
 
@@ -5487,6 +5677,7 @@ def handrive_api_search(request):
                 file_path = current_dir_path / filename
                 rel_file = (rel_current + "/" + filename) if rel_current != "." else filename
                 if has_handrive_read_access(request, rel_file):
+                    share_info = build_handrive_existing_share_info(request, rel_file)
                     try:
                         size = file_path.stat().st_size
                         size_display = format_handrive_bytes_display(size)
@@ -5504,7 +5695,8 @@ def handrive_api_search(request):
                         "is_public_write": is_handrive_public_write_enabled(request, rel_file),
                         "is_url_only": is_handrive_url_only_enabled(request, rel_file),
                         "write_acl_labels": get_write_acl_display_labels(request, rel_file),
-                        "share_url": "",
+                        "share_url": share_info["share_url"],
+                        "share_is_inherited": share_info["share_is_inherited"],
                     }
                     matches.append(entry)
 
@@ -7279,16 +7471,26 @@ def handrive_map_viewer(request, map_path, ui_lang=None):
 
     can_edit = has_handrive_write_access(request, normalized)
     map_is_url_only = is_handrive_url_only_enabled(request, normalized)
-    map_share_url = ""
-    if map_is_url_only:
-        _share_link = HandriveSharedLink.objects.select_related("owner").filter(path=normalized).first()
-        if _share_link:
-            map_share_url = request.build_absolute_uri(
-                build_handrive_shared_view_url(resolved_lang, _share_link.owner.username, _share_link.share_slug)
-            )
+    map_share_url = build_handrive_existing_share_url(request, normalized)
 
-    shared_owner = str(getattr(request, "_handrive_shared_owner_username", "") or "")
-    shared_slug = str(getattr(request, "_handrive_shared_slug", "") or "")
+    shared_context = get_handrive_shared_access_context(request)
+    shared_owner = str(
+        getattr(request, "_handrive_shared_owner_username", "")
+        or (shared_context or {}).get("owner_username", "")
+        or ""
+    )
+    shared_slug = str(
+        getattr(request, "_handrive_shared_slug", "")
+        or (shared_context or {}).get("share_slug", "")
+        or ""
+    )
+    show_map_list_button = not bool(shared_owner)
+    if shared_context and parent_path not in (".", ""):
+        parent_share_info = build_handrive_existing_share_info(request, parent_path)
+        parent_share_url = parent_share_info.get("share_url", "")
+        if parent_share_url:
+            parent_list_url = parent_share_url
+            show_map_list_button = True
 
     context.update({
         "map_path": normalized,
@@ -7298,6 +7500,7 @@ def handrive_map_viewer(request, map_path, ui_lang=None):
         "can_edit": can_edit,
         "map_editor_url": f"/handrive/map-editor/{normalized}",
         "handrive_list_url": parent_list_url,
+        "show_map_list_button": show_map_list_button,
         "map_data_api_url": reverse("main:handrive_api_map_data"),
         "map_icon_api_url": "/handrive/api/map-image/",
         "url_share_api_url": reverse("main:handrive_api_url_share") if can_edit else "",

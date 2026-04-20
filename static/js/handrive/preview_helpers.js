@@ -10,6 +10,12 @@
             return;
         }
         var visible = Boolean(isVisible);
+        if (!visible) {
+            var focused = document.activeElement;
+            if (focused && previewPanel.contains(focused)) {
+                focused.blur();
+            }
+        }
         previewPanel.hidden = !visible;
         previewPanel.setAttribute("aria-hidden", visible ? "false" : "true");
         if (listLayout) {

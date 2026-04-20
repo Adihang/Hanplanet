@@ -64,6 +64,10 @@
         var onAfterChange = settings.onAfterChange || function () {};
 
         if (editorPanel) {
+            var focused = document.activeElement;
+            if (focused && editorPanel.contains(focused)) {
+                focused.blur();
+            }
             editorPanel.hidden = true;
             editorPanel.setAttribute("aria-hidden", "true");
         }

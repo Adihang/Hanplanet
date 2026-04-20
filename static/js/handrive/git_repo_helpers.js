@@ -4,7 +4,7 @@
     // Git repo modal UI helpers intentionally do not fetch data. They only normalize the
     // visible modal state so polling/create flows can reuse one presentation layer.
 
-    function resetGitRepoModalUi(options) {
+	    function resetGitRepoModalUi(options) {
         // Reset the create/manage modal into a neutral state before each open so
         // status text and clone URLs from the previous repository cannot leak through.
         var settings = options || {};
@@ -15,8 +15,9 @@
         var gitRepoTitle = settings.gitRepoTitle || null;
         var gitRepoModal = settings.gitRepoModal || null;
         var syncModalBodyState = settings.syncModalBodyState || function () {};
-        var entry = settings.entry || null;
-        var isManageMode = Boolean(settings.isManageMode);
+	        var entry = settings.entry || null;
+	        var isManageMode = Boolean(settings.isManageMode);
+	        var t = settings.t || function (key, fallbackValue) { return fallbackValue; };
 
         if (gitRepoForm) {
             gitRepoForm.hidden = isManageMode;
@@ -30,9 +31,11 @@
         if (gitRepoTarget) {
             gitRepoTarget.textContent = entry ? entry.path : "";
         }
-        if (gitRepoTitle) {
-            gitRepoTitle.textContent = isManageMode ? "Git 리포지토리 관리" : "Git 리포지토리 생성";
-        }
+	        if (gitRepoTitle) {
+	            gitRepoTitle.textContent = isManageMode
+	                ? t("git_repo_manage_title", "Git 리포지토리 관리")
+	                : t("git_repo_create_title", "Git 리포지토리 생성");
+	        }
         if (gitRepoModal) {
             gitRepoModal._targetEntry = entry || null;
             gitRepoModal.hidden = false;

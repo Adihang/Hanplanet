@@ -73,7 +73,9 @@ ohmo --help</code></div>
             <li>Right-click the zip file and select <strong>Extract All</strong>, or use 7-Zip.</li>
             <li>Open <strong>PowerShell</strong> in the extracted folder (where <code>hanplanet.exe</code> is located) and add the folder to your PATH:
                 <div class="hanharness-code-block"><code>$p=$PWD.Path; if(([Environment]::GetEnvironmentVariable("Path","User")) -notlike "*$p*"){[Environment]::SetEnvironmentVariable("Path",([Environment]::GetEnvironmentVariable("Path","User"))+";"+$p,"User")}</code></div>
-                <p style="margin:6px 0 0; font-size:13px; color:var(--site-text-muted);">⚠️ PowerShell only — does not work in Command Prompt (cmd). Restart your terminal after running.</p>
+                <p style="margin:6px 0 0; font-size:13px; color:var(--site-text-muted);">If you are updating an existing installation, use this command to remove the old entry and register the new path:</p>
+                <div class="hanharness-code-block"><code>$n=$PWD.Path; [Environment]::SetEnvironmentVariable("Path",((([Environment]::GetEnvironmentVariable("Path","User")-split";")|Where-Object{$_ -notlike "*HanPlanet-CLI*"-and$_})+$n)-join";","User")</code></div>
+                <p style="margin:6px 0 0; font-size:13px; color:var(--site-text-muted);">⚠️ PowerShell only — does not work in Command Prompt (cmd).</p>
             </li>
             <li>Open <strong>PowerShell</strong> or <strong>Command Prompt</strong> in your desired project folder and run:
                 <div class="hanharness-code-block"><code>hanplanet</code></div>
@@ -176,7 +178,9 @@ ohmo --help</code></div>
             <li>zip 파일을 우클릭 후 <strong>모두 추출</strong>을 선택하거나 7-Zip으로 압축 해제합니다.</li>
             <li>압축 해제된 폴더(<code>hanplanet.exe</code>이 있는)에서 <strong>PowerShell</strong>을 열고 폴더를 PATH에 추가합니다:
                 <div class="hanharness-code-block"><code>$p=$PWD.Path; if(([Environment]::GetEnvironmentVariable("Path","User")) -notlike "*$p*"){[Environment]::SetEnvironmentVariable("Path",([Environment]::GetEnvironmentVariable("Path","User"))+";"+$p,"User")}</code></div>
-                <p style="margin:6px 0 0; font-size:13px; color:var(--site-text-muted);">⚠️ PowerShell 전용 명령어입니다. 명령 프롬프트(cmd)에서는 동작하지 않습니다. 실행 후 터미널을 재시작하세요.</p>
+                <p style="margin:6px 0 0; font-size:13px; color:var(--site-text-muted);">기존에 등록된 경로를 제거하고 새 경로로 재등록하는 경우:</p>
+                <div class="hanharness-code-block"><code>$n=$PWD.Path; [Environment]::SetEnvironmentVariable("Path",((([Environment]::GetEnvironmentVariable("Path","User")-split";")|Where-Object{$_ -notlike "*HanPlanet-CLI*"-and$_})+$n)-join";","User")</code></div>
+                <p style="margin:6px 0 0; font-size:13px; color:var(--site-text-muted);">⚠️ PowerShell 전용 명령어입니다. 명령 프롬프트(cmd)에서는 동작하지 않습니다.</p>
             </li>
             <li>원하는 프로젝트 폴더에서 <strong>PowerShell</strong> 또는 <strong>명령 프롬프트</strong>를 열고 실행합니다:
                 <div class="hanharness-code-block"><code>hanplanet</code></div>

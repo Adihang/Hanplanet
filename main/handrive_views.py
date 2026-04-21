@@ -7509,6 +7509,8 @@ def handrive_map_viewer(request, map_path, ui_lang=None):
         "shared_owner": shared_owner,
         "shared_slug": shared_slug,
         "hide_global_nav": True,
+        "map_collab_auth_url": "/api/map-collab-auth-token/",
+        "map_collab_enabled": request.user.is_authenticated or has_handrive_shared_read_access(request, normalized),
     })
     return render(request, "handrive/map_viewer.html", context)
 

@@ -94,6 +94,13 @@ body.map-editor-page {
     overflow: hidden;
 }
 
+/* Force arrow cursor on map viewer — override Leaflet's grab/hand defaults */
+body.map-viewer-page .leaflet-grab,
+body.map-viewer-page .leaflet-drag-target,
+body.map-viewer-page .leaflet-container {
+    cursor: default !important;
+}
+
 body.handrive-view-page {
     height: 100vh;
     height: 100dvh;

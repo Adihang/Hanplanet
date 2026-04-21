@@ -2187,6 +2187,107 @@ def game_auth_token(request, ui_lang=None):
     return response
 
 
+@require_http_methods(["GET"])
+def map_collab_auth_token(request, ui_lang=None):
+    """Issue a short-lived JWT for the map collaboration WebSocket server."""
+    resolve_ui_lang(request, ui_lang)
+    secret = str(getattr(settings, "GAME_JWT_SECRET", "") or "").strip()
+    if not secret:
+        return JsonResponse({"error": "game_jwt_secret_not_configured"}, status=503)
+    map_path = str(request.GET.get("map_path") or "").strip()
+    if not map_path:
+        return JsonResponse({"error": "map_path_required"}, status=400)
+    from .handrive_views import has_handrive_read_access, has_handrive_shared_read_access, normalize_relative_path
+    try:
+        normalized = normalize_relative_path(map_path, allow_empty=False)
+    except ValueError:
+        return JsonResponse({"error": "invalid_map_path"}, status=400)
+    shared_owner = str(request.GET.get("share_owner") or "").strip()
+    shared_slug_val = str(request.GET.get("share_slug") or "").strip()
+    if shared_owner and shared_slug_val:
+        setattr(request, "_handrive_shared_owner_username", shared_owner)
+        setattr(request, "_handrive_shared_slug", shared_slug_val)
+    if not has_handrive_read_access(request, normalized):
+        return JsonResponse({"error": "forbidden"}, status=403)
+    is_auth = request.user.is_authenticated
+    if is_auth:
+        token = build_game_auth_token(user=request.user, game_slug=f"map:{normalized}")
+    else:
+        if not request.session.session_key:
+            request.session.create()
+        token = build_game_auth_token(
+            subject=f"shared-{request.session.session_key[:16]}",
+            display_name="Guest",
+            is_guest=True,
+            game_slug=f"map:{normalized}",
+        )
+    host = (request.get_host() or "").split(":")[0].strip().lower()
+    is_local = host in {"localhost", "127.0.0.1"}
+    ws_url = str(
+        getattr(
+            settings,
+            "MAP_COLLAB_WS_LOCAL_URL" if is_local else "MAP_COLLAB_WS_PUBLIC_URL",
+            "ws://127.0.0.1:8083" if is_local else "wss://map-collab.hanplanet.com",
+        )
+        or ("ws://127.0.0.1:8083" if is_local else "wss://map-collab.hanplanet.com")
+    )
+    response = JsonResponse({"token": token, "ws_url": ws_url})
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    return response
+
+
+@require_http_methods(["POST"])
+def map_collab_presence(request, ui_lang=None):
+    """Presence ping — tracks viewers without a WS session. Returns room viewer count."""
+    resolve_ui_lang(request, ui_lang)
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"error": "invalid_json"}, status=400)
+    map_path = str(body.get("map_path") or "").strip()
+    if not map_path:
+        return JsonResponse({"error": "map_path_required"}, status=400)
+    from .handrive_views import has_handrive_read_access, normalize_relative_path
+    try:
+        normalized = normalize_relative_path(map_path, allow_empty=False)
+    except ValueError:
+        return JsonResponse({"error": "invalid_map_path"}, status=400)
+    shared_owner = str(body.get("shared_owner") or "").strip()
+    shared_slug_val = str(body.get("shared_slug") or "").strip()
+    if shared_owner and shared_slug_val:
+        setattr(request, "_handrive_shared_owner_username", shared_owner)
+        setattr(request, "_handrive_shared_slug", shared_slug_val)
+    has_access = has_handrive_read_access(request, normalized)
+    import logging as _logging; _logging.getLogger("django").warning(f"[collab-presence] map={normalized!r} user={getattr(request.user,'username','anon')!r} shared_owner={shared_owner!r} has_access={has_access}")
+    if not has_access:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    # tab_id makes each browser tab unique (same user in two tabs = two presence entries)
+    tab_id = str(body.get("tab_id") or "").strip()[:64]
+    if request.user.is_authenticated:
+        user_id = f"{request.user.username}:{tab_id}" if tab_id else str(request.user.username)
+    else:
+        if not request.session.session_key:
+            request.session.create()
+        user_id = f"shared-{request.session.session_key[:16]}:{tab_id}" if tab_id else f"shared-{request.session.session_key[:16]}"
+    admin_url = str(getattr(settings, "MAP_COLLAB_ADMIN_URL", "http://127.0.0.1:8084") or "http://127.0.0.1:8084")
+    try:
+        req = Request(
+            f"{admin_url}/presence",
+            data=json.dumps({"map_path": normalized, "user_id": user_id}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(req, timeout=2) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+    except Exception as _e:
+        import logging as _logging; _logging.getLogger("django").warning(f"[collab-presence] admin call failed: {_e!r}")
+        return JsonResponse({"count": 0})
+    count = int(result.get("count", 0))
+    import logging as _logging; _logging.getLogger("django").warning(f"[collab-presence] user_id={user_id!r} count={count}")
+    return JsonResponse({"count": count})
+
+
 def _is_local_internal_request(request):
     """Allow internal-only bumpercar stat updates from loopback requests."""
     remote_addr = str(request.META.get("REMOTE_ADDR") or "").strip()

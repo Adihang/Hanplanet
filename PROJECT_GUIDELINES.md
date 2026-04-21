@@ -32,6 +32,7 @@ PORT=8081 node server.js  # Dev (port 8080 is often occupied locally)
 |---------|--------------|------|---------|
 | Django (gunicorn) | `com.hanplanet.gunicorn` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.gunicorn` |
 | Game server | `com.hanplanet.bumpercar-spiky-server` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server` |
+| Map collab server | `com.hanplanet.map-collab-server` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.map-collab-server` |
 | Git server (Gitea) | `com.hanplanet.gitea` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.gitea` |
 | Celery worker | `com.hanplanet.celery` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.celery` |
 | Nginx | `com.hanplanet.nginx` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.nginx` |
@@ -42,6 +43,7 @@ PORT=8081 node server.js  # Dev (port 8080 is often occupied locally)
 **Plist 위치:**
 - `deploy/launchd/` — Django, Gitea, Celery, Nginx, 헬스체크 (저장소에 포함)
 - `bumpercar-spiky-server/deploy/launchd/` — 게임 서버
+- `map-collab-server/deploy/launchd/` — 맵 협업 서버
 - `~/Library/LaunchAgents/` only — HDD 마운트, HDD .DS_Store 정리 (저장소 미포함, 수동 설치)
 
 ### Django 변경 후 운영 적용

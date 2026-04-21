@@ -2175,6 +2175,7 @@ body.portfolio-page section {
     position: sticky;
     top: 0;
     z-index: var(--site-z-nav);
+    flex-shrink: 0;
     min-height: var(--site-common-header-min-height);
     padding: var(--site-nav-padding-y) 18px;
     border-bottom: none;

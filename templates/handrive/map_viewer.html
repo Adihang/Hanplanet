@@ -604,6 +604,32 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 .leaflet-control-zoom a.leaflet-control-zoom-out {
     border-top-width: 1px;
 }
+/* 선 그리기 토글 버튼 */
+.map-draw-toggle-control {
+    margin-top: 8px;
+}
+.map-draw-toggle-btn {
+    width: 30px;
+    height: 30px;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    background: var(--handrive-surface, #fff) !important;
+    color: var(--handrive-text, #222) !important;
+    cursor: pointer;
+    border: 1px solid var(--handrive-border, #e0e0e0) !important;
+    border-radius: 4px !important;
+}
+.map-draw-toggle-btn:hover {
+    background: var(--handrive-surface-subtle, #f5f5f5) !important;
+}
+.map-draw-toggle-btn.active {
+    background: #2563eb !important;
+    color: #fff !important;
+}
+body.map-viewer-page.draw-mode .leaflet-container {
+    touch-action: none !important;
+}
 /* 레이어 가시성 위젯 */
 .map-viewer-layers-widget {
     position: absolute;
@@ -718,6 +744,25 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 	                <a href="{{ handrive_list_url }}" class="handrive-icon-btn" title="목록으로" aria-label="목록으로"
 	                ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="15" x2="17" y2="15"/></svg></a>
 	                {% endif %}
+	                {% if map_collab_enabled %}
+	                <div id="map-collab-spinner" style="display:none;align-items:center;gap:5px;font-size:12px;padding:2px 8px;border-radius:12px;background:var(--handrive-surface,#fff);border:1px solid var(--handrive-border,#e0e0e0);color:var(--handrive-text,#222)" aria-label="협업 연결 중">
+	                    <div class="handrive-list-loading-spinner" style="width:10px;height:10px;border-width:1.5px;flex-shrink:0"></div>
+	                    <span>{% include 'partials/ui_i18n.html' with key='map_collab_connecting' %}</span>
+	                </div>
+	                <div style="position:relative">
+	                <button type="button" id="map-collab-indicator"
+	                    data-online-text="{% if ui_lang == 'en' %}Online{% else %}온라인{% endif %}"
+	                    data-offline-text="{% if ui_lang == 'en' %}Offline{% else %}오프라인{% endif %}"
+	                    data-members-header="{% if ui_lang == 'en' %}Collaborators{% else %}협업 중인 사용자{% endif %}"
+	                    data-no-peers-text="{% if ui_lang == 'en' %}No other collaborators{% else %}다른 협업자 없음{% endif %}"
+	                    data-me-suffix="{% if ui_lang == 'en' %} (me){% else %} (나){% endif %}"
+	                    style="display:flex;align-items:center;gap:4px;font-size:12px;padding:0 8px;height:30px;border-radius:12px;background:var(--handrive-surface,#fff);border:1px solid var(--handrive-border,#e0e0e0);color:var(--handrive-text,#222);cursor:pointer;line-height:1" aria-label="협업 상태">
+	                    <span id="map-collab-dot" style="width:8px;height:8px;border-radius:50%;background:#bbb;display:block;flex-shrink:0"></span>
+	                    <span id="map-collab-label">{% if ui_lang == 'en' %}Offline{% else %}오프라인{% endif %}</span>
+	                </button>
+	                <div id="map-collab-popup" style="display:none;position:absolute;top:calc(100% + 6px);right:0;min-width:160px;background:var(--handrive-surface,#fff);border:1px solid var(--handrive-border,#e0e0e0);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.14);padding:6px 0;z-index:9999"></div>
+	                </div>
+{% endif %}
 	            </div>
 	            {% include "partials/ui_controls_stack.html" %}
 	        </div>
@@ -752,6 +797,8 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
         data-map-path-for-share="{{ map_path }}"
         data-shared-owner="{{ shared_owner }}"
         data-shared-slug="{{ shared_slug }}"
+        data-collab-auth-url="{{ map_collab_auth_url }}"
+        data-collab-enabled="{{ map_collab_enabled|yesno:'true,false' }}"
     >
         <div class="map-loading-overlay" id="map-viewer-loading">
             <div class="handrive-list-loading-spinner"></div>
@@ -784,6 +831,8 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 </div>
 
 <script src="{% static_v 'js/vendor/leaflet.js' %}"></script>
+<script src="{% static_v 'js/vendor/msgpack.min.js' %}"></script>
+<script>var msgpack = window.MessagePack;</script>
 <script>
 (function () {
     "use strict";
@@ -1944,14 +1993,48 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
             crs: L.CRS.Simple,
             minZoom: -4,
             maxZoom: 4,
-            zoomSnap: 0.25,
+            zoomSnap: 0,
+            zoomDelta: 1,
+            wheelPxPerZoomLevel: 60,
             attributionControl: false,
             scrollWheelZoom: true,
-            touchZoom: false,
+            touchZoom: true,
             doubleClickZoom: true,
             zoomControl: false,
         });
         L.control.zoom({ position: "topright" }).addTo(map);
+        {% if map_collab_enabled %}
+        (function () {
+            // 전역 드로우 모드 상태 (collab IIFE에서 참조)
+            window._drawModeActive = false;
+            window._setDrawMode = function (active) {
+                window._drawModeActive = active;
+                document.body.classList.toggle("draw-mode", active);
+                var btn = document.getElementById("map-draw-toggle-btn");
+                if (btn) btn.classList.toggle("active", active);
+                if (!active && map.dragging && !map.dragging.enabled()) map.dragging.enable();
+            };
+
+            var topRight = map.getContainer().querySelector(".leaflet-top.leaflet-right");
+            if (!topRight) return;
+            var wrap = document.createElement("div");
+            wrap.className = "leaflet-control leaflet-bar map-draw-toggle-control";
+            var btn = document.createElement("a");
+            btn.className = "map-draw-toggle-btn";
+            btn.href = "#";
+            btn.id = "map-draw-toggle-btn";
+            btn.title = "선 그리기 모드";
+            btn.setAttribute("role", "button");
+            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
+            btn.addEventListener("click", function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                window._setDrawMode(!window._drawModeActive);
+            });
+            wrap.appendChild(btn);
+            topRight.appendChild(wrap);
+        })();
+        {% endif %}
         enableMapGestureZoom(map, document.getElementById("map-viewer-container"));
         var backgroundPane = map.createPane("imageBackgroundPane");
         backgroundPane.style.zIndex = "200";
@@ -2359,6 +2442,9 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                 });
             }
         }
+
+        // collab 등 map-ready 콜백 실행
+        if (window._onMapReady) window._onMapReady();
     }
 
     // 공유 팝업
@@ -2425,6 +2511,473 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
                 }
             });
         }
+    })();
+
+    // ── Map Collaboration ─────────────────────────────────────────────────
+    (function () {
+        "use strict";
+        var collabEnabled = container.dataset.collabEnabled === "true";
+        if (!collabEnabled) return;
+
+        var PALETTE = ["#e6194b","#3cb44b","#4363d8","#f58231","#911eb4","#42d4f4","#f032e6","#bfef45","#469990","#9A6324","#e6beff","#aaffc3"];
+        var CURSOR_THROTTLE_MS = 50, DRAW_THROTTLE_MS = 30, CURSOR_HIDE_MS = 5000;
+
+        // ── State ────────────────────────────────────────────────────────────
+        var ws = null, myId = null;
+        var myColor = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+        var peerState = {};
+        var wsActive = false, wsConnecting = false;
+        var retryCount = 0;
+        var presenceTimer = null;
+        var drawing = false, drawPoints = [], drawRawPoints = [];
+        var localLine = null;
+        var strokeLayers = [];
+        var lastCursorSent = 0, lastDrawSent = 0;
+
+        // ── Stroke weight (scales with zoom so lines look constant on the image) ──
+        var BASE_WEIGHT = 4.8;
+        var refZoom = null;  // lazily set on first use (map may be null at IIFE run time)
+        function getStrokeWeight() {
+            if (!map) return BASE_WEIGHT;
+            if (refZoom === null) refZoom = map.getZoom();
+            return Math.max(0.5, BASE_WEIGHT * Math.pow(2, map.getZoom() - refZoom));
+        }
+        // Register zoomend AFTER map is ready (called from initMap via window._onMapReady)
+        var _pendingStrokes = [];
+        var _prevOnMapReady = window._onMapReady || null;
+        window._onMapReady = function () {
+            if (_prevOnMapReady) _prevOnMapReady();
+            refZoom = map.getZoom();
+            for (var i = 0; i < _pendingStrokes.length; i++) {
+                renderStroke(_pendingStrokes[i].color, _pendingStrokes[i].points);
+            }
+            _pendingStrokes = [];
+            map.on("zoomend", function () {
+                var w = getStrokeWeight();
+                for (var i = 0; i < strokeLayers.length; i++) {
+                    if (map.hasLayer(strokeLayers[i])) strokeLayers[i].setStyle({ weight: w });
+                }
+                if (localLine) localLine.setStyle({ weight: w });
+                for (var id in peerState) {
+                    if (peerState[id].line) peerState[id].line.setStyle({ weight: w });
+                }
+            });
+        };
+
+        // ── Coord helpers ────────────────────────────────────────────────────
+        function containerToPixel(clientX, clientY) {
+            var rect = container.getBoundingClientRect();
+            var ll = map.containerPointToLatLng(L.point(clientX - rect.left, clientY - rect.top));
+            return { x: ll.lng, y: ll.lat };
+        }
+        function pixelLL(x, y) { return L.latLng(y, x); }
+
+        // ── Send helper ──────────────────────────────────────────────────────
+        function send(obj) {
+            if (ws && ws.readyState === 1) try { ws.send(JSON.stringify(obj)); } catch (_) {}
+        }
+
+        // ── Input events (always active — drawing works even solo) ───────────
+        container.addEventListener("pointerdown", function (e) {
+            if (e.button !== 0) return;
+            if (!window._drawModeActive) return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            drawing = true;
+            drawPoints = [];
+            drawRawPoints = [];
+            localLine = null;
+            if (map.dragging && map.dragging.enabled()) map.dragging.disable();
+        }, true);
+
+        container.addEventListener("pointermove", function (e) {
+            if (!map) return;
+            var px = containerToPixel(e.clientX, e.clientY);
+            var now = Date.now();
+            if (drawing) {
+                drawPoints.push(pixelLL(px.x, px.y));
+                drawRawPoints.push({ x: px.x, y: px.y });
+                if (!localLine) {
+                    localLine = L.polyline(drawPoints, { color: myColor, weight: getStrokeWeight(), opacity: 0.85, interactive: false }).addTo(map);
+                } else {
+                    localLine.setLatLngs(drawPoints);
+                }
+                if (wsActive && now - lastDrawSent >= DRAW_THROTTLE_MS) {
+                    lastDrawSent = now;
+                    send({ type: "draw_point", x: px.x, y: px.y });
+                }
+            } else {
+                if (wsActive && now - lastCursorSent >= CURSOR_THROTTLE_MS) {
+                    lastCursorSent = now;
+                    send({ type: "cursor", x: px.x, y: px.y });
+                }
+            }
+        });
+
+        function endDraw(cancel) {
+            if (!drawing) return;
+            drawing = false;
+            if (map.dragging && !map.dragging.enabled()) map.dragging.enable();
+            var finishedLine = localLine;
+            localLine = null;
+            if (cancel || drawPoints.length < 2) {
+                if (finishedLine) map.removeLayer(finishedLine);
+                if (wsActive) send({ type: "draw_cancel" });
+            } else {
+                if (wsActive) {
+                    if (finishedLine) map.removeLayer(finishedLine);
+                    send({ type: "draw_end", points: drawRawPoints });
+                } else {
+                    if (finishedLine) strokeLayers.push(finishedLine);
+                }
+            }
+            drawPoints = [];
+            drawRawPoints = [];
+        }
+
+        container.addEventListener("pointerup", function (e) { if (e.button === 0) endDraw(false); });
+        container.addEventListener("pointerleave", function () { endDraw(true); });
+        document.addEventListener("keydown", function (e) {
+            if (e.key === "Escape") {
+                if (drawing) endDraw(true);
+                else if (window._drawModeActive && window._setDrawMode) window._setDrawMode(false);
+            }
+        });
+
+        // collab IIFE가 window._setDrawMode를 확장해서 endDraw도 처리
+        var _baseSdm = window._setDrawMode;
+        if (_baseSdm) {
+            window._setDrawMode = function (active) {
+                if (!active && drawing) endDraw(true);
+                _baseSdm(active);
+            };
+        }
+
+        // ── Right-click: remove nearest stroke (hit-test in pixel space) ─────
+        function ptSegDistSq(px, py, ax, ay, bx, by) {
+            var dx = bx - ax, dy = by - ay, lenSq = dx*dx + dy*dy;
+            if (lenSq === 0) return (px-ax)*(px-ax) + (py-ay)*(py-ay);
+            var t = Math.max(0, Math.min(1, ((px-ax)*dx + (py-ay)*dy) / lenSq));
+            var rx = px - ax - t*dx, ry = py - ay - t*dy;
+            return rx*rx + ry*ry;
+        }
+        container.addEventListener("contextmenu", function (e) {
+            e.preventDefault();
+            if (drawing) { endDraw(true); return; }
+            if (window._drawModeActive && window._setDrawMode) { window._setDrawMode(false); return; }
+            var rect = container.getBoundingClientRect();
+            var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+            var HIT_PX = 15, bestDist = HIT_PX * HIT_PX, bestIdx = -1;
+            for (var i = 0; i < strokeLayers.length; i++) {
+                var pl = strokeLayers[i];
+                if (!map.hasLayer(pl)) continue;
+                var lls = pl.getLatLngs();
+                for (var j = 0; j < lls.length - 1; j++) {
+                    var a = map.latLngToContainerPoint(lls[j]);
+                    var b = map.latLngToContainerPoint(lls[j + 1]);
+                    var d = ptSegDistSq(cx, cy, a.x, a.y, b.x, b.y);
+                    if (d < bestDist) { bestDist = d; bestIdx = i; }
+                }
+            }
+            if (bestIdx >= 0) {
+                map.removeLayer(strokeLayers[bestIdx]);
+                strokeLayers.splice(bestIdx, 1);
+            }
+        }, true);
+
+        // ── WS/presence requires msgpack ─────────────────────────────────────
+        var collabAuthUrl = container.dataset.collabAuthUrl || "";
+        if (!collabAuthUrl || typeof msgpack === "undefined") return;
+
+        var PRESENCE_INTERVAL_MS = 5000, PRESENCE_INTERVAL_ACTIVE_MS = 15000;
+        var PRESENCE_URL = "/api/map-collab-presence/";
+        var TAB_ID = Math.random().toString(36).slice(2, 10);
+        var sharedOwner = container.dataset.sharedOwner || "";
+        var sharedSlug = container.dataset.sharedSlug || "";
+
+        var myDisplayName = "";
+        var myGuestNum = null;
+
+        // ── UI helpers ───────────────────────────────────────────────────────
+        function showSpinner() {
+            var spinner = document.getElementById("map-collab-spinner");
+            var ind = document.getElementById("map-collab-indicator");
+            if (spinner) spinner.style.display = "flex";
+            if (ind) ind.style.display = "none";
+        }
+        function hideSpinner() {
+            var el = document.getElementById("map-collab-spinner");
+            if (el) el.style.display = "none";
+        }
+        function setIndicatorOnline() {
+            hideSpinner();
+            var ind = document.getElementById("map-collab-indicator");
+            var dot = document.getElementById("map-collab-dot");
+            var label = document.getElementById("map-collab-label");
+            if (!ind) return;
+            if (dot) dot.style.background = "#3cb44b";
+            if (label) label.textContent = (ind.dataset.onlineText || "온라인");
+            ind.style.display = "flex";
+        }
+        function setIndicatorOffline() {
+            hideSpinner();
+            var ind = document.getElementById("map-collab-indicator");
+            var dot = document.getElementById("map-collab-dot");
+            var label = document.getElementById("map-collab-label");
+            if (!ind) return;
+            if (dot) dot.style.background = "#bbb";
+            if (label) label.textContent = (ind.dataset.offlineText || "오프라인");
+            ind.style.display = "flex";
+            closeCollabPopup();
+        }
+        function showIndicator() { setIndicatorOnline(); }
+
+        // ── Collab popup ──────────────────────────────────────────────────────
+        function buildCollabPopup() {
+            var ind = document.getElementById("map-collab-indicator");
+            var popup = document.getElementById("map-collab-popup");
+            if (!ind || !popup) return;
+            var header = ind.dataset.membersHeader || "협업 중인 사용자";
+            var noPeersText = ind.dataset.noPeersText || "다른 협업자 없음";
+            var meSuffix = ind.dataset.meSuffix || " (나)";
+            var html = '<div style="padding:4px 12px 6px;font-size:11px;color:#888;white-space:nowrap">' + escHtml(header) + '</div>';
+            var entries = [];
+            if (myId) {
+                var myIsGuest = myId.indexOf("shared-") === 0;
+                var myLabel = myIsGuest ? "guest-" + (myGuestNum != null ? myGuestNum : "?") : (myDisplayName || myId);
+                entries.push({ color: myColor, name: myLabel + meSuffix });
+            }
+            for (var id in peerState) {
+                var p = peerState[id];
+                entries.push({ color: p.color, name: getLabelForPeer(id, p.displayName) });
+            }
+            if (entries.length === 0) {
+                html += '<div style="padding:4px 12px;font-size:12px;color:#888">' + escHtml(noPeersText) + '</div>';
+            } else {
+                for (var i = 0; i < entries.length; i++) {
+                    html += '<div style="display:flex;align-items:center;gap:7px;padding:4px 12px;font-size:12px;white-space:nowrap">'
+                        + '<span style="width:9px;height:9px;border-radius:50%;background:' + escHtml(entries[i].color) + ';flex-shrink:0;display:block"></span>'
+                        + '<span>' + escHtml(entries[i].name) + '</span>'
+                        + '</div>';
+                }
+            }
+            popup.innerHTML = html;
+        }
+        function openCollabPopup() {
+            var popup = document.getElementById("map-collab-popup");
+            if (!popup) return;
+            buildCollabPopup();
+            popup.style.display = "block";
+        }
+        function closeCollabPopup() {
+            var popup = document.getElementById("map-collab-popup");
+            if (popup) popup.style.display = "none";
+        }
+        (function () {
+            var ind = document.getElementById("map-collab-indicator");
+            if (!ind) return;
+            ind.addEventListener("click", function (e) {
+                e.stopPropagation();
+                var popup = document.getElementById("map-collab-popup");
+                if (popup && popup.style.display !== "none") {
+                    closeCollabPopup();
+                } else {
+                    openCollabPopup();
+                }
+            });
+            document.addEventListener("click", function () { closeCollabPopup(); });
+        })();
+
+        // ── Presence polling ─────────────────────────────────────────────────
+        function getCsrfToken() {
+            return (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
+        }
+
+        function pingPresence() {
+            fetch(PRESENCE_URL, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRFToken": getCsrfToken(),
+                },
+                body: JSON.stringify({ map_path: mapPath, tab_id: TAB_ID, shared_owner: sharedOwner, shared_slug: sharedSlug }),
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.count >= 2 && !wsActive && !wsConnecting) {
+                    wsConnecting = true;
+                    clearInterval(presenceTimer);
+                    showSpinner();
+                    fetchToken(connect);
+                }
+            })
+            .catch(function () {});
+        }
+
+        // ── Auth & WS connect ────────────────────────────────────────────────
+        function fetchToken(cb) {
+            var authUrl = collabAuthUrl + "?map_path=" + encodeURIComponent(mapPath);
+            if (sharedOwner) authUrl += "&share_owner=" + encodeURIComponent(sharedOwner) + "&share_slug=" + encodeURIComponent(sharedSlug);
+            fetch(authUrl, {
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { if (d.token && d.ws_url) cb(d.token, d.ws_url); })
+            .catch(function () { wsConnecting = false; hideSpinner(); restartPresence(); });
+        }
+
+        function connect(token, wsUrl) {
+            if (ws && ws.readyState < 2) ws.close();
+            ws = new WebSocket(wsUrl + "?token=" + encodeURIComponent(token));
+            ws.binaryType = "arraybuffer";
+            ws.onmessage = function (e) {
+                var msg;
+                try { msg = msgpack.decode(new Uint8Array(e.data)); } catch (_) { return; }
+                retryCount = 0;
+                onMsg(msg);
+            };
+            ws.onclose = function (e) {
+                wsActive = false;
+                wsConnecting = false;
+                setIndicatorOffline();
+                restartPresence();
+                if (e.code === 4001 || e.code === 4003) return;
+                var delay = Math.min(3000 * Math.pow(2, retryCount++), 30000);
+                setTimeout(function () {
+                    wsConnecting = true;
+                    showSpinner();
+                    fetchToken(connect);
+                }, delay);
+            };
+            ws.onerror = function () {};
+        }
+
+        function restartPresence() {
+            clearInterval(presenceTimer);
+            presenceTimer = setInterval(pingPresence, wsActive ? PRESENCE_INTERVAL_ACTIVE_MS : PRESENCE_INTERVAL_MS);
+        }
+
+        // ── Peer rendering ───────────────────────────────────────────────────
+        var peerJoinCounter = 0;
+
+        function getLabelForPeer(id, displayName) {
+            var p = peerState[id];
+            var isGuest = id.indexOf("shared-") === 0;
+            if (isGuest) return "guest-" + (p && p.guestNum != null ? p.guestNum : "?");
+            return (displayName || (p && p.displayName) || id);
+        }
+
+        function cursorHtml(color, label) {
+            return '<div style="position:relative;display:inline-block;pointer-events:none">'
+                + '<span style="position:absolute;left:50%;top:-16px;white-space:nowrap;font-size:10px;font-weight:600;line-height:1;color:' + escHtml(color) + ';text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff">' + escHtml(label) + '</span>'
+                + '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="20" viewBox="0 0 16 20">'
+                + '<path d="M0 0L0 16L4 12L7 19L9 18L6 11L11 11Z" fill="' + color + '" stroke="#fff" stroke-width="1"/>'
+                + '</svg>'
+                + '</div>';
+        }
+
+        function ensurePeer(id, color, displayName, guestNum) {
+            if (!peerState[id]) {
+                peerState[id] = { marker: null, line: null, drawPts: [], color: color || "#999", displayName: displayName || id, guestNum: guestNum != null ? guestNum : null, hideTimer: null };
+            } else {
+                if (displayName) peerState[id].displayName = displayName;
+                if (guestNum != null) peerState[id].guestNum = guestNum;
+            }
+            return peerState[id];
+        }
+
+        function moveCursor(id, color, x, y) {
+            if (!map) return;
+            var p = ensurePeer(id, color);
+            var ll = pixelLL(x, y);
+            if (!p.marker) {
+                var label = getLabelForPeer(id, p.displayName);
+                p.marker = L.marker(ll, {
+                    icon: L.divIcon({ html: cursorHtml(p.color, label), className: "", iconSize: null, iconAnchor: [0, 0] }),
+                    interactive: false, zIndexOffset: 1000,
+                }).addTo(map);
+            } else {
+                p.marker.setLatLng(ll);
+            }
+            if (p.marker._icon) p.marker._icon.style.opacity = "1";
+            clearTimeout(p.hideTimer);
+            p.hideTimer = setTimeout(function () {
+                if (p.marker && p.marker._icon) p.marker._icon.style.opacity = "0";
+            }, CURSOR_HIDE_MS);
+        }
+
+        function addDrawPt(id, color, x, y) {
+            if (!map) return;
+            var p = ensurePeer(id, color);
+            p.drawPts.push(pixelLL(x, y));
+            if (!p.line) {
+                p.line = L.polyline(p.drawPts, { color: p.color, weight: getStrokeWeight(), opacity: 0.85, interactive: false }).addTo(map);
+            } else {
+                p.line.setLatLngs(p.drawPts);
+            }
+            moveCursor(id, color, x, y);
+        }
+
+        function finalizeStroke(id, color, points) {
+            var p = ensurePeer(id, color);
+            if (p.line) { map.removeLayer(p.line); p.line = null; }
+            p.drawPts = [];
+            renderStroke(color, points);
+        }
+
+        function cancelDraw(id) {
+            var p = peerState[id]; if (!p) return;
+            if (p.line) { map.removeLayer(p.line); p.line = null; }
+            p.drawPts = [];
+        }
+
+        function renderStroke(color, points) {
+            if (!points || points.length < 2) return;
+            if (!map) { _pendingStrokes.push({ color: color, points: points }); return; }
+            var pl = L.polyline(
+                points.map(function (pt) { return pixelLL(pt.x, pt.y); }),
+                { color: color, weight: getStrokeWeight(), opacity: 0.8, interactive: false }
+            ).addTo(map);
+            strokeLayers.push(pl);
+        }
+
+        function removePeer(id) {
+            var p = peerState[id]; if (!p) return;
+            clearTimeout(p.hideTimer);
+            if (p.marker) map.removeLayer(p.marker);
+            if (p.line) map.removeLayer(p.line);
+            delete peerState[id];
+        }
+
+        // ── Message handler ──────────────────────────────────────────────────
+        function onMsg(msg) {
+            switch (msg.type) {
+                case "welcome":
+                    myId = msg.id;
+                    myColor = msg.color;
+                    myDisplayName = msg.displayName || myId;
+                    myGuestNum = msg.guestNum != null ? msg.guestNum : null;
+                    if (localLine) localLine.setStyle({ color: myColor });
+                    wsActive = true;
+                    wsConnecting = false;
+                    (msg.peers || []).forEach(function (p) { ensurePeer(p.id, p.color, p.displayName, p.guestNum); });
+                    (msg.strokes || []).forEach(function (s) { renderStroke(s.color, s.points); });
+                    showIndicator();
+                    restartPresence();
+                    break;
+                case "peer_joined": ensurePeer(msg.id, msg.color, msg.displayName, msg.guestNum); break;
+                case "peer_left":    removePeer(msg.id); break;
+                case "peer_cursor":  moveCursor(msg.id, msg.color, msg.x, msg.y); break;
+                case "peer_draw_point": addDrawPt(msg.id, msg.color, msg.x, msg.y); break;
+                case "peer_draw_end":   finalizeStroke(msg.id, msg.color, msg.points); break;
+                case "peer_draw_cancel": cancelDraw(msg.id); break;
+            }
+        }
+
+        // ── Start presence polling ───────────────────────────────────────────
+        pingPresence();
+        restartPresence();
     })();
 
     if (backgroundSelect) {

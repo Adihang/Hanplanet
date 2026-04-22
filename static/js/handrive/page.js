@@ -6466,7 +6466,12 @@
             let listPreviewFontSize = 16;
             previewContent.addEventListener("wheel", function (event) {
                 if (!event.ctrlKey && !event.metaKey) return;
-                if (previewContent.classList.contains("handrive-media")) return;
+                if (previewContent.classList.contains("handrive-media")) {
+                    event.preventDefault();
+                    const delta = event.deltaY < 0 ? 0.15 : -0.15;
+                    setPreviewImageZoom(state.previewImageZoom + delta);
+                    return;
+                }
                 event.preventDefault();
                 const delta = event.deltaY < 0 ? 2 : -2;
                 listPreviewFontSize = Math.max(8, Math.min(40, listPreviewFontSize + delta));
@@ -6693,7 +6698,14 @@
             }
 
             event.preventDefault();
-            enqueueUploadFiles(files, state.currentDir).catch(alertError);
+            var pasteTargetDir = state.currentDir;
+            if (state.selectedPaths.size === 1) {
+                var selectedEntries = getSelectedEntries();
+                if (selectedEntries.length === 1 && selectedEntries[0].type === "dir") {
+                    pasteTargetDir = normalizePath(selectedEntries[0].path, true);
+                }
+            }
+            enqueueUploadFiles(files, pasteTargetDir).catch(alertError);
         });
 
         if (uploadQueueToggleButton) {
@@ -6947,18 +6959,21 @@
         }
 
         function syncViewImageZoom() {
-            const imageElement = getViewImageElement();
             const imageWrap = contentArticle
                 ? contentArticle.querySelector(".handrive-media-image-wrap")
                 : null;
-            const hasImage = Boolean(imageElement && imageWrap && contentArticle && contentArticle.classList.contains("handrive-media"));
+            const videoWrap = contentArticle
+                ? contentArticle.querySelector(".handrive-media-video-wrap")
+                : null;
+            const mediaWrap = imageWrap || videoWrap;
+            const hasMedia = Boolean(mediaWrap && contentArticle && contentArticle.classList.contains("handrive-media"));
             if (viewZoomWrap) {
-                viewZoomWrap.hidden = !hasImage;
+                viewZoomWrap.hidden = !hasMedia;
             }
-            if (!hasImage || !imageWrap) {
+            if (!hasMedia || !mediaWrap) {
                 return;
             }
-            imageWrap.style.transform = "scale(" + String(viewImageZoom) + ")";
+            mediaWrap.style.transform = "scale(" + String(viewImageZoom) + ")";
             if (contentArticle) {
                 contentArticle.scrollLeft = 0;
                 contentArticle.scrollTop = 0;
@@ -6975,7 +6990,7 @@
             if (!naturalWidth) {
                 return 0.5;
             }
-            return Math.max(0.05, Math.min(1, availableWidth / naturalWidth));
+            return Math.max(0.05, Math.min(0.1, availableWidth / naturalWidth));
         }
 
         function setViewImageZoom(nextZoom) {
@@ -7022,6 +7037,13 @@
                 const delta = event.deltaY < 0 ? 2 : -2;
                 viewTextFontSize = Math.max(8, Math.min(40, viewTextFontSize + delta));
                 contentArticle.style.setProperty("--handrive-text-font-size", viewTextFontSize + "px");
+            }, { passive: false });
+        } else if (contentArticle && contentArticle.classList.contains("handrive-media")) {
+            contentArticle.addEventListener("wheel", function (event) {
+                if (!event.ctrlKey && !event.metaKey) return;
+                event.preventDefault();
+                const delta = event.deltaY < 0 ? 0.15 : -0.15;
+                setViewImageZoom(viewImageZoom + delta);
             }, { passive: false });
         }
 

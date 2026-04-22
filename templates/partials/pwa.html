@@ -31,11 +31,11 @@
         };
 
         var showInstallFallbackGuide = function () {
-            var message = '브라우저 메뉴에서 "홈 화면에 추가" 또는 "앱 설치"를 선택해 주세요.';
+            var message = {% if ui_lang == 'en' %}'Please select "Add to Home Screen" or "Install App" from the browser menu.'{% else %}'브라우저 메뉴에서 "홈 화면에 추가" 또는 "앱 설치"를 선택해 주세요.'{% endif %};
             var ua = (window.navigator.userAgent || '').toLowerCase();
             var isIOS = /iphone|ipad|ipod/.test(ua);
             if (isIOS) {
-                message = 'Safari에서 공유 버튼을 누른 뒤 "홈 화면에 추가"를 선택해 주세요.';
+                message = {% if ui_lang == 'en' %}'In Safari, tap the share button then select "Add to Home Screen".'{% else %}'Safari에서 공유 버튼을 누른 뒤 "홈 화면에 추가"를 선택해 주세요.'{% endif %};
             }
             window.alert(message);
         };

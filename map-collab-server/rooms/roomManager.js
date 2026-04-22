@@ -30,7 +30,7 @@ const rooms = new Map()
 
 function getOrCreateRoom(mapPath) {
     if (!rooms.has(mapPath)) {
-        rooms.set(mapPath, { clients: new Map(), strokes: [], lastActive: Date.now(), guestCounter: 0 })
+        rooms.set(mapPath, { clients: new Map(), strokes: [], texts: [], lastActive: Date.now(), guestCounter: 0, strokeCounter: 0, textCounter: 0 })
     }
     return rooms.get(mapPath)
 }
@@ -55,7 +55,7 @@ function joinRoom(mapPath, ws, { userId, displayName }) {
     for (const c of room.clients.values()) {
         if (c.userId !== userId) peers.push({ id: c.userId, displayName: c.displayName, color: c.color, guestNum: c.guestNum })
     }
-    return { color, guestNum, strokes: room.strokes, peers }
+    return { color, guestNum, strokes: room.strokes, texts: room.texts, peers }
 }
 
 function getClientRef(mapPath, ws) {
@@ -96,13 +96,60 @@ function broadcastToRoom(mapPath, senderWs, payload, { includeSelf = false } = {
 
 function addStroke(mapPath, stroke) {
     const room = rooms.get(mapPath)
-    if (!room) return
-    room.strokes.push(stroke)
+    if (!room) return null
+    const hasRequestedId = stroke.strokeId !== undefined && stroke.strokeId !== null && stroke.strokeId !== ""
+    const strokeId = hasRequestedId ? stroke.strokeId : ++room.strokeCounter
+    if (typeof strokeId === "number" && strokeId > room.strokeCounter) room.strokeCounter = strokeId
+    const existingIdx = room.strokes.findIndex(s => s.strokeId === strokeId)
+    if (existingIdx >= 0) room.strokes.splice(existingIdx, 1)
+    room.strokes.push({ ...stroke, strokeId })
     if (room.strokes.length > 100) room.strokes.shift()
+    return strokeId
+}
+
+function removeStroke(mapPath, strokeId) {
+    const room = rooms.get(mapPath)
+    if (!room) return false
+    const idx = room.strokes.findIndex(s => s.strokeId === strokeId)
+    if (idx === -1) return false
+    room.strokes.splice(idx, 1)
+    return true
+}
+
+function upsertText(mapPath, text) {
+    const room = rooms.get(mapPath)
+    if (!room) return null
+    const textId = String(text.textId || `t${++room.textCounter}`)
+    const normalized = {
+        textId,
+        userId: text.userId,
+        color: text.color,
+        x: Number(text.x) || 0,
+        y: Number(text.y) || 0,
+        w: Math.max(10, Number(text.w) || 540),
+        h: Math.max(10, Number(text.h) || 210),
+        text: String(text.text || "").slice(0, 2000),
+    }
+    const idx = room.texts.findIndex(t => t.textId === textId)
+    if (idx >= 0) room.texts[idx] = { ...room.texts[idx], ...normalized }
+    else {
+        room.texts.push(normalized)
+        if (room.texts.length > 100) room.texts.shift()
+    }
+    return normalized
+}
+
+function removeText(mapPath, textId) {
+    const room = rooms.get(mapPath)
+    if (!room) return false
+    const idx = room.texts.findIndex(t => t.textId === textId)
+    if (idx === -1) return false
+    room.texts.splice(idx, 1)
+    return true
 }
 
 function getClient(ws) {
     return ws._client || null
 }
 
-module.exports = { joinRoom, leaveRoom, broadcastToRoom, addStroke, getClient, getClientRef, updatePresence, getPresenceCount }
+module.exports = { joinRoom, leaveRoom, broadcastToRoom, addStroke, removeStroke, upsertText, removeText, getClient, getClientRef, updatePresence, getPresenceCount }

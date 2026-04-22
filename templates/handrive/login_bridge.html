@@ -196,34 +196,32 @@
     <section class="oauth-authorize-shell">
         <div class="oauth-authorize-card">
             {% if connected %}
-                <span class="oauth-authorize-kicker">앱 연결</span>
+                <span class="oauth-authorize-kicker">{% if ui_lang == 'en' %}App Connection{% else %}앱 연결{% endif %}</span>
                 {% if cancelled %}
-                    <h1 class="oauth-authorize-title">연결 취소</h1>
+                    <h1 class="oauth-authorize-title">{% if ui_lang == 'en' %}Connection Cancelled{% else %}연결 취소{% endif %}</h1>
                     <p class="oauth-authorize-lead">
-                        연결이 취소됐습니다.<br>
-                        이 창을 닫아도 됩니다.
+                        {% if ui_lang == 'en' %}The connection was cancelled.<br>You may close this window.{% else %}연결이 취소됐습니다.<br>이 창을 닫아도 됩니다.{% endif %}
                     </p>
                 {% else %}
-                    <h1 class="oauth-authorize-title">연결 완료!</h1>
+                    <h1 class="oauth-authorize-title">{% if ui_lang == 'en' %}Connected!{% else %}연결 완료!{% endif %}</h1>
                     <p class="oauth-authorize-lead">
-                        {{ user.username }}님의 계정이 연결됐습니다.<br>
-                        이 창을 닫아도 됩니다.
+                        {% if ui_lang == 'en' %}{{ user.username }}'s account has been connected.<br>You may close this window.{% else %}{{ user.username }}님의 계정이 연결됐습니다.<br>이 창을 닫아도 됩니다.{% endif %}
                     </p>
                 {% endif %}
             {% elif state %}
-                <span class="oauth-authorize-kicker">앱 연결</span>
-                <h1 class="oauth-authorize-title">{{ client_name }} 연결</h1>
+                <span class="oauth-authorize-kicker">{% if ui_lang == 'en' %}App Connection{% else %}앱 연결{% endif %}</span>
+                <h1 class="oauth-authorize-title">{% if ui_lang == 'en' %}Connect {{ client_name }}{% else %}{{ client_name }} 연결{% endif %}</h1>
                 <p class="oauth-authorize-lead">
-                    이 앱이 내 Hanplanet 계정에 접근하려고 합니다.
+                    {% if ui_lang == 'en' %}This app is requesting access to your Hanplanet account.{% else %}이 앱이 내 Hanplanet 계정에 접근하려고 합니다.{% endif %}
                 </p>
 
-                <div class="oauth-authorize-app" aria-label="앱">
-                    <span class="oauth-authorize-app-label">앱</span>
+                <div class="oauth-authorize-app" aria-label="{% if ui_lang == 'en' %}App{% else %}앱{% endif %}">
+                    <span class="oauth-authorize-app-label">{% if ui_lang == 'en' %}App{% else %}앱{% endif %}</span>
                     <div class="oauth-authorize-app-name">{{ client_name }}</div>
                 </div>
 
-                <div class="oauth-authorize-app" aria-label="계정">
-                    <span class="oauth-authorize-app-label">계정</span>
+                <div class="oauth-authorize-app" aria-label="{% if ui_lang == 'en' %}Account{% else %}계정{% endif %}">
+                    <span class="oauth-authorize-app-label">{% if ui_lang == 'en' %}Account{% else %}계정{% endif %}</span>
                     <div class="oauth-authorize-app-name">{{ user.username }}</div>
                 </div>
 
@@ -231,8 +229,8 @@
                     {% csrf_token %}
                     <input type="hidden" name="state" value="{{ state }}">
                     <div class="oauth-authorize-actions">
-                        <button type="button" id="btn-cancel" class="ui-btn">취소</button>
-                        <button type="button" id="btn-allow" class="ui-btn ui-btn-primary">연결</button>
+                        <button type="button" id="btn-cancel" class="ui-btn">{% if ui_lang == 'en' %}Cancel{% else %}취소{% endif %}</button>
+                        <button type="button" id="btn-allow" class="ui-btn ui-btn-primary">{% if ui_lang == 'en' %}Connect{% else %}연결{% endif %}</button>
                     </div>
                 </form>
                 <div id="oauth-result" style="display:none; margin-top:18px;">
@@ -264,11 +262,11 @@
                             });
                         } catch (e) {}
                         if (action === 'allow') {
-                            resultTitle.textContent = '연결 완료!';
-                            resultBody.textContent = '계정이 연결됐습니다. 이 창을 닫아도 됩니다.';
+                            resultTitle.textContent = '{% if ui_lang == "en" %}Connected!{% else %}연결 완료!{% endif %}';
+                            resultBody.textContent = '{% if ui_lang == "en" %}Account connected. You may close this window.{% else %}계정이 연결됐습니다. 이 창을 닫아도 됩니다.{% endif %}';
                         } else {
-                            resultTitle.textContent = '연결 취소';
-                            resultBody.textContent = '연결이 취소됐습니다. 이 창을 닫아도 됩니다.';
+                            resultTitle.textContent = '{% if ui_lang == "en" %}Connection Cancelled{% else %}연결 취소{% endif %}';
+                            resultBody.textContent = '{% if ui_lang == "en" %}The connection was cancelled. You may close this window.{% else %}연결이 취소됐습니다. 이 창을 닫아도 됩니다.{% endif %}';
                         }
                         form.style.display = 'none';
                         result.style.display = '';
@@ -279,11 +277,10 @@
                 })();
                 </script>
             {% else %}
-                <span class="oauth-authorize-kicker">앱 연결</span>
-                <h1 class="oauth-authorize-title">{{ user.username }}님, 안녕하세요!</h1>
+                <span class="oauth-authorize-kicker">{% if ui_lang == 'en' %}App Connection{% else %}앱 연결{% endif %}</span>
+                <h1 class="oauth-authorize-title">{% if ui_lang == 'en' %}Hello, {{ user.username }}!{% else %}{{ user.username }}님, 안녕하세요!{% endif %}</h1>
                 <p class="oauth-authorize-lead">
-                    HanDrive 데스크톱 앱에서 로그인 요청이 없습니다.<br>
-                    앱의 설정 → <strong>다시 로그인</strong> 버튼을 눌러 주세요.
+                    {% if ui_lang == 'en' %}No login request from the HanDrive desktop app.<br>Please click the <strong>Re-login</strong> button in the app settings.{% else %}HanDrive 데스크톱 앱에서 로그인 요청이 없습니다.<br>앱의 설정 → <strong>다시 로그인</strong> 버튼을 눌러 주세요.{% endif %}
                 </p>
             {% endif %}
         </div>

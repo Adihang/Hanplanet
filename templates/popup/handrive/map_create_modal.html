@@ -1,15 +1,15 @@
 <div id="handrive-map-create-modal" class="handrive-rename-modal" hidden>
     <div class="handrive-rename-modal-backdrop" id="handrive-map-create-modal-backdrop"></div>
     <div class="handrive-rename-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-map-create-title">
-        <h3 id="handrive-map-create-title" class="handrive-rename-title">지도 제작</h3>
+        <h3 id="handrive-map-create-title" class="handrive-rename-title">{{ handrive_text.map_create_title }}</h3>
         <div class="handrive-rename-target" id="handrive-map-create-target"></div>
         <label class="handrive-field handrive-field-full">
-            <span>지도명</span>
+            <span>{{ handrive_text.map_create_name_label }}</span>
             <input type="text" id="handrive-map-create-input" placeholder="{{ handrive_text.map_create_placeholder }}" autocomplete="off" spellcheck="false">
         </label>
         <div class="handrive-rename-actions" style="padding-top:12px;">
-            <button type="button" class="ui-btn" id="handrive-map-create-cancel-btn">취소</button>
-            <button type="button" class="ui-btn ui-btn-primary" id="handrive-map-create-confirm-btn">지도 만들기</button>
+            <button type="button" class="ui-btn" id="handrive-map-create-cancel-btn">{{ handrive_text.cancel }}</button>
+            <button type="button" class="ui-btn ui-btn-primary" id="handrive-map-create-confirm-btn">{{ handrive_text.map_create_confirm }}</button>
         </div>
     </div>
 </div>

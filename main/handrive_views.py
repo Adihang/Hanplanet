@@ -631,6 +631,31 @@ DOCS_TEXT = {
         "git_repo_retry_button": "재시도",
         "map_name_placeholder": "이름을 입력하세요",
         "map_marker_name_placeholder": "마커 이름",
+        "menu_create_map": "지도 제작",
+        "menu_git_create_branch": "브랜치 생성",
+        "menu_git_delete_branch": "브랜치 삭제",
+        "map_create_title": "지도 제작",
+        "map_create_name_label": "지도명",
+        "map_create_confirm": "지도 만들기",
+        "branch_create_title": "브랜치 생성",
+        "branch_create_name_label": "새 브랜치 이름",
+        "map_zone_title": "이름 입력",
+        "map_clickable_title": "클릭 가능",
+        "map_zone_icon_visible_title": "아이콘/구역 표시",
+        "map_marker_icon_visible_title": "아이콘 표시",
+        "map_marker_title": "마커 정보",
+        "map_name_label": "이름",
+        "map_icon_label": "아이콘",
+        "map_desc_label": "설명",
+        "map_desc_placeholder": "설명 (선택)",
+        "map_image_label": "이미지",
+        "map_image_attach": "이미지 첨부",
+        "map_video_label": "영상",
+        "map_video_attach": "영상 첨부",
+        "map_bind_title": "다른 아이콘/구역과 연결",
+        "map_bind_button": "바인딩",
+        "map_confirm_button": "확인",
+        "map_delete_button_label": "삭제",
         "create_button": "생성",
         "create_folder_in_label": "생성 위치",
         "permission_title": "권한 설정",
@@ -860,6 +885,31 @@ DOCS_TEXT = {
         "git_repo_retry_button": "Retry",
         "map_name_placeholder": "Enter a name",
         "map_marker_name_placeholder": "Marker name",
+        "menu_create_map": "Create Map",
+        "menu_git_create_branch": "Create Branch",
+        "menu_git_delete_branch": "Delete Branch",
+        "map_create_title": "Create Map",
+        "map_create_name_label": "Map Name",
+        "map_create_confirm": "Create Map",
+        "branch_create_title": "Create Branch",
+        "branch_create_name_label": "New Branch Name",
+        "map_zone_title": "Enter Name",
+        "map_clickable_title": "Clickable",
+        "map_zone_icon_visible_title": "Show Icon/Zone",
+        "map_marker_icon_visible_title": "Show Icon",
+        "map_marker_title": "Marker Info",
+        "map_name_label": "Name",
+        "map_icon_label": "Icon",
+        "map_desc_label": "Description",
+        "map_desc_placeholder": "Description (optional)",
+        "map_image_label": "Image",
+        "map_image_attach": "Attach Image",
+        "map_video_label": "Video",
+        "map_video_attach": "Attach Video",
+        "map_bind_title": "Link to another icon/zone",
+        "map_bind_button": "Link",
+        "map_confirm_button": "Confirm",
+        "map_delete_button_label": "Delete",
         "create_button": "Create",
         "create_folder_in_label": "Create in",
         "permission_title": "Access Control",
@@ -5537,13 +5587,16 @@ def handrive_api_url_share(request):
 @csrf_protect
 @with_request_handrive_root
 def handrive_api_sync_settings(request):
+    is_english = (resolve_ui_lang(request, getattr(getattr(request, "resolver_match", None), "kwargs", {}).get("ui_lang")) == "en")
     if not request.user.is_authenticated:
-        return JsonResponse({"ok": False, "error": "로그인이 필요합니다."}, status=401)
+        msg = "Login required." if is_english else "로그인이 필요합니다."
+        return JsonResponse({"ok": False, "error": msg}, status=401)
 
     try:
         payload = json.loads(request.body or "{}")
     except (TypeError, ValueError):
-        return JsonResponse({"ok": False, "error": "잘못된 요청입니다."}, status=400)
+        msg = "Invalid request." if is_english else "잘못된 요청입니다."
+        return JsonResponse({"ok": False, "error": msg}, status=400)
 
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     excluded_paths = _sanitize_sync_excluded_paths(payload.get("excluded_paths"), scoped_home_dir)
@@ -7531,8 +7584,10 @@ def handrive_login_bridge(request):
     """
     from urllib.parse import urlencode
 
+    ui_lang = resolve_ui_lang(request)
+    is_english = (ui_lang == "en")
     state = request.GET.get("state", "").strip()
-    client_name = request.GET.get("client_name", "데스크톱 앱").strip()
+    client_name = request.GET.get("client_name", "Desktop App" if is_english else "데스크톱 앱").strip()
 
     # force_relogin=1: 현재 세션 로그아웃 후 로그인 페이지로
     if request.GET.get("force_relogin") == "1":
@@ -7561,6 +7616,7 @@ def handrive_login_bridge(request):
             "user": request.user,
             "connected": True,
             "cancelled": action != "allow",
+            "ui_lang": ui_lang,
         })
 
     if state:
@@ -7569,10 +7625,11 @@ def handrive_login_bridge(request):
             "user": request.user,
             "client_name": client_name,
             "state": state,
+            "ui_lang": ui_lang,
         })
 
     # state 없이 직접 접근: 안내 페이지
-    return render(request, "handrive/login_bridge.html", {"user": request.user})
+    return render(request, "handrive/login_bridge.html", {"user": request.user, "ui_lang": ui_lang})
 
 
 def handrive_callback_poll(request):

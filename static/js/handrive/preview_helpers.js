@@ -72,23 +72,26 @@
         if (!naturalWidth) {
             return 0.5;
         }
-        return Math.max(0.05, Math.min(1, availableWidth / naturalWidth));
+        return Math.max(0.05, Math.min(0.1, availableWidth / naturalWidth));
     }
 
     function syncPreviewImageZoom(previewContent, previewZoomWrap, nextZoom) {
-        // Image previews reset scroll when zoom changes so users never land on stale pan offsets.
-        var imageElement = getPreviewImageElement(previewContent);
+        // Image/video previews reset scroll when zoom changes so users never land on stale pan offsets.
         var imageWrap = previewContent
             ? previewContent.querySelector(".handrive-media-image-wrap")
             : null;
-        var hasImage = Boolean(imageElement && imageWrap);
+        var videoWrap = previewContent
+            ? previewContent.querySelector(".handrive-media-video-wrap")
+            : null;
+        var mediaWrap = imageWrap || videoWrap;
+        var hasMedia = Boolean(mediaWrap);
         if (previewZoomWrap) {
-            previewZoomWrap.hidden = !hasImage;
+            previewZoomWrap.hidden = !hasMedia;
         }
-        if (!hasImage || !imageWrap) {
+        if (!hasMedia) {
             return;
         }
-        imageWrap.style.transform = "scale(" + String(nextZoom) + ")";
+        mediaWrap.style.transform = "scale(" + String(nextZoom) + ")";
         if (previewContent) {
             previewContent.scrollLeft = 0;
             previewContent.scrollTop = 0;

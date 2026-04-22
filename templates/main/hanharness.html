@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block body_class %}hanharness-page{% endblock %}
 {% block content %}
 <main class="hanharness-shell">
@@ -24,8 +25,8 @@
             </a>
         </div>
     </section>
-
     <section class="hanharness-info" aria-labelledby="hanharness-info-title">
+        <img class="hanharness-hero-img" src="{% static 'media/img/hanplanet-cli.png' %}" alt="HanPlanet CLI">
         {% if ui_lang == 'en' %}
 
         <h2 id="hanharness-info-title">About HanPlanet CLI</h2>
@@ -87,7 +88,7 @@ ohmo --help</code></div>
         <h3>Usage</h3>
 
         <h4>Initial setup</h4>
-        <p>Run <code>hanplanet setup</code> to choose a provider and authenticate. To use the Hanplanet Ollama backend, select <strong>OpenAI-Compatible</strong> and enter <code>https://hanplanet.com/ai/v1</code> as the base URL.</p>
+        <p>Run <code>hanplanet setup</code> to choose a provider and authenticate. Select <strong>Hanplanet</strong> to use the built-in Hanplanet Ollama backend.</p>
         <div class="hanharness-code-block"><code>hanplanet setup</code></div>
 
         <h4>Starting a session</h4>
@@ -192,7 +193,7 @@ ohmo --help</code></div>
         <h3>사용법</h3>
 
         <h4>초기 설정</h4>
-        <p><code>hanplanet setup</code>을 실행해 프로바이더를 선택하고 인증합니다. Hanplanet Ollama 백엔드를 사용하려면 <strong>OpenAI-Compatible</strong>을 선택하고 Base URL에 <code>https://hanplanet.com/ai/v1</code>을 입력하세요.</p>
+        <p><code>hanplanet setup</code>을 실행해 프로바이더를 선택하고 인증합니다. Hanplanet Ollama 백엔드를 사용하려면 <strong>Hanplanet</strong>을 선택하세요.</p>
         <div class="hanharness-code-block"><code>hanplanet setup</code></div>
 
         <h4>세션 시작</h4>

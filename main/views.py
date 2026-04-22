@@ -4699,21 +4699,27 @@ def git_auth_device(request):
 @login_required
 def git_auth_page(request):
     """Render the browser approval page for a pending Git device-code login request."""
+    ui_lang = resolve_ui_lang(request)
+    is_english = (ui_lang == "en")
     code = (request.GET.get("code") or "").strip().upper()
     if not code:
-        return render(request, "git_auth_approve.html", {"error": "코드가 없습니다."})
+        msg = "No code provided." if is_english else "코드가 없습니다."
+        return render(request, "git_auth_approve.html", {"error": msg, "ui_lang": ui_lang})
 
     try:
         device = GitDeviceCode.objects.get(user_code=code, approved=False)
     except GitDeviceCode.DoesNotExist:
-        return render(request, "git_auth_approve.html", {"error": "유효하지 않거나 이미 사용된 코드입니다."})
+        msg = "Invalid or already used code." if is_english else "유효하지 않거나 이미 사용된 코드입니다."
+        return render(request, "git_auth_approve.html", {"error": msg, "ui_lang": ui_lang})
 
     if _tz.now() > device.expires_at:
-        return render(request, "git_auth_approve.html", {"error": "인증 코드가 만료되었습니다."})
+        msg = "Auth code has expired." if is_english else "인증 코드가 만료되었습니다."
+        return render(request, "git_auth_approve.html", {"error": msg, "ui_lang": ui_lang})
 
     return render(request, "git_auth_approve.html", {
         "user_code":  device.user_code,
         "expires_at": device.expires_at,
+        "ui_lang":    ui_lang,
     })
 
 
@@ -4866,11 +4872,12 @@ _CLI_FILES = {
 }
 
 
-def _serve_cli_zip(platform):
+def _serve_cli_zip(platform, is_english=False):
     filename, download_name = _CLI_FILES[platform]
     archive_path = _CLI_DIR / filename
     if not archive_path.exists():
-        return HttpResponse("HanPlanet CLI 파일을 찾을 수 없습니다.", status=404)
+        msg = "HanPlanet CLI file not found." if is_english else "HanPlanet CLI 파일을 찾을 수 없습니다."
+        return HttpResponse(msg, status=404)
     response = FileResponse(archive_path.open("rb"), as_attachment=True, filename=download_name)
     response["Content-Type"] = "application/zip"
     response["Cache-Control"] = "no-store"
@@ -4879,21 +4886,20 @@ def _serve_cli_zip(platform):
 
 def hanharness_download(request, ui_lang=None):
     """Download HanPlanet CLI for macOS (Apple Silicon)."""
-    del ui_lang
-    return _serve_cli_zip("macos")
+    return _serve_cli_zip("macos", is_english=(ui_lang == "en"))
 
 
 def hanharness_download_windows(request, ui_lang=None):
     """Download HanPlanet CLI for Windows (x64)."""
-    del ui_lang
-    return _serve_cli_zip("windows")
+    return _serve_cli_zip("windows", is_english=(ui_lang == "en"))
 
 
 def handrive_sync_client_download(request, ui_lang=None):
     """Download the bundled HanDrive Windows sync client executable."""
     client_path = Path(settings.BASE_DIR) / "sync-client" / "handrive.exe"
     if not client_path.exists():
-        return HttpResponse("클라이언트를 찾을 수 없습니다.", status=404)
+        msg = "Client not found." if ui_lang == "en" else "클라이언트를 찾을 수 없습니다."
+        return HttpResponse(msg, status=404)
     response = FileResponse(client_path.open("rb"), as_attachment=True, filename="handrive.exe")
     response["Content-Type"] = "application/vnd.microsoft.portable-executable"
     return response

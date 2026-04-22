@@ -2,7 +2,7 @@ const WebSocket = require("ws")
 const { encode } = require("@msgpack/msgpack")
 const { PORT, JWT_SECRET } = require("../config/config")
 const { verifyToken } = require("../auth/jwt")
-const { joinRoom, leaveRoom, broadcastToRoom, addStroke, getClient, getClientRef } = require("../rooms/roomManager")
+const { joinRoom, leaveRoom, broadcastToRoom, addStroke, removeStroke, upsertText, removeText, getClient, getClientRef } = require("../rooms/roomManager")
 
 const RATE_LIMIT = 30
 const MAX_DRAW_POINTS = 2000
@@ -46,12 +46,12 @@ function createServer() {
         ws.isAlive = true
         ws.on("pong", () => { ws.isAlive = true })
 
-        const { color, guestNum, strokes, peers } = joinRoom(mapPath, ws, { userId, displayName })
+        const { color, guestNum, strokes, texts, peers } = joinRoom(mapPath, ws, { userId, displayName })
         ws._mapPath = mapPath
         ws._userId = userId
         ws._client = getClientRef(mapPath, ws)
 
-        ws.send(encode({ type: "welcome", id: userId, displayName, color, guestNum, strokes, peers }))
+        ws.send(encode({ type: "welcome", id: userId, displayName, color, guestNum, strokes, texts, peers }))
         broadcastToRoom(mapPath, ws, encode({ type: "peer_joined", id: userId, displayName, color, guestNum }))
 
         ws.on("message", (raw) => {
@@ -96,8 +96,58 @@ function createServer() {
                     client.drawPoints = []
                     if (pts.length > 2000) pts = pts.filter((_, i) => i % 2 === 0)
                     if (pts.length >= 2) {
-                        addStroke(mapPath, { userId, color: client.color, points: pts })
-                        broadcastToRoom(mapPath, ws, encode({ type: "peer_draw_end", id: userId, color: client.color, points: pts }), { includeSelf: true })
+                        const strokeId = addStroke(mapPath, { userId, color: client.color, points: pts })
+                        broadcastToRoom(mapPath, ws, encode({ type: "peer_draw_end", id: userId, color: client.color, points: pts, strokeId }), { includeSelf: true })
+                    }
+                    break
+                }
+
+                case "stroke_erase": {
+                    const strokeId = msg.strokeId
+                    if (!strokeId) break
+                    const removed = removeStroke(mapPath, strokeId)
+                    if (removed) {
+                        broadcastToRoom(mapPath, ws, encode({ type: "stroke_erased", strokeId }), { includeSelf: true })
+                    }
+                    break
+                }
+
+                case "stroke_restore": {
+                    const pts = Array.isArray(msg.points) ? msg.points.slice() : []
+                    if (pts.length < 2) break
+                    const strokeId = addStroke(mapPath, {
+                        strokeId: msg.strokeId,
+                        userId,
+                        color: msg.color || client.color,
+                        points: pts,
+                    })
+                    broadcastToRoom(mapPath, ws, encode({ type: "peer_draw_end", id: userId, color: msg.color || client.color, points: pts, strokeId }), { includeSelf: msg.includeSelf !== false })
+                    break
+                }
+
+                case "text_upsert": {
+                    const text = upsertText(mapPath, {
+                        textId: msg.textId,
+                        userId,
+                        color: client.color,
+                        x: msg.x,
+                        y: msg.y,
+                        w: msg.w,
+                        h: msg.h,
+                        text: msg.text,
+                    })
+                    if (text) {
+                        broadcastToRoom(mapPath, ws, encode({ type: "text_updated", text }), { includeSelf: msg.includeSelf !== false })
+                    }
+                    break
+                }
+
+                case "text_delete": {
+                    const textId = String(msg.textId || "")
+                    if (!textId) break
+                    const removed = removeText(mapPath, textId)
+                    if (removed) {
+                        broadcastToRoom(mapPath, ws, encode({ type: "text_deleted", textId }), { includeSelf: true })
                     }
                     break
                 }

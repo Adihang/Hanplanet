@@ -148,7 +148,7 @@
                 return right.id - left.id;
             }
             if (leftPriority === 2) {
-                return left.id - right.id;
+                return right.id - left.id;
             }
             return right.id - left.id;
         });

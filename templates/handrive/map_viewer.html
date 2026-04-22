@@ -608,7 +608,12 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 .map-draw-toggle-control {
     margin-top: 8px;
 }
-.map-draw-toggle-btn {
+.map-draw-toggle-control {
+    display: flex;
+    flex-direction: column;
+}
+.map-draw-toggle-btn,
+.map-text-toggle-btn {
     width: 30px;
     height: 30px;
     display: flex !important;
@@ -620,16 +625,139 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
     border: 1px solid var(--handrive-border, #e0e0e0) !important;
     border-radius: 4px !important;
 }
-.map-draw-toggle-btn:hover {
+.map-text-toggle-btn {
+    border-top: none !important;
+    border-radius: 0 0 4px 4px !important;
+}
+.map-draw-toggle-btn {
+    border-radius: 4px 4px 0 0 !important;
+}
+.map-draw-toggle-btn:hover,
+.map-text-toggle-btn:hover {
     background: var(--handrive-surface-subtle, #f5f5f5) !important;
 }
-.map-draw-toggle-btn.active {
+.map-draw-toggle-btn.active,
+.map-text-toggle-btn.active {
     background: #2563eb !important;
     color: #fff !important;
 }
-body.map-viewer-page.draw-mode .leaflet-container {
+body.map-viewer-page.draw-mode .leaflet-container,
+body.map-viewer-page.text-mode .leaflet-container {
     touch-action: none !important;
 }
+.map-collab-text-layer {
+    position: absolute;
+    z-index: 650;
+    pointer-events: none;
+    transform-origin: 0 0;
+    will-change: transform;
+}
+.map-collab-text-block {
+    position: absolute;
+    box-sizing: border-box;
+    pointer-events: none;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--map-collab-text-color, #2563eb);
+    box-shadow: none;
+    overflow: visible;
+    touch-action: none;
+}
+.map-collab-text-block.is-active {
+    pointer-events: auto;
+}
+.map-collab-text-block.is-active {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.8);
+}
+.map-collab-text-input {
+    width: 100%;
+    min-height: 100%;
+    height: auto;
+    box-sizing: border-box;
+    resize: none;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 800;
+    line-height: 1.08;
+    padding: 0;
+    overflow: hidden;
+    white-space: pre;
+    overflow-wrap: normal;
+    word-break: keep-all;
+    cursor: text;
+    scrollbar-width: none;
+    pointer-events: none;
+    text-shadow:
+        -1px -1px 0 #fff,
+        1px -1px 0 #fff,
+        -1px 1px 0 #fff,
+        1px 1px 0 #fff,
+        0 0 3px #fff;
+}
+.map-collab-text-input::-webkit-scrollbar {
+    display: none;
+}
+.map-collab-text-block:not(.is-active) .map-collab-text-input {
+    pointer-events: none;
+}
+.map-collab-text-block.is-active .map-collab-text-input {
+    pointer-events: auto;
+}
+.map-collab-text-hit-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+.map-collab-text-hit {
+    position: absolute;
+    pointer-events: auto;
+    cursor: text;
+    background: transparent;
+}
+.map-collab-text-block.is-active .map-collab-text-hit {
+    pointer-events: none;
+}
+.map-collab-text-move-edge {
+    position: absolute;
+    display: none;
+    z-index: 2;
+    cursor: move;
+}
+.map-collab-text-block.is-active .map-collab-text-move-edge {
+    display: block;
+}
+.map-collab-text-move-edge[data-edge="top"] { left: 8px; right: 8px; top: -4px; height: 8px; }
+.map-collab-text-move-edge[data-edge="right"] { right: -4px; top: 8px; bottom: 8px; width: 8px; }
+.map-collab-text-move-edge[data-edge="bottom"] { left: 8px; right: 8px; bottom: -4px; height: 8px; }
+.map-collab-text-move-edge[data-edge="left"] { left: -4px; top: 8px; bottom: 8px; width: 8px; }
+.map-collab-text-resize {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #2563eb;
+    border: 2px solid #fff;
+    box-sizing: border-box;
+    cursor: nwse-resize;
+    display: none;
+    z-index: 3;
+}
+.map-collab-text-block.is-active .map-collab-text-resize {
+    display: block;
+}
+.map-collab-text-resize[data-dir="nw"] { left: -5px; top: -5px; cursor: nwse-resize; }
+.map-collab-text-resize[data-dir="n"] { left: 50%; top: -5px; transform: translateX(-50%); cursor: ns-resize; }
+.map-collab-text-resize[data-dir="ne"] { right: -5px; top: -5px; cursor: nesw-resize; }
+.map-collab-text-resize[data-dir="e"] { right: -5px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.map-collab-text-resize[data-dir="se"] { right: -5px; bottom: -5px; cursor: nwse-resize; }
+.map-collab-text-resize[data-dir="s"] { left: 50%; bottom: -5px; transform: translateX(-50%); cursor: ns-resize; }
+.map-collab-text-resize[data-dir="sw"] { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.map-collab-text-resize[data-dir="w"] { left: -5px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
 /* 레이어 가시성 위젯 */
 .map-viewer-layers-widget {
     position: absolute;
@@ -2007,10 +2135,20 @@ body.map-viewer-page.draw-mode .leaflet-container {
         (function () {
             // 전역 드로우 모드 상태 (collab IIFE에서 참조)
             window._drawModeActive = false;
+            window._textModeActive = false;
             window._setDrawMode = function (active) {
                 window._drawModeActive = active;
+                if (active && window._setTextMode) window._setTextMode(false);
                 document.body.classList.toggle("draw-mode", active);
                 var btn = document.getElementById("map-draw-toggle-btn");
+                if (btn) btn.classList.toggle("active", active);
+                if (!active && map.dragging && !map.dragging.enabled()) map.dragging.enable();
+            };
+            window._setTextMode = function (active) {
+                window._textModeActive = active;
+                if (active && window._setDrawMode) window._setDrawMode(false);
+                document.body.classList.toggle("text-mode", active);
+                var btn = document.getElementById("map-text-toggle-btn");
                 if (btn) btn.classList.toggle("active", active);
                 if (!active && map.dragging && !map.dragging.enabled()) map.dragging.enable();
             };
@@ -2031,7 +2169,20 @@ body.map-viewer-page.draw-mode .leaflet-container {
                 e.stopPropagation();
                 window._setDrawMode(!window._drawModeActive);
             });
+            var textBtn = document.createElement("a");
+            textBtn.className = "map-text-toggle-btn";
+            textBtn.href = "#";
+            textBtn.id = "map-text-toggle-btn";
+            textBtn.title = "텍스트 작성 모드";
+            textBtn.setAttribute("role", "button");
+            textBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7V5h14v2"/><path d="M12 5v14"/><path d="M9 19h6"/><path d="M19 11v6"/></svg>';
+            textBtn.addEventListener("click", function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                window._setTextMode(!window._textModeActive);
+            });
             wrap.appendChild(btn);
+            wrap.appendChild(textBtn);
             topRight.appendChild(wrap);
         })();
         {% endif %}
@@ -2311,7 +2462,7 @@ body.map-viewer-page.draw-mode .leaflet-container {
 
             var nameEl = document.createElement("span");
             nameEl.className = "map-viewer-layer-name";
-            nameEl.textContent = d.name || "(이름 없음)";
+            nameEl.textContent = d.name || "";
 
             row.appendChild(cb);
             row.appendChild(iconEl);
@@ -2532,7 +2683,17 @@ body.map-viewer-page.draw-mode .leaflet-container {
         var drawing = false, drawPoints = [], drawRawPoints = [];
         var localLine = null;
         var strokeLayers = [];
+        var textLayerEl = null;
+        var textBlocks = {};
+        var activeTextId = null;
+        var textDrag = null;
+        var textResize = null;
         var lastCursorSent = 0, lastDrawSent = 0;
+        var lastTextSent = 0;
+        var undoStack = [], redoStack = [];
+        var pendingStrokeHistory = null;
+        var suppressNextLocalStrokeHistory = false;
+        var _pendingTexts = [];
 
         // ── Stroke weight (scales with zoom so lines look constant on the image) ──
         var BASE_WEIGHT = 4.8;
@@ -2549,9 +2710,13 @@ body.map-viewer-page.draw-mode .leaflet-container {
             if (_prevOnMapReady) _prevOnMapReady();
             refZoom = map.getZoom();
             for (var i = 0; i < _pendingStrokes.length; i++) {
-                renderStroke(_pendingStrokes[i].color, _pendingStrokes[i].points);
+                renderStroke(_pendingStrokes[i].color, _pendingStrokes[i].points, _pendingStrokes[i].strokeId);
             }
             _pendingStrokes = [];
+            for (var j = 0; j < _pendingTexts.length; j++) {
+                renderTextBlock(_pendingTexts[j]);
+            }
+            _pendingTexts = [];
             map.on("zoomend", function () {
                 var w = getStrokeWeight();
                 for (var i = 0; i < strokeLayers.length; i++) {
@@ -2561,7 +2726,10 @@ body.map-viewer-page.draw-mode .leaflet-container {
                 for (var id in peerState) {
                     if (peerState[id].line) peerState[id].line.setStyle({ weight: w });
                 }
+                layoutAllTextBlocks();
             });
+            map.on("zoomanim", animateTextLayerZoom);
+            map.on("moveend viewreset", layoutAllTextBlocks);
         };
 
         // ── Coord helpers ────────────────────────────────────────────────────
@@ -2572,14 +2740,546 @@ body.map-viewer-page.draw-mode .leaflet-container {
         }
         function pixelLL(x, y) { return L.latLng(y, x); }
 
+        function getMapUnitScale() {
+            if (!map) return 1;
+            var a = map.latLngToContainerPoint(pixelLL(0, 0));
+            var b = map.latLngToContainerPoint(pixelLL(1, 0));
+            return Math.max(0.05, Math.abs(b.x - a.x) || 1);
+        }
+
         // ── Send helper ──────────────────────────────────────────────────────
         function send(obj) {
             if (ws && ws.readyState === 1) try { ws.send(JSON.stringify(obj)); } catch (_) {}
         }
 
+        function sendTextUpdate(item, force, includeSelf) {
+            if (!item) return;
+            var now = Date.now();
+            if (!force && now - lastTextSent < 80) return;
+            lastTextSent = now;
+            if (wsActive) {
+                send({ type: "text_upsert", textId: item.textId, x: item.x, y: item.y, w: item.w, h: item.h, text: item.text, includeSelf: includeSelf !== false });
+            }
+        }
+
+        function syncLocalTextBlocksToServer() {
+            if (!wsActive) return;
+            Object.keys(textBlocks).forEach(function(textId) {
+                var item = textBlocks[textId];
+                if (!item) return;
+                item.text = item.input ? item.input.value : item.text || "";
+                send({
+                    type: "text_upsert",
+                    textId: item.textId,
+                    x: item.x,
+                    y: item.y,
+                    w: item.w,
+                    h: item.h,
+                    text: item.text,
+                    includeSelf: false
+                });
+            });
+        }
+
+        function syncLocalStrokesToServer() {
+            if (!wsActive) return;
+            for (var i = 0; i < strokeLayers.length; i++) {
+                var layer = strokeLayers[i];
+                if (!layer || layer._syncedToServer) continue;
+                var strokeId = layer._strokeId;
+                var points = layer._strokePoints;
+                if (!strokeId || !points || points.length < 2) continue;
+                send({
+                    type: "stroke_restore",
+                    strokeId: strokeId,
+                    color: layer._strokeColor || myColor,
+                    points: points,
+                    includeSelf: false
+                });
+                layer._syncedToServer = true;
+            }
+        }
+
+        function pushUndoAction(action) {
+            if (!action) return;
+            undoStack.push(action);
+            if (undoStack.length > 100) undoStack.shift();
+            redoStack = [];
+        }
+
+        function cloneTextItem(item) {
+            if (!item) return null;
+            return {
+                textId: item.textId,
+                userId: item.userId || myId || "local",
+                color: item.color || myColor,
+                x: item.x,
+                y: item.y,
+                w: item.w,
+                h: item.h,
+                text: item.input ? item.input.value : item.text || ""
+            };
+        }
+
+        function cloneStrokeAction(strokeId, color, points) {
+            return {
+                type: "stroke",
+                strokeId: strokeId,
+                color: color || myColor,
+                points: (points || []).map(function(pt) { return { x: pt.x, y: pt.y }; })
+            };
+        }
+
+        function cloneStrokeLayerAction(layer) {
+            if (!layer) return null;
+            return cloneStrokeAction(
+                layer._strokeId,
+                layer._strokeColor || myColor,
+                layer._strokePoints || layer.getLatLngs().map(function(ll) { return { x: ll.lng, y: ll.lat }; })
+            );
+        }
+
+        function ensureTextLayer() {
+            if (textLayerEl) return textLayerEl;
+            textLayerEl = document.createElement("div");
+            textLayerEl.className = "map-collab-text-layer leaflet-zoom-animated";
+            var pane = map && map.getPanes ? map.getPanes().overlayPane : container;
+            pane.appendChild(textLayerEl);
+            return textLayerEl;
+        }
+
+        function getTextLayerFrameAtZoom(zoom, center) {
+            var activeImage = (typeof getActiveMapImage === "function" && getActiveMapImage()) || null;
+            var originX = parseNumberValue(activeImage && activeImage.x, 0);
+            var originY = parseNumberValue(activeImage && activeImage.y, 0);
+            var width = Math.max(1, parseNumberValue(activeImage && activeImage.width, imgWidth));
+            var height = Math.max(1, parseNumberValue(activeImage && activeImage.height, imgHeight));
+            var p1 = zoom == null
+                ? map.latLngToLayerPoint(pixelLL(originX, originY))
+                : map._latLngToNewLayerPoint(pixelLL(originX, originY), zoom, center);
+            var p2 = zoom == null
+                ? map.latLngToLayerPoint(pixelLL(originX + width, originY + height))
+                : map._latLngToNewLayerPoint(pixelLL(originX + width, originY + height), zoom, center);
+            return {
+                originX: originX,
+                originY: originY,
+                left: Math.min(p1.x, p2.x),
+                top: Math.min(p1.y, p2.y),
+                width: Math.max(1, Math.abs(p2.x - p1.x)),
+                height: Math.max(1, Math.abs(p2.y - p1.y))
+            };
+        }
+
+        function layoutTextLayer() {
+            ensureTextLayer();
+            var frame = getTextLayerFrameAtZoom();
+            L.DomUtil.setTransform(textLayerEl, L.point(frame.left, frame.top), 1);
+            textLayerEl.style.width = frame.width + "px";
+            textLayerEl.style.height = frame.height + "px";
+            return frame;
+        }
+
+        function animateTextLayerZoom(e) {
+            if (!textLayerEl || !map || !e || typeof e.zoom === "undefined" || !map._latLngToNewLayerPoint) return;
+            var current = getTextLayerFrameAtZoom();
+            var next = getTextLayerFrameAtZoom(e.zoom, e.center);
+            var scale = next.width / Math.max(1, current.width);
+            L.DomUtil.setTransform(textLayerEl, L.point(next.left, next.top), scale);
+        }
+
+        function textContainerRect(item, frame) {
+            frame = frame || getTextLayerFrameAtZoom();
+            var p1 = map.latLngToLayerPoint(pixelLL(item.x, item.y));
+            var p2 = map.latLngToLayerPoint(pixelLL(item.x + item.w, item.y + item.h));
+            return {
+                left: Math.min(p1.x, p2.x) - frame.left,
+                top: Math.min(p1.y, p2.y) - frame.top,
+                width: Math.max(8, Math.abs(p2.x - p1.x)),
+                height: Math.max(8, Math.abs(p2.y - p1.y)),
+                scale: getMapUnitScale()
+            };
+        }
+
+        function getTextLines(item) {
+            var currentText = item && item.input ? item.input.value : (item && item.text);
+            return String(currentText || "Text").split(/\r?\n/);
+        }
+
+        function fitTextFontSize(item, width) {
+            if (!item || !item.input) return 14;
+            var canvas = fitTextFontSize._canvas || (fitTextFontSize._canvas = document.createElement("canvas"));
+            var ctx = canvas.getContext("2d");
+            var style = window.getComputedStyle(item.input);
+            var fontFamily = style.fontFamily || "sans-serif";
+            var fontWeight = style.fontWeight || "800";
+            var lines = getTextLines(item);
+            var safeWidth = Math.max(1, width);
+
+            function fits(fontSize) {
+                ctx.font = fontWeight + " " + fontSize + "px " + fontFamily;
+                var maxWidth = 0;
+                for (var i = 0; i < lines.length; i++) {
+                    maxWidth = Math.max(maxWidth, ctx.measureText(lines[i] || " ").width);
+                }
+                return maxWidth <= safeWidth;
+            }
+
+            var low = 6;
+            var high = Math.max(low, Math.min(220, width));
+            if (fits(high)) return Math.floor(high * 10) / 10;
+            for (var i = 0; i < 12; i++) {
+                var mid = (low + high) / 2;
+                if (fits(mid)) low = mid;
+                else high = mid;
+            }
+            return Math.floor(low * 10) / 10;
+        }
+
+        function layoutTextBlock(item, rectOverride, frame) {
+            if (!item || !item.el || !map) return;
+            frame = frame || layoutTextLayer();
+            var r = rectOverride || textContainerRect(item, frame);
+            item.el.style.transform = "translate3d(" + r.left + "px," + r.top + "px,0)";
+            item.el.style.width = r.width + "px";
+            item.el.style.height = r.height + "px";
+            var fontSize = fitTextFontSize(item, r.width);
+            item.el.style.fontSize = fontSize + "px";
+            if (item.input) {
+                var lineCount = Math.max(1, getTextLines(item).length);
+                item.input.style.height = Math.max(r.height, lineCount * fontSize * 1.08) + "px";
+            }
+            syncTextHitAreas(item);
+        }
+
+        function setActiveText(textId, focus) {
+            if (activeTextId && textBlocks[activeTextId] && textBlocks[activeTextId].el) {
+                textBlocks[activeTextId].el.classList.remove("is-active");
+            }
+            activeTextId = textId || null;
+            var item = activeTextId ? textBlocks[activeTextId] : null;
+            if (item && item.el) {
+                item.el.classList.add("is-active");
+                if (focus && item.input) {
+                    item.input.focus();
+                    item.input.selectionStart = item.input.selectionEnd = item.input.value.length;
+                }
+            }
+        }
+
+        function removeTextBlock(textId) {
+            var item = textBlocks[String(textId || "")];
+            if (!item) return;
+            if (activeTextId === item.textId) activeTextId = null;
+            if (item.el && item.el.parentNode) item.el.parentNode.removeChild(item.el);
+            delete textBlocks[item.textId];
+        }
+
+        function beginTextDrag(item, e) {
+            item.text = item.input ? item.input.value : item.text;
+            setActiveText(item.textId, false);
+            var start = containerToPixel(e.clientX, e.clientY);
+            textDrag = { item: item, start: start, x: item.x, y: item.y, moved: false };
+            if (map.dragging && map.dragging.enabled()) map.dragging.disable();
+        }
+
+        function isTextHit(item, e) {
+            if (!item || !item.input) return false;
+            var value = item.input.value || "";
+            if (!value) return false;
+            var rect = item.input.getBoundingClientRect();
+            var fontSize = parseFloat(item.el && item.el.style.fontSize) || parseFloat(window.getComputedStyle(item.input).fontSize) || 14;
+            var lineHeight = fontSize * 1.08;
+            var lineIndex = Math.floor((e.clientY - rect.top) / Math.max(1, lineHeight));
+            var lines = value.split(/\r?\n/);
+            if (lineIndex < 0 || lineIndex >= lines.length) return false;
+            var line = lines[lineIndex] || "";
+            var canvas = isTextHit._canvas || (isTextHit._canvas = document.createElement("canvas"));
+            var ctx = canvas.getContext("2d");
+            var style = window.getComputedStyle(item.input);
+            ctx.font = (style.fontWeight || "800") + " " + fontSize + "px " + (style.fontFamily || "sans-serif");
+            var textWidth = ctx.measureText(line || " ").width;
+            return e.clientX >= rect.left && e.clientX <= rect.left + textWidth && e.clientY >= rect.top && e.clientY <= rect.top + lineHeight;
+        }
+
+        function syncTextHitAreas(item) {
+            if (!item || !item.hitLayer || !item.input) return;
+            item.hitLayer.innerHTML = "";
+            var value = item.input.value || "";
+            if (!value) return;
+            var fontSize = parseFloat(item.el && item.el.style.fontSize) || parseFloat(window.getComputedStyle(item.input).fontSize) || 14;
+            var lineHeight = fontSize * 1.08;
+            var canvas = syncTextHitAreas._canvas || (syncTextHitAreas._canvas = document.createElement("canvas"));
+            var ctx = canvas.getContext("2d");
+            var style = window.getComputedStyle(item.input);
+            ctx.font = (style.fontWeight || "800") + " " + fontSize + "px " + (style.fontFamily || "sans-serif");
+            value.split(/\r?\n/).forEach(function(line, index) {
+                var width = ctx.measureText(line || " ").width;
+                if (width <= 0) return;
+                var hit = document.createElement("span");
+                hit.className = "map-collab-text-hit";
+                hit.style.left = "0px";
+                hit.style.top = (index * lineHeight) + "px";
+                hit.style.width = width + "px";
+                hit.style.height = lineHeight + "px";
+                hit.addEventListener("pointerdown", function(e) {
+                    if (e.button !== 0) return;
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setActiveText(item.textId, true);
+                });
+                hit.addEventListener("click", function(e) {
+                    e.stopPropagation();
+                    if (!item._suppressClick) setActiveText(item.textId, true);
+                });
+                item.hitLayer.appendChild(hit);
+            });
+        }
+
+        function renderTextBlock(data, opts) {
+            if (!data || !data.textId) return null;
+            if (!map) { _pendingTexts.push(data); return null; }
+            ensureTextLayer();
+            var item = textBlocks[data.textId];
+            if (!item) {
+                item = {
+                    textId: String(data.textId),
+                    color: data.color || myColor,
+                    x: Number(data.x) || 0,
+                    y: Number(data.y) || 0,
+                    w: Math.max(20, Number(data.w) || 540),
+                    h: Math.max(16, Number(data.h) || 210),
+                    text: String(data.text || "")
+                };
+                var el = document.createElement("div");
+                el.className = "map-collab-text-block";
+                var input = document.createElement("textarea");
+                input.className = "map-collab-text-input";
+                input.spellcheck = false;
+                input.wrap = "off";
+                input.value = item.text;
+                el.appendChild(input);
+                var hitLayer = document.createElement("div");
+                hitLayer.className = "map-collab-text-hit-layer";
+                el.appendChild(hitLayer);
+                ["top", "right", "bottom", "left"].forEach(function(edgeName) {
+                    var edge = document.createElement("span");
+                    edge.className = "map-collab-text-move-edge";
+                    edge.dataset.edge = edgeName;
+                    edge.addEventListener("pointerdown", function(e) {
+                        if (e.button !== 0) return;
+                        e.stopPropagation();
+                        e.preventDefault();
+                        beginTextDrag(item, e);
+                        edge.setPointerCapture && edge.setPointerCapture(e.pointerId);
+                    });
+                    el.appendChild(edge);
+                });
+                ["nw", "n", "ne", "e", "se", "s", "sw", "w"].forEach(function(dir) {
+                    var handle = document.createElement("span");
+                    handle.className = "map-collab-text-resize";
+                    handle.dataset.dir = dir;
+                    handle.addEventListener("pointerdown", function(e) {
+                        if (e.button !== 0) return;
+                        e.stopPropagation();
+                        e.preventDefault();
+                        item.text = item.input ? item.input.value : item.text;
+                        setActiveText(item.textId, false);
+                        textResize = {
+                            item: item,
+                            startClientX: e.clientX,
+                            startClientY: e.clientY,
+                            rect: textContainerRect(item),
+                            dir: dir
+                        };
+                        if (map.dragging && map.dragging.enabled()) map.dragging.disable();
+                        handle.setPointerCapture && handle.setPointerCapture(e.pointerId);
+                    });
+                    el.appendChild(handle);
+                });
+                item.el = el;
+                item.input = input;
+                item.hitLayer = hitLayer;
+                textBlocks[item.textId] = item;
+                textLayerEl.appendChild(el);
+
+                el.addEventListener("pointerdown", function(e) {
+                    if (e.button !== 0) return;
+                    if (!isTextHit(item, e)) { setActiveText(null, false); return; }
+                    e.stopPropagation();
+                    e.preventDefault();
+                    beginTextDrag(item, e);
+                    el.setPointerCapture && el.setPointerCapture(e.pointerId);
+                });
+                el.addEventListener("click", function(e) {
+                    if (!isTextHit(item, e)) { setActiveText(null, false); return; }
+                    e.stopPropagation();
+                    if (!item._suppressClick) setActiveText(item.textId, true);
+                });
+                input.addEventListener("input", function() {
+                    item.text = input.value;
+                    layoutTextBlock(item);
+                    sendTextUpdate(item, false, false);
+                });
+                input.addEventListener("pointerdown", function(e) {
+                    if (!isTextHit(item, e)) {
+                        setActiveText(null, false);
+                        return;
+                    }
+                    if (activeTextId === item.textId) e.stopPropagation();
+                });
+                input.addEventListener("click", function(e) {
+                    if (!isTextHit(item, e)) {
+                        setActiveText(null, false);
+                        return;
+                    }
+                    if (activeTextId === item.textId) e.stopPropagation();
+                });
+                input.addEventListener("blur", function() {
+                    item.text = input.value;
+                    sendTextUpdate(item, true);
+                });
+                el.addEventListener("contextmenu", function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    item.text = item.input ? item.input.value : item.text;
+                    pushUndoAction({ type: "text", op: "delete", textId: item.textId, text: cloneTextItem(item) });
+                    removeTextBlock(item.textId);
+                    if (wsActive) send({ type: "text_delete", textId: item.textId });
+                });
+            } else {
+                item.color = data.color || item.color || myColor;
+                item.x = Number(data.x) || 0;
+                item.y = Number(data.y) || 0;
+                item.w = Math.max(20, Number(data.w) || item.w || 540);
+                item.h = Math.max(16, Number(data.h) || item.h || 210);
+                if (item.input && document.activeElement === item.input) {
+                    item.text = item.input.value;
+                } else {
+                    item.text = String(data.text || "");
+                    if (item.input && item.input.value !== item.text) item.input.value = item.text;
+                }
+            }
+            item.el.style.setProperty("--map-collab-text-color", item.color || myColor);
+            layoutTextBlock(item);
+            if (opts && opts.active) setActiveText(item.textId, !!opts.focus);
+            return item;
+        }
+
+        function createLocalText(x, y) {
+            var item = {
+                textId: "t-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+                userId: myId || "local",
+                color: myColor,
+                x: x,
+                y: y,
+                w: 540,
+                h: 210,
+                text: ""
+            };
+            renderTextBlock(item, { active: true, focus: true });
+            sendTextUpdate(item, true);
+            pushUndoAction({ type: "text", textId: item.textId });
+            if (window._setTextMode) window._setTextMode(false);
+        }
+
+        function layoutAllTextBlocks() {
+            if (!map) return;
+            var frame = layoutTextLayer();
+            Object.keys(textBlocks).forEach(function(id) { layoutTextBlock(textBlocks[id], null, frame); });
+        }
+
+        function endTextInteraction() {
+            var drag = textDrag;
+            var resize = textResize;
+            var item = drag ? drag.item : (resize ? resize.item : null);
+            if (drag && drag.moved && drag.item) {
+                drag.item._suppressClick = true;
+                setTimeout(function() { drag.item._suppressClick = false; }, 0);
+            }
+            textDrag = null;
+            textResize = null;
+            if (map && map.dragging && !map.dragging.enabled()) map.dragging.enable();
+            if (item) sendTextUpdate(item, true);
+        }
+
+        function undoCollabAction() {
+            var action = undoStack.pop();
+            if (!action) return;
+            if (action.type === "stroke") {
+                if (action.op === "delete") {
+                    if (wsActive && action.strokeId) {
+                        send({ type: "stroke_restore", strokeId: action.strokeId, color: action.color, points: action.points });
+                    } else {
+                        renderStroke(action.color, action.points, action.strokeId, false);
+                    }
+                } else {
+                    eraseStrokeById(action.strokeId);
+                    if (wsActive && action.strokeId) {
+                        send({ type: "stroke_erase", strokeId: action.strokeId });
+                    }
+                }
+                redoStack.push(action);
+                return;
+            }
+            if (action.type === "text") {
+                if (action.op === "delete") {
+                    var restored = renderTextBlock(action.text);
+                    if (restored) sendTextUpdate(restored, true);
+                } else {
+                    var item = textBlocks[action.textId];
+                    action.text = cloneTextItem(item) || action.text;
+                    removeTextBlock(action.textId);
+                    if (wsActive) send({ type: "text_delete", textId: action.textId });
+                }
+                redoStack.push(action);
+            }
+        }
+
+        function redoCollabAction() {
+            var action = redoStack.pop();
+            if (!action) return;
+            if (action.type === "stroke") {
+                if (action.op === "delete") {
+                    eraseStrokeById(action.strokeId);
+                    if (wsActive && action.strokeId) {
+                        send({ type: "stroke_erase", strokeId: action.strokeId });
+                    }
+                } else {
+                    if (wsActive && action.strokeId) {
+                        suppressNextLocalStrokeHistory = true;
+                        send({ type: "stroke_restore", strokeId: action.strokeId, color: action.color, points: action.points });
+                    } else {
+                        renderStroke(action.color, action.points, action.strokeId, false);
+                    }
+                }
+                undoStack.push(action);
+                return;
+            }
+            if (action.type === "text" && action.text) {
+                if (action.op === "delete") {
+                    removeTextBlock(action.textId);
+                    if (wsActive) send({ type: "text_delete", textId: action.textId });
+                } else {
+                    var item = renderTextBlock(action.text);
+                    if (item) sendTextUpdate(item, true);
+                }
+                undoStack.push(action);
+            }
+        }
+
         // ── Input events (always active — drawing works even solo) ───────────
         container.addEventListener("pointerdown", function (e) {
+            var textTarget = e.target && e.target.closest && e.target.closest(".map-collab-text-block");
+            if (!textTarget && activeTextId) setActiveText(null, false);
             if (e.button !== 0) return;
+            if (textTarget) return;
+            if (window._textModeActive) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                var textPx = containerToPixel(e.clientX, e.clientY);
+                createLocalText(textPx.x, textPx.y);
+                return;
+            }
             if (!window._drawModeActive) return;
             e.preventDefault();
             e.stopImmediatePropagation();
@@ -2594,7 +3294,47 @@ body.map-viewer-page.draw-mode .leaflet-container {
             if (!map) return;
             var px = containerToPixel(e.clientX, e.clientY);
             var now = Date.now();
-            if (drawing) {
+            if (textDrag) {
+                e.preventDefault();
+                var dx = px.x - textDrag.start.x;
+                var dy = px.y - textDrag.start.y;
+                if (Math.abs(dx) + Math.abs(dy) > 1) textDrag.moved = true;
+                textDrag.item.x = textDrag.x + dx;
+                textDrag.item.y = textDrag.y + dy;
+                layoutTextBlock(textDrag.item);
+                sendTextUpdate(textDrag.item, false, false);
+            } else if (textResize) {
+                e.preventDefault();
+                var s = textResize.rect;
+                var dxScreen = e.clientX - textResize.startClientX;
+                var dyScreen = e.clientY - textResize.startClientY;
+                var minW = 8;
+                var minH = 8;
+                var left = s.left;
+                var top = s.top;
+                var right = s.left + s.width;
+                var bottom = s.top + s.height;
+                if (textResize.dir.indexOf("w") >= 0) {
+                    left = Math.min(right - minW, left + dxScreen);
+                }
+                if (textResize.dir.indexOf("e") >= 0) {
+                    right = Math.max(left + minW, right + dxScreen);
+                }
+                if (textResize.dir.indexOf("n") >= 0) {
+                    top = Math.min(bottom - minH, top + dyScreen);
+                }
+                if (textResize.dir.indexOf("s") >= 0) {
+                    bottom = Math.max(top + minH, bottom + dyScreen);
+                }
+                var ll1 = map.layerPointToLatLng(L.point(left, top));
+                var ll2 = map.layerPointToLatLng(L.point(right, bottom));
+                textResize.item.x = Math.min(ll1.lng, ll2.lng);
+                textResize.item.y = Math.min(ll1.lat, ll2.lat);
+                textResize.item.w = Math.max(20, Math.abs(ll2.lng - ll1.lng));
+                textResize.item.h = Math.max(16, Math.abs(ll2.lat - ll1.lat));
+                layoutTextBlock(textResize.item);
+                sendTextUpdate(textResize.item, false, false);
+            } else if (drawing) {
                 drawPoints.push(pixelLL(px.x, px.y));
                 drawRawPoints.push({ x: px.x, y: px.y });
                 if (!localLine) {
@@ -2626,20 +3366,47 @@ body.map-viewer-page.draw-mode .leaflet-container {
             } else {
                 if (wsActive) {
                     if (finishedLine) map.removeLayer(finishedLine);
+                    pendingStrokeHistory = cloneStrokeAction(null, myColor, drawRawPoints);
                     send({ type: "draw_end", points: drawRawPoints });
                 } else {
-                    if (finishedLine) strokeLayers.push(finishedLine);
+                    if (finishedLine) {
+                        var localStrokeId = "local-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+                        finishedLine._strokeId = localStrokeId;
+                        finishedLine._strokeColor = myColor;
+                        finishedLine._strokePoints = drawRawPoints.map(function(pt) { return { x: pt.x, y: pt.y }; });
+                        finishedLine._syncedToServer = false;
+                        strokeLayers.push(finishedLine);
+                        pushUndoAction(cloneStrokeAction(localStrokeId, myColor, drawRawPoints));
+                    }
                 }
             }
             drawPoints = [];
             drawRawPoints = [];
         }
 
-        container.addEventListener("pointerup", function (e) { if (e.button === 0) endDraw(false); });
-        container.addEventListener("pointerleave", function () { endDraw(true); });
+        container.addEventListener("pointerup", function (e) {
+            if (e.button !== 0) return;
+            if (textDrag || textResize) { endTextInteraction(); return; }
+            endDraw(false);
+        });
+        container.addEventListener("pointerleave", function () {
+            if (textDrag || textResize) endTextInteraction();
+            endDraw(true);
+        });
         document.addEventListener("keydown", function (e) {
+            var isUndoRedoKey = (e.metaKey || e.ctrlKey) && !e.altKey && (e.key === "z" || e.key === "Z" || e.key === "y" || e.key === "Y");
+            if (isUndoRedoKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.key === "y" || e.key === "Y" || e.shiftKey) redoCollabAction();
+                else undoCollabAction();
+                return;
+            }
             if (e.key === "Escape") {
-                if (drawing) endDraw(true);
+                if (textDrag || textResize) endTextInteraction();
+                else if (activeTextId) setActiveText(null, false);
+                else if (drawing) endDraw(true);
+                else if (window._textModeActive && window._setTextMode) window._setTextMode(false);
                 else if (window._drawModeActive && window._setDrawMode) window._setDrawMode(false);
             }
         });
@@ -2650,6 +3417,13 @@ body.map-viewer-page.draw-mode .leaflet-container {
             window._setDrawMode = function (active) {
                 if (!active && drawing) endDraw(true);
                 _baseSdm(active);
+            };
+        }
+        var _baseStm = window._setTextMode;
+        if (_baseStm) {
+            window._setTextMode = function(active) {
+                if (!active && (textDrag || textResize)) endTextInteraction();
+                _baseStm(active);
             };
         }
 
@@ -2663,6 +3437,7 @@ body.map-viewer-page.draw-mode .leaflet-container {
         }
         container.addEventListener("contextmenu", function (e) {
             e.preventDefault();
+            if (!(e.target && e.target.closest && e.target.closest(".map-collab-text-block")) && activeTextId) setActiveText(null, false);
             if (drawing) { endDraw(true); return; }
             if (window._drawModeActive && window._setDrawMode) { window._setDrawMode(false); return; }
             var rect = container.getBoundingClientRect();
@@ -2680,8 +3455,19 @@ body.map-viewer-page.draw-mode .leaflet-container {
                 }
             }
             if (bestIdx >= 0) {
-                map.removeLayer(strokeLayers[bestIdx]);
-                strokeLayers.splice(bestIdx, 1);
+                var targetStroke = strokeLayers[bestIdx];
+                var sid = targetStroke._strokeId;
+                var deleteAction = cloneStrokeLayerAction(targetStroke);
+                if (deleteAction) {
+                    deleteAction.op = "delete";
+                    pushUndoAction(deleteAction);
+                }
+                if (wsActive && sid) {
+                    send({ type: "stroke_erase", strokeId: sid });
+                } else {
+                    map.removeLayer(targetStroke);
+                    strokeLayers.splice(bestIdx, 1);
+                }
             }
         }, true);
 
@@ -2748,6 +3534,7 @@ body.map-viewer-page.draw-mode .leaflet-container {
                 entries.push({ color: myColor, name: myLabel + meSuffix });
             }
             for (var id in peerState) {
+                if (id === myId) continue;
                 var p = peerState[id];
                 entries.push({ color: p.color, name: getLabelForPeer(id, p.displayName) });
             }
@@ -2919,11 +3706,22 @@ body.map-viewer-page.draw-mode .leaflet-container {
             moveCursor(id, color, x, y);
         }
 
-        function finalizeStroke(id, color, points) {
+        function finalizeStroke(id, color, points, strokeId) {
             var p = ensurePeer(id, color);
             if (p.line) { map.removeLayer(p.line); p.line = null; }
             p.drawPts = [];
-            renderStroke(color, points);
+            renderStroke(color, points, strokeId);
+            if (id === myId) {
+                if (suppressNextLocalStrokeHistory) {
+                    suppressNextLocalStrokeHistory = false;
+                } else if (pendingStrokeHistory) {
+                    pendingStrokeHistory.strokeId = strokeId;
+                    pendingStrokeHistory.color = color || pendingStrokeHistory.color;
+                    pendingStrokeHistory.points = (points || pendingStrokeHistory.points).map(function(pt) { return { x: pt.x, y: pt.y }; });
+                    pushUndoAction(pendingStrokeHistory);
+                }
+                pendingStrokeHistory = null;
+            }
         }
 
         function cancelDraw(id) {
@@ -2932,14 +3730,29 @@ body.map-viewer-page.draw-mode .leaflet-container {
             p.drawPts = [];
         }
 
-        function renderStroke(color, points) {
+        function renderStroke(color, points, strokeId, syncedToServer) {
             if (!points || points.length < 2) return;
-            if (!map) { _pendingStrokes.push({ color: color, points: points }); return; }
+            if (!map) { _pendingStrokes.push({ color: color, points: points, strokeId: strokeId }); return; }
+            if (strokeId) eraseStrokeById(strokeId);
             var pl = L.polyline(
                 points.map(function (pt) { return pixelLL(pt.x, pt.y); }),
                 { color: color, weight: getStrokeWeight(), opacity: 0.8, interactive: false }
             ).addTo(map);
+            pl._strokeId = strokeId || null;
+            pl._strokeColor = color || myColor;
+            pl._strokePoints = points.map(function(pt) { return { x: pt.x, y: pt.y }; });
+            pl._syncedToServer = syncedToServer !== false;
             strokeLayers.push(pl);
+        }
+
+        function eraseStrokeById(strokeId) {
+            for (var i = 0; i < strokeLayers.length; i++) {
+                if (strokeLayers[i]._strokeId === strokeId) {
+                    map.removeLayer(strokeLayers[i]);
+                    strokeLayers.splice(i, 1);
+                    return;
+                }
+            }
         }
 
         function removePeer(id) {
@@ -2962,7 +3775,10 @@ body.map-viewer-page.draw-mode .leaflet-container {
                     wsActive = true;
                     wsConnecting = false;
                     (msg.peers || []).forEach(function (p) { ensurePeer(p.id, p.color, p.displayName, p.guestNum); });
-                    (msg.strokes || []).forEach(function (s) { renderStroke(s.color, s.points); });
+                    (msg.strokes || []).forEach(function (s) { renderStroke(s.color, s.points, s.strokeId); });
+                    (msg.texts || []).forEach(function (t) { renderTextBlock(t); });
+                    syncLocalStrokesToServer();
+                    syncLocalTextBlocksToServer();
                     showIndicator();
                     restartPresence();
                     break;
@@ -2970,8 +3786,11 @@ body.map-viewer-page.draw-mode .leaflet-container {
                 case "peer_left":    removePeer(msg.id); break;
                 case "peer_cursor":  moveCursor(msg.id, msg.color, msg.x, msg.y); break;
                 case "peer_draw_point": addDrawPt(msg.id, msg.color, msg.x, msg.y); break;
-                case "peer_draw_end":   finalizeStroke(msg.id, msg.color, msg.points); break;
+                case "peer_draw_end":   finalizeStroke(msg.id, msg.color, msg.points, msg.strokeId); break;
                 case "peer_draw_cancel": cancelDraw(msg.id); break;
+                case "stroke_erased":  eraseStrokeById(msg.strokeId); break;
+                case "text_updated":   renderTextBlock(msg.text); break;
+                case "text_deleted":   removeTextBlock(msg.textId); break;
             }
         }
 

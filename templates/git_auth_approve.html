@@ -4,54 +4,54 @@
 
 {% if error %}
     <div style="border:1px solid #e55;border-radius:8px;padding:24px;text-align:center;">
-        <h2 style="margin:0 0 12px;font-size:1.2rem;">인증 오류</h2>
+        <h2 style="margin:0 0 12px;font-size:1.2rem;">{% if ui_lang == 'en' %}Auth Error{% else %}인증 오류{% endif %}</h2>
         <p style="color:#c33;margin:0 0 20px;">{{ error }}</p>
-        <p style="font-size:0.9em;color:#888;">터미널에서 git 명령을 다시 실행해주세요.</p>
+        <p style="font-size:0.9em;color:#888;">{% if ui_lang == 'en' %}Please run the git command again in the terminal.{% else %}터미널에서 git 명령을 다시 실행해주세요.{% endif %}</p>
     </div>
 
 {% elif approved %}
     <div style="border:1px solid #3a3;border-radius:8px;padding:24px;text-align:center;">
-        <h2 style="margin:0 0 12px;font-size:1.2rem;">인증 완료</h2>
-        <p style="color:#363;margin:0 0 8px;">Git 접근이 승인되었습니다.</p>
-        <p style="font-size:0.9em;color:#888;">터미널로 돌아가시면 자동으로 진행됩니다.</p>
+        <h2 style="margin:0 0 12px;font-size:1.2rem;">{% if ui_lang == 'en' %}Authenticated{% else %}인증 완료{% endif %}</h2>
+        <p style="color:#363;margin:0 0 8px;">{% if ui_lang == 'en' %}Git access has been approved.{% else %}Git 접근이 승인되었습니다.{% endif %}</p>
+        <p style="font-size:0.9em;color:#888;">{% if ui_lang == 'en' %}Return to your terminal to continue.{% else %}터미널로 돌아가시면 자동으로 진행됩니다.{% endif %}</p>
     </div>
 
 {% elif denied %}
     <div style="border:1px solid #888;border-radius:8px;padding:24px;text-align:center;">
-        <h2 style="margin:0 0 12px;font-size:1.2rem;">인증 거절</h2>
-        <p style="margin:0 0 8px;">Git 접근 요청을 거절했습니다.</p>
-        <p style="font-size:0.9em;color:#888;">터미널에서 git 명령이 취소됩니다.</p>
+        <h2 style="margin:0 0 12px;font-size:1.2rem;">{% if ui_lang == 'en' %}Access Denied{% else %}인증 거절{% endif %}</h2>
+        <p style="margin:0 0 8px;">{% if ui_lang == 'en' %}Git access request was denied.{% else %}Git 접근 요청을 거절했습니다.{% endif %}</p>
+        <p style="font-size:0.9em;color:#888;">{% if ui_lang == 'en' %}The git command in the terminal will be cancelled.{% else %}터미널에서 git 명령이 취소됩니다.{% endif %}</p>
     </div>
 
 {% else %}
     <div style="border:1px solid #ddd;border-radius:8px;padding:24px;">
-        <h2 style="margin:0 0 4px;font-size:1.2rem;">HanDrive Git 접근 요청</h2>
+        <h2 style="margin:0 0 4px;font-size:1.2rem;">{% if ui_lang == 'en' %}HanDrive Git Access Request{% else %}HanDrive Git 접근 요청{% endif %}</h2>
         <p style="color:#888;font-size:0.9em;margin:0 0 20px;">
-            터미널의 git 명령이 HanDrive Git 서버 접근을 요청합니다.
+            {% if ui_lang == 'en' %}A git command in your terminal is requesting access to the HanDrive Git server.{% else %}터미널의 git 명령이 HanDrive Git 서버 접근을 요청합니다.{% endif %}
         </p>
 
         <div style="background:#f5f5f5;border-radius:6px;padding:16px;text-align:center;margin-bottom:20px;">
-            <p style="margin:0 0 6px;font-size:0.85em;color:#666;">인증 코드</p>
+            <p style="margin:0 0 6px;font-size:0.85em;color:#666;">{% if ui_lang == 'en' %}Auth Code{% else %}인증 코드{% endif %}</p>
             <span style="font-size:2rem;font-weight:700;letter-spacing:0.15em;font-family:monospace;">
                 {{ user_code }}
             </span>
             <p style="margin:8px 0 0;font-size:0.8em;color:#999;">
-                터미널에 표시된 코드와 일치하는지 확인하세요.
+                {% if ui_lang == 'en' %}Verify that it matches the code shown in your terminal.{% else %}터미널에 표시된 코드와 일치하는지 확인하세요.{% endif %}
             </p>
         </div>
 
         <p style="font-size:0.85em;color:#666;margin:0 0 20px;">
-            로그인 계정: <strong>{{ request.user.username }}</strong>
+            {% if ui_lang == 'en' %}Account:{% else %}로그인 계정:{% endif %} <strong>{{ request.user.username }}</strong>
         </p>
 
         <div style="display:flex;gap:12px;">
             <button id="deny-btn" type="button"
                 style="flex:1;padding:10px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;font-size:1rem;">
-                거절
+                {% if ui_lang == 'en' %}Deny{% else %}거절{% endif %}
             </button>
             <button id="approve-btn" type="button"
                 style="flex:2;padding:10px;border:none;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;font-size:1rem;font-weight:600;">
-                승인
+                {% if ui_lang == 'en' %}Approve{% else %}승인{% endif %}
             </button>
         </div>
 
@@ -59,6 +59,18 @@
     </div>
 
     <script>
+    var GIT_AUTH_STRINGS = {
+        processing: "{% if ui_lang == 'en' %}Processing...{% else %}처리 중...{% endif %}",
+        approved_title: "{% if ui_lang == 'en' %}Authenticated{% else %}인증 완료{% endif %}",
+        approved_body: "{% if ui_lang == 'en' %}Git access has been approved.{% else %}Git 접근이 승인되었습니다.{% endif %}",
+        approved_sub: "{% if ui_lang == 'en' %}Return to your terminal to continue.{% else %}터미널로 돌아가시면 자동으로 진행됩니다.{% endif %}",
+        error_prefix: "{% if ui_lang == 'en' %}Error: {% else %}오류: {% endif %}",
+        unknown_error: "{% if ui_lang == 'en' %}Unknown error{% else %}알 수 없는 오류{% endif %}",
+        request_failed: "{% if ui_lang == 'en' %}Request failed. Please try again.{% else %}요청 실패. 다시 시도해주세요.{% endif %}",
+        denied_title: "{% if ui_lang == 'en' %}Access Denied{% else %}인증 거절{% endif %}",
+        denied_body: "{% if ui_lang == 'en' %}Git access request was denied.{% else %}Git 접근 요청을 거절했습니다.{% endif %}",
+        denied_sub: "{% if ui_lang == 'en' %}The git command in the terminal will be cancelled.{% else %}터미널에서 git 명령이 취소됩니다.{% endif %}",
+    };
     (function () {
         const approveBtn = document.getElementById("approve-btn");
         const denyBtn    = document.getElementById("deny-btn");
@@ -76,7 +88,7 @@
 
         approveBtn.addEventListener("click", function () {
             disableButtons();
-            setStatus("처리 중...");
+            setStatus(GIT_AUTH_STRINGS.processing);
             fetch("/api/git/auth/approve/", {
                 method: "POST",
                 headers: {
@@ -90,18 +102,18 @@
                 if (data.ok) {
                     document.querySelector("[style*='border:1px']").innerHTML =
                         '<div style="text-align:center;padding:8px;">' +
-                        '<h2 style="margin:0 0 12px;font-size:1.2rem;">인증 완료</h2>' +
-                        '<p style="color:#363;margin:0 0 8px;">Git 접근이 승인되었습니다.</p>' +
-                        '<p style="font-size:0.9em;color:#888;">터미널로 돌아가시면 자동으로 진행됩니다.</p>' +
+                        '<h2 style="margin:0 0 12px;font-size:1.2rem;">' + GIT_AUTH_STRINGS.approved_title + '</h2>' +
+                        '<p style="color:#363;margin:0 0 8px;">' + GIT_AUTH_STRINGS.approved_body + '</p>' +
+                        '<p style="font-size:0.9em;color:#888;">' + GIT_AUTH_STRINGS.approved_sub + '</p>' +
                         '</div>';
                 } else {
-                    setStatus("오류: " + (data.error || "알 수 없는 오류"));
+                    setStatus(GIT_AUTH_STRINGS.error_prefix + (data.error || GIT_AUTH_STRINGS.unknown_error));
                     approveBtn.disabled = false;
                     denyBtn.disabled    = false;
                 }
             })
             .catch(function () {
-                setStatus("요청 실패. 다시 시도해주세요.");
+                setStatus(GIT_AUTH_STRINGS.request_failed);
                 approveBtn.disabled = false;
                 denyBtn.disabled    = false;
             });
@@ -111,9 +123,9 @@
             disableButtons();
             document.querySelector("[style*='border:1px']").innerHTML =
                 '<div style="text-align:center;padding:8px;">' +
-                '<h2 style="margin:0 0 12px;font-size:1.2rem;">인증 거절</h2>' +
-                '<p style="margin:0 0 8px;">Git 접근 요청을 거절했습니다.</p>' +
-                '<p style="font-size:0.9em;color:#888;">터미널에서 git 명령이 취소됩니다.</p>' +
+                '<h2 style="margin:0 0 12px;font-size:1.2rem;">' + GIT_AUTH_STRINGS.denied_title + '</h2>' +
+                '<p style="margin:0 0 8px;">' + GIT_AUTH_STRINGS.denied_body + '</p>' +
+                '<p style="font-size:0.9em;color:#888;">' + GIT_AUTH_STRINGS.denied_sub + '</p>' +
                 '</div>';
         });
 

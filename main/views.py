@@ -4867,15 +4867,16 @@ def hanharness_page(request, ui_lang=None):
 
 _CLI_DIR = Path("/Volumes/HANPLANET_HDD/Hanplanet/HanPlanet-CLI")
 _CLI_FILES = {
-    "macos": ("HanPlanet-CLI-macos-arm64.zip", "HanPlanet-CLI-macos-arm64.zip"),
-    "windows": ("HanPlanet-CLI-windows-x64.zip", "HanPlanet-CLI-windows-x64.zip"),
+    "macos": ("HanPlanet-CLI-macos-arm64", "HanPlanet-CLI-macos-arm64.zip"),
+    "windows": ("HanPlanet-CLI-windows-x64", "HanPlanet-CLI-windows-x64.zip"),
 }
 
 
 def _serve_cli_zip(platform, is_english=False):
-    filename, download_name = _CLI_FILES[platform]
-    archive_path = _CLI_DIR / filename
-    if not archive_path.exists():
+    name_fragment, download_name = _CLI_FILES[platform]
+    matches = sorted(_CLI_DIR.glob(f"*{name_fragment}*.zip"))
+    archive_path = matches[-1] if matches else None
+    if archive_path is None or not archive_path.exists():
         msg = "HanPlanet CLI file not found." if is_english else "HanPlanet CLI 파일을 찾을 수 없습니다."
         return HttpResponse(msg, status=404)
     response = FileResponse(archive_path.open("rb"), as_attachment=True, filename=download_name)

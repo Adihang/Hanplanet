@@ -1670,6 +1670,18 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     overflow-x: hidden;
 }
 
+.handrive-list-preview-body:has(.handrive-media-pdf-element),
+.handrive-list-preview-body:has(.handrive-office-sheet),
+.handrive-list-preview-body:has(.handrive-html-live-frame) {
+    padding: 0;
+}
+
+.handrive-list-preview-body:has(.handrive-media-pdf-element) .handrive-list-preview-content,
+.handrive-list-preview-body:has(.handrive-office-sheet) .handrive-list-preview-content,
+.handrive-list-preview-body:has(.handrive-html-live-frame) .handrive-list-preview-content {
+    border-radius: 0;
+}
+
 .handrive-editor-surface > #handrive-list-content-input {
     position: absolute;
     inset: 0;
@@ -3654,6 +3666,15 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     background: #ffffff;
 }
 
+.handrive-list-preview-content.handrive-html .handrive-html-live-wrap,
+.handrive-list-preview-content.handrive-office .handrive-html-live-wrap,
+.handrive-list-preview-content.handrive-html .handrive-html-live-frame,
+.handrive-list-preview-content.handrive-office .handrive-html-live-frame,
+.handrive-list-preview-content.handrive-office-sheet .handrive-office-sheet-section,
+.handrive-list-preview-content.handrive-office-sheet .handrive-office-table-wrap {
+    border-radius: 0;
+}
+
 .handrive-list-preview-content.handrive-json,
 .handrive-list-preview-content.handrive-html,
 .handrive-list-preview-content.handrive-css,
@@ -3842,6 +3863,12 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     transform-origin: center center;
 }
 
+.handrive-media-pdf-wrap {
+    background: var(--handrive-elevated-bg, var(--handrive-bg, var(--site-bg, #fff)));
+    border-radius: 0;
+    color-scheme: light dark;
+}
+
 .handrive-media-element {
     display: block;
     max-width: 100%;
@@ -3861,7 +3888,19 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     height: 100%;
     min-height: 720px;
     border: 0;
-    background: #fff;
+    border-radius: 0;
+    background: var(--handrive-elevated-bg, var(--handrive-bg, var(--site-bg, #fff)));
+    color-scheme: light dark;
+}
+
+body.handrive-page.theme-dark .handrive-media-pdf-wrap {
+    background: var(--handrive-elevated-bg, var(--handrive-bg, var(--site-bg, #222)));
+    color-scheme: dark light;
+}
+
+body.handrive-page.theme-dark .handrive-media-pdf-element {
+    background: var(--handrive-elevated-bg, var(--handrive-bg, var(--site-bg, #222)));
+    color-scheme: dark light;
 }
 
 .handrive-media-audio-element {
@@ -3887,6 +3926,7 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     flex: 1 1 auto;
     min-height: max(720px, calc(100vh - 220px));
     overflow-x: hidden;
+    border-radius: 0;
 }
 
 .handrive-list-preview-content.handrive-media .handrive-media-image-wrap {
@@ -3907,6 +3947,7 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     flex: 1 1 auto;
     min-height: max(720px, calc(100vh - 220px));
     overflow-x: hidden;
+    border-radius: 0;
 }
 
 .handrive-list-preview-content.handrive-office .handrive-media-pdf-element {
@@ -3917,6 +3958,7 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     flex: 1 1 auto;
     min-height: max(720px, calc(100vh - 220px));
     overflow-x: hidden;
+    border-radius: 0;
 }
 
 .handrive-list-preview-content.handrive-media-pdf .handrive-media-pdf-element {
@@ -5326,3 +5368,29 @@ body.handrive-modal-open {
     font-size: 11px;
     color: var(--handrive-text-muted);
 }
+
+/* ── 이미지 에디터: body padding 제거 (패딩이 canvasArea 높이 계산 방해 방지) ── */
+.handrive-list-editor-body:has(.handrive-image-editor-surface:not([hidden])) {
+    padding: 0;
+}
+
+/* ── 캔버스 테두리 리사이즈 핸들 ── */
+.ie-canvas-resize-handle {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: #fff;
+    border: 1px solid #0078d4;
+    box-sizing: border-box;
+    z-index: 10;
+    /* 핸들이 canvasWrap 밖으로 나와도 보이도록 */
+}
+
+.ie-resize-handle--n  { top: -5px;  left: calc(50% - 4px); cursor: n-resize; }
+.ie-resize-handle--ne { top: -5px;  right: -5px;            cursor: ne-resize; }
+.ie-resize-handle--e  { top: calc(50% - 4px); right: -5px;  cursor: e-resize; }
+.ie-resize-handle--se { bottom: -5px; right: -5px;          cursor: se-resize; }
+.ie-resize-handle--s  { bottom: -5px; left: calc(50% - 4px); cursor: s-resize; }
+.ie-resize-handle--sw { bottom: -5px; left: -5px;           cursor: sw-resize; }
+.ie-resize-handle--w  { top: calc(50% - 4px); left: -5px;   cursor: w-resize; }
+.ie-resize-handle--nw { top: -5px;  left: -5px;             cursor: nw-resize; }

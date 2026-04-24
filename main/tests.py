@@ -3584,3 +3584,19 @@ class HandriveAccessRuleTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("확장자 형식이 올바르지 않습니다", response.json().get("error", ""))
+
+
+class HanharnessDownloadTests(TestCase):
+    def test_download_serves_latest_timestamped_windows_zip(self):
+        with TemporaryDirectory() as tmpdir:
+            cli_dir = Path(tmpdir)
+            (cli_dir / "HanPlanet-CLI-windows-x64_202604231200.zip").write_bytes(b"old")
+            (cli_dir / "HanPlanet-CLI-windows-x64_202604241544.zip").write_bytes(b"new")
+
+            with mock.patch("main.views._CLI_DIR", cli_dir):
+                response = self.client.get("/ko/handrive/cli/download/windows")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.get("Content-Type"), "application/zip")
+            self.assertIn('filename="HanPlanet-CLI-windows-x64.zip"', response.get("Content-Disposition", ""))
+            self.assertEqual(b"".join(response.streaming_content), b"new")

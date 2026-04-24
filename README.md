@@ -21,26 +21,6 @@ Hanplanet은 하나의 Django 프로젝트 안에 아래 기능을 함께 운영
 
 추가 운영 규칙과 에이전트용 상세 작업 규칙은 [PROJECT_GUIDELINES.md](./PROJECT_GUIDELINES.md)를 참고하세요.
 
-## 대표 화면
-
-아래 이미지는 현재 저장소에 같이 보관하는 대표 화면들입니다. 인증이 필요한 HanDrive 작업공간이나 운영자 화면은 UI가 자주 바뀌므로, README 자산은 대표 흐름 위주로 유지합니다.
-
-### Portfolio / Project case
-
-![Portfolio POS case screenshot](./docs/readme-assets/portfolio-pos-case.png)
-
-### Git user repository list
-
-![Git user repository list](./docs/readme-assets/git-user-repo-list.png)
-
-### Git repository detail
-
-![Git repository detail](./docs/readme-assets/git-repo-detail-mobile.png)
-
-### Salvation's Edge 4 cover
-
-![Salvation's Edge 4 cover](./docs/readme-assets/salvations-edge-4-cover.png)
-
 ## 서비스 전체 구조
 
 ### 1. 공개 트래픽 경로

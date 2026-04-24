@@ -683,7 +683,7 @@ body.map-viewer-page.text-mode .leaflet-container {
     font: inherit;
     font-weight: 800;
     line-height: 1.08;
-    padding: 0;
+    padding: 0 3px;
     overflow: hidden;
     white-space: pre;
     overflow-wrap: normal;
@@ -896,10 +896,10 @@ body.map-viewer-page.text-mode .leaflet-container {
 	        </div>
 	    </div>
     <!-- 공유 팝업 -->
-    <div id="map-viewer-share-modal" class="handrive-rename-modal" hidden>
-        <div class="handrive-rename-modal-backdrop" id="map-viewer-share-modal-backdrop"></div>
-        <div class="handrive-rename-modal-dialog" role="dialog" aria-modal="true">
-            <h3 class="handrive-rename-title">공유</h3>
+    <div id="map-viewer-share-modal" class="handrive-popup-modal" hidden>
+        <div class="handrive-popup-modal-backdrop" id="map-viewer-share-modal-backdrop"></div>
+        <div class="handrive-popup-modal-dialog" role="dialog" aria-modal="true">
+            <h3 class="handrive-popup-title">공유</h3>
             {% if url_share_api_url %}
             <label class="handrive-url-share-toggle-label">
                 <input type="checkbox" id="map-viewer-share-toggle" {% if map_is_url_only %}checked{% endif %}>
@@ -909,7 +909,7 @@ body.map-viewer-page.text-mode .leaflet-container {
             <div id="map-viewer-share-url-row" class="handrive-field handrive-field-full" {% if not map_is_url_only %}hidden{% endif %}>
                 <input type="text" id="map-viewer-share-url-input" value="{{ map_share_url }}" readonly>
             </div>
-            <div class="handrive-rename-actions">
+            <div class="handrive-popup-actions">
                 <button type="button" class="ui-btn" id="map-viewer-share-close">닫기</button>
                 <button type="button" class="ui-btn ui-btn-primary" id="map-viewer-share-copy-btn" {% if not map_is_url_only %}hidden{% endif %}>복사</button>
             </div>
@@ -2114,6 +2114,48 @@ body.map-viewer-page.text-mode .leaflet-container {
         }
     }, 20000);
 
+    function installMapWheelZoom() {
+        if (!map || !map.getContainer) return;
+        var mapContainer = map.getContainer();
+        var wheelDelta = 0;
+        var wheelPoint = null;
+        var wheelFrame = 0;
+
+        function normalizeWheelDelta(event) {
+            var delta = Number(event.deltaY) || 0;
+            if (event.deltaMode === 1) {
+                delta *= 16;
+            } else if (event.deltaMode === 2) {
+                delta *= window.innerHeight || 800;
+            }
+            return delta;
+        }
+
+        function flushWheelZoom() {
+            wheelFrame = 0;
+            if (!map || !wheelDelta) return;
+            var point = wheelPoint || map.getSize().divideBy(2);
+            var pixelsPerZoom = Math.max(1, (Number(map.options.wheelPxPerZoomLevel) || 120) * 2);
+            var nextZoom = map._limitZoom(map.getZoom() - (wheelDelta / pixelsPerZoom));
+            wheelDelta = 0;
+            if (nextZoom === map.getZoom()) return;
+            if (map._stop) map._stop();
+            map.setZoomAround(point, nextZoom);
+        }
+
+        mapContainer.addEventListener("wheel", function(event) {
+            var delta = normalizeWheelDelta(event);
+            if (!delta) return;
+            event.preventDefault();
+            event.stopPropagation();
+            wheelDelta += delta;
+            wheelPoint = map.mouseEventToContainerPoint(event);
+            if (!wheelFrame) {
+                wheelFrame = window.requestAnimationFrame(flushWheelZoom);
+            }
+        }, { passive: false });
+    }
+
     function initMap() {
         if (map) return;
         hideLoading();
@@ -2122,14 +2164,15 @@ body.map-viewer-page.text-mode .leaflet-container {
             minZoom: -4,
             maxZoom: 4,
             zoomSnap: 0,
-            zoomDelta: 1,
-            wheelPxPerZoomLevel: 60,
+            zoomDelta: 0.5,
+            wheelPxPerZoomLevel: 120,
             attributionControl: false,
-            scrollWheelZoom: true,
+            scrollWheelZoom: false,
             touchZoom: true,
             doubleClickZoom: true,
             zoomControl: false,
         });
+        installMapWheelZoom();
         L.control.zoom({ position: "topright" }).addTo(map);
         {% if map_collab_enabled %}
         (function () {
@@ -2161,7 +2204,7 @@ body.map-viewer-page.text-mode .leaflet-container {
             btn.className = "map-draw-toggle-btn";
             btn.href = "#";
             btn.id = "map-draw-toggle-btn";
-            btn.title = "선 그리기 모드";
+            btn.title = "선 그리기 모드 (단축키: L)";
             btn.setAttribute("role", "button");
             btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
             btn.addEventListener("click", function (e) {
@@ -2173,7 +2216,7 @@ body.map-viewer-page.text-mode .leaflet-container {
             textBtn.className = "map-text-toggle-btn";
             textBtn.href = "#";
             textBtn.id = "map-text-toggle-btn";
-            textBtn.title = "텍스트 작성 모드";
+            textBtn.title = "텍스트 작성 모드 (단축키: T)";
             textBtn.setAttribute("role", "button");
             textBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7V5h14v2"/><path d="M12 5v14"/><path d="M9 19h6"/><path d="M19 11v6"/></svg>';
             textBtn.addEventListener("click", function (e) {
@@ -2688,6 +2731,10 @@ body.map-viewer-page.text-mode .leaflet-container {
         var activeTextId = null;
         var textDrag = null;
         var textResize = null;
+        var mapPan = null;
+        var suppressNextContextMenu = false;
+        var suppressNextContextMenuTimer = null;
+        var TEXT_INPUT_HORIZONTAL_PADDING = 6;
         var lastCursorSent = 0, lastDrawSent = 0;
         var lastTextSent = 0;
         var undoStack = [], redoStack = [];
@@ -2905,6 +2952,67 @@ body.map-viewer-page.text-mode .leaflet-container {
             return String(currentText || "Text").split(/\r?\n/);
         }
 
+        function shouldBlockMapPanTarget(target) {
+            return Boolean(
+                target &&
+                target.closest &&
+                target.closest(
+                    ".map-collab-text-block, .leaflet-control, .leaflet-popup, .map-viewer-layers-widget"
+                )
+            );
+        }
+
+        function beginMapPan(e) {
+            if (!map || !e || e.pointerType !== "mouse") return;
+            if (e.button !== 1 && e.button !== 2) return;
+            if (shouldBlockMapPanTarget(e.target)) return;
+            mapPan = {
+                pointerId: e.pointerId,
+                button: e.button,
+                lastX: e.clientX,
+                lastY: e.clientY,
+                moved: false,
+                captureTarget: e.target || null
+            };
+            suppressNextContextMenu = false;
+            e.preventDefault();
+            e.stopPropagation();
+            if (mapPan.captureTarget && mapPan.captureTarget.setPointerCapture) {
+                try { mapPan.captureTarget.setPointerCapture(e.pointerId); } catch (_) {}
+            }
+        }
+
+        function moveMapPan(e) {
+            if (!mapPan || !e || e.pointerType !== "mouse" || e.pointerId !== mapPan.pointerId) return;
+            var dx = e.clientX - mapPan.lastX;
+            var dy = e.clientY - mapPan.lastY;
+            if (!dx && !dy) return;
+            e.preventDefault();
+            e.stopPropagation();
+            map.panBy(L.point(-dx, -dy), { animate: false });
+            mapPan.lastX = e.clientX;
+            mapPan.lastY = e.clientY;
+            mapPan.moved = true;
+        }
+
+        function endMapPan(e) {
+            if (!mapPan || !e || e.pointerType !== "mouse" || e.pointerId !== mapPan.pointerId) return;
+            if (mapPan.button === 2 && mapPan.moved) {
+                suppressNextContextMenu = true;
+                if (suppressNextContextMenuTimer !== null) {
+                    window.clearTimeout(suppressNextContextMenuTimer);
+                }
+                suppressNextContextMenuTimer = window.setTimeout(function () {
+                    suppressNextContextMenu = false;
+                    suppressNextContextMenuTimer = null;
+                }, 250);
+            }
+            if (mapPan.captureTarget && mapPan.captureTarget.releasePointerCapture) {
+                try { mapPan.captureTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+            }
+            mapPan = null;
+        }
+
         function fitTextFontSize(item, width) {
             if (!item || !item.input) return 14;
             var canvas = fitTextFontSize._canvas || (fitTextFontSize._canvas = document.createElement("canvas"));
@@ -2913,7 +3021,7 @@ body.map-viewer-page.text-mode .leaflet-container {
             var fontFamily = style.fontFamily || "sans-serif";
             var fontWeight = style.fontWeight || "800";
             var lines = getTextLines(item);
-            var safeWidth = Math.max(1, width);
+            var safeWidth = Math.max(1, width - TEXT_INPUT_HORIZONTAL_PADDING);
 
             function fits(fontSize) {
                 ctx.font = fontWeight + " " + fontSize + "px " + fontFamily;
@@ -2925,7 +3033,7 @@ body.map-viewer-page.text-mode .leaflet-container {
             }
 
             var low = 6;
-            var high = Math.max(low, Math.min(220, width));
+            var high = Math.max(low, safeWidth);
             if (fits(high)) return Math.floor(high * 10) / 10;
             for (var i = 0; i < 12; i++) {
                 var mid = (low + high) / 2;
@@ -3084,11 +3192,14 @@ body.map-viewer-page.text-mode .leaflet-container {
                         e.preventDefault();
                         item.text = item.input ? item.input.value : item.text;
                         setActiveText(item.textId, false);
+                        var textFrame = layoutTextLayer();
                         textResize = {
                             item: item,
                             startClientX: e.clientX,
                             startClientY: e.clientY,
-                            rect: textContainerRect(item),
+                            rect: textContainerRect(item, textFrame),
+                            frameLeft: textFrame.left,
+                            frameTop: textFrame.top,
                             dir: dir
                         };
                         if (map.dragging && map.dragging.enabled()) map.dragging.disable();
@@ -3268,6 +3379,26 @@ body.map-viewer-page.text-mode .leaflet-container {
         }
 
         // ── Input events (always active — drawing works even solo) ───────────
+        container.addEventListener("mousedown", function (e) {
+            if (!map || e.button !== 0 || e.target && e.target.closest && e.target.closest(".map-collab-text-block, .leaflet-control, .leaflet-popup, .map-viewer-layers-widget")) return;
+            e.preventDefault();
+        }, true);
+        container.addEventListener("pointerdown", function (e) {
+            if (textDrag || textResize) return;
+            beginMapPan(e);
+        }, true);
+        container.addEventListener("pointermove", function (e) {
+            moveMapPan(e);
+        }, true);
+        container.addEventListener("pointerup", function (e) {
+            endMapPan(e);
+        }, true);
+        container.addEventListener("pointercancel", function (e) {
+            endMapPan(e);
+        }, true);
+        container.addEventListener("pointerleave", function (e) {
+            endMapPan(e);
+        }, true);
         container.addEventListener("pointerdown", function (e) {
             var textTarget = e.target && e.target.closest && e.target.closest(".map-collab-text-block");
             if (!textTarget && activeTextId) setActiveText(null, false);
@@ -3326,8 +3457,10 @@ body.map-viewer-page.text-mode .leaflet-container {
                 if (textResize.dir.indexOf("s") >= 0) {
                     bottom = Math.max(top + minH, bottom + dyScreen);
                 }
-                var ll1 = map.layerPointToLatLng(L.point(left, top));
-                var ll2 = map.layerPointToLatLng(L.point(right, bottom));
+                var frameLeft = Number(textResize.frameLeft) || 0;
+                var frameTop = Number(textResize.frameTop) || 0;
+                var ll1 = map.layerPointToLatLng(L.point(left + frameLeft, top + frameTop));
+                var ll2 = map.layerPointToLatLng(L.point(right + frameLeft, bottom + frameTop));
                 textResize.item.x = Math.min(ll1.lng, ll2.lng);
                 textResize.item.y = Math.min(ll1.lat, ll2.lat);
                 textResize.item.w = Math.max(20, Math.abs(ll2.lng - ll1.lng));
@@ -3393,6 +3526,14 @@ body.map-viewer-page.text-mode .leaflet-container {
             if (textDrag || textResize) endTextInteraction();
             endDraw(true);
         });
+        function isMapShortcutTypingTarget(target) {
+            var el = target;
+            if (!el) return false;
+            if (el.isContentEditable) return true;
+            var tagName = el.tagName ? el.tagName.toLowerCase() : "";
+            return tagName === "input" || tagName === "textarea" || tagName === "select";
+        }
+
         document.addEventListener("keydown", function (e) {
             var isUndoRedoKey = (e.metaKey || e.ctrlKey) && !e.altKey && (e.key === "z" || e.key === "Z" || e.key === "y" || e.key === "Y");
             if (isUndoRedoKey) {
@@ -3401,6 +3542,20 @@ body.map-viewer-page.text-mode .leaflet-container {
                 if (e.key === "y" || e.key === "Y" || e.shiftKey) redoCollabAction();
                 else undoCollabAction();
                 return;
+            }
+            if (!e.metaKey && !e.ctrlKey && !e.altKey && !isMapShortcutTypingTarget(e.target)) {
+                if (e.key === "l" || e.key === "L") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (window._setDrawMode) window._setDrawMode(!window._drawModeActive);
+                    return;
+                }
+                if (e.key === "t" || e.key === "T") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (window._setTextMode) window._setTextMode(!window._textModeActive);
+                    return;
+                }
             }
             if (e.key === "Escape") {
                 if (textDrag || textResize) endTextInteraction();
@@ -3436,6 +3591,16 @@ body.map-viewer-page.text-mode .leaflet-container {
             return rx*rx + ry*ry;
         }
         container.addEventListener("contextmenu", function (e) {
+            if (suppressNextContextMenu) {
+                e.preventDefault();
+                e.stopPropagation();
+                suppressNextContextMenu = false;
+                if (suppressNextContextMenuTimer !== null) {
+                    window.clearTimeout(suppressNextContextMenuTimer);
+                    suppressNextContextMenuTimer = null;
+                }
+                return;
+            }
             e.preventDefault();
             if (!(e.target && e.target.closest && e.target.closest(".map-collab-text-block")) && activeTextId) setActiveText(null, false);
             if (drawing) { endDraw(true); return; }
@@ -3477,7 +3642,20 @@ body.map-viewer-page.text-mode .leaflet-container {
 
         var PRESENCE_INTERVAL_MS = 5000, PRESENCE_INTERVAL_ACTIVE_MS = 15000;
         var PRESENCE_URL = "/api/map-collab-presence/";
-        var TAB_ID = Math.random().toString(36).slice(2, 10);
+        var TAB_ID_STORAGE_KEY = "hanplanet.mapCollab.tabId";
+        function getStableTabId() {
+            var existing = "";
+            try {
+                existing = window.sessionStorage ? String(window.sessionStorage.getItem(TAB_ID_STORAGE_KEY) || "") : "";
+            } catch (_) {}
+            if (/^[a-z0-9]{8,32}$/i.test(existing)) return existing;
+            var next = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+            try {
+                if (window.sessionStorage) window.sessionStorage.setItem(TAB_ID_STORAGE_KEY, next);
+            } catch (_) {}
+            return next;
+        }
+        var TAB_ID = getStableTabId();
         var sharedOwner = container.dataset.sharedOwner || "";
         var sharedSlug = container.dataset.sharedSlug || "";
 

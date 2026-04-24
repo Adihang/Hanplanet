@@ -768,7 +768,7 @@ body.theme-dark .ui-auth-account-menu-actions .ui-auth-account-menu-item:focus-v
 
 .handrive-context-menu,
 .ui-auth-account-menu,
-.handrive-rename-modal-dialog,
+.handrive-popup-modal-dialog,
 .handrive-save-modal-dialog,
 .handrive-folder-modal-dialog,
 .handrive-help-modal-dialog,
@@ -778,7 +778,7 @@ body.theme-dark .ui-auth-account-menu-actions .ui-auth-account-menu-item:focus-v
 
 .handrive-context-menu,
 .ui-auth-account-menu,
-.handrive-rename-modal-dialog,
+.handrive-popup-modal-dialog,
 .handrive-save-modal-dialog,
 .handrive-folder-modal-dialog,
 .handrive-help-modal-dialog,
@@ -2820,7 +2820,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     line-height: 1.2;
 }
 
-.handrive-rename-modal {
+.handrive-popup-modal {
     position: fixed;
     inset: 0;
     z-index: var(--site-z-modal);
@@ -2831,17 +2831,17 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     box-sizing: border-box;
 }
 
-.handrive-rename-modal[hidden] {
+.handrive-popup-modal[hidden] {
     display: none;
 }
 
-.handrive-rename-modal-backdrop {
+.handrive-popup-modal-backdrop {
     position: absolute;
     inset: 0;
     background: var(--handrive-backdrop);
 }
 
-.handrive-rename-modal-dialog {
+.handrive-popup-modal-dialog {
     position: relative;
     width: min(430px, 100%);
     border: 0;
@@ -2853,13 +2853,13 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     gap: 10px;
 }
 
-.handrive-rename-title {
+.handrive-popup-title {
     margin: 0;
     font-size: 16px;
     font-weight: 700;
 }
 
-.handrive-rename-target {
+.handrive-popup-target {
     font-size: 16px;
     color: var(--handrive-text-secondary);
     border: 1px solid var(--handrive-border-mid);
@@ -2871,18 +2871,20 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     white-space: nowrap;
 }
 
-.handrive-auth-logout-message {
+.handrive-popup-message {
     margin: 0;
     font-size: 16px;
     color: var(--handrive-text-secondary);
     line-height: 1.45;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
 }
 
 #handrive-auth-logout-title {
     font-size: 18px;
 }
 
-.handrive-rename-actions {
+.handrive-popup-actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -4928,4 +4930,399 @@ body.handrive-modal-open {
         width: 80px;
         max-width: 80px;
     }
+}
+
+
+/* ═══════════════════════════════════════════════
+   이미지 에디터 Surface
+   ═══════════════════════════════════════════════ */
+
+.handrive-image-editor-surface {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    background: var(--handrive-bg);
+}
+
+/* ── 리본 ── */
+.ie-ribbon {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 4px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--handrive-border);
+    background: var(--handrive-surface);
+    flex-shrink: 0;
+    min-height: 42px;
+}
+
+.ie-ribbon-section {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-wrap: wrap;
+}
+
+.ie-ribbon-sep {
+    width: 1px;
+    height: 22px;
+    background: var(--handrive-border);
+    margin: 0 2px;
+    flex-shrink: 0;
+}
+
+.ie-ribbon-sep--vertical {
+    height: 30px;
+    margin: 0 4px;
+}
+
+.ie-tool-btn,
+.ie-action-btn,
+.ie-mode-btn {
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: var(--handrive-radius-sm, 4px);
+    background: transparent;
+    cursor: pointer;
+    color: var(--handrive-text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+    padding: 0;
+}
+
+.ie-tool-btn:hover,
+.ie-action-btn:hover,
+.ie-mode-btn:hover {
+    background: var(--handrive-hover);
+}
+
+.ie-tool-btn.is-active {
+    background: var(--handrive-selected-bg);
+    color: var(--handrive-accent, #4f8ef7);
+    outline: 1px solid var(--handrive-accent, #4f8ef7);
+    outline-offset: -1px;
+}
+
+.ie-mode-btn.is-active {
+    background: var(--handrive-selected-bg);
+    color: var(--handrive-accent, #4f8ef7);
+}
+
+.ie-shape-mode-group {
+    display: flex;
+    border: 1px solid var(--handrive-border);
+    border-radius: var(--handrive-radius-sm, 4px);
+    overflow: hidden;
+}
+
+.ie-shape-mode-group .ie-mode-btn {
+    border-radius: 0;
+    border-right: 1px solid var(--handrive-border);
+    width: 28px;
+    height: 28px;
+}
+
+.ie-shape-mode-group .ie-mode-btn:last-child {
+    border-right: none;
+}
+
+/* ── 크기 옵션 ── */
+.ie-ribbon-section--options {
+    gap: 6px;
+}
+
+.ie-size-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ie-ribbon-label {
+    font-size: 11px;
+    color: var(--handrive-text-muted);
+    white-space: nowrap;
+}
+
+.ie-size-slider {
+    width: 64px;
+    height: 4px;
+    cursor: pointer;
+    accent-color: var(--handrive-accent, #4f8ef7);
+}
+
+.ie-size-value {
+    font-size: 11px;
+    color: var(--handrive-text-muted);
+    min-width: 26px;
+    text-align: left;
+}
+
+/* ── 색상 ── */
+.ie-ribbon-section--colors {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ie-color-swatches-wrap {
+    position: relative;
+    width: 36px;
+    height: 32px;
+    flex-shrink: 0;
+}
+
+.ie-swatch {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border: 2px solid var(--handrive-border);
+    border-radius: 3px;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+.ie-swatch--primary {
+    top: 0;
+    left: 0;
+    z-index: 2;
+}
+
+.ie-swatch--secondary {
+    bottom: 0;
+    right: 0;
+    z-index: 1;
+}
+
+.ie-swatch-swap {
+    position: absolute;
+    bottom: -2px;
+    left: -2px;
+    width: 14px;
+    height: 14px;
+    border: none;
+    background: var(--handrive-surface);
+    color: var(--handrive-text-muted);
+    cursor: pointer;
+    font-size: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+    z-index: 3;
+    padding: 0;
+    line-height: 1;
+}
+
+.ie-swatch-swap:hover {
+    color: var(--handrive-text);
+}
+
+.ie-palette {
+    display: flex;
+    flex-wrap: wrap;
+    width: 112px;
+    gap: 2px;
+}
+
+.ie-palette-cell {
+    width: 14px;
+    height: 14px;
+    border: 1px solid rgba(0,0,0,.12);
+    border-radius: 2px;
+    cursor: pointer;
+    flex-shrink: 0;
+    box-sizing: border-box;
+}
+
+.ie-palette-cell:hover {
+    outline: 2px solid var(--handrive-text-stronger, #000);
+    outline-offset: 1px;
+}
+
+.ie-custom-color-input {
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--handrive-border);
+    border-radius: 3px;
+    padding: 1px;
+    cursor: pointer;
+    background: none;
+    flex-shrink: 0;
+}
+
+/* ── 이미지 조작 ── */
+.ie-ribbon-section--imageops {
+    gap: 1px;
+}
+
+/* ── 캔버스 영역 ── */
+.ie-canvas-area {
+    flex: 1;
+    overflow: auto;
+    background: var(--handrive-surface-subtle, #f0f0f0);
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 16px;
+    min-height: 0;
+}
+
+.ie-canvas-wrap {
+    position: relative;
+    display: inline-block;
+    transform-origin: 0 0;
+    box-shadow: 0 2px 16px rgba(0,0,0,.18);
+    /* 투명도 체크무늬 배경 */
+    background-color: #fff;
+    background-image:
+        linear-gradient(45deg, #d0d0d0 25%, transparent 25%),
+        linear-gradient(-45deg, #d0d0d0 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #d0d0d0 75%),
+        linear-gradient(-45deg, transparent 75%, #d0d0d0 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+#ie-main-canvas {
+    display: block;
+    position: relative;
+    z-index: 1;
+}
+
+#ie-overlay-canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    display: block;
+}
+
+.ie-text-overlay {
+    position: absolute;
+    z-index: 3;
+    background: transparent;
+    border: 1px dashed var(--handrive-accent, #4f8ef7);
+    resize: none;
+    font-family: sans-serif;
+    outline: none;
+    color: inherit;
+    min-width: 40px;
+    min-height: 24px;
+    padding: 2px 4px;
+    box-sizing: border-box;
+}
+
+/* 픽셀 그리드 (줌 > 400%) */
+.ie-canvas-area.show-pixel-grid #ie-overlay-canvas {
+    image-rendering: pixelated;
+}
+
+/* ── 상태바 ── */
+.ie-statusbar {
+    height: 22px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px;
+    border-top: 1px solid var(--handrive-border);
+    font-size: 11px;
+    color: var(--handrive-text-muted);
+    flex-shrink: 0;
+    background: var(--handrive-surface);
+    user-select: none;
+}
+
+.ie-statusbar-sep {
+    color: var(--handrive-border);
+}
+
+/* ── 크기 조정 모달 ── */
+.ie-resize-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 0 8px;
+}
+
+.ie-resize-field-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ie-resize-label {
+    min-width: 36px;
+    font-size: 13px;
+    color: var(--handrive-text-muted);
+}
+
+.ie-resize-input {
+    width: 80px;
+    padding: 4px 6px;
+    border: 1px solid var(--handrive-border);
+    border-radius: var(--handrive-radius-sm, 4px);
+    background: var(--handrive-surface);
+    color: var(--handrive-text);
+    font-size: 13px;
+}
+
+.ie-resize-unit {
+    font-size: 12px;
+    color: var(--handrive-text-muted);
+}
+
+.ie-resize-lock-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.ie-resize-mode-row {
+    display: flex;
+    gap: 14px;
+    font-size: 13px;
+}
+
+/* ── Save As 모달 ── */
+.ie-save-as-modal-body {
+    padding: 4px 0 8px;
+}
+
+.ie-save-as-format-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ie-save-as-format-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: var(--handrive-radius-sm, 4px);
+    border: 1px solid var(--handrive-border);
+}
+
+.ie-save-as-format-option:hover {
+    background: var(--handrive-hover);
+}
+
+.ie-save-as-format-option span {
+    font-size: 13px;
+    font-weight: 600;
+    min-width: 46px;
+}
+
+.ie-save-as-format-option small {
+    font-size: 11px;
+    color: var(--handrive-text-muted);
 }

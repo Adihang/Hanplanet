@@ -1,0 +1,30 @@
+<div id="ie-resize-modal" class="handrive-popup-modal" hidden>
+    <div class="handrive-popup-modal-backdrop" id="ie-resize-modal-backdrop"></div>
+    <div class="handrive-popup-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="ie-resize-modal-title">
+        <h3 id="ie-resize-modal-title" class="handrive-popup-title">{{ handrive_text.image_editor_resize_title|default:"크기 조정" }}</h3>
+        <div class="ie-resize-modal-body">
+            <div class="ie-resize-field-row">
+                <label for="ie-resize-width" class="ie-resize-label">{{ handrive_text.image_editor_resize_width|default:"너비" }}</label>
+                <input type="number" id="ie-resize-width" class="ie-resize-input" min="1" max="16384" value="800">
+                <span class="ie-resize-unit">px</span>
+            </div>
+            <div class="ie-resize-field-row">
+                <label for="ie-resize-height" class="ie-resize-label">{{ handrive_text.image_editor_resize_height|default:"높이" }}</label>
+                <input type="number" id="ie-resize-height" class="ie-resize-input" min="1" max="16384" value="600">
+                <span class="ie-resize-unit">px</span>
+            </div>
+            <label class="ie-resize-lock-row">
+                <input type="checkbox" id="ie-resize-lock-ratio" checked>
+                <span>{{ handrive_text.image_editor_resize_lock_ratio|default:"비율 유지" }}</span>
+            </label>
+            <div class="ie-resize-mode-row">
+                <label><input type="radio" name="ie-resize-unit-type" value="px" checked> px</label>
+                <label><input type="radio" name="ie-resize-unit-type" value="percent"> %</label>
+            </div>
+        </div>
+        <div class="handrive-popup-actions">
+            <button type="button" class="ui-btn" id="ie-resize-cancel-btn">{{ handrive_text.cancel|default:"취소" }}</button>
+            <button type="button" class="ui-btn ui-btn-primary" id="ie-resize-confirm-btn">{{ handrive_text.apply|default:"변경" }}</button>
+        </div>
+    </div>
+</div>

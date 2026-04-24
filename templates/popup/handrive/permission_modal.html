@@ -1,8 +1,8 @@
-<div id="handrive-permission-modal" class="handrive-rename-modal" hidden>
-    <div class="handrive-rename-modal-backdrop" id="handrive-permission-modal-backdrop"></div>
-    <div class="handrive-rename-modal-dialog handrive-permission-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-permission-title">
-        <h3 id="handrive-permission-title" class="handrive-rename-title">{{ handrive_text.permission_title }}</h3>
-        <div class="handrive-rename-target" id="handrive-permission-target"></div>
+<div id="handrive-permission-modal" class="handrive-popup-modal" hidden>
+    <div class="handrive-popup-modal-backdrop" id="handrive-permission-modal-backdrop"></div>
+    <div class="handrive-popup-modal-dialog handrive-permission-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-permission-title">
+        <h3 id="handrive-permission-title" class="handrive-popup-title">{{ handrive_text.permission_title }}</h3>
+        <div class="handrive-popup-target" id="handrive-permission-target"></div>
         <div class="handrive-permission-grid">
             <div class="handrive-permission-col">
                 <div class="handrive-permission-col-title">{{ handrive_text.permission_read_users }}</div>
@@ -22,7 +22,7 @@
             </div>
         </div>
         <div class="handrive-permission-help">{{ handrive_text.permission_help }}</div>
-        <div class="handrive-rename-actions">
+        <div class="handrive-popup-actions">
             <button type="button" class="ui-btn" id="handrive-permission-cancel-btn">{{ handrive_text.cancel }}</button>
             <button type="button" class="ui-btn ui-btn-primary" id="handrive-permission-save-btn">{{ handrive_text.permission_save_button }}</button>
         </div>

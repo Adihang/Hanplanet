@@ -977,7 +977,7 @@
     function hasOpenHandriveModal() {
         return Boolean(
             document.querySelector(
-                ".handrive-rename-modal:not([hidden]), .handrive-save-modal:not([hidden]), .handrive-help-modal:not([hidden]), .handrive-folder-modal:not([hidden]), .handrive-sync-modal:not([hidden])"
+                ".handrive-popup-modal:not([hidden]), .handrive-save-modal:not([hidden]), .handrive-help-modal:not([hidden]), .handrive-folder-modal:not([hidden]), .handrive-sync-modal:not([hidden])"
             )
         );
     }
@@ -1176,6 +1176,98 @@
     }
 
     const requestCommitMessageDialog = createHandriveCommitMessageDialog();
+
+    function createHandriveClipboardFilenameDialog() {
+        const modal = document.getElementById("handrive-clipboard-filename-modal");
+        const backdrop = document.getElementById("handrive-clipboard-filename-modal-backdrop");
+        const target = document.getElementById("handrive-clipboard-filename-target");
+        const input = document.getElementById("handrive-clipboard-filename-input");
+        const cancelButton = document.getElementById("handrive-clipboard-filename-cancel-btn");
+        const confirmButton = document.getElementById("handrive-clipboard-filename-confirm-btn");
+
+        if (!modal || !backdrop || !target || !input || !cancelButton || !confirmButton) {
+            return async function () {
+                return null;
+            };
+        }
+
+        let resolvePending = null;
+        let isOpen = false;
+        let lastFocusedElement = null;
+
+        const close = function (value) {
+            if (!isOpen) {
+                return;
+            }
+            modal.hidden = true;
+            isOpen = false;
+            syncHandriveModalBodyState();
+            if (resolvePending) {
+                resolvePending(value);
+                resolvePending = null;
+            }
+            if (lastFocusedElement && typeof lastFocusedElement.focus === "function") {
+                lastFocusedElement.focus();
+            }
+            lastFocusedElement = null;
+        };
+
+        const submit = function () {
+            close(String(input.value || "").trim());
+        };
+
+        backdrop.addEventListener("click", function () {
+            close(null);
+        });
+        cancelButton.addEventListener("click", function () {
+            close(null);
+        });
+        confirmButton.addEventListener("click", function () {
+            submit();
+        });
+        input.addEventListener("keydown", function (event) {
+            if (!isOpen) {
+                return;
+            }
+            if (event.key === "Escape") {
+                event.preventDefault();
+                close(null);
+                return;
+            }
+            if (event.key === "Enter") {
+                event.preventDefault();
+                submit();
+            }
+        });
+
+        return function requestClipboardFilenameDialog(options) {
+            if (resolvePending) {
+                resolvePending(null);
+                resolvePending = null;
+            }
+
+            const settings = options || {};
+            target.textContent = settings.targetText || "";
+            input.value = "";
+            if (settings.placeholder) {
+                input.placeholder = settings.placeholder;
+            }
+            modal.hidden = false;
+            isOpen = true;
+            lastFocusedElement = document.activeElement;
+            syncHandriveModalBodyState();
+            window.setTimeout(function () {
+                input.focus();
+                input.select();
+            }, 0);
+
+            return new Promise(function (resolve) {
+                resolvePending = resolve;
+            });
+        };
+    }
+
+    const requestClipboardFilenameDialog = createHandriveClipboardFilenameDialog();
 
     function createHandriveUrlShareModal() {
         const shareModal = document.getElementById("handrive-url-share-modal");
@@ -1680,6 +1772,8 @@
         const editorHighlightCode = document.getElementById("handrive-list-editor-highlight-code");
         const editorSurface = document.getElementById("handrive-list-editor-surface");
         const editorHighlight = document.getElementById("handrive-list-editor-highlight");
+        const imageEditorSurface = document.getElementById("handrive-image-editor-surface");
+        const imageEditorSaveUrl = root.dataset.imageEditorSaveUrl || "";
         const editorSuggest = document.getElementById("handrive-list-editor-suggest");
         const editorSuggestLabel = document.getElementById("handrive-list-editor-suggest-label");
         const markdownSnippetMenu = document.getElementById("ui-markdown-snippet-menu");
@@ -1811,6 +1905,12 @@
             ".flac",
             ".weba",
         ]);
+        const imageEditorExtensions = new Set([
+            ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".avif",
+        ]);
+        function isImageEditorEntry(entry) {
+            return imageEditorExtensions.has(getEntryFileExtension(entry));
+        }
 
         const currentDir = normalizePath(root.dataset.currentDir || "", true);
         const currentDirIsRoot = root.dataset.currentDirIsRoot === "1";
@@ -2405,6 +2505,17 @@
                 });
         }
 
+        function isKeyboardEditableTarget(target) {
+            if (!(target instanceof Element)) {
+                return false;
+            }
+            const tagName = String(target.tagName || "").toLowerCase();
+            if (tagName === "input" || tagName === "textarea" || tagName === "select") {
+                return true;
+            }
+            return Boolean(target.isContentEditable);
+        }
+
         function updateListLayoutMode() {
             if (!listLayout) {
                 return;
@@ -2717,7 +2828,8 @@
         }
 
         function isEditableHandriveFileEntry(entry) {
-            return !nonEditableMediaExtensions.has(getEntryFileExtension(entry));
+            return !nonEditableMediaExtensions.has(getEntryFileExtension(entry))
+                || isImageEditorEntry(entry);
         }
 
         function applyRenderedContentModeClass(targetElement, renderMode, renderClass) {
@@ -2755,9 +2867,16 @@
         }
 
         function switchToEditor(entry) {
-            if (!editorPanel || !editorFilenameInput || !editorContentInput) {
+            if (!editorPanel || !editorFilenameInput) {
                 return;
             }
+
+            if (isImageEditorEntry(entry)) {
+                switchToImageEditor(entry);
+                return;
+            }
+
+            if (!editorContentInput) return;
 
             activeListEditorEntry = entry || null;
             clearListEditorSuggestion();
@@ -2793,7 +2912,57 @@
             setupEditorEvents(entry);
         }
 
+        function switchToImageEditor(entry) {
+            activeListEditorEntry = entry || null;
+
+            // 텍스트 surface 숨김, 이미지 surface 표시
+            if (editorSurface) editorSurface.hidden = true;
+            if (imageEditorSurface) imageEditorSurface.hidden = false;
+
+            // 파일명 입력창 설정
+            if (editorFilenameInput) editorFilenameInput.value = entry.name || "";
+
+            // 패널 열기 (has-editor 클래스 추가)
+            if (previewPanel) {
+                previewPanel.hidden = true;
+                previewPanel.setAttribute("aria-hidden", "true");
+            }
+            if (editorPanel) {
+                editorPanel.hidden = false;
+                editorPanel.setAttribute("aria-hidden", "false");
+            }
+            if (listLayout) {
+                listLayout.classList.remove("has-preview");
+                listLayout.classList.add("has-editor");
+            }
+            scheduleSyncCurrentDirRowHeightWithSideHead();
+            syncSearchFormVisibility();
+
+            // ImageEditor 초기화
+            const imageServeUrl = buildDownloadUrl(entry.path);
+            if (window.HandriveImageEditor) {
+                window.HandriveImageEditor.init({
+                    entry: entry,
+                    imageServeUrl: imageServeUrl,
+                    onDirtyChange: function (dirty) {
+                        if (editorSaveButton) {
+                            editorSaveButton.classList.toggle("is-dirty", dirty);
+                        }
+                    },
+                });
+            }
+
+            setupEditorEvents(entry);
+        }
+
         function switchToPreview() {
+            // 이미지 에디터 정리
+            if (imageEditorSurface && !imageEditorSurface.hidden) {
+                if (window.HandriveImageEditor) window.HandriveImageEditor.destroy();
+                imageEditorSurface.hidden = true;
+                if (editorSurface) editorSurface.hidden = false;
+            }
+
             editorSwitchToPreviewUI({
                 editorPanel: editorPanel,
                 previewPanel: previewPanel,
@@ -2912,10 +3081,41 @@
             // 저장/취소 버튼 이벤트를 현재 편집 대상(entry)에 바인딩
             editorSaveButton.onclick = function (event) {
                 event.preventDefault();
+                // 이미지 에디터 모드 분기
+                if (imageEditorSurface && !imageEditorSurface.hidden && window.HandriveImageEditor) {
+                    const csrfToken = getCsrfToken();
+                    const savingText = t("image_editor_saving", "저장 중...");
+                    const origText = editorSaveButton.textContent;
+                    editorSaveButton.disabled = true;
+                    editorSaveButton.textContent = savingText;
+                    window.HandriveImageEditor.saveToServer(
+                        imageEditorSaveUrl,
+                        csrfToken,
+                        entry.path,
+                        function (result) {
+                            editorSaveButton.disabled = false;
+                            editorSaveButton.textContent = origText;
+                            if (result.ok) {
+                                // 미리보기 캐시 무효화
+                                if (state.previewCache) state.previewCache.delete(entry.path);
+                            } else {
+                                alertError(new Error(result.error || t("image_editor_save_error", "저장 실패")));
+                            }
+                        }
+                    );
+                    return;
+                }
                 saveEditorContent(entry).catch(alertError);
             };
             editorCancelButton.onclick = function (event) {
                 event.preventDefault();
+                if (imageEditorSurface && !imageEditorSurface.hidden && window.HandriveImageEditor) {
+                    if (window.HandriveImageEditor.getIsDirty()) {
+                        if (!window.confirm(t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"))) {
+                            return;
+                        }
+                    }
+                }
                 switchToPreview();
             };
         }
@@ -4120,6 +4320,128 @@
                 return true;
             }
             return Boolean(activeElement.isContentEditable);
+        }
+
+        function getClipboardDefaultFileExtension(file) {
+            const type = String(file && file.type ? file.type : "").toLowerCase();
+            const extensionByType = {
+                "image/bmp": ".bmp",
+                "image/gif": ".gif",
+                "image/jpeg": ".jpg",
+                "image/png": ".png",
+                "image/svg+xml": ".svg",
+                "image/webp": ".webp",
+                "text/html": ".html",
+                "text/plain": ".txt",
+                "video/mp4": ".mp4",
+                "video/webm": ".webm",
+            };
+            return extensionByType[type] || "";
+        }
+
+        function getClipboardDefaultFilename(file, index) {
+            const suffix = index > 0 ? "-" + String(index + 1) : "";
+            return "untitled" + suffix + getClipboardDefaultFileExtension(file);
+        }
+
+        function isLikelyGeneratedClipboardFilename(file, filename, index) {
+            const rawName = String(filename || "").trim().toLowerCase();
+            if (!rawName) {
+                return true;
+            }
+
+            // Browsers often synthesize a generic name for pasted files instead of exposing
+            // the user's original filename. Treat those names like "missing" so the filename
+            // dialog still appears and the user can confirm or override them.
+            const extensionlessName = rawName.replace(/\.[a-z0-9._-]{1,16}$/i, "");
+            const genericNamePatterns = [
+                /^(?:blob|clipboard|file|image|photo|picture|screenshot|screen shot|screen_shot|capture|untitled)(?:[-_ ]?\d+)?$/,
+                /^(?:pasted[-_ ]?(?:image|clipboard))(?:[-_ ]?\d+)?$/,
+                /^(?:image|photo|picture|screenshot|screen shot|screen_shot|capture|untitled)(?:[-_ ]?\d+)?\.(?:bmp|gif|jpe?g|png|svg|webp|heic|avif|tiff?)$/,
+            ];
+
+            return genericNamePatterns.some(function (pattern) {
+                return pattern.test(rawName) || pattern.test(extensionlessName);
+            });
+        }
+
+        function renameClipboardFile(file, filename) {
+            const safeName = String(filename || "").trim();
+            if (!file || !safeName) {
+                return file;
+            }
+            try {
+                return new File([file], safeName, {
+                    type: file.type || "application/octet-stream",
+                    lastModified: file.lastModified || Date.now(),
+                });
+            } catch (error) {
+                const renamedBlob = file.slice(0, file.size || 0, file.type || "application/octet-stream");
+                try {
+                    Object.defineProperty(renamedBlob, "name", {
+                        configurable: true,
+                        value: safeName,
+                    });
+                    Object.defineProperty(renamedBlob, "lastModified", {
+                        configurable: true,
+                        value: file.lastModified || Date.now(),
+                    });
+                } catch (defineError) {
+                    return file;
+                }
+                return renamedBlob;
+            }
+        }
+
+        function resolveClipboardFilenameValue(file, inputValue, defaultFilename) {
+            const safeInput = String(inputValue || "").trim();
+            const fallbackName = String(defaultFilename || "").trim();
+            const baseName = safeInput || fallbackName;
+            if (!baseName) {
+                return "";
+            }
+
+            const normalizedBaseName = baseName.replace(/\.+$/g, "");
+            const baseExtMatch = normalizedBaseName.match(/\.([a-z0-9._-]{1,16})$/i);
+            if (baseExtMatch) {
+                return normalizedBaseName;
+            }
+
+            const clipboardExtension = getClipboardDefaultFileExtension(file);
+            return clipboardExtension ? normalizedBaseName + clipboardExtension : normalizedBaseName;
+        }
+
+        async function resolveClipboardUploadFilenames(files, targetDirPath) {
+            const resolvedFiles = [];
+            const targetLabel = targetDirPath
+                ? t("clipboard_filename_target_prefix", "업로드 위치") + ": " + targetDirPath
+                : t("clipboard_filename_target_root", "업로드 위치: HanDrive");
+            for (let index = 0; index < files.length; index += 1) {
+                const file = files[index];
+                const fileName = String(file && file.name ? file.name : "").trim();
+                if (fileName && !isLikelyGeneratedClipboardFilename(file, fileName, index)) {
+                    resolvedFiles.push(file);
+                    continue;
+                }
+
+                const defaultFilename = getClipboardDefaultFilename(file, index);
+                const inputValue = await requestClipboardFilenameDialog({
+                    targetText: targetLabel,
+                    placeholder: t("clipboard_filename_blank_default_prefix", "비워두면 ")
+                        + defaultFilename
+                        + t("clipboard_filename_blank_default_suffix", " 이름으로 업로드됩니다."),
+                });
+                if (inputValue === null) {
+                    return null;
+                }
+                resolvedFiles.push(
+                    renameClipboardFile(
+                        file,
+                        resolveClipboardFilenameValue(file, inputValue, defaultFilename)
+                    )
+                );
+            }
+            return resolvedFiles;
         }
 
         function setDragOverTarget(element) {
@@ -6575,7 +6897,32 @@
         });
 
         document.addEventListener("keydown", function (event) {
-            if (event.key === "Escape") {
+            const key = String(event.key || "");
+            if (key === "Delete" || key === "Backspace") {
+                if (
+                    isKeyboardEditableTarget(event.target) ||
+                    (contextMenu && !contextMenu.hidden) ||
+                    hasOpenHandriveModal()
+                ) {
+                    return;
+                }
+
+                const selectedEntries = getSelectedEntries().filter(function (entry) {
+                    return isEntryDeletable(entry);
+                });
+                if (selectedEntries.length === 0) {
+                    if (key === "Backspace") {
+                        event.preventDefault();
+                    }
+                    return;
+                }
+
+                event.preventDefault();
+                deleteEntries(selectedEntries.length > 1 ? selectedEntries : selectedEntries[0]).catch(alertError);
+                return;
+            }
+
+            if (key === "Escape") {
                 if (folderCreateModal && !folderCreateModal.hidden) {
                     setFolderCreateModalOpen(false);
                     return;
@@ -6705,7 +7052,14 @@
                     pasteTargetDir = normalizePath(selectedEntries[0].path, true);
                 }
             }
-            enqueueUploadFiles(files, pasteTargetDir).catch(alertError);
+            resolveClipboardUploadFilenames(files, pasteTargetDir)
+                .then(function (resolvedFiles) {
+                    if (!resolvedFiles || !resolvedFiles.length) {
+                        return null;
+                    }
+                    return enqueueUploadFiles(resolvedFiles, pasteTargetDir);
+                })
+                .catch(alertError);
         });
 
         if (uploadQueueToggleButton) {

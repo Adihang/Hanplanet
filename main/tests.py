@@ -3333,6 +3333,25 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json().get("path"), "Ski Map")
 
+    def test_docs_api_rename_preserves_explicit_extension_for_files(self):
+        editor = self.create_handrive_editor("rename_explicit_ext_editor")
+        self.client.force_login(editor)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
+        handrive_root.mkdir(parents=True, exist_ok=True)
+        (handrive_root / "sample.md").write_text("# sample", encoding="utf-8")
+
+        response = self.client.post(
+            reverse("main:handrive_api_rename"),
+            data=json.dumps({"path": "sample.md", "new_name": "sample.txt"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("path"), "sample.txt")
+        self.assertFalse((handrive_root / "sample.md").exists())
+        self.assertTrue((handrive_root / "sample.txt").exists())
+
     def test_public_writable_file_cannot_be_deleted(self):
         public_group = get_handrive_public_write_group()
         rule = HandriveAccessRule.objects.create(path="public.md")
@@ -3496,7 +3515,7 @@ class HandriveAccessRuleTests(TestCase):
     def test_docs_api_save_allows_custom_extension(self):
         editor = self.create_handrive_editor("custom_ext_editor")
         self.client.force_login(editor)
-        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
 
         response = self.client.post(
             reverse("main:handrive_api_save"),
@@ -3520,6 +3539,30 @@ class HandriveAccessRuleTests(TestCase):
 
         view_response = self.client.get("/ko/docs/notes.txt/")
         self.assertEqual(view_response.status_code, 200)
+
+    def test_docs_api_save_preserves_explicit_extension_in_filename(self):
+        editor = self.create_handrive_editor("explicit_filename_ext_editor")
+        self.client.force_login(editor)
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
+
+        response = self.client.post(
+            reverse("main:handrive_api_save"),
+            data=json.dumps(
+                {
+                    "original_path": "",
+                    "target_dir": "",
+                    "filename": "notes.txt",
+                    "content": "# text document",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("path"), "notes.txt")
+        self.assertEqual(payload.get("slug_path"), "notes.txt")
+        self.assertTrue((handrive_root / "notes.txt").exists())
 
     def test_docs_api_save_rejects_invalid_extension_format(self):
         editor = self.create_handrive_editor("invalid_ext_editor")

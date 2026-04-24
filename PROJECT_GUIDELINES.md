@@ -170,6 +170,7 @@ Do not commit API keys or secrets. Production uses `DEBUG = False`.
 - Account popup UI (`ide-auth-account-menu`) must be maintained as a separate shared partial template — do not duplicate popup markup across page templates.
 - Popup/modal markup must live in `templates/popup/` or `templates/partials/` — never inline in page templates.
 - Popups with similar structure should be merged into a shared base partial and parameterized includes instead of duplicated HTML blocks.
+- 공통 팝업에서 재사용하는 class 명은 기능명(`rename`, `auth_logout` 등)으로 두지 말고, `handrive-popup-*` 같은 공용 이름으로 다시 지정한다.
 - Static assets should be split by responsibility — do not grow monolithic `style.css` or single JS files.
 
 ## Testing Guidelines

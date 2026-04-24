@@ -1,0 +1,29 @@
+<div id="ie-save-as-modal" class="handrive-popup-modal" hidden>
+    <div class="handrive-popup-modal-backdrop" id="ie-save-as-modal-backdrop"></div>
+    <div class="handrive-popup-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="ie-save-as-modal-title">
+        <h3 id="ie-save-as-modal-title" class="handrive-popup-title">{{ handrive_text.image_editor_save_as_title|default:"다른 이름으로 저장" }}</h3>
+        <div class="ie-save-as-modal-body">
+            <div class="ie-save-as-format-group">
+                <label class="ie-save-as-format-option">
+                    <input type="radio" name="ie-save-as-format" value="png" checked>
+                    <span>PNG</span>
+                    <small>무손실, 투명 지원</small>
+                </label>
+                <label class="ie-save-as-format-option">
+                    <input type="radio" name="ie-save-as-format" value="jpeg">
+                    <span>JPEG</span>
+                    <small>사진에 적합, 파일 크기 작음</small>
+                </label>
+                <label class="ie-save-as-format-option">
+                    <input type="radio" name="ie-save-as-format" value="webp">
+                    <span>WebP</span>
+                    <small>고효율 압축</small>
+                </label>
+            </div>
+        </div>
+        <div class="handrive-popup-actions">
+            <button type="button" class="ui-btn" id="ie-save-as-cancel-btn">{{ handrive_text.cancel|default:"취소" }}</button>
+            <button type="button" class="ui-btn ui-btn-primary" id="ie-save-as-confirm-btn">{{ handrive_text.image_editor_save_as_title|default:"다운로드" }}</button>
+        </div>
+    </div>
+</div>

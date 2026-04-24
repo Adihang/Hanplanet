@@ -1,9 +1,9 @@
-<div id="{{ modal_id }}" class="handrive-rename-modal" hidden>
-    <div class="handrive-rename-modal-backdrop" id="{{ backdrop_id }}"></div>
-    <div class="handrive-rename-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="{{ title_id }}" aria-describedby="{{ message_id }}">
-        <h3 id="{{ title_id }}" class="handrive-rename-title">{{ title_text }}</h3>
-        <p id="{{ message_id }}" class="handrive-auth-logout-message">{{ message_text|default:"" }}</p>
-        <div class="handrive-rename-actions">
+<div id="{{ modal_id }}" class="handrive-popup-modal" hidden>
+    <div class="handrive-popup-modal-backdrop" id="{{ backdrop_id }}"></div>
+    <div class="handrive-popup-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="{{ title_id }}" aria-describedby="{{ message_id }}">
+        <h3 id="{{ title_id }}" class="handrive-popup-title">{{ title_text }}</h3>
+        <p id="{{ message_id }}" class="handrive-popup-message">{{ message_text|default:"" }}</p>
+        <div class="handrive-popup-actions">
             <button type="button" class="ui-btn" id="{{ cancel_button_id }}">{{ cancel_text }}</button>
             <button type="button" class="ui-btn ui-btn-primary" id="{{ confirm_button_id }}">{{ confirm_text }}</button>
         </div>

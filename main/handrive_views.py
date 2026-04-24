@@ -269,6 +269,7 @@ MAP_ICONS_DIR = "_icons"
 MAP_IMAGE_ATTACHMENTS_DIR = "_images"
 MAP_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff", ".tif", ".avif"})
 FOLDER_ICON_EXTENSIONS = MAP_IMAGE_EXTENSIONS
+IMAGE_EDITOR_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".avif"})
 MAP_VIDEO_EXTENSIONS = frozenset({".mp4", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m4v", ".ogv"})
 MAP_MEDIA_EXTENSIONS = MAP_IMAGE_EXTENSIONS | MAP_VIDEO_EXTENSIONS
 MAP_IMAGE_MIME_TYPES = {
@@ -505,6 +506,14 @@ DOCS_TEXT = {
         "commit_message_title": "커밋 메시지",
         "commit_message_label": "메시지",
         "commit_message_placeholder": "커밋 메시지를 입력해주세요.",
+        "clipboard_filename_title": "파일명 입력",
+        "clipboard_filename_label": "파일명",
+        "clipboard_filename_placeholder": "비워두면 기본 파일명으로 업로드됩니다.",
+        "clipboard_filename_target_prefix": "업로드 위치",
+        "clipboard_filename_target_root": "업로드 위치: HanDrive",
+        "clipboard_filename_placeholder_with_default": "비워두면 기본 파일명으로 업로드됩니다.",
+        "clipboard_filename_blank_default_prefix": "비워두면 ",
+        "clipboard_filename_blank_default_suffix": " 이름으로 업로드됩니다.",
         "rename_new_name": "새 이름",
         "rename_new_name_placeholder": "새 이름",
         "cancel": "취소",
@@ -521,6 +530,15 @@ DOCS_TEXT = {
         "queue_status_move_done": "이동 완료",
         "apply": "변경",
         "edit_button": "수정",
+        "image_editor_save_ok": "저장 완료",
+        "image_editor_save_error": "저장 실패",
+        "image_editor_saving": "저장 중...",
+        "image_editor_resize_title": "크기 조정",
+        "image_editor_save_as_title": "다른 이름으로 저장",
+        "image_editor_resize_width": "너비",
+        "image_editor_resize_height": "높이",
+        "image_editor_resize_lock_ratio": "비율 유지",
+        "image_editor_unsaved_warning": "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?",
         "delete_button": "삭제",
         "delete_repo_button": "Repo 삭제",
         "download_button": "다운로드",
@@ -698,10 +716,10 @@ DOCS_TEXT = {
         "js_error_parent_path_not_allowed": "상위 경로(..)는 사용할 수 없습니다.",
         "js_error_request_failed": "요청 처리 중 오류가 발생했습니다.",
         "js_error_processing_failed": "처리 중 오류가 발생했습니다.",
-        "js_confirm_delete_entry": "정말 삭제할까요?\n{path}",
+        "js_confirm_delete_entry": "{path}",
         "js_confirm_delete_entries": "선택한 {count}개 항목을 삭제할까요?",
-        "js_confirm_delete_repo_entry": "이 Repo를 삭제하면 Forgejo 저장소가 삭제되고 폴더는 내 루트 폴더로 이동합니다.\n정말 삭제할까요?\n{path}",
-        "js_confirm_delete_repo_entries": "선택한 {count}개 항목 중 Repo를 삭제하면 Forgejo 저장소가 삭제되고 폴더는 각 사용자 루트 폴더로 이동합니다.\n정말 삭제할까요?",
+        "js_confirm_delete_repo_entry": "이 Repo를 삭제하면 Forgejo 저장소가 삭제되고 폴더는 내 루트 폴더로 이동합니다.\n{path}",
+        "js_confirm_delete_repo_entries": "선택한 {count}개 항목 중 Repo를 삭제하면 Forgejo 저장소가 삭제되고 폴더는 각 사용자 루트 폴더로 이동합니다.",
         "js_permission_target_multiple": "{count}개 항목",
         "js_empty_documents": "파일이 없습니다.",
         "js_confirm_delete_doc": "이 파일을 삭제할까요?",
@@ -769,12 +787,29 @@ DOCS_TEXT = {
         "commit_message_title": "Commit Message",
         "commit_message_label": "Message",
         "commit_message_placeholder": "Enter a commit message.",
+        "clipboard_filename_title": "File Name",
+        "clipboard_filename_label": "File name",
+        "clipboard_filename_placeholder": "Leave blank to upload with the default file name.",
+        "clipboard_filename_target_prefix": "Upload location",
+        "clipboard_filename_target_root": "Upload location: HanDrive",
+        "clipboard_filename_placeholder_with_default": "Leave blank to upload with the default file name.",
+        "clipboard_filename_blank_default_prefix": "Leave blank to upload as ",
+        "clipboard_filename_blank_default_suffix": ".",
         "rename_new_name": "New name",
         "rename_new_name_placeholder": "New name",
         "cancel": "Cancel",
         "upload_cancel": "Cancel Upload",
         "apply": "Apply",
         "edit_button": "Edit",
+        "image_editor_save_ok": "Saved",
+        "image_editor_save_error": "Save failed",
+        "image_editor_saving": "Saving...",
+        "image_editor_resize_title": "Resize",
+        "image_editor_save_as_title": "Save As",
+        "image_editor_resize_width": "Width",
+        "image_editor_resize_height": "Height",
+        "image_editor_resize_lock_ratio": "Lock ratio",
+        "image_editor_unsaved_warning": "You have unsaved changes. Continue?",
         "delete_button": "Delete",
         "delete_repo_button": "Delete Repo",
         "download_button": "Download",
@@ -936,7 +971,7 @@ DOCS_TEXT = {
         "queue_status_pending": "Queued",
         "queue_status_delete_queued": "Delete queued",
         "queue_status_deleting": "Deleting",
-        "queue_status_delete_done": "Delete complete",
+        "queue_status_delete_done": "Deleted",
         "queue_status_move_queued": "Move queued",
         "queue_status_moving": "Moving",
         "queue_status_move_done": "Move complete",
@@ -962,10 +997,10 @@ DOCS_TEXT = {
         "js_error_parent_path_not_allowed": "Parent path (..) is not allowed.",
         "js_error_request_failed": "Request failed while processing the request.",
         "js_error_processing_failed": "An error occurred while processing.",
-        "js_confirm_delete_entry": "Delete this item?\n{path}",
+        "js_confirm_delete_entry": "{path}",
         "js_confirm_delete_entries": "Delete {count} selected items?",
-        "js_confirm_delete_repo_entry": "Deleting this Repo also deletes the Forgejo repository, then moves the folder back to your root folder.\nDelete it now?\n{path}",
-        "js_confirm_delete_repo_entries": "Deleting Repo items among the selected {count} entries also deletes the Forgejo repositories, then moves each folder back to its user's root folder.\nDelete them now?",
+        "js_confirm_delete_repo_entry": "Deleting this Repo also deletes the Forgejo repository, then moves the folder back to your root folder.\n{path}",
+        "js_confirm_delete_repo_entries": "Deleting Repo items among the selected {count} entries also deletes the Forgejo repositories, then moves each folder back to its user's root folder.",
         "js_permission_target_multiple": "{count} items",
         "js_empty_documents": "No files found.",
         "js_confirm_delete_doc": "Delete this file?",
@@ -1183,6 +1218,37 @@ def validate_name(
                 raise ValueError("파일명을 입력해주세요.")
 
     return candidate
+
+
+def resolve_file_name_and_extension(
+    name: str | None,
+    *,
+    fallback_extension: str | None = DOCS_FILE_EXTENSION,
+) -> tuple[str, str]:
+    """파일명 입력에서 stem과 extension을 분리한다.
+
+    확장자가 명시되면 그 값을 우선하고, 없으면 fallback_extension을 붙인다.
+    """
+    candidate = (name or "").strip()
+    if not candidate:
+        raise ValueError("이름을 입력해주세요.")
+    if candidate in {".", ".."}:
+        raise ValueError("사용할 수 없는 이름입니다.")
+    if INVALID_NAME_PATTERN.search(candidate):
+        raise ValueError("이름에 슬래시를 사용할 수 없습니다.")
+
+    ext_match = re.match(r"^(.*?)(\.[A-Za-z0-9]+)$", candidate)
+    if ext_match and ext_match[1] and not ext_match[1].endswith("."):
+        base_name = validate_name(ext_match[1].strip(), for_file=False)
+        extension = normalize_file_extension(ext_match[2])
+        return base_name, extension
+
+    if candidate.endswith("."):
+        raise ValueError("확장자 형식이 올바르지 않습니다. 예: .md")
+
+    base_name = validate_name(candidate, for_file=False)
+    extension = normalize_file_extension(fallback_extension)
+    return base_name, extension
 
 
 def build_available_upload_path(parent_dir: Path, original_name: str) -> Path:
@@ -3871,6 +3937,7 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_map_image_url": reverse("main:handrive_api_map_image"),
             "handrive_map_editor_base_url": "/handrive/map-editor/",
             "handrive_map_viewer_base_url": "/handrive/map-viewer/",
+            "handrive_image_editor_save_url": reverse("main:handrive_api_image_editor_save"),
             "handrive_can_edit": has_handrive_directory_write_access(request, ""),
             "handrive_can_manage_acl": is_handrive_acl_admin(request),
             "handrive_file_extension_options": get_handrive_save_extension_options(),
@@ -5863,8 +5930,15 @@ def handrive_api_rename(request):
         old_repo_relative = normalize_relative_path(git_virtual_source["repo_relative_path"], allow_empty=False)
         old_name = Path(old_repo_relative).name
         suffix = Path(old_name).suffix.lower()
-        candidate_name = validate_name(new_name, for_file=git_virtual_source["kind"] == "branch_file", file_extension=suffix if git_virtual_source["kind"] == "branch_file" else "")
-        new_leaf_name = f"{candidate_name}{suffix}" if git_virtual_source["kind"] == "branch_file" else candidate_name
+        if git_virtual_source["kind"] == "branch_file":
+            candidate_name, candidate_extension = resolve_file_name_and_extension(
+                new_name,
+                fallback_extension=suffix,
+            )
+            new_leaf_name = f"{candidate_name}{candidate_extension}"
+        else:
+            candidate_name = validate_name(new_name, for_file=False)
+            new_leaf_name = candidate_name
         parent_relative = normalize_relative_path(str(Path(old_repo_relative).parent).replace("\\", "/"), allow_empty=True)
         if parent_relative == ".":
             parent_relative = ""
@@ -5904,8 +5978,11 @@ def handrive_api_rename(request):
             source_extension = normalize_file_extension(source_extension)
         except ValueError:
             return json_error("파일만 이름을 바꿀 수 있습니다.", status=400)
-        candidate_name = validate_name(new_name, for_file=True, file_extension=source_extension)
-        destination = parent / f"{candidate_name}{source_extension}"
+        candidate_name, candidate_extension = resolve_file_name_and_extension(
+            new_name,
+            fallback_extension=source_extension,
+        )
+        destination = parent / f"{candidate_name}{candidate_extension}"
     else:
         destination = parent / new_name
 
@@ -6819,11 +6896,11 @@ def handrive_api_save(request):
         if source_is_public_write:
             target_extension = source_extension
 
-        filename = validate_name(
+        filename, resolved_extension = resolve_file_name_and_extension(
             payload.get("filename"),
-            for_file=True,
-            file_extension=target_extension,
+            fallback_extension=target_extension,
         )
+        target_extension = resolved_extension
         if git_virtual_target is not None:
             destination_repo_relative = (
                 f"{git_virtual_target['repo_relative_path']}/{filename}{target_extension}"
@@ -7483,6 +7560,58 @@ def handrive_map_editor(request, map_path, ui_lang=None):
         "hide_global_nav": True,
     })
     return render(request, "handrive/map_editor.html", context)
+
+
+@with_request_handrive_root
+def handrive_api_image_editor_save(request):
+    """이미지 에디터 저장 API.
+
+    multipart/form-data 로 image_blob(file) + path(str) 을 받아 원본 파일을 덮어쓴다.
+    """
+    if request.method != "POST":
+        return json_error("POST 요청만 허용됩니다.", status=405)
+
+    raw_path = str(request.POST.get("path") or "").strip()
+    try:
+        normalized = normalize_relative_path(unquote(raw_path), allow_empty=False)
+        file_path, normalized = resolve_path(normalized, must_exist=True)
+    except FileNotFoundError:
+        return json_error("파일을 찾을 수 없습니다.", status=404)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    if not file_path.is_file():
+        return json_error("파일을 찾을 수 없습니다.", status=404)
+
+    if file_path.suffix.lower() not in IMAGE_EDITOR_EXTENSIONS:
+        return json_error("이미지 편집기가 지원하지 않는 파일 형식입니다.", status=400)
+
+    if not has_handrive_write_access(request, normalized):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+    image_blob = request.FILES.get("image_blob")
+    if not image_blob:
+        return json_error("이미지 데이터가 없습니다.", status=400)
+
+    old_size = file_path.stat().st_size
+    new_size = image_blob.size
+    try:
+        enforce_handrive_scoped_quota(
+            request,
+            quota_path=normalized,
+            extra_bytes=max(0, new_size - old_size),
+        )
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    try:
+        with file_path.open("wb") as dst:
+            for chunk in image_blob.chunks():
+                dst.write(chunk)
+    except (OSError, PermissionError) as exc:
+        return _storage_unavailable_response(request, exc)
+
+    return JsonResponse({"ok": True, "path": normalized})
 
 
 @with_request_handrive_root

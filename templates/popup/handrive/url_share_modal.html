@@ -1,7 +1,7 @@
-<div id="handrive-url-share-modal" class="handrive-rename-modal" hidden>
-    <div class="handrive-rename-modal-backdrop" id="handrive-url-share-modal-backdrop"></div>
-    <div class="handrive-rename-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-url-share-title">
-        <h3 id="handrive-url-share-title" class="handrive-rename-title">{{ handrive_text.url_share_title }}</h3>
+<div id="handrive-url-share-modal" class="handrive-popup-modal" hidden>
+    <div class="handrive-popup-modal-backdrop" id="handrive-url-share-modal-backdrop"></div>
+    <div class="handrive-popup-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-url-share-title">
+        <h3 id="handrive-url-share-title" class="handrive-popup-title">{{ handrive_text.url_share_title }}</h3>
         <label class="handrive-url-share-toggle-label">
             <input type="checkbox" id="handrive-url-share-enabled-checkbox">
             <span>{{ handrive_text.url_share_enabled_label }}</span>
@@ -10,7 +10,7 @@
             <span>{{ handrive_text.url_share_label }}</span>
             <input type="text" id="handrive-url-share-input" readonly>
         </div>
-        <div class="handrive-rename-actions">
+        <div class="handrive-popup-actions">
             <button type="button" class="ui-btn" id="handrive-url-share-close-btn">{{ handrive_text.cancel }}</button>
             <button type="button" class="ui-btn ui-btn-primary" id="handrive-url-share-copy-btn" hidden>{{ handrive_text.url_share_copy_button }}</button>
         </div>

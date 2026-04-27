@@ -77,6 +77,14 @@ function createServer() {
                     break
                 }
 
+                case "map_ping": {
+                    const x = Number(msg.x)
+                    const y = Number(msg.y)
+                    if (!Number.isFinite(x) || !Number.isFinite(y)) break
+                    broadcastToRoom(mapPath, ws, encode({ type: "peer_map_ping", id: userId, color: client.color, x, y }))
+                    break
+                }
+
                 case "draw_point": {
                     if (client.drawPoints.length >= MAX_DRAW_POINTS) break
                     const last = client.drawPoints[client.drawPoints.length - 1]

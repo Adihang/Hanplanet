@@ -137,6 +137,16 @@
         return appendSharedQuery(baseUrl + "/" + encoded);
     }
 
+    function getParentPath(pathValue) {
+        const normalized = normalizePath(pathValue, true);
+        if (!normalized) {
+            return "";
+        }
+        const parts = normalized.split("/");
+        parts.pop();
+        return parts.join("/");
+    }
+
     // 쓰기 URL을 구축하는 함수
     function buildWriteUrl(writeBaseUrl, params) {
         const search = new URLSearchParams(params || {});
@@ -1756,6 +1766,11 @@
         const previewZoomWrap = document.getElementById("handrive-list-preview-zoom");
         const previewZoomOutButton = document.getElementById("handrive-list-preview-zoom-out");
         const previewZoomInButton = document.getElementById("handrive-list-preview-zoom-in");
+        const previewNavPrevBtn = document.getElementById("handrive-preview-nav-prev");
+        const previewNavNextBtn = document.getElementById("handrive-preview-nav-next");
+        const previewNavBg = document.getElementById("handrive-preview-nav-bg");
+        const previewNavBgPrev = previewNavBg ? previewNavBg.querySelector("span:first-child") : null;
+        const previewNavBgNext = previewNavBg ? previewNavBg.querySelector("span:last-child") : null;
         const previewDownloadButton = document.getElementById("handrive-list-preview-download-btn");
         const previewEditButton = document.getElementById("handrive-list-preview-edit-btn");
         const previewDeleteButton = document.getElementById("handrive-list-preview-delete-btn");
@@ -1910,6 +1925,32 @@
         ]);
         function isImageEditorEntry(entry) {
             return imageEditorExtensions.has(getEntryFileExtension(entry));
+        }
+
+        const mediaNavExtensions = new Set([
+            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif",
+            ".mp4", ".webm", ".mov", ".m4v", ".ogv",
+        ]);
+        function isMediaNavEntry(entry) {
+            return Boolean(entry && entry.type === "file" && mediaNavExtensions.has(getEntryFileExtension(entry)));
+        }
+
+        function getVisibleSiblingMediaEntries(parentPath) {
+            const normalizedParentPath = normalizePath(parentPath, true);
+            const visiblePaths = Array.isArray(state.visibleEntryPaths) ? state.visibleEntryPaths : [];
+            const visibleEntries = visiblePaths
+                .map(function (pathValue) {
+                    return state.entryByPath.get(pathValue) || null;
+                })
+                .filter(function (entry) {
+                    return Boolean(entry && isMediaNavEntry(entry) && getParentPath(entry.path) === normalizedParentPath);
+                });
+            if (visibleEntries.length) {
+                return visibleEntries;
+            }
+            return getCachedEntries(normalizedParentPath).filter(function (entry) {
+                return Boolean(entry && isMediaNavEntry(entry) && getParentPath(entry.path) === normalizedParentPath);
+            });
         }
 
         const currentDir = normalizePath(root.dataset.currentDir || "", true);
@@ -2808,7 +2849,7 @@
         }
 
         function scrollPreviewIntoViewIfPortrait() {
-            previewScrollIntoViewIfPortrait(previewPanel);
+            previewScrollIntoViewIfPortrait(previewPanel, previewHead);
         }
 
         function isPreviewableFileEntry(entry) {
@@ -3200,11 +3241,102 @@
                 }
 
                 await loadPreviewForEntry(savedEntry);
+                await updatePreviewNavButtons(savedEntry);
             } finally {
                 if (editorSaveButton) {
                     editorSaveButton.disabled = false;
                 }
             }
+        }
+
+        async function updatePreviewNavButtons(entry) {
+            if (!previewNavPrevBtn || !previewNavNextBtn) return;
+            if (!entry || !isMediaNavEntry(entry)) {
+                previewNavPrevBtn.hidden = true;
+                previewNavNextBtn.hidden = true;
+                if (previewNavBgPrev) previewNavBgPrev.hidden = true;
+                if (previewNavBgNext) previewNavBgNext.hidden = true;
+                setPreviewNavBackgroundVisible(false);
+                previewNavPrevBtn._navTarget = null;
+                previewNavNextBtn._navTarget = null;
+                return;
+            }
+            const siblingDir = getParentPath(entry.path) || state.currentDir;
+            const normalizedSiblingDir = normalizePath(siblingDir, true);
+            let siblings = getVisibleSiblingMediaEntries(normalizedSiblingDir);
+            if (!siblings.length && normalizedSiblingDir && normalizedSiblingDir !== state.currentDir) {
+                try {
+                    await loadDirectory(normalizedSiblingDir);
+                    siblings = getVisibleSiblingMediaEntries(normalizedSiblingDir);
+                } catch (error) {}
+            }
+            if (!siblings.length) {
+                previewNavPrevBtn.hidden = true;
+                previewNavNextBtn.hidden = true;
+                if (previewNavBgPrev) previewNavBgPrev.hidden = true;
+                if (previewNavBgNext) previewNavBgNext.hidden = true;
+                setPreviewNavBackgroundVisible(false);
+                previewNavPrevBtn._navTarget = null;
+                previewNavNextBtn._navTarget = null;
+                return;
+            }
+            const currentPath = normalizePath(entry.path, true);
+            const idx = siblings.findIndex(function (e) {
+                return normalizePath(e.path, true) === currentPath;
+            });
+            const prevEntry = idx > 0 ? siblings[idx - 1] : null;
+            const nextEntry = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
+            previewNavPrevBtn.hidden = !prevEntry;
+            previewNavNextBtn.hidden = !nextEntry;
+            if (previewNavBgPrev) previewNavBgPrev.hidden = !prevEntry;
+            if (previewNavBgNext) previewNavBgNext.hidden = !nextEntry;
+            previewNavPrevBtn._navTarget = prevEntry;
+            previewNavNextBtn._navTarget = nextEntry;
+            setPreviewNavBackgroundVisible(Boolean(prevEntry || nextEntry));
+            if (prevEntry) {
+                previewNavPrevBtn.classList.remove("is-revealing");
+                void previewNavPrevBtn.offsetWidth;
+                previewNavPrevBtn.classList.add("is-revealing");
+                window.setTimeout(function () {
+                    previewNavPrevBtn.classList.remove("is-revealing");
+                }, 180);
+            }
+            if (nextEntry) {
+                previewNavNextBtn.classList.remove("is-revealing");
+                void previewNavNextBtn.offsetWidth;
+                previewNavNextBtn.classList.add("is-revealing");
+                window.setTimeout(function () {
+                    previewNavNextBtn.classList.remove("is-revealing");
+                }, 180);
+            }
+        }
+
+        function navigateToPreviewEntry(entry) {
+            if (!entry) return;
+            state.selectedPaths = new Set([entry.path]);
+            state.selectedPath = entry.path;
+            state.activePreviewPath = normalizePath(entry.path, true);
+            renderList({ skipPreview: true });
+            loadPreviewForEntry(entry)
+                .then(function () { return updatePreviewNavButtons(entry); })
+                .catch(alertError);
+        }
+
+        function setPreviewNavBackgroundVisible(visible) {
+            if (!previewNavBg) return;
+            previewNavBg.hidden = !visible;
+            previewNavBg.classList.toggle("is-visible", Boolean(visible));
+        }
+
+        if (previewNavPrevBtn) {
+            previewNavPrevBtn.addEventListener("click", function () {
+                navigateToPreviewEntry(previewNavPrevBtn._navTarget);
+            });
+        }
+        if (previewNavNextBtn) {
+            previewNavNextBtn.addEventListener("click", function () {
+                navigateToPreviewEntry(previewNavNextBtn._navTarget);
+            });
         }
 
         function clearPreviewPane() {
@@ -3214,6 +3346,9 @@
             state.previewRequestToken += 1;
             state.previewImageZoom = 1;
             setPreviewVisibility(false);
+            if (previewNavBgPrev) previewNavBgPrev.hidden = true;
+            if (previewNavBgNext) previewNavBgNext.hidden = true;
+            setPreviewNavBackgroundVisible(false);
             
             // 편집기가 열려있으면 닫기
             if (editorPanel && !editorPanel.hidden) {
@@ -3230,6 +3365,7 @@
                 t("list_preview_empty", "파일을 선택하면 미리보기가 표시됩니다.")
             );
             syncPreviewImageZoom();
+            void updatePreviewNavButtons(null);
         }
 
         function getPreviewImageMinZoom() {
@@ -3315,7 +3451,9 @@
             // 이전 파일의 선택 효과가 남지 않도록 함
             state.activePreviewPath = entryPath;
             renderList({ skipPreview: true });
-            loadPreviewForEntry(entry).catch(alertError);
+            loadPreviewForEntry(entry)
+                .then(function () { return updatePreviewNavButtons(entry); })
+                .catch(alertError);
         }
 
         function syncContextMenuByEntries(entries) {
@@ -6823,6 +6961,7 @@
                         const refreshedEntry = state.entryByPath.get(selectedEntry.path);
                         if (refreshedEntry) {
                             await loadPreviewForEntry(refreshedEntry);
+                            await updatePreviewNavButtons(refreshedEntry);
                         } else {
                             clearPreviewPane();
                         }
@@ -7294,8 +7433,10 @@
         const handriveRootUrl = root.dataset.handriveRootUrl || handriveBaseUrl;
         const deleteApiUrl = root.dataset.deleteApiUrl;
         const urlShareApiUrl = root.dataset.urlShareApiUrl;
-        const docPath = root.dataset.docPath || "";
-        const docSlugPath = root.dataset.docSlugPath || docPath;
+        const listApiUrl = root.dataset.listApiUrl || "";
+        const previewApiUrl = root.dataset.previewApiUrl || "";
+        let currentDocPath = root.dataset.docPath || "";
+        let currentDocSlugPath = root.dataset.docSlugPath || currentDocPath;
         const docIsUrlOnly = root.dataset.docIsUrlOnly === "1";
         const parentDir = root.dataset.parentDir || "";
         const deleteButton = document.getElementById("handrive-delete-btn");
@@ -7304,7 +7445,21 @@
         const viewZoomWrap = document.getElementById("handrive-view-zoom");
         const viewZoomOutButton = document.getElementById("handrive-view-zoom-out");
         const viewZoomInButton = document.getElementById("handrive-view-zoom-in");
+        const viewNavPrevBtn = document.getElementById("handrive-view-nav-prev");
+        const viewNavNextBtn = document.getElementById("handrive-view-nav-next");
+        const viewNavBg = document.getElementById("handrive-view-nav-bg");
+        const viewNavBgPrev = viewNavBg ? viewNavBg.querySelector("span:first-child") : null;
+        const viewNavBgNext = viewNavBg ? viewNavBg.querySelector("span:last-child") : null;
         let viewImageZoom = 1;
+
+        const viewMediaNavExtensions = new Set([
+            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif",
+            ".mp4", ".webm", ".mov", ".m4v", ".ogv",
+        ]);
+
+        function isViewMediaNavEntry(entry) {
+            return Boolean(entry && entry.type === "file" && viewMediaNavExtensions.has(getPathFileExtension(entry.name)));
+        }
 
         function getViewImageElement() {
             return contentArticle
@@ -7353,6 +7508,156 @@
             syncViewImageZoom();
         }
 
+        function setViewNavBackgroundVisible(visible) {
+            if (!viewNavBg) return;
+            viewNavBg.hidden = !visible;
+            viewNavBg.classList.toggle("is-visible", Boolean(visible));
+        }
+
+        function bindViewNavButtonEffects(btn) {
+            if (!btn || btn._viewNavFxBound) return;
+            btn._viewNavFxBound = true;
+            const clearPressed = function () {
+                btn.classList.remove("is-pressed");
+            };
+            const clearHovered = function () {
+                btn.classList.remove("is-hovered");
+            };
+            const playReveal = function () {
+                if (btn.hidden) return;
+                btn.classList.remove("is-revealing");
+                void btn.offsetWidth;
+                btn.classList.add("is-revealing");
+                window.setTimeout(function () {
+                    btn.classList.remove("is-revealing");
+                }, 200);
+            };
+
+            btn.addEventListener("pointerenter", function () {
+                btn.classList.add("is-hovered");
+            });
+            btn.addEventListener("pointerleave", function () {
+                clearHovered();
+                clearPressed();
+            });
+            btn.addEventListener("focus", function () {
+                btn.classList.add("is-hovered");
+            });
+            btn.addEventListener("blur", function () {
+                clearHovered();
+                clearPressed();
+            });
+            btn.addEventListener("pointerdown", function (event) {
+                if (event.button !== 0) return;
+                btn.classList.add("is-pressed");
+                playReveal();
+            });
+            btn.addEventListener("pointerup", clearPressed);
+            btn.addEventListener("pointercancel", clearPressed);
+            btn.addEventListener("click", playReveal);
+        }
+
+        function updateViewNavButtons(siblings, currentPath) {
+            if (!viewNavPrevBtn || !viewNavNextBtn) return;
+            const normalizedCurrent = normalizePath(currentPath, true);
+            const idx = siblings.findIndex(function (e) {
+                return normalizePath(e.path, true) === normalizedCurrent;
+            });
+            const prevEntry = idx > 0 ? siblings[idx - 1] : null;
+            const nextEntry = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
+            const wasPrevHidden = viewNavPrevBtn.hidden;
+            const wasNextHidden = viewNavNextBtn.hidden;
+            viewNavPrevBtn.hidden = !prevEntry;
+            viewNavNextBtn.hidden = !nextEntry;
+            viewNavPrevBtn._navTarget = prevEntry || null;
+            viewNavNextBtn._navTarget = nextEntry || null;
+            if (viewNavBgPrev) viewNavBgPrev.hidden = !prevEntry;
+            if (viewNavBgNext) viewNavBgNext.hidden = !nextEntry;
+            setViewNavBackgroundVisible(Boolean(prevEntry || nextEntry));
+            if (wasPrevHidden && prevEntry) {
+                bindViewNavButtonEffects(viewNavPrevBtn);
+                viewNavPrevBtn.classList.remove("is-revealing");
+                void viewNavPrevBtn.offsetWidth;
+                viewNavPrevBtn.classList.add("is-revealing");
+                window.setTimeout(function () {
+                    viewNavPrevBtn.classList.remove("is-revealing");
+                }, 180);
+            }
+            if (wasNextHidden && nextEntry) {
+                bindViewNavButtonEffects(viewNavNextBtn);
+                viewNavNextBtn.classList.remove("is-revealing");
+                void viewNavNextBtn.offsetWidth;
+                viewNavNextBtn.classList.add("is-revealing");
+                window.setTimeout(function () {
+                    viewNavNextBtn.classList.remove("is-revealing");
+                }, 180);
+            }
+        }
+
+        let viewNavSiblings = [];
+
+        async function loadViewNavSiblings() {
+            if (!listApiUrl || !contentArticle) return;
+            try {
+                const data = await requestJson(
+                    appendSharedQuery(listApiUrl + "?path=" + encodeURIComponent(parentDir))
+                );
+                const entries = Array.isArray(data.entries) ? data.entries : [];
+                viewNavSiblings = entries.filter(isViewMediaNavEntry);
+                updateViewNavButtons(viewNavSiblings, currentDocPath);
+            } catch (e) {}
+        }
+
+        async function navigateViewToEntry(entry) {
+            if (!entry || !previewApiUrl || !contentArticle) return;
+            try {
+                const data = await requestJson(
+                    appendSharedQuery(previewApiUrl),
+                    buildPostOptions({ path: entry.path })
+                );
+                const newHtml = data.html || "";
+                const newClass = data.render_class || "";
+
+                contentArticle.className = newClass;
+                contentArticle.innerHTML = newHtml;
+
+                hydrateMediaAudioElements(contentArticle);
+
+                viewImageZoom = 1;
+                syncViewImageZoom();
+
+                currentDocPath = entry.path;
+                currentDocSlugPath = entry.slug_path || entry.path;
+
+                const fileName = entry.name || "";
+                const titleEl = document.querySelector(".handrive-toolbar-left .handrive-title");
+                if (titleEl) titleEl.textContent = fileName;
+                const pathCurrentEl = document.querySelector(".handrive-toolbar-left .ui-path-current");
+                if (pathCurrentEl) pathCurrentEl.textContent = fileName;
+                document.title = fileName;
+
+                const newUrl = buildViewUrl(handriveBaseUrl, currentDocSlugPath);
+                window.history.pushState({ handriveViewPath: currentDocPath }, "", newUrl);
+
+                updateViewNavButtons(viewNavSiblings, currentDocPath);
+            } catch (error) {
+                alertError(error);
+            }
+        }
+
+        if (viewNavPrevBtn) {
+            bindViewNavButtonEffects(viewNavPrevBtn);
+            viewNavPrevBtn.addEventListener("click", function () {
+                navigateViewToEntry(viewNavPrevBtn._navTarget);
+            });
+        }
+        if (viewNavNextBtn) {
+            bindViewNavButtonEffects(viewNavNextBtn);
+            viewNavNextBtn.addEventListener("click", function () {
+                navigateViewToEntry(viewNavNextBtn._navTarget);
+            });
+        }
+
         if (contentArticle && contentArticle.classList.contains("handrive-js")) {
             applyHandriveCodeHighlighting(contentArticle, "handrive-js");
         } else if (contentArticle && contentArticle.classList.contains("handrive-css")) {
@@ -7369,6 +7674,8 @@
 
         viewImageZoom = 1;
         syncViewImageZoom();
+
+        loadViewNavSiblings();
 
         if (viewZoomOutButton) {
             viewZoomOutButton.addEventListener("click", function () {
@@ -7401,7 +7708,7 @@
             }, { passive: false });
         }
 
-        if (urlShareButton && urlShareApiUrl && docPath) {
+        if (urlShareButton && urlShareApiUrl && currentDocPath) {
             urlShareButton.addEventListener("click", function () {
                 const initialShareUrl = root.dataset.docShareUrl || "";
                 urlShareModal.open({
@@ -7411,7 +7718,7 @@
                     onToggle: async function (enabled) {
                         const data = await requestJson(
                             appendSharedQuery(urlShareApiUrl),
-                            buildPostOptions({ path: docPath, enabled: enabled })
+                            buildPostOptions({ path: currentDocPath, enabled: enabled })
                         );
                         if (!enabled) {
                             window.location.reload();
@@ -7438,7 +7745,7 @@
             }
 
             try {
-                await requestJson(deleteApiUrl, buildPostOptions({ path: docPath }));
+                await requestJson(deleteApiUrl, buildPostOptions({ path: currentDocPath }));
                 window.location.href = buildListUrl(handriveBaseUrl, parentDir, handriveRootUrl);
             } catch (error) {
                 alertError(error);

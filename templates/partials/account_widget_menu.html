@@ -2,6 +2,16 @@
     {% if user.is_superuser %}
     <a href="/admin" class="ui-auth-account-admin-btn" title="Admin" aria-label="Admin"
     ><span class="ui-auth-account-admin-icon" aria-hidden="true"></span></a>
+    <form class="ui-auth-account-restart-form" method="post" action="{% url 'main:handrive_ops_apply_static' %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button
+            class="ui-auth-account-restart-btn"
+            type="submit"
+            title="Apply Static + Restart"
+            aria-label="Apply Static + Restart"
+        ><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M4 18v-5h5"/><path d="M18.7 9A7 7 0 0 0 6.4 6.6L4 9"/><path d="M5.3 15a7 7 0 0 0 12.3 2.4L20 15"/></svg></button>
+    </form>
     {% endif %}
     <div class="ui-auth-account-profile">
         <form
@@ -37,66 +47,6 @@
         <strong class="ui-auth-account-profile-name">{{ account_display_name|default:user.get_username }}</strong>
         <span class="ui-auth-account-profile-email">{{ account_email|default:"-" }}</span>
     </div>
-    {% if account_privacy_policy_agreed_at or account_terms_of_service_agreed_at %}
-    <div class="ui-auth-account-stats">
-        <div class="ui-auth-account-stats-list">
-            {% if account_privacy_policy_agreed_at %}
-            <div class="ui-auth-account-stats-row">
-                <span>{% include 'partials/ui_i18n.html' with key='account_privacy_policy_agreed_at' %}</span>
-                <strong>{{ account_privacy_policy_agreed_at }}</strong>
-            </div>
-            {% endif %}
-            {% if account_terms_of_service_agreed_at %}
-            <div class="ui-auth-account-stats-row">
-                <span>{% include 'partials/ui_i18n.html' with key='account_terms_of_service_agreed_at' %}</span>
-                <strong>{{ account_terms_of_service_agreed_at }}</strong>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-    {% endif %}
-    {% if show_account_bumpercar_spiky_stats and account_bumpercar_spiky_stats %}
-    <button
-        type="button"
-        class="ui-auth-account-menu-item ui-auth-account-stats-toggle"
-        data-auth-account-stats-toggle
-        aria-expanded="false"
-    >
-        {% include 'partials/ui_i18n.html' with key='account_bumpercar_stats_title' %}
-    </button>
-    <div class="ui-auth-account-stats" data-auth-account-stats-panel hidden>
-        <div class="ui-auth-account-stats-list">
-            <div class="ui-auth-account-stats-row">
-                <span>{% include 'partials/ui_i18n.html' with key='account_bumpercar_player_kills' %}</span>
-                <strong>{{ account_bumpercar_spiky_stats.player_kills }}</strong>
-            </div>
-            <div class="ui-auth-account-stats-row">
-                <span>{% include 'partials/ui_i18n.html' with key='account_bumpercar_deaths' %}</span>
-                <strong>{{ account_bumpercar_spiky_stats.deaths }}</strong>
-            </div>
-            <div class="ui-auth-account-stats-row">
-                <span>{% include 'partials/ui_i18n.html' with key='account_bumpercar_ner_kills' %}</span>
-                <strong>{{ account_bumpercar_spiky_stats.ner_kills }}</strong>
-            </div>
-            <div class="ui-auth-account-stats-row">
-                <span>{% include 'partials/ui_i18n.html' with key='account_bumpercar_ner_phase1_attack_dodges' %}</span>
-                <strong>{{ account_bumpercar_spiky_stats.ner_phase1_attack_dodges }}</strong>
-            </div>
-            <div class="ui-auth-account-stats-row">
-                <span>{% include 'partials/ui_i18n.html' with key='account_bumpercar_ner_phase2_attack_dodges' %}</span>
-                <strong>{{ account_bumpercar_spiky_stats.ner_phase2_attack_dodges }}</strong>
-            </div>
-            <div class="ui-auth-account-stats-row">
-                <span>{% include 'partials/ui_i18n.html' with key='account_bumpercar_ner_phase3_attack_dodges' %}</span>
-                <strong>{{ account_bumpercar_spiky_stats.ner_phase3_attack_dodges }}</strong>
-            </div>
-            <div class="ui-auth-account-stats-row">
-                <span>{% include 'partials/ui_i18n.html' with key='account_bumpercar_ner_hits' %}</span>
-                <strong>{{ account_bumpercar_spiky_stats.ner_hits }}</strong>
-            </div>
-        </div>
-    </div>
-    {% endif %}
     <div class="ui-auth-account-menu-actions">
         {% if show_account_my_portfolio %}
         <a class="ui-auth-account-menu-item" href="{{ account_my_portfolio_url }}">

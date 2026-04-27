@@ -40,8 +40,8 @@
     .oauth-authorize-card {
         width: 100%;
         border-radius: 28px;
-        border: none;
-        background: var(--site-elevated-bg);
+        border: 1px solid var(--site-border-soft);
+        background: var(--shared-card-bg, var(--site-elevated-bg));
         box-shadow: none;
         padding: clamp(24px, 4vw, 36px);
         color: var(--site-text-stronger);
@@ -89,7 +89,7 @@
         padding: 16px 18px;
         border-radius: 20px;
         border: none;
-        background: var(--site-surface-muted-strong);
+        background: var(--site-hover-strong);
     }
 
     .oauth-authorize-app-label {
@@ -153,16 +153,16 @@
     }
 
     .oauth-authorize-actions .ui-btn.ui-btn-primary {
-        border-color: color-mix(in srgb, var(--site-hover-strong) 70%, var(--site-border));
-        background: var(--site-hover-strong);
+        border-color: #1e9e4a;
+        background: #22b55a;
         color: #ffffff;
-        box-shadow: 0 12px 26px color-mix(in srgb, var(--site-hover-strong) 36%, transparent);
+        box-shadow: 0 12px 26px rgba(34, 181, 90, 0.32);
     }
 
     .oauth-authorize-actions .ui-btn.ui-btn-primary:hover,
     .oauth-authorize-actions .ui-btn.ui-btn-primary:focus-visible {
-        border-color: color-mix(in srgb, var(--site-hover-strong) 82%, var(--site-border));
-        background: color-mix(in srgb, var(--site-hover-strong) 92%, #ffffff);
+        border-color: #1a8d42;
+        background: #1fa851;
         color: #ffffff;
     }
 

@@ -15,6 +15,9 @@
     overflow: hidden;
     background: var(--handrive-bg, #f5f5f5);
     touch-action: none;
+    --map-top-right-control-size: 30px;
+    --map-top-right-control-icon-size: 18px;
+    --map-top-right-control-gap: 8px;
 }
 	.map-viewer-toolbar {
 	    display: flex;
@@ -593,6 +596,8 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
     text-indent: 0 !important;
     padding: 0;
     background-clip: padding-box;
+    width: var(--map-top-right-control-size);
+    height: var(--map-top-right-control-size);
 }
 .leaflet-control-zoom a.leaflet-control-zoom-in,
 .leaflet-control-zoom a.leaflet-control-zoom-out {
@@ -606,16 +611,17 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 }
 /* 선 그리기 토글 버튼 */
 .map-draw-toggle-control {
-    margin-top: 8px;
+    margin-top: var(--map-top-right-control-gap);
 }
 .map-draw-toggle-control {
     display: flex;
     flex-direction: column;
 }
 .map-draw-toggle-btn,
-.map-text-toggle-btn {
-    width: 30px;
-    height: 30px;
+.map-text-toggle-btn,
+.map-eraser-toggle-btn {
+    width: var(--map-top-right-control-size);
+    height: var(--map-top-right-control-size);
     display: flex !important;
     align-items: center;
     justify-content: center;
@@ -627,23 +633,39 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 }
 .map-text-toggle-btn {
     border-top: none !important;
+    border-bottom: none !important;
+    border-radius: 0 !important;
+}
+.map-eraser-toggle-btn {
+    border-top: 1px solid var(--handrive-border, #e0e0e0) !important;
     border-radius: 0 0 4px 4px !important;
 }
 .map-draw-toggle-btn {
     border-radius: 4px 4px 0 0 !important;
 }
 .map-draw-toggle-btn:hover,
-.map-text-toggle-btn:hover {
+.map-text-toggle-btn:hover,
+.map-eraser-toggle-btn:hover {
     background: var(--handrive-surface-subtle, #f5f5f5) !important;
 }
 .map-draw-toggle-btn.active,
-.map-text-toggle-btn.active {
+.map-text-toggle-btn.active,
+.map-eraser-toggle-btn.active {
     background: #2563eb !important;
     color: #fff !important;
 }
+.leaflet-top.leaflet-right .leaflet-bar a svg,
+.leaflet-top.leaflet-right .map-draw-toggle-btn svg,
+.leaflet-top.leaflet-right .map-text-toggle-btn svg,
+.leaflet-top.leaflet-right .map-eraser-toggle-btn svg {
+    width: var(--map-top-right-control-icon-size);
+    height: var(--map-top-right-control-icon-size);
+}
 body.map-viewer-page.draw-mode .leaflet-container,
-body.map-viewer-page.text-mode .leaflet-container {
+body.map-viewer-page.text-mode .leaflet-container,
+body.map-viewer-page.eraser-mode .leaflet-container {
     touch-action: none !important;
+    cursor: crosshair;
 }
 .map-collab-text-layer {
     position: absolute;
@@ -758,6 +780,64 @@ body.map-viewer-page.text-mode .leaflet-container {
 .map-collab-text-resize[data-dir="s"] { left: 50%; bottom: -5px; transform: translateX(-50%); cursor: ns-resize; }
 .map-collab-text-resize[data-dir="sw"] { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .map-collab-text-resize[data-dir="w"] { left: -5px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.map-collab-ping {
+    position: relative;
+    width: 112px;
+    height: 112px;
+    pointer-events: none;
+}
+.map-collab-ping-core,
+.map-collab-ping-edge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--map-collab-ping-color, #ef4444);
+    color: #fff;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+    font-size: 20px;
+    font-weight: 900;
+    line-height: 1;
+}
+.map-collab-ping-core {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    animation: map-collab-ping-core-fade 3s linear forwards;
+}
+.map-collab-ping-edge {
+    position: absolute;
+    z-index: 1200;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    animation: map-collab-ping-core-fade 3s linear forwards;
+}
+.map-collab-ping-map-wave {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    border: 18px solid var(--map-collab-ping-color, #ef4444);
+    border-radius: 50%;
+    box-sizing: border-box;
+    background: var(--map-collab-ping-color, #ef4444);
+    pointer-events: none;
+    opacity: 0;
+    will-change: transform, width, height, opacity;
+}
+.map-ping-wave-path {
+    filter: blur(5px);
+}
+@keyframes map-collab-ping-core-fade {
+    0% { opacity: 1; }
+    70% { opacity: 0.55; }
+    100% { opacity: 0; }
+}
 /* 레이어 가시성 위젯 */
 .map-viewer-layers-widget {
     position: absolute;
@@ -2174,14 +2254,71 @@ body.map-viewer-page.text-mode .leaflet-container {
         });
         installMapWheelZoom();
         L.control.zoom({ position: "topright" }).addTo(map);
+        var scheduleTopRightControlSizeUpdate = null;
+        (function () {
+            var resizeRafId = null;
+            function updateTopRightControlSize() {
+                var wrap = document.querySelector(".map-viewer-wrap");
+                if (!wrap) return;
+                var minSide = Math.max(0, Math.min(window.innerWidth, window.innerHeight));
+                var nextSize = Math.max(30, Math.min(64, Math.round(minSide * 0.045)));
+                var nextIconSize = Math.max(18, Math.round(nextSize * 0.58));
+                wrap.style.setProperty("--map-top-right-control-size", nextSize + "px");
+                wrap.style.setProperty("--map-top-right-control-icon-size", nextIconSize + "px");
+                wrap.style.setProperty("--map-top-right-control-gap", Math.max(6, Math.round(nextSize * 0.25)) + "px");
+
+                var topRightControls = document.querySelectorAll(
+                    ".leaflet-top.leaflet-right .leaflet-control-zoom-in, " +
+                    ".leaflet-top.leaflet-right .leaflet-control-zoom-out, " +
+                    ".leaflet-top.leaflet-right .map-draw-toggle-btn, " +
+                    ".leaflet-top.leaflet-right .map-text-toggle-btn, " +
+                    ".leaflet-top.leaflet-right .map-eraser-toggle-btn"
+                );
+                topRightControls.forEach(function (button) {
+                    if (!button) return;
+                    button.style.width = nextSize + "px";
+                    button.style.height = nextSize + "px";
+                });
+
+                var topRightIcons = document.querySelectorAll(
+                    ".leaflet-top.leaflet-right .leaflet-control-zoom-in svg, " +
+                    ".leaflet-top.leaflet-right .leaflet-control-zoom-out svg, " +
+                    ".leaflet-top.leaflet-right .map-draw-toggle-btn svg, " +
+                    ".leaflet-top.leaflet-right .map-text-toggle-btn svg, " +
+                    ".leaflet-top.leaflet-right .map-eraser-toggle-btn svg"
+                );
+                topRightIcons.forEach(function (icon) {
+                    if (!icon) return;
+                    icon.style.width = nextIconSize + "px";
+                    icon.style.height = nextIconSize + "px";
+                });
+            }
+            function scheduleUpdateTopRightControlSize() {
+                if (resizeRafId !== null) return;
+                resizeRafId = window.requestAnimationFrame(function () {
+                    resizeRafId = null;
+                    updateTopRightControlSize();
+                });
+            }
+            scheduleTopRightControlSizeUpdate = scheduleUpdateTopRightControlSize;
+            updateTopRightControlSize();
+            window.requestAnimationFrame(updateTopRightControlSize);
+            window.setTimeout(updateTopRightControlSize, 0);
+            window.setTimeout(updateTopRightControlSize, 120);
+            window.addEventListener("resize", scheduleUpdateTopRightControlSize);
+            window.addEventListener("orientationchange", scheduleUpdateTopRightControlSize);
+            window.addEventListener("load", scheduleUpdateTopRightControlSize, { once: true });
+        })();
         {% if map_collab_enabled %}
         (function () {
             // 전역 드로우 모드 상태 (collab IIFE에서 참조)
             window._drawModeActive = false;
             window._textModeActive = false;
+            window._eraserModeActive = false;
             window._setDrawMode = function (active) {
                 window._drawModeActive = active;
                 if (active && window._setTextMode) window._setTextMode(false);
+                if (active && window._setEraserMode) window._setEraserMode(false);
                 document.body.classList.toggle("draw-mode", active);
                 var btn = document.getElementById("map-draw-toggle-btn");
                 if (btn) btn.classList.toggle("active", active);
@@ -2190,8 +2327,18 @@ body.map-viewer-page.text-mode .leaflet-container {
             window._setTextMode = function (active) {
                 window._textModeActive = active;
                 if (active && window._setDrawMode) window._setDrawMode(false);
+                if (active && window._setEraserMode) window._setEraserMode(false);
                 document.body.classList.toggle("text-mode", active);
                 var btn = document.getElementById("map-text-toggle-btn");
+                if (btn) btn.classList.toggle("active", active);
+                if (!active && map.dragging && !map.dragging.enabled()) map.dragging.enable();
+            };
+            window._setEraserMode = function (active) {
+                window._eraserModeActive = active;
+                if (active && window._setDrawMode) window._setDrawMode(false);
+                if (active && window._setTextMode) window._setTextMode(false);
+                document.body.classList.toggle("eraser-mode", active);
+                var btn = document.getElementById("map-eraser-toggle-btn");
                 if (btn) btn.classList.toggle("active", active);
                 if (!active && map.dragging && !map.dragging.enabled()) map.dragging.enable();
             };
@@ -2224,9 +2371,27 @@ body.map-viewer-page.text-mode .leaflet-container {
                 e.stopPropagation();
                 window._setTextMode(!window._textModeActive);
             });
+            var eraserBtn = document.createElement("a");
+            eraserBtn.className = "map-eraser-toggle-btn";
+            eraserBtn.href = "#";
+            eraserBtn.id = "map-eraser-toggle-btn";
+            eraserBtn.title = "지우개 모드";
+            eraserBtn.setAttribute("role", "button");
+            eraserBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.24 3.56 21 8.32c.78.78.78 2.05 0 2.83l-7.78 7.78c-.75.75-1.77 1.17-2.83 1.17H4.41c-1.54 0-2.34-1.87-1.25-2.95l11.25-11.25c.78-.78 2.05-.78 2.83 0Zm-4.82 15.54H11.4c.53 0 1.04-.21 1.41-.59l4.95-4.95-4.95-4.95-8.33 8.33c-.31.31-.09.84.35.84h6.59Z"/></svg>';
+            eraserBtn.addEventListener("click", function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                window._setEraserMode(!window._eraserModeActive);
+            });
             wrap.appendChild(btn);
             wrap.appendChild(textBtn);
+            wrap.appendChild(eraserBtn);
             topRight.appendChild(wrap);
+            if (scheduleTopRightControlSizeUpdate) {
+                scheduleTopRightControlSizeUpdate();
+                window.setTimeout(scheduleTopRightControlSizeUpdate, 0);
+                window.setTimeout(scheduleTopRightControlSizeUpdate, 120);
+            }
         })();
         {% endif %}
         enableMapGestureZoom(map, document.getElementById("map-viewer-container"));
@@ -2741,9 +2906,23 @@ body.map-viewer-page.text-mode .leaflet-container {
         var pendingStrokeHistory = null;
         var suppressNextLocalStrokeHistory = false;
         var _pendingTexts = [];
+        var erasing = false;
+        var eraserPointerId = null;
+        var eraserHitStrokeIds = {};
+        var eraserHitTextIds = {};
+        var rightClickCandidate = null;
+        var activeMapPings = [];
+        var activeMapPingsByOwner = {};
+        var activeMapPingWaves = [];
+        var MAP_PING_DURATION_MS = 3000;
+        var MAP_PING_SHORT_CLICK_MS = 350;
+        var MAP_PING_WAVE_DURATION_MS = 3000;
+        var MAP_PING_WAVE_DELAY_MS = 260;
+        var pingWaveFrame = null;
+        var pingWaveRenderer = null;
 
         // ── Stroke weight (scales with zoom so lines look constant on the image) ──
-        var BASE_WEIGHT = 4.8;
+        var BASE_WEIGHT = 4;
         var refZoom = null;  // lazily set on first use (map may be null at IIFE run time)
         function getStrokeWeight() {
             if (!map) return BASE_WEIGHT;
@@ -2774,9 +2953,19 @@ body.map-viewer-page.text-mode .leaflet-container {
                     if (peerState[id].line) peerState[id].line.setStyle({ weight: w });
                 }
                 layoutAllTextBlocks();
+                updatePingEdgeIndicators();
+                updateMapPingWaves();
             });
             map.on("zoomanim", animateTextLayerZoom);
-            map.on("moveend viewreset", layoutAllTextBlocks);
+            map.on("move zoom", function () {
+                updatePingEdgeIndicators();
+                updateMapPingWaves();
+            });
+            map.on("moveend viewreset", function () {
+                layoutAllTextBlocks();
+                updatePingEdgeIndicators();
+                updateMapPingWaves();
+            });
         };
 
         // ── Coord helpers ────────────────────────────────────────────────────
@@ -2952,6 +3141,408 @@ body.map-viewer-page.text-mode .leaflet-container {
             return String(currentText || "Text").split(/\r?\n/);
         }
 
+        function resetEraserState() {
+            erasing = false;
+            eraserPointerId = null;
+            eraserHitStrokeIds = {};
+            eraserHitTextIds = {};
+        }
+
+        function getTextItemAtPoint(clientX, clientY) {
+            var keys = Object.keys(textBlocks);
+            for (var i = keys.length - 1; i >= 0; i--) {
+                var item = textBlocks[keys[i]];
+                if (!item || !item.el) continue;
+                var rect = item.el.getBoundingClientRect();
+                if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+                    return item;
+                }
+            }
+            return null;
+        }
+
+        function getStrokeHitAtPoint(clientX, clientY) {
+            if (!map) return null;
+            var rect = container.getBoundingClientRect();
+            var cx = clientX - rect.left;
+            var cy = clientY - rect.top;
+            var HIT_PX = 15;
+            var bestDist = HIT_PX * HIT_PX;
+            var bestLayer = null;
+            for (var i = strokeLayers.length - 1; i >= 0; i--) {
+                var pl = strokeLayers[i];
+                if (!pl || !map.hasLayer(pl)) continue;
+                var sid = pl._strokeId || "";
+                if (sid && eraserHitStrokeIds[sid]) continue;
+                var lls = pl.getLatLngs();
+                for (var j = 0; j < lls.length - 1; j++) {
+                    var a = map.latLngToContainerPoint(lls[j]);
+                    var b = map.latLngToContainerPoint(lls[j + 1]);
+                    var d = ptSegDistSq(cx, cy, a.x, a.y, b.x, b.y);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        bestLayer = pl;
+                    }
+                }
+            }
+            return bestLayer;
+        }
+
+        function pingIconHtml(color) {
+            var safeColor = escHtml(color || "#ef4444");
+            return '<div class="map-collab-ping" style="--map-collab-ping-color:' + safeColor + '">'
+                + '<span class="map-collab-ping-core">!</span>'
+                + '</div>';
+        }
+
+        function removeMapPing(ping) {
+            if (!ping) return;
+            if (ping.timer) window.clearTimeout(ping.timer);
+            if (ping.iconTimer) window.clearTimeout(ping.iconTimer);
+            removeMapPingIcon(ping);
+            for (var i = activeMapPings.length - 1; i >= 0; i--) {
+                if (activeMapPings[i] === ping) activeMapPings.splice(i, 1);
+            }
+            if (ping.ownerId && activeMapPingsByOwner[ping.ownerId] === ping) {
+                delete activeMapPingsByOwner[ping.ownerId];
+            }
+        }
+
+        function removeMapPingIcon(ping) {
+            if (!ping) return;
+            if (ping.iconTimer) {
+                window.clearTimeout(ping.iconTimer);
+                ping.iconTimer = null;
+            }
+            if (ping.marker && map && map.hasLayer(ping.marker)) map.removeLayer(ping.marker);
+            if (ping.edgeEl && ping.edgeEl.parentNode) ping.edgeEl.parentNode.removeChild(ping.edgeEl);
+            ping.marker = null;
+            ping.edgeEl = null;
+        }
+
+        function replaceMapPingForOwner(ownerId) {
+            var key = String(ownerId || "");
+            if (!key) return;
+            var existing = activeMapPingsByOwner[key];
+            if (existing) {
+                removeMapPingIcon(existing);
+                delete activeMapPingsByOwner[key];
+            }
+        }
+
+        function getPingWaveMaxRadiusPx(x, y) {
+            if (!map) return 1000;
+            var centerPt = map.latLngToLayerPoint(pixelLL(x, y));
+            var activeImage = (typeof getActiveMapImage === "function" && getActiveMapImage()) || null;
+            var originX = parseNumberValue(activeImage && activeImage.x, 0);
+            var originY = parseNumberValue(activeImage && activeImage.y, 0);
+            var width = Math.max(1, parseNumberValue(activeImage && activeImage.width, imgWidth));
+            var height = Math.max(1, parseNumberValue(activeImage && activeImage.height, imgHeight));
+            var candidates = [
+                map.latLngToLayerPoint(pixelLL(originX, originY)),
+                map.latLngToLayerPoint(pixelLL(originX + width, originY)),
+                map.latLngToLayerPoint(pixelLL(originX, originY + height)),
+                map.latLngToLayerPoint(pixelLL(originX + width, originY + height))
+            ];
+            if (map.getSize && map.containerPointToLayerPoint) {
+                var size = map.getSize();
+                candidates.push(map.containerPointToLayerPoint(L.point(0, 0)));
+                candidates.push(map.containerPointToLayerPoint(L.point(size.x, 0)));
+                candidates.push(map.containerPointToLayerPoint(L.point(0, size.y)));
+                candidates.push(map.containerPointToLayerPoint(L.point(size.x, size.y)));
+            }
+            var radius = 0;
+            for (var i = 0; i < candidates.length; i++) {
+                var dx = candidates[i].x - centerPt.x;
+                var dy = candidates[i].y - centerPt.y;
+                radius = Math.max(radius, Math.sqrt(dx * dx + dy * dy));
+            }
+            var imageDiagonalPx = Math.sqrt(
+                Math.pow(map.latLngToLayerPoint(pixelLL(originX + width, originY)).x - map.latLngToLayerPoint(pixelLL(originX, originY)).x, 2) +
+                Math.pow(map.latLngToLayerPoint(pixelLL(originX, originY + height)).y - map.latLngToLayerPoint(pixelLL(originX, originY)).y, 2)
+            );
+            return Math.max(radius + imageDiagonalPx * 0.35, imageDiagonalPx * 1.25, 600);
+        }
+
+        function ensureMapPingPane() {
+            if (!map) return "overlayPane";
+            var pane = map.getPane && map.getPane("mapPingPane");
+            if (!pane && map.createPane) {
+                pane = map.createPane("mapPingPane");
+                pane.style.zIndex = "550";
+                pane.style.pointerEvents = "none";
+                pane.style.overflow = "visible";
+            }
+            if (!pingWaveRenderer && L.svg) {
+                pingWaveRenderer = L.svg({ pane: "mapPingPane", padding: 8 });
+                pingWaveRenderer.addTo(map);
+            }
+            return pane ? "mapPingPane" : "overlayPane";
+        }
+
+        function createCircleLatLngs(x, y, radius) {
+            var points = [];
+            var segments = 64;
+            for (var i = 0; i <= segments; i++) {
+                var angle = (Math.PI * 2 * i) / segments;
+                points.push(pixelLL(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius));
+            }
+            return points;
+        }
+
+        function createMapPingWave(x, y, color) {
+            if (!map) return null;
+            var safeColor = color || myColor;
+            var paneName = ensureMapPingPane();
+            var wave = {
+                x: Number(x) || 0,
+                y: Number(y) || 0,
+                color: safeColor,
+                start: performance.now(),
+                maxRadiusPx: getPingWaveMaxRadiusPx(Number(x) || 0, Number(y) || 0) * 0.5,
+                expandMs: 0,
+                holdUntilMs: 0,
+                durationMs: 0,
+                layers: []
+            };
+            var zoomScale = (refZoom !== null && map) ? Math.pow(2, Math.max(0, map.getZoom() - refZoom)) : 1;
+            wave.durationMs = MAP_PING_WAVE_DURATION_MS * zoomScale;
+
+            var initZoomScale = (refZoom !== null && map) ? Math.pow(2, Math.max(0, map.getZoom() - refZoom)) : 1;
+            [0, MAP_PING_WAVE_DELAY_MS].forEach(function(delay) {
+                var layer = L.polygon(createCircleLatLngs(wave.x, wave.y, 1), {
+                    pane: paneName,
+                    renderer: pingWaveRenderer || undefined,
+                    color: safeColor,
+                    weight: Math.max(2, BASE_WEIGHT * 3.375 / Math.sqrt(initZoomScale)),
+                    opacity: 0,
+                    fill: false,
+                    interactive: false,
+                    bubblingMouseEvents: false,
+                    lineCap: "round",
+                    lineJoin: "round",
+                    className: "map-ping-wave-path"
+                }).addTo(map);
+                layer._pingDelay = delay;
+                wave.layers.push(layer);
+            });
+            activeMapPingWaves.push(wave);
+            schedulePingWaveFrame();
+            return wave;
+        }
+
+        function easeOutCubic(t) {
+            t = Math.max(0, Math.min(1, t));
+            return 1 - Math.pow(1 - t, 3);
+        }
+
+        function layoutMapPingWave(wave, layer, now) {
+            if (!map || !wave || !layer) return false;
+            var elapsed = now - wave.start - (Number(layer._pingDelay) || 0);
+            if (elapsed < 0) {
+                layer.setStyle({ opacity: 0 });
+                return true;
+            }
+            if (elapsed >= wave.durationMs) return false;
+            var t = elapsed / wave.durationMs;
+            var eased = easeOutCubic(t);
+            var minRadiusPx = Math.max(8, wave.maxRadiusPx * 0.006);
+            var radiusPx = minRadiusPx + (wave.maxRadiusPx - minRadiusPx) * eased;
+            var centerPt = map.latLngToLayerPoint(pixelLL(wave.x, wave.y));
+            var edgeLatLng = map.layerPointToLatLng(L.point(centerPt.x + radiusPx, centerPt.y));
+            var radiusMap = Math.max(1, Math.abs(edgeLatLng.lng - wave.x));
+            layer.setLatLngs(createCircleLatLngs(wave.x, wave.y, radiusMap));
+            var strokeOpacity = Math.max(0, 0.85 * (1 - t));
+            var pingZoomScale = (refZoom !== null && map) ? Math.pow(2, Math.max(0, map.getZoom() - refZoom)) : 1;
+            layer.setStyle({
+                weight: Math.max(2, BASE_WEIGHT * 3.375 / Math.sqrt(pingZoomScale)),
+                opacity: strokeOpacity,
+                fillOpacity: 0
+            });
+            return true;
+        }
+
+        function updateMapPingWaves(now) {
+            if (!map) return;
+            now = now || performance.now();
+            var hasActiveWave = false;
+            for (var i = activeMapPingWaves.length - 1; i >= 0; i--) {
+                var wave = activeMapPingWaves[i];
+                var waveActive = false;
+                if (!wave || !wave.layers) continue;
+                for (var j = 0; j < wave.layers.length; j++) {
+                    if (layoutMapPingWave(wave, wave.layers[j], now)) {
+                        waveActive = true;
+                        hasActiveWave = true;
+                    }
+                }
+                if (!waveActive) {
+                    wave.layers.forEach(function(layer) {
+                        if (layer && map.hasLayer(layer)) map.removeLayer(layer);
+                    });
+                    activeMapPingWaves.splice(i, 1);
+                }
+            }
+            if (hasActiveWave) schedulePingWaveFrame();
+        }
+
+        function schedulePingWaveFrame() {
+            if (pingWaveFrame !== null) return;
+            pingWaveFrame = window.requestAnimationFrame(function (now) {
+                pingWaveFrame = null;
+                updateMapPingWaves(now);
+            });
+        }
+
+        function updatePingEdgeIndicators() {
+            if (!map || !container) return;
+            var size = map.getSize();
+            var center = L.point(size.x / 2, size.y / 2);
+            var pad = 24;
+            for (var i = activeMapPings.length - 1; i >= 0; i--) {
+                var ping = activeMapPings[i];
+                if (!ping || !ping.edgeEl) continue;
+                var pt = map.latLngToContainerPoint(pixelLL(ping.x, ping.y));
+                var inside = pt.x >= 0 && pt.x <= size.x && pt.y >= 0 && pt.y <= size.y;
+                ping.edgeEl.hidden = inside;
+                if (inside) continue;
+
+                var dx = pt.x - center.x;
+                var dy = pt.y - center.y;
+                var scaleX = dx === 0 ? Infinity : (dx > 0 ? (size.x - pad - center.x) / dx : (pad - center.x) / dx);
+                var scaleY = dy === 0 ? Infinity : (dy > 0 ? (size.y - pad - center.y) / dy : (pad - center.y) / dy);
+                var scale = Math.max(0, Math.min(scaleX, scaleY));
+                var x = center.x + dx * scale;
+                var y = center.y + dy * scale;
+                ping.edgeEl.style.left = x + "px";
+                ping.edgeEl.style.top = y + "px";
+            }
+        }
+
+        function showMapPing(x, y, color, ownerId) {
+            if (!map) return;
+            var pingOwnerId = String(ownerId || "local");
+            replaceMapPingForOwner(pingOwnerId);
+            var ping = {
+                ownerId: pingOwnerId,
+                x: Number(x) || 0,
+                y: Number(y) || 0,
+                marker: null,
+                edgeEl: null,
+                iconTimer: null,
+                timer: null
+            };
+            createMapPingWave(ping.x, ping.y, color || myColor);
+            ping.marker = L.marker(pixelLL(ping.x, ping.y), {
+                icon: L.divIcon({
+                    html: pingIconHtml(color || myColor),
+                    className: "",
+                    iconSize: [112, 112],
+                    iconAnchor: [56, 56]
+                }),
+                interactive: false,
+                zIndexOffset: 1200
+            }).addTo(map);
+            ping.edgeEl = document.createElement("div");
+            ping.edgeEl.className = "map-collab-ping-edge";
+            ping.edgeEl.style.background = color || myColor;
+            ping.edgeEl.textContent = "!";
+            container.appendChild(ping.edgeEl);
+            activeMapPings.push(ping);
+            activeMapPingsByOwner[pingOwnerId] = ping;
+            updatePingEdgeIndicators();
+            ping.iconTimer = window.setTimeout(function () {
+                removeMapPingIcon(ping);
+            }, MAP_PING_DURATION_MS);
+            ping.timer = window.setTimeout(function () {
+                removeMapPing(ping);
+            }, MAP_PING_DURATION_MS);
+        }
+
+        function isBlockedPingTarget(target) {
+            return Boolean(
+                target &&
+                target.closest &&
+                target.closest(
+                    ".map-collab-text-block, .leaflet-control, .leaflet-popup, .map-viewer-layers-widget, .leaflet-marker-icon, .leaflet-interactive"
+                )
+            );
+        }
+
+        function hasCollabObjectAtPoint(clientX, clientY) {
+            return Boolean(getTextItemAtPoint(clientX, clientY) || getStrokeHitAtPoint(clientX, clientY));
+        }
+
+        function canTriggerRightClickPing(e) {
+            if (!map || !e) return false;
+            if (window._drawModeActive || window._textModeActive || window._eraserModeActive) return false;
+            if (drawing || textDrag || textResize || erasing) return false;
+            if (isBlockedPingTarget(e.target)) return false;
+            if (hasCollabObjectAtPoint(e.clientX, e.clientY)) return false;
+            var candidate = rightClickCandidate || (mapPan && mapPan.button === 2 ? mapPan : null);
+            if (!candidate) return true;
+            var duration = Number.isFinite(candidate.duration)
+                ? candidate.duration
+                : (e.timeStamp || performance.now()) - candidate.startTime;
+            return !candidate.moved && duration >= 0 && duration <= MAP_PING_SHORT_CLICK_MS;
+        }
+
+        function triggerMapPing(e) {
+            var px = containerToPixel(e.clientX, e.clientY);
+            showMapPing(px.x, px.y, myColor, myId || "local");
+            if (wsActive) send({ type: "map_ping", x: px.x, y: px.y });
+        }
+
+        function deleteStrokeLayer(layer, opts) {
+            if (!layer) return false;
+            var sid = layer._strokeId || "";
+            var strokeAction = cloneStrokeLayerAction(layer);
+            if (strokeAction) {
+                strokeAction.op = "delete";
+                pushUndoAction(strokeAction);
+            }
+            if (map.hasLayer(layer)) {
+                map.removeLayer(layer);
+            }
+            for (var i = 0; i < strokeLayers.length; i++) {
+                if (strokeLayers[i] === layer) {
+                    strokeLayers.splice(i, 1);
+                    break;
+                }
+            }
+            if (wsActive && sid) {
+                send({ type: "stroke_erase", strokeId: sid });
+            }
+            if (!opts || opts.markHit !== false) {
+                eraserHitStrokeIds[sid] = true;
+            }
+            return true;
+        }
+
+        function deleteTextItem(item, opts) {
+            if (!item) return false;
+            pushUndoAction({ type: "text", op: "delete", textId: item.textId, text: cloneTextItem(item) });
+            removeTextBlock(item.textId);
+            if (wsActive) send({ type: "text_delete", textId: item.textId });
+            if (!opts || opts.markHit !== false) {
+                eraserHitTextIds[item.textId] = true;
+            }
+            return true;
+        }
+
+        function eraseAtPoint(clientX, clientY) {
+            if (!window._eraserModeActive || !map) return false;
+            var textItem = getTextItemAtPoint(clientX, clientY);
+            if (textItem && !eraserHitTextIds[textItem.textId]) {
+                return deleteTextItem(textItem);
+            }
+            var strokeItem = getStrokeHitAtPoint(clientX, clientY);
+            if (strokeItem && !eraserHitStrokeIds[strokeItem._strokeId || ""]) {
+                return deleteStrokeLayer(strokeItem);
+            }
+            return false;
+        }
+
         function shouldBlockMapPanTarget(target) {
             return Boolean(
                 target &&
@@ -2962,6 +3553,14 @@ body.map-viewer-page.text-mode .leaflet-container {
             );
         }
 
+        function shouldBlockEraserTarget(target) {
+            return Boolean(
+                target &&
+                target.closest &&
+                target.closest(".leaflet-control, .leaflet-popup, .map-viewer-layers-widget")
+            );
+        }
+
         function beginMapPan(e) {
             if (!map || !e || e.pointerType !== "mouse") return;
             if (e.button !== 1 && e.button !== 2) return;
@@ -2969,11 +3568,18 @@ body.map-viewer-page.text-mode .leaflet-container {
             mapPan = {
                 pointerId: e.pointerId,
                 button: e.button,
+                startTime: e.timeStamp || performance.now(),
                 lastX: e.clientX,
                 lastY: e.clientY,
                 moved: false,
                 captureTarget: e.target || null
             };
+            if (e.button === 2) {
+                rightClickCandidate = {
+                    startTime: mapPan.startTime,
+                    moved: false
+                };
+            }
             suppressNextContextMenu = false;
             e.preventDefault();
             e.stopPropagation();
@@ -2993,10 +3599,15 @@ body.map-viewer-page.text-mode .leaflet-container {
             mapPan.lastX = e.clientX;
             mapPan.lastY = e.clientY;
             mapPan.moved = true;
+            if (mapPan.button === 2 && rightClickCandidate) rightClickCandidate.moved = true;
         }
 
         function endMapPan(e) {
             if (!mapPan || !e || e.pointerType !== "mouse" || e.pointerId !== mapPan.pointerId) return;
+            if (mapPan.button === 2 && rightClickCandidate) {
+                rightClickCandidate.moved = mapPan.moved;
+                rightClickCandidate.duration = (e.timeStamp || performance.now()) - rightClickCandidate.startTime;
+            }
             if (mapPan.button === 2 && mapPan.moved) {
                 suppressNextContextMenu = true;
                 if (suppressNextContextMenuTimer !== null) {
@@ -3385,18 +3996,54 @@ body.map-viewer-page.text-mode .leaflet-container {
         }, true);
         container.addEventListener("pointerdown", function (e) {
             if (textDrag || textResize) return;
+            if (window._eraserModeActive && e.button === 0) {
+                if (shouldBlockEraserTarget(e.target)) return;
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                erasing = true;
+                eraserPointerId = e.pointerId;
+                eraserHitStrokeIds = {};
+                eraserHitTextIds = {};
+                if (map.dragging && map.dragging.enabled()) map.dragging.disable();
+                if (e.target && e.target.setPointerCapture) {
+                    try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
+                }
+                eraseAtPoint(e.clientX, e.clientY);
+                return;
+            }
             beginMapPan(e);
         }, true);
         container.addEventListener("pointermove", function (e) {
+            if (erasing && e.pointerType === "mouse" && e.pointerId === eraserPointerId) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                eraseAtPoint(e.clientX, e.clientY);
+                return;
+            }
             moveMapPan(e);
         }, true);
         container.addEventListener("pointerup", function (e) {
+            if (erasing && e.pointerType === "mouse" && e.pointerId === eraserPointerId) {
+                resetEraserState();
+                if (map && map.dragging && !map.dragging.enabled()) map.dragging.enable();
+                return;
+            }
             endMapPan(e);
         }, true);
         container.addEventListener("pointercancel", function (e) {
+            if (erasing && e.pointerType === "mouse" && e.pointerId === eraserPointerId) {
+                resetEraserState();
+                if (map && map.dragging && !map.dragging.enabled()) map.dragging.enable();
+                return;
+            }
             endMapPan(e);
         }, true);
         container.addEventListener("pointerleave", function (e) {
+            if (erasing) {
+                resetEraserState();
+                if (map && map.dragging && !map.dragging.enabled()) map.dragging.enable();
+                return;
+            }
             endMapPan(e);
         }, true);
         container.addEventListener("pointerdown", function (e) {
@@ -3404,6 +4051,11 @@ body.map-viewer-page.text-mode .leaflet-container {
             if (!textTarget && activeTextId) setActiveText(null, false);
             if (e.button !== 0) return;
             if (textTarget) return;
+            if (window._eraserModeActive) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return;
+            }
             if (window._textModeActive) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
@@ -3537,6 +4189,7 @@ body.map-viewer-page.text-mode .leaflet-container {
         document.addEventListener("keydown", function (e) {
             var isUndoRedoKey = (e.metaKey || e.ctrlKey) && !e.altKey && (e.key === "z" || e.key === "Z" || e.key === "y" || e.key === "Y");
             if (isUndoRedoKey) {
+                if (isMapShortcutTypingTarget(e.target)) return;
                 e.preventDefault();
                 e.stopPropagation();
                 if (e.key === "y" || e.key === "Y" || e.shiftKey) redoCollabAction();
@@ -3556,6 +4209,12 @@ body.map-viewer-page.text-mode .leaflet-container {
                     if (window._setTextMode) window._setTextMode(!window._textModeActive);
                     return;
                 }
+                if (e.key === "e" || e.key === "E") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (window._setEraserMode) window._setEraserMode(!window._eraserModeActive);
+                    return;
+                }
             }
             if (e.key === "Escape") {
                 if (textDrag || textResize) endTextInteraction();
@@ -3563,6 +4222,7 @@ body.map-viewer-page.text-mode .leaflet-container {
                 else if (drawing) endDraw(true);
                 else if (window._textModeActive && window._setTextMode) window._setTextMode(false);
                 else if (window._drawModeActive && window._setDrawMode) window._setDrawMode(false);
+                else if (window._eraserModeActive && window._setEraserMode) window._setEraserMode(false);
             }
         });
 
@@ -3579,6 +4239,13 @@ body.map-viewer-page.text-mode .leaflet-container {
             window._setTextMode = function(active) {
                 if (!active && (textDrag || textResize)) endTextInteraction();
                 _baseStm(active);
+            };
+        }
+        var _baseSem = window._setEraserMode;
+        if (_baseSem) {
+            window._setEraserMode = function(active) {
+                if (!active && erasing) resetEraserState();
+                _baseSem(active);
             };
         }
 
@@ -3603,8 +4270,14 @@ body.map-viewer-page.text-mode .leaflet-container {
             }
             e.preventDefault();
             if (!(e.target && e.target.closest && e.target.closest(".map-collab-text-block")) && activeTextId) setActiveText(null, false);
-            if (drawing) { endDraw(true); return; }
-            if (window._drawModeActive && window._setDrawMode) { window._setDrawMode(false); return; }
+            if (drawing) {
+                endDraw(true);
+            }
+            if (canTriggerRightClickPing(e)) {
+                triggerMapPing(e);
+                rightClickCandidate = null;
+                return;
+            }
             var rect = container.getBoundingClientRect();
             var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
             var HIT_PX = 15, bestDist = HIT_PX * HIT_PX, bestIdx = -1;
@@ -3621,19 +4294,9 @@ body.map-viewer-page.text-mode .leaflet-container {
             }
             if (bestIdx >= 0) {
                 var targetStroke = strokeLayers[bestIdx];
-                var sid = targetStroke._strokeId;
-                var deleteAction = cloneStrokeLayerAction(targetStroke);
-                if (deleteAction) {
-                    deleteAction.op = "delete";
-                    pushUndoAction(deleteAction);
-                }
-                if (wsActive && sid) {
-                    send({ type: "stroke_erase", strokeId: sid });
-                } else {
-                    map.removeLayer(targetStroke);
-                    strokeLayers.splice(bestIdx, 1);
-                }
+                deleteStrokeLayer(targetStroke);
             }
+            rightClickCandidate = null;
         }, true);
 
         // ── WS/presence requires msgpack ─────────────────────────────────────
@@ -3945,6 +4608,13 @@ body.map-viewer-page.text-mode .leaflet-container {
         function onMsg(msg) {
             switch (msg.type) {
                 case "welcome":
+                    activeMapPingWaves.forEach(function(wave) {
+                        if (wave && wave.layers) wave.layers.forEach(function(l) {
+                            if (l && map && map.hasLayer(l)) map.removeLayer(l);
+                        });
+                    });
+                    activeMapPingWaves.length = 0;
+                    activeMapPings.slice().forEach(function(ping) { removeMapPing(ping); });
                     myId = msg.id;
                     myColor = msg.color;
                     myDisplayName = msg.displayName || myId;
@@ -3963,6 +4633,7 @@ body.map-viewer-page.text-mode .leaflet-container {
                 case "peer_joined": ensurePeer(msg.id, msg.color, msg.displayName, msg.guestNum); break;
                 case "peer_left":    removePeer(msg.id); break;
                 case "peer_cursor":  moveCursor(msg.id, msg.color, msg.x, msg.y); break;
+                case "peer_map_ping": showMapPing(msg.x, msg.y, msg.color, msg.id || "peer"); break;
                 case "peer_draw_point": addDrawPt(msg.id, msg.color, msg.x, msg.y); break;
                 case "peer_draw_end":   finalizeStroke(msg.id, msg.color, msg.points, msg.strokeId); break;
                 case "peer_draw_cancel": cancelDraw(msg.id); break;

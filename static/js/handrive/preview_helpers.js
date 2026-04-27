@@ -26,7 +26,10 @@
         }
     }
 
-    function scrollPreviewIntoViewIfPortrait(previewPanel) {
+    var previewScrollObserver = null;
+    var previewScrollCleanupTimer = null;
+
+    function scrollPreviewIntoViewIfPortrait(previewPanel, previewHead) {
         if (!previewPanel || previewPanel.hidden) {
             return;
         }
@@ -34,18 +37,53 @@
         if (!isPortrait) {
             return;
         }
+        var targetElement = previewHead || previewPanel;
         var scrollToPreviewTop = function () {
-            var previewTop = previewPanel.getBoundingClientRect().top + window.pageYOffset;
+            if (!previewPanel || previewPanel.hidden || !targetElement) {
+                return;
+            }
+            var previewTop = targetElement.getBoundingClientRect().top + window.pageYOffset;
             window.scrollTo({
                 top: Math.max(0, Math.floor(previewTop)),
                 behavior: "smooth",
             });
         };
+
+        if (previewScrollObserver) {
+            previewScrollObserver.disconnect();
+            previewScrollObserver = null;
+        }
+        if (previewScrollCleanupTimer !== null) {
+            window.clearTimeout(previewScrollCleanupTimer);
+            previewScrollCleanupTimer = null;
+        }
+
         window.requestAnimationFrame(function () {
             window.requestAnimationFrame(function () {
                 scrollToPreviewTop();
             });
         });
+
+        if (typeof ResizeObserver === "function") {
+            previewScrollObserver = new ResizeObserver(function () {
+                window.requestAnimationFrame(function () {
+                    window.requestAnimationFrame(function () {
+                        scrollToPreviewTop();
+                    });
+                });
+            });
+            previewScrollObserver.observe(previewPanel);
+            if (previewHead && previewHead !== previewPanel) {
+                previewScrollObserver.observe(previewHead);
+            }
+            previewScrollCleanupTimer = window.setTimeout(function () {
+                if (previewScrollObserver) {
+                    previewScrollObserver.disconnect();
+                    previewScrollObserver = null;
+                }
+                previewScrollCleanupTimer = null;
+            }, 1200);
+        }
     }
 
     function setPreviewPlaceholder(previewContent, escapeHtml, message) {

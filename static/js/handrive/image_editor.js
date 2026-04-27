@@ -1,11 +1,10 @@
 (function () {
     "use strict";
 
+    // 6열 × 2행 기본 12색
     var DEFAULT_PALETTE = [
-        "#000000","#808080","#800000","#808000","#008000","#008080","#000080","#800080",
-        "#ffffff","#c0c0c0","#ff0000","#ffff00","#00ff00","#00ffff","#0000ff","#ff00ff",
-        "#ff8040","#804000","#80ff00","#004040","#0080ff","#8000ff","#ff0080","#ff8080",
-        "#ffff80","#80ff80","#80ffff","#8080ff",
+        "#ff0000","#ff8000","#ffff00","#88dd00","#00bb00","#00bfff",
+        "#0055ff","#7700ff","#cc0055","#884400","#000000","#ffffff",
     ];
 
     var state = {
@@ -54,6 +53,10 @@
     var paletteEl, customColorInput;
     var resizeModal, saveAsModal;
     var boundKeyDown, boundWheel, boundContextMenu;
+    var modalsAlreadyBound = false;
+    var ribbonAlreadyBound = false;
+    var canvasAlreadyBound = false;
+    var keyboardAlreadyBound = false;
 
     // 캔버스 테두리 드래그 리사이즈 상태
     var resizeDragging = false;
@@ -87,7 +90,7 @@
         saveAsModal = document.getElementById("ie-save-as-modal");
 
         if (!mainCanvas || !overlayCanvas) return;
-        mainCtx    = mainCanvas.getContext("2d");
+        mainCtx    = mainCanvas.getContext("2d", { willReadFrequently: true });
         overlayCtx = overlayCanvas.getContext("2d");
 
         state.isDirty = false;
@@ -211,6 +214,8 @@
 
     // ── 리본 이벤트 ───────────────────────────────────────────────────────
     function bindRibbonEvents() {
+        if (ribbonAlreadyBound) return;
+        ribbonAlreadyBound = true;
         var ribbon = document.getElementById("ie-ribbon");
         if (!ribbon) return;
 
@@ -319,6 +324,8 @@
 
     // ── 캔버스 이벤트 ─────────────────────────────────────────────────────
     function bindCanvasEvents() {
+        if (canvasAlreadyBound) return;
+        canvasAlreadyBound = true;
         if (!overlayCanvas) return;
 
         overlayCanvas.style.pointerEvents = "all";
@@ -1280,6 +1287,8 @@
 
     // ── 키보드 단축키 ─────────────────────────────────────────────────────
     function bindKeyboard() {
+        if (keyboardAlreadyBound) return;
+        keyboardAlreadyBound = true;
         boundKeyDown = function (e) {
             var tag = e.target.tagName;
             var isEditing = tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable;
@@ -1344,6 +1353,8 @@
 
     // ── 모달 ─────────────────────────────────────────────────────────────
     function bindModals() {
+        if (modalsAlreadyBound) return;
+        modalsAlreadyBound = true;
         if (resizeModal) {
             var wInput = document.getElementById("ie-resize-width");
             var hInput = document.getElementById("ie-resize-height");

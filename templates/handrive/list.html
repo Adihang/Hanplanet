@@ -162,6 +162,16 @@
                     ><svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5h4v2.5H8z"/><line x1="3" y1="5.5" x2="17" y2="5.5"/><rect x="5" y="6.5" width="10" height="11" rx="1.5"/><line x1="8.5" y1="9" x2="8.5" y2="15"/><line x1="11.5" y1="9" x2="11.5" y2="15"/></svg></button>
                 </div>
             </header>
+            <button class="handrive-preview-nav-btn handrive-preview-nav-prev" id="handrive-preview-nav-prev" type="button" aria-label="{{ handrive_text.previous_file|default:'이전 파일' }}" hidden>
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="13,4 7,10 13,16"/></svg>
+            </button>
+            <button class="handrive-preview-nav-btn handrive-preview-nav-next" id="handrive-preview-nav-next" type="button" aria-label="{{ handrive_text.next_file|default:'다음 파일' }}" hidden>
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="7,4 13,10 7,16"/></svg>
+            </button>
+            <div class="handrive-preview-nav-bg" id="handrive-preview-nav-bg" aria-hidden="true" hidden>
+                <span></span>
+                <span></span>
+            </div>
             <div class="handrive-list-preview-body" data-scroll-y-priority>
                 <div class="handrive-list-preview-zoom" id="handrive-list-preview-zoom" hidden>
                     <button class="handrive-list-preview-zoom-btn" type="button" id="handrive-list-preview-zoom-out" aria-label="{{ handrive_text.zoom_out_button }}">

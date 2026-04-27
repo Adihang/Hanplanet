@@ -146,6 +146,46 @@ body.theme-dark .ui-auth-account-admin-btn:focus-visible {
     color: #eee;
 }
 
+.ui-auth-account-restart-form {
+    position: absolute;
+    top: 54px;
+    right: 10px;
+    margin: 0;
+    padding: 0;
+    line-height: 0;
+}
+
+.ui-auth-account-restart-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    padding: 0;
+}
+
+.ui-auth-account-restart-btn:hover,
+.ui-auth-account-restart-btn:focus-visible {
+    background: rgba(0, 0, 0, 0.08);
+    color: #333;
+}
+
+body.theme-dark .ui-auth-account-restart-btn {
+    color: #aaa;
+}
+
+body.theme-dark .ui-auth-account-restart-btn:hover,
+body.theme-dark .ui-auth-account-restart-btn:focus-visible {
+    background: rgba(255, 255, 255, 0.1);
+    color: #eee;
+}
+
 .ui-auth-account-menu-item {
     border: 0;
     border-radius: 8px;
@@ -248,9 +288,13 @@ img.ui-auth-account-avatar {
 
 .ui-auth-account-stats {
     padding: 0 16px 16px;
-    display: flex;
+    display: none;
     flex-direction: column;
     gap: 10px;
+}
+
+.ui-auth-account-menu .ui-auth-account-stats {
+    display: flex;
 }
 
 .ui-auth-account-stats[hidden] {

@@ -59,6 +59,8 @@
         var flags = {
             open: false,
             download: false,
+            extractArchive: false,
+            createArchive: false,
             share: false,
             upload: false,
             edit: false,
@@ -77,6 +79,9 @@
         };
 
         if (!targetEntry) {
+            return flags;
+        }
+        if (targets.some(function (entry) { return Boolean(entry && entry.is_archive_member); })) {
             return flags;
         }
 
@@ -116,8 +121,10 @@
 
         flags.open = !isCurrentFolder;
         flags.download = !isCurrentFolder && !isDirectory;
+        flags.extractArchive = Boolean(!isCurrentFolder && !isMultiSelection && targetEntry.is_archive && targetEntry.can_extract);
         flags.share = !isCurrentFolder && canEditEntry && !isGitVirtualEntry;
         flags.upload = isDirectory && canWriteChildren && !hasGitRepo;
+        flags.createArchive = Boolean(isDirectory && !isCurrentFolder && canEditEntry && !hasGitRepo && !isGitVirtualEntry);
         flags.edit = !isDirectory && canShowEditEntry;
         flags.rename = !isCurrentFolder && canEditEntry && !isPublicWriteFile && !hasGitRepo;
         flags.deleteEntry = isEntryDeletable(targetEntry);

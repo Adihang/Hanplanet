@@ -799,6 +799,68 @@ def ai_usage_log_view(request):
     return TemplateResponse(request, "admin/main/aiusage/ai_usage_log.html", context)
 
 
+def _format_map_collab_timestamp(value):
+    try:
+        timestamp_ms = int(value)
+    except (TypeError, ValueError):
+        return ""
+    if timestamp_ms <= 0:
+        return ""
+    return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.get_current_timezone())
+
+
+def map_collab_sessions_view(request):
+    admin_url = str(getattr(settings, "MAP_COLLAB_ADMIN_URL", "http://127.0.0.1:8084") or "http://127.0.0.1:8084").rstrip("/")
+    rooms = []
+    error_message = ""
+    generated_at = None
+
+    try:
+        response = httpx.get(f"{admin_url}/rooms", timeout=2.0)
+        response.raise_for_status()
+        payload = response.json()
+        generated_at = _format_map_collab_timestamp(payload.get("generated_at"))
+        for room in payload.get("rooms") or []:
+            clients = []
+            for client in room.get("clients") or []:
+                clients.append({
+                    "user_id": str(client.get("userId") or ""),
+                    "display_name": str(client.get("displayName") or ""),
+                    "color": str(client.get("color") or ""),
+                    "guest_num": client.get("guestNum"),
+                    "joined_at": _format_map_collab_timestamp(client.get("joinedAt")),
+                    "last_seen": _format_map_collab_timestamp(client.get("lastSeen")),
+                    "connected_seconds": int(client.get("connectedSeconds") or 0),
+                    "idle_seconds": int(client.get("idleSeconds") or 0),
+                    "pending_draw_points": int(client.get("pendingDrawPoints") or 0),
+                })
+            rooms.append({
+                "map_path": str(room.get("mapPath") or ""),
+                "client_count": int(room.get("clientCount") or len(clients)),
+                "stroke_count": int(room.get("strokeCount") or 0),
+                "text_count": int(room.get("textCount") or 0),
+                "last_active": _format_map_collab_timestamp(room.get("lastActive")),
+                "idle_seconds": int(room.get("idleSeconds") or 0),
+                "clients": clients,
+            })
+    except (httpx.HTTPError, ValueError) as exc:
+        error_message = f"맵 협업 서버 상태를 불러오지 못했습니다: {exc}"
+
+    total_clients = sum(room["client_count"] for room in rooms)
+    context = {
+        **admin.site.each_context(request),
+        "title": "맵 협업 세션",
+        "subtitle": None,
+        "rooms": rooms,
+        "room_count": len(rooms),
+        "total_clients": total_clients,
+        "generated_at": generated_at,
+        "admin_url": admin_url,
+        "error_message": error_message,
+    }
+    return TemplateResponse(request, "admin/main/map_collab/sessions.html", context)
+
+
 # ---------------------------------------------------------------------------
 
 _original_admin_get_urls = admin.site.get_urls
@@ -841,6 +903,11 @@ def _get_admin_urls():
             "main/ai-usage/",
             admin.site.admin_view(ai_usage_log_view),
             name="main_ai_usage_changelist",
+        ),
+        path(
+            "main/map-collab-sessions/",
+            admin.site.admin_view(map_collab_sessions_view),
+            name="main_map_collab_sessions",
         ),
     ]
     return custom_urls + urls

@@ -282,6 +282,13 @@
             renderClasses.includes("handrive-media")
         ) {
             targetElement.classList.add("handrive-media");
+            if (renderMode === "media_image") {
+                targetElement.classList.add("handrive-media-image");
+            } else if (renderMode === "media_video") {
+                targetElement.classList.add("handrive-media-video");
+            } else if (renderMode === "media_audio") {
+                targetElement.classList.add("handrive-media-audio");
+            }
             renderClasses.forEach(function (className) {
                 if (
                     className === "handrive-media-image" ||
@@ -1458,6 +1465,7 @@
             ".mp4",
             ".webm",
             ".mov",
+            ".mkv",
             ".m4v",
             ".ogv",
             ".mp3",
@@ -2808,9 +2816,6 @@
                 const html = data && typeof data.html === "string" ? data.html : "";
                 const renderMode = data && typeof data.render_mode === "string" ? data.render_mode : "plain_text";
                 let renderClass = data && typeof data.render_class === "string" ? data.render_class : "";
-                if (renderMode === "media_image" || renderMode === "media_video" || renderMode === "media_audio") {
-                    renderClass = "handrive-media";
-                }
                 state.previewCache.set(pathValue, {
                     html: html,
                     renderMode: renderMode,

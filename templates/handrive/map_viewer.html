@@ -807,14 +807,12 @@ body.map-viewer-page.eraser-mode .leaflet-container {
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    animation: map-collab-ping-core-fade 3s linear forwards;
 }
 .map-collab-ping-edge {
     position: absolute;
     z-index: 1200;
     pointer-events: none;
     transform: translate(-50%, -50%);
-    animation: map-collab-ping-core-fade 3s linear forwards;
 }
 .map-collab-ping-map-wave {
     position: absolute;
@@ -2910,6 +2908,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         var eraserPointerId = null;
         var eraserHitStrokeIds = {};
         var eraserHitTextIds = {};
+        var eraserHitPingIds = {};
         var rightClickCandidate = null;
         var activeMapPings = [];
         var activeMapPingsByOwner = {};
@@ -2954,6 +2953,9 @@ body.map-viewer-page.eraser-mode .leaflet-container {
                 }
                 layoutAllTextBlocks();
                 updatePingEdgeIndicators();
+                var pingZs = (refZoom !== null && map) ? Math.pow(2, Math.max(0, map.getZoom() - refZoom)) : 1;
+                var newW = Math.max(2, BASE_WEIGHT * 3.375 / Math.sqrt(pingZs));
+                for (var k = 0; k < activeMapPingWaves.length; k++) activeMapPingWaves[k].cachedWeight = newW;
                 updateMapPingWaves();
             });
             map.on("zoomanim", animateTextLayerZoom);
@@ -3146,6 +3148,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             eraserPointerId = null;
             eraserHitStrokeIds = {};
             eraserHitTextIds = {};
+            eraserHitPingIds = {};
         }
 
         function getTextItemAtPoint(clientX, clientY) {
@@ -3197,8 +3200,6 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 
         function removeMapPing(ping) {
             if (!ping) return;
-            if (ping.timer) window.clearTimeout(ping.timer);
-            if (ping.iconTimer) window.clearTimeout(ping.iconTimer);
             removeMapPingIcon(ping);
             for (var i = activeMapPings.length - 1; i >= 0; i--) {
                 if (activeMapPings[i] === ping) activeMapPings.splice(i, 1);
@@ -3210,10 +3211,6 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 
         function removeMapPingIcon(ping) {
             if (!ping) return;
-            if (ping.iconTimer) {
-                window.clearTimeout(ping.iconTimer);
-                ping.iconTimer = null;
-            }
             if (ping.marker && map && map.hasLayer(ping.marker)) map.removeLayer(ping.marker);
             if (ping.edgeEl && ping.edgeEl.parentNode) ping.edgeEl.parentNode.removeChild(ping.edgeEl);
             ping.marker = null;
@@ -3225,8 +3222,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             if (!key) return;
             var existing = activeMapPingsByOwner[key];
             if (existing) {
-                removeMapPingIcon(existing);
-                delete activeMapPingsByOwner[key];
+                removeMapPing(existing);
             }
         }
 
@@ -3280,51 +3276,35 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             return pane ? "mapPingPane" : "overlayPane";
         }
 
-        function createCircleLatLngs(x, y, radius) {
-            var points = [];
-            var segments = 64;
-            for (var i = 0; i <= segments; i++) {
-                var angle = (Math.PI * 2 * i) / segments;
-                points.push(pixelLL(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius));
-            }
-            return points;
-        }
-
         function createMapPingWave(x, y, color) {
             if (!map) return null;
             var safeColor = color || myColor;
-            var paneName = ensureMapPingPane();
+            ensureMapPingPane();
+            var svgGroup = pingWaveRenderer && pingWaveRenderer._rootGroup;
+            if (!svgGroup) return null;
+            var pingZoomScale = (refZoom !== null && map) ? Math.pow(2, Math.max(0, map.getZoom() - refZoom)) : 1;
             var wave = {
                 x: Number(x) || 0,
                 y: Number(y) || 0,
                 color: safeColor,
                 start: performance.now(),
                 maxRadiusPx: getPingWaveMaxRadiusPx(Number(x) || 0, Number(y) || 0) * 0.5,
-                expandMs: 0,
-                holdUntilMs: 0,
-                durationMs: 0,
+                durationMs: MAP_PING_WAVE_DURATION_MS * pingZoomScale,
+                cachedWeight: Math.max(2, BASE_WEIGHT * 3.375 / Math.sqrt(pingZoomScale)),
                 layers: []
             };
-            var zoomScale = (refZoom !== null && map) ? Math.pow(2, Math.max(0, map.getZoom() - refZoom)) : 1;
-            wave.durationMs = MAP_PING_WAVE_DURATION_MS * zoomScale;
-
-            var initZoomScale = (refZoom !== null && map) ? Math.pow(2, Math.max(0, map.getZoom() - refZoom)) : 1;
+            var SVG_NS = "http://www.w3.org/2000/svg";
             [0, MAP_PING_WAVE_DELAY_MS].forEach(function(delay) {
-                var layer = L.polygon(createCircleLatLngs(wave.x, wave.y, 1), {
-                    pane: paneName,
-                    renderer: pingWaveRenderer || undefined,
-                    color: safeColor,
-                    weight: Math.max(2, BASE_WEIGHT * 3.375 / Math.sqrt(initZoomScale)),
-                    opacity: 0,
-                    fill: false,
-                    interactive: false,
-                    bubblingMouseEvents: false,
-                    lineCap: "round",
-                    lineJoin: "round",
-                    className: "map-ping-wave-path"
-                }).addTo(map);
-                layer._pingDelay = delay;
-                wave.layers.push(layer);
+                var circle = document.createElementNS(SVG_NS, "circle");
+                circle.setAttribute("fill", "none");
+                circle.setAttribute("stroke", safeColor);
+                circle.setAttribute("stroke-width", String(wave.cachedWeight));
+                circle.setAttribute("stroke-opacity", "0");
+                circle.setAttribute("stroke-linecap", "round");
+                circle.setAttribute("class", "map-ping-wave-path");
+                circle._pingDelay = delay;
+                svgGroup.appendChild(circle);
+                wave.layers.push(circle);
             });
             activeMapPingWaves.push(wave);
             schedulePingWaveFrame();
@@ -3336,11 +3316,11 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             return 1 - Math.pow(1 - t, 3);
         }
 
-        function layoutMapPingWave(wave, layer, now) {
-            if (!map || !wave || !layer) return false;
-            var elapsed = now - wave.start - (Number(layer._pingDelay) || 0);
+        function layoutMapPingWave(wave, circle, now) {
+            if (!map || !wave || !circle) return false;
+            var elapsed = now - wave.start - (Number(circle._pingDelay) || 0);
             if (elapsed < 0) {
-                layer.setStyle({ opacity: 0 });
+                if (circle.getAttribute("stroke-opacity") !== "0") circle.setAttribute("stroke-opacity", "0");
                 return true;
             }
             if (elapsed >= wave.durationMs) return false;
@@ -3349,16 +3329,11 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             var minRadiusPx = Math.max(8, wave.maxRadiusPx * 0.006);
             var radiusPx = minRadiusPx + (wave.maxRadiusPx - minRadiusPx) * eased;
             var centerPt = map.latLngToLayerPoint(pixelLL(wave.x, wave.y));
-            var edgeLatLng = map.layerPointToLatLng(L.point(centerPt.x + radiusPx, centerPt.y));
-            var radiusMap = Math.max(1, Math.abs(edgeLatLng.lng - wave.x));
-            layer.setLatLngs(createCircleLatLngs(wave.x, wave.y, radiusMap));
-            var strokeOpacity = Math.max(0, 0.85 * (1 - t));
-            var pingZoomScale = (refZoom !== null && map) ? Math.pow(2, Math.max(0, map.getZoom() - refZoom)) : 1;
-            layer.setStyle({
-                weight: Math.max(2, BASE_WEIGHT * 3.375 / Math.sqrt(pingZoomScale)),
-                opacity: strokeOpacity,
-                fillOpacity: 0
-            });
+            circle.setAttribute("cx", String(centerPt.x));
+            circle.setAttribute("cy", String(centerPt.y));
+            circle.setAttribute("r",  String(Math.max(1, radiusPx)));
+            circle.setAttribute("stroke-opacity", String(Math.max(0, 0.85 * (1 - t))));
+            circle.setAttribute("stroke-width", String(wave.cachedWeight));
             return true;
         }
 
@@ -3377,8 +3352,8 @@ body.map-viewer-page.eraser-mode .leaflet-container {
                     }
                 }
                 if (!waveActive) {
-                    wave.layers.forEach(function(layer) {
-                        if (layer && map.hasLayer(layer)) map.removeLayer(layer);
+                    wave.layers.forEach(function(circle) {
+                        if (circle && circle.parentNode) circle.parentNode.removeChild(circle);
                     });
                     activeMapPingWaves.splice(i, 1);
                 }
@@ -3429,8 +3404,6 @@ body.map-viewer-page.eraser-mode .leaflet-container {
                 y: Number(y) || 0,
                 marker: null,
                 edgeEl: null,
-                iconTimer: null,
-                timer: null
             };
             createMapPingWave(ping.x, ping.y, color || myColor);
             ping.marker = L.marker(pixelLL(ping.x, ping.y), {
@@ -3451,12 +3424,6 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             activeMapPings.push(ping);
             activeMapPingsByOwner[pingOwnerId] = ping;
             updatePingEdgeIndicators();
-            ping.iconTimer = window.setTimeout(function () {
-                removeMapPingIcon(ping);
-            }, MAP_PING_DURATION_MS);
-            ping.timer = window.setTimeout(function () {
-                removeMapPing(ping);
-            }, MAP_PING_DURATION_MS);
         }
 
         function isBlockedPingTarget(target) {
@@ -3530,8 +3497,29 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             return true;
         }
 
+        function getPingAtPoint(clientX, clientY) {
+            if (!map) return null;
+            var HIT_PX = 28;
+            for (var i = 0; i < activeMapPings.length; i++) {
+                var ping = activeMapPings[i];
+                if (!ping.marker) continue;
+                var pt = map.latLngToContainerPoint(ping.marker.getLatLng());
+                var rect = container.getBoundingClientRect();
+                var dx = clientX - rect.left - pt.x;
+                var dy = clientY - rect.top - pt.y;
+                if (dx * dx + dy * dy <= HIT_PX * HIT_PX) return ping;
+            }
+            return null;
+        }
+
         function eraseAtPoint(clientX, clientY) {
             if (!window._eraserModeActive || !map) return false;
+            var pingItem = getPingAtPoint(clientX, clientY);
+            if (pingItem && !eraserHitPingIds[pingItem.ownerId]) {
+                eraserHitPingIds[pingItem.ownerId] = true;
+                removeMapPing(pingItem);
+                return true;
+            }
             var textItem = getTextItemAtPoint(clientX, clientY);
             if (textItem && !eraserHitTextIds[textItem.textId]) {
                 return deleteTextItem(textItem);
@@ -4004,6 +3992,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
                 eraserPointerId = e.pointerId;
                 eraserHitStrokeIds = {};
                 eraserHitTextIds = {};
+                eraserHitPingIds = {};
                 if (map.dragging && map.dragging.enabled()) map.dragging.disable();
                 if (e.target && e.target.setPointerCapture) {
                     try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
@@ -4272,6 +4261,12 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             if (!(e.target && e.target.closest && e.target.closest(".map-collab-text-block")) && activeTextId) setActiveText(null, false);
             if (drawing) {
                 endDraw(true);
+            }
+            var pingHit = getPingAtPoint(e.clientX, e.clientY);
+            if (pingHit) {
+                removeMapPing(pingHit);
+                rightClickCandidate = null;
+                return;
             }
             if (canTriggerRightClickPing(e)) {
                 triggerMapPing(e);
@@ -4609,8 +4604,8 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             switch (msg.type) {
                 case "welcome":
                     activeMapPingWaves.forEach(function(wave) {
-                        if (wave && wave.layers) wave.layers.forEach(function(l) {
-                            if (l && map && map.hasLayer(l)) map.removeLayer(l);
+                        if (wave && wave.layers) wave.layers.forEach(function(circle) {
+                            if (circle && circle.parentNode) circle.parentNode.removeChild(circle);
                         });
                     });
                     activeMapPingWaves.length = 0;

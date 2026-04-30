@@ -50,7 +50,8 @@ function joinRoom(mapPath, ws, { userId, displayName }) {
     const color = PALETTE.find(c => !usedColors.has(c)) || PALETTE[room.clients.size % PALETTE.length]
     const isGuest = userId.startsWith("shared-")
     const guestNum = isGuest ? ++room.guestCounter : null
-    room.clients.set(ws, { userId, displayName, color, guestNum, drawPoints: [] })
+    const now = Date.now()
+    room.clients.set(ws, { userId, displayName, color, guestNum, drawPoints: [], joinedAt: now, lastSeen: now })
     const peers = []
     for (const c of room.clients.values()) {
         if (c.userId !== userId) peers.push({ id: c.userId, displayName: c.displayName, color: c.color, guestNum: c.guestNum })
@@ -61,6 +62,16 @@ function joinRoom(mapPath, ws, { userId, displayName }) {
 function getClientRef(mapPath, ws) {
     const room = rooms.get(mapPath)
     return room ? (room.clients.get(ws) || null) : null
+}
+
+function touchClient(mapPath, ws) {
+    const room = rooms.get(mapPath)
+    if (!room) return
+    const client = room.clients.get(ws)
+    if (!client) return
+    const now = Date.now()
+    client.lastSeen = now
+    room.lastActive = now
 }
 
 function leaveRoom(ws) {
@@ -152,4 +163,36 @@ function getClient(ws) {
     return ws._client || null
 }
 
-module.exports = { joinRoom, leaveRoom, broadcastToRoom, addStroke, removeStroke, upsertText, removeText, getClient, getClientRef, updatePresence, getPresenceCount }
+function getRoomSnapshots() {
+    const now = Date.now()
+    const snapshots = []
+    for (const [mapPath, room] of rooms) {
+        const clients = []
+        for (const client of room.clients.values()) {
+            clients.push({
+                userId: client.userId,
+                displayName: client.displayName,
+                color: client.color,
+                guestNum: client.guestNum,
+                joinedAt: client.joinedAt || null,
+                lastSeen: client.lastSeen || null,
+                connectedSeconds: client.joinedAt ? Math.max(0, Math.floor((now - client.joinedAt) / 1000)) : 0,
+                idleSeconds: client.lastSeen ? Math.max(0, Math.floor((now - client.lastSeen) / 1000)) : 0,
+                pendingDrawPoints: Array.isArray(client.drawPoints) ? client.drawPoints.length : 0,
+            })
+        }
+        snapshots.push({
+            mapPath,
+            clientCount: clients.length,
+            strokeCount: room.strokes.length,
+            textCount: room.texts.length,
+            lastActive: room.lastActive,
+            idleSeconds: room.lastActive ? Math.max(0, Math.floor((now - room.lastActive) / 1000)) : 0,
+            clients,
+        })
+    }
+    snapshots.sort((a, b) => b.clientCount - a.clientCount || String(a.mapPath).localeCompare(String(b.mapPath)))
+    return snapshots
+}
+
+module.exports = { joinRoom, leaveRoom, broadcastToRoom, addStroke, removeStroke, upsertText, removeText, getClient, getClientRef, touchClient, getRoomSnapshots, updatePresence, getPresenceCount }

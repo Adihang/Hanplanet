@@ -538,6 +538,8 @@ def sync_upload_data(request, upload_id):
         return JsonResponse({"error": "upload session not found"}, status=404)
 
     body = request.body or b""
+    if len(body) != session.size:
+        return JsonResponse({"error": "content_length_mismatch"}, status=400)
     content_type = request.headers.get("Content-Type", "application/octet-stream")
     try:
         target_path, normalized_path = _resolve_sync_storage_path(user, session.path, must_exist=False)

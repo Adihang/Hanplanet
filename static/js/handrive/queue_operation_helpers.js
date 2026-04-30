@@ -156,6 +156,107 @@
         queueNeedsRefresh();
     }
 
+    async function runCreateArchiveOperationQueueItem(item, options) {
+        var settings = options || {};
+        var requestJson = settings.requestJson || function () { return Promise.resolve({}); };
+        var buildPostOptions = settings.buildPostOptions || function () { return {}; };
+        var archiveCreateApiUrl = settings.archiveCreateApiUrl || "";
+        var renderUploadQueue = settings.renderUploadQueue || function () {};
+        var applySelection = settings.applySelection || function () {};
+        var queueNeedsRefresh = settings.queueNeedsRefresh || function () {};
+        var t = settings.t || function (_, fallbackValue) { return fallbackValue || ""; };
+        var entries = Array.isArray(item.entries) ? item.entries.slice() : [];
+        var archivedPaths = [];
+
+        if (!archiveCreateApiUrl) {
+            throw new Error(t("job_status_failed", "실패"));
+        }
+
+        for (var index = 0; index < entries.length; index += 1) {
+            if (item.abortRequested) {
+                throw new Error(t("queue_cancel", "취소"));
+            }
+            var controller = new AbortController();
+            item.abortController = controller;
+            var entry = entries[index];
+            var data = await requestJson(archiveCreateApiUrl, Object.assign(
+                buildPostOptions({
+                    source_path: entry.path,
+                }),
+                { signal: controller.signal }
+            ));
+            var paths = data && Array.isArray(data.paths) ? data.paths : [];
+            if (paths.length === 0 && data && data.path) {
+                paths = [data.path];
+            }
+            archivedPaths = archivedPaths.concat(paths);
+            item.progress = ((index + 1) / entries.length) * 100;
+            item.savedPath = paths[0] || (data && data.path) || item.targetDirPath || "";
+            item.savedSlugPath = data && data.slug_path ? data.slug_path : "";
+            item.abortController = null;
+            renderUploadQueue();
+        }
+
+        applySelection(archivedPaths, {
+            primaryPath: archivedPaths[0] || "",
+            anchorPath: archivedPaths[0] || "",
+            render: false,
+        });
+        queueNeedsRefresh();
+    }
+
+    async function runExtractOperationQueueItem(item, options) {
+        var settings = options || {};
+        var requestJson = settings.requestJson || function () { return Promise.resolve({}); };
+        var buildPostOptions = settings.buildPostOptions || function () { return {}; };
+        var archiveExtractApiUrl = settings.archiveExtractApiUrl || "";
+        var renderUploadQueue = settings.renderUploadQueue || function () {};
+        var applySelection = settings.applySelection || function () {};
+        var queueNeedsRefresh = settings.queueNeedsRefresh || function () {};
+        var t = settings.t || function (_, fallbackValue) { return fallbackValue || ""; };
+
+        var entries = Array.isArray(item.entries) ? item.entries.slice() : [];
+        var totalCount = entries.length;
+        var extractedPaths = [];
+
+        if (!archiveExtractApiUrl) {
+            throw new Error(t("job_status_failed", "실패"));
+        }
+
+        for (var index = 0; index < entries.length; index += 1) {
+            if (item.abortRequested) {
+                throw new Error(t("queue_cancel", "취소"));
+            }
+            var controller = new AbortController();
+            item.abortController = controller;
+            var entry = entries[index];
+            var data = await requestJson(archiveExtractApiUrl, Object.assign(
+                buildPostOptions({
+                    source_path: entry.path,
+                    target_dir: item.targetDirPath,
+                    destination_mode: item.destinationMode || "current",
+                }),
+                { signal: controller.signal }
+            ));
+            var paths = data && Array.isArray(data.paths) ? data.paths : [];
+            if (paths.length === 0 && data && data.path) {
+                paths = [data.path];
+            }
+            extractedPaths = extractedPaths.concat(paths);
+            item.progress = ((index + 1) / totalCount) * 100;
+            item.savedPath = paths[0] || (data && data.destination_dir) || item.targetDirPath || "";
+            item.abortController = null;
+            renderUploadQueue();
+        }
+
+        applySelection(extractedPaths, {
+            primaryPath: extractedPaths[0] || "",
+            anchorPath: extractedPaths[0] || "",
+            render: false,
+        });
+        queueNeedsRefresh();
+    }
+
     async function processOperationQueue(options) {
         // Synthetic move/delete jobs share the same queue panel as uploads but run in
         // a dedicated worker so destructive operations stay serialized and inspectable.
@@ -163,7 +264,9 @@
         var state = settings.state || {};
         var renderUploadQueue = settings.renderUploadQueue || function () {};
         var removeUploadQueueItem = settings.removeUploadQueueItem || function () {};
+        var runCreateArchiveOperationQueueItem = settings.runCreateArchiveOperationQueueItem || function () { return Promise.resolve(); };
         var runDeleteOperationQueueItem = settings.runDeleteOperationQueueItem || function () { return Promise.resolve(); };
+        var runExtractOperationQueueItem = settings.runExtractOperationQueueItem || function () { return Promise.resolve(); };
         var runMoveOperationQueueItem = settings.runMoveOperationQueueItem || function () { return Promise.resolve(); };
         var refreshCurrentDirectory = settings.refreshCurrentDirectory || function () { return Promise.resolve(); };
         var alertError = settings.alertError || function () {};
@@ -186,8 +289,12 @@
                 nextItem.errorMessage = "";
                 renderUploadQueue();
                 try {
-                    if (nextItem.operationType === "delete") {
+                    if (nextItem.operationType === "create-archive") {
+                        await runCreateArchiveOperationQueueItem(nextItem);
+                    } else if (nextItem.operationType === "delete") {
                         await runDeleteOperationQueueItem(nextItem);
+                    } else if (nextItem.operationType === "extract") {
+                        await runExtractOperationQueueItem(nextItem);
                     } else if (nextItem.operationType === "move") {
                         await runMoveOperationQueueItem(nextItem);
                     }
@@ -281,7 +388,9 @@
         enqueueUploadFiles: enqueueUploadFiles,
         processOperationQueue: processOperationQueue,
         processUploadQueue: processUploadQueue,
+        runCreateArchiveOperationQueueItem: runCreateArchiveOperationQueueItem,
         runDeleteOperationQueueItem: runDeleteOperationQueueItem,
+        runExtractOperationQueueItem: runExtractOperationQueueItem,
         runMoveOperationQueueItem: runMoveOperationQueueItem,
     };
 })();

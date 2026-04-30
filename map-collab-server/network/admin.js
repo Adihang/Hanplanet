@@ -1,6 +1,6 @@
 const http = require("http")
 const { ADMIN_PORT } = require("../config/config")
-const { updatePresence, getPresenceCount } = require("../rooms/roomManager")
+const { updatePresence, getPresenceCount, getRoomSnapshots } = require("../rooms/roomManager")
 
 function createAdminServer() {
     const server = http.createServer((req, res) => {
@@ -19,6 +19,15 @@ function createAdminServer() {
                     res.end(JSON.stringify({ error: "bad_request" }))
                 }
             })
+            return
+        }
+
+        if (req.method === "GET" && req.url === "/rooms") {
+            res.end(JSON.stringify({
+                ok: true,
+                generated_at: Date.now(),
+                rooms: getRoomSnapshots(),
+            }))
             return
         }
 

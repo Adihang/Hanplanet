@@ -40,7 +40,7 @@
             event.source.postMessage({
                 type: "handrive-office-preview-viewport",
                 width: viewportWidth,
-            }, "*");
+            }, "null");
         }
         if (wrap) {
             wrap.style.width = appliedWidth + "px";
@@ -309,6 +309,8 @@
     const processOperationQueueWorker = handriveQueueOperationHelpers.processOperationQueue || function () { return Promise.resolve(); };
     const processUploadQueueWorker = handriveQueueOperationHelpers.processUploadQueue || function () { return Promise.resolve(); };
     const runDeleteQueueOperation = handriveQueueOperationHelpers.runDeleteOperationQueueItem || function () { return Promise.resolve(); };
+    const runCreateArchiveQueueOperation = handriveQueueOperationHelpers.runCreateArchiveOperationQueueItem || function () { return Promise.resolve(); };
+    const runExtractQueueOperation = handriveQueueOperationHelpers.runExtractOperationQueueItem || function () { return Promise.resolve(); };
     const runMoveQueueOperation = handriveQueueOperationHelpers.runMoveOperationQueueItem || function () { return Promise.resolve(); };
 
     const HANDRIVE_MEDIA_AUDIO_VOLUME_STORAGE_KEY = "handrive-media-audio-volume";
@@ -443,6 +445,15 @@
             renderClasses.includes("handrive-media")
         ) {
             targetElement.classList.add("handrive-media");
+            if (renderMode === "media_image") {
+                targetElement.classList.add("handrive-media-image");
+            } else if (renderMode === "media_video") {
+                targetElement.classList.add("handrive-media-video");
+            } else if (renderMode === "media_audio") {
+                targetElement.classList.add("handrive-media-audio");
+            } else if (renderMode === "pdf") {
+                targetElement.classList.add("handrive-media-pdf");
+            }
             renderClasses.forEach(function (className) {
                 if (
                     className === "handrive-media-image" ||
@@ -1736,6 +1747,8 @@
         const deleteApiUrl = root.dataset.deleteApiUrl;
         const mkdirApiUrl = root.dataset.mkdirApiUrl;
         const moveApiUrl = root.dataset.moveApiUrl;
+        const archiveExtractApiUrl = root.dataset.archiveExtractApiUrl || "";
+        const archiveCreateApiUrl = root.dataset.archiveCreateApiUrl || "";
         const uploadApiUrl = root.dataset.uploadApiUrl;
         const uploadCancelApiUrl = root.dataset.uploadCancelApiUrl;
         const downloadApiUrl = root.dataset.downloadApiUrl;
@@ -1809,8 +1822,10 @@
         const contextMenu = document.getElementById("handrive-context-menu");
         const contextOpenButton = contextMenu ? contextMenu.querySelector('button[data-action="open"]') : null;
         const contextDownloadButton = contextMenu ? contextMenu.querySelector('button[data-action="download"]') : null;
+        const contextExtractArchiveButton = contextMenu ? contextMenu.querySelector('button[data-action="extract-archive"]') : null;
         const contextShareButton = contextMenu ? contextMenu.querySelector('button[data-action="share"]') : null;
         const contextUploadButton = contextMenu ? contextMenu.querySelector('button[data-action="upload"]') : null;
+        const contextCreateArchiveButton = contextMenu ? contextMenu.querySelector('button[data-action="create-archive"]') : null;
         const contextEditButton = contextMenu ? contextMenu.querySelector('button[data-action="edit"]') : null;
         const contextRenameButton = contextMenu ? contextMenu.querySelector('button[data-action="rename"]') : null;
         const contextDeleteButton = contextMenu ? contextMenu.querySelector('button[data-action="delete"]') : null;
@@ -1836,6 +1851,12 @@
         const renameTarget = document.getElementById("handrive-rename-target");
         const renameCancelButton = document.getElementById("handrive-rename-cancel-btn");
         const renameConfirmButton = document.getElementById("handrive-rename-confirm-btn");
+        const archiveExtractModal = document.getElementById("handrive-archive-extract-modal");
+        const archiveExtractModalBackdrop = document.getElementById("handrive-archive-extract-modal-backdrop");
+        const archiveExtractTarget = document.getElementById("handrive-archive-extract-target");
+        const archiveExtractCancelButton = document.getElementById("handrive-archive-extract-cancel-btn");
+        const archiveExtractCurrentButton = document.getElementById("handrive-archive-extract-current-btn");
+        const archiveExtractFolderButton = document.getElementById("handrive-archive-extract-folder-btn");
         const folderCreateModal = document.getElementById("handrive-folder-create-modal");
         const folderCreateModalBackdrop = document.getElementById("handrive-folder-create-modal-backdrop");
         const folderCreateTarget = document.getElementById("handrive-folder-create-target");
@@ -1910,6 +1931,7 @@
             ".mp4",
             ".webm",
             ".mov",
+            ".mkv",
             ".m4v",
             ".ogv",
             ".mp3",
@@ -1929,7 +1951,7 @@
 
         const mediaNavExtensions = new Set([
             ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif",
-            ".mp4", ".webm", ".mov", ".m4v", ".ogv",
+            ".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv",
         ]);
         function isMediaNavEntry(entry) {
             return Boolean(entry && entry.type === "file" && mediaNavExtensions.has(getEntryFileExtension(entry)));
@@ -2019,6 +2041,7 @@
             contextTarget: null,
             contextEntries: [],
             renameTargetEntry: null,
+            archiveExtractTargetEntry: null,
             folderIconTargetEntry: null,
             folderCreateParentEntry: null,
             permissionTargetEntry: null,
@@ -2853,7 +2876,25 @@
         }
 
         function isPreviewableFileEntry(entry) {
-            return Boolean(entry && entry.type === "file" && !entry.isCurrentFolder);
+            return Boolean(
+                entry &&
+                entry.type === "file" &&
+                !entry.isCurrentFolder &&
+                !entry.is_archive &&
+                !entry.is_archive_member
+            );
+        }
+
+        function isArchiveEntry(entry) {
+            return Boolean(entry && entry.is_archive && entry.archive_virtual_path);
+        }
+
+        function isArchiveMemberEntry(entry) {
+            return Boolean(entry && entry.is_archive_member);
+        }
+
+        function isArchiveVirtualPath(pathValue) {
+            return normalizePath(pathValue || "", true).startsWith(".handrive-archive/");
         }
 
         function getEntryFileExtension(entry) {
@@ -3463,8 +3504,10 @@
             });
             setContextButtonVisible(contextOpenButton, Boolean(visibility.open));
             setContextButtonVisible(contextDownloadButton, Boolean(visibility.download));
+            setContextButtonVisible(contextExtractArchiveButton, Boolean(visibility.extractArchive && archiveExtractApiUrl));
             setContextButtonVisible(contextShareButton, Boolean(visibility.share && urlShareApiUrl));
             setContextButtonVisible(contextUploadButton, Boolean(visibility.upload));
+            setContextButtonVisible(contextCreateArchiveButton, Boolean(visibility.createArchive && archiveCreateApiUrl));
             setContextButtonVisible(contextEditButton, Boolean(visibility.edit));
             setContextButtonVisible(contextRenameButton, Boolean(visibility.rename));
             setContextButtonVisible(contextDeleteButton, Boolean(visibility.deleteEntry));
@@ -4032,6 +4075,10 @@
                         name: getEntryEditableName(entry),
                         type: entry.type,
                         size_display: entry.size_display || "",
+                        is_archive_member: Boolean(entry.is_archive_member),
+                        is_archive: Boolean(entry.is_archive),
+                        archive_path: entry.archive_path || "",
+                        archive_member_path: entry.archive_member_path || "",
                     };
                 }),
                 fileName: buildQueueItemLabel(normalizedEntries, operationType, {
@@ -4042,6 +4089,7 @@
                 }),
                 sourcePath: normalizedEntries.length > 0 ? normalizedEntries[0].path : "",
                 targetDirPath: normalizePath(targetDirPath || "", true),
+                destinationMode: settings.destinationMode || "",
                 status: "queued",
                 progress: 0,
                 errorMessage: "",
@@ -4188,6 +4236,8 @@
                     deleteButton: contextDeleteButton,
                     download: contextDownloadButton,
                     edit: contextEditButton,
+                    createArchive: contextCreateArchiveButton,
+                    extractArchive: contextExtractArchiveButton,
                     share: contextShareButton,
                     gitCreateRepo: contextGitCreateRepoButton,
                     gitDeleteRepo: contextGitDeleteRepoButton,
@@ -4400,6 +4450,18 @@
             });
         }
 
+        async function runCreateArchiveOperationQueueItem(item) {
+            await runCreateArchiveQueueOperation(item, {
+                applySelection: applySelection,
+                archiveCreateApiUrl: archiveCreateApiUrl,
+                buildPostOptions: buildPostOptions,
+                queueNeedsRefresh: queueNeedsRefresh,
+                renderUploadQueue: renderUploadQueue,
+                requestJson: requestJson,
+                t: t,
+            });
+        }
+
         async function runMoveOperationQueueItem(item) {
             await runMoveQueueOperation(item, {
                 applySelection: applySelection,
@@ -4413,13 +4475,27 @@
             });
         }
 
+        async function runExtractOperationQueueItem(item) {
+            await runExtractQueueOperation(item, {
+                applySelection: applySelection,
+                archiveExtractApiUrl: archiveExtractApiUrl,
+                buildPostOptions: buildPostOptions,
+                queueNeedsRefresh: queueNeedsRefresh,
+                renderUploadQueue: renderUploadQueue,
+                requestJson: requestJson,
+                t: t,
+            });
+        }
+
         async function processOperationQueue() {
             await processOperationQueueWorker({
                 alertError: alertError,
                 refreshCurrentDirectory: refreshCurrentDirectory,
                 removeUploadQueueItem: removeUploadQueueItem,
                 renderUploadQueue: renderUploadQueue,
+                runCreateArchiveOperationQueueItem: runCreateArchiveOperationQueueItem,
                 runDeleteOperationQueueItem: runDeleteOperationQueueItem,
+                runExtractOperationQueueItem: runExtractOperationQueueItem,
                 runMoveOperationQueueItem: runMoveOperationQueueItem,
                 state: state,
                 t: t,
@@ -4623,12 +4699,21 @@
         }
 
         function canDropToDirectory(targetDirPath, options) {
-            if (!moveApiUrl || !Array.isArray(state.draggingEntries) || state.draggingEntries.length === 0) {
+            if ((!moveApiUrl && !archiveExtractApiUrl) || !Array.isArray(state.draggingEntries) || state.draggingEntries.length === 0) {
                 return false;
             }
 
             const targetPath = normalizePath(targetDirPath, true);
             const allowSameParent = Boolean(options && options.allowSameParent);
+            const hasArchiveSources = state.draggingEntries.some(function (entry) {
+                return Boolean(entry && entry.is_archive_member);
+            });
+            const hasNormalSources = state.draggingEntries.some(function (entry) {
+                return Boolean(entry && !entry.is_archive_member);
+            });
+            if (hasArchiveSources && (hasNormalSources || !archiveExtractApiUrl || isArchiveVirtualPath(targetPath))) {
+                return false;
+            }
             let hasMovableSource = false;
 
             for (let index = 0; index < state.draggingEntries.length; index += 1) {
@@ -4642,10 +4727,10 @@
                 if (!sourcePath || sourcePath === targetPath) {
                     return false;
                 }
-                if (!allowSameParent && getParentDirectory(sourcePath) === targetPath) {
+                if (!hasArchiveSources && !allowSameParent && getParentDirectory(sourcePath) === targetPath) {
                     return false;
                 }
-                if (sourceType === "dir" && targetPath && targetPath.startsWith(sourcePath + "/")) {
+                if (!hasArchiveSources && sourceType === "dir" && targetPath && targetPath.startsWith(sourcePath + "/")) {
                     return false;
                 }
                 hasMovableSource = true;
@@ -4653,8 +4738,33 @@
             return hasMovableSource;
         }
 
+        async function extractArchiveEntriesToDirectory(sourceEntries, targetDirPath) {
+            if (!Array.isArray(sourceEntries) || sourceEntries.length === 0 || !archiveExtractApiUrl) {
+                return;
+            }
+            createOperationQueueItem("extract", sourceEntries, targetDirPath, "", {
+                destinationMode: "current",
+            });
+            processOperationQueue().catch(alertError);
+        }
+
+        function createArchiveFromFolder(entry) {
+            if (!entry || entry.type !== "dir" || !archiveCreateApiUrl) {
+                return;
+            }
+            createOperationQueueItem("create-archive", [entry], getParentDirectory(entry.path), "");
+            processOperationQueue().catch(alertError);
+        }
+
         async function moveEntriesToDirectory(sourceEntries, targetDirPath) {
-            if (!Array.isArray(sourceEntries) || sourceEntries.length === 0 || !moveApiUrl) {
+            if (!Array.isArray(sourceEntries) || sourceEntries.length === 0) {
+                return;
+            }
+            if (sourceEntries.every(function (entry) { return Boolean(entry && entry.is_archive_member); })) {
+                await extractArchiveEntriesToDirectory(sourceEntries, targetDirPath);
+                return;
+            }
+            if (!moveApiUrl) {
                 return;
             }
             var commitMessage = "";
@@ -4824,6 +4934,9 @@
                 }
                 if (candidate.isCurrentFolder) {
                     return false;
+                }
+                if (candidate.is_archive_member && candidate.can_extract) {
+                    return true;
                 }
                 if (!(candidate.can_edit || candidate.can_delete)) {
                     return false;
@@ -5467,6 +5580,51 @@
             modalSetRenameModalOpen(renameModal, renameTarget, renameInput, syncModalBodyState, true, state.renameTargetEntry, getEntryEditableName);
         }
 
+        function setArchiveExtractModalOpen(opened, entry) {
+            if (!archiveExtractModal) {
+                return;
+            }
+            archiveExtractModal.hidden = !opened;
+            syncModalBodyState();
+            if (!opened) {
+                state.archiveExtractTargetEntry = null;
+                return;
+            }
+            state.archiveExtractTargetEntry = entry || null;
+            if (archiveExtractTarget) {
+                archiveExtractTarget.textContent = getHandrivePathLabel(entry && entry.path ? entry.path : "");
+            }
+        }
+
+        async function submitArchiveExtract(destinationMode, entryOverride, targetDirOverride) {
+            const entry = entryOverride || state.archiveExtractTargetEntry;
+            if (!entry || !archiveExtractApiUrl) {
+                return;
+            }
+            const sourcePath = entry.path || "";
+            const targetDir = targetDirOverride !== undefined
+                ? targetDirOverride
+                : getParentDirectory(sourcePath);
+            const data = await requestJson(
+                archiveExtractApiUrl,
+                buildPostOptions({
+                    source_path: sourcePath,
+                    target_dir: targetDir,
+                    destination_mode: destinationMode || "current",
+                })
+            );
+            setArchiveExtractModalOpen(false);
+            await refreshCurrentDirectory({ skipPreview: true });
+            const paths = data && Array.isArray(data.paths) ? data.paths : [];
+            const selectedPath = paths[0] || (data && data.path) || "";
+            if (selectedPath) {
+                applySelection(paths.length > 0 ? paths : [selectedPath], {
+                    primaryPath: selectedPath,
+                    anchorPath: selectedPath,
+                });
+            }
+        }
+
         function setFolderCreateModalOpen(opened, entry) {
             if (!folderCreateModal) {
                 return;
@@ -5865,8 +6023,38 @@
             renderList();
         }
 
+        async function toggleArchiveExpansion(entry) {
+            if (!isArchiveEntry(entry)) {
+                return;
+            }
+            const archivePath = normalizePath(entry.path, false);
+            const virtualPath = normalizePath(entry.archive_virtual_path || "", false);
+            if (!archivePath || !virtualPath) {
+                return;
+            }
+            if (state.expandedFolders.has(archivePath)) {
+                state.expandedFolders.delete(archivePath);
+                renderList();
+                return;
+            }
+            await loadDirectory(virtualPath);
+            state.expandedFolders.add(archivePath);
+            state.openingFolderPath = archivePath;
+            renderList();
+        }
+
         function openEntry(entry) {
             if (!entry) {
+                return;
+            }
+            if (isArchiveEntry(entry)) {
+                setArchiveExtractModalOpen(true, entry);
+                return;
+            }
+            if (isArchiveMemberEntry(entry)) {
+                if (entry.type === "dir") {
+                    toggleFolderExpansion(entry).catch(alertError);
+                }
                 return;
             }
             if (entry.type === "dir") {
@@ -6010,7 +6198,7 @@
             row.setAttribute("data-entry-path", entry.path);
             state.entryRowByPath.set(entry.path, row);
             const isPublicWriteFile = Boolean(entry.type === "file" && entry.is_public_write);
-            row.draggable = Boolean(moveApiUrl && (entry.can_edit || entry.can_delete) && !isPublicWriteFile);
+            row.draggable = Boolean((moveApiUrl || archiveExtractApiUrl) && (entry.can_edit || entry.can_delete || (entry.is_archive_member && entry.can_extract)) && !isPublicWriteFile);
             if (state.selectedPaths.has(entry.path) || normalizePath(entry.path, true) === state.activePreviewPath) {
                 row.classList.add("is-selected");
             }
@@ -6052,6 +6240,12 @@
                     openEntry(entry);
                     return;
                 }
+                if (isArchiveEntry(entry)) {
+                    if (event.detail === 1 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+                        toggleArchiveExpansion(entry).catch(alertError);
+                    }
+                    return;
+                }
                 if (entry.type === "dir") {
                     if (event.detail === 1 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
                         if (hasSharedContext() && entry.is_map_folder) {
@@ -6073,6 +6267,9 @@
 
             row.addEventListener("contextmenu", function (event) {
                 event.preventDefault();
+                if (isArchiveMemberEntry(entry)) {
+                    return;
+                }
                 openContextMenuForEntry(entry, event.clientX, event.clientY);
             });
 
@@ -6136,8 +6333,10 @@
             state.entryByPath.set(entry.path, entry);
             state.visibleEntryPaths.push(entry.path);
 
-            if (entry.type === "dir" && state.expandedFolders.has(entry.path)) {
-                const childEntries = getCachedEntries(entry.path);
+            const expandsAsArchive = isArchiveEntry(entry) && state.expandedFolders.has(entry.path);
+            const expandsAsDirectory = entry.type === "dir" && state.expandedFolders.has(entry.path);
+            if (expandsAsArchive || expandsAsDirectory) {
+                const childEntries = getCachedEntries(expandsAsArchive ? entry.archive_virtual_path : entry.path);
                 const nextAncestorHasNextSiblings = (ancestorHasNextSiblings || []).slice();
                 nextAncestorHasNextSiblings.push(!isLastSibling);
                 childEntries.forEach(function (child, index) {
@@ -6282,7 +6481,10 @@
                             return;
                         }
                         if (uploadQueueItem.kind === "operation") {
-                            if (uploadQueueItem.operationType === "move" && (uploadQueueItem.savedPath || uploadQueueItem.targetDirPath)) {
+                            if (
+                                uploadQueueItem.operationType !== "delete" &&
+                                (uploadQueueItem.savedPath || uploadQueueItem.targetDirPath)
+                            ) {
                                 navigateToDirectory(
                                     getParentDirectory(uploadQueueItem.savedPath || "") || uploadQueueItem.targetDirPath
                                 ).catch(alertError);
@@ -6326,6 +6528,12 @@
                     downloadEntries(entries);
                     return;
                 }
+                if (action === "extract-archive") {
+                    if (isArchiveEntry(entry)) {
+                        setArchiveExtractModalOpen(true, entry);
+                    }
+                    return;
+                }
                 if (action === "share") {
                     if (!entry || entry.isCurrentFolder || !entry.can_edit || !urlShareApiUrl) {
                         return;
@@ -6350,6 +6558,10 @@
                 }
                 if (action === "upload") {
                     openContextUploadPicker(entry);
+                    return;
+                }
+                if (action === "create-archive") {
+                    createArchiveFromFolder(entry);
                     return;
                 }
                 if (action === "rename") {
@@ -6487,6 +6699,30 @@
                     event.preventDefault();
                     submitRename().catch(alertError);
                 }
+            });
+        }
+
+        if (archiveExtractModalBackdrop) {
+            archiveExtractModalBackdrop.addEventListener("click", function () {
+                setArchiveExtractModalOpen(false);
+            });
+        }
+
+        if (archiveExtractCancelButton) {
+            archiveExtractCancelButton.addEventListener("click", function () {
+                setArchiveExtractModalOpen(false);
+            });
+        }
+
+        if (archiveExtractCurrentButton) {
+            archiveExtractCurrentButton.addEventListener("click", function () {
+                submitArchiveExtract("current").catch(alertError);
+            });
+        }
+
+        if (archiveExtractFolderButton) {
+            archiveExtractFolderButton.addEventListener("click", function () {
+                submitArchiveExtract("folder").catch(alertError);
             });
         }
 
@@ -7066,6 +7302,10 @@
                     setFolderCreateModalOpen(false);
                     return;
                 }
+                if (archiveExtractModal && !archiveExtractModal.hidden) {
+                    setArchiveExtractModalOpen(false);
+                    return;
+                }
                 if (renameModal && !renameModal.hidden) {
                     setRenameModalOpen(false);
                     return;
@@ -7454,7 +7694,7 @@
 
         const viewMediaNavExtensions = new Set([
             ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif",
-            ".mp4", ".webm", ".mov", ".m4v", ".ogv",
+            ".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv",
         ]);
 
         function isViewMediaNavEntry(entry) {

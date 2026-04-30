@@ -154,9 +154,6 @@
             var html = data && typeof data.html === "string" ? data.html : "";
             var renderMode = data && typeof data.render_mode === "string" ? data.render_mode : "plain_text";
             var renderClass = data && typeof data.render_class === "string" ? data.render_class : "";
-            if (renderMode === "media_image" || renderMode === "media_video" || renderMode === "media_audio") {
-                renderClass = "handrive-media";
-            }
             state.previewCache.set(pathValue, {
                 html: html,
                 renderMode: renderMode,

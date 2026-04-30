@@ -2300,6 +2300,11 @@ def bumpercar_spiky_stats_record(request):
     """Accept runtime stat deltas from the local game server and persist them onto the user profile."""
     if not _is_local_internal_request(request):
         raise Http404()
+    required_secret = getattr(settings, "BUMPERCAR_SPIKY_INTERNAL_SECRET", "")
+    if required_secret:
+        provided = request.headers.get("X-Internal-Secret", "")
+        if not provided or provided != required_secret:
+            raise Http404()
 
     try:
         payload = json.loads((request.body or b"{}").decode("utf-8"))
@@ -4395,7 +4400,7 @@ def git_repo_collaborator(request, repo_id: int):
     User = get_user_model()
 
     try:
-        target_user = User.objects.get(username=username)
+        target_user = User.objects.get(username=username, is_active=True)
     except User.DoesNotExist:
         return _git_json_error("사용자를 찾을 수 없습니다.", status=404)
 

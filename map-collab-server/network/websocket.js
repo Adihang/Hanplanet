@@ -2,7 +2,7 @@ const WebSocket = require("ws")
 const { encode } = require("@msgpack/msgpack")
 const { PORT, JWT_SECRET } = require("../config/config")
 const { verifyToken } = require("../auth/jwt")
-const { joinRoom, leaveRoom, broadcastToRoom, addStroke, removeStroke, upsertText, removeText, getClient, getClientRef } = require("../rooms/roomManager")
+const { joinRoom, leaveRoom, broadcastToRoom, addStroke, removeStroke, upsertText, removeText, getClient, getClientRef, touchClient } = require("../rooms/roomManager")
 
 const RATE_LIMIT = 30
 const MAX_DRAW_POINTS = 2000
@@ -62,6 +62,7 @@ function createServer() {
 
             const client = getClient(ws)
             if (!client) return
+            touchClient(mapPath, ws)
 
             switch (msg.type) {
                 case "ping":

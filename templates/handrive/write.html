@@ -57,10 +57,11 @@
 
         <div class="handrive-field handrive-field-full">
             <div class="handrive-field-head">
-                <label for="handrive-content-input" class="handrive-field-label">{{ handrive_text.content_label }}</label>
                 <div class="handrive-content-snippet-tools">
-                    <button class="ui-btn" type="button" id="ui-markdown-help-btn"{% if not write_is_markdown %} hidden disabled{% endif %}>{{ handrive_text.markdown_guide_button }}</button>
-                    <button class="ui-btn" type="button" id="ui-markdown-preview-btn"{% if not write_is_markdown %} hidden disabled{% endif %}>{{ handrive_text.markdown_preview_button }}</button>
+                    {% if write_is_markdown %}
+                    <button class="ui-btn" type="button" id="ui-markdown-help-btn">{{ handrive_text.markdown_guide_button }}</button>
+                    <button class="ui-btn" type="button" id="ui-markdown-preview-btn">{{ handrive_text.markdown_preview_button }}</button>
+                    {% endif %}
                 </div>
             </div>
             <div class="handrive-editor-surface" id="handrive-editor-surface">

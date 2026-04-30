@@ -74,6 +74,8 @@
     data-delete-api-url="{{ handrive_api_delete_url }}"
     data-mkdir-api-url="{{ handrive_api_mkdir_url }}"
     data-move-api-url="{{ handrive_api_move_url }}"
+    data-archive-extract-api-url="{{ handrive_api_archive_extract_url }}"
+    data-archive-create-api-url="{{ handrive_api_archive_create_url }}"
     data-upload-api-url="{{ handrive_api_upload_url }}"
     data-upload-cancel-api-url="{{ handrive_api_upload_cancel_url }}"
     data-download-api-url="{{ handrive_api_download_url }}"
@@ -306,6 +308,7 @@
 {% include "popup/handrive/context_menu.html" %}
 {% include "popup/handrive/markdown_snippet_menu.html" %}
 
+{% include "popup/handrive/archive_extract_modal.html" %}
 {% include "popup/handrive/rename_modal.html" %}
 {% include "popup/handrive/folder_create_modal.html" %}
 {% include "popup/handrive/commit_message_modal.html" %}

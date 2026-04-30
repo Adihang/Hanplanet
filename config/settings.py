@@ -20,6 +20,7 @@ from storage_profile import get_disc_mode, get_forgejo_repos_root, get_media_roo
 
 mimetypes.add_type("application/javascript", ".js", strict=True)
 mimetypes.add_type("application/javascript", ".mjs", strict=True)
+mimetypes.add_type("video/x-matroska", ".mkv", strict=True)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -420,9 +421,12 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # 디버그 모드에서는 HTTPS 리다이렉트 비활성화
 SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", default=False) if not DEBUG else False
 SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", default=DEFAULT_SECURE_TRANSPORT) if not DEBUG else False
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 3  # 3일
 SESSION_ENGINE = "django.contrib.sessions.backends.db"  # LocMemCache 세션 방지
 CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", default=DEFAULT_SECURE_TRANSPORT) if not DEBUG else False
+CSRF_COOKIE_SAMESITE = "Lax"
 SECURE_HSTS_SECONDS = int(
     os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "31536000" if DEFAULT_SECURE_TRANSPORT else "0")
 )
@@ -435,6 +439,9 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = os.environ.get("DJANGO_SECURE_REFERRER_POLICY", "same-origin")
 X_FRAME_OPTIONS = "DENY"
 CSRF_FAILURE_VIEW = "main.handrive_views.handrive_csrf_failure"
+
+# 로컬 게임 서버 → Django 내부 API 인증 시크릿 (설정 시 요청에 X-Internal-Secret 헤더 필요)
+BUMPERCAR_SPIKY_INTERNAL_SECRET = os.environ.get("BUMPERCAR_SPIKY_INTERNAL_SECRET", "")
 
 # config/settings.py
 
@@ -466,3 +473,18 @@ AUTHENTICATION_BACKENDS = [
 
 # OAuth2 인증 시 리디렉션할 로그인 URL
 LOGIN_URL = '/ko/login'
+
+# ── Email 2FA ─────────────────────────────────────────────────────────────────
+EMAIL_BACKEND = (
+    "django.core.mail.backends.console.EmailBackend" if DEBUG
+    else "django.core.mail.backends.smtp.EmailBackend"
+)
+EMAIL_HOST = load_optional_secret("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = load_optional_int_secret("EMAIL_PORT", 587)
+EMAIL_USE_TLS = load_optional_bool_secret("EMAIL_USE_TLS", True)
+EMAIL_HOST_USER = load_optional_secret("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = load_optional_secret("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = load_optional_secret("DEFAULT_FROM_EMAIL", "noreply@hanplanet.com")
+TWO_FA_CODE_EXPIRY_MINUTES = 10
+TWO_FA_DEVICE_COOKIE_NAME = "hp_device_id"
+TWO_FA_DEVICE_TRUSTED_DAYS = 3

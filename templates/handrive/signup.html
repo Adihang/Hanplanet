@@ -17,12 +17,20 @@
 </div>
 
 <main class="handrive-shell ui-shell handrive-content ui-content">
-    <form method="post" class="handrive-login-form">
+
+    <form method="post" class="handrive-login-form" id="handrive-signup-form">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ handrive_signup_next }}">
 
-        {% if handrive_signup_error_message or handrive_signup_form.non_field_errors %}
-            <div class="handrive-login-error">{{ handrive_signup_error_message|default:handrive_text.auth_signup_error }}</div>
+        {# 이메일 인증 완료 후 서버에서 발급한 서명 토큰 (AJAX로 채워짐) #}
+        {{ handrive_signup_form.email_2fa_token }}
+
+        {% if handrive_signup_form.non_field_errors %}
+            {% for err in handrive_signup_form.non_field_errors %}
+                <div class="handrive-login-error">{{ err }}</div>
+            {% endfor %}
+        {% elif handrive_signup_error_message %}
+            <div class="handrive-login-error">{{ handrive_signup_error_message }}</div>
         {% endif %}
 
         <label class="handrive-field handrive-field-full">
@@ -57,13 +65,44 @@
             <div class="handrive-login-error">{{ handrive_signup_form.first_name.errors|join:", " }}</div>
         {% endif %}
 
-        <label class="handrive-field handrive-field-full">
+        {# ── 이메일 + 인증번호 요청 버튼 (가로 배치) ─────────────────── #}
+        <div class="handrive-field handrive-field-full">
             <span>{{ handrive_text.auth_email_label }}</span>
-            {{ handrive_signup_form.email }}
-        </label>
-        {% if handrive_signup_form.email.errors %}
-            <div class="handrive-login-error">{{ handrive_signup_form.email.errors|join:", " }}</div>
-        {% endif %}
+            <div class="handrive-signup-email-row" id="handrive-signup-email-row">
+                {{ handrive_signup_form.email }}
+                <button type="button" class="ui-btn" id="handrive-signup-send-code-btn">{{ handrive_text.auth_2fa_send_code_button }}</button>
+            </div>
+            {% if handrive_signup_form.email.errors %}
+                <div class="handrive-login-error">{{ handrive_signup_form.email.errors|join:", " }}</div>
+            {% endif %}
+            <div id="handrive-signup-send-code-error" class="handrive-login-error" style="display:none;"></div>
+        </div>
+
+        {# ── 인증번호 입력 + 확인 버튼 (발송 후 표시) ────────────────── #}
+        <div class="handrive-field handrive-field-full" id="handrive-signup-code-block" hidden>
+            <span>{{ handrive_text.auth_2fa_code_label }}</span>
+            <div class="handrive-signup-email-row">
+                <input
+                    type="text"
+                    id="handrive-signup-code-input"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    maxlength="6"
+                    placeholder="{{ handrive_text.auth_2fa_code_placeholder }}"
+                >
+                <button type="button" class="ui-btn ui-btn-primary" id="handrive-signup-verify-code-btn">{{ handrive_text.auth_2fa_verify_code_button }}</button>
+            </div>
+            <div id="handrive-signup-verify-code-error" class="handrive-login-error" style="display:none;"></div>
+            <div id="handrive-signup-verified-msg" style="display:none; color: var(--ui-color-success, green); font-size: 0.875rem; margin-top: 4px;">
+                ✓ {{ handrive_text.auth_2fa_verified_label }}
+            </div>
+            <div id="handrive-signup-resend-wrap" class="handrive-2fa-resend-row">
+                <button type="button" class="ui-btn" id="handrive-signup-resend-btn">
+                    {{ handrive_text.auth_2fa_resend_button }}
+                </button>
+                <span id="handrive-signup-resend-msg" class="handrive-2fa-resend-msg" hidden></span>
+            </div>
+        </div>
 
         <div class="handrive-field handrive-field-full handrive-field-checkbox">
             <div class="handrive-field-checkbox-text">
@@ -87,14 +126,186 @@
             <button class="ui-btn ui-btn-primary" type="submit">{{ handrive_text.auth_signup_submit }}</button>
         </div>
     </form>
+
 </main>
-{% include "partials/site_footer_links.html" %}
 <script>
     (function () {
         const errorPopupMessage = "{{ handrive_signup_error_popup_message|default:''|escapejs }}";
         if (errorPopupMessage) {
             window.alert(errorPopupMessage);
         }
+
+        const sendCodeUrl = "{{ handrive_api_signup_2fa_send_code_url|escapejs }}";
+        const verifyCodeUrl = "{{ handrive_api_signup_2fa_verify_code_url|escapejs }}";
+        const csrfToken = "{{ csrf_token }}";
+
+        const emailInput = document.getElementById("id_signup_email");
+        const tokenInput = document.querySelector('input[name="email_2fa_token"]');
+        const sendCodeBtn = document.getElementById("handrive-signup-send-code-btn");
+        const sendCodeError = document.getElementById("handrive-signup-send-code-error");
+        const codeBlock = document.getElementById("handrive-signup-code-block");
+        const codeInput = document.getElementById("handrive-signup-code-input");
+        const verifyCodeBtn = document.getElementById("handrive-signup-verify-code-btn");
+        const verifyCodeError = document.getElementById("handrive-signup-verify-code-error");
+        const verifiedMsg = document.getElementById("handrive-signup-verified-msg");
+
+        function showError(el, msg) {
+            if (!el) return;
+            el.textContent = msg;
+            el.style.display = "block";
+        }
+        function hideError(el) {
+            if (!el) return;
+            el.style.display = "none";
+            el.textContent = "";
+        }
+
+        function setEmailVerified() {
+            if (emailInput) {
+                emailInput.disabled = true;
+                emailInput.setAttribute("aria-disabled", "true");
+            }
+            if (codeInput) {
+                codeInput.disabled = true;
+            }
+            if (sendCodeBtn) sendCodeBtn.disabled = true;
+            if (verifyCodeBtn) verifyCodeBtn.disabled = true;
+            if (verifiedMsg) verifiedMsg.style.display = "block";
+            hideError(verifyCodeError);
+        }
+
+        if (sendCodeBtn) {
+            sendCodeBtn.addEventListener("click", function () {
+                sendCodeBtn.disabled = true;
+                doSendCode();
+            });
+        }
+
+        if (verifyCodeBtn) {
+            verifyCodeBtn.addEventListener("click", function () {
+                const code = codeInput ? codeInput.value.trim() : "";
+                if (!code) {
+                    showError(verifyCodeError, "인증 코드를 입력해주세요.");
+                    return;
+                }
+                hideError(verifyCodeError);
+                verifyCodeBtn.disabled = true;
+
+                const body = new URLSearchParams();
+                body.append("code", code);
+
+                fetch(verifyCodeUrl, {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "X-CSRFToken": csrfToken,
+                        "Accept": "application/json",
+                    },
+                    body: body,
+                })
+                    .then(function (res) { return res.json(); })
+                    .then(function (data) {
+                        verifyCodeBtn.disabled = false;
+                        if (data.ok && data.token) {
+                            if (tokenInput) tokenInput.value = data.token;
+                            setEmailVerified();
+                        } else {
+                            showError(verifyCodeError, data.error || "인증에 실패했습니다.");
+                        }
+                    })
+                    .catch(function () {
+                        verifyCodeBtn.disabled = false;
+                        showError(verifyCodeError, "오류가 발생했습니다. 다시 시도해주세요.");
+                    });
+            });
+        }
+
+        // Enter 키로 인증번호 확인
+        if (codeInput) {
+            codeInput.addEventListener("keydown", function (e) {
+                if (e.key === "Enter" && !e.isComposing) {
+                    e.preventDefault();
+                    if (verifyCodeBtn && !verifyCodeBtn.disabled) verifyCodeBtn.click();
+                }
+            });
+        }
+
+        // ── 인증코드 재전송 ─────────────────────────────────────────────────
+        const resendBtn = document.getElementById("handrive-signup-resend-btn");
+        const resendMsg = document.getElementById("handrive-signup-resend-msg");
+
+        function doSendCode() {
+            const email = emailInput ? emailInput.value.trim() : "";
+            if (!email) {
+                showError(sendCodeError, "이메일 주소를 입력해주세요.");
+                return;
+            }
+            hideError(sendCodeError);
+            if (resendMsg) { resendMsg.hidden = true; resendMsg.textContent = ""; }
+            hideError(verifyCodeError);
+
+            const body = new URLSearchParams();
+            body.append("email", email);
+
+            fetch(sendCodeUrl, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "X-CSRFToken": csrfToken, "Accept": "application/json" },
+                body: body,
+            })
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    if (data.ok) {
+                        if (codeBlock) codeBlock.removeAttribute("hidden");
+                        if (codeInput) { codeInput.value = ""; codeInput.focus(); }
+                        if (resendMsg) {
+                            resendMsg.textContent = "{{ handrive_text.auth_2fa_resend_success|escapejs }}";
+                            resendMsg.hidden = false;
+                        }
+                    } else {
+                        showError(sendCodeError, data.error || "오류가 발생했습니다.");
+                    }
+                    if (resendBtn) resendBtn.disabled = false;
+                    if (sendCodeBtn) sendCodeBtn.disabled = false;
+                })
+                .catch(function () {
+                    showError(sendCodeError, "오류가 발생했습니다. 다시 시도해주세요.");
+                    if (resendBtn) resendBtn.disabled = false;
+                    if (sendCodeBtn) sendCodeBtn.disabled = false;
+                });
+        }
+
+        if (resendBtn) {
+            resendBtn.addEventListener("click", function () {
+                resendBtn.disabled = true;
+                doSendCode();
+            });
+        }
     })();
 </script>
+<style>
+    .handrive-signup-email-row {
+        display: flex;
+        gap: 8px;
+        align-items: stretch;
+    }
+    .handrive-signup-email-row input {
+        flex: 1;
+        min-width: 0;
+    }
+    .handrive-signup-email-row .ui-btn {
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
+    #handrive-signup-form input:disabled {
+        color: var(--handrive-text-muted, #999);
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+    #handrive-signup-form .ui-btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+</style>
 {% endblock %}

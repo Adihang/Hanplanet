@@ -1,6 +1,7 @@
 import base64
 import json
 import hashlib
+import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
@@ -26,6 +27,7 @@ from stratagem.models import Stratagem_Hero_Score
 from oauth2_provider.models import get_application_model
 from .handrive_views import (
     DOCS_EDIT_PERMISSION_CODE,
+    HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY,
     HANDRIVE_EDITOR_GROUP_NAME,
     DOCS_PUBLIC_WRITE_GROUP_NAME,
     DOCS_USER_SCOPED_ENTRY_LIMIT,
@@ -1387,6 +1389,61 @@ class HandriveAuthFlowTests(TestCase):
         self.assertIn("i_like_gitea", second_login.cookies)
         self.assertEqual(mock_prepare_session.call_count, 2)
 
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch(
+        "main.handrive_views._prepare_forgejo_login_session",
+        side_effect=[("forgejo-session-a", None), ("forgejo-session-b", None)],
+    )
+    def test_docs_login_switching_account_replaces_pending_2fa_user(self, mock_prepare_session, mock_send_2fa):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+        other_user = self.user_model.objects.create_user(
+            username="handrive_login_user_two",
+            password="pw123456",
+            email="two@example.com",
+            is_staff=False,
+        )
+
+        first_response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+        )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertContains(first_response, "on**@example.com")
+        self.assertEqual(self.client.session[HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY], self.user.pk)
+
+        second_response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user_two", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+        )
+
+        self.assertEqual(second_response.status_code, 200)
+        self.assertContains(second_response, "tw**@example.com")
+        self.assertNotContains(second_response, "on**@example.com")
+        self.assertEqual(self.client.session[HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY], other_user.pk)
+        self.assertEqual(mock_prepare_session.call_count, 2)
+        self.assertEqual(mock_send_2fa.call_count, 2)
+
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_docs_login_get_clears_abandoned_pending_2fa(self, mock_prepare_session, mock_send_2fa):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+
+        first_response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+        )
+        self.assertEqual(first_response.status_code, 200)
+        self.assertIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
+
+        login_page = self.client.get("/ko/login/")
+
+        self.assertEqual(login_page.status_code, 200)
+        self.assertNotIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
+        self.assertNotContains(login_page, "on**@example.com")
+
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=(None, "FORGEJO"))
     def test_docs_login_blocks_django_login_when_forgejo_link_fails(self, mock_prepare_session):
         response = self.client.post(
@@ -2508,6 +2565,98 @@ class HandriveAccessRuleTests(TestCase):
         self.assertTrue((handrive_root / "archive" / "public.md").exists())
         self.assertEqual(response.json().get("path"), "archive/public.md")
 
+    def test_docs_api_list_opens_zip_as_virtual_directory(self):
+        editor = self.create_handrive_editor("zip_list_editor")
+        self.client.force_login(editor)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        archive_path = handrive_root / "sample.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("folder/a.txt", "A")
+            archive.writestr("root.txt", "R")
+
+        root_response = self.client.get(reverse("main:handrive_api_list"), data={"path": ""})
+        self.assertEqual(root_response.status_code, 200)
+        archive_entry = next(item for item in root_response.json()["entries"] if item["name"] == "sample.zip")
+        self.assertTrue(archive_entry["is_archive"])
+        self.assertTrue(archive_entry["can_extract"])
+        self.assertTrue(archive_entry["archive_virtual_path"].startswith(".handrive-archive/"))
+
+        archive_response = self.client.get(
+            reverse("main:handrive_api_list"),
+            data={"path": archive_entry["archive_virtual_path"]},
+        )
+        self.assertEqual(archive_response.status_code, 200)
+        entries = {item["name"]: item for item in archive_response.json()["entries"]}
+        self.assertEqual(entries["folder"]["type"], "dir")
+        self.assertTrue(entries["folder"]["is_archive_member"])
+        self.assertEqual(entries["root.txt"]["type"], "file")
+        self.assertTrue(entries["root.txt"]["is_archive_member"])
+
+    def test_docs_api_archive_extract_supports_full_and_partial_extract(self):
+        editor = self.create_handrive_editor("zip_extract_editor")
+        self.client.force_login(editor)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "target").mkdir(parents=True, exist_ok=True)
+        archive_path = handrive_root / "sample.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("folder/a.txt", "A")
+            archive.writestr("root.txt", "R")
+
+        full_response = self.client.post(
+            reverse("main:handrive_api_archive_extract"),
+            data=json.dumps({"source_path": "sample.zip", "destination_mode": "folder"}),
+            content_type="application/json",
+        )
+        self.assertEqual(full_response.status_code, 200)
+        migrated_root = Path(settings.MEDIA_ROOT) / "HanDrive"
+        self.assertEqual((migrated_root / "sample" / "folder" / "a.txt").read_text(encoding="utf-8"), "A")
+        self.assertEqual((migrated_root / "sample" / "root.txt").read_text(encoding="utf-8"), "R")
+
+        root_response = self.client.get(reverse("main:handrive_api_list"), data={"path": ""})
+        archive_entry = next(item for item in root_response.json()["entries"] if item["name"] == "sample.zip")
+        archive_response = self.client.get(
+            reverse("main:handrive_api_list"),
+            data={"path": archive_entry["archive_virtual_path"]},
+        )
+        root_file_entry = next(item for item in archive_response.json()["entries"] if item["name"] == "root.txt")
+        partial_response = self.client.post(
+            reverse("main:handrive_api_archive_extract"),
+            data=json.dumps({
+                "source_path": root_file_entry["path"],
+                "target_dir": "target",
+                "destination_mode": "current",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(partial_response.status_code, 200)
+        self.assertEqual((migrated_root / "target" / "root.txt").read_text(encoding="utf-8"), "R")
+
+    def test_docs_api_archive_create_zips_folder_next_to_source(self):
+        editor = self.create_handrive_editor("zip_create_editor")
+        self.client.force_login(editor)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        source_dir = handrive_root / "restricted"
+        (source_dir / "child").mkdir(parents=True, exist_ok=True)
+        (source_dir / "child" / "nested.txt").write_text("nested", encoding="utf-8")
+
+        response = self.client.post(
+            reverse("main:handrive_api_archive_create"),
+            data=json.dumps({"source_path": "restricted"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("path"), "restricted.zip")
+        archive_path = Path(settings.MEDIA_ROOT) / "HanDrive" / "restricted.zip"
+        self.assertTrue(archive_path.exists())
+        with zipfile.ZipFile(archive_path) as archive:
+            self.assertEqual(archive.read("restricted/secret.md").decode("utf-8"), "# secret")
+            self.assertEqual(archive.read("restricted/child/nested.txt").decode("utf-8"), "nested")
+
     def test_docs_api_move_updates_sync_excluded_paths(self):
         editor = self.create_handrive_editor("move_sync_editor")
         profile, _ = UserProfile.objects.get_or_create(user=editor)
@@ -3238,6 +3387,24 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(payload.get("render_mode"), "media_audio")
         self.assertIn("<audio", payload.get("html", ""))
         self.assertIn("/handrive/api/download?path=sample.mp3", payload.get("html", ""))
+
+    def test_docs_api_preview_renders_mkv_as_video_media_file(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "sample.mkv").write_bytes(b"\x1a\x45\xdf\xa3")
+        editor = self.create_handrive_editor("mkv_editor")
+        self.client.force_login(editor)
+
+        response = self.client.post(
+            reverse("main:handrive_api_preview"),
+            data=json.dumps({"path": "sample.mkv"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("render_mode"), "media_video")
+        self.assertIn("<video", payload.get("html", ""))
+        self.assertIn("/handrive/api/download?path=sample.mkv", payload.get("html", ""))
 
     def test_docs_view_renders_html_live_with_same_name_css_and_js(self):
         handrive_root = Path(settings.MEDIA_ROOT) / "docs"

@@ -17,6 +17,7 @@
 </div>
 
 <main class="handrive-shell ui-shell handrive-content ui-content">
+
     <form method="post" class="handrive-login-form" id="handrive-login-form">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ handrive_login_next }}">
@@ -25,50 +26,87 @@
             <div class="handrive-login-error">{{ handrive_login_error_message|default:handrive_text.auth_login_error }}</div>
         {% endif %}
 
-        <label class="handrive-field handrive-field-full">
-            <span>{{ handrive_text.auth_username_label }}</span>
-            <input
-                type="text"
-                name="username"
-                value="{{ handrive_login_form.username.value|default:'' }}"
-                autocomplete="username"
-                required
-                autofocus
-            >
-        </label>
-
-        <label class="handrive-field handrive-field-full">
-            <span>{{ handrive_text.auth_password_label }}</span>
-            <input
-                type="password"
-                name="password"
-                autocomplete="current-password"
-                required
-            >
-        </label>
-
-        <label class="handrive-field handrive-field-full" id="handrive-login-captcha-block"{% if not handrive_login_show_captcha %} hidden{% endif %}>
-                <span>{{ handrive_text.auth_login_captcha_label }}</span>
-                <span class="ui-subtitle">{{ handrive_text.auth_login_captcha_hint }}</span>
-                <span id="handrive-login-captcha-question">{{ handrive_login_captcha_question }}</span>
+        {# ── 로그인 필드 (2FA 모드에서는 숨김) ───────────────────────── #}
+        <div id="handrive-login-credential-block"{% if handrive_login_show_2fa %} hidden{% endif %}>
+            <label class="handrive-field handrive-field-full">
+                <span>{{ handrive_text.auth_username_label }}</span>
                 <input
                     type="text"
-                    name="handrive-captcha-answer"
-                    inputmode="numeric"
-                    autocomplete="off"
-                    placeholder="{{ handrive_text.auth_login_captcha_placeholder }}"
-                    {% if handrive_login_show_captcha %}required{% endif %}
+                    name="username"
+                    value="{{ handrive_login_form.username.value|default:'' }}"
+                    autocomplete="username"
+                    required
+                    {% if not handrive_login_show_2fa %}autofocus{% endif %}
                 >
-                {% if handrive_turnstile_site_key %}
-                    <div id="handrive-turnstile-widget"></div>
-                {% endif %}
+            </label>
+
+            <label class="handrive-field handrive-field-full">
+                <span>{{ handrive_text.auth_password_label }}</span>
+                <input
+                    type="password"
+                    name="password"
+                    autocomplete="current-password"
+                    required
+                >
+            </label>
+        </div>
+
+        {# ── 캡챠 블록 ──────────────────────────────────────────────── #}
+        <label class="handrive-field handrive-field-full" id="handrive-login-captcha-block"{% if not handrive_login_show_captcha %} hidden{% endif %}>
+            <span>{{ handrive_text.auth_login_captcha_label }}</span>
+            <span class="ui-subtitle">{{ handrive_text.auth_login_captcha_hint }}</span>
+            <span id="handrive-login-captcha-question">{{ handrive_login_captcha_question }}</span>
+            <input
+                type="text"
+                name="handrive-captcha-answer"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="{{ handrive_text.auth_login_captcha_placeholder }}"
+                {% if handrive_login_show_captcha %}required{% endif %}
+            >
+            {% if handrive_turnstile_site_key %}
+                <div id="handrive-turnstile-widget"></div>
+            {% endif %}
         </label>
+
+        {# ── 이메일 2FA 블록 (새 기기 감지 시 표시) ─────────────────── #}
+        <div id="handrive-login-2fa-block"{% if not handrive_login_show_2fa %} hidden{% endif %}>
+            <input type="hidden" name="handrive_2fa_phase" value="verify">
+            <p class="ui-subtitle">{{ handrive_text.auth_2fa_hint }} <strong>{{ handrive_login_2fa_masked_email }}</strong></p>
+            {% if handrive_login_2fa_error_message %}
+                <div class="handrive-login-error" id="handrive-login-2fa-error">{{ handrive_login_2fa_error_message }}</div>
+            {% else %}
+                <div class="handrive-login-error" id="handrive-login-2fa-error" style="display:none;"></div>
+            {% endif %}
+            <div id="handrive-login-2fa-resend-msg" class="handrive-login-2fa-resend-msg" hidden></div>
+            <label class="handrive-field handrive-field-full">
+                <span>{{ handrive_text.auth_2fa_code_label }}</span>
+                <input
+                    type="text"
+                    name="code"
+                    id="handrive-login-2fa-code-input"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    maxlength="6"
+                    {% if handrive_login_show_2fa %}required autofocus{% endif %}
+                    placeholder="{{ handrive_text.auth_2fa_code_placeholder }}"
+                >
+            </label>
+            <div class="handrive-2fa-resend-row">
+                <button type="button" class="ui-btn" id="handrive-login-2fa-resend-btn">
+                    {{ handrive_text.auth_2fa_resend_button }}
+                </button>
+            </div>
+        </div>
 
         <div class="handrive-login-actions">
             <a class="ui-btn" href="{{ handrive_base_url }}">{{ handrive_text.cancel }}</a>
-            <button class="ui-btn ui-btn-primary" type="submit" id="handrive-login-submit-btn">{{ handrive_text.auth_login_submit }}</button>
+            <button class="ui-btn ui-btn-primary" type="submit" id="handrive-login-submit-btn">
+                {% if handrive_login_show_2fa %}{{ handrive_text.auth_2fa_submit }}{% else %}{{ handrive_text.auth_login_submit }}{% endif %}
+            </button>
         </div>
     </form>
+
 </main>
 {% include "partials/site_footer_links.html" %}
 
@@ -263,6 +301,53 @@
                 }, 300);
             });
             fetchCaptchaStatus(true);
+        }
+
+        // ── 2FA 인증코드 재전송 ─────────────────────────────────────────────
+        const resendBtn = document.getElementById("handrive-login-2fa-resend-btn");
+        const resendMsgEl = document.getElementById("handrive-login-2fa-resend-msg");
+        const twoFaErrorEl = document.getElementById("handrive-login-2fa-error");
+        const twoFaCodeInput = document.getElementById("handrive-login-2fa-code-input");
+        const resendUrl = "{{ handrive_api_login_2fa_resend_code_url|default:''|escapejs }}";
+
+        if (resendBtn && resendUrl) {
+            resendBtn.addEventListener("click", function () {
+                resendBtn.disabled = true;
+                if (resendMsgEl) { resendMsgEl.hidden = true; resendMsgEl.textContent = ""; }
+                if (twoFaErrorEl) { twoFaErrorEl.style.display = "none"; twoFaErrorEl.textContent = ""; }
+
+                fetch(resendUrl, {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "X-CSRFToken": (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || "",
+                        "Accept": "application/json",
+                    },
+                })
+                    .then(function (res) { return res.json(); })
+                    .then(function (data) {
+                        resendBtn.disabled = false;
+                        if (data.ok) {
+                            if (resendMsgEl) {
+                                resendMsgEl.textContent = "{{ handrive_text.auth_2fa_resend_success|escapejs }}";
+                                resendMsgEl.hidden = false;
+                            }
+                            if (twoFaCodeInput) { twoFaCodeInput.value = ""; twoFaCodeInput.focus(); }
+                        } else {
+                            if (twoFaErrorEl) {
+                                twoFaErrorEl.textContent = data.error || "재전송에 실패했습니다.";
+                                twoFaErrorEl.style.display = "block";
+                            }
+                        }
+                    })
+                    .catch(function () {
+                        resendBtn.disabled = false;
+                        if (twoFaErrorEl) {
+                            twoFaErrorEl.textContent = "오류가 발생했습니다. 다시 시도해주세요.";
+                            twoFaErrorEl.style.display = "block";
+                        }
+                    });
+            });
         }
     })();
 </script>

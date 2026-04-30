@@ -1,0 +1,93 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; 맵 협업 세션
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="module">
+    <h2>맵 협업 세션</h2>
+    <p>
+      활성 세션 {{ room_count }}개 / 접속자 {{ total_clients }}명
+      {% if generated_at %}<span class="quiet">/ 조회 시각 {{ generated_at|date:"Y-m-d H:i:s" }}</span>{% endif %}
+    </p>
+    <p class="quiet">조회 대상: {{ admin_url }}/rooms</p>
+    <p>
+      <a class="button" href="{% url 'admin:main_map_collab_sessions' %}">새로고침</a>
+    </p>
+    {% if error_message %}
+      <p class="errornote">{{ error_message }}</p>
+    {% endif %}
+  </div>
+
+  {% if rooms %}
+    {% for room in rooms %}
+      <div class="module">
+        <h2>{{ room.map_path }}</h2>
+        <table>
+          <tbody>
+            <tr>
+              <th scope="row">접속자</th>
+              <td>{{ room.client_count }}명</td>
+              <th scope="row">드로잉/텍스트</th>
+              <td>선 {{ room.stroke_count }}개 / 텍스트 {{ room.text_count }}개</td>
+              <th scope="row">마지막 활동</th>
+              <td>
+                {% if room.last_active %}{{ room.last_active|date:"Y-m-d H:i:s" }}{% else %}-{% endif %}
+                <span class="quiet">({{ room.idle_seconds }}초 전)</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table>
+          <thead>
+            <tr>
+              <th>사용자</th>
+              <th>User ID</th>
+              <th>색상</th>
+              <th>접속 시작</th>
+              <th>마지막 활동</th>
+              <th>연결 시간</th>
+              <th>대기 드로잉 포인트</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for client in room.clients %}
+              <tr>
+                <td>
+                  {{ client.display_name|default:"-" }}
+                  {% if client.guest_num %}<span class="quiet">guest #{{ client.guest_num }}</span>{% endif %}
+                </td>
+                <td><code>{{ client.user_id }}</code></td>
+                <td>
+                  <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:{{ client.color }};vertical-align:-1px;border:1px solid #999;"></span>
+                  <code>{{ client.color }}</code>
+                </td>
+                <td>{% if client.joined_at %}{{ client.joined_at|date:"Y-m-d H:i:s" }}{% else %}-{% endif %}</td>
+                <td>
+                  {% if client.last_seen %}{{ client.last_seen|date:"Y-m-d H:i:s" }}{% else %}-{% endif %}
+                  <span class="quiet">({{ client.idle_seconds }}초 전)</span>
+                </td>
+                <td>{{ client.connected_seconds }}초</td>
+                <td>{{ client.pending_draw_points }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="7">접속자가 없습니다.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="module">
+      <p>현재 활성화된 맵 협업 세션이 없습니다.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

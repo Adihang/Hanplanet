@@ -13,6 +13,7 @@ from __future__ import annotations
 """
 
 import base64
+import binascii
 import io
 import logging
 import json
@@ -27,6 +28,7 @@ import tempfile
 import time
 import unicodedata
 import uuid
+import zipfile
 from datetime import datetime
 from contextvars import ContextVar
 from functools import wraps
@@ -296,6 +298,14 @@ MAP_VIDEO_MIME_TYPES = {
 }
 HANDRIVE_LOGIN_CAPTCHA_QUESTION_SESSION_KEY = "handrive_login_captcha_question"
 HANDRIVE_LOGIN_CAPTCHA_ANSWER_SESSION_KEY = "handrive_login_captcha_answer"
+
+# 2FA pending session keys
+HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY = "handrive_2fa_pending_user_id"
+HANDRIVE_2FA_PENDING_NEXT_URL_SESSION_KEY = "handrive_2fa_pending_next_url"
+HANDRIVE_2FA_PENDING_UI_LANG_SESSION_KEY = "handrive_2fa_pending_ui_lang"
+HANDRIVE_2FA_PENDING_FORGEJO_KEY_SESSION_KEY = "handrive_2fa_pending_forgejo_key"
+HANDRIVE_2FA_PENDING_REQUIRES_ATTACH_SESSION_KEY = "handrive_2fa_pending_requires_attach"
+HANDRIVE_SIGNUP_2FA_SESSION_KEY = "handrive_signup_2fa_pending"  # 회원가입 AJAX 이메일 인증 세션 키
 DOCS_SIGNUP_FORBIDDEN_TERMS = (
     "admin",
     "administrator",
@@ -331,6 +341,8 @@ DOCS_RENDER_MODE_PDF = "pdf"
 DOCS_RENDER_MODE_UNSUPPORTED = "unsupported"
 HANDRIVE_ACTIVE_ROOT_DIR: ContextVar[Path | None] = ContextVar("handrive_active_root_dir", default=None)
 HANDRIVE_ACTIVE_REQUEST: ContextVar[object | None] = ContextVar("handrive_active_request", default=None)
+HANDRIVE_ARCHIVE_VIRTUAL_PREFIX = ".handrive-archive"
+HANDRIVE_SUPPORTED_ARCHIVE_EXTENSIONS = frozenset({".zip"})
 DOCS_DEFAULT_RENDER_PROFILE = {
     "mode": DOCS_RENDER_MODE_PLAIN_TEXT,
     "css_class": "handrive-plain-text",
@@ -436,6 +448,10 @@ DOCS_RENDER_PROFILES_BY_EXTENSION = {
         "mode": DOCS_RENDER_MODE_MEDIA_VIDEO,
         "css_class": "handrive-media handrive-media-video",
     },
+    ".mkv": {
+        "mode": DOCS_RENDER_MODE_MEDIA_VIDEO,
+        "css_class": "handrive-media handrive-media-video",
+    },
     ".m4v": {
         "mode": DOCS_RENDER_MODE_MEDIA_VIDEO,
         "css_class": "handrive-media handrive-media-video",
@@ -500,8 +516,14 @@ DOCS_TEXT = {
         "menu_manage_repo": "Repo 관리",
         "menu_delete_repo": "Repo 삭제",
         "menu_change_icon": "아이콘 변경",
+        "menu_extract_archive": "압축해제",
+        "menu_create_archive": "압축하기",
         "menu_new_folder": "새 폴더",
         "menu_new_document": "새 파일",
+        "archive_extract_title": "압축해제",
+        "archive_extract_message": "압축을 어디에 풀까요?",
+        "archive_extract_current_folder": "이 폴더에",
+        "archive_extract_named_folder": "압축파일명 폴더에",
         "rename_title": "이름 바꾸기",
         "commit_message_title": "커밋 메시지",
         "commit_message_label": "메시지",
@@ -528,6 +550,12 @@ DOCS_TEXT = {
         "queue_status_move_queued": "이동 대기",
         "queue_status_moving": "이동 중",
         "queue_status_move_done": "이동 완료",
+        "queue_status_extract_queued": "압축해제 대기",
+        "queue_status_extracting": "압축해제 중",
+        "queue_status_extract_done": "압축해제 완료",
+        "queue_status_archive_create_queued": "압축파일 생성 대기",
+        "queue_status_archive_creating": "압축파일 생성 중",
+        "queue_status_archive_create_done": "압축파일 생성 완료",
         "apply": "변경",
         "edit_button": "수정",
         "image_editor_save_ok": "저장 완료",
@@ -762,6 +790,26 @@ DOCS_TEXT = {
         "auth_login_captcha_unavailable": "캡챠 설정이 준비되지 않았습니다. 관리자에게 문의해주세요.",
         "auth_logout_confirm": "로그아웃 하시겠습니까?",
         "auth_profile_label": "프로필",
+        "auth_2fa_title": "이메일 인증",
+        "auth_2fa_hint": "인증 코드가 아래 이메일로 발송되었습니다:",
+        "auth_2fa_code_label": "인증 코드",
+        "auth_2fa_code_placeholder": "6자리 코드 입력",
+        "auth_2fa_submit": "확인",
+        "auth_2fa_code_error": "인증 코드가 올바르지 않거나 만료되었습니다. 다시 확인해주세요.",
+        "auth_2fa_email_send_error": "인증 코드 발송에 실패했습니다. 잠시 후 다시 시도해주세요.",
+        "auth_2fa_send_code_button": "인증번호 요청",
+        "auth_2fa_verify_code_button": "확인",
+        "auth_2fa_verified_label": "이메일 인증 완료",
+        "auth_2fa_email_not_verified": "이메일 인증을 완료해주세요.",
+        "auth_2fa_rate_limit": "잠시 후 다시 시도해주세요.",
+        "auth_2fa_resend_button": "인증코드 재전송",
+        "auth_2fa_resend_success": "인증 코드가 재전송되었습니다.",
+        "auth_2fa_session_expired": "인증 세션이 만료되었습니다. 다시 로그인해주세요.",
+        "auth_register_email_title": "이메일 등록",
+        "auth_register_email_hint": "2차 인증을 위해 이메일 주소를 등록해주세요.",
+        "auth_register_email_label": "이메일 주소",
+        "auth_register_email_submit": "등록 및 인증 코드 받기",
+        "auth_register_email_invalid": "올바른 이메일 주소를 입력해주세요.",
     },
     "en": {
         "list_title": "Files",
@@ -781,8 +829,14 @@ DOCS_TEXT = {
         "menu_manage_repo": "Manage Repo",
         "menu_delete_repo": "Delete Repo",
         "menu_change_icon": "Change Icon",
+        "menu_extract_archive": "Extract",
+        "menu_create_archive": "Compress",
         "menu_new_folder": "New Folder",
         "menu_new_document": "New File",
+        "archive_extract_title": "Extract",
+        "archive_extract_message": "Where should this archive be extracted?",
+        "archive_extract_current_folder": "Here",
+        "archive_extract_named_folder": "Into archive-name folder",
         "rename_title": "Rename",
         "commit_message_title": "Commit Message",
         "commit_message_label": "Message",
@@ -975,6 +1029,12 @@ DOCS_TEXT = {
         "queue_status_move_queued": "Move queued",
         "queue_status_moving": "Moving",
         "queue_status_move_done": "Move complete",
+        "queue_status_extract_queued": "Extract queued",
+        "queue_status_extracting": "Extracting",
+        "queue_status_extract_done": "Extract complete",
+        "queue_status_archive_create_queued": "Compress queued",
+        "queue_status_archive_creating": "Compressing",
+        "queue_status_archive_create_done": "Compress complete",
         "upload_error_file_too_large": "File too large",
         "upload_error_timeout": "Upload timed out",
         "upload_error_file_type_not_allowed": "Unsupported file type",
@@ -1043,6 +1103,26 @@ DOCS_TEXT = {
         "auth_login_captcha_unavailable": "Captcha is not configured. Please contact the administrator.",
         "auth_logout_confirm": "Do you want to log out?",
         "auth_profile_label": "Profile",
+        "auth_2fa_title": "Email Verification",
+        "auth_2fa_hint": "A verification code was sent to:",
+        "auth_2fa_code_label": "Verification Code",
+        "auth_2fa_code_placeholder": "Enter 6-digit code",
+        "auth_2fa_submit": "Verify",
+        "auth_2fa_code_error": "The code is invalid or expired. Please check and try again.",
+        "auth_2fa_email_send_error": "Failed to send the verification code. Please try again later.",
+        "auth_2fa_send_code_button": "Send Code",
+        "auth_2fa_verify_code_button": "Confirm",
+        "auth_2fa_verified_label": "Email verified",
+        "auth_2fa_email_not_verified": "Please verify your email address.",
+        "auth_2fa_rate_limit": "Please wait a moment before trying again.",
+        "auth_2fa_resend_button": "Resend Code",
+        "auth_2fa_resend_success": "Verification code resent.",
+        "auth_2fa_session_expired": "Session expired. Please log in again.",
+        "auth_register_email_title": "Register Email",
+        "auth_register_email_hint": "Please register an email address for two-factor authentication.",
+        "auth_register_email_label": "Email address",
+        "auth_register_email_submit": "Register & Get Verification Code",
+        "auth_register_email_invalid": "Please enter a valid email address.",
     },
 }
 
@@ -1304,6 +1384,156 @@ def markdown_slug_from_relative(relative_path: str) -> str:
     return relative_path
 
 
+def is_handrive_supported_archive_path(path_obj_or_name) -> bool:
+    return Path(str(path_obj_or_name or "")).suffix.lower() in HANDRIVE_SUPPORTED_ARCHIVE_EXTENSIONS
+
+
+def build_archive_virtual_path(archive_relative_path: str, inner_path: str = "") -> str:
+    archive_relative = normalize_relative_path(archive_relative_path, allow_empty=False)
+    token = base64.urlsafe_b64encode(archive_relative.encode("utf-8")).decode("ascii").rstrip("=")
+    normalized_inner = normalize_relative_path(inner_path, allow_empty=True)
+    if normalized_inner:
+        return f"{HANDRIVE_ARCHIVE_VIRTUAL_PREFIX}/{token}/{normalized_inner}"
+    return f"{HANDRIVE_ARCHIVE_VIRTUAL_PREFIX}/{token}"
+
+
+def parse_archive_virtual_path(path_value: str | None) -> tuple[str, str] | None:
+    normalized = normalize_relative_path(path_value, allow_empty=True)
+    prefix = f"{HANDRIVE_ARCHIVE_VIRTUAL_PREFIX}/"
+    if not normalized.startswith(prefix):
+        return None
+    remainder = normalized[len(prefix):]
+    token, _, inner = remainder.partition("/")
+    if not token:
+        raise ValueError("압축파일 경로가 올바르지 않습니다.")
+    padded_token = token + ("=" * (-len(token) % 4))
+    try:
+        archive_relative = normalize_relative_path(
+            base64.urlsafe_b64decode(padded_token.encode("ascii")).decode("utf-8"),
+            allow_empty=False,
+        )
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        raise ValueError("압축파일 경로가 올바르지 않습니다.")
+    inner_path = normalize_relative_path(inner, allow_empty=True)
+    return archive_relative, inner_path
+
+
+def normalize_archive_member_name(member_name: str | None) -> str:
+    value = str(member_name or "").replace("\\", "/").lstrip("/")
+    parts = []
+    for part in value.split("/"):
+        stripped = part.strip()
+        if not stripped or stripped == ".":
+            continue
+        if stripped == "..":
+            return ""
+        parts.append(stripped)
+    return "/".join(parts)
+
+
+def build_archive_directory_meta(request, archive_relative: str, inner_path: str, entries: list[dict]) -> dict:
+    normalized_inner = normalize_relative_path(inner_path, allow_empty=True)
+    virtual_path = build_archive_virtual_path(archive_relative, normalized_inner)
+    archive_path, _ = resolve_path(archive_relative, must_exist=True)
+    modified_display = ""
+    try:
+        modified_display = format_handrive_modified_display_from_timestamp(archive_path.stat().st_mtime)
+    except OSError:
+        pass
+    return {
+        "path": virtual_path,
+        "is_root": False,
+        "can_edit": False,
+        "can_write_children": False,
+        "has_children": bool(entries),
+        "is_git_repo_root": False,
+        "requires_commit_message": False,
+        "git_branch_root": False,
+        "git_commit_message": "",
+        "git_commit_author_username": "",
+        "modified_display": modified_display,
+        "size_display": "",
+        "git_repo": None,
+        "is_archive_virtual": True,
+        "archive_path": archive_relative,
+        "archive_member_path": normalized_inner,
+    }
+
+
+def list_archive_entries(archive_path: Path, archive_relative: str, inner_path: str, request=None) -> list[dict]:
+    normalized_inner = normalize_archive_member_name(inner_path)
+    prefix = f"{normalized_inner}/" if normalized_inner else ""
+    children: dict[str, dict] = {}
+
+    with zipfile.ZipFile(archive_path) as archive:
+        for info in archive.infolist():
+            member_name = normalize_archive_member_name(info.filename)
+            if not member_name or (normalized_inner and member_name != normalized_inner and not member_name.startswith(prefix)):
+                continue
+            remainder = member_name[len(prefix):] if prefix else member_name
+            if not remainder:
+                continue
+            child_name, _, child_rest = remainder.partition("/")
+            child_member_path = f"{prefix}{child_name}" if prefix else child_name
+            is_dir = bool(child_rest) or info.is_dir()
+            existing = children.get(child_name)
+            if existing is None:
+                entry = {
+                    "name": child_name,
+                    "path": build_archive_virtual_path(archive_relative, child_member_path),
+                    "type": "dir" if is_dir else "file",
+                    "modified_display": format_handrive_modified_display(datetime(*info.date_time)),
+                    "can_edit": False,
+                    "can_write_children": False,
+                    "can_delete": False,
+                    "is_public_write": False,
+                    "is_url_only": False,
+                    "write_acl_labels": [],
+                    "share_url": "",
+                    "share_is_inherited": False,
+                    "is_archive_member": True,
+                    "can_extract": True,
+                    "archive_path": archive_relative,
+                    "archive_member_path": child_member_path,
+                    "has_children": is_dir,
+                }
+                if not is_dir:
+                    entry["size_display"] = format_handrive_bytes_display(info.file_size)
+                children[child_name] = entry
+            else:
+                existing["has_children"] = bool(existing.get("has_children") or is_dir)
+                if is_dir:
+                    existing["type"] = "dir"
+
+    return sorted(children.values(), key=lambda item: (0 if item.get("type") == "dir" else 1, item.get("name", "").lower()))
+
+
+def build_available_archive_directory_path(parent_dir: Path, raw_name: str) -> Path:
+    base_name = validate_name(raw_name or "archive", for_file=False)
+    candidate = parent_dir / base_name
+    if not candidate.exists():
+        return candidate
+    index = 2
+    while True:
+        candidate = parent_dir / f"{base_name} ({index})"
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
+def build_available_archive_file_path(parent_dir: Path, raw_stem: str) -> Path:
+    base_name = validate_name(raw_stem or "archive", for_file=False)
+    candidate = parent_dir / f"{base_name}.zip"
+    if not candidate.exists():
+        return candidate
+    index = 2
+    while True:
+        candidate = parent_dir / f"{base_name} ({index}).zip"
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
 def render_plain_text_safely(text: str) -> str:
     """plain text 를 안전한 ``pre/code`` HTML 로 감싼다."""
     escaped_text = escape(text or "")
@@ -1460,7 +1690,7 @@ def render_handrive_media_safely(source_path: Path, relative_path: str, share_ow
             f'<img class="handrive-media-element handrive-media-image-element" src="{source_url}" alt="{escape(source_path.name)}" loading="eager">'
             "</div>"
         )
-    if extension in {".mp4", ".webm", ".mov", ".m4v", ".ogv"}:
+    if extension in {".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv"}:
         return mark_safe(
             '<div class="handrive-media-wrap handrive-media-video-wrap">'
             f'<video class="handrive-media-element handrive-media-video-element" src="{source_url}" controls preload="metadata"></video>'
@@ -2270,6 +2500,12 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                 share_info = build_handrive_existing_share_info(request, entry["path"])
                 entry["share_url"] = share_info["share_url"]
                 entry["share_is_inherited"] = share_info["share_is_inherited"]
+                if is_handrive_supported_archive_path(child):
+                    entry["is_archive"] = True
+                    entry["can_extract"] = can_read
+                    entry["archive_path"] = entry["path"]
+                    entry["archive_virtual_path"] = build_archive_virtual_path(entry["path"])
+                    entry["has_children"] = True
             entries.append(entry)
             existing_entry_paths.add(entry["path"])
 
@@ -3921,6 +4157,8 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_delete_url": reverse("main:handrive_api_delete"),
             "handrive_api_mkdir_url": reverse("main:handrive_api_mkdir"),
             "handrive_api_move_url": reverse("main:handrive_api_move"),
+            "handrive_api_archive_extract_url": reverse("main:handrive_api_archive_extract"),
+            "handrive_api_archive_create_url": reverse("main:handrive_api_archive_create"),
             "handrive_api_upload_url": reverse("main:handrive_api_upload"),
             "handrive_api_upload_cancel_url": reverse("main:handrive_api_upload_cancel"),
             "handrive_api_download_url": reverse("main:handrive_api_download"),
@@ -4085,6 +4323,239 @@ def _reset_handrive_login_guard(user):
     guard.save(update_fields=["failed_attempts", "captcha_required", "updated_at"])
 
 
+# ── 2FA 헬퍼 ──────────────────────────────────────────────────────────────────
+
+def _generate_and_store_2fa_code(user) -> str:
+    """6자리 인증 코드를 생성하고 EmailVerificationCode 레코드를 저장한 뒤 반환한다."""
+    from datetime import timedelta
+    from django.utils import timezone
+    from main.models import EmailVerificationCode
+    code = str(secrets.randbelow(900000) + 100000)  # 100000–999999
+    expiry = timezone.now() + timedelta(minutes=settings.TWO_FA_CODE_EXPIRY_MINUTES)
+    # 기존 미사용 코드를 모두 무효화 (최신 코드만 유효)
+    EmailVerificationCode.objects.filter(user=user, used=False).update(used=True)
+    EmailVerificationCode.objects.create(user=user, code=code, expires_at=expiry)
+    return code
+
+
+def _send_2fa_email(user, code: str) -> bool:
+    """인증 코드를 사용자 이메일로 발송한다. 성공하면 True, 실패하면 False."""
+    from django.core.mail import send_mail
+    email = str(getattr(user, "email", "") or "").strip()
+    if not email:
+        return False
+    subject = "[Hanplanet] 이메일 인증 코드"
+    body = (
+        f"안녕하세요,\n\n"
+        f"Hanplanet 로그인 인증 코드입니다.\n\n"
+        f"인증 코드: {code}\n\n"
+        f"이 코드는 {settings.TWO_FA_CODE_EXPIRY_MINUTES}분 후 만료됩니다.\n"
+        f"본인이 요청하지 않은 경우 이 메일을 무시하세요."
+    )
+    try:
+        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [email])
+        return True
+    except Exception:
+        logger.exception("[2FA] Failed to send verification email to user %s", getattr(user, "username", "?"))
+        return False
+
+
+def _verify_2fa_code(user, submitted_code: str) -> bool:
+    """제출된 코드가 유효한지 확인하고, 유효하면 used=True로 표시한다."""
+    from django.utils import timezone
+    from main.models import EmailVerificationCode
+    submitted = str(submitted_code or "").strip()
+    if not submitted:
+        return False
+    record = (
+        EmailVerificationCode.objects
+        .filter(user=user, code=submitted, used=False, expires_at__gt=timezone.now())
+        .order_by("-created_at")
+        .first()
+    )
+    if record is None:
+        return False
+    record.used = True
+    record.save(update_fields=["used"])
+    return True
+
+
+def _read_device_token(request) -> str:
+    """쿠키에서 디바이스 토큰을 읽는다. 없으면 빈 문자열 반환."""
+    cookie_name = getattr(settings, "TWO_FA_DEVICE_COOKIE_NAME", "hp_device_id")
+    return str(request.COOKIES.get(cookie_name, "") or "").strip()
+
+
+def _is_device_trusted(user, device_token: str) -> bool:
+    """디바이스 토큰이 3일 이내에 사용된 신뢰 기기인지 확인한다.
+    만료된 레코드는 이 자리에서 lazy 삭제한다."""
+    if not device_token:
+        return False
+    from datetime import timedelta
+    from django.utils import timezone
+    from main.models import TrustedDevice
+    cutoff = timezone.now() - timedelta(days=settings.TWO_FA_DEVICE_TRUSTED_DAYS)
+    # 3일 초과된 해당 유저의 레코드 삭제 (lazy cleanup)
+    TrustedDevice.objects.filter(user=user, last_seen_at__lt=cutoff).delete()
+    record = TrustedDevice.objects.filter(
+        user=user, device_token=device_token, last_seen_at__gte=cutoff
+    ).first()
+    if record is None:
+        return False
+    # 마지막 확인 시각 갱신
+    record.last_seen_at = timezone.now()
+    record.save(update_fields=["last_seen_at"])
+    return True
+
+
+def _register_trusted_device(user, device_token: str) -> None:
+    """신뢰된 기기 레코드를 생성하거나 last_seen_at을 갱신한다."""
+    from django.utils import timezone
+    from main.models import TrustedDevice
+    TrustedDevice.objects.update_or_create(
+        device_token=device_token,
+        defaults={"user": user, "last_seen_at": timezone.now()},
+    )
+
+
+def _set_device_cookie(response, device_token: str) -> None:
+    """응답에 hp_device_id 쿠키를 설정한다 (90일 유효)."""
+    cookie_name = getattr(settings, "TWO_FA_DEVICE_COOKIE_NAME", "hp_device_id")
+    response.set_cookie(
+        cookie_name,
+        device_token,
+        max_age=60 * 60 * 24 * 90,
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="Lax",
+    )
+
+
+def _clear_2fa_pending_session(request) -> None:
+    """세션에서 2FA pending 상태를 모두 제거한다."""
+    cleared = False
+    for key in (
+        HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY,
+        HANDRIVE_2FA_PENDING_NEXT_URL_SESSION_KEY,
+        HANDRIVE_2FA_PENDING_UI_LANG_SESSION_KEY,
+        HANDRIVE_2FA_PENDING_FORGEJO_KEY_SESSION_KEY,
+        HANDRIVE_2FA_PENDING_REQUIRES_ATTACH_SESSION_KEY,
+    ):
+        if key in request.session:
+            request.session.pop(key, None)
+            cleared = True
+    if cleared:
+        request.session.modified = True
+
+
+def _set_2fa_pending_session(
+    request,
+    user,
+    target_url: str,
+    ui_lang: str,
+    forgejo_session_key: str | None,
+    requires_direct_attach: bool,
+) -> None:
+    """새 2FA 대상 계정으로 pending 상태를 교체한다."""
+    _clear_2fa_pending_session(request)
+    request.session[HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY] = user.pk
+    request.session[HANDRIVE_2FA_PENDING_NEXT_URL_SESSION_KEY] = target_url
+    request.session[HANDRIVE_2FA_PENDING_UI_LANG_SESSION_KEY] = ui_lang
+    request.session[HANDRIVE_2FA_PENDING_FORGEJO_KEY_SESSION_KEY] = forgejo_session_key or ""
+    request.session[HANDRIVE_2FA_PENDING_REQUIRES_ATTACH_SESSION_KEY] = requires_direct_attach
+    request.session.modified = True
+
+
+def _mask_email(email: str) -> str:
+    """'user@example.com' → 'us**@example.com' 형태로 이메일을 가린다."""
+    if not email or "@" not in email:
+        return "***"
+    local, domain = email.split("@", 1)
+    visible = local[:2] if len(local) >= 2 else local[:1]
+    return f"{visible}{'*' * max(2, len(local) - 2)}@{domain}"
+
+
+def _complete_login_or_require_2fa(
+    request,
+    user,
+    target_url: str,
+    ui_lang,
+    *,
+    forgejo_session_key,
+    requires_direct_attach: bool,
+    captcha_was_shown: bool = False,
+    on_2fa_needed=None,
+):
+    """비밀번호 검증 후 최종 로그인 완료 또는 2FA 흐름으로 분기한다.
+
+    1. 이메일 없음 → /register-email/ 로 유도
+    2. 신뢰된 기기   → 즉시 로그인 완료
+    3. 새 기기       → 2FA 코드 발송 후 /2fa-verify/ 로 redirect
+    """
+    if captcha_was_shown:
+        _clear_handrive_login_captcha(request)
+
+    resolved_ui_lang = str(ui_lang or "ko").strip() or "ko"
+
+    # 1) 이메일이 없는 경우 → 이메일 등록 유도
+    user_email = str(getattr(user, "email", "") or "").strip()
+    if not user_email:
+        _set_2fa_pending_session(
+            request,
+            user,
+            target_url,
+            resolved_ui_lang,
+            forgejo_session_key,
+            requires_direct_attach,
+        )
+        register_url = reverse("main:handrive_register_email_lang", kwargs={"ui_lang": resolved_ui_lang})
+        return redirect(register_url)
+
+    # 2) 신뢰된 기기인지 확인
+    device_token = _read_device_token(request)
+    if device_token and _is_device_trusted(user, device_token):
+        _reset_handrive_login_guard(user)
+        _purge_stale_user_sessions(user)
+        token = _issue_session_token(user)
+        auth_login(request, user)
+        request.session["_hp_session_token"] = token
+        if not requires_direct_attach:
+            response = _build_post_hanplanet_login_response(target_url, user)
+        else:
+            response = _build_forgejo_redirect_base(target_url)
+            if forgejo_session_key:
+                response = _apply_forgejo_session_cookie(response, forgejo_session_key)
+        _set_device_cookie(response, device_token)
+        return response
+
+    # 3) 새 기기 → 2FA 필요
+    code = _generate_and_store_2fa_code(user)
+    email_sent = _send_2fa_email(user, code)
+    if not email_sent:
+        logger.error("[2FA] Email send failed for user %s, email=%s", user.username, user.email)
+        if on_2fa_needed is not None:
+            # 인라인 표시: 발송 실패 에러를 caller가 처리
+            return on_2fa_needed(_mask_email(user_email), send_failed=True)
+        login_url = reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_ui_lang})
+        return redirect(f"{login_url}?2fa_error=send_failed")
+
+    _set_2fa_pending_session(
+        request,
+        user,
+        target_url,
+        resolved_ui_lang,
+        forgejo_session_key,
+        requires_direct_attach,
+    )
+
+    if on_2fa_needed is not None:
+        # 인라인 표시: 같은 페이지에서 2FA 코드 입력창 노출
+        return on_2fa_needed(_mask_email(user_email))
+
+    verify_url = reverse("main:handrive_2fa_verify_lang", kwargs={"ui_lang": resolved_ui_lang})
+    return redirect(verify_url)
+
+
 def _verify_handrive_turnstile_token(token: str | None, remote_ip: str | None) -> bool:
     # 디버그 모드에서는 항상 통과
     if settings.DEBUG:
@@ -4177,8 +4648,10 @@ def _resolve_handrive_post_login_url(request, ui_lang: str | None, fallback_next
 
 class HandriveSignupForm(UserCreationForm):
     first_name = forms.CharField(max_length=150, required=False)
-    email = forms.EmailField(required=False)
+    email = forms.EmailField(required=True)
     privacy_consent = forms.BooleanField(required=True)
+    # 이메일 AJAX 인증 완료 후 서버에서 발급한 서명 토큰 (hidden)
+    email_2fa_token = forms.CharField(required=False, widget=forms.HiddenInput)
 
     def __init__(self, *args, ui_lang: str | None = None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -4189,11 +4662,38 @@ class HandriveSignupForm(UserCreationForm):
         self.fields["privacy_consent"].error_messages = {
             "required": handrive_text.get("auth_privacy_consent_error", "개인정보 처리방침 및 이용약관 동의가 필요합니다."),
         }
+        self._handrive_text = handrive_text
         self.fields["username"].widget.attrs.update({"autocomplete": "username", "placeholder": "아이디를 입력하세요"})
         self.fields["password1"].widget.attrs.update({"autocomplete": "new-password", "placeholder": "비밀번호 입력"})
         self.fields["password2"].widget.attrs.update({"autocomplete": "new-password", "placeholder": "비밀번호 다시 입력"})
         self.fields["first_name"].widget.attrs.update({"autocomplete": "name", "placeholder": "이름 입력"})
-        self.fields["email"].widget.attrs.update({"autocomplete": "email", "placeholder": "example@email.com"})
+        self.fields["email"].widget.attrs.update({"autocomplete": "email", "placeholder": "example@email.com", "id": "id_signup_email"})
+
+    def clean_email(self):
+        email = str(self.cleaned_data.get("email", "") or "").strip()
+        if not email:
+            raise ValidationError("이메일 주소를 입력해주세요.")
+        return email
+
+    def clean(self):
+        from django.core import signing
+        cleaned = super().clean()
+        token = str(cleaned.get("email_2fa_token", "") or "").strip()
+        email = str(cleaned.get("email", "") or "").strip()
+        not_verified_msg = (
+            getattr(self, "_handrive_text", {}).get("auth_2fa_email_not_verified", "이메일 인증을 완료해주세요.")
+        )
+        if not token:
+            self.add_error(None, not_verified_msg)
+            return cleaned
+        if email:
+            try:
+                data = signing.loads(token, salt="signup-email-verified", max_age=30 * 60)
+                if data.get("email") != email:
+                    self.add_error(None, not_verified_msg)
+            except Exception:
+                self.add_error(None, not_verified_msg)
+        return cleaned
 
     def save(self, commit=True):
         user = super().save(commit=False)
@@ -4466,6 +4966,9 @@ def _render_handrive_login_page(
     captcha_question: str,
     auth_breadcrumb_url: str,
     hide_global_nav: bool,
+    show_2fa: bool = False,
+    twofa_masked_email: str = "",
+    twofa_error_message: str = "",
 ):
     handrive_text = context["handrive_text"]
     return render(
@@ -4484,6 +4987,10 @@ def _render_handrive_login_page(
             "handrive_auth_breadcrumb_url": auth_breadcrumb_url,
             "handrive_auth_breadcrumb_label": handrive_text.get("auth_previous_page", "Previous Page"),
             "hide_global_nav": hide_global_nav,
+            "handrive_login_show_2fa": show_2fa,
+            "handrive_login_2fa_masked_email": twofa_masked_email,
+            "handrive_login_2fa_error_message": twofa_error_message,
+            "handrive_api_login_2fa_resend_code_url": reverse("main:handrive_api_login_2fa_resend_code"),
         },
     )
 
@@ -4511,6 +5018,8 @@ def _render_handrive_signup_page(
             "handrive_auth_breadcrumb_url": auth_breadcrumb_url,
             "handrive_auth_breadcrumb_label": handrive_text.get("auth_previous_page", "Previous Page"),
             "hide_global_nav": hide_global_nav,
+            "handrive_api_signup_2fa_send_code_url": reverse("main:handrive_api_signup_2fa_send_code"),
+            "handrive_api_signup_2fa_verify_code_url": reverse("main:handrive_api_signup_2fa_verify_code"),
         },
     )
 
@@ -4572,13 +5081,15 @@ def handrive_login(request, ui_lang=None):
         from django.contrib.auth import logout as auth_logout
         auth_logout(request)
 
-    form = AuthenticationForm(request, data=request.POST or None)
     login_error_message = ""
     login_error_popup_message = ""
     show_captcha = False
     captcha_question = ""
-    
-    # 디버그 모드에서는 Turnstile 비활성화
+    show_2fa = False
+    twofa_masked_email = ""
+    twofa_error_message = ""
+
+    # 디버그 모드에서는 Turnstile 비활성화 (콜백보다 먼저 초기화)
     if settings.DEBUG:
         turnstile_site_key = ""
         turnstile_secret_key = ""
@@ -4586,7 +5097,69 @@ def handrive_login(request, ui_lang=None):
         turnstile_site_key = str(getattr(settings, "TURNSTILE_SITE_KEY", "") or "").strip()
         turnstile_secret_key = str(getattr(settings, "TURNSTILE_SECRET_KEY", "") or "").strip()
 
+    if request.method == "GET" and request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY):
+        _clear_2fa_pending_session(request)
+
+    # ── 인라인 2FA 콜백 ───────────────────────────────────────────────────────
+    def _render_login_with_2fa(masked_email, send_failed=False):
+        err = handrive_text.get("auth_2fa_email_send_error", "인증 코드 발송에 실패했습니다.") if send_failed else ""
+        return _render_handrive_login_page(
+            request, context, AuthenticationForm(request),
+            next_url, "", "", False, turnstile_site_key, "",
+            auth_breadcrumb_url, hide_global_nav,
+            show_2fa=True, twofa_masked_email=masked_email, twofa_error_message=err,
+        )
+
+    # ── 2FA 코드 제출 처리 (phase 2) ─────────────────────────────────────────
+    if (request.method == "POST"
+            and request.POST.get("handrive_2fa_phase") == "verify"
+            and request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)):
+        UserModel = get_user_model()
+        pending_user_id = request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)
+        try:
+            pending_user = UserModel.objects.get(pk=pending_user_id)
+        except UserModel.DoesNotExist:
+            _clear_2fa_pending_session(request)
+            return redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}))
+
+        submitted_code = str(request.POST.get("code", "") or "").strip()
+        if _verify_2fa_code(pending_user, submitted_code):
+            _p_target_url = request.session.get(HANDRIVE_2FA_PENDING_NEXT_URL_SESSION_KEY, "")
+            _p_forgejo_key = request.session.get(HANDRIVE_2FA_PENDING_FORGEJO_KEY_SESSION_KEY, "") or None
+            _p_requires_attach = request.session.get(HANDRIVE_2FA_PENDING_REQUIRES_ATTACH_SESSION_KEY, True)
+            _clear_2fa_pending_session(request)
+            _reset_handrive_login_guard(pending_user)
+            _purge_stale_user_sessions(pending_user)
+            token = _issue_session_token(pending_user)
+            auth_login(request, pending_user, backend="django.contrib.auth.backends.ModelBackend")
+            request.session["_hp_session_token"] = token
+            existing_device_token = _read_device_token(request)
+            device_token = existing_device_token if existing_device_token else secrets.token_hex(32)
+            _register_trusted_device(pending_user, device_token)
+            if not _p_requires_attach:
+                response = _build_post_hanplanet_login_response(_p_target_url, pending_user)
+            else:
+                response = _build_forgejo_redirect_base(_p_target_url)
+                if _p_forgejo_key:
+                    response = _apply_forgejo_session_cookie(response, _p_forgejo_key)
+            _set_device_cookie(response, device_token)
+            return response
+        else:
+            # 코드 오류 → 2FA 화면 유지
+            _masked = _mask_email(str(getattr(pending_user, "email", "") or ""))
+            return _render_handrive_login_page(
+                request, context, AuthenticationForm(request),
+                next_url, "", "", False, turnstile_site_key, "",
+                auth_breadcrumb_url, hide_global_nav,
+                show_2fa=True, twofa_masked_email=_masked,
+                twofa_error_message=handrive_text.get("auth_2fa_code_error", "인증 코드가 올바르지 않거나 만료되었습니다."),
+            )
+
+    form = AuthenticationForm(request, data=request.POST or None)
+
     if request.method == "POST":
+        if request.POST.get("handrive_2fa_phase") != "verify":
+            _clear_2fa_pending_session(request)
         username_value = request.POST.get("username", "")
         target_user = _resolve_handrive_login_target_user(username_value)
         show_captcha = _is_handrive_login_captcha_required(target_user)
@@ -4633,16 +5206,13 @@ def handrive_login(request, ui_lang=None):
                             auth_breadcrumb_url,
                             hide_global_nav,
                         )
-                _reset_handrive_login_guard(authed_user)
-                _clear_handrive_login_captcha(request)
-                _purge_stale_user_sessions(authed_user)
-                token = _issue_session_token(authed_user)
-                auth_login(request, authed_user)
-                request.session["_hp_session_token"] = token
-                if not requires_direct_attach:
-                    return _build_post_hanplanet_login_response(target_url, authed_user)
-                response = _build_forgejo_redirect_base(target_url)
-                return _apply_forgejo_session_cookie(response, forgejo_session_key)
+                return _complete_login_or_require_2fa(
+                    request, authed_user, target_url, resolved_lang,
+                    forgejo_session_key=forgejo_session_key,
+                    requires_direct_attach=requires_direct_attach,
+                    captcha_was_shown=True,
+                    on_2fa_needed=_render_login_with_2fa,
+                )
             else:
                 login_error_message = handrive_text.get("auth_login_error", "아이디 또는 비밀번호를 확인해주세요.")
                 captcha_question = _build_handrive_login_captcha(request, refresh=True)
@@ -4672,16 +5242,13 @@ def handrive_login(request, ui_lang=None):
                         auth_breadcrumb_url,
                         hide_global_nav,
                     )
-            _reset_handrive_login_guard(authed_user)
-            _clear_handrive_login_captcha(request)
-            _purge_stale_user_sessions(authed_user)
-            token = _issue_session_token(authed_user)
-            auth_login(request, authed_user)
-            request.session["_hp_session_token"] = token
-            if not requires_direct_attach:
-                return _build_post_hanplanet_login_response(target_url, authed_user)
-            response = _build_forgejo_redirect_base(target_url)
-            return _apply_forgejo_session_cookie(response, forgejo_session_key)
+            return _complete_login_or_require_2fa(
+                request, authed_user, target_url, resolved_lang,
+                forgejo_session_key=forgejo_session_key,
+                requires_direct_attach=requires_direct_attach,
+                captcha_was_shown=False,
+                on_2fa_needed=_render_login_with_2fa,
+            )
         else:
             login_error_message = handrive_text.get("auth_login_error", "아이디 또는 비밀번호를 확인해주세요.")
             if target_user is not None:
@@ -4717,6 +5284,137 @@ def handrive_api_login_captcha_status(request):
     return JsonResponse({"ok": True, "required": required, "question": question})
 
 
+@require_http_methods(["POST"])
+@csrf_protect
+def handrive_api_login_2fa_resend_code(request, ui_lang=None):
+    """로그인 2FA 인증 코드 재전송 API (AJAX).
+
+    세션에 pending_user_id가 있어야 동작한다. 60초 재전송 제한 적용.
+    """
+    from .models import EmailVerificationCode
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    handrive_text = get_handrive_text(resolved_lang)
+
+    pending_user_id = request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)
+    if not pending_user_id:
+        return JsonResponse(
+            {"ok": False, "error": handrive_text.get("auth_2fa_session_expired", "인증 세션이 만료되었습니다. 다시 로그인해주세요.")},
+            status=400,
+        )
+
+    UserModel = get_user_model()
+    try:
+        pending_user = UserModel.objects.get(pk=pending_user_id)
+    except UserModel.DoesNotExist:
+        _clear_2fa_pending_session(request)
+        return JsonResponse(
+            {"ok": False, "error": handrive_text.get("auth_2fa_session_expired", "인증 세션이 만료되었습니다. 다시 로그인해주세요.")},
+            status=400,
+        )
+
+    # 60초 재전송 속도 제한
+    last_code = EmailVerificationCode.objects.filter(user=pending_user).order_by("-created_at").first()
+    if last_code:
+        elapsed = (timezone.now() - last_code.created_at).total_seconds()
+        if elapsed < 60:
+            return JsonResponse(
+                {"ok": False, "error": handrive_text.get("auth_2fa_rate_limit", "잠시 후 다시 시도해주세요.")},
+                status=429,
+            )
+
+    code = _generate_and_store_2fa_code(pending_user)
+    email_sent = _send_2fa_email(pending_user, code)
+    if not email_sent:
+        return JsonResponse(
+            {"ok": False, "error": handrive_text.get("auth_2fa_email_send_error", "인증 코드 발송에 실패했습니다.")},
+            status=500,
+        )
+
+    return JsonResponse({"ok": True})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+def handrive_api_signup_2fa_send_code(request, ui_lang=None):
+    """회원가입 이메일 2FA 인증 코드 발송 API (AJAX)."""
+    from django.core.mail import send_mail as _send_mail
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    handrive_text = get_handrive_text(resolved_lang)
+
+    email = str(request.POST.get("email", "") or "").strip()
+    if not email or "@" not in email or "." not in email.split("@")[-1]:
+        return JsonResponse({"ok": False, "error": handrive_text.get("auth_register_email_invalid", "올바른 이메일 주소를 입력해주세요.")}, status=400)
+
+    # 연속 발송 속도 제한 (60초)
+    pending = request.session.get(HANDRIVE_SIGNUP_2FA_SESSION_KEY) or {}
+    import time as _time
+    now_ts = _time.time()
+    if pending.get("email") == email and (now_ts - pending.get("sent_at_ts", 0)) < 60:
+        return JsonResponse({"ok": False, "error": handrive_text.get("auth_2fa_rate_limit", "잠시 후 다시 시도해주세요.")}, status=429)
+
+    code = str(secrets.randbelow(1000000)).zfill(6)
+    expires_at_ts = now_ts + 600  # 10분
+    request.session[HANDRIVE_SIGNUP_2FA_SESSION_KEY] = {
+        "email": email,
+        "code": code,
+        "sent_at_ts": now_ts,
+        "expires_at_ts": expires_at_ts,
+    }
+
+    try:
+        _send_mail(
+            subject="[Hanplanet] 이메일 인증 코드",
+            message=f"인증 코드: {code}\n\n이 코드는 10분간 유효합니다.",
+            html_message=(
+                f"<p>Hanplanet 이메일 인증 코드입니다.</p>"
+                f"<p>인증 코드: <strong>{code}</strong></p>"
+                f"<p>이 코드는 10분간 유효합니다.</p>"
+            ),
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@hanplanet.com"),
+            recipient_list=[email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception("Failed to send signup 2FA email to %s", email)
+        return JsonResponse({"ok": False, "error": handrive_text.get("auth_2fa_email_send_error", "인증 코드 발송에 실패했습니다.")}, status=500)
+
+    return JsonResponse({"ok": True})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+def handrive_api_signup_2fa_verify_code(request, ui_lang=None):
+    """회원가입 이메일 2FA 코드 검증 API (AJAX) → 검증 성공 시 서명 토큰 반환."""
+    from django.core import signing
+    import time as _time
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    handrive_text = get_handrive_text(resolved_lang)
+    code_error = handrive_text.get("auth_2fa_code_error", "인증 코드가 올바르지 않거나 만료되었습니다.")
+
+    submitted_code = str(request.POST.get("code", "") or "").strip()
+    pending = request.session.get(HANDRIVE_SIGNUP_2FA_SESSION_KEY) or {}
+
+    if not pending or not submitted_code:
+        return JsonResponse({"ok": False, "error": code_error}, status=400)
+
+    if _time.time() > pending.get("expires_at_ts", 0):
+        return JsonResponse({"ok": False, "error": code_error}, status=400)
+
+    if pending.get("code") != submitted_code:
+        return JsonResponse({"ok": False, "error": code_error}, status=400)
+
+    email = pending.get("email", "")
+    # 세션 코드 소비
+    try:
+        del request.session[HANDRIVE_SIGNUP_2FA_SESSION_KEY]
+    except KeyError:
+        pass
+
+    # 30분 유효 서명 토큰 발급
+    token = signing.dumps({"email": email}, salt="signup-email-verified")
+    return JsonResponse({"ok": True, "token": token})
+
+
 @require_http_methods(["GET", "POST"])
 def handrive_signup(request, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
@@ -4735,6 +5433,7 @@ def handrive_signup(request, ui_lang=None):
     form = HandriveSignupForm(request.POST or None, ui_lang=resolved_lang)
     signup_error_message = ""
     signup_error_popup_message = ""
+
     if request.method == "POST":
         if form.is_valid():
             user = form.save()
@@ -4780,12 +5479,22 @@ def handrive_signup(request, ui_lang=None):
                         auth_breadcrumb_url,
                         hide_global_nav,
                     )
+            # 이메일 인증이 이미 AJAX로 완료되었으므로 2FA 없이 즉시 로그인
             _purge_stale_user_sessions(authed_user)
-            auth_login(request, authed_user)
+            token = _issue_session_token(authed_user)
+            auth_login(request, authed_user, backend="django.contrib.auth.backends.ModelBackend")
+            request.session["_hp_session_token"] = token
+            # 신규 가입 = 신규 기기 → 새 device_token 발급 후 신뢰 등록
+            device_token = secrets.token_hex(32)
+            _register_trusted_device(authed_user, device_token)
             if not requires_direct_attach:
-                return _build_post_hanplanet_login_response(target_url, authed_user)
-            response = _build_forgejo_redirect_base(target_url)
-            return _apply_forgejo_session_cookie(response, forgejo_session_key)
+                response = _build_post_hanplanet_login_response(target_url, authed_user)
+            else:
+                response = _build_forgejo_redirect_base(target_url)
+                if forgejo_session_key:
+                    response = _apply_forgejo_session_cookie(response, forgejo_session_key)
+            _set_device_cookie(response, device_token)
+            return response
         signup_error_message = handrive_text.get("auth_signup_error", "회원가입 정보를 확인해주세요.")
     return _render_handrive_signup_page(
         request,
@@ -4797,6 +5506,109 @@ def handrive_signup(request, ui_lang=None):
         auth_breadcrumb_url,
         hide_global_nav,
     )
+
+
+@require_http_methods(["GET", "POST"])
+def handrive_2fa_verify(request, ui_lang=None):
+    """이메일 2FA 코드 입력/검증 페이지."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    context = handrive_common_context(request, resolved_lang)
+    handrive_text = context["handrive_text"]
+
+    pending_user_id = request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)
+    if not pending_user_id:
+        return redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}))
+
+    UserModel = get_user_model()
+    try:
+        pending_user = UserModel.objects.get(pk=pending_user_id)
+    except UserModel.DoesNotExist:
+        _clear_2fa_pending_session(request)
+        return redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}))
+
+    target_url = request.session.get(HANDRIVE_2FA_PENDING_NEXT_URL_SESSION_KEY, "")
+    forgejo_session_key = request.session.get(HANDRIVE_2FA_PENDING_FORGEJO_KEY_SESSION_KEY, "") or None
+    requires_direct_attach = request.session.get(HANDRIVE_2FA_PENDING_REQUIRES_ATTACH_SESSION_KEY, True)
+
+    error_message = ""
+
+    if request.method == "POST":
+        submitted_code = str(request.POST.get("code", "") or "").strip()
+        if _verify_2fa_code(pending_user, submitted_code):
+            _clear_2fa_pending_session(request)
+            _reset_handrive_login_guard(pending_user)
+            _purge_stale_user_sessions(pending_user)
+            token = _issue_session_token(pending_user)
+            # multiple backends 환경에서 backend를 명시해야 auth_login이 정상 작동함
+            auth_login(request, pending_user, backend="django.contrib.auth.backends.ModelBackend")
+            request.session["_hp_session_token"] = token
+
+            # 신뢰된 기기 등록 (기존 쿠키 재사용 또는 신규 발급)
+            existing_device_token = _read_device_token(request)
+            device_token = existing_device_token if existing_device_token else secrets.token_hex(32)
+            _register_trusted_device(pending_user, device_token)
+
+            if not requires_direct_attach:
+                response = _build_post_hanplanet_login_response(target_url, pending_user)
+            else:
+                response = _build_forgejo_redirect_base(target_url)
+                if forgejo_session_key:
+                    response = _apply_forgejo_session_cookie(response, forgejo_session_key)
+            _set_device_cookie(response, device_token)
+            return response
+        else:
+            error_message = handrive_text.get("auth_2fa_code_error", "인증 코드가 올바르지 않거나 만료되었습니다.")
+
+    return render(request, "handrive/2fa_verify.html", {
+        **context,
+        "handrive_2fa_error_message": error_message,
+        "handrive_2fa_user_email_masked": _mask_email(str(getattr(pending_user, "email", "") or "")),
+        "hide_global_nav": True,
+    })
+
+
+@require_http_methods(["GET", "POST"])
+def handrive_register_email(request, ui_lang=None):
+    """이메일이 없는 기존 계정의 이메일 등록 및 2FA 코드 발송 페이지."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    context = handrive_common_context(request, resolved_lang)
+    handrive_text = context["handrive_text"]
+
+    pending_user_id = request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)
+    if not pending_user_id:
+        return redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}))
+
+    UserModel = get_user_model()
+    try:
+        pending_user = UserModel.objects.get(pk=pending_user_id)
+    except UserModel.DoesNotExist:
+        _clear_2fa_pending_session(request)
+        return redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}))
+
+    error_message = ""
+
+    if request.method == "POST":
+        email_input = str(request.POST.get("email", "") or "").strip()
+        if not email_input or "@" not in email_input:
+            error_message = handrive_text.get("auth_register_email_invalid", "올바른 이메일 주소를 입력해주세요.")
+        else:
+            # 이메일 저장
+            pending_user.email = email_input
+            pending_user.save(update_fields=["email"])
+            # 2FA 코드 발송
+            code = _generate_and_store_2fa_code(pending_user)
+            email_sent = _send_2fa_email(pending_user, code)
+            if not email_sent:
+                error_message = handrive_text.get("auth_2fa_email_send_error", "인증 코드 발송에 실패했습니다.")
+            else:
+                verify_url = reverse("main:handrive_2fa_verify_lang", kwargs={"ui_lang": resolved_lang})
+                return redirect(verify_url)
+
+    return render(request, "handrive/register_email.html", {
+        **context,
+        "handrive_register_email_error_message": error_message,
+        "hide_global_nav": True,
+    })
 
 
 @require_http_methods(["POST"])
@@ -5686,8 +6498,39 @@ def handrive_api_list(request):
     except ValueError as exc:
         return json_error(str(exc), status=404)
 
+    try:
+        archive_virtual = parse_archive_virtual_path(normalized)
+    except ValueError as exc:
+        return json_error(str(exc), status=404)
+    if archive_virtual is not None:
+        archive_relative, archive_inner_path = archive_virtual
+        try:
+            archive_path, archive_relative = resolve_path(archive_relative, must_exist=True)
+        except (ValueError, FileNotFoundError) as exc:
+            return json_error(str(exc), status=404)
+        if not archive_path.is_file() or not is_handrive_supported_archive_path(archive_path):
+            return json_error("지원하지 않는 압축파일입니다.", status=400)
+        if not has_handrive_read_access(request, archive_relative):
+            return json_error("파일을 볼 권한이 없습니다.", status=403)
+        try:
+            entries = list_archive_entries(archive_path, archive_relative, archive_inner_path, request=request)
+        except zipfile.BadZipFile:
+            return json_error("압축파일을 읽을 수 없습니다.", status=400)
+        normalized = build_archive_virtual_path(archive_relative, archive_inner_path)
+        return JsonResponse(
+            {
+                "ok": True,
+                "path": normalized,
+                "entries": entries,
+                "directory": build_archive_directory_meta(request, archive_relative, archive_inner_path, entries),
+            }
+        )
+
     git_virtual = _get_git_virtual_context(request, normalized)
     if git_virtual is None:
+        # 경로 존재 여부 노출을 막기 위해 권한 검사를 먼저 수행한다.
+        if not has_handrive_read_access(request, normalized):
+            return json_error("폴더를 찾을 수 없습니다.", status=404)
         try:
             target_dir, normalized = resolve_path(rel_path, must_exist=True)
         except (ValueError, FileNotFoundError) as exc:
@@ -5698,13 +6541,12 @@ def handrive_api_list(request):
     else:
         if git_virtual["kind"] == "branch_file":
             return json_error("폴더 경로가 아닙니다.", status=400)
+        if not has_handrive_read_access(request, normalized):
+            return json_error("폴더를 찾을 수 없습니다.", status=404)
         try:
             entries = _build_git_virtual_entries(request, git_virtual)
         except RuntimeError as exc:
             return json_error(str(exc), status=500)
-
-    if not has_handrive_read_access(request, normalized):
-        return json_error("파일을 볼 권한이 없습니다.", status=403)
 
     try:
         directory_meta = _build_handrive_directory_meta(request, normalized, entries)
@@ -6160,6 +7002,204 @@ def handrive_api_delete(request):
         deleted_paths.append(target_relative)
 
     return JsonResponse({"ok": True, "deleted_paths": deleted_paths})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_archive_extract(request):
+    """ZIP 전체 또는 ZIP 내부 선택 항목을 실제 HanDrive 폴더로 압축해제한다."""
+    try:
+        payload = parse_json_body(request)
+        source_path_value = normalize_relative_path(payload.get("source_path"), allow_empty=False)
+        target_dir_value = normalize_relative_path(payload.get("target_dir"), allow_empty=True)
+        destination_mode = str(payload.get("destination_mode") or "current").strip().lower()
+        if destination_mode not in {"current", "folder"}:
+            raise ValueError("압축해제 위치가 올바르지 않습니다.")
+        archive_virtual = parse_archive_virtual_path(source_path_value)
+        if archive_virtual is None:
+            archive_relative = source_path_value
+            selected_member_path = ""
+        else:
+            archive_relative, selected_member_path = archive_virtual
+        archive_path, archive_relative = resolve_path(archive_relative, must_exist=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=400)
+
+    if not archive_path.is_file() or not is_handrive_supported_archive_path(archive_path):
+        return json_error("지원하지 않는 압축파일입니다.", status=400)
+    if not has_handrive_read_access(request, archive_relative):
+        return json_error("파일을 볼 권한이 없습니다.", status=403)
+
+    try:
+        if target_dir_value:
+            target_dir_path, target_dir_relative = resolve_path(target_dir_value, must_exist=True)
+        else:
+            target_dir_path = archive_path.parent
+            target_dir_relative = relative_from_root(target_dir_path)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=400)
+    if not target_dir_path.is_dir():
+        return json_error("압축해제 대상 경로가 폴더가 아닙니다.", status=400)
+    if not has_handrive_directory_write_access(request, target_dir_relative):
+        return json_error("폴더에 쓸 권한이 없습니다.", status=403)
+
+    destination_root = target_dir_path
+    if destination_mode == "folder":
+        destination_root = build_available_archive_directory_path(target_dir_path, archive_path.stem)
+        destination_root.mkdir(parents=True, exist_ok=True)
+
+    selected_member_path = normalize_archive_member_name(selected_member_path)
+    selected_prefix = f"{selected_member_path}/" if selected_member_path else ""
+    selected_parent = str(Path(selected_member_path).parent).replace("\\", "/") if selected_member_path else ""
+    if selected_parent == ".":
+        selected_parent = ""
+    extracted_top_paths = set()
+    extracted_count = 0
+    destination_root_resolved = destination_root.resolve()
+    handrive_root_resolved = handrive_root_dir().resolve()
+    if destination_root_resolved != handrive_root_resolved and handrive_root_resolved not in destination_root_resolved.parents:
+        return json_error("압축해제 대상 경로가 올바르지 않습니다.", status=400)
+
+    # Zip Bomb 방어: 개별 파일 최대 4GB, 전체 압축해제 최대 8GB
+    _EXTRACT_MAX_SINGLE_BYTES = 4 * 1024 ** 3
+    _EXTRACT_MAX_TOTAL_BYTES = 8 * 1024 ** 3
+
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            infos = archive.infolist()
+            if selected_member_path and not any(
+                normalize_archive_member_name(info.filename) == selected_member_path
+                or normalize_archive_member_name(info.filename).startswith(selected_prefix)
+                for info in infos
+            ):
+                return json_error("압축파일 안에서 항목을 찾을 수 없습니다.", status=404)
+
+            total_uncompressed = sum(
+                info.file_size for info in infos
+                if not (info.is_dir() or info.filename.endswith("/"))
+            )
+            if total_uncompressed > _EXTRACT_MAX_TOTAL_BYTES:
+                return json_error("압축해제 크기가 허용 한도(8GB)를 초과합니다.", status=400)
+
+            for info in infos:
+                member_name = normalize_archive_member_name(info.filename)
+                if not member_name:
+                    continue
+                if selected_member_path:
+                    if member_name != selected_member_path and not member_name.startswith(selected_prefix):
+                        continue
+                    extract_relative = member_name
+                    if selected_parent and member_name.startswith(selected_parent + "/"):
+                        extract_relative = member_name[len(selected_parent) + 1:]
+                else:
+                    extract_relative = member_name
+                extract_relative = normalize_archive_member_name(extract_relative)
+                if not extract_relative:
+                    continue
+
+                destination_path = destination_root / extract_relative
+                destination_resolved = destination_path.resolve()
+                if destination_resolved != destination_root_resolved and destination_root_resolved not in destination_resolved.parents:
+                    return json_error("압축파일 안에 허용되지 않은 경로가 있습니다.", status=400)
+                top_name = extract_relative.split("/", 1)[0]
+                extracted_top_paths.add(relative_from_root(destination_root / top_name))
+
+                if info.is_dir() or member_name.endswith("/"):
+                    destination_path.mkdir(parents=True, exist_ok=True)
+                    continue
+                if info.file_size > _EXTRACT_MAX_SINGLE_BYTES:
+                    return json_error(f"단일 파일 크기가 허용 한도(4GB)를 초과합니다: {extract_relative}", status=400)
+                if destination_path.exists():
+                    return json_error(f"같은 이름의 항목이 이미 존재합니다: {extract_relative}", status=409)
+                destination_path.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(info, "r") as source, destination_path.open("wb") as target:
+                    shutil.copyfileobj(source, target)
+                extracted_count += 1
+    except zipfile.BadZipFile:
+        return json_error("압축파일을 읽을 수 없습니다.", status=400)
+    except OSError as exc:
+        return json_error(f"압축해제에 실패했습니다: {exc}", status=500)
+
+    if extracted_count == 0:
+        return json_error("압축해제할 파일이 없습니다.", status=400)
+
+    extracted_paths = sorted(extracted_top_paths)
+    response_path = extracted_paths[0] if extracted_paths else relative_from_root(destination_root)
+    return JsonResponse(
+        {
+            "ok": True,
+            "path": response_path,
+            "paths": extracted_paths,
+            "target_dir": target_dir_relative,
+            "destination_dir": relative_from_root(destination_root),
+        }
+    )
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_archive_create(request):
+    """폴더를 같은 상위 폴더에 ZIP 파일로 압축한다."""
+    try:
+        payload = parse_json_body(request)
+        source_path_value = normalize_relative_path(payload.get("source_path"), allow_empty=False)
+        source_path, source_relative = resolve_path(source_path_value, must_exist=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=400)
+
+    if not source_path.is_dir():
+        return json_error("폴더만 압축할 수 있습니다.", status=400)
+    if not has_handrive_read_access(request, source_relative):
+        return json_error("파일을 볼 권한이 없습니다.", status=403)
+
+    parent_dir = source_path.parent
+    parent_relative = relative_from_root(parent_dir)
+    if not has_handrive_directory_write_access(request, parent_relative):
+        return json_error("폴더에 쓸 권한이 없습니다.", status=403)
+
+    try:
+        destination_path = build_available_archive_file_path(parent_dir, source_path.name)
+        destination_resolved = destination_path.resolve()
+        root_resolved = handrive_root_dir().resolve()
+        if destination_resolved != root_resolved and root_resolved not in destination_resolved.parents:
+            return json_error("압축파일 생성 위치가 올바르지 않습니다.", status=400)
+
+        file_count = 0
+        with zipfile.ZipFile(destination_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            root_arcname = source_path.name.rstrip("/") + "/"
+            archive.writestr(root_arcname, b"")
+            for child in sorted(source_path.rglob("*"), key=lambda p: p.relative_to(source_path).as_posix().lower()):
+                if child == destination_path:
+                    continue
+                try:
+                    relative_child = child.relative_to(source_path).as_posix()
+                except ValueError:
+                    continue
+                arcname = f"{source_path.name}/{relative_child}"
+                if child.is_dir():
+                    archive.writestr(arcname.rstrip("/") + "/", b"")
+                    continue
+                if not child.is_file():
+                    continue
+                archive.write(child, arcname)
+                file_count += 1
+    except OSError as exc:
+        return json_error(f"압축파일 생성에 실패했습니다: {exc}", status=500)
+    except zipfile.BadZipFile:
+        return json_error("압축파일 생성에 실패했습니다.", status=500)
+
+    destination_relative = relative_from_root(destination_path)
+    response = {
+        "ok": True,
+        "path": destination_relative,
+        "paths": [destination_relative],
+        "file_count": file_count,
+        "type": "file",
+        "slug_path": destination_relative,
+    }
+    return JsonResponse(response)
 
 
 @require_http_methods(["POST"])
@@ -7446,6 +8486,10 @@ def handrive_api_folder_icon_serve(request):
     if not re.fullmatch(r"[a-zA-Z0-9._-]+", owner_key):
         raise Http404
     if not re.fullmatch(r"[a-zA-Z0-9._-]+", folder_stem):
+        raise Http404
+    # IDOR 방어: 요청자 본인의 owner_key 만 허용
+    expected_owner_key = get_folder_icon_owner_key_for_user(getattr(request, "user", None))
+    if owner_key != expected_owner_key:
         raise Http404
     icons_dir = Path(settings.MEDIA_ROOT) / build_user_folder_icon_dir(owner_key)
     icon_path = None

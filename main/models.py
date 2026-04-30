@@ -202,6 +202,47 @@ class HandriveLoginAttemptGuard(models.Model):
         verbose_name_plural = "HanDrive 로그인 보호 상태"
 
 
+class EmailVerificationCode(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="email_verification_codes",
+        verbose_name="사용자",
+    )
+    code = models.CharField("인증 코드", max_length=8)
+    created_at = models.DateTimeField("생성일", auto_now_add=True)
+    expires_at = models.DateTimeField("만료일")
+    used = models.BooleanField("사용됨", default=False)
+
+    class Meta:
+        verbose_name = "이메일 인증 코드"
+        verbose_name_plural = "이메일 인증 코드"
+        indexes = [models.Index(fields=["user", "created_at"])]
+
+    def __str__(self):
+        return f"{self.user.username} — {self.code} (used={self.used})"
+
+
+class TrustedDevice(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="trusted_devices",
+        verbose_name="사용자",
+    )
+    device_token = models.CharField("디바이스 토큰", max_length=64, unique=True)
+    last_seen_at = models.DateTimeField("마지막 확인일")
+    created_at = models.DateTimeField("생성일", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "신뢰된 기기"
+        verbose_name_plural = "신뢰된 기기"
+        indexes = [models.Index(fields=["user", "last_seen_at"])]
+
+    def __str__(self):
+        return f"{self.user.username} — {self.device_token[:8]}… (last={self.last_seen_at})"
+
+
 class HandriveUserQuota(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,

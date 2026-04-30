@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block body_class %}handrive-page{% endblock %}
+{% block content %}
+{% include 'handrive/_assets_head.html' %}
+
+<div class="handrive-toolbar-wrap ui-toolbar-wrap">
+    <div class="handrive-shell ui-shell handrive-toolbar ui-toolbar">
+        <div class="handrive-toolbar-left ui-toolbar-left">
+            <h1 class="handrive-title ui-title">{{ handrive_text.auth_register_email_title }}</h1>
+        </div>
+    </div>
+</div>
+
+<main class="handrive-shell ui-shell handrive-content ui-content">
+    <form method="post" class="handrive-login-form" id="handrive-register-email-form">
+        {% csrf_token %}
+
+        {% if handrive_register_email_error_message %}
+            <div class="handrive-login-error">{{ handrive_register_email_error_message }}</div>
+        {% endif %}
+
+        <p class="ui-subtitle">{{ handrive_text.auth_register_email_hint }}</p>
+
+        <label class="handrive-field handrive-field-full">
+            <span>{{ handrive_text.auth_register_email_label }}</span>
+            <input
+                type="email"
+                name="email"
+                autocomplete="email"
+                required
+                autofocus
+                placeholder="example@email.com"
+            >
+        </label>
+
+        <div class="handrive-login-actions">
+            <button class="ui-btn ui-btn-primary" type="submit">{{ handrive_text.auth_register_email_submit }}</button>
+        </div>
+    </form>
+</main>
+{% include "partials/site_footer_links.html" %}
+{% endblock %}

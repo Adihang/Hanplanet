@@ -148,7 +148,6 @@
         const verifyCodeBtn = document.getElementById("handrive-signup-verify-code-btn");
         const verifyCodeError = document.getElementById("handrive-signup-verify-code-error");
         const verifiedMsg = document.getElementById("handrive-signup-verified-msg");
-
         function showError(el, msg) {
             if (!el) return;
             el.textContent = msg;
@@ -162,7 +161,7 @@
 
         function setEmailVerified() {
             if (emailInput) {
-                emailInput.disabled = true;
+                emailInput.readOnly = true;
                 emailInput.setAttribute("aria-disabled", "true");
             }
             if (codeInput) {
@@ -177,7 +176,7 @@
         if (sendCodeBtn) {
             sendCodeBtn.addEventListener("click", function () {
                 sendCodeBtn.disabled = true;
-                doSendCode();
+                doSendCode({ showResendMessage: false });
             });
         }
 
@@ -233,11 +232,81 @@
         // ── 인증코드 재전송 ─────────────────────────────────────────────────
         const resendBtn = document.getElementById("handrive-signup-resend-btn");
         const resendMsg = document.getElementById("handrive-signup-resend-msg");
+        const sendCodeBtnText = sendCodeBtn ? sendCodeBtn.textContent : "";
+        const resendBtnText = resendBtn ? resendBtn.textContent : "";
+        const codeSendCooldownMs = 30 * 1000;
+        let codeSendCooldownEmail = "";
+        let codeSendCooldownUntil = 0;
+        let codeSendCooldownTimer = null;
 
-        function doSendCode() {
+        function getCurrentEmail() {
+            return emailInput ? emailInput.value.trim() : "";
+        }
+
+        function getCooldownRemainingSeconds(email) {
+            if (!email || email !== codeSendCooldownEmail) {
+                return 0;
+            }
+            const remainingMs = codeSendCooldownUntil - Date.now();
+            return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0;
+        }
+
+        function updateCodeSendCooldownUi() {
+            const email = getCurrentEmail();
+            const remainingSeconds = getCooldownRemainingSeconds(email);
+            const isVerified = Boolean(emailInput && emailInput.readOnly);
+            const isCoolingDown = remainingSeconds > 0;
+
+            if (sendCodeBtn) {
+                sendCodeBtn.disabled = isVerified || isCoolingDown;
+                sendCodeBtn.textContent = sendCodeBtnText;
+            }
+            if (resendBtn) {
+                resendBtn.disabled = isVerified || isCoolingDown;
+                resendBtn.textContent = resendBtnText;
+            }
+            if (resendMsg && !isVerified) {
+                if (isCoolingDown) {
+                    resendMsg.textContent = "재전송 가능까지 " + remainingSeconds + "초";
+                    resendMsg.hidden = false;
+                } else if (resendMsg.dataset.cooldownMessage === "1") {
+                    resendMsg.textContent = "";
+                    resendMsg.hidden = true;
+                    delete resendMsg.dataset.cooldownMessage;
+                }
+            }
+
+            if (codeSendCooldownTimer) {
+                window.clearTimeout(codeSendCooldownTimer);
+                codeSendCooldownTimer = null;
+            }
+            if (isCoolingDown) {
+                if (resendMsg) {
+                    resendMsg.dataset.cooldownMessage = "1";
+                }
+                codeSendCooldownTimer = window.setTimeout(updateCodeSendCooldownUi, 1000);
+            }
+        }
+
+        function startCodeSendCooldown(email) {
+            codeSendCooldownEmail = email;
+            codeSendCooldownUntil = Date.now() + codeSendCooldownMs;
+            updateCodeSendCooldownUi();
+        }
+
+        function doSendCode(options) {
+            const settings = options || {};
+            const showResendMessage = Boolean(settings.showResendMessage);
             const email = emailInput ? emailInput.value.trim() : "";
             if (!email) {
                 showError(sendCodeError, "이메일 주소를 입력해주세요.");
+                if (resendBtn) resendBtn.disabled = false;
+                if (sendCodeBtn) sendCodeBtn.disabled = false;
+                return;
+            }
+            if (getCooldownRemainingSeconds(email) > 0) {
+                hideError(sendCodeError);
+                updateCodeSendCooldownUi();
                 return;
             }
             hideError(sendCodeError);
@@ -258,15 +327,16 @@
                     if (data.ok) {
                         if (codeBlock) codeBlock.removeAttribute("hidden");
                         if (codeInput) { codeInput.value = ""; codeInput.focus(); }
-                        if (resendMsg) {
+                        if (resendMsg && showResendMessage) {
                             resendMsg.textContent = "{{ handrive_text.auth_2fa_resend_success|escapejs }}";
                             resendMsg.hidden = false;
                         }
+                        startCodeSendCooldown(email);
                     } else {
                         showError(sendCodeError, data.error || "오류가 발생했습니다.");
+                        if (resendBtn) resendBtn.disabled = false;
+                        if (sendCodeBtn) sendCodeBtn.disabled = false;
                     }
-                    if (resendBtn) resendBtn.disabled = false;
-                    if (sendCodeBtn) sendCodeBtn.disabled = false;
                 })
                 .catch(function () {
                     showError(sendCodeError, "오류가 발생했습니다. 다시 시도해주세요.");
@@ -278,8 +348,12 @@
         if (resendBtn) {
             resendBtn.addEventListener("click", function () {
                 resendBtn.disabled = true;
-                doSendCode();
+                doSendCode({ showResendMessage: true });
             });
+        }
+
+        if (emailInput) {
+            emailInput.addEventListener("input", updateCodeSendCooldownUi);
         }
     })();
 </script>
@@ -297,7 +371,8 @@
         flex-shrink: 0;
         white-space: nowrap;
     }
-    #handrive-signup-form input:disabled {
+    #handrive-signup-form input:disabled,
+    #handrive-signup-form input[readonly][aria-disabled="true"] {
         color: var(--handrive-text-muted, #999);
         opacity: 0.6;
         cursor: not-allowed;

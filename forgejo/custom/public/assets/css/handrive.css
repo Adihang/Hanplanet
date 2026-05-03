@@ -933,6 +933,14 @@ body.theme-dark .handrive-help-icon-symbol {
     position: relative;
 }
 
+.handrive-list-layout.is-landscape > .handrive-list-pane,
+.handrive-list-layout.is-landscape > .handrive-list-preview,
+.handrive-list-layout.is-landscape > .handrive-list-editor {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
 .handrive-list-layout.is-landscape.has-preview {
     grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
     align-items: stretch;
@@ -1711,6 +1719,14 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     overflow: hidden;
 }
 
+.handrive-list-layout.is-landscape .handrive-list {
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
 .handrive-item {
     display: flex;
     align-items: stretch;
@@ -1735,6 +1751,13 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     position: relative;
     z-index: 1;
     box-shadow: 0 6px 10px -10px var(--handrive-overlay-shadow);
+}
+
+.handrive-list-layout.is-landscape .handrive-current-dir-item {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--handrive-bg);
 }
 
 .handrive-current-dir-item::after {
@@ -3114,6 +3137,80 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     grid-column: 1 / -1;
 }
 
+.handrive-field-checkbox-text {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.handrive-field-checkbox-consent {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    width: fit-content;
+    max-width: 100%;
+    color: var(--handrive-text-strong);
+    line-height: 1.35;
+    cursor: pointer;
+}
+
+.handrive-field-checkbox-consent input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    position: relative;
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    flex-shrink: 0;
+    border: 1px solid var(--handrive-border-heavy);
+    border-radius: 6px;
+    background: var(--handrive-bg);
+    cursor: pointer;
+    transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.handrive-field-checkbox-consent input[type="checkbox"]::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 10px;
+    border: solid var(--ui-btn-primary-text, #ffffff);
+    border-width: 0 2px 2px 0;
+    transform: translate(-50%, -50%) translateY(-1px) rotate(45deg) scale(0);
+    transform-origin: center;
+    transition: transform 0.14s ease;
+}
+
+.handrive-field-checkbox-consent:hover input[type="checkbox"] {
+    border-color: var(--handrive-text-muted);
+    background: var(--handrive-hover-soft);
+}
+
+.handrive-field-checkbox-consent input[type="checkbox"]:focus-visible {
+    outline: none;
+    border-color: var(--theme-accent-strong, var(--handrive-text-stronger));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent-strong, #3b82f6) 22%, transparent);
+}
+
+.handrive-field-checkbox-consent input[type="checkbox"]:checked {
+    border-color: var(--ui-btn-primary-bg, var(--theme-accent-strong, #3b82f6));
+    background: var(--ui-btn-primary-bg, var(--theme-accent-strong, #3b82f6));
+}
+
+.handrive-field-checkbox-consent input[type="checkbox"]:checked::after {
+    transform: translate(-50%, -50%) translateY(-1px) rotate(45deg) scale(1);
+}
+
+.handrive-field-checkbox-links {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+}
+
 .handrive-field input,
 .handrive-field select,
 .handrive-field textarea {
@@ -3329,6 +3426,15 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     gap: 10px;
 }
 
+#handrive-login-credential-block {
+    display: grid;
+    gap: 6px;
+}
+
+#handrive-login-credential-block[hidden] {
+    display: none;
+}
+
 .handrive-login-error {
     border: 1px solid var(--handrive-border-heavy);
     border-radius: var(--handrive-radius-sm);
@@ -3349,7 +3455,7 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 4px;
+    margin-top: 10px;
 }
 
 .handrive-2fa-resend-row .handrive-btn,

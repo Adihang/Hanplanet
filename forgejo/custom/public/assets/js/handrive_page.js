@@ -2161,6 +2161,7 @@
             // 레이아웃 변경 후 동기화
             setTimeout(function() {
                 scheduleSyncCurrentDirRowHeightWithSideHead();
+                scheduleListBodyHeight();
             }, 10);
         }
 
@@ -2171,6 +2172,61 @@
                 clearTimeout(layoutUpdateTimeout);
             }
             layoutUpdateTimeout = setTimeout(updateListLayoutMode, 50);
+        }
+
+        function getFooterReservedHeight() {
+            const footerLinks = document.querySelector(".site-footer-links");
+            if (!footerLinks || footerLinks.offsetParent === null) {
+                return 0;
+            }
+            const footerRect = footerLinks.getBoundingClientRect();
+            const footerStyle = window.getComputedStyle(footerLinks);
+            const marginTop = parseFloat(footerStyle.marginTop) || 0;
+            const marginBottom = parseFloat(footerStyle.marginBottom) || 0;
+            return Math.max(0, footerRect.height + marginTop + marginBottom);
+        }
+
+        function getListBodyHeight() {
+            const contentEl = listLayout ? listLayout.closest(".handrive-content, .ui-content") : null;
+            if (!contentEl || !listLayout) {
+                return 0;
+            }
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            const layoutRect = listLayout.getBoundingClientRect();
+            const contentStyle = window.getComputedStyle(contentEl);
+            const padBottom = parseFloat(contentStyle.paddingBottom) || 0;
+            const layoutStyle = window.getComputedStyle(listLayout);
+            const layoutBorderH = (parseFloat(layoutStyle.borderTopWidth) || 0) + (parseFloat(layoutStyle.borderBottomWidth) || 0);
+            const availableHeight = viewportHeight - getFooterReservedHeight() - layoutRect.top - padBottom - layoutBorderH;
+            return Math.max(0, Math.floor(availableHeight));
+        }
+
+        let listBodyHeightRafId = null;
+        function syncListBodyHeight() {
+            if (!listContainer || !listLayout) {
+                return;
+            }
+            const isLandscape = listLayout.classList.contains("is-landscape");
+            if (!isLandscape) {
+                listContainer.style.height = "";
+                listContainer.style.minHeight = "";
+                listContainer.style.maxHeight = "";
+                return;
+            }
+            const height = getListBodyHeight();
+            listContainer.style.height = height + "px";
+            listContainer.style.minHeight = height + "px";
+            listContainer.style.maxHeight = height + "px";
+        }
+
+        function scheduleListBodyHeight() {
+            if (listBodyHeightRafId !== null) {
+                return;
+            }
+            listBodyHeightRafId = window.requestAnimationFrame(function () {
+                listBodyHeightRafId = null;
+                syncListBodyHeight();
+            });
         }
 
         let currentDirRowSyncRafId = null;
@@ -5177,6 +5233,7 @@
                     ? state.selectionAnchorPath
                     : (state.selectedPath || "");
                 listContainer.appendChild(fragment);
+                scheduleListBodyHeight();
                 syncPreviewFromSelection();
                 state.openingFolderPath = "";
                 return;
@@ -5194,6 +5251,7 @@
                 ? state.selectionAnchorPath
                 : (state.selectedPath || "");
             listContainer.appendChild(fragment);
+            scheduleListBodyHeight();
             syncPreviewFromSelection();
             scheduleSyncCurrentDirRowHeightWithSideHead();
             state.openingFolderPath = "";
@@ -5956,12 +6014,31 @@
         window.addEventListener("resize", closeListMarkdownSnippetMenu, { passive: true });
         window.addEventListener("resize", debouncedUpdateListLayoutMode, { passive: true });
         window.addEventListener("orientationchange", debouncedUpdateListLayoutMode, { passive: true });
+        window.addEventListener("resize", scheduleListBodyHeight, { passive: true });
+        window.addEventListener("orientationchange", scheduleListBodyHeight, { passive: true });
 
         if (window.ResizeObserver && previewHead) {
             const previewHeadResizeObserver = new ResizeObserver(function () {
                 scheduleSyncCurrentDirRowHeightWithSideHead();
             });
             previewHeadResizeObserver.observe(previewHead);
+        }
+
+        if (window.ResizeObserver) {
+            if (listPane) {
+                const listPaneResizeObserver = new ResizeObserver(scheduleListBodyHeight);
+                listPaneResizeObserver.observe(listPane);
+            }
+            const toolbarWrap = document.querySelector(".handrive-toolbar-wrap");
+            if (toolbarWrap) {
+                const listToolbarResizeObserver = new ResizeObserver(scheduleListBodyHeight);
+                listToolbarResizeObserver.observe(toolbarWrap);
+            }
+            const footerLinks = document.querySelector(".site-footer-links");
+            if (footerLinks) {
+                const listFooterResizeObserver = new ResizeObserver(scheduleListBodyHeight);
+                listFooterResizeObserver.observe(footerLinks);
+            }
         }
 
         if (pathBreadcrumbs) {
@@ -5973,6 +6050,7 @@
         // 초기화 시 약간의 지연 후 레이아웃 업데이트
         setTimeout(function() {
             updateListLayoutMode();
+            scheduleListBodyHeight();
         }, 100);
         
         clearPreviewPane();

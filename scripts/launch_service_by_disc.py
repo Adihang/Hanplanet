@@ -201,6 +201,22 @@ def _terminate_conflicting_nginx() -> None:
     except OSError:
         pass
 
+    if _wait_for_port_state(80, should_listen=False, timeout_seconds=5) and _wait_for_port_state(8080, should_listen=False, timeout_seconds=2):
+        return
+
+    # A manually started/Homebrew default nginx can keep the ports occupied
+    # without the runtime config path in its argv. Clear any remaining nginx
+    # master/worker before launchd starts the Hanplanet runtime config.
+    try:
+        subprocess.run(
+            ["/usr/bin/pkill", "-TERM", "-f", r"(/opt/homebrew/.*/nginx|nginx: master process|nginx: worker process)"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        pass
+
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
         if not _is_tcp_port_listening(80) and not _is_tcp_port_listening(8080):
@@ -209,7 +225,7 @@ def _terminate_conflicting_nginx() -> None:
 
     try:
         subprocess.run(
-            ["/usr/bin/pkill", "-KILL", "-f", pattern],
+            ["/usr/bin/pkill", "-KILL", "-f", r"(/opt/homebrew/.*/nginx|nginx: master process|nginx: worker process)"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,

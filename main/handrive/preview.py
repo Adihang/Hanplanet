@@ -10,6 +10,7 @@ from __future__ import annotations
 """
 
 import base64
+import csv
 import io
 import re
 import shutil
@@ -359,6 +360,49 @@ def _extract_xlsx_preview_html(file_bytes: bytes) -> str:
             return "".join(sections)
     except (zipfile.BadZipFile, OSError, ET.ParseError):
         return "<p>미리보기를 지원하지 않는 Excel 파일입니다.</p>"
+
+
+def render_handrive_csv_preview_safely(csv_source: str, *, file_name: str = "CSV") -> str:
+    """CSV 텍스트를 HanDrive office sheet 스타일의 표로 렌더한다."""
+    source = csv_source or ""
+    try:
+        dialect = csv.Sniffer().sniff(source[:4096]) if source.strip() else csv.excel
+    except csv.Error:
+        dialect = csv.excel
+
+    try:
+        rows = list(csv.reader(io.StringIO(source), dialect))
+    except csv.Error:
+        rows = list(csv.reader(io.StringIO(source), csv.excel))
+
+    visible_rows = rows[:300]
+    table_rows: list[str] = []
+    for row_index, row in enumerate(visible_rows):
+        visible_cells = row[:80]
+        tag = "th" if row_index == 0 else "td"
+        cells_html = "".join(f"<{tag}>{escape(cell)}</{tag}>" for cell in visible_cells)
+        if cells_html:
+            table_rows.append(f"<tr>{cells_html}</tr>")
+
+    if not table_rows:
+        return '<section class="handrive-office-sheet-section handrive-csv-sheet"><p>CSV에 표시할 데이터가 없습니다.</p></section>'
+
+    omitted_parts: list[str] = []
+    if len(rows) > len(visible_rows):
+        omitted_parts.append(f"{len(rows) - len(visible_rows)} more rows")
+    if any(len(row) > 80 for row in visible_rows):
+        omitted_parts.append("additional columns")
+    omitted_html = ""
+    if omitted_parts:
+        omitted_html = f'<p class="handrive-office-preview-note">{escape(", ".join(omitted_parts))} omitted from preview.</p>'
+
+    return (
+        f'<section class="handrive-office-sheet-section handrive-csv-sheet">'
+        f"<h3>{escape(file_name)}</h3>"
+        f'<div class="handrive-office-table-wrap"><table class="handrive-office-table handrive-csv-table">{"".join(table_rows)}</table></div>'
+        f"{omitted_html}"
+        "</section>"
+    )
 
 
 def _extract_pptx_preview_html(file_bytes: bytes) -> str:

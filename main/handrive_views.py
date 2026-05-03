@@ -70,7 +70,12 @@ from .views import (
 from .restart_utils import restart_gunicorn_and_wait
 from .forgejo_client import ForgejoClient
 from .handrive.html_assets import load_local_html_companion_assets, load_repo_html_companion_assets
-from .handrive.preview import render_handrive_html_live_safely, render_handrive_office_preview_safely, render_handrive_pdf_safely
+from .handrive.preview import (
+    render_handrive_csv_preview_safely,
+    render_handrive_html_live_safely,
+    render_handrive_office_preview_safely,
+    render_handrive_pdf_safely,
+)
 from .models import HandriveAccessRule, HandriveLoginAttemptGuard, HandriveSharedLink, HandriveUserQuota, UserProfile
 from git.models import GitUserMapping
 from portfolio.models import PortfolioProfile
@@ -375,6 +380,10 @@ DOCS_RENDER_PROFILES_BY_EXTENSION = {
     ".json": {
         "mode": DOCS_RENDER_MODE_PLAIN_TEXT,
         "css_class": "handrive-json",
+    },
+    ".csv": {
+        "mode": DOCS_RENDER_MODE_PLAIN_TEXT,
+        "css_class": "handrive-office handrive-office-sheet handrive-csv",
     },
     ".doc": {
         "mode": DOCS_RENDER_MODE_OFFICE,
@@ -1827,6 +1836,9 @@ def render_handrive_content(
             except OSError:
                 office_bytes = b""
         rendered = render_handrive_office_preview_safely(profile["extension"], office_bytes or b"")
+    elif profile["extension"] == ".csv":
+        file_name = source_path.name if source_path is not None else "CSV"
+        rendered = render_handrive_csv_preview_safely(content, file_name=file_name)
     elif profile["mode"] == DOCS_RENDER_MODE_MARKDOWN:
         rendered = render_markdown_safely(content)
     elif profile["mode"] in {
@@ -4312,6 +4324,22 @@ def _purge_stale_user_sessions(user):
         pass
 
 
+def _finalize_handrive_login_session(request, user) -> str:
+    """HanDrive 로그인 성공 시 Django 세션과 앱 세션 토큰을 확정한다."""
+    _reset_handrive_login_guard(user)
+    _purge_stale_user_sessions(user)
+    token = _issue_session_token(user)
+    auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+    request.user = user
+    request.session["_hp_session_token"] = token
+    request.session.modified = True
+    try:
+        request.session.save()
+    except Exception:
+        logger.exception("[login] Failed to save authenticated session for user %s", getattr(user, "username", "?"))
+    return token
+
+
 def _reset_handrive_login_guard(user):
     if user is None:
         return
@@ -4338,25 +4366,252 @@ def _generate_and_store_2fa_code(user) -> str:
     return code
 
 
-def _send_2fa_email(user, code: str) -> bool:
+def _render_hanplanet_email_html(
+    *,
+    title: str,
+    eyebrow: str,
+    intro_html: str,
+    body_html: str,
+    cta_label: str = "",
+    cta_url: str = "",
+    footer_note: str = "",
+) -> str:
+    """Hanplanet 공통 HTML 메일 템플릿."""
+    safe_title = escape(title)
+    safe_eyebrow = escape(eyebrow)
+    safe_cta_label = escape(cta_label)
+    safe_cta_url = escape(cta_url)
+    safe_footer_note = escape(footer_note)
+    cta_html = ""
+    if cta_label and cta_url:
+        cta_html = (
+            '<tr><td style="padding:22px 0 4px;">'
+            f'<a href="{safe_cta_url}" '
+            'style="display:inline-block;padding:12px 18px;border-radius:8px;'
+            'background:#222222;color:#ffffff;text-decoration:none;font-size:14px;'
+            'font-weight:700;line-height:1.2;">'
+            f"{safe_cta_label}</a>"
+            "</td></tr>"
+        )
+    footer_note_html = ""
+    if footer_note:
+        footer_note_html = (
+            '<p style="margin:14px 0 0;color:#777777;font-size:12px;line-height:1.5;">'
+            f"{safe_footer_note}</p>"
+        )
+    return (
+        '<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f4;'
+        'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Apple SD Gothic Neo,Malgun Gothic,Arial,sans-serif;'
+        'color:#222222;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#f4f4f4;">'
+        '<tr><td align="center" style="padding:28px 14px;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;border-collapse:collapse;">'
+        "<tr><td>"
+        '<div style="background:#222222;border-radius:12px 12px 0 0;padding:18px 20px;color:#ffffff;">'
+        '<div style="font-size:20px;font-weight:800;letter-spacing:0;">Hanplanet</div>'
+        f'<div style="margin-top:6px;font-size:13px;color:#d7d7d7;line-height:1.4;">{safe_eyebrow}</div>'
+        "</div>"
+        "</td></tr>"
+        '<tr><td style="background:#ffffff;border:1px solid #dddddd;border-top:0;'
+        'border-radius:0 0 12px 12px;padding:26px 24px;">'
+        f'<h1 style="margin:0 0 14px;font-size:24px;line-height:1.25;color:#222222;letter-spacing:0;">{safe_title}</h1>'
+        f'<div style="font-size:15px;line-height:1.7;color:#333333;">{intro_html}</div>'
+        '<div style="height:1px;background:#e6e6e6;margin:22px 0;"></div>'
+        f'<div style="font-size:14px;line-height:1.7;color:#333333;">{body_html}</div>'
+        '<table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">'
+        f"{cta_html}"
+        "</table>"
+        f"{footer_note_html}"
+        "</td></tr>"
+        '<tr><td style="padding:14px 4px 0;color:#888888;font-size:12px;line-height:1.5;text-align:center;">'
+        "Hanplanet · https://www.hanplanet.com"
+        "</td></tr>"
+        "</table></td></tr></table></body></html>"
+    )
+
+
+def _render_hanplanet_email_code_box(code: str) -> str:
+    safe_code = escape(code)
+    return (
+        '<div style="margin:18px 0;padding:18px;border:1px solid #d8d8d8;border-radius:10px;'
+        'background:#fafafa;text-align:center;">'
+        '<div style="margin:0 0 8px;color:#666666;font-size:13px;font-weight:700;">Verification Code</div>'
+        f'<div style="font-family:SFMono-Regular,Menlo,Consolas,monospace;font-size:30px;'
+        f'letter-spacing:6px;font-weight:800;color:#222222;">{safe_code}</div>'
+        "</div>"
+    )
+
+
+def _send_2fa_email(user, code: str, ui_lang: str = "ko") -> bool:
     """인증 코드를 사용자 이메일로 발송한다. 성공하면 True, 실패하면 False."""
     from django.core.mail import send_mail
     email = str(getattr(user, "email", "") or "").strip()
     if not email:
         return False
-    subject = "[Hanplanet] 이메일 인증 코드"
-    body = (
-        f"안녕하세요,\n\n"
-        f"Hanplanet 로그인 인증 코드입니다.\n\n"
-        f"인증 코드: {code}\n\n"
-        f"이 코드는 {settings.TWO_FA_CODE_EXPIRY_MINUTES}분 후 만료됩니다.\n"
-        f"본인이 요청하지 않은 경우 이 메일을 무시하세요."
-    )
+    expiry = settings.TWO_FA_CODE_EXPIRY_MINUTES
+    is_en = ui_lang == "en"
+    if is_en:
+        subject = "[Hanplanet] Email verification code"
+        body = (
+            f"Hi,\n\n"
+            f"Here is your Hanplanet login verification code.\n\n"
+            f"Verification code: {code}\n\n"
+            f"This code expires in {expiry} minutes.\n"
+            f"If you did not request this, please ignore this email."
+        )
+        html_message = _render_hanplanet_email_html(
+            title="Login verification code",
+            eyebrow="Hanplanet Account Security",
+            intro_html='<p style="margin:0;">Enter the code below to continue signing in to Hanplanet.</p>',
+            body_html=(
+                _render_hanplanet_email_code_box(code)
+                + f'<p style="margin:0;color:#666666;">This code expires in {expiry} minutes. '
+                'If you did not request this, please ignore this email.</p>'
+            ),
+            cta_label="Open Hanplanet",
+            cta_url="https://www.hanplanet.com/en/handrive",
+            footer_note="Never share your verification code with anyone.",
+        )
+    else:
+        subject = "[Hanplanet] 이메일 인증 코드"
+        body = (
+            f"안녕하세요,\n\n"
+            f"Hanplanet 로그인 인증 코드입니다.\n\n"
+            f"인증 코드: {code}\n\n"
+            f"이 코드는 {expiry}분 후 만료됩니다.\n"
+            f"본인이 요청하지 않은 경우 이 메일을 무시하세요."
+        )
+        html_message = _render_hanplanet_email_html(
+            title="로그인 인증 코드",
+            eyebrow="Hanplanet Account Security",
+            intro_html='<p style="margin:0;">Hanplanet 로그인을 계속하려면 아래 인증 코드를 입력해주세요.</p>',
+            body_html=(
+                _render_hanplanet_email_code_box(code)
+                + f'<p style="margin:0;color:#666666;">이 코드는 {expiry}분 후 만료됩니다. '
+                '본인이 요청하지 않은 경우 이 메일을 무시하세요.</p>'
+            ),
+            cta_label="Hanplanet 열기",
+            cta_url="https://www.hanplanet.com/ko/handrive",
+            footer_note="보안을 위해 인증 코드는 누구에게도 공유하지 마세요.",
+        )
     try:
-        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [email])
+        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [email], html_message=html_message)
         return True
     except Exception:
         logger.exception("[2FA] Failed to send verification email to user %s", getattr(user, "username", "?"))
+        return False
+
+
+def _send_signup_welcome_email(user, ui_lang: str) -> bool:
+    """회원가입 완료 후 Hanplanet 사용 안내 메일을 발송한다."""
+    from django.core.mail import send_mail
+
+    email = str(getattr(user, "email", "") or "").strip()
+    if not email:
+        return False
+
+    username = str(getattr(user, "first_name", "") or getattr(user, "username", "") or "").strip()
+    if not username:
+        username = str(getattr(user, "username", "") or "Hanplanet user")
+
+    is_en = ui_lang == "en"
+    handrive_url = "https://www.hanplanet.com/en/handrive" if is_en else "https://www.hanplanet.com/ko/handrive"
+    portfolio_url = f"https://www.hanplanet.com/{'en' if is_en else 'ko'}/portfolio/{user.get_username()}/"
+    games_url = "https://www.hanplanet.com/en/fun/bumpercar-spiky/" if is_en else "https://www.hanplanet.com/ko/fun/bumpercar-spiky/"
+
+    if is_en:
+        subject = "[Hanplanet] Welcome to Hanplanet"
+        body = (
+            f"Hi {username},\n\n"
+            "Welcome to Hanplanet.\n\n"
+            "Here are a few things you can do now:\n"
+            "- HanDrive: upload, preview, edit, share, zip/unzip, and manage files.\n"
+            "- Portfolio: build and share your public profile and project pages.\n"
+            "- Mini games: play Hanplanet multiplayer games with your account.\n"
+            "- Git workspace: manage supported HanDrive folders through the connected Git server.\n\n"
+            f"Start with HanDrive: {handrive_url}\n"
+            f"Your portfolio: {portfolio_url}\n"
+            f"Mini games: {games_url}\n\n"
+            "Thanks,\nHanplanet"
+        )
+        html_message = _render_hanplanet_email_html(
+            title="Welcome to Hanplanet",
+            eyebrow="Your account is ready",
+            intro_html=(
+                f'<p style="margin:0;">Hi <strong>{escape(username)}</strong>, your Hanplanet account is ready.</p>'
+                '<p style="margin:10px 0 0;color:#555555;">Start with HanDrive, then build your portfolio and explore multiplayer content.</p>'
+            ),
+            body_html=(
+                '<div style="display:block;">'
+                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>HanDrive</strong><br>'
+                '<span style="color:#666666;">Upload, preview, edit, share, zip/unzip, and manage files.</span></div>'
+                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>Portfolio</strong><br>'
+                '<span style="color:#666666;">Build and share your public profile and project pages.</span></div>'
+                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>Mini games</strong><br>'
+                '<span style="color:#666666;">Play Hanplanet multiplayer games with your account.</span></div>'
+                '<div style="padding:12px 0;"><strong>Git workspace</strong><br>'
+                '<span style="color:#666666;">Manage supported HanDrive folders through the connected Git server.</span></div>'
+                "</div>"
+                f'<p style="margin:16px 0 0;color:#666666;">Portfolio: <a href="{escape(portfolio_url)}" style="color:#222222;">{escape(portfolio_url)}</a></p>'
+                f'<p style="margin:6px 0 0;color:#666666;">Mini games: <a href="{escape(games_url)}" style="color:#222222;">{escape(games_url)}</a></p>'
+            ),
+            cta_label="Open HanDrive",
+            cta_url=handrive_url,
+            footer_note="You can change account and theme preferences after signing in.",
+        )
+    else:
+        subject = "[Hanplanet] 회원가입을 환영합니다"
+        body = (
+            f"{username}님, 안녕하세요.\n\n"
+            "Hanplanet 가입을 환영합니다.\n\n"
+            "이제 사이트에서 아래 기능을 사용할 수 있습니다.\n"
+            "- HanDrive: 파일 업로드, 미리보기, 수정, 공유, 압축/압축해제, 파일 관리\n"
+            "- 포트폴리오: 내 프로필과 프로젝트 페이지 작성 및 공유\n"
+            "- 미니게임: 계정으로 Hanplanet 멀티플레이 게임 이용\n"
+            "- Git 작업공간: 지원되는 HanDrive 폴더를 연결된 Git 서버에서 관리\n\n"
+            f"HanDrive 시작하기: {handrive_url}\n"
+            f"내 포트폴리오: {portfolio_url}\n"
+            f"미니게임: {games_url}\n\n"
+            "감사합니다.\nHanplanet"
+        )
+        html_message = _render_hanplanet_email_html(
+            title="회원가입을 환영합니다",
+            eyebrow="Hanplanet 계정 준비 완료",
+            intro_html=(
+                f'<p style="margin:0;"><strong>{escape(username)}</strong>님, Hanplanet 가입을 환영합니다.</p>'
+                '<p style="margin:10px 0 0;color:#555555;">HanDrive에서 파일을 다루고, 포트폴리오와 멀티플레이 콘텐츠도 함께 이용해보세요.</p>'
+            ),
+            body_html=(
+                '<div style="display:block;">'
+                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>HanDrive</strong><br>'
+                '<span style="color:#666666;">파일 업로드, 미리보기, 수정, 공유, 압축/압축해제, 파일 관리</span></div>'
+                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>포트폴리오</strong><br>'
+                '<span style="color:#666666;">내 프로필과 프로젝트 페이지 작성 및 공유</span></div>'
+                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>미니게임</strong><br>'
+                '<span style="color:#666666;">계정으로 Hanplanet 멀티플레이 게임 이용</span></div>'
+                '<div style="padding:12px 0;"><strong>Git 작업공간</strong><br>'
+                '<span style="color:#666666;">지원되는 HanDrive 폴더를 연결된 Git 서버에서 관리</span></div>'
+                "</div>"
+                f'<p style="margin:16px 0 0;color:#666666;">내 포트폴리오: <a href="{escape(portfolio_url)}" style="color:#222222;">{escape(portfolio_url)}</a></p>'
+                f'<p style="margin:6px 0 0;color:#666666;">미니게임: <a href="{escape(games_url)}" style="color:#222222;">{escape(games_url)}</a></p>'
+            ),
+            cta_label="HanDrive 시작하기",
+            cta_url=handrive_url,
+            footer_note="로그인 후 계정, 테마, 언어 설정을 변경할 수 있습니다.",
+        )
+
+    try:
+        send_mail(
+            subject,
+            body,
+            getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@hanplanet.com"),
+            [email],
+            html_message=html_message,
+            fail_silently=False,
+        )
+        return True
+    except Exception:
+        logger.exception("[signup] Failed to send welcome email to user %s", getattr(user, "username", "?"))
         return False
 
 
@@ -4514,11 +4769,7 @@ def _complete_login_or_require_2fa(
     # 2) 신뢰된 기기인지 확인
     device_token = _read_device_token(request)
     if device_token and _is_device_trusted(user, device_token):
-        _reset_handrive_login_guard(user)
-        _purge_stale_user_sessions(user)
-        token = _issue_session_token(user)
-        auth_login(request, user)
-        request.session["_hp_session_token"] = token
+        _finalize_handrive_login_session(request, user)
         if not requires_direct_attach:
             response = _build_post_hanplanet_login_response(target_url, user)
         else:
@@ -4530,7 +4781,7 @@ def _complete_login_or_require_2fa(
 
     # 3) 새 기기 → 2FA 필요
     code = _generate_and_store_2fa_code(user)
-    email_sent = _send_2fa_email(user, code)
+    email_sent = _send_2fa_email(user, code, ui_lang=resolved_ui_lang)
     if not email_sent:
         logger.error("[2FA] Email send failed for user %s, email=%s", user.username, user.email)
         if on_2fa_needed is not None:
@@ -5113,6 +5364,7 @@ def handrive_login(request, ui_lang=None):
     # ── 2FA 코드 제출 처리 (phase 2) ─────────────────────────────────────────
     if (request.method == "POST"
             and request.POST.get("handrive_2fa_phase") == "verify"
+            and str(request.POST.get("code", "") or "").strip()
             and request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)):
         UserModel = get_user_model()
         pending_user_id = request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)
@@ -5128,11 +5380,7 @@ def handrive_login(request, ui_lang=None):
             _p_forgejo_key = request.session.get(HANDRIVE_2FA_PENDING_FORGEJO_KEY_SESSION_KEY, "") or None
             _p_requires_attach = request.session.get(HANDRIVE_2FA_PENDING_REQUIRES_ATTACH_SESSION_KEY, True)
             _clear_2fa_pending_session(request)
-            _reset_handrive_login_guard(pending_user)
-            _purge_stale_user_sessions(pending_user)
-            token = _issue_session_token(pending_user)
-            auth_login(request, pending_user, backend="django.contrib.auth.backends.ModelBackend")
-            request.session["_hp_session_token"] = token
+            _finalize_handrive_login_session(request, pending_user)
             existing_device_token = _read_device_token(request)
             device_token = existing_device_token if existing_device_token else secrets.token_hex(32)
             _register_trusted_device(pending_user, device_token)
@@ -5289,7 +5537,7 @@ def handrive_api_login_captcha_status(request):
 def handrive_api_login_2fa_resend_code(request, ui_lang=None):
     """로그인 2FA 인증 코드 재전송 API (AJAX).
 
-    세션에 pending_user_id가 있어야 동작한다. 60초 재전송 제한 적용.
+    세션에 pending_user_id가 있어야 동작한다. 30초 재전송 제한 적용.
     """
     from .models import EmailVerificationCode
     resolved_lang = resolve_ui_lang(request, ui_lang)
@@ -5312,18 +5560,18 @@ def handrive_api_login_2fa_resend_code(request, ui_lang=None):
             status=400,
         )
 
-    # 60초 재전송 속도 제한
+    # 30초 재전송 속도 제한
     last_code = EmailVerificationCode.objects.filter(user=pending_user).order_by("-created_at").first()
     if last_code:
         elapsed = (timezone.now() - last_code.created_at).total_seconds()
-        if elapsed < 60:
+        if elapsed < 30:
             return JsonResponse(
                 {"ok": False, "error": handrive_text.get("auth_2fa_rate_limit", "잠시 후 다시 시도해주세요.")},
                 status=429,
             )
 
     code = _generate_and_store_2fa_code(pending_user)
-    email_sent = _send_2fa_email(pending_user, code)
+    email_sent = _send_2fa_email(pending_user, code, ui_lang=resolved_lang)
     if not email_sent:
         return JsonResponse(
             {"ok": False, "error": handrive_text.get("auth_2fa_email_send_error", "인증 코드 발송에 실패했습니다.")},
@@ -5345,11 +5593,11 @@ def handrive_api_signup_2fa_send_code(request, ui_lang=None):
     if not email or "@" not in email or "." not in email.split("@")[-1]:
         return JsonResponse({"ok": False, "error": handrive_text.get("auth_register_email_invalid", "올바른 이메일 주소를 입력해주세요.")}, status=400)
 
-    # 연속 발송 속도 제한 (60초)
+    # 연속 발송 속도 제한 (30초)
     pending = request.session.get(HANDRIVE_SIGNUP_2FA_SESSION_KEY) or {}
     import time as _time
     now_ts = _time.time()
-    if pending.get("email") == email and (now_ts - pending.get("sent_at_ts", 0)) < 60:
+    if pending.get("email") == email and (now_ts - pending.get("sent_at_ts", 0)) < 30:
         return JsonResponse({"ok": False, "error": handrive_text.get("auth_2fa_rate_limit", "잠시 후 다시 시도해주세요.")}, status=429)
 
     code = str(secrets.randbelow(1000000)).zfill(6)
@@ -5365,10 +5613,18 @@ def handrive_api_signup_2fa_send_code(request, ui_lang=None):
         _send_mail(
             subject="[Hanplanet] 이메일 인증 코드",
             message=f"인증 코드: {code}\n\n이 코드는 10분간 유효합니다.",
-            html_message=(
-                f"<p>Hanplanet 이메일 인증 코드입니다.</p>"
-                f"<p>인증 코드: <strong>{code}</strong></p>"
-                f"<p>이 코드는 10분간 유효합니다.</p>"
+            html_message=_render_hanplanet_email_html(
+                title="회원가입 이메일 인증",
+                eyebrow="Hanplanet Account Verification",
+                intro_html='<p style="margin:0;">회원가입을 계속하려면 아래 인증 코드를 입력해주세요.</p>',
+                body_html=(
+                    _render_hanplanet_email_code_box(code)
+                    + '<p style="margin:0;color:#666666;">이 코드는 10분간 유효합니다. '
+                    '본인이 요청하지 않은 경우 이 메일을 무시하세요.</p>'
+                ),
+                cta_label="회원가입 계속하기",
+                cta_url="https://www.hanplanet.com/ko/signup",
+                footer_note="보안을 위해 인증 코드는 누구에게도 공유하지 마세요.",
             ),
             from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@hanplanet.com"),
             recipient_list=[email],
@@ -5480,10 +5736,7 @@ def handrive_signup(request, ui_lang=None):
                         hide_global_nav,
                     )
             # 이메일 인증이 이미 AJAX로 완료되었으므로 2FA 없이 즉시 로그인
-            _purge_stale_user_sessions(authed_user)
-            token = _issue_session_token(authed_user)
-            auth_login(request, authed_user, backend="django.contrib.auth.backends.ModelBackend")
-            request.session["_hp_session_token"] = token
+            _finalize_handrive_login_session(request, authed_user)
             # 신규 가입 = 신규 기기 → 새 device_token 발급 후 신뢰 등록
             device_token = secrets.token_hex(32)
             _register_trusted_device(authed_user, device_token)
@@ -5493,6 +5746,7 @@ def handrive_signup(request, ui_lang=None):
                 response = _build_forgejo_redirect_base(target_url)
                 if forgejo_session_key:
                     response = _apply_forgejo_session_cookie(response, forgejo_session_key)
+            _send_signup_welcome_email(authed_user, resolved_lang)
             _set_device_cookie(response, device_token)
             return response
         signup_error_message = handrive_text.get("auth_signup_error", "회원가입 정보를 확인해주세요.")
@@ -5536,12 +5790,7 @@ def handrive_2fa_verify(request, ui_lang=None):
         submitted_code = str(request.POST.get("code", "") or "").strip()
         if _verify_2fa_code(pending_user, submitted_code):
             _clear_2fa_pending_session(request)
-            _reset_handrive_login_guard(pending_user)
-            _purge_stale_user_sessions(pending_user)
-            token = _issue_session_token(pending_user)
-            # multiple backends 환경에서 backend를 명시해야 auth_login이 정상 작동함
-            auth_login(request, pending_user, backend="django.contrib.auth.backends.ModelBackend")
-            request.session["_hp_session_token"] = token
+            _finalize_handrive_login_session(request, pending_user)
 
             # 신뢰된 기기 등록 (기존 쿠키 재사용 또는 신규 발급)
             existing_device_token = _read_device_token(request)
@@ -5597,7 +5846,7 @@ def handrive_register_email(request, ui_lang=None):
             pending_user.save(update_fields=["email"])
             # 2FA 코드 발송
             code = _generate_and_store_2fa_code(pending_user)
-            email_sent = _send_2fa_email(pending_user, code)
+            email_sent = _send_2fa_email(pending_user, code, ui_lang=resolved_lang)
             if not email_sent:
                 error_message = handrive_text.get("auth_2fa_email_send_error", "인증 코드 발송에 실패했습니다.")
             else:

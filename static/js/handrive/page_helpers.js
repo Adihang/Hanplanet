@@ -83,10 +83,10 @@
         if ([".odt", ".pages", ".hwp", ".hwpx"].includes(extension)) {
             return "file";
         }
-        if ([".xls", ".xlsx"].includes(extension)) {
+        if ([".xls", ".xlsx", ".csv"].includes(extension)) {
             return "excel";
         }
-        if ([".csv", ".tsv", ".ods", ".numbers"].includes(extension)) {
+        if ([".tsv", ".ods", ".numbers"].includes(extension)) {
             return "file";
         }
         if ([".ppt", ".pptx"].includes(extension)) {

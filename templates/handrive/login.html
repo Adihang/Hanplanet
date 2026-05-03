@@ -35,7 +35,8 @@
                     name="username"
                     value="{{ handrive_login_form.username.value|default:'' }}"
                     autocomplete="username"
-                    required
+                    {% if not handrive_login_show_2fa %}required{% endif %}
+                    {% if handrive_login_show_2fa %}disabled{% endif %}
                     {% if not handrive_login_show_2fa %}autofocus{% endif %}
                 >
             </label>
@@ -46,7 +47,8 @@
                     type="password"
                     name="password"
                     autocomplete="current-password"
-                    required
+                    {% if not handrive_login_show_2fa %}required{% endif %}
+                    {% if handrive_login_show_2fa %}disabled{% endif %}
                 >
             </label>
         </div>
@@ -62,7 +64,8 @@
                 inputmode="numeric"
                 autocomplete="off"
                 placeholder="{{ handrive_text.auth_login_captcha_placeholder }}"
-                {% if handrive_login_show_captcha %}required{% endif %}
+                {% if handrive_login_show_captcha and not handrive_login_show_2fa %}required{% endif %}
+                {% if handrive_login_show_2fa %}disabled{% endif %}
             >
             {% if handrive_turnstile_site_key %}
                 <div id="handrive-turnstile-widget"></div>
@@ -71,7 +74,12 @@
 
         {# ── 이메일 2FA 블록 (새 기기 감지 시 표시) ─────────────────── #}
         <div id="handrive-login-2fa-block"{% if not handrive_login_show_2fa %} hidden{% endif %}>
-            <input type="hidden" name="handrive_2fa_phase" value="verify">
+            <input
+                type="hidden"
+                name="handrive_2fa_phase"
+                value="verify"
+                {% if not handrive_login_show_2fa %}disabled{% endif %}
+            >
             <p class="ui-subtitle">{{ handrive_text.auth_2fa_hint }} <strong>{{ handrive_login_2fa_masked_email }}</strong></p>
             {% if handrive_login_2fa_error_message %}
                 <div class="handrive-login-error" id="handrive-login-2fa-error">{{ handrive_login_2fa_error_message }}</div>
@@ -146,6 +154,7 @@
         const turnstileContainer = document.getElementById("handrive-turnstile-widget");
         const captchaStatusUrl = "{{ handrive_api_login_captcha_status_url|escapejs }}";
         const turnstileSiteKey = "{{ handrive_turnstile_site_key|escapejs }}";
+        const isTwoFaMode = {{ handrive_login_show_2fa|yesno:"true,false" }};
 
         const getTurnstileTheme = function () {
             return document.body.classList.contains("theme-dark") ? "dark" : "light";
@@ -153,9 +162,23 @@
 
         let lastTheme = "";
         let turnstileWidgetId = null;
+        let turnstileScriptLoading = false;
         let mutationObserver = null;
         let usernameCheckTimer = null;
         let lastCheckedUsername = "";
+
+        const loadTurnstileScript = function () {
+            if (!turnstileSiteKey || turnstileScriptLoading || document.getElementById("handrive-turnstile-script")) {
+                return;
+            }
+            turnstileScriptLoading = true;
+            const script = document.createElement("script");
+            script.id = "handrive-turnstile-script";
+            script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=handriveTurnstileOnload&render=explicit";
+            script.async = true;
+            script.defer = true;
+            document.head.appendChild(script);
+        };
 
         const removeTurnstile = function () {
             if (!window.turnstile || turnstileWidgetId === null) {
@@ -174,6 +197,7 @@
 
         const renderTurnstile = function () {
             if (!window.turnstile || !turnstileContainer || !turnstileSiteKey) {
+                loadTurnstileScript();
                 return;
             }
             const nextTheme = getTurnstileTheme();
@@ -211,7 +235,11 @@
                 }
             }
             if (visible) {
-                renderTurnstile();
+                if (window.turnstile && typeof window.turnstile.render === "function") {
+                    renderTurnstile();
+                } else {
+                    loadTurnstileScript();
+                }
                 return;
             }
             removeTurnstile();
@@ -219,6 +247,10 @@
         };
 
         const fetchCaptchaStatus = function (force) {
+            if (isTwoFaMode) {
+                setCaptchaVisible(false, "");
+                return;
+            }
             if (!usernameInput || !captchaStatusUrl) {
                 return;
             }
@@ -284,11 +316,13 @@
             });
         };
 
-        if (window.turnstile && typeof window.turnstile.render === "function") {
+        if (!isTwoFaMode && window.turnstile && typeof window.turnstile.render === "function") {
             window.handriveTurnstileOnload();
+        } else if (!isTwoFaMode && captchaBlock && !captchaBlock.hasAttribute("hidden")) {
+            loadTurnstileScript();
         }
 
-        if (usernameInput) {
+        if (!isTwoFaMode && usernameInput) {
             usernameInput.addEventListener("blur", function () {
                 fetchCaptchaStatus(true);
             });
@@ -309,9 +343,54 @@
         const twoFaErrorEl = document.getElementById("handrive-login-2fa-error");
         const twoFaCodeInput = document.getElementById("handrive-login-2fa-code-input");
         const resendUrl = "{{ handrive_api_login_2fa_resend_code_url|default:''|escapejs }}";
+        const login2faResendBtnText = resendBtn ? resendBtn.textContent : "";
+        const login2faCooldownMs = 30 * 1000;
+        let login2faCooldownUntil = 0;
+        let login2faCooldownTimer = null;
+
+        function getLogin2faCooldownRemainingSeconds() {
+            const remainingMs = login2faCooldownUntil - Date.now();
+            return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0;
+        }
+
+        function updateLogin2faCooldownUi() {
+            const remainingSeconds = getLogin2faCooldownRemainingSeconds();
+            const isCoolingDown = remainingSeconds > 0;
+            if (resendBtn) {
+                resendBtn.disabled = isCoolingDown;
+                resendBtn.textContent = login2faResendBtnText;
+            }
+            if (resendMsgEl) {
+                if (isCoolingDown) {
+                    resendMsgEl.textContent = "재전송 가능까지 " + remainingSeconds + "초";
+                    resendMsgEl.hidden = false;
+                    resendMsgEl.dataset.cooldownMessage = "1";
+                } else if (resendMsgEl.dataset.cooldownMessage === "1") {
+                    resendMsgEl.textContent = "";
+                    resendMsgEl.hidden = true;
+                    delete resendMsgEl.dataset.cooldownMessage;
+                }
+            }
+            if (login2faCooldownTimer) {
+                window.clearTimeout(login2faCooldownTimer);
+                login2faCooldownTimer = null;
+            }
+            if (isCoolingDown) {
+                login2faCooldownTimer = window.setTimeout(updateLogin2faCooldownUi, 1000);
+            }
+        }
+
+        function startLogin2faCooldown() {
+            login2faCooldownUntil = Date.now() + login2faCooldownMs;
+            updateLogin2faCooldownUi();
+        }
 
         if (resendBtn && resendUrl) {
             resendBtn.addEventListener("click", function () {
+                if (getLogin2faCooldownRemainingSeconds() > 0) {
+                    updateLogin2faCooldownUi();
+                    return;
+                }
                 resendBtn.disabled = true;
                 if (resendMsgEl) { resendMsgEl.hidden = true; resendMsgEl.textContent = ""; }
                 if (twoFaErrorEl) { twoFaErrorEl.style.display = "none"; twoFaErrorEl.textContent = ""; }
@@ -326,14 +405,15 @@
                 })
                     .then(function (res) { return res.json(); })
                     .then(function (data) {
-                        resendBtn.disabled = false;
                         if (data.ok) {
                             if (resendMsgEl) {
                                 resendMsgEl.textContent = "{{ handrive_text.auth_2fa_resend_success|escapejs }}";
                                 resendMsgEl.hidden = false;
                             }
                             if (twoFaCodeInput) { twoFaCodeInput.value = ""; twoFaCodeInput.focus(); }
+                            startLogin2faCooldown();
                         } else {
+                            resendBtn.disabled = false;
                             if (twoFaErrorEl) {
                                 twoFaErrorEl.textContent = data.error || "재전송에 실패했습니다.";
                                 twoFaErrorEl.style.display = "block";
@@ -351,7 +431,4 @@
         }
     })();
 </script>
-{% if handrive_turnstile_site_key %}
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=handriveTurnstileOnload&render=explicit" async defer></script>
-{% endif %}
 {% endblock %}

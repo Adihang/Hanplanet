@@ -2594,6 +2594,7 @@
             // 레이아웃 변경 후 동기화
             setTimeout(function() {
                 scheduleSyncCurrentDirRowHeightWithSideHead();
+                scheduleListBodyHeight();
                 schedulePreviewBodyHeight();
                 scheduleEditorBodyHeight();
                 updateListColumnVisibility();
@@ -2604,6 +2605,7 @@
         function updateListColumnVisibility() {
             if (!listPane) {
                 scheduleSyncCurrentDirRowHeightWithSideHead();
+                scheduleListBodyHeight();
                 return;
             }
 
@@ -2680,6 +2682,7 @@
             }
 
             scheduleSyncCurrentDirRowHeightWithSideHead();
+            scheduleListBodyHeight();
         }
 
         // 디바운싱된 레이아웃 업데이트 함수
@@ -2764,6 +2767,35 @@
             editorBody.style.minHeight = height + "px";
             editorBody.style.maxHeight = height + "px";
         }
+
+        let listBodyHeightRafId = null;
+        function syncListBodyHeight() {
+            if (!listContainer || !listLayout) {
+                return;
+            }
+            const isLandscape = listLayout.classList.contains("is-landscape");
+            if (!isLandscape) {
+                listContainer.style.height = "";
+                listContainer.style.minHeight = "";
+                listContainer.style.maxHeight = "";
+                return;
+            }
+            const height = getListSideBodyHeight(null);
+            listContainer.style.height = height + "px";
+            listContainer.style.minHeight = height + "px";
+            listContainer.style.maxHeight = height + "px";
+        }
+
+        function scheduleListBodyHeight() {
+            if (listBodyHeightRafId !== null) {
+                return;
+            }
+            listBodyHeightRafId = window.requestAnimationFrame(function () {
+                listBodyHeightRafId = null;
+                syncListBodyHeight();
+            });
+        }
+
         function schedulePreviewBodyHeight() {
             if (previewBodyHeightRafId !== null) {
                 return;
@@ -2853,6 +2885,7 @@
             const duration = 220;
             const startTime = performance.now();
             function tick() {
+                syncListBodyHeight();
                 syncPreviewBodyHeight();
                 syncEditorBodyHeight();
                 if (performance.now() - startTime < duration) {
@@ -6412,6 +6445,7 @@
                     : (state.selectedPath || "");
                 listContainer.appendChild(fragment);
                 updateListColumnVisibility();
+                scheduleListBodyHeight();
                 if (!renderListOptions.skipPreview) { syncPreviewFromSelection(); }
                 state.openingFolderPath = "";
                 return;
@@ -6434,6 +6468,7 @@
                 : (state.selectedPath || "");
             listContainer.appendChild(fragment);
             updateListColumnVisibility();
+            scheduleListBodyHeight();
             if (!renderListOptions.skipPreview) { syncPreviewFromSelection(); }
             scheduleSyncCurrentDirRowHeightWithSideHead();
             state.openingFolderPath = "";
@@ -7497,6 +7532,8 @@
         window.addEventListener("orientationchange", debouncedUpdateListLayoutMode, { passive: true });
         window.addEventListener("resize", updateListColumnVisibility, { passive: true });
         window.addEventListener("orientationchange", updateListColumnVisibility, { passive: true });
+        window.addEventListener("resize", scheduleListBodyHeight, { passive: true });
+        window.addEventListener("orientationchange", scheduleListBodyHeight, { passive: true });
         window.addEventListener("resize", schedulePreviewBodyHeight, { passive: true });
         window.addEventListener("orientationchange", schedulePreviewBodyHeight, { passive: true });
         window.addEventListener("resize", scheduleEditorBodyHeight, { passive: true });
@@ -7525,12 +7562,16 @@
 
         if (window.ResizeObserver) {
             if (listPane) {
-                const listPaneResizeObserver = new ResizeObserver(updateListColumnVisibility);
+                const listPaneResizeObserver = new ResizeObserver(function () {
+                    updateListColumnVisibility();
+                    scheduleListBodyHeight();
+                });
                 listPaneResizeObserver.observe(listPane);
             }
             const toolbarWrap = document.querySelector(".handrive-toolbar-wrap");
             if (toolbarWrap) {
                 const listToolbarResizeObserver = new ResizeObserver(function () {
+                    scheduleListBodyHeight();
                     schedulePreviewBodyHeight();
                     scheduleEditorBodyHeight();
                 });
@@ -7539,6 +7580,7 @@
             const footerLinks = document.querySelector(".site-footer-links");
             if (footerLinks) {
                 const listFooterResizeObserver = new ResizeObserver(function () {
+                    scheduleListBodyHeight();
                     schedulePreviewBodyHeight();
                     scheduleEditorBodyHeight();
                 });
@@ -7587,6 +7629,7 @@
 
         schedulePreviewBodyHeight();
         scheduleEditorBodyHeight();
+        scheduleListBodyHeight();
 
         updateDirectoryHistory(state.currentDir, "replace");
 

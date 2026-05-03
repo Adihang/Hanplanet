@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 from django.contrib.auth.signals import user_logged_in
 from django.conf import settings
+from django.core import signing
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import HttpRequest, HttpResponse
 from django.test import Client, RequestFactory, TestCase, override_settings
@@ -21,7 +22,7 @@ from django.utils import timezone
 from datetime import date, datetime
 from importlib import import_module
 
-from .models import HandriveAccessRule, NavLink, SyncFile, UserProfile
+from .models import EmailVerificationCode, HandriveAccessRule, HandriveLoginAttemptGuard, NavLink, SyncFile, UserProfile
 from portfolio.models import Career, PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject
 from stratagem.models import Stratagem_Hero_Score
 from oauth2_provider.models import get_application_model
@@ -887,8 +888,12 @@ class LanguageUrlRoutingTests(TestCase):
 
 
 class HandriveSignupAutoLoginTests(TestCase):
+    def build_signup_email_token(self, email):
+        return signing.dumps({"email": email}, salt="signup-email-verified")
+
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
-    def test_signup_logs_user_in_immediately(self, mock_prepare_session):
+    @mock.patch("django.core.mail.send_mail")
+    def test_signup_logs_user_in_immediately(self, mock_send_mail, mock_prepare_session):
         response = self.client.post(
             reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
             data={
@@ -897,6 +902,7 @@ class HandriveSignupAutoLoginTests(TestCase):
                 "password2": "pw123456!!AA",
                 "first_name": "Auto",
                 "email": "auto@example.com",
+                "email_2fa_token": self.build_signup_email_token("auto@example.com"),
                 "privacy_consent": "on",
                 "next": "/ko/fun/bumpercar-spiky/",
             },
@@ -913,7 +919,8 @@ class HandriveSignupAutoLoginTests(TestCase):
         self.assertIn("i_like_gitea", response.cookies)
 
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=(None, "FORGEJO"))
-    def test_signup_blocks_django_login_when_forgejo_link_fails(self, mock_prepare_session):
+    @mock.patch("django.core.mail.send_mail")
+    def test_signup_blocks_django_login_when_forgejo_link_fails(self, mock_send_mail, mock_prepare_session):
         response = self.client.post(
             reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
             data={
@@ -922,6 +929,7 @@ class HandriveSignupAutoLoginTests(TestCase):
                 "password2": "pw123456!!AA",
                 "first_name": "Blocked",
                 "email": "blocked@example.com",
+                "email_2fa_token": self.build_signup_email_token("blocked@example.com"),
                 "privacy_consent": "on",
             },
         )
@@ -930,9 +938,11 @@ class HandriveSignupAutoLoginTests(TestCase):
         self.assertContains(response, "로그인 실패 (FORGEJO)")
         self.assertNotIn("_auth_user_id", self.client.session)
         mock_prepare_session.assert_called_once()
+        mock_send_mail.assert_not_called()
 
     @mock.patch("main.handrive_views._prepare_forgejo_login_session")
-    def test_signup_oauth_handoff_keeps_existing_gitea_session_cookie(self, mock_prepare_session):
+    @mock.patch("django.core.mail.send_mail")
+    def test_signup_oauth_handoff_keeps_existing_gitea_session_cookie(self, mock_send_mail, mock_prepare_session):
         next_url = (
             "/o/authorize/?client_id=gitea-hanplanet-sso"
             "&redirect_uri=https%3A%2F%2Fgit.hanplanet.com%2Fuser%2Foauth2%2Fhanplanet%2Fcallback"
@@ -948,6 +958,7 @@ class HandriveSignupAutoLoginTests(TestCase):
                 "password2": "pw123456!!AA",
                 "first_name": "OAuth",
                 "email": "oauth-signup@example.com",
+                "email_2fa_token": self.build_signup_email_token("oauth-signup@example.com"),
                 "privacy_consent": "on",
                 "next": next_url,
             },
@@ -959,7 +970,33 @@ class HandriveSignupAutoLoginTests(TestCase):
         self.assertNotIn("i_like_gitea", response.cookies)
         mock_prepare_session.assert_not_called()
 
-    def test_signup_saves_privacy_and_terms_consent(self):
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    @mock.patch("django.core.mail.send_mail")
+    def test_signup_sends_welcome_email_after_success(self, mock_send_mail, mock_prepare_session):
+        response = self.client.post(
+            reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
+            data={
+                "username": "welcome_user",
+                "password1": "pw123456!!AA",
+                "password2": "pw123456!!AA",
+                "first_name": "Welcome",
+                "email": "welcome@example.com",
+                "email_2fa_token": self.build_signup_email_token("welcome@example.com"),
+                "privacy_consent": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        mock_send_mail.assert_called_once()
+        args, kwargs = mock_send_mail.call_args
+        self.assertEqual(args[0], "[Hanplanet] 회원가입을 환영합니다")
+        self.assertIn("HanDrive", args[1])
+        self.assertIn("welcome@example.com", args[3])
+        self.assertIn("포트폴리오", kwargs.get("html_message", ""))
+
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    @mock.patch("django.core.mail.send_mail")
+    def test_signup_saves_privacy_and_terms_consent(self, mock_send_mail, mock_prepare_session):
         self.client.post(
             reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
             data={
@@ -968,6 +1005,7 @@ class HandriveSignupAutoLoginTests(TestCase):
                 "password2": "pw123456!!AA",
                 "first_name": "Consent",
                 "email": "consent@example.com",
+                "email_2fa_token": self.build_signup_email_token("consent@example.com"),
                 "privacy_consent": "on",
             },
         )
@@ -1443,6 +1481,85 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(login_page.status_code, 200)
         self.assertNotIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
         self.assertNotContains(login_page, "on**@example.com")
+
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_docs_inline_2fa_completion_authenticates_session(self, mock_prepare_session, mock_send_2fa):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+
+        first_response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+        )
+        self.assertEqual(first_response.status_code, 200)
+        self.assertIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
+
+        code = EmailVerificationCode.objects.filter(user=self.user, used=False).latest("created_at").code
+        verify_response = self.client.post(
+            "/ko/login/",
+            data={"handrive_2fa_phase": "verify", "code": code, "next": "/ko/handrive/all/list/"},
+        )
+
+        self.assertEqual(verify_response.status_code, 302)
+        self.assertEqual(verify_response["Location"], "/ko/handrive")
+        self.assertEqual(self.client.session.get("_auth_user_id"), str(self.user.pk))
+        self.assertTrue(self.client.session.get("_hp_session_token"))
+        self.assertNotIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
+        self.assertIn("i_like_gitea", verify_response.cookies)
+
+    @mock.patch("main.handrive_views._verify_handrive_turnstile_token", return_value=True)
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    @override_settings(DEBUG=False, TURNSTILE_SITE_KEY="site-key", TURNSTILE_SECRET_KEY="secret-key")
+    def test_docs_login_captcha_to_2fa_does_not_require_captcha_again(
+        self,
+        mock_prepare_session,
+        mock_send_2fa,
+        mock_turnstile,
+    ):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+        HandriveLoginAttemptGuard.objects.create(user=self.user, failed_attempts=3, captcha_required=True)
+
+        captcha_get = self.client.get("/handrive/api/login-captcha-status?username=handrive_login_user")
+        captcha_answer = self.client.session["handrive_login_captcha_answer"]
+
+        response = self.client.post(
+            "/ko/login/",
+            data={
+                "username": "handrive_login_user",
+                "password": "pw123456",
+                "next": "/ko/handrive/all/list/",
+                "handrive-captcha-answer": captcha_answer,
+                "cf-turnstile-response": "turnstile-token",
+            },
+        )
+
+        self.assertEqual(captcha_get.status_code, 200)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "on**@example.com")
+        self.assertContains(response, 'const isTwoFaMode = true;')
+        self.assertContains(response, 'name="handrive-captcha-answer"', html=False)
+        self.assertContains(response, "disabled", html=False)
+        self.assertNotContains(response, 'name="handrive-captcha-answer"\n                inputmode="numeric"\n                autocomplete="off"\n                placeholder="정답 입력"\n                required', html=False)
+        self.assertNotContains(response, "인증 코드가 올바르지 않거나 만료되었습니다.")
+
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_docs_initial_2fa_screen_has_no_code_error(self, mock_prepare_session, mock_send_2fa):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+
+        response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "on**@example.com")
+        self.assertContains(response, 'name="handrive_2fa_phase"', html=False)
+        self.assertNotContains(response, "인증 코드가 올바르지 않거나 만료되었습니다.")
 
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=(None, "FORGEJO"))
     def test_docs_login_blocks_django_login_when_forgejo_link_fails(self, mock_prepare_session):
@@ -3260,6 +3377,36 @@ class HandriveAccessRuleTests(TestCase):
         self.assertIn("<pre><code># heading", payload.get("html", ""))
         self.assertIn("**bold**", payload.get("html", ""))
         self.assertNotIn("<strong>bold</strong>", payload.get("html", ""))
+
+    def test_docs_api_preview_renders_csv_as_editable_sheet(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "data.csv").write_text("name,score\nAlice,10\nBob,20\n", encoding="utf-8")
+        editor = self.create_handrive_editor("csv_preview_editor")
+        self.client.force_login(editor)
+
+        response = self.client.post(
+            reverse("main:handrive_api_preview"),
+            data=json.dumps({"path": "data.csv"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("render_mode"), "plain_text")
+        self.assertIn("handrive-office-sheet", payload.get("render_class", ""))
+        self.assertIn('<table class="handrive-office-table handrive-csv-table">', payload.get("html", ""))
+        self.assertIn("<th>name</th>", payload.get("html", ""))
+        self.assertIn("<td>Alice</td>", payload.get("html", ""))
+
+        view_response = self.client.get("/ko/docs/data.csv/")
+        self.assertEqual(view_response.status_code, 200)
+        view_html = view_response.content.decode("utf-8")
+        self.assertIn("handrive-csv-table", view_html)
+        self.assertIn("path=data.csv", view_html)
+
+        edit_response = self.client.get("/ko/docs/write/", data={"path": "data.csv"})
+        self.assertEqual(edit_response.status_code, 200)
+        self.assertContains(edit_response, "Alice,10")
 
     def test_docs_api_preview_returns_unsupported_message_for_binary_file(self):
         handrive_root = Path(settings.MEDIA_ROOT) / "docs"

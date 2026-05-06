@@ -108,6 +108,25 @@ PAGE_HELP_FILE_BASENAMES = {
 HANDRIVE_EDITOR_GROUP_NAME = "HandriveEditors"
 DOCS_EDIT_PERMISSION_CODE = "main.can_edit_docs"
 DOCS_PUBLIC_WRITE_GROUP_NAME = "__DOCS_PUBLIC_ALL__"
+MARKDOWN_IMAGE_UPLOAD_EXTENSIONS = {
+    ".avif",
+    ".bmp",
+    ".gif",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".svg",
+    ".webp",
+}
+MARKDOWN_IMAGE_CONTENT_TYPE_EXTENSIONS = {
+    "image/avif": ".avif",
+    "image/bmp": ".bmp",
+    "image/gif": ".gif",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/svg+xml": ".svg",
+    "image/webp": ".webp",
+}
 DOCS_URL_ONLY_GROUP_NAME = "url-only"
 DOCS_META_TITLE = "Hanplanet"
 DOCS_META_DESCRIPTION = "Hanplanet workspace"
@@ -1374,6 +1393,146 @@ def get_handrive_upload_tmp_dir() -> Path:
     temp_dir = Path(tempfile.gettempdir()) / "hanplanet_handrive_uploads"
     temp_dir.mkdir(parents=True, exist_ok=True)
     return temp_dir
+
+
+def get_markdown_image_upload_extension(uploaded_file) -> str:
+    """업로드된 이미지의 저장 확장자를 반환한다."""
+    original_suffix = Path(str(getattr(uploaded_file, "name", "") or "")).suffix.lower()
+    if original_suffix in MARKDOWN_IMAGE_UPLOAD_EXTENSIONS:
+        return original_suffix
+    content_type = str(getattr(uploaded_file, "content_type", "") or "").split(";", 1)[0].strip().lower()
+    mapped_extension = MARKDOWN_IMAGE_CONTENT_TYPE_EXTENSIONS.get(content_type)
+    if mapped_extension:
+        return mapped_extension
+    raise ValueError("이미지 파일만 업로드할 수 있습니다.")
+
+
+def build_markdown_image_upload_name(markdown_name: str, image_name: str, image_extension: str) -> str:
+    """마크다운 파일명과 이미지 파일명으로 저장 파일명을 만든다."""
+    markdown_stem = Path(str(markdown_name or "").strip()).stem
+    image_stem = Path(str(image_name or "").strip()).stem
+    safe_markdown_stem = sanitize_upload_segment(markdown_stem) or "markdown"
+    safe_image_stem = sanitize_upload_segment(image_stem) or "image"
+    return f"{safe_markdown_stem}_{safe_image_stem}{image_extension}"
+
+
+def build_markdown_image_public_url(relative_path: str, request=None) -> str:
+    """MEDIA_ROOT 기준 상대경로를 외부 접근 가능한 media URL로 변환한다."""
+    normalized = normalize_relative_path(relative_path, allow_empty=False)
+    encoded = "/".join(quote(part) for part in normalized.split("/"))
+    media_url = str(getattr(settings, "MEDIA_URL", "/media/") or "/media/")
+    if not media_url.endswith("/"):
+        media_url = f"{media_url}/"
+    path_url = f"{media_url}{encoded}"
+    public_base_url = str(getattr(settings, "PUBLIC_BASE_URL", "") or "").strip().rstrip("/")
+    if public_base_url:
+        return f"{public_base_url}{path_url}"
+    if request is not None:
+        return request.build_absolute_uri(path_url)
+    return path_url
+
+
+MARKDOWN_IMAGE_REFERENCE_PATTERN = re.compile(
+    r"!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)|"
+    r"<img\b[^>]*\bsrc=[\"']([^\"']+)[\"']",
+    re.IGNORECASE,
+)
+
+
+def extract_markdown_image_media_paths(content: str) -> set[Path]:
+    """마크다운/HTML 이미지 참조 중 MEDIA_ROOT 아래 파일 경로만 추출한다."""
+    media_root = Path(settings.MEDIA_ROOT).resolve()
+    media_url = str(getattr(settings, "MEDIA_URL", "/media/") or "/media/")
+    if not media_url.startswith("/"):
+        media_url_path = "/" + media_url
+    else:
+        media_url_path = media_url
+    if not media_url_path.endswith("/"):
+        media_url_path = f"{media_url_path}/"
+
+    paths: set[Path] = set()
+    for match in MARKDOWN_IMAGE_REFERENCE_PATTERN.finditer(str(content or "")):
+        raw_url = match.group(1) or match.group(2) or ""
+        parsed = urlparse(raw_url.strip())
+        path_value = unquote(parsed.path or raw_url.strip())
+        if not path_value.startswith(media_url_path):
+            continue
+        media_relative = path_value[len(media_url_path):].lstrip("/")
+        if not media_relative:
+            continue
+        try:
+            candidate = (media_root / normalize_relative_path(media_relative, allow_empty=False)).resolve()
+            candidate.relative_to(media_root)
+        except (ValueError, FileNotFoundError):
+            continue
+        paths.add(candidate)
+    return paths
+
+
+def cleanup_removed_markdown_image_files(
+    *,
+    request,
+    markdown_relative_path: str,
+    previous_content: str,
+    next_content: str,
+) -> None:
+    """저장 후 더 이상 참조되지 않는 해당 마크다운의 md-img 파일을 삭제한다."""
+    user = getattr(request, "user", None)
+    if not user or not user.is_authenticated:
+        return
+    if not markdown_relative_path.lower().endswith(DOCS_FILE_EXTENSION):
+        return
+
+    username_key = sanitize_upload_segment(getattr(user, "username", "")) or "anon"
+    user_md_img_dir = (handrive_root_dir() / "users" / username_key / "md-img").resolve()
+    markdown_stem = sanitize_upload_segment(Path(markdown_relative_path).stem) or "markdown"
+    expected_prefix = f"{markdown_stem}_"
+    previous_paths = extract_markdown_image_media_paths(previous_content)
+    next_paths = extract_markdown_image_media_paths(next_content)
+
+    for image_path in previous_paths - next_paths:
+        try:
+            image_path.relative_to(user_md_img_dir)
+        except ValueError:
+            continue
+        if not image_path.name.startswith(expected_prefix):
+            continue
+        try:
+            if image_path.exists() and image_path.is_file():
+                image_path.unlink()
+        except OSError:
+            logger.warning("Failed to delete removed markdown image: %s", image_path, exc_info=True)
+
+
+def resolve_user_markdown_image_paths(user, raw_paths) -> set[Path]:
+    """클라이언트가 전달한 이미지 path/url 중 현재 사용자 md-img 내부 파일만 반환한다."""
+    username_key = sanitize_upload_segment(getattr(user, "username", "")) or "anon"
+    media_root = Path(settings.MEDIA_ROOT).resolve()
+    user_md_img_dir = (handrive_root_dir() / "users" / username_key / "md-img").resolve()
+    media_url = str(getattr(settings, "MEDIA_URL", "/media/") or "/media/")
+    if not media_url.startswith("/"):
+        media_url = "/" + media_url
+    if not media_url.endswith("/"):
+        media_url = f"{media_url}/"
+
+    resolved_paths: set[Path] = set()
+    for raw_value in raw_paths if isinstance(raw_paths, list) else []:
+        raw_text = str(raw_value or "").strip()
+        if not raw_text:
+            continue
+        parsed = urlparse(raw_text)
+        path_text = unquote(parsed.path or raw_text)
+        if path_text.startswith(media_url):
+            path_text = path_text[len(media_url):].lstrip("/")
+        elif path_text.startswith("/"):
+            path_text = path_text.lstrip("/")
+        try:
+            candidate = (media_root / normalize_relative_path(path_text, allow_empty=False)).resolve()
+            candidate.relative_to(user_md_img_dir)
+        except (ValueError, FileNotFoundError):
+            continue
+        resolved_paths.add(candidate)
+    return resolved_paths
 
 
 def relative_from_root(path_obj: Path) -> str:
@@ -4172,6 +4331,8 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_archive_extract_url": reverse("main:handrive_api_archive_extract"),
             "handrive_api_archive_create_url": reverse("main:handrive_api_archive_create"),
             "handrive_api_upload_url": reverse("main:handrive_api_upload"),
+            "handrive_api_markdown_image_upload_url": reverse("main:handrive_api_markdown_image_upload"),
+            "handrive_api_markdown_image_cleanup_url": reverse("main:handrive_api_markdown_image_cleanup"),
             "handrive_api_upload_cancel_url": reverse("main:handrive_api_upload_cancel"),
             "handrive_api_download_url": reverse("main:handrive_api_download"),
             "handrive_api_acl_url": reverse("main:handrive_api_acl"),
@@ -7927,6 +8088,132 @@ def handrive_api_upload(request):
 
 @require_http_methods(["POST"])
 @csrf_protect
+@with_request_handrive_root
+def handrive_api_markdown_image_upload(request):
+    """마크다운 입력창에서 붙여넣거나 드롭한 이미지를 사용자 md-img 폴더에 저장한다."""
+    user = getattr(request, "user", None)
+    if not user or not user.is_authenticated:
+        return json_error("로그인이 필요합니다.", status=403)
+
+    uploaded_file = request.FILES.get("image")
+    if uploaded_file is None:
+        return json_error("업로드할 이미지가 없습니다.", status=400)
+
+    markdown_path_value = normalize_relative_path(request.POST.get("markdown_path"), allow_empty=True)
+    markdown_name_value = str(request.POST.get("markdown_name") or "").strip()
+    target_dir_value = normalize_relative_path(request.POST.get("target_dir"), allow_empty=True)
+
+    if markdown_path_value:
+        if not markdown_path_value.lower().endswith(DOCS_FILE_EXTENSION):
+            return json_error("마크다운 파일에서만 이미지를 삽입할 수 있습니다.", status=400)
+        if not has_handrive_write_access(request, markdown_path_value):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
+        markdown_name = Path(markdown_path_value).name
+        quota_path = markdown_path_value
+    else:
+        if markdown_name_value and not markdown_name_value.lower().endswith(DOCS_FILE_EXTENSION):
+            markdown_name_value = f"{markdown_name_value}{DOCS_FILE_EXTENSION}"
+        if not has_handrive_directory_write_access(request, target_dir_value):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
+        markdown_name = markdown_name_value or "markdown.md"
+        quota_path = target_dir_value
+
+    try:
+        image_extension = get_markdown_image_upload_extension(uploaded_file)
+        stored_name = build_markdown_image_upload_name(markdown_name, uploaded_file.name, image_extension)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    username_key = sanitize_upload_segment(getattr(user, "username", "")) or "anon"
+    upload_dir = handrive_root_dir() / "users" / username_key / "md-img"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        destination_path = build_available_upload_path(upload_dir, stored_name)
+        enforce_handrive_scoped_quota(
+            request,
+            quota_path=quota_path,
+            extra_bytes=uploaded_file.size or 0,
+            extra_entries=1,
+        )
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    with destination_path.open("wb") as destination_handle:
+        for chunk in uploaded_file.chunks():
+            destination_handle.write(chunk)
+
+    media_relative = destination_path.resolve().relative_to(Path(settings.MEDIA_ROOT).resolve()).as_posix()
+    image_url = build_markdown_image_public_url(media_relative, request=request)
+    return JsonResponse(
+        {
+            "ok": True,
+            "name": destination_path.name,
+            "path": media_relative,
+            "url": image_url,
+            "markdown": f"![{Path(uploaded_file.name).stem or 'image'}]({image_url})",
+        }
+    )
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_markdown_image_cleanup(request):
+    """취소 등으로 저장되지 않은 마크다운 이미지 업로드 파일을 정리한다."""
+    user = getattr(request, "user", None)
+    if not user or not user.is_authenticated:
+        return json_error("로그인이 필요합니다.", status=403)
+
+    try:
+        payload = parse_json_body(request)
+        markdown_path_value = normalize_relative_path(payload.get("markdown_path"), allow_empty=True)
+        target_dir_value = normalize_relative_path(payload.get("target_dir"), allow_empty=True)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    if markdown_path_value:
+        if not markdown_path_value.lower().endswith(DOCS_FILE_EXTENSION):
+            return json_error("마크다운 파일에서만 이미지를 정리할 수 있습니다.", status=400)
+        if not has_handrive_write_access(request, markdown_path_value):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
+    elif not has_handrive_directory_write_access(request, target_dir_value):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+    persisted_content = ""
+    if markdown_path_value:
+        git_virtual_source = _get_git_virtual_context(request, markdown_path_value)
+        try:
+            if git_virtual_source is None:
+                source_path, _ = normalize_markdown_relative_path(markdown_path_value, must_exist=True)
+                persisted_content = source_path.read_text(encoding="utf-8")
+            elif git_virtual_source["kind"] == "branch_file":
+                persisted_content = decode_handrive_text_bytes(
+                    _git_repo_read_file_bytes(
+                        git_virtual_source["repo"],
+                        git_virtual_source["branch_name"],
+                        git_virtual_source["repo_relative_path"],
+                    )
+                )
+        except (OSError, UnicodeDecodeError, ValueError, FileNotFoundError):
+            persisted_content = ""
+
+    persisted_paths = extract_markdown_image_media_paths(persisted_content)
+    candidate_paths = resolve_user_markdown_image_paths(user, payload.get("image_paths", []))
+    deleted_paths = []
+    for image_path in candidate_paths - persisted_paths:
+        try:
+            if image_path.exists() and image_path.is_file():
+                image_path.unlink()
+                deleted_paths.append(image_path.relative_to(Path(settings.MEDIA_ROOT).resolve()).as_posix())
+        except OSError:
+            logger.warning("Failed to cleanup cancelled markdown image: %s", image_path, exc_info=True)
+
+    return JsonResponse({"ok": True, "deleted_paths": deleted_paths})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
 def handrive_api_upload_cancel(request):
     upload_id = str(request.POST.get("upload_id") or "").strip()
     if not upload_id:
@@ -8166,6 +8453,7 @@ def handrive_api_save(request):
         source_relative = ""
         source_is_public_write = False
         source_extension = DOCS_FILE_EXTENSION
+        source_content_before_save = ""
         git_virtual_source = None
         if original_relative_path:
             git_virtual_source = _get_git_virtual_context(request, original_relative_path)
@@ -8180,6 +8468,8 @@ def handrive_api_save(request):
             if not has_handrive_write_access(request, source_relative):
                 return json_error("파일을 수정할 권한이 없습니다.", status=403)
             source_is_public_write = is_handrive_public_write_enabled(request, source_relative)
+            if source_extension == DOCS_FILE_EXTENSION and source_path is not None:
+                source_content_before_save = source_path.read_text(encoding="utf-8")
 
         target_extension = requested_extension or source_extension or DOCS_FILE_EXTENSION
         if source_is_public_write:
@@ -8280,6 +8570,13 @@ def handrive_api_save(request):
         source_path.unlink(missing_ok=True)
 
     destination_relative = relative_from_root(destination)
+    if source_content_before_save:
+        cleanup_removed_markdown_image_files(
+            request=request,
+            markdown_relative_path=source_relative or destination_relative,
+            previous_content=source_content_before_save,
+            next_content=content,
+        )
     destination_slug = markdown_slug_from_relative(destination_relative)
     parent_dir = str(Path(destination_relative).parent).replace("\\", "/")
     if parent_dir == ".":

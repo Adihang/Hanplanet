@@ -2889,6 +2889,99 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(payload["path"], "restricted")
         self.assertEqual(payload["entries"][0]["path"], "restricted/hello.txt")
 
+    def test_docs_api_markdown_image_upload_saves_under_user_md_img(self):
+        editor = self.create_handrive_editor("md_image_editor")
+        self.client.force_login(editor)
+
+        response = self.client.post(
+            reverse("main:handrive_api_markdown_image_upload"),
+            data={
+                "markdown_path": "public.md",
+                "image": SimpleUploadedFile("photo.png", b"\x89PNG\r\n\x1a\n", content_type="image/png"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        expected_path = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / "md_image_editor" / "md-img" / "public_photo.png"
+        self.assertTrue(expected_path.exists())
+        payload = response.json()
+        self.assertEqual(payload["path"], "HanDrive/users/md_image_editor/md-img/public_photo.png")
+        self.assertEqual(payload["url"], "https://www.hanplanet.com/media/HanDrive/users/md_image_editor/md-img/public_photo.png")
+        self.assertEqual(payload["markdown"], "![photo](https://www.hanplanet.com/media/HanDrive/users/md_image_editor/md-img/public_photo.png)")
+
+    def test_docs_api_save_deletes_removed_markdown_image_references(self):
+        editor = self.create_handrive_editor("md_image_cleanup_editor")
+        self.client.force_login(editor)
+
+        removed_response = self.client.post(
+            reverse("main:handrive_api_markdown_image_upload"),
+            data={
+                "markdown_path": "public.md",
+                "image": SimpleUploadedFile("removed.png", b"removed", content_type="image/png"),
+            },
+        )
+        kept_response = self.client.post(
+            reverse("main:handrive_api_markdown_image_upload"),
+            data={
+                "markdown_path": "public.md",
+                "image": SimpleUploadedFile("kept.png", b"kept", content_type="image/png"),
+            },
+        )
+        self.assertEqual(removed_response.status_code, 200)
+        self.assertEqual(kept_response.status_code, 200)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
+        markdown_path = handrive_root / "public.md"
+        removed_markdown = removed_response.json()["markdown"]
+        kept_markdown = kept_response.json()["markdown"]
+        markdown_path.write_text(f"{removed_markdown}\n{kept_markdown}\n", encoding="utf-8")
+
+        response = self.client.post(
+            reverse("main:handrive_api_save"),
+            data=json.dumps({
+                "original_path": "public.md",
+                "target_dir": "",
+                "filename": "public",
+                "extension": ".md",
+                "content": f"{kept_markdown}\n",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        removed_path = handrive_root / "users" / "md_image_cleanup_editor" / "md-img" / "public_removed.png"
+        kept_path = handrive_root / "users" / "md_image_cleanup_editor" / "md-img" / "public_kept.png"
+        self.assertFalse(removed_path.exists())
+        self.assertTrue(kept_path.exists())
+
+    def test_docs_api_markdown_image_cleanup_deletes_cancelled_upload(self):
+        editor = self.create_handrive_editor("md_image_cancel_editor")
+        self.client.force_login(editor)
+
+        upload_response = self.client.post(
+            reverse("main:handrive_api_markdown_image_upload"),
+            data={
+                "markdown_path": "public.md",
+                "image": SimpleUploadedFile("cancelled.png", b"cancelled", content_type="image/png"),
+            },
+        )
+        self.assertEqual(upload_response.status_code, 200)
+        uploaded_path = Path(settings.MEDIA_ROOT) / upload_response.json()["path"]
+        self.assertTrue(uploaded_path.exists())
+
+        cleanup_response = self.client.post(
+            reverse("main:handrive_api_markdown_image_cleanup"),
+            data=json.dumps({
+                "markdown_path": "public.md",
+                "target_dir": "",
+                "image_paths": [upload_response.json()["path"]],
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(cleanup_response.status_code, 200)
+        self.assertFalse(uploaded_path.exists())
+
     def test_docs_api_upload_requires_directory_write_access(self):
         writers_group = Group.objects.create(name="upload_writers")
         rule = HandriveAccessRule.objects.create(path="restricted")

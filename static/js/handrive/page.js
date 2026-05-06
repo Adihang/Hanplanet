@@ -202,6 +202,177 @@
         return payload;
     }
 
+    function getImageFilesFromTransfer(dataTransfer) {
+        if (!dataTransfer) {
+            return [];
+        }
+        const files = [];
+        if (dataTransfer.files && dataTransfer.files.length > 0) {
+            Array.from(dataTransfer.files).forEach(function (file) {
+                if (file && String(file.type || "").toLowerCase().startsWith("image/")) {
+                    files.push(file);
+                }
+            });
+            return files;
+        }
+        if (dataTransfer.items && dataTransfer.items.length > 0) {
+            Array.from(dataTransfer.items).forEach(function (item) {
+                if (!item || item.kind !== "file" || !String(item.type || "").toLowerCase().startsWith("image/")) {
+                    return;
+                }
+                const file = item.getAsFile();
+                if (file) {
+                    files.push(file);
+                }
+            });
+        }
+        return files;
+    }
+
+    function getTextareaCaretOffsetFromPoint(textarea, clientX, clientY) {
+        if (!textarea) {
+            return null;
+        }
+        const rect = textarea.getBoundingClientRect();
+        const styles = window.getComputedStyle(textarea);
+        const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+        const paddingTop = parseFloat(styles.paddingTop) || 0;
+        const borderLeft = parseFloat(styles.borderLeftWidth) || 0;
+        const borderTop = parseFloat(styles.borderTopWidth) || 0;
+        const lineHeight = parseFloat(styles.lineHeight) || (parseFloat(styles.fontSize) || 16) * 1.2;
+        const source = textarea.value || "";
+        const lines = source.split("\n");
+        const rawLineIndex = Math.floor(
+            (clientY - rect.top - paddingTop - borderTop + textarea.scrollTop) / Math.max(1, lineHeight)
+        );
+        const lineIndex = Math.max(0, Math.min(lines.length - 1, rawLineIndex));
+        let lineStart = 0;
+        for (let index = 0; index < lineIndex; index += 1) {
+            lineStart += lines[index].length + 1;
+        }
+
+        const targetX = clientX - rect.left - paddingLeft - borderLeft + textarea.scrollLeft;
+        const line = lines[lineIndex] || "";
+        if (targetX <= 0 || !line) {
+            return lineStart;
+        }
+
+        const canvas = getTextareaCaretOffsetFromPoint.canvas || document.createElement("canvas");
+        getTextareaCaretOffsetFromPoint.canvas = canvas;
+        const context = canvas.getContext("2d");
+        if (!context) {
+            return lineStart + line.length;
+        }
+        context.font = styles.font;
+
+        let low = 0;
+        let high = line.length;
+        while (low < high) {
+            const mid = Math.ceil((low + high) / 2);
+            const width = context.measureText(line.slice(0, mid)).width;
+            if (width < targetX) {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+
+        const beforeWidth = context.measureText(line.slice(0, low)).width;
+        const afterWidth = low < line.length
+            ? context.measureText(line.slice(0, low + 1)).width
+            : beforeWidth;
+        const offsetInLine = low < line.length && Math.abs(afterWidth - targetX) < Math.abs(targetX - beforeWidth)
+            ? low + 1
+            : low;
+        return lineStart + Math.max(0, Math.min(line.length, offsetInLine));
+    }
+
+    function insertTextAtTextareaCursor(textarea, insertText, insertOffset) {
+        if (!textarea) {
+            return 0;
+        }
+        const hasInsertOffset = Number.isInteger(insertOffset);
+        const start = hasInsertOffset ? Math.max(0, Math.min(textarea.value.length, insertOffset)) : (textarea.selectionStart || 0);
+        const end = hasInsertOffset ? start : (textarea.selectionEnd || 0);
+        textarea.setRangeText(insertText, start, end, "end");
+        const nextCursor = start + String(insertText || "").length;
+        textarea.setSelectionRange(nextCursor, nextCursor);
+        textarea.focus();
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        return nextCursor;
+    }
+
+    function createMarkdownImageInputHandler(options) {
+        const settings = options || {};
+        const textarea = settings.textarea;
+        const uploadApiUrl = settings.uploadApiUrl;
+        const isEnabled = typeof settings.isEnabled === "function" ? settings.isEnabled : function () { return true; };
+        const getMarkdownPath = typeof settings.getMarkdownPath === "function" ? settings.getMarkdownPath : function () { return ""; };
+        const getMarkdownName = typeof settings.getMarkdownName === "function" ? settings.getMarkdownName : function () { return ""; };
+        const getTargetDir = typeof settings.getTargetDir === "function" ? settings.getTargetDir : function () { return ""; };
+        const onAfterInsert = typeof settings.onAfterInsert === "function" ? settings.onAfterInsert : function () {};
+
+        async function uploadAndInsert(files, insertOffset) {
+            if (!textarea || !uploadApiUrl || !isEnabled()) {
+                return;
+            }
+            let nextInsertOffset = Number.isInteger(insertOffset) ? insertOffset : null;
+            for (const file of files) {
+                const formData = new FormData();
+                formData.append("markdown_path", getMarkdownPath() || "");
+                formData.append("markdown_name", getMarkdownName() || "");
+                formData.append("target_dir", getTargetDir() || "");
+                formData.append("image", file, file.name || "image.png");
+                const data = await requestFormDataJson(uploadApiUrl, formData);
+                const snippet = data && typeof data.markdown === "string" && data.markdown
+                    ? data.markdown
+                    : ("![" + (file.name ? file.name.replace(/\.[^.]+$/, "") : "image") + "](" + (data && data.url ? data.url : "") + ")");
+                nextInsertOffset = insertTextAtTextareaCursor(textarea, snippet, nextInsertOffset);
+                onAfterInsert(data || {});
+            }
+        }
+
+        return {
+            handlePaste: function (event) {
+                if (!event || !event.clipboardData || !isEnabled()) {
+                    return false;
+                }
+                const files = getImageFilesFromTransfer(event.clipboardData);
+                if (!files.length) {
+                    return false;
+                }
+                event.preventDefault();
+                uploadAndInsert(files, null).catch(alertError);
+                return true;
+            },
+            handleDrop: function (event) {
+                if (!event || !event.dataTransfer || !isEnabled()) {
+                    return false;
+                }
+                const files = getImageFilesFromTransfer(event.dataTransfer);
+                if (!files.length) {
+                    return false;
+                }
+                const insertOffset = getTextareaCaretOffsetFromPoint(textarea, event.clientX, event.clientY);
+                event.preventDefault();
+                uploadAndInsert(files, insertOffset).catch(alertError);
+                return true;
+            },
+            handleDragOver: function (event) {
+                if (!event || !event.dataTransfer || !isEnabled()) {
+                    return false;
+                }
+                const files = getImageFilesFromTransfer(event.dataTransfer);
+                if (!files.length) {
+                    return false;
+                }
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+                return true;
+            }
+        };
+    }
+
     // POST 요청 옵션을 구축하는 함수
     function buildPostOptions(body) {
         return {
@@ -1750,6 +1921,8 @@
         const archiveExtractApiUrl = root.dataset.archiveExtractApiUrl || "";
         const archiveCreateApiUrl = root.dataset.archiveCreateApiUrl || "";
         const uploadApiUrl = root.dataset.uploadApiUrl;
+        const markdownImageUploadApiUrl = root.dataset.markdownImageUploadApiUrl || "";
+        const markdownImageCleanupApiUrl = root.dataset.markdownImageCleanupApiUrl || "";
         const uploadCancelApiUrl = root.dataset.uploadCancelApiUrl;
         const downloadApiUrl = root.dataset.downloadApiUrl;
         const previewApiUrl = root.dataset.previewApiUrl;
@@ -2094,6 +2267,31 @@
         let activeListEditorEntry = null;
         let listSuggestEventsBound = false;
         let listMarkdownSnippetEventsBound = false;
+        let listMarkdownImageEventsBound = false;
+        let listMarkdownUploadedImagePaths = [];
+        const listMarkdownImageInput = createMarkdownImageInputHandler({
+            textarea: editorContentInput,
+            uploadApiUrl: markdownImageUploadApiUrl,
+            isEnabled: function () {
+                return Boolean(activeListEditorEntry && resolveListEditorExtension() === ".md");
+            },
+            getMarkdownPath: function () {
+                return activeListEditorEntry && activeListEditorEntry.path ? activeListEditorEntry.path : "";
+            },
+            getMarkdownName: function () {
+                return editorFilenameInput ? editorFilenameInput.value : "";
+            },
+            getTargetDir: function () {
+                const pathValue = activeListEditorEntry && activeListEditorEntry.path ? activeListEditorEntry.path : state.currentDir;
+                return getParentPath(pathValue) || state.currentDir || "";
+            },
+            onAfterInsert: function (data) {
+                if (data && data.path) {
+                    listMarkdownUploadedImagePaths.push(data.path);
+                }
+                renderListEditorHighlight();
+            }
+        });
 
         function resolveListEditorExtension() {
             const entryPath = activeListEditorEntry && activeListEditorEntry.path
@@ -2994,6 +3192,7 @@
             if (!editorContentInput) return;
 
             activeListEditorEntry = entry || null;
+            listMarkdownUploadedImagePaths = [];
             clearListEditorSuggestion();
             editorSwitchToEditorUI({
                 entry: entry,
@@ -3102,6 +3301,18 @@
             cleanupEditorEvents();
             
             if (editorContentInput) {
+                if (!listMarkdownImageEventsBound) {
+                    listMarkdownImageEventsBound = true;
+                    editorContentInput.addEventListener("paste", function (event) {
+                        listMarkdownImageInput.handlePaste(event);
+                    });
+                    editorContentInput.addEventListener("dragover", function (event) {
+                        listMarkdownImageInput.handleDragOver(event);
+                    });
+                    editorContentInput.addEventListener("drop", function (event) {
+                        listMarkdownImageInput.handleDrop(event);
+                    });
+                }
                 editorContentInput.addEventListener("input", function () {
                     renderListEditorHighlight();
                     updateListEditorSuggestion();
@@ -3231,7 +3442,11 @@
                         }
                     }
                 }
-                switchToPreview();
+                cleanupListMarkdownUploadedImages(entry)
+                    .catch(alertError)
+                    .finally(function () {
+                        switchToPreview();
+                    });
             };
         }
 
@@ -3285,6 +3500,7 @@
                     payload.commit_message = commitMessage;
                 }
                 const data = await requestJson(saveApiUrl, buildPostOptions(payload));
+                listMarkdownUploadedImagePaths = [];
 
                 // 저장 후에는 취소 버튼 동작처럼 편집기를 닫고, 해당 파일 미리보기를 다시 연다.
                 const savedPath = data && typeof data.path === "string" && data.path.trim()
@@ -3321,6 +3537,24 @@
                     editorSaveButton.disabled = false;
                 }
             }
+        }
+
+        async function cleanupListMarkdownUploadedImages(entry) {
+            if (!markdownImageCleanupApiUrl || !listMarkdownUploadedImagePaths.length) {
+                return;
+            }
+            const sourcePath = entry && entry.path ? normalizePath(entry.path, true) : "";
+            const targetDir = getParentPath(sourcePath) || state.currentDir || "";
+            const imagePaths = Array.from(new Set(listMarkdownUploadedImagePaths));
+            listMarkdownUploadedImagePaths = [];
+            await requestJson(
+                markdownImageCleanupApiUrl,
+                buildPostOptions({
+                    markdown_path: sourcePath,
+                    target_dir: targetDir,
+                    image_paths: imagePaths,
+                })
+            );
         }
 
         async function updatePreviewNavButtons(entry) {
@@ -8041,6 +8275,8 @@
         const handriveRootUrl = root.dataset.handriveRootUrl || handriveBaseUrl;
         const saveApiUrl = root.dataset.saveApiUrl;
         const previewApiUrl = root.dataset.previewApiUrl;
+        const markdownImageUploadApiUrl = root.dataset.markdownImageUploadApiUrl || "";
+        const markdownImageCleanupApiUrl = root.dataset.markdownImageCleanupApiUrl || "";
         const mkdirApiUrl = root.dataset.mkdirApiUrl;
         const originalPath = root.dataset.originalPath || "";
         const initialDir = root.dataset.initialDir || "";
@@ -8132,8 +8368,37 @@
         let activeEditorSuggestions = [];
         let activeEditorSuggestionIndex = -1;
         let writeSuggestEventsBound = false;
+        let writeMarkdownUploadedImagePaths = [];
         // 자동완성 단어 리스트는 전역 단일 맵(window.__handriveEditorCompletionMap)만 사용
         const editorCompletionMap = window.__handriveEditorCompletionMap || {};
+        const writeMarkdownImageInput = createMarkdownImageInputHandler({
+            textarea: contentInput,
+            uploadApiUrl: markdownImageUploadApiUrl,
+            isEnabled: function () {
+                const originalExtension = getPathFileExtension(originalPath);
+                if (originalExtension) {
+                    return originalExtension === DOCS_DEFAULT_EXTENSION;
+                }
+                const rawName = filenameInput ? String(filenameInput.value || "").trim() : "";
+                const match = rawName.match(/\.[A-Za-z0-9]+$/);
+                return !match || match[0].toLowerCase() === DOCS_DEFAULT_EXTENSION;
+            },
+            getMarkdownPath: function () {
+                return originalPath || "";
+            },
+            getMarkdownName: function () {
+                return filenameInput ? filenameInput.value : "";
+            },
+            getTargetDir: function () {
+                return normalizePath(initialDir, true);
+            },
+            onAfterInsert: function (data) {
+                if (data && data.path) {
+                    writeMarkdownUploadedImagePaths.push(data.path);
+                }
+                renderWriteEditorHighlight();
+            }
+        });
 
         function markCurrentAsSaved() {
             savedFilenameValue = filenameInput ? filenameInput.value : "";
@@ -8144,6 +8409,22 @@
             const currentFilename = filenameInput ? filenameInput.value : "";
             const currentContent = contentInput ? contentInput.value : "";
             return currentFilename !== savedFilenameValue || currentContent !== savedContentValue;
+        }
+
+        async function cleanupWriteMarkdownUploadedImages() {
+            if (!markdownImageCleanupApiUrl || !writeMarkdownUploadedImagePaths.length) {
+                return;
+            }
+            const imagePaths = Array.from(new Set(writeMarkdownUploadedImagePaths));
+            writeMarkdownUploadedImagePaths = [];
+            await requestJson(
+                markdownImageCleanupApiUrl,
+                buildPostOptions({
+                    markdown_path: originalPath || "",
+                    target_dir: normalizePath(initialDir, true),
+                    image_paths: imagePaths,
+                })
+            );
         }
 
         function runWithBeforeUnloadBypass(action) {
@@ -9560,6 +9841,7 @@
                     payload.commit_message = commitMessage;
                 }
                 const data = await requestJson(saveApiUrl, buildPostOptions(payload));
+                writeMarkdownUploadedImagePaths = [];
                 markCurrentAsSaved();
 
                 if (saveModal && !saveModal.hidden) {
@@ -9680,7 +9962,12 @@
             cancelButton.addEventListener("click", function () {
                 const targetDir = getCancelTargetDirectory();
                 attemptLeaveWithUnsavedGuard(function () {
-                    window.location.assign(buildListUrl(handriveBaseUrl, targetDir, handriveRootUrl));
+                    cleanupWriteMarkdownUploadedImages()
+                        .catch(alertError)
+                        .finally(function () {
+                            bypassUnsavedBeforeUnload = true;
+                            window.location.assign(buildListUrl(handriveBaseUrl, targetDir, handriveRootUrl));
+                        });
                 });
             });
         }
@@ -9743,6 +10030,15 @@
         }
 
         if (contentInput) {
+            contentInput.addEventListener("paste", function (event) {
+                writeMarkdownImageInput.handlePaste(event);
+            });
+            contentInput.addEventListener("dragover", function (event) {
+                writeMarkdownImageInput.handleDragOver(event);
+            });
+            contentInput.addEventListener("drop", function (event) {
+                writeMarkdownImageInput.handleDrop(event);
+            });
             contentInput.addEventListener("input", function () {
                 renderWriteEditorHighlight();
                 updateEditorSuggestion();

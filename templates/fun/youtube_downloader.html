@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+{% load static_versioned %}
+
+{% block body_class %}ui-page youtube-downloader-page{% endblock %}
+
+{% block extra_head %}
+{% include 'handrive/_assets_head.html' %}
+<script src="{% static_v 'vendor/videojs/video.min.js' %}"></script>
+<script src="{% static_v 'js/handrive/videojs_compat.js' %}"></script>
+<script src="{% static_v 'vendor/videojs/videojs-seek-buttons.min.js' %}" defer></script>
+<script src="{% static_v 'vendor/videojs/videojs.hotkeys.min.js' %}" defer></script>
+<script src="{% static_v 'vendor/videojs/videojs-mobile-ui.js' %}" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@silvermine/videojs-chromecast@1.5.0/dist/silvermine-videojs-chromecast.min.js" defer></script>
+<script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1" defer></script>
+<script src="{% static_v 'js/handrive/video_player.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+<link rel="stylesheet" type="text/css" href="{% static_v 'css/fun/youtube_downloader.css' %}">
+<script src="{% static_v 'js/fun/youtube_downloader.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+{% endblock %}
+
+{% block content %}
+<div class="ui-toolbar-wrap">
+    <div class="ui-shell ui-toolbar">
+        <div class="ui-toolbar-left">
+            <div class="ui-title-row">
+                <h1 class="ui-title">{{ page_title }}</h1>
+            </div>
+            <div class="ui-subtitle ui-path-breadcrumbs">
+                <a class="ui-path-link" href="/">{{ home_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <a class="ui-path-link" href="{{ minigame_url }}">{{ minigame_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <span class="ui-path-current">{{ page_title }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<main class="ui-shell ui-content youtube-downloader-content">
+    <section class="youtube-downloader-panel" aria-label="{{ page_title }}">
+        <form
+            class="youtube-downloader-form"
+            data-youtube-downloader-form
+            data-download-url="{{ download_api_url }}"
+            data-formats-url="{{ formats_api_url }}"
+            data-empty-url-message="{{ empty_url_message }}"
+            data-download-failed-message="{{ download_failed_message }}"
+            data-quality-loading-message="{{ quality_loading_label }}"
+            data-quality-best-label="{{ quality_best_label }}"
+            data-complete-message="{{ complete_message }}"
+        >
+            {% csrf_token %}
+            <div class="youtube-downloader-url-row">
+                <label class="youtube-downloader-label" for="youtubeDownloaderUrl">{{ url_label }}</label>
+                <input
+                    id="youtubeDownloaderUrl"
+                    class="youtube-downloader-input"
+                    name="url"
+                    type="url"
+                    inputmode="url"
+                    autocomplete="off"
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    required
+                >
+            </div>
+
+            <div class="youtube-downloader-format-row" role="radiogroup" aria-label="Format">
+                <label class="youtube-downloader-format-option">
+                    <input type="radio" name="format" value="mp4" checked>
+                    <span>MP4</span>
+                </label>
+                <label class="youtube-downloader-format-option">
+                    <input type="radio" name="format" value="mp3">
+                    <span>MP3</span>
+                </label>
+            </div>
+
+            <div class="youtube-downloader-progress" data-youtube-downloader-progress hidden>
+                <div class="youtube-downloader-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="{{ working_label }}">
+                    <span class="youtube-downloader-progress-bar"></span>
+                </div>
+            </div>
+
+            <div class="youtube-downloader-action-row">
+                <div class="youtube-downloader-submit-wrap">
+                    <button class="ui-btn ui-btn-primary youtube-downloader-submit" type="submit" data-submit-label="{{ submit_label }}" data-working-label="{{ working_label }}" aria-haspopup="menu" aria-expanded="false">
+                        {{ submit_label }}
+                    </button>
+                    <div class="youtube-downloader-quality-menu" data-youtube-downloader-quality-menu role="menu" hidden></div>
+                </div>
+                <p class="youtube-downloader-status" data-youtube-downloader-status role="status" aria-live="polite"></p>
+            </div>
+
+            <p class="youtube-downloader-notice">
+                {{ notice_text }}
+            </p>
+        </form>
+
+        <section class="youtube-downloader-preview" data-youtube-downloader-preview hidden>
+            <div class="youtube-downloader-preview-head">
+                <h2 class="youtube-downloader-preview-title">{{ preview_label }}</h2>
+                <span class="youtube-downloader-preview-meta" data-youtube-downloader-preview-meta></span>
+            </div>
+            <div class="youtube-downloader-player-slot" data-youtube-downloader-player-slot></div>
+            <div class="youtube-downloader-progress youtube-downloader-save-progress" data-youtube-downloader-save-progress hidden>
+                <div class="youtube-downloader-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="{{ save_to_handrive_label }}">
+                    <span class="youtube-downloader-progress-bar"></span>
+                </div>
+            </div>
+            <div class="youtube-downloader-preview-actions">
+                {% if save_to_handrive_api_url %}
+                <button
+                    class="handrive-icon-btn youtube-downloader-save-to-handrive"
+                    type="button"
+                    data-youtube-downloader-save
+                    data-save-url="{{ save_to_handrive_api_url }}"
+                    data-save-complete-message="{{ save_complete_message }}"
+                    data-save-failed-message="{{ save_failed_message }}"
+                    aria-label="{{ save_to_handrive_label }}"
+                    title="{{ save_to_handrive_label }}"
+                >
+                    <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M14 13.5a3 3 0 0 0-.5-5.95A5 5 0 1 0 5 11.5"></path>
+                        <line x1="10" y1="17" x2="10" y2="10"></line>
+                        <polyline points="7.5,12.5 10,10 12.5,12.5"></polyline>
+                    </svg>
+                    <span class="youtube-downloader-sr-only">{{ save_to_handrive_label }}</span>
+                </button>
+                {% endif %}
+                <button
+                    class="handrive-icon-btn youtube-downloader-download"
+                    type="button"
+                    data-youtube-downloader-download
+                    aria-label="{{ download_label }}"
+                    title="{{ download_label }}"
+                >
+                    <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <line x1="10" y1="3" x2="10" y2="12.5"></line>
+                        <polyline points="6.5,9.5 10,13 13.5,9.5"></polyline>
+                        <path d="M4 15.5h12"></path>
+                    </svg>
+                    <span class="youtube-downloader-sr-only">{{ download_label }}</span>
+                </button>
+            </div>
+        </section>
+    </section>
+</main>
+{% include "partials/site_footer_links.html" %}
+{% endblock %}

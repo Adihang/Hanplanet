@@ -4086,6 +4086,21 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
     display: block;
 }
 
+.handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-video {
+    min-height: 0;
+}
+
+.handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-video .handrive-media-video-wrap {
+    height: auto;
+    aspect-ratio: 16 / 9;
+}
+
+.handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-video .video-js {
+    height: auto !important;
+    min-height: 180px;
+    aspect-ratio: 16 / 9;
+}
+
 .handrive-list-preview-content.handrive-office .handrive-media-pdf-wrap {
     flex: 1 1 auto;
     min-height: max(720px, calc(100vh - 220px));
@@ -4186,6 +4201,341 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
 
 body.handrive-page.theme-dark .handrive-media-audio-element {
     filter: brightness(1.08) saturate(0.76);
+}
+
+/* ── Video.js 플레이어 (HanDrive 통합) ──────────────────────────────── */
+
+/* 기존 handrive-media-video-element 규칙 재정의 (Video.js wrapper div에 적용됨) */
+.handrive-media-video-wrap .video-js {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    border-radius: var(--handrive-radius-md);
+    overflow: hidden;
+    font-size: 14px; /* site reset 충돌 방지 */
+}
+
+/* 내부 <video> 비율 유지 */
+.handrive-media-video-wrap .video-js video {
+    object-fit: contain;
+    width: 100%;
+    height: 100%;
+}
+
+/* 컨트롤바: 2행 레이아웃 (1행=진행바, 2행=버튼) */
+.video-js .vjs-control-bar {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    height: auto !important;
+    padding-bottom: 4px;
+}
+
+/* 진행바: 1행 전체 폭 */
+.video-js .vjs-progress-control {
+    order: -1;
+    width: 100% !important;
+    flex: 0 0 100% !important;
+    height: 16px;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+}
+.video-js .vjs-progress-control .vjs-progress-holder {
+    height: 4px;
+    margin: 0;
+}
+.video-js .vjs-progress-control:hover .vjs-progress-holder {
+    height: 6px;
+}
+
+/* 2행 버튼들 높이 통일 */
+.video-js .vjs-control-bar > .vjs-control:not(.vjs-progress-control) {
+    height: 36px;
+    line-height: 36px;
+}
+
+/* Video.js 기본 CSS가 숨기는 시간 표시 강제 노출 */
+.video-js .vjs-current-time,
+.video-js .vjs-duration {
+    display: flex;
+    padding: 0 4px;
+    min-width: 0;
+}
+.video-js .vjs-time-divider {
+    display: flex;
+    min-width: 0;
+    padding: 0;
+}
+.video-js .vjs-custom-control-spacer {
+    display: flex;
+    flex: 1 1 auto;
+}
+
+/* Cast 버튼: SDK 로드 시 항상 표시 + 아이콘 크기 보정 */
+.video-js .vjs-chromecast-button {
+    display: block !important;
+}
+.video-js .vjs-control-bar .vjs-chromecast-button .vjs-icon-placeholder {
+    background: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    font-family: VideoJS;
+    font-size: 20px;
+    line-height: 20px;
+    vertical-align: middle;
+}
+.video-js .vjs-control-bar .vjs-chromecast-button .vjs-icon-placeholder::before {
+    content: "\f126";
+    position: static;
+    display: block;
+    width: 20px;
+    height: 20px;
+    font-size: 20px;
+    line-height: 20px;
+}
+.video-js .vjs-control-bar .vjs-chromecast-button .vjs-icon-placeholder svg {
+    width: 20px;
+    height: 20px;
+    vertical-align: middle;
+}
+
+/* 풀스크린: 여백 없이 꽉 채움 */
+.video-js.vjs-fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+}
+
+/* 10초 스킵 버튼 아이콘 크기 보정 */
+.video-js .vjs-seek-button .vjs-icon-placeholder::before {
+    font-size: 1.6em;
+}
+
+/* 썸네일 프리뷰 툴팁 */
+.video-js .vjs-thumb-preview {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.85);
+    border-radius: 4px;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+.video-js .vjs-thumb-preview canvas {
+    display: block;
+}
+.video-js .vjs-thumb-time {
+    color: #fff;
+    font-size: 11px;
+    padding: 3px 6px 4px;
+    font-weight: 500;
+    text-align: center;
+    white-space: nowrap;
+}
+
+/* PiP 버튼 */
+.video-js .vjs-pip-button {
+    cursor: pointer;
+}
+.video-js .vjs-pip-button svg {
+    vertical-align: middle;
+}
+.video-js .vjs-pip-button.vjs-pip-active {
+    opacity: 0.6;
+}
+
+/* 버퍼링 · 네트워크 오버레이 */
+.video-js .vjs-network-overlay {
+    position: absolute;
+    bottom: 54px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.72);
+    color: #fff;
+    font-size: 13px;
+    padding: 5px 14px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 3;
+    white-space: nowrap;
+}
+
+/* 에러 오버레이 커스텀 */
+.video-js .vjs-error-display .vjs-error-msg {
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+.video-js .vjs-error-display .vjs-retry-btn {
+    padding: 6px 18px;
+    background: rgba(255, 255, 255, 0.9);
+    color: #222;
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s;
+}
+.video-js .vjs-error-display .vjs-retry-btn:hover {
+    background: #fff;
+}
+
+/* 다크 테마 */
+body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
+    color-scheme: dark;
+}
+
+/* ── HLS 트랜스코딩 상태 배지 ───────────────────────────────────────── */
+.video-js .vjs-hls-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(15, 15, 15, 0.78);
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 4;
+    white-space: nowrap;
+    transition: opacity 0.2s;
+}
+.video-js .vjs-hls-badge--ready {
+    color: #fff;
+    cursor: pointer;
+    pointer-events: auto;
+    background: rgba(15, 15, 15, 0.88);
+}
+.video-js .vjs-hls-badge--ready:hover {
+    background: rgba(40, 40, 40, 0.95);
+}
+
+/* ── Video.js 무채색(Monochrome) 테마 ──────────────────────────────── */
+
+/* 컨트롤바 배경 */
+.video-js .vjs-control-bar {
+    background: rgba(15, 15, 15, 0.88);
+}
+
+/* 빅 플레이 버튼 */
+.video-js .vjs-big-play-button {
+    background: rgba(15, 15, 15, 0.72);
+    border-color: rgba(255, 255, 255, 0.6);
+    color: #fff;
+    border-radius: 50%;
+    width: 64px;
+    height: 64px;
+    line-height: 64px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    margin: 0;
+}
+.video-js:hover .vjs-big-play-button,
+.video-js .vjs-big-play-button:focus {
+    background: rgba(40, 40, 40, 0.88);
+    border-color: #fff;
+}
+
+/* 진행바 트랙 */
+.video-js .vjs-slider {
+    background: rgba(255, 255, 255, 0.18);
+}
+.video-js .vjs-load-progress,
+.video-js .vjs-load-progress div {
+    background: rgba(255, 255, 255, 0.3);
+}
+.video-js .vjs-play-progress {
+    background: #fff;
+}
+.video-js .vjs-play-progress::before {
+    color: #fff;
+}
+
+/* 시크 핸들 (hover 시 나타나는 dot) */
+.video-js .vjs-progress-holder:hover .vjs-play-progress::before {
+    color: #fff;
+}
+
+/* 볼륨 바 */
+.video-js .vjs-volume-level {
+    background: #fff;
+}
+.video-js .vjs-volume-level::before {
+    color: #fff;
+}
+.video-js .vjs-volume-bar.vjs-slider-horizontal {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+/* 버튼 아이콘 색상 */
+.video-js .vjs-control {
+    color: rgba(255, 255, 255, 0.85);
+}
+.video-js .vjs-control:hover,
+.video-js .vjs-control:focus {
+    color: #fff;
+    text-shadow: none;
+}
+
+/* 시간 표시 */
+.video-js .vjs-current-time-display,
+.video-js .vjs-duration-display,
+.video-js .vjs-time-divider {
+    color: rgba(255, 255, 255, 0.75);
+}
+
+/* 재생속도 메뉴 */
+.video-js .vjs-menu-content {
+    background: rgba(15, 15, 15, 0.95);
+}
+.video-js .vjs-menu-item {
+    color: rgba(255, 255, 255, 0.8);
+}
+.video-js .vjs-menu-item:hover,
+.video-js .vjs-menu-item:focus {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+}
+.video-js .vjs-menu-item.vjs-selected,
+.video-js .vjs-menu-item.vjs-selected:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+/* 캡션 · 자막 메뉴 (동일 스타일) */
+.video-js .vjs-texttrack-settings {
+    background: rgba(15, 15, 15, 0.95);
+    color: #e0e0e0;
+}
+
+/* 에러 오버레이 */
+.video-js .vjs-error-display {
+    background: rgba(15, 15, 15, 0.85);
+}
+
+/* 로딩 스피너 */
+.video-js .vjs-loading-spinner::before,
+.video-js .vjs-loading-spinner::after {
+    border-top-color: #fff;
+}
+
+/* 모달 다이얼로그 (크롬캐스트 연결 안내 등) */
+.video-js .vjs-modal-dialog {
+    background: rgba(15, 15, 15, 0.88);
+    color: #e0e0e0;
 }
 
 .handrive-form-grid {

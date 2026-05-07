@@ -1,0 +1,370 @@
+.youtube-downloader-content {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    padding-top: 14px;
+    overflow: visible;
+}
+
+.youtube-downloader-panel {
+    width: min(1300px, 100%);
+    min-width: 0;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    margin-top: 0;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    overflow: visible;
+    background-color: transparent;
+}
+
+.youtube-downloader-form {
+    display: grid;
+    gap: 14px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 12px;
+    background: var(--shared-card-bg);
+    padding: 16px;
+}
+
+.youtube-downloader-form[hidden],
+.youtube-downloader-preview[hidden] {
+    display: none;
+}
+
+.youtube-downloader-url-row {
+    display: grid;
+    gap: 8px;
+}
+
+.youtube-downloader-label {
+    color: var(--handrive-text-stronger);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.youtube-downloader-input {
+    width: 100%;
+    min-height: 46px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    background: var(--handrive-surface-muted-strong);
+    color: var(--handrive-text-stronger);
+    padding: 10px 12px;
+    box-sizing: border-box;
+    font: inherit;
+    line-height: 1.3;
+}
+
+.youtube-downloader-input:focus {
+    border-color: var(--handrive-border-mid);
+    outline: 2px solid rgba(37, 99, 235, 0.18);
+    outline-offset: 1px;
+}
+
+.youtube-downloader-format-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.youtube-downloader-format-option {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 42px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    background: var(--handrive-surface-muted-strong);
+    color: var(--handrive-text-stronger);
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.youtube-downloader-format-option:has(input:checked) {
+    border-color: var(--handrive-border-mid);
+    background: var(--handrive-hover-soft);
+}
+
+.youtube-downloader-format-option input {
+    accent-color: #2563eb;
+}
+
+.youtube-downloader-progress[hidden] {
+    display: none;
+}
+
+.youtube-downloader-progress {
+    margin-top: -4px;
+}
+
+.youtube-downloader-progress-track {
+    position: relative;
+    width: 100%;
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--handrive-surface-muted-strong);
+    border: 1px solid var(--handrive-border-soft);
+}
+
+.youtube-downloader-progress-bar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -38%;
+    width: 38%;
+    border-radius: inherit;
+    background: #2563eb;
+    animation: youtube-downloader-progress-sweep 1.15s ease-in-out infinite;
+}
+
+body.theme-dark .youtube-downloader-progress-bar {
+    background: #7aa2ff;
+}
+
+@keyframes youtube-downloader-progress-sweep {
+    0% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(365%);
+    }
+}
+
+.youtube-downloader-action-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 42px;
+}
+
+.youtube-downloader-submit-wrap {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+}
+
+.youtube-downloader-submit {
+    min-width: 140px;
+}
+
+.youtube-downloader-quality-menu[hidden] {
+    display: none;
+}
+
+.youtube-downloader-quality-menu {
+    position: fixed;
+    z-index: 4200;
+    min-width: 152px;
+    max-height: 280px;
+    overflow: auto;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    background: var(--shared-card-bg);
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.18);
+    padding: 6px;
+}
+
+.youtube-downloader-quality-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 34px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--handrive-text-stronger);
+    padding: 7px 9px;
+    text-align: left;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.youtube-downloader-quality-option:hover,
+.youtube-downloader-quality-option:focus-visible {
+    background: var(--handrive-hover-soft);
+    outline: none;
+}
+
+.youtube-downloader-status {
+    margin: 0;
+    color: var(--handrive-text-muted);
+    font-size: 14px;
+    line-height: 1.35;
+}
+
+.youtube-downloader-status.is-error {
+    color: #b42318;
+}
+
+body.theme-dark .youtube-downloader-status.is-error {
+    color: #ffb4a8;
+}
+
+.youtube-downloader-notice {
+    margin: 0;
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.youtube-downloader-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 12px;
+    background: var(--shared-card-bg);
+    padding: 16px;
+    overflow: visible;
+}
+
+.youtube-downloader-preview-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.youtube-downloader-preview-title {
+    margin: 0;
+    color: var(--handrive-text-stronger);
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.youtube-downloader-preview-meta {
+    min-width: 0;
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.youtube-downloader-player-slot {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    flex: 0 1 auto;
+}
+
+.youtube-downloader-player-slot .video-js {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    max-height: calc(100dvh - 260px);
+    min-height: 180px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #050505;
+}
+
+.youtube-downloader-player-slot .youtube-downloader-player.is-audio {
+    aspect-ratio: auto;
+    height: 96px;
+    min-height: 96px;
+    max-height: 96px;
+}
+
+.youtube-downloader-preview-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.youtube-downloader-save-to-handrive.is-saved {
+    color: #16a34a;
+}
+
+body.theme-dark .youtube-downloader-save-to-handrive.is-saved {
+    color: #4ade80;
+}
+
+.youtube-downloader-save-to-handrive,
+.youtube-downloader-download {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 auto;
+}
+
+.youtube-downloader-save-to-handrive svg,
+.youtube-downloader-download svg {
+    display: block;
+}
+
+.youtube-downloader-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+@media (max-width: 640px) {
+    .youtube-downloader-form {
+        padding: 12px;
+    }
+
+    .youtube-downloader-content {
+        align-items: stretch;
+    }
+
+    .youtube-downloader-format-row {
+        grid-template-columns: 1fr;
+    }
+
+    .youtube-downloader-action-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .youtube-downloader-submit {
+        width: 100%;
+    }
+
+    .youtube-downloader-submit-wrap {
+        display: flex;
+        width: 100%;
+    }
+
+
+    .youtube-downloader-preview {
+        padding: 12px;
+    }
+
+    .youtube-downloader-player-slot .video-js {
+        min-height: 160px;
+        max-height: none;
+    }
+
+    .youtube-downloader-preview-head,
+    .youtube-downloader-preview-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .youtube-downloader-download {
+        align-self: flex-end;
+    }
+}

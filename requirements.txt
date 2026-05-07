@@ -19,3 +19,5 @@ tzdata==2023.4
 wheel==0.41.2
 boto3
 PyJWT
+yt-dlp
+curl_cffi>=0.11

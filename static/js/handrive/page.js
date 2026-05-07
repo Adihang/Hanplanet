@@ -7988,18 +7988,14 @@
             const imageWrap = contentArticle
                 ? contentArticle.querySelector(".handrive-media-image-wrap")
                 : null;
-            const videoWrap = contentArticle
-                ? contentArticle.querySelector(".handrive-media-video-wrap")
-                : null;
-            const mediaWrap = imageWrap || videoWrap;
-            const hasMedia = Boolean(mediaWrap && contentArticle && contentArticle.classList.contains("handrive-media"));
+            const hasImage = Boolean(imageWrap && contentArticle && contentArticle.classList.contains("handrive-media"));
             if (viewZoomWrap) {
-                viewZoomWrap.hidden = !hasMedia;
+                viewZoomWrap.hidden = !hasImage;
             }
-            if (!hasMedia || !mediaWrap) {
+            if (!hasImage || !imageWrap) {
                 return;
             }
-            mediaWrap.style.transform = "scale(" + String(viewImageZoom) + ")";
+            imageWrap.style.transform = "scale(" + String(viewImageZoom) + ")";
             if (contentArticle) {
                 contentArticle.scrollLeft = 0;
                 contentArticle.scrollTop = 0;

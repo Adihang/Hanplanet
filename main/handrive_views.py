@@ -32,6 +32,7 @@ import zipfile
 from datetime import datetime
 from contextvars import ContextVar
 from functools import wraps
+from glob import escape as glob_escape
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse, unquote
 import httpx
@@ -46,7 +47,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import FileResponse, Http404, HttpResponse, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -1848,6 +1849,27 @@ def build_handrive_download_url(relative_path: str, share_owner: str = "", share
     return url
 
 
+_SUBTITLE_LANG_LABELS: dict[str, str] = {
+    "ko": "한국어", "en": "English", "ja": "日本語", "zh": "中文", "und": "자막",
+}
+
+
+def _find_sidecar_vtt(source_path: Path, root: Path) -> list[dict]:
+    """같은 디렉터리에서 video.ko.vtt / video.en.vtt / video.vtt 패턴의 파일을 찾는다."""
+    stem   = source_path.stem
+    result = []
+    for vtt in sorted(source_path.parent.glob(f"{glob_escape(stem)}*.vtt")):
+        suffix = vtt.stem[len(stem):].lstrip(".")
+        lang   = suffix if suffix else "und"
+        label  = _SUBTITLE_LANG_LABELS.get(lang, lang.upper())
+        try:
+            rel = str(vtt.relative_to(root))
+            result.append({"rel_path": rel, "lang": lang, "label": label})
+        except ValueError:
+            pass
+    return result
+
+
 def render_handrive_media_safely(source_path: Path, relative_path: str, share_owner: str = "", share_slug: str = "") -> str:
     """이미지·비디오·오디오 파일을 HanDrive 미리보기용 HTML로 감싼다."""
     source_url = escape(build_handrive_download_url(relative_path, share_owner=share_owner, share_slug=share_slug))
@@ -1859,9 +1881,65 @@ def render_handrive_media_safely(source_path: Path, relative_path: str, share_ow
             "</div>"
         )
     if extension in {".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv"}:
+        _mime_map = {
+            ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+            ".mkv": "video/x-matroska", ".m4v": "video/x-m4v", ".ogv": "video/ogg",
+        }
+        mime = _mime_map.get(extension, "video/mp4")
+
+        # ── HLS 관련 URL ────────────────────────────────────────────────
+        hls_params = f"?path={quote(relative_path)}"
+        if share_owner and share_slug:
+            hls_params += f"&share_owner={quote(share_owner)}&share_slug={quote(share_slug)}"
+        hls_manifest_url     = escape(reverse("main:handrive_api_hls_manifest")      + hls_params)
+        hls_status_url       = escape(reverse("main:handrive_api_hls_status")         + hls_params)
+        hls_poster_url       = escape(reverse("main:handrive_api_hls_poster")         + hls_params)
+        hls_faststart_url    = escape(reverse("main:handrive_api_hls_faststart")      + hls_params)
+        hls_thumbnail_vtt_url = escape(reverse("main:handrive_api_hls_thumbnail_vtt") + hls_params)
+        hls_poster_attr = f' data-poster-url="{hls_poster_url}"'
+        hls_faststart_attr = ""
+        hls_thumbnail_vtt_attr = ""
+        try:
+            from main import handrive_hls as hls
+            cache_key = hls.get_cache_key(source_path)
+            if hls.get_faststart_path(cache_key):
+                hls_faststart_attr = f' data-faststart-url="{hls_faststart_url}"'
+            if hls.get_sprite_vtt_path(cache_key):
+                hls_thumbnail_vtt_attr = f' data-thumbnail-vtt-url="{hls_thumbnail_vtt_url}"'
+        except OSError:
+            pass
+
+        # ── 사이드카 자막 ────────────────────────────────────────────────
+        track_html = ""
+        try:
+            media_root = Path(settings.MEDIA_ROOT)
+            for vtt_info in _find_sidecar_vtt(source_path, media_root):
+                vtt_url = escape(
+                    reverse("main:handrive_api_vtt") + f"?path={quote(vtt_info['rel_path'])}"
+                    + (f"&share_owner={quote(share_owner)}&share_slug={quote(share_slug)}"
+                       if share_owner and share_slug else "")
+                )
+                track_html += (
+                    f'<track kind="subtitles" src="{vtt_url}"'
+                    f' srclang="{escape(vtt_info["lang"])}"'
+                    f' label="{escape(vtt_info["label"])}">'
+                )
+        except Exception:
+            pass
+
         return mark_safe(
             '<div class="handrive-media-wrap handrive-media-video-wrap">'
-            f'<video class="handrive-media-element handrive-media-video-element" src="{source_url}" controls preload="metadata"></video>'
+            '<video class="video-js handrive-media-element handrive-media-video-element"'
+            ' preload="metadata" playsinline webkit-playsinline x-webkit-airplay="allow"'
+            f' data-fallback-src="{source_url}" data-fallback-type="{mime}"'
+            f' data-filename="{escape(source_path.name)}"'
+            f' data-hls-manifest-url="{hls_manifest_url}"'
+            f' data-hls-status-url="{hls_status_url}"'
+            f'{hls_faststart_attr}'
+            f'{hls_poster_attr}'
+            f'{hls_thumbnail_vtt_attr}>'
+            + track_html +
+            "</video>"
             "</div>"
         )
     return mark_safe(
@@ -8600,6 +8678,53 @@ def handrive_api_save(request):
     )
 
 
+_STREAM_MIME: dict[str, str] = {
+    ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+    ".mkv": "video/x-matroska", ".m4v": "video/x-m4v", ".ogv": "video/ogg",
+    ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".flac": "audio/flac",
+    ".wav": "audio/wav", ".m4a": "audio/mp4", ".aac": "audio/aac",
+}
+
+
+def _stream_response(request, fh, file_size: int, content_type: str, filename: str):
+    """video/audio inline 스트리밍 — HTTP Range 요청 지원 (seek 가능)."""
+    safe_name = quote(filename)
+    disposition = f"inline; filename*=UTF-8''{safe_name}"
+
+    range_header = request.META.get("HTTP_RANGE", "").strip()
+    m = range_header and re.match(r"bytes=(\d*)-(\d*)", range_header)
+    if m:
+        start = int(m.group(1)) if m.group(1) else 0
+        end   = int(m.group(2)) if m.group(2) else file_size - 1
+        end   = min(end, file_size - 1)
+        length = end - start + 1
+
+        fh.seek(start)
+
+        def _iter(fh, length, chunk=65536):
+            remaining = length
+            while remaining > 0:
+                data = fh.read(min(chunk, remaining))
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+        resp = StreamingHttpResponse(_iter(fh, length), status=206, content_type=content_type)
+        resp["Content-Range"]       = f"bytes {start}-{end}/{file_size}"
+        resp["Content-Length"]      = length
+        resp["Accept-Ranges"]       = "bytes"
+        resp["Content-Disposition"] = disposition
+        return resp
+
+    fh.seek(0)
+    resp = FileResponse(fh, content_type=content_type)
+    resp["Content-Length"]      = file_size
+    resp["Accept-Ranges"]       = "bytes"
+    resp["Content-Disposition"] = disposition
+    return resp
+
+
 @require_http_methods(["GET"])
 @with_request_handrive_root
 def handrive_api_download(request):
@@ -8616,22 +8741,320 @@ def handrive_api_download(request):
             raise Http404("다운로드할 파일을 찾을 수 없습니다.")
         filename = file_path.name
         file_handle = file_path.open("rb")
+        file_size   = file_path.stat().st_size
     else:
         if git_virtual["kind"] != "branch_file":
             raise Http404("다운로드할 파일을 찾을 수 없습니다.")
-        filename = Path(git_virtual["repo_relative_path"]).name
-        file_handle = io.BytesIO(
-            _git_repo_read_file_bytes(
-                git_virtual["repo"],
-                git_virtual["branch_name"],
-                git_virtual["repo_relative_path"],
-            )
+        filename    = Path(git_virtual["repo_relative_path"]).name
+        raw         = _git_repo_read_file_bytes(
+            git_virtual["repo"],
+            git_virtual["branch_name"],
+            git_virtual["repo_relative_path"],
         )
+        file_handle = io.BytesIO(raw)
+        file_size   = len(raw)
 
     if not has_handrive_read_access(request, rel_path):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
 
+    ext = Path(filename).suffix.lower()
+    if ext in _STREAM_MIME:
+        return _stream_response(request, file_handle, file_size, _STREAM_MIME[ext], filename)
+
     return FileResponse(file_handle, as_attachment=True, filename=filename)
+
+
+# ── HLS 스트리밍 API ──────────────────────────────────────────────────────
+
+def _hls_resolve(request) -> tuple[Path, str] | None:
+    """HLS 공통 경로 해석 + 권한 검사. 실패 시 None 반환."""
+    try:
+        file_path, rel_path = normalize_handrive_relative_path(
+            request.GET.get("path"), must_exist=True
+        )
+    except (ValueError, FileNotFoundError):
+        return None
+    if not has_handrive_read_access(request, rel_path):
+        return None
+    return file_path, rel_path
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_hls_status(request):
+    """HLS 트랜스코딩 상태 반환 — 사이드이펙트 없음."""
+    ctx = _hls_resolve(request)
+    if ctx is None:
+        return JsonResponse({"status": "error", "progress": 0}, status=403)
+
+    from main import handrive_hls as hls
+    file_path, _ = ctx
+    ext = file_path.suffix.lower()
+    if ext not in _STREAM_MIME or not _STREAM_MIME[ext].startswith("video/"):
+        return JsonResponse({"status": "error", "progress": 0}, status=400)
+
+    try:
+        cache_key = hls.get_cache_key(file_path)
+    except OSError:
+        return JsonResponse({"status": "error", "progress": 0}, status=404)
+
+    return JsonResponse(hls.get_status(cache_key))
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_hls_manifest(request):
+    """master.m3u8 반환. 트랜스코딩이 아직 안 됐으면 시작 후 202 반환."""
+    ctx = _hls_resolve(request)
+    if ctx is None:
+        return HttpResponse(status=403)
+
+    from main import handrive_hls as hls
+    file_path, rel_path = ctx
+    ext = file_path.suffix.lower()
+    if ext not in _STREAM_MIME or not _STREAM_MIME[ext].startswith("video/"):
+        return HttpResponse(status=400)
+
+    try:
+        cache_key = hls.get_cache_key(file_path)
+    except OSError:
+        return HttpResponse(status=404)
+
+    status = hls.get_status(cache_key)
+
+    if status["status"] != "ready":
+        hls.start_transcoding(file_path, cache_key)
+        return JsonResponse({"status": status["status"], "progress": status["progress"]}, status=202)
+
+    master_path = hls.get_master_playlist_path(cache_key)
+    if not master_path:
+        return HttpResponse(status=404)
+
+    # master.m3u8의 상대 경로를 Django 엔드포인트 URL로 재작성
+    encoded_path = quote(rel_path)
+    share_params = ""
+    share_owner = request.GET.get("share_owner", "")
+    share_slug   = request.GET.get("share_slug", "")
+    if share_owner and share_slug:
+        share_params = f"&share_owner={quote(share_owner)}&share_slug={quote(share_slug)}"
+
+    variant_base = (
+        f"{reverse('main:handrive_api_hls_playlist')}"
+        f"?path={encoded_path}{share_params}&q="
+    )
+
+    lines = []
+    for line in master_path.read_text(encoding="utf-8").splitlines():
+        # 상대 경로 줄(ex: "720p/playlist.m3u8") → Django URL로 치환
+        if line and not line.startswith("#"):
+            quality = line.split("/")[0]
+            lines.append(f"{variant_base}{quality}")
+        else:
+            lines.append(line)
+
+    resp = HttpResponse("\n".join(lines) + "\n", content_type="application/x-mpegURL")
+    resp["Cache-Control"] = "no-store"
+    return resp
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_hls_playlist(request):
+    """화질별 playlist.m3u8 반환 — 세그먼트 URL을 Django 엔드포인트로 재작성."""
+    ctx = _hls_resolve(request)
+    if ctx is None:
+        return HttpResponse(status=403)
+
+    from main import handrive_hls as hls
+    file_path, rel_path = ctx
+    quality = request.GET.get("q", "")
+
+    try:
+        cache_key = hls.get_cache_key(file_path)
+    except OSError:
+        return HttpResponse(status=404)
+
+    playlist_path = hls.get_variant_playlist_path(cache_key, quality)
+    if not playlist_path:
+        return HttpResponse(status=404)
+
+    encoded_path = quote(rel_path)
+    share_params = ""
+    share_owner = request.GET.get("share_owner", "")
+    share_slug   = request.GET.get("share_slug", "")
+    if share_owner and share_slug:
+        share_params = f"&share_owner={quote(share_owner)}&share_slug={quote(share_slug)}"
+
+    seg_base = (
+        f"{reverse('main:handrive_api_hls_segment')}"
+        f"?path={encoded_path}{share_params}&q={quote(quality)}&s="
+    )
+
+    lines = []
+    for line in playlist_path.read_text(encoding="utf-8").splitlines():
+        if line and not line.startswith("#"):
+            # seg000.ts → Django URL
+            lines.append(f"{seg_base}{line.strip()}")
+        else:
+            lines.append(line)
+
+    resp = HttpResponse("\n".join(lines) + "\n", content_type="application/x-mpegURL")
+    resp["Cache-Control"] = "no-store"
+    return resp
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_hls_segment(request):
+    """.ts 세그먼트 파일 서빙."""
+    ctx = _hls_resolve(request)
+    if ctx is None:
+        return HttpResponse(status=403)
+
+    from main import handrive_hls as hls
+    file_path, _ = ctx
+    quality = request.GET.get("q", "")
+    segment = request.GET.get("s", "")
+
+    try:
+        cache_key = hls.get_cache_key(file_path)
+    except OSError:
+        return HttpResponse(status=404)
+
+    seg_path = hls.get_segment_path(cache_key, quality, segment)
+    if not seg_path:
+        return HttpResponse(status=404)
+
+    resp = FileResponse(seg_path.open("rb"), content_type="video/MP2T")
+    resp["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_hls_poster(request):
+    """poster.jpg 서빙. 트랜스코딩 중에도 poster가 생성되면 즉시 반환."""
+    ctx = _hls_resolve(request)
+    if ctx is None:
+        return HttpResponse(status=403)
+
+    from main import handrive_hls as hls
+    file_path, _ = ctx
+    try:
+        cache_key = hls.get_cache_key(file_path)
+    except OSError:
+        return HttpResponse(status=404)
+
+    poster_path = hls.ensure_first_frame_poster(file_path, cache_key)
+    if not poster_path:
+        return HttpResponse(status=404)
+
+    resp = FileResponse(poster_path.open("rb"), content_type="image/jpeg")
+    resp["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_hls_faststart(request):
+    """FastStart MP4 파일을 Range 스트리밍으로 서빙."""
+    ctx = _hls_resolve(request)
+    if ctx is None:
+        return HttpResponse(status=403)
+
+    from main import handrive_hls as hls
+    file_path, _ = ctx
+    try:
+        cache_key = hls.get_cache_key(file_path)
+    except OSError:
+        return HttpResponse(status=404)
+
+    fs_path = hls.get_faststart_path(cache_key)
+    if not fs_path:
+        return HttpResponse(status=404)
+
+    file_size = fs_path.stat().st_size
+    return _stream_response(request, fs_path.open("rb"), file_size, "video/mp4", fs_path.name)
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_hls_sprite(request):
+    """썸네일 스프라이트 이미지(sprite.jpg) 서빙."""
+    ctx = _hls_resolve(request)
+    if ctx is None:
+        return HttpResponse(status=403)
+
+    from main import handrive_hls as hls
+    file_path, _ = ctx
+    try:
+        cache_key = hls.get_cache_key(file_path)
+    except OSError:
+        return HttpResponse(status=404)
+
+    sprite_path = hls.get_sprite_path(cache_key)
+    if not sprite_path:
+        return HttpResponse(status=404)
+
+    resp = FileResponse(sprite_path.open("rb"), content_type="image/jpeg")
+    resp["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_hls_thumbnail_vtt(request):
+    """썸네일 VTT(sprite.vtt) 서빙 — 스프라이트 URL을 Django 엔드포인트로 재작성."""
+    ctx = _hls_resolve(request)
+    if ctx is None:
+        return HttpResponse(status=403)
+
+    from main import handrive_hls as hls
+    file_path, rel_path = ctx
+    try:
+        cache_key = hls.get_cache_key(file_path)
+    except OSError:
+        return HttpResponse(status=404)
+
+    vtt_path = hls.get_sprite_vtt_path(cache_key)
+    if not vtt_path:
+        return HttpResponse(status=404)
+
+    encoded_path = quote(rel_path)
+    share_params = ""
+    share_owner = request.GET.get("share_owner", "")
+    share_slug   = request.GET.get("share_slug", "")
+    if share_owner and share_slug:
+        share_params = f"&share_owner={quote(share_owner)}&share_slug={quote(share_slug)}"
+
+    sprite_url = (
+        reverse("main:handrive_api_hls_sprite")
+        + f"?path={encoded_path}{share_params}"
+    )
+
+    # VTT 내 "sprite.jpg" → 절대 Django URL로 치환
+    vtt_content = vtt_path.read_text(encoding="utf-8").replace("sprite.jpg", sprite_url)
+
+    resp = HttpResponse(vtt_content, content_type="text/vtt; charset=utf-8")
+    resp["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_vtt(request):
+    """사이드카 .vtt 자막 파일 서빙 (권한 검사 포함)."""
+    ctx = _hls_resolve(request)
+    if ctx is None:
+        return HttpResponse(status=403)
+
+    file_path, _ = ctx
+    if file_path.suffix.lower() != ".vtt":
+        return HttpResponse(status=400)
+
+    resp = FileResponse(file_path.open("rb"), content_type="text/vtt; charset=utf-8")
+    resp["Cache-Control"] = "public, max-age=3600"
+    return resp
 
 
 @require_http_methods(["GET"])

@@ -22,6 +22,10 @@ import hashlib
 import hmac
 import time
 import subprocess
+import shutil
+import sys
+import tempfile
+import unicodedata
 import zipfile
 from django.utils import timezone
 from django.utils.safestring import mark_safe
@@ -53,6 +57,21 @@ SUPPORTED_UI_LANGS = {"ko", "en"}
 UI_LANG_SESSION_KEY = "portfolio_ui_lang"
 SUPPORTED_ROOT_SEARCH_ENGINES = {"google", "youtube", "duckduckgo", "bing", "naver", "gpt", "claude", "gemini"}
 SUPPORTED_TRANSLATION_LANGS = {"ko", "en"}
+YOUTUBE_DOWNLOAD_FORMATS = {"mp4", "mp3"}
+YOUTUBE_DOWNLOAD_BIN = Path("/opt/homebrew/bin/yt-dlp")
+YOUTUBE_DOWNLOAD_FFMPEG_BIN = Path("/opt/homebrew/bin/ffmpeg")
+YOUTUBE_DOWNLOAD_QUALITY_PATTERN = re.compile(r"^\d{3,4}$")
+YOUTUBE_DOWNLOAD_TOKEN_DIR = Path(tempfile.gettempdir()) / "hanplanet-ytdl-tokens"
+YOUTUBE_DOWNLOAD_TOKEN_TTL = 1800  # 30분
+YOUTUBE_DOWNLOAD_TOKEN_PATTERN = re.compile(r'^[0-9a-f]{32}$')
+YOUTUBE_DOWNLOAD_ALLOWED_HOSTS = {
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+    "www.youtu.be",
+}
 UI_LANG_PATH_PREFIX_PATTERN = re.compile(r"^/(ko|en)(/|$)")
 IDENTITY_IMPERSONATION_PATTERNS = [
     re.compile(
@@ -1519,21 +1538,21 @@ def minigame_page(request, ui_lang=None):
             "title": "Salvation's Edge 4",
             "url": reverse("main:Salvations_Edge_4_lang", kwargs={"ui_lang": resolved_lang}),
             "description": "Raid-inspired rhythm and timing challenge." if is_english else "레이드 감성의 리듬/타이밍 챌린지.",
-            "image_url": build_public_absolute_url(static("media/icons/icon-192.png")),
+            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
         },
         {
             "slug": "stratagem-hero",
             "title": "Stratagem Hero",
             "url": reverse("main:Stratagem_Hero_lang", kwargs={"ui_lang": resolved_lang}),
             "description": "Call stratagems fast and climb the scoreboard." if is_english else "스트라타젬을 빠르게 입력하고 점수판에 도전하세요.",
-            "image_url": build_public_absolute_url(static("media/icons/icon-192.png")),
+            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
         },
         {
             "slug": "bubble",
             "title": "Bubble",
             "url": reverse("main:bubble_lang", kwargs={"ui_lang": resolved_lang}),
             "description": "A small color-pop playground." if is_english else "가볍게 즐기는 색감 버블 게임.",
-            "image_url": build_public_absolute_url(static("media/icons/icon-192.png")),
+            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
         },
         {
             "slug": "text-speaki",
@@ -1544,7 +1563,18 @@ def minigame_page(request, ui_lang=None):
                 if is_english
                 else "떠다니는 버블이 텍스트 흐름을 갈라놓는 실험적인 페이지."
             ),
-            "image_url": build_public_absolute_url(static("media/icons/icon-192.png")),
+            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
+        },
+        {
+            "slug": "youtube-downloader",
+            "title": "YouTube Downloader" if is_english else "유튜브 다운로더",
+            "url": reverse("main:youtube_downloader_lang", kwargs={"ui_lang": resolved_lang}),
+            "description": (
+                "Extract an MP4 or MP3 file from a YouTube URL."
+                if is_english
+                else "유튜브 URL에서 MP4 또는 MP3 파일을 추출합니다."
+            ),
+            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
         },
         {
             "slug": "bumpercar-spiky",
@@ -1642,6 +1672,385 @@ def text_bubble_page(request, ui_lang=None):
         "page_image_url": build_public_absolute_url(static("media/img/text-bubble.png")),
     }
     return render(request, "fun/text-bubble.html", context)
+
+
+def youtube_downloader_page(request, ui_lang=None):
+    """Render the YouTube URL to MP4/MP3 utility page."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+    context = {
+        "ui_lang": resolved_lang,
+        "page_title": "YouTube Downloader" if is_english else "유튜브 다운로더",
+        "home_label": "Home" if is_english else "홈",
+        "minigame_label": "Mini Game" if is_english else "미니게임",
+        "minigame_url": reverse("main:minigame_lang", kwargs={"ui_lang": resolved_lang}),
+        "download_api_url": reverse("main:youtube_download_lang", kwargs={"ui_lang": resolved_lang}),
+        "formats_api_url": reverse("main:youtube_formats_lang", kwargs={"ui_lang": resolved_lang}),
+        "url_label": "YouTube URL",
+        "submit_label": "Extract" if is_english else "추출",
+        "working_label": "Extracting..." if is_english else "추출 중...",
+        "quality_loading_label": "Loading qualities..." if is_english else "화질 목록을 불러오는 중...",
+        "quality_best_label": "Best quality" if is_english else "최고 화질",
+        "empty_url_message": "Enter a URL." if is_english else "URL을 입력해주세요.",
+        "download_failed_message": "Download failed." if is_english else "다운로드에 실패했습니다.",
+        "complete_message": "Done." if is_english else "완료되었습니다.",
+        "preview_label": "Preview" if is_english else "미리보기",
+        "download_label": "Download" if is_english else "다운로드",
+        "notice_text": (
+            "Use this only for videos you own or videos where downloading is allowed."
+            if is_english
+            else "본인이 권리를 가진 영상 또는 다운로드가 허용된 영상에만 사용하세요."
+        ),
+        "meta_title": "YouTube Downloader | Hanplanet" if is_english else "유튜브 다운로더 | Hanplanet",
+        "meta_og_title": "YouTube Downloader | Hanplanet" if is_english else "유튜브 다운로더 | Hanplanet",
+        "meta_description": (
+            "Paste a YouTube URL and export it as an MP4 or MP3 file."
+            if is_english
+            else "유튜브 URL을 붙여넣고 MP4 또는 MP3 파일로 저장하는 도구입니다."
+        ),
+        "meta_robots": "noindex",
+    }
+    if request.user.is_authenticated:
+        context["save_to_handrive_api_url"] = reverse("main:youtube_save_to_handrive_lang", kwargs={"ui_lang": resolved_lang})
+        context["save_to_handrive_label"] = "Save to HanDrive" if is_english else "HanDrive에 저장"
+        context["save_complete_message"] = "Saved to HanDrive." if is_english else "HanDrive에 저장되었습니다."
+        context["save_failed_message"] = "Save failed." if is_english else "저장에 실패했습니다."
+    context["meta_og_description"] = context["meta_description"]
+    apply_ui_context(request, context, resolved_lang)
+    context["theme_preference_url"] = ""
+    return render(request, "fun/youtube_downloader.html", context)
+
+
+def _normalize_youtube_url(raw_url):
+    url = str(raw_url or "").strip()
+    if not url:
+        return ""
+    if len(url) > 2048:
+        return ""
+    if not re.match(r"^https?://", url, re.IGNORECASE):
+        url = "https://" + url
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme not in {"http", "https"}:
+        return ""
+    if host not in YOUTUBE_DOWNLOAD_ALLOWED_HOSTS:
+        return ""
+    return url
+
+
+def _youtube_download_rate_limit_key(request):
+    bucket = int(time.time() // 60)
+    return f"youtube_download:{get_client_ip(request)}:{bucket}"
+
+
+def _is_youtube_download_allowed(request, limit=4):
+    cache_key = _youtube_download_rate_limit_key(request)
+    count = cache.get(cache_key, 0)
+    if count >= limit:
+        return False
+    if count == 0:
+        cache.set(cache_key, 1, timeout=60)
+    else:
+        try:
+            cache.incr(cache_key)
+        except ValueError:
+            cache.set(cache_key, count + 1, timeout=60)
+    return True
+
+
+def _cleanup_file_response(response, temp_dir):
+    original_close = response.close
+
+    def close_with_cleanup():
+        try:
+            original_close()
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    response.close = close_with_cleanup
+    return response
+
+
+def _cleanup_old_token_dirs():
+    if not YOUTUBE_DOWNLOAD_TOKEN_DIR.exists():
+        return
+    cutoff = time.time() - YOUTUBE_DOWNLOAD_TOKEN_TTL
+    for entry in YOUTUBE_DOWNLOAD_TOKEN_DIR.iterdir():
+        try:
+            if entry.is_dir() and entry.stat().st_mtime < cutoff:
+                shutil.rmtree(entry, ignore_errors=True)
+        except OSError:
+            pass
+
+
+def _youtube_base_command():
+    if YOUTUBE_DOWNLOAD_BIN.exists():
+        return [str(YOUTUBE_DOWNLOAD_BIN)]
+    return [sys.executable, "-m", "yt_dlp"]
+
+
+def _append_youtube_client_fallback(command):
+    if not YOUTUBE_DOWNLOAD_BIN.exists():
+        command.extend(["--extractor-args", "youtube:player_client=android"])
+    return command
+
+
+def _normalize_youtube_download_filename(file_path):
+    normalized_name = unicodedata.normalize("NFC", file_path.name)
+    normalized_name = "".join(
+        "_" if (ord(ch) < 32 or ch in {"/", "\\"}) else ch
+        for ch in normalized_name
+    ).strip(" .")
+    if not normalized_name:
+        normalized_name = f"youtube-download{file_path.suffix}"
+    if normalized_name == file_path.name:
+        return file_path
+
+    candidate = file_path.with_name(normalized_name)
+    if candidate.exists():
+        stem = candidate.stem
+        suffix = candidate.suffix
+        counter = 1
+        while candidate.exists():
+            candidate = file_path.with_name(f"{stem} ({counter}){suffix}")
+            counter += 1
+    file_path.rename(candidate)
+    return candidate
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+def youtube_formats(request, ui_lang=None):
+    """Return available MP4 quality choices for a YouTube URL."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+
+    try:
+        payload = json.loads(request.body)
+    except (TypeError, ValueError):
+        payload = request.POST
+
+    youtube_url = _normalize_youtube_url(payload.get("url", ""))
+    if not youtube_url:
+        message = "Enter a valid YouTube URL." if is_english else "올바른 유튜브 URL을 입력해주세요."
+        return JsonResponse({"ok": False, "error": message}, status=400)
+
+    command = _youtube_base_command()
+    command.extend(["--no-playlist", "--dump-json"])
+    _append_youtube_client_fallback(command)
+    command.append(youtube_url)
+
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=90, check=True)
+        info = json.loads(result.stdout)
+    except (subprocess.CalledProcessError, OSError, ValueError, subprocess.TimeoutExpired):
+        message = "Could not load quality options." if is_english else "화질 목록을 불러올 수 없습니다."
+        return JsonResponse({"ok": False, "error": message})
+
+    heights = set()
+    for item in info.get("formats", []):
+        if str(item.get("vcodec") or "none").lower() == "none":
+            continue
+        if str(item.get("ext") or "").lower() != "mp4":
+            continue
+        try:
+            height = int(item.get("height") or 0)
+        except (TypeError, ValueError):
+            height = 0
+        if height > 0:
+            heights.add(height)
+
+    qualities = [{"value": "best", "label": "Best quality" if is_english else "최고 화질"}]
+    qualities.extend(
+        {"value": str(height), "label": f"{height}p"}
+        for height in sorted(heights, reverse=True)
+    )
+    return JsonResponse({"ok": True, "qualities": qualities})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+def youtube_download(request, ui_lang=None):
+    """Download a YouTube URL as MP4 or MP3 using yt-dlp."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+
+    if not _is_youtube_download_allowed(request):
+        message = "Too many requests. Try again later." if is_english else "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."
+        return JsonResponse({"ok": False, "error": message}, status=429)
+
+    try:
+        payload = json.loads(request.body)
+    except (TypeError, ValueError):
+        payload = request.POST
+
+    download_format = str(payload.get("format", "")).strip().lower()
+    download_quality = str(payload.get("quality", "best")).strip().lower() or "best"
+    youtube_url = _normalize_youtube_url(payload.get("url", ""))
+    if download_format not in YOUTUBE_DOWNLOAD_FORMATS:
+        message = "Choose MP4 or MP3." if is_english else "MP4 또는 MP3를 선택해주세요."
+        return JsonResponse({"ok": False, "error": message}, status=400)
+    if not youtube_url:
+        message = "Enter a valid YouTube URL." if is_english else "올바른 유튜브 URL을 입력해주세요."
+        return JsonResponse({"ok": False, "error": message}, status=400)
+    if download_format == "mp4" and download_quality != "best" and not YOUTUBE_DOWNLOAD_QUALITY_PATTERN.fullmatch(download_quality):
+        message = "Choose a valid quality." if is_english else "올바른 화질을 선택해주세요."
+        return JsonResponse({"ok": False, "error": message}, status=400)
+
+    temp_dir = tempfile.mkdtemp(prefix="hanplanet-ytdl-")
+    output_template = str(Path(temp_dir) / "%(title).160B [%(id)s].%(ext)s")
+    base_command = _youtube_base_command()
+    base_command.extend([
+        "--no-playlist",
+        "--windows-filenames",
+        "--max-filesize",
+        "500M",
+        "-o",
+        output_template,
+    ])
+    _append_youtube_client_fallback(base_command)
+    if YOUTUBE_DOWNLOAD_FFMPEG_BIN.exists():
+        base_command.extend(["--ffmpeg-location", str(YOUTUBE_DOWNLOAD_FFMPEG_BIN)])
+    if download_format == "mp3":
+        command = base_command + [
+            "-x",
+            "--audio-format",
+            "mp3",
+            "--audio-quality",
+            "0",
+            youtube_url,
+        ]
+        content_type = "audio/mpeg"
+        suffix = ".mp3"
+    else:
+        if download_quality == "best":
+            format_selector = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
+        else:
+            format_selector = (
+                f"bv*[ext=mp4][height<={download_quality}]+ba[ext=m4a]/"
+                f"b[ext=mp4][height<={download_quality}]/"
+                f"bv*[height<={download_quality}]+ba/"
+                f"b[height<={download_quality}]"
+            )
+        command = base_command + [
+            "-f",
+            format_selector,
+            "--merge-output-format",
+            "mp4",
+            youtube_url,
+        ]
+        content_type = "video/mp4"
+        suffix = ".mp4"
+
+    try:
+        subprocess.run(command, capture_output=True, text=True, timeout=300, check=True)
+        candidates = sorted(Path(temp_dir).glob(f"*{suffix}"), key=lambda path: path.stat().st_mtime, reverse=True)
+        if not candidates:
+            raise RuntimeError("downloaded file not found")
+    except subprocess.CalledProcessError as error:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        stderr = (error.stderr or error.stdout or "").strip()
+        if "No module named yt_dlp" in stderr:
+            message = "yt-dlp is not installed on the server." if is_english else "서버에 yt-dlp가 설치되어 있지 않습니다."
+        else:
+            message = "Could not extract this video." if is_english else "이 영상을 추출할 수 없습니다."
+        return JsonResponse({"ok": False, "error": message})
+    except (OSError, RuntimeError, subprocess.TimeoutExpired):
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        message = "The download timed out or failed." if is_english else "다운로드 시간이 초과되었거나 실패했습니다."
+        return JsonResponse({"ok": False, "error": message})
+
+    file_path = candidates[0]
+    file_path = _normalize_youtube_download_filename(file_path)
+    import uuid as _uuid_mod
+    token = _uuid_mod.uuid4().hex
+    YOUTUBE_DOWNLOAD_TOKEN_DIR.mkdir(parents=True, exist_ok=True)
+    token_dir = YOUTUBE_DOWNLOAD_TOKEN_DIR / token
+    token_dir.mkdir()
+    dest_path = token_dir / file_path.name
+    file_path.rename(dest_path)
+    shutil.rmtree(temp_dir, ignore_errors=True)
+    try:
+        _cleanup_old_token_dirs()
+    except Exception:
+        pass
+    file_url = reverse(
+        "main:youtube_download_file_lang",
+        kwargs={"ui_lang": resolved_lang, "token": token},
+    )
+    return JsonResponse({"ok": True, "file_url": file_url, "filename": dest_path.name, "format": download_format, "token": token})
+
+
+@require_http_methods(["GET"])
+def youtube_download_file(request, token, ui_lang=None):
+    if not YOUTUBE_DOWNLOAD_TOKEN_PATTERN.fullmatch(token):
+        raise Http404
+    token_dir = YOUTUBE_DOWNLOAD_TOKEN_DIR / token
+    if not token_dir.exists():
+        raise Http404
+    if time.time() - token_dir.stat().st_mtime > YOUTUBE_DOWNLOAD_TOKEN_TTL:
+        shutil.rmtree(token_dir, ignore_errors=True)
+        raise Http404
+    files = [f for f in token_dir.iterdir() if f.is_file()]
+    if not files:
+        raise Http404
+    file_path = files[0]
+    ext = file_path.suffix.lower()
+    content_type = "audio/mpeg" if ext == ".mp3" else "video/mp4"
+    as_attachment = request.GET.get("dl") == "1"
+    response = FileResponse(file_path.open("rb"), content_type=content_type, as_attachment=as_attachment, filename=file_path.name)
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+def youtube_save_to_handrive(request, ui_lang=None):
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+    if not request.user.is_authenticated:
+        return JsonResponse({"ok": False, "error": "Login required." if is_english else "로그인이 필요합니다."}, status=401)
+    try:
+        payload = json.loads(request.body)
+    except (TypeError, ValueError):
+        payload = {}
+    token = str(payload.get("token", "")).strip()
+    if not YOUTUBE_DOWNLOAD_TOKEN_PATTERN.fullmatch(token):
+        return JsonResponse({"ok": False, "error": "Invalid token." if is_english else "잘못된 토큰입니다."}, status=400)
+    token_dir = YOUTUBE_DOWNLOAD_TOKEN_DIR / token
+    if not token_dir.exists() or time.time() - token_dir.stat().st_mtime > YOUTUBE_DOWNLOAD_TOKEN_TTL:
+        shutil.rmtree(token_dir, ignore_errors=True)
+        return JsonResponse({"ok": False, "error": "File expired." if is_english else "파일이 만료되었습니다."}, status=404)
+    files = [f for f in token_dir.iterdir() if f.is_file()]
+    if not files:
+        return JsonResponse({"ok": False, "error": "File not found." if is_english else "파일을 찾을 수 없습니다."}, status=404)
+    file_path = files[0]
+    try:
+        from .handrive_views import get_request_handrive_root_dir, get_scoped_handrive_home_dir
+        root = get_request_handrive_root_dir(request)
+        scoped_home = get_scoped_handrive_home_dir(request)
+        base_dir = (root / scoped_home) if scoped_home else root
+        dest_dir = base_dir / "youtube-downloader"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = dest_dir / file_path.name
+        if dest_path.exists():
+            stem, suffix = file_path.stem, file_path.suffix
+            counter = 1
+            while dest_path.exists():
+                dest_path = dest_dir / f"{stem} ({counter}){suffix}"
+                counter += 1
+        shutil.copy2(str(file_path), str(dest_path))
+    except (OSError, PermissionError):
+        return JsonResponse({"ok": False, "error": "Save failed." if is_english else "저장에 실패했습니다."}, status=500)
+
+    dest_relative_dir = "youtube-downloader"
+    if scoped_home:
+        dest_relative_dir = f"{scoped_home.strip('/')}/youtube-downloader"
+    list_url = reverse(
+        "main:handrive_list_lang",
+        kwargs={"ui_lang": resolved_lang, "folder_path": dest_relative_dir},
+    )
+    return JsonResponse({"ok": True, "filename": dest_path.name, "list_url": list_url})
 
 
 def nyt_article_api(request):

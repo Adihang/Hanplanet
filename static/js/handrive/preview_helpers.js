@@ -114,22 +114,17 @@
     }
 
     function syncPreviewImageZoom(previewContent, previewZoomWrap, nextZoom) {
-        // Image/video previews reset scroll when zoom changes so users never land on stale pan offsets.
         var imageWrap = previewContent
             ? previewContent.querySelector(".handrive-media-image-wrap")
             : null;
-        var videoWrap = previewContent
-            ? previewContent.querySelector(".handrive-media-video-wrap")
-            : null;
-        var mediaWrap = imageWrap || videoWrap;
-        var hasMedia = Boolean(mediaWrap);
+        var hasImage = Boolean(imageWrap);
         if (previewZoomWrap) {
-            previewZoomWrap.hidden = !hasMedia;
+            previewZoomWrap.hidden = !hasImage;
         }
-        if (!hasMedia) {
+        if (!hasImage) {
             return;
         }
-        mediaWrap.style.transform = "scale(" + String(nextZoom) + ")";
+        imageWrap.style.transform = "scale(" + String(nextZoom) + ")";
         if (previewContent) {
             previewContent.scrollLeft = 0;
             previewContent.scrollTop = 0;

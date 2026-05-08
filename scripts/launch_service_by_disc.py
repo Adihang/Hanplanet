@@ -260,6 +260,8 @@ def main() -> int:
                 "127.0.0.1:8000",
                 "--chdir",
                 str(REPO_ROOT),
+                "--workers",
+                "2",
                 "--timeout",
                 "360",
             ]

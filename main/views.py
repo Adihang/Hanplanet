@@ -1457,6 +1457,27 @@ def favicon_ico(request):
     raise Http404("favicon.ico not found")
 
 
+def image_pip_demo_sample_image(request, ui_lang=None):
+    """Serve the public sample image through a stable demo URL."""
+    static_root = Path(getattr(settings, "STATIC_ROOT", "") or "")
+    base_dir = Path(getattr(settings, "BASE_DIR", Path.cwd()))
+    sample_path = Path("media/Spikip/speaki_default/icon/main.png")
+    candidates = [
+        static_root / sample_path if static_root else None,
+        base_dir / "static" / sample_path,
+    ]
+
+    for candidate in candidates:
+        if candidate and candidate.exists() and candidate.is_file():
+            response = FileResponse(candidate.open("rb"), content_type="image/png")
+            response["Cache-Control"] = "public, max-age=2592000, immutable"
+            response["Content-Disposition"] = 'inline; filename="image-pip-sample.png"'
+            response["Access-Control-Allow-Origin"] = "*"
+            return response
+
+    raise Http404("sample image not found")
+
+
 def main_legacy_redirect(request):
     """Redirect the historical root portfolio URL onto the current localized landing flow."""
     return portfolio_root_redirect(request)
@@ -1566,6 +1587,17 @@ def minigame_page(request, ui_lang=None):
             "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
         },
         {
+            "slug": "image-pip-demo",
+            "title": "Image PiP Demo" if is_english else "이미지 PiP 데모",
+            "url": reverse("main:image_pip_demo_lang", kwargs={"ui_lang": resolved_lang}),
+            "description": (
+                "Drop or paste an image, then click it to open Picture-in-Picture."
+                if is_english
+                else "이미지를 드롭하거나 붙여넣고 클릭해서 PiP로 띄웁니다."
+            ),
+            "image_url": build_public_absolute_url(static("media/Spikip/speaki_default/icon/main.png")),
+        },
+        {
             "slug": "youtube-downloader",
             "title": "YouTube Downloader" if is_english else "유튜브 다운로더",
             "url": reverse("main:youtube_downloader_lang", kwargs={"ui_lang": resolved_lang}),
@@ -1637,6 +1669,62 @@ def minigame_page(request, ui_lang=None):
     response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response["Pragma"] = "no-cache"
     return response
+
+
+def image_pip_demo_page(request, ui_lang=None):
+    """Render a small demo for opening images in native Picture-in-Picture."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+    context = {
+        "page_title": "Image PiP Demo" if is_english else "이미지 PiP 데모",
+        "home_label": "Home" if is_english else "홈",
+        "minigame_label": "Mini Game" if is_english else "미니게임",
+        "minigame_url": reverse("main:minigame_lang", kwargs={"ui_lang": resolved_lang}),
+        "sample_image_url": reverse("main:image_pip_demo_sample_image"),
+        "drop_label": (
+            "Drop an image here or paste one with Ctrl/Command+V."
+            if is_english
+            else "이미지를 이 영역에 드롭하거나 Ctrl/Command+V로 붙여넣으세요."
+        ),
+        "click_label": (
+            "Click the image to open it in Picture-in-Picture."
+            if is_english
+            else "이미지를 클릭하면 Picture-in-Picture로 열립니다."
+        ),
+        "status_ready": "Ready" if is_english else "준비됨",
+        "status_loaded": "Image loaded" if is_english else "이미지를 불러왔습니다",
+        "status_pip_opened": "Picture-in-Picture opened" if is_english else "PiP를 열었습니다",
+        "status_unsupported": (
+            "This browser does not support image Picture-in-Picture."
+            if is_english
+            else "이 브라우저는 이미지 PiP를 지원하지 않습니다."
+        ),
+        "status_missing_image": (
+            "Could not find an image."
+            if is_english
+            else "이미지를 찾을 수 없습니다."
+        ),
+        "status_invalid_file": (
+            "Use an image file."
+            if is_english
+            else "이미지 파일을 사용해주세요."
+        ),
+        "example_code_label": "Example Code" if is_english else "예제코드",
+        "example_code_title": "Single-file HTML example" if is_english else "HTML 단일 파일 예제",
+        "example_code_close_label": "Close" if is_english else "닫기",
+        "example_code_copy_label": "Copy" if is_english else "복사",
+        "example_code_copied_label": "Copied" if is_english else "복사됨",
+        "meta_title": "Image PiP Demo" if is_english else "이미지 PiP 데모",
+        "meta_og_title": "Image PiP Demo" if is_english else "이미지 PiP 데모",
+        "meta_description": (
+            "A Hanplanet demo for opening pasted or dropped images in browser Picture-in-Picture."
+            if is_english
+            else "붙여넣거나 드롭한 이미지를 브라우저 Picture-in-Picture로 여는 Hanplanet 데모입니다."
+        ),
+    }
+    context["meta_og_description"] = context["meta_description"]
+    apply_ui_context(request, context, resolved_lang)
+    return render(request, "fun/image_pip_demo.html", context)
 
 
 def bubble_page(request, ui_lang=None):

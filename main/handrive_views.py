@@ -666,6 +666,8 @@ DOCS_TEXT = {
         "file_extension_quick_label": "확장자 빠른 선택",
         "file_extension_custom_option": "직접 입력",
         "file_extension_placeholder": ".md",
+        "image_pip_no_image_error": "PiP로 띄울 이미지를 찾을 수 없습니다.",
+        "image_pip_unsupported_error": "이 브라우저는 이미지 PiP를 지원하지 않습니다.",
         "zoom_out_button": "축소",
         "zoom_in_button": "확대",
         "content_label": "내용",
@@ -963,6 +965,8 @@ DOCS_TEXT = {
         "file_extension_quick_label": "Extension quick pick",
         "file_extension_custom_option": "Custom input",
         "file_extension_placeholder": ".md",
+        "image_pip_no_image_error": "Could not find an image to show in PiP.",
+        "image_pip_unsupported_error": "This browser does not support image PiP.",
         "zoom_out_button": "Zoom out",
         "zoom_in_button": "Zoom in",
         "content_label": "Content",
@@ -8772,7 +8776,7 @@ def _hls_resolve(request) -> tuple[Path, str] | None:
         file_path, rel_path = normalize_handrive_relative_path(
             request.GET.get("path"), must_exist=True
         )
-    except (ValueError, FileNotFoundError):
+    except (ValueError, FileNotFoundError, OSError, PermissionError):
         return None
     if not has_handrive_read_access(request, rel_path):
         return None
@@ -8795,10 +8799,11 @@ def handrive_api_hls_status(request):
 
     try:
         cache_key = hls.get_cache_key(file_path)
-    except OSError:
+        status = hls.get_status(cache_key)
+    except (OSError, PermissionError):
         return JsonResponse({"status": "error", "progress": 0}, status=404)
 
-    return JsonResponse(hls.get_status(cache_key))
+    return JsonResponse(status)
 
 
 @require_http_methods(["GET"])
@@ -8817,13 +8822,13 @@ def handrive_api_hls_manifest(request):
 
     try:
         cache_key = hls.get_cache_key(file_path)
-    except OSError:
+        status = hls.get_status(cache_key)
+    except (OSError, PermissionError):
         return HttpResponse(status=404)
 
-    status = hls.get_status(cache_key)
-
     if status["status"] != "ready":
-        hls.start_transcoding(file_path, cache_key)
+        if not hls.start_transcoding(file_path, cache_key):
+            return JsonResponse({"status": "error", "progress": 0}, status=200)
         return JsonResponse({"status": status["status"], "progress": status["progress"]}, status=202)
 
     master_path = hls.get_master_playlist_path(cache_key)

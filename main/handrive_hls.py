@@ -21,10 +21,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import queue
 import re
 import subprocess
+import tempfile
 import threading
+import time
 from pathlib import Path
 
 from django.conf import settings
@@ -67,8 +70,26 @@ def _ensure_workers() -> None:
     if _workers_started:
         return
     _workers_started = True
+    # 프로세스 재시작 후 stale "transcoding"/"queued" 상태 초기화
+    _reset_stale_statuses()
     for _ in range(_WORKER_COUNT):
         threading.Thread(target=_worker_loop, daemon=True).start()
+
+
+def _reset_stale_statuses() -> None:
+    """프로세스 시작 시 이전 프로세스가 남긴 transcoding/queued 상태를 error로 리셋."""
+    cache_root = _hls_cache_root()
+    if not cache_root.exists():
+        return
+    for status_file in cache_root.glob("*/status.json"):
+        try:
+            data = json.loads(status_file.read_text(encoding="utf-8"))
+            if data.get("status") in ("transcoding", "queued"):
+                cache_dir = status_file.parent
+                _write_status(cache_dir, "error", 0)
+                logger.info("[HLS] stale 상태 초기화: %s", cache_dir.name)
+        except Exception:
+            pass
 
 
 def _worker_loop() -> None:
@@ -105,7 +126,18 @@ def _read_status_dict(cache_dir: Path) -> dict:
 
 def _write_status(cache_dir: Path, status: str, progress: int, **extra) -> None:
     data = {"status": status, "progress": progress, **extra}
-    _status_path(cache_dir).write_text(json.dumps(data), encoding="utf-8")
+    target = _status_path(cache_dir)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=cache_dir)
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data))
+        os.replace(tmp_path, target)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        raise
 
 
 def get_status(cache_key: str) -> dict:
@@ -117,7 +149,12 @@ def get_status(cache_key: str) -> dict:
     if not p.exists():
         return {"status": "not_started", "progress": 0}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if data.get("status") in ("queued", "transcoding"):
+            age_seconds = time.time() - p.stat().st_mtime
+            if age_seconds > 45:
+                return {"status": "not_started", "progress": 0}
+        return data
     except Exception:
         return {"status": "error", "progress": 0}
 
@@ -217,19 +254,26 @@ def _pick_qualities(source_height: int) -> list[tuple[str, str, int, int]]:
 
 # ── 트랜스코딩 시작 ───────────────────────────────────────────────────────
 
-def start_transcoding(file_path: Path, cache_key: str) -> None:
+def start_transcoding(file_path: Path, cache_key: str) -> bool:
     """이미 큐에 있거나 진행 중이거나 완료된 경우 아무것도 하지 않음."""
     _ensure_workers()
     with _lock:
         st = get_status(cache_key)
         if st["status"] in ("transcoding", "ready", "queued"):
-            return
+            return True
         _queued.add(cache_key)
 
     cache_dir = _hls_cache_root() / cache_key
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    _write_status(cache_dir, "queued", 0)
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        _write_status(cache_dir, "queued", 0)
+    except OSError:
+        with _lock:
+            _queued.discard(cache_key)
+        logger.warning("[HLS] 캐시 쓰기 실패: %s", cache_key, exc_info=True)
+        return False
     _job_queue.put((file_path, cache_key))
+    return True
 
 
 def _transcode_all(file_path: Path, cache_key: str) -> None:
@@ -248,6 +292,10 @@ def _transcode_all(file_path: Path, cache_key: str) -> None:
 
         # ② FastStart MP4 복사본
         faststart_ok = _make_faststart(file_path, cache_dir)
+        st = _read_status_dict(cache_dir)
+        _write_status(cache_dir, "transcoding", 5,
+                      poster=st.get("poster", False),
+                      faststart=faststart_ok)
 
         # ③ HLS 화질별 세그먼트
         for i, (label, vf, vbr, abr) in enumerate(qualities):
@@ -255,8 +303,27 @@ def _transcode_all(file_path: Path, cache_key: str) -> None:
             q_dir.mkdir(exist_ok=True)
             playlist    = q_dir / "playlist.m3u8"
             seg_pattern = str(q_dir / "seg%03d.ts")
+            progress_start = 5 + int(i / n * 85)
+            progress_end = 5 + int((i + 1) / n * 85)
 
-            ok = _run_ffmpeg(file_path, vf, vbr, abr, playlist, seg_pattern)
+            def update_quality_progress(ratio: float, *, start=progress_start, end=progress_end):
+                progress = start + int(max(0.0, min(1.0, ratio)) * max(1, end - start))
+                st_now = _read_status_dict(cache_dir)
+                _write_status(cache_dir, "transcoding", progress,
+                              poster=st_now.get("poster", False),
+                              faststart=faststart_ok)
+
+            update_quality_progress(0.0)
+            ok = _run_ffmpeg(
+                file_path,
+                vf,
+                vbr,
+                abr,
+                playlist,
+                seg_pattern,
+                duration=duration,
+                progress_callback=update_quality_progress,
+            )
             if not ok:
                 _write_status(cache_dir, "error", 0)
                 logger.error("[HLS] 트랜스코딩 실패: %s %s", file_path.name, label)
@@ -296,24 +363,64 @@ def _run_ffmpeg(
     abr: int,
     playlist: Path,
     seg_pattern: str,
+    *,
+    duration: float = 0.0,
+    progress_callback=None,
 ) -> bool:
     """VideoToolbox(hw) 시도 → 실패 시 libx264(sw) 재시도."""
-    base_args = [
-        _ffmpeg(), "-y", "-i", str(src),
-        "-vf", vf,
-        "-b:v", f"{vbr}k",
-        "-c:a", "aac", "-b:a", f"{abr}k",
-        "-hls_time", "6",
-        "-hls_playlist_type", "vod",
-        "-hls_segment_filename", seg_pattern,
-        "-f", "hls", str(playlist),
-    ]
-
     for codec in ("h264_videotoolbox", "libx264"):
-        cmd = base_args[:4] + ["-c:v", codec] + base_args[4:]
+        cmd = [
+            _ffmpeg(), "-y", "-nostats", "-progress", "pipe:1",
+            "-i", str(src),
+            "-c:v", codec,
+            "-vf", vf,
+            "-b:v", f"{vbr}k",
+            "-c:a", "aac", "-b:a", f"{abr}k",
+            "-hls_time", "6",
+            "-hls_playlist_type", "vod",
+            "-hls_segment_filename", seg_pattern,
+            "-f", "hls", str(playlist),
+        ]
         try:
-            r = subprocess.run(cmd, capture_output=True, timeout=7200)
-            if r.returncode == 0:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                bufsize=1,
+            )
+            started_at = time.time()
+            last_update_at = 0.0
+            if proc.stdout:
+                for line in proc.stdout:
+                    if time.time() - started_at > 7200:
+                        proc.kill()
+                        logger.error("[HLS] ffmpeg 타임아웃: %s", codec)
+                        return False
+                    if not duration or progress_callback is None:
+                        continue
+                    key, _, value = line.strip().partition("=")
+                    if key != "out_time_ms":
+                        continue
+                    now = time.time()
+                    if now - last_update_at < 1.5:
+                        continue
+                    try:
+                        ratio = (int(value) / 1_000_000) / duration
+                    except (TypeError, ValueError, ZeroDivisionError):
+                        continue
+                    try:
+                        progress_callback(ratio)
+                        last_update_at = now
+                    except OSError:
+                        pass
+            return_code = proc.wait(timeout=10)
+            if return_code == 0:
+                if progress_callback is not None:
+                    try:
+                        progress_callback(1.0)
+                    except OSError:
+                        pass
                 return True
         except subprocess.TimeoutExpired:
             logger.error("[HLS] ffmpeg 타임아웃: %s", codec)
@@ -407,7 +514,17 @@ def _make_thumbnail_sprite(src: Path, cache_dir: Path, duration: float) -> bool:
             f"sprite.jpg#xywh={x},{y},{THUMB_W},{THUMB_H}",
             "",
         ]
-    vtt_path.write_text("\n".join(lines), encoding="utf-8")
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=cache_dir)
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        os.replace(tmp_path, vtt_path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        return False
     return True
 
 
@@ -428,4 +545,15 @@ def _build_master(cache_dir: Path, qualities: list[tuple[str, str, int, int]]) -
         bw = (vbr + abr) * 1000
         lines.append(f'#EXT-X-STREAM-INF:BANDWIDTH={bw},RESOLUTION={w}x{h},NAME="{label}"')
         lines.append(f"{label}/playlist.m3u8")
-    (cache_dir / "master.m3u8").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    target = cache_dir / "master.m3u8"
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=cache_dir)
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        os.replace(tmp_path, target)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        raise

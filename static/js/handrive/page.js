@@ -579,6 +579,98 @@
         );
     }
 
+    let imagePipSession = null;
+
+    function closeImagePipSession() {
+        if (!imagePipSession) {
+            return;
+        }
+        const session = imagePipSession;
+        imagePipSession = null;
+        if (session.video) {
+            session.video.remove();
+        }
+        if (session.stream) {
+            session.stream.getTracks().forEach(function (track) {
+                track.stop();
+            });
+        }
+    }
+
+    async function openImagePictureInPicture(imageElement) {
+        if (!imageElement) {
+            throw new Error(t("image_pip_no_image_error", "PiP로 띄울 이미지를 찾을 수 없습니다."));
+        }
+        if (!document.pictureInPictureEnabled || typeof HTMLVideoElement === "undefined") {
+            throw new Error(t("image_pip_unsupported_error", "이 브라우저는 이미지 PiP를 지원하지 않습니다."));
+        }
+        if (typeof HTMLCanvasElement === "undefined" || typeof HTMLCanvasElement.prototype.captureStream !== "function") {
+            throw new Error(t("image_pip_unsupported_error", "이 브라우저는 이미지 PiP를 지원하지 않습니다."));
+        }
+        if (document.pictureInPictureElement) {
+            await document.exitPictureInPicture().catch(function () {});
+        }
+        closeImagePipSession();
+
+        if (!imageElement.complete && typeof imageElement.decode === "function") {
+            await imageElement.decode().catch(function () {});
+        }
+
+        const sourceWidth = Number(imageElement.naturalWidth || imageElement.width || imageElement.clientWidth || 0);
+        const sourceHeight = Number(imageElement.naturalHeight || imageElement.height || imageElement.clientHeight || 0);
+        if (!sourceWidth || !sourceHeight) {
+            throw new Error(t("image_pip_no_image_error", "PiP로 띄울 이미지를 찾을 수 없습니다."));
+        }
+
+        const maxSide = 1280;
+        const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+        canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+        const context = canvas.getContext("2d");
+        if (!context) {
+            throw new Error(t("image_pip_unsupported_error", "이 브라우저는 이미지 PiP를 지원하지 않습니다."));
+        }
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        try {
+            context.drawImage(imageElement, 0, 0, canvas.width, canvas.height);
+        } catch (error) {
+            throw new Error(t("image_pip_no_image_error", "PiP로 띄울 이미지를 찾을 수 없습니다."));
+        }
+
+        const stream = canvas.captureStream(1);
+        const video = document.createElement("video");
+        video.muted = true;
+        video.playsInline = true;
+        video.srcObject = stream;
+        video.style.cssText = "position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0;pointer-events:none;";
+        document.body.appendChild(video);
+
+        imagePipSession = { stream: stream, video: video };
+        video.addEventListener("leavepictureinpicture", closeImagePipSession, { once: true });
+        try {
+            await video.play();
+            await video.requestPictureInPicture();
+        } catch (error) {
+            closeImagePipSession();
+            throw error;
+        }
+    }
+
+    function openClickedImagePictureInPicture(event) {
+        if (!event || event.button !== 0) {
+            return;
+        }
+        const target = event.target && event.target.closest
+            ? event.target.closest(".handrive-media-image-element")
+            : null;
+        if (!target) {
+            return;
+        }
+        event.preventDefault();
+        openImagePictureInPicture(target).catch(alertError);
+    }
+
     // 문서 렌더링 콘텐츠 모드 클래스를 적용하는 함수
     function applyHandriveRenderedContentModeClass(targetElement, renderMode, renderClass) {
         // Preview renderers return both a high-level mode and optional CSS class hints.
@@ -7428,6 +7520,8 @@
         }
 
         if (previewContent) {
+            previewContent.addEventListener("click", openClickedImagePictureInPicture);
+
             let listPreviewFontSize = 16;
             previewContent.addEventListener("wheel", function (event) {
                 if (!event.ctrlKey && !event.metaKey) return;
@@ -8200,6 +8294,10 @@
             viewZoomInButton.addEventListener("click", function () {
                 setViewImageZoom(viewImageZoom + 0.25);
             });
+        }
+
+        if (contentArticle) {
+            contentArticle.addEventListener("click", openClickedImagePictureInPicture);
         }
 
         const isTextArticle = contentArticle && !contentArticle.classList.contains("handrive-media");

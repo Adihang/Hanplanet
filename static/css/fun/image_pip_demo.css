@@ -1,0 +1,192 @@
+.image-pip-demo-content {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 14px;
+}
+
+.image-pip-demo-panel {
+    width: min(900px, 100%);
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: var(--handrive-radius-lg);
+    background: var(--handrive-surface-muted);
+    padding: 14px;
+    box-sizing: border-box;
+}
+
+.image-pip-demo-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+}
+
+.image-pip-demo-drop-label,
+.image-pip-demo-click-label,
+.image-pip-demo-status {
+    margin: 0;
+    color: var(--handrive-text-muted);
+    font-size: 15px;
+    line-height: 1.4;
+}
+
+.image-pip-demo-click-label {
+    color: var(--handrive-text-stronger);
+    font-weight: 600;
+}
+
+.image-pip-demo-stage {
+    position: relative;
+    width: 100%;
+    min-height: 420px;
+    border: 1px dashed var(--handrive-border-mid);
+    border-radius: 8px;
+    background: var(--shared-card-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+    overflow: hidden;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.image-pip-demo-stage.is-dragover {
+    border-color: var(--handrive-accent, #2563eb);
+    background: var(--handrive-hover-soft);
+}
+
+.image-pip-demo-image {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: min(70vh, 620px);
+    object-fit: contain;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);
+}
+
+.image-pip-demo-status {
+    min-height: 21px;
+    margin-top: 10px;
+}
+
+.image-pip-demo-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+.image-pip-demo-code-button {
+    min-height: 38px;
+}
+
+.image-demo-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 3600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--handrive-backdrop-strong, var(--site-backdrop-strong, rgba(0, 0, 0, 0.54)));
+}
+
+.image-demo-modal {
+    width: min(980px, 100%);
+    max-height: min(82vh, 780px);
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: var(--handrive-radius-lg);
+    background: var(--handrive-elevated-bg, var(--shared-card-bg));
+    color: var(--handrive-text);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: var(--handrive-shadow-md, var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28)));
+}
+
+.image-demo-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--handrive-border-soft);
+    background: var(--handrive-surface-muted);
+}
+
+.image-demo-modal-title {
+    margin: 0;
+    color: var(--handrive-text-stronger);
+    font-size: 16px;
+    line-height: 1.35;
+}
+
+.image-demo-modal-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.image-pip-demo-copy-button {
+    min-height: 34px;
+}
+
+.image-demo-modal-close {
+    appearance: none;
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: var(--handrive-radius-sm);
+    background: var(--shared-card-bg);
+    color: var(--handrive-text-stronger);
+    font-size: 25px;
+    line-height: 1;
+    cursor: pointer;
+    transition: var(--handrive-transition-fast);
+}
+
+.image-demo-modal-close:hover,
+.image-demo-modal-close:focus-visible {
+    background: var(--handrive-hover-soft);
+    outline: none;
+}
+
+.image-pip-demo-code-block {
+    margin: 0;
+    padding: 16px;
+    overflow: auto;
+    color: #d1d5db;
+    background: #0b1120;
+    font-family: "SFMono-Regular", "Cascadia Code", "JetBrains Mono", Consolas, Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    tab-size: 2;
+    user-select: text;
+}
+
+.image-pip-demo-code-block code {
+    color: inherit;
+    white-space: pre;
+}
+
+.image-pip-token-tag { color: #7dd3fc; }
+.image-pip-token-attr { color: #facc15; }
+.image-pip-token-string { color: #86efac; }
+.image-pip-token-keyword { color: #c084fc; }
+.image-pip-token-function { color: #93c5fd; }
+.image-pip-token-comment { color: #64748b; }
+
+@media (max-width: 720px) {
+    .image-pip-demo-stage {
+        min-height: 300px;
+        padding: 12px;
+    }
+
+    .image-pip-demo-panel {
+        padding: 10px;
+    }
+
+
+}

@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% load static_versioned %}
+
+{% block body_class %}ui-page image-pip-demo-page{% endblock %}
+
+{% block extra_head %}
+{% include 'handrive/_assets_head.html' %}
+<link rel="stylesheet" type="text/css" href="{% static_v 'css/fun/image_pip_demo.css' %}">
+<script src="{% static_v 'js/fun/image_pip_demo.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+{% endblock %}
+
+{% block content %}
+<div class="ui-toolbar-wrap">
+    <div class="ui-shell ui-toolbar">
+        <div class="ui-toolbar-left">
+            <div class="ui-title-row">
+                <h1 class="ui-title">{{ page_title }}</h1>
+            </div>
+            <div class="ui-subtitle ui-path-breadcrumbs">
+                <a class="ui-path-link" href="/">{{ home_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <a class="ui-path-link" href="{{ minigame_url }}">{{ minigame_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <span class="ui-path-current">{{ page_title }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<main class="ui-shell ui-content image-pip-demo-content">
+    <section
+        class="image-pip-demo-panel"
+        data-image-pip-demo
+        data-status-ready="{{ status_ready }}"
+        data-status-loaded="{{ status_loaded }}"
+        data-status-pip-opened="{{ status_pip_opened }}"
+        data-status-unsupported="{{ status_unsupported }}"
+        data-status-missing-image="{{ status_missing_image }}"
+        data-status-invalid-file="{{ status_invalid_file }}"
+        aria-label="{{ page_title }}"
+    >
+        <div class="image-pip-demo-copy">
+            <p class="image-pip-demo-drop-label">{{ drop_label }}</p>
+            <p class="image-pip-demo-click-label">{{ click_label }}</p>
+        </div>
+        <div class="image-pip-demo-stage" data-image-pip-dropzone>
+            <img
+                class="image-pip-demo-image"
+                data-image-pip-image
+                src="{{ sample_image_url }}"
+                alt="{{ page_title }}"
+                draggable="false"
+            >
+        </div>
+        <p class="image-pip-demo-status" data-image-pip-status role="status" aria-live="polite">{{ status_ready }}</p>
+        <div class="image-pip-demo-actions">
+            <button class="ui-btn image-pip-demo-code-button" type="button" data-image-pip-code-open>
+                {{ example_code_label }}
+            </button>
+        </div>
+    </section>
+</main>
+
+{% include "popup/fun/image_demo_code_modal.html" %}
+{% include "partials/site_footer_links.html" %}
+{% endblock %}

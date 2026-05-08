@@ -176,7 +176,7 @@ def build_handrive_html_live_document(html_source: str, *, companion_css: str = 
         "content=\"default-src 'none'; "
         "script-src 'unsafe-inline'; "
         "style-src 'unsafe-inline'; "
-        "img-src data: blob:; "
+        "img-src data: blob: https://www.hanplanet.com; "
         "font-src data:; "
         "media-src data: blob:; "
         "connect-src 'none'; "
@@ -221,6 +221,7 @@ def render_handrive_html_live_safely(html_source: str, *, companion_css: str = "
         '<div class="handrive-html-live-wrap">'
         '<iframe class="handrive-html-live-frame" '
         'sandbox="allow-scripts" '
+        'allow="picture-in-picture" '
         'referrerpolicy="no-referrer" '
         f'srcdoc="{escaped_srcdoc}"></iframe>'
         "</div>"

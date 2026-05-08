@@ -4016,6 +4016,10 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     object-fit: contain;
 }
 
+.handrive-media-image-element {
+    cursor: pointer;
+}
+
 .handrive-media-pdf-element {
     display: block;
     width: 100%;
@@ -4253,8 +4257,155 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
 
 /* 2행 버튼들 높이 통일 */
 .video-js .vjs-control-bar > .vjs-control:not(.vjs-progress-control) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
     height: 36px;
+    min-width: 36px;
+    padding: 0;
     line-height: 36px;
+}
+
+.video-js .vjs-control-bar .vjs-button > .vjs-icon-placeholder,
+.video-js .vjs-control-bar .vjs-button > .vjs-icon-placeholder::before {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    font-size: 20px;
+    line-height: 20px;
+    position: static;
+    inset: auto;
+    margin: 0;
+}
+
+.video-js .vjs-control-bar .vjs-button > .vjs-icon-placeholder::before {
+    font-family: VideoJS;
+}
+
+.video-js .vjs-control-bar .vjs-play-control > .vjs-icon-placeholder,
+.video-js .vjs-control-bar .vjs-play-control > .vjs-icon-placeholder::before,
+.video-js .vjs-control-bar .vjs-fullscreen-control > .vjs-icon-placeholder,
+.video-js .vjs-control-bar .vjs-fullscreen-control > .vjs-icon-placeholder::before {
+    width: 24px;
+    height: 24px;
+    font-size: 24px;
+    line-height: 24px;
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel {
+    position: relative;
+    width: 36px;
+    min-width: 36px;
+    overflow: visible;
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel .vjs-mute-control {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    line-height: 36px;
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel .vjs-mute-control > .vjs-icon-placeholder {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    line-height: 20px;
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel .vjs-volume-control.vjs-volume-vertical {
+    position: absolute;
+    left: 50%;
+    bottom: 40px;
+    width: 34px;
+    height: 118px;
+    margin: 0;
+    padding: 12px 0;
+    transform: translateX(-50%);
+    border-radius: 18px;
+    background: rgba(15, 15, 15, 0.92);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel .vjs-volume-control.vjs-volume-vertical,
+.video-js .vjs-control-bar .vjs-volume-panel.vjs-hover .vjs-volume-control.vjs-volume-vertical,
+.video-js .vjs-control-bar .vjs-volume-panel.vjs-slider-active .vjs-volume-control.vjs-volume-vertical,
+.video-js .vjs-control-bar .vjs-volume-panel:active .vjs-volume-control.vjs-volume-vertical,
+.video-js .vjs-control-bar .vjs-volume-panel:focus-within .vjs-volume-control.vjs-volume-vertical {
+    left: 50%;
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel .vjs-volume-bar.vjs-slider-vertical {
+    width: 4px;
+    height: 88px;
+    margin: 0 auto;
+    border-radius: 999px;
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel .vjs-slider-vertical .vjs-volume-level {
+    width: 4px;
+    border-radius: 999px;
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel .vjs-slider-vertical .vjs-volume-level::before {
+    top: -7px;
+    left: -6px;
+    font-size: 16px;
+    line-height: 16px;
+}
+
+.video-js .vjs-control-bar .vjs-playback-rate {
+    width: 46px;
+    min-width: 46px;
+}
+
+.video-js .vjs-control-bar .vjs-playback-rate .vjs-playback-rate-value {
+    position: static;
+    width: auto;
+    height: auto;
+    font-size: 12px;
+    line-height: 36px;
+}
+
+.video-js .vjs-control-bar .vjs-quality-selector {
+    width: 36px;
+    min-width: 36px;
+}
+
+.video-js .vjs-control-bar .vjs-quality-selector .vjs-menu-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    line-height: 36px;
+}
+
+.video-js .vjs-control-bar .vjs-quality-selector .vjs-icon-placeholder,
+.video-js .vjs-control-bar .vjs-quality-selector .vjs-icon-placeholder::before {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    font-size: 20px;
+    line-height: 20px;
+    position: static;
+    margin: 0;
+}
+
+.video-js .vjs-control-bar .vjs-quality-selector .vjs-icon-placeholder::before {
+    font-family: VideoJS;
 }
 
 /* Video.js 기본 CSS가 숨기는 시간 표시 강제 노출 */
@@ -4316,28 +4467,30 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
 
 /* 10초 스킵 버튼 아이콘 크기 보정 */
 .video-js .vjs-seek-button .vjs-icon-placeholder::before {
-    font-size: 1.6em;
+    font-size: 20px;
 }
 
 /* 썸네일 프리뷰 툴팁 */
-.video-js .vjs-thumb-preview {
+.vjs-thumb-preview {
     position: absolute;
-    bottom: calc(100% + 6px);
     transform: translateX(-50%);
     background: rgba(0, 0, 0, 0.85);
     border-radius: 4px;
     overflow: hidden;
     pointer-events: none;
-    z-index: 20;
+    z-index: 3000;
     display: flex;
     flex-direction: column;
     align-items: center;
     box-shadow: 0 2px 8px rgba(0,0,0,0.5);
 }
-.video-js .vjs-thumb-preview canvas {
+.vjs-thumb-preview--floating {
+    position: fixed;
+}
+.vjs-thumb-preview canvas {
     display: block;
 }
-.video-js .vjs-thumb-time {
+.vjs-thumb-time {
     color: #fff;
     font-size: 11px;
     padding: 3px 6px 4px;
@@ -4351,6 +4504,8 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     cursor: pointer;
 }
 .video-js .vjs-pip-button svg {
+    width: 20px;
+    height: 20px;
     vertical-align: middle;
 }
 .video-js .vjs-pip-button.vjs-pip-active {
@@ -4476,7 +4631,8 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 .video-js .vjs-volume-level::before {
     color: #fff;
 }
-.video-js .vjs-volume-bar.vjs-slider-horizontal {
+.video-js .vjs-volume-bar.vjs-slider-horizontal,
+.video-js .vjs-volume-bar.vjs-slider-vertical {
     background: rgba(255, 255, 255, 0.18);
 }
 

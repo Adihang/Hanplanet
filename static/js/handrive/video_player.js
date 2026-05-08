@@ -77,7 +77,7 @@
                     'timeDivider',
                     'durationDisplay',
                     'customControlSpacer',
-                    { name: 'volumePanel', inline: true },
+                    { name: 'volumePanel', inline: false },
                     'playbackRateMenuButton',
                     'fullscreenToggle',
                 ],
@@ -212,14 +212,38 @@
         const videoEl = player.el().querySelector('video');
         const vttUrl  = (videoEl && videoEl.dataset.thumbnailVttUrl) || (el && el.dataset.thumbnailVttUrl);
         if (vttUrl) {
-            setupVttThumbnails(player, vttUrl);
+            setupVttThumbnails(player, vttUrl, el);
         } else {
             setupRealtimeThumbnails(player, el);
         }
     }
 
+    function attachThumbOverlay(player, tooltip) {
+        tooltip.hidden = true;
+        tooltip.classList.add('vjs-thumb-preview--floating');
+        document.body.appendChild(tooltip);
+        player.on('dispose', () => tooltip.remove());
+    }
+
+    function positionThumbOverlay(tooltip, progEl, event, thumbWidth) {
+        const progRect = progEl.getBoundingClientRect();
+        const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+        const margin = 8;
+        const tooltipHeight = tooltip.offsetHeight || 118;
+        const minLeft = margin + (thumbWidth / 2);
+        const maxLeft = Math.max(minLeft, viewportWidth - margin - (thumbWidth / 2));
+        const left = Math.max(minLeft, Math.min(event.clientX, maxLeft));
+        let top = progRect.top - tooltipHeight - 8;
+        if (top < margin) {
+            top = progRect.bottom + 8;
+        }
+        tooltip.style.left = left + 'px';
+        tooltip.style.top = top + 'px';
+        tooltip.style.bottom = '';
+    }
+
     // VTT 스프라이트 방식: 미리 생성된 sprite.jpg + sprite.vtt 사용
-    function setupVttThumbnails(player, vttUrl) {
+    function setupVttThumbnails(player, vttUrl, el) {
         const THUMB_W = 160;
         const THUMB_H = 90;
 
@@ -233,13 +257,17 @@
         timeLabel.className = 'vjs-thumb-time';
         tooltip.appendChild(thumbImg);
         tooltip.appendChild(timeLabel);
+        attachThumbOverlay(player, tooltip);
 
         let entries = null; // [{start, end, x, y, w, h, spriteUrl}]
         let spritePreloaded = false;
 
         // VTT 파싱
         fetch(vttUrl)
-            .then(r => r.text())
+            .then(r => {
+                if (!r.ok) throw new Error('thumbnail vtt unavailable');
+                return r.text();
+            })
             .then(text => {
                 const lines = text.split(/\r?\n/);
                 const parsed = [];
@@ -261,7 +289,10 @@
                 }
                 entries = parsed;
             })
-            .catch(() => {});
+            .catch(() => {
+                tooltip.remove();
+                setupRealtimeThumbnails(player, el);
+            });
 
         player.ready(() => {
             const bar     = player.getChild('controlBar');
@@ -269,15 +300,13 @@
             if (!progCtl) return;
 
             const progEl = progCtl.el();
-            progEl.style.position = 'relative';
-            progEl.appendChild(tooltip);
 
             progEl.addEventListener('mousemove', (e) => {
                 const dur = player.duration();
                 if (!dur || !entries) return;
 
-                const rect  = progEl.getBoundingClientRect();
-                const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                const progRect = progEl.getBoundingClientRect();
+                const ratio = Math.max(0, Math.min(1, (e.clientX - progRect.left) / progRect.width));
                 const time  = ratio * dur;
 
                 const entry = entries.find(en => time >= en.start && time < en.end)
@@ -296,13 +325,13 @@
                 thumbImg.style.height = entry.h + 'px';
                 timeLabel.textContent = fmtTime(time);
 
-                const localX   = e.clientX - rect.left;
-                const clampedX = Math.max(THUMB_W / 2, Math.min(localX, rect.width - THUMB_W / 2));
-                tooltip.style.left = clampedX + 'px';
                 tooltip.hidden = false;
+                positionThumbOverlay(tooltip, progEl, e, entry.w || THUMB_W);
             });
 
-            progEl.addEventListener('mouseleave', () => { tooltip.hidden = true; });
+            progEl.addEventListener('mouseleave', () => {
+                tooltip.hidden = true;
+            });
         });
     }
 
@@ -330,6 +359,7 @@
         const timeLabel = document.createElement('span');
         timeLabel.className = 'vjs-thumb-time';
         tooltip.appendChild(timeLabel);
+        attachThumbOverlay(player, tooltip);
 
         const thumbVid = document.createElement('video');
         thumbVid.setAttribute('muted', '');
@@ -341,6 +371,9 @@
         let pendingTime  = -1;
         let seeking      = false;
         let metaReady    = false;
+        let lastRatio    = -1;  // 마지막 hover 위치 (metadata 로드 후 재처리용)
+        let lastClientX  = -1;
+        let lastProgEl   = null;
 
         function tryDraw() {
             if (thumbVid.readyState < 2) return;
@@ -360,7 +393,15 @@
 
         thumbVid.addEventListener('loadedmetadata', () => {
             metaReady = true;
-            if (pendingTime >= 0) doSeek();
+            // preload:none 미니 플레이어: metadata 로드 후 마지막 hover 위치로 즉시 seek
+            if (lastRatio >= 0 && thumbVid.duration) {
+                pendingTime = lastRatio * thumbVid.duration;
+                tooltip.hidden = false;
+                if (lastProgEl && lastClientX >= 0) {
+                    positionThumbOverlay(tooltip, lastProgEl, { clientX: lastClientX }, THUMB_W);
+                }
+                doSeek();
+            }
         });
         thumbVid.addEventListener('seeked', tryDraw);
 
@@ -378,34 +419,40 @@
             const progCtl = bar && bar.getChild('progressControl');
             if (!progCtl) return;
 
-            const progEl = progCtl.el();
-            progEl.style.position = 'relative';
-            progEl.appendChild(tooltip);
-            player.el().appendChild(thumbVid);
+            const progEl   = progCtl.el();
+            const playerEl = player.el();
+            playerEl.appendChild(thumbVid);
+
+            // preload:none 미니 플레이어용: mouseenter 시 thumbVid 소스 미리 로드
+            progEl.addEventListener('mouseenter', () => {
+                if (!thumbVid.src) {
+                    const videoEl = player.el().querySelector('video');
+                    const src = (el && el.dataset.faststartUrl)
+                        || (videoEl && videoEl.dataset.fallbackSrc)
+                        || player.currentSrc();
+                    if (src) {
+                        thumbVid.src = src;
+                        thumbVid.load();
+                    }
+                }
+            });
 
             progEl.addEventListener('mousemove', (e) => {
-                const dur = player.duration();
+                const progRect   = progEl.getBoundingClientRect();
+                const ratio = Math.max(0, Math.min(1, (e.clientX - progRect.left) / progRect.width));
+                lastRatio = ratio;  // metadata 로드 후 재처리용
+                lastClientX = e.clientX;
+                lastProgEl = progEl;
+
+                const dur = player.duration() || thumbVid.duration || 0;
                 if (!dur) return;
 
-                const rect  = progEl.getBoundingClientRect();
-                const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
                 const time  = ratio * dur;
 
                 timeLabel.textContent = fmtTime(time);
 
-                const localX   = e.clientX - rect.left;
-                const clampedX = Math.max(THUMB_W / 2, Math.min(localX, rect.width - THUMB_W / 2));
-                tooltip.style.left = clampedX + 'px';
                 tooltip.hidden = false;
-
-                if (!thumbVid.src) {
-                    const videoEl = player.el().querySelector('video');
-                    const faststartUrl = el && el.dataset.faststartUrl;
-                    const src = faststartUrl
-                        || (videoEl && videoEl.dataset.fallbackSrc)
-                        || player.currentSrc();
-                    thumbVid.src = src;
-                }
+                positionThumbOverlay(tooltip, progEl, e, THUMB_W);
 
                 pendingTime = time;
                 if (!seeking) doSeek();
@@ -610,7 +657,19 @@
         // 화질 선택기 활성화
         function enableQualitySelector() {
             if (typeof player.hlsQualitySelector === 'function') {
-                try { player.hlsQualitySelector({ displayCurrentQuality: true }); } catch (_) {}
+                try {
+                    const bar = player.getChild('controlBar');
+                    const children = bar ? bar.children() : [];
+                    const rateIdx = children.findIndex(c => {
+                        const name = String(c.name_ || c.name?.() || '').toLowerCase();
+                        const el = typeof c.el === 'function' ? c.el() : null;
+                        return name.includes('playbackrate') || Boolean(el && el.classList.contains('vjs-playback-rate'));
+                    });
+                    player.hlsQualitySelector({
+                        displayCurrentQuality: false,
+                        placementIndex: rateIdx >= 0 ? rateIdx + 1 : undefined,
+                    });
+                } catch (_) {}
             }
         }
 
@@ -670,9 +729,22 @@
             }
         }
 
+        function fetchHlsStatus() {
+            return fetch(statusUrl).then(r => {
+                if (!r.ok) {
+                    throw new Error('HLS status failed');
+                }
+                return r.json();
+            });
+        }
+
+        function stopHlsFallback() {
+            stopPoll();
+            hideBadge();
+        }
+
         // 상태 조회 → 필요하면 트랜스코딩 시작
-        fetch(statusUrl)
-            .then(r => r.json())
+        fetchHlsStatus()
             .then(data => {
                 if (data.status === 'ready') {
                     // 이미 완료 → 바로 HLS
@@ -682,12 +754,16 @@
                 } else {
                     // not_started 또는 transcoding → 트랜스코딩 킥오프
                     if (data.status === 'not_started') {
-                        fetch(manifestUrl).catch(() => {}); // 202 무시
+                        fetch(manifestUrl).then(r => {
+                            if (!r.ok && r.status !== 202) {
+                                throw new Error('HLS manifest failed');
+                            }
+                            return r;
+                        }).catch(stopHlsFallback);
                     }
                     showBadge(`화질 선택 준비 중... ${data.progress || 0}%`);
                     pollTimer = setInterval(() => {
-                        fetch(statusUrl)
-                            .then(r => r.json())
+                        fetchHlsStatus()
                             .then(d => {
                                 if (d.status === 'ready') {
                                     stopPoll();
@@ -700,11 +776,11 @@
                                     showBadge(`화질 선택 준비 중... ${d.progress || 0}%`);
                                 }
                             })
-                            .catch(() => {});
+                            .catch(stopHlsFallback);
                     }, POLL_MS);
                 }
             })
-            .catch(() => {}); // 상태 조회 실패 시 fallback MP4 그대로
+            .catch(stopHlsFallback); // 상태 조회 실패 시 fallback MP4 그대로
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────

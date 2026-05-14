@@ -234,7 +234,7 @@ body {
 .arrow-right  { background-image: url('/static/media/icon/arrow3.png'); }
 
 /* ── Footer ─────────────────────────────────────────────────────────────── */
-.minigame-footer {
+.sub-footer {
     position: fixed;
     left: 0;
     right: 0;
@@ -243,7 +243,7 @@ body {
     padding: 0 12px 6px;
     background: none;
 }
-.minigame-footer .stratagem_hr {
+.sub-footer .stratagem_hr {
     margin: 0 0 4px;
 }
 .lowtext {

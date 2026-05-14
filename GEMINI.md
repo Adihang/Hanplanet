@@ -6,7 +6,7 @@ This document provides an overview of the Hanplanet project, detailing its purpo
 
 Hanplanet is an integrated service built on a Django 5.0.1 framework, combining multiple functionalities within a single project.
 
-**Purpose:** To provide a comprehensive platform encompassing portfolio management, content creation (HanDrive), Git repository hosting (Forgejo), real-time multiplayer gaming, mini-games, and AI chatbot capabilities.
+**Purpose:** To provide a comprehensive platform encompassing portfolio management, content creation (HanDrive), Git repository hosting (Forgejo), real-time multiplayer gaming, Sub, and AI chatbot capabilities.
 
 **Main Technologies:**
 *   **Backend:** Python (Django 5.0.1), SQLite, Celery, Redis
@@ -22,7 +22,7 @@ Hanplanet is an integrated service built on a Django 5.0.1 framework, combining 
 *   **HanDrive:** Document and file workspace with Git repository integration (virtual folders, branches, file operations).
 *   **Git Service:** Forgejo-based Git web UI with OAuth/session-based authentication.
 *   **Real-time Multiplayer Game:** "Bumper Car Spiky" with WebSocket communication.
-*   **Mini-Games:** "Stratagem Hero," "Salvation's Edge 4."
+*   **Sub:** "Stratagem Hero," "Salvation's Edge 4."
 *   **Ollama AI Chatbot:** AI-powered conversational agent.
 *   **Access Log Analysis:** Collection and summary of access logs for operational insights.
 

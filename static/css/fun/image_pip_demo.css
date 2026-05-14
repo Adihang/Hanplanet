@@ -75,10 +75,20 @@
 
 .image-pip-demo-actions {
     display: flex;
+    gap: 8px;
     justify-content: flex-end;
     margin-top: 12px;
 }
 
+.image-pip-demo-file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.image-pip-demo-upload-button,
 .image-pip-demo-code-button {
     min-height: 38px;
 }

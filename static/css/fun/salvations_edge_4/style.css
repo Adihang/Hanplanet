@@ -31,7 +31,7 @@ ul{
     padding-left: 35px;
 }
 
-.minigame-footer {
+.sub-footer {
     position: fixed;
     left: 0;
     right: 0;
@@ -41,7 +41,7 @@ ul{
     background: linear-gradient(to top, rgba(54, 54, 54, 0.96), rgba(54, 54, 54, 0.55), transparent);
 }
 
-.minigame-footer hr {
+.sub-footer hr {
     margin: 0 0 4px;
 }
 hr{

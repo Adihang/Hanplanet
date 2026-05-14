@@ -1995,6 +1995,9 @@ body.map-viewer-page.eraser-mode .leaflet-container {
     var mapImages = [];
     var activeMapImageId = "";
     var openPopup = null;
+    var mapPipSession = null;
+    var mapPipButton = null;
+    var MAP_PIP_FRAME_RATE = 30;
 
     function getLegacyMapImage() {
         if (!imageUrl) return null;
@@ -2261,6 +2264,552 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         }, { passive: false });
     }
 
+    function isSameOriginImage(src) {
+        if (!src) return false;
+        if (/^(data|blob):/i.test(src)) return true;
+        try {
+            return new URL(src, window.location.href).origin === window.location.origin;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function waitForImageReady(img) {
+        return new Promise(function(resolve) {
+            if (!img) {
+                resolve(false);
+                return;
+            }
+            if (img.complete && img.naturalWidth > 0) {
+                resolve(true);
+                return;
+            }
+            var done = function(ok) {
+                img.removeEventListener("load", onLoad);
+                img.removeEventListener("error", onError);
+                resolve(ok);
+            };
+            var onLoad = function() { done(true); };
+            var onError = function() { done(false); };
+            img.addEventListener("load", onLoad, { once: true });
+            img.addEventListener("error", onError, { once: true });
+            window.setTimeout(function() { done(!!(img.complete && img.naturalWidth > 0)); }, 1200);
+        });
+    }
+
+    function relativeElementRect(el, rootRect, scale) {
+        var rect = el.getBoundingClientRect();
+        return {
+            x: (rect.left - rootRect.left) * scale,
+            y: (rect.top - rootRect.top) * scale,
+            width: rect.width * scale,
+            height: rect.height * scale,
+            raw: rect
+        };
+    }
+
+    function drawRoundRect(ctx, x, y, width, height, radius) {
+        var r = Math.max(0, Math.min(radius || 0, width / 2, height / 2));
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + width - r, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+        ctx.lineTo(x + width, y + height - r);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+        ctx.lineTo(x + r, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+    }
+
+    function drawStyledText(ctx, text, style, x, y, maxWidth, scale) {
+        var fontSize = parseFloat(style.fontSize) || 14;
+        var fontFamily = style.fontFamily || "system-ui, sans-serif";
+        var fontWeight = style.fontWeight || "400";
+        var fontStyle = style.fontStyle || "normal";
+        var fontScale = scale || 1;
+        ctx.font = fontStyle + " " + fontWeight + " " + (fontSize * fontScale) + "px " + fontFamily;
+        ctx.fillStyle = style.color || "#222";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text || "", x, y, Math.max(1, maxWidth || 1000));
+    }
+
+    async function drawImageElementToCanvas(ctx, img, rootRect, scale) {
+        var src = img.currentSrc || img.src || "";
+        if (!isSameOriginImage(src)) return;
+        var ready = await waitForImageReady(img);
+        if (!ready) return;
+        var r = relativeElementRect(img, rootRect, scale);
+        if (r.width <= 0 || r.height <= 0) return;
+        try {
+            ctx.drawImage(img, r.x, r.y, r.width, r.height);
+        } catch (e) {}
+    }
+
+    async function drawSvgElementToCanvas(ctx, svg, rootRect, scale) {
+        var r = relativeElementRect(svg, rootRect, scale);
+        if (r.width <= 0 || r.height <= 0) return;
+        var clone = svg.cloneNode(true);
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        clone.setAttribute("width", Math.max(1, Math.round(r.width)));
+        clone.setAttribute("height", Math.max(1, Math.round(r.height)));
+        var serialized = new XMLSerializer().serializeToString(clone);
+        var blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
+        var url = URL.createObjectURL(blob);
+        var img = new Image();
+        try {
+            await new Promise(function(resolve) {
+                img.onload = resolve;
+                img.onerror = resolve;
+                img.src = url;
+            });
+            if (img.naturalWidth > 0) {
+                ctx.drawImage(img, r.x, r.y, r.width, r.height);
+            }
+        } catch (e) {
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    }
+
+    function parseSvgViewBox(svg, width, height) {
+        var base = svg.viewBox && svg.viewBox.baseVal;
+        if (base && base.width > 0 && base.height > 0) {
+            return { x: base.x, y: base.y, width: base.width, height: base.height };
+        }
+        var attr = (svg.getAttribute("viewBox") || "").trim().split(/\s+/).map(Number);
+        if (attr.length === 4 && attr.every(function(value) { return Number.isFinite(value); }) && attr[2] > 0 && attr[3] > 0) {
+            return { x: attr[0], y: attr[1], width: attr[2], height: attr[3] };
+        }
+        return { x: 0, y: 0, width: width || 1, height: height || 1 };
+    }
+
+    function svgPaintValue(style, el, propName, attrName, fallback) {
+        var value = style[propName] || el.getAttribute(attrName) || fallback || "";
+        return value === "none" ? "" : value;
+    }
+
+    function svgOpacityValue(style, el, propName, attrName, fallback) {
+        var value = parseFloat(style[propName] || el.getAttribute(attrName));
+        return Number.isFinite(value) ? value : fallback;
+    }
+
+    function drawSvgPathElement(ctx, el) {
+        var d = el.getAttribute("d");
+        if (!d || typeof Path2D === "undefined") return false;
+        var style = window.getComputedStyle(el);
+        var stroke = svgPaintValue(style, el, "stroke", "stroke", "");
+        var fill = svgPaintValue(style, el, "fill", "fill", "");
+        var opacity = svgOpacityValue(style, el, "opacity", "opacity", 1);
+        var strokeOpacity = svgOpacityValue(style, el, "strokeOpacity", "stroke-opacity", 1);
+        var fillOpacity = svgOpacityValue(style, el, "fillOpacity", "fill-opacity", 1);
+        var lineWidth = parseFloat(style.strokeWidth || el.getAttribute("stroke-width")) || 1;
+        var path;
+        try {
+            path = new Path2D(d);
+        } catch (e) {
+            return false;
+        }
+        if (fill) {
+            ctx.save();
+            ctx.globalAlpha = opacity * fillOpacity;
+            ctx.fillStyle = fill;
+            ctx.fill(path);
+            ctx.restore();
+        }
+        if (stroke && lineWidth > 0) {
+            ctx.save();
+            ctx.globalAlpha = opacity * strokeOpacity;
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = lineWidth;
+            ctx.lineCap = style.strokeLinecap || el.getAttribute("stroke-linecap") || "round";
+            ctx.lineJoin = style.strokeLinejoin || el.getAttribute("stroke-linejoin") || "round";
+            ctx.stroke(path);
+            ctx.restore();
+        }
+        return true;
+    }
+
+    function drawSvgCircleElement(ctx, el) {
+        var cx = parseFloat(el.getAttribute("cx"));
+        var cy = parseFloat(el.getAttribute("cy"));
+        var radius = parseFloat(el.getAttribute("r"));
+        if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(radius) || radius <= 0) return false;
+        var style = window.getComputedStyle(el);
+        var stroke = svgPaintValue(style, el, "stroke", "stroke", "");
+        var fill = svgPaintValue(style, el, "fill", "fill", "");
+        var opacity = svgOpacityValue(style, el, "opacity", "opacity", 1);
+        var strokeOpacity = svgOpacityValue(style, el, "strokeOpacity", "stroke-opacity", 1);
+        var fillOpacity = svgOpacityValue(style, el, "fillOpacity", "fill-opacity", 1);
+        var lineWidth = parseFloat(style.strokeWidth || el.getAttribute("stroke-width")) || 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        if (fill) {
+            ctx.save();
+            ctx.globalAlpha = opacity * fillOpacity;
+            ctx.fillStyle = fill;
+            ctx.fill();
+            ctx.restore();
+        }
+        if (stroke && lineWidth > 0) {
+            ctx.save();
+            ctx.globalAlpha = opacity * strokeOpacity;
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = lineWidth;
+            ctx.stroke();
+            ctx.restore();
+        }
+        return true;
+    }
+
+    async function drawSvgVectorElementToCanvas(ctx, svg, rootRect, scale) {
+        var r = relativeElementRect(svg, rootRect, scale);
+        if (r.width <= 0 || r.height <= 0) return;
+        var viewBox = parseSvgViewBox(svg, r.width / scale, r.height / scale);
+        var vectorItems = svg.querySelectorAll("path, circle");
+        if (!vectorItems.length) {
+            await drawSvgElementToCanvas(ctx, svg, rootRect, scale);
+            return;
+        }
+        ctx.save();
+        ctx.translate(r.x, r.y);
+        ctx.scale(r.width / viewBox.width, r.height / viewBox.height);
+        ctx.translate(-viewBox.x, -viewBox.y);
+        for (var i = 0; i < vectorItems.length; i++) {
+            var item = vectorItems[i];
+            if (item.tagName && item.tagName.toLowerCase() === "circle") {
+                drawSvgCircleElement(ctx, item);
+            } else {
+                drawSvgPathElement(ctx, item);
+            }
+        }
+        ctx.restore();
+    }
+
+    async function drawMarkerElementToCanvas(ctx, el, rootRect, scale) {
+        var r = relativeElementRect(el, rootRect, scale);
+        if (r.width <= 0 || r.height <= 0) return;
+        var img = el.matches && el.matches("img") ? el : el.querySelector("img");
+        if (img) {
+            await drawImageElementToCanvas(ctx, img, rootRect, scale);
+            return;
+        }
+        var text = (el.textContent || "").trim();
+        if (!text) return;
+        var style = window.getComputedStyle(el);
+        ctx.save();
+        ctx.shadowColor = "rgba(0,0,0,0.35)";
+        ctx.shadowBlur = 3 * scale;
+        ctx.shadowOffsetY = 1 * scale;
+        drawStyledText(ctx, text, style, r.x + r.width / 2, r.y + r.height / 2, r.width * 1.4, scale);
+        ctx.restore();
+    }
+
+    function drawTooltipElementToCanvas(ctx, el, rootRect, scale) {
+        var r = relativeElementRect(el, rootRect, scale);
+        if (r.width <= 0 || r.height <= 0) return;
+        var style = window.getComputedStyle(el);
+        var bg = style.backgroundColor || "rgba(0,0,0,0.6)";
+        ctx.save();
+        ctx.fillStyle = bg === "rgba(0, 0, 0, 0)" ? "rgba(0,0,0,0.6)" : bg;
+        drawRoundRect(ctx, r.x, r.y, r.width, r.height, (parseFloat(style.borderRadius) || 4) * scale);
+        ctx.fill();
+        drawStyledText(ctx, (el.textContent || "").trim(), style, r.x + r.width / 2, r.y + r.height / 2, r.width - 6 * scale, scale);
+        ctx.restore();
+    }
+
+    function drawTextAreaContentToCanvas(ctx, el, rootRect, scale) {
+        var input = el.querySelector(".map-collab-text-input");
+        if (!input) return;
+        var r = relativeElementRect(input, rootRect, scale);
+        if (r.width <= 0 || r.height <= 0) return;
+        var style = window.getComputedStyle(input);
+        var fontSize = parseFloat(style.fontSize) || 16;
+        var lineHeight = parseFloat(style.lineHeight) || fontSize * 1.08;
+        var fontFamily = style.fontFamily || "system-ui, sans-serif";
+        var fontWeight = style.fontWeight || "800";
+        var text = input.value || "";
+        var lines = text.split(/\r?\n/);
+        ctx.save();
+        ctx.font = fontWeight + " " + (fontSize * scale) + "px " + fontFamily;
+        ctx.fillStyle = style.color || "#2563eb";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = Math.max(2, 2 * scale);
+        lines.forEach(function(line, index) {
+            var x = r.x + 3 * scale;
+            var y = r.y + index * lineHeight * scale;
+            ctx.strokeText(line, x, y, Math.max(1, r.width - 6 * scale));
+            ctx.fillText(line, x, y, Math.max(1, r.width - 6 * scale));
+        });
+        ctx.restore();
+    }
+
+    function intersectRects(a, b) {
+        var left = Math.max(a.left, b.left);
+        var top = Math.max(a.top, b.top);
+        var right = Math.min(a.right, b.right);
+        var bottom = Math.min(a.bottom, b.bottom);
+        return {
+            left: left,
+            top: top,
+            right: right,
+            bottom: bottom,
+            width: Math.max(0, right - left),
+            height: Math.max(0, bottom - top)
+        };
+    }
+
+    function rectFromPoints(rootRect, p1, p2) {
+        var left = rootRect.left + Math.min(p1.x, p2.x);
+        var top = rootRect.top + Math.min(p1.y, p2.y);
+        var right = rootRect.left + Math.max(p1.x, p2.x);
+        var bottom = rootRect.top + Math.max(p1.y, p2.y);
+        return {
+            left: left,
+            top: top,
+            right: right,
+            bottom: bottom,
+            width: Math.max(0, right - left),
+            height: Math.max(0, bottom - top)
+        };
+    }
+
+    function getMapPipCaptureRect(rootRect) {
+        if (imageOverlay && imageOverlay.getElement) {
+            var imageEl = imageOverlay.getElement();
+            if (imageEl) {
+                var imageRect = imageEl.getBoundingClientRect();
+                var visibleImageRect = intersectRects(rootRect, imageRect);
+                if (visibleImageRect.width > 1 && visibleImageRect.height > 1) {
+                    return visibleImageRect;
+                }
+            }
+        }
+        if (map && map.latLngToContainerPoint) {
+            var activeImage = getActiveMapImage() || { x: 0, y: 0, width: imgWidth, height: imgHeight };
+            var bounds = mapImageBounds(activeImage);
+            var p1 = map.latLngToContainerPoint(L.latLng(bounds[0][0], bounds[0][1]));
+            var p2 = map.latLngToContainerPoint(L.latLng(bounds[1][0], bounds[1][1]));
+            var mapImageRect = rectFromPoints(rootRect, p1, p2);
+            var visibleMapImageRect = intersectRects(rootRect, mapImageRect);
+            if (visibleMapImageRect.width > 1 && visibleMapImageRect.height > 1) {
+                return visibleMapImageRect;
+            }
+        }
+        return rootRect;
+    }
+
+    function getMapPipRenderScale(captureRect) {
+        var baseScale = Math.max(1, window.devicePixelRatio || 1);
+        var nativeScale = baseScale;
+        if (imageOverlay && imageOverlay.getElement) {
+            var imageEl = imageOverlay.getElement();
+            if (imageEl) {
+                var imageRect = imageEl.getBoundingClientRect();
+                if (imageRect.width > 1 && imageRect.height > 1 && imageEl.naturalWidth > 0 && imageEl.naturalHeight > 0) {
+                    nativeScale = Math.max(
+                        nativeScale,
+                        imageEl.naturalWidth / imageRect.width,
+                        imageEl.naturalHeight / imageRect.height
+                    );
+                }
+            }
+        }
+        var targetScale = Math.min(4, Math.max(baseScale, nativeScale));
+        var maxCanvasSide = 4096;
+        var maxCanvasPixels = 9000000;
+        if (captureRect.width > 0 && captureRect.height > 0) {
+            targetScale = Math.min(
+                targetScale,
+                maxCanvasSide / captureRect.width,
+                maxCanvasSide / captureRect.height,
+                Math.sqrt(maxCanvasPixels / (captureRect.width * captureRect.height))
+            );
+        }
+        return Math.max(1, targetScale);
+    }
+
+    async function renderMapToPipCanvas(canvas) {
+        if (!map || !map.getContainer) return;
+        var mapContainer = map.getContainer();
+        var rootRect = mapContainer.getBoundingClientRect();
+        if (rootRect.width <= 0 || rootRect.height <= 0) return;
+        var captureRect = getMapPipCaptureRect(rootRect);
+        var scale = getMapPipRenderScale(captureRect);
+        var width = Math.max(1, Math.round(captureRect.width * scale));
+        var height = Math.max(1, Math.round(captureRect.height * scale));
+        if (canvas.width !== width) canvas.width = width;
+        if (canvas.height !== height) canvas.height = height;
+        var ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        var style = window.getComputedStyle(mapContainer);
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = style.backgroundColor && style.backgroundColor !== "rgba(0, 0, 0, 0)" ? style.backgroundColor : "#f5f5f5";
+        ctx.fillRect(0, 0, width, height);
+
+        var panes = map.getPanes ? map.getPanes() : {};
+        var paneOrder = [
+            panes.tilePane,
+            panes.imageBackgroundPane,
+            panes.overlayPane,
+            panes.shadowPane,
+            panes.markerPane,
+            panes.tooltipPane,
+            panes.popupPane
+        ];
+        for (var i = 0; i < paneOrder.length; i++) {
+            var pane = paneOrder[i];
+            if (!pane) continue;
+            var images = pane.querySelectorAll("img");
+            for (var imageIndex = 0; imageIndex < images.length; imageIndex++) {
+                await drawImageElementToCanvas(ctx, images[imageIndex], captureRect, scale);
+            }
+            var svgs = pane.querySelectorAll("svg");
+            for (var svgIndex = 0; svgIndex < svgs.length; svgIndex++) {
+                await drawSvgVectorElementToCanvas(ctx, svgs[svgIndex], captureRect, scale);
+            }
+            var markers = pane.querySelectorAll(".leaflet-marker-icon");
+            for (var markerIndex = 0; markerIndex < markers.length; markerIndex++) {
+                await drawMarkerElementToCanvas(ctx, markers[markerIndex], captureRect, scale);
+            }
+            var tooltips = pane.querySelectorAll(".leaflet-tooltip");
+            for (var tooltipIndex = 0; tooltipIndex < tooltips.length; tooltipIndex++) {
+                drawTooltipElementToCanvas(ctx, tooltips[tooltipIndex], captureRect, scale);
+            }
+            var popups = pane.querySelectorAll(".leaflet-popup-content-wrapper");
+            for (var popupIndex = 0; popupIndex < popups.length; popupIndex++) {
+                drawTooltipElementToCanvas(ctx, popups[popupIndex], captureRect, scale);
+            }
+            var textBlocks = pane.querySelectorAll(".map-collab-text-block");
+            for (var textIndex = 0; textIndex < textBlocks.length; textIndex++) {
+                drawTextAreaContentToCanvas(ctx, textBlocks[textIndex], captureRect, scale);
+            }
+        }
+    }
+
+    function requestMapPipVideoFrame() {
+        if (!mapPipSession || !mapPipSession.track || !mapPipSession.track.requestFrame) return;
+        try {
+            mapPipSession.track.requestFrame();
+        } catch (e) {}
+    }
+
+    function refreshMapPictureInPicture() {
+        if (!mapPipSession || !mapPipSession.canvas) return;
+        if (mapPipSession.rendering) {
+            mapPipSession.pending = true;
+            return;
+        }
+        mapPipSession.rendering = true;
+        renderMapToPipCanvas(mapPipSession.canvas)
+            .then(requestMapPipVideoFrame)
+            .finally(function() {
+                if (!mapPipSession) return;
+                mapPipSession.rendering = false;
+                if (mapPipSession.pending) {
+                    mapPipSession.pending = false;
+                    refreshMapPictureInPicture();
+                }
+            });
+    }
+
+    function stopMapPictureInPicture() {
+        if (!mapPipSession) return;
+        window.clearInterval(mapPipSession.intervalId);
+        if (mapPipSession.video) {
+            if (mapPipSession.video.srcObject) {
+                mapPipSession.video.srcObject.getTracks().forEach(function(track) { track.stop(); });
+            }
+            mapPipSession.video.remove();
+        }
+        mapPipSession = null;
+        if (mapPipButton) {
+            mapPipButton.classList.remove("is-active", "is-busy");
+        }
+    }
+
+    async function startMapPictureInPicture(button) {
+        if (!document.pictureInPictureEnabled || !HTMLCanvasElement.prototype.captureStream) {
+            window.alert("이 브라우저에서는 지도 PiP를 지원하지 않습니다.");
+            return;
+        }
+        if (document.pictureInPictureElement) {
+            try { await document.exitPictureInPicture(); } catch (e) {}
+            return;
+        }
+        if (mapPipSession) {
+            stopMapPictureInPicture();
+        }
+        var canvas = document.createElement("canvas");
+        var video = document.createElement("video");
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute("playsinline", "");
+        video.style.position = "fixed";
+        video.style.left = "-9999px";
+        video.style.top = "-9999px";
+        video.style.width = "1px";
+        video.style.height = "1px";
+        document.body.appendChild(video);
+        button.classList.add("is-busy");
+        try {
+            await renderMapToPipCanvas(canvas);
+            var stream = canvas.captureStream(MAP_PIP_FRAME_RATE);
+            var videoTrack = stream.getVideoTracks()[0] || null;
+            video.srcObject = stream;
+            await video.play();
+            await video.requestPictureInPicture();
+            button.classList.remove("is-busy");
+            button.classList.add("is-active");
+            video.addEventListener("leavepictureinpicture", stopMapPictureInPicture, { once: true });
+            mapPipSession = {
+                canvas: canvas,
+                video: video,
+                track: videoTrack,
+                rendering: false,
+                pending: false,
+                intervalId: window.setInterval(function() {
+                    refreshMapPictureInPicture();
+                }, Math.round(1000 / MAP_PIP_FRAME_RATE))
+            };
+            requestMapPipVideoFrame();
+        } catch (e) {
+            button.classList.remove("is-busy");
+            video.remove();
+            window.alert("지도 PiP를 여는 중 문제가 발생했습니다.");
+        }
+    }
+
+    function installMapPipButton() {
+        if (!map || !map.getContainer || mapPipButton) return;
+        var zoomControl = map.getContainer().querySelector(".leaflet-control-zoom");
+        if (!zoomControl) {
+            window.setTimeout(installMapPipButton, 60);
+            return;
+        }
+        var button = document.createElement("a");
+        button.href = "#";
+        button.className = "map-viewer-pip-btn";
+        button.title = "지도 PiP";
+        button.setAttribute("role", "button");
+        button.setAttribute("aria-label", "지도 PiP");
+        button.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11" width="7" height="5" rx="1"/></svg>';
+        button.addEventListener("click", function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            startMapPictureInPicture(button);
+        });
+        zoomControl.appendChild(button);
+        mapPipButton = button;
+        document.addEventListener("leavepictureinpicture", stopMapPictureInPicture);
+    }
+
     function initMap() {
         if (map) return;
         hideLoading();
@@ -2279,6 +2828,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         });
         installMapWheelZoom();
         L.control.zoom({ position: "topright" }).addTo(map);
+        installMapPipButton();
         var scheduleTopRightControlSizeUpdate = null;
         (function () {
             var resizeRafId = null;
@@ -2452,8 +3002,8 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             if (!data.ok || !data.geojson) return;
             var geojson = data.geojson;
             mapImages = normalizeMapImages(geojson.mapImages || []);
-            activeMapImageId = geojson.activeMapImageId || (mapImages[0] && mapImages[0].id) || "";
-            setActiveMapImage(activeMapImageId, false);
+            activeMapImageId = (mapImages[0] && mapImages[0].id) || "";
+            setActiveMapImage(activeMapImageId, true);
 
             // 그룹 로드
             if (geojson.groups) {
@@ -4006,10 +4556,11 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 
         // ── Input events (always active — drawing works even solo) ───────────
         container.addEventListener("mousedown", function (e) {
-            if (!map || e.button !== 0 || e.target && e.target.closest && e.target.closest(".map-collab-text-block, .leaflet-control, .leaflet-popup, .map-viewer-layers-widget")) return;
+            if (!map || e.button !== 0 || e.target && e.target.closest && e.target.closest(".map-collab-text-block, .leaflet-control, .leaflet-popup, .map-viewer-layers-widget, .map-viewer-background-select")) return;
             e.preventDefault();
         }, true);
         container.addEventListener("pointerdown", function (e) {
+            if (e.target && e.target.closest && e.target.closest(".map-viewer-background-select")) return;
             if (textDrag || textResize) return;
             if (window._eraserModeActive && e.button === 0) {
                 if (shouldBlockEraserTarget(e.target)) return;
@@ -4063,10 +4614,11 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             endMapPan(e);
         }, true);
         container.addEventListener("pointerdown", function (e) {
-            var textTarget = e.target && e.target.closest && e.target.closest(".map-collab-text-block");
+            var controlTarget = e.target && e.target.closest && e.target.closest(".map-collab-text-block, .map-viewer-background-select");
+            var textTarget = controlTarget && controlTarget.classList && controlTarget.classList.contains("map-collab-text-block") ? controlTarget : null;
             if (!textTarget && activeTextId) setActiveText(null, false);
             if (e.button !== 0) return;
-            if (textTarget) return;
+            if (controlTarget) return;
             if (window._eraserModeActive) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
@@ -4628,6 +5180,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 
         // ── Message handler ──────────────────────────────────────────────────
         function onMsg(msg) {
+            var shouldRefreshPip = false;
             switch (msg.type) {
                 case "welcome":
                     activeMapPingWaves.forEach(function(wave) {
@@ -4651,18 +5204,20 @@ body.map-viewer-page.eraser-mode .leaflet-container {
                     syncLocalTextBlocksToServer();
                     showIndicator();
                     restartPresence();
+                    shouldRefreshPip = true;
                     break;
                 case "peer_joined": ensurePeer(msg.id, msg.color, msg.displayName, msg.guestNum); break;
-                case "peer_left":    removePeer(msg.id); break;
+                case "peer_left":    removePeer(msg.id); shouldRefreshPip = true; break;
                 case "peer_cursor":  moveCursor(msg.id, msg.color, msg.x, msg.y); break;
-                case "peer_map_ping": showMapPing(msg.x, msg.y, msg.color, msg.id || "peer"); break;
-                case "peer_draw_point": addDrawPt(msg.id, msg.color, msg.x, msg.y); break;
-                case "peer_draw_end":   finalizeStroke(msg.id, msg.color, msg.points, msg.strokeId); break;
-                case "peer_draw_cancel": cancelDraw(msg.id); break;
-                case "stroke_erased":  eraseStrokeById(msg.strokeId); break;
-                case "text_updated":   renderTextBlock(msg.text); break;
-                case "text_deleted":   removeTextBlock(msg.textId); break;
+                case "peer_map_ping": showMapPing(msg.x, msg.y, msg.color, msg.id || "peer"); shouldRefreshPip = true; break;
+                case "peer_draw_point": addDrawPt(msg.id, msg.color, msg.x, msg.y); shouldRefreshPip = true; break;
+                case "peer_draw_end":   finalizeStroke(msg.id, msg.color, msg.points, msg.strokeId); shouldRefreshPip = true; break;
+                case "peer_draw_cancel": cancelDraw(msg.id); shouldRefreshPip = true; break;
+                case "stroke_erased":  eraseStrokeById(msg.strokeId); shouldRefreshPip = true; break;
+                case "text_updated":   renderTextBlock(msg.text); shouldRefreshPip = true; break;
+                case "text_deleted":   removeTextBlock(msg.textId); shouldRefreshPip = true; break;
             }
+            if (shouldRefreshPip) refreshMapPictureInPicture();
         }
 
         // ── Start presence polling ───────────────────────────────────────────
@@ -4671,6 +5226,11 @@ body.map-viewer-page.eraser-mode .leaflet-container {
     })();
 
     if (backgroundSelect) {
+        ["pointerdown", "mousedown", "touchstart", "click", "wheel"].forEach(function(type) {
+            backgroundSelect.addEventListener(type, function(event) {
+                event.stopPropagation();
+            });
+        });
         backgroundSelect.addEventListener("change", function() {
             setActiveMapImage(backgroundSelect.value, true);
         });

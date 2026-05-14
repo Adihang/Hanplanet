@@ -989,8 +989,11 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     <video class="map-video-viewer-modal-video" id="map-video-viewer-modal-video" controls playsinline></video>
 </div>
 
+{% include "popup/handrive/job_queue_panel.html" %}
+
 <script src="{% static_v 'js/vendor/leaflet.js' %}"></script>
 <script src="{% static_v 'js/vendor/leaflet.draw.js' %}"></script>
+<script src="{% static_v 'js/handrive/queue_helpers.js' %}"></script>
 <script>
 (function () {
     "use strict";
@@ -1085,11 +1088,21 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
 	    var backgroundControlsEl = document.getElementById("map-background-controls");
 	    var backgroundListEl = document.getElementById("map-background-list");
 	    var backgroundUploadInput = document.getElementById("map-background-upload-input");
-	    var backgroundControlInstalled = false;
+    var backgroundControlInstalled = false;
     var mapImageAdjustMode = false;
     var mapImageAdjustItemId = "";
     var mapImageAdjustDrag = null;
     var mapImageAdjustHandlersInstalled = false;
+    var uploadQueuePanel = document.getElementById("handrive-job-queue-panel");
+    var uploadQueueSummary = document.getElementById("handrive-job-queue-summary");
+    var uploadQueueList = document.getElementById("handrive-job-queue-list");
+    var uploadQueueToggleButton = document.getElementById("handrive-job-queue-toggle");
+    var uploadQueueCloseButton = document.getElementById("handrive-job-queue-close");
+    var uploadQueueHelpers = window.HandriveQueueHelpers || {};
+    var uploadQueueItems = [];
+    var uploadQueueSequence = 0;
+    var uploadQueueCollapsed = false;
+    var uploadQueueDismissed = false;
 
     // 그룹 데이터
     var groups = {}; // gid -> {name, collapsed}
@@ -1129,6 +1142,188 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         }
         if (srcIdx < lastIdx) lastIdx -= 1;
         layerOrder.splice(lastIdx + 1, 0, srcFid);
+    }
+
+    function queueT(key, fallbackValue) {
+        return fallbackValue || key || "";
+    }
+
+    function formatQueueFileSize(bytes) {
+        var n = Number(bytes) || 0;
+        if (n < 1024) return n + " B";
+        if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+        if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + " MB";
+        return (n / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+    }
+
+    function renderMapUploadQueue() {
+        var items = uploadQueueItems.slice(-20);
+        var renderPanel = uploadQueueHelpers.renderUploadQueuePanel;
+        if (typeof renderPanel !== "function") {
+            if (uploadQueuePanel) uploadQueuePanel.hidden = uploadQueueDismissed || items.length === 0;
+            if (uploadQueueSummary) uploadQueueSummary.textContent = items.length ? "업로드 " + items.length : "작업 대기 없음";
+            if (uploadQueueList) uploadQueueList.innerHTML = "";
+            return;
+        }
+        renderPanel({
+            createQueueListItem: function(item) {
+                return uploadQueueHelpers.createQueueListItem(item, {
+                    documentRef: document,
+                    getMetaLabel: function(nextItem) {
+                        return nextItem.targetDirPath || mapPath || "";
+                    },
+                    getStatusLabel: function(nextItem) {
+                        return uploadQueueHelpers.getQueueItemStatusLabel(nextItem, queueT);
+                    },
+                    onOpenContextMenu: function() {}
+                });
+            },
+            collapsed: uploadQueueCollapsed,
+            dismissed: uploadQueueDismissed,
+            items: items,
+            sortQueueItems: uploadQueueHelpers.sortQueueItems,
+            summarizeUploadQueue: function(nextItems) {
+                return uploadQueueHelpers.summarizeUploadQueue(nextItems, queueT);
+            },
+            t: queueT,
+            uploadQueueList: uploadQueueList,
+            uploadQueuePanel: uploadQueuePanel,
+            uploadQueueSummary: uploadQueueSummary,
+            uploadQueueToggleButton: uploadQueueToggleButton
+        });
+    }
+
+    function createMapUploadQueueItem(file, targetDirPath) {
+        uploadQueueSequence += 1;
+        var item = {
+            id: uploadQueueSequence,
+            kind: "upload",
+            file: file,
+            fileName: file && file.name ? file.name : "upload",
+            fileSize: file && file.size ? file.size : 0,
+            sizeDisplay: file && file.size ? formatQueueFileSize(file.size) : "",
+            targetDirPath: targetDirPath || mapPath || "",
+            savedPath: "",
+            savedSlugPath: "",
+            status: "queued",
+            progress: 0,
+            uploadSpeed: 0,
+            uploadedBytes: 0,
+            startTime: 0,
+            errorMessage: "",
+            xhr: null
+        };
+        uploadQueueItems.push(item);
+        uploadQueueDismissed = false;
+        renderMapUploadQueue();
+        return item;
+    }
+
+    function createMapOperationQueueItem(fileName, operationType, path) {
+        uploadQueueSequence += 1;
+        var item = {
+            id: uploadQueueSequence,
+            kind: "operation",
+            operationType: operationType,
+            fileName: fileName || "",
+            fileSize: 0,
+            sizeDisplay: "",
+            targetDirPath: path || mapPath || "",
+            savedPath: path || "",
+            status: "queued",
+            progress: 0,
+            errorMessage: "",
+            abortRequested: false,
+            abortController: null
+        };
+        uploadQueueItems.push(item);
+        uploadQueueDismissed = false;
+        renderMapUploadQueue();
+        return item;
+    }
+
+    function uploadFormDataWithQueue(item, url, formData, fallbackErrorMessage) {
+        return new Promise(function(resolve, reject) {
+            if (!url) {
+                reject(new Error(fallbackErrorMessage || "업로드 경로를 찾을 수 없습니다."));
+                return;
+            }
+            var xhr = new XMLHttpRequest();
+            var startedAt = Date.now();
+            item.status = "uploading";
+            item.progress = 0;
+            item.startTime = startedAt;
+            item.xhr = xhr;
+            renderMapUploadQueue();
+            xhr.open("POST", url, true);
+            xhr.timeout = 120000;
+            var csrfToken = getCsrfToken();
+            if (csrfToken) xhr.setRequestHeader("X-CSRFToken", csrfToken);
+            if (xhr.upload) {
+                xhr.upload.addEventListener("progress", function(event) {
+                    if (!event.lengthComputable) return;
+                    var loaded = Math.max(0, event.loaded || 0);
+                    var total = Math.max(1, event.total || item.fileSize || 1);
+                    item.progress = Math.min(99, (loaded / total) * 100);
+                    item.uploadedBytes = loaded;
+                    item.uploadSpeed = loaded / Math.max(0.001, (Date.now() - startedAt) / 1000);
+                    renderMapUploadQueue();
+                });
+            }
+            xhr.addEventListener("load", function() {
+                var data = null;
+                try {
+                    data = JSON.parse(xhr.responseText || "null");
+                } catch (error) {
+                    data = null;
+                }
+                item.xhr = null;
+                if (xhr.status >= 200 && xhr.status < 300 && data && data.ok) {
+                    item.status = "done";
+                    item.progress = 100;
+                    item.savedPath = data.icon_path || data.image_path || data.media_path || "";
+                    renderMapUploadQueue();
+                    resolve(data);
+                    return;
+                }
+                var message = data && data.error ? data.error : (fallbackErrorMessage || "업로드에 실패했습니다.");
+                item.status = "failed";
+                item.errorMessage = message;
+                item.progress = 100;
+                renderMapUploadQueue();
+                reject(new Error(message));
+            });
+            xhr.addEventListener("error", function() {
+                item.xhr = null;
+                item.status = "failed";
+                item.errorMessage = fallbackErrorMessage || "업로드 중 오류가 발생했습니다.";
+                item.progress = 100;
+                renderMapUploadQueue();
+                reject(new Error(item.errorMessage));
+            });
+            xhr.addEventListener("timeout", function() {
+                item.xhr = null;
+                item.status = "failed";
+                item.errorMessage = "대기시간 초과";
+                item.progress = 100;
+                renderMapUploadQueue();
+                reject(new Error(item.errorMessage));
+            });
+            xhr.send(formData);
+        });
+    }
+
+    if (uploadQueueToggleButton) {
+        uploadQueueToggleButton.addEventListener("click", function() {
+            uploadQueueCollapsed = !uploadQueueCollapsed;
+            renderMapUploadQueue();
+        });
+    }
+    if (uploadQueueCloseButton) {
+        uploadQueueCloseButton.addEventListener("click", function() {
+            uploadQueueDismissed = true;
+            renderMapUploadQueue();
+        });
     }
 
     // 레이어 ID 생성
@@ -3805,6 +4000,12 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
     }
 
     function deleteIcon(btn, iconPath) {
+        var fileName = iconPath ? iconPath.split("/").pop() : iconPath;
+        var queueItem = createMapOperationQueueItem(fileName, "delete", iconPath);
+        queueItem.status = "uploading";
+        queueItem.progress = 0;
+        renderMapUploadQueue();
+
         var csrfToken = getCsrfToken();
         var formData = new FormData();
         formData.append("icon_path", iconPath);
@@ -3816,7 +4017,10 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.ok) {
-                // 삭제한 아이콘이 선택 중이면 선택 해제
+                queueItem.status = "done";
+                queueItem.progress = 100;
+                renderMapUploadQueue();
+                customIconsList = customIconsList.filter(function(ic) { return ic.path !== iconPath; });
                 if (selectedIconKey === "custom:" + iconPath) {
                     selectedIconKey = "";
                     selectedIconUrl = "";
@@ -3825,10 +4029,18 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 }
                 btn.remove();
             } else {
-                alert(data.error || "\uc544\uc774\ucf58 \uc0ad\uc81c\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
+                queueItem.status = "failed";
+                queueItem.errorMessage = data.error || "아이콘 삭제에 실패했습니다.";
+                queueItem.progress = 100;
+                renderMapUploadQueue();
             }
         })
-        .catch(function() { alert("\uc544\uc774\ucf58 \uc0ad\uc81c \uc911 \uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4."); });
+        .catch(function() {
+            queueItem.status = "failed";
+            queueItem.errorMessage = "아이콘 삭제 중 오류가 발생했습니다.";
+            queueItem.progress = 100;
+            renderMapUploadQueue();
+        });
     }
 
     // ── 아이콘 업로드 ──────────────────────────────────────────────────────
@@ -3836,33 +4048,24 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         var formData = new FormData();
         formData.append("path", mapPath);
         formData.append("icon", file);
-        var csrfToken = getCsrfToken();
-        fetch(mapIconUploadApi, {
-            method: "POST",
-            headers: csrfToken ? { "X-CSRFToken": csrfToken } : {},
-            body: formData,
-        })
-        .then(function(r) { return r.json(); })
+        var queueItem = createMapUploadQueueItem(file, mapPath);
+        uploadFormDataWithQueue(queueItem, mapIconUploadApi, formData, "아이콘 업로드에 실패했습니다.")
         .then(function(data) {
-            if (data.ok) {
-                if (onSuccess) {
-                    onSuccess(data.icon_url);
-                    return;
-                }
-                customIconsList.push({ name: file.name, url: data.icon_url, path: data.icon_path });
-                var grid = document.getElementById("map-custom-icons");
-                addCustomIconBtn(grid, file.name, data.icon_url, data.icon_path);
-                selectedIconKey = "custom:" + data.icon_path;
-                selectedIconEmoji = "";
-                selectedIconUrl = data.icon_url;
-                document.querySelectorAll(".map-editor-icon-btn").forEach(function(b) { b.classList.remove("is-selected"); });
-                grid.lastElementChild && grid.lastElementChild.classList.add("is-selected");
-                setTool("marker");
-            } else {
-                alert(data.error || "아이콘 업로드에 실패했습니다.");
+            if (onSuccess) {
+                onSuccess(data.icon_url);
+                return;
             }
+            customIconsList.push({ name: file.name, url: data.icon_url, path: data.icon_path });
+            var grid = document.getElementById("map-custom-icons");
+            addCustomIconBtn(grid, file.name, data.icon_url, data.icon_path);
+            selectedIconKey = "custom:" + data.icon_path;
+            selectedIconEmoji = "";
+            selectedIconUrl = data.icon_url;
+            document.querySelectorAll(".map-editor-icon-btn").forEach(function(b) { b.classList.remove("is-selected"); });
+            grid.lastElementChild && grid.lastElementChild.classList.add("is-selected");
+            setTool("marker");
         })
-        .catch(function() { alert("아이콘 업로드 중 오류가 발생했습니다."); });
+        .catch(function(error) { alert(error && error.message ? error.message : "아이콘 업로드 중 오류가 발생했습니다."); });
     }
 
     function getAttachmentFolderName(stateKey) {
@@ -3890,23 +4093,14 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         formData.append("path", mapPath);
         formData.append("folder_name", getAttachmentFolderName(stateKey));
         formData.append("image", file);
-        var csrfToken = getCsrfToken();
-        fetch(mapImageUploadApi, {
-            method: "POST",
-            headers: csrfToken ? { "X-CSRFToken": csrfToken } : {},
-            body: formData,
-        })
-        .then(function(r) { return r.json(); })
+        var queueItem = createMapUploadQueueItem(file, getAttachmentFolderName(stateKey));
+        uploadFormDataWithQueue(queueItem, mapImageUploadApi, formData, "이미지/영상 업로드에 실패했습니다.")
         .then(function(data) {
-            if (data.ok) {
-                if (onSuccess) {
-                    onSuccess(data.media_url || data.image_url || data.video_url || "", data.media_kind || (data.video_url ? "video" : "image"));
-                }
-            } else {
-                alert(data.error || "이미지/영상 업로드에 실패했습니다.");
+            if (onSuccess) {
+                onSuccess(data.media_url || data.image_url || data.video_url || "", data.media_kind || (data.video_url ? "video" : "image"));
             }
         })
-        .catch(function() { alert("이미지/영상 업로드 중 오류가 발생했습니다."); });
+        .catch(function(error) { alert(error && error.message ? error.message : "이미지/영상 업로드 중 오류가 발생했습니다."); });
     }
 
     function uploadMapBackground(file) {
@@ -3922,20 +4116,25 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         formData.append("path", mapPath);
         formData.append("folder_name", "_map_backgrounds");
         formData.append("image", file);
-        var csrfToken = getCsrfToken();
-        fetch(mapImageUploadApi, {
-            method: "POST",
-            headers: csrfToken ? { "X-CSRFToken": csrfToken } : {},
-            body: formData,
-        })
-        .then(function(r) { return r.json(); })
+        var queueItem = createMapUploadQueueItem(file, "_map_backgrounds");
+        uploadFormDataWithQueue(queueItem, mapImageUploadApi, formData, "맵 이미지 업로드에 실패했습니다.")
         .then(function(data) {
-            if (!data.ok || data.media_kind === "video") {
-                alert(data.error || "맵 이미지 업로드에 실패했습니다.");
+            if (data.media_kind === "video") {
+                queueItem.status = "failed";
+                queueItem.errorMessage = "맵 배경에는 이미지만 업로드할 수 있습니다.";
+                queueItem.progress = 100;
+                renderMapUploadQueue();
                 return;
             }
             var uploadedUrl = data.image_url || data.media_url || "";
             var uploadedPath = data.image_path || data.media_path || "";
+            if (!uploadedUrl) {
+                queueItem.status = "failed";
+                queueItem.errorMessage = "서버에서 이미지 URL을 받지 못했습니다.";
+                queueItem.progress = 100;
+                renderMapUploadQueue();
+                return;
+            }
             var item = {
                 id: nextMapImageId(),
                 name: file.name,
@@ -3953,7 +4152,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             setActiveMapImage(item.id, true);
             commitHistoryState();
         })
-        .catch(function() { alert("맵 이미지 업로드 중 오류가 발생했습니다."); });
+        .catch(function(error) { alert(error && error.message ? error.message : "맵 이미지 업로드 중 오류가 발생했습니다."); });
     }
 
     // ── GeoJSON 저장/불러오기 ──────────────────────────────────────────────

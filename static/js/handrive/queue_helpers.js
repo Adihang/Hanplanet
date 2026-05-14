@@ -8,8 +8,8 @@
         // Summaries collapse heterogeneous upload/move/delete work into one short status line
         // for the floating queue header without exposing the full item list every time.
         var normalizedItems = Array.isArray(items) ? items : [];
-        var uploadingCount = 0, movingCount = 0, deletingCount = 0, extractingCount = 0, archiveCreatingCount = 0;
-        var uploadDoneCount = 0, moveDoneCount = 0, deleteDoneCount = 0, extractDoneCount = 0, archiveCreateDoneCount = 0;
+        var uploadingCount = 0, movingCount = 0, deletingCount = 0, extractingCount = 0, archiveCreatingCount = 0, youtubeSavingCount = 0;
+        var uploadDoneCount = 0, moveDoneCount = 0, deleteDoneCount = 0, extractDoneCount = 0, archiveCreateDoneCount = 0, youtubeSaveDoneCount = 0;
         var queuedCount = 0, failedCount = 0;
 
         normalizedItems.forEach(function (item) {
@@ -20,6 +20,7 @@
                 else if (isOp && opType === "delete") { deletingCount += 1; }
                 else if (isOp && opType === "extract") { extractingCount += 1; }
                 else if (isOp && opType === "create-archive") { archiveCreatingCount += 1; }
+                else if (isOp && opType === "youtube-save") { youtubeSavingCount += 1; }
                 else { uploadingCount += 1; }
             } else if (item.status === "queued") {
                 queuedCount += 1;
@@ -28,6 +29,7 @@
                 else if (isOp && opType === "delete") { deleteDoneCount += 1; }
                 else if (isOp && opType === "extract") { extractDoneCount += 1; }
                 else if (isOp && opType === "create-archive") { archiveCreateDoneCount += 1; }
+                else if (isOp && opType === "youtube-save") { youtubeSaveDoneCount += 1; }
                 else { uploadDoneCount += 1; }
             } else if (item.status === "failed") {
                 failedCount += 1;
@@ -40,12 +42,14 @@
         if (deletingCount > 0) { parts.push(t("queue_status_deleting", "삭제 중") + " " + deletingCount); }
         if (extractingCount > 0) { parts.push(t("queue_status_extracting", "압축해제 중") + " " + extractingCount); }
         if (archiveCreatingCount > 0) { parts.push(t("queue_status_archive_creating", "압축파일 생성 중") + " " + archiveCreatingCount); }
+        if (youtubeSavingCount > 0) { parts.push(t("queue_status_youtube_saving", "YouTube 저장 중") + " " + youtubeSavingCount); }
         if (queuedCount > 0) { parts.push(t("queue_status_pending", "대기") + " " + queuedCount); }
         if (uploadDoneCount > 0) { parts.push(t("job_status_done", "업로드 완료") + " " + uploadDoneCount); }
         if (moveDoneCount > 0) { parts.push(t("queue_status_move_done", "이동 완료") + " " + moveDoneCount); }
         if (deleteDoneCount > 0) { parts.push(t("queue_status_delete_done", "삭제 완료") + " " + deleteDoneCount); }
         if (extractDoneCount > 0) { parts.push(t("queue_status_extract_done", "압축해제 완료") + " " + extractDoneCount); }
         if (archiveCreateDoneCount > 0) { parts.push(t("queue_status_archive_create_done", "압축파일 생성 완료") + " " + archiveCreateDoneCount); }
+        if (youtubeSaveDoneCount > 0) { parts.push(t("queue_status_youtube_save_done", "YouTube 저장 완료") + " " + youtubeSaveDoneCount); }
         if (failedCount > 0) { parts.push(t("job_status_failed", "실패") + " " + failedCount); }
         return parts.join(" · ");
     }
@@ -105,6 +109,18 @@
                 }
                 return t("job_status_failed", "실패");
             }
+            if (item.operationType === "youtube-save") {
+                if (item.status === "uploading") {
+                    return t("queue_status_youtube_saving", "YouTube 저장 중") + progressText;
+                }
+                if (item.status === "queued") {
+                    return t("queue_status_youtube_save_queued", "YouTube 저장 대기");
+                }
+                if (item.status === "done") {
+                    return t("queue_status_youtube_save_done", "YouTube 저장 완료");
+                }
+                return t("job_status_failed", "실패");
+            }
         }
         if (item.status === "uploading") {
             return t("job_status_uploading", "업로드 중") + progressText;
@@ -124,12 +140,12 @@
         }
         if (item.kind === "operation") {
             if (item.status === "done") {
-                if (item.operationType === "move" || item.operationType === "extract" || item.operationType === "create-archive") {
+                if (item.operationType === "move" || item.operationType === "extract" || item.operationType === "create-archive" || item.operationType === "youtube-save") {
                     return getHandrivePathLabel(item.savedPath || item.targetDirPath || item.sourcePath || "");
                 }
                 return getHandrivePathLabel(item.sourcePath || "");
             }
-            if (item.operationType === "move" || item.operationType === "extract" || item.operationType === "create-archive") {
+            if (item.operationType === "move" || item.operationType === "extract" || item.operationType === "create-archive" || item.operationType === "youtube-save") {
                 return getHandrivePathLabel(item.targetDirPath || item.sourcePath || "");
             }
             return getHandrivePathLabel(item.sourcePath || "");

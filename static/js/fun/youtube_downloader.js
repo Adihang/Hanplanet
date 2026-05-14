@@ -20,6 +20,7 @@
     const downloadFailedMessage = form.dataset.downloadFailedMessage || 'Download failed.';
     const qualityLoadingMessage = form.dataset.qualityLoadingMessage || 'Loading qualities...';
     const qualityBestLabel = form.dataset.qualityBestLabel || 'Best quality';
+    const pendingSaveStorageKey = 'hanplanet.youtubeDownloader.pendingSave';
 
     let currentResult = null;
     let currentPlayerEl = null;
@@ -194,6 +195,7 @@
             token: token || ''
         };
         if (saveButton) {
+            saveButton.hidden = false;
             saveButton.disabled = false;
             saveButton.classList.remove('is-saved');
         }
@@ -238,6 +240,9 @@
         document.body.appendChild(link);
         link.click();
         link.remove();
+        if (saveButton) {
+            saveButton.hidden = true;
+        }
     };
 
     if (downloadButton) {
@@ -249,41 +254,28 @@
             return;
         }
         const saveUrl = saveButton.dataset.saveUrl || '';
-        if (!saveUrl) {
+        const listUrl = saveButton.dataset.saveListUrl || '';
+        if (!saveUrl || !listUrl) {
             return;
         }
         saveButton.disabled = true;
         if (saveProgress) { saveProgress.hidden = false; }
-        fetch(saveUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify({ token: currentResult.token })
-        })
-            .then(function (response) {
-                return response.json().catch(function () {
-                    return { ok: false };
-                });
-            })
-            .then(function (data) {
-                if (!data || !data.ok) {
-                    throw new Error((data && data.error) || (saveButton.dataset.saveFailedMessage || 'Save failed.'));
-                }
-                saveButton.classList.add('is-saved');
-                setStatus(saveButton.dataset.saveCompleteMessage || 'Saved.', false);
-                if (data.list_url) {
-                    window.location.assign(data.list_url);
-                }
-            })
-            .catch(function (error) {
-                saveButton.disabled = false;
-                setStatus(error.message || (saveButton.dataset.saveFailedMessage || 'Save failed.'), true);
-            })
-            .finally(function () {
-                if (saveProgress) { saveProgress.hidden = true; }
-            });
+        try {
+            window.sessionStorage.setItem(pendingSaveStorageKey, JSON.stringify({
+                createdAt: Date.now(),
+                filename: currentResult.filename || 'youtube-download',
+                listUrl: listUrl,
+                saveUrl: saveUrl,
+                targetDir: saveButton.dataset.saveTargetDir || 'youtube-downloader',
+                token: currentResult.token
+            }));
+        } catch (error) {
+            saveButton.disabled = false;
+            if (saveProgress) { saveProgress.hidden = true; }
+            setStatus(saveButton.dataset.saveFailedMessage || 'Save failed.', true);
+            return;
+        }
+        window.location.assign(listUrl);
     };
 
     if (saveButton) {

@@ -1,4 +1,4 @@
-// Shared account widget used by minigame pages for menu, profile upload, and logout confirmation UI.
+// Shared account widget used by Sub section pages for menu, profile upload, and logout confirmation UI.
 (function () {
     'use strict';
 
@@ -63,7 +63,7 @@
     };
 
     const closeAllMenus = function () {
-        // Minigame pages can render more than one account host, so close all menus before opening another.
+        // Sub section pages can render more than one account host, so close all menus before opening another.
         hosts.forEach(function (host) {
             const trigger = host.querySelector('[data-auth-account-trigger]');
             const menu = host.querySelector('[data-auth-account-menu]');
@@ -94,7 +94,7 @@
         const logoutForm =
             host.querySelector('form.ui-auth-form.ui-auth-form-hidden') ||
             host.querySelector('form[action][method="post"]:not([data-root-account-profile-upload-form])') ||
-            document.getElementById('auth-logout-form-minigame');
+            document.getElementById('auth-logout-form-sub');
 
         if (!accountTrigger || !logoutForm) {
             return;

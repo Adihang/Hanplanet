@@ -1,7 +1,7 @@
 /**
  * text-bubble page
  *
- * 물리: fun/bubble (site.js initInteractiveBubbleBackground) 완전 동일
+ * 물리: sub/bubble (site.js initInteractiveBubbleBackground) 완전 동일
  *   - 벽 충돌 + 버블 간 충돌 → 속도 임계값 초과 시 팝
  *   - 클릭으로 팝
  *   - 전체 팝 → 새 기사 fetch + 버블 재생성
@@ -40,7 +40,7 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
     const lineSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
     const wordSegmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
 
-    // fun/bubble 동일 물리 상수
+    // sub/bubble 동일 물리 상수
     const POP_SENSITIVITY = 0.5;
     const WALL_POP_SPEED   = 10.65 / POP_SENSITIVITY;
     const IMPACT_POP_SPEED = 9.65 / POP_SENSITIVITY;
@@ -348,7 +348,7 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
         });
     };
 
-    // ── Bubble creation (fun/bubble 동일 비율) ────────────────────────────────
+    // ── Bubble creation (sub/bubble 동일 비율) ────────────────────────────────
     const createBubble = () => {
         const base = Math.min(canvasW || window.innerWidth, canvasH || window.innerHeight);
         const min  = Math.max(26, Math.round(base * 0.045)) * 2 * 0.56;
@@ -568,7 +568,7 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
     };
 
 
-    // ── Physics (fun/bubble / site.js 완전 동일) ──────────────────────────────
+    // ── Physics (sub/bubble / site.js 완전 동일) ──────────────────────────────
     const updatePhysics = (dt, time) => {
         const fs        = dt / 16.666;
         const poppedSet = new Set();
@@ -651,7 +651,7 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
             }
         });
 
-        // 버블 간 충돌 — 속도 임계값 초과 시 팝 (fun/bubble 동일)
+        // 버블 간 충돌 — 속도 임계값 초과 시 팝 (sub/bubble 동일)
         for (let i = 0; i < bubbles.length; i++) {
             const a = bubbles[i];
             if (poppedSet.has(a)) continue;
@@ -692,7 +692,7 @@ import { prepareWithSegments, layoutNextLine } from 'https://esm.sh/@chenglou/pr
             }
         }
 
-        // 벽 바운스 — 속도 임계값 초과 시 팝 (fun/bubble 동일)
+        // 벽 바운스 — 속도 임계값 초과 시 팝 (sub/bubble 동일)
         bubbles.forEach(b => {
             if (poppedSet.has(b)) return;
             const collision = getBubbleCollisionRadii(b);

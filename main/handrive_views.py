@@ -64,6 +64,7 @@ from .views import (
     SUPPORTED_UI_LANGS,
     apply_ui_context,
     get_account_display_name,
+    redirect_to_language_prefixed_path,
     redirect_to_localized_route,
     render_markdown_safely,
     resolve_ui_lang,
@@ -4475,26 +4476,6 @@ def handrive_root(request, ui_lang=None):
     return handrive_list(request, folder_path="", ui_lang=ui_lang)
 
 
-def handrive_root_legacy_redirect(request, ui_lang=None):
-    return redirect_to_localized_route(request, "main:handrive_root_lang", ui_lang=ui_lang)
-
-
-def handrive_list_root_legacy_redirect(request, ui_lang=None):
-    return redirect_to_localized_route(request, "main:handrive_root_lang", ui_lang=ui_lang)
-
-
-def handrive_write_legacy_redirect(request, ui_lang=None):
-    return redirect_to_localized_route(request, "main:handrive_write_lang", ui_lang=ui_lang)
-
-
-def handrive_list_legacy_redirect(request, folder_path, ui_lang=None):
-    return redirect_to_localized_route(request, "main:handrive_list_lang", ui_lang=ui_lang, folder_path=folder_path)
-
-
-def handrive_view_legacy_redirect(request, doc_path, ui_lang=None):
-    return redirect_to_localized_route(request, "main:handrive_view_lang", ui_lang=ui_lang, doc_path=doc_path)
-
-
 def _resolve_handrive_login_target_user(username_value: str | None):
     username = (username_value or "").strip()
     if not username:
@@ -4760,7 +4741,7 @@ def _send_signup_welcome_email(user, ui_lang: str) -> bool:
     is_en = ui_lang == "en"
     handrive_url = "https://www.hanplanet.com/en/handrive" if is_en else "https://www.hanplanet.com/ko/handrive"
     portfolio_url = f"https://www.hanplanet.com/{'en' if is_en else 'ko'}/portfolio/{user.get_username()}/"
-    games_url = "https://www.hanplanet.com/en/fun/bumpercar-spiky/" if is_en else "https://www.hanplanet.com/ko/fun/bumpercar-spiky/"
+    sub_url = "https://www.hanplanet.com/en/sub/" if is_en else "https://www.hanplanet.com/ko/sub/"
 
     if is_en:
         subject = "[Hanplanet] Welcome to Hanplanet"
@@ -4770,11 +4751,11 @@ def _send_signup_welcome_email(user, ui_lang: str) -> bool:
             "Here are a few things you can do now:\n"
             "- HanDrive: upload, preview, edit, share, zip/unzip, and manage files.\n"
             "- Portfolio: build and share your public profile and project pages.\n"
-            "- Mini games: play Hanplanet multiplayer games with your account.\n"
+            "- Sub: explore Hanplanet games and utility pages with your account.\n"
             "- Git workspace: manage supported HanDrive folders through the connected Git server.\n\n"
             f"Start with HanDrive: {handrive_url}\n"
             f"Your portfolio: {portfolio_url}\n"
-            f"Mini games: {games_url}\n\n"
+            f"Sub: {sub_url}\n\n"
             "Thanks,\nHanplanet"
         )
         html_message = _render_hanplanet_email_html(
@@ -4790,13 +4771,13 @@ def _send_signup_welcome_email(user, ui_lang: str) -> bool:
                 '<span style="color:#666666;">Upload, preview, edit, share, zip/unzip, and manage files.</span></div>'
                 '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>Portfolio</strong><br>'
                 '<span style="color:#666666;">Build and share your public profile and project pages.</span></div>'
-                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>Mini games</strong><br>'
-                '<span style="color:#666666;">Play Hanplanet multiplayer games with your account.</span></div>'
+                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>Sub</strong><br>'
+                '<span style="color:#666666;">Explore Hanplanet games and utility pages with your account.</span></div>'
                 '<div style="padding:12px 0;"><strong>Git workspace</strong><br>'
                 '<span style="color:#666666;">Manage supported HanDrive folders through the connected Git server.</span></div>'
                 "</div>"
                 f'<p style="margin:16px 0 0;color:#666666;">Portfolio: <a href="{escape(portfolio_url)}" style="color:#222222;">{escape(portfolio_url)}</a></p>'
-                f'<p style="margin:6px 0 0;color:#666666;">Mini games: <a href="{escape(games_url)}" style="color:#222222;">{escape(games_url)}</a></p>'
+                f'<p style="margin:6px 0 0;color:#666666;">Sub: <a href="{escape(sub_url)}" style="color:#222222;">{escape(sub_url)}</a></p>'
             ),
             cta_label="Open HanDrive",
             cta_url=handrive_url,
@@ -4810,11 +4791,11 @@ def _send_signup_welcome_email(user, ui_lang: str) -> bool:
             "이제 사이트에서 아래 기능을 사용할 수 있습니다.\n"
             "- HanDrive: 파일 업로드, 미리보기, 수정, 공유, 압축/압축해제, 파일 관리\n"
             "- 포트폴리오: 내 프로필과 프로젝트 페이지 작성 및 공유\n"
-            "- 미니게임: 계정으로 Hanplanet 멀티플레이 게임 이용\n"
+            "- 기타: 계정으로 Hanplanet 멀티플레이 게임 이용\n"
             "- Git 작업공간: 지원되는 HanDrive 폴더를 연결된 Git 서버에서 관리\n\n"
             f"HanDrive 시작하기: {handrive_url}\n"
             f"내 포트폴리오: {portfolio_url}\n"
-            f"미니게임: {games_url}\n\n"
+            f"기타: {sub_url}\n\n"
             "감사합니다.\nHanplanet"
         )
         html_message = _render_hanplanet_email_html(
@@ -4830,13 +4811,13 @@ def _send_signup_welcome_email(user, ui_lang: str) -> bool:
                 '<span style="color:#666666;">파일 업로드, 미리보기, 수정, 공유, 압축/압축해제, 파일 관리</span></div>'
                 '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>포트폴리오</strong><br>'
                 '<span style="color:#666666;">내 프로필과 프로젝트 페이지 작성 및 공유</span></div>'
-                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>미니게임</strong><br>'
+                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>기타</strong><br>'
                 '<span style="color:#666666;">계정으로 Hanplanet 멀티플레이 게임 이용</span></div>'
                 '<div style="padding:12px 0;"><strong>Git 작업공간</strong><br>'
                 '<span style="color:#666666;">지원되는 HanDrive 폴더를 연결된 Git 서버에서 관리</span></div>'
                 "</div>"
                 f'<p style="margin:16px 0 0;color:#666666;">내 포트폴리오: <a href="{escape(portfolio_url)}" style="color:#222222;">{escape(portfolio_url)}</a></p>'
-                f'<p style="margin:6px 0 0;color:#666666;">미니게임: <a href="{escape(games_url)}" style="color:#222222;">{escape(games_url)}</a></p>'
+                f'<p style="margin:6px 0 0;color:#666666;">기타: <a href="{escape(sub_url)}" style="color:#222222;">{escape(sub_url)}</a></p>'
             ),
             cta_label="HanDrive 시작하기",
             cta_url=handrive_url,
@@ -5553,6 +5534,8 @@ def handrive_logout_bridge(request, ui_lang=None):
 
 @require_http_methods(["GET", "POST"])
 def handrive_login(request, ui_lang=None):
+    if ui_lang is None and request.method in {"GET", "HEAD"}:
+        return redirect_to_language_prefixed_path(request)
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
@@ -5916,6 +5899,8 @@ def handrive_api_signup_2fa_verify_code(request, ui_lang=None):
 
 @require_http_methods(["GET", "POST"])
 def handrive_signup(request, ui_lang=None):
+    if ui_lang is None and request.method in {"GET", "HEAD"}:
+        return redirect_to_language_prefixed_path(request)
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
@@ -6008,6 +5993,8 @@ def handrive_signup(request, ui_lang=None):
 @require_http_methods(["GET", "POST"])
 def handrive_2fa_verify(request, ui_lang=None):
     """이메일 2FA 코드 입력/검증 페이지."""
+    if ui_lang is None and request.method in {"GET", "HEAD"}:
+        return redirect_to_language_prefixed_path(request)
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
@@ -6062,6 +6049,8 @@ def handrive_2fa_verify(request, ui_lang=None):
 @require_http_methods(["GET", "POST"])
 def handrive_register_email(request, ui_lang=None):
     """이메일이 없는 기존 계정의 이메일 등록 및 2FA 코드 발송 페이지."""
+    if ui_lang is None and request.method in {"GET", "HEAD"}:
+        return redirect_to_language_prefixed_path(request)
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]

@@ -7,6 +7,8 @@
     const dropzone = panel.querySelector("[data-image-pip-dropzone]");
     const image = panel.querySelector("[data-image-pip-image]");
     const status = panel.querySelector("[data-image-pip-status]");
+    const uploadOpenButton = panel.querySelector("[data-image-pip-upload-open]");
+    const uploadInput = panel.querySelector("[data-image-pip-upload-input]");
     const codeOpenButton = panel.querySelector("[data-image-pip-code-open]");
     const codeModal = document.querySelector("[data-image-pip-code-modal]");
     const codeCloseButton = document.querySelector("[data-image-pip-code-close]");
@@ -26,7 +28,7 @@
   </style>
 </head>
 <body>
-  <img id="image" alt="Image PiP" crossorigin="anonymous" src="https://www.hanplanet.com/fun/image-pip-demo/sample-image.png">
+  <img id="image" alt="Image PiP" crossorigin="anonymous" src="https://www.hanplanet.com/sub/image-pip-demo/sample-image.png">
 
   <script>
     const image = document.getElementById("image");
@@ -227,6 +229,16 @@
             openImagePictureInPicture().catch(function (error) {
                 setStatus(error && error.message ? error.message : getMessage("statusUnsupported", "This browser does not support image Picture-in-Picture."));
             });
+        });
+    }
+
+    if (uploadOpenButton && uploadInput) {
+        uploadOpenButton.addEventListener("click", function () {
+            uploadInput.click();
+        });
+        uploadInput.addEventListener("change", function () {
+            replaceImageWithFile(uploadInput.files && uploadInput.files[0]);
+            uploadInput.value = "";
         });
     }
 

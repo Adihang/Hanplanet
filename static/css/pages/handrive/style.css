@@ -1242,7 +1242,7 @@ body.theme-dark .handrive-help-icon-symbol {
     border-radius: var(--handrive-radius-lg);
     background: var(--handrive-elevated-bg);
     box-shadow: var(--handrive-shadow-lg);
-    z-index: 24;
+    z-index: 3000;
     overflow: hidden;
 }
 
@@ -1804,7 +1804,8 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 .handrive-preview-nav-btn {
     position: absolute;
     top: calc(50% + calc(var(--handrive-preview-head-height, 47px) / 2));
-    transform: translateY(-50%) scale(var(--handrive-preview-nav-scale, 1));
+    --handrive-preview-nav-offset-x: 0;
+    transform: translate(var(--handrive-preview-nav-offset-x), -50%) scale(var(--handrive-preview-nav-scale, 1));
     z-index: 9;
     width: 30px;
     height: 86px;
@@ -1821,8 +1822,8 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     opacity: 0.9;
     mix-blend-mode: difference;
     transition:
-        opacity 140ms ease,
-        transform 140ms ease,
+        opacity 180ms ease,
+        transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
         background-color 140ms ease,
         color 140ms ease;
     flex-shrink: 0;
@@ -1850,11 +1851,11 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 @keyframes handrive-preview-nav-pop {
     0% {
         opacity: 0;
-        transform: translateY(-50%) scale(0.9);
+        transform: translate(0, -50%) scale(0.9);
     }
     100% {
         opacity: 0.9;
-        transform: translateY(-50%) scale(1);
+        transform: translate(0, -50%) scale(1);
     }
 }
 
@@ -1866,6 +1867,11 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     z-index: 8;
     pointer-events: none;
     display: none;
+    opacity: 1;
+    visibility: visible;
+    transition:
+        opacity 180ms ease,
+        visibility 0s linear 0s;
 }
 
 .handrive-preview-nav-bg.is-visible {
@@ -1883,6 +1889,10 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     -webkit-backdrop-filter: blur(3px);
     border: 1px solid rgba(255, 255, 255, 0.18);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    opacity: 1;
+    transition:
+        opacity 180ms ease,
+        transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .handrive-preview-nav-bg > span:first-child {
@@ -1895,8 +1905,34 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     transform: translateY(-50%);
 }
 
-.handrive-preview-nav-prev { left: 6px; }
-.handrive-preview-nav-next { right: 6px; }
+.handrive-preview-nav-prev {
+    left: 6px;
+    --handrive-preview-nav-hidden-x: -8px;
+}
+.handrive-preview-nav-next {
+    right: 6px;
+    --handrive-preview-nav-hidden-x: 8px;
+}
+
+/* 영상 재생 중에는 nav 버튼 숨김 */
+.handrive-list-preview:has(.video-js.vjs-playing) .handrive-preview-nav-btn {
+    --handrive-preview-nav-offset-x: var(--handrive-preview-nav-hidden-x, 0);
+    --handrive-preview-nav-scale: 0.94;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.handrive-list-preview:has(.video-js.vjs-playing) .handrive-preview-nav-bg {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+        opacity 180ms ease,
+        visibility 0s linear 180ms;
+}
+
+.handrive-list-preview:has(.video-js.vjs-playing) .handrive-preview-nav-bg > span {
+    opacity: 0;
+}
 
 .handrive-list-preview-zoom-bg,
 .handrive-view-zoom-bg {
@@ -4234,7 +4270,18 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     flex-wrap: wrap;
     align-items: center;
     height: auto !important;
-    padding-bottom: 4px;
+    padding: 0;
+}
+
+.handrive-media-video-wrap .video-js .vjs-control-bar {
+    left: -1px;
+    right: -1px;
+    bottom: -1px;
+    width: calc(100% + 2px);
+    padding-bottom: 1px;
+    border-radius: 0 0 var(--handrive-radius-md) var(--handrive-radius-md);
+    overflow: hidden;
+    background-clip: padding-box;
 }
 
 /* 진행바: 1행 전체 폭 */
@@ -4242,10 +4289,11 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     order: -1;
     width: 100% !important;
     flex: 0 0 100% !important;
-    height: 16px;
+    height: 10px;
     min-height: 0;
     margin: 0;
-    padding: 0;
+    padding: 0 8px;
+    box-sizing: border-box;
 }
 .video-js .vjs-progress-control .vjs-progress-holder {
     height: 4px;
@@ -4427,7 +4475,9 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
 
 /* Cast 버튼: SDK 로드 시 항상 표시 + 아이콘 크기 보정 */
 .video-js .vjs-chromecast-button {
-    display: block !important;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
 }
 .video-js .vjs-control-bar .vjs-chromecast-button .vjs-icon-placeholder {
     background: none;
@@ -4465,9 +4515,13 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     border-radius: 0 !important;
 }
 
-/* 10초 스킵 버튼 아이콘 크기 보정 */
-.video-js .vjs-seek-button .vjs-icon-placeholder::before {
-    font-size: 20px;
+.video-js.vjs-fullscreen .vjs-control-bar {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    padding-bottom: 0;
+    border-radius: 0;
 }
 
 /* 썸네일 프리뷰 툴팁 */
@@ -4582,6 +4636,19 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 /* 컨트롤바 배경 */
 .video-js .vjs-control-bar {
     background: rgba(15, 15, 15, 0.88);
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+}
+
+.video-js.vjs-user-inactive.vjs-playing .vjs-control-bar {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: none;
+    transform: translateY(calc(100% + 2px));
+    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* 빅 플레이 버튼 */

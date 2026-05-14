@@ -19,7 +19,7 @@
             <div class="ui-subtitle ui-path-breadcrumbs">
                 <a class="ui-path-link" href="/">{{ home_label }}</a>
                 <span class="ui-path-sep">/</span>
-                <a class="ui-path-link" href="{{ minigame_url }}">{{ minigame_label }}</a>
+                <a class="ui-path-link" href="{{ sub_url }}">{{ sub_label }}</a>
                 <span class="ui-path-sep">/</span>
                 <span class="ui-path-current">{{ page_title }}</span>
             </div>
@@ -54,6 +54,16 @@
         </div>
         <p class="image-pip-demo-status" data-image-pip-status role="status" aria-live="polite">{{ status_ready }}</p>
         <div class="image-pip-demo-actions">
+            <input
+                class="image-pip-demo-file-input"
+                type="file"
+                accept="image/*"
+                data-image-pip-upload-input
+                aria-label="{{ upload_image_label }}"
+            >
+            <button class="ui-btn image-pip-demo-upload-button" type="button" data-image-pip-upload-open>
+                {{ upload_image_label }}
+            </button>
             <button class="ui-btn image-pip-demo-code-button" type="button" data-image-pip-code-open>
                 {{ example_code_label }}
             </button>

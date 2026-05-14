@@ -71,13 +71,12 @@
                 // progressControl은 CSS로 컨트롤바 위 행으로 올림
                 children: [
                     'playToggle',
-                    // setupControls의 ready()에서 index 1,2에 back/forward 삽입
+                    { name: 'volumePanel', inline: false },
                     'progressControl',
                     'currentTimeDisplay',
                     'timeDivider',
                     'durationDisplay',
                     'customControlSpacer',
-                    { name: 'volumePanel', inline: false },
                     'playbackRateMenuButton',
                     'fullscreenToggle',
                 ],
@@ -105,21 +104,6 @@
 
     // ── 컨트롤 공통 ──────────────────────────────────────────────────
     function setupControls(player) {
-        // 10초 스킵 버튼: play 바로 뒤 index 1(back), 2(forward)에 직접 삽입
-        player.ready(() => {
-            const bar = player.getChild('controlBar');
-            if (!bar) return;
-            const SeekButton = videojs.getComponent('SeekButton');
-            if (!SeekButton) {
-                if (typeof player.seekButtons === 'function') {
-                    player.seekButtons({ back: 10, forward: 10, backIndex: 1, forwardIndex: 2 });
-                }
-                return;
-            }
-            bar.addChild('SeekButton', { direction: 'back',    seconds: 10 }, 1);
-            bar.addChild('SeekButton', { direction: 'forward', seconds: 10 }, 2);
-        });
-
         // Space: 재생/정지 | ←→: 10초 | ↑↓: 볼륨 | F: 풀스크린 | M: 음소거
         if (typeof player.hotkeys === 'function') {
             player.hotkeys({

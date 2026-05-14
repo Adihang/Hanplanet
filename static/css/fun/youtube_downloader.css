@@ -1,9 +1,14 @@
+body.youtube-downloader-page {
+    height: 100dvh;
+    overflow: hidden;
+}
+
 .youtube-downloader-content {
     display: flex;
     align-items: stretch;
     justify-content: center;
     padding-top: 14px;
-    overflow: visible;
+    overflow: hidden;
 }
 
 .youtube-downloader-panel {
@@ -16,8 +21,43 @@
     border: none;
     border-radius: 0;
     padding: 0;
-    overflow: visible;
+    overflow: hidden;
     background-color: transparent;
+}
+
+/* preview 활성화 시 flex 체인으로 뷰포트를 가득 채움 (handrive 읽기 페이지 방식) */
+.youtube-downloader-panel:has(.youtube-downloader-preview:not([hidden])) {
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+.youtube-downloader-panel:has(.youtube-downloader-preview:not([hidden])) .youtube-downloader-preview {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* head / progress / actions는 자연 높이 고정 — 플레이어 높이 계산에서 제외 */
+.youtube-downloader-panel:has(.youtube-downloader-preview:not([hidden])) .youtube-downloader-preview-head,
+.youtube-downloader-panel:has(.youtube-downloader-preview:not([hidden])) .youtube-downloader-save-progress,
+.youtube-downloader-panel:has(.youtube-downloader-preview:not([hidden])) .youtube-downloader-preview-actions {
+    flex: 0 0 auto;
+}
+
+/* 오디오가 아닌 경우에만 player-slot이 나머지 높이를 채움 */
+.youtube-downloader-panel:has(.youtube-downloader-preview:not([hidden])):not(:has(.youtube-downloader-player.is-audio)) .youtube-downloader-player-slot {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.youtube-downloader-panel:has(.youtube-downloader-preview:not([hidden])):not(:has(.youtube-downloader-player.is-audio)) .youtube-downloader-player-slot .video-js {
+    height: 100%;
+    width: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: auto;
+    min-height: 0;
 }
 
 .youtube-downloader-form {
@@ -355,7 +395,6 @@ body.theme-dark .youtube-downloader-save-to-handrive.is-saved {
 
     .youtube-downloader-player-slot .video-js {
         min-height: 160px;
-        max-height: none;
     }
 
     .youtube-downloader-preview-head,

@@ -268,6 +268,7 @@
         var runDeleteOperationQueueItem = settings.runDeleteOperationQueueItem || function () { return Promise.resolve(); };
         var runExtractOperationQueueItem = settings.runExtractOperationQueueItem || function () { return Promise.resolve(); };
         var runMoveOperationQueueItem = settings.runMoveOperationQueueItem || function () { return Promise.resolve(); };
+        var runYoutubeSaveOperationQueueItem = settings.runYoutubeSaveOperationQueueItem || function () { return Promise.resolve(); };
         var refreshCurrentDirectory = settings.refreshCurrentDirectory || function () { return Promise.resolve(); };
         var alertError = settings.alertError || function () {};
         var t = settings.t || function (_, fallbackValue) { return fallbackValue || ""; };
@@ -297,6 +298,8 @@
                         await runExtractOperationQueueItem(nextItem);
                     } else if (nextItem.operationType === "move") {
                         await runMoveOperationQueueItem(nextItem);
+                    } else if (nextItem.operationType === "youtube-save") {
+                        await runYoutubeSaveOperationQueueItem(nextItem);
                     }
                     if (nextItem.abortRequested) {
                         removeUploadQueueItem(nextItem.id);

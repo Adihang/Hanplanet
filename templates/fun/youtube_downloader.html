@@ -27,7 +27,7 @@
             <div class="ui-subtitle ui-path-breadcrumbs">
                 <a class="ui-path-link" href="/">{{ home_label }}</a>
                 <span class="ui-path-sep">/</span>
-                <a class="ui-path-link" href="{{ minigame_url }}">{{ minigame_label }}</a>
+                <a class="ui-path-link" href="{{ sub_url }}">{{ sub_label }}</a>
                 <span class="ui-path-sep">/</span>
                 <span class="ui-path-current">{{ page_title }}</span>
             </div>
@@ -113,6 +113,8 @@
                     type="button"
                     data-youtube-downloader-save
                     data-save-url="{{ save_to_handrive_api_url }}"
+                    data-save-list-url="{{ save_to_handrive_list_url }}"
+                    data-save-target-dir="{{ save_to_handrive_target_dir }}"
                     data-save-complete-message="{{ save_complete_message }}"
                     data-save-failed-message="{{ save_failed_message }}"
                     aria-label="{{ save_to_handrive_label }}"

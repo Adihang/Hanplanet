@@ -4466,6 +4466,57 @@
             return item;
         }
 
+        function enqueuePendingYoutubeDownloaderSave() {
+            const storageKey = "hanplanet.youtubeDownloader.pendingSave";
+            let payload = null;
+            try {
+                const raw = window.sessionStorage ? window.sessionStorage.getItem(storageKey) : "";
+                if (!raw) {
+                    return;
+                }
+                payload = JSON.parse(raw);
+                window.sessionStorage.removeItem(storageKey);
+            } catch (error) {
+                try {
+                    window.sessionStorage.removeItem(storageKey);
+                } catch (removeError) {}
+                return;
+            }
+
+            if (!payload || !payload.token || !payload.saveUrl) {
+                return;
+            }
+            const createdAt = Number(payload.createdAt || 0);
+            if (createdAt && Date.now() - createdAt > 30 * 60 * 1000) {
+                return;
+            }
+            state.uploadQueueSequence += 1;
+            state.uploadQueueItems.push({
+                id: state.uploadQueueSequence,
+                kind: "operation",
+                operationType: "youtube-save",
+                entries: [],
+                fileName: String(payload.filename || "youtube-download"),
+                sourcePath: "YouTube Downloader",
+                targetDirPath: normalizePath(payload.targetDir || "youtube-downloader", true),
+                status: "queued",
+                progress: 0,
+                errorMessage: "",
+                savedPath: "",
+                savedSlugPath: "",
+                commitMessage: "",
+                abortRequested: false,
+                abortController: null,
+                saveUrl: String(payload.saveUrl || ""),
+                sizeDisplay: "",
+                token: String(payload.token || ""),
+            });
+            state.uploadQueueDismissed = false;
+            state.uploadQueueCollapsed = false;
+            renderUploadQueue();
+            processOperationQueue().catch(alertError);
+        }
+
         let _uploadQueuePollTimer = null;
         function renderUploadQueue() {
             const items = state.uploadQueueItems.slice(-20);
@@ -4846,6 +4897,22 @@
             });
         }
 
+        async function runYoutubeSaveOperationQueueItem(item) {
+            if (!item.saveUrl || !item.token) {
+                throw new Error(t("job_status_failed", "실패"));
+            }
+            item.progress = 10;
+            renderUploadQueue();
+            const data = await requestJson(item.saveUrl, buildPostOptions({ token: item.token }));
+            item.progress = 90;
+            item.savedPath = data && data.path
+                ? data.path
+                : normalizePath((item.targetDirPath || "") + "/" + (item.fileName || ""), true);
+            item.savedSlugPath = data && data.slug_path ? data.slug_path : "";
+            renderUploadQueue();
+            queueNeedsRefresh();
+        }
+
         async function processOperationQueue() {
             await processOperationQueueWorker({
                 alertError: alertError,
@@ -4856,6 +4923,7 @@
                 runDeleteOperationQueueItem: runDeleteOperationQueueItem,
                 runExtractOperationQueueItem: runExtractOperationQueueItem,
                 runMoveOperationQueueItem: runMoveOperationQueueItem,
+                runYoutubeSaveOperationQueueItem: runYoutubeSaveOperationQueueItem,
                 state: state,
                 t: t,
             });
@@ -8020,6 +8088,7 @@
         
         clearPreviewPane();
         renderList();
+        enqueuePendingYoutubeDownloaderSave();
         var initialSearchQuery = listSearchInput
             ? String(new URLSearchParams(window.location.search).get("q") || "").trim()
             : "";

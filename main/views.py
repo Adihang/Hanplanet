@@ -590,7 +590,7 @@ def get_dummy_portfolio_projects(ui_lang):
                 ),
             },
             {
-                "title": "Mini Game Hub",
+                "title": "Sub Hub",
                 "tags": ["Canvas", "JavaScript", "Animation"],
                 "content": (
                     "A collection page for small interactive web games.\n\n"
@@ -653,7 +653,7 @@ def get_dummy_portfolio_projects(ui_lang):
             ),
         },
         {
-            "title": "미니게임 허브",
+            "title": "기타 허브",
             "tags": ["Canvas", "JavaScript", "Animation"],
             "content": (
                 "작은 웹 게임들을 모아 보여주는 허브 페이지입니다.\n\n"
@@ -970,7 +970,7 @@ def build_lang_switch_url(request, target_lang):
 def apply_ui_context(request, context, ui_lang):
     """Populate shared template context used across Hanplanet pages and partials."""
     request_path = str(getattr(request, "path", "") or "")
-    default_show_account_my_portfolio = "/fun/" not in request_path
+    default_show_account_my_portfolio = "/fun/" not in request_path and "/sub/" not in request_path and request_path != "/sub"
     context["ui_lang"] = ui_lang
     context["show_chat_widget"] = False
     context["lang_switch_ko_url"] = build_lang_switch_url(request, "ko")
@@ -1028,9 +1028,15 @@ def apply_ui_context(request, context, ui_lang):
         for link in nav_links:
             name_value = str(getattr(link, "name", "") or "")
             url_value = str(getattr(link, "url", "") or "")
-            if name_value.strip().lower() == "docs":
+            normalized_name = name_value.strip().lower()
+            normalized_url = url_value.rstrip("/")
+            if normalized_name == "docs":
                 link.name = "HanDrive"
-            if url_value.startswith("/docs"):
+            elif normalized_name in {"mini game", "minigame"}:
+                link.name = "Sub"
+            if normalized_url in {"/fun/sub", "/fun/minigame", "/minigame", "/Stratagem_Hero"}:
+                link.url = f"/{ui_lang}/sub/"
+            elif url_value.startswith("/docs"):
                 link.url = "/handrive" + url_value[len("/docs"):]
             elif url_value.startswith("/ide"):
                 link.url = "/handrive" + url_value[len("/ide"):]
@@ -1072,7 +1078,7 @@ def apply_ui_context(request, context, ui_lang):
         context["nav_links"] = [
             {"name": "HanDrive", "url": "/handrive/list"},
             {"name": "CLI", "url": f"/{ui_lang}/handrive/cli"},
-            {"name": "Mini Game", "url": "/fun/minigame/"},
+            {"name": "Sub", "url": "/sub/"},
         ]
 
 
@@ -1163,6 +1169,23 @@ def get_account_display_name(user):
 def redirect_to_localized_route(request, route_name, **kwargs):
     """Convenience redirect wrapper for routes that always follow the active UI language."""
     return redirect(build_localized_url(request, route_name, **kwargs))
+
+
+def redirect_to_language_prefixed_path(request, extra_path=None, **kwargs):
+    """Redirect a current non-language URL to the same path under the active UI language."""
+    resolved_lang = resolve_ui_lang(request)
+    raw_path = str(extra_path if extra_path is not None else request.path or "").strip()
+    if raw_path:
+        target_path = raw_path if raw_path.startswith("/") else f"/{raw_path}"
+    else:
+        target_path = "/"
+    query_params = request.GET.copy()
+    query_params.pop("lang", None)
+    query_string = query_params.urlencode()
+    target_url = f"/{resolved_lang}{target_path}"
+    if query_string:
+        target_url = f"{target_url}?{query_string}"
+    return redirect(target_url)
 
 
 def _redirect_to_handrive_login_with_next(request):
@@ -1478,78 +1501,8 @@ def image_pip_demo_sample_image(request, ui_lang=None):
     raise Http404("sample image not found")
 
 
-def main_legacy_redirect(request):
-    """Redirect the historical root portfolio URL onto the current localized landing flow."""
-    return portfolio_root_redirect(request)
-
-
-def portfolio_user_legacy_redirect(request, user_id):
-    """Redirect a legacy portfolio-user URL onto the localized portfolio route."""
-    return redirect_to_localized_route(request, "main:portfolio_user_lang", user_id=user_id)
-
-
-def portfolio_write_legacy_redirect(request):
-    """Redirect the old portfolio write URL onto the localized editor."""
-    return redirect_to_localized_route(request, "main:portfolio_write_lang")
-
-
-def project_detail_legacy_redirect(request, project_id):
-    """Redirect the legacy numeric project detail route onto the localized URL."""
-    return redirect_to_localized_route(request, "main:ProjectDetail_lang", project_id=project_id)
-
-
-def project_detail_user_legacy_redirect(request, user_id, project_number):
-    """Redirect a legacy user/project detail URL onto the localized owner/project route."""
-    return redirect_to_localized_route(
-        request,
-        "main:ProjectDetail_user_lang",
-        user_id=user_id,
-        project_number=project_number,
-    )
-
-
-def dummy_project_detail_legacy_redirect(request, sample_id):
-    """Redirect legacy sample project URLs onto the localized dummy-project route."""
-    return redirect_to_localized_route(request, "main:DummyProjectDetail_lang", sample_id=sample_id)
-
-
-def salvations_edge_legacy_redirect(request, ui_lang=None):
-    """Redirect the legacy Salvation's Edge page onto the localized mini-game page."""
-    return redirect_to_localized_route(request, "main:Salvations_Edge_4_lang")
-
-
-def stratagem_hero_legacy_redirect(request, ui_lang=None):
-    """Redirect the legacy Stratagem Hero page onto the localized route."""
-    return redirect_to_localized_route(request, "main:Stratagem_Hero_lang")
-
-
-def stratagem_hero_scoreboard_legacy_redirect(request, ui_lang=None):
-    """Redirect the legacy Stratagem Hero scoreboard onto the localized route."""
-    return redirect_to_localized_route(request, "main:Stratagem_Hero_Scoreboard_lang")
-
-
-def minigame_legacy_redirect(request, ui_lang=None):
-    """Redirect the legacy minigame hub URL onto the localized hub."""
-    return redirect_to_localized_route(request, "main:minigame_lang")
-
-
-def bubble_legacy_redirect(request, ui_lang=None):
-    """Redirect the legacy Bubble page onto the localized route."""
-    return redirect_to_localized_route(request, "main:bubble_lang")
-
-
-def hanplanet_multiplayer_legacy_redirect(request, ui_lang=None):
-    """Redirect the legacy bumpercar page onto the localized public game route."""
-    return redirect_to_localized_route(request, "main:bumpercar_spiky_lang")
-
-
-def bumpercar_spiky_admin_legacy_redirect(request, ui_lang=None):
-    """Redirect the legacy bumpercar admin URL onto the localized admin page."""
-    return redirect_to_localized_route(request, "main:bumpercar_spiky_admin_lang")
-
-
-def minigame_page(request, ui_lang=None):
-    """Render the mini game landing page that links to the browser game collection."""
+def sub_page(request, ui_lang=None):
+    """Render the sub landing page that links to the browser game collection."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
 
@@ -1629,17 +1582,17 @@ def minigame_page(request, ui_lang=None):
     ]
 
     context = {
-        "page_title": "Mini Game" if is_english else "미니게임",
-        "minigame_links": links,
-        "minigame_home_label": "Home" if is_english else "홈",
+        "page_title": "Sub" if is_english else "기타",
+        "sub_links": links,
+        "sub_home_label": "Home" if is_english else "홈",
         "handrive_login_url": reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}),
         "handrive_signup_url": reverse("main:handrive_signup_lang", kwargs={"ui_lang": resolved_lang}),
-        "meta_title": "Hanplanet Mini Games" if is_english else "Hanplanet 미니게임",
-        "meta_og_title": "Hanplanet Mini Games" if is_english else "Hanplanet 미니게임",
+        "meta_title": "Hanplanet Sub" if is_english else "Hanplanet 기타",
+        "meta_og_title": "Hanplanet Sub" if is_english else "Hanplanet 기타",
         "meta_description": (
-            "Play browser mini games on Hanplanet, including Bubble, Text Bubble, Stratagem Hero, Bumper Car Spiky, and Raise Speaki."
+            "Browse Sub on Hanplanet, including Bubble, Text Bubble, Stratagem Hero, Bumper Car Spiky, and Raise Speaki."
             if is_english
-            else "Hanplanet에서 Bubble, Text Bubble, Stratagem Hero, 범퍼카 스핔이, 스핔이 키우기 같은 브라우저 미니게임을 즐겨보세요."
+            else "Hanplanet에서 Bubble, Text Bubble, Stratagem Hero, 범퍼카 스핔이, 스핔이 키우기 같은 기타 페이지를 둘러보세요."
         ),
     }
     context["meta_og_description"] = context["meta_description"]
@@ -1660,12 +1613,12 @@ def minigame_page(request, ui_lang=None):
             kwargs={"ui_lang": resolved_lang},
         )
         context["account_my_portfolio_url"] = context["handrive_my_portfolio_url"]
-        context["account_logout_form_id"] = "auth-logout-form-minigame"
+        context["account_logout_form_id"] = "auth-logout-form-sub"
         context["account_logout_next"] = request.get_full_path() or reverse(
-            "main:minigame_lang", kwargs={"ui_lang": resolved_lang}
+            "main:sub_lang", kwargs={"ui_lang": resolved_lang}
         )
         context["account_logout_url"] = reverse("main:handrive_logout_lang", kwargs={"ui_lang": resolved_lang})
-    response = render(request, "fun/minigame.html", context)
+    response = render(request, "fun/sub.html", context)
     response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response["Pragma"] = "no-cache"
     return response
@@ -1678,8 +1631,8 @@ def image_pip_demo_page(request, ui_lang=None):
     context = {
         "page_title": "Image PiP Demo" if is_english else "이미지 PiP 데모",
         "home_label": "Home" if is_english else "홈",
-        "minigame_label": "Mini Game" if is_english else "미니게임",
-        "minigame_url": reverse("main:minigame_lang", kwargs={"ui_lang": resolved_lang}),
+        "sub_label": "Sub" if is_english else "기타",
+        "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
         "sample_image_url": reverse("main:image_pip_demo_sample_image"),
         "drop_label": (
             "Drop an image here or paste one with Ctrl/Command+V."
@@ -1709,6 +1662,7 @@ def image_pip_demo_page(request, ui_lang=None):
             if is_english
             else "이미지 파일을 사용해주세요."
         ),
+        "upload_image_label": "Upload Image" if is_english else "이미지 업로드",
         "example_code_label": "Example Code" if is_english else "예제코드",
         "example_code_title": "Single-file HTML example" if is_english else "HTML 단일 파일 예제",
         "example_code_close_label": "Close" if is_english else "닫기",
@@ -1728,7 +1682,7 @@ def image_pip_demo_page(request, ui_lang=None):
 
 
 def bubble_page(request, ui_lang=None):
-    """Render the simple bubble mini game page."""
+    """Render the simple bubble sub page."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
     context = {
@@ -1740,7 +1694,7 @@ def bubble_page(request, ui_lang=None):
             if is_english
             else "버블을 전부 터뜨리면 배경색이 랜덤으로 바뀝니다."
         ),
-        "back_to_minigame_text": "Back to Mini Game" if is_english else "미니게임으로 돌아가기",
+        "back_to_sub_text": "Back to Sub" if is_english else "기타로 돌아가기",
     }
     return render(request, "fun/bubble.html", context)
 
@@ -1770,8 +1724,8 @@ def youtube_downloader_page(request, ui_lang=None):
         "ui_lang": resolved_lang,
         "page_title": "YouTube Downloader" if is_english else "유튜브 다운로더",
         "home_label": "Home" if is_english else "홈",
-        "minigame_label": "Mini Game" if is_english else "미니게임",
-        "minigame_url": reverse("main:minigame_lang", kwargs={"ui_lang": resolved_lang}),
+        "sub_label": "Sub" if is_english else "기타",
+        "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
         "download_api_url": reverse("main:youtube_download_lang", kwargs={"ui_lang": resolved_lang}),
         "formats_api_url": reverse("main:youtube_formats_lang", kwargs={"ui_lang": resolved_lang}),
         "url_label": "YouTube URL",
@@ -1799,7 +1753,17 @@ def youtube_downloader_page(request, ui_lang=None):
         "meta_robots": "noindex",
     }
     if request.user.is_authenticated:
+        from .handrive_views import get_scoped_handrive_home_dir
+        scoped_home = get_scoped_handrive_home_dir(request)
+        save_target_dir = "youtube-downloader"
+        if scoped_home:
+            save_target_dir = f"{scoped_home.strip('/')}/youtube-downloader"
         context["save_to_handrive_api_url"] = reverse("main:youtube_save_to_handrive_lang", kwargs={"ui_lang": resolved_lang})
+        context["save_to_handrive_list_url"] = reverse(
+            "main:handrive_list_lang",
+            kwargs={"ui_lang": resolved_lang, "folder_path": save_target_dir},
+        )
+        context["save_to_handrive_target_dir"] = save_target_dir
         context["save_to_handrive_label"] = "Save to HanDrive" if is_english else "HanDrive에 저장"
         context["save_complete_message"] = "Saved to HanDrive." if is_english else "HanDrive에 저장되었습니다."
         context["save_failed_message"] = "Save failed." if is_english else "저장에 실패했습니다."
@@ -1869,6 +1833,27 @@ def _cleanup_old_token_dirs():
                 shutil.rmtree(entry, ignore_errors=True)
         except OSError:
             pass
+
+
+def _cleanup_youtube_token_dir(token_dir):
+    try:
+        if token_dir and token_dir.exists():
+            shutil.rmtree(token_dir, ignore_errors=True)
+    except OSError:
+        pass
+
+
+def _attach_cleanup_on_response_close(response, cleanup_callback):
+    original_close = response.close
+
+    def close_with_cleanup():
+        try:
+            original_close()
+        finally:
+            cleanup_callback()
+
+    response.close = close_with_cleanup
+    return response
 
 
 def _youtube_base_command():
@@ -1986,7 +1971,7 @@ def youtube_download(request, ui_lang=None):
         return JsonResponse({"ok": False, "error": message}, status=400)
 
     temp_dir = tempfile.mkdtemp(prefix="hanplanet-ytdl-")
-    output_template = str(Path(temp_dir) / "%(title).160B [%(id)s].%(ext)s")
+    output_template = str(Path(temp_dir) / "%(title).160B_%(id)s.%(ext)s")
     base_command = _youtube_base_command()
     base_command.extend([
         "--no-playlist",
@@ -2071,6 +2056,7 @@ def youtube_download(request, ui_lang=None):
 
 @require_http_methods(["GET"])
 def youtube_download_file(request, token, ui_lang=None):
+    _cleanup_old_token_dirs()
     if not YOUTUBE_DOWNLOAD_TOKEN_PATTERN.fullmatch(token):
         raise Http404
     token_dir = YOUTUBE_DOWNLOAD_TOKEN_DIR / token
@@ -2088,12 +2074,15 @@ def youtube_download_file(request, token, ui_lang=None):
     as_attachment = request.GET.get("dl") == "1"
     response = FileResponse(file_path.open("rb"), content_type=content_type, as_attachment=as_attachment, filename=file_path.name)
     response["Cache-Control"] = "no-store"
+    if as_attachment:
+        return _attach_cleanup_on_response_close(response, lambda: _cleanup_youtube_token_dir(token_dir))
     return response
 
 
 @require_http_methods(["POST"])
 @csrf_protect
 def youtube_save_to_handrive(request, ui_lang=None):
+    _cleanup_old_token_dirs()
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
     if not request.user.is_authenticated:
@@ -2138,7 +2127,9 @@ def youtube_save_to_handrive(request, ui_lang=None):
         "main:handrive_list_lang",
         kwargs={"ui_lang": resolved_lang, "folder_path": dest_relative_dir},
     )
-    return JsonResponse({"ok": True, "filename": dest_path.name, "list_url": list_url})
+    _cleanup_youtube_token_dir(token_dir)
+    saved_relative_path = f"{dest_relative_dir.rstrip('/')}/{dest_path.name}" if dest_relative_dir else dest_path.name
+    return JsonResponse({"ok": True, "filename": dest_path.name, "list_url": list_url, "path": saved_relative_path})
 
 
 def nyt_article_api(request):
@@ -2272,7 +2263,7 @@ def _build_multiplayer_page_context(
         "multiplayer_hud_counter_text": multiplayer_hud_counter_text,
         "game_slug": game_slug,
         "game_client_script_path": game_client_script_path,
-        "multiplayer_back_text": "Mini Game" if is_english else "미니게임",
+        "multiplayer_back_text": "Sub" if is_english else "기타",
         "handrive_login_url": reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}),
         "handrive_signup_url": reverse("main:handrive_signup_lang", kwargs={"ui_lang": resolved_lang}),
         "bumpercar_restart_server_url": reverse(

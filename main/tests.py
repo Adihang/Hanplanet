@@ -868,23 +868,17 @@ class LanguageUrlRoutingTests(TestCase):
 
         self.assertEqual(resolved, "en")
 
-    def test_legacy_portfolio_redirects_by_browser_language(self):
+    def test_unprefixed_portfolio_url_redirects_by_browser_language(self):
         response = self.client.get("/portfolio/?tab=projects", HTTP_ACCEPT_LANGUAGE="en-US,en;q=0.9")
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], "/login?next=/portfolio/%3Ftab%3Dprojects")
+        self.assertEqual(response["Location"], "/en/portfolio/?tab=projects")
 
-    def test_legacy_portfolio_redirects_to_ko_when_accept_language_missing(self):
-        response = self.client.get("/portfolio/", HTTP_ACCEPT_LANGUAGE="")
-
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], "/login?next=/portfolio/")
-
-    def test_legacy_portfolio_redirects_to_en_for_non_korean_language(self):
-        response = self.client.get("/portfolio/", HTTP_ACCEPT_LANGUAGE="ja-JP,ja;q=0.9")
-
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], "/login?next=/portfolio/")
+    def test_legacy_docs_url_is_not_redirected(self):
+        for url in ("/docs/", "/ko/docs/"):
+            response = self.client.get(url, HTTP_ACCEPT_LANGUAGE="")
+            self.assertEqual(response.status_code, 404)
+            self.assertNotIn("Location", response.headers)
 
 
 class HandriveSignupAutoLoginTests(TestCase):
@@ -904,12 +898,12 @@ class HandriveSignupAutoLoginTests(TestCase):
                 "email": "auto@example.com",
                 "email_2fa_token": self.build_signup_email_token("auto@example.com"),
                 "privacy_consent": "on",
-                "next": "/ko/fun/bumpercar-spiky/",
+                "next": "/ko/sub/bumpercar-spiky/",
             },
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["Location"], "/ko/fun/bumpercar-spiky/")
+        self.assertEqual(response.headers["Location"], "/ko/sub/bumpercar-spiky/")
         self.assertTrue("_auth_user_id" in self.client.session)
         self.assertEqual(
             self.client.session["_auth_user_id"],
@@ -1136,13 +1130,13 @@ class PortfolioPerUserRoutingTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], "/ko/portfolio/GuestUser/")
 
-    def test_logged_in_user_redirects_from_legacy_portfolio_to_own_page(self):
+    def test_logged_in_user_redirects_from_unprefixed_portfolio(self):
         self.client.login(username="GuestUser", password="pw12345")
 
         response = self.client.get("/portfolio/?tab=projects")
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], "/ko/portfolio/GuestUser/?tab=projects")
+        self.assertEqual(response["Location"], "/ko/portfolio/?tab=projects")
 
     def test_unauthenticated_user_redirects_from_localized_portfolio_to_login(self):
         response = self.client.get("/ko/portfolio/")
@@ -1150,11 +1144,11 @@ class PortfolioPerUserRoutingTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], "/login?next=/ko/portfolio/")
 
-    def test_unauthenticated_user_redirects_from_legacy_portfolio_to_login(self):
+    def test_unauthenticated_user_redirects_from_unprefixed_portfolio(self):
         response = self.client.get("/portfolio/")
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], "/login?next=/portfolio/")
+        self.assertEqual(response["Location"], "/ko/portfolio/")
 
     def test_own_portfolio_shows_edit_widget(self):
         self.client.login(username="GuestUser", password="pw12345")
@@ -1793,7 +1787,7 @@ class HanplanetMultiplayerPageTests(TestCase):
         )
 
     def test_multiplayer_page_renders_for_unauthenticated_user(self):
-        response = self.client.get("/ko/fun/bumpercar-spiky/")
+        response = self.client.get("/ko/sub/bumpercar-spiky/")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "data-game-client", html=False)
@@ -1802,7 +1796,7 @@ class HanplanetMultiplayerPageTests(TestCase):
     def test_multiplayer_page_renders_for_authenticated_user(self):
         self.client.force_login(self.user)
 
-        response = self.client.get("/ko/fun/bumpercar-spiky/", HTTP_HOST="127.0.0.1:8000")
+        response = self.client.get("/ko/sub/bumpercar-spiky/", HTTP_HOST="127.0.0.1:8000")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "data-game-client", html=False)
@@ -1815,7 +1809,7 @@ class HanplanetMultiplayerPageTests(TestCase):
     def test_multiplayer_page_shows_restart_button_for_superuser(self):
         self.client.force_login(self.admin_user)
 
-        response = self.client.get("/ko/fun/bumpercar-spiky/")
+        response = self.client.get("/ko/sub/bumpercar-spiky/")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "서버 재시작", html=False)
@@ -1947,14 +1941,14 @@ class HanplanetMultiplayerPageTests(TestCase):
     def test_bumpercar_spiky_admin_requires_superuser(self):
         self.client.force_login(self.user)
 
-        response = self.client.get("/ko/fun/bumpercar-spiky/admin/")
+        response = self.client.get("/ko/sub/bumpercar-spiky/admin/")
 
         self.assertEqual(response.status_code, 404)
 
     def test_bumpercar_spiky_admin_renders_for_superuser(self):
         self.client.force_login(self.admin_user)
 
-        response = self.client.get("/ko/fun/bumpercar-spiky/admin/")
+        response = self.client.get("/ko/sub/bumpercar-spiky/admin/")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "범퍼카 스핔이 관리자", html=False)
@@ -1967,7 +1961,7 @@ class HanplanetMultiplayerPageTests(TestCase):
 
         response = self.client.post(
             reverse("main:bumpercar_spiky_restart_server_lang", kwargs={"ui_lang": "ko"}),
-            data={"next": "/ko/fun/bumpercar-spiky/"},
+            data={"next": "/ko/sub/bumpercar-spiky/"},
         )
 
         self.assertEqual(response.status_code, 404)
@@ -1979,11 +1973,11 @@ class HanplanetMultiplayerPageTests(TestCase):
 
         response = self.client.post(
             reverse("main:bumpercar_spiky_restart_server_lang", kwargs={"ui_lang": "ko"}),
-            data={"next": "/ko/fun/bumpercar-spiky/"},
+            data={"next": "/ko/sub/bumpercar-spiky/"},
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], "/ko/fun/bumpercar-spiky/")
+        self.assertEqual(response["Location"], "/ko/sub/bumpercar-spiky/")
         mock_restart.assert_called_once()
 
     @mock.patch("main.views.set_bumpercar_spiky_npc_health")
@@ -1992,7 +1986,7 @@ class HanplanetMultiplayerPageTests(TestCase):
 
         response = self.client.post(
             reverse("main:bumpercar_spiky_set_npc_health_lang", kwargs={"ui_lang": "ko"}),
-            data={"next": "/ko/fun/bumpercar-spiky/", "npc_health": "12"},
+            data={"next": "/ko/sub/bumpercar-spiky/", "npc_health": "12"},
         )
 
         self.assertEqual(response.status_code, 404)
@@ -2004,11 +1998,11 @@ class HanplanetMultiplayerPageTests(TestCase):
 
         response = self.client.post(
             reverse("main:bumpercar_spiky_set_npc_health_lang", kwargs={"ui_lang": "ko"}),
-            data={"next": "/ko/fun/bumpercar-spiky/", "npc_health": "12"},
+            data={"next": "/ko/sub/bumpercar-spiky/", "npc_health": "12"},
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], "/ko/fun/bumpercar-spiky/")
+        self.assertEqual(response["Location"], "/ko/sub/bumpercar-spiky/")
         mock_set_npc_health.assert_called_once_with(12)
 
     def test_bumpercar_spiky_stats_record_updates_user_profile(self):
@@ -2108,7 +2102,7 @@ class HanplanetMultiplayerPageTests(TestCase):
         )
         self.client.force_login(self.user)
 
-        response = self.client.get("/ko/fun/bumpercar-spiky/")
+        response = self.client.get("/ko/sub/bumpercar-spiky/")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -2132,7 +2126,7 @@ class HanplanetMultiplayerPageTests(TestCase):
         UserProfile.objects.create(user=self.user, bumpercar_spiky_stats={"game_clears": 1})
         self.client.force_login(self.user)
 
-        response = self.client.get("/ko/fun/bumpercar-spiky/")
+        response = self.client.get("/ko/sub/bumpercar-spiky/")
 
         self.assertEqual(response.status_code, 200)
         skin_catalog = json.loads(response.context["game_skin_catalog_json"])
@@ -2143,7 +2137,7 @@ class HanplanetMultiplayerPageTests(TestCase):
         UserProfile.objects.create(user=self.user, bumpercar_spiky_stats={"game_clears": 1})
         self.client.force_login(self.user)
 
-        response = self.client.get("/ko/fun/raise-speaki/")
+        response = self.client.get("/ko/sub/raise-speaki/")
 
         self.assertEqual(response.status_code, 200)
         skin_catalog = json.loads(response.context["game_skin_catalog_json"])
@@ -2154,7 +2148,7 @@ class HanplanetMultiplayerPageTests(TestCase):
         UserProfile.objects.create(user=self.user, bumpercar_spiky_stats={"deaths": 20})
         self.client.force_login(self.user)
 
-        response = self.client.get("/ko/fun/bumpercar-spiky/")
+        response = self.client.get("/ko/sub/bumpercar-spiky/")
 
         self.assertEqual(response.status_code, 200)
         skin_catalog = json.loads(response.context["game_skin_catalog_json"])
@@ -2165,7 +2159,7 @@ class HanplanetMultiplayerPageTests(TestCase):
         UserProfile.objects.create(user=self.user, bumpercar_spiky_stats={"dummy_kills": 20})
         self.client.force_login(self.user)
 
-        response = self.client.get("/ko/fun/bumpercar-spiky/")
+        response = self.client.get("/ko/sub/bumpercar-spiky/")
 
         self.assertEqual(response.status_code, 200)
         skin_catalog = json.loads(response.context["game_skin_catalog_json"])
@@ -2182,7 +2176,7 @@ class HanplanetMultiplayerPageTests(TestCase):
         UserProfile.objects.create(user=admin_user, bumpercar_spiky_stats={"dummy_kills": 0})
         self.client.force_login(admin_user)
 
-        response = self.client.get("/ko/fun/bumpercar-spiky/")
+        response = self.client.get("/ko/sub/bumpercar-spiky/")
 
         self.assertEqual(response.status_code, 200)
         skin_catalog = json.loads(response.context["game_skin_catalog_json"])
@@ -2198,7 +2192,7 @@ class HanplanetMultiplayerPageTests(TestCase):
         UserProfile.objects.create(user=admin_user, bumpercar_spiky_stats={})
         self.client.force_login(admin_user)
 
-        response = self.client.get("/ko/fun/bumpercar-spiky/")
+        response = self.client.get("/ko/sub/bumpercar-spiky/")
 
         self.assertEqual(response.status_code, 200)
         skin_catalog = json.loads(response.context["game_skin_catalog_json"])
@@ -2207,7 +2201,7 @@ class HanplanetMultiplayerPageTests(TestCase):
     def test_multiplayer_page_marks_pumkin_skin_locked_for_regular_user(self):
         self.client.force_login(self.user)
 
-        response = self.client.get("/ko/fun/bumpercar-spiky/")
+        response = self.client.get("/ko/sub/bumpercar-spiky/")
 
         self.assertEqual(response.status_code, 200)
         skin_catalog = json.loads(response.context["game_skin_catalog_json"])
@@ -2219,22 +2213,90 @@ class HanplanetMultiplayerPageTests(TestCase):
         UserProfile.objects.create(user=self.user, bumpercar_spiky_stats={"max_ner_party_size": 2})
         self.client.force_login(self.user)
 
-        response = self.client.get("/ko/fun/bumpercar-spiky/")
+        response = self.client.get("/ko/sub/bumpercar-spiky/")
 
         self.assertEqual(response.status_code, 200)
         skin_catalog = json.loads(response.context["game_skin_catalog_json"])
         pumkin_skin = next(skin for skin in skin_catalog if skin["name"] == "pumkin")
         self.assertTrue(pumkin_skin["unlocked"])
 
-    def test_minigame_page_shows_stats_button_but_not_account_stats_menu(self):
+    def test_sub_page_shows_stats_button_but_not_account_stats_menu(self):
         UserProfile.objects.create(user=self.user, bumpercar_spiky_stats={"dummy_kills": 1})
         self.client.force_login(self.user)
 
-        response = self.client.get("/ko/fun/minigame/")
+        response = self.client.get("/ko/sub/")
 
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "기타", html=False)
+        self.assertNotContains(response, "미니게임", html=False)
+        self.assertContains(response, "sub-page", html=False)
         self.assertContains(response, "전적", html=False)
         self.assertFalse(response.context["show_account_bumpercar_spiky_stats"])
+
+    def test_old_sub_urls_are_not_redirected(self):
+        for url in ("/ko/fun/minigame/", "/fun/youtube-downloader/", "/minigame/"):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 404)
+            self.assertNotIn("Location", response.headers)
+
+    def test_unprefixed_sub_url_redirects_to_localized_sub_url(self):
+        response = self.client.get("/sub/youtube-downloader/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/ko/sub/youtube-downloader/")
+
+    def test_youtube_download_file_cleans_token_dir_after_attachment_download(self):
+        with TemporaryDirectory() as tmpdir:
+            token = "0" * 32
+            token_dir = Path(tmpdir) / token
+            token_dir.mkdir(parents=True)
+            (token_dir / "sample.mp4").write_bytes(b"video")
+
+            with mock.patch("main.views.YOUTUBE_DOWNLOAD_TOKEN_DIR", Path(tmpdir)):
+                response = self.client.get(f"/ko/sub/youtube-downloader/file/{token}/?dl=1")
+
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(token_dir.exists())
+                response.close()
+                self.assertFalse(token_dir.exists())
+
+    def test_youtube_preview_keeps_token_dir_for_player_reuse(self):
+        with TemporaryDirectory() as tmpdir:
+            token = "1" * 32
+            token_dir = Path(tmpdir) / token
+            token_dir.mkdir(parents=True)
+            (token_dir / "sample.mp4").write_bytes(b"video")
+
+            with mock.patch("main.views.YOUTUBE_DOWNLOAD_TOKEN_DIR", Path(tmpdir)):
+                response = self.client.get(f"/ko/sub/youtube-downloader/file/{token}/")
+
+                self.assertEqual(response.status_code, 200)
+                response.close()
+                self.assertTrue(token_dir.exists())
+
+    def test_youtube_save_to_handrive_returns_saved_path_and_cleans_token_dir(self):
+        self.client.force_login(self.user)
+        with TemporaryDirectory() as tmpdir, TemporaryDirectory() as media_tmp:
+            token = "2" * 32
+            token_dir = Path(tmpdir) / token
+            token_dir.mkdir(parents=True)
+            (token_dir / "한글제목_videoid123.mp4").write_bytes(b"video")
+
+            with override_settings(MEDIA_ROOT=media_tmp), mock.patch("main.views.YOUTUBE_DOWNLOAD_TOKEN_DIR", Path(tmpdir)):
+                response = self.client.post(
+                    "/ko/sub/youtube-downloader/save/",
+                    data=json.dumps({"token": token}),
+                    content_type="application/json",
+                )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["filename"], "한글제목_videoid123.mp4")
+            self.assertEqual(payload["path"], "youtube-downloader/한글제목_videoid123.mp4")
+            self.assertEqual(payload["list_url"], "/ko/handrive/youtube-downloader/list")
+            self.assertTrue((Path(media_tmp) / "HanDrive" / "youtube-downloader" / "한글제목_videoid123.mp4").exists())
+            self.assertFalse(token_dir.exists())
 
 
 class HandriveAccessRuleTests(TestCase):

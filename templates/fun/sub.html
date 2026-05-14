@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load static_versioned %}
-{% block body_class %}ui-page minigame-page{% endblock %}
+{% block body_class %}ui-page sub-page{% endblock %}
 {% block content %}
 {% include 'handrive/_assets_head.html' %}
 
@@ -11,12 +11,12 @@
                 <h1 class="ui-title">{{ page_title }}</h1>
             </div>
             <div class="ui-subtitle ui-path-breadcrumbs">
-                <a class="ui-path-link" href="/">{{ minigame_home_label }}</a>
+                <a class="ui-path-link" href="/">{{ sub_home_label }}</a>
                 <span class="ui-path-sep">/</span>
                 <span class="ui-path-current">{{ page_title }}</span>
             </div>
         </div>
-        <div class="ui-toolbar-right minigame-auth-host">
+        <div class="ui-toolbar-right sub-auth-host">
             {% if request.user.is_authenticated %}
                 {% include "partials/account_widget.html" %}
             {% else %}
@@ -33,28 +33,28 @@
     </div>
 </div>
 
-<main class="ui-shell ui-content minigame-ui-content">
-    <section class="minigame-ui-panel" aria-label="{{ page_title }}">
-        <ul class="minigame-list">
-            {% for item in minigame_links %}
+<main class="ui-shell ui-content sub-ui-content">
+    <section class="sub-ui-panel" aria-label="{{ page_title }}">
+        <ul class="sub-list">
+            {% for item in sub_links %}
                 <li>
-                    <div class="minigame-link-shell">
+                    <div class="sub-link-shell">
                         {% if request.user.is_authenticated %}
                             {% if item.slug == "bumpercar-spiky" or item.slug == "raise-speaki" %}
-                                <button class="ui-btn minigame-link-stats-button" type="button" data-bumpercar-stats-open>
+                                <button class="ui-btn sub-link-stats-button" type="button" data-bumpercar-stats-open>
                                     {% include 'partials/ui_i18n.html' with key='account_bumpercar_stats_button' %}
                                 </button>
                             {% endif %}
                         {% endif %}
-                        <a class="minigame-link" href="{{ item.url }}">
-                            <span class="minigame-link-image-wrap">
-                                <img class="minigame-link-image" src="{{ item.image_url|default:'' }}" alt="{{ item.title }}" loading="lazy" {% if not item.image_url %}hidden{% endif %}>
+                        <a class="sub-link" href="{{ item.url }}">
+                            <span class="sub-link-image-wrap">
+                                <img class="sub-link-image" src="{{ item.image_url|default:'' }}" alt="{{ item.title }}" loading="lazy" {% if not item.image_url %}hidden{% endif %}>
                             </span>
-                            <span class="minigame-link-content" data-minigame-card data-meta-url="{{ item.url }}">
-                                <span class="minigame-link-head">
-                                    <span class="minigame-link-title">{{ item.title }}</span>
+                            <span class="sub-link-content" data-sub-card data-meta-url="{{ item.url }}">
+                                <span class="sub-link-head">
+                                    <span class="sub-link-title">{{ item.title }}</span>
                                 </span>
-                                <span class="minigame-link-description" {% if not item.description %}hidden{% endif %}>{{ item.description|default:'' }}</span>
+                                <span class="sub-link-description" {% if not item.description %}hidden{% endif %}>{{ item.description|default:'' }}</span>
                             </span>
                         </a>
                     </div>
@@ -70,14 +70,14 @@
 {% endif %}
 
 <style>
-    .minigame-ui-content {
+    .sub-ui-content {
         display: flex;
         align-items: flex-start;
         justify-content: center;
         padding-top: 14px;
     }
 
-    .minigame-ui-panel {
+    .sub-ui-panel {
         width: min(980px, 100%);
         border: 1px solid var(--handrive-border-soft);
         border-radius: var(--handrive-radius-lg);
@@ -86,7 +86,7 @@
         box-sizing: border-box;
     }
 
-    .minigame-list {
+    .sub-list {
         list-style: none;
         margin: 0;
         padding: 0;
@@ -95,7 +95,7 @@
         gap: 10px;
     }
 
-    .minigame-link {
+    .sub-link {
         display: grid;
         grid-template-columns: 88px minmax(0, 1fr);
         gap: 12px;
@@ -110,30 +110,30 @@
         min-height: 110px;
     }
 
-    .minigame-link-shell {
+    .sub-link-shell {
         position: relative;
     }
 
-    .minigame-link:visited {
+    .sub-link:visited {
         color: var(--handrive-text-stronger);
     }
 
-    .minigame-link:hover,
-    .minigame-link:focus-visible,
-    .minigame-link:active {
+    .sub-link:hover,
+    .sub-link:focus-visible,
+    .sub-link:active {
         background: var(--handrive-hover-soft);
         border-color: var(--handrive-border-mid);
         color: var(--handrive-text-stronger);
     }
 
-    .minigame-link-title {
+    .sub-link-title {
         display: block;
         font-size: 16px;
         font-weight: 700;
         line-height: 1.3;
     }
 
-    .minigame-link-description {
+    .sub-link-description {
         display: block;
         margin-top: 4px;
         color: var(--handrive-text-muted);
@@ -141,7 +141,7 @@
         line-height: 1.35;
     }
 
-    .minigame-link-image-wrap {
+    .sub-link-image-wrap {
         width: 88px;
         height: 88px;
         border-radius: 10px;
@@ -154,32 +154,32 @@
         justify-content: center;
     }
 
-    .minigame-link-image {
+    .sub-link-image {
         width: 100%;
         height: 100%;
         object-fit: cover;
         display: block;
     }
 
-    .minigame-link-image-wrap.is-empty::before {
+    .sub-link-image-wrap.is-empty::before {
         content: "No Image";
         color: var(--handrive-text-faint);
         font-size: 16px;
         letter-spacing: 0.02em;
     }
 
-    .minigame-link-content {
+    .sub-link-content {
         min-width: 0;
         padding-right: 72px;
     }
 
-    .minigame-link-head {
+    .sub-link-head {
         display: flex;
         align-items: flex-start;
         justify-content: flex-start;
     }
 
-    .minigame-link-stats-button {
+    .sub-link-stats-button {
         position: absolute;
         top: 12px;
         right: 12px;
@@ -261,24 +261,24 @@
     }
 
     @media (max-width: 840px) {
-        .minigame-list {
+        .sub-list {
             grid-template-columns: 1fr;
         }
     }
 
     @media (max-width: 640px) {
-        .minigame-link {
+        .sub-link {
             grid-template-columns: 68px minmax(0, 1fr);
             gap: 10px;
             min-height: 88px;
         }
 
-        .minigame-link-image-wrap {
+        .sub-link-image-wrap {
             width: 68px;
             height: 68px;
         }
 
-        .minigame-link-description {
+        .sub-link-description {
             font-size: 16px;
         }
     }
@@ -286,7 +286,7 @@
 
 <script>
     (function () {
-        const cards = document.querySelectorAll('[data-minigame-card]');
+        const cards = document.querySelectorAll('[data-sub-card]');
         if (!cards.length) {
             return;
         }
@@ -335,11 +335,11 @@
 
             const pageUrl = toAbsoluteUrl(metaUrl, window.location.origin);
             const requestUrl = pageUrl || metaUrl;
-            const titleNode = card.querySelector('.minigame-link-title');
-            const descriptionNode = card.querySelector('.minigame-link-description');
-            const cardLink = card.closest('.minigame-link');
-            const imageWrap = cardLink ? cardLink.querySelector('.minigame-link-image-wrap') : null;
-            const imageNode = cardLink ? cardLink.querySelector('.minigame-link-image') : null;
+            const titleNode = card.querySelector('.sub-link-title');
+            const descriptionNode = card.querySelector('.sub-link-description');
+            const cardLink = card.closest('.sub-link');
+            const imageWrap = cardLink ? cardLink.querySelector('.sub-link-image-wrap') : null;
+            const imageNode = cardLink ? cardLink.querySelector('.sub-link-image') : null;
 
             if (imageWrap) {
                 if (!imageNode || !imageNode.getAttribute('src')) {
@@ -432,6 +432,6 @@
 </script>
 {% if request.user.is_authenticated %}
 {% include "popup/root/auth_logout_modal.html" %}
-<script src="{% static_v 'js/common/minigame_account_widget.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+<script src="{% static_v 'js/common/sub_account_widget.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
 {% endif %}
 {% endblock %}

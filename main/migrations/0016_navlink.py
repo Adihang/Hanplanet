@@ -8,8 +8,8 @@ def seed_nav_links(apps, schema_editor):
     defaults = [
         (1, "GitHub", "https://github.com/Adihang"),
         (2, "Thingiverse", "https://www.thingiverse.com/hanbyel/designs"),
-        (3, "Docs", "/docs/list"),
-        (4, "Mini Game", "/Stratagem_Hero/"),
+        (3, "HanDrive", "/handrive/"),
+        (4, "Sub", "/sub/"),
     ]
 
     for order, name, url in defaults:
@@ -24,7 +24,7 @@ def seed_nav_links(apps, schema_editor):
 
 def unseed_nav_links(apps, schema_editor):
     NavLink = apps.get_model("main", "NavLink")
-    NavLink.objects.filter(name__in=["GitHub", "Thingiverse", "Docs", "Mini Game"]).delete()
+    NavLink.objects.filter(name__in=["GitHub", "Thingiverse", "Docs", "HanDrive", "Sub"]).delete()
 
 
 class Migration(migrations.Migration):

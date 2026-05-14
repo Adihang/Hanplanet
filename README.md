@@ -8,7 +8,7 @@ Hanplanet은 하나의 Django 프로젝트 안에 아래 기능을 함께 운영
 - HanDrive와 연결된 Git 저장소 관리
 - Forgejo(Gitea) 기반 Git 웹 UI
 - 실시간 멀티플레이어 게임 `Bumper Car Spiky`
-- 미니게임 `Stratagem Hero`, `Salvation's Edge 4`
+- 기타 `Stratagem Hero`, `Salvation's Edge 4`
 - Ollama 기반 AI 챗봇
 - 접속 로그 수집/요약과 운영용 관리 화면
 
@@ -293,7 +293,7 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 | [`static/js/common/`](./static/js/common/) | 사이트 전역 JS. nav, popup, chat widget, print helper 등 |
 | [`static/js/pages/`](./static/js/pages/) | 특정 Django page 전용 엔트리 |
 | [`static/js/handrive/`](./static/js/handrive/) | Handrive 전용 모듈. list, preview, queue, modal, git repo UI |
-| [`static/js/fun/`](./static/js/fun/) | 게임/미니게임 전용 JS |
+| [`static/js/fun/`](./static/js/fun/) | 게임/기타 전용 JS |
 | [`static/js/vendor/`](./static/js/vendor/) | 직접 수정하지 않는 vendor asset |
 
 ### `static/css/` 구조
@@ -302,7 +302,7 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 | --- | --- |
 | [`static/css/common/`](./static/css/common/) | 공용 레이아웃, 공통 팝업, 계정 위젯, 채팅 위젯 |
 | [`static/css/pages/`](./static/css/pages/) | 페이지 전용 스타일 |
-| [`static/css/fun/`](./static/css/fun/) | 게임/미니게임 전용 스타일 |
+| [`static/css/fun/`](./static/css/fun/) | 게임/기타 전용 스타일 |
 | [`static/css/vendor/`](./static/css/vendor/) | vendor CSS |
 
 ### `templates/` 구조

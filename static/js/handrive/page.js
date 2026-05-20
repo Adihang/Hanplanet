@@ -68,6 +68,15 @@
             + "&share_slug=" + encodeURIComponent(sharedSlug);
     }
 
+    function appendQueryParam(url, key, value) {
+        const baseUrl = String(url || "").trim();
+        if (!baseUrl) {
+            return baseUrl;
+        }
+        const separator = baseUrl.indexOf("?") === -1 ? "?" : "&";
+        return baseUrl + separator + encodeURIComponent(key) + "=" + encodeURIComponent(value || "");
+    }
+
     // CSRF 토큰을 가져오는 함수
     function getCsrfToken() {
         const meta = document.querySelector('meta[name="csrf-token"]');
@@ -556,6 +565,27 @@
             audioElement.addEventListener("volumechange", function () {
                 storeMediaAudioVolume(audioElement.volume);
             });
+        });
+    }
+
+    function stopPreviewMediaElements(container) {
+        if (!container || !(container instanceof Element)) {
+            return;
+        }
+        container.querySelectorAll("audio, video").forEach(function (mediaElement) {
+            if (!(mediaElement instanceof HTMLMediaElement)) {
+                return;
+            }
+            try {
+                mediaElement.pause();
+            } catch (error) {
+                // ignore media state errors
+            }
+            try {
+                mediaElement.currentTime = 0;
+            } catch (error) {
+                // ignore seek failures for unloaded media
+            }
         });
     }
 
@@ -2012,6 +2042,7 @@
         const moveApiUrl = root.dataset.moveApiUrl;
         const archiveExtractApiUrl = root.dataset.archiveExtractApiUrl || "";
         const archiveCreateApiUrl = root.dataset.archiveCreateApiUrl || "";
+        const convertMp3ApiUrl = root.dataset.convertMp3ApiUrl || "";
         const uploadApiUrl = root.dataset.uploadApiUrl;
         const markdownImageUploadApiUrl = root.dataset.markdownImageUploadApiUrl || "";
         const markdownImageCleanupApiUrl = root.dataset.markdownImageCleanupApiUrl || "";
@@ -2066,7 +2097,11 @@
         const editorSurface = document.getElementById("handrive-list-editor-surface");
         const editorHighlight = document.getElementById("handrive-list-editor-highlight");
         const imageEditorSurface = document.getElementById("handrive-image-editor-surface");
+        const videoEditorSurface = document.getElementById("handrive-video-editor-surface");
+        const audioEditorSurface = document.getElementById("handrive-audio-editor-surface");
         const imageEditorSaveUrl = root.dataset.imageEditorSaveUrl || "";
+        const videoEditorSaveUrl = root.dataset.videoEditorSaveUrl || "";
+        const audioEditorSaveUrl = root.dataset.audioEditorSaveUrl || "";
         const editorSuggest = document.getElementById("handrive-list-editor-suggest");
         const editorSuggestLabel = document.getElementById("handrive-list-editor-suggest-label");
         const markdownSnippetMenu = document.getElementById("ui-markdown-snippet-menu");
@@ -2099,6 +2134,7 @@
         const contextPermissionsButton = contextMenu ? contextMenu.querySelector('button[data-action="permissions"]') : null;
         const contextGitCreateRepoButton = contextMenu ? contextMenu.querySelector('button[data-action="git-create-repo"]') : null;
         const contextCreateMapButton = contextMenu ? contextMenu.querySelector('button[data-action="create-map"]') : null;
+        const contextConvertMp3Button = contextMenu ? contextMenu.querySelector('button[data-action="convert-mp3"]') : null;
         const contextGitManageRepoButton = contextMenu ? contextMenu.querySelector('button[data-action="git-manage-repo"]') : null;
         const contextGitDeleteRepoButton = contextMenu ? contextMenu.querySelector('button[data-action="git-delete-repo"]') : null;
         const contextGitCreateBranchButton = contextMenu ? contextMenu.querySelector('button[data-action="git-create-branch"]') : null;
@@ -2210,8 +2246,20 @@
         const imageEditorExtensions = new Set([
             ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".avif",
         ]);
+        const audioEditorExtensions = new Set([
+            ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".weba",
+        ]);
+        const videoEditorExtensions = new Set([
+            ".mp4", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m4v", ".ogv",
+        ]);
         function isImageEditorEntry(entry) {
             return imageEditorExtensions.has(getEntryFileExtension(entry));
+        }
+        function isAudioEditorEntry(entry) {
+            return audioEditorExtensions.has(getEntryFileExtension(entry));
+        }
+        function isVideoEditorEntry(entry) {
+            return videoEditorExtensions.has(getEntryFileExtension(entry));
         }
 
         const mediaNavExtensions = new Set([
@@ -3234,7 +3282,9 @@
 
         function isEditableHandriveFileEntry(entry) {
             return !nonEditableMediaExtensions.has(getEntryFileExtension(entry))
-                || isImageEditorEntry(entry);
+                || isImageEditorEntry(entry)
+                || isVideoEditorEntry(entry)
+                || isAudioEditorEntry(entry);
         }
 
         function applyRenderedContentModeClass(targetElement, renderMode, renderClass) {
@@ -3261,6 +3311,16 @@
             previewSetPlaceholder(previewContent, escapeHtml, message);
         }
 
+        function setPreviewLoading() {
+            if (!previewContent) {
+                return;
+            }
+            applyRenderedContentModeClass(previewContent, "plain_text", "handrive-plain-text");
+            previewContent.innerHTML = '<div class="handrive-list-preview-loading" role="status" aria-label="' +
+                escapeHtml(t("list_preview_loading", "미리보기를 불러오는 중...")) +
+                '"><span class="handrive-list-preview-loading-spinner" aria-hidden="true"></span></div>';
+        }
+
         function updateEditorHighlight() {
             if (!editorContentInput || !editorHighlightCode) {
                 return;
@@ -3275,9 +3335,18 @@
             if (!editorPanel || !editorFilenameInput) {
                 return;
             }
+            stopPreviewMediaElements(previewContent);
 
             if (isImageEditorEntry(entry)) {
                 switchToImageEditor(entry);
+                return;
+            }
+            if (isVideoEditorEntry(entry)) {
+                switchToVideoEditor(entry);
+                return;
+            }
+            if (isAudioEditorEntry(entry)) {
+                switchToAudioEditor(entry);
                 return;
             }
 
@@ -3320,9 +3389,12 @@
 
         function switchToImageEditor(entry) {
             activeListEditorEntry = entry || null;
+            stopPreviewMediaElements(previewContent);
 
             // 텍스트 surface 숨김, 이미지 surface 표시
             if (editorSurface) editorSurface.hidden = true;
+            if (videoEditorSurface) videoEditorSurface.hidden = true;
+            if (audioEditorSurface) audioEditorSurface.hidden = true;
             if (imageEditorSurface) imageEditorSurface.hidden = false;
 
             // 파일명 입력창 설정
@@ -3361,11 +3433,111 @@
             setupEditorEvents(entry);
         }
 
+        function switchToVideoEditor(entry) {
+            activeListEditorEntry = entry || null;
+            stopPreviewMediaElements(previewContent);
+
+            if (editorSurface) editorSurface.hidden = true;
+            if (imageEditorSurface) imageEditorSurface.hidden = true;
+            if (audioEditorSurface) audioEditorSurface.hidden = true;
+            if (videoEditorSurface) videoEditorSurface.hidden = false;
+
+            if (editorFilenameInput) editorFilenameInput.value = entry.name || "";
+
+            if (previewPanel) {
+                previewPanel.hidden = true;
+                previewPanel.setAttribute("aria-hidden", "true");
+            }
+            if (editorPanel) {
+                editorPanel.hidden = false;
+                editorPanel.setAttribute("aria-hidden", "false");
+            }
+            if (listLayout) {
+                listLayout.classList.remove("has-preview");
+                listLayout.classList.add("has-editor");
+            }
+            scheduleSyncCurrentDirRowHeightWithSideHead();
+            syncSearchFormVisibility();
+
+            const videoServeUrl = buildDownloadUrl(entry.path);
+            if (window.HandriveVideoEditor) {
+                window.HandriveVideoEditor.init({
+                    entry: entry,
+                    videoServeUrl: videoServeUrl,
+                    buildDownloadUrl: buildScopedHomeDownloadUrl,
+                    listApiUrl: appendQueryParam(appendSharedQuery(listApiUrl), "scope_home", "1"),
+                    scopedHomeDir: scopedHomeDir,
+                    onDirtyChange: function (dirty) {
+                        if (editorSaveButton) {
+                            editorSaveButton.classList.toggle("is-dirty", dirty);
+                        }
+                    },
+                });
+            }
+
+            setupEditorEvents(entry);
+        }
+
+        function switchToAudioEditor(entry) {
+            activeListEditorEntry = entry || null;
+            stopPreviewMediaElements(previewContent);
+
+            if (editorSurface) editorSurface.hidden = true;
+            if (imageEditorSurface) imageEditorSurface.hidden = true;
+            if (videoEditorSurface) videoEditorSurface.hidden = true;
+            if (audioEditorSurface) audioEditorSurface.hidden = false;
+
+            if (editorFilenameInput) editorFilenameInput.value = entry.name || "";
+
+            if (previewPanel) {
+                previewPanel.hidden = true;
+                previewPanel.setAttribute("aria-hidden", "true");
+            }
+            if (editorPanel) {
+                editorPanel.hidden = false;
+                editorPanel.setAttribute("aria-hidden", "false");
+            }
+            if (listLayout) {
+                listLayout.classList.remove("has-preview");
+                listLayout.classList.add("has-editor");
+            }
+            scheduleSyncCurrentDirRowHeightWithSideHead();
+            syncSearchFormVisibility();
+
+            const audioServeUrl = buildDownloadUrl(entry.path);
+            if (window.HandriveAudioEditor) {
+                window.HandriveAudioEditor.init({
+                    entry: entry,
+                    audioServeUrl: audioServeUrl,
+                    listApiUrl: appendQueryParam(appendSharedQuery(listApiUrl), "scope_home", "1"),
+                    buildDownloadUrl: buildScopedHomeDownloadUrl,
+                    scopedHomeDir: scopedHomeDir,
+                    onDirtyChange: function (dirty) {
+                        if (editorSaveButton) {
+                            editorSaveButton.classList.toggle("is-dirty", dirty);
+                        }
+                    },
+                });
+            }
+
+            setupEditorEvents(entry);
+        }
+
         function switchToPreview() {
             // 이미지 에디터 정리
             if (imageEditorSurface && !imageEditorSurface.hidden) {
                 if (window.HandriveImageEditor) window.HandriveImageEditor.destroy();
                 imageEditorSurface.hidden = true;
+                if (editorSurface) editorSurface.hidden = false;
+            }
+            if (videoEditorSurface && !videoEditorSurface.hidden) {
+                if (window.HandriveVideoEditor) window.HandriveVideoEditor.destroy();
+                videoEditorSurface.hidden = true;
+                if (editorSurface) editorSurface.hidden = false;
+            }
+            if (audioEditorSurface && !audioEditorSurface.hidden) {
+                if (window.HandriveAudioEditor) window.HandriveAudioEditor.destroy();
+                audioEditorSurface.hidden = true;
                 if (editorSurface) editorSurface.hidden = false;
             }
 
@@ -3496,6 +3668,29 @@
                 });
             }
             
+            function handleMediaEditorSaved(result) {
+                const savedPath = result && typeof result.path === "string" && result.path.trim()
+                    ? normalizePath(result.path, true)
+                    : "";
+                if (state.previewCache) {
+                    state.previewCache.delete(entry.path);
+                    if (savedPath) {
+                        state.previewCache.delete(savedPath);
+                    }
+                }
+                refreshCurrentDirectory({ skipPreview: true })
+                    .then(function () {
+                        if (savedPath && state.entryByPath.has(savedPath)) {
+                            applySelection([savedPath], {
+                                primaryPath: savedPath,
+                                anchorPath: savedPath,
+                                render: false,
+                            });
+                        }
+                    })
+                    .catch(alertError);
+            }
+
             // 저장/취소 버튼 이벤트를 현재 편집 대상(entry)에 바인딩
             editorSaveButton.onclick = function (event) {
                 event.preventDefault();
@@ -3523,12 +3718,70 @@
                     );
                     return;
                 }
+                if (videoEditorSurface && !videoEditorSurface.hidden && window.HandriveVideoEditor) {
+                    const csrfToken = getCsrfToken();
+                    const savingText = t("video_editor_saving", "저장 중...");
+                    const origText = editorSaveButton.textContent;
+                    editorSaveButton.disabled = true;
+                    editorSaveButton.textContent = savingText;
+                    window.HandriveVideoEditor.saveToServer(
+                        videoEditorSaveUrl,
+                        csrfToken,
+                        entry.path,
+                        function (result) {
+                            editorSaveButton.disabled = false;
+                            editorSaveButton.textContent = origText;
+                            if (result && result.ok) {
+                                handleMediaEditorSaved(result);
+                            } else {
+                                alertError(new Error((result && result.error) || t("video_editor_save_error", "비디오 저장 실패")));
+                            }
+                        }
+                    );
+                    return;
+                }
+                if (audioEditorSurface && !audioEditorSurface.hidden && window.HandriveAudioEditor) {
+                    const csrfToken = getCsrfToken();
+                    const savingText = t("audio_editor_saving", "저장 중...");
+                    const origText = editorSaveButton.textContent;
+                    editorSaveButton.disabled = true;
+                    editorSaveButton.textContent = savingText;
+                    window.HandriveAudioEditor.saveToServer(
+                        audioEditorSaveUrl,
+                        csrfToken,
+                        entry.path,
+                        function (result) {
+                            editorSaveButton.disabled = false;
+                            editorSaveButton.textContent = origText;
+                            if (result && result.ok) {
+                                handleMediaEditorSaved(result);
+                            } else {
+                                alertError(new Error((result && result.error) || t("audio_editor_save_error", "오디오 저장 실패")));
+                            }
+                        }
+                    );
+                    return;
+                }
                 saveEditorContent(entry).catch(alertError);
             };
             editorCancelButton.onclick = function (event) {
                 event.preventDefault();
                 if (imageEditorSurface && !imageEditorSurface.hidden && window.HandriveImageEditor) {
                     if (window.HandriveImageEditor.getIsDirty()) {
+                        if (!window.confirm(t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"))) {
+                            return;
+                        }
+                    }
+                }
+                if (videoEditorSurface && !videoEditorSurface.hidden && window.HandriveVideoEditor) {
+                    if (window.HandriveVideoEditor.getIsDirty()) {
+                        if (!window.confirm(t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"))) {
+                            return;
+                        }
+                    }
+                }
+                if (audioEditorSurface && !audioEditorSurface.hidden && window.HandriveAudioEditor) {
+                    if (window.HandriveAudioEditor.getIsDirty()) {
                         if (!window.confirm(t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"))) {
                             return;
                         }
@@ -3819,6 +4072,7 @@
                 requestJson: requestJson,
                 scrollPreviewIntoViewIfPortrait: scrollPreviewIntoViewIfPortrait,
                 setPreviewActionTargets: setPreviewActionTargets,
+                setPreviewLoading: setPreviewLoading,
                 setPreviewPlaceholder: setPreviewPlaceholder,
                 setPreviewVisibility: setPreviewVisibility,
                 state: state,
@@ -3879,6 +4133,7 @@
             setContextButtonVisible(contextGitCreateBranchButton, Boolean(visibility.gitCreateBranch));
             setContextButtonVisible(contextGitDeleteBranchButton, Boolean(visibility.gitDeleteBranch));
             setContextButtonVisible(contextCreateMapButton, Boolean(visibility.createMap));
+            setContextButtonVisible(contextConvertMp3Button, Boolean(visibility.convertMp3 && convertMp3ApiUrl));
             setContextButtonVisible(contextChangeIconButton, Boolean(visibility.changeIcon && folderIconUploadApiUrl));
             syncContextMenuDividers(contextMenu);
         }
@@ -4655,6 +4910,7 @@
                     gitCreateBranch: contextGitCreateBranchButton,
                     gitDeleteBranch: contextGitDeleteBranchButton,
                     createMap: contextCreateMapButton,
+                    convertMp3: contextConvertMp3Button,
                     newDoc: contextNewDocButton,
                     newFolder: contextNewFolderButton,
                     open: contextOpenButton,
@@ -4913,6 +5169,44 @@
             queueNeedsRefresh();
         }
 
+        async function runConvertMp3OperationQueueItem(item) {
+            if (!convertMp3ApiUrl) {
+                throw new Error(t("job_status_failed", "실패"));
+            }
+            const entries = Array.isArray(item.entries) ? item.entries.slice() : [];
+            const convertedPaths = [];
+            for (let index = 0; index < entries.length; index += 1) {
+                if (item.abortRequested) {
+                    throw new Error(t("queue_cancel", "취소"));
+                }
+                const controller = new AbortController();
+                item.abortController = controller;
+                const entry = entries[index];
+                const data = await requestJson(appendSharedQuery(convertMp3ApiUrl), Object.assign(
+                    buildPostOptions({ path: entry.path }),
+                    { signal: controller.signal }
+                ));
+                const convertedPath = data && data.path ? data.path : "";
+                if (convertedPath) {
+                    convertedPaths.push(convertedPath);
+                }
+                item.progress = ((index + 1) / Math.max(1, entries.length)) * 100;
+                item.savedPath = convertedPath || item.savedPath || "";
+                item.savedSlugPath = data && data.slug_path ? data.slug_path : "";
+                item.sizeDisplay = data && data.size_display ? data.size_display : item.sizeDisplay;
+                item.abortController = null;
+                renderUploadQueue();
+            }
+            if (convertedPaths.length > 0) {
+                applySelection(convertedPaths, {
+                    primaryPath: convertedPaths[0] || "",
+                    anchorPath: convertedPaths[0] || "",
+                    render: false,
+                });
+            }
+            queueNeedsRefresh();
+        }
+
         async function processOperationQueue() {
             await processOperationQueueWorker({
                 alertError: alertError,
@@ -4924,6 +5218,7 @@
                 runExtractOperationQueueItem: runExtractOperationQueueItem,
                 runMoveOperationQueueItem: runMoveOperationQueueItem,
                 runYoutubeSaveOperationQueueItem: runYoutubeSaveOperationQueueItem,
+                runConvertMp3OperationQueueItem: runConvertMp3OperationQueueItem,
                 state: state,
                 t: t,
             });
@@ -6516,6 +6811,10 @@
             return appendSharedQuery(query ? downloadApiUrl + "?" + query : downloadApiUrl);
         }
 
+        function buildScopedHomeDownloadUrl(pathValue) {
+            return appendQueryParam(buildDownloadUrl(pathValue), "scope_home", "1");
+        }
+
         function triggerDownload(targetUrl) {
             if (!targetUrl) {
                 return;
@@ -6556,7 +6855,19 @@
             if (!isEditableHandriveFileEntry(entry)) {
                 return;
             }
+            if (isImageEditorEntry(entry) || isVideoEditorEntry(entry) || isAudioEditorEntry(entry)) {
+                switchToEditor(entry);
+                return;
+            }
             window.location.href = buildWriteUrl(writeUrl, { path: entry.path });
+        }
+
+        async function convertEntryToMp3(entry) {
+            if (!entry || entry.type !== "file" || !entry.can_edit || !convertMp3ApiUrl) {
+                return;
+            }
+            createOperationQueueItem("convert-mp3", [entry], getParentDirectory(entry.path), "");
+            processOperationQueue().catch(alertError);
         }
 
         function syncSearchQueryFromInput() {
@@ -7018,6 +7329,9 @@
                 }
                 if (action === "create-map") {
                     openMapCreateModal(entry);
+                }
+                if (action === "convert-mp3") {
+                    convertEntryToMp3(entry).catch(alertError);
                 }
                 if (action === "git-create-repo") {
                     openGitRepoModal(entry);
@@ -8438,11 +8752,18 @@
         const handriveRootUrl = root.dataset.handriveRootUrl || handriveBaseUrl;
         const saveApiUrl = root.dataset.saveApiUrl;
         const previewApiUrl = root.dataset.previewApiUrl;
+        const listApiUrl = root.dataset.listApiUrl || "";
+        const downloadApiUrl = root.dataset.downloadApiUrl || "";
+        const imageEditorSaveUrl = root.dataset.imageEditorSaveUrl || "";
+        const audioEditorSaveUrl = root.dataset.audioEditorSaveUrl || "";
+        const videoEditorSaveUrl = root.dataset.videoEditorSaveUrl || "";
         const markdownImageUploadApiUrl = root.dataset.markdownImageUploadApiUrl || "";
         const markdownImageCleanupApiUrl = root.dataset.markdownImageCleanupApiUrl || "";
         const mkdirApiUrl = root.dataset.mkdirApiUrl;
         const originalPath = root.dataset.originalPath || "";
         const initialDir = root.dataset.initialDir || "";
+        const writeEditorKind = String(root.dataset.writeEditorKind || "text").trim().toLowerCase();
+        const isMediaWriteEditor = writeEditorKind === "image" || writeEditorKind === "audio" || writeEditorKind === "video";
         const isPublicWriteDirectSave = root.dataset.publicWriteDirectSave === "1";
         const writeRequiresCommitMessage = root.dataset.writeRequiresCommitMessage === "1";
 
@@ -8451,6 +8772,9 @@
         const saveExtensionSelect = document.getElementById("handrive-save-extension-select");
         const contentInput = document.getElementById("handrive-content-input");
         const editorSurface = document.getElementById("handrive-editor-surface");
+        const imageEditorSurface = document.getElementById("handrive-image-editor-surface");
+        const videoEditorSurface = document.getElementById("handrive-video-editor-surface");
+        const audioEditorSurface = document.getElementById("handrive-audio-editor-surface");
         const editorHighlight = document.getElementById("handrive-editor-highlight");
         const editorHighlightCode = document.getElementById("handrive-editor-highlight-code");
         const editorSuggest = document.getElementById("handrive-editor-suggest");
@@ -8568,7 +8892,35 @@
             savedContentValue = contentInput ? contentInput.value : "";
         }
 
+        function getActiveWriteMediaEditor() {
+            if (writeEditorKind === "image" && window.HandriveImageEditor) {
+                return window.HandriveImageEditor;
+            }
+            if (writeEditorKind === "video" && window.HandriveVideoEditor) {
+                return window.HandriveVideoEditor;
+            }
+            if (writeEditorKind === "audio" && window.HandriveAudioEditor) {
+                return window.HandriveAudioEditor;
+            }
+            return null;
+        }
+
+        function getActiveWriteMediaSaveUrl() {
+            if (writeEditorKind === "image") return imageEditorSaveUrl;
+            if (writeEditorKind === "video") return videoEditorSaveUrl;
+            if (writeEditorKind === "audio") return audioEditorSaveUrl;
+            return "";
+        }
+
+        function hasUnsavedMediaWriteChanges() {
+            const editor = getActiveWriteMediaEditor();
+            return Boolean(editor && typeof editor.getIsDirty === "function" && editor.getIsDirty());
+        }
+
         function hasUnsavedWriteChanges() {
+            if (isMediaWriteEditor) {
+                return hasUnsavedMediaWriteChanges();
+            }
             const currentFilename = filenameInput ? filenameInput.value : "";
             const currentContent = contentInput ? contentInput.value : "";
             return currentFilename !== savedFilenameValue || currentContent !== savedContentValue;
@@ -8599,6 +8951,81 @@
             window.setTimeout(function () {
                 bypassUnsavedBeforeUnload = false;
             }, 1200);
+        }
+
+        function buildWriteDownloadUrl(pathValue) {
+            if (!downloadApiUrl) {
+                return "";
+            }
+            const query = new URLSearchParams({ path: pathValue || "" }).toString();
+            return appendSharedQuery(query ? downloadApiUrl + "?" + query : downloadApiUrl);
+        }
+
+        function buildWriteScopedHomeDownloadUrl(pathValue) {
+            return appendQueryParam(buildWriteDownloadUrl(pathValue), "scope_home", "1");
+        }
+
+        function getWriteMediaEntry() {
+            if (!originalPath) {
+                return null;
+            }
+            return {
+                path: originalPath,
+                slug_path: originalPath,
+                name: originalPath.split("/").pop() || originalPath,
+                type: "file",
+            };
+        }
+
+        function showWriteMediaSurface() {
+            if (!isMediaWriteEditor) {
+                if (imageEditorSurface) imageEditorSurface.hidden = true;
+                if (videoEditorSurface) videoEditorSurface.hidden = true;
+                if (audioEditorSurface) audioEditorSurface.hidden = true;
+                return;
+            }
+            if (editorSurface) editorSurface.hidden = true;
+            if (contentInput) contentInput.disabled = true;
+            if (filenameInput) {
+                filenameInput.readOnly = true;
+                filenameInput.setAttribute("aria-readonly", "true");
+            }
+            if (imageEditorSurface) imageEditorSurface.hidden = writeEditorKind !== "image";
+            if (videoEditorSurface) videoEditorSurface.hidden = writeEditorKind !== "video";
+            if (audioEditorSurface) audioEditorSurface.hidden = writeEditorKind !== "audio";
+
+            const entry = getWriteMediaEntry();
+            const mediaUrl = buildWriteDownloadUrl(originalPath);
+            const dirtyHandler = function (dirty) {
+                if (saveButton) {
+                    saveButton.classList.toggle("is-dirty", Boolean(dirty));
+                }
+            };
+            if (writeEditorKind === "image" && window.HandriveImageEditor && entry) {
+                window.HandriveImageEditor.init({
+                    entry: entry,
+                    imageServeUrl: mediaUrl,
+                    onDirtyChange: dirtyHandler,
+                });
+            } else if (writeEditorKind === "video" && window.HandriveVideoEditor && entry) {
+                window.HandriveVideoEditor.init({
+                    entry: entry,
+                    videoServeUrl: mediaUrl,
+                    buildDownloadUrl: buildWriteScopedHomeDownloadUrl,
+                    listApiUrl: appendQueryParam(appendSharedQuery(listApiUrl), "scope_home", "1"),
+                    scopedHomeDir: scopedHomeDir,
+                    onDirtyChange: dirtyHandler,
+                });
+            } else if (writeEditorKind === "audio" && window.HandriveAudioEditor && entry) {
+                window.HandriveAudioEditor.init({
+                    entry: entry,
+                    audioServeUrl: mediaUrl,
+                    listApiUrl: appendQueryParam(appendSharedQuery(listApiUrl), "scope_home", "1"),
+                    buildDownloadUrl: buildWriteScopedHomeDownloadUrl,
+                    scopedHomeDir: scopedHomeDir,
+                    onDirtyChange: dirtyHandler,
+                });
+            }
         }
 
         function setUnsavedModalOpen(opened) {
@@ -8670,6 +9097,19 @@
             if (!pendingSaveThenLeaveAction) {
                 return;
             }
+            if (isMediaWriteEditor) {
+                submitMediaEditorSave({
+                    redirectOnSuccess: false,
+                    onSuccess: function () {
+                        const nextAction = pendingSaveThenLeaveAction;
+                        pendingSaveThenLeaveAction = null;
+                        if (typeof nextAction === "function") {
+                            runWithBeforeUnloadBypass(nextAction);
+                        }
+                    }
+                });
+                return;
+            }
 
             submitSave({
                 redirectOnSuccess: false,
@@ -8699,6 +9139,10 @@
                 }
                 if (choice === "save") {
                     pendingSaveThenLeaveAction = action;
+                    if (isMediaWriteEditor) {
+                        submitSaveThenLeave();
+                        return;
+                    }
                     if (isPublicWriteDirectSave || !saveModal) {
                         submitSaveThenLeave();
                         return;
@@ -9942,6 +10386,63 @@
             }
         }
 
+        function submitMediaEditorSave(options) {
+            const settings = options || {};
+            const redirectOnSuccess = settings.redirectOnSuccess !== false;
+            const onSuccess = typeof settings.onSuccess === "function" ? settings.onSuccess : null;
+            const editor = getActiveWriteMediaEditor();
+            const saveUrl = getActiveWriteMediaSaveUrl();
+            if (!isMediaWriteEditor || !editor || typeof editor.saveToServer !== "function") {
+                alertError(new Error(t("js_preview_unavailable", "미리보기를 표시할 수 없습니다.")));
+                return;
+            }
+            if (!saveUrl || !originalPath) {
+                alertError(new Error(t("js_request_failed", "요청 처리 중 오류가 발생했습니다.")));
+                return;
+            }
+
+            const csrfToken = getCsrfToken();
+            const savingText = writeEditorKind === "image"
+                ? t("image_editor_saving", "저장 중...")
+                : writeEditorKind === "video"
+                    ? t("video_editor_saving", "저장 중...")
+                    : t("audio_editor_saving", "저장 중...");
+            const originalButtonText = saveButton ? saveButton.textContent : "";
+            if (saveButton) {
+                saveButton.disabled = true;
+                saveButton.textContent = savingText;
+            }
+
+            editor.saveToServer(saveUrl, csrfToken, originalPath, function (result) {
+                if (saveButton) {
+                    saveButton.disabled = false;
+                    saveButton.textContent = originalButtonText;
+                    saveButton.classList.toggle("is-dirty", hasUnsavedMediaWriteChanges());
+                }
+                if (!result || !result.ok) {
+                    const fallbackMessage = writeEditorKind === "image"
+                        ? t("image_editor_save_error", "저장 실패")
+                        : writeEditorKind === "video"
+                            ? t("video_editor_save_error", "비디오 저장 실패")
+                            : t("audio_editor_save_error", "오디오 저장 실패");
+                    alertError(new Error((result && result.error) || fallbackMessage));
+                    return;
+                }
+                markCurrentAsSaved();
+                if (onSuccess) {
+                    onSuccess(result || {});
+                    return;
+                }
+                if (!redirectOnSuccess) {
+                    return;
+                }
+                const targetPath = (result && (result.slug_path || result.path)) || originalPath;
+                runWithBeforeUnloadBypass(function () {
+                    window.location.href = buildViewUrl(handriveBaseUrl, targetPath);
+                });
+            });
+        }
+
         async function submitSave(options) {
             const settings = options || {};
             const redirectOnSuccess = settings.redirectOnSuccess !== false;
@@ -10057,6 +10558,7 @@
             syncExtensionSelectFromValue(initialExtension);
         }
         syncMarkdownHelpButtonVisibility();
+        showWriteMediaSurface();
 
         async function createFolderFromModal() {
             const folderName = folderNameInput ? folderNameInput.value : "";
@@ -10109,6 +10611,10 @@
 
         if (saveButton) {
             saveButton.addEventListener("click", function () {
+                if (isMediaWriteEditor) {
+                    submitMediaEditorSave();
+                    return;
+                }
                 if (isPublicWriteDirectSave) {
                     submitSave();
                     return;
@@ -10411,6 +10917,10 @@
             saveConfirmButton.addEventListener("click", function () {
                 if (pendingSaveThenLeaveAction) {
                     submitSaveThenLeave();
+                    return;
+                }
+                if (isMediaWriteEditor) {
+                    submitMediaEditorSave();
                     return;
                 }
                 submitSave();

@@ -762,10 +762,40 @@
 
     function flattenFloatingSelection() {
         if (!state.selectionFloating || !state.selectionImageData || !state.selection) return;
-        mainCtx.putImageData(state.selectionImageData, state.selection.x, state.selection.y);
+        drawImageDataSkippingTransparent(mainCtx, state.selectionImageData, state.selection.x, state.selection.y);
         state.selectionFloating  = false;
         state.selectionImageData = null;
         commitHistoryState();
+    }
+
+    function drawImageDataSkippingTransparent(ctx, imageData, x, y) {
+        var targetX = Math.floor(x);
+        var targetY = Math.floor(y);
+        var srcW = imageData.width;
+        var srcH = imageData.height;
+        var dstX = Math.max(0, targetX);
+        var dstY = Math.max(0, targetY);
+        var srcX = Math.max(0, -targetX);
+        var srcY = Math.max(0, -targetY);
+        var copyW = Math.min(srcW - srcX, state.canvasWidth - dstX);
+        var copyH = Math.min(srcH - srcY, state.canvasHeight - dstY);
+        if (copyW <= 0 || copyH <= 0) return;
+
+        var dst = ctx.getImageData(dstX, dstY, copyW, copyH);
+        var srcData = imageData.data;
+        var dstData = dst.data;
+        for (var row = 0; row < copyH; row++) {
+            for (var col = 0; col < copyW; col++) {
+                var srcIdx = ((srcY + row) * srcW + (srcX + col)) * 4;
+                if (srcData[srcIdx + 3] === 0) continue;
+                var dstIdx = (row * copyW + col) * 4;
+                dstData[dstIdx] = srcData[srcIdx];
+                dstData[dstIdx + 1] = srcData[srcIdx + 1];
+                dstData[dstIdx + 2] = srcData[srcIdx + 2];
+                dstData[dstIdx + 3] = srcData[srcIdx + 3];
+            }
+        }
+        ctx.putImageData(dst, dstX, dstY);
     }
 
     function selectAll() {
@@ -851,9 +881,9 @@
                                     var c = document.createElement("canvas");
                                     c.width = img.width; c.height = img.height;
                                     c.getContext("2d").drawImage(img, 0, 0);
-                                    state.selectionImageData = c.getContext("2d").getImageData(0, 0, img.width, img.height);
+                                    var pastedImageData = c.getContext("2d").getImageData(0, 0, img.width, img.height);
                                     URL.revokeObjectURL(url);
-                                    pasteSelectionInternal();
+                                    pasteSelectionInternal(pastedImageData);
                                 };
                                 img.src = url;
                             }).catch(function () { pasteSelectionInternal(); });
@@ -868,12 +898,14 @@
         }
     }
 
-    function pasteSelectionInternal() {
-        if (!state.selectionImageData) return;
+    function pasteSelectionInternal(imageData) {
+        var pastedImageData = imageData || state.selectionImageData;
+        if (!pastedImageData) return;
         flattenFloatingSelection();
         state.freeSelectPath = null;
-        var iw = state.selectionImageData.width;
-        var ih = state.selectionImageData.height;
+        state.selectionImageData = pastedImageData;
+        var iw = pastedImageData.width;
+        var ih = pastedImageData.height;
         state.selection = {
             x: Math.max(0, Math.floor((state.canvasWidth  - iw) / 2)),
             y: Math.max(0, Math.floor((state.canvasHeight - ih) / 2)),

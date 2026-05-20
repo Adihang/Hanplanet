@@ -299,6 +299,29 @@ MAP_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".sv
 FOLDER_ICON_EXTENSIONS = MAP_IMAGE_EXTENSIONS
 IMAGE_EDITOR_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".avif"})
 MAP_VIDEO_EXTENSIONS = frozenset({".mp4", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m4v", ".ogv"})
+HANDRIVE_MP3_SOURCE_EXTENSIONS = MAP_VIDEO_EXTENSIONS
+HANDRIVE_FFMPEG_BIN = Path("/opt/homebrew/bin/ffmpeg")
+HANDRIVE_AUDIO_EDITOR_EXTENSIONS = frozenset({".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".weba"})
+HANDRIVE_VIDEO_EDITOR_EXTENSIONS = MAP_VIDEO_EXTENSIONS
+HANDRIVE_AUDIO_EDITOR_CODECS = {
+    ".mp3": ["-codec:a", "libmp3lame", "-q:a", "2"],
+    ".wav": ["-codec:a", "pcm_s16le"],
+    ".ogg": ["-codec:a", "libvorbis", "-q:a", "5"],
+    ".m4a": ["-codec:a", "aac", "-b:a", "192k"],
+    ".aac": ["-codec:a", "aac", "-b:a", "192k"],
+    ".flac": ["-codec:a", "flac"],
+    ".weba": ["-codec:a", "libopus", "-b:a", "128k"],
+}
+HANDRIVE_VIDEO_EDITOR_CODECS = {
+    ".mp4": ["-codec:v", "libx264", "-preset", "medium", "-crf", "23", "-codec:a", "aac", "-b:a", "192k", "-movflags", "+faststart"],
+    ".mov": ["-codec:v", "libx264", "-preset", "medium", "-crf", "23", "-codec:a", "aac", "-b:a", "192k"],
+    ".m4v": ["-codec:v", "libx264", "-preset", "medium", "-crf", "23", "-codec:a", "aac", "-b:a", "192k", "-movflags", "+faststart"],
+    ".mkv": ["-codec:v", "libx264", "-preset", "medium", "-crf", "23", "-codec:a", "aac", "-b:a", "192k"],
+    ".avi": ["-codec:v", "mpeg4", "-q:v", "4", "-codec:a", "libmp3lame", "-q:a", "3"],
+    ".wmv": ["-codec:v", "wmv2", "-codec:a", "wmav2"],
+    ".webm": ["-codec:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-codec:a", "libopus", "-b:a", "128k"],
+    ".ogv": ["-codec:v", "libtheora", "-q:v", "7", "-codec:a", "libvorbis", "-q:a", "5"],
+}
 MAP_MEDIA_EXTENSIONS = MAP_IMAGE_EXTENSIONS | MAP_VIDEO_EXTENSIONS
 MAP_IMAGE_MIME_TYPES = {
     ".png": "image/png",
@@ -546,6 +569,7 @@ DOCS_TEXT = {
         "menu_manage_repo": "Repo 관리",
         "menu_delete_repo": "Repo 삭제",
         "menu_change_icon": "아이콘 변경",
+        "menu_convert_mp3": "mp3변환",
         "menu_extract_archive": "압축해제",
         "menu_create_archive": "압축하기",
         "menu_new_folder": "새 폴더",
@@ -586,6 +610,9 @@ DOCS_TEXT = {
         "queue_status_archive_create_queued": "압축파일 생성 대기",
         "queue_status_archive_creating": "압축파일 생성 중",
         "queue_status_archive_create_done": "압축파일 생성 완료",
+        "queue_status_convert_mp3_queued": "mp3 변환 대기",
+        "queue_status_convert_mp3_converting": "mp3 변환 중",
+        "queue_status_convert_mp3_done": "mp3 변환 완료",
         "apply": "변경",
         "edit_button": "수정",
         "image_editor_save_ok": "저장 완료",
@@ -597,6 +624,32 @@ DOCS_TEXT = {
         "image_editor_resize_height": "높이",
         "image_editor_resize_lock_ratio": "비율 유지",
         "image_editor_unsaved_warning": "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?",
+        "audio_editor_title": "오디오 편집",
+        "audio_editor_play": "재생",
+        "audio_editor_pause": "일시정지",
+        "audio_editor_start": "시작",
+        "audio_editor_end": "끝",
+        "audio_editor_volume": "음량",
+        "audio_editor_append": "뒤에 붙이기",
+        "audio_editor_append_pc": "내 PC",
+        "audio_editor_append_drive": "드라이브",
+        "audio_editor_append_empty": "선택된 파일 없음",
+        "audio_editor_drive_title": "드라이브 오디오 선택",
+        "audio_editor_drive_up": "상위 폴더",
+        "audio_editor_drive_empty": "선택할 수 있는 오디오 파일이 없습니다.",
+        "audio_editor_drive_cancel": "취소",
+        "audio_editor_reset": "초기화",
+        "audio_editor_save_error": "오디오 저장 실패",
+        "audio_editor_saving": "저장 중...",
+        "video_editor_title": "비디오 편집",
+        "video_editor_start": "시작",
+        "video_editor_end": "끝",
+        "video_editor_volume": "음량",
+        "video_editor_subtitle": "자막",
+        "video_editor_subtitle_placeholder": "영상 아래쪽에 표시할 자막을 입력하세요",
+        "video_editor_reset": "초기화",
+        "video_editor_save_error": "비디오 저장 실패",
+        "video_editor_saving": "저장 중...",
         "delete_button": "삭제",
         "delete_repo_button": "Repo 삭제",
         "download_button": "다운로드",
@@ -861,6 +914,7 @@ DOCS_TEXT = {
         "menu_manage_repo": "Manage Repo",
         "menu_delete_repo": "Delete Repo",
         "menu_change_icon": "Change Icon",
+        "menu_convert_mp3": "Convert to MP3",
         "menu_extract_archive": "Extract",
         "menu_create_archive": "Compress",
         "menu_new_folder": "New Folder",
@@ -896,6 +950,32 @@ DOCS_TEXT = {
         "image_editor_resize_height": "Height",
         "image_editor_resize_lock_ratio": "Lock ratio",
         "image_editor_unsaved_warning": "You have unsaved changes. Continue?",
+        "audio_editor_title": "Audio Edit",
+        "audio_editor_play": "Play",
+        "audio_editor_pause": "Pause",
+        "audio_editor_start": "Start",
+        "audio_editor_end": "End",
+        "audio_editor_volume": "Volume",
+        "audio_editor_append": "Append",
+        "audio_editor_append_pc": "My PC",
+        "audio_editor_append_drive": "Drive",
+        "audio_editor_append_empty": "No file selected",
+        "audio_editor_drive_title": "Select Drive Audio",
+        "audio_editor_drive_up": "Parent Folder",
+        "audio_editor_drive_empty": "No selectable audio files.",
+        "audio_editor_drive_cancel": "Cancel",
+        "audio_editor_reset": "Reset",
+        "audio_editor_save_error": "Audio save failed",
+        "audio_editor_saving": "Saving...",
+        "video_editor_title": "Video Edit",
+        "video_editor_start": "Start",
+        "video_editor_end": "End",
+        "video_editor_volume": "Volume",
+        "video_editor_subtitle": "Subtitle",
+        "video_editor_subtitle_placeholder": "Enter a subtitle to show at the bottom of the video",
+        "video_editor_reset": "Reset",
+        "video_editor_save_error": "Video save failed",
+        "video_editor_saving": "Saving...",
         "delete_button": "Delete",
         "delete_repo_button": "Delete Repo",
         "download_button": "Download",
@@ -1069,6 +1149,9 @@ DOCS_TEXT = {
         "queue_status_archive_create_queued": "Compress queued",
         "queue_status_archive_creating": "Compressing",
         "queue_status_archive_create_done": "Compress complete",
+        "queue_status_convert_mp3_queued": "MP3 conversion queued",
+        "queue_status_convert_mp3_converting": "Converting to MP3",
+        "queue_status_convert_mp3_done": "MP3 conversion complete",
         "upload_error_file_too_large": "File too large",
         "upload_error_timeout": "Upload timed out",
         "upload_error_file_type_not_allowed": "Unsupported file type",
@@ -1549,6 +1632,19 @@ def relative_from_root(path_obj: Path) -> str:
         return absolute_path.relative_to(root).as_posix()
     except ValueError:
         return path_obj.resolve().relative_to(root).as_posix()
+
+
+def handrive_edited_output_path(source_path: Path) -> Path:
+    """편집 저장용 새 파일 경로를 원본과 같은 폴더 안에서 만든다."""
+    parent = source_path.parent
+    stem = source_path.stem
+    suffix = source_path.suffix
+    candidate = parent / f"{stem}_편집{suffix}"
+    index = 2
+    while candidate.exists():
+        candidate = parent / f"{stem}_편집 {index}{suffix}"
+        index += 1
+    return candidate
 
 
 def markdown_slug_from_relative(relative_path: str) -> str:
@@ -2097,6 +2193,12 @@ def render_handrive_content(
 def is_handrive_non_editable_media_extension(file_extension: str | None) -> bool:
     """에디터 대신 전용 preview 를 써야 하는 확장자인지 판별한다."""
     return resolve_handrive_render_profile(file_extension).get("mode") in DOCS_NON_EDITABLE_MEDIA_MODES
+
+
+def is_handrive_media_editor_extension(file_extension: str | None) -> bool:
+    """write 페이지 미디어 에디터로 수정 가능한 확장자인지 판별한다."""
+    suffix = str(file_extension or "").lower()
+    return suffix in IMAGE_EDITOR_EXTENSIONS or suffix in HANDRIVE_AUDIO_EDITOR_EXTENSIONS or suffix in HANDRIVE_VIDEO_EDITOR_EXTENSIONS
 
 
 def load_handrive_source_content(file_path: Path, *, request=None, relative_path: str = "") -> str:
@@ -3629,6 +3731,28 @@ def is_path_in_handrive_scope(path_value: str, scoped_home_dir: str) -> bool:
     return path_value == scoped_home_dir or path_value.startswith(scoped_home_dir + "/")
 
 
+def should_enforce_handrive_scoped_home(request) -> bool:
+    """API 요청이 현재 사용자의 scoped home 안으로 제한되어야 하는지 반환한다."""
+    value = str(request.GET.get("scope_home") or request.POST.get("scope_home") or "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def normalize_scoped_home_api_path(request, path_value: str | None, *, allow_empty: bool = True) -> str:
+    """scope_home=1 API 요청의 경로를 사용자 홈으로 고정한다."""
+    normalized = normalize_relative_path(path_value, allow_empty=allow_empty)
+    if not should_enforce_handrive_scoped_home(request):
+        return normalized
+
+    scoped_home_dir = get_scoped_handrive_home_dir(request)
+    if not scoped_home_dir:
+        return normalized
+    if not normalized:
+        return scoped_home_dir
+    if not is_path_in_handrive_scope(normalized, scoped_home_dir):
+        raise ValueError("허용되지 않은 경로입니다.")
+    return normalized
+
+
 def ensure_scoped_home_dir(scoped_home_dir: str) -> None:
     if not scoped_home_dir:
         return
@@ -4413,6 +4537,7 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_move_url": reverse("main:handrive_api_move"),
             "handrive_api_archive_extract_url": reverse("main:handrive_api_archive_extract"),
             "handrive_api_archive_create_url": reverse("main:handrive_api_archive_create"),
+            "handrive_api_convert_mp3_url": reverse("main:handrive_api_convert_mp3"),
             "handrive_api_upload_url": reverse("main:handrive_api_upload"),
             "handrive_api_markdown_image_upload_url": reverse("main:handrive_api_markdown_image_upload"),
             "handrive_api_markdown_image_cleanup_url": reverse("main:handrive_api_markdown_image_cleanup"),
@@ -4432,6 +4557,8 @@ def handrive_common_context(request, ui_lang):
             "handrive_map_editor_base_url": "/handrive/map-editor/",
             "handrive_map_viewer_base_url": "/handrive/map-viewer/",
             "handrive_image_editor_save_url": reverse("main:handrive_api_image_editor_save"),
+            "handrive_audio_editor_save_url": reverse("main:handrive_api_audio_editor_save"),
+            "handrive_video_editor_save_url": reverse("main:handrive_api_video_editor_save"),
             "handrive_can_edit": has_handrive_directory_write_access(request, ""),
             "handrive_can_manage_acl": is_handrive_acl_admin(request),
             "handrive_file_extension_options": get_handrive_save_extension_options(),
@@ -6390,16 +6517,25 @@ def handrive_view(request, doc_path, ui_lang=None):
             root_url=shared_root_url,
         )
 
+    doc_can_edit = has_handrive_write_access(request, relative_file_path)
+    doc_is_media_editor_file = git_virtual is None and is_handrive_media_editor_extension(file_extension)
+    doc_can_show_edit = (
+        doc_can_edit
+        and render_profile["mode"] != DOCS_RENDER_MODE_UNSUPPORTED
+        and (
+            not is_handrive_non_editable_media_extension(file_extension)
+            or doc_is_media_editor_file
+        )
+    )
+
     context.update(
         {
             "doc_title": file_name,
             "doc_relative_path": relative_file_path,
             "doc_slug_path": slug_path,
             "doc_parent_dir": parent_dir,
-            "doc_can_edit": has_handrive_write_access(request, relative_file_path),
-            "doc_can_show_edit": has_handrive_write_access(request, relative_file_path)
-            and not is_handrive_non_editable_media_extension(file_extension)
-            and render_profile["mode"] != DOCS_RENDER_MODE_UNSUPPORTED,
+            "doc_can_edit": doc_can_edit,
+            "doc_can_show_edit": doc_can_show_edit,
             "doc_is_url_only": doc_is_url_only,
             "doc_share_url": doc_share_url,
             "doc_share_is_inherited": doc_share_is_inherited,
@@ -6543,6 +6679,7 @@ def handrive_write(request, ui_lang=None):
     write_current_file_name = ""
     write_public_direct_save = False
     write_requires_commit_message = False
+    write_editor_kind = "text"
 
     if requested_path:
         try:
@@ -6552,24 +6689,39 @@ def handrive_write(request, ui_lang=None):
         git_virtual = _get_git_virtual_context(request, original_relative_path)
         if git_virtual is None:
             try:
-                file_path, original_relative_path = normalize_markdown_relative_path(requested_path, must_exist=True)
+                file_path, original_relative_path = resolve_path(original_relative_path, must_exist=True)
             except (ValueError, FileNotFoundError):
+                raise Http404("수정할 파일을 찾을 수 없습니다.")
+            if not file_path.is_file():
                 raise Http404("수정할 파일을 찾을 수 없습니다.")
             file_name = file_path.name
             initial_filename = file_path.stem
             initial_extension = file_path.suffix.lower() if file_path.suffix else DOCS_FILE_EXTENSION
-            initial_content = file_path.read_text(encoding="utf-8")
+            if initial_extension in IMAGE_EDITOR_EXTENSIONS:
+                write_editor_kind = "image"
+            elif initial_extension in HANDRIVE_AUDIO_EDITOR_EXTENSIONS:
+                write_editor_kind = "audio"
+            elif initial_extension in HANDRIVE_VIDEO_EDITOR_EXTENSIONS:
+                write_editor_kind = "video"
+            else:
+                try:
+                    initial_content = file_path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    raise Http404("수정할 파일을 찾을 수 없습니다.")
         else:
             if git_virtual["kind"] != "branch_file":
                 raise Http404("수정할 파일을 찾을 수 없습니다.")
             file_name = Path(git_virtual["repo_relative_path"]).name
             initial_filename = Path(file_name).stem
             initial_extension = Path(file_name).suffix.lower() if Path(file_name).suffix else DOCS_FILE_EXTENSION
-            initial_content = _git_repo_read_file_bytes(
-                git_virtual["repo"],
-                git_virtual["branch_name"],
-                git_virtual["repo_relative_path"],
-            ).decode("utf-8")
+            try:
+                initial_content = _git_repo_read_file_bytes(
+                    git_virtual["repo"],
+                    git_virtual["branch_name"],
+                    git_virtual["repo_relative_path"],
+                ).decode("utf-8")
+            except UnicodeDecodeError:
+                raise Http404("수정할 파일을 찾을 수 없습니다.")
             write_requires_commit_message = True
             write_public_direct_save = True
         if not is_superuser and not is_path_in_handrive_scope(original_relative_path, scoped_home_dir):
@@ -6624,7 +6776,8 @@ def handrive_write(request, ui_lang=None):
             "original_relative_path": original_relative_path,
             "initial_filename": initial_filename,
             "initial_extension": initial_extension,
-            "write_is_markdown": initial_extension == DOCS_FILE_EXTENSION,
+            "write_is_markdown": write_editor_kind == "text" and initial_extension == DOCS_FILE_EXTENSION,
+            "write_editor_kind": write_editor_kind,
             "initial_filename_input": initial_filename_input,
             "initial_dir": initial_dir,
             "initial_content": initial_content,
@@ -6975,7 +7128,7 @@ def handrive_api_list(request):
     rel_path = request.GET.get("path", "")
 
     try:
-        normalized = normalize_relative_path(rel_path, allow_empty=True)
+        normalized = normalize_scoped_home_api_path(request, rel_path, allow_empty=True)
     except ValueError as exc:
         return json_error(str(exc), status=404)
 
@@ -7013,7 +7166,7 @@ def handrive_api_list(request):
         if not has_handrive_read_access(request, normalized):
             return json_error("폴더를 찾을 수 없습니다.", status=404)
         try:
-            target_dir, normalized = resolve_path(rel_path, must_exist=True)
+            target_dir, normalized = resolve_path(normalized, must_exist=True)
         except (ValueError, FileNotFoundError) as exc:
             return json_error(str(exc), status=404)
         if not target_dir.is_dir():
@@ -7681,6 +7834,99 @@ def handrive_api_archive_create(request):
         "slug_path": destination_relative,
     }
     return JsonResponse(response)
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_convert_mp3(request):
+    """영상 파일의 오디오 트랙을 같은 폴더의 같은 이름 .mp3 파일로 추출한다."""
+    temp_path = None
+    try:
+        payload = parse_json_body(request)
+        source_path_value = normalize_relative_path(payload.get("path"), allow_empty=False)
+        git_virtual_source = _get_git_virtual_context(request, source_path_value)
+        if git_virtual_source is not None:
+            return json_error("Repo 브랜치 파일은 mp3로 변환할 수 없습니다.", status=400)
+        source_path, source_relative = resolve_path(source_path_value, must_exist=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=400)
+
+    if not source_path.is_file():
+        return json_error("파일만 mp3로 변환할 수 있습니다.", status=400)
+    if source_path.suffix.lower() not in HANDRIVE_MP3_SOURCE_EXTENSIONS:
+        return json_error("영상 파일만 mp3로 변환할 수 있습니다.", status=400)
+    if not has_handrive_write_access(request, source_relative):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+    if is_handrive_public_write_enabled(request, source_relative):
+        return json_error("전체 허용 파일은 mp3로 변환할 수 없습니다.", status=403)
+
+    destination_path = source_path.with_suffix(".mp3")
+    if destination_path.exists():
+        return json_error("같은 이름의 mp3 파일이 이미 존재합니다.", status=409)
+
+    ffmpeg_candidate = shutil.which("ffmpeg")
+    ffmpeg_bin = HANDRIVE_FFMPEG_BIN if HANDRIVE_FFMPEG_BIN.exists() else (Path(ffmpeg_candidate) if ffmpeg_candidate else None)
+    if ffmpeg_bin is None:
+        return json_error("ffmpeg를 찾을 수 없습니다.", status=500)
+
+    try:
+        with tempfile.NamedTemporaryFile(prefix="handrive-mp3-", suffix=".mp3", delete=False) as temp_file:
+            temp_path = Path(temp_file.name)
+        command = [
+            str(ffmpeg_bin),
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(source_path),
+            "-vn",
+            "-codec:a",
+            "libmp3lame",
+            "-q:a",
+            "2",
+            "-y",
+            str(temp_path),
+        ]
+        subprocess.run(command, capture_output=True, text=True, timeout=900, check=True)
+        output_size = temp_path.stat().st_size
+        destination_relative = relative_from_root(destination_path)
+        enforce_handrive_scoped_quota(
+            request,
+            quota_path=destination_relative,
+            extra_bytes=output_size,
+            extra_entries=1,
+        )
+        shutil.move(str(temp_path), str(destination_path))
+        temp_path = None
+    except subprocess.TimeoutExpired:
+        return json_error("mp3 변환 시간이 초과되었습니다.", status=504)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()
+        message = "mp3 변환에 실패했습니다."
+        if detail:
+            message = f"{message} {detail[:300]}"
+        return json_error(message, status=500)
+    except (OSError, ValueError) as exc:
+        return json_error(f"mp3 변환에 실패했습니다: {exc}", status=500)
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    destination_relative = relative_from_root(destination_path)
+    return JsonResponse(
+        {
+            "ok": True,
+            "path": destination_relative,
+            "slug_path": destination_relative,
+            "type": "file",
+            "size_display": format_handrive_bytes_display(destination_path.stat().st_size),
+        }
+    )
 
 
 @require_http_methods(["POST"])
@@ -8723,13 +8969,13 @@ def _stream_response(request, fh, file_size: int, content_type: str, filename: s
 def handrive_api_download(request):
     """일반 파일과 repo virtual file을 공통 다운로드 엔드포인트로 제공한다."""
     try:
-        rel_path = normalize_relative_path(request.GET.get("path"), allow_empty=False)
+        rel_path = normalize_scoped_home_api_path(request, request.GET.get("path"), allow_empty=False)
     except ValueError:
         raise Http404("다운로드할 파일을 찾을 수 없습니다.")
     git_virtual = _get_git_virtual_context(request, rel_path)
     if git_virtual is None:
         try:
-            file_path, rel_path = normalize_handrive_relative_path(request.GET.get("path"), must_exist=True)
+            file_path, rel_path = normalize_handrive_relative_path(rel_path, must_exist=True)
         except (ValueError, FileNotFoundError):
             raise Http404("다운로드할 파일을 찾을 수 없습니다.")
         filename = file_path.name
@@ -9619,6 +9865,774 @@ def handrive_api_image_editor_save(request):
         return _storage_unavailable_response(request, exc)
 
     return JsonResponse({"ok": True, "path": normalized})
+
+
+@with_request_handrive_root
+def handrive_api_audio_editor_save(request):
+    """오디오 에디터 저장 API.
+
+    multipart/form-data 로 path, trim_start, trim_end, volume, append_blob(optional) 을 받아
+    원본과 같은 폴더에 ``_편집`` 파일명으로 새 오디오 파일을 저장한다.
+    """
+    if request.method != "POST":
+        return json_error("POST 요청만 허용됩니다.", status=405)
+
+    raw_path = str(request.POST.get("path") or "").strip()
+    temp_paths: list[Path] = []
+    output_path = None
+    append_path = None
+    try:
+        normalized = normalize_relative_path(unquote(raw_path), allow_empty=False)
+        file_path, normalized = resolve_path(normalized, must_exist=True)
+    except FileNotFoundError:
+        return json_error("파일을 찾을 수 없습니다.", status=404)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    if not file_path.is_file():
+        return json_error("파일을 찾을 수 없습니다.", status=404)
+    suffix = file_path.suffix.lower()
+    if suffix not in HANDRIVE_AUDIO_EDITOR_EXTENSIONS:
+        return json_error("오디오 편집기가 지원하지 않는 파일 형식입니다.", status=400)
+    if not has_handrive_write_access(request, normalized):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+    if is_handrive_public_write_enabled(request, normalized):
+        return json_error("전체 허용 파일은 오디오 편집기로 저장할 수 없습니다.", status=403)
+
+    try:
+        trim_start = max(0.0, float(request.POST.get("trim_start") or 0))
+        trim_end = max(0.0, float(request.POST.get("trim_end") or 0))
+        volume = max(0.0, min(4.0, float(request.POST.get("volume") or 1)))
+    except (TypeError, ValueError):
+        return json_error("오디오 편집 값이 올바르지 않습니다.", status=400)
+    if trim_end and trim_end <= trim_start:
+        return json_error("끝 시간은 시작 시간보다 커야 합니다.", status=400)
+
+    ffmpeg_candidate = shutil.which("ffmpeg")
+    ffmpeg_bin = HANDRIVE_FFMPEG_BIN if HANDRIVE_FFMPEG_BIN.exists() else (Path(ffmpeg_candidate) if ffmpeg_candidate else None)
+    if ffmpeg_bin is None:
+        return json_error("ffmpeg를 찾을 수 없습니다.", status=500)
+
+    append_blob = request.FILES.get("append_blob")
+    append_path = None
+    try:
+        if append_blob:
+            append_suffix = Path(append_blob.name or "").suffix.lower()
+            if append_suffix not in HANDRIVE_AUDIO_EDITOR_EXTENSIONS:
+                return json_error("붙일 수 없는 오디오 파일 형식입니다.", status=400)
+            with tempfile.NamedTemporaryFile(prefix="handrive-audio-append-", suffix=append_suffix, delete=False) as append_file:
+                append_path = Path(append_file.name)
+                temp_paths.append(append_path)
+                for chunk in append_blob.chunks():
+                    append_file.write(chunk)
+
+        with tempfile.NamedTemporaryFile(prefix="handrive-audio-save-", suffix=suffix, delete=False) as output_file:
+            output_path = Path(output_file.name)
+            temp_paths.append(output_path)
+
+        atrim_parts = [f"start={trim_start:.3f}"]
+        if trim_end > 0:
+            atrim_parts.append(f"end={trim_end:.3f}")
+        first_filter = f"[0:a]atrim={':'.join(atrim_parts)},asetpts=PTS-STARTPTS,volume={volume:.4f}[a0]"
+        command = [
+            str(ffmpeg_bin),
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(file_path),
+        ]
+        filter_parts = [first_filter]
+        if append_path is not None:
+            command.extend(["-i", str(append_path)])
+            filter_parts.append("[1:a]asetpts=PTS-STARTPTS[a1]")
+            filter_parts.append("[a0][a1]concat=n=2:v=0:a=1[out]")
+        else:
+            filter_parts.append("[a0]anull[out]")
+        command.extend([
+            "-filter_complex",
+            ";".join(filter_parts),
+            "-map",
+            "[out]",
+        ])
+        command.extend(HANDRIVE_AUDIO_EDITOR_CODECS.get(suffix, []))
+        command.extend(["-y", str(output_path)])
+        subprocess.run(command, capture_output=True, text=True, timeout=900, check=True)
+
+        destination_path = handrive_edited_output_path(file_path)
+        destination_relative = relative_from_root(destination_path)
+        new_size = output_path.stat().st_size
+        enforce_handrive_scoped_quota(
+            request,
+            quota_path=destination_relative,
+            extra_bytes=new_size,
+            extra_entries=1,
+        )
+        shutil.move(str(output_path), str(destination_path))
+        output_path = None
+    except subprocess.TimeoutExpired:
+        return json_error("오디오 저장 시간이 초과되었습니다.", status=504)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()
+        message = "오디오 저장에 실패했습니다."
+        if detail:
+            message = f"{message} {detail[:300]}"
+        return json_error(message, status=500)
+    except (OSError, ValueError) as exc:
+        return json_error(f"오디오 저장에 실패했습니다: {exc}", status=500)
+    finally:
+        for temp_path in temp_paths:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    return JsonResponse({
+        "ok": True,
+        "path": destination_relative,
+        "slug_path": destination_relative,
+        "type": "file",
+        "size_display": format_handrive_bytes_display(destination_path.stat().st_size),
+    })
+
+
+def _handrive_drawtext_fontfile() -> Path | None:
+    for candidate in (
+        Path("/System/Library/Fonts/AppleSDGothicNeo.ttc"),
+        Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
+        Path("/Library/Fonts/Arial Unicode.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    ):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _handrive_video_font_candidates(font_family: str | None) -> tuple[Path, ...]:
+    key = _normalize_handrive_video_font_family(font_family)
+    candidates_by_key = {
+        "serif": (
+            Path("/System/Library/Fonts/Times.ttc"),
+            Path("/Library/Fonts/Times New Roman.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"),
+        ),
+        "monospace": (
+            Path("/System/Library/Fonts/Monaco.ttf"),
+            Path("/Library/Fonts/Courier New.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"),
+        ),
+        "Arial": (
+            Path("/Library/Fonts/Arial.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        ),
+        "Helvetica": (
+            Path("/System/Library/Fonts/Helvetica.ttc"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        ),
+        "Georgia": (
+            Path("/Library/Fonts/Georgia.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Georgia.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"),
+        ),
+        "Times New Roman": (
+            Path("/Library/Fonts/Times New Roman.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Times New Roman.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"),
+        ),
+        "Verdana": (
+            Path("/Library/Fonts/Verdana.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Verdana.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        ),
+        "Trebuchet MS": (
+            Path("/Library/Fonts/Trebuchet MS.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Trebuchet MS.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        ),
+        "Courier New": (
+            Path("/Library/Fonts/Courier New.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Courier New.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"),
+        ),
+    }
+    return candidates_by_key.get(key, ()) + tuple(Path(path) for path in (_handrive_drawtext_fontfile(),) if path is not None)
+
+
+def _create_handrive_video_subtitle_png(text: str, video_width: int, target_path: Path) -> None:
+    from PIL import Image, ImageDraw, ImageFont
+
+    canvas_width = max(320, min(1600, int(video_width or 1280) - 64))
+    font_size = max(20, min(42, canvas_width // 24))
+    font_path = next((candidate for candidate in _handrive_video_font_candidates(subtitle.get("font_family")) if candidate.exists()), None)
+    if font_path is not None:
+        font = ImageFont.truetype(str(font_path), font_size)
+    else:
+        font = ImageFont.load_default()
+    draw_probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    words = text.replace("\r", "").split()
+    lines: list[str] = []
+    current = ""
+    max_text_width = canvas_width - 32
+    for word in words or [text]:
+        candidate = f"{current} {word}".strip()
+        bbox = draw_probe.textbbox((0, 0), candidate, font=font)
+        if current and bbox[2] - bbox[0] > max_text_width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    lines = lines[:3]
+    line_height = int(font_size * 1.35)
+    canvas_height = max(56, line_height * len(lines) + 28)
+    image = Image.new("RGBA", (canvas_width, canvas_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((0, 0, canvas_width, canvas_height), radius=14, fill=(0, 0, 0, 145))
+    y = 14
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        x = (canvas_width - (bbox[2] - bbox[0])) // 2
+        draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))
+        y += line_height
+    image.save(target_path)
+
+
+def _parse_handrive_video_color(value: str | None, alpha: int = 255) -> tuple[int, int, int, int]:
+    raw = str(value or "").strip()
+    if raw.startswith("#"):
+        raw = raw[1:]
+    if len(raw) == 3:
+        raw = "".join(ch * 2 for ch in raw)
+    if not re.fullmatch(r"[0-9a-fA-F]{6}", raw or ""):
+        return (0, 0, 0, alpha)
+    return (int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16), alpha)
+
+
+def _parse_handrive_video_bool(value, default: bool = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() not in {"0", "false", "off", "no", "none"}
+
+
+def _normalize_handrive_video_font_family(value: str | None) -> str:
+    normalized = str(value or "system").strip()
+    allowed = {
+        "system",
+        "sans-serif",
+        "serif",
+        "monospace",
+        "cursive",
+        "fantasy",
+        "Arial",
+        "Helvetica",
+        "Georgia",
+        "Times New Roman",
+        "Verdana",
+        "Trebuchet MS",
+        "Courier New",
+    }
+    return normalized if normalized in allowed else "system"
+
+
+def _probe_handrive_video_dimensions(file_path: Path) -> tuple[int, int]:
+    ffprobe_candidate = shutil.which("ffprobe")
+    ffprobe_bin = HANDRIVE_FFMPEG_BIN.with_name("ffprobe") if HANDRIVE_FFMPEG_BIN.with_name("ffprobe").exists() else (Path(ffprobe_candidate) if ffprobe_candidate else None)
+    if ffprobe_bin is None:
+        return 1280, 720
+    try:
+        result = subprocess.run(
+            [
+                str(ffprobe_bin),
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "csv=s=x:p=0",
+                str(file_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=True,
+        )
+        width_text, height_text = (result.stdout or "1280x720").strip().split("x", 1)
+        return max(320, int(width_text or 1280)), max(180, int(height_text or 720))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 1280, 720
+
+
+def _probe_handrive_video_width(file_path: Path) -> int:
+    return _probe_handrive_video_dimensions(file_path)[0]
+
+
+def _normalize_handrive_video_subtitles(raw_json: str | None, legacy_text: str | None = None) -> list[dict]:
+    subtitles: list[dict] = []
+    if raw_json:
+        try:
+            parsed = json.loads(raw_json)
+        except (TypeError, ValueError):
+            parsed = []
+        if isinstance(parsed, list):
+            source_items = parsed[:20]
+        else:
+            source_items = []
+        for item in source_items:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+            try:
+                index = int(item.get("index") or 0)
+                start = max(0.0, float(item.get("start") or 0))
+                end = max(0.0, float(item.get("end") or 0))
+                width = max(8.0, min(100.0, float(item.get("width") or 60)))
+                height = max(8.0, min(100.0, float(item.get("height") or 16)))
+                x = max(0.0, min(100.0 - width, float(item.get("x") or 0)))
+                y = max(0.0, min(100.0 - height, float(item.get("y") or 0)))
+                font_size = max(8, min(160, int(float(item.get("fontSize") or item.get("font_size") or 28))))
+                preview_width = max(1.0, float(item.get("previewWidth") or item.get("preview_width") or 0))
+                preview_height = max(1.0, float(item.get("previewHeight") or item.get("preview_height") or 0))
+            except (TypeError, ValueError):
+                continue
+            if end <= start:
+                continue
+            subtitles.append({
+                "text": text[:500],
+                "index": index,
+                "start": start,
+                "end": end,
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
+                "preview_width": preview_width,
+                "preview_height": preview_height,
+                "font_family": _normalize_handrive_video_font_family(item.get("fontFamily") or item.get("font_family")),
+                "font_size": font_size,
+                "font_bold": _parse_handrive_video_bool(item.get("fontBold", item.get("font_bold")), False),
+                "font_italic": _parse_handrive_video_bool(item.get("fontItalic", item.get("font_italic")), False),
+                "font_underline": _parse_handrive_video_bool(item.get("fontUnderline", item.get("font_underline")), False),
+                "font_color_enabled": _parse_handrive_video_bool(item.get("fontColorEnabled", item.get("font_color_enabled")), True),
+                "font_color": item.get("fontColor") or item.get("font_color") or "#ffffff",
+                "font_stroke_enabled": _parse_handrive_video_bool(item.get("fontStrokeEnabled", item.get("font_stroke_enabled")), True),
+                "font_stroke_color": item.get("fontStrokeColor") or item.get("font_stroke_color") or "#000000",
+                "bg_enabled": _parse_handrive_video_bool(item.get("bgEnabled", item.get("bg_enabled")), True),
+                "bg_color": item.get("bgColor") or item.get("bg_color") or "#000000",
+                "border_enabled": _parse_handrive_video_bool(item.get("borderEnabled", item.get("border_enabled")), True),
+                "border_color": item.get("borderColor") or item.get("border_color") or "#000000",
+            })
+    elif legacy_text:
+        text = str(legacy_text or "").strip()
+        if text:
+            subtitles.append({
+                "text": text[:500],
+                "start": 0.0,
+                "end": 360000.0,
+                "x": 15.0,
+                "y": 78.0,
+                "width": 70.0,
+                "height": 14.0,
+                "font_family": "system",
+                "font_size": 28,
+                "font_bold": False,
+                "font_italic": False,
+                "font_underline": False,
+                "font_color_enabled": True,
+                "font_color": "#ffffff",
+                "font_stroke_enabled": True,
+                "font_stroke_color": "#000000",
+                "bg_enabled": True,
+                "bg_color": "#000000",
+                "border_enabled": True,
+                "border_color": "#000000",
+            })
+    return subtitles
+
+
+def _normalize_handrive_video_images(raw_json: str | None, files) -> list[dict]:
+    overlays: list[dict] = []
+    if not raw_json:
+        return overlays
+    try:
+        parsed = json.loads(raw_json)
+    except (TypeError, ValueError):
+        parsed = []
+    if not isinstance(parsed, list):
+        return overlays
+    for item in parsed[:20]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            index = int(item.get("index"))
+            start = max(0.0, float(item.get("start") or 0))
+            end = max(0.0, float(item.get("end") or 0))
+            width = max(4.0, min(100.0, float(item.get("width") or 20)))
+            height = max(4.0, min(100.0, float(item.get("height") or 20)))
+            x = max(0.0, min(100.0 - width, float(item.get("x") or 0)))
+            y = max(0.0, min(100.0 - height, float(item.get("y") or 0)))
+        except (TypeError, ValueError):
+            continue
+        if end <= start:
+            continue
+        upload = files.get(f"image_overlay_{index}")
+        if not upload:
+            continue
+        suffix = Path(upload.name or "").suffix.lower()
+        if suffix not in MAP_IMAGE_EXTENSIONS:
+            continue
+        overlays.append({
+            "upload": upload,
+            "suffix": suffix,
+            "start": start,
+            "end": end,
+            "x": x,
+            "y": y,
+            "width": width,
+            "height": height,
+        })
+    return overlays
+
+
+def _create_handrive_video_subtitle_box_png(subtitle: dict, video_width: int, video_height: int, target_path: Path) -> None:
+    from PIL import Image, ImageDraw, ImageFont
+
+    box_width = max(1, int(video_width * (float(subtitle["width"]) / 100)))
+    box_height = max(1, int(video_height * (float(subtitle["height"]) / 100)))
+    preview_width = float(subtitle.get("preview_width") or 0)
+    preview_height = float(subtitle.get("preview_height") or 0)
+    scale_x = video_width / preview_width if preview_width > 0 else 1.0
+    scale_y = video_height / preview_height if preview_height > 0 else scale_x
+    text_scale = max(0.1, min(scale_x, scale_y))
+    font_size = max(1, int(round(max(8, min(160, int(subtitle.get("font_size") or 28))) * text_scale)))
+    font_path = next((candidate for candidate in _handrive_video_font_candidates(subtitle.get("font_family")) if candidate.exists()), None)
+    if font_path is not None:
+        font = ImageFont.truetype(str(font_path), font_size)
+    else:
+        font = ImageFont.load_default()
+
+    image = Image.new("RGBA", (box_width, box_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    bg_color = _parse_handrive_video_color(subtitle.get("bg_color"), 160) if subtitle.get("bg_enabled") is not False else None
+    border_color = _parse_handrive_video_color(subtitle.get("border_color"), 255) if subtitle.get("border_enabled") is not False else None
+    font_color = _parse_handrive_video_color(subtitle.get("font_color"), 255) if subtitle.get("font_color_enabled") is not False else (255, 255, 255, 255)
+    border_width = max(1, int(round(2 * text_scale))) if border_color is not None else 0
+    if bg_color is not None or border_color is not None:
+        inset = max(0, border_width // 2)
+        draw.rounded_rectangle(
+            (inset, inset, max(inset, box_width - inset - 1), max(inset, box_height - inset - 1)),
+            radius=max(1, int(round(4 * text_scale))),
+            fill=bg_color,
+            outline=border_color,
+            width=border_width,
+        )
+
+    padding_x = max(4, int(font_size * 0.42))
+    max_text_width = max(10, box_width - (padding_x * 2))
+    draw_probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    lines: list[str] = []
+    for raw_line in str(subtitle.get("text") or "").replace("\r", "").split("\n"):
+        words = raw_line.split()
+        current = ""
+        for word in words or [raw_line]:
+            candidate = f"{current} {word}".strip()
+            bbox = draw_probe.textbbox((0, 0), candidate, font=font)
+            if current and bbox[2] - bbox[0] > max_text_width:
+                lines.append(current)
+                current = word
+            else:
+                current = candidate
+        if current:
+            lines.append(current)
+    line_height = max(1, int(font_size * 1.25))
+    padding_y = max(2, int(font_size * 0.28))
+    max_lines = max(1, (box_height - (padding_y * 2)) // max(1, line_height))
+    lines = lines[:max_lines]
+    total_text_height = line_height * len(lines)
+    block_y = max(padding_y, (box_height - total_text_height) // 2)
+    bold_enabled = subtitle.get("font_bold") is True
+    italic_enabled = subtitle.get("font_italic") is True
+    underline_enabled = subtitle.get("font_underline") is True
+    stroke_enabled = subtitle.get("font_stroke_enabled") is not False
+    stroke_width = max(1, int(round(text_scale))) if stroke_enabled else 0
+    stroke_fill = _parse_handrive_video_color(subtitle.get("font_stroke_color"), 255) if stroke_enabled else None
+    bold_offset = max(1, int(round(font_size * 0.04))) if bold_enabled else 0
+    underline_width = max(1, int(round(font_size * 0.06)))
+    line_pad = max(stroke_width + bold_offset + underline_width + 4, int(font_size * 0.18))
+
+    for line_index, line in enumerate(lines):
+        bbox = draw_probe.textbbox((0, 0), line, font=font, stroke_width=stroke_width)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        layer_width = max(1, text_width + bold_offset + line_pad * 2)
+        layer_height = max(1, text_height + line_pad * 2 + (underline_width * 2 if underline_enabled else 0))
+        text_layer = Image.new("RGBA", (layer_width, layer_height), (0, 0, 0, 0))
+        layer_draw = ImageDraw.Draw(text_layer)
+        text_x = line_pad - bbox[0]
+        text_y = line_pad - bbox[1]
+        for offset in range(bold_offset + 1):
+            layer_draw.text(
+                (text_x + offset, text_y),
+                line,
+                font=font,
+                fill=font_color,
+                stroke_width=stroke_width,
+                stroke_fill=stroke_fill,
+            )
+        if underline_enabled:
+            underline_y = min(layer_height - underline_width, int(text_y + bbox[3] + max(2, font_size * 0.18)))
+            layer_draw.line(
+                (text_x, underline_y, text_x + text_width + bold_offset, underline_y),
+                fill=font_color,
+                width=underline_width,
+            )
+        if italic_enabled:
+            shear = 0.22
+            shifted_width = layer_width + int(abs(shear) * layer_height)
+            text_layer = text_layer.transform(
+                (shifted_width, layer_height),
+                Image.AFFINE,
+                (1, shear, 0, 0, 1, 0),
+                resample=Image.BICUBIC,
+            )
+        paste_x = max(0, (box_width - text_layer.width) // 2)
+        slot_y = block_y + (line_index * line_height)
+        paste_y = max(0, int(slot_y + ((line_height - text_layer.height) / 2)))
+        image.alpha_composite(text_layer, (paste_x, paste_y))
+    image.save(target_path)
+
+
+@with_request_handrive_root
+def handrive_api_video_editor_save(request):
+    """비디오 에디터 저장 API.
+
+    multipart/form-data 로 path, trim_start, trim_end, volume, subtitles_json 을 받아
+    원본과 같은 폴더에 ``_편집`` 파일명으로 새 비디오 파일을 저장한다.
+    """
+    if request.method != "POST":
+        return json_error("POST 요청만 허용됩니다.", status=405)
+
+    raw_path = str(request.POST.get("path") or "").strip()
+    temp_paths: list[Path] = []
+    output_path = None
+    append_path = None
+    try:
+        normalized = normalize_relative_path(unquote(raw_path), allow_empty=False)
+        file_path, normalized = resolve_path(normalized, must_exist=True)
+    except FileNotFoundError:
+        return json_error("파일을 찾을 수 없습니다.", status=404)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    if not file_path.is_file():
+        return json_error("파일을 찾을 수 없습니다.", status=404)
+    suffix = file_path.suffix.lower()
+    if suffix not in HANDRIVE_VIDEO_EDITOR_EXTENSIONS:
+        return json_error("비디오 편집기가 지원하지 않는 파일 형식입니다.", status=400)
+    if not has_handrive_write_access(request, normalized):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+    if is_handrive_public_write_enabled(request, normalized):
+        return json_error("전체 허용 파일은 비디오 편집기로 저장할 수 없습니다.", status=403)
+
+    try:
+        trim_start = max(0.0, float(request.POST.get("trim_start") or 0))
+        trim_end = max(0.0, float(request.POST.get("trim_end") or 0))
+        volume = max(0.0, min(4.0, float(request.POST.get("volume") or 1)))
+    except (TypeError, ValueError):
+        return json_error("비디오 편집 값이 올바르지 않습니다.", status=400)
+    subtitles = _normalize_handrive_video_subtitles(
+        request.POST.get("subtitles_json"),
+        request.POST.get("subtitle_text"),
+    )
+    image_overlays = _normalize_handrive_video_images(request.POST.get("images_json"), request.FILES)
+    if trim_end and trim_end <= trim_start:
+        return json_error("끝 시간은 시작 시간보다 커야 합니다.", status=400)
+
+    ffmpeg_candidate = shutil.which("ffmpeg")
+    ffmpeg_bin = HANDRIVE_FFMPEG_BIN if HANDRIVE_FFMPEG_BIN.exists() else (Path(ffmpeg_candidate) if ffmpeg_candidate else None)
+    if ffmpeg_bin is None:
+        return json_error("ffmpeg를 찾을 수 없습니다.", status=500)
+
+    append_blob = request.FILES.get("append_blob")
+    try:
+        if append_blob:
+            append_suffix = Path(append_blob.name or "").suffix.lower()
+            if append_suffix not in HANDRIVE_VIDEO_EDITOR_EXTENSIONS:
+                return json_error("붙일 수 없는 비디오 파일 형식입니다.", status=400)
+            with tempfile.NamedTemporaryFile(prefix="handrive-video-append-", suffix=append_suffix, delete=False) as append_file:
+                append_path = Path(append_file.name)
+                temp_paths.append(append_path)
+                for chunk in append_blob.chunks():
+                    append_file.write(chunk)
+
+        with tempfile.NamedTemporaryFile(prefix="handrive-video-save-", suffix=suffix, delete=False) as output_file:
+            output_path = Path(output_file.name)
+            temp_paths.append(output_path)
+
+        command = [
+            str(ffmpeg_bin),
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+        ]
+        if trim_start > 0 and append_path is None:
+            command.extend(["-ss", f"{trim_start:.3f}"])
+        command.extend(["-i", str(file_path)])
+        append_input_index = None
+        if append_path is not None:
+            append_input_index = 1
+            command.extend(["-i", str(append_path)])
+
+        video_width, video_height = _probe_handrive_video_dimensions(file_path)
+        subtitle_inputs: list[tuple[dict, int]] = []
+        subtitle_input_offset = 2 if append_input_index is not None else 1
+        next_overlay_input_index = subtitle_input_offset
+        output_end = trim_end if trim_end > 0 else None
+        for subtitle in subtitles:
+            effective_start = max(0.0, float(subtitle["start"]) - trim_start)
+            effective_end = float(subtitle["end"]) - trim_start
+            if output_end is not None:
+                effective_end = min(effective_end, output_end - trim_start)
+            if effective_end <= effective_start:
+                continue
+            with tempfile.NamedTemporaryFile(prefix="handrive-video-subtitle-", suffix=".png", delete=False) as subtitle_file:
+                subtitle_path = Path(subtitle_file.name)
+            temp_paths.append(subtitle_path)
+            subtitle_upload = request.FILES.get(f"subtitle_overlay_{subtitle.get('index')}")
+            if subtitle_upload:
+                with subtitle_path.open("wb") as subtitle_file:
+                    for chunk in subtitle_upload.chunks():
+                        subtitle_file.write(chunk)
+            else:
+                _create_handrive_video_subtitle_box_png(subtitle, video_width, video_height, subtitle_path)
+            command.extend(["-loop", "1", "-i", str(subtitle_path)])
+            subtitle_inputs.append((dict(subtitle, effective_start=effective_start, effective_end=effective_end), next_overlay_input_index))
+            next_overlay_input_index += 1
+        image_inputs: list[tuple[dict, int]] = []
+        for overlay in image_overlays:
+            effective_start = max(0.0, float(overlay["start"]) - trim_start)
+            effective_end = float(overlay["end"]) - trim_start
+            if output_end is not None:
+                effective_end = min(effective_end, output_end - trim_start)
+            if effective_end <= effective_start:
+                continue
+            with tempfile.NamedTemporaryFile(prefix="handrive-video-image-", suffix=overlay["suffix"], delete=False) as image_file:
+                image_path = Path(image_file.name)
+                temp_paths.append(image_path)
+                for chunk in overlay["upload"].chunks():
+                    image_file.write(chunk)
+            command.extend(["-loop", "1", "-i", str(image_path)])
+            image_inputs.append((dict(overlay, effective_start=effective_start, effective_end=effective_end), next_overlay_input_index))
+            next_overlay_input_index += 1
+
+        main_video_filters = []
+        main_audio_filters = []
+        if append_input_index is not None:
+            trim_parts = [f"start={trim_start:.3f}"]
+            if trim_end > 0:
+                trim_parts.append(f"end={trim_end:.3f}")
+            main_video_filters.append(f"trim={':'.join(trim_parts)}")
+            main_audio_filters.append(f"atrim={':'.join(trim_parts)}")
+        main_video_filters.extend([f"scale={video_width}:{video_height}", "setsar=1", "setpts=PTS-STARTPTS", "format=yuv420p"])
+        video_filter_parts = [f"[0:v]{','.join(main_video_filters)}[v0]"]
+        last_video_label = "[v0]"
+        for index, (subtitle, input_index) in enumerate(subtitle_inputs, start=1):
+            x = max(0, min(video_width - 1, int(video_width * (float(subtitle["x"]) / 100))))
+            y = max(0, min(video_height - 1, int(video_height * (float(subtitle["y"]) / 100))))
+            width_px = max(1, int(video_width * (float(subtitle["width"]) / 100)))
+            height_px = max(1, int(video_height * (float(subtitle["height"]) / 100)))
+            scaled_label = f"[sub{index}]"
+            next_label = f"[v{index}]"
+            video_filter_parts.append(f"[{input_index}:v]scale={width_px}:{height_px},format=rgba{scaled_label}")
+            video_filter_parts.append(
+                f"{last_video_label}{scaled_label}overlay={x}:{y}:enable='between(t,{subtitle['effective_start']:.3f},{subtitle['effective_end']:.3f})':shortest=1{next_label}"
+            )
+            last_video_label = next_label
+        image_label_index = len(subtitle_inputs)
+        for overlay, input_index in image_inputs:
+            image_label_index += 1
+            x = max(0, min(video_width - 1, int(video_width * (float(overlay["x"]) / 100))))
+            y = max(0, min(video_height - 1, int(video_height * (float(overlay["y"]) / 100))))
+            width_px = max(1, int(video_width * (float(overlay["width"]) / 100)))
+            height_px = max(1, int(video_height * (float(overlay["height"]) / 100)))
+            scaled_label = f"[img{image_label_index}]"
+            next_label = f"[v{image_label_index}]"
+            video_filter_parts.append(f"[{input_index}:v]scale={width_px}:{height_px}:force_original_aspect_ratio=decrease,format=rgba{scaled_label}")
+            video_filter_parts.append(
+                f"{last_video_label}{scaled_label}overlay={x}:{y}:enable='between(t,{overlay['effective_start']:.3f},{overlay['effective_end']:.3f})':shortest=1{next_label}"
+            )
+            last_video_label = next_label
+        main_audio_filters.extend([f"volume={volume:.4f}", "asetpts=PTS-STARTPTS"])
+        audio_filter = f"[0:a]{','.join(main_audio_filters)}[amain]"
+        if append_input_index is not None:
+            video_filter_parts.append(f"{last_video_label}null[vmain]")
+            video_filter_parts.append(f"[{append_input_index}:v]scale={video_width}:{video_height},setsar=1,setpts=PTS-STARTPTS,format=yuv420p[vappend]")
+            video_filter_parts.append(f"[{append_input_index}:a]asetpts=PTS-STARTPTS[aappend]")
+            video_filter_parts.append("[vmain][amain][vappend][aappend]concat=n=2:v=1:a=1[vout][aout]")
+        else:
+            video_filter_parts.append(f"{last_video_label}null[vout]")
+            video_filter_parts.append(audio_filter.replace("[amain]", "[aout]"))
+        filter_complex = ";".join(video_filter_parts if append_input_index is not None else video_filter_parts)
+        if append_input_index is not None:
+            filter_complex = f"{';'.join(video_filter_parts[: -1])};{audio_filter};{video_filter_parts[-1]}"
+        command.extend([
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "[vout]",
+            "-map",
+            "[aout]",
+        ])
+        if trim_end > 0 and append_input_index is None:
+            command.extend(["-t", f"{max(0.001, trim_end - trim_start):.3f}"])
+        command.extend(HANDRIVE_VIDEO_EDITOR_CODECS.get(suffix, []))
+        command.extend(["-y", str(output_path)])
+        subprocess.run(command, capture_output=True, text=True, timeout=1800, check=True)
+
+        destination_path = handrive_edited_output_path(file_path)
+        destination_relative = relative_from_root(destination_path)
+        new_size = output_path.stat().st_size
+        enforce_handrive_scoped_quota(
+            request,
+            quota_path=destination_relative,
+            extra_bytes=new_size,
+            extra_entries=1,
+        )
+        shutil.move(str(output_path), str(destination_path))
+        output_path = None
+    except subprocess.TimeoutExpired:
+        return json_error("비디오 저장 시간이 초과되었습니다.", status=504)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()
+        message = "비디오 저장에 실패했습니다."
+        if detail:
+            message = f"{message} {detail[:300]}"
+        return json_error(message, status=500)
+    except (OSError, ValueError) as exc:
+        return json_error(f"비디오 저장에 실패했습니다: {exc}", status=500)
+    finally:
+        for temp_path in temp_paths:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    return JsonResponse({
+        "ok": True,
+        "path": destination_relative,
+        "slug_path": destination_relative,
+        "type": "file",
+        "size_display": format_handrive_bytes_display(destination_path.stat().st_size),
+    })
 
 
 @with_request_handrive_root

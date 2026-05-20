@@ -2335,6 +2335,57 @@ class HandriveAccessRuleTests(TestCase):
         user_home.mkdir(parents=True, exist_ok=True)
         return user
 
+    def test_scope_home_list_starts_at_scoped_user_folder_for_superuser(self):
+        admin = self.user_model.objects.create_user(
+            username="scoped_api_admin",
+            password="pw123456",
+            is_staff=True,
+            is_superuser=True,
+        )
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
+        user_home = handrive_root / "users" / admin.username
+        user_home.mkdir(parents=True, exist_ok=True)
+        (user_home / "visible.png").write_bytes(b"png")
+        (handrive_root / "root-secret.png").write_bytes(b"secret")
+
+        self.client.force_login(admin)
+        response = self.client.get(
+            reverse("main:handrive_api_list"),
+            data={"path": "", "scope_home": "1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["path"], f"users/{admin.username}")
+        self.assertIn("visible.png", {entry["name"] for entry in payload["entries"]})
+        self.assertNotIn("root-secret.png", {entry["name"] for entry in payload["entries"]})
+
+    def test_scope_home_download_blocks_superuser_outside_scoped_user_folder(self):
+        admin = self.user_model.objects.create_user(
+            username="scoped_download_admin",
+            password="pw123456",
+            is_staff=True,
+            is_superuser=True,
+        )
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
+        user_home = handrive_root / "users" / admin.username
+        user_home.mkdir(parents=True, exist_ok=True)
+        (user_home / "visible.png").write_bytes(b"png")
+        (handrive_root / "root-secret.png").write_bytes(b"secret")
+
+        self.client.force_login(admin)
+        blocked_response = self.client.get(
+            reverse("main:handrive_api_download"),
+            data={"path": "root-secret.png", "scope_home": "1"},
+        )
+        allowed_response = self.client.get(
+            reverse("main:handrive_api_download"),
+            data={"path": f"users/{admin.username}/visible.png", "scope_home": "1"},
+        )
+
+        self.assertEqual(blocked_response.status_code, 404)
+        self.assertEqual(allowed_response.status_code, 200)
+
     def test_restricted_path_blocks_non_allowed_user_from_read(self):
         reader_group = Group.objects.create(name="handrive_readers")
         rule = HandriveAccessRule.objects.create(path="restricted")

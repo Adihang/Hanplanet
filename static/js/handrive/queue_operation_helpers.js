@@ -269,6 +269,7 @@
         var runExtractOperationQueueItem = settings.runExtractOperationQueueItem || function () { return Promise.resolve(); };
         var runMoveOperationQueueItem = settings.runMoveOperationQueueItem || function () { return Promise.resolve(); };
         var runYoutubeSaveOperationQueueItem = settings.runYoutubeSaveOperationQueueItem || function () { return Promise.resolve(); };
+        var runConvertMp3OperationQueueItem = settings.runConvertMp3OperationQueueItem || function () { return Promise.resolve(); };
         var refreshCurrentDirectory = settings.refreshCurrentDirectory || function () { return Promise.resolve(); };
         var alertError = settings.alertError || function () {};
         var t = settings.t || function (_, fallbackValue) { return fallbackValue || ""; };
@@ -300,6 +301,8 @@
                         await runMoveOperationQueueItem(nextItem);
                     } else if (nextItem.operationType === "youtube-save") {
                         await runYoutubeSaveOperationQueueItem(nextItem);
+                    } else if (nextItem.operationType === "convert-mp3") {
+                        await runConvertMp3OperationQueueItem(nextItem);
                     }
                     if (nextItem.abortRequested) {
                         removeUploadQueueItem(nextItem.id);

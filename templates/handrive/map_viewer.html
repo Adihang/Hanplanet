@@ -8,6 +8,7 @@
 
 <style>
 .map-viewer-wrap {
+    position: relative;
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -18,13 +19,21 @@
     --map-top-right-control-size: 30px;
     --map-top-right-control-icon-size: 18px;
     --map-top-right-control-gap: 8px;
+    --map-viewer-toolbar-offset: 64px;
 }
 	.map-viewer-toolbar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1200;
 	    display: flex;
 	    align-items: center;
 	    gap: 2px;
     padding: 12px;
-    background: var(--handrive-surface, #fff);
+    background: color-mix(in srgb, var(--handrive-surface, #fff) 46%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--handrive-border, #e0e0e0);
     flex-shrink: 0;
 }
@@ -55,7 +64,7 @@
 	}
 	.map-viewer-background-select {
     position: absolute;
-    top: 10px;
+    top: calc(var(--map-viewer-toolbar-offset) + 10px);
     left: 10px;
     z-index: 1000;
     width: min(240px, calc(100vw - 20px));
@@ -585,6 +594,10 @@ body.theme-dark .leaflet-bar a.leaflet-disabled {
 .leaflet-control-zoom {
     overflow: hidden;
 }
+.leaflet-top.leaflet-left,
+.leaflet-top.leaflet-right {
+    top: var(--map-viewer-toolbar-offset);
+}
 .leaflet-control-zoom a.leaflet-control-zoom-in,
 .leaflet-control-zoom a.leaflet-control-zoom-out {
     display: flex;
@@ -866,7 +879,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 /* 레이어 가시성 위젯 */
 .map-viewer-layers-widget {
     position: absolute;
-    top: 10px;
+    top: calc(var(--map-viewer-toolbar-offset) + 10px);
     left: 10px;
     z-index: 999;
     pointer-events: auto;
@@ -883,7 +896,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
     overflow: hidden;
 }
 .map-viewer-background-select:not([hidden]) + .map-viewer-layers-widget {
-    top: 52px;
+    top: calc(var(--map-viewer-toolbar-offset) + 52px);
 }
 .map-viewer-layers-toggle {
     width: 100%;
@@ -2079,27 +2092,39 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             renderBackgroundSelect();
             return;
         }
+        if (item.loadedUrl) {
+            applyActiveMapImageLoadedUrl(item, item.loadedUrl, fitBounds);
+            renderBackgroundSelect();
+            return;
+        }
+        showLoading();
         loadImageWithProgress(
             appendShared(item.url),
             function(blobUrl) {
                 item.loadedUrl = blobUrl;
-                var bounds = mapImageBounds(item);
-                if (imageOverlay && map.hasLayer(imageOverlay)) {
-                    map.removeLayer(imageOverlay);
-                }
-                imageOverlay = L.imageOverlay(blobUrl, bounds, { pane: "imageBackgroundPane" }).addTo(map);
-                imageOverlay.bringToBack();
-                if (fitBounds) {
-                    map.fitBounds(bounds);
-                }
-                applyViewerMapImageLayerSettings();
+                applyActiveMapImageLoadedUrl(item, blobUrl, fitBounds);
                 renderBackgroundSelect();
-                scheduleMapResize();
+                hideLoading();
             },
             function() {
                 renderBackgroundSelect();
+                hideLoading();
             }
         );
+    }
+
+    function applyActiveMapImageLoadedUrl(item, blobUrl, fitBounds) {
+        var bounds = mapImageBounds(item);
+        if (imageOverlay && map.hasLayer(imageOverlay)) {
+            map.removeLayer(imageOverlay);
+        }
+        imageOverlay = L.imageOverlay(blobUrl, bounds, { pane: "imageBackgroundPane" }).addTo(map);
+        imageOverlay.bringToBack();
+        if (fitBounds) {
+            map.fitBounds(bounds);
+        }
+        applyViewerMapImageLayerSettings();
+        scheduleMapResize();
     }
 
     function createInvisibleViewerIcon() {
@@ -2178,6 +2203,11 @@ body.map-viewer-page.eraser-mode .leaflet-container {
     function hideLoading() {
         var overlay = document.getElementById("map-viewer-loading");
         if (overlay) { overlay.classList.add("is-hidden"); }
+    }
+
+    function showLoading() {
+        var overlay = document.getElementById("map-viewer-loading");
+        if (overlay) { overlay.classList.remove("is-hidden"); }
     }
 
     function loadImageWithProgress(url, onLoad, onError) {

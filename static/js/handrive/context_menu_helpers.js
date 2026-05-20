@@ -56,6 +56,7 @@
             : function () { return false; };
 
         var IMAGE_EXTENSIONS_FOR_MAP = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff", ".tif", ".avif"];
+        var VIDEO_EXTENSIONS_FOR_MP3 = [".mp4", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m4v", ".ogv"];
         var flags = {
             open: false,
             download: false,
@@ -75,6 +76,7 @@
             gitCreateBranch: false,
             gitDeleteBranch: false,
             createMap: false,
+            convertMp3: false,
             changeIcon: false,
         };
 
@@ -140,6 +142,7 @@
             ? ("." + targetEntry.name.split(".").pop()).toLowerCase()
             : "";
         flags.createMap = !isDirectory && canEditEntry && IMAGE_EXTENSIONS_FOR_MAP.indexOf(entryExtension) !== -1 && !isGitVirtualEntry;
+        flags.convertMp3 = !isDirectory && canEditEntry && VIDEO_EXTENSIONS_FOR_MP3.indexOf(entryExtension) !== -1 && !isGitVirtualEntry;
         flags.changeIcon = Boolean(
             !isMultiSelection &&
             isDirectory &&

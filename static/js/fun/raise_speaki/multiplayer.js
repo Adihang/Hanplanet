@@ -4416,9 +4416,7 @@
             let spriteHeight = fallbackSpriteHeight;
             let spriteWidth = spriteHeight * fallbackAspectRatio;
             if (!isNpc && spriteState.skinRuntime && spriteState.skinRuntime.skinType === 'evolution') {
-                const evolutionHealthSegments = getPlayerHealthSegments(player);
-                const evolutionBoostScale = isBoostVisualActive && evolutionHealthSegments >= 3 ? 1.2 : 1;
-                const classicReferenceWidth = fallbackSpriteHeight * defaultPlayerAspectRatio * 2 * evolutionBoostScale;
+                const classicReferenceWidth = fallbackSpriteHeight * defaultPlayerAspectRatio * 2;
                 spriteWidth = classicReferenceWidth;
                 spriteHeight = spriteWidth / Math.max(0.1, fallbackAspectRatio);
             }

@@ -7,7 +7,6 @@ from .forms import PortfolioActionButtonForm, PortfolioCareerForm, PortfolioProf
 from .models import NavLink, QuickLink, UserProfile
 from portfolio.models import PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject, Project, Project_Tag, upload_to_portfolio_profile
 from stratagem.models import Stratagem, Stratagem_Hero_Score
-from git.models import GitUserMapping
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
@@ -1056,22 +1055,6 @@ def apply_ui_context(request, context, ui_lang):
                 break
         if not hanharness_inserted:
             resolved_links.append(hanharness_link)
-
-        # Git 링크: 로그인 유저에게 본인 Forgejo 페이지로 연결
-        if request.user.is_authenticated:
-            forgejo_username = (
-                GitUserMapping.objects
-                .filter(user=request.user)
-                .values_list("forgejo_username", flat=True)
-                .first()
-            )
-            git_target_username = forgejo_username or getattr(request.user, "username", "")
-            if git_target_username:
-                for link in resolved_links:
-                    url_value = str(getattr(link, "url", "") or "")
-                    if "git.hanplanet.com" in url_value and str(getattr(link, "name", "") or "").strip().lower() == "git":
-                        link.url = f"https://git.hanplanet.com/{quote(str(git_target_username), safe='')}"
-                        break
 
         context["nav_links"] = resolved_links
     except (OperationalError, ProgrammingError):

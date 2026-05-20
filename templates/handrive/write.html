@@ -40,12 +40,20 @@
     data-handrive-root-url="{{ handrive_root_url }}"
     data-save-api-url="{{ handrive_api_save_url }}"
     data-preview-api-url="{{ handrive_api_preview_url }}"
+    data-list-api-url="{{ handrive_api_list_url }}"
+    data-download-api-url="{{ handrive_api_download_url }}"
+    data-image-editor-save-url="{{ handrive_image_editor_save_url }}"
+    data-audio-editor-save-url="{{ handrive_audio_editor_save_url }}"
+    data-video-editor-save-url="{{ handrive_video_editor_save_url }}"
     data-markdown-image-upload-api-url="{{ handrive_api_markdown_image_upload_url }}"
     data-markdown-image-cleanup-api-url="{{ handrive_api_markdown_image_cleanup_url }}"
     data-mkdir-api-url="{{ handrive_api_mkdir_url }}"
     data-write-mode="{{ write_mode }}"
+    data-write-editor-kind="{{ write_editor_kind|default:'text' }}"
     data-original-path="{{ original_relative_path }}"
     data-initial-dir="{{ initial_dir }}"
+    data-scoped-home-dir="{{ scoped_home_dir|default:'' }}"
+    data-handrive-root-label="{{ handrive_root_label|default:'HanDrive' }}"
     data-public-write-direct-save="{% if write_public_direct_save %}1{% else %}0{% endif %}"
     data-write-requires-commit-message="{% if write_requires_commit_message %}1{% else %}0{% endif %}"
     data-is-superuser="{% if user.is_superuser %}1{% else %}0{% endif %}"
@@ -66,6 +74,7 @@
                     {% endif %}
                 </div>
             </div>
+            {% include "handrive/_media_editor_surfaces.html" %}
             <div class="handrive-editor-surface" id="handrive-editor-surface">
                 <pre class="handrive-editor-highlight handrive-plain-text" id="handrive-editor-highlight" aria-hidden="true"><code id="handrive-editor-highlight-code"></code></pre>
                 <div class="handrive-editor-suggest" id="handrive-editor-suggest" hidden>
@@ -87,6 +96,8 @@
 {% include "popup/handrive/markdown_help_modal.html" %}
 {% include "popup/handrive/markdown_preview_modal.html" %}
 {% include "popup/handrive/unsaved_changes_modal.html" %}
+{% include "popup/handrive/image_resize_modal.html" %}
+{% include "popup/handrive/image_save_as_modal.html" %}
 {% include "popup/handrive/confirm_modal.html" %}
 {% include "popup/handrive/auth_logout_modal.html" %}
 

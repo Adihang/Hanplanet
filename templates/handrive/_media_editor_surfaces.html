@@ -1,0 +1,323 @@
+                <div class="handrive-image-editor-surface" id="handrive-image-editor-surface" hidden>
+                    <div class="ie-ribbon" id="ie-ribbon">
+                        <div class="ie-ribbon-section">
+                            <button class="ie-tool-btn is-active" data-tool="pencil" title="연필 (P)"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l1-4L13 3l3 3L7 16l-4 1z"/><line x1="11" y1="5" x2="14" y2="8"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="brush" title="브러시 (B)"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16c1-3 4-5 7-5 2 0 3-1 3-3 0-2-2-4-4-4C7 4 5 6 4 9"/><circle cx="4.5" cy="15.5" r="1.5" fill="currentColor" stroke="none"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="eraser" title="지우개 (E)"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 16l3 1 9-9-4-4-9 9 1 3z"/><line x1="9" y1="5" x2="15" y2="11"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="fill" title="채우기 (F)"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12L10 3l6 9"/><path d="M4 12c0 2 2 4 6 4s6-2 6-4" fill="currentColor" stroke="none" opacity="0.2"/><path d="M4 12c0 2 2 4 6 4s6-2 6-4"/><circle cx="16" cy="16" r="2" fill="currentColor" stroke="none"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="eyedropper" title="색 선택 (I)"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3l4 4-7 7-2-1-3 3H3v-2l3-3-1-2 7-7z"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="text" title="텍스트 (T)"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="5" x2="16" y2="5"/><line x1="10" y1="5" x2="10" y2="16"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="select-rect" title="사각형 선택 (M)"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 2" aria-hidden="true"><rect x="4" y="4" width="12" height="12" rx="1"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="select-free" title="자유형 선택"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 2" aria-hidden="true"><path d="M10 4c4 0 7 2 7 4s-3 3-4 5-1 4-3 4-3-2-4-4-4-3-4-5 4-4 8-4z"/></svg></button>
+                            <div class="ie-ribbon-sep"></div>
+                            <button class="ie-action-btn" data-action="undo" title="실행취소 (Ctrl+Z)"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9A6 6 0 1 1 5.5 15"/><polyline points="4,5 4,9 8,9"/></svg></button>
+                            <button class="ie-action-btn" data-action="redo" title="다시실행 (Ctrl+Y)"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 9A6 6 0 1 0 14.5 15"/><polyline points="16,5 16,9 12,9"/></svg></button>
+                        </div>
+                        <div class="ie-ribbon-sep ie-ribbon-sep--vertical"></div>
+                        <div class="ie-ribbon-section">
+                            <button class="ie-tool-btn" data-tool="line" title="선 (L)"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="16" x2="16" y2="4"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="rect" title="사각형 (R)"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="4" width="12" height="12"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="rounded-rect" title="둥근 사각형"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="4" width="12" height="12" rx="3"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="ellipse" title="타원 (O)"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><ellipse cx="10" cy="10" rx="7" ry="5"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="triangle" title="삼각형"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="10,4 17,16 3,16"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="diamond" title="다이아몬드"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="10,3 17,10 10,17 3,10"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="arrow" title="화살표"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="16" x2="16" y2="4"/><polyline points="9,4 16,4 16,11"/></svg></button>
+                            <button class="ie-tool-btn" data-tool="star" title="별"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="10,3 12.5,8 18,8.5 14,12.5 15.5,18 10,15 4.5,18 6,12.5 2,8.5 7.5,8"/></svg></button>
+                            <div class="ie-ribbon-sep"></div>
+                            <div class="ie-shape-mode-group">
+                                <button class="ie-mode-btn is-active" data-shape-mode="outline" title="윤곽선"><svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="2" width="10" height="10"/></svg></button>
+                                <button class="ie-mode-btn" data-shape-mode="filled" title="채움"><svg viewBox="0 0 14 14" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="2" y="2" width="10" height="10"/></svg></button>
+                                <button class="ie-mode-btn" data-shape-mode="both" title="윤곽선+채움"><svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><rect x="2" y="2" width="10" height="10" fill="currentColor" opacity="0.4"/><rect x="2" y="2" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+                            </div>
+                        </div>
+                        <div class="ie-ribbon-sep ie-ribbon-sep--vertical"></div>
+                        <div class="ie-ribbon-section ie-ribbon-section--options">
+                            <div class="ie-size-row">
+                                <span class="ie-ribbon-label">크기</span>
+                                <input type="range" id="ie-brush-size" min="1" max="50" value="4" class="ie-size-slider">
+                                <span id="ie-brush-size-display" class="ie-size-value">4px</span>
+                            </div>
+                        </div>
+                        <div class="ie-ribbon-sep ie-ribbon-sep--vertical"></div>
+                        <div class="ie-ribbon-section ie-ribbon-section--colors">
+                            <div class="ie-color-swatches-wrap">
+                                <div id="ie-secondary-swatch" class="ie-swatch ie-swatch--secondary" title="배경색 (우클릭으로 선택)"></div>
+                                <div id="ie-primary-swatch"   class="ie-swatch ie-swatch--primary"   title="전경색 (클릭으로 선택)"></div>
+                                <button class="ie-swatch-swap" id="ie-swatch-swap" title="색상 교체 (X)">⇄</button>
+                            </div>
+                            <div class="ie-palette" id="ie-palette"></div>
+                            <input type="color" id="ie-custom-color" class="ie-custom-color-input" title="사용자 정의 색상">
+                        </div>
+                        <div class="ie-ribbon-sep ie-ribbon-sep--vertical"></div>
+                        <div class="ie-ribbon-section ie-ribbon-section--imageops">
+                            <button class="ie-action-btn" data-action="rotate-cw"  title="90° 시계방향"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 9A6 6 0 1 0 14.5 15"/><polyline points="16,5 16,9 12,9"/></svg></button>
+                            <button class="ie-action-btn" data-action="rotate-ccw" title="90° 반시계방향"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9A6 6 0 1 1 5.5 15"/><polyline points="4,5 4,9 8,9"/></svg></button>
+                            <button class="ie-action-btn" data-action="flip-h"     title="수평 뒤집기"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" y1="3" x2="10" y2="17"/><polyline points="6,7 3,10 6,13"/><polyline points="14,7 17,10 14,13"/></svg></button>
+                            <button class="ie-action-btn" data-action="flip-v"     title="수직 뒤집기"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="10" x2="17" y2="10"/><polyline points="7,6 10,3 13,6"/><polyline points="7,14 10,17 13,14"/></svg></button>
+                            <button class="ie-action-btn" data-action="resize"     title="크기 조정"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="8" height="8"/><path d="M13 13l4 4m0-4v4h-4"/></svg></button>
+                            <button class="ie-action-btn" data-action="crop"       title="선택 영역으로 자르기"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4,2 4,16 18,16"/><polyline points="8,6 16,6 16,14"/></svg></button>
+                            <div class="ie-ribbon-sep"></div>
+                            <button class="ie-action-btn" data-action="zoom-out"   title="축소 (Ctrl+-)"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="5"/><line x1="13" y1="13" x2="17" y2="17"/><line x1="7" y1="9" x2="11" y2="9"/></svg></button>
+                            <button class="ie-action-btn" data-action="zoom-in"    title="확대 (Ctrl+=)"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="5"/><line x1="13" y1="13" x2="17" y2="17"/><line x1="7" y1="9" x2="11" y2="9"/><line x1="9" y1="7" x2="9" y2="11"/></svg></button>
+                            <button class="ie-action-btn" data-action="zoom-fit"   title="창에 맞춤"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="8,4 4,4 4,8"/><polyline points="12,4 16,4 16,8"/><polyline points="4,12 4,16 8,16"/><polyline points="16,12 16,16 12,16"/></svg></button>
+                            <button class="ie-action-btn" data-action="zoom-100"   title="실제 크기 (Ctrl+0)"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="5"/><line x1="13" y1="13" x2="17" y2="17"/><line x1="7" y1="9" x2="11" y2="9"/><line x1="9" y1="7" x2="9" y2="11"/></svg></button>
+                            <button class="ie-action-btn" data-action="save-as"    title="다른 이름으로 저장 (PNG/JPG/WebP)"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10l4 4v9a1 1 0 0 1-1 1h-2"/><polyline points="10,13 10,17"/><line x1="7" y1="17" x2="13" y2="17"/></svg></button>
+                        </div>
+                    </div>
+                    <div class="ie-canvas-area" id="ie-canvas-area">
+                        <div class="ie-canvas-wrap" id="ie-canvas-wrap">
+                            <canvas id="ie-main-canvas"></canvas>
+                            <canvas id="ie-overlay-canvas"></canvas>
+                            <textarea id="ie-text-overlay" class="ie-text-overlay" hidden></textarea>
+                        </div>
+                    </div>
+                    <div class="ie-statusbar">
+                        <span id="ie-coords-display">X: -, Y: -</span>
+                        <span class="ie-statusbar-sep">|</span>
+                        <span id="ie-size-display"></span>
+                        <span class="ie-statusbar-sep">|</span>
+                        <span id="ie-zoom-display">100%</span>
+                    </div>
+                </div>
+                <div class="handrive-video-editor-surface" id="handrive-video-editor-surface" hidden>
+                    <div class="ve-ribbon">
+                        <button class="ae-btn" type="button" id="ve-reset-btn">{{ handrive_text.video_editor_reset }}</button>
+                        <label class="ae-field">{{ handrive_text.video_editor_start }}
+                            <input type="number" id="ve-start-input" min="0" step="0.01" value="0">
+                        </label>
+                        <label class="ae-field">{{ handrive_text.video_editor_end }}
+                            <input type="number" id="ve-end-input" min="0" step="0.01" value="0">
+                        </label>
+                        <div class="ve-input-control" id="ve-input-control">
+                            <button class="ae-btn ve-input-icon-btn" type="button" id="ve-input-subtitle-btn" aria-label="{{ handrive_text.video_editor_subtitle }} 추가" title="{{ handrive_text.video_editor_subtitle }} 추가">
+                                <svg class="ve-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M4 7V5h16v2"></path>
+                                    <path d="M12 5v14"></path>
+                                    <path d="M9 19h6"></path>
+                                </svg>
+                            </button>
+                            <button class="ae-btn ve-input-icon-btn" type="button" id="ve-input-image-btn" aria-label="이미지 추가" title="이미지 추가">
+                                <svg class="ve-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                                    <circle cx="8" cy="10" r="1.4"></circle>
+                                    <path d="M21 16l-5.2-5.2a1.4 1.4 0 0 0-2 0L7 17"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="ae-volume-control" id="ve-volume-control">
+                            <button class="ae-btn ae-volume-btn" type="button" id="ve-volume-btn" aria-label="{{ handrive_text.video_editor_volume }}" title="{{ handrive_text.video_editor_volume }}" aria-expanded="false" aria-controls="ve-volume-popover">
+                                <svg class="ae-volume-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                    <path d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+                                    <path d="M18.5 5.5a9 9 0 0 1 0 13"></path>
+                                </svg>
+                                <span id="ve-volume-display">100%</span>
+                            </button>
+                            <div class="ae-volume-popover" id="ve-volume-popover" hidden>
+                                <input type="range" id="ve-volume-input" min="0" max="2" step="0.01" value="1" orient="vertical" aria-label="{{ handrive_text.video_editor_volume }}">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ve-body">
+                        <div class="ve-video-stage" id="ve-video-stage">
+                            <video id="ve-video" class="video-js vjs-default-skin" controls preload="metadata" playsinline></video>
+                            <div class="ve-subtitle-overlay-layer" id="ve-subtitle-overlay-layer"></div>
+                        </div>
+                        <div class="ae-timeline">
+                            <div class="ae-range-wrap">
+                                <div class="ae-range-selection" id="ve-range-selection"></div>
+                                <input class="ae-range-input ae-range-input--start" type="range" id="ve-start-range" min="0" max="0" step="0.01" value="0" aria-label="{{ handrive_text.video_editor_start }}">
+                                <input class="ae-range-input ae-range-input--end" type="range" id="ve-end-range" min="0" max="0" step="0.01" value="0" aria-label="{{ handrive_text.video_editor_end }}">
+                            </div>
+                            <div class="ae-time-row">
+                                <span id="ve-current-time">0:00.00</span>
+                                <span id="ve-duration">0:00.00</span>
+                            </div>
+                        </div>
+                        <div class="ve-subtitle-field" id="ve-subtitle-field" hidden>
+                            <div class="ve-subtitle-toolbar">
+                                <label class="ve-subtitle-select-label" aria-label="{{ handrive_text.video_editor_subtitle }}" title="{{ handrive_text.video_editor_subtitle }}">
+                                    <svg class="ve-toolbar-label-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M4 7V5h16v2"></path>
+                                        <path d="M12 5v14"></path>
+                                        <path d="M9 19h6"></path>
+                                    </svg>
+                                    <select id="ve-subtitle-select"></select>
+                                </label>
+                                <button class="ae-btn" type="button" id="ve-subtitle-add-btn">추가</button>
+                                <button class="ae-btn" type="button" id="ve-subtitle-delete-btn">삭제</button>
+                                <button class="ae-btn ve-field-hide-btn" type="button" id="ve-subtitle-hide-btn" aria-label="자막 패널 숨기기" title="자막 패널 숨기기">
+                                    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"></line><line x1="15" y1="5" x2="5" y2="15"></line></svg>
+                                </button>
+                            </div>
+                            <div class="ve-subtitle-style-grid">
+                                <label class="ve-subtitle-icon-field" aria-label="폰트" title="폰트">
+                                    <span class="ve-style-icon" aria-hidden="true">F</span>
+                                    <select id="ve-subtitle-font-family" class="ve-subtitle-font-family-select">
+                                        <option value="system">기본</option>
+                                        <option value="sans-serif">Sans Serif</option>
+                                        <option value="serif">Serif</option>
+                                        <option value="monospace">Monospace</option>
+                                        <option value="cursive">Cursive</option>
+                                        <option value="fantasy">Fantasy</option>
+                                        <option value="Arial">Arial</option>
+                                        <option value="Helvetica">Helvetica</option>
+                                        <option value="Georgia">Georgia</option>
+                                        <option value="Times New Roman">Times New Roman</option>
+                                        <option value="Verdana">Verdana</option>
+                                        <option value="Trebuchet MS">Trebuchet MS</option>
+                                        <option value="Courier New">Courier New</option>
+                                    </select>
+                                </label>
+                                <label class="ve-subtitle-icon-field" aria-label="폰트 크기" title="폰트 크기">
+                                    <span class="ve-style-icon" aria-hidden="true">T</span>
+                                    <input class="ve-subtitle-font-size-input" type="number" id="ve-subtitle-font-size" min="8" max="160" step="1" value="28">
+                                </label>
+                                <button class="ae-btn ve-subtitle-style-toggle" type="button" id="ve-subtitle-bold-btn" aria-label="굵게" title="굵게" aria-pressed="false"><strong aria-hidden="true">B</strong></button>
+                                <button class="ae-btn ve-subtitle-style-toggle" type="button" id="ve-subtitle-italic-btn" aria-label="기울임" title="기울임" aria-pressed="false"><em aria-hidden="true">I</em></button>
+                                <button class="ae-btn ve-subtitle-style-toggle" type="button" id="ve-subtitle-underline-btn" aria-label="밑줄" title="밑줄" aria-pressed="false"><span class="ve-style-underline-icon" aria-hidden="true">U</span></button>
+                                <label class="ve-subtitle-icon-field" aria-label="폰트색" title="폰트색">
+                                    <input type="checkbox" id="ve-subtitle-font-color-enabled" checked>
+                                    <span class="ve-style-icon" aria-hidden="true">A</span>
+                                    <input type="color" id="ve-subtitle-font-color" value="#ffffff">
+                                </label>
+                                <label class="ve-subtitle-icon-field" aria-label="폰트 테두리" title="폰트 테두리">
+                                    <input type="checkbox" id="ve-subtitle-font-stroke-enabled" checked>
+                                    <span class="ve-style-icon ve-style-icon--stroke" aria-hidden="true">A</span>
+                                    <input type="color" id="ve-subtitle-font-stroke-color" value="#000000">
+                                </label>
+                                <label class="ve-subtitle-icon-field" aria-label="배경색" title="배경색">
+                                    <input type="checkbox" id="ve-subtitle-bg-enabled" checked>
+                                    <span class="ve-style-icon ve-style-icon--bg" aria-hidden="true"></span>
+                                    <input type="color" id="ve-subtitle-bg-color" value="#000000">
+                                </label>
+                                <label class="ve-subtitle-icon-field" aria-label="박스 테두리색" title="박스 테두리색">
+                                    <input type="checkbox" id="ve-subtitle-border-enabled" checked>
+                                    <span class="ve-style-icon ve-style-icon--box" aria-hidden="true"></span>
+                                    <input type="color" id="ve-subtitle-border-color" value="#000000">
+                                </label>
+                            </div>
+                            <textarea id="ve-subtitle-input" rows="3" placeholder="{{ handrive_text.video_editor_subtitle_placeholder }}"></textarea>
+                            <div class="ve-subtitle-timeline">
+                                <div class="ae-range-wrap">
+                                    <div class="ae-range-selection" id="ve-subtitle-range-selection"></div>
+                                    <input class="ae-range-input ae-range-input--start" type="range" id="ve-subtitle-start-range" min="0" max="0" step="0.01" value="0" aria-label="자막 시작">
+                                    <input class="ae-range-input ae-range-input--end" type="range" id="ve-subtitle-end-range" min="0" max="0" step="0.01" value="0" aria-label="자막 끝">
+                                </div>
+                                <div class="ae-time-row">
+                                    <span id="ve-subtitle-start-time">0:00.00</span>
+                                    <span id="ve-subtitle-end-time">0:00.00</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="ve-image-field" id="ve-image-field" hidden>
+                            <div class="ve-image-toolbar">
+                                <label class="ve-subtitle-select-label" aria-label="이미지" title="이미지">
+                                    <svg class="ve-toolbar-label-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                                        <circle cx="8" cy="10" r="1.4"></circle>
+                                        <path d="M21 16l-5.2-5.2a1.4 1.4 0 0 0-2 0L7 17"></path>
+                                    </svg>
+                                    <select id="ve-image-select"></select>
+                                </label>
+                                <button class="ae-btn" type="button" id="ve-image-add-btn">추가</button>
+                                <button class="ae-btn" type="button" id="ve-image-delete-btn">삭제</button>
+                                <button class="ae-btn ve-field-hide-btn" type="button" id="ve-image-hide-btn" aria-label="이미지 패널 숨기기" title="이미지 패널 숨기기">
+                                    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"></line><line x1="15" y1="5" x2="5" y2="15"></line></svg>
+                                </button>
+                            </div>
+                            <div class="ve-image-timeline">
+                                <div class="ae-range-wrap">
+                                    <div class="ae-range-selection" id="ve-image-range-selection"></div>
+                                    <input class="ae-range-input ae-range-input--start" type="range" id="ve-image-start-range" min="0" max="0" step="0.01" value="0" aria-label="이미지 시작">
+                                    <input class="ae-range-input ae-range-input--end" type="range" id="ve-image-end-range" min="0" max="0" step="0.01" value="0" aria-label="이미지 끝">
+                                </div>
+                                <div class="ae-time-row">
+                                    <span id="ve-image-start-time">0:00.00</span>
+                                    <span id="ve-image-end-time">0:00.00</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ve-image-upload-dialog" id="ve-image-upload-dialog" hidden>
+                        <div class="ve-image-upload-panel">
+                            <div class="ve-image-upload-head">
+                                <strong>이미지 업로드</strong>
+                                <button class="ae-btn" type="button" id="ve-image-upload-close-btn">닫기</button>
+                            </div>
+                            <div class="ve-image-drop-zone" id="ve-image-drop-zone">이미지 파일을 드래그앤드롭</div>
+                            <div class="ve-image-upload-actions">
+                                <label class="ae-btn">로컬 이미지
+                                    <input type="file" id="ve-image-file-input" accept="image/*" hidden>
+                                </label>
+                                <button class="ae-btn" type="button" id="ve-image-drive-btn">드라이브</button>
+                            </div>
+                            <div class="ve-image-drive-picker" id="ve-image-drive-picker" hidden>
+                                <div class="ae-drive-head">
+                                    <button type="button" class="ae-btn" id="ve-image-drive-up-btn">상위 폴더</button>
+                                    <span class="ae-drive-path" id="ve-image-drive-path"></span>
+                                </div>
+                                <div class="ae-drive-list" id="ve-image-drive-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="handrive-audio-editor-surface" id="handrive-audio-editor-surface" hidden>
+                    <div class="ae-ribbon">
+                        <button class="ae-btn" type="button" id="ae-reset-btn">{{ handrive_text.audio_editor_reset }}</button>
+                        <label class="ae-field">{{ handrive_text.audio_editor_start }}
+                            <input type="number" id="ae-start-input" min="0" step="0.01" value="0">
+                        </label>
+                        <label class="ae-field">{{ handrive_text.audio_editor_end }}
+                            <input type="number" id="ae-end-input" min="0" step="0.01" value="0">
+                        </label>
+                        <div class="ae-volume-control" id="ae-volume-control">
+                            <button class="ae-btn ae-volume-btn" type="button" id="ae-volume-btn" aria-label="{{ handrive_text.audio_editor_volume }}" title="{{ handrive_text.audio_editor_volume }}" aria-expanded="false" aria-controls="ae-volume-popover">
+                                <svg class="ae-volume-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                    <path d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+                                    <path d="M18.5 5.5a9 9 0 0 1 0 13"></path>
+                                </svg>
+                                <span id="ae-volume-display">100%</span>
+                            </button>
+                            <div class="ae-volume-popover" id="ae-volume-popover" hidden>
+                                <input type="range" id="ae-volume-input" min="0" max="2" step="0.01" value="1" orient="vertical" aria-label="{{ handrive_text.audio_editor_volume }}">
+                            </div>
+                        </div>
+                        <div class="ae-append-control" id="ae-append-control">
+                            <button class="ae-file-btn" type="button" id="ae-append-btn" aria-expanded="false" aria-controls="ae-append-popover">{{ handrive_text.audio_editor_append }}</button>
+                            <div class="ae-append-popover" id="ae-append-popover" hidden>
+                                <button type="button" class="ae-source-btn" id="ae-append-pc-btn">{{ handrive_text.audio_editor_append_pc }}</button>
+                                <button type="button" class="ae-source-btn" id="ae-append-drive-btn">{{ handrive_text.audio_editor_append_drive }}</button>
+                            </div>
+                            <input type="file" id="ae-append-input" accept="audio/*" hidden>
+                        </div>
+                        <span class="ae-append-name" id="ae-append-name" data-empty-text="{{ handrive_text.audio_editor_append_empty }}">{{ handrive_text.audio_editor_append_empty }}</span>
+                    </div>
+                    <div class="ae-body">
+                        <div class="ae-title" id="ae-title">{{ handrive_text.audio_editor_title }}</div>
+                        <audio id="ae-audio" controls preload="metadata"></audio>
+                        <div class="ae-timeline">
+                            <div class="ae-range-wrap">
+                                <div class="ae-range-selection" id="ae-range-selection"></div>
+                                <input class="ae-range-input ae-range-input--start" type="range" id="ae-start-range" min="0" max="0" step="0.01" value="0" aria-label="{{ handrive_text.audio_editor_start }}">
+                                <input class="ae-range-input ae-range-input--end" type="range" id="ae-end-range" min="0" max="0" step="0.01" value="0" aria-label="{{ handrive_text.audio_editor_end }}">
+                            </div>
+                            <div class="ae-time-row">
+                                <span id="ae-current-time">0:00.00</span>
+                                <span id="ae-duration">0:00.00</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ae-drive-picker" id="ae-drive-picker" hidden>
+                        <div class="ae-drive-dialog">
+                            <div class="ae-drive-head">
+                                <strong>{{ handrive_text.audio_editor_drive_title }}</strong>
+                                <button type="button" class="ae-btn" id="ae-drive-close-btn">{{ handrive_text.audio_editor_drive_cancel }}</button>
+                            </div>
+                            <div class="ae-drive-path" id="ae-drive-path"></div>
+                            <button type="button" class="ae-btn" id="ae-drive-up-btn">{{ handrive_text.audio_editor_drive_up }}</button>
+                            <div class="ae-drive-list" id="ae-drive-list" data-empty-text="{{ handrive_text.audio_editor_drive_empty }}"></div>
+                        </div>
+                    </div>
+                </div>

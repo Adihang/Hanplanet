@@ -93,6 +93,7 @@
         var setPreviewActionTargets = settings.setPreviewActionTargets || function () {};
         var renderPreviewHtml = settings.renderPreviewHtml || function () {};
         var scrollPreviewIntoViewIfPortrait = settings.scrollPreviewIntoViewIfPortrait || function () {};
+        var setPreviewLoading = settings.setPreviewLoading || null;
         var setPreviewPlaceholder = settings.setPreviewPlaceholder || function () {};
         var requestJson = settings.requestJson || function () { return Promise.resolve({}); };
         var buildPostOptions = settings.buildPostOptions || function () { return {}; };
@@ -139,7 +140,11 @@
             return;
         }
 
-        setPreviewPlaceholder(t("list_preview_loading", "미리보기를 불러오는 중..."));
+        if (typeof setPreviewLoading === "function") {
+            setPreviewLoading();
+        } else {
+            setPreviewPlaceholder(t("list_preview_loading", "미리보기를 불러오는 중..."));
+        }
         var requestToken = state.previewRequestToken + 1;
         state.previewRequestToken = requestToken;
 

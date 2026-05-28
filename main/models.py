@@ -219,6 +219,28 @@ class EmailVerificationCode(models.Model):
         verbose_name_plural = "이메일 인증 코드"
         indexes = [models.Index(fields=["user", "created_at"])]
 
+
+class WargameSolve(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="wargame_solves",
+        verbose_name="사용자",
+    )
+    challenge_id = models.CharField("문제 ID", max_length=80)
+    solved_at = models.DateTimeField("해결일", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "워게임 해결 기록"
+        verbose_name_plural = "워게임 해결 기록"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "challenge_id"], name="unique_wargame_solve_user_challenge"),
+        ]
+        indexes = [models.Index(fields=["user", "challenge_id"])]
+
+    def __str__(self):
+        return f"{self.user_id}:{self.challenge_id}"
+
     def __str__(self):
         return f"{self.user.username} — {self.code} (used={self.used})"
 

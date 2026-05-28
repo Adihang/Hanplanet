@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% load static_versioned %}
+
+{% block body_class %}ui-page qrbarcode-page{% endblock %}
+
+{% block extra_head %}
+{% include 'handrive/_assets_head.html' %}
+<link rel="stylesheet" type="text/css" href="{% static_v 'css/fun/qrbarcode.css' %}">
+<script src="{% static_v 'js/fun/qrbarcode.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+{% endblock %}
+
+{% block content %}
+<div class="ui-toolbar-wrap">
+    <div class="ui-shell ui-toolbar">
+        <div class="ui-toolbar-left">
+            <div class="ui-title-row">
+                <h1 class="ui-title">{{ page_title }}</h1>
+            </div>
+            <div class="ui-subtitle ui-path-breadcrumbs">
+                <a class="ui-path-link" href="/">{{ home_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <a class="ui-path-link" href="{{ sub_url }}">{{ sub_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <span class="ui-path-current">{{ page_title }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<main class="ui-shell ui-content qrbarcode-content">
+    <div class="qrbarcode-panel" aria-label="{{ page_title }}">
+        <form
+            class="qrbarcode-form"
+            data-qrbarcode-form
+            data-generate-url="{{ generate_api_url }}"
+            data-empty-message="{{ empty_message }}"
+            data-invalid-url-message="{{ invalid_url_message }}"
+            data-failed-message="{{ failed_message }}"
+            data-copied-message="{{ copied_message }}"
+        >
+            {% csrf_token %}
+            <div class="qrbarcode-controls">
+                <fieldset class="qrbarcode-fieldset">
+                    <legend>{{ input_kind_label }}</legend>
+                    <label class="qrbarcode-option" title="{{ url_label }}" aria-label="{{ url_label }}">
+                        <input type="radio" name="input_kind" value="url" checked>
+                        <svg class="qrbarcode-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"></path>
+                            <path d="M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20.1l1.1-1.1"></path>
+                        </svg>
+                    </label>
+                    <label class="qrbarcode-option" title="{{ text_label }}" aria-label="{{ text_label }}">
+                        <input type="radio" name="input_kind" value="text">
+                        <svg class="qrbarcode-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M4 6h16"></path>
+                            <path d="M12 6v12"></path>
+                            <path d="M8 18h8"></path>
+                        </svg>
+                    </label>
+                </fieldset>
+
+                <fieldset class="qrbarcode-fieldset">
+                    <legend>{{ code_kind_label }}</legend>
+                    <label class="qrbarcode-option" title="{{ qr_label }}" aria-label="{{ qr_label }}">
+                        <input type="radio" name="code_kind" value="qr" checked>
+                        <svg class="qrbarcode-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="4" y="4" width="6" height="6"></rect>
+                            <rect x="14" y="4" width="6" height="6"></rect>
+                            <rect x="4" y="14" width="6" height="6"></rect>
+                            <path d="M14 14h2v2h-2z"></path>
+                            <path d="M18 14h2v6h-6v-2h4z"></path>
+                        </svg>
+                    </label>
+                    <label class="qrbarcode-option" title="{{ barcode_label }}" aria-label="{{ barcode_label }}">
+                        <input type="radio" name="code_kind" value="barcode">
+                        <svg class="qrbarcode-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+                            <path d="M4 5v14"></path>
+                            <path d="M7 5v14"></path>
+                            <path d="M11 5v14"></path>
+                            <path d="M13.5 5v14"></path>
+                            <path d="M18 5v14"></path>
+                            <path d="M20 5v14"></path>
+                        </svg>
+                    </label>
+                </fieldset>
+            </div>
+
+            <label class="qrbarcode-barcode-kind-field" data-qrbarcode-barcode-kind-field hidden>
+                <span>{{ barcode_kind_label }}</span>
+                <select name="barcode_kind" data-qrbarcode-barcode-kind>
+                    {% for option in barcode_kind_options %}
+                        <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="qrbarcode-value-field">
+                <span>{{ value_label }}</span>
+                <textarea
+                    name="value"
+                    rows="5"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="https://www.hanplanet.com/"
+                    data-default-value="https://www.hanplanet.com/"
+                    required
+                >https://www.hanplanet.com/</textarea>
+            </label>
+
+            <div class="qrbarcode-action-row">
+                <p class="qrbarcode-status" data-qrbarcode-status role="status" aria-live="polite"></p>
+            </div>
+        </form>
+
+        <section class="qrbarcode-preview" data-qrbarcode-preview>
+            <div class="qrbarcode-preview-frame" data-qrbarcode-preview-frame>
+                <img class="qrbarcode-preview-image" alt="{{ page_title }}" data-qrbarcode-image>
+            </div>
+            <div class="qrbarcode-preview-actions">
+                <button class="ui-btn" type="button" data-qrbarcode-copy>{{ copy_label }}</button>
+                <button class="ui-btn ui-btn-primary" type="button" data-qrbarcode-download-jpeg>{{ download_jpeg_label }}</button>
+                <button class="ui-btn ui-btn-primary" type="button" data-qrbarcode-download-png>{{ download_png_label }}</button>
+            </div>
+        </section>
+    </div>
+</main>
+{% include "partials/site_footer_links.html" %}
+{% endblock %}

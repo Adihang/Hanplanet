@@ -35,32 +35,37 @@
 
 <main class="ui-shell ui-content sub-ui-content">
     <section class="sub-ui-panel" aria-label="{{ page_title }}">
-        <ul class="sub-list">
-            {% for item in sub_links %}
-                <li>
-                    <div class="sub-link-shell">
-                        {% if request.user.is_authenticated %}
-                            {% if item.slug == "bumpercar-spiky" or item.slug == "raise-speaki" %}
-                                <button class="ui-btn sub-link-stats-button" type="button" data-bumpercar-stats-open>
-                                    {% include 'partials/ui_i18n.html' with key='account_bumpercar_stats_button' %}
-                                </button>
-                            {% endif %}
-                        {% endif %}
-                        <a class="sub-link" href="{{ item.url }}">
-                            <span class="sub-link-image-wrap">
-                                <img class="sub-link-image" src="{{ item.image_url|default:'' }}" alt="{{ item.title }}" loading="lazy" {% if not item.image_url %}hidden{% endif %}>
-                            </span>
-                            <span class="sub-link-content" data-sub-card data-meta-url="{{ item.url }}">
-                                <span class="sub-link-head">
-                                    <span class="sub-link-title">{{ item.title }}</span>
-                                </span>
-                                <span class="sub-link-description" {% if not item.description %}hidden{% endif %}>{{ item.description|default:'' }}</span>
-                            </span>
-                        </a>
-                    </div>
-                </li>
-            {% endfor %}
-        </ul>
+        {% for group in sub_link_groups %}
+            <section class="sub-group" aria-labelledby="sub-group-{{ group.slug }}">
+                <h2 class="sub-group-title" id="sub-group-{{ group.slug }}">{{ group.title }}</h2>
+                <ul class="sub-list">
+                    {% for item in group.items %}
+                        <li>
+                            <div class="sub-link-shell">
+                                {% if request.user.is_authenticated %}
+                                    {% if item.slug == "bumpercar-spiky" or item.slug == "raise-speaki" %}
+                                        <button class="ui-btn sub-link-stats-button" type="button" data-bumpercar-stats-open>
+                                            {% include 'partials/ui_i18n.html' with key='account_bumpercar_stats_button' %}
+                                        </button>
+                                    {% endif %}
+                                {% endif %}
+                                <a class="sub-link" href="{{ item.url }}">
+                                    <span class="sub-link-image-wrap">
+                                        <img class="sub-link-image" src="{{ item.image_url|default:'' }}" alt="{{ item.title }}" loading="lazy" {% if not item.image_url %}hidden{% endif %}>
+                                    </span>
+                                    <span class="sub-link-content" data-sub-card data-meta-url="{{ item.url }}">
+                                        <span class="sub-link-head">
+                                            <span class="sub-link-title">{{ item.title }}</span>
+                                        </span>
+                                        <span class="sub-link-description" {% if not item.description %}hidden{% endif %}>{{ item.description|default:'' }}</span>
+                                    </span>
+                                </a>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endfor %}
     </section>
 </main>
 {% include "partials/site_footer_links.html" %}
@@ -84,6 +89,26 @@
         background: var(--handrive-surface-muted);
         padding: 12px;
         box-sizing: border-box;
+        display: grid;
+        gap: 18px;
+    }
+
+    .sub-group {
+        display: grid;
+        gap: 10px;
+    }
+
+    .sub-group + .sub-group {
+        border-top: 1px solid var(--handrive-border-soft);
+        padding-top: 16px;
+    }
+
+    .sub-group-title {
+        margin: 0;
+        color: var(--handrive-text-stronger);
+        font-size: 15px;
+        font-weight: 800;
+        line-height: 1.2;
     }
 
     .sub-list {

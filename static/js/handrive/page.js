@@ -2100,6 +2100,7 @@
         const videoEditorSurface = document.getElementById("handrive-video-editor-surface");
         const audioEditorSurface = document.getElementById("handrive-audio-editor-surface");
         const imageEditorSaveUrl = root.dataset.imageEditorSaveUrl || "";
+        const imageEditorRemoveBackgroundUrl = root.dataset.imageEditorRemoveBackgroundUrl || "";
         const videoEditorSaveUrl = root.dataset.videoEditorSaveUrl || "";
         const audioEditorSaveUrl = root.dataset.audioEditorSaveUrl || "";
         const editorSuggest = document.getElementById("handrive-list-editor-suggest");
@@ -3422,6 +3423,7 @@
                 window.HandriveImageEditor.init({
                     entry: entry,
                     imageServeUrl: imageServeUrl,
+                    backgroundRemoveUrl: imageEditorRemoveBackgroundUrl,
                     onDirtyChange: function (dirty) {
                         if (editorSaveButton) {
                             editorSaveButton.classList.toggle("is-dirty", dirty);
@@ -3668,10 +3670,12 @@
                 });
             }
             
-            function handleMediaEditorSaved(result) {
+            function handleMediaEditorSaved(result, options) {
+                const settings = options || {};
                 const savedPath = result && typeof result.path === "string" && result.path.trim()
                     ? normalizePath(result.path, true)
                     : "";
+                const targetPath = savedPath || normalizePath(entry.path || "", true);
                 if (state.previewCache) {
                     state.previewCache.delete(entry.path);
                     if (savedPath) {
@@ -3679,11 +3683,37 @@
                     }
                 }
                 refreshCurrentDirectory({ skipPreview: true })
-                    .then(function () {
+                    .then(async function () {
+                        const savedEntryFromList = state.entryByPath.get(targetPath) || null;
+                        const savedEntry = savedEntryFromList || {
+                            type: "file",
+                            isCurrentFolder: false,
+                            can_edit: Boolean(entry && entry.can_edit),
+                            path: targetPath,
+                            slug_path: targetPath,
+                            name: targetPath.split("/").pop() || (entry && entry.name) || "",
+                        };
+
+                        if (settings.openPreview) {
+                            switchToPreview();
+                            if (savedEntryFromList) {
+                                applySelection([targetPath], {
+                                    primaryPath: targetPath,
+                                    anchorPath: targetPath,
+                                    skipPreview: true,
+                                });
+                            } else {
+                                setPreviewVisibility(true);
+                            }
+                            await loadPreviewForEntry(savedEntry);
+                            await updatePreviewNavButtons(savedEntry);
+                            return;
+                        }
+
                         if (savedPath && state.entryByPath.has(savedPath)) {
-                            applySelection([savedPath], {
-                                primaryPath: savedPath,
-                                anchorPath: savedPath,
+                            applySelection([targetPath], {
+                                primaryPath: targetPath,
+                                anchorPath: targetPath,
                                 render: false,
                             });
                         }
@@ -3699,6 +3729,44 @@
                     const csrfToken = getCsrfToken();
                     const savingText = t("image_editor_saving", "저장 중...");
                     const origText = editorSaveButton.textContent;
+                    const imageFilename = String(editorFilenameInput ? editorFilenameInput.value || "" : "").trim();
+                    if (!imageFilename) {
+                        alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
+                        return;
+                    }
+                    if (
+                        typeof window.HandriveImageEditor.getIsDirty === "function" &&
+                        !window.HandriveImageEditor.getIsDirty() &&
+                        imageFilename !== String(entry.name || "")
+                    ) {
+                        editorSaveButton.disabled = true;
+                        editorSaveButton.textContent = savingText;
+                        (async function () {
+                            let commitMessage = "";
+                            if (entry.requires_commit_message) {
+                                commitMessage = await promptCommitMessage(entry.path);
+                                if (commitMessage === null) {
+                                    return null;
+                                }
+                            }
+                            return requestJson(renameApiUrl, buildPostOptions({
+                                path: entry.path,
+                                new_name: imageFilename,
+                                commit_message: commitMessage,
+                            }));
+                        })()
+                            .then(function (result) {
+                                if (result) {
+                                    handleMediaEditorSaved(result, { openPreview: true });
+                                }
+                            })
+                            .catch(alertError)
+                            .finally(function () {
+                                editorSaveButton.disabled = false;
+                                editorSaveButton.textContent = origText;
+                            });
+                        return;
+                    }
                     editorSaveButton.disabled = true;
                     editorSaveButton.textContent = savingText;
                     window.HandriveImageEditor.saveToServer(
@@ -3709,12 +3777,12 @@
                             editorSaveButton.disabled = false;
                             editorSaveButton.textContent = origText;
                             if (result.ok) {
-                                // 미리보기 캐시 무효화
-                                if (state.previewCache) state.previewCache.delete(entry.path);
+                                handleMediaEditorSaved(result, { openPreview: true });
                             } else {
                                 alertError(new Error(result.error || t("image_editor_save_error", "저장 실패")));
                             }
-                        }
+                        },
+                        { filename: imageFilename }
                     );
                     return;
                 }
@@ -8751,10 +8819,12 @@
         const handriveBaseUrl = root.dataset.handriveBaseUrl || "/handrive";
         const handriveRootUrl = root.dataset.handriveRootUrl || handriveBaseUrl;
         const saveApiUrl = root.dataset.saveApiUrl;
+        const renameApiUrl = root.dataset.renameApiUrl || "";
         const previewApiUrl = root.dataset.previewApiUrl;
         const listApiUrl = root.dataset.listApiUrl || "";
         const downloadApiUrl = root.dataset.downloadApiUrl || "";
         const imageEditorSaveUrl = root.dataset.imageEditorSaveUrl || "";
+        const imageEditorRemoveBackgroundUrl = root.dataset.imageEditorRemoveBackgroundUrl || "";
         const audioEditorSaveUrl = root.dataset.audioEditorSaveUrl || "";
         const videoEditorSaveUrl = root.dataset.videoEditorSaveUrl || "";
         const markdownImageUploadApiUrl = root.dataset.markdownImageUploadApiUrl || "";
@@ -8919,7 +8989,10 @@
 
         function hasUnsavedWriteChanges() {
             if (isMediaWriteEditor) {
-                return hasUnsavedMediaWriteChanges();
+                const filenameChanged = writeEditorKind === "image" && filenameInput
+                    ? filenameInput.value !== savedFilenameValue
+                    : false;
+                return hasUnsavedMediaWriteChanges() || filenameChanged;
             }
             const currentFilename = filenameInput ? filenameInput.value : "";
             const currentContent = contentInput ? contentInput.value : "";
@@ -8965,6 +9038,45 @@
             return appendQueryParam(buildWriteDownloadUrl(pathValue), "scope_home", "1");
         }
 
+        function getWriteMediaFilenameValue() {
+            return String(filenameInput ? filenameInput.value || "" : "").trim();
+        }
+
+        function getWriteMediaOriginalFilename() {
+            return String(originalPath || "").split("/").pop() || "";
+        }
+
+        async function submitImageRenameOnly() {
+            const nextName = getWriteMediaFilenameValue();
+            if (!nextName) {
+                alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
+                return;
+            }
+            if (!renameApiUrl || !originalPath) {
+                alertError(new Error(t("js_request_failed", "요청 처리 중 오류가 발생했습니다.")));
+                return;
+            }
+            let commitMessage = "";
+            if (writeRequiresCommitMessage) {
+                commitMessage = await promptWriteCommitMessage(originalPath);
+                if (commitMessage === null) {
+                    return;
+                }
+            }
+            const data = await requestJson(renameApiUrl, buildPostOptions({
+                path: originalPath,
+                new_name: nextName,
+                commit_message: commitMessage,
+            }));
+            markCurrentAsSaved();
+            const targetPath = data && (data.slug_path || data.path);
+            if (targetPath) {
+                runWithBeforeUnloadBypass(function () {
+                    window.location.href = buildViewUrl(handriveBaseUrl, targetPath);
+                });
+            }
+        }
+
         function getWriteMediaEntry() {
             if (!originalPath) {
                 return null;
@@ -8986,7 +9098,7 @@
             }
             if (editorSurface) editorSurface.hidden = true;
             if (contentInput) contentInput.disabled = true;
-            if (filenameInput) {
+            if (filenameInput && writeEditorKind !== "image") {
                 filenameInput.readOnly = true;
                 filenameInput.setAttribute("aria-readonly", "true");
             }
@@ -9005,6 +9117,7 @@
                 window.HandriveImageEditor.init({
                     entry: entry,
                     imageServeUrl: mediaUrl,
+                    backgroundRemoveUrl: imageEditorRemoveBackgroundUrl,
                     onDirtyChange: dirtyHandler,
                 });
             } else if (writeEditorKind === "video" && window.HandriveVideoEditor && entry) {
@@ -10401,6 +10514,18 @@
                 return;
             }
 
+            if (
+                writeEditorKind === "image" &&
+                editor &&
+                typeof editor.getIsDirty === "function" &&
+                !editor.getIsDirty() &&
+                getWriteMediaFilenameValue() &&
+                getWriteMediaFilenameValue() !== getWriteMediaOriginalFilename()
+            ) {
+                submitImageRenameOnly().catch(alertError);
+                return;
+            }
+
             const csrfToken = getCsrfToken();
             const savingText = writeEditorKind === "image"
                 ? t("image_editor_saving", "저장 중...")
@@ -10411,6 +10536,19 @@
             if (saveButton) {
                 saveButton.disabled = true;
                 saveButton.textContent = savingText;
+            }
+
+            let imageFilename = "";
+            if (writeEditorKind === "image") {
+                imageFilename = String(filenameInput ? filenameInput.value || "" : "").trim();
+                if (!imageFilename) {
+                    alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
+                    if (saveButton) {
+                        saveButton.disabled = false;
+                        saveButton.textContent = originalButtonText;
+                    }
+                    return;
+                }
             }
 
             editor.saveToServer(saveUrl, csrfToken, originalPath, function (result) {
@@ -10440,7 +10578,7 @@
                 runWithBeforeUnloadBypass(function () {
                     window.location.href = buildViewUrl(handriveBaseUrl, targetPath);
                 });
-            });
+            }, writeEditorKind === "image" ? { filename: imageFilename } : {});
         }
 
         async function submitSave(options) {

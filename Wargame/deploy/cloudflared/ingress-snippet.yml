@@ -1,0 +1,4 @@
+# Add this rule above the final catch-all ingress rule in ~/.cloudflared/config.yml.
+
+  - hostname: wargame.hanplanet.com
+    service: http://localhost:8090

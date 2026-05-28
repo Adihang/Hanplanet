@@ -1478,6 +1478,22 @@ class HandriveAuthFlowTests(TestCase):
 
     @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_docs_login_refreshing_inline_2fa_does_not_resend_email(self, mock_prepare_session, mock_send_2fa):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+
+        login_data = {"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"}
+        first_response = self.client.post("/ko/login/", data=login_data)
+        refresh_response = self.client.post("/ko/login/", data=login_data)
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(refresh_response.status_code, 200)
+        self.assertContains(refresh_response, "on**@example.com")
+        self.assertEqual(mock_send_2fa.call_count, 1)
+        self.assertEqual(self.client.session[HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY], self.user.pk)
+
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
     def test_docs_inline_2fa_completion_authenticates_session(self, mock_prepare_session, mock_send_2fa):
         self.user.email = "one@example.com"
         self.user.save(update_fields=["email"])

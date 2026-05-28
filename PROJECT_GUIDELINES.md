@@ -33,6 +33,7 @@ PORT=8081 node server.js  # Dev (port 8080 is often occupied locally)
 | Django (gunicorn) | `com.hanplanet.gunicorn` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.gunicorn` |
 | Game server | `com.hanplanet.bumpercar-spiky-server` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server` |
 | Map collab server | `com.hanplanet.map-collab-server` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.map-collab-server` |
+| Wargame Apache | `com.hanplanet.wargame-apache` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.wargame-apache` |
 | Git server (Gitea) | `com.hanplanet.gitea` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.gitea` |
 | Celery worker | `com.hanplanet.celery` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.celery` |
 | Nginx | `com.hanplanet.nginx` | KeepAlive | `launchctl kickstart -k gui/$(id -u)/com.hanplanet.nginx` |
@@ -44,6 +45,7 @@ PORT=8081 node server.js  # Dev (port 8080 is often occupied locally)
 - `deploy/launchd/` — Django, Gitea, Celery, Nginx, 헬스체크 (저장소에 포함)
 - `bumpercar-spiky-server/deploy/launchd/` — 게임 서버
 - `map-collab-server/deploy/launchd/` — 맵 협업 서버
+- `Wargame/deploy/launchd/` — Wargame 전용 Apache
 - `~/Library/LaunchAgents/` only — HDD 마운트, HDD .DS_Store 정리 (저장소 미포함, 수동 설치)
 
 ### Django 변경 후 운영 적용
@@ -64,6 +66,14 @@ PORT=8081 node server.js  # Dev (port 8080 is often occupied locally)
 ```bash
 launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server
 # 확인: tail -f /tmp/bumpercar-spiky-server.log
+```
+
+### Wargame Apache 변경 후 운영 적용
+
+```bash
+httpd -t -f /Users/imhanbyeol/Development/Hanplanet/Wargame/deploy/apache/httpd-wargame.conf
+launchctl kickstart -k gui/$(id -u)/com.hanplanet.wargame-apache
+# 확인: curl -I http://localhost:8090/
 ```
 
 ### Celery worker 변경 후 운영 적용
@@ -108,6 +118,7 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.celery
 - `manage.py`: Django management entry point.
 - `requirements.txt`: Python dependencies.
 - `bumpercar-spiky-server/`: Separate Node.js WebSocket game server (see its own `AGENTS.md`).
+- `Wargame/`: Separate Apache + PHP + SQLite site for `wargame.hanplanet.com`; Django APIs may be used only for non-challenge site integration such as account identity, solve records, and shared navigation (see `Wargame/AGENTS.md`).
 
 ## Architecture
 
@@ -136,6 +147,8 @@ This is a Django 5.0.1 portfolio + content management + multiplayer game platfor
 - OpenHarness 설정: `oh setup` → OpenAI-compatible → Base URL `https://hanplanet.com/ai/v1` → API Key = `OLLAMA_PROXY_API_KEY` 값
 
 **Infrastructure:** Gunicorn → Nginx → Cloudflare Tunnel → hanplanet.com
+
+**Wargame integration boundary:** `wargame.hanplanet.com` runs as its own Apache + PHP + SQLite app under `Wargame/`, listens on its own local port, and Cloudflare Tunnel routes the hostname directly to that port. PHP must not directly read Django DB/session/cookie/filesystem state. Django site APIs may be used only for non-challenge integration such as token-based identity, solve read/write, and navbar/common UI; do not use Django APIs for challenge mechanics, vulnerable problem files, flags, hints, or challenge-local data. Challenge-local data remains in `Wargame/data/wargame.sqlite3`.
 
 **Git 서버:** Gitea (Homebrew, `/opt/homebrew/bin/gitea`, 포트 3000) + Celery Worker (Redis 브로커) — HanDrive 폴더를 Git 저장소로 변환하는 비동기 작업 처리.
 

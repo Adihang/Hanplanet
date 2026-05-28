@@ -10,6 +10,8 @@ httpx==0.28.1
 idna==3.11
 Markdown==3.5.2
 pillow==10.2.0
+python-barcode==0.16.1
+qrcode[pil]==8.2
 celery[redis]==5.3.6
 redis>=5,<6
 setuptools==68.2.2
@@ -21,3 +23,5 @@ boto3
 PyJWT
 yt-dlp
 curl_cffi>=0.11
+rembg==2.0.61
+onnxruntime==1.19.2

@@ -113,6 +113,7 @@
         if (!pipSession) return;
         const session = pipSession;
         pipSession = null;
+        if (session.frameRequest) window.cancelAnimationFrame(session.frameRequest);
         if (session.video) session.video.remove();
         if (session.stream) {
             session.stream.getTracks().forEach(function (track) {
@@ -176,17 +177,26 @@
         if (!context) {
             throw new Error(getMessage("statusUnsupported", "This browser does not support image Picture-in-Picture."));
         }
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        function drawPipFrame() {
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        }
+        drawPipFrame();
 
-        const stream = canvas.captureStream(1);
+        const stream = canvas.captureStream(30);
         const video = document.createElement("video");
         video.muted = true;
         video.playsInline = true;
         video.srcObject = stream;
         video.style.cssText = "position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0;pointer-events:none;";
         document.body.appendChild(video);
-        pipSession = { stream: stream, video: video };
+        pipSession = { stream: stream, video: video, frameRequest: 0 };
+        function tickPipFrame() {
+            if (!pipSession || pipSession.video !== video) return;
+            drawPipFrame();
+            pipSession.frameRequest = window.requestAnimationFrame(tickPipFrame);
+        }
+        pipSession.frameRequest = window.requestAnimationFrame(tickPipFrame);
         video.addEventListener("leavepictureinpicture", closePipSession, { once: true });
 
         try {

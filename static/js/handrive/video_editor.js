@@ -33,6 +33,7 @@
     var surface, videoStage, subtitleLayer;
     var videoStageSizeFrame = 0;
     var videoStageResizeObserver = null;
+    var OVERLAY_BASE_WIDTH = 860;
 
     function init(options) {
         var opts = options || {};
@@ -828,6 +829,9 @@
             scheduleVideoStageSizeSync();
         });
         videoStageResizeObserver.observe(target);
+        if (videoStage && videoStage !== target) videoStageResizeObserver.observe(videoStage);
+        if (subtitleLayer && subtitleLayer !== target && subtitleLayer !== videoStage) videoStageResizeObserver.observe(subtitleLayer);
+        window.addEventListener("resize", scheduleVideoStageSizeSync);
     }
 
     function unbindResizeObserver() {
@@ -835,6 +839,7 @@
             videoStageResizeObserver.disconnect();
             videoStageResizeObserver = null;
         }
+        window.removeEventListener("resize", scheduleVideoStageSizeSync);
     }
 
     function scheduleVideoStageSizeSync() {
@@ -1017,6 +1022,7 @@
         subtitleLayer.innerHTML = "";
         var currentTime = getMediaCurrentTime();
         var layerRect = subtitleLayer.getBoundingClientRect();
+        var overlayScale = getOverlayDisplayScale(layerRect);
         state.subtitles.forEach(function (subtitle) {
             if (!isSubtitleActive(subtitle, currentTime)) {
                 return;
@@ -1040,6 +1046,12 @@
             box.style.textDecoration = subtitle.fontUnderline ? "underline" : "none";
             box.style.setProperty("--ve-subtitle-padding-y", Math.max(2, Math.round(fontSize * 0.28)) + "px");
             box.style.setProperty("--ve-subtitle-padding-x", Math.max(4, Math.round(fontSize * 0.42)) + "px");
+            box.style.borderWidth = scaledPx(2, overlayScale) + "px";
+            box.style.borderRadius = scaledPx(4, overlayScale) + "px";
+            if (subtitle.id === state.selectedSubtitleId) {
+                box.style.outlineWidth = scaledPx(2, overlayScale) + "px";
+                box.style.outlineOffset = scaledPx(2, overlayScale) + "px";
+            }
             box.style.color = subtitle.fontColorEnabled === false ? "#ffffff" : subtitle.fontColor || "#ffffff";
             box.style.textShadow = subtitle.fontStrokeEnabled === false
                 ? "none"
@@ -1061,6 +1073,7 @@
             box.style.top = clamp(image.y, 0, 100 - image.height) + "%";
             box.style.width = clamp(image.width, 4, 100) + "%";
             box.style.height = clamp(image.height, 4, 100) + "%";
+            box.style.borderWidth = scaledPx(2, overlayScale) + "px";
             var img = document.createElement("img");
             img.src = image.objectUrl;
             img.alt = image.label || "image";
@@ -1068,6 +1081,13 @@
             if (image.id === state.selectedImageId) {
                 var handle = document.createElement("span");
                 handle.className = "ve-image-resize-handle";
+                var handleSize = scaledPx(12, overlayScale);
+                var handleOffset = -Math.round(handleSize / 2) - Math.max(1, Math.round(overlayScale));
+                handle.style.width = handleSize + "px";
+                handle.style.height = handleSize + "px";
+                handle.style.right = handleOffset + "px";
+                handle.style.bottom = handleOffset + "px";
+                handle.style.borderWidth = scaledPx(2, overlayScale) + "px";
                 box.appendChild(handle);
             }
             subtitleLayer.appendChild(box);
@@ -1087,7 +1107,17 @@
     }
 
     function getSubtitleFontSize(subtitle, layerRect) {
-        return Math.round(clamp(Number(subtitle.fontSize) || 28, 8, 160));
+        var baseFontSize = clamp(Number(subtitle.fontSize) || 28, 8, 160);
+        return Math.round(clamp(baseFontSize * getOverlayDisplayScale(layerRect), 6, 240));
+    }
+
+    function getOverlayDisplayScale(layerRect) {
+        var width = Math.max(1, Number(layerRect && layerRect.width) || OVERLAY_BASE_WIDTH);
+        return clamp(width / OVERLAY_BASE_WIDTH, 0.25, 4);
+    }
+
+    function scaledPx(value, scale) {
+        return Math.max(1, Math.round(value * (Number(scale) || 1)));
     }
 
     function estimateSubtitleBoxPercent(subtitle, layerRect, fontSize) {
@@ -1450,7 +1480,7 @@
                     previewWidth: layerWidth,
                     previewHeight: layerHeight,
                     fontFamily: subtitle.fontFamily || "system",
-                    fontSize: Number(subtitle.fontSize) || 28,
+                    fontSize: getSubtitleFontSize(subtitle, layerRect),
                     fontBold: Boolean(subtitle.fontBold),
                     fontItalic: Boolean(subtitle.fontItalic),
                     fontUnderline: Boolean(subtitle.fontUnderline),

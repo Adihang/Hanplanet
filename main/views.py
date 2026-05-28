@@ -4,7 +4,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from .forms import PortfolioActionButtonForm, PortfolioCareerForm, PortfolioProfileForm, PortfolioProjectForm
-from .models import NavLink, QuickLink, UserProfile
+from .models import NavLink, QuickLink, UserProfile, WargameSolve
 from portfolio.models import PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject, Project, Project_Tag, upload_to_portfolio_profile
 from stratagem.models import Stratagem, Stratagem_Hero_Score
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
@@ -17,6 +17,7 @@ import re
 import logging
 import math
 import base64
+import io
 import hashlib
 import hmac
 import time
@@ -79,6 +80,8 @@ IDENTITY_IMPERSONATION_PATTERNS = [
     re.compile(r"^\s*(임\s*한별|임한별|한별님|한별)\s*입니다"),
     re.compile(r"\b(i am|i'm|my name is|this is)\s+(lim\s+hanbyeol|hanbyeol)\b", re.IGNORECASE),
 ]
+WARGAME_ALLOWED_ORIGIN = "https://wargame.hanplanet.com"
+WARGAME_CHALLENGE_ID_PATTERN = re.compile(r"^level\d{1,3}$")
 
 
 FENCED_BLOCK_PATTERN = re.compile(r"^\s*(`{3,}|~{3,})")
@@ -1023,14 +1026,14 @@ def apply_ui_context(request, context, ui_lang):
             context["account_terms_of_service_agreed_at"] = timezone.localtime(terms_agreed_at).strftime("%Y-%m-%d %H:%M")
     try:
         nav_links = list(NavLink.objects.all())
-        removed_nav_names = {"github", "thingiverse", "portfolio"}
+        removed_nav_names = {"github", "thingiverse", "portfolio", "wargame"}
         for link in nav_links:
             name_value = str(getattr(link, "name", "") or "")
             url_value = str(getattr(link, "url", "") or "")
             normalized_name = name_value.strip().lower()
             normalized_url = url_value.rstrip("/")
-            if normalized_name == "docs":
-                link.name = "HanDrive"
+            if normalized_name in {"docs", "handrive"}:
+                link.name = "Drive"
             elif normalized_name in {"mini game", "minigame"}:
                 link.name = "Sub"
             if normalized_url in {"/fun/sub", "/fun/minigame", "/minigame", "/Stratagem_Hero"}:
@@ -1049,7 +1052,7 @@ def apply_ui_context(request, context, ui_lang):
         )
         hanharness_inserted = False
         for index, link in enumerate(resolved_links):
-            if str(getattr(link, "name", "") or "").strip().lower() == "handrive":
+            if str(getattr(link, "name", "") or "").strip().lower() == "drive":
                 resolved_links.insert(index + 1, hanharness_link)
                 hanharness_inserted = True
                 break
@@ -1059,7 +1062,7 @@ def apply_ui_context(request, context, ui_lang):
         context["nav_links"] = resolved_links
     except (OperationalError, ProgrammingError):
         context["nav_links"] = [
-            {"name": "HanDrive", "url": "/handrive/list"},
+            {"name": "Drive", "url": "/handrive/list"},
             {"name": "CLI", "url": f"/{ui_lang}/handrive/cli"},
             {"name": "Sub", "url": "/sub/"},
         ]
@@ -1443,6 +1446,216 @@ def build_game_auth_token(
     return f"{encoded_header}.{encoded_payload}.{encoded_signature}"
 
 
+def _base64url_decode(value):
+    padded = value + "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(padded.encode("ascii"))
+
+
+def _wargame_cors_response(request, response):
+    origin = request.headers.get("Origin")
+    if origin == WARGAME_ALLOWED_ORIGIN:
+        response["Access-Control-Allow-Origin"] = WARGAME_ALLOWED_ORIGIN
+        response["Access-Control-Allow-Credentials"] = "true"
+        response["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-Requested-With"
+        response["Access-Control-Allow-Methods"] = "GET, POST, PATCH, OPTIONS"
+        response["Vary"] = "Origin"
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def _wargame_options_response(request):
+    return _wargame_cors_response(request, HttpResponse(status=204))
+
+
+def _decode_wargame_auth_token(token):
+    secret = str(getattr(settings, "GAME_JWT_SECRET", "") or "").encode("utf-8")
+    if not secret:
+        raise ValueError("game_jwt_secret_not_configured")
+    parts = str(token or "").split(".")
+    if len(parts) != 3:
+        raise ValueError("invalid_token")
+
+    signing_input = f"{parts[0]}.{parts[1]}".encode("ascii")
+    expected_signature = _base64url_encode(hmac.new(secret, signing_input, hashlib.sha256).digest())
+    if not hmac.compare_digest(expected_signature, parts[2]):
+        raise ValueError("invalid_token")
+
+    payload = json.loads(_base64url_decode(parts[1]).decode("utf-8"))
+    now = int(time.time())
+    if str(payload.get("game") or "").strip().lower() != "wargame":
+        raise ValueError("invalid_game")
+    if int(payload.get("nbf") or 0) > now:
+        raise ValueError("token_not_yet_valid")
+    if int(payload.get("exp") or 0) < now:
+        raise ValueError("token_expired")
+
+    configured_issuer = str(getattr(settings, "GAME_JWT_ISSUER", "") or "")
+    configured_audience = str(getattr(settings, "GAME_JWT_AUDIENCE", "") or "")
+    if configured_issuer and payload.get("iss") != configured_issuer:
+        raise ValueError("invalid_issuer")
+    if configured_audience and payload.get("aud") != configured_audience:
+        raise ValueError("invalid_audience")
+    return payload
+
+
+def _wargame_user_from_request(request):
+    authorization = str(request.headers.get("Authorization") or "")
+    if not authorization.startswith("Bearer "):
+        raise ValueError("missing_bearer_token")
+    payload = _decode_wargame_auth_token(authorization.removeprefix("Bearer ").strip())
+    if payload.get("is_guest"):
+        raise ValueError("guest_token_not_allowed")
+    username = str(payload.get("username") or payload.get("sub") or "").strip()
+    if not username:
+        raise ValueError("missing_username")
+    return get_user_model().objects.get(username=username)
+
+
+def _wargame_login_url(ui_lang):
+    resolved_lang = ui_lang if ui_lang in SUPPORTED_UI_LANGS else "ko"
+    next_url = quote("https://wargame.hanplanet.com/", safe="")
+    return f"https://www.hanplanet.com/{resolved_lang}/login/?next={next_url}"
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def wargame_session(request, ui_lang=None):
+    resolved_lang = ui_lang if ui_lang in SUPPORTED_UI_LANGS else "ko"
+    if request.method == "OPTIONS":
+        return _wargame_options_response(request)
+    if not request.user.is_authenticated:
+        return _wargame_cors_response(
+            request,
+            JsonResponse({"authenticated": False, "login_url": _wargame_login_url(resolved_lang)}),
+        )
+
+    token = build_game_auth_token(request.user, game_slug="wargame")
+    return _wargame_cors_response(
+        request,
+        JsonResponse(
+            {
+                "authenticated": True,
+                "username": request.user.username,
+                "display_name": get_account_display_name(request.user),
+                "token": token,
+                "expires_in": int(getattr(settings, "GAME_JWT_EXP_SECONDS", 300) or 300),
+            }
+        ),
+    )
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def wargame_navbar(request, ui_lang=None):
+    resolved_lang = ui_lang if ui_lang in SUPPORTED_UI_LANGS else "ko"
+    if request.method == "OPTIONS":
+        return _wargame_options_response(request)
+
+    context = {"request": request, "navbar_supported_content_empty": False}
+    apply_ui_context(request, context, resolved_lang)
+    html_fragment = render_to_string("partials/navbar.html", context, request=request)
+    return _wargame_cors_response(request, JsonResponse({"html": html_fragment}))
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST", "OPTIONS"])
+def wargame_solves(request, ui_lang=None):
+    if request.method == "OPTIONS":
+        return _wargame_options_response(request)
+    try:
+        user = _wargame_user_from_request(request)
+    except Exception as exc:
+        return _wargame_cors_response(request, JsonResponse({"error": str(exc)}, status=401))
+
+    if request.method == "POST":
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            return _wargame_cors_response(request, JsonResponse({"error": "invalid_json"}, status=400))
+        challenge_id = str(payload.get("challenge_id") or "").strip()
+        if not WARGAME_CHALLENGE_ID_PATTERN.match(challenge_id):
+            return _wargame_cors_response(request, JsonResponse({"error": "invalid_challenge_id"}, status=400))
+        WargameSolve.objects.get_or_create(user=user, challenge_id=challenge_id)
+
+    solves = list(
+        WargameSolve.objects.filter(user=user)
+        .order_by("challenge_id")
+        .values_list("challenge_id", flat=True)
+    )
+    return _wargame_cors_response(
+        request,
+        JsonResponse(
+            {
+                "authenticated": True,
+                "username": user.username,
+                "display_name": get_account_display_name(user),
+                "solves": solves,
+            }
+        ),
+    )
+
+
+@csrf_exempt
+@require_http_methods(["GET", "PATCH", "OPTIONS"])
+def wargame_preferences(request, ui_lang=None):
+    if request.method == "OPTIONS":
+        return _wargame_options_response(request)
+    try:
+        user = _wargame_user_from_request(request)
+    except Exception as exc:
+        return _wargame_cors_response(request, JsonResponse({"error": str(exc)}, status=401))
+
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+
+    if request.method == "PATCH":
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            return _wargame_cors_response(request, JsonResponse({"error": "invalid_json"}, status=400))
+
+        update_fields = []
+        if "mode" in payload:
+            next_mode = _normalize_theme_mode(payload.get("mode"))
+            raw_mode = payload.get("mode")
+            if raw_mode not in ("", None) and not next_mode:
+                return _wargame_cors_response(request, JsonResponse({"error": "invalid_mode"}, status=400))
+            if profile.theme_mode != next_mode:
+                profile.theme_mode = next_mode
+                update_fields.append("theme_mode")
+
+        if "ui_lang" in payload:
+            next_ui_lang = str(payload.get("ui_lang") or "").strip().lower()
+            if next_ui_lang and next_ui_lang not in SUPPORTED_UI_LANGS:
+                return _wargame_cors_response(request, JsonResponse({"error": "invalid_ui_lang"}, status=400))
+            if profile.preferred_ui_lang != next_ui_lang:
+                profile.preferred_ui_lang = next_ui_lang
+                update_fields.append("preferred_ui_lang")
+
+        if "root_search_engine" in payload:
+            next_engine = _normalize_root_search_engine(payload.get("root_search_engine"))
+            raw_engine = payload.get("root_search_engine")
+            if raw_engine not in ("", None) and not next_engine:
+                return _wargame_cors_response(request, JsonResponse({"error": "invalid_root_search_engine"}, status=400))
+            if profile.preferred_root_search_engine != next_engine:
+                profile.preferred_root_search_engine = next_engine
+                update_fields.append("preferred_root_search_engine")
+
+        if update_fields:
+            update_fields.append("updated_at")
+            profile.save(update_fields=update_fields)
+
+    return _wargame_cors_response(
+        request,
+        JsonResponse(
+            {
+                "theme_mode": profile.theme_mode if profile.theme_mode in ("light", "dark") else None,
+                "ui_lang": profile.preferred_ui_lang or None,
+                "root_search_engine": profile.preferred_root_search_engine or None,
+            }
+        ),
+    )
+
+
 def favicon_ico(request):
     """Serve favicon.ico from collected static files or fall back to the source static directory."""
     static_root = Path(getattr(settings, "STATIC_ROOT", "") or "")
@@ -1491,7 +1704,20 @@ def sub_page(request, ui_lang=None):
 
     links = [
         {
+            "slug": "wargame",
+            "category": "game",
+            "title": "Wargame",
+            "url": "https://wargame.hanplanet.com/",
+            "description": (
+                "Security challenge stages for practicing web and systems problems."
+                if is_english
+                else "웹과 시스템 문제를 연습하는 보안 워게임 스테이지."
+            ),
+            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
+        },
+        {
             "slug": "salvations-edge-4",
+            "category": "game",
             "title": "Salvation's Edge 4",
             "url": reverse("main:Salvations_Edge_4_lang", kwargs={"ui_lang": resolved_lang}),
             "description": "Raid-inspired rhythm and timing challenge." if is_english else "레이드 감성의 리듬/타이밍 챌린지.",
@@ -1499,6 +1725,7 @@ def sub_page(request, ui_lang=None):
         },
         {
             "slug": "stratagem-hero",
+            "category": "game",
             "title": "Stratagem Hero",
             "url": reverse("main:Stratagem_Hero_lang", kwargs={"ui_lang": resolved_lang}),
             "description": "Call stratagems fast and climb the scoreboard." if is_english else "스트라타젬을 빠르게 입력하고 점수판에 도전하세요.",
@@ -1506,6 +1733,7 @@ def sub_page(request, ui_lang=None):
         },
         {
             "slug": "bubble",
+            "category": "game",
             "title": "Bubble",
             "url": reverse("main:bubble_lang", kwargs={"ui_lang": resolved_lang}),
             "description": "A small color-pop playground." if is_english else "가볍게 즐기는 색감 버블 게임.",
@@ -1513,6 +1741,7 @@ def sub_page(request, ui_lang=None):
         },
         {
             "slug": "text-speaki",
+            "category": "tool",
             "title": "Text Bubble" if is_english else "텍스트 버블",
             "url": reverse("main:text_bubble_lang", kwargs={"ui_lang": resolved_lang}),
             "description": (
@@ -1524,6 +1753,7 @@ def sub_page(request, ui_lang=None):
         },
         {
             "slug": "image-pip-demo",
+            "category": "tool",
             "title": "Image PiP Demo" if is_english else "이미지 PiP 데모",
             "url": reverse("main:image_pip_demo_lang", kwargs={"ui_lang": resolved_lang}),
             "description": (
@@ -1535,6 +1765,7 @@ def sub_page(request, ui_lang=None):
         },
         {
             "slug": "youtube-downloader",
+            "category": "tool",
             "title": "YouTube Downloader" if is_english else "유튜브 다운로더",
             "url": reverse("main:youtube_downloader_lang", kwargs={"ui_lang": resolved_lang}),
             "description": (
@@ -1545,7 +1776,20 @@ def sub_page(request, ui_lang=None):
             "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
         },
         {
+            "slug": "qrbarcode",
+            "category": "tool",
+            "title": "QR/Barcode" if is_english else "QR/Barcode",
+            "url": reverse("main:qrbarcode_lang", kwargs={"ui_lang": resolved_lang}),
+            "description": (
+                "Generate a QR code or Code128 barcode from a URL or text."
+                if is_english
+                else "URL 또는 텍스트로 QR 코드와 Code128 바코드를 생성합니다."
+            ),
+            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
+        },
+        {
             "slug": "bumpercar-spiky",
+            "category": "game",
             "title": "Bumper Car Spiky" if is_english else "범퍼카 스핔이",
             "url": reverse("main:bumpercar_spiky_lang", kwargs={"ui_lang": resolved_lang}),
             "description": "Crash around a shared arena with Spiky." if is_english else "스핔이로 공용 경기장을 뛰어다니는 멀티플레이 범퍼카 게임.",
@@ -1553,6 +1797,7 @@ def sub_page(request, ui_lang=None):
         },
         {
             "slug": "raise-speaki",
+            "category": "game",
             "title": "Raise Speaki" if is_english else "스핔이 키우기",
             "url": reverse("main:raise_speaki_lang", kwargs={"ui_lang": resolved_lang}),
             "description": (
@@ -1564,9 +1809,23 @@ def sub_page(request, ui_lang=None):
         },
     ]
 
+    link_groups = [
+        {
+            "slug": "games",
+            "title": "Games" if is_english else "게임",
+            "items": [link for link in links if link.get("category") == "game"],
+        },
+        {
+            "slug": "tools",
+            "title": "Tools" if is_english else "도구",
+            "items": [link for link in links if link.get("category") == "tool"],
+        },
+    ]
+
     context = {
-        "page_title": "Sub" if is_english else "기타",
+        "page_title": "Sub",
         "sub_links": links,
+        "sub_link_groups": link_groups,
         "sub_home_label": "Home" if is_english else "홈",
         "handrive_login_url": reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}),
         "handrive_signup_url": reverse("main:handrive_signup_lang", kwargs={"ui_lang": resolved_lang}),
@@ -1699,6 +1958,253 @@ def text_bubble_page(request, ui_lang=None):
     return render(request, "fun/text-bubble.html", context)
 
 
+def qrbarcode_page(request, ui_lang=None):
+    """Render the QR / barcode generator page."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+    context = {
+        "ui_lang": resolved_lang,
+        "page_title": "QR/Barcode" if is_english else "QR/Barcode",
+        "home_label": "Home" if is_english else "홈",
+        "sub_label": "Sub" if is_english else "기타",
+        "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
+        "generate_api_url": reverse("main:qrbarcode_generate_lang", kwargs={"ui_lang": resolved_lang}),
+        "input_kind_label": "Input" if is_english else "입력",
+        "url_label": "URL",
+        "text_label": "Text" if is_english else "Text",
+        "code_kind_label": "Code" if is_english else "코드",
+        "qr_label": "QR",
+        "barcode_label": "Barcode",
+        "barcode_kind_label": "Barcode type" if is_english else "바코드 종류",
+        "barcode_kind_options": [
+            {"value": "ean", "label": "EAN", "selected": False},
+            {"value": "code39", "label": "CODE39", "selected": False},
+            {"value": "itf", "label": "ITF", "selected": False},
+            {"value": "codabar", "label": "CODABAR", "selected": False},
+            {"value": "code128", "label": "CODE128", "selected": True},
+        ],
+        "value_label": "Value" if is_english else "내용",
+        "submit_label": "Generate" if is_english else "생성",
+        "download_jpeg_label": "JPEG",
+        "download_png_label": "PNG",
+        "copy_label": "Copy image" if is_english else "이미지 복사",
+        "empty_message": "Enter a value." if is_english else "내용을 입력해주세요.",
+        "invalid_url_message": "Enter a valid URL." if is_english else "올바른 URL을 입력해주세요.",
+        "failed_message": "Generation failed." if is_english else "생성에 실패했습니다.",
+        "copied_message": "Copied" if is_english else "복사됨",
+        "meta_title": "QR/Barcode | Hanplanet",
+        "meta_og_title": "QR/Barcode | Hanplanet",
+        "meta_description": (
+            "Generate a QR code or barcode from a URL or text."
+            if is_english
+            else "URL 또는 텍스트로 QR 코드와 바코드를 생성하는 도구입니다."
+        ),
+        "meta_og_image": build_public_absolute_url(static("media/icons/qrbarcode-og-1200.png")),
+        "meta_robots": "noindex",
+    }
+    context["meta_og_description"] = context["meta_description"]
+    context["meta_twitter_image"] = context["meta_og_image"]
+    apply_ui_context(request, context, resolved_lang)
+    return render(request, "fun/qrbarcode.html", context)
+
+
+def _normalize_qrbarcode_payload(request):
+    try:
+        payload = json.loads(request.body)
+    except (TypeError, ValueError):
+        payload = request.POST
+    return {
+        "input_kind": str(payload.get("input_kind") or "url").strip().lower(),
+        "code_kind": str(payload.get("code_kind") or "qr").strip().lower(),
+        "barcode_kind": str(payload.get("barcode_kind") or "code128").strip().lower(),
+        "value": str(payload.get("value") or "").strip(),
+    }
+
+
+def _is_valid_qrbarcode_url(value):
+    parsed = urlparse(value)
+    hostname = str(parsed.hostname or "")
+    if parsed.scheme not in {"http", "https"} or not hostname:
+        return False
+    if re.search(r"\s", value):
+        return False
+    if hostname == "localhost":
+        return True
+    if re.match(r"^\d{1,3}(?:\.\d{1,3}){3}$", hostname):
+        return all(0 <= int(part) <= 255 for part in hostname.split("."))
+    if ":" in hostname:
+        return True
+    return "." in hostname
+
+
+def _normalize_qrbarcode_value(input_kind, value, code_kind="qr", barcode_kind="code128"):
+    if input_kind == "url" and (code_kind != "barcode" or barcode_kind == "code128"):
+        if len(value) > 2048:
+            return ""
+        if value and not re.match(r"^https?://", value, re.IGNORECASE):
+            value = "https://" + value
+        if not _is_valid_qrbarcode_url(value):
+            return ""
+    elif len(value) > 4096:
+        return ""
+    return value
+
+
+def _generate_qr_png(value):
+    import qrcode
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=12,
+        border=4,
+    )
+    qr.add_data(value)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG", optimize=True)
+    return buffer.getvalue()
+
+
+BARCODE_KIND_META = {
+    "ean": {
+        "class": "ean13",
+        "filename": "hanplanet-ean.png",
+        "max_length": 13,
+        "pattern": re.compile(r"^\d{12,13}$"),
+    },
+    "code39": {
+        "class": "code39",
+        "filename": "hanplanet-code39.png",
+        "max_length": 80,
+        "pattern": re.compile(r"^[0-9A-Z .$/+%-]+$", re.IGNORECASE),
+    },
+    "itf": {
+        "class": "itf",
+        "filename": "hanplanet-itf.png",
+        "max_length": 80,
+        "pattern": re.compile(r"^\d+$"),
+    },
+    "codabar": {
+        "class": "codabar",
+        "filename": "hanplanet-codabar.png",
+        "max_length": 80,
+        "pattern": re.compile(r"^[0-9A-D\\-\\$:/.+]+$", re.IGNORECASE),
+    },
+    "code128": {
+        "class": "code128",
+        "filename": "hanplanet-code128.png",
+        "max_length": 256,
+        "pattern": re.compile(r"^[\x20-\x7e]+$"),
+    },
+}
+
+
+def _barcode_validation_message(barcode_kind, is_english=False):
+    if is_english:
+        return {
+            "ean": "EAN accepts only 12 or 13 digits.",
+            "code39": "CODE39 accepts English letters, numbers, spaces, and these symbols: . $ / + % -",
+            "itf": "ITF accepts only numbers.",
+            "codabar": "CODABAR accepts numbers, A-D, and these symbols: - $ : / . +",
+            "code128": "CODE128 accepts English letters, numbers, and common symbols. Korean text is not supported.",
+        }.get(barcode_kind, "Enter a valid value for this barcode type.")
+    return {
+        "ean": "EAN은 숫자 12자리 또는 13자리만 입력할 수 있습니다.",
+        "code39": "CODE39는 영문, 숫자, 공백과 . $ / + % - 기호만 입력할 수 있습니다.",
+        "itf": "ITF는 숫자만 입력할 수 있습니다.",
+        "codabar": "CODABAR는 숫자, A-D와 - $ : / . + 기호만 입력할 수 있습니다.",
+        "code128": "CODE128은 영문, 숫자, 일반 기호만 입력할 수 있습니다. 한글은 지원하지 않습니다.",
+    }.get(barcode_kind, "선택한 바코드 종류에 맞는 내용을 입력해주세요.")
+
+
+def _normalize_barcode_value(barcode_kind, value):
+    meta = BARCODE_KIND_META.get(barcode_kind) or BARCODE_KIND_META["code128"]
+    normalized = str(value or "").strip()
+    if barcode_kind in {"code39", "codabar"}:
+        normalized = normalized.upper()
+    if barcode_kind == "codabar" and normalized and normalized[0] not in "ABCD":
+        normalized = f"A{normalized}A"
+    if len(normalized) > meta["max_length"] or not meta["pattern"].match(normalized):
+        return ""
+    return normalized
+
+
+def _generate_barcode_png(value, barcode_kind="code128"):
+    from barcode import get_barcode_class
+    from barcode.writer import ImageWriter
+
+    meta = BARCODE_KIND_META.get(barcode_kind) or BARCODE_KIND_META["code128"]
+    buffer = io.BytesIO()
+    code = get_barcode_class(meta["class"])(value, writer=ImageWriter())
+    code.write(buffer, {
+        "module_height": 18.0,
+        "module_width": 0.36,
+        "quiet_zone": 5.0,
+        "font_size": 10,
+        "text_distance": 4.0,
+        "write_text": True,
+        "dpi": 200,
+    })
+    return buffer.getvalue()
+
+
+@csrf_protect
+def qrbarcode_generate(request, ui_lang=None):
+    """Generate a PNG QR code or selected barcode."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "POST only."}, status=405)
+
+    payload = _normalize_qrbarcode_payload(request)
+    input_kind = payload["input_kind"]
+    code_kind = payload["code_kind"]
+    barcode_kind = payload["barcode_kind"]
+    if input_kind not in {"url", "text"}:
+        input_kind = "url"
+    if code_kind not in {"qr", "barcode"}:
+        code_kind = "qr"
+    if barcode_kind not in BARCODE_KIND_META:
+        barcode_kind = "code128"
+
+    value = _normalize_qrbarcode_value(input_kind, payload["value"], code_kind=code_kind, barcode_kind=barcode_kind)
+    if not value:
+        if input_kind == "url" and (code_kind != "barcode" or barcode_kind == "code128"):
+            message = "Enter a valid URL." if is_english else "올바른 URL을 입력해주세요."
+        else:
+            message = "Enter a valid value." if is_english else "올바른 내용을 입력해주세요."
+        return JsonResponse({"ok": False, "error": message}, status=400)
+
+    if code_kind == "barcode":
+        value = _normalize_barcode_value(barcode_kind, value)
+        if not value:
+            message = _barcode_validation_message(barcode_kind, is_english=is_english)
+            return JsonResponse({"ok": False, "error": message}, status=400)
+
+    try:
+        if code_kind == "qr":
+            png_bytes = _generate_qr_png(value)
+            filename = "hanplanet-qr.png"
+        else:
+            png_bytes = _generate_barcode_png(value, barcode_kind=barcode_kind)
+            filename = BARCODE_KIND_META[barcode_kind]["filename"]
+    except Exception as exc:
+        logger.warning("QR/barcode generation failed: %s", exc, exc_info=True)
+        message = "Could not generate this code." if is_english else "이 코드로 생성할 수 없습니다."
+        return JsonResponse({"ok": False, "error": message}, status=400)
+
+    return JsonResponse({
+        "ok": True,
+        "image": "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii"),
+        "filename": filename,
+        "normalized_value": value,
+        "code_kind": code_kind,
+        "barcode_kind": barcode_kind,
+    })
+
+
 def youtube_downloader_page(request, ui_lang=None):
     """Render the YouTube URL to MP4/MP3 utility page."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
@@ -1733,6 +2239,7 @@ def youtube_downloader_page(request, ui_lang=None):
             if is_english
             else "유튜브 URL을 붙여넣고 MP4 또는 MP3 파일로 저장하는 도구입니다."
         ),
+        "meta_og_image": build_public_absolute_url(static("media/icons/youtube-downloader-og-1200.png")),
         "meta_robots": "noindex",
     }
     if request.user.is_authenticated:
@@ -1751,6 +2258,7 @@ def youtube_downloader_page(request, ui_lang=None):
         context["save_complete_message"] = "Saved to HanDrive." if is_english else "HanDrive에 저장되었습니다."
         context["save_failed_message"] = "Save failed." if is_english else "저장에 실패했습니다."
     context["meta_og_description"] = context["meta_description"]
+    context["meta_twitter_image"] = context["meta_og_image"]
     apply_ui_context(request, context, resolved_lang)
     context["theme_preference_url"] = ""
     return render(request, "fun/youtube_downloader.html", context)

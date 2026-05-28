@@ -83,8 +83,8 @@
             rel="noopener noreferrer"
             data-chat-widget-anchor
             data-chat-widget-anchor-order="{{ forloop.counter }}"
-            aria-label="{{ button.label }}"
-            title="{{ button.label }}"
+            aria-label="{% if button.label == 'HanDrive' %}Drive{% else %}{{ button.label }}{% endif %}"
+            title="{% if button.label == 'HanDrive' %}Drive{% else %}{{ button.label }}{% endif %}"
         >
             {% if button.label|lower == 'github' %}
             <svg class="portfolio-chat-link-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="currentColor">
@@ -99,7 +99,7 @@
             {% elif button.icon_url %}
             <img class="portfolio-chat-link-icon" src="{{ button.icon_url }}" alt="{{ button.label }}" style="width: 20px; height: 20px; object-fit: contain;"/>
             {% else %}
-            <span style="font-size: 12px; font-weight: 600;">{{ button.label }}</span>
+            <span style="font-size: 12px; font-weight: 600;">{% if button.label == 'HanDrive' %}Drive{% else %}{{ button.label }}{% endif %}</span>
             {% endif %}
         </a>
         {% endfor %}

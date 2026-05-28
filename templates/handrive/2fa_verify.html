@@ -21,19 +21,33 @@
 
         <p class="ui-subtitle">{{ handrive_text.auth_2fa_hint }} <strong>{{ handrive_2fa_user_email_masked }}</strong></p>
 
-        <label class="handrive-field handrive-field-full">
-            <span>{{ handrive_text.auth_2fa_code_label }}</span>
-            <input
-                type="text"
-                name="code"
-                inputmode="numeric"
-                autocomplete="one-time-code"
-                maxlength="6"
-                required
-                autofocus
-                placeholder="{{ handrive_text.auth_2fa_code_placeholder }}"
-            >
-        </label>
+        <div class="handrive-field handrive-field-full">
+            <div class="handrive-otp-input-wrap" data-handrive-otp-wrap>
+                <input
+                    class="handrive-otp-hidden-input"
+                    type="text"
+                    name="code"
+                    id="handrive-2fa-code-input"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    maxlength="6"
+                    pattern="[0-9]*"
+                    required
+                    autofocus
+                    aria-label="{{ handrive_text.auth_2fa_code_label }}"
+                    placeholder="{{ handrive_text.auth_2fa_code_placeholder }}"
+                    data-handrive-otp-input
+                >
+                <div class="handrive-otp-boxes" data-handrive-otp-boxes aria-hidden="true">
+                    <span class="handrive-otp-box" data-index="0"></span>
+                    <span class="handrive-otp-box" data-index="1"></span>
+                    <span class="handrive-otp-box" data-index="2"></span>
+                    <span class="handrive-otp-box" data-index="3"></span>
+                    <span class="handrive-otp-box" data-index="4"></span>
+                    <span class="handrive-otp-box" data-index="5"></span>
+                </div>
+            </div>
+        </div>
 
         <div class="handrive-login-actions">
             <button class="ui-btn ui-btn-primary" type="submit">{{ handrive_text.auth_2fa_submit }}</button>
@@ -41,4 +55,72 @@
     </form>
 </main>
 {% include "partials/site_footer_links.html" %}
+<script>
+    (function () {
+        function normalizeOtp(value, maxLength) {
+            return String(value || "").replace(/\D/g, "").slice(0, maxLength);
+        }
+
+        function initOtpInput(input) {
+            const wrap = input.closest("[data-handrive-otp-wrap]");
+            if (!wrap || input.dataset.otpReady === "1") return;
+            input.dataset.otpReady = "1";
+            const boxes = Array.from(wrap.querySelectorAll(".handrive-otp-box"));
+            const maxLength = Number(input.getAttribute("maxlength")) || boxes.length || 6;
+            let autoSubmitted = false;
+
+            function submitOtpForm() {
+                const form = input.form;
+                if (!form || autoSubmitted || input.value.length !== maxLength) return;
+                autoSubmitted = true;
+                window.setTimeout(function () {
+                    if (typeof form.requestSubmit === "function") {
+                        form.requestSubmit();
+                    } else {
+                        form.submit();
+                    }
+                }, 80);
+            }
+
+            function render() {
+                const value = normalizeOtp(input.value, maxLength);
+                if (input.value !== value) input.value = value;
+                if (value.length < maxLength) autoSubmitted = false;
+                boxes.forEach(function (box, index) {
+                    box.textContent = value[index] ? (index === value.length - 1 ? value[index] : "•") : "";
+                    box.classList.toggle("is-filled", index < value.length);
+                    box.classList.toggle("is-active", index === Math.min(value.length, maxLength - 1) && document.activeElement === input);
+                });
+                wrap.classList.toggle("is-focused", document.activeElement === input);
+                if (value.length === maxLength) submitOtpForm();
+            }
+
+            function focusInput() {
+                input.focus({ preventScroll: true });
+                const end = input.value.length;
+                try { input.setSelectionRange(end, end); } catch (error) {}
+            }
+
+            wrap.addEventListener("click", focusInput);
+            wrap.addEventListener("paste", function (event) {
+                const text = event.clipboardData ? event.clipboardData.getData("text") : "";
+                if (!text) return;
+                event.preventDefault();
+                input.value = normalizeOtp(text, maxLength);
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                focusInput();
+            });
+            input.addEventListener("input", render);
+            input.addEventListener("change", render);
+            input.addEventListener("focus", render);
+            input.addEventListener("blur", render);
+            render();
+            if (input.hasAttribute("autofocus")) {
+                window.setTimeout(focusInput, 0);
+            }
+        }
+
+        document.querySelectorAll("[data-handrive-otp-input]").forEach(initOtpInput);
+    })();
+</script>
 {% endblock %}

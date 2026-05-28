@@ -1,0 +1,13 @@
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS level2_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS level12_flag (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    flag TEXT NOT NULL
+);
+

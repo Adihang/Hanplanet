@@ -624,6 +624,11 @@ DOCS_TEXT = {
         "image_editor_resize_height": "높이",
         "image_editor_resize_lock_ratio": "비율 유지",
         "image_editor_unsaved_warning": "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?",
+        "image_editor_remove_bg": "배경제거",
+        "image_editor_remove_bg_processing": "배경제거 중...",
+        "image_editor_remove_bg_error": "배경제거 실패",
+        "image_editor_auto_select_border": "테두리 자동 선택",
+        "image_editor_auto_select_border_empty": "선택할 테두리를 찾을 수 없습니다.",
         "audio_editor_title": "오디오 편집",
         "audio_editor_play": "재생",
         "audio_editor_pause": "일시정지",
@@ -950,6 +955,11 @@ DOCS_TEXT = {
         "image_editor_resize_height": "Height",
         "image_editor_resize_lock_ratio": "Lock ratio",
         "image_editor_unsaved_warning": "You have unsaved changes. Continue?",
+        "image_editor_remove_bg": "Remove background",
+        "image_editor_remove_bg_processing": "Removing background...",
+        "image_editor_remove_bg_error": "Background removal failed",
+        "image_editor_auto_select_border": "Auto select border",
+        "image_editor_auto_select_border_empty": "No selectable border found.",
         "audio_editor_title": "Audio Edit",
         "audio_editor_play": "Play",
         "audio_editor_pause": "Pause",
@@ -1643,6 +1653,16 @@ def handrive_edited_output_path(source_path: Path) -> Path:
     index = 2
     while candidate.exists():
         candidate = parent / f"{stem}_편집 {index}{suffix}"
+        index += 1
+    return candidate
+
+
+def handrive_numbered_output_path(parent: Path, stem: str, suffix: str) -> Path:
+    """같은 이름이 있으면 ``이름(2).ext`` 형태로 저장 가능한 경로를 만든다."""
+    candidate = parent / f"{stem}{suffix}"
+    index = 2
+    while candidate.exists():
+        candidate = parent / f"{stem}({index}){suffix}"
         index += 1
     return candidate
 
@@ -4557,6 +4577,7 @@ def handrive_common_context(request, ui_lang):
             "handrive_map_editor_base_url": "/handrive/map-editor/",
             "handrive_map_viewer_base_url": "/handrive/map-viewer/",
             "handrive_image_editor_save_url": reverse("main:handrive_api_image_editor_save"),
+            "handrive_image_editor_remove_background_url": reverse("main:handrive_api_image_editor_remove_background"),
             "handrive_audio_editor_save_url": reverse("main:handrive_api_audio_editor_save"),
             "handrive_video_editor_save_url": reverse("main:handrive_api_video_editor_save"),
             "handrive_can_edit": has_handrive_directory_write_access(request, ""),
@@ -4739,7 +4760,7 @@ def _render_hanplanet_email_html(
             '<tr><td style="padding:22px 0 4px;">'
             f'<a href="{safe_cta_url}" '
             'style="display:inline-block;padding:12px 18px;border-radius:8px;'
-            'background:#222222;color:#ffffff;text-decoration:none;font-size:14px;'
+            'background:#111111;color:#ffffff;text-decoration:none;font-size:14px;'
             'font-weight:700;line-height:1.2;">'
             f"{safe_cta_label}</a>"
             "</td></tr>"
@@ -4747,34 +4768,34 @@ def _render_hanplanet_email_html(
     footer_note_html = ""
     if footer_note:
         footer_note_html = (
-            '<p style="margin:14px 0 0;color:#777777;font-size:12px;line-height:1.5;">'
+            '<p style="margin:14px 0 0;color:#535353;font-size:12px;line-height:1.5;">'
             f"{safe_footer_note}</p>"
         )
     return (
-        '<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f4;'
+        '<!doctype html><html><body style="margin:0;padding:0;background:#eeeeee;'
         'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Apple SD Gothic Neo,Malgun Gothic,Arial,sans-serif;'
-        'color:#222222;">'
-        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#f4f4f4;">'
+        'color:#111111;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#eeeeee;">'
         '<tr><td align="center" style="padding:28px 14px;">'
         '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;border-collapse:collapse;">'
         "<tr><td>"
-        '<div style="background:#222222;border-radius:12px 12px 0 0;padding:18px 20px;color:#ffffff;">'
+        '<div style="background:#111111;border-radius:12px 12px 0 0;padding:18px 20px;color:#ffffff;">'
         '<div style="font-size:20px;font-weight:800;letter-spacing:0;">Hanplanet</div>'
-        f'<div style="margin-top:6px;font-size:13px;color:#d7d7d7;line-height:1.4;">{safe_eyebrow}</div>'
+        f'<div style="margin-top:6px;font-size:13px;color:#ededed;line-height:1.4;">{safe_eyebrow}</div>'
         "</div>"
         "</td></tr>"
-        '<tr><td style="background:#ffffff;border:1px solid #dddddd;border-top:0;'
+        '<tr><td style="background:#ffffff;border:1px solid #b6b6b6;border-top:0;'
         'border-radius:0 0 12px 12px;padding:26px 24px;">'
-        f'<h1 style="margin:0 0 14px;font-size:24px;line-height:1.25;color:#222222;letter-spacing:0;">{safe_title}</h1>'
-        f'<div style="font-size:15px;line-height:1.7;color:#333333;">{intro_html}</div>'
-        '<div style="height:1px;background:#e6e6e6;margin:22px 0;"></div>'
-        f'<div style="font-size:14px;line-height:1.7;color:#333333;">{body_html}</div>'
+        f'<h1 style="margin:0 0 14px;font-size:24px;line-height:1.25;color:#111111;letter-spacing:0;">{safe_title}</h1>'
+        f'<div style="font-size:15px;line-height:1.7;color:#2f2f2f;">{intro_html}</div>'
+        '<div style="height:1px;background:#d0d0d0;margin:22px 0;"></div>'
+        f'<div style="font-size:14px;line-height:1.7;color:#2f2f2f;">{body_html}</div>'
         '<table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">'
         f"{cta_html}"
         "</table>"
         f"{footer_note_html}"
         "</td></tr>"
-        '<tr><td style="padding:14px 4px 0;color:#888888;font-size:12px;line-height:1.5;text-align:center;">'
+        '<tr><td style="padding:14px 4px 0;color:#535353;font-size:12px;line-height:1.5;text-align:center;">'
         "Hanplanet · https://www.hanplanet.com"
         "</td></tr>"
         "</table></td></tr></table></body></html>"
@@ -4784,11 +4805,11 @@ def _render_hanplanet_email_html(
 def _render_hanplanet_email_code_box(code: str) -> str:
     safe_code = escape(code)
     return (
-        '<div style="margin:18px 0;padding:18px;border:1px solid #d8d8d8;border-radius:10px;'
-        'background:#fafafa;text-align:center;">'
-        '<div style="margin:0 0 8px;color:#666666;font-size:13px;font-weight:700;">Verification Code</div>'
+        '<div style="margin:18px 0;padding:18px;border:1px solid #b6b6b6;border-radius:10px;'
+        'background:#f5f5f5;text-align:center;">'
+        '<div style="margin:0 0 8px;color:#535353;font-size:13px;font-weight:700;">Verification Code</div>'
         f'<div style="font-family:SFMono-Regular,Menlo,Consolas,monospace;font-size:30px;'
-        f'letter-spacing:6px;font-weight:800;color:#222222;">{safe_code}</div>'
+        f'letter-spacing:6px;font-weight:800;color:#111111;">{safe_code}</div>'
         "</div>"
     )
 
@@ -4816,7 +4837,7 @@ def _send_2fa_email(user, code: str, ui_lang: str = "ko") -> bool:
             intro_html='<p style="margin:0;">Enter the code below to continue signing in to Hanplanet.</p>',
             body_html=(
                 _render_hanplanet_email_code_box(code)
-                + f'<p style="margin:0;color:#666666;">This code expires in {expiry} minutes. '
+                + f'<p style="margin:0;color:#535353;">This code expires in {expiry} minutes. '
                 'If you did not request this, please ignore this email.</p>'
             ),
             cta_label="Open Hanplanet",
@@ -4838,7 +4859,7 @@ def _send_2fa_email(user, code: str, ui_lang: str = "ko") -> bool:
             intro_html='<p style="margin:0;">Hanplanet 로그인을 계속하려면 아래 인증 코드를 입력해주세요.</p>',
             body_html=(
                 _render_hanplanet_email_code_box(code)
-                + f'<p style="margin:0;color:#666666;">이 코드는 {expiry}분 후 만료됩니다. '
+                + f'<p style="margin:0;color:#535353;">이 코드는 {expiry}분 후 만료됩니다. '
                 '본인이 요청하지 않은 경우 이 메일을 무시하세요.</p>'
             ),
             cta_label="Hanplanet 열기",
@@ -4890,21 +4911,21 @@ def _send_signup_welcome_email(user, ui_lang: str) -> bool:
             eyebrow="Your account is ready",
             intro_html=(
                 f'<p style="margin:0;">Hi <strong>{escape(username)}</strong>, your Hanplanet account is ready.</p>'
-                '<p style="margin:10px 0 0;color:#555555;">Start with HanDrive, then build your portfolio and explore multiplayer content.</p>'
+                '<p style="margin:10px 0 0;color:#535353;">Start with HanDrive, then build your portfolio and explore multiplayer content.</p>'
             ),
             body_html=(
                 '<div style="display:block;">'
-                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>HanDrive</strong><br>'
-                '<span style="color:#666666;">Upload, preview, edit, share, zip/unzip, and manage files.</span></div>'
-                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>Portfolio</strong><br>'
-                '<span style="color:#666666;">Build and share your public profile and project pages.</span></div>'
-                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>Sub</strong><br>'
-                '<span style="color:#666666;">Explore Hanplanet games and utility pages with your account.</span></div>'
+                '<div style="padding:12px 0;border-bottom:1px solid #d0d0d0;"><strong>HanDrive</strong><br>'
+                '<span style="color:#535353;">Upload, preview, edit, share, zip/unzip, and manage files.</span></div>'
+                '<div style="padding:12px 0;border-bottom:1px solid #d0d0d0;"><strong>Portfolio</strong><br>'
+                '<span style="color:#535353;">Build and share your public profile and project pages.</span></div>'
+                '<div style="padding:12px 0;border-bottom:1px solid #d0d0d0;"><strong>Sub</strong><br>'
+                '<span style="color:#535353;">Explore Hanplanet games and utility pages with your account.</span></div>'
                 '<div style="padding:12px 0;"><strong>Git workspace</strong><br>'
-                '<span style="color:#666666;">Manage supported HanDrive folders through the connected Git server.</span></div>'
+                '<span style="color:#535353;">Manage supported HanDrive folders through the connected Git server.</span></div>'
                 "</div>"
-                f'<p style="margin:16px 0 0;color:#666666;">Portfolio: <a href="{escape(portfolio_url)}" style="color:#222222;">{escape(portfolio_url)}</a></p>'
-                f'<p style="margin:6px 0 0;color:#666666;">Sub: <a href="{escape(sub_url)}" style="color:#222222;">{escape(sub_url)}</a></p>'
+                f'<p style="margin:16px 0 0;color:#535353;">Portfolio: <a href="{escape(portfolio_url)}" style="color:#111111;">{escape(portfolio_url)}</a></p>'
+                f'<p style="margin:6px 0 0;color:#535353;">Sub: <a href="{escape(sub_url)}" style="color:#111111;">{escape(sub_url)}</a></p>'
             ),
             cta_label="Open HanDrive",
             cta_url=handrive_url,
@@ -4930,21 +4951,21 @@ def _send_signup_welcome_email(user, ui_lang: str) -> bool:
             eyebrow="Hanplanet 계정 준비 완료",
             intro_html=(
                 f'<p style="margin:0;"><strong>{escape(username)}</strong>님, Hanplanet 가입을 환영합니다.</p>'
-                '<p style="margin:10px 0 0;color:#555555;">HanDrive에서 파일을 다루고, 포트폴리오와 멀티플레이 콘텐츠도 함께 이용해보세요.</p>'
+                '<p style="margin:10px 0 0;color:#535353;">HanDrive에서 파일을 다루고, 포트폴리오와 멀티플레이 콘텐츠도 함께 이용해보세요.</p>'
             ),
             body_html=(
                 '<div style="display:block;">'
-                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>HanDrive</strong><br>'
-                '<span style="color:#666666;">파일 업로드, 미리보기, 수정, 공유, 압축/압축해제, 파일 관리</span></div>'
-                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>포트폴리오</strong><br>'
-                '<span style="color:#666666;">내 프로필과 프로젝트 페이지 작성 및 공유</span></div>'
-                '<div style="padding:12px 0;border-bottom:1px solid #eeeeee;"><strong>기타</strong><br>'
-                '<span style="color:#666666;">계정으로 Hanplanet 멀티플레이 게임 이용</span></div>'
+                '<div style="padding:12px 0;border-bottom:1px solid #d0d0d0;"><strong>HanDrive</strong><br>'
+                '<span style="color:#535353;">파일 업로드, 미리보기, 수정, 공유, 압축/압축해제, 파일 관리</span></div>'
+                '<div style="padding:12px 0;border-bottom:1px solid #d0d0d0;"><strong>포트폴리오</strong><br>'
+                '<span style="color:#535353;">내 프로필과 프로젝트 페이지 작성 및 공유</span></div>'
+                '<div style="padding:12px 0;border-bottom:1px solid #d0d0d0;"><strong>기타</strong><br>'
+                '<span style="color:#535353;">계정으로 Hanplanet 멀티플레이 게임 이용</span></div>'
                 '<div style="padding:12px 0;"><strong>Git 작업공간</strong><br>'
-                '<span style="color:#666666;">지원되는 HanDrive 폴더를 연결된 Git 서버에서 관리</span></div>'
+                '<span style="color:#535353;">지원되는 HanDrive 폴더를 연결된 Git 서버에서 관리</span></div>'
                 "</div>"
-                f'<p style="margin:16px 0 0;color:#666666;">내 포트폴리오: <a href="{escape(portfolio_url)}" style="color:#222222;">{escape(portfolio_url)}</a></p>'
-                f'<p style="margin:6px 0 0;color:#666666;">기타: <a href="{escape(sub_url)}" style="color:#222222;">{escape(sub_url)}</a></p>'
+                f'<p style="margin:16px 0 0;color:#535353;">내 포트폴리오: <a href="{escape(portfolio_url)}" style="color:#111111;">{escape(portfolio_url)}</a></p>'
+                f'<p style="margin:6px 0 0;color:#535353;">기타: <a href="{escape(sub_url)}" style="color:#111111;">{escape(sub_url)}</a></p>'
             ),
             cta_label="HanDrive 시작하기",
             cta_url=handrive_url,
@@ -5131,6 +5152,10 @@ def _complete_login_or_require_2fa(
         return response
 
     # 3) 새 기기 → 2FA 필요
+    pending_user_id = request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)
+    if pending_user_id == user.pk and on_2fa_needed is not None:
+        return on_2fa_needed(_mask_email(user_email))
+
     code = _generate_and_store_2fa_code(user)
     email_sent = _send_2fa_email(user, code, ui_lang=resolved_ui_lang)
     if not email_sent:
@@ -5759,10 +5784,12 @@ def handrive_login(request, ui_lang=None):
     form = AuthenticationForm(request, data=request.POST or None)
 
     if request.method == "POST":
-        if request.POST.get("handrive_2fa_phase") != "verify":
-            _clear_2fa_pending_session(request)
         username_value = request.POST.get("username", "")
         target_user = _resolve_handrive_login_target_user(username_value)
+        if request.POST.get("handrive_2fa_phase") != "verify":
+            pending_user_id = request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)
+            if not target_user or pending_user_id != target_user.pk:
+                _clear_2fa_pending_session(request)
         show_captcha = _is_handrive_login_captcha_required(target_user)
 
         if settings.DEBUG:
@@ -5972,7 +5999,7 @@ def handrive_api_signup_2fa_send_code(request, ui_lang=None):
                 intro_html='<p style="margin:0;">회원가입을 계속하려면 아래 인증 코드를 입력해주세요.</p>',
                 body_html=(
                     _render_hanplanet_email_code_box(code)
-                    + '<p style="margin:0;color:#666666;">이 코드는 10분간 유효합니다. '
+                    + '<p style="margin:0;color:#535353;">이 코드는 10분간 유효합니다. '
                     '본인이 요청하지 않은 경우 이 메일을 무시하세요.</p>'
                 ),
                 cta_label="회원가입 계속하기",
@@ -9816,10 +9843,58 @@ def handrive_map_editor(request, map_path, ui_lang=None):
 
 
 @with_request_handrive_root
+def handrive_api_image_editor_remove_background(request):
+    """이미지 에디터 배경제거 API.
+
+    현재 캔버스 이미지를 multipart/form-data ``image_blob`` 으로 받아
+    rembg로 배경을 제거한 PNG 이미지를 반환한다.
+    """
+    if request.method != "POST":
+        return json_error("POST 요청만 허용됩니다.", status=405)
+
+    raw_path = str(request.POST.get("path") or "").strip()
+    try:
+        normalized = normalize_relative_path(unquote(raw_path), allow_empty=False)
+        file_path, normalized = resolve_path(normalized, must_exist=True)
+    except FileNotFoundError:
+        return json_error("파일을 찾을 수 없습니다.", status=404)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    if not file_path.is_file():
+        return json_error("파일을 찾을 수 없습니다.", status=404)
+    if file_path.suffix.lower() not in IMAGE_EDITOR_EXTENSIONS:
+        return json_error("이미지 편집기가 지원하지 않는 파일 형식입니다.", status=400)
+    if not has_handrive_write_access(request, normalized):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+    image_blob = request.FILES.get("image_blob")
+    if not image_blob:
+        return json_error("이미지 데이터가 없습니다.", status=400)
+
+    try:
+        from rembg import remove
+    except ImportError:
+        return json_error("배경제거 라이브러리가 설치되지 않았습니다.", status=500)
+
+    try:
+        input_bytes = image_blob.read()
+        output_bytes = remove(input_bytes)
+    except Exception as exc:
+        logger.exception("HanDrive image background removal failed path=%s", normalized)
+        return json_error(f"배경제거에 실패했습니다: {exc}", status=500)
+
+    response = HttpResponse(output_bytes, content_type="image/png")
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@with_request_handrive_root
 def handrive_api_image_editor_save(request):
     """이미지 에디터 저장 API.
 
-    multipart/form-data 로 image_blob(file) + path(str) 을 받아 원본 파일을 덮어쓴다.
+    multipart/form-data 로 image_blob(file) + path(str) 을 받아
+    원본과 같은 폴더에 ``_편집`` 파일명으로 새 이미지 파일을 저장한다.
     """
     if request.method != "POST":
         return json_error("POST 요청만 허용됩니다.", status=405)
@@ -9846,25 +9921,51 @@ def handrive_api_image_editor_save(request):
     if not image_blob:
         return json_error("이미지 데이터가 없습니다.", status=400)
 
-    old_size = file_path.stat().st_size
+    force_png = str(request.POST.get("force_png") or "").strip().lower() in {"1", "true", "yes", "on"}
+    output_source_path = file_path.with_suffix(".png") if force_png else file_path
+    requested_filename = str(request.POST.get("filename") or "").strip()
+    destination_path = None
+    if requested_filename and requested_filename != file_path.name:
+        try:
+            requested_stem, requested_extension = resolve_file_name_and_extension(
+                requested_filename,
+                fallback_extension=output_source_path.suffix,
+            )
+        except ValueError as exc:
+            return json_error(str(exc), status=400)
+        if force_png:
+            requested_extension = ".png"
+        if requested_extension.lower() not in IMAGE_EDITOR_EXTENSIONS:
+            return json_error("이미지 편집기가 지원하지 않는 파일 형식입니다.", status=400)
+        destination_path = handrive_numbered_output_path(file_path.parent, requested_stem, requested_extension)
+    else:
+        destination_path = handrive_edited_output_path(output_source_path)
+    destination_relative = relative_from_root(destination_path)
     new_size = image_blob.size
     try:
         enforce_handrive_scoped_quota(
             request,
-            quota_path=normalized,
-            extra_bytes=max(0, new_size - old_size),
+            quota_path=destination_relative,
+            extra_bytes=new_size,
+            extra_entries=1,
         )
     except ValueError as exc:
         return json_error(str(exc), status=400)
 
     try:
-        with file_path.open("wb") as dst:
+        with destination_path.open("wb") as dst:
             for chunk in image_blob.chunks():
                 dst.write(chunk)
     except (OSError, PermissionError) as exc:
         return _storage_unavailable_response(request, exc)
 
-    return JsonResponse({"ok": True, "path": normalized})
+    return JsonResponse({
+        "ok": True,
+        "path": destination_relative,
+        "slug_path": destination_relative,
+        "type": "file",
+        "size_display": format_handrive_bytes_display(destination_path.stat().st_size),
+    })
 
 
 @with_request_handrive_root

@@ -1,0 +1,261 @@
+body.qrbarcode-page {
+    min-height: 100dvh;
+}
+
+.qrbarcode-content {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 14px;
+}
+
+.qrbarcode-panel {
+    width: min(980px, 100%);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+    gap: 12px;
+    align-items: start;
+    border: 0;
+    background: transparent;
+    padding: 0;
+}
+
+.qrbarcode-form,
+.qrbarcode-preview {
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 12px;
+    background: var(--shared-card-bg);
+    margin-top: 0;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.qrbarcode-form {
+    display: grid;
+    gap: 14px;
+}
+
+.qrbarcode-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.qrbarcode-fieldset {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.qrbarcode-fieldset legend,
+.qrbarcode-barcode-kind-field > span,
+.qrbarcode-value-field > span {
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 0 4px;
+}
+
+.qrbarcode-option {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+    flex: 0 0 40px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--handrive-text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    cursor: pointer;
+    transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.qrbarcode-option:has(input:checked) {
+    border-color: #2563eb;
+    background: rgba(37, 99, 235, 0.12);
+    color: #1d4ed8;
+}
+
+body.theme-dark .qrbarcode-option:has(input:checked) {
+    border-color: #7aa2ff;
+    background: rgba(122, 162, 255, 0.18);
+    color: #b8ccff;
+}
+
+.qrbarcode-option:hover,
+.qrbarcode-option:focus-within {
+    border-color: var(--handrive-border-mid);
+    background: var(--handrive-hover-soft);
+}
+
+.qrbarcode-option input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+}
+
+.qrbarcode-option-icon {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+
+.qrbarcode-barcode-kind-field {
+    display: grid;
+    gap: 7px;
+}
+
+.qrbarcode-barcode-kind-field[hidden] {
+    display: none;
+}
+
+.qrbarcode-barcode-kind-field select {
+    width: 100%;
+    height: 42px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 10px;
+    background: var(--handrive-surface-muted-strong);
+    color: var(--handrive-text-stronger);
+    padding: 0 34px 0 12px;
+    box-sizing: border-box;
+    font: inherit;
+    cursor: pointer;
+}
+
+.qrbarcode-barcode-kind-field select:focus {
+    border-color: var(--handrive-border-mid);
+    outline: 2px solid rgba(37, 99, 235, 0.18);
+    outline-offset: 1px;
+}
+
+.qrbarcode-value-field {
+    display: grid;
+    gap: 7px;
+}
+
+.qrbarcode-value-field textarea {
+    width: 100%;
+    min-height: 132px;
+    resize: vertical;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 10px;
+    background: var(--handrive-surface-muted-strong);
+    color: var(--handrive-text-stronger);
+    padding: 11px 12px;
+    box-sizing: border-box;
+    font: inherit;
+    line-height: 1.45;
+}
+
+.qrbarcode-value-field textarea:focus {
+    border-color: var(--handrive-border-mid);
+    outline: 2px solid rgba(37, 99, 235, 0.18);
+    outline-offset: 1px;
+}
+
+.qrbarcode-action-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 18px;
+}
+
+.qrbarcode-status {
+    margin: 0;
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    line-height: 1.3;
+}
+
+.qrbarcode-status.is-error {
+    color: #dc2626;
+}
+
+.qrbarcode-preview[hidden] {
+    display: none;
+}
+
+.qrbarcode-preview {
+    display: grid;
+    gap: 12px;
+}
+
+.qrbarcode-preview-frame {
+    position: relative;
+    min-height: 320px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 10px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    box-sizing: border-box;
+    overflow: auto;
+    cursor: zoom-in;
+    transition: background-color 0.24s ease, border-color 0.24s ease;
+    isolation: isolate;
+}
+
+.qrbarcode-preview-frame:hover {
+    border-color: var(--handrive-border-mid);
+}
+
+.qrbarcode-preview-frame::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: rgba(0, 0, 0, 0);
+    pointer-events: none;
+    transition: background 0.24s ease;
+    z-index: 2;
+}
+
+.qrbarcode-preview-frame:hover::after {
+    background: rgba(0, 0, 0, 0.14);
+}
+
+.qrbarcode-preview-image {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    image-rendering: auto;
+    position: relative;
+    z-index: 1;
+}
+
+.qrbarcode-preview-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+@media (max-width: 760px) {
+    .qrbarcode-panel {
+        grid-template-columns: 1fr;
+    }
+
+    .qrbarcode-preview-frame {
+        min-height: 240px;
+    }
+
+    .qrbarcode-preview-actions {
+        justify-content: stretch;
+    }
+
+    .qrbarcode-preview-actions .ui-btn {
+        flex: 1 1 0;
+    }
+}

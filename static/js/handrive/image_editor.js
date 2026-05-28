@@ -25,6 +25,8 @@
         // 자유형 선택: 폴리곤 경로를 유지 (bounding box 변환 안 함)
         freeSelectPoints: [],
         freeSelectPath: null,   // confirmed polygon path (endSelectFree 후 유지)
+        freeSelectBuilding: false,
+        selectionMask: null,    // { x, y, w, h, data } exact pixel mask for auto border selection
         selection: null,        // { x, y, w, h } bounding box
         selectionImageData: null,
         selectionFloating: false,
@@ -43,8 +45,17 @@
         textItalic: false,
         entry: null,
         onDirtyChange: null,
+        backgroundRemoveUrl: "",
+        backgroundRemoveRunning: false,
+        forcePngOnSave: false,
+        panDragging: false,
+        panStartClientX: 0,
+        panStartClientY: 0,
+        panStartScrollLeft: 0,
+        panStartScrollTop: 0,
     };
 
+    var imageEditorSurface;
     var mainCanvas, mainCtx, overlayCanvas, overlayCtx, textOverlay;
     var canvasArea, canvasWrap;
     var coordsDisplay, sizeDisplay, zoomDisplay;
@@ -71,7 +82,12 @@
         var opts = options || {};
         state.entry = opts.entry || null;
         state.onDirtyChange = opts.onDirtyChange || null;
+        state.backgroundRemoveUrl = opts.backgroundRemoveUrl || "";
+        state.backgroundRemoveRunning = false;
+        state.forcePngOnSave = false;
+        state.panDragging = false;
 
+        imageEditorSurface = document.getElementById("handrive-image-editor-surface");
         mainCanvas    = document.getElementById("ie-main-canvas");
         overlayCanvas = document.getElementById("ie-overlay-canvas");
         textOverlay   = document.getElementById("ie-text-overlay");
@@ -97,10 +113,13 @@
         state.undoHistory = [];
         state.redoHistory = [];
         state.selection = null;
+        state.selectionMask = null;
         state.selectionImageData = null;
         state.selectionFloating = false;
         state.selectionDragging = false;
         state.freeSelectPath = null;
+        state.freeSelectBuilding = false;
+        state.selectionMask = null;
         state.isDrawing = false;
         state.textOverlayActive = false;
         state.zoom = 1.0;
@@ -153,6 +172,12 @@
 
         state.entry = null;
         state.onDirtyChange = null;
+        state.backgroundRemoveUrl = "";
+        state.backgroundRemoveRunning = false;
+        state.forcePngOnSave = false;
+        state.panDragging = false;
+        if (canvasArea) canvasArea.classList.remove("is-panning");
+        setEditorBusy(false);
         state.isDirty = false;
     }
 
@@ -219,16 +244,28 @@
         var ribbon = document.getElementById("ie-ribbon");
         if (!ribbon) return;
 
+        ribbon.querySelectorAll("button").forEach(function (btn) {
+            btn.type = "button";
+        });
+
         ribbon.querySelectorAll(".ie-tool-btn[data-tool]").forEach(function (btn) {
-            btn.addEventListener("click", function () { setActiveTool(btn.dataset.tool); });
+            btn.addEventListener("click", function (event) {
+                event.preventDefault();
+                setActiveTool(btn.dataset.tool);
+            });
         });
 
         ribbon.querySelectorAll(".ie-action-btn[data-action]").forEach(function (btn) {
-            btn.addEventListener("click", function () { handleAction(btn.dataset.action); });
+            btn.addEventListener("click", function (event) {
+                event.preventDefault();
+                if (state.backgroundRemoveRunning) return;
+                handleAction(btn.dataset.action);
+            });
         });
 
         ribbon.querySelectorAll(".ie-mode-btn[data-shape-mode]").forEach(function (btn) {
-            btn.addEventListener("click", function () {
+            btn.addEventListener("click", function (event) {
+                event.preventDefault();
                 state.shapeMode = btn.dataset.shapeMode;
                 ribbon.querySelectorAll(".ie-mode-btn[data-shape-mode]").forEach(function (b) {
                     b.classList.toggle("is-active", b === btn);
@@ -267,7 +304,8 @@
 
         var swapBtn = document.getElementById("ie-swatch-swap");
         if (swapBtn) {
-            swapBtn.addEventListener("click", function () {
+            swapBtn.addEventListener("click", function (event) {
+                event.preventDefault();
                 var t = state.primaryColor;
                 state.primaryColor   = state.secondaryColor;
                 state.secondaryColor = t;
@@ -282,6 +320,9 @@
 
     function setActiveTool(tool) {
         if (state.textOverlayActive) commitTextOverlay();
+        if (tool !== "select-free" && state.freeSelectBuilding) {
+            cancelFreeSelectBuild();
+        }
         if (tool !== "select-rect" && tool !== "select-free" && state.selection) {
             flattenFloatingSelection();
             clearSelection();
@@ -312,6 +353,8 @@
             case "rotate-ccw": rotateCanvas(-90);              break;
             case "flip-h":     flipCanvas("h");                break;
             case "flip-v":     flipCanvas("v");                break;
+            case "auto-select-border": autoSelectBorder();     break;
+            case "remove-bg":  removeBackground();             break;
             case "resize":     openResizeModal();              break;
             case "crop":       cropToSelection();              break;
             case "zoom-fit":   zoomFit();                      break;
@@ -335,16 +378,18 @@
         overlayCanvas.addEventListener("pointermove",  onPointerMove);
         overlayCanvas.addEventListener("pointerup",    onPointerUp);
         overlayCanvas.addEventListener("pointerleave", onPointerLeave);
+        overlayCanvas.addEventListener("pointercancel", onPointerCancel);
+        overlayCanvas.addEventListener("auxclick", function (e) {
+            if (e.button === 1) e.preventDefault();
+        });
 
         boundContextMenu = function (e) { e.preventDefault(); };
         overlayCanvas.addEventListener("contextmenu", boundContextMenu);
 
         if (canvasArea) {
             boundWheel = function (e) {
-                if (e.ctrlKey || e.metaKey) {
-                    e.preventDefault();
-                    setZoom(state.zoom * (e.deltaY < 0 ? 1.15 : (1 / 1.15)));
-                }
+                e.preventDefault();
+                setZoom(state.zoom * (e.deltaY < 0 ? 1.15 : (1 / 1.15)));
             };
             canvasArea.addEventListener("wheel", boundWheel, { passive: false });
         }
@@ -368,9 +413,23 @@
 
     function onPointerDown(e) {
         if (!mainCanvas) return;
+        if (state.backgroundRemoveRunning) {
+            e.preventDefault();
+            return;
+        }
+        if (e.button === 1) {
+            e.preventDefault();
+            beginCanvasPan(e);
+            return;
+        }
+        if (e.button === 2) {
+            e.preventDefault();
+            handleRightPointerDown(e);
+            return;
+        }
         overlayCanvas.setPointerCapture(e.pointerId);
         var pos = clientToCanvas(e.clientX, e.clientY);
-        var useSecondary = (e.button === 2);
+        var useSecondary = false;
 
         state.isDrawing  = true;
         state.drawStartX = pos.x;
@@ -394,7 +453,10 @@
             state.isDrawing = false;
             if (state.textOverlayActive) commitTextOverlay();
             else activateTextOverlay(pos.x, pos.y);
-        } else if (tool === "select-rect" || tool === "select-free") {
+        } else if (tool === "select-free") {
+            state.isDrawing = false;
+            handleFreeSelectClick(pos.x, pos.y, e.detail >= 2);
+        } else if (tool === "select-rect") {
             // 기존 선택 영역 안쪽 클릭 → 드래그 이동
             if (state.selection && state.selection.w > 0 && isInsideSelection(pos.x, pos.y)) {
                 if (!state.selectionFloating) liftSelection();
@@ -404,20 +466,47 @@
             } else {
                 if (state.selectionFloating) flattenFloatingSelection();
                 clearSelection();
-                if (tool === "select-rect") beginSelectRect(pos.x, pos.y);
-                else beginSelectFree(pos.x, pos.y);
+                beginSelectRect(pos.x, pos.y);
             }
         } else {
             beginShape(pos.x, pos.y, useSecondary);
         }
     }
 
+    function handleRightPointerDown(e) {
+        overlayCanvas.setPointerCapture(e.pointerId);
+        var pos = clientToCanvas(e.clientX, e.clientY);
+        if (state.textOverlayActive) commitTextOverlay();
+        setActiveTool("select-rect");
+        state.isDrawing = true;
+        state.drawStartX = pos.x;
+        state.drawStartY = pos.y;
+        state.lastX = pos.x;
+        state.lastY = pos.y;
+        if (state.selection && state.selection.w > 0 && isInsideSelection(pos.x, pos.y)) {
+            if (!state.selectionFloating) liftSelection();
+            state.selectionDragging = true;
+            state.selectionDragOffsetX = pos.x - state.selection.x;
+            state.selectionDragOffsetY = pos.y - state.selection.y;
+            return;
+        }
+        if (state.selectionFloating) flattenFloatingSelection();
+        clearSelection();
+        beginSelectRect(pos.x, pos.y);
+    }
+
     function onPointerMove(e) {
-        if (!state.isDrawing) return;
+        if (state.panDragging) {
+            continueCanvasPan(e);
+            return;
+        }
+        if ((!state.isDrawing && !state.freeSelectBuilding) || state.backgroundRemoveRunning) return;
         var pos = clientToCanvas(e.clientX, e.clientY);
         var tool = state.activeTool;
 
-        if (state.selectionDragging && state.selection) {
+        if (tool === "select-free" && state.freeSelectBuilding) {
+            continueSelectFree(pos.x, pos.y);
+        } else if (state.selectionDragging && state.selection) {
             // 선택 영역 이동
             var dx = pos.x - state.lastX;
             var dy = pos.y - state.lastY;
@@ -428,14 +517,16 @@
                     return [p[0] + dx, p[1] + dy];
                 });
             }
+            if (state.selectionMask) {
+                state.selectionMask.x += dx;
+                state.selectionMask.y += dy;
+            }
         } else if (tool === "pencil" || tool === "brush") {
             continueStroke(pos.x, pos.y);
         } else if (tool === "eraser") {
             continueErase(pos.x, pos.y);
         } else if (tool === "select-rect") {
             continueSelectRect(pos.x, pos.y);
-        } else if (tool === "select-free") {
-            continueSelectFree(pos.x, pos.y);
         } else if (isShapeTool(tool)) {
             previewShape(pos.x, pos.y);
         }
@@ -445,7 +536,11 @@
     }
 
     function onPointerUp(e) {
-        if (!state.isDrawing) return;
+        if (state.panDragging) {
+            endCanvasPan(e);
+            return;
+        }
+        if (!state.isDrawing || state.backgroundRemoveRunning) return;
         state.isDrawing = false;
         var pos = clientToCanvas(e.clientX, e.clientY);
         var tool = state.activeTool;
@@ -459,15 +554,46 @@
             endErase();
         } else if (tool === "select-rect") {
             endSelectRect(pos.x, pos.y);
-        } else if (tool === "select-free") {
-            endSelectFree(pos.x, pos.y);
         } else if (isShapeTool(tool)) {
             commitShape(pos.x, pos.y, e.button === 2);
         }
     }
 
     function onPointerLeave(e) {
+        if (state.panDragging) return;
         if (state.isDrawing) onPointerUp(e);
+    }
+
+    function onPointerCancel(e) {
+        if (state.panDragging) endCanvasPan(e);
+    }
+
+    function beginCanvasPan(e) {
+        if (!canvasArea || !overlayCanvas) return;
+        overlayCanvas.setPointerCapture(e.pointerId);
+        state.panDragging = true;
+        state.isDrawing = false;
+        state.selectionDragging = false;
+        state.panStartClientX = e.clientX;
+        state.panStartClientY = e.clientY;
+        state.panStartScrollLeft = canvasArea.scrollLeft;
+        state.panStartScrollTop = canvasArea.scrollTop;
+        canvasArea.classList.add("is-panning");
+    }
+
+    function continueCanvasPan(e) {
+        if (!canvasArea) return;
+        e.preventDefault();
+        canvasArea.scrollLeft = state.panStartScrollLeft - (e.clientX - state.panStartClientX);
+        canvasArea.scrollTop = state.panStartScrollTop - (e.clientY - state.panStartClientY);
+    }
+
+    function endCanvasPan(e) {
+        if (overlayCanvas && e && typeof e.pointerId !== "undefined") {
+            try { overlayCanvas.releasePointerCapture(e.pointerId); } catch (err) { /* 이미 해제된 경우 무시 */ }
+        }
+        state.panDragging = false;
+        if (canvasArea) canvasArea.classList.remove("is-panning");
     }
 
     function isShapeTool(tool) {
@@ -616,10 +742,22 @@
         if (!state.selection) return false;
         var s = state.selection;
         if (x < s.x || x > s.x + s.w || y < s.y || y > s.y + s.h) return false;
+        if (state.selectionMask) {
+            return isInsideSelectionMask(x, y);
+        }
         if (state.freeSelectPath && state.freeSelectPath.length > 2) {
             return pointInPolygon(x, y, state.freeSelectPath);
         }
         return true;
+    }
+
+    function isInsideSelectionMask(x, y) {
+        var mask = state.selectionMask;
+        if (!mask) return false;
+        var mx = Math.floor(x - mask.x);
+        var my = Math.floor(y - mask.y);
+        if (mx < 0 || my < 0 || mx >= mask.w || my >= mask.h) return false;
+        return Boolean(mask.data[my * mask.w + mx]);
     }
 
     function pointInPolygon(x, y, polygon) {
@@ -645,41 +783,19 @@
         var tmpCtx = tmp.getContext("2d");
         var hasPoly = state.freeSelectPath && state.freeSelectPath.length > 2;
 
-        if (hasPoly) {
-            tmpCtx.save();
-            tmpCtx.beginPath();
-            state.freeSelectPath.forEach(function (p, i) {
-                var lx = p[0] - s.x, ly = p[1] - s.y;
-                if (i === 0) tmpCtx.moveTo(lx, ly);
-                else tmpCtx.lineTo(lx, ly);
-            });
-            tmpCtx.closePath();
-            tmpCtx.clip();
-        }
         tmpCtx.drawImage(mainCanvas, s.x, s.y, s.w, s.h, 0, 0, s.w, s.h);
-        if (hasPoly) tmpCtx.restore();
+        if (hasPoly) applyPolygonMaskToCanvas(tmpCtx, s.w, s.h, state.freeSelectPath, s.x, s.y);
+        if (state.selectionMask) applySelectionMaskToCanvas(tmpCtx, s.w, s.h);
         state.selectionImageData = tmpCtx.getImageData(0, 0, s.w, s.h);
 
-        // 원래 위치를 배경색으로 채우기
-        mainCtx.save();
-        if (hasPoly) {
-            mainCtx.beginPath();
-            state.freeSelectPath.forEach(function (p, i) {
-                if (i === 0) mainCtx.moveTo(p[0], p[1]);
-                else mainCtx.lineTo(p[0], p[1]);
-            });
-            mainCtx.closePath();
-            mainCtx.clip();
-        }
-        mainCtx.fillStyle = state.secondaryColor;
-        mainCtx.fillRect(s.x, s.y, s.w, s.h);
-        mainCtx.restore();
+        clearSelectionAreaToTransparent(s, hasPoly ? state.freeSelectPath : null, state.selectionMask);
 
         state.selectionFloating = true;
     }
 
     function beginSelectRect(x, y) {
         state.freeSelectPath = null;
+        state.selectionMask = null;
         state.selection = { x: x, y: y, w: 0, h: 0 };
     }
 
@@ -702,35 +818,98 @@
         }
     }
 
+    function handleFreeSelectClick(x, y, shouldClose) {
+        if (state.freeSelectBuilding) {
+            if (shouldClose || isNearFreeSelectStart(x, y)) {
+                endSelectFree();
+                return;
+            }
+            addFreeSelectPoint(x, y);
+            return;
+        }
+
+        if (state.selection && state.selection.w > 0 && isInsideSelection(x, y)) {
+            if (!state.selectionFloating) liftSelection();
+            state.isDrawing = true;
+            state.selectionDragging = true;
+            state.selectionDragOffsetX = x - state.selection.x;
+            state.selectionDragOffsetY = y - state.selection.y;
+            state.lastX = x;
+            state.lastY = y;
+            return;
+        }
+
+        if (state.selectionFloating) flattenFloatingSelection();
+        clearSelection();
+        beginSelectFree(x, y);
+    }
+
     function beginSelectFree(x, y) {
         state.freeSelectPath = null;
+        state.selectionMask = null;
         state.freeSelectPoints = [[x, y]];
+        state.freeSelectBuilding = true;
         overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        drawFreeSelectPreview(x, y);
+    }
+
+    function addFreeSelectPoint(x, y) {
+        state.freeSelectPoints.push([x, y]);
+        drawFreeSelectPreview(x, y);
     }
 
     function continueSelectFree(x, y) {
-        state.freeSelectPoints.push([x, y]);
+        if (!state.freeSelectBuilding) return;
+        drawFreeSelectPreview(x, y);
+    }
+
+    function drawFreeSelectPreview(x, y) {
         overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (!state.freeSelectPoints.length) return;
+        var lineWidth = screenPxToCanvasPx(1);
+        var dashSize = screenPxToCanvasPx(4);
+        var pointRadius = screenPxToCanvasPx(3.5);
         overlayCtx.save();
         overlayCtx.beginPath();
-        overlayCtx.setLineDash([4, 4]);
+        overlayCtx.setLineDash([dashSize, dashSize]);
         overlayCtx.strokeStyle = "#000";
-        overlayCtx.lineWidth = 1;
+        overlayCtx.lineWidth = lineWidth;
         state.freeSelectPoints.forEach(function (p, i) {
             if (i === 0) overlayCtx.moveTo(p[0], p[1]);
             else overlayCtx.lineTo(p[0], p[1]);
         });
+        if (state.freeSelectPoints.length) overlayCtx.lineTo(x, y);
         overlayCtx.stroke();
+        overlayCtx.setLineDash([]);
+        state.freeSelectPoints.forEach(function (p, i) {
+            overlayCtx.beginPath();
+            overlayCtx.fillStyle = i === 0 ? "#fff" : "#000";
+            overlayCtx.strokeStyle = "#000";
+            overlayCtx.lineWidth = lineWidth;
+            overlayCtx.arc(p[0], p[1], pointRadius, 0, Math.PI * 2);
+            overlayCtx.fill();
+            overlayCtx.stroke();
+        });
         overlayCtx.setLineDash([]);
         overlayCtx.restore();
     }
 
-    function endSelectFree(x, y) {
-        if (state.freeSelectPoints.length < 3) { clearSelection(); return; }
+    function isNearFreeSelectStart(x, y) {
+        if (!state.freeSelectPoints.length || state.freeSelectPoints.length < 3) return false;
+        var first = state.freeSelectPoints[0];
+        var dx = x - first[0];
+        var dy = y - first[1];
+        var threshold = Math.max(6, 8 / Math.max(0.25, state.zoom));
+        return dx * dx + dy * dy <= threshold * threshold;
+    }
+
+    function endSelectFree() {
+        if (state.freeSelectPoints.length < 3) { cancelFreeSelectBuild(); return; }
         // 폴리곤 경로 보존 (사각형으로 변환하지 않음)
         var pts = state.freeSelectPoints.slice();
         state.freeSelectPath = pts;
         state.freeSelectPoints = [];
+        state.freeSelectBuilding = false;
 
         var xs = pts.map(function (p) { return p[0]; });
         var ys = pts.map(function (p) { return p[1]; });
@@ -747,11 +926,20 @@
         }
     }
 
+    function cancelFreeSelectBuild() {
+        state.freeSelectPoints = [];
+        state.freeSelectBuilding = false;
+        if (overlayCtx) overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    }
+
     function clearSelection() {
         state.selection = null;
+        state.selectionMask = null;
         state.selectionImageData = null;
         state.selectionFloating  = false;
         state.selectionDragging  = false;
+        state.freeSelectPoints   = [];
+        state.freeSelectBuilding = false;
         state.freeSelectPath     = null;
         if (state.marchingRafId) {
             cancelAnimationFrame(state.marchingRafId);
@@ -765,6 +953,7 @@
         drawImageDataSkippingTransparent(mainCtx, state.selectionImageData, state.selection.x, state.selection.y);
         state.selectionFloating  = false;
         state.selectionImageData = null;
+        state.selectionMask = null;
         commitHistoryState();
     }
 
@@ -787,7 +976,7 @@
         for (var row = 0; row < copyH; row++) {
             for (var col = 0; col < copyW; col++) {
                 var srcIdx = ((srcY + row) * srcW + (srcX + col)) * 4;
-                if (srcData[srcIdx + 3] === 0) continue;
+                if (srcData[srcIdx + 3] <= 1) continue;
                 var dstIdx = (row * copyW + col) * 4;
                 dstData[dstIdx] = srcData[srcIdx];
                 dstData[dstIdx + 1] = srcData[srcIdx + 1];
@@ -804,6 +993,205 @@
         startMarchingAnts();
     }
 
+    function autoSelectBorder() {
+        if (!mainCtx || !state.canvasWidth || !state.canvasHeight) return;
+        if (state.selectionFloating) flattenFloatingSelection();
+        var imageData = mainCtx.getImageData(0, 0, state.canvasWidth, state.canvasHeight);
+        var data = imageData.data;
+        var hasTransparency = false;
+        for (var ai = 3; ai < data.length; ai += 4) {
+            if (data[ai] < 250) {
+                hasTransparency = true;
+                break;
+            }
+        }
+
+        var width = state.canvasWidth;
+        var height = state.canvasHeight;
+        var bg = getCanvasEdgeBackgroundColor(data, width, height);
+        var foreground = new Uint8Array(width * height);
+        var minX = state.canvasWidth, minY = state.canvasHeight, maxX = -1, maxY = -1;
+        for (var y = 0; y < height; y++) {
+            for (var x = 0; x < width; x++) {
+                var pixelIndex = y * width + x;
+                var idx = pixelIndex * 4;
+                var isForeground = hasTransparency
+                    ? data[idx + 3] > 12
+                    : colorDistanceSq(data[idx], data[idx + 1], data[idx + 2], bg[0], bg[1], bg[2]) > 34 * 34;
+                if (!isForeground) continue;
+                foreground[pixelIndex] = 1;
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
+            }
+        }
+
+        if (maxX < minX || maxY < minY) {
+            window.alert(getEditorText("image_editor_auto_select_border_empty", "선택할 테두리를 찾을 수 없습니다."));
+            return;
+        }
+        var borderPath = traceForegroundBorder(foreground, width, height, minX, minY, maxX, maxY);
+        state.freeSelectPath = borderPath.length > 2 ? borderPath : null;
+        state.selectionMask = createSelectionMaskFromForeground(foreground, width, minX, minY, maxX, maxY);
+        state.selection = {
+            x: minX,
+            y: minY,
+            w: Math.max(1, maxX - minX + 1),
+            h: Math.max(1, maxY - minY + 1),
+        };
+        startMarchingAnts();
+    }
+
+    function traceForegroundBorder(foreground, width, height, minX, minY, maxX, maxY) {
+        var leftEdge = [];
+        var rightEdge = [];
+        for (var y = minY; y <= maxY; y++) {
+            var left = -1;
+            var right = -1;
+            for (var x = minX; x <= maxX; x++) {
+                if (!foreground[y * width + x]) continue;
+                if (left < 0) left = x;
+                right = x;
+            }
+            if (left < 0) continue;
+            leftEdge.push([left, y]);
+            rightEdge.push([right + 1, y]);
+        }
+        if (!leftEdge.length) return [];
+        rightEdge.reverse();
+        return simplifyPolygonPath(leftEdge.concat(rightEdge), 1.5);
+    }
+
+    function createSelectionMaskFromForeground(foreground, width, minX, minY, maxX, maxY) {
+        var maskW = Math.max(1, maxX - minX + 1);
+        var maskH = Math.max(1, maxY - minY + 1);
+        var maskData = new Uint8Array(maskW * maskH);
+        for (var y = 0; y < maskH; y++) {
+            for (var x = 0; x < maskW; x++) {
+                maskData[y * maskW + x] = foreground[(minY + y) * width + (minX + x)] ? 1 : 0;
+            }
+        }
+        return { x: minX, y: minY, w: maskW, h: maskH, data: maskData };
+    }
+
+    function simplifyPolygonPath(points, tolerance) {
+        if (points.length <= 4) return points;
+        var simplified = [points[0]];
+        for (var i = 1; i < points.length - 1; i++) {
+            var prev = simplified[simplified.length - 1];
+            var current = points[i];
+            var next = points[i + 1];
+            var sameDirection =
+                Math.abs((current[0] - prev[0]) * (next[1] - current[1]) - (current[1] - prev[1]) * (next[0] - current[0])) <= tolerance;
+            if (!sameDirection) simplified.push(current);
+        }
+        simplified.push(points[points.length - 1]);
+        return simplified;
+    }
+
+    function getCanvasEdgeBackgroundColor(data, width, height) {
+        var samples = [];
+        var sampleSize = Math.min(12, width, height);
+        function addSample(x, y) {
+            var idx = (y * width + x) * 4;
+            samples.push([data[idx], data[idx + 1], data[idx + 2]]);
+        }
+        for (var i = 0; i < sampleSize; i++) {
+            addSample(i, 0);
+            addSample(width - 1 - i, 0);
+            addSample(i, height - 1);
+            addSample(width - 1 - i, height - 1);
+            addSample(0, i);
+            addSample(width - 1, i);
+            addSample(0, height - 1 - i);
+            addSample(width - 1, height - 1 - i);
+        }
+        var r = 0, g = 0, b = 0;
+        samples.forEach(function (sample) {
+            r += sample[0]; g += sample[1]; b += sample[2];
+        });
+        var count = Math.max(1, samples.length);
+        return [Math.round(r / count), Math.round(g / count), Math.round(b / count)];
+    }
+
+    function colorDistanceSq(r1, g1, b1, r2, g2, b2) {
+        var dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+        return dr * dr + dg * dg + db * db;
+    }
+
+    function applySelectionMaskToCanvas(ctx, width, height) {
+        if (!state.selectionMask) return;
+        var mask = state.selectionMask;
+        var imageData = ctx.getImageData(0, 0, width, height);
+        for (var y = 0; y < height; y++) {
+            for (var x = 0; x < width; x++) {
+                if (x < mask.w && y < mask.h && mask.data[y * mask.w + x]) continue;
+                imageData.data[(y * width + x) * 4 + 3] = 0;
+            }
+        }
+        ctx.putImageData(imageData, 0, 0);
+    }
+
+    function applyPolygonMaskToCanvas(ctx, width, height, polyPath, offsetX, offsetY) {
+        if (!polyPath || polyPath.length <= 2) return;
+        var imageData = ctx.getImageData(0, 0, width, height);
+        for (var y = 0; y < height; y++) {
+            for (var x = 0; x < width; x++) {
+                if (pointInPolygon(offsetX + x + 0.5, offsetY + y + 0.5, polyPath)) continue;
+                imageData.data[(y * width + x) * 4 + 3] = 0;
+            }
+        }
+        ctx.putImageData(imageData, 0, 0);
+    }
+
+    function clearSelectionAreaToTransparent(selection, polyPath, mask) {
+        if (!selection) return;
+        if (mask) {
+            clearSelectionMaskToTransparent(selection, mask);
+            return;
+        }
+        if (polyPath && polyPath.length > 2) {
+            clearSelectionPolygonToTransparent(selection, polyPath);
+            return;
+        }
+        mainCtx.save();
+        mainCtx.clearRect(selection.x, selection.y, selection.w, selection.h);
+        mainCtx.restore();
+        state.forcePngOnSave = true;
+        setDirty(true);
+    }
+
+    function clearSelectionPolygonToTransparent(selection, polyPath) {
+        var s = selection;
+        var imageData = mainCtx.getImageData(s.x, s.y, s.w, s.h);
+        for (var y = 0; y < s.h; y++) {
+            for (var x = 0; x < s.w; x++) {
+                if (!pointInPolygon(s.x + x + 0.5, s.y + y + 0.5, polyPath)) continue;
+                imageData.data[(y * s.w + x) * 4 + 3] = 0;
+            }
+        }
+        mainCtx.putImageData(imageData, s.x, s.y);
+        state.forcePngOnSave = true;
+        setDirty(true);
+    }
+
+    function clearSelectionMaskToTransparent(selection, mask) {
+        if (!selection || !mask) return;
+        var s = selection;
+        var imageData = mainCtx.getImageData(s.x, s.y, s.w, s.h);
+        for (var y = 0; y < s.h; y++) {
+            for (var x = 0; x < s.w; x++) {
+                if (!mask.data[y * mask.w + x]) continue;
+                var idx = (y * s.w + x) * 4;
+                imageData.data[idx + 3] = 0;
+            }
+        }
+        mainCtx.putImageData(imageData, s.x, s.y);
+        state.forcePngOnSave = true;
+        setDirty(true);
+    }
+
     // 복사 (시스템 클립보드 + 내부 클립보드)
     function copySelection() {
         if (!state.selection || state.selection.w <= 0) return;
@@ -813,19 +1201,9 @@
         var tmpCtx = tmp.getContext("2d");
         var hasPoly = state.freeSelectPath && state.freeSelectPath.length > 2;
 
-        if (hasPoly) {
-            tmpCtx.save();
-            tmpCtx.beginPath();
-            state.freeSelectPath.forEach(function (p, i) {
-                var lx = p[0] - s.x, ly = p[1] - s.y;
-                if (i === 0) tmpCtx.moveTo(lx, ly);
-                else tmpCtx.lineTo(lx, ly);
-            });
-            tmpCtx.closePath();
-            tmpCtx.clip();
-        }
         tmpCtx.drawImage(mainCanvas, s.x, s.y, s.w, s.h, 0, 0, s.w, s.h);
-        if (hasPoly) tmpCtx.restore();
+        if (hasPoly) applyPolygonMaskToCanvas(tmpCtx, s.w, s.h, state.freeSelectPath, s.x, s.y);
+        if (state.selectionMask) applySelectionMaskToCanvas(tmpCtx, s.w, s.h);
 
         state.selectionImageData = tmpCtx.getImageData(0, 0, s.w, s.h);
 
@@ -843,19 +1221,7 @@
         if (!state.selection || state.selection.w <= 0) return;
         copySelection();
         var s = state.selection;
-        mainCtx.save();
-        if (state.freeSelectPath && state.freeSelectPath.length > 2) {
-            mainCtx.beginPath();
-            state.freeSelectPath.forEach(function (p, i) {
-                if (i === 0) mainCtx.moveTo(p[0], p[1]);
-                else mainCtx.lineTo(p[0], p[1]);
-            });
-            mainCtx.closePath();
-            mainCtx.clip();
-        }
-        mainCtx.fillStyle = state.secondaryColor;
-        mainCtx.fillRect(s.x, s.y, s.w, s.h);
-        mainCtx.restore();
+        clearSelectionAreaToTransparent(s, state.freeSelectPath, state.selectionMask);
         clearSelection();
         commitHistoryState();
     }
@@ -918,19 +1284,7 @@
     function deleteSelection() {
         if (!state.selection || state.selection.w <= 0) return;
         var s = state.selection;
-        mainCtx.save();
-        if (state.freeSelectPath && state.freeSelectPath.length > 2) {
-            mainCtx.beginPath();
-            state.freeSelectPath.forEach(function (p, i) {
-                if (i === 0) mainCtx.moveTo(p[0], p[1]);
-                else mainCtx.lineTo(p[0], p[1]);
-            });
-            mainCtx.closePath();
-            mainCtx.clip();
-        }
-        mainCtx.fillStyle = state.secondaryColor;
-        mainCtx.fillRect(s.x, s.y, s.w, s.h);
-        mainCtx.restore();
+        clearSelectionAreaToTransparent(s, state.freeSelectPath, state.selectionMask);
         clearSelection();
         commitHistoryState();
     }
@@ -953,9 +1307,12 @@
 
     function drawSelectionBorder(ctx, sel, polyPath, offset) {
         if (!sel || sel.w <= 0 || sel.h <= 0) return;
+        var lineWidth = screenPxToCanvasPx(1);
+        var dashSize = screenPxToCanvasPx(6);
+        var dashOffset = screenPxToCanvasPx(offset);
         ctx.save();
-        ctx.lineWidth = 1;
-        ctx.setLineDash([6, 6]);
+        ctx.lineWidth = lineWidth;
+        ctx.setLineDash([dashSize, dashSize]);
 
         if (polyPath && polyPath.length > 2) {
             // 폴리곤 marching ants
@@ -970,20 +1327,24 @@
                 ctx.closePath();
                 ctx.stroke();
             }
-            drawPoly(offset, "#000");
-            drawPoly(offset - 6, "#fff");
+            drawPoly(dashOffset, "#000");
+            drawPoly(dashOffset - dashSize, "#fff");
         } else {
             // 사각형 marching ants
-            ctx.lineDashOffset = -offset;
+            ctx.lineDashOffset = -dashOffset;
             ctx.strokeStyle = "#000";
             ctx.strokeRect(sel.x + 0.5, sel.y + 0.5, sel.w, sel.h);
-            ctx.lineDashOffset = -offset + 6;
+            ctx.lineDashOffset = -dashOffset + dashSize;
             ctx.strokeStyle = "#fff";
             ctx.strokeRect(sel.x + 0.5, sel.y + 0.5, sel.w, sel.h);
         }
 
         ctx.setLineDash([]);
         ctx.restore();
+    }
+
+    function screenPxToCanvasPx(value) {
+        return value / Math.max(0.125, state.zoom || 1);
     }
 
     // ── 도형 도구 ─────────────────────────────────────────────────────────
@@ -1272,7 +1633,10 @@
 
     function setZoom(newZoom) {
         state.zoom = Math.max(0.125, Math.min(8, newZoom));
-        if (canvasWrap) canvasWrap.style.transform = "scale(" + state.zoom + ")";
+        if (canvasWrap) {
+            canvasWrap.style.transform = "scale(" + state.zoom + ")";
+            canvasWrap.style.setProperty("--ie-inverse-zoom", String(1 / state.zoom));
+        }
         if (zoomDisplay) zoomDisplay.textContent = Math.round(state.zoom * 100) + "%";
         if (canvasArea) canvasArea.classList.toggle("show-pixel-grid", state.zoom > 4);
     }
@@ -1317,6 +1681,127 @@
         if (state.onDirtyChange) state.onDirtyChange(isDirty);
     }
 
+    function getEditorText(key, fallback) {
+        var script = document.getElementById("handrive-i18n");
+        if (!script) return fallback;
+        try {
+            var data = JSON.parse(script.textContent || "{}");
+            return data && data[key] ? data[key] : fallback;
+        } catch (error) {
+            return fallback;
+        }
+    }
+
+    function getCsrfToken() {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta && meta.content) return meta.content;
+        var input = document.querySelector('input[name="csrfmiddlewaretoken"]');
+        return input ? input.value : "";
+    }
+
+    function setActionButtonBusy(action, busy) {
+        var btn = document.querySelector('.ie-action-btn[data-action="' + action + '"]');
+        if (!btn) return;
+        btn.disabled = Boolean(busy);
+        btn.classList.toggle("is-busy", Boolean(busy));
+        btn.setAttribute("aria-busy", busy ? "true" : "false");
+    }
+
+    function setEditorBusy(busy) {
+        if (!imageEditorSurface) return;
+        imageEditorSurface.classList.toggle("is-processing", Boolean(busy));
+        var overlay = imageEditorSurface.querySelector(".ie-processing-overlay");
+        if (busy && !overlay) {
+            overlay = document.createElement("div");
+            overlay.className = "ie-processing-overlay";
+            overlay.setAttribute("role", "status");
+            overlay.setAttribute("aria-live", "polite");
+            overlay.innerHTML = '<span class="ie-processing-spinner" aria-hidden="true"></span><span class="ie-processing-text">' +
+                getEditorText("image_editor_remove_bg_processing", "배경제거 중...") +
+                "</span>";
+            imageEditorSurface.appendChild(overlay);
+        }
+        if (overlay) overlay.hidden = !busy;
+    }
+
+    function drawBlobToCanvas(blob, onDone) {
+        var img = new Image();
+        var objectUrl = URL.createObjectURL(blob);
+        img.onload = function () {
+            URL.revokeObjectURL(objectUrl);
+            state.canvasWidth = img.naturalWidth || img.width;
+            state.canvasHeight = img.naturalHeight || img.height;
+            resizeCanvasTo(state.canvasWidth, state.canvasHeight);
+            mainCtx.clearRect(0, 0, state.canvasWidth, state.canvasHeight);
+            mainCtx.drawImage(img, 0, 0);
+            clearSelection();
+            updateSizeDisplay();
+            commitHistoryState();
+            if (typeof onDone === "function") onDone();
+        };
+        img.onerror = function () {
+            URL.revokeObjectURL(objectUrl);
+            window.alert(getEditorText("image_editor_remove_bg_error", "배경제거 실패"));
+            if (typeof onDone === "function") onDone();
+        };
+        img.src = objectUrl;
+    }
+
+    function removeBackground() {
+        if (!mainCanvas || state.backgroundRemoveRunning) return;
+        if (!state.backgroundRemoveUrl) {
+            window.alert(getEditorText("image_editor_remove_bg_error", "배경제거 실패"));
+            return;
+        }
+        if (state.selectionFloating) flattenFloatingSelection();
+        state.backgroundRemoveRunning = true;
+        setActionButtonBusy("remove-bg", true);
+        setEditorBusy(true);
+        mainCanvas.toBlob(function (blob) {
+            if (!blob) {
+                state.backgroundRemoveRunning = false;
+                setActionButtonBusy("remove-bg", false);
+                setEditorBusy(false);
+                window.alert(getEditorText("image_editor_remove_bg_error", "배경제거 실패"));
+                return;
+            }
+            var fd = new FormData();
+            fd.append("image_blob", blob, "image.png");
+            fd.append("path", state.entry && state.entry.path ? state.entry.path : "");
+            var csrfToken = getCsrfToken();
+            if (csrfToken) fd.append("csrfmiddlewaretoken", csrfToken);
+            fetch(state.backgroundRemoveUrl, {
+                method: "POST",
+                headers: csrfToken
+                    ? { "X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest" }
+                    : { "X-Requested-With": "XMLHttpRequest" },
+                body: fd,
+            })
+                .then(function (response) {
+                    if (!response.ok) {
+                        return response.json().catch(function () { return {}; }).then(function (data) {
+                            throw new Error(data.error || getEditorText("image_editor_remove_bg_error", "배경제거 실패"));
+                        });
+                    }
+                    return response.blob();
+                })
+                .then(function (resultBlob) {
+                    drawBlobToCanvas(resultBlob, function () {
+                        state.forcePngOnSave = true;
+                        state.backgroundRemoveRunning = false;
+                        setActionButtonBusy("remove-bg", false);
+                        setEditorBusy(false);
+                    });
+                })
+                .catch(function (error) {
+                    state.backgroundRemoveRunning = false;
+                    setActionButtonBusy("remove-bg", false);
+                    setEditorBusy(false);
+                    window.alert(error && error.message ? error.message : getEditorText("image_editor_remove_bg_error", "배경제거 실패"));
+                });
+        }, "image/png");
+    }
+
     // ── 키보드 단축키 ─────────────────────────────────────────────────────
     function bindKeyboard() {
         if (keyboardAlreadyBound) return;
@@ -1352,9 +1837,15 @@
                 if (state.selection) deleteSelection();
                 return;
             }
+            if (e.key === "Enter" && state.freeSelectBuilding) {
+                e.preventDefault();
+                endSelectFree();
+                return;
+            }
             if (e.key === "Escape") {
                 e.preventDefault();
                 if (state.textOverlayActive) commitTextOverlay();
+                else if (state.freeSelectBuilding) cancelFreeSelectBuild();
                 else if (state.selectionFloating) flattenFloatingSelection();
                 else clearSelection();
                 return;
@@ -1459,25 +1950,84 @@
     function closeModal(modal) { modal.hidden = true; }
 
     // ── 저장 ─────────────────────────────────────────────────────────────
-    function saveToServer(saveUrl, csrfToken, path, onDone) {
+    function saveToServer(saveUrl, csrfToken, path, onDone, options) {
+        var saveOptions = options || {};
+        var targetFilename = String(saveOptions.filename || "").trim();
         if (!mainCanvas) { onDone && onDone({ ok: false, error: "캔버스 없음" }); return; }
-        if (state.selectionFloating) flattenFloatingSelection();
+        if (state.selectionFloating) {
+            flattenFloatingSelection();
+            clearSelection();
+        }
+        var selectionCanvas = createSelectionExportCanvas();
+        if (selectionCanvas) {
+            selectionCanvas.toBlob(function (blob) {
+                if (!blob) { onDone && onDone({ ok: false, error: "변환 실패" }); return; }
+                var stem = (path.split("/").pop() || "image").replace(/\.[^.]+$/, "") || "image";
+                var fd = new FormData();
+                fd.append("image_blob", blob, stem + ".png");
+                fd.append("path", path);
+                fd.append("force_png", "1");
+                fd.append("selected_only", "1");
+                if (targetFilename) fd.append("filename", targetFilename);
+                fd.append("csrfmiddlewaretoken", csrfToken);
+                fetch(saveUrl, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" }, body: fd })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) { if (data.ok) setDirty(false); onDone && onDone(data); })
+                    .catch(function (err) { onDone && onDone({ ok: false, error: String(err) }); });
+            }, "image/png");
+            return;
+        }
         var ext = (path.match(/\.([a-z0-9]+)$/i) || [])[1] || "png";
-        var mime = ext.toLowerCase() === "jpg" || ext.toLowerCase() === "jpeg"
+        var forcePng = Boolean(state.forcePngOnSave);
+        var mime = forcePng ? "image/png" : ext.toLowerCase() === "jpg" || ext.toLowerCase() === "jpeg"
             ? "image/jpeg" : ext.toLowerCase() === "webp" ? "image/webp" : "image/png";
 
         mainCanvas.toBlob(function (blob) {
             if (!blob) { onDone && onDone({ ok: false, error: "변환 실패" }); return; }
             var filename = path.split("/").pop() || "image.png";
+            if (forcePng) filename = filename.replace(/\.[^.]+$/, "") + ".png";
             var fd = new FormData();
             fd.append("image_blob", blob, filename);
             fd.append("path", path);
+            if (targetFilename) fd.append("filename", targetFilename);
+            if (forcePng) fd.append("force_png", "1");
             fd.append("csrfmiddlewaretoken", csrfToken);
             fetch(saveUrl, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" }, body: fd })
                 .then(function (r) { return r.json(); })
-                .then(function (data) { if (data.ok) setDirty(false); onDone && onDone(data); })
+                .then(function (data) { if (data.ok) { state.forcePngOnSave = false; setDirty(false); } onDone && onDone(data); })
                 .catch(function (err) { onDone && onDone({ ok: false, error: String(err) }); });
         }, mime);
+    }
+
+    function createSelectionExportCanvas() {
+        if (!state.selection || state.selection.w <= 0 || state.selection.h <= 0) {
+            return null;
+        }
+        var s = {
+            x: Math.max(0, Math.floor(state.selection.x)),
+            y: Math.max(0, Math.floor(state.selection.y)),
+            w: Math.max(1, Math.ceil(state.selection.w)),
+            h: Math.max(1, Math.ceil(state.selection.h)),
+        };
+        s.w = Math.min(s.w, state.canvasWidth - s.x);
+        s.h = Math.min(s.h, state.canvasHeight - s.y);
+        if (s.w <= 0 || s.h <= 0) return null;
+
+        var tmp = document.createElement("canvas");
+        tmp.width = s.w;
+        tmp.height = s.h;
+        var tmpCtx = tmp.getContext("2d");
+        var hasPoly = state.freeSelectPath && state.freeSelectPath.length > 2;
+
+        if (state.selectionFloating && state.selectionImageData) {
+            tmpCtx.putImageData(state.selectionImageData, 0, 0);
+            return tmp;
+        }
+
+        tmpCtx.drawImage(mainCanvas, s.x, s.y, s.w, s.h, 0, 0, s.w, s.h);
+        if (hasPoly) applyPolygonMaskToCanvas(tmpCtx, s.w, s.h, state.freeSelectPath, s.x, s.y);
+        if (state.selectionMask) applySelectionMaskToCanvas(tmpCtx, s.w, s.h);
+        return tmp;
     }
 
     function saveAsDownload(format) {

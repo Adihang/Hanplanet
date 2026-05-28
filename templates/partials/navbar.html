@@ -21,7 +21,7 @@
             <ul class="ui-nav-links">
                 {% for nav_link in nav_links %}
                     <li class="nav-item">
-                        <a class="nav-link ui-nav-link" href="{{ nav_link.url }}">{{ nav_link.name }}</a>
+                        <a class="nav-link ui-nav-link" href="{{ nav_link.url }}">{% if nav_link.name == "HanDrive" %}Drive{% else %}{{ nav_link.name }}{% endif %}</a>
                     </li>
                 {% endfor %}
             </ul>

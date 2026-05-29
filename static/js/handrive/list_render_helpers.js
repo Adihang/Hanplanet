@@ -80,58 +80,6 @@
         return typeMarker;
     }
 
-    function appendAclBadges(row, aclLabels, limit) {
-        if (!row) {
-            return;
-        }
-        var labels = Array.isArray(aclLabels) ? aclLabels : [];
-        if (labels.length === 0) {
-            return;
-        }
-        var metaTrail = row.querySelector(".handrive-item-meta-trail") || row;
-        var aclLabelLimit = Number(limit) || 3;
-        var aclWrap = document.createElement("span");
-        aclWrap.className = "handrive-item-acl-list";
-        labels.slice(0, aclLabelLimit).forEach(function (labelText) {
-            var aclBadge = document.createElement("span");
-            aclBadge.className = "handrive-item-acl-badge";
-            aclBadge.textContent = String(labelText || "");
-            aclWrap.appendChild(aclBadge);
-        });
-        if (labels.length > aclLabelLimit) {
-            var overflowBadge = document.createElement("span");
-            overflowBadge.className = "handrive-item-acl-badge handrive-item-acl-badge-overflow";
-            overflowBadge.textContent = "+" + String(labels.length - aclLabelLimit);
-            aclWrap.appendChild(overflowBadge);
-        }
-        metaTrail.appendChild(aclWrap);
-    }
-
-    function appendEntryBadge(row, entry, translator, appendBadgeWithPrefix) {
-        if (!row || !entry || typeof appendBadgeWithPrefix !== "function") {
-            return;
-        }
-        var t = typeof translator === "function" ? translator : function (_, fallback) { return fallback; };
-        var badgeText = "";
-        var badgePrefixText = "";
-        if (entry.type === "dir" && entry.git_repo) {
-            badgeText = t("repository_badge", "Repository");
-            if (!entry.git_repo.is_owner) {
-                badgePrefixText = String(entry.git_repo.owner_username || "").trim();
-            }
-        } else if (entry.type === "dir" && entry.git_branch_root) {
-            badgeText = t("branch_badge", "Branch");
-        } else if (entry.git_commit_message) {
-            badgeText = String(entry.git_commit_message || "").trim();
-            badgePrefixText = String(entry.git_commit_author_username || "").trim();
-        } else if (entry.type === "file" && entry.is_public_write) {
-            badgeText = t("public_write_badge", "전체 허용");
-        }
-        if (badgeText) {
-            appendBadgeWithPrefix(row, badgeText, badgePrefixText);
-        }
-    }
-
     function appendCurrentDirRepoName(nameWrap, repoMeta, options) {
         if (!nameWrap || !repoMeta || !repoMeta.repo_name) {
             return;
@@ -154,9 +102,7 @@
     }
 
     window.HandriveListRenderHelpers = {
-        appendAclBadges: appendAclBadges,
         appendCurrentDirRepoName: appendCurrentDirRepoName,
-        appendEntryBadge: appendEntryBadge,
         buildTreePrefixElement: buildTreePrefixElement,
         createEntryMetaField: createEntryMetaField,
         createTypeMarker: createTypeMarker,

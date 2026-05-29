@@ -71,7 +71,7 @@
                 // progressControl은 CSS로 컨트롤바 위 행으로 올림
                 children: [
                     'playToggle',
-                    { name: 'volumePanel', inline: false },
+                    { name: 'volumePanel', inline: true },
                     'progressControl',
                     'currentTimeDisplay',
                     'timeDivider',

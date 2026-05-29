@@ -58,9 +58,10 @@ body.ui-page {
     --handrive-close-color: var(--site-close-color);
     --handrive-overlay-soft: var(--site-overlay-soft);
     --handrive-overlay-shadow: var(--site-overlay-shadow);
-    --handrive-drop-target-bg: rgba(34, 197, 94, 0.12);
-    --handrive-drop-target-row-bg: rgba(34, 197, 94, 0.1);
-    --handrive-drop-target-border: #22c55e;
+    --handrive-drop-target-bg: var(--handrive-hover-soft);
+    --handrive-drop-target-row-bg: var(--handrive-hover-soft);
+    --handrive-drop-target-border: var(--handrive-accent, #2563eb);
+    --handrive-drop-target-overlay-bg: rgba(37, 99, 235, 0.06);
     --handrive-generic-icon-color: #000000;
     --handrive-radius-sm: 8px;
     --handrive-radius-md: 10px;
@@ -76,6 +77,7 @@ body.ui-page {
     --handrive-list-search-margin-b: 10px;
     --handrive-preview-head-height: 47px;
     --handrive-preview-body-pad-y: 10px;
+    --handrive-current-dir-meta-active-color: #000000;
 }
 
 body.handrive-page,
@@ -123,6 +125,7 @@ body.ui-page.theme-dark {
     --handrive-text-subtle: #c8c8c8;
     --handrive-text-faint: #b2b2b2;
     --handrive-text-secondary: #c2c2c2;
+    --handrive-current-dir-meta-active-color: #ffffff;
     --handrive-border-soft: var(--theme-border);
     --handrive-border: var(--theme-border);
     --handrive-border-mid: var(--theme-border);
@@ -140,9 +143,10 @@ body.ui-page.theme-dark {
     --handrive-surface-muted-strong: rgba(46, 46, 46, 0.96);
     --handrive-link: #d2d2d2;
     --handrive-elevated-bg: rgba(46, 46, 46, 0.97);
-    --handrive-drop-target-bg: rgba(74, 222, 128, 0.18);
-    --handrive-drop-target-row-bg: rgba(74, 222, 128, 0.14);
-    --handrive-drop-target-border: #4ade80;
+    --handrive-drop-target-bg: var(--handrive-hover-soft);
+    --handrive-drop-target-row-bg: var(--handrive-hover-soft);
+    --handrive-drop-target-border: var(--handrive-accent, #60a5fa);
+    --handrive-drop-target-overlay-bg: rgba(96, 165, 250, 0.1);
     --handrive-generic-icon-color: #d8e5fb;
 }
 
@@ -307,6 +311,11 @@ body.ui-page .portfolio-print-btn {
 .handrive-list-search-input {
     width: 100%;
     height: 48px;
+}
+
+.handrive-list-search-clear {
+    width: var(--handrive-list-search-height, 48px);
+    height: var(--handrive-list-search-height, 48px);
 }
 
 .handrive-list-search-input::-webkit-search-cancel-button {
@@ -1155,6 +1164,7 @@ body.theme-dark .handrive-help-icon-symbol {
 .handrive-list-pane {
     min-width: 0;
     position: relative;
+    transition: background-color 0.15s ease;
 }
 
 .handrive-list-pane.is-loading .handrive-list {
@@ -1193,40 +1203,6 @@ body.theme-dark .handrive-help-icon-symbol {
     to {
         transform: rotate(360deg);
     }
-}
-
-.handrive-list-pane.is-file-drop-target {
-    background: var(--handrive-drop-target-bg);
-}
-
-.handrive-list-pane.is-file-drop-target::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    box-shadow: inset 0 0 0 2px var(--handrive-drop-target-border);
-    border-radius: 10px;
-    background-image:
-        linear-gradient(to right, var(--handrive-drop-target-border) 50%, transparent 50%),
-        linear-gradient(to right, var(--handrive-drop-target-border) 50%, transparent 50%),
-        linear-gradient(to bottom, var(--handrive-drop-target-border) 50%, transparent 50%),
-        linear-gradient(to bottom, var(--handrive-drop-target-border) 50%, transparent 50%);
-    background-position:
-        8px 8px,
-        8px calc(100% - 8px),
-        8px 8px,
-        calc(100% - 8px) 8px;
-    background-size:
-        12px 2px,
-        12px 2px,
-        2px 12px,
-        2px 12px;
-    background-repeat:
-        repeat-x,
-        repeat-x,
-        repeat-y,
-        repeat-y;
-    z-index: 3;
 }
 
 .handrive-job-queue-panel {
@@ -1578,13 +1554,14 @@ body.theme-dark .handrive-job-queue-item-reason {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     padding: var(--handrive-list-head-pad-y) var(--handrive-list-head-pad-x);
     min-height: var(--handrive-preview-head-height, 47px);
     box-sizing: border-box;
     border: 0;
     box-shadow: inset 0 -1px 0 var(--handrive-border-soft);
     background: var(--handrive-hover-soft);
+    overflow: hidden;
 }
 
 .handrive-list-editor-head {
@@ -1645,6 +1622,12 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-list-preview-title-text {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     cursor: pointer;
 }
 
@@ -1653,6 +1636,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     align-items: center;
     justify-content: flex-end;
     gap: 4px;
+    flex-wrap: nowrap;
     flex: 0 0 auto;
     margin-left: auto;
 }
@@ -2114,6 +2098,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     border: 0;
     border-radius: 0;
     overflow: hidden;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .handrive-list-layout.is-landscape .handrive-list {
@@ -2128,6 +2113,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     display: flex;
     align-items: stretch;
     min-width: 0;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .handrive-item.is-entering {
@@ -2171,9 +2157,17 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-item-row {
-    --handrive-col-modified: var(--handrive-list-col-modified, auto);
-    --handrive-col-size: var(--handrive-list-col-size, auto);
-    --handrive-col-badge: var(--handrive-list-col-badge, auto);
+    --handrive-col-modified: var(--handrive-list-col-modified, 0px);
+    --handrive-col-type: var(--handrive-list-col-type, 0px);
+    --handrive-col-size: var(--handrive-list-col-size, 0px);
+    --handrive-col-permission: var(--handrive-list-col-permission, 0px);
+    --handrive-col-commit: var(--handrive-list-col-commit, 0px);
+    --handrive-col-id: var(--handrive-list-col-id, 0px);
+    --handrive-meta-gap-type: 8px;
+    --handrive-meta-gap-size: 8px;
+    --handrive-meta-gap-permission: 8px;
+    --handrive-meta-gap-commit: 8px;
+    --handrive-meta-gap-id: 8px;
     width: 100%;
     flex: 1;
     min-width: 0;
@@ -2185,13 +2179,16 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
         auto
         minmax(0, 1fr)
         auto;
-    padding: 10px 6px 10px 14px;
+    padding: 10px 10px 10px 14px;
     background: var(--handrive-bg);
     color: var(--handrive-text-strong);
     border: 0;
     text-align: left;
     cursor: pointer;
     box-sizing: border-box;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .handrive-item-row:hover,
@@ -2217,13 +2214,137 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     background: var(--handrive-drop-target-row-bg);
 }
 
+.handrive-list-pane.is-file-drop-target .handrive-item-row.is-drop-target:not(.is-file-drop-group),
+.handrive-list-pane.is-file-drop-target .handrive-item-row.is-drop-hover:not(.is-file-drop-group) {
+    background-color: var(--handrive-drop-target-row-bg);
+    background-image: linear-gradient(var(--handrive-drop-target-row-bg), var(--handrive-drop-target-row-bg));
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--handrive-drop-target-border);
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-item {
+    position: relative;
+    overflow: hidden;
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-start {
+    border-radius: 10px 10px 0 0;
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-end {
+    border-radius: 0 0 10px 10px;
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-start.is-file-drop-group-end {
+    border-radius: 10px;
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-current-dir-item.is-file-drop-group-start {
+    border-radius: calc(var(--handrive-radius-lg) + 3px) calc(var(--handrive-radius-lg) + 3px) 0 0;
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-current-dir-item.is-file-drop-group-start.is-file-drop-group-end {
+    border-radius: calc(var(--handrive-radius-lg) + 3px);
+}
+
+.handrive-list-layout.is-landscape.has-preview .handrive-list-pane.is-file-drop-target .handrive-current-dir-item.is-file-drop-group-start,
+.handrive-list-layout.is-landscape.has-editor .handrive-list-pane.is-file-drop-target .handrive-current-dir-item.is-file-drop-group-start {
+    border-radius: calc(var(--handrive-radius-lg) + 3px) 0 0 0;
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-item::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: var(--handrive-drop-group-left, 0px);
+    pointer-events: none;
+    z-index: 2;
+    box-shadow:
+        inset 1px 0 0 var(--handrive-drop-target-border),
+        inset -1px 0 0 var(--handrive-drop-target-border);
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-start::before {
+    border-radius: inherit;
+    box-shadow:
+        inset 1px 0 0 var(--handrive-drop-target-border),
+        inset -1px 0 0 var(--handrive-drop-target-border),
+        inset 0 1px 0 var(--handrive-drop-target-border);
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-end::before {
+    border-radius: inherit;
+    box-shadow:
+        inset 1px 0 0 var(--handrive-drop-target-border),
+        inset -1px 0 0 var(--handrive-drop-target-border),
+        inset 0 -1px 0 var(--handrive-drop-target-border);
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-start.is-file-drop-group-end::before {
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px var(--handrive-drop-target-border);
+}
+
+.handrive-list.is-file-drop-root-target {
+    background-color: var(--handrive-drop-target-row-bg);
+    background-image: linear-gradient(var(--handrive-drop-target-row-bg), var(--handrive-drop-target-row-bg));
+    border-radius: calc(var(--handrive-radius-lg) + 3px);
+    box-shadow: inset 0 0 0 1px var(--handrive-drop-target-border);
+}
+
+.handrive-list.is-file-drop-root-target .handrive-item.is-file-drop-group-item::before {
+    content: none;
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-item > .handrive-item-tree-prefix {
+    position: relative;
+    z-index: 1;
+    background-color: var(--handrive-drop-target-row-bg);
+    background-image: linear-gradient(var(--handrive-drop-target-row-bg), var(--handrive-drop-target-row-bg));
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-item-row.is-file-drop-group {
+    position: relative;
+    z-index: 1;
+    background-color: var(--handrive-drop-target-row-bg);
+    background-image: linear-gradient(var(--handrive-drop-target-row-bg), var(--handrive-drop-target-row-bg));
+    outline: none;
+    box-shadow: none;
+}
+
+.handrive-list-pane.is-file-drop-target .handrive-current-dir-row.is-file-drop-group-start {
+    border-radius: calc(var(--handrive-radius-lg) + 3px) calc(var(--handrive-radius-lg) + 3px) 0 0;
+}
+
 .handrive-current-dir-row {
     background: var(--handrive-hover-soft);
-    padding: 10px 6px 10px 14px;
+    padding: 10px 10px 10px 14px;
     min-height: 48px;
     box-sizing: border-box;
     font-size: 16px;
     line-height: 1.2;
+    border-radius: calc(var(--handrive-radius-lg) - 1px) calc(var(--handrive-radius-lg) - 1px) 0 0;
+    overflow: hidden;
+}
+
+.handrive-list-layout.is-landscape.has-preview .handrive-current-dir-row,
+.handrive-list-layout.is-landscape.has-editor .handrive-current-dir-row {
+    border-radius: calc(var(--handrive-radius-lg) - 1px) 0 0 0;
+}
+
+.handrive-current-dir-row.is-drop-target {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--handrive-drop-target-border);
+}
+
+.handrive-current-dir-row.has-inline-search {
+    grid-template-columns:
+        auto
+        minmax(0, 1fr)
+        auto
+        minmax(150px, clamp(150px, 30%, 260px));
 }
 
 .handrive-item-name-wrap {
@@ -2246,6 +2367,11 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     text-overflow: ellipsis;
 }
 
+body.handrive-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-label,
+body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-label {
+    color: color-mix(in srgb, var(--handrive-text-subtle) 88%, transparent);
+}
+
 .handrive-item-row.is-empty {
     cursor: default;
 }
@@ -2265,9 +2391,18 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     font-size: 18px;
 }
 
+.handrive-current-dir-row .handrive-item-name-wrap,
+.handrive-current-dir-row .handrive-item-name,
+.handrive-current-dir-row > .handrive-item-type-icon {
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
 .handrive-item-modified {
+    grid-column: 1;
     min-width: var(--handrive-col-modified);
-    width: auto;
+    width: var(--handrive-col-modified);
     flex: 0 0 auto;
     text-align: left;
     overflow: visible;
@@ -2275,10 +2410,65 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     white-space: nowrap;
 }
 
-.handrive-item-size {
-    min-width: var(--handrive-col-size);
-    width: auto;
+.handrive-item-type {
+    grid-column: 2;
+    min-width: calc(var(--handrive-col-type) + var(--handrive-meta-gap-type));
+    width: calc(var(--handrive-col-type) + var(--handrive-meta-gap-type));
     flex: 0 0 auto;
+    box-sizing: border-box;
+    padding-left: var(--handrive-meta-gap-type);
+    text-align: left;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+.handrive-item-size {
+    grid-column: 3;
+    min-width: calc(var(--handrive-col-size) + var(--handrive-meta-gap-size));
+    width: calc(var(--handrive-col-size) + var(--handrive-meta-gap-size));
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    padding-left: var(--handrive-meta-gap-size);
+    text-align: left;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+.handrive-item-permission {
+    grid-column: 4;
+    min-width: calc(var(--handrive-col-permission) + var(--handrive-meta-gap-permission));
+    width: calc(var(--handrive-col-permission) + var(--handrive-meta-gap-permission));
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    padding-left: var(--handrive-meta-gap-permission);
+    text-align: left;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+.handrive-item-commit {
+    grid-column: 5;
+    min-width: calc(var(--handrive-col-commit) + var(--handrive-meta-gap-commit));
+    width: calc(var(--handrive-col-commit) + var(--handrive-meta-gap-commit));
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    padding-left: var(--handrive-meta-gap-commit);
+    text-align: left;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+.handrive-item-id {
+    grid-column: 6;
+    min-width: calc(var(--handrive-col-id) + var(--handrive-meta-gap-id));
+    width: calc(var(--handrive-col-id) + var(--handrive-meta-gap-id));
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    padding-left: var(--handrive-meta-gap-id);
     text-align: left;
     overflow: visible;
     text-overflow: clip;
@@ -2287,14 +2477,143 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 
 .handrive-item-meta-trail {
     grid-column: 3;
-    display: inline-flex;
+    display: inline-grid;
+    grid-template-columns:
+        minmax(0, var(--handrive-col-modified))
+        minmax(0, calc(var(--handrive-col-type) + var(--handrive-meta-gap-type)))
+        minmax(0, calc(var(--handrive-col-size) + var(--handrive-meta-gap-size)))
+        minmax(0, calc(var(--handrive-col-permission) + var(--handrive-meta-gap-permission)))
+        minmax(0, calc(var(--handrive-col-commit) + var(--handrive-meta-gap-commit)))
+        minmax(0, calc(var(--handrive-col-id) + var(--handrive-meta-gap-id)));
     align-items: center;
-    justify-content: flex-end;
-    gap: 6px;
+    justify-content: end;
+    column-gap: 0;
     min-width: 0;
     max-width: 100%;
     justify-self: end;
     flex: 0 1 auto;
+}
+
+.handrive-item-meta-trail > .handrive-item-meta-label {
+    justify-self: start;
+}
+
+.handrive-current-dir-row .handrive-item-meta-trail {
+    font-size: 15px;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.handrive-current-dir-row .handrive-item-meta-trail .handrive-item-meta-label {
+    display: inline-flex;
+    align-items: center;
+    position: relative;
+    font-size: 15px;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: color 0.18s ease;
+}
+
+.handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key] {
+    cursor: pointer;
+}
+
+.handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key]:hover,
+.handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key]:focus-visible,
+.handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key]:active,
+.handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label.is-sort-active {
+    color: var(--handrive-current-dir-meta-active-color, var(--handrive-text-stronger));
+}
+
+.handrive-current-dir-search-wrap {
+    grid-column: 4;
+    display: none;
+    align-items: center;
+    justify-self: end;
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    border: 1px solid var(--handrive-border);
+    border-radius: 999px;
+    background: var(--handrive-surface);
+    box-sizing: border-box;
+    overflow: hidden;
+    cursor: text;
+}
+
+.handrive-current-dir-search-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 32px;
+    flex: 0 0 34px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 999px 0 0 999px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.handrive-current-dir-search-button::before {
+    content: "";
+    width: 18px;
+    height: 18px;
+    background-color: var(--handrive-text-subtle);
+    opacity: 0.72;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.2'/%3E%3Cpath d='m20.5 20.5-4.8-4.8'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.2'/%3E%3Cpath d='m20.5 20.5-4.8-4.8'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+}
+
+.handrive-current-dir-search-button:hover::before,
+.handrive-current-dir-search-button:focus-visible::before {
+    background-color: var(--handrive-text-strong);
+    opacity: 1;
+}
+
+.handrive-current-dir-search-button:focus-visible {
+    background: var(--handrive-hover-soft);
+    outline: 0;
+}
+
+.handrive-current-dir-search-button:disabled {
+    cursor: default;
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.handrive-current-dir-row.has-inline-search .handrive-current-dir-search-wrap:not([hidden]) {
+    display: flex;
+}
+
+.handrive-current-dir-search-wrap:focus-within {
+    border-color: var(--ui-search-border-focus, var(--handrive-search-border-focus, var(--site-text-muted)));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--ui-search-border-focus, var(--handrive-search-border-focus, var(--site-text-muted))) 24%, transparent);
+}
+
+.handrive-current-dir-search-input {
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    flex: 1 1 auto;
+    padding: 0 12px 0 2px;
+    color: var(--handrive-text-strong);
+    font-size: 14px;
+    line-height: 1;
+    cursor: text;
+}
+
+.handrive-current-dir-search-clear {
+    width: 30px;
+    height: 32px;
+    flex: 0 0 30px;
+}
+
+.handrive-current-dir-search-input::-webkit-search-cancel-button {
+    display: none;
+    -webkit-appearance: none;
+    appearance: none;
 }
 
 .handrive-item-tree-prefix {
@@ -2350,117 +2669,74 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     padding-left: 6px;
 }
 
-.handrive-item-acl-list {
-    display: inline-flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 4px;
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: 40%;
-    overflow: hidden;
+.handrive-list-pane.is-hide-id .handrive-item-row {
+    --handrive-col-id: 0px;
+    --handrive-meta-gap-id: 0px;
 }
 
-.handrive-item-acl-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    height: 18px;
-    max-width: 120px;
-    padding: 0 6px;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--handrive-text-subtle);
-    font-size: 16px;
-    font-weight: 600;
-    line-height: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.handrive-list-pane.is-hide-id .handrive-item-id {
+    display: none;
 }
 
-.handrive-item-acl-badge-overflow {
-    min-width: 24px;
-    justify-content: center;
+.handrive-list-pane.is-hide-commit .handrive-item-row {
+    --handrive-col-commit: 0px;
+    --handrive-meta-gap-commit: 0px;
 }
 
-.handrive-item-public-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    min-width: 58px;
-    height: 20px;
-    padding: 0;
-    border-radius: 999px;
-    border: 0;
-    background: transparent;
-    color: var(--handrive-text-subtle);
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 1;
-    white-space: nowrap;
+.handrive-list-pane.is-hide-commit .handrive-item-commit {
+    display: none;
 }
 
-.handrive-item-public-badge-wrap {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    flex: 0 0 auto;
-    min-width: 0;
-    padding: 0 8px;
+.handrive-list-pane.is-hide-permission .handrive-item-row {
+    --handrive-col-permission: 0px;
+    --handrive-meta-gap-permission: 0px;
 }
 
-.handrive-item-badge-slot {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    min-width: 0;
-    width: var(--handrive-col-badge);
-    flex: 0 0 var(--handrive-col-badge);
-    overflow: hidden;
-    margin-left: 2px;
+.handrive-list-pane.is-hide-permission .handrive-item-permission {
+    display: none;
 }
 
 .handrive-list-pane.is-hide-size .handrive-item-row {
     --handrive-col-size: 0px;
+    --handrive-meta-gap-size: 0px;
 }
 
 .handrive-list-pane.is-hide-size .handrive-item-size {
     display: none;
 }
 
+.handrive-list-pane.is-hide-type .handrive-item-row {
+    --handrive-col-type: 0px;
+    --handrive-meta-gap-type: 0px;
+}
+
+.handrive-list-pane.is-hide-type .handrive-item-type {
+    display: none;
+}
+
 .handrive-list-pane.is-hide-modified .handrive-item-row {
     --handrive-col-modified: 0px;
+    --handrive-meta-gap-type: 0px;
 }
 
 .handrive-list-pane.is-hide-modified .handrive-item-modified {
     display: none;
 }
 
-.handrive-list-pane.is-hide-badge .handrive-item-row {
-    --handrive-col-badge: 0px;
+.handrive-list-pane.is-hide-modified.is-hide-type .handrive-item-row {
+    --handrive-meta-gap-size: 0px;
 }
 
-.handrive-list-pane.is-hide-badge .handrive-item-badge-slot {
-    display: none;
+.handrive-list-pane.is-hide-modified.is-hide-type.is-hide-size .handrive-item-row {
+    --handrive-meta-gap-permission: 0px;
 }
 
-.handrive-item-public-badge-prefix {
-    display: inline-flex;
-    align-items: center;
-    flex: 0 1 auto;
-    min-height: 20px;
-    min-width: 0;
-    color: color-mix(in srgb, var(--handrive-text-subtle) 72%, transparent);
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 1.1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.handrive-list-pane.is-hide-modified.is-hide-type.is-hide-size.is-hide-permission .handrive-item-row {
+    --handrive-meta-gap-commit: 0px;
+}
+
+.handrive-list-pane.is-hide-modified.is-hide-type.is-hide-size.is-hide-permission.is-hide-commit .handrive-item-row {
+    --handrive-meta-gap-id: 0px;
 }
 
 .handrive-item-depth {
@@ -4408,6 +4684,13 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     overflow: visible;
 }
 
+.video-js .vjs-control-bar > .vjs-volume-panel.vjs-volume-panel-horizontal {
+    width: 118px;
+    min-width: 118px;
+    flex: 0 0 118px;
+    justify-content: flex-start;
+}
+
 .video-js .vjs-control-bar .vjs-volume-panel .vjs-mute-control {
     display: inline-flex;
     align-items: center;
@@ -4426,6 +4709,38 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     height: 20px;
     margin: 0;
     line-height: 20px;
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel .vjs-volume-control.vjs-volume-horizontal {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    width: 82px;
+    height: 36px;
+    margin: 0;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel .vjs-volume-bar.vjs-slider-horizontal {
+    width: 66px;
+    height: 4px;
+    margin: 0 8px 0 4px;
+    border-radius: 999px;
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel .vjs-slider-horizontal .vjs-volume-level {
+    height: 4px;
+    border-radius: 999px;
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel .vjs-slider-horizontal .vjs-volume-level::before {
+    right: -6px;
+    top: -6px;
+    font-size: 16px;
+    line-height: 16px;
 }
 
 .video-js .vjs-control-bar .vjs-volume-panel .vjs-volume-control.vjs-volume-vertical {
@@ -4817,6 +5132,15 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 .video-js .vjs-modal-dialog {
     background: rgba(15, 15, 15, 0.88);
     color: #e0e0e0;
+}
+
+.video-js .vjs-modal-dialog:not(.vjs-text-track-settings) .vjs-modal-dialog-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
 }
 
 .handrive-form-grid {

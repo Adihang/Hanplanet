@@ -10,35 +10,6 @@
             .replace(/^\/+|\/+$/g, "");
     }
 
-    function appendBadgeWithPrefix(row, badgeText, prefixText) {
-        // Repo owner names and commit authors share the same badge shell, with an optional
-        // prefix rendered to the left in a visually lighter style.
-        var normalizedBadgeText = String(badgeText || "").trim();
-        if (!normalizedBadgeText || !row) {
-            return;
-        }
-        var badgeContainer = row.querySelector(".handrive-item-badge-slot") || row;
-        var wrap = document.createElement("span");
-        wrap.className = "handrive-item-public-badge-wrap";
-        var normalizedPrefixText = String(prefixText || "").trim();
-        if (normalizedPrefixText) {
-            var prefix = document.createElement("span");
-            prefix.className = "handrive-item-public-badge-prefix";
-            prefix.textContent = normalizedPrefixText;
-            wrap.appendChild(prefix);
-        }
-        var badge = document.createElement("span");
-        badge.className = "handrive-item-public-badge";
-        badge.textContent = normalizedBadgeText;
-        wrap.appendChild(badge);
-        badgeContainer.appendChild(wrap);
-        if (typeof row.dispatchEvent === "function") {
-            row.dispatchEvent(new CustomEvent("handrive:badgecontentchange", {
-                bubbles: true,
-            }));
-        }
-    }
-
     function getPathFileExtension(pathValue) {
         var normalized = normalizePathForHelper(pathValue);
         if (!normalized) {
@@ -200,7 +171,6 @@
     }
 
     window.HandrivePageHelpers = {
-        appendBadgeWithPrefix: appendBadgeWithPrefix,
         getPathFileExtension: getPathFileExtension,
         getFileIconKey: getFileIconKey,
         isGenericFileIconKey: isGenericFileIconKey,

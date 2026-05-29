@@ -9,6 +9,7 @@
     const sourceInput = panel.querySelector('[data-root-translate-source]');
     const sourceInputShell = panel.querySelector('[data-root-translate-source-shell]');
     const sourcePlaceholder = panel.querySelector('[data-root-translate-source-placeholder]');
+    const sourceClearButton = panel.querySelector('[data-root-translate-source-clear]');
     const targetOutput = panel.querySelector('[data-root-translate-target]');
     const targetOutputShell = panel.querySelector('[data-root-translate-target-shell]');
     const copyButton = panel.querySelector('[data-root-translate-copy]');
@@ -451,7 +452,11 @@
     };
 
     const syncSourcePlaceholderState = function () {
-        sourceInputShell.setAttribute('data-empty', sourceInput.value.length ? '0' : '1');
+        const hasValue = Boolean(sourceInput.value.length);
+        sourceInputShell.setAttribute('data-empty', hasValue ? '0' : '1');
+        if (sourceClearButton) {
+            sourceClearButton.hidden = !hasValue;
+        }
     };
 
     const setBusy = function (busy) {
@@ -555,6 +560,19 @@
                 return;
             }
             writeClipboardText(copyText).then(showCopiedState).catch(function () {});
+        });
+    }
+
+    if (sourceClearButton) {
+        sourceClearButton.addEventListener('click', function () {
+            activeRequestId += 1;
+            sourceInput.value = '';
+            syncSourcePlaceholderState();
+            setRenderedOutput('', resultPlaceholder, '');
+            targetOutput.setAttribute('data-placeholder', resultPlaceholder);
+            setBusy(false);
+            scheduleTextareaHeightsSync();
+            sourceInput.focus();
         });
     }
 

@@ -977,6 +977,46 @@ body.theme-dark .root-auth-modal-dialog {
     color: var(--site-placeholder);
 }
 
+.root-input-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.root-input-clear[hidden] {
+    display: none;
+}
+
+.root-input-clear::before {
+    content: "";
+    width: 16px;
+    height: 16px;
+    background-color: var(--site-text-muted);
+    opacity: 0.72;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'%3E%3Cpath d='M5.5 5.5 14.5 14.5M14.5 5.5 5.5 14.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'%3E%3Cpath d='M5.5 5.5 14.5 14.5M14.5 5.5 5.5 14.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+
+.root-input-clear:hover::before,
+.root-input-clear:focus-visible::before {
+    background-color: var(--site-text-strong);
+    opacity: 1;
+}
+
+.root-input-clear:focus-visible {
+    background: var(--site-hover-soft);
+    outline: 0;
+}
+
 .root-search-engine {
     width: fit-content;
     min-width: 0;
@@ -1071,6 +1111,17 @@ body.theme-dark .root-auth-modal-dialog {
 .root-translate-input-shell .root-translate-textarea {
     width: 100%;
     max-width: 100%;
+}
+
+.root-translate-input-shell .root-translate-textarea-source {
+    padding-right: 40px;
+}
+
+.root-translate-source-clear {
+    position: absolute;
+    top: 2px;
+    right: 4px;
+    z-index: 2;
 }
 
 .root-translate-output-shell {

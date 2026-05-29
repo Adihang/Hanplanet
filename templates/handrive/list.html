@@ -124,6 +124,14 @@
             spellcheck="false"
             placeholder="{{ handrive_text.search_placeholder }}"
         >
+        <button
+            class="root-input-clear handrive-list-search-clear"
+            id="handrive-list-search-clear"
+            type="button"
+            aria-label="{{ handrive_text.clear_button|default:'지우기' }}"
+            title="{{ handrive_text.clear_button|default:'지우기' }}"
+            hidden
+        ></button>
     </div>
     <div class="handrive-list-layout" id="handrive-list-layout">
         <div class="handrive-list-pane">
@@ -261,6 +269,7 @@
 {{ handrive_text|json_script:"handrive-i18n" }}
 {{ initial_entries|json_script:"handrive-initial-entries" }}
 {{ current_dir_git_repo|json_script:"handrive-current-dir-git-repo" }}
+{{ current_dir_write_acl_labels|json_script:"handrive-current-dir-write-acl-labels" }}
 {{ sync_excluded_paths|json_script:"handrive-sync-excluded-paths" }}
 {% include 'handrive/_assets_script.html' %}
 {% endblock %}

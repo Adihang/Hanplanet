@@ -75,6 +75,14 @@
                         data-root-translate-source
                         rows="1"
                     ></textarea>
+                    <button
+                        type="button"
+                        class="root-input-clear root-translate-source-clear"
+                        data-root-translate-source-clear
+                        aria-label="{% include 'partials/ui_i18n.html' with key='clear' %}"
+                        title="{% include 'partials/ui_i18n.html' with key='clear' %}"
+                        hidden
+                    ></button>
                     <span class="root-translate-textarea-placeholder" data-root-translate-source-placeholder aria-hidden="true">
                         {% include 'partials/ui_i18n.html' with key='translation_placeholder_ko' %}
                     </span>

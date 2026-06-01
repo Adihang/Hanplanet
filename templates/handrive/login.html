@@ -26,6 +26,14 @@
             <div class="handrive-login-error">{{ handrive_login_error_message|default:handrive_text.auth_login_error }}</div>
         {% endif %}
 
+        {% if handrive_github_auth_enabled and not handrive_login_show_2fa %}
+            <div class="handrive-auth-provider-row">
+                <a class="ui-btn handrive-auth-provider-btn" href="{{ handrive_github_login_url }}">
+                    {{ handrive_text.auth_github_login_button }}
+                </a>
+            </div>
+        {% endif %}
+
         {# ── 로그인 필드 (2FA 모드에서는 숨김) ───────────────────────── #}
         <div id="handrive-login-credential-block"{% if handrive_login_show_2fa %} hidden{% endif %}>
             <label class="handrive-field handrive-field-full">

@@ -123,6 +123,19 @@
 
         <div class="handrive-login-actions">
             <a class="ui-btn" href="{{ handrive_login_url }}">{{ handrive_text.auth_login_button }}</a>
+            {% if handrive_github_auth_enabled %}
+                <button
+                    class="ui-btn handrive-auth-provider-btn"
+                    type="submit"
+                    name="mode"
+                    value="signup"
+                    formaction="{{ handrive_github_signup_url }}"
+                    formmethod="post"
+                    formnovalidate
+                >
+                    {{ handrive_text.auth_github_signup_button }}
+                </button>
+            {% endif %}
             <button class="ui-btn ui-btn-primary" type="submit">{{ handrive_text.auth_signup_submit }}</button>
         </div>
     </form>

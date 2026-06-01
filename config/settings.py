@@ -215,6 +215,15 @@ FORGEJO_ADMIN_TOKEN = load_optional_secret("FORGEJO_ADMIN_TOKEN", "")
 PUBLIC_GIT_BASE_URL = load_optional_secret("PUBLIC_GIT_BASE_URL", "http://localhost:3000")
 FORGEJO_REPOS_ROOT  = str(get_forgejo_repos_root(DISC))
 
+# GitHub App 설정
+GITHUB_APP_CLIENT_ID     = load_optional_secret("GITHUB_APP_CLIENT_ID", "")
+GITHUB_APP_CLIENT_SECRET = load_optional_secret("GITHUB_APP_CLIENT_SECRET", "")
+GITHUB_AUTH_CALLBACK_URL = load_optional_secret("GITHUB_AUTH_CALLBACK_URL", "")
+GITHUB_AUTH_AUTHORIZE_URL = load_optional_secret("GITHUB_AUTH_AUTHORIZE_URL", "https://github.com/login/oauth/authorize")
+GITHUB_AUTH_TOKEN_URL     = load_optional_secret("GITHUB_AUTH_TOKEN_URL", "https://github.com/login/oauth/access_token")
+GITHUB_API_BASE_URL       = load_optional_secret("GITHUB_API_BASE_URL", "https://api.github.com")
+GITHUB_API_VERSION        = load_optional_secret("GITHUB_API_VERSION", "2022-11-28")
+
 # MinIO (S3 호환 오브젝트 스토리지) 설정
 MINIO_ENDPOINT        = load_optional_secret("MINIO_ENDPOINT", "localhost:9000")
 MINIO_ACCESS_KEY      = load_optional_secret("MINIO_ACCESS_KEY", "minioadmin")

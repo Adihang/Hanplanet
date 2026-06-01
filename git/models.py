@@ -18,6 +18,38 @@ class GitUserMapping(models.Model):
         return f"{self.user.username} → forgejo:{self.forgejo_username}"
 
 
+class GitHubAccountMapping(models.Model):
+    """Django User ↔ GitHub 계정 매핑.
+
+    GitHub App user authorization token 은 GitHub repo 목록 조회와
+    이후 installation 접근 확인에 사용한다.
+    """
+    user                     = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="github_account")
+    github_user_id           = models.BigIntegerField(unique=True)
+    github_login             = models.CharField(max_length=255)
+    github_name              = models.CharField(max_length=255, blank=True, default="")
+    github_email             = models.EmailField(blank=True, default="")
+    github_avatar_url        = models.URLField(max_length=1024, blank=True, default="")
+    user_access_token        = models.TextField(blank=True, default="")
+    user_access_token_expires_at = models.DateTimeField(null=True, blank=True)
+    user_refresh_token       = models.TextField(blank=True, default="")
+    user_refresh_token_expires_at = models.DateTimeField(null=True, blank=True)
+    token_scope              = models.CharField(max_length=512, blank=True, default="")
+    token_type               = models.CharField(max_length=64, blank=True, default="")
+    created_at               = models.DateTimeField(auto_now_add=True)
+    updated_at               = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "main_githubaccountmapping"
+        indexes = [
+            models.Index(fields=["github_login"]),
+            models.Index(fields=["user", "updated_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} → github:{self.github_login}"
+
+
 class GitRepository(models.Model):
     """Handrive 폴더와 연결된 Git 저장소 (DB가 진실의 원천)"""
     STATUS_CHOICES = [

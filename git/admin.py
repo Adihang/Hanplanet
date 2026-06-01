@@ -1,12 +1,19 @@
 from django.contrib import admin
 
-from .models import GitCollaborator, GitRepository, GitUserMapping
+from .models import GitCollaborator, GitHubAccountMapping, GitRepository, GitUserMapping
 
 
 @admin.register(GitUserMapping)
 class GitUserMappingAdmin(admin.ModelAdmin):
     list_display = ["user", "forgejo_username", "forgejo_user_id"]
     search_fields = ["user__username", "forgejo_username"]
+
+
+@admin.register(GitHubAccountMapping)
+class GitHubAccountMappingAdmin(admin.ModelAdmin):
+    list_display = ["user", "github_login", "github_user_id", "github_email", "updated_at"]
+    search_fields = ["user__username", "github_login", "github_email"]
+    readonly_fields = ["created_at", "updated_at"]
 
 
 @admin.register(GitRepository)

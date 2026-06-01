@@ -5678,6 +5678,19 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     display: none;
 }
 
+.handrive-auth-provider-row {
+    display: flex;
+}
+
+.handrive-auth-provider-btn {
+    min-width: 0;
+}
+
+.handrive-auth-provider-row .handrive-auth-provider-btn {
+    width: 100%;
+    justify-content: center;
+}
+
 .handrive-login-error {
     border: 1px solid color-mix(in srgb, #dc2626 45%, var(--handrive-border-heavy));
     border-radius: var(--handrive-radius-sm);

@@ -36,7 +36,7 @@ from contextvars import ContextVar
 from functools import wraps
 from glob import escape as glob_escape
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse, unquote
+from urllib.parse import parse_qs, quote, urlencode, urlparse, unquote
 import httpx
 
 from django import forms
@@ -73,6 +73,15 @@ from .views import (
 )
 from .restart_utils import restart_gunicorn_and_wait
 from .forgejo_client import ForgejoClient
+from .github_auth import (
+    GitHubAuthError,
+    build_github_authorize_url,
+    exchange_github_code,
+    fetch_github_identity,
+    is_github_auth_configured,
+    resolve_github_user,
+    save_github_mapping,
+)
 from .handrive.html_assets import load_local_html_companion_assets, load_repo_html_companion_assets
 from .handrive.preview import (
     render_handrive_csv_preview_safely,
@@ -88,6 +97,7 @@ logger = logging.getLogger(__name__)
 GIT_BIN = "/usr/bin/git"
 FORGEJO_SESSION_HELPER_BINARY_NAME = "hanplanet_forgejo_session_blob"
 FORGEJO_AUTH_ERROR_CODE = "FORGEJO"
+HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY = "handrive_github_auth_state"
 
 DOCS_FILE_EXTENSION = ".md"
 DOCS_ALLOWED_FILE_EXTENSIONS = (
@@ -886,6 +896,12 @@ DOCS_TEXT = {
         "auth_privacy_consent_error": "개인정보 처리방침 및 이용약관 동의가 필요합니다.",
         "auth_signup_error": "회원가입 정보를 확인해주세요.",
         "auth_login_error": "아이디 또는 비밀번호를 확인해주세요.",
+        "auth_github_login_button": "GitHub로 로그인",
+        "auth_github_signup_button": "GitHub로 회원가입",
+        "auth_github_unconfigured": "GitHub 로그인이 아직 설정되지 않았습니다.",
+        "auth_github_failed": "GitHub 인증에 실패했습니다. 다시 시도해주세요.",
+        "auth_github_login_new_account_error": "연결된 계정을 찾을 수 없습니다. 회원가입 페이지에서 GitHub 회원가입을 진행해주세요.",
+        "auth_github_consent_error": "GitHub 회원가입을 계속하려면 개인정보 처리방침 및 이용약관 동의가 필요합니다.",
         "auth_login_captcha_label": "캡챠 인증",
         "auth_login_captcha_hint": "아래 보안 인증을 완료해주세요.",
         "auth_login_captcha_placeholder": "정답 입력",
@@ -1247,6 +1263,12 @@ DOCS_TEXT = {
         "auth_privacy_consent_error": "You must agree to the Privacy Policy and Terms of Service.",
         "auth_signup_error": "Please check the sign up information.",
         "auth_login_error": "Please check your username or password.",
+        "auth_github_login_button": "Login with GitHub",
+        "auth_github_signup_button": "Sign up with GitHub",
+        "auth_github_unconfigured": "GitHub login is not configured yet.",
+        "auth_github_failed": "GitHub authentication failed. Please try again.",
+        "auth_github_login_new_account_error": "No connected account was found. Use GitHub sign up first.",
+        "auth_github_consent_error": "You must agree to the Privacy Policy and Terms of Service to continue GitHub sign up.",
         "auth_login_captcha_label": "Captcha Verification",
         "auth_login_captcha_hint": "Complete the security verification below.",
         "auth_login_captcha_placeholder": "Enter answer",
@@ -5662,6 +5684,74 @@ def _build_post_hanplanet_login_response(target_url: str, user):
     return _build_forgejo_authenticated_redirect(target_url, user)
 
 
+def _build_github_auth_start_url(request, ui_lang: str | None, next_url: str, mode: str) -> str:
+    kwargs = {"ui_lang": ui_lang} if ui_lang in SUPPORTED_UI_LANGS else {}
+    route_name = "main:handrive_github_auth_start_lang" if kwargs else "main:handrive_github_auth_start"
+    base_url = reverse(route_name, kwargs=kwargs) if kwargs else reverse(route_name)
+    query = urlencode({"mode": mode, "next": next_url or ""})
+    return f"{base_url}?{query}"
+
+
+def _build_github_auth_callback_url(request) -> str:
+    configured = str(getattr(settings, "GITHUB_AUTH_CALLBACK_URL", "") or "").strip()
+    if configured:
+        return configured
+    return request.build_absolute_uri(reverse("main:handrive_github_auth_callback"))
+
+
+def _github_auth_context(request, ui_lang: str | None, next_url: str) -> dict:
+    return {
+        "handrive_github_auth_enabled": is_github_auth_configured(),
+        "handrive_github_login_url": _build_github_auth_start_url(request, ui_lang, next_url, "login"),
+        "handrive_github_signup_url": _build_github_auth_start_url(request, ui_lang, next_url, "signup"),
+    }
+
+
+def _initialize_github_signup_user(user) -> None:
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    consented_at = timezone.now()
+    profile.privacy_policy_agreed_at = consented_at
+    profile.terms_of_service_agreed_at = consented_at
+    profile.save(update_fields=["privacy_policy_agreed_at", "terms_of_service_agreed_at", "updated_at"])
+    user.groups.add(get_handrive_public_write_group())
+    try:
+        scoped_home_dir = normalize_relative_path(f"users/{user.get_username()}", allow_empty=False)
+        ensure_scoped_home_dir(scoped_home_dir)
+    except (OSError, ValueError):
+        logger.exception("Failed to initialize scoped HanDrive home for GitHub signup user %s", user.get_username())
+
+
+def _render_github_auth_error(request, ui_lang: str | None, mode: str, next_url: str, message: str):
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    context = handrive_common_context(request, resolved_lang)
+    auth_breadcrumb_url = resolve_auth_breadcrumb_url(request, context["handrive_base_url"])
+    hide_global_nav = is_handrive_share_auth_entry(request, context["handrive_base_url"])
+    if mode == "signup":
+        return _render_handrive_signup_page(
+            request,
+            context,
+            HandriveSignupForm(ui_lang=resolved_lang),
+            next_url,
+            message,
+            message,
+            auth_breadcrumb_url,
+            hide_global_nav,
+        )
+    return _render_handrive_login_page(
+        request,
+        context,
+        AuthenticationForm(request),
+        next_url,
+        message,
+        message,
+        False,
+        "",
+        "",
+        auth_breadcrumb_url,
+        hide_global_nav,
+    )
+
+
 def _render_handrive_login_page(
     request,
     context,
@@ -5699,6 +5789,7 @@ def _render_handrive_login_page(
             "handrive_login_2fa_masked_email": twofa_masked_email,
             "handrive_login_2fa_error_message": twofa_error_message,
             "handrive_api_login_2fa_resend_code_url": reverse("main:handrive_api_login_2fa_resend_code"),
+            **_github_auth_context(request, context.get("ui_lang"), next_url),
         },
     )
 
@@ -5728,8 +5819,140 @@ def _render_handrive_signup_page(
             "hide_global_nav": hide_global_nav,
             "handrive_api_signup_2fa_send_code_url": reverse("main:handrive_api_signup_2fa_send_code"),
             "handrive_api_signup_2fa_verify_code_url": reverse("main:handrive_api_signup_2fa_verify_code"),
+            **_github_auth_context(request, context.get("ui_lang"), next_url),
         },
     )
+
+
+@require_http_methods(["GET", "POST"])
+@csrf_protect
+def handrive_github_auth_start(request, ui_lang=None):
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    context = handrive_common_context(request, resolved_lang)
+    handrive_text = context["handrive_text"]
+    next_url = resolve_next_url(request, context["handrive_base_url"])
+    mode = str(request.POST.get("mode") or request.GET.get("mode") or "login").strip().lower()
+    if mode not in {"login", "signup"}:
+        mode = "login"
+
+    if not is_github_auth_configured():
+        return _render_github_auth_error(
+            request,
+            resolved_lang,
+            mode,
+            next_url,
+            handrive_text.get("auth_github_unconfigured", "GitHub login is not configured yet."),
+        )
+
+    if mode == "signup":
+        if request.method != "POST" or not request.POST.get("privacy_consent"):
+            return _render_github_auth_error(
+                request,
+                resolved_lang,
+                "signup",
+                next_url,
+                handrive_text.get("auth_github_consent_error", "You must agree to continue GitHub sign up."),
+            )
+
+    state = secrets.token_urlsafe(32)
+    request.session[HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY] = {
+        "state": state,
+        "mode": mode,
+        "next_url": next_url,
+        "ui_lang": resolved_lang,
+        "created_at": time.time(),
+        "privacy_consent": mode == "signup",
+    }
+    request.session.modified = True
+
+    try:
+        authorize_url = build_github_authorize_url(_build_github_auth_callback_url(request), state)
+    except GitHubAuthError:
+        return _render_github_auth_error(
+            request,
+            resolved_lang,
+            mode,
+            next_url,
+            handrive_text.get("auth_github_unconfigured", "GitHub login is not configured yet."),
+        )
+    return redirect(authorize_url)
+
+
+@require_http_methods(["GET"])
+def handrive_github_auth_callback(request):
+    pending = request.session.pop(HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY, None) or {}
+    request.session.modified = True
+    resolved_lang = resolve_ui_lang(request, pending.get("ui_lang"))
+    context = handrive_common_context(request, resolved_lang)
+    handrive_text = context["handrive_text"]
+    mode = str(pending.get("mode") or "login").strip().lower()
+    if mode not in {"login", "signup"}:
+        mode = "login"
+    next_url = str(pending.get("next_url") or context["handrive_base_url"])
+    generic_error = handrive_text.get("auth_github_failed", "GitHub authentication failed. Please try again.")
+
+    state = str(request.GET.get("state") or "").strip()
+    expected_state = str(pending.get("state") or "").strip()
+    created_at = float(pending.get("created_at") or 0)
+    if not expected_state or not secrets.compare_digest(state, expected_state) or time.time() - created_at > 600:
+        return _render_github_auth_error(request, resolved_lang, mode, next_url, generic_error)
+
+    if request.GET.get("error"):
+        return _render_github_auth_error(request, resolved_lang, mode, next_url, generic_error)
+
+    code = str(request.GET.get("code") or "").strip()
+    if not code:
+        return _render_github_auth_error(request, resolved_lang, mode, next_url, generic_error)
+
+    try:
+        token_data = exchange_github_code(code, _build_github_auth_callback_url(request))
+        identity = fetch_github_identity(token_data.access_token)
+        current_user = request.user if getattr(request.user, "is_authenticated", False) else None
+        user, created = resolve_github_user(identity, mode=mode, current_user=current_user)
+        if user is None:
+            return _render_github_auth_error(
+                request,
+                resolved_lang,
+                "login",
+                next_url,
+                handrive_text.get("auth_github_login_new_account_error", generic_error),
+            )
+        save_github_mapping(user, identity, token_data)
+    except GitHubAuthError:
+        logger.exception("GitHub authentication failed")
+        return _render_github_auth_error(request, resolved_lang, mode, next_url, generic_error)
+    except Exception:
+        logger.exception("GitHub account login failed")
+        return _render_github_auth_error(request, resolved_lang, mode, next_url, generic_error)
+
+    if created:
+        _initialize_github_signup_user(user)
+
+    target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, user)
+    requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
+    forgejo_session_key = None
+    if requires_direct_attach:
+        forgejo_session_key, forgejo_error_code = _prepare_forgejo_login_session(user)
+        if forgejo_error_code or not forgejo_session_key:
+            return _render_github_auth_error(
+                request,
+                resolved_lang,
+                mode,
+                next_url,
+                _build_forgejo_auth_error_message(resolved_lang, forgejo_error_code or FORGEJO_AUTH_ERROR_CODE),
+            )
+
+    _finalize_handrive_login_session(request, user)
+    if not requires_direct_attach:
+        response = _build_post_hanplanet_login_response(target_url, user)
+    else:
+        response = _build_forgejo_redirect_base(target_url)
+        if forgejo_session_key:
+            response = _apply_forgejo_session_cookie(response, forgejo_session_key)
+
+    if created:
+        _send_signup_welcome_email(user, resolved_lang)
+    return response
 
 
 @require_http_methods(["GET"])

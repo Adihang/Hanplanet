@@ -26,11 +26,14 @@ from .models import EmailVerificationCode, HandriveAccessRule, HandriveLoginAtte
 from portfolio.models import Career, PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject
 from stratagem.models import Stratagem_Hero_Score
 from oauth2_provider.models import get_application_model
+from git.models import GitHubAccountMapping
+from .github_auth import GitHubIdentity, GitHubTokenData
 from .handrive_views import (
     DOCS_EDIT_PERMISSION_CODE,
     HANDRIVE_2FA_PENDING_FORGEJO_KEY_SESSION_KEY,
     HANDRIVE_2FA_PENDING_NEXT_URL_SESSION_KEY,
     HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY,
+    HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY,
     HANDRIVE_EDITOR_GROUP_NAME,
     DOCS_PUBLIC_WRITE_GROUP_NAME,
     DOCS_USER_SCOPED_ENTRY_LIMIT,
@@ -1340,6 +1343,121 @@ class HandriveAuthFlowTests(TestCase):
         self.assertNotContains(response, "handleEnterSubmit", html=False)
         self.assertNotContains(response, 'input.addEventListener("keydown"', html=False)
         self.assertContains(response, 'loginForm.dataset.submitting = "1"', html=False)
+
+    @override_settings(
+        GITHUB_APP_CLIENT_ID="github-client-id",
+        GITHUB_APP_CLIENT_SECRET="github-client-secret",
+        GITHUB_AUTH_AUTHORIZE_URL="https://github.example/login/oauth/authorize",
+        GITHUB_AUTH_CALLBACK_URL="https://www.hanplanet.com/auth/github/callback",
+    )
+    def test_github_login_start_redirects_to_github(self):
+        response = self.client.get("/ko/auth/github/start/", {"mode": "login", "next": "/ko/handrive/"})
+
+        self.assertEqual(response.status_code, 302)
+        location = response["Location"]
+        self.assertTrue(location.startswith("https://github.example/login/oauth/authorize?"))
+        self.assertIn("client_id=github-client-id", location)
+        self.assertIn("state=", location)
+        pending = self.client.session[HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY]
+        self.assertEqual(pending["mode"], "login")
+        self.assertEqual(pending["next_url"], "/ko/handrive/")
+
+    @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
+    def test_github_signup_start_requires_privacy_consent(self):
+        response = self.client.post("/ko/auth/github/start/", data={"mode": "signup", "next": "/ko/handrive/"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "개인정보 처리방침 및 이용약관 동의가 필요합니다.")
+        self.assertNotIn(HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY, self.client.session)
+
+    def _seed_github_auth_session(self, *, mode="login", state="github-state", next_url="/ko/handrive/"):
+        session = self.client.session
+        session[HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY] = {
+            "state": state,
+            "mode": mode,
+            "next_url": next_url,
+            "ui_lang": "ko",
+            "created_at": timezone.now().timestamp(),
+            "privacy_consent": mode == "signup",
+        }
+        session.save()
+
+    @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    @mock.patch("main.handrive_views.fetch_github_identity")
+    @mock.patch("main.handrive_views.exchange_github_code")
+    def test_github_login_existing_email_skips_handrive_2fa(
+        self,
+        mock_exchange_code,
+        mock_fetch_identity,
+        mock_prepare_session,
+        mock_send_2fa,
+    ):
+        self.user.email = "github-user@example.com"
+        self.user.save(update_fields=["email"])
+        self._seed_github_auth_session(mode="login")
+        mock_exchange_code.return_value = GitHubTokenData(access_token="github-access-token")
+        mock_fetch_identity.return_value = GitHubIdentity(
+            github_user_id=12345,
+            login="github-user",
+            name="GitHub User",
+            email="github-user@example.com",
+            avatar_url="https://github.example/avatar.png",
+            email_verified=True,
+        )
+
+        response = self.client.get("/auth/github/callback/", {"code": "code-1", "state": "github-state"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.client.session["_auth_user_id"], str(self.user.pk))
+        self.assertNotIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
+        self.assertIn("i_like_gitea", response.cookies)
+        mock_send_2fa.assert_not_called()
+        mock_prepare_session.assert_called_once_with(self.user)
+        mapping = GitHubAccountMapping.objects.get(user=self.user)
+        self.assertEqual(mapping.github_user_id, 12345)
+        self.assertEqual(mapping.github_login, "github-user")
+
+    @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
+    @mock.patch("main.handrive_views._send_signup_welcome_email", return_value=True)
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    @mock.patch("main.handrive_views.fetch_github_identity")
+    @mock.patch("main.handrive_views.exchange_github_code")
+    def test_github_signup_creates_user_without_handrive_2fa(
+        self,
+        mock_exchange_code,
+        mock_fetch_identity,
+        mock_prepare_session,
+        mock_send_2fa,
+        mock_welcome_email,
+    ):
+        self._seed_github_auth_session(mode="signup")
+        mock_exchange_code.return_value = GitHubTokenData(access_token="github-access-token")
+        mock_fetch_identity.return_value = GitHubIdentity(
+            github_user_id=67890,
+            login="new-github-user",
+            name="New GitHub User",
+            email="new-github-user@example.com",
+            avatar_url="",
+            email_verified=True,
+        )
+
+        response = self.client.get("/auth/github/callback/", {"code": "code-2", "state": "github-state"})
+
+        self.assertEqual(response.status_code, 302)
+        user = get_user_model().objects.get(username="new-github-user")
+        self.assertEqual(self.client.session["_auth_user_id"], str(user.pk))
+        self.assertFalse(user.has_usable_password())
+        self.assertNotIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
+        mock_send_2fa.assert_not_called()
+        mock_prepare_session.assert_called_once_with(user)
+        mock_welcome_email.assert_called_once_with(user, "ko")
+        profile = UserProfile.objects.get(user=user)
+        self.assertIsNotNone(profile.privacy_policy_agreed_at)
+        self.assertIsNotNone(profile.terms_of_service_agreed_at)
+        self.assertTrue(user.groups.filter(name=DOCS_PUBLIC_WRITE_GROUP_NAME).exists())
 
     @mock.patch("main.handrive_views.subprocess.run")
     @mock.patch("main.handrive_views.settings.RUNNING_TESTS", False)

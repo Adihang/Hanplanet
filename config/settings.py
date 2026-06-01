@@ -358,6 +358,10 @@ GLOBAL_RATE_LIMIT_EXEMPT_PATH_PREFIXES = tuple(
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = str(get_media_root(DISC))
+HANDRIVE_HLS_CACHE_ROOT = load_optional_secret(
+    "HANDRIVE_HLS_CACHE_ROOT",
+    str(get_media_root("hdd") / "hls_cache"),
+)
 
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')

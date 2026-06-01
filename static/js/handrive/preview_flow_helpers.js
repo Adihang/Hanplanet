@@ -95,6 +95,9 @@
         var scrollPreviewIntoViewIfPortrait = settings.scrollPreviewIntoViewIfPortrait || function () {};
         var setPreviewLoading = settings.setPreviewLoading || null;
         var setPreviewPlaceholder = settings.setPreviewPlaceholder || function () {};
+        var beforePreviewContentReplace = settings.beforePreviewContentReplace || function () {
+            return Promise.resolve();
+        };
         var requestJson = settings.requestJson || function () { return Promise.resolve({}); };
         var buildPostOptions = settings.buildPostOptions || function () { return {}; };
         var t = settings.t || function (_, fallbackValue) { return fallbackValue || ""; };
@@ -128,6 +131,10 @@
 
         if (state.previewCache.has(pathValue)) {
             var cached = state.previewCache.get(pathValue);
+            await beforePreviewContentReplace();
+            if (state.activePreviewPath !== pathValue) {
+                return;
+            }
             if (cached && typeof cached === "object") {
                 renderPreviewHtml(entry, cached.html, cached.renderMode, cached.renderClass);
                 state.activeRenderedPreviewPath = pathValue;
@@ -140,6 +147,10 @@
             return;
         }
 
+        await beforePreviewContentReplace();
+        if (state.activePreviewPath !== pathValue) {
+            return;
+        }
         if (typeof setPreviewLoading === "function") {
             setPreviewLoading();
         } else {

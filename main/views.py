@@ -1701,6 +1701,21 @@ def sub_page(request, ui_lang=None):
     """Render the sub landing page that links to the browser game collection."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
+    hanplanet_site_name = "Hanplanet"
+    hanplanet_og_image = build_public_absolute_url(static("media/icons/hanplanet-og-1200.png"))
+    speaki_icon_image = build_public_absolute_url(static("media/Spikip/speaki_default/icon/main.png"))
+    speaki_main_image = build_public_absolute_url(static("media/Spikip/main.png"))
+    bubble_og_image = build_public_absolute_url(static("media/img/bubble_og_icon.svg"))
+    text_bubble_og_image = build_public_absolute_url(static("media/img/text-bubble.png"))
+    youtube_downloader_og_image = build_public_absolute_url(static("media/icons/youtube-downloader-og-1200.png"))
+    qrbarcode_og_image = build_public_absolute_url(static("media/icons/qrbarcode-og-1200.png"))
+    salvation_edge_og_image = "https://github.com/Adihang/Hanplanet/assets/56463432/14fcd76f-770a-4c42-9e94-06aaa73efe5e"
+    stratagem_hero_og_image = "https://github.com/Adihang/Hanplanet/assets/56463432/484730d2-3edb-47ee-b598-206096312261"
+    wargame_description = (
+        "Practice web and system security through hands-on Hanplanet Wargame challenges."
+        if is_english
+        else "직접 문제를 풀며 웹과 시스템 보안을 연습하는 Hanplanet 워게임입니다."
+    )
 
     links = [
         {
@@ -1708,48 +1723,53 @@ def sub_page(request, ui_lang=None):
             "category": "game",
             "title": "Wargame",
             "url": "https://wargame.hanplanet.com/",
-            "description": (
-                "Security challenge stages for practicing web and systems problems."
-                if is_english
-                else "웹과 시스템 문제를 연습하는 보안 워게임 스테이지."
-            ),
-            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
+            "description": wargame_description,
+            "site_name": "Hanplanet Wargame",
+            "image_url": hanplanet_og_image,
         },
         {
             "slug": "salvations-edge-4",
             "category": "game",
-            "title": "Salvation's Edge 4",
+            "title": "구원의 경계 4네임드 계산기",
             "url": reverse("main:Salvations_Edge_4_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": "Raid-inspired rhythm and timing challenge." if is_english else "레이드 감성의 리듬/타이밍 챌린지.",
-            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
+            "description": "능지박살 아이익 전용",
+            "site_name": hanplanet_site_name,
+            "image_url": salvation_edge_og_image,
         },
         {
             "slug": "stratagem-hero",
             "category": "game",
             "title": "Stratagem Hero",
             "url": reverse("main:Stratagem_Hero_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": "Call stratagems fast and climb the scoreboard." if is_english else "스트라타젬을 빠르게 입력하고 점수판에 도전하세요.",
-            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
+            "description": "Helldivers Sub",
+            "site_name": hanplanet_site_name,
+            "image_url": stratagem_hero_og_image,
         },
         {
             "slug": "bubble",
             "category": "game",
-            "title": "Bubble",
+            "title": "Bubble Playground" if is_english else "버블 플레이그라운드",
             "url": reverse("main:bubble_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": "A small color-pop playground." if is_english else "가볍게 즐기는 색감 버블 게임.",
-            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
+            "description": (
+                "Pop all bubbles to roll a random background color."
+                if is_english
+                else "버블을 전부 터뜨리면 배경색이 랜덤으로 바뀝니다."
+            ),
+            "site_name": hanplanet_site_name,
+            "image_url": bubble_og_image,
         },
         {
             "slug": "text-speaki",
             "category": "tool",
-            "title": "Text Bubble" if is_english else "텍스트 버블",
+            "title": "Text Bubble | Hanplanet" if is_english else "책먹는 스핔이 | Hanplanet",
             "url": reverse("main:text_bubble_lang", kwargs={"ui_lang": resolved_lang}),
             "description": (
-                "Floating bubbles carve up a live text field."
+                "Bubbles float through a New York Times article, reshaping the text around them."
                 if is_english
-                else "떠다니는 버블이 텍스트 흐름을 갈라놓는 실험적인 페이지."
+                else "타임지의 기사를 책처럼 볼 수 있습니다\n하지만 그때 스핔이가 나타났다."
             ),
-            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
+            "site_name": hanplanet_site_name,
+            "image_url": text_bubble_og_image,
         },
         {
             "slug": "image-pip-demo",
@@ -1761,39 +1781,43 @@ def sub_page(request, ui_lang=None):
                 if is_english
                 else "이미지를 드롭하거나 붙여넣고 클릭해서 PiP로 띄웁니다."
             ),
-            "image_url": build_public_absolute_url(static("media/Spikip/speaki_default/icon/main.png")),
+            "site_name": hanplanet_site_name,
+            "image_url": hanplanet_og_image,
         },
         {
             "slug": "youtube-downloader",
             "category": "tool",
-            "title": "YouTube Downloader" if is_english else "유튜브 다운로더",
+            "title": "YouTube Downloader | Hanplanet" if is_english else "유튜브 다운로더 | Hanplanet",
             "url": reverse("main:youtube_downloader_lang", kwargs={"ui_lang": resolved_lang}),
             "description": (
-                "Extract an MP4 or MP3 file from a YouTube URL."
+                "Paste a YouTube URL and export it as an MP4 or MP3 file."
                 if is_english
-                else "유튜브 URL에서 MP4 또는 MP3 파일을 추출합니다."
+                else "유튜브 URL을 붙여넣고 MP4 또는 MP3 파일로 저장하는 도구입니다."
             ),
-            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
+            "site_name": hanplanet_site_name,
+            "image_url": youtube_downloader_og_image,
         },
         {
             "slug": "qrbarcode",
             "category": "tool",
-            "title": "QR/Barcode" if is_english else "QR/Barcode",
+            "title": "QR/Barcode | Hanplanet",
             "url": reverse("main:qrbarcode_lang", kwargs={"ui_lang": resolved_lang}),
             "description": (
                 "Generate a QR code or Code128 barcode from a URL or text."
                 if is_english
-                else "URL 또는 텍스트로 QR 코드와 Code128 바코드를 생성합니다."
+                else "URL 또는 텍스트로 QR 코드와 바코드를 생성하는 도구입니다."
             ),
-            "image_url": build_public_absolute_url(static("media/icons/pwa-192.png")),
+            "site_name": hanplanet_site_name,
+            "image_url": qrbarcode_og_image,
         },
         {
             "slug": "bumpercar-spiky",
             "category": "game",
             "title": "Bumper Car Spiky" if is_english else "범퍼카 스핔이",
             "url": reverse("main:bumpercar_spiky_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": "Crash around a shared arena with Spiky." if is_english else "스핔이로 공용 경기장을 뛰어다니는 멀티플레이 범퍼카 게임.",
-            "image_url": build_public_absolute_url(static("media/Spikip/speaki_default/icon/main.png")),
+            "description": "A multiplayer Spiky bumper car game." if is_english else "멀티플레이 가능한 스핔이 범퍼카 게임.",
+            "site_name": "Bumper Car Spiky" if is_english else "범퍼카 스핔이",
+            "image_url": speaki_icon_image,
         },
         {
             "slug": "raise-speaki",
@@ -1805,7 +1829,8 @@ def sub_page(request, ui_lang=None):
                 if is_english
                 else "스핔이를 키워서 스피키로 진화시키세요!"
             ),
-            "image_url": build_public_absolute_url(static("media/Spikip/speaki_default/icon/main.png")),
+            "site_name": "Raise Speaki" if is_english else "스핔이 키우기",
+            "image_url": speaki_main_image,
         },
     ]
 

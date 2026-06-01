@@ -447,6 +447,7 @@
     const handrivePreviewHelpers = window.HandrivePreviewHelpers || {};
     const previewGetImageElement = handrivePreviewHelpers.getPreviewImageElement || function () { return null; };
     const previewGetImageMinZoom = handrivePreviewHelpers.getPreviewImageMinZoom || function () { return 0.5; };
+    const previewCancelScrollIntoView = handrivePreviewHelpers.cancelScrollIntoView || function () {};
     const previewScrollIntoViewIfPortrait = handrivePreviewHelpers.scrollPreviewIntoViewIfPortrait || function () {};
     const previewSetActionTargets = handrivePreviewHelpers.setPreviewActionTargets || function () {};
     const previewSetPlaceholder = handrivePreviewHelpers.setPreviewPlaceholder || function () {};
@@ -574,6 +575,16 @@
         if (!container || !(container instanceof Element)) {
             return;
         }
+        const activePipElement = document.pictureInPictureElement;
+        if (
+            activePipElement &&
+            activePipElement instanceof HTMLVideoElement &&
+            activePipElement.dataset.handriveImagePipHost !== "1" &&
+            container.contains(activePipElement) &&
+            typeof document.exitPictureInPicture === "function"
+        ) {
+            document.exitPictureInPicture().catch(function () {});
+        }
         container.querySelectorAll("audio, video").forEach(function (mediaElement) {
             if (!(mediaElement instanceof HTMLMediaElement)) {
                 return;
@@ -588,6 +599,35 @@
             } catch (error) {
                 // ignore seek failures for unloaded media
             }
+        });
+    }
+
+    function releasePreviewVideoPlayers(container) {
+        if (!container || !(container instanceof Element)) {
+            return Promise.resolve();
+        }
+        if (
+            window.HandriveVideoPlayer &&
+            typeof window.HandriveVideoPlayer.cleanupPreview === "function"
+        ) {
+            return window.HandriveVideoPlayer.cleanupPreview(container).catch(function () {});
+        }
+        stopPreviewMediaElements(container);
+        return Promise.resolve();
+    }
+
+    function initializePreviewVideoPlayers(container) {
+        if (!container || !(container instanceof Element)) {
+            return;
+        }
+        if (
+            !window.HandriveVideoPlayer ||
+            typeof window.HandriveVideoPlayer.init !== "function"
+        ) {
+            return;
+        }
+        container.querySelectorAll("video.video-js:not([data-vjs-initialized])").forEach(function (videoElement) {
+            window.HandriveVideoPlayer.init(videoElement);
         });
     }
 
@@ -619,13 +659,98 @@
         }
         const session = imagePipSession;
         imagePipSession = null;
-        if (session.video) {
-            session.video.remove();
-        }
         if (session.stream) {
             session.stream.getTracks().forEach(function (track) {
                 track.stop();
             });
+        }
+        if (session.video) {
+            session.video.remove();
+        }
+    }
+
+    function isActiveImagePictureInPictureSession() {
+        return Boolean(
+            imagePipSession &&
+            imagePipSession.video &&
+            document.pictureInPictureElement === imagePipSession.video
+        );
+    }
+
+    function closeNonImagePictureInPicture() {
+        if (!document.pictureInPictureElement || isActiveImagePictureInPictureSession()) {
+            return Promise.resolve();
+        }
+        return document.exitPictureInPicture().catch(function () {});
+    }
+
+    function getImagePipFrameSize(imageElement) {
+        const sourceWidth = Number(imageElement.naturalWidth || imageElement.width || imageElement.clientWidth || 0);
+        const sourceHeight = Number(imageElement.naturalHeight || imageElement.height || imageElement.clientHeight || 0);
+        if (!sourceWidth || !sourceHeight) {
+            return null;
+        }
+        const maxSide = 1280;
+        const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+        return {
+            width: Math.max(1, Math.round(sourceWidth * scale)),
+            height: Math.max(1, Math.round(sourceHeight * scale)),
+        };
+    }
+
+    function waitForVideoMetadata(videoElement) {
+        if (!videoElement || videoElement.readyState >= HTMLMediaElement.HAVE_METADATA) {
+            return Promise.resolve();
+        }
+        return new Promise(function (resolve, reject) {
+            const cleanup = function () {
+                videoElement.removeEventListener("loadedmetadata", onLoadedMetadata);
+                videoElement.removeEventListener("error", onError);
+            };
+            const onLoadedMetadata = function () {
+                cleanup();
+                resolve();
+            };
+            const onError = function () {
+                cleanup();
+                reject(new Error(t("image_pip_no_image_error", "PiP로 띄울 이미지를 찾을 수 없습니다.")));
+            };
+            videoElement.addEventListener("loadedmetadata", onLoadedMetadata);
+            videoElement.addEventListener("error", onError);
+        });
+    }
+
+    function drawImagePipFrame(imageElement, session) {
+        if (!imageElement || !imageElement.complete || !session || !session.canvas || !session.context) {
+            return false;
+        }
+        const frameSize = getImagePipFrameSize(imageElement);
+        if (!frameSize) {
+            return false;
+        }
+        if (session.canvas.width !== frameSize.width) {
+            session.canvas.width = frameSize.width;
+        }
+        if (session.canvas.height !== frameSize.height) {
+            session.canvas.height = frameSize.height;
+        }
+        session.context.clearRect(0, 0, session.canvas.width, session.canvas.height);
+        try {
+            session.context.drawImage(imageElement, 0, 0, session.canvas.width, session.canvas.height);
+        } catch (error) {
+            return false;
+        }
+        return true;
+    }
+
+    function requestImagePipFrame(session) {
+        const stream = session && session.stream;
+        const tracks = stream && typeof stream.getVideoTracks === "function"
+            ? stream.getVideoTracks()
+            : [];
+        const track = tracks[0] || null;
+        if (track && typeof track.requestFrame === "function") {
+            track.requestFrame();
         }
     }
 
@@ -639,34 +764,43 @@
         if (typeof HTMLCanvasElement === "undefined" || typeof HTMLCanvasElement.prototype.captureStream !== "function") {
             throw new Error(t("image_pip_unsupported_error", "이 브라우저는 이미지 PiP를 지원하지 않습니다."));
         }
-        if (document.pictureInPictureElement) {
-            await document.exitPictureInPicture().catch(function () {});
+        if (isActiveImagePictureInPictureSession()) {
+            if (!imageElement.complete && typeof imageElement.decode === "function") {
+                await imageElement.decode().catch(function () {});
+            }
+            if (!imageElement.complete) {
+                throw new Error(t("image_pip_no_image_error", "PiP로 띄울 이미지를 찾을 수 없습니다."));
+            }
+            if (!drawImagePipFrame(imageElement, imagePipSession)) {
+                throw new Error(t("image_pip_no_image_error", "PiP로 띄울 이미지를 찾을 수 없습니다."));
+            }
+            requestImagePipFrame(imagePipSession);
+            return;
         }
+
+        await closeNonImagePictureInPicture();
         closeImagePipSession();
 
         if (!imageElement.complete && typeof imageElement.decode === "function") {
             await imageElement.decode().catch(function () {});
         }
-
-        const sourceWidth = Number(imageElement.naturalWidth || imageElement.width || imageElement.clientWidth || 0);
-        const sourceHeight = Number(imageElement.naturalHeight || imageElement.height || imageElement.clientHeight || 0);
-        if (!sourceWidth || !sourceHeight) {
+        if (!imageElement.complete) {
             throw new Error(t("image_pip_no_image_error", "PiP로 띄울 이미지를 찾을 수 없습니다."));
         }
 
-        const maxSide = 1280;
-        const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
         const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(sourceWidth * scale));
-        canvas.height = Math.max(1, Math.round(sourceHeight * scale));
         const context = canvas.getContext("2d");
         if (!context) {
             throw new Error(t("image_pip_unsupported_error", "이 브라우저는 이미지 PiP를 지원하지 않습니다."));
         }
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        try {
-            context.drawImage(imageElement, 0, 0, canvas.width, canvas.height);
-        } catch (error) {
+        const session = {
+            canvas: canvas,
+            context: context,
+            mode: "image",
+            stream: null,
+            video: null,
+        };
+        if (!drawImagePipFrame(imageElement, session)) {
             throw new Error(t("image_pip_no_image_error", "PiP로 띄울 이미지를 찾을 수 없습니다."));
         }
 
@@ -675,14 +809,22 @@
         video.muted = true;
         video.playsInline = true;
         video.srcObject = stream;
+        video.dataset.handriveImagePipHost = "1";
         video.style.cssText = "position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0;pointer-events:none;";
         document.body.appendChild(video);
 
-        imagePipSession = { stream: stream, video: video };
+        session.stream = stream;
+        session.video = video;
+        imagePipSession = session;
         video.addEventListener("leavepictureinpicture", closeImagePipSession, { once: true });
         try {
-            await video.play();
-            await video.requestPictureInPicture();
+            await waitForVideoMetadata(video);
+            const pictureInPicturePromise = video.requestPictureInPicture();
+            const playPromise = video.play();
+            await pictureInPicturePromise;
+            if (playPromise && typeof playPromise.catch === "function") {
+                playPromise.catch(function () {});
+            }
         } catch (error) {
             closeImagePipSession();
             throw error;
@@ -1925,111 +2067,148 @@
         });
     }
 
-    // 문서 툴바 자동 축소를 초기화하는 함수
+    // 문서 툴바는 한 줄을 유지한다.
     function initializeHandriveToolbarAutoCollapse() {
         const toolbar = document.querySelector(".handrive-toolbar-wrap .handrive-toolbar");
         if (!toolbar) {
             return;
         }
+        toolbar.classList.remove("handrive-toolbar-auto-collapsed");
+    }
 
-        const toolbarChildren = Array.from(toolbar.children).filter(function (child) {
-            return child && child.nodeType === 1 && !child.hasAttribute("data-auth-account");
-        });
-        if (toolbarChildren.length < 2) {
-            toolbar.classList.remove("handrive-toolbar-auto-collapsed");
+    function initializeHandriveBreadcrumbOverflow() {
+        const breadcrumbsList = Array.from(document.querySelectorAll(".handrive-subtitle-wrap .ui-path-breadcrumbs"));
+        if (!breadcrumbsList.length) {
             return;
         }
 
         let rafId = null;
 
-        const toolbarItemsMeasure = document.createElement("div");
-        toolbarItemsMeasure.setAttribute("aria-hidden", "true");
-        Object.assign(toolbarItemsMeasure.style, {
-            position: "fixed",
-            left: "-99999px",
-            top: "-99999px",
-            visibility: "hidden",
-            pointerEvents: "none",
-            display: "flex",
-            alignItems: "center",
-            flexWrap: "nowrap",
-            width: "auto",
-            maxWidth: "none",
-            margin: "0",
-            padding: "0"
-        });
-
-        toolbarChildren.forEach(function (child) {
-            const clone = child.cloneNode(true);
-            Object.assign(clone.style, {
-                flex: "0 0 auto",
-                width: "max-content",
-                minWidth: "max-content",
-                maxWidth: "none",
-                margin: "0",
-                whiteSpace: "nowrap"
+        function getBreadcrumbTextItems(breadcrumbs) {
+            return Array.from(breadcrumbs.children).filter(function (child) {
+                return child instanceof HTMLElement && child.matches(".ui-path-link, .ui-path-current");
             });
+        }
 
-            clone.querySelectorAll("*").forEach(function (node) {
-                if (!(node instanceof window.HTMLElement)) {
+        function resetBreadcrumbWidths(breadcrumbs) {
+            breadcrumbs.classList.remove("is-equal-truncated");
+            breadcrumbs.style.removeProperty("--handrive-breadcrumb-segment-width");
+            getBreadcrumbTextItems(breadcrumbs).forEach(function (item) {
+                item.style.removeProperty("--handrive-breadcrumb-item-width");
+            });
+        }
+
+        function calculateBreadcrumbItemWidths(textItems, availableWidth) {
+            const naturalWidths = textItems.map(function (item) {
+                return Math.ceil(item.scrollWidth || item.getBoundingClientRect().width || 0);
+            });
+            let remainingWidth = Math.max(0, availableWidth);
+            let remainingIndexes = naturalWidths.map(function (_width, index) {
+                return index;
+            });
+            const widths = new Array(textItems.length).fill(0);
+
+            while (remainingIndexes.length) {
+                const sharedWidth = remainingWidth / remainingIndexes.length;
+                const fixedIndexes = remainingIndexes.filter(function (index) {
+                    return naturalWidths[index] <= sharedWidth;
+                });
+
+                if (!fixedIndexes.length) {
+                    remainingIndexes.forEach(function (index) {
+                        widths[index] = Math.max(0, sharedWidth);
+                    });
+                    break;
+                }
+
+                fixedIndexes.forEach(function (index) {
+                    widths[index] = naturalWidths[index];
+                    remainingWidth -= naturalWidths[index];
+                });
+                remainingIndexes = remainingIndexes.filter(function (index) {
+                    return fixedIndexes.indexOf(index) === -1;
+                });
+            }
+
+            return widths;
+        }
+
+        function updateBreadcrumbWidths() {
+            rafId = null;
+            breadcrumbsList.forEach(function (breadcrumbs) {
+                resetBreadcrumbWidths(breadcrumbs);
+
+                const textItems = getBreadcrumbTextItems(breadcrumbs);
+                if (!textItems.length || breadcrumbs.clientWidth <= 0) {
                     return;
                 }
-                node.style.whiteSpace = "nowrap";
-                node.style.flexWrap = "nowrap";
+
+                if (breadcrumbs.scrollWidth <= breadcrumbs.clientWidth + 1) {
+                    return;
+                }
+
+                const children = Array.from(breadcrumbs.children).filter(function (child) {
+                    return child instanceof HTMLElement;
+                });
+                const style = window.getComputedStyle(breadcrumbs);
+                const gapValue = parseFloat(style.columnGap || style.gap || "0");
+                const gap = Number.isFinite(gapValue) ? gapValue : 0;
+                const separatorWidth = children.reduce(function (total, child) {
+                    if (child.matches(".ui-path-link, .ui-path-current")) {
+                        return total;
+                    }
+                    return total + child.getBoundingClientRect().width;
+                }, 0);
+                const gapWidth = Math.max(0, children.length - 1) * gap;
+                const availableWidth = breadcrumbs.clientWidth - separatorWidth - gapWidth;
+                const segmentWidth = Math.max(0, Math.floor(availableWidth / textItems.length));
+                const itemWidths = calculateBreadcrumbItemWidths(textItems, availableWidth);
+
+                breadcrumbs.style.setProperty("--handrive-breadcrumb-segment-width", segmentWidth + "px");
+                textItems.forEach(function (item, index) {
+                    item.style.setProperty("--handrive-breadcrumb-item-width", Math.floor(itemWidths[index]) + "px");
+                });
+                breadcrumbs.classList.add("is-equal-truncated");
             });
+        }
 
-            toolbarItemsMeasure.appendChild(clone);
-        });
-
-        document.body.appendChild(toolbarItemsMeasure);
-
-        // 툴바 모드를 업데이트하는 함수
-        const updateToolbarMode = function () {
-            rafId = null;
-
-            toolbar.classList.remove("handrive-toolbar-auto-collapsed");
-
-            const toolbarStyle = window.getComputedStyle(toolbar);
-            const gapValue = parseFloat(toolbarStyle.columnGap || toolbarStyle.gap || "0");
-            const horizontalGap = Number.isFinite(gapValue) ? gapValue : 0;
-            toolbarItemsMeasure.style.gap = horizontalGap + "px";
-
-            const paddingLeftValue = parseFloat(toolbarStyle.paddingLeft || "0");
-            const paddingRightValue = parseFloat(toolbarStyle.paddingRight || "0");
-            const horizontalPadding =
-                (Number.isFinite(paddingLeftValue) ? paddingLeftValue : 0) +
-                (Number.isFinite(paddingRightValue) ? paddingRightValue : 0);
-            const requiredWidth = Math.ceil(toolbarItemsMeasure.getBoundingClientRect().width);
-            const availableWidth = Math.max(0, toolbar.clientWidth - horizontalPadding);
-            const shouldCollapse = requiredWidth > availableWidth;
-
-            toolbar.classList.toggle("handrive-toolbar-auto-collapsed", shouldCollapse);
-        };
-
-        // 툴바 모드 업데이트를 스케줄링하는 함수
-        const scheduleToolbarModeUpdate = function () {
+        function scheduleBreadcrumbWidthUpdate() {
             if (rafId !== null) {
                 return;
             }
-            rafId = window.requestAnimationFrame(updateToolbarMode);
-        };
+            rafId = window.requestAnimationFrame(updateBreadcrumbWidths);
+        }
 
-        window.addEventListener("resize", scheduleToolbarModeUpdate, { passive: true });
-        window.addEventListener("orientationchange", scheduleToolbarModeUpdate, { passive: true });
+        window.addEventListener("resize", scheduleBreadcrumbWidthUpdate, { passive: true });
+        window.addEventListener("orientationchange", scheduleBreadcrumbWidthUpdate, { passive: true });
 
         if (window.ResizeObserver) {
-            const observer = new ResizeObserver(scheduleToolbarModeUpdate);
-            observer.observe(toolbar);
-            toolbarChildren.forEach(function (child) {
-                observer.observe(child);
+            const resizeObserver = new ResizeObserver(scheduleBreadcrumbWidthUpdate);
+            breadcrumbsList.forEach(function (breadcrumbs) {
+                resizeObserver.observe(breadcrumbs);
+                const wrap = breadcrumbs.closest(".handrive-subtitle-wrap");
+                if (wrap) {
+                    resizeObserver.observe(wrap);
+                }
+            });
+        }
+
+        if (window.MutationObserver) {
+            const mutationObserver = new MutationObserver(scheduleBreadcrumbWidthUpdate);
+            breadcrumbsList.forEach(function (breadcrumbs) {
+                mutationObserver.observe(breadcrumbs, {
+                    childList: true,
+                    characterData: true,
+                    subtree: true,
+                });
             });
         }
 
         if (document.fonts && document.fonts.ready) {
-            document.fonts.ready.then(scheduleToolbarModeUpdate).catch(function () {});
+            document.fonts.ready.then(scheduleBreadcrumbWidthUpdate).catch(function () {});
         }
 
-        scheduleToolbarModeUpdate();
+        scheduleBreadcrumbWidthUpdate();
     }
 
     function initializeListPage() {
@@ -2066,10 +2245,10 @@
         const listLayout = document.getElementById("handrive-list-layout");
         const listPane = root.querySelector(".handrive-list-pane");
         const listContainer = document.getElementById("handrive-list");
-        const listSearchForm = document.getElementById("handrive-list-search-form");
-        const listSearchInput = document.getElementById("handriveListSearchInput");
-        const listSearchSubmitButton = document.getElementById("handrive-list-search-submit");
-        const listSearchClearButton = document.getElementById("handrive-list-search-clear");
+        let listSearchForm = document.getElementById("handrive-list-search-form");
+        let listSearchInput = document.getElementById("handriveListSearchInput");
+        let listSearchSubmitButton = document.getElementById("handrive-list-search-submit");
+        let listSearchClearButton = document.getElementById("handrive-list-search-clear");
         let currentDirSearchInput = null;
         const listLoadingOverlay = document.getElementById("handrive-list-loading");
         const previewPanel = document.getElementById("handrive-list-preview");
@@ -2385,6 +2564,8 @@
             dragHoverElement: null,
             fileDropGroupRows: [],
             fileDropGroupPath: "",
+            fileDropGroupHighlightElement: null,
+            fileDropSourceKind: "",
             hoverExpandTimerId: null,
             hoverExpandPath: "",
             previewCache: new Map(),
@@ -2729,6 +2910,51 @@
             }
             editorHighlight.scrollTop = editorContentInput.scrollTop;
             editorHighlight.scrollLeft = editorContentInput.scrollLeft;
+        }
+
+        function resetListEditorHorizontalScroll() {
+            try { document.documentElement.scrollLeft = 0; } catch (error) {}
+            try { document.body.scrollLeft = 0; } catch (error) {}
+            try {
+                if (document.scrollingElement) {
+                    document.scrollingElement.scrollLeft = 0;
+                }
+            } catch (error) {}
+            try { window.scrollTo(0, window.scrollY || window.pageYOffset || 0); } catch (error) {}
+            [
+                editorPanel,
+                editorBody,
+                editorSurface,
+                editorContentInput,
+                editorHighlight,
+                imageEditorSurface,
+                videoEditorSurface,
+                audioEditorSurface,
+            ].forEach(function (element) {
+                if (element && typeof element.scrollLeft === "number") {
+                    element.scrollLeft = 0;
+                }
+            });
+            if (editorPanel && typeof editorPanel.querySelectorAll === "function") {
+                editorPanel
+                    .querySelectorAll(".ie-canvas-area, .ve-body, .ae-body")
+                    .forEach(function (element) {
+                        element.scrollLeft = 0;
+                    });
+            }
+            if (editorContentInput && editorHighlight) {
+                editorHighlight.scrollLeft = editorContentInput.scrollLeft;
+            }
+        }
+
+        function scheduleListEditorHorizontalScrollReset() {
+            resetListEditorHorizontalScroll();
+            window.requestAnimationFrame(function () {
+                resetListEditorHorizontalScroll();
+                window.requestAnimationFrame(resetListEditorHorizontalScroll);
+            });
+            window.setTimeout(resetListEditorHorizontalScroll, 80);
+            window.setTimeout(resetListEditorHorizontalScroll, 240);
         }
 
         function renderListEditorHighlight() {
@@ -3172,20 +3398,92 @@
         // preview/editor body 높이를 실제 화면 배치 기준으로 맞춘다.
         // 가로모드에서는 footer가 viewport 안에 남을 공간을 먼저 예약한 뒤 본문 높이를 정한다.
         let previewBodyHeightRafId = null;
+        let previewPortraitLoadingHeightLocked = false;
+        let previewPortraitLoadingHeightReleaseRafId = null;
+
+        function getPreviewBodyElement() {
+            return previewPanel ? previewPanel.querySelector(".handrive-list-preview-body") : null;
+        }
+
+        function clearPreviewBodyHeightStyles(previewBody) {
+            if (!previewBody) {
+                return;
+            }
+            previewBody.style.height = "";
+            previewBody.style.minHeight = "";
+            previewBody.style.maxHeight = "";
+        }
+
+        function lockPreviewBodyHeightForPortraitLoading() {
+            const previewBody = getPreviewBodyElement();
+            if (
+                !previewBody ||
+                !previewPanel ||
+                previewPanel.hidden ||
+                !listLayout ||
+                !listLayout.classList.contains("is-portrait") ||
+                !listLayout.classList.contains("has-preview")
+            ) {
+                return;
+            }
+            if (previewPortraitLoadingHeightReleaseRafId !== null) {
+                window.cancelAnimationFrame(previewPortraitLoadingHeightReleaseRafId);
+                previewPortraitLoadingHeightReleaseRafId = null;
+            }
+            const currentHeight = Math.ceil(previewBody.getBoundingClientRect().height);
+            if (currentHeight <= 0) {
+                return;
+            }
+            previewPortraitLoadingHeightLocked = true;
+            const heightValue = String(currentHeight) + "px";
+            previewBody.style.height = heightValue;
+            previewBody.style.minHeight = heightValue;
+            previewBody.style.maxHeight = "none";
+        }
+
+        function releasePreviewBodyHeightAfterPortraitLoading() {
+            if (!previewPortraitLoadingHeightLocked) {
+                return;
+            }
+            if (previewPortraitLoadingHeightReleaseRafId !== null) {
+                window.cancelAnimationFrame(previewPortraitLoadingHeightReleaseRafId);
+            }
+            previewPortraitLoadingHeightReleaseRafId = window.requestAnimationFrame(function () {
+                const previewBody = getPreviewBodyElement();
+                previewPortraitLoadingHeightReleaseRafId = null;
+                previewPortraitLoadingHeightLocked = false;
+                if (!previewBody) {
+                    return;
+                }
+                if (listLayout && listLayout.classList.contains("is-landscape")) {
+                    syncPreviewBodyHeight();
+                    return;
+                }
+                clearPreviewBodyHeightStyles(previewBody);
+            });
+        }
+
         function syncPreviewBodyHeight() {
             if (!previewPanel || !listLayout) {
                 return;
             }
-            const previewBody = previewPanel.querySelector(".handrive-list-preview-body");
+            const previewBody = getPreviewBodyElement();
             if (!previewBody) {
                 return;
             }
             const isLandscape = listLayout.classList.contains("is-landscape");
             const hasPreview = listLayout.classList.contains("has-preview");
             if (!isLandscape || !hasPreview) {
-                previewBody.style.height = "";
-                previewBody.style.minHeight = "";
-                previewBody.style.maxHeight = "";
+                if (
+                    previewPortraitLoadingHeightLocked &&
+                    hasPreview &&
+                    !previewPanel.hidden &&
+                    listLayout.classList.contains("is-portrait")
+                ) {
+                    return;
+                }
+                previewPortraitLoadingHeightLocked = false;
+                clearPreviewBodyHeightStyles(previewBody);
                 return;
             }
             const previewHead = previewPanel.querySelector(".handrive-list-preview-head");
@@ -3359,14 +3657,14 @@
         }
 
         function syncSearchFormVisibility() {
-            if (!listSearchForm) return;
-            const isLandscape = listLayout.classList.contains("is-landscape");
-            const panelOpen = isLandscape && (
-                (previewPanel && !previewPanel.hidden) ||
-                (editorPanel && !editorPanel.hidden)
-            );
-            listSearchForm.classList.toggle("is-search-hidden", panelOpen);
-            syncCurrentDirInlineSearchVisibility(panelOpen);
+            const searchForm = ensureListSearchForm();
+            if (!searchForm) return;
+            const currentDirRow = listContainer
+                ? listContainer.querySelector(".handrive-current-dir-row")
+                : null;
+            attachListSearchFormToCurrentDirRow(currentDirRow);
+            searchForm.classList.remove("is-search-hidden");
+            syncCurrentDirInlineSearchVisibility(false);
             const duration = 220;
             const startTime = performance.now();
             function tick() {
@@ -3381,6 +3679,9 @@
         }
 
         function setPreviewVisibility(isVisible) {
+            if (!isVisible) {
+                void releasePreviewVideoPlayers(previewContent);
+            }
             previewSetVisibility(previewPanel, listLayout, isVisible, scheduleSyncCurrentDirRowHeightWithSideHead);
             if (isVisible) {
                 schedulePreviewBodyHeight();
@@ -3552,12 +3853,76 @@
             return value || null;
         }
 
+        const entryTypeSortRankByIconKey = {
+            archive: 100,
+            pdf: 110,
+            document: 120,
+            word: 120,
+            sheet: 121,
+            excel: 121,
+            presentation: 122,
+            powerpoint: 122,
+            text: 130,
+            markdown: 131,
+            data: 140,
+            json: 141,
+            image: 150,
+            audio: 160,
+            video: 170,
+            font: 180,
+            html: 200,
+            css: 201,
+            js: 202,
+            jsx: 203,
+            ts: 204,
+            py: 205,
+            java: 206,
+            kotlin: 207,
+            swift: 208,
+            go: 209,
+            rust: 210,
+            ruby: 211,
+            php: 212,
+            c: 213,
+            cpp: 214,
+            csharp: 215,
+            scala: 216,
+            shell: 217,
+            code: 218,
+            exe: 300,
+            file: 900,
+        };
+
+        function getEntryTypeSortValue(entry) {
+            if (!entry) {
+                return null;
+            }
+            const safeEntry = entry || {};
+            if (safeEntry.type === "dir") {
+                if (safeEntry.git_repo) {
+                    return "000:repo";
+                }
+                if (safeEntry.git_branch_root) {
+                    return "001:branch";
+                }
+                if (safeEntry.is_map_folder) {
+                    return "002:map-folder";
+                }
+                return "003:folder";
+            }
+            const extension = getEntryFileExtension(safeEntry) || getPathFileExtension(safeEntry.path || safeEntry.name || "");
+            const normalizedExtension = String(extension || "").replace(/^\./, "").toLocaleLowerCase();
+            const iconKey = safeEntry.is_archive ? "archive" : getFileIconKey(safeEntry.path || safeEntry.name || "");
+            const typeRank = entryTypeSortRankByIconKey[iconKey] || entryTypeSortRankByIconKey.file;
+            return String(typeRank).padStart(3, "0") + ":" + String(iconKey || "file") + ":" + (normalizedExtension || "no-extension");
+        }
+
         function getEntrySortValue(entry, sortKey) {
             if (sortKey === "modified") {
                 return getEntryModifiedSortValue(entry);
             }
             if (sortKey === "type") {
-                return resolveEntryTypeLabel(entry).toLocaleLowerCase();
+                return getEntryTypeSortValue(entry);
             }
             if (sortKey === "size") {
                 return getEntrySizeSortValue(entry);
@@ -3632,11 +3997,31 @@
             if (!row) {
                 return;
             }
+            const syncSortDirectionMarker = function (label, isActive) {
+                let marker = label.querySelector(".handrive-sort-direction-mark");
+                if (!isActive) {
+                    label.removeAttribute("data-sort-direction");
+                    if (marker) {
+                        marker.remove();
+                    }
+                    return;
+                }
+                const sortDirection = state.listSortDirection === "desc" ? "desc" : "asc";
+                label.setAttribute("data-sort-direction", sortDirection);
+                if (!marker) {
+                    marker = document.createElement("span");
+                    marker.className = "handrive-sort-direction-mark";
+                    marker.setAttribute("aria-hidden", "true");
+                    label.appendChild(marker);
+                }
+                marker.textContent = sortDirection === "desc" ? "▾" : "▴";
+            };
             const labels = row.querySelectorAll(".handrive-item-meta-label[data-sort-key]");
             labels.forEach(function (label) {
                 const isActive = label.getAttribute("data-sort-key") === state.listSortKey;
                 label.classList.toggle("is-sort-active", isActive);
                 label.setAttribute("aria-sort", isActive && state.listSortDirection === "desc" ? "descending" : (isActive ? "ascending" : "none"));
+                syncSortDirectionMarker(label, isActive);
             });
         }
 
@@ -3708,13 +4093,18 @@
         }
 
         function setPreviewPlaceholder(message) {
+            void releasePreviewVideoPlayers(previewContent);
             previewSetPlaceholder(previewContent, escapeHtml, message);
+            releasePreviewBodyHeightAfterPortraitLoading();
         }
 
         function setPreviewLoading() {
             if (!previewContent) {
                 return;
             }
+            previewCancelScrollIntoView({ freezePosition: true });
+            lockPreviewBodyHeightForPortraitLoading();
+            void releasePreviewVideoPlayers(previewContent);
             applyRenderedContentModeClass(previewContent, "plain_text", "handrive-plain-text");
             previewContent.innerHTML = '<div class="handrive-list-preview-loading" role="status" aria-label="' +
                 escapeHtml(t("list_preview_loading", "미리보기를 불러오는 중...")) +
@@ -3763,6 +4153,7 @@
                 previewPanel: previewPanel,
                 listLayout: listLayout,
                 renderHighlight: renderListEditorHighlight,
+                resetHorizontalScroll: scheduleListEditorHorizontalScrollReset,
                 onAfterChange: function () {
                     setPreviewVisibility(false);
                     scheduleSyncCurrentDirRowHeightWithSideHead();
@@ -3830,6 +4221,7 @@
                     },
                 });
             }
+            scheduleListEditorHorizontalScrollReset();
 
             setupEditorEvents(entry);
         }
@@ -3875,6 +4267,7 @@
                     },
                 });
             }
+            scheduleListEditorHorizontalScrollReset();
 
             setupEditorEvents(entry);
         }
@@ -3920,6 +4313,7 @@
                     },
                 });
             }
+            scheduleListEditorHorizontalScrollReset();
 
             setupEditorEvents(entry);
         }
@@ -4488,6 +4882,14 @@
             void updatePreviewNavButtons(null);
         }
 
+        function closePreviewPaneIfOpen() {
+            if (!previewPanel || previewPanel.hidden) {
+                return false;
+            }
+            clearPreviewPane();
+            return true;
+        }
+
         function getPreviewImageMinZoom() {
             return previewGetImageMinZoom(previewContent);
         }
@@ -4500,6 +4902,54 @@
             const minZoom = getPreviewImageMinZoom();
             state.previewImageZoom = Math.max(minZoom, Math.min(3, Number(nextZoom) || 1));
             syncPreviewImageZoom();
+        }
+
+        function releasePreviewBodyHeightAfterNextPaint() {
+            window.requestAnimationFrame(function () {
+                window.requestAnimationFrame(function () {
+                    releasePreviewBodyHeightAfterPortraitLoading();
+                });
+            });
+        }
+
+        function releasePreviewBodyHeightWhenRendered(renderMode) {
+            const normalizedRenderMode = String(renderMode || "");
+            if (normalizedRenderMode !== "media_image") {
+                releasePreviewBodyHeightAfterNextPaint();
+                return;
+            }
+
+            const imageElement = previewGetImageElement(previewContent);
+            if (!imageElement) {
+                releasePreviewBodyHeightAfterNextPaint();
+                return;
+            }
+
+            let released = false;
+            const releaseOnce = function () {
+                if (released) {
+                    return;
+                }
+                released = true;
+                imageElement.removeEventListener("load", releaseOnce);
+                imageElement.removeEventListener("error", releaseOnce);
+                releasePreviewBodyHeightAfterNextPaint();
+            };
+
+            if (imageElement.complete) {
+                if (
+                    imageElement.naturalWidth > 0 &&
+                    typeof imageElement.decode === "function"
+                ) {
+                    imageElement.decode().then(releaseOnce, releaseOnce);
+                    return;
+                }
+                releaseOnce();
+                return;
+            }
+
+            imageElement.addEventListener("load", releaseOnce);
+            imageElement.addEventListener("error", releaseOnce);
         }
 
         function renderPreviewHtml(entry, html, renderMode, renderClass) {
@@ -4521,11 +4971,16 @@
                 syncPreviewImageZoom: syncPreviewImageZoom,
                 t: t,
             });
+            initializePreviewVideoPlayers(previewContent);
+            releasePreviewBodyHeightWhenRendered(renderMode);
         }
 
         async function loadPreviewForEntry(entry) {
             await loadPreviewEntryFlow({
                 buildPostOptions: buildPostOptions,
+                beforePreviewContentReplace: function () {
+                    return releasePreviewVideoPlayers(previewContent);
+                },
                 clearPreviewPane: clearPreviewPane,
                 editorPanel: editorPanel,
                 entry: entry,
@@ -5091,6 +5546,7 @@
                 state.dragHoverElement = null;
             }
             clearFileDropGroup();
+            setFileDropTarget(false);
         }
 
         function isFileTransfer(event) {
@@ -5107,11 +5563,22 @@
             return Array.from(dataTransfer.types).includes("Files");
         }
 
-        function setFileDropTarget(active) {
+        function setFileDropTarget(active, sourceKind) {
             if (!listPane) {
                 return;
             }
-            listPane.classList.toggle("is-file-drop-target", Boolean(active));
+            const isActive = Boolean(active);
+            const nextSourceKind = isActive ? String(sourceKind || "") : "";
+            if (
+                listPane.classList.contains("is-file-drop-target") === isActive &&
+                listPane.classList.contains("is-local-file-drop-target") === (isActive && nextSourceKind === "local") &&
+                state.fileDropSourceKind === nextSourceKind
+            ) {
+                return;
+            }
+            listPane.classList.toggle("is-file-drop-target", isActive);
+            listPane.classList.toggle("is-local-file-drop-target", isActive && nextSourceKind === "local");
+            state.fileDropSourceKind = nextSourceKind;
         }
 
         function clearFileDragUiState() {
@@ -5135,6 +5602,7 @@
             });
             state.fileDropGroupRows = [];
             state.fileDropGroupPath = "";
+            state.fileDropGroupHighlightElement = null;
             if (listContainer) {
                 listContainer.classList.remove("is-file-drop-root-target");
             }
@@ -5197,6 +5665,14 @@
 
         function setFileDropGroup(targetDirPath, highlightElement) {
             const targetPath = normalizePath(targetDirPath || "", true);
+            if (
+                state.fileDropGroupPath === targetPath &&
+                state.fileDropGroupHighlightElement === highlightElement &&
+                Array.isArray(state.fileDropGroupRows) &&
+                state.fileDropGroupRows.length > 0
+            ) {
+                return;
+            }
             const rows = getFileDropGroupRows(targetPath, highlightElement);
             const groupLeftOffset = getFileDropGroupLeftOffset(highlightElement);
             const currentDirPath = normalizePath(state.currentDir || "", true);
@@ -5229,6 +5705,7 @@
             });
             state.fileDropGroupRows = rows;
             state.fileDropGroupPath = targetPath;
+            state.fileDropGroupHighlightElement = highlightElement;
         }
 
         function isInsideCurrentFileDropGroup(targetNode) {
@@ -5264,6 +5741,10 @@
                 return false;
             }
             return !targetNode.closest(".handrive-item");
+        }
+
+        function hasActiveDriveDrag() {
+            return Array.isArray(state.draggingEntries) && state.draggingEntries.length > 0;
         }
 
         function resolveFileDropHighlightElement(targetNode) {
@@ -6001,6 +6482,32 @@
             state.dragOverElement.classList.add("is-drop-target");
         }
 
+        function restoreActiveDropPreviewAfterRender() {
+            if (!listPane || !listPane.classList.contains("is-file-drop-target")) {
+                return;
+            }
+            const targetPath = normalizePath(state.fileDropGroupPath || "", true);
+            const sourceKind = state.fileDropSourceKind;
+            if (!targetPath) {
+                clearDragOverTarget();
+                return;
+            }
+            const highlightElement = state.entryRowByPath.get(targetPath);
+            if (!highlightElement) {
+                clearDragOverTarget();
+                return;
+            }
+            if (state.dragOverElement && state.dragOverElement !== highlightElement) {
+                state.dragOverElement.classList.remove("is-drop-target");
+            }
+            state.dragOverElement = highlightElement;
+            state.dragOverElement.classList.add("is-drop-target");
+            state.fileDropGroupPath = "";
+            state.fileDropGroupHighlightElement = null;
+            setFileDropTarget(true, sourceKind);
+            setFileDropGroup(targetPath, highlightElement);
+        }
+
         function clearHoverExpandTimer() {
             if (state.hoverExpandTimerId !== null) {
                 window.clearTimeout(state.hoverExpandTimerId);
@@ -6094,6 +6601,18 @@
             if (!Array.isArray(sourceEntries) || sourceEntries.length === 0) {
                 return;
             }
+            const normalizedTargetPath = normalizePath(targetDirPath || "", true);
+            const normalSourceEntries = sourceEntries.filter(function (entry) {
+                return Boolean(entry && !entry.is_archive_member);
+            });
+            if (
+                normalSourceEntries.length > 0 &&
+                normalSourceEntries.every(function (entry) {
+                    return getParentDirectory(entry.path) === normalizedTargetPath;
+                })
+            ) {
+                return;
+            }
             if (sourceEntries.every(function (entry) { return Boolean(entry && entry.is_archive_member); })) {
                 await extractArchiveEntriesToDirectory(sourceEntries, targetDirPath);
                 return;
@@ -6112,16 +6631,24 @@
             processOperationQueue().catch(alertError);
         }
 
-        function activateFileDropTarget(event, targetDirPath, highlightElement) {
+        function activateDropPreviewTarget(event, targetDirPath, highlightElement, dropEffect, sourceKind) {
             event.preventDefault();
             event.stopPropagation();
             if (event.dataTransfer) {
-                event.dataTransfer.dropEffect = "copy";
+                event.dataTransfer.dropEffect = dropEffect || "copy";
             }
-            setFileDropTarget(true);
             setDragOverTarget(highlightElement);
+            setFileDropTarget(true, sourceKind);
             setFileDropGroup(targetDirPath, highlightElement);
             scheduleHoverExpand(targetDirPath);
+        }
+
+        function activateFileDropTarget(event, targetDirPath, highlightElement) {
+            activateDropPreviewTarget(event, targetDirPath, highlightElement, "copy", "local");
+        }
+
+        function activateDriveMoveDropTarget(event, targetDirPath, highlightElement) {
+            activateDropPreviewTarget(event, targetDirPath, highlightElement, "move", "drive");
         }
 
         function bindDropTarget(targetElement, targetDirPath, options) {
@@ -6131,6 +6658,7 @@
             const bindOptions = options || {};
             const highlightElement = bindOptions.highlightElement || targetElement;
             const fileTransfersOnly = Boolean(bindOptions.fileTransfersOnly);
+            const driveMoveOptions = Object.assign({}, bindOptions, { allowSameParent: false });
 
             targetElement.addEventListener("dragenter", function (event) {
                 if (isFileTransfer(event)) {
@@ -6140,12 +6668,10 @@
                 if (fileTransfersOnly) {
                     return;
                 }
-                if (!canDropToDirectory(targetDirPath, options)) {
+                if (!canDropToDirectory(targetDirPath, driveMoveOptions)) {
                     return;
                 }
-                event.preventDefault();
-                setDragOverTarget(highlightElement);
-                scheduleHoverExpand(targetDirPath);
+                activateDriveMoveDropTarget(event, targetDirPath, highlightElement);
             });
 
             targetElement.addEventListener("dragover", function (event) {
@@ -6156,15 +6682,10 @@
                 if (fileTransfersOnly) {
                     return;
                 }
-                if (!canDropToDirectory(targetDirPath, options)) {
+                if (!canDropToDirectory(targetDirPath, driveMoveOptions)) {
                     return;
                 }
-                event.preventDefault();
-                if (event.dataTransfer) {
-                    event.dataTransfer.dropEffect = "move";
-                }
-                setDragOverTarget(highlightElement);
-                scheduleHoverExpand(targetDirPath);
+                activateDriveMoveDropTarget(event, targetDirPath, highlightElement);
             });
 
             targetElement.addEventListener("dragleave", function (event) {
@@ -6199,10 +6720,11 @@
                 if (fileTransfersOnly) {
                     return;
                 }
-                if (!canDropToDirectory(targetDirPath, options)) {
+                if (!canDropToDirectory(targetDirPath, driveMoveOptions)) {
                     return;
                 }
                 event.preventDefault();
+                event.stopPropagation();
                 clearHoverExpandTimer();
                 clearDragOverTarget();
                 moveEntriesToDirectory(state.draggingEntries.slice(), targetDirPath).catch(alertError);
@@ -6388,7 +6910,7 @@
             sizeField.setAttribute("data-sort-key", "size");
             const permissionField = createEntryMetaField("handrive-item-permission", t("list_sort_permission", textByLang("권한", "Permission")));
             permissionField.setAttribute("data-sort-key", "permission");
-            const commitField = createEntryMetaField("handrive-item-commit", t("list_sort_commit", textByLang("커밋", "Commit")));
+            const commitField = createEntryMetaField("handrive-item-commit", t("list_sort_commit", textByLang("커밋명", "Commit")));
             commitField.setAttribute("data-sort-key", "commit");
             const idField = createEntryMetaField("handrive-item-id", t("list_sort_id", "ID"));
             idField.setAttribute("data-sort-key", "id");
@@ -6458,6 +6980,118 @@
                 return currentDirSearchInput;
             }
             return listSearchInput;
+        }
+
+        function getDirectChildByClass(element, className) {
+            if (!element) {
+                return null;
+            }
+            const children = element.children || [];
+            for (let i = 0; i < children.length; i += 1) {
+                if (children[i].classList && children[i].classList.contains(className)) {
+                    return children[i];
+                }
+            }
+            return null;
+        }
+
+        function buildListSearchFormFallback() {
+            const form = document.createElement("div");
+            form.className = "ui-search-form handrive-list-search-form";
+            form.id = "handrive-list-search-form";
+
+            const submitButton = document.createElement("button");
+            submitButton.className = "root-search-submit handrive-list-search-submit";
+            submitButton.id = "handrive-list-search-submit";
+            submitButton.type = "button";
+            submitButton.setAttribute("aria-label", t("search_button", textByLang("검색", "Search")));
+            submitButton.title = t("search_button", textByLang("검색", "Search"));
+
+            const submitIcon = document.createElement("span");
+            submitIcon.className = "root-search-submit-icon";
+            submitIcon.setAttribute("aria-hidden", "true");
+            submitButton.appendChild(submitIcon);
+
+            const label = document.createElement("label");
+            label.className = "root-search-sr-only";
+            label.setAttribute("for", "handriveListSearchInput");
+            label.textContent = t("search_button", textByLang("검색", "Search"));
+
+            const input = document.createElement("input");
+            input.id = "handriveListSearchInput";
+            input.className = "root-search-input handrive-list-search-input";
+            input.type = "text";
+            input.autocomplete = "off";
+            input.spellcheck = false;
+            input.placeholder = t("search_placeholder", textByLang("파일 검색", "Search files"));
+
+            const clearButton = document.createElement("button");
+            clearButton.className = "root-input-clear handrive-list-search-clear";
+            clearButton.id = "handrive-list-search-clear";
+            clearButton.type = "button";
+            clearButton.hidden = true;
+            clearButton.setAttribute("aria-label", t("clear_button", textByLang("지우기", "Clear")));
+            clearButton.title = t("clear_button", textByLang("지우기", "Clear"));
+
+            form.appendChild(submitButton);
+            form.appendChild(label);
+            form.appendChild(input);
+            form.appendChild(clearButton);
+            return form;
+        }
+
+        function ensureListSearchForm() {
+            if (listSearchForm && listSearchInput) {
+                return listSearchForm;
+            }
+            const template = document.getElementById("handrive-list-search-form-template");
+            const clonedForm = template && template.content && template.content.firstElementChild
+                ? template.content.firstElementChild.cloneNode(true)
+                : buildListSearchFormFallback();
+            if (!clonedForm) {
+                return null;
+            }
+            listSearchForm = clonedForm;
+            listSearchInput = listSearchForm.querySelector("#handriveListSearchInput");
+            listSearchSubmitButton = listSearchForm.querySelector("#handrive-list-search-submit");
+            listSearchClearButton = listSearchForm.querySelector("#handrive-list-search-clear");
+            return listSearchForm;
+        }
+
+        function bindListSearchFormRowEvents() {
+            ensureListSearchForm();
+            if (!listSearchForm || listSearchForm.dataset.handriveRowSearchBound === "1") {
+                return;
+            }
+            listSearchForm.dataset.handriveRowSearchBound = "1";
+            ["pointerdown", "mousedown", "mouseup", "click", "dblclick", "contextmenu"].forEach(function (eventName) {
+                listSearchForm.addEventListener(eventName, function (event) {
+                    event.stopPropagation();
+                });
+            });
+        }
+
+        function attachListSearchFormToCurrentDirRow(row) {
+            const searchForm = ensureListSearchForm();
+            if (!row || !searchForm) {
+                return;
+            }
+            const previousRow = searchForm.closest(".handrive-current-dir-row");
+            if (previousRow && previousRow !== row) {
+                previousRow.classList.remove("has-list-search");
+            }
+            bindListSearchFormRowEvents();
+            row.classList.add("has-list-search");
+            row.classList.remove("has-inline-search");
+            searchForm.classList.remove("is-search-hidden");
+            searchForm.hidden = false;
+            const nameWrap = getDirectChildByClass(row, "handrive-item-name-wrap");
+            if (!nameWrap) {
+                return;
+            }
+            if (searchForm.parentNode !== nameWrap) {
+                nameWrap.appendChild(searchForm);
+            }
         }
 
         function ensureCurrentDirInlineSearch(row) {
@@ -6573,9 +7207,19 @@
         }
 
         function syncCurrentDirInlineSearchVisibility(visible) {
+            if (listSearchForm && listSearchForm.closest(".handrive-current-dir-row")) {
+                visible = false;
+            }
             const currentDirRow = listContainer
                 ? listContainer.querySelector(".handrive-current-dir-row")
                 : null;
+            if (!visible && !currentDirSearchInput) {
+                if (currentDirRow) {
+                    currentDirRow.classList.remove("has-inline-search");
+                }
+                updateListColumnVisibility();
+                return;
+            }
             const wrap = ensureCurrentDirInlineSearch(currentDirRow);
             if (!currentDirRow || !wrap) {
                 return;
@@ -6639,13 +7283,14 @@
                 showForBranchOrRepoInner: Boolean(currentDirMeta.git_branch_root || currentDirMeta.requires_commit_message),
             });
             appendCurrentDirMetaColumns(row);
-            ensureCurrentDirInlineSearch(row);
+            attachListSearchFormToCurrentDirRow(row);
             bindCurrentDirSortControls(row);
 
             row.addEventListener("click", function (event) {
                 if (event.button !== 0) { return; }
                 event.preventDefault();
                 closeContextMenu();
+                closePreviewPaneIfOpen();
                 selectEntriesByRowClick(currentFolderEntry, event);
             });
 
@@ -7947,7 +8592,7 @@
                         normalizePath(currentFolderEntryForReuse.path, true) === state.activePreviewPath
                     );
                     state.entryRowByPath.set(currentFolderEntryForReuse.path, existingCurrentDirRow);
-                    ensureCurrentDirInlineSearch(existingCurrentDirRow);
+                    attachListSearchFormToCurrentDirRow(existingCurrentDirRow);
                     bindCurrentDirSortControls(existingCurrentDirRow);
                 }
                 state.entryByPath.set(currentFolderEntryForReuse.path, currentFolderEntryForReuse);
@@ -7976,7 +8621,8 @@
                     ? state.selectionAnchorPath
                     : (state.selectedPath || "");
                 listContainer.appendChild(fragment);
-                syncCurrentDirInlineSearchVisibility(Boolean(listSearchForm && listSearchForm.classList.contains("is-search-hidden")));
+                restoreActiveDropPreviewAfterRender();
+                syncSearchFormVisibility();
                 updateListColumnVisibility();
                 scheduleListBodyHeight();
                 if (!renderListOptions.skipPreview) { syncPreviewFromSelection(); }
@@ -8000,7 +8646,8 @@
                 ? state.selectionAnchorPath
                 : (state.selectedPath || "");
             listContainer.appendChild(fragment);
-            syncCurrentDirInlineSearchVisibility(Boolean(listSearchForm && listSearchForm.classList.contains("is-search-hidden")));
+            restoreActiveDropPreviewAfterRender();
+            syncSearchFormVisibility();
             updateListColumnVisibility();
             scheduleListBodyHeight();
             if (!renderListOptions.skipPreview) { syncPreviewFromSelection(); }
@@ -8976,6 +9623,70 @@
             });
         }
 
+        if (listPane && moveApiUrl) {
+            listPane.addEventListener("dragenter", function (event) {
+                if (isFileTransfer(event) || !hasActiveDriveDrag()) {
+                    return;
+                }
+                if (isInsideCurrentFileDropGroup(event.target)) {
+                    event.preventDefault();
+                    if (event.dataTransfer) {
+                        event.dataTransfer.dropEffect = "move";
+                    }
+                    return;
+                }
+                const currentDirRow = getCurrentDirectoryDropRow();
+                if (
+                    currentDirRow &&
+                    isBareListFileDropTarget(event.target) &&
+                    canDropToDirectory(state.currentDir)
+                ) {
+                    activateDriveMoveDropTarget(event, state.currentDir, currentDirRow);
+                    return;
+                }
+                clearDragOverTarget();
+            });
+
+            listPane.addEventListener("dragover", function (event) {
+                if (isFileTransfer(event) || !hasActiveDriveDrag()) {
+                    return;
+                }
+                if (isInsideCurrentFileDropGroup(event.target)) {
+                    event.preventDefault();
+                    if (event.dataTransfer) {
+                        event.dataTransfer.dropEffect = "move";
+                    }
+                    return;
+                }
+                const currentDirRow = getCurrentDirectoryDropRow();
+                if (
+                    currentDirRow &&
+                    isBareListFileDropTarget(event.target) &&
+                    canDropToDirectory(state.currentDir)
+                ) {
+                    activateDriveMoveDropTarget(event, state.currentDir, currentDirRow);
+                    return;
+                }
+                clearDragOverTarget();
+            });
+
+            listPane.addEventListener("drop", function (event) {
+                if (isFileTransfer(event) || !hasActiveDriveDrag()) {
+                    return;
+                }
+                const targetDirPath = isInsideCurrentFileDropGroup(event.target) && state.fileDropGroupPath
+                    ? state.fileDropGroupPath
+                    : state.currentDir;
+                if (!canDropToDirectory(targetDirPath)) {
+                    return;
+                }
+                event.preventDefault();
+                clearHoverExpandTimer();
+                clearDragOverTarget();
+                moveEntriesToDirectory(state.draggingEntries.slice(), targetDirPath).catch(alertError);
+            });
+        }
+
         document.addEventListener("drop", function () {
             clearFileDragUiState();
         });
@@ -9220,6 +9931,7 @@
             }).catch(alertError);
         });
 
+        ensureListSearchForm();
         if (listSearchForm && listSearchInput) {
             listSearchForm.addEventListener("submit", function (event) {
                 event.preventDefault();
@@ -9449,6 +10161,7 @@
         }
 
         let viewNavSiblings = [];
+        let viewNavRequestToken = 0;
 
         async function loadViewNavSiblings() {
             if (!listApiUrl || !contentArticle) return;
@@ -9464,18 +10177,29 @@
 
         async function navigateViewToEntry(entry) {
             if (!entry || !previewApiUrl || !contentArticle) return;
+            const requestToken = viewNavRequestToken + 1;
+            viewNavRequestToken = requestToken;
             try {
                 const data = await requestJson(
                     appendSharedQuery(previewApiUrl),
                     buildPostOptions({ path: entry.path })
                 );
+                if (requestToken !== viewNavRequestToken) {
+                    return;
+                }
                 const newHtml = data.html || "";
                 const newClass = data.render_class || "";
+
+                await releasePreviewVideoPlayers(contentArticle);
+                if (requestToken !== viewNavRequestToken) {
+                    return;
+                }
 
                 contentArticle.className = newClass;
                 contentArticle.innerHTML = newHtml;
 
                 hydrateMediaAudioElements(contentArticle);
+                initializePreviewVideoPlayers(contentArticle);
 
                 viewImageZoom = 1;
                 syncViewImageZoom();
@@ -9935,6 +10659,7 @@
                     onDirtyChange: dirtyHandler,
                 });
             }
+            scheduleWriteEditorHorizontalScrollReset();
         }
 
         function setUnsavedModalOpen(opened) {
@@ -10556,6 +11281,50 @@
             }
             editorHighlight.scrollTop = contentInput.scrollTop;
             editorHighlight.scrollLeft = contentInput.scrollLeft;
+        }
+
+        function resetWriteEditorHorizontalScroll() {
+            try { document.documentElement.scrollLeft = 0; } catch (error) {}
+            try { document.body.scrollLeft = 0; } catch (error) {}
+            try {
+                if (document.scrollingElement) {
+                    document.scrollingElement.scrollLeft = 0;
+                }
+            } catch (error) {}
+            try { window.scrollTo(0, window.scrollY || window.pageYOffset || 0); } catch (error) {}
+            [
+                root,
+                editorSurface,
+                contentInput,
+                editorHighlight,
+                imageEditorSurface,
+                videoEditorSurface,
+                audioEditorSurface,
+            ].forEach(function (element) {
+                if (element && typeof element.scrollLeft === "number") {
+                    element.scrollLeft = 0;
+                }
+            });
+            if (root && typeof root.querySelectorAll === "function") {
+                root
+                    .querySelectorAll(".ie-canvas-area, .ve-body, .ae-body")
+                    .forEach(function (element) {
+                        element.scrollLeft = 0;
+                    });
+            }
+            if (contentInput && editorHighlight) {
+                editorHighlight.scrollLeft = contentInput.scrollLeft;
+            }
+        }
+
+        function scheduleWriteEditorHorizontalScrollReset() {
+            resetWriteEditorHorizontalScroll();
+            window.requestAnimationFrame(function () {
+                resetWriteEditorHorizontalScroll();
+                window.requestAnimationFrame(resetWriteEditorHorizontalScroll);
+            });
+            window.setTimeout(resetWriteEditorHorizontalScroll, 80);
+            window.setTimeout(resetWriteEditorHorizontalScroll, 240);
         }
 
         function clearEditorSuggestion() {
@@ -11493,6 +12262,7 @@
         }
         syncMarkdownHelpButtonVisibility();
         showWriteMediaSurface();
+        scheduleWriteEditorHorizontalScrollReset();
 
         async function createFolderFromModal() {
             const folderName = folderNameInput ? folderNameInput.value : "";
@@ -12050,6 +12820,7 @@
     initializeHandriveAuthInteraction();
     initializeHandrivePageHelpModal();
     initializeHandriveToolbarAutoCollapse();
+    initializeHandriveBreadcrumbOverflow();
 
     if (pageType === "list") {
         initializeListPage();

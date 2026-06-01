@@ -103,36 +103,38 @@
     data-folder-icon-upload-api-url="{{ handrive_api_folder_icon_upload_url }}"
     data-folder-icon-delete-api-url="{{ handrive_api_folder_icon_delete_url }}"
 >
-    <div class="ui-search-form handrive-list-search-form" id="handrive-list-search-form">
-        <button
-            class="root-search-submit handrive-list-search-submit"
-            id="handrive-list-search-submit"
-            type="button"
-            aria-label="{{ handrive_text.search_button|default:'검색' }}"
-            title="{{ handrive_text.search_button|default:'검색' }}"
-        >
-            <span class="root-search-submit-icon" aria-hidden="true"></span>
-        </button>
-        <label for="handriveListSearchInput" class="root-search-sr-only">
-            {{ handrive_text.search_button|default:'검색' }}
-        </label>
-        <input
-            id="handriveListSearchInput"
-            class="root-search-input handrive-list-search-input"
-            type="text"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="{{ handrive_text.search_placeholder }}"
-        >
-        <button
-            class="root-input-clear handrive-list-search-clear"
-            id="handrive-list-search-clear"
-            type="button"
-            aria-label="{{ handrive_text.clear_button|default:'지우기' }}"
-            title="{{ handrive_text.clear_button|default:'지우기' }}"
-            hidden
-        ></button>
-    </div>
+    <template id="handrive-list-search-form-template">
+        <div class="ui-search-form handrive-list-search-form" id="handrive-list-search-form">
+            <button
+                class="root-search-submit handrive-list-search-submit"
+                id="handrive-list-search-submit"
+                type="button"
+                aria-label="{{ handrive_text.search_button|default:'검색' }}"
+                title="{{ handrive_text.search_button|default:'검색' }}"
+            >
+                <span class="root-search-submit-icon" aria-hidden="true"></span>
+            </button>
+            <label for="handriveListSearchInput" class="root-search-sr-only">
+                {{ handrive_text.search_button|default:'검색' }}
+            </label>
+            <input
+                id="handriveListSearchInput"
+                class="root-search-input handrive-list-search-input"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="{{ handrive_text.search_placeholder }}"
+            >
+            <button
+                class="root-input-clear handrive-list-search-clear"
+                id="handrive-list-search-clear"
+                type="button"
+                aria-label="{{ handrive_text.clear_button|default:'지우기' }}"
+                title="{{ handrive_text.clear_button|default:'지우기' }}"
+                hidden
+            ></button>
+        </div>
+    </template>
     <div class="handrive-list-layout" id="handrive-list-layout">
         <div class="handrive-list-pane">
             <div class="handrive-list-loading" id="handrive-list-loading" hidden aria-hidden="true">

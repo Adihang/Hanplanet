@@ -28,6 +28,47 @@
 
     var previewScrollObserver = null;
     var previewScrollCleanupTimer = null;
+    var previewScrollFrameId = null;
+    var previewScrollNestedFrameId = null;
+
+    function cancelPreviewScrollIntoView(options) {
+        if (previewScrollObserver) {
+            previewScrollObserver.disconnect();
+            previewScrollObserver = null;
+        }
+        if (previewScrollCleanupTimer !== null) {
+            window.clearTimeout(previewScrollCleanupTimer);
+            previewScrollCleanupTimer = null;
+        }
+        if (previewScrollFrameId !== null) {
+            window.cancelAnimationFrame(previewScrollFrameId);
+            previewScrollFrameId = null;
+        }
+        if (previewScrollNestedFrameId !== null) {
+            window.cancelAnimationFrame(previewScrollNestedFrameId);
+            previewScrollNestedFrameId = null;
+        }
+        if (options && options.freezePosition) {
+            window.scrollTo(window.pageXOffset, window.pageYOffset);
+        }
+    }
+
+    function schedulePreviewScroll(callback) {
+        if (previewScrollFrameId !== null) {
+            window.cancelAnimationFrame(previewScrollFrameId);
+        }
+        if (previewScrollNestedFrameId !== null) {
+            window.cancelAnimationFrame(previewScrollNestedFrameId);
+            previewScrollNestedFrameId = null;
+        }
+        previewScrollFrameId = window.requestAnimationFrame(function () {
+            previewScrollFrameId = null;
+            previewScrollNestedFrameId = window.requestAnimationFrame(function () {
+                previewScrollNestedFrameId = null;
+                callback();
+            });
+        });
+    }
 
     function scrollPreviewIntoViewIfPortrait(previewPanel, previewHead) {
         if (!previewPanel || previewPanel.hidden) {
@@ -49,28 +90,13 @@
             });
         };
 
-        if (previewScrollObserver) {
-            previewScrollObserver.disconnect();
-            previewScrollObserver = null;
-        }
-        if (previewScrollCleanupTimer !== null) {
-            window.clearTimeout(previewScrollCleanupTimer);
-            previewScrollCleanupTimer = null;
-        }
+        cancelPreviewScrollIntoView();
 
-        window.requestAnimationFrame(function () {
-            window.requestAnimationFrame(function () {
-                scrollToPreviewTop();
-            });
-        });
+        schedulePreviewScroll(scrollToPreviewTop);
 
         if (typeof ResizeObserver === "function") {
             previewScrollObserver = new ResizeObserver(function () {
-                window.requestAnimationFrame(function () {
-                    window.requestAnimationFrame(function () {
-                        scrollToPreviewTop();
-                    });
-                });
+                schedulePreviewScroll(scrollToPreviewTop);
             });
             previewScrollObserver.observe(previewPanel);
             if (previewHead && previewHead !== previewPanel) {
@@ -189,6 +215,7 @@
     }
 
     window.HandrivePreviewHelpers = {
+        cancelScrollIntoView: cancelPreviewScrollIntoView,
         getPreviewImageElement: getPreviewImageElement,
         getPreviewImageMinZoom: getPreviewImageMinZoom,
         scrollPreviewIntoViewIfPortrait: scrollPreviewIntoViewIfPortrait,

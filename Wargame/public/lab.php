@@ -726,6 +726,7 @@ $pageTitle = (string) $scene['brand'];
 $metaDescription = $preferredUiLang === 'en'
     ? 'Solve a hands-on Hanplanet Wargame lab and practice real security reasoning.'
     : 'Hanplanet 워게임 실습 문제를 풀며 실제 보안 사고 과정을 연습합니다.';
+$metaImage = django_static_url('media/icons/hanplanet-og-1200.png');
 ?>
 <!doctype html>
 <html lang="<?= h($preferredUiLang) ?>" data-account-theme-mode="<?= h($accountThemeMode) ?>">
@@ -734,10 +735,13 @@ $metaDescription = $preferredUiLang === 'en'
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="<?= h($metaDescription) ?>">
     <meta property="og:title" content="<?= h($pageTitle) ?>">
+    <meta property="og:site_name" content="Hanplanet Wargame">
     <meta property="og:description" content="<?= h($metaDescription) ?>">
-    <meta name="twitter:card" content="summary">
+    <meta property="og:image" content="<?= h($metaImage) ?>">
+    <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="<?= h($pageTitle) ?>">
     <meta name="twitter:description" content="<?= h($metaDescription) ?>">
+    <meta name="twitter:image" content="<?= h($metaImage) ?>">
     <title><?= h($pageTitle) ?></title>
     <link rel="icon" href="/assets/favicon.ico?v=<?= h($faviconVersion) ?>">
     <link rel="stylesheet" href="<?= h(django_static_url('css/common/layout.css')) ?>">

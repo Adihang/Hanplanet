@@ -7,9 +7,12 @@ Hanplanet은 하나의 Django 프로젝트 안에 아래 기능을 함께 운영
 - HanDrive 문서·파일 작업 공간
 - HanDrive와 연결된 Git 저장소 관리
 - Forgejo(Gitea) 기반 Git 웹 UI
+- HanDrive 지도 뷰어/에디터와 실시간 맵 협업 서버
 - 실시간 멀티플레이어 게임 `Bumper Car Spiky`
+- 독립 Apache/PHP/SQLite 기반 Wargame 서비스
 - 기타 `Stratagem Hero`, `Salvation's Edge 4`
 - Ollama 기반 AI 챗봇
+- Ollama를 OpenAI-compatible API로 노출하는 `/ai/v1` 프록시
 - 접속 로그 수집/요약과 운영용 관리 화면
 
 운영 기준 주소:
@@ -18,6 +21,9 @@ Hanplanet은 하나의 Django 프로젝트 안에 아래 기능을 함께 운영
 - 루트 도메인: [https://hanplanet.com](https://hanplanet.com)
 - Git 웹 UI: [https://git.hanplanet.com](https://git.hanplanet.com)
 - 게임 WebSocket: `wss://game.hanplanet.com`
+- 맵 협업 WebSocket: `wss://map-collab.hanplanet.com`
+- Wargame: [https://wargame.hanplanet.com](https://wargame.hanplanet.com)
+- OpenAI-compatible AI 프록시: `https://hanplanet.com/ai/v1`
 
 추가 운영 규칙과 에이전트용 상세 작업 규칙은 [PROJECT_GUIDELINES.md](./PROJECT_GUIDELINES.md)를 참고하세요.
 
@@ -34,6 +40,9 @@ flowchart LR
   T --> WWW["localhost:8000 (Django/Gunicorn)"]
   T --> GIT["localhost:3000 (Gitea)"]
   T --> GAME["localhost:8081 (Node game server)"]
+  T --> MAP["localhost:8083 (Map collab WS)"]
+  T --> WG["localhost:8090 (Wargame Apache)"]
+  T --> SSH["localhost:22 (SSH)"]
 ```
 
 현재 `~/.cloudflared/config.yml` 기준:
@@ -41,7 +50,11 @@ flowchart LR
 - `www.hanplanet.com`, `hanplanet.com` -> `http://localhost:8000`
 - `git.hanplanet.com` -> `http://localhost:3000`
 - `game.hanplanet.com` -> `http://localhost:8081`
+- `map-collab.hanplanet.com` -> `http://localhost:8083`
 - `ssh.hanplanet.com` -> `ssh://localhost:22`
+- `wargame.hanplanet.com` -> `http://localhost:8090`
+
+메인 도메인은 현재 Cloudflare Tunnel이 Gunicorn `:8000`으로 직접 전달합니다. Nginx `:80`도 launchd로 실행되지만, 현재 역할은 로컬 reverse proxy, 정적/미디어 alias, JSON access log, 직접 IP/로컬 접속 대응입니다.
 
 ### 2. 호스트 내부 서비스 구조
 
@@ -54,7 +67,12 @@ flowchart TD
   Celery["Celery worker"]
   Ollama["Ollama :11434"]
   Game["Bumpercar Node WS :8081"]
+  MapCollab["Map collab Node WS :8083"]
+  MapAdmin["Map collab admin :8084"]
+  Wargame["Wargame Apache :8090"]
+  PHPFPM["PHP-FPM :9000"]
   SQLite["SQLite (Django DB / Forgejo DB)"]
+  WargameDB["Wargame SQLite"]
   Media["media/"]
   Static["staticfiles/"]
   RepoData["forgejo/data/repos/"]
@@ -66,11 +84,15 @@ flowchart TD
   Django --> Redis
   Django --> Celery
   Django --> Forgejo
+  Django --> MapAdmin
   Celery --> Forgejo
   Celery --> Redis
   Forgejo --> RepoData
   Forgejo --> SQLite
   Django --> Game
+  MapCollab -. exposes .-> MapAdmin
+  Wargame --> PHPFPM
+  Wargame --> WargameDB
   Nginx --> Django
   Nginx --> Static
   Nginx --> Media
@@ -85,8 +107,10 @@ flowchart TD
 | Celery worker | HanDrive -> Git 저장소 생성/재시도 같은 비동기 작업 | [`main/git_tasks.py`](./main/git_tasks.py), [`deploy/launchd/com.hanplanet.celery.plist`](./deploy/launchd/com.hanplanet.celery.plist) |
 | Redis | Celery broker | launchd/brew services 환경 |
 | Node game server | 실시간 범퍼카 월드 시뮬레이션, JWT 검증, WebSocket | [`bumpercar-spiky-server/server.js`](./bumpercar-spiky-server/server.js), [`bumpercar-spiky-server/world/world.js`](./bumpercar-spiky-server/world/world.js) |
-| Ollama | `/api/chat/`의 LLM 백엔드 | [`config/settings.py`](./config/settings.py) |
-| Nginx | host local reverse proxy, static/media alias, access log JSON | [`nginx/nginx.autorun.conf`](./nginx/nginx.autorun.conf), [`nginx/portfolio.conf`](./nginx/portfolio.conf) |
+| Map collab server | HanDrive 지도 뷰어 실시간 협업, presence/admin endpoint | [`map-collab-server/server.js`](./map-collab-server/server.js), [`map-collab-server/network/websocket.js`](./map-collab-server/network/websocket.js) |
+| Wargame Apache/PHP | `wargame.hanplanet.com` 전용 PHP 앱, 문제/플래그/SQLite 격리 | [`Wargame/README.md`](./Wargame/README.md), [`Wargame/deploy/apache/httpd-wargame.conf`](./Wargame/deploy/apache/httpd-wargame.conf) |
+| Ollama | `/api/chat/`, `/ai/v1/*`의 LLM 백엔드 | [`config/settings.py`](./config/settings.py), [`ai/views.py`](./ai/views.py) |
+| Nginx | host local reverse proxy, static/media alias, access log JSON, `/ai/` long-streaming proxy 설정 | [`nginx/nginx.autorun.conf`](./nginx/nginx.autorun.conf), [`nginx/portfolio.conf`](./nginx/portfolio.conf) |
 | Cloudflare Tunnel | 공개 도메인 -> 로컬 포트 라우팅 | `~/.cloudflared/config.yml` |
 
 ## 서버들은 어떻게 연동되는가
@@ -123,15 +147,47 @@ flowchart TD
 - 게임 루프: [`bumpercar-spiky-server/game/gameLoop.js`](./bumpercar-spiky-server/game/gameLoop.js)
 - 월드 판정: [`bumpercar-spiky-server/world/world.js`](./bumpercar-spiky-server/world/world.js)
 
+### HanDrive 맵 협업 연동
+
+1. 사용자가 HanDrive map viewer/editor를 열면 Django가 맵 경로와 사용자 권한을 확인
+2. 브라우저가 `/api/map-collab-auth-token/`으로 협업 JWT와 WebSocket URL을 요청
+3. 브라우저가 `wss://map-collab.hanplanet.com`으로 연결
+4. Node 맵 협업 서버가 JWT를 검증하고 방 단위로 stroke/text/ping/presence 이벤트를 중계
+5. Django admin의 맵 협업 세션 화면은 `127.0.0.1:8084` admin endpoint로 현재 방/사용자 상태를 조회
+
+관련 코드:
+
+- 토큰/프레즌스 API: [`main/views.py`](./main/views.py)
+- 맵 뷰어 UI: [`templates/handrive/map_viewer.html`](./templates/handrive/map_viewer.html)
+- WS 서버: [`map-collab-server/network/websocket.js`](./map-collab-server/network/websocket.js)
+- admin endpoint: [`map-collab-server/network/admin.js`](./map-collab-server/network/admin.js)
+
+### Wargame 연동
+
+1. `wargame.hanplanet.com`은 Cloudflare Tunnel이 Apache `:8090`으로 직접 전달
+2. Apache는 `Wargame/public/`만 DocumentRoot로 노출하고 PHP-FPM `127.0.0.1:9000`으로 PHP 실행
+3. 문제/플래그/힌트/문제별 상태는 `Wargame/data/wargame.sqlite3`만 사용
+4. 사이트 통합이 필요한 로그인 상태, navbar, 풀이 기록, 사용자 설정만 Django API와 통신
+5. Wargame PHP는 Django DB, Django session, `media/` 파일 시스템에 직접 접근하지 않음
+
+관련 코드:
+
+- Wargame 앱: [`Wargame/`](./Wargame/)
+- Apache 설정: [`Wargame/deploy/apache/httpd-wargame.conf`](./Wargame/deploy/apache/httpd-wargame.conf)
+- Django 통합 API: [`main/views.py`](./main/views.py)
+
 ### AI 챗봇 연동
 
 1. 브라우저가 `/api/chat/` 호출
 2. Django가 입력을 정리하고 Ollama HTTP API로 프록시
 3. 응답을 HTML/markdown 안전 규칙에 맞춰 다시 반환
 
+OpenAI-compatible API가 필요한 외부 도구는 `/ai/v1/*`를 사용합니다. 이 경로는 Django `ai` 앱이 Ollama `/v1/*`로 투명 프록시하며, `OLLAMA_PROXY_API_KEY`가 설정되어 있으면 `Authorization: Bearer ...` 인증을 요구합니다.
+
 관련 코드:
 
 - API: [`main/views.py`](./main/views.py)
+- OpenAI-compatible proxy: [`ai/views.py`](./ai/views.py), [`ai/urls.py`](./ai/urls.py)
 - 위젯 UI: [`static/js/common/chat_widget.js`](./static/js/common/chat_widget.js)
 
 ## 기술 스택
@@ -164,17 +220,22 @@ flowchart TD
 - Cloudflare Tunnel
 - Nginx
 - macOS launchd
+- Apache HTTP Server
+- PHP-FPM
+- Homebrew PHP
 
-### Game
+### Realtime / Game
 
 - Node.js
 - `ws`
 - `jsonwebtoken`
 - `@msgpack/msgpack`
+- Map collaboration WebSocket server
 
 ### AI / preview / ops
 
 - Ollama
+- OpenAI-compatible `/ai/v1` proxy
 - LibreOffice
 - JSON access logs + 일일 요약 command
 
@@ -200,9 +261,20 @@ flowchart TD
 | --- | --- | --- |
 | `/api/game-auth-token/` | 게임 JWT 발급 | [`main/views.py`](./main/views.py) `game_auth_token` |
 | `/api/internal/bumpercar-spiky/stats/` | 게임 통계 수집 | [`main/views.py`](./main/views.py) `bumpercar_spiky_stats_record` |
-| `/fun/bumpercar-spiky/admin/` | 게임 관리자 화면 | [`main/views.py`](./main/views.py) `bumpercar_spiky_admin_page` |
-| `/fun/bumpercar-spiky/restart-server/` | 게임 서버 재시작 | [`main/views.py`](./main/views.py) `bumpercar_spiky_restart_server` |
-| `/fun/bumpercar-spiky/set-npc-health/` | NPC 체력 조정 | [`main/views.py`](./main/views.py) `bumpercar_spiky_set_npc_health` |
+| `/sub/bumpercar-spiky/admin/` | 게임 관리자 화면 | [`main/views.py`](./main/views.py) `bumpercar_spiky_admin_page` |
+| `/sub/bumpercar-spiky/restart-server/` | 게임 서버 재시작 | [`main/views.py`](./main/views.py) `bumpercar_spiky_restart_server` |
+| `/sub/bumpercar-spiky/set-npc-health/` | NPC 체력 조정 | [`main/views.py`](./main/views.py) `bumpercar_spiky_set_npc_health` |
+
+### Wargame / Map Collab API
+
+| 경로 | 용도 | 실제 처리 함수 |
+| --- | --- | --- |
+| `/api/wargame/session/` | Wargame용 로그인 토큰 발급 | [`main/views.py`](./main/views.py) `wargame_session` |
+| `/api/wargame/navbar/` | Wargame 공통 navbar HTML 조각 | [`main/views.py`](./main/views.py) `wargame_navbar` |
+| `/api/wargame/solves/` | Wargame 풀이 기록 읽기/저장 | [`main/views.py`](./main/views.py) `wargame_solves` |
+| `/api/wargame/preferences/` | Wargame UI/언어/검색 설정 | [`main/views.py`](./main/views.py) `wargame_preferences` |
+| `/api/map-collab-auth-token/` | 지도 협업 JWT + WS URL 발급 | [`main/views.py`](./main/views.py) `map_collab_auth_token` |
+| `/api/map-collab-presence/` | 지도 협업 presence 조회 | [`main/views.py`](./main/views.py) `map_collab_presence` |
 
 ### HanDrive API
 
@@ -217,12 +289,19 @@ HanDrive 파일/권한/미리보기/공유 관련 요청은 대부분 [`main/han
 | `/handrive/api/delete` | 삭제 |
 | `/handrive/api/mkdir` | 폴더 생성 |
 | `/handrive/api/move` | 이동 |
+| `/handrive/api/archive/extract` | 압축 해제 |
+| `/handrive/api/archive/create` | 압축 생성 |
+| `/handrive/api/convert/mp3` | 오디오 MP3 변환 |
 | `/handrive/api/upload` | 업로드 |
+| `/handrive/api/markdown-image-upload` | Markdown 이미지 업로드 |
 | `/handrive/api/upload/cancel` | 업로드 취소 |
 | `/handrive/api/download` | 다운로드 |
+| `/handrive/api/hls/*` | 비디오 HLS/썸네일/스프라이트 |
+| `/handrive/api/map/*` | 지도 생성/데이터/이미지/아이콘 |
 | `/handrive/api/acl` | 권한 설정 |
 | `/handrive/api/acl-options` | 권한 설정 후보 조회 |
 | `/handrive/api/url-share` | 링크 공유 |
+| `/handrive/api/sync-settings` | 동기화 클라이언트 설정 |
 | `/handrive/api/login-captcha-status` | 로그인 캡차 상태 |
 
 ### Git / Device Flow API
@@ -264,9 +343,12 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 | [`media/`](./media/) | 업로드 파일, HanDrive 실제 파일, 포트폴리오 업로드 |
 | [`forgejo/`](./forgejo/) | Gitea work path, custom templates/assets, data/log |
 | [`bumpercar-spiky-server/`](./bumpercar-spiky-server/) | 별도 Node 게임 서버 |
+| [`map-collab-server/`](./map-collab-server/) | HanDrive 지도 실시간 협업 WebSocket/admin 서버 |
+| [`Wargame/`](./Wargame/) | `wargame.hanplanet.com` 전용 Apache/PHP/SQLite 앱 |
+| [`sync-client/`](./sync-client/) | HanDrive 동기화 클라이언트 |
 | [`deploy/`](./deploy/) | launchd plist, helper script |
 | [`nginx/`](./nginx/) | nginx 설정 |
-| [`scripts/`](./scripts/) | access log rotate/summary 등 운영 스크립트 |
+| [`scripts/`](./scripts/) | launchd 실행 래퍼, access log rotate/summary, 헬스체크, HDD 정리 스크립트 |
 | [`docs/readme-assets/`](./docs/readme-assets/) | README에서 참조하는 이미지 자산 |
 
 ### `main/` 핵심 파일
@@ -342,6 +424,26 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 | [`world/worldEncounter.js`](./bumpercar-spiky-server/world/worldEncounter.js) | encounter phase 처리 |
 | [`world/player.js`](./bumpercar-spiky-server/world/player.js) | player/NPC 상태 구조 |
 
+### `map-collab-server/` 구조
+
+| 경로 | 목적 |
+| --- | --- |
+| [`server.js`](./map-collab-server/server.js) | WebSocket/admin 서버 진입점 |
+| [`config/config.js`](./map-collab-server/config/config.js) | 포트/JWT/presence TTL 설정 |
+| [`network/websocket.js`](./map-collab-server/network/websocket.js) | 맵 협업 WebSocket 연결/메시지 처리 |
+| [`network/admin.js`](./map-collab-server/network/admin.js) | Django admin이 조회하는 로컬 admin endpoint |
+| [`rooms/roomManager.js`](./map-collab-server/rooms/roomManager.js) | 방별 사용자 presence 관리 |
+
+### `Wargame/` 구조
+
+| 경로 | 목적 |
+| --- | --- |
+| [`Wargame/public/`](./Wargame/public/) | Apache DocumentRoot. 공개 PHP/CSS/JS만 위치 |
+| [`Wargame/app/`](./Wargame/app/) | Wargame PHP 애플리케이션 로직 |
+| [`Wargame/data/`](./Wargame/data/) | Wargame SQLite DB와 Apache/launchd 로그 |
+| [`Wargame/deploy/apache/httpd-wargame.conf`](./Wargame/deploy/apache/httpd-wargame.conf) | 전용 Apache 인스턴스 설정 |
+| [`Wargame/deploy/launchd/com.hanplanet.wargame-apache.plist`](./Wargame/deploy/launchd/com.hanplanet.wargame-apache.plist) | Wargame Apache launchd 설정 |
+
 ## 코드를 이해할 때 권장 읽기 순서
 
 주석과 docstring을 읽으면서 들어가기 가장 편한 순서는 아래입니다.
@@ -389,6 +491,22 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 5. [`bumpercar-spiky-server/network/websocket.js`](./bumpercar-spiky-server/network/websocket.js)
 6. [`bumpercar-spiky-server/world/world.js`](./bumpercar-spiky-server/world/world.js)
 
+### HanDrive 지도 협업
+
+1. [`templates/handrive/map_viewer.html`](./templates/handrive/map_viewer.html)
+2. [`main/views.py`](./main/views.py) 의 `map_collab_*` API
+3. [`map-collab-server/server.js`](./map-collab-server/server.js)
+4. [`map-collab-server/network/websocket.js`](./map-collab-server/network/websocket.js)
+5. [`map-collab-server/network/admin.js`](./map-collab-server/network/admin.js)
+
+### Wargame
+
+1. [`Wargame/README.md`](./Wargame/README.md)
+2. [`Wargame/public/index.php`](./Wargame/public/index.php)
+3. [`Wargame/public/lab.php`](./Wargame/public/lab.php)
+4. [`Wargame/app/bootstrap.php`](./Wargame/app/bootstrap.php)
+5. [`main/views.py`](./main/views.py) 의 `wargame_*` 통합 API
+
 ### 공용 UI / 위젯
 
 1. [`static/js/common/site.js`](./static/js/common/site.js)
@@ -411,7 +529,7 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 운영 또는 로컬 재현에 필요한 도구:
 
 ```bash
-brew install nginx redis gitea libreoffice
+brew install nginx redis gitea php libreoffice
 ```
 
 선택:
@@ -450,9 +568,12 @@ cd /Users/imhanbyeol/Development/Hanplanet
   "FORGEJO_BASE_URL": "http://localhost:3000",
   "FORGEJO_ADMIN_TOKEN": "gitea-admin-api-token",
   "PUBLIC_GIT_BASE_URL": "https://git.hanplanet.com",
+  "OLLAMA_PROXY_API_KEY": "optional-openai-compatible-api-key",
   "GAME_JWT_SECRET": "game-jwt-secret",
   "GAME_JWT_ISSUER": "https://www.hanplanet.com",
   "GAME_JWT_AUDIENCE": "hanplanet-game",
+  "DATA_BACKUP_ROOT": "/Volumes/HANPLANET_HDD/Hanplanet/back-up",
+  "DATA_BACKUP_RETENTION_DAYS": 3,
   "TURNSTILE_SITE_KEY": "",
   "TURNSTILE_SECRET_KEY": ""
 }
@@ -534,7 +655,27 @@ npm install
 - `JWT_ISSUER`
 - `JWT_AUDIENCE`
 
-### 6. Gitea / Git 기능 초기화
+### 6. 맵 협업 서버 초기화
+
+```bash
+cd /Users/imhanbyeol/Development/Hanplanet/map-collab-server
+npm install
+```
+
+기본 포트:
+
+- WebSocket: `8083`
+- 로컬 admin endpoint: `127.0.0.1:8084`
+
+Django 설정은 환경변수로 조정할 수 있습니다.
+
+- `MAP_COLLAB_WS_PUBLIC_URL` — 기본 `wss://map-collab.hanplanet.com`
+- `MAP_COLLAB_WS_LOCAL_URL` — 기본 `ws://127.0.0.1:8083`
+- `MAP_COLLAB_ADMIN_URL` — 기본 `http://127.0.0.1:8084`
+
+`map-collab-server/.env`의 JWT 값은 Django의 게임 JWT 값과 맞춥니다.
+
+### 7. Gitea / Git 기능 초기화
 
 ```bash
 brew services start redis
@@ -544,7 +685,7 @@ bash setup.sh
 
 `setup.sh`가 출력한 토큰을 `config/secrets.json`의 `FORGEJO_ADMIN_TOKEN`으로 넣어야 HanDrive Git API가 정상 동작합니다.
 
-### 7. 로컬 실행
+### 8. 로컬 실행
 
 ```bash
 # Django
@@ -554,6 +695,10 @@ cd /Users/imhanbyeol/Development/Hanplanet
 # Game server
 cd /Users/imhanbyeol/Development/Hanplanet/bumpercar-spiky-server
 PORT=8081 node server.js
+
+# Map collab server
+cd /Users/imhanbyeol/Development/Hanplanet/map-collab-server
+PORT=8083 ADMIN_PORT=8084 node server.js
 ```
 
 필요하면 Ollama도 별도로 올립니다.
@@ -567,31 +712,38 @@ ollama serve
 
 ### launchd 서비스
 
-| 서비스 | 라벨 | plist |
-| --- | --- | --- |
-| Django/Gunicorn | `com.hanplanet.gunicorn` | `~/Library/LaunchAgents/` |
-| Nginx | `com.hanplanet.nginx` | `~/Library/LaunchAgents/` |
-| Gitea | `com.hanplanet.gitea` | [`deploy/launchd/com.hanplanet.gitea.plist`](./deploy/launchd/com.hanplanet.gitea.plist) |
-| Celery | `com.hanplanet.celery` | [`deploy/launchd/com.hanplanet.celery.plist`](./deploy/launchd/com.hanplanet.celery.plist) |
-| 범퍼카 게임 서버 | `com.hanplanet.bumpercar-spiky-server` | [`bumpercar-spiky-server/deploy/launchd/com.hanplanet.bumpercar-spiky-server.plist`](./bumpercar-spiky-server/deploy/launchd/com.hanplanet.bumpercar-spiky-server.plist) |
-| 외장 HDD 자동 마운트 | `com.hanplanet.mount-hanplanet-hdd` | `~/Library/LaunchAgents/com.hanplanet.mount-hanplanet-hdd.plist` |
-| 외장 HDD keepalive 카운터 | `com.hanplanet.external-hdd-keepalive` | `~/Library/LaunchAgents/com.hanplanet.external-hdd-keepalive.plist` |
+운영은 Docker가 아니라 macOS `launchd` 네이티브 데몬으로 유지합니다. 저장소의 plist가 원본이고, 실제 로드된 파일은 보통 `~/Library/LaunchAgents/`에 복사되어 있습니다.
+
+| 서비스 | 라벨 | 원본 plist / 위치 | 역할 |
+| --- | --- | --- | --- |
+| Django/Gunicorn | `com.hanplanet.gunicorn` | [`deploy/launchd/com.hanplanet.gunicorn.plist`](./deploy/launchd/com.hanplanet.gunicorn.plist) | `127.0.0.1:8000`, 메인 Django |
+| Nginx | `com.hanplanet.nginx` | [`deploy/launchd/com.hanplanet.nginx.plist`](./deploy/launchd/com.hanplanet.nginx.plist) | `:80`, 로컬 reverse proxy/static/media/log |
+| Gitea | `com.hanplanet.gitea` | [`deploy/launchd/com.hanplanet.gitea.plist`](./deploy/launchd/com.hanplanet.gitea.plist) | `:3000`, Git 웹 UI |
+| Celery | `com.hanplanet.celery` | [`deploy/launchd/com.hanplanet.celery.plist`](./deploy/launchd/com.hanplanet.celery.plist) | HanDrive Git 작업 |
+| 범퍼카 게임 서버 | `com.hanplanet.bumpercar-spiky-server` | [`bumpercar-spiky-server/deploy/launchd/com.hanplanet.bumpercar-spiky-server.plist`](./bumpercar-spiky-server/deploy/launchd/com.hanplanet.bumpercar-spiky-server.plist) | `:8081`, 게임 WS |
+| 맵 협업 서버 | `com.hanplanet.map-collab-server` | [`map-collab-server/deploy/launchd/com.hanplanet.map-collab-server.plist`](./map-collab-server/deploy/launchd/com.hanplanet.map-collab-server.plist) | `:8083`, admin `127.0.0.1:8084` |
+| Wargame Apache | `com.hanplanet.wargame-apache` | [`Wargame/deploy/launchd/com.hanplanet.wargame-apache.plist`](./Wargame/deploy/launchd/com.hanplanet.wargame-apache.plist) | `:8090`, Wargame PHP |
+| 헬스체크 | `com.hanplanet.healthcheck` | [`deploy/launchd/com.hanplanet.healthcheck.plist`](./deploy/launchd/com.hanplanet.healthcheck.plist) | 60초마다 메인/미디어 상태 확인 |
+| Nginx access log rotate | `com.hanplanet.nginx-accesslog-rotate` | [`deploy/launchd/com.hanplanet.nginx-accesslog-rotate.plist`](./deploy/launchd/com.hanplanet.nginx-accesslog-rotate.plist) | access JSON rotate |
+| Nginx access log summary | `com.hanplanet.nginx-accesslog-summary` | [`deploy/launchd/com.hanplanet.nginx-accesslog-summary.plist`](./deploy/launchd/com.hanplanet.nginx-accesslog-summary.plist) | access summary 생성 |
+| 외장 HDD 자동 마운트 | `com.hanplanet.mount-hanplanet-hdd` | `~/Library/LaunchAgents/com.hanplanet.mount-hanplanet-hdd.plist` | 로그인 시 `HANPLANET_HDD` 마운트 |
+| 외장 HDD .DS_Store 정리 | `com.hanplanet.external-hdd-keepalive` | `~/Library/LaunchAgents/com.hanplanet.external-hdd-keepalive.plist` | 600초마다 HDD `.DS_Store` 삭제 |
 
 ### 외장 HDD 유지 / 백업 위치
 
 - 외장 자동 마운트는 `launchd`의 `com.hanplanet.mount-hanplanet-hdd`가 담당합니다.
-- 외장 keepalive 카운터는 `launchd`의 `com.hanplanet.external-hdd-keepalive`가 담당합니다.
-  - 실행 파일: [`scripts/external_keepalive_counter.py`](./scripts/external_keepalive_counter.py)
-  - 실행 주기: 매 정각
-  - 기록 파일: `/Volumes/HANPLANET_HDD/Hanplanet/time.txt`
-  - 로그: 정상 실행 시 로그를 남기지 않고, 오류만 `/tmp/com.hanplanet.external-hdd-keepalive.log`에 기록합니다.
+- 외장 HDD `.DS_Store` 정리는 `launchd`의 `com.hanplanet.external-hdd-keepalive`가 담당합니다.
+  - 실행 파일: [`scripts/cleanup_hdd_ds_store.py`](./scripts/cleanup_hdd_ds_store.py)
+  - 실행 주기: 600초마다
+  - 대상: `/Volumes/HANPLANET_HDD/` 전체
+  - 로그: `/tmp/com.hanplanet.external-hdd-keepalive.log`
 - 일일 데이터 백업은 별도 `launchd` 작업이 아니라 Django/Gunicorn 프로세스 내부에서 돕니다.
   - 시작 위치: [`main/apps.py`](./main/apps.py) -> [`main/access_log_scheduler.py`](./main/access_log_scheduler.py)
   - 실제 실행 프로세스: `com.hanplanet.gunicorn`
   - 백업 시각: 매일 `00:05` 이후 첫 스케줄 루프에서 1회
   - 백업 대상: `MEDIA_ROOT`, `FORGEJO_REPOS_ROOT`
-  - 현재 백업 저장 경로: `/Volumes/HANPLANET_HDD/Hanplanet/back-up`
-  - 현재 보관 개수: 최근 3일치 (`hanplanet_data_YYYY-MM-DD.tar.gz`)
+  - 백업 저장 경로: `DATA_BACKUP_ROOT` 또는 `DJANGO_DATA_BACKUP_ROOT`
+  - 현재 기본 보관 개수: 최근 3일치 (`hanplanet_data_YYYY-MM-DD.tar.gz`)
 
 ### 자주 쓰는 명령
 
@@ -599,7 +751,7 @@ ollama serve
 # Django 변경
 cd /Users/imhanbyeol/Development/Hanplanet
 .venv/bin/python manage.py collectstatic --noinput
-launchctl kickstart -k gui/$(id -u)/com.hanplanet.gunicorn
+./scripts/restart_gunicorn_and_wait.py
 
 # Celery 변경
 launchctl kickstart -k gui/$(id -u)/com.hanplanet.celery
@@ -609,24 +761,40 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.gitea
 
 # 게임 서버 변경
 launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server
+
+# 맵 협업 서버 변경
+launchctl kickstart -k gui/$(id -u)/com.hanplanet.map-collab-server
+
+# Wargame Apache 변경
+httpd -t -f /Users/imhanbyeol/Development/Hanplanet/Wargame/deploy/apache/httpd-wargame.conf
+launchctl kickstart -k gui/$(id -u)/com.hanplanet.wargame-apache
 ```
 
 ### 로그
 
 | 대상 | 위치 |
 | --- | --- |
+| Gunicorn stdout/stderr | `~/Library/Logs/gunicorn.out.log`, `~/Library/Logs/gunicorn.err.log` |
+| Nginx launchd stdout/stderr | `~/Library/Logs/hanplanet-nginx.out.log`, `~/Library/Logs/hanplanet-nginx.err.log` |
 | Celery stdout | [`log/celery.stdout.log`](./log/celery.stdout.log) |
 | Celery stderr | [`log/celery.stderr.log`](./log/celery.stderr.log) |
 | 범퍼카 게임 stdout | `/tmp/bumpercar-spiky-server.log` |
 | 범퍼카 게임 stderr | `/tmp/bumpercar-spiky-server-error.log` |
+| 맵 협업 stdout/stderr | `/tmp/map-collab-server.log`, `/tmp/map-collab-server-error.log` |
+| Wargame Apache/access/error | `Wargame/data/launchd.*.log`, `Wargame/data/apache-*.log` |
 | Gitea logs | `forgejo/log/` |
 | Nginx access JSON | `/opt/homebrew/var/log/nginx/access_json.log` |
+| 헬스체크 | `~/Library/Logs/hanplanet-healthcheck.out.log`, `~/Library/Logs/hanplanet-healthcheck.err.log` |
 
 ## 운영 스크립트
 
 | 파일 | 목적 |
 | --- | --- |
 | [`deploy/scripts/git-credential-hanplanet`](./deploy/scripts/git-credential-hanplanet) | Git credential helper. OAuth2 device flow로 Git clone/push 인증 |
+| [`scripts/launch_service_by_disc.py`](./scripts/launch_service_by_disc.py) | `DISC` 값에 맞춰 gunicorn/gitea/celery/nginx 실행 전 storage profile 적용 |
+| [`scripts/restart_gunicorn_and_wait.py`](./scripts/restart_gunicorn_and_wait.py) | gunicorn 재시작 후 HTTP 준비 상태 대기 |
+| [`scripts/healthcheck_and_restart.py`](./scripts/healthcheck_and_restart.py) | 메인/미디어 헬스체크 후 필요 시 gunicorn 재시작 |
+| [`scripts/cleanup_hdd_ds_store.py`](./scripts/cleanup_hdd_ds_store.py) | 외장 HDD `.DS_Store` 정리 |
 | [`scripts/rotate-nginx-access-json.sh`](./scripts/rotate-nginx-access-json.sh) | access JSON log rotate 및 30일 보관 |
 | [`scripts/summarize-nginx-access-json.sh`](./scripts/summarize-nginx-access-json.sh) | 일일 access log summary 생성 |
 
@@ -636,6 +804,8 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server
 - CSS/JS 또는 이를 참조하는 템플릿을 바꾸면 항상 `collectstatic` 후 gunicorn 재시작이 필요합니다.
 - HanDrive Git 기능은 Django + Celery + Redis + Forgejo 네 요소가 모두 살아 있어야 정상 동작합니다.
 - 범퍼카 게임은 Django만 살아 있어도 안 되고, Node 게임 서버와 JWT 설정이 같이 맞아야 합니다.
+- HanDrive 지도 협업은 Django 토큰 API + `map-collab-server` `:8083` + admin endpoint `:8084`가 같이 살아 있어야 합니다.
+- Wargame은 Django 앱 안에 있지 않고 Apache/PHP/SQLite로 분리되어 있으며, 문제 로직은 Django DB나 media에 직접 의존하면 안 됩니다.
 - Forgejo custom asset은 [`forgejo/custom/public/assets/`](./forgejo/custom/public/assets/) 아래에서 관리합니다.
 - Office 미리보기는 LibreOffice가 설치되어 있어야 품질이 제대로 나옵니다.
 
@@ -644,6 +814,7 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server
 - [PROJECT_GUIDELINES.md](./PROJECT_GUIDELINES.md)
 - [DEPLOYMENT.md](./DEPLOYMENT.md)
 - [bumpercar-spiky-server/README.md](./bumpercar-spiky-server/README.md)
+- [Wargame/README.md](./Wargame/README.md)
 - [AGENTS.md](./AGENTS.md)
 
 ## 커스텀 내역

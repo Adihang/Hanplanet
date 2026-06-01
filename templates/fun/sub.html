@@ -54,6 +54,7 @@
                                         <img class="sub-link-image" src="{{ item.image_url|default:'' }}" alt="{{ item.title }}" loading="lazy" {% if not item.image_url %}hidden{% endif %}>
                                     </span>
                                     <span class="sub-link-content" data-sub-card data-meta-url="{{ item.url }}">
+                                        <span class="sub-link-site-name" {% if not item.site_name %}hidden{% endif %}>{{ item.site_name|default:'' }}</span>
                                         <span class="sub-link-head">
                                             <span class="sub-link-title">{{ item.title }}</span>
                                         </span>
@@ -132,7 +133,9 @@
         padding: 12px;
         transition: var(--handrive-transition-fast);
         align-items: center;
-        min-height: 110px;
+        box-sizing: border-box;
+        height: 114px;
+        overflow: hidden;
     }
 
     .sub-link-shell {
@@ -158,12 +161,28 @@
         line-height: 1.3;
     }
 
-    .sub-link-description {
+    .sub-link-site-name {
         display: block;
+        margin-bottom: 3px;
+        color: var(--handrive-text-faint);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.15;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .sub-link-description {
+        display: -webkit-box;
         margin-top: 4px;
         color: var(--handrive-text-muted);
         font-size: 16px;
         line-height: 1.35;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
     }
 
     .sub-link-image-wrap {
@@ -295,7 +314,6 @@
         .sub-link {
             grid-template-columns: 68px minmax(0, 1fr);
             gap: 10px;
-            min-height: 88px;
         }
 
         .sub-link-image-wrap {
@@ -352,6 +370,14 @@
             }
         };
 
+        const isSameOriginUrl = function (rawUrl) {
+            try {
+                return new URL(rawUrl, window.location.href).origin === window.location.origin;
+            } catch (error) {
+                return false;
+            }
+        };
+
         cards.forEach(function (card) {
             const metaUrl = card.getAttribute('data-meta-url');
             if (!metaUrl) {
@@ -361,15 +387,22 @@
             const pageUrl = toAbsoluteUrl(metaUrl, window.location.origin);
             const requestUrl = pageUrl || metaUrl;
             const titleNode = card.querySelector('.sub-link-title');
+            const siteNameNode = card.querySelector('.sub-link-site-name');
             const descriptionNode = card.querySelector('.sub-link-description');
             const cardLink = card.closest('.sub-link');
             const imageWrap = cardLink ? cardLink.querySelector('.sub-link-image-wrap') : null;
             const imageNode = cardLink ? cardLink.querySelector('.sub-link-image') : null;
+            const initialDescription = descriptionNode ? (descriptionNode.textContent || '').trim() : '';
+            const initialImageUrl = imageNode ? (imageNode.getAttribute('src') || '').trim() : '';
 
             if (imageWrap) {
-                if (!imageNode || !imageNode.getAttribute('src')) {
+                if (!initialImageUrl) {
                     imageWrap.classList.add('is-empty');
                 }
+            }
+
+            if (!isSameOriginUrl(requestUrl)) {
+                return;
             }
 
             fetch(requestUrl, { credentials: 'same-origin' })
@@ -381,18 +414,37 @@
                 })
                 .then(function (html) {
                     const doc = parser.parseFromString(html, 'text/html');
-                    const parsedTitle = getMetaContent(doc, { property: 'og:title' }) || (doc.title || '').trim();
+                    const parsedTitle = getMetaContent(doc, { property: 'og:title' }) ||
+                        getMetaContent(doc, { name: 'twitter:title' });
+                    const parsedSiteName = getMetaContent(doc, { property: 'og:site_name' }) ||
+                        getMetaContent(doc, { name: 'application-name' }) ||
+                        getMetaContent(doc, { name: 'author' });
                     const parsedDescription = getMetaContent(doc, { property: 'og:description' }) ||
+                        getMetaContent(doc, { name: 'twitter:description' }) ||
                         getMetaContent(doc, { name: 'description' });
-                    const parsedImage = getMetaContent(doc, { property: 'og:image' });
+                    const parsedImage = getMetaContent(doc, { property: 'og:image' }) ||
+                        getMetaContent(doc, { name: 'twitter:image' });
 
                     if (titleNode && parsedTitle) {
                         titleNode.textContent = parsedTitle;
                     }
 
+                    if (siteNameNode) {
+                        if (parsedSiteName) {
+                            siteNameNode.textContent = parsedSiteName;
+                            siteNameNode.hidden = false;
+                        } else if ((siteNameNode.textContent || '').trim()) {
+                            siteNameNode.hidden = false;
+                        } else {
+                            siteNameNode.hidden = true;
+                        }
+                    }
+
                     if (descriptionNode) {
                         if (parsedDescription) {
                             descriptionNode.textContent = parsedDescription;
+                            descriptionNode.hidden = false;
+                        } else if (initialDescription) {
                             descriptionNode.hidden = false;
                         } else {
                             descriptionNode.hidden = true;
@@ -409,8 +461,8 @@
                     }
                 })
                 .catch(function () {
-                    if (descriptionNode) {
-                        descriptionNode.hidden = true;
+                    if (descriptionNode && (descriptionNode.textContent || '').trim()) {
+                        descriptionNode.hidden = false;
                     }
                 });
         });

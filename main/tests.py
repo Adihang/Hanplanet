@@ -19,7 +19,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from importlib import import_module
 
 from .models import EmailVerificationCode, HandriveAccessRule, HandriveLoginAttemptGuard, NavLink, SyncFile, UserProfile
@@ -28,6 +28,8 @@ from stratagem.models import Stratagem_Hero_Score
 from oauth2_provider.models import get_application_model
 from .handrive_views import (
     DOCS_EDIT_PERMISSION_CODE,
+    HANDRIVE_2FA_PENDING_FORGEJO_KEY_SESSION_KEY,
+    HANDRIVE_2FA_PENDING_NEXT_URL_SESSION_KEY,
     HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY,
     HANDRIVE_EDITOR_GROUP_NAME,
     DOCS_PUBLIC_WRITE_GROUP_NAME,
@@ -43,6 +45,7 @@ from .handrive_views import (
     _forgejo_db_path,
     _forgejo_server_logout,
     _resolve_handrive_post_login_url,
+    _send_or_reuse_login_2fa_email,
     get_handrive_text,
     get_handrive_upload_tmp_dir,
     get_handrive_public_write_group,
@@ -695,6 +698,56 @@ class StorageProfileDiscModeTests(TestCase):
         ):
             self.assertEqual(storage_profile.get_disc_mode(), "hdd")
 
+    def test_hls_cache_root_uses_dedicated_hdd_setting(self):
+        handrive_hls = import_module("main.handrive_hls")
+        hdd_cache_root = "/Volumes/HANPLANET_HDD/Hanplanet/media/hls_cache"
+
+        with override_settings(
+            MEDIA_ROOT="/Users/imhanbyeol/temporary/hanplanet-ssd/media",
+            HANDRIVE_HLS_CACHE_ROOT=hdd_cache_root,
+        ):
+            self.assertEqual(handrive_hls._hls_cache_root(), Path(hdd_cache_root))
+
+
+class HandriveHlsThumbnailTests(TestCase):
+    @mock.patch("main.handrive_hls.subprocess.run")
+    def test_thumbnail_sprite_preserves_aspect_ratio_with_padding(self, mock_run):
+        handrive_hls = import_module("main.handrive_hls")
+        mock_run.return_value = mock.Mock(returncode=0)
+
+        with TemporaryDirectory() as tmp_dir:
+            cache_root = Path(tmp_dir)
+            cache_dir = cache_root / "cache-key"
+            cache_dir.mkdir()
+            source = cache_root / "video.mp4"
+            source.write_bytes(b"placeholder")
+
+            with override_settings(HANDRIVE_HLS_CACHE_ROOT=str(cache_root)):
+                ok = handrive_hls._make_thumbnail_sprite(source, cache_dir, 12)
+
+                self.assertTrue(ok)
+                command = mock_run.call_args.args[0]
+                vf = command[command.index("-vf") + 1]
+                self.assertIn("force_original_aspect_ratio=decrease", vf)
+                self.assertIn("pad=160:90:(ow-iw)/2:(oh-ih)/2:color=black", vf)
+                self.assertEqual((cache_dir / "sprite.version").read_text(encoding="utf-8"), "contain-v1")
+                (cache_dir / "sprite.jpg").write_bytes(b"sprite")
+                self.assertEqual(handrive_hls.get_sprite_path("cache-key"), cache_dir / "sprite.jpg")
+                self.assertEqual(handrive_hls.get_sprite_vtt_path("cache-key"), cache_dir / "sprite.vtt")
+
+    def test_legacy_thumbnail_sprite_without_version_is_ignored(self):
+        handrive_hls = import_module("main.handrive_hls")
+
+        with TemporaryDirectory() as tmp_dir:
+            cache_dir = Path(tmp_dir) / "cache-key"
+            cache_dir.mkdir()
+            (cache_dir / "sprite.jpg").write_bytes(b"old")
+            (cache_dir / "sprite.vtt").write_text("WEBVTT\n", encoding="utf-8")
+
+            with override_settings(HANDRIVE_HLS_CACHE_ROOT=tmp_dir):
+                self.assertIsNone(handrive_hls.get_sprite_path("cache-key"))
+                self.assertIsNone(handrive_hls.get_sprite_vtt_path("cache-key"))
+
 
 class HandriveUnreadableEntryTests(TestCase):
     def test_quota_breakdown_skips_unreadable_subdirectories(self):
@@ -1280,6 +1333,14 @@ class HandriveAuthFlowTests(TestCase):
         self.assertContains(response, "이전 페이지")
         self.assertNotContains(response, ">ide<", html=False)
 
+    def test_docs_login_page_uses_native_enter_submit_with_submit_guard(self):
+        response = self.client.get("/ko/login/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "handleEnterSubmit", html=False)
+        self.assertNotContains(response, 'input.addEventListener("keydown"', html=False)
+        self.assertContains(response, 'loginForm.dataset.submitting = "1"', html=False)
+
     @mock.patch("main.handrive_views.subprocess.run")
     @mock.patch("main.handrive_views.settings.RUNNING_TESTS", False)
     def test_build_forgejo_session_blob_prefers_homebrew_go(self, mock_run):
@@ -1491,6 +1552,76 @@ class HandriveAuthFlowTests(TestCase):
         self.assertContains(refresh_response, "on**@example.com")
         self.assertEqual(mock_send_2fa.call_count, 1)
         self.assertEqual(self.client.session[HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY], self.user.pk)
+
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch(
+        "main.handrive_views._prepare_forgejo_login_session",
+        side_effect=[("forgejo-session-a", None), ("forgejo-session-b", None)],
+    )
+    def test_docs_login_refreshing_inline_2fa_updates_pending_redirect(self, mock_prepare_session, mock_send_2fa):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+
+        first_response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+        )
+        second_response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/portfolio/handrive_login_user/"},
+        )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(mock_send_2fa.call_count, 1)
+        self.assertEqual(self.client.session[HANDRIVE_2FA_PENDING_NEXT_URL_SESSION_KEY], "/ko/portfolio/handrive_login_user/")
+        self.assertEqual(self.client.session[HANDRIVE_2FA_PENDING_FORGEJO_KEY_SESSION_KEY], "forgejo-session-b")
+
+        code = EmailVerificationCode.objects.filter(user=self.user, used=False).latest("created_at").code
+        verify_response = self.client.post(
+            "/ko/login/",
+            data={"handrive_2fa_phase": "verify", "code": code, "next": "/ko/portfolio/handrive_login_user/"},
+        )
+
+        self.assertEqual(verify_response.status_code, 302)
+        self.assertEqual(verify_response["Location"], "/ko/portfolio/handrive_login_user/")
+
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_docs_login_reuses_recent_2fa_code_without_resending_email(self, mock_prepare_session, mock_send_2fa):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+        EmailVerificationCode.objects.create(
+            user=self.user,
+            code="123456",
+            expires_at=timezone.now() + timedelta(minutes=10),
+        )
+
+        response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "on**@example.com")
+        mock_send_2fa.assert_not_called()
+        self.assertEqual(EmailVerificationCode.objects.filter(user=self.user, used=False).count(), 1)
+
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    def test_send_or_reuse_login_2fa_email_reuses_recent_unused_code(self, mock_send_2fa):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+        EmailVerificationCode.objects.create(
+            user=self.user,
+            code="123456",
+            expires_at=timezone.now() + timedelta(minutes=10),
+        )
+
+        email_sent = _send_or_reuse_login_2fa_email(self.user, ui_lang="ko")
+
+        self.assertTrue(email_sent)
+        mock_send_2fa.assert_not_called()
+        self.assertEqual(EmailVerificationCode.objects.filter(user=self.user, used=False).count(), 1)
 
     @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
@@ -2247,6 +2378,9 @@ class HanplanetMultiplayerPageTests(TestCase):
         self.assertNotContains(response, "미니게임", html=False)
         self.assertContains(response, "sub-page", html=False)
         self.assertContains(response, "전적", html=False)
+        self.assertContains(response, "sub-link-site-name", html=False)
+        self.assertContains(response, "Hanplanet Wargame", html=False)
+        self.assertContains(response, "youtube-downloader-og-1200.png", html=False)
         self.assertFalse(response.context["show_account_bumpercar_spiky_stats"])
 
     def test_old_sub_urls_are_not_redirected(self):

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import fcntl
 import io
 import logging
 import json
@@ -30,6 +31,7 @@ import unicodedata
 import uuid
 import zipfile
 from datetime import datetime
+from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
 from glob import escape as glob_escape
@@ -833,7 +835,7 @@ DOCS_TEXT = {
         "list_sort_type": "유형",
         "list_sort_size": "크기",
         "list_sort_permission": "권한",
-        "list_sort_commit": "커밋",
+        "list_sort_commit": "커밋명",
         "list_sort_id": "ID",
         "markdown_help_aria": "마크다운 문법 안내",
         "markdown_help_fallback_title": "마크다운 문법",
@@ -4761,6 +4763,54 @@ def _generate_and_store_2fa_code(user) -> str:
     return code
 
 
+@contextmanager
+def _login_2fa_send_lock(user):
+    """동일 사용자 로그인 2FA 코드 발송이 동시에 두 번 실행되지 않도록 잠근다."""
+    user_pk = str(getattr(user, "pk", "") or "anonymous")
+    lock_dir = Path(tempfile.gettempdir()) / "hanplanet_login_2fa_locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / f"user_{user_pk}.lock"
+    with lock_path.open("w") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _get_recent_unused_2fa_code(user, *, window_seconds: int = 30):
+    """최근에 발급된 미사용 2FA 코드가 있으면 반환한다."""
+    from datetime import timedelta
+    from main.models import EmailVerificationCode
+
+    now = timezone.now()
+    return (
+        EmailVerificationCode.objects
+        .filter(
+            user=user,
+            used=False,
+            expires_at__gt=now,
+            created_at__gte=now - timedelta(seconds=window_seconds),
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+
+def _send_or_reuse_login_2fa_email(user, *, ui_lang: str = "ko", window_seconds: int = 30) -> bool:
+    """로그인 2FA 메일을 발송하되, 같은 사용자에게 최근 발급 코드가 있으면 재사용한다."""
+    with _login_2fa_send_lock(user):
+        if _get_recent_unused_2fa_code(user, window_seconds=window_seconds) is not None:
+            return True
+
+        code = _generate_and_store_2fa_code(user)
+        email_sent = _send_2fa_email(user, code, ui_lang=ui_lang)
+        if not email_sent:
+            from main.models import EmailVerificationCode
+            EmailVerificationCode.objects.filter(user=user, code=code, used=False).update(used=True)
+        return email_sent
+
+
 def _render_hanplanet_email_html(
     *,
     title: str,
@@ -5177,10 +5227,18 @@ def _complete_login_or_require_2fa(
     # 3) 새 기기 → 2FA 필요
     pending_user_id = request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)
     if pending_user_id == user.pk and on_2fa_needed is not None:
+        # 같은 계정의 pending 2FA를 재사용하더라도 redirect 대상은 최신 로그인 시도를 따른다.
+        _set_2fa_pending_session(
+            request,
+            user,
+            target_url,
+            resolved_ui_lang,
+            forgejo_session_key,
+            requires_direct_attach,
+        )
         return on_2fa_needed(_mask_email(user_email))
 
-    code = _generate_and_store_2fa_code(user)
-    email_sent = _send_2fa_email(user, code, ui_lang=resolved_ui_lang)
+    email_sent = _send_or_reuse_login_2fa_email(user, ui_lang=resolved_ui_lang)
     if not email_sent:
         logger.error("[2FA] Email send failed for user %s, email=%s", user.username, user.email)
         if on_2fa_needed is not None:
@@ -5973,8 +6031,7 @@ def handrive_api_login_2fa_resend_code(request, ui_lang=None):
                 status=429,
             )
 
-    code = _generate_and_store_2fa_code(pending_user)
-    email_sent = _send_2fa_email(pending_user, code, ui_lang=resolved_lang)
+    email_sent = _send_or_reuse_login_2fa_email(pending_user, ui_lang=resolved_lang)
     if not email_sent:
         return JsonResponse(
             {"ok": False, "error": handrive_text.get("auth_2fa_email_send_error", "인증 코드 발송에 실패했습니다.")},

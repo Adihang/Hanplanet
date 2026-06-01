@@ -1,12 +1,12 @@
 {% load static_versioned %}
-<script src="https://cdn.jsdelivr.net/npm/video.js@8.21.1/dist/video.min.js"></script>
+<script src="{% static_v 'vendor/videojs/video.min.js' %}"></script>
 <script src="{% static_v 'js/handrive/videojs_compat.js' %}"></script>
-<script src="https://cdn.jsdelivr.net/npm/videojs-seek-buttons@4.0.3/dist/videojs-seek-buttons.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/videojs-hotkeys@0.2.27/videojs.hotkeys.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/videojs-mobile-ui@1.1.1/dist/videojs-mobile-ui.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/@silvermine/videojs-chromecast@1.5.0/dist/silvermine-videojs-chromecast.min.js" defer></script>
-<script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/videojs-hls-quality-selector@2.0.0/dist/videojs-hls-quality-selector.min.js" defer></script>
+<script src="{% static_v 'vendor/videojs/videojs-seek-buttons.min.js' %}" defer></script>
+<script src="{% static_v 'vendor/videojs/videojs.hotkeys.min.js' %}" defer></script>
+<script src="{% static_v 'vendor/videojs/videojs-mobile-ui.js' %}" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@silvermine/videojs-chromecast@1.5.0/dist/silvermine-videojs-chromecast.min.js" async></script>
+<script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1" async></script>
+<script src="https://cdn.jsdelivr.net/npm/videojs-hls-quality-selector@2.0.0/dist/videojs-hls-quality-selector.min.js" async></script>
 <script src="{% static_v 'js/handrive/video_player.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
 <script src="{% static_v 'js/handrive/editor_completion_map.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
 <script src="{% static_v 'js/handrive/page_helpers.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>

@@ -20,6 +20,7 @@ body.ui-page {
     --handrive-hover: var(--site-hover);
     --handrive-hover-strong: var(--site-hover-strong);
     --handrive-hover-button: var(--site-hover-button);
+    --handrive-row-hover-bg: var(--handrive-hover-soft);
     --handrive-surface: #ffffff;
     --handrive-surface-subtle: #f5f5f5;
     --handrive-surface-toolbar: transparent;
@@ -80,6 +81,16 @@ body.ui-page {
     --handrive-current-dir-meta-active-color: #000000;
 }
 
+body.handrive-page:not(.theme-dark),
+body.ui-page:not(.theme-dark) {
+    --handrive-hover-soft: rgba(0, 0, 0, 0.075);
+    --handrive-row-hover-bg: rgba(0, 0, 0, 0.075);
+    --handrive-selected-bg: rgba(0, 0, 0, 0.14);
+    --handrive-drop-target-bg: rgba(37, 99, 235, 0.11);
+    --handrive-drop-target-row-bg: rgba(37, 99, 235, 0.11);
+    --handrive-drop-target-overlay-bg: rgba(37, 99, 235, 0.14);
+}
+
 body.handrive-page,
 body.ui-page {
     background: var(--handrive-bg);
@@ -132,7 +143,8 @@ body.ui-page.theme-dark {
     --handrive-border-strong: var(--theme-border);
     --handrive-border-heavy: var(--theme-border);
     --handrive-search-border-focus: color-mix(in srgb, var(--handrive-text-subtle) 74%, var(--handrive-border));
-    --handrive-hover-soft: rgba(255, 255, 255, 0.08);
+    --handrive-hover-soft: rgba(255, 255, 255, 0.1);
+    --handrive-selected-bg: rgba(255, 255, 255, 0.18);
     --handrive-hover: rgba(255, 255, 255, 0.13);
     --handrive-hover-strong: rgba(255, 255, 255, 0.19);
     --handrive-hover-button: rgba(255, 255, 255, 0.13);
@@ -143,8 +155,8 @@ body.ui-page.theme-dark {
     --handrive-surface-muted-strong: rgba(46, 46, 46, 0.96);
     --handrive-link: #d2d2d2;
     --handrive-elevated-bg: rgba(46, 46, 46, 0.97);
-    --handrive-drop-target-bg: var(--handrive-hover-soft);
-    --handrive-drop-target-row-bg: var(--handrive-hover-soft);
+    --handrive-drop-target-bg: rgba(96, 165, 250, 0.16);
+    --handrive-drop-target-row-bg: rgba(96, 165, 250, 0.16);
     --handrive-drop-target-border: var(--handrive-accent, #60a5fa);
     --handrive-drop-target-overlay-bg: rgba(96, 165, 250, 0.1);
     --handrive-generic-icon-color: #d8e5fb;
@@ -171,7 +183,6 @@ body.ui-page .portfolio-print-btn {
     min-height: var(--site-common-header-min-height);
     overflow: visible;
     flex: 0 0 auto;
-    border-bottom: 1px solid var(--handrive-border-soft);
     color: var(--handrive-text);
 }
 
@@ -186,7 +197,8 @@ body.ui-page .portfolio-print-btn {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    flex-wrap: nowrap;
+    gap: 10px;
     max-width: 1300px;
     margin-left: auto;
     margin-right: auto;
@@ -203,6 +215,16 @@ body.ui-page .portfolio-print-btn {
 
 .handrive-toolbar:not(.handrive-toolbar-auto-collapsed) > *,
 .ui-toolbar:not(.ui-toolbar-auto-collapsed) > * {
+    flex: 0 1 auto;
+}
+
+.handrive-toolbar:not(.handrive-toolbar-auto-collapsed) > .handrive-toolbar-left,
+.ui-toolbar:not(.ui-toolbar-auto-collapsed) > .ui-toolbar-left {
+    flex: 1 1 auto;
+}
+
+.handrive-toolbar:not(.handrive-toolbar-auto-collapsed) > .handrive-toolbar-right,
+.ui-toolbar:not(.ui-toolbar-auto-collapsed) > .ui-toolbar-right {
     flex: 0 0 auto;
 }
 
@@ -1023,14 +1045,48 @@ body.theme-dark .handrive-help-icon-symbol {
     display: flex;
     flex-direction: row;
     align-items: flex-end;
-    gap: 0;
+    gap: 4px;
     margin-top: 2px;
+    max-width: 100%;
+    min-width: 0;
 }
 .handrive-subtitle-wrap .ui-subtitle {
     margin-top: 0;
 }
 
+.handrive-subtitle-wrap .ui-path-breadcrumbs {
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.handrive-subtitle-wrap .ui-path-link,
+.handrive-subtitle-wrap .ui-path-current {
+    display: block;
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.handrive-subtitle-wrap .handrive-path-sep,
+.handrive-subtitle-wrap .ui-path-sep {
+    flex: 0 0 auto;
+}
+
+.handrive-subtitle-wrap .ui-path-breadcrumbs.is-equal-truncated .ui-path-link,
+.handrive-subtitle-wrap .ui-path-breadcrumbs.is-equal-truncated .ui-path-current {
+    flex: 0 1 auto;
+    max-width: var(--handrive-breadcrumb-item-width, var(--handrive-breadcrumb-segment-width));
+}
+
 .handrive-path-current-size {
+    flex: 0 0 auto;
     font-size: 11px;
     line-height: 1.2;
     color: var(--handrive-text-muted, var(--handrive-text));
@@ -1052,7 +1108,7 @@ body.theme-dark .handrive-help-icon-symbol {
     width: 100%;
     max-width: none;
     min-height: 0;
-    padding: 12px;
+    padding: 0 12px;
     overflow: hidden;
 }
 
@@ -1102,12 +1158,12 @@ body.theme-dark .handrive-help-icon-symbol {
 }
 
 .handrive-list-layout.is-landscape.has-preview {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+    grid-template-columns: minmax(0, min(25%, 400px)) minmax(0, 1fr);
     align-items: stretch;
 }
 
 .handrive-list-layout.is-landscape.has-editor {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+    grid-template-columns: minmax(0, min(25%, 400px)) minmax(0, 1fr);
     align-items: stretch;
 }
 
@@ -1744,26 +1800,10 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     -webkit-overflow-scrolling: touch;
 }
 
-.handrive-list-layout.is-landscape.has-preview::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 25%;
-    width:   1px;
-    background: var(--handrive-border-soft);
-    pointer-events: none;
-}
-
-.handrive-list-layout.is-landscape.has-editor::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 25%;
-    width:   1px;
-    background: var(--handrive-border-soft);
-    pointer-events: none;
+.handrive-list-layout.is-landscape.has-preview > .handrive-list-preview,
+.handrive-list-layout.is-landscape.has-editor > .handrive-list-editor {
+    box-sizing: border-box;
+    border-left: 1px solid var(--handrive-border-soft);
 }
 
 .handrive-list-preview-content {
@@ -2098,6 +2138,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     border: 0;
     border-radius: 0;
     overflow: hidden;
+    position: relative;
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -2163,18 +2204,18 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     --handrive-col-permission: var(--handrive-list-col-permission, 0px);
     --handrive-col-commit: var(--handrive-list-col-commit, 0px);
     --handrive-col-id: var(--handrive-list-col-id, 0px);
-    --handrive-meta-gap-type: 8px;
-    --handrive-meta-gap-size: 8px;
-    --handrive-meta-gap-permission: 8px;
-    --handrive-meta-gap-commit: 8px;
-    --handrive-meta-gap-id: 8px;
+    --handrive-meta-gap-type: 10px;
+    --handrive-meta-gap-size: 10px;
+    --handrive-meta-gap-permission: 10px;
+    --handrive-meta-gap-commit: 10px;
+    --handrive-meta-gap-id: 10px;
     width: 100%;
     flex: 1;
     min-width: 0;
     display: grid;
     align-items: center;
     justify-content: flex-start;
-    gap: 6px;
+    gap: 0;
     grid-template-columns:
         auto
         minmax(0, 1fr)
@@ -2193,7 +2234,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 
 .handrive-item-row:hover,
 .handrive-item-row:focus-visible {
-    background: var(--handrive-hover-soft);
+    background: var(--handrive-row-hover-bg);
 }
 
 .handrive-item-row.is-selected {
@@ -2216,8 +2257,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 
 .handrive-list-pane.is-file-drop-target .handrive-item-row.is-drop-target:not(.is-file-drop-group),
 .handrive-list-pane.is-file-drop-target .handrive-item-row.is-drop-hover:not(.is-file-drop-group) {
-    background-color: var(--handrive-drop-target-row-bg);
-    background-image: linear-gradient(var(--handrive-drop-target-row-bg), var(--handrive-drop-target-row-bg));
+    background: var(--handrive-drop-target-row-bg);
     outline: none;
     box-shadow: inset 0 0 0 1px var(--handrive-drop-target-border);
 }
@@ -2225,6 +2265,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 .handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-item {
     position: relative;
     overflow: hidden;
+    transition: none;
 }
 
 .handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-start {
@@ -2260,7 +2301,8 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     bottom: 0;
     left: var(--handrive-drop-group-left, 0px);
     pointer-events: none;
-    z-index: 2;
+    z-index: 0;
+    background: var(--handrive-drop-target-row-bg);
     box-shadow:
         inset 1px 0 0 var(--handrive-drop-target-border),
         inset -1px 0 0 var(--handrive-drop-target-border);
@@ -2287,11 +2329,50 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     box-shadow: inset 0 0 0 1px var(--handrive-drop-target-border);
 }
 
+.handrive-list-pane.is-local-file-drop-target .handrive-item.is-file-drop-group-item::before {
+    box-sizing: border-box;
+    border-left: 1px dashed var(--handrive-drop-target-border);
+    border-right: 1px dashed var(--handrive-drop-target-border);
+    box-shadow: none;
+}
+
+.handrive-list-pane.is-local-file-drop-target .handrive-item.is-file-drop-group-start::before {
+    border-top: 1px dashed var(--handrive-drop-target-border);
+    box-shadow: none;
+}
+
+.handrive-list-pane.is-local-file-drop-target .handrive-item.is-file-drop-group-end::before {
+    border-bottom: 1px dashed var(--handrive-drop-target-border);
+    box-shadow: none;
+}
+
+.handrive-list-pane.is-local-file-drop-target .handrive-item.is-file-drop-group-start.is-file-drop-group-end::before {
+    border: 1px dashed var(--handrive-drop-target-border);
+    box-shadow: none;
+}
+
 .handrive-list.is-file-drop-root-target {
-    background-color: var(--handrive-drop-target-row-bg);
-    background-image: linear-gradient(var(--handrive-drop-target-row-bg), var(--handrive-drop-target-row-bg));
+    background: var(--handrive-drop-target-row-bg);
     border-radius: calc(var(--handrive-radius-lg) + 3px);
-    box-shadow: inset 0 0 0 1px var(--handrive-drop-target-border);
+    transition: box-shadow 0.15s ease;
+}
+
+.handrive-list.is-file-drop-root-target::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--handrive-drop-target-border);
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.handrive-list-pane.is-local-file-drop-target .handrive-list.is-file-drop-root-target::after {
+    border-style: dashed;
+}
+
+body.theme-dark .handrive-list-pane.is-local-file-drop-target .handrive-list.is-file-drop-root-target .handrive-current-dir-item::after {
+    opacity: 0;
 }
 
 .handrive-list.is-file-drop-root-target .handrive-item.is-file-drop-group-item::before {
@@ -2301,17 +2382,16 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 .handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-item > .handrive-item-tree-prefix {
     position: relative;
     z-index: 1;
-    background-color: var(--handrive-drop-target-row-bg);
-    background-image: linear-gradient(var(--handrive-drop-target-row-bg), var(--handrive-drop-target-row-bg));
+    background: transparent;
 }
 
 .handrive-list-pane.is-file-drop-target .handrive-item-row.is-file-drop-group {
     position: relative;
     z-index: 1;
-    background-color: var(--handrive-drop-target-row-bg);
-    background-image: linear-gradient(var(--handrive-drop-target-row-bg), var(--handrive-drop-target-row-bg));
+    background: transparent;
     outline: none;
     box-shadow: none;
+    transition: none;
 }
 
 .handrive-list-pane.is-file-drop-target .handrive-current-dir-row.is-file-drop-group-start {
@@ -2329,6 +2409,10 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     overflow: hidden;
 }
 
+.handrive-current-dir-row.is-selected:not(.is-drop-target):not(.is-drop-hover):not(.is-file-drop-group) {
+    background: var(--handrive-hover-soft);
+}
+
 .handrive-list-layout.is-landscape.has-preview .handrive-current-dir-row,
 .handrive-list-layout.is-landscape.has-editor .handrive-current-dir-row {
     border-radius: calc(var(--handrive-radius-lg) - 1px) 0 0 0;
@@ -2339,6 +2423,14 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     box-shadow: inset 0 0 0 1px var(--handrive-drop-target-border);
 }
 
+.handrive-list-pane.is-local-file-drop-target .handrive-item-row.is-drop-target:not(.is-file-drop-group),
+.handrive-list-pane.is-local-file-drop-target .handrive-item-row.is-drop-hover:not(.is-file-drop-group),
+.handrive-list-pane.is-local-file-drop-target .handrive-current-dir-row.is-drop-target:not(.is-file-drop-group) {
+    outline: 1px dashed var(--handrive-drop-target-border);
+    outline-offset: -1px;
+    box-shadow: none;
+}
+
 .handrive-current-dir-row.has-inline-search {
     grid-template-columns:
         auto
@@ -2347,12 +2439,24 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
         minmax(150px, clamp(150px, 30%, 260px));
 }
 
+.handrive-current-dir-row.has-list-search {
+    grid-template-columns:
+        auto
+        minmax(0, 1fr)
+        auto;
+}
+
 .handrive-item-name-wrap {
     grid-column: 2;
     display: inline-flex;
     align-items: baseline;
     gap: 8px;
     min-width: 0;
+    margin-left: 6px;
+}
+
+.handrive-current-dir-row.has-list-search .handrive-item-name-wrap {
+    align-items: center;
 }
 
 .handrive-item-meta-label {
@@ -2518,11 +2622,61 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     cursor: pointer;
 }
 
+.handrive-current-dir-row .handrive-sort-direction-mark {
+    flex: 0 0 auto;
+    margin-left: 4px;
+    color: currentColor;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+}
+
 .handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key]:hover,
 .handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key]:focus-visible,
 .handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key]:active,
 .handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label.is-sort-active {
     color: var(--handrive-current-dir-meta-active-color, var(--handrive-text-stronger));
+}
+
+.handrive-current-dir-row .handrive-list-search-form {
+    display: grid;
+    flex: 1 1 150px;
+    width: auto;
+    min-width: 150px;
+    max-width: none;
+    min-height: 34px;
+    max-height: 34px;
+    margin: 0 10px;
+    opacity: 1;
+    transform: none;
+    visibility: visible;
+    background: var(--handrive-surface);
+}
+
+.handrive-current-dir-row .handrive-list-search-input {
+    height: 32px;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.handrive-current-dir-row .handrive-list-search-clear {
+    width: 30px;
+    height: 32px;
+    flex-basis: 30px;
+}
+
+.handrive-current-dir-row .handrive-list-search-form .root-search-submit,
+.handrive-current-dir-row .handrive-list-search-form .handrive-list-search-submit {
+    width: 34px;
+    height: 32px;
+}
+
+.handrive-current-dir-row .handrive-list-search-form .root-search-submit-icon {
+    width: 18px;
+    height: 18px;
+    background-size: 18px 18px;
+    transform: translateY(1px);
 }
 
 .handrive-current-dir-search-wrap {
@@ -4598,6 +4752,21 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     height: 100%;
 }
 
+/* PiP 상태에서 원래 플레이어에 표시되는 poster/placeholder 비율 유지 */
+.handrive-media-video-wrap .video-js.vjs-picture-in-picture .vjs-poster,
+.handrive-media-video-wrap .video-js.vjs-pip-container .vjs-poster {
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+}
+
+.handrive-media-video-wrap .video-js.vjs-picture-in-picture .vjs-poster img,
+.handrive-media-video-wrap .video-js.vjs-pip-container .vjs-poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
 /* 컨트롤바: 2행 레이아웃 (1행=진행바, 2행=버튼) */
 .video-js .vjs-control-bar {
     display: flex !important;
@@ -4614,8 +4783,15 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     width: calc(100% + 2px);
     padding-bottom: 1px;
     border-radius: 0 0 var(--handrive-radius-md) var(--handrive-radius-md);
-    overflow: hidden;
+    overflow: visible;
     background-clip: padding-box;
+    z-index: 20;
+}
+
+.video-js .vjs-control-bar .vjs-menu,
+.video-js .vjs-control-bar .vjs-menu-content,
+.video-js .vjs-control-bar .vjs-volume-control.vjs-volume-vertical {
+    z-index: 30;
 }
 
 /* 진행바: 1행 전체 폭 */
@@ -5527,7 +5703,7 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: 0;
 }
 
 .handrive-2fa-resend-row .ui-btn {
@@ -5580,7 +5756,7 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     gap: 10px;
     width: 100%;
     justify-content: center;
-    padding: 10px 0;
+    padding: 20px 0;
     cursor: default;
     user-select: none;
 }

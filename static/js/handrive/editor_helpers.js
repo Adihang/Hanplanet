@@ -17,6 +17,9 @@
         var renderHighlight = settings.renderHighlight || function () {};
         var onAfterChange = settings.onAfterChange || function () {};
         var loadContent = settings.loadContent || function () { return Promise.resolve(""); };
+        var resetHorizontalScroll = settings.resetHorizontalScroll || function () {
+            try { editorContentInput.scrollLeft = 0; } catch (error) {}
+        };
 
         if (!editorPanel || !editorFilenameInput || !editorContentInput || !entry) {
             return Promise.resolve();
@@ -24,10 +27,27 @@
 
         editorFilenameInput.value = entry.name || "";
 
+        var resetInitialViewport = function () {
+            try { editorContentInput.setSelectionRange(0, 0); } catch (error) {}
+            try { editorContentInput.scrollLeft = 0; } catch (error) {}
+            try { document.documentElement.scrollLeft = 0; } catch (error) {}
+            try { document.body.scrollLeft = 0; } catch (error) {}
+            try {
+                if (document.scrollingElement) {
+                    document.scrollingElement.scrollLeft = 0;
+                }
+            } catch (error) {}
+            try { window.scrollTo(0, window.scrollY || window.pageYOffset || 0); } catch (error) {}
+            resetHorizontalScroll();
+        };
+
         var applyContent = function (text) {
             entry.content = typeof text === "string" ? text : "";
             editorContentInput.value = entry.content;
+            resetInitialViewport();
             renderHighlight();
+            resetInitialViewport();
+            window.requestAnimationFrame(resetInitialViewport);
         };
 
         var loadPromise;
@@ -51,7 +71,14 @@
             listLayout.classList.add("has-editor");
         }
         onAfterChange();
-        editorContentInput.focus();
+        resetInitialViewport();
+        try {
+            editorContentInput.focus({ preventScroll: true });
+        } catch (error) {
+            editorContentInput.focus();
+        }
+        resetInitialViewport();
+        window.requestAnimationFrame(resetInitialViewport);
         return loadPromise;
     }
 

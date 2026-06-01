@@ -86,6 +86,7 @@ $bodyThemeClass = $accountThemeMode === 'light' ? '' : ' theme-dark';
 $metaDescription = $preferredUiLang === 'en'
     ? 'Practice web and system security through hands-on Hanplanet Wargame challenges.'
     : '직접 문제를 풀며 웹과 시스템 보안을 연습하는 Hanplanet 워게임입니다.';
+$metaImage = django_static_url('media/icons/hanplanet-og-1200.png');
 ?>
 <!doctype html>
 <html lang="<?= h($preferredUiLang) ?>" data-account-theme-mode="<?= h($accountThemeMode) ?>">
@@ -95,10 +96,13 @@ $metaDescription = $preferredUiLang === 'en'
     <meta name="csrf-token" content="<?= h(csrf_token()) ?>">
     <meta name="description" content="<?= h($metaDescription) ?>">
     <meta property="og:title" content="Hanplanet Wargame">
+    <meta property="og:site_name" content="Hanplanet Wargame">
     <meta property="og:description" content="<?= h($metaDescription) ?>">
-    <meta name="twitter:card" content="summary">
+    <meta property="og:image" content="<?= h($metaImage) ?>">
+    <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Hanplanet Wargame">
     <meta name="twitter:description" content="<?= h($metaDescription) ?>">
+    <meta name="twitter:image" content="<?= h($metaImage) ?>">
     <title>Hanplanet Wargame</title>
     <link rel="icon" href="/assets/favicon.ico?v=<?= h($faviconVersion) ?>">
     <link rel="stylesheet" href="<?= h(django_static_url('css/vendor/bootstrap.min.css')) ?>">

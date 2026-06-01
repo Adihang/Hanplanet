@@ -209,20 +209,13 @@
 
         loginForm.querySelectorAll("[data-handrive-otp-input]").forEach(initOtpInput);
 
-        const handleEnterSubmit = function (event) {
-            if (event.key !== "Enter" || event.isComposing) {
+        loginForm.addEventListener("submit", function (event) {
+            if (loginForm.dataset.submitting === "1") {
+                event.preventDefault();
                 return;
             }
-            event.preventDefault();
-            if (typeof loginForm.requestSubmit === "function") {
-                loginForm.requestSubmit(submitButton);
-                return;
-            }
-            submitButton.click();
-        };
-
-        loginForm.querySelectorAll('input[name="username"], input[name="password"]').forEach(function (input) {
-            input.addEventListener("keydown", handleEnterSubmit);
+            loginForm.dataset.submitting = "1";
+            submitButton.disabled = true;
         });
 
         const usernameInput = loginForm.querySelector('input[name="username"]');

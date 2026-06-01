@@ -1,7 +1,27 @@
-(function () {
+(function bootstrapHandriveVideoPlayer() {
     'use strict';
 
-    if (typeof videojs === 'undefined') return;
+    if (window.HandriveVideoPlayer) return;
+    if (typeof videojs === 'undefined') {
+        if (window.__handriveVideoPlayerRetryTimer) return;
+        let retryCount = Number(window.__handriveVideoPlayerRetryCount || 0);
+        const retry = () => {
+            window.__handriveVideoPlayerRetryTimer = null;
+            if (window.HandriveVideoPlayer) return;
+            if (typeof videojs !== 'undefined') {
+                window.__handriveVideoPlayerRetryCount = 0;
+                bootstrapHandriveVideoPlayer();
+                return;
+            }
+            retryCount += 1;
+            window.__handriveVideoPlayerRetryCount = retryCount;
+            if (retryCount < 80) {
+                window.__handriveVideoPlayerRetryTimer = window.setTimeout(retry, 100);
+            }
+        };
+        window.__handriveVideoPlayerRetryTimer = window.setTimeout(retry, 0);
+        return;
+    }
 
     // ── localStorage 유틸 ──────────────────────────────────────────────
     const ls = {
@@ -42,7 +62,7 @@
         players.set(el, { player, cleanups });
 
         setupControls(player);
-        setupPip(player);
+        setupPip(player, cleanups);
         setupCast(player);
         setupThumbnailPreview(player, el);
         setupPersist(player);
@@ -122,7 +142,7 @@
     }
 
     // ── 미니 플레이어 (PiP) ───────────────────────────────────────────
-    function setupPip(player) {
+    function setupPip(player, cleanups) {
         const videoEl = player.el().querySelector('video');
         if (!document.pictureInPictureEnabled || !videoEl || videoEl.disablePictureInPicture) return;
 
@@ -138,15 +158,36 @@
                         + '<path d="M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 '
                         + '1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z"/></svg>';
                 }
-                document.addEventListener('enterpictureinpicture', () => this.addClass('vjs-pip-active'));
-                document.addEventListener('leavepictureinpicture',  () => this.removeClass('vjs-pip-active'));
+                const syncActiveClass = () => {
+                    if (document.pictureInPictureElement === videoEl) {
+                        this.addClass('vjs-pip-active');
+                        return;
+                    }
+                    this.removeClass('vjs-pip-active');
+                };
+                document.addEventListener('enterpictureinpicture', syncActiveClass);
+                document.addEventListener('leavepictureinpicture', syncActiveClass);
+                if (Array.isArray(cleanups)) {
+                    cleanups.push(() => {
+                        document.removeEventListener('enterpictureinpicture', syncActiveClass);
+                        document.removeEventListener('leavepictureinpicture', syncActiveClass);
+                    });
+                }
             }
-            handleClick() {
+            async handleClick() {
                 if (this.player().isFullscreen()) this.player().exitFullscreen();
-                (document.pictureInPictureElement
-                    ? document.exitPictureInPicture()
-                    : videoEl.requestPictureInPicture()
-                ).catch(() => {});
+                if (document.pictureInPictureElement === videoEl) {
+                    document.exitPictureInPicture().catch(() => {});
+                    return;
+                }
+                try {
+                    await videoEl.requestPictureInPicture();
+                } catch (_) {
+                    if (document.pictureInPictureElement && document.pictureInPictureElement !== videoEl) {
+                        await document.exitPictureInPicture().catch(() => {});
+                        await videoEl.requestPictureInPicture().catch(() => {});
+                    }
+                }
             }
             buildCSSClass() { return `vjs-pip-button ${super.buildCSSClass()}`; }
         }
@@ -158,6 +199,32 @@
             c => c.name_ === 'fullscreenToggle' || c.name_ === 'FullscreenToggle'
         ) : -1;
         bar && bar.addChild('PipButton', {}, fsIdx >= 0 ? fsIdx : undefined);
+    }
+
+    function isHandriveImagePipVideo(el) {
+        return Boolean(el && el.dataset && el.dataset.handriveImagePipHost === '1');
+    }
+
+    function getActiveVideoPictureInPictureElement(scope) {
+        const active = document.pictureInPictureElement;
+        if (!active || active.tagName !== 'VIDEO' || isHandriveImagePipVideo(active)) {
+            return null;
+        }
+        if (scope && scope !== document && typeof scope.contains === 'function' && !scope.contains(active)) {
+            return null;
+        }
+        return active;
+    }
+
+    function closeVideoPictureInPicture(scope) {
+        if (
+            !document.pictureInPictureElement ||
+            typeof document.exitPictureInPicture !== 'function' ||
+            !getActiveVideoPictureInPictureElement(scope)
+        ) {
+            return Promise.resolve();
+        }
+        return document.exitPictureInPicture().catch(() => {});
     }
 
     // ── Google Cast ───────────────────────────────────────────────────
@@ -326,6 +393,24 @@
         return parts[0] || 0;
     }
 
+    function drawVideoContain(ctx, videoEl, width, height) {
+        const sourceWidth = Number(videoEl.videoWidth || width || 0);
+        const sourceHeight = Number(videoEl.videoHeight || height || 0);
+        if (!sourceWidth || !sourceHeight) return false;
+
+        const scale = Math.min(width / sourceWidth, height / sourceHeight);
+        const drawWidth = Math.max(1, Math.round(sourceWidth * scale));
+        const drawHeight = Math.max(1, Math.round(sourceHeight * scale));
+        const drawX = Math.floor((width - drawWidth) / 2);
+        const drawY = Math.floor((height - drawHeight) / 2);
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(videoEl, drawX, drawY, drawWidth, drawHeight);
+        return true;
+    }
+
     // 실시간 seek 방식: canvas + 숨김 video (VTT 없을 때 fallback)
     function setupRealtimeThumbnails(player, el) {
         const THUMB_W = 160;
@@ -361,7 +446,7 @@
 
         function tryDraw() {
             if (thumbVid.readyState < 2) return;
-            try { ctx.drawImage(thumbVid, 0, 0, THUMB_W, THUMB_H); } catch (_) {}
+            try { drawVideoContain(ctx, thumbVid, THUMB_W, THUMB_H); } catch (_) {}
             if (Math.abs(thumbVid.currentTime - pendingTime) > 0.5) {
                 thumbVid.currentTime = pendingTime;
             } else {
@@ -589,14 +674,28 @@
         const title     = (el && el.dataset.filename) || document.title;
         const posterUrl = (el && el.dataset.posterUrl) || '';
 
+        function setPlaybackState(state) {
+            try { navigator.mediaSession.playbackState = state; } catch (_) {}
+        }
+
+        function setPlaybackPosition() {
+            try {
+                navigator.mediaSession.setPositionState?.({
+                    duration:     player.duration() || 0,
+                    position:     player.currentTime(),
+                    playbackRate: player.playbackRate(),
+                });
+            } catch (_) {}
+        }
+
         player.on('play', () => {
             navigator.mediaSession.metadata = new MediaMetadata({
                 title,
                 artwork: posterUrl ? [{ src: posterUrl, sizes: '1280x720', type: 'image/jpeg' }] : [],
             });
-            navigator.mediaSession.playbackState = 'playing';
+            setPlaybackState('playing');
         });
-        player.on('pause', () => { navigator.mediaSession.playbackState = 'paused'; });
+        player.on('pause', () => { setPlaybackState('paused'); });
 
         const actions = {
             play:         () => player.play().catch(() => {}),
@@ -609,15 +708,7 @@
             try { navigator.mediaSession.setActionHandler(action, fn); } catch (_) {}
         });
 
-        player.on('timeupdate', () => {
-            try {
-                navigator.mediaSession.setPositionState?.({
-                    duration:     player.duration() || 0,
-                    position:     player.currentTime(),
-                    playbackRate: player.playbackRate(),
-                });
-            } catch (_) {}
-        });
+        player.on('timeupdate', setPlaybackPosition);
 
         player.on('dispose', () => {
             try { navigator.mediaSession.metadata = null; } catch (_) {}
@@ -632,29 +723,48 @@
 
         const POLL_MS = 3000;
         let pollTimer = null;
+        let qualitySelectorRetryTimer = null;
+        let qualitySelectorRetryCount = 0;
+        let qualitySelectorEnabled = false;
 
         function stopPoll() {
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         }
         cleanups.push(stopPoll);
+        cleanups.push(() => {
+            if (qualitySelectorRetryTimer) {
+                clearTimeout(qualitySelectorRetryTimer);
+                qualitySelectorRetryTimer = null;
+            }
+        });
 
         // 화질 선택기 활성화
         function enableQualitySelector() {
-            if (typeof player.hlsQualitySelector === 'function') {
-                try {
-                    const bar = player.getChild('controlBar');
-                    const children = bar ? bar.children() : [];
-                    const rateIdx = children.findIndex(c => {
-                        const name = String(c.name_ || c.name?.() || '').toLowerCase();
-                        const el = typeof c.el === 'function' ? c.el() : null;
-                        return name.includes('playbackrate') || Boolean(el && el.classList.contains('vjs-playback-rate'));
-                    });
-                    player.hlsQualitySelector({
-                        displayCurrentQuality: false,
-                        placementIndex: rateIdx >= 0 ? rateIdx + 1 : undefined,
-                    });
-                } catch (_) {}
+            if (qualitySelectorEnabled) return;
+            if (typeof player.hlsQualitySelector !== 'function') {
+                if (!qualitySelectorRetryTimer && qualitySelectorRetryCount < 40) {
+                    qualitySelectorRetryCount += 1;
+                    qualitySelectorRetryTimer = setTimeout(() => {
+                        qualitySelectorRetryTimer = null;
+                        enableQualitySelector();
+                    }, 250);
+                }
+                return;
             }
+            qualitySelectorEnabled = true;
+            try {
+                const bar = player.getChild('controlBar');
+                const children = bar ? bar.children() : [];
+                const rateIdx = children.findIndex(c => {
+                    const name = String(c.name_ || c.name?.() || '').toLowerCase();
+                    const el = typeof c.el === 'function' ? c.el() : null;
+                    return name.includes('playbackrate') || Boolean(el && el.classList.contains('vjs-playback-rate'));
+                });
+                player.hlsQualitySelector({
+                    displayCurrentQuality: false,
+                    placementIndex: rateIdx >= 0 ? rateIdx + 1 : undefined,
+                });
+            } catch (_) {}
         }
 
         // HLS 소스로 전환 (재생 중이면 위치 보존)
@@ -768,13 +878,39 @@
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────
-    function cleanup(el) {
+    function disposePlayer(el) {
         const entry = players.get(el);
         if (!entry) return;
         entry.cleanups.forEach(fn => fn());
         try { entry.player.dispose(); } catch (_) {}
         players.delete(el);
         delete el.dataset.vjsInitialized;
+    }
+
+    function cleanup(el) {
+        if (!el) return Promise.resolve();
+        const activePip = getActiveVideoPictureInPictureElement(null);
+        if (activePip === el) {
+            return closeVideoPictureInPicture(el).then(() => disposePlayer(el), () => disposePlayer(el));
+        }
+        disposePlayer(el);
+        return Promise.resolve();
+    }
+
+    function cleanupPreview(root) {
+        const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
+        const videos = Array.from(scope.querySelectorAll('video.video-js'));
+        return closeVideoPictureInPicture(scope).then(() => {
+            return Promise.all(videos.map(cleanup));
+        });
+    }
+
+    function cleanupRemovedVideoPlayers(node) {
+        if (!(node instanceof Element)) return;
+        if (node.matches('video.video-js')) {
+            cleanup(node);
+        }
+        node.querySelectorAll('video.video-js').forEach(cleanup);
     }
 
     // ── DOM 스캔 · 감시 ───────────────────────────────────────────────
@@ -798,15 +934,26 @@
         scanAndInit(document);
 
         document.querySelectorAll('.handrive-list-preview-content').forEach(container => {
-            new MutationObserver(() => scanAndInit(container))
+            new MutationObserver(records => {
+                records.forEach(record => {
+                    record.removedNodes.forEach(cleanupRemovedVideoPlayers);
+                });
+                scanAndInit(container);
+            })
                 .observe(container, { childList: true, subtree: true });
         });
 
         document.addEventListener('handrive:preview:hide', (e) => {
             const panel = e && e.detail && e.detail.panel;
-            (panel || document).querySelectorAll('video.video-js').forEach(cleanup);
+            cleanupPreview(panel || document);
         });
     });
 
-    window.HandriveVideoPlayer = { init, cleanup, players };
+    window.HandriveVideoPlayer = {
+        init,
+        cleanup,
+        cleanupPreview,
+        closeVideoPictureInPicture,
+        players,
+    };
 })();

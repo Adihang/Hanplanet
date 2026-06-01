@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 
 # ── 경로 설정 ──────────────────────────────────────────────────────────
 def _hls_cache_root() -> Path:
+    configured_root = str(getattr(settings, "HANDRIVE_HLS_CACHE_ROOT", "") or "").strip()
+    if configured_root:
+        return Path(configured_root)
     return Path(settings.MEDIA_ROOT) / "hls_cache"
 
 
@@ -56,6 +59,7 @@ _QUALITY_PRESETS: list[tuple[str, str, int, int]] = [
     ("480p",  "scale=-2:480",  1400, 128),
     ("360p",  "scale=-2:360",  800,  96),
 ]
+_SPRITE_VERSION = "contain-v1"
 
 # ── Worker Queue (동시 트랜스코딩 최대 _WORKER_COUNT개 제한) ──────────────
 _WORKER_COUNT = 2
@@ -211,13 +215,26 @@ def get_faststart_path(cache_key: str) -> Path | None:
 
 
 def get_sprite_path(cache_key: str) -> Path | None:
-    p = _hls_cache_root() / cache_key / "sprite.jpg"
+    cache_dir = _hls_cache_root() / cache_key
+    if _read_sprite_version(cache_dir) != _SPRITE_VERSION:
+        return None
+    p = cache_dir / "sprite.jpg"
     return p if p.exists() else None
 
 
 def get_sprite_vtt_path(cache_key: str) -> Path | None:
-    p = _hls_cache_root() / cache_key / "sprite.vtt"
+    cache_dir = _hls_cache_root() / cache_key
+    if _read_sprite_version(cache_dir) != _SPRITE_VERSION:
+        return None
+    p = cache_dir / "sprite.vtt"
     return p if p.exists() else None
+
+
+def _read_sprite_version(cache_dir: Path) -> str:
+    try:
+        return (cache_dir / "sprite.version").read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
 
 
 # ── 화질 레벨 선택 ────────────────────────────────────────────────────────
@@ -477,11 +494,14 @@ def _make_thumbnail_sprite(src: Path, cache_dir: Path, duration: float) -> bool:
 
     sprite_path = cache_dir / "sprite.jpg"
     vtt_path    = cache_dir / "sprite.vtt"
+    version_path = cache_dir / "sprite.version"
 
     # ffmpeg: 6초마다 프레임 추출 → 10열 타일로 합치기
     fps_expr = (
         f"select='not(mod(t\\,{INTERVAL}))',"
-        f"scale={THUMB_W}:{THUMB_H},"
+        f"scale={THUMB_W}:{THUMB_H}:force_original_aspect_ratio=decrease,"
+        f"pad={THUMB_W}:{THUMB_H}:(ow-iw)/2:(oh-ih)/2:color=black,"
+        "setsar=1,"
         f"tile={COLS}x1000"
     )
     cmd = [
@@ -519,6 +539,7 @@ def _make_thumbnail_sprite(src: Path, cache_dir: Path, duration: float) -> bool:
         with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
         os.replace(tmp_path, vtt_path)
+        version_path.write_text(_SPRITE_VERSION, encoding="utf-8")
     except Exception:
         try:
             os.unlink(tmp_path)

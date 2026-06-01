@@ -3474,7 +3474,7 @@ body.portfolio-page.theme-dark .career_cards hr {
     align-items: center;
     justify-content: center;
     gap: 10px;
-    padding: 0 0 16px;
+    padding: 10px 0 16px;
     font-size: 14px;
     color: #6b7280;
     flex: 0 0 auto;
@@ -3482,7 +3482,7 @@ body.portfolio-page.theme-dark .career_cards hr {
 }
 
 body.portfolio-page .site-footer-links {
-    padding-top: 16px;
+    padding-top: 10px;
 }
 
 .site-footer-link {

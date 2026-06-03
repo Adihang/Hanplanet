@@ -78,6 +78,7 @@
         <span class="ui-auth-account-name">{{ user.get_username }}</span>
     </button>
     {% include "partials/account_widget_menu.html" %}
+    {% include "partials/account_github_modal.html" %}
     <form method="post" action="{{ account_logout_url }}" class="ui-auth-form ui-auth-form-hidden" id="{{ account_logout_form_id }}">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ account_logout_next|default:request.get_full_path }}">

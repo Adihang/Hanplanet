@@ -28,11 +28,22 @@
 {% elif key == "login" %}{% if ui_lang|default:'ko' == 'en' %}Login{% else %}로그인{% endif %}
 {% elif key == "signup" %}{% if ui_lang|default:'ko' == 'en' %}Sign Up{% else %}회원가입{% endif %}
 {% elif key == "save" %}{% if ui_lang|default:'ko' == 'en' %}Save{% else %}저장{% endif %}
+{% elif key == "saved" %}{% if ui_lang|default:'ko' == 'en' %}Saved{% else %}저장됨{% endif %}
 {% elif key == "cancel" %}{% if ui_lang|default:'ko' == 'en' %}Cancel{% else %}취소{% endif %}
 {% elif key == "clear" %}{% if ui_lang|default:'ko' == 'en' %}Clear{% else %}지우기{% endif %}
 {% elif key == "logout" %}{% if ui_lang|default:'ko' == 'en' %}Logout{% else %}로그아웃{% endif %}
 {% elif key == "logout_confirm" %}{% if ui_lang|default:'ko' == 'en' %}Do you want to log out?{% else %}로그아웃 하시겠습니까?{% endif %}
 {% elif key == "my_portfolio" %}{% if ui_lang|default:'ko' == 'en' %}My Portfolio{% else %}내 포트폴리오{% endif %}
+{% elif key == "github_connect" %}{% if ui_lang|default:'ko' == 'en' %}Connect GitHub{% else %}GitHub 연동{% endif %}
+{% elif key == "github_connect_title" %}{% if ui_lang|default:'ko' == 'en' %}Connect GitHub{% else %}GitHub 연동{% endif %}
+{% elif key == "github_connect_message" %}{% if ui_lang|default:'ko' == 'en' %}No GitHub account is connected. Connect GitHub now?{% else %}연동된 GitHub 계정이 없습니다. 지금 연동하시겠습니까?{% endif %}
+{% elif key == "github_connect_confirm" %}{% if ui_lang|default:'ko' == 'en' %}Connect{% else %}연동{% endif %}
+{% elif key == "github_repo_select_title" %}{% if ui_lang|default:'ko' == 'en' %}GitHub Repositories{% else %}GitHub 저장소 선택{% endif %}
+{% elif key == "github_repo_select_message" %}{% if ui_lang|default:'ko' == 'en' %}Select repositories to show in HanDrive.{% else %}HanDrive에 표시할 저장소를 선택하세요.{% endif %}
+{% elif key == "github_repo_select_loading" %}{% if ui_lang|default:'ko' == 'en' %}Loading repositories...{% else %}저장소를 불러오는 중...{% endif %}
+{% elif key == "github_repo_select_empty" %}{% if ui_lang|default:'ko' == 'en' %}No repositories available.{% else %}표시할 수 있는 저장소가 없습니다.{% endif %}
+{% elif key == "github_repo_select_error" %}{% if ui_lang|default:'ko' == 'en' %}Failed to load GitHub repositories.{% else %}GitHub 저장소를 불러오지 못했습니다.{% endif %}
+{% elif key == "github_unconfigured" %}{% if ui_lang|default:'ko' == 'en' %}GitHub connection is not configured yet.{% else %}GitHub 연동 설정이 아직 완료되지 않았습니다.{% endif %}
 {% elif key == "close" %}{% if ui_lang|default:'ko' == 'en' %}Close{% else %}닫기{% endif %}
 {% elif key == "collapse" %}{% if ui_lang|default:'ko' == 'en' %}Collapse{% else %}접기{% endif %}
 {% elif key == "expand" %}{% if ui_lang|default:'ko' == 'en' %}Expand{% else %}펼치기{% endif %}

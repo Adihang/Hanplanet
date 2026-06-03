@@ -29,7 +29,7 @@
                             <a class="ui-path-link" href="{{ crumb.url }}" data-handrive-dir="{{ crumb.path|default:'' }}">{{ crumb.label }}</a>
                         {% endif %}
                     {% endfor %}
-                </div>{% if list_current_dir_size_display %}<span class="handrive-path-current-size">{{ list_current_dir_size_display }}</span>{% endif %}
+                </div><span class="handrive-path-current-size">{{ list_current_dir_size_display|default:'' }}</span>
             </div>
         </div>
         <div class="handrive-toolbar-right ui-toolbar-right">
@@ -59,10 +59,14 @@
     data-current-dir-is-git-repo-root="{% if current_dir_is_git_repo_root %}1{% else %}0{% endif %}"
     data-current-dir-requires-commit-message="{% if current_dir_requires_commit_message %}1{% else %}0{% endif %}"
     data-current-dir-git-branch-root="{% if current_dir_git_branch_root %}1{% else %}0{% endif %}"
+    data-current-dir-git-commit-id="{{ current_dir_git_commit_id|default:''|escape }}"
     data-current-dir-git-commit-message="{{ current_dir_git_commit_message|default:''|escape }}"
     data-current-dir-git-commit-author-username="{{ current_dir_git_commit_author_username|default:''|escape }}"
     data-current-dir-modified-display="{{ current_dir_modified_display|default:''|escape }}"
     data-current-dir-size-display="{{ list_current_dir_size_display|default:''|escape }}"
+    data-current-dir-is-url-only="{% if current_dir_is_url_only %}1{% else %}0{% endif %}"
+    data-current-dir-share-url="{{ current_dir_share_url|default:''|escape }}"
+    data-current-dir-share-is-inherited="{% if current_dir_share_is_inherited %}1{% else %}0{% endif %}"
     data-account-profile-image-url="{{ account_profile_image_url|default:''|escape }}"
     data-scoped-home-dir="{{ scoped_home_dir|default:'' }}"
     data-handrive-base-url="{{ handrive_base_url }}"
@@ -83,6 +87,7 @@
     data-upload-cancel-api-url="{{ handrive_api_upload_cancel_url }}"
     data-download-api-url="{{ handrive_api_download_url }}"
     data-preview-api-url="{{ handrive_api_preview_url }}"
+    data-pdf-preview-api-url="{{ handrive_api_pdf_preview_url }}"
     data-handrive-root-label="{{ handrive_root_label }}"
     data-acl-api-url="{{ handrive_api_acl_url }}"
     data-acl-options-api-url="{{ handrive_api_acl_options_url }}"
@@ -154,6 +159,14 @@
                         title="{{ handrive_text.url_share_button }}"
                         hidden
                     ><svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="4" r="2"/><circle cx="15" cy="16" r="2"/><circle cx="5" cy="10" r="2"/><line x1="7" y1="9" x2="13" y2="5"/><line x1="7" y1="11" x2="13" y2="15"/></svg></button>
+                    <button
+                        id="handrive-list-preview-print-btn"
+                        class="handrive-icon-btn"
+                        type="button"
+                        aria-label="{{ handrive_text.print_button }}"
+                        title="{{ handrive_text.print_button }}"
+                        hidden
+                    ><svg class="portfolio-print-btn-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V4h10v5"/><rect x="4" y="9" width="16" height="8" rx="2"/><rect x="8" y="15" width="8" height="5"/><line x1="9" y1="18" x2="15" y2="18"/></svg></button>
                     <a
                         id="handrive-list-preview-download-btn"
                         class="handrive-icon-btn"

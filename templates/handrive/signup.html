@@ -57,7 +57,7 @@
             <div class="handrive-login-error">{{ handrive_signup_form.password2.errors|join:", " }}</div>
         {% endif %}
 
-        <label class="handrive-field handrive-field-full">
+        <label class="handrive-field handrive-field-full{% if handrive_signup_github_pending %} handrive-field-readonly{% endif %}">
             <span>{{ handrive_text.auth_name_label }}</span>
             {{ handrive_signup_form.first_name }}
         </label>
@@ -66,18 +66,24 @@
         {% endif %}
 
         {# ── 이메일 + 인증번호 요청 버튼 (가로 배치) ─────────────────── #}
-        <div class="handrive-field handrive-field-full">
+        <div class="handrive-field handrive-field-full{% if handrive_signup_github_pending %} handrive-field-readonly{% endif %}">
             <span>{{ handrive_text.auth_email_label }}</span>
             <div class="handrive-signup-email-row" id="handrive-signup-email-row">
                 {{ handrive_signup_form.email }}
+                {% if not handrive_signup_github_pending %}
                 <button type="button" class="ui-btn" id="handrive-signup-send-code-btn">{{ handrive_text.auth_2fa_send_code_button }}</button>
+                {% endif %}
             </div>
             {% if handrive_signup_form.email.errors %}
                 <div class="handrive-login-error">{{ handrive_signup_form.email.errors|join:", " }}</div>
             {% endif %}
+            {% if handrive_signup_github_pending and handrive_signup_github_login %}
+                <span class="ui-subtitle">GitHub: {{ handrive_signup_github_login }}</span>
+            {% endif %}
             <div id="handrive-signup-send-code-error" class="handrive-login-error" style="display:none;"></div>
         </div>
 
+        {% if not handrive_signup_github_pending %}
         {# ── 인증번호 입력 + 확인 버튼 (발송 후 표시) ────────────────── #}
         <div class="handrive-field handrive-field-full" id="handrive-signup-code-block" hidden>
             <span>{{ handrive_text.auth_2fa_code_label }}</span>
@@ -120,22 +126,10 @@
         {% if handrive_signup_form.privacy_consent.errors %}
             <div class="handrive-login-error">{{ handrive_signup_form.privacy_consent.errors|join:", " }}</div>
         {% endif %}
+        {% endif %}
 
         <div class="handrive-login-actions">
             <a class="ui-btn" href="{{ handrive_login_url }}">{{ handrive_text.auth_login_button }}</a>
-            {% if handrive_github_auth_enabled %}
-                <button
-                    class="ui-btn handrive-auth-provider-btn"
-                    type="submit"
-                    name="mode"
-                    value="signup"
-                    formaction="{{ handrive_github_signup_url }}"
-                    formmethod="post"
-                    formnovalidate
-                >
-                    {{ handrive_text.auth_github_signup_button }}
-                </button>
-            {% endif %}
             <button class="ui-btn ui-btn-primary" type="submit">{{ handrive_text.auth_signup_submit }}</button>
         </div>
     </form>
@@ -389,6 +383,10 @@
         color: var(--handrive-text-muted, #999);
         opacity: 0.6;
         cursor: not-allowed;
+    }
+    #handrive-signup-form .handrive-field-readonly input:disabled {
+        background: color-mix(in srgb, var(--handrive-surface-muted-strong) 78%, #000 22%);
+        border-color: var(--handrive-border-soft);
     }
     #handrive-signup-form .ui-btn:disabled {
         opacity: 0.45;

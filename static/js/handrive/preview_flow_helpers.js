@@ -138,11 +138,13 @@
             if (cached && typeof cached === "object") {
                 renderPreviewHtml(entry, cached.html, cached.renderMode, cached.renderClass);
                 state.activeRenderedPreviewPath = pathValue;
+                setPreviewActionTargets(entry);
                 scrollPreviewIntoViewIfPortrait();
                 return;
             }
             renderPreviewHtml(entry, cached, "markdown", "ui-markdown");
             state.activeRenderedPreviewPath = pathValue;
+            setPreviewActionTargets(entry);
             scrollPreviewIntoViewIfPortrait();
             return;
         }
@@ -181,6 +183,7 @@
             }
             renderPreviewHtml(entry, html, renderMode, renderClass);
             state.activeRenderedPreviewPath = pathValue;
+            setPreviewActionTargets(entry);
             scrollPreviewIntoViewIfPortrait();
         } catch (error) {
             if (requestToken !== state.previewRequestToken || state.activePreviewPath !== pathValue) {

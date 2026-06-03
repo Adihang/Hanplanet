@@ -31,7 +31,7 @@ import unicodedata
 import uuid
 import zipfile
 from datetime import datetime
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from functools import wraps
 from glob import escape as glob_escape
@@ -75,22 +75,26 @@ from .restart_utils import restart_gunicorn_and_wait
 from .forgejo_client import ForgejoClient
 from .github_auth import (
     GitHubAuthError,
+    GitHubIdentity,
+    GitHubTokenData,
     build_github_authorize_url,
     exchange_github_code,
     fetch_github_identity,
+    github_token_has_configured_repository_scope,
     is_github_auth_configured,
-    resolve_github_user,
+    list_github_repositories,
     save_github_mapping,
 )
 from .handrive.html_assets import load_local_html_companion_assets, load_repo_html_companion_assets
 from .handrive.preview import (
+    convert_office_bytes_to_pdf,
     render_handrive_csv_preview_safely,
     render_handrive_html_live_safely,
     render_handrive_office_preview_safely,
     render_handrive_pdf_safely,
 )
 from .models import HandriveAccessRule, HandriveLoginAttemptGuard, HandriveSharedLink, HandriveUserQuota, UserProfile
-from git.models import GitUserMapping
+from git.models import GitHubAccountMapping, GitUserMapping
 from portfolio.models import PortfolioProfile
 
 logger = logging.getLogger(__name__)
@@ -98,6 +102,7 @@ GIT_BIN = "/usr/bin/git"
 FORGEJO_SESSION_HELPER_BINARY_NAME = "hanplanet_forgejo_session_blob"
 FORGEJO_AUTH_ERROR_CODE = "FORGEJO"
 HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY = "handrive_github_auth_state"
+HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY = "handrive_github_pending_auth"
 
 DOCS_FILE_EXTENSION = ".md"
 DOCS_ALLOWED_FILE_EXTENSIONS = (
@@ -400,6 +405,14 @@ DOCS_RENDER_MODE_MEDIA_AUDIO = "media_audio"
 DOCS_RENDER_MODE_OFFICE = "office"
 DOCS_RENDER_MODE_PDF = "pdf"
 DOCS_RENDER_MODE_UNSUPPORTED = "unsupported"
+HANDRIVE_OFFICE_PDF_EXTENSIONS = frozenset({
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+})
 HANDRIVE_ACTIVE_ROOT_DIR: ContextVar[Path | None] = ContextVar("handrive_active_root_dir", default=None)
 HANDRIVE_ACTIVE_REQUEST: ContextVar[object | None] = ContextVar("handrive_active_request", default=None)
 HANDRIVE_ARCHIVE_VIRTUAL_PREFIX = ".handrive-archive"
@@ -592,7 +605,7 @@ DOCS_TEXT = {
         "archive_extract_current_folder": "이 폴더에",
         "archive_extract_named_folder": "압축파일명 폴더에",
         "rename_title": "이름 바꾸기",
-        "commit_message_title": "커밋 메시지",
+        "commit_message_title": "커밋",
         "commit_message_label": "메시지",
         "commit_message_placeholder": "커밋 메시지를 입력해주세요.",
         "clipboard_filename_title": "파일명 입력",
@@ -659,6 +672,9 @@ DOCS_TEXT = {
         "audio_editor_reset": "초기화",
         "audio_editor_save_error": "오디오 저장 실패",
         "audio_editor_saving": "저장 중...",
+        "media_loop_on": "연속재생 켜짐",
+        "media_loop_off": "연속재생 꺼짐",
+        "media_loop_toggle": "연속재생 켜기/끄기",
         "video_editor_title": "비디오 편집",
         "video_editor_start": "시작",
         "video_editor_end": "끝",
@@ -671,6 +687,8 @@ DOCS_TEXT = {
         "delete_button": "삭제",
         "delete_repo_button": "Repo 삭제",
         "download_button": "다운로드",
+        "print_button": "인쇄",
+        "print_popup_blocked": "인쇄 창을 열 수 없습니다. 팝업 차단을 해제해주세요.",
         "write_title_edit": "수정",
         "write_title_create": "새 파일",
         "markdown_guide_button": "마크다운 가이드",
@@ -845,7 +863,7 @@ DOCS_TEXT = {
         "list_sort_type": "유형",
         "list_sort_size": "크기",
         "list_sort_permission": "권한",
-        "list_sort_commit": "커밋명",
+        "list_sort_commit": "커밋",
         "list_sort_id": "ID",
         "markdown_help_aria": "마크다운 문법 안내",
         "markdown_help_fallback_title": "마크다운 문법",
@@ -902,6 +920,13 @@ DOCS_TEXT = {
         "auth_github_failed": "GitHub 인증에 실패했습니다. 다시 시도해주세요.",
         "auth_github_login_new_account_error": "연결된 계정을 찾을 수 없습니다. 회원가입 페이지에서 GitHub 회원가입을 진행해주세요.",
         "auth_github_consent_error": "GitHub 회원가입을 계속하려면 개인정보 처리방침 및 이용약관 동의가 필요합니다.",
+        "auth_github_link_conflict": "이미 다른 계정에 연결된 GitHub 계정입니다.",
+        "auth_github_link_requires_login": "GitHub 연동은 로그인 후 사용할 수 있습니다.",
+        "auth_github_choice_title": "GitHub 계정 확인",
+        "auth_github_choice_message": "이 GitHub 계정의 이메일을 사용하는 Hanplanet 계정이 있습니다. 기존 계정에 연동하거나 새 계정으로 회원가입할 수 있습니다.",
+        "auth_github_choice_link": "연동",
+        "auth_github_choice_signup": "회원가입",
+        "auth_github_link_pending": "GitHub 계정을 연동하려면 로그인해주세요.",
         "auth_login_captcha_label": "캡챠 인증",
         "auth_login_captcha_hint": "아래 보안 인증을 완료해주세요.",
         "auth_login_captcha_placeholder": "정답 입력",
@@ -1007,6 +1032,9 @@ DOCS_TEXT = {
         "audio_editor_reset": "Reset",
         "audio_editor_save_error": "Audio save failed",
         "audio_editor_saving": "Saving...",
+        "media_loop_on": "Loop playback on",
+        "media_loop_off": "Loop playback off",
+        "media_loop_toggle": "Toggle loop playback",
         "video_editor_title": "Video Edit",
         "video_editor_start": "Start",
         "video_editor_end": "End",
@@ -1019,6 +1047,8 @@ DOCS_TEXT = {
         "delete_button": "Delete",
         "delete_repo_button": "Delete Repo",
         "download_button": "Download",
+        "print_button": "Print",
+        "print_popup_blocked": "Could not open the print window. Please allow pop-ups and try again.",
         "write_title_edit": "Edit File",
         "write_title_create": "New File",
         "markdown_guide_button": "Markdown Guide",
@@ -1269,6 +1299,13 @@ DOCS_TEXT = {
         "auth_github_failed": "GitHub authentication failed. Please try again.",
         "auth_github_login_new_account_error": "No connected account was found. Use GitHub sign up first.",
         "auth_github_consent_error": "You must agree to the Privacy Policy and Terms of Service to continue GitHub sign up.",
+        "auth_github_link_conflict": "This GitHub account is already connected to another account.",
+        "auth_github_link_requires_login": "Sign in before connecting GitHub.",
+        "auth_github_choice_title": "GitHub account found",
+        "auth_github_choice_message": "A Hanplanet account already uses this GitHub account email. Link GitHub to the existing account or create a new account.",
+        "auth_github_choice_link": "Link",
+        "auth_github_choice_signup": "Sign Up",
+        "auth_github_link_pending": "Sign in to link this GitHub account.",
         "auth_login_captcha_label": "Captcha Verification",
         "auth_login_captcha_hint": "Complete the security verification below.",
         "auth_login_captcha_placeholder": "Enter answer",
@@ -1785,6 +1822,7 @@ def build_archive_directory_meta(request, archive_relative: str, inner_path: str
         "is_git_repo_root": False,
         "requires_commit_message": False,
         "git_branch_root": False,
+        "git_commit_id": "",
         "git_commit_message": "",
         "git_commit_author_username": "",
         "modified_display": modified_display,
@@ -1868,6 +1906,63 @@ def build_available_archive_file_path(parent_dir: Path, raw_stem: str) -> Path:
         if not candidate.exists():
             return candidate
         index += 1
+
+
+def iter_readable_directory_zip_entries(request, source_path: Path):
+    """읽기 권한이 있는 폴더 항목만 ZIP에 포함하도록 순회한다."""
+    root_name = source_path.name.strip() or "folder"
+    yield source_path, f"{root_name}/", True
+
+    stack = [source_path]
+    while stack:
+        current = stack.pop()
+        try:
+            children = sorted(current.iterdir(), key=lambda path_obj: path_obj.name.lower(), reverse=True)
+        except (OSError, PermissionError):
+            continue
+
+        for child in children:
+            try:
+                if child.is_symlink():
+                    continue
+                child_relative = relative_from_root(child)
+                if not has_handrive_read_access(request, child_relative):
+                    continue
+                relative_child = child.relative_to(source_path).as_posix()
+                arcname = f"{root_name}/{relative_child}"
+                if child.is_dir():
+                    yield child, arcname.rstrip("/") + "/", True
+                    stack.append(child)
+                    continue
+                if child.is_file():
+                    yield child, arcname, False
+            except (OSError, PermissionError, ValueError):
+                continue
+
+
+def build_handrive_directory_download_response(request, source_path: Path):
+    """HanDrive 폴더를 임시 ZIP 파일로 만들어 다운로드 응답을 반환한다."""
+    if source_path.is_symlink():
+        raise Http404("다운로드할 폴더를 찾을 수 없습니다.")
+
+    zip_file = tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024, mode="w+b")
+    try:
+        with zipfile.ZipFile(zip_file, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for entry_path, arcname, is_directory in iter_readable_directory_zip_entries(request, source_path):
+                if is_directory:
+                    archive.writestr(arcname, b"")
+                    continue
+                try:
+                    archive.write(entry_path, arcname)
+                except (OSError, PermissionError):
+                    continue
+        zip_file.seek(0)
+    except Exception:
+        zip_file.close()
+        raise
+
+    filename = f"{(source_path.name.strip() or 'folder')}.zip"
+    return FileResponse(zip_file, as_attachment=True, filename=filename, content_type="application/zip")
 
 
 def render_plain_text_safely(text: str) -> str:
@@ -2289,7 +2384,7 @@ def decode_handrive_text_bytes(source_bytes: bytes, *, request=None, relative_pa
         raise
 
 
-def build_entry(path_obj: Path) -> dict:
+def build_entry(path_obj: Path, *, include_dir_size: bool = True) -> dict:
     """filesystem 경로를 list API 엔트리 dict 로 직렬화한다."""
     rel_path = relative_from_root(path_obj)
     is_dir = path_obj.is_dir()
@@ -2311,14 +2406,17 @@ def build_entry(path_obj: Path) -> dict:
             data["has_children"] = any(path_obj.iterdir())
         except OSError:
             data["has_children"] = False
-        try:
-            total_bytes = sum(
-                child.stat().st_size
-                for child in path_obj.rglob("*")
-                if child.is_file()
-            )
-            data["size_display"] = format_handrive_bytes_display(total_bytes)
-        except OSError:
+        if include_dir_size:
+            try:
+                total_bytes = sum(
+                    child.stat().st_size
+                    for child in path_obj.rglob("*")
+                    if child.is_file()
+                )
+                data["size_display"] = format_handrive_bytes_display(total_bytes)
+            except OSError:
+                data["size_display"] = ""
+        else:
             data["size_display"] = ""
         map_meta_file = path_obj / MAP_META_FILENAME
         if map_meta_file.is_file():
@@ -2858,17 +2956,110 @@ def delete_handrive_sync_excluded_paths_for_path(path_value: str) -> None:
         profile.save(update_fields=["sync_excluded_paths", "updated_at"])
 
 
+def _parse_github_repository_modified_datetime(repository: dict) -> datetime | None:
+    for key in ("pushed_at", "updated_at"):
+        raw_value = str(repository.get(key) or "").strip()
+        if not raw_value:
+            continue
+        try:
+            return datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+    return None
+
+
+def _selected_github_repository_entries_for_directory(request, current_dir_relative: str, existing_entry_paths: set[str]) -> list[dict]:
+    if request is None or not hasattr(request, "user") or not request.user.is_authenticated:
+        return []
+
+    scoped_home_dir = get_scoped_handrive_home_dir(request)
+    normalized_current_dir = normalize_relative_path(current_dir_relative, allow_empty=True)
+    root_relative = scoped_home_dir if scoped_home_dir else ""
+    if normalized_current_dir != root_relative:
+        return []
+
+    selected_repositories = _selected_github_virtual_repositories(request)
+    if not selected_repositories:
+        return []
+
+    entries = []
+    used_paths = set(existing_entry_paths)
+    for repository in selected_repositories:
+        repo_path = _github_virtual_repo_root_relative(request, repository)
+        suffix = 2
+        while repo_path in used_paths:
+            path_name = f".github-repo-{repository.github_repo_id}-{suffix}"
+            repo_path = f"{root_relative}/{path_name}" if root_relative else path_name
+            suffix += 1
+        used_paths.add(repo_path)
+
+        source_repository = next(
+            (
+                item for item in repository.mapping.selected_repositories
+                if isinstance(item, dict) and str(item.get("id")) == str(repository.github_repo_id)
+            ),
+            {},
+        )
+        modified_dt = _parse_github_repository_modified_datetime(source_repository)
+        entries.append(
+            {
+                "name": repository.repo_name,
+                "path": repo_path,
+                "type": "dir",
+                "has_children": True,
+                "modified_display": format_handrive_modified_display(modified_dt),
+                "size_display": "",
+                "can_edit": False,
+                "can_read": True,
+                "can_write_children": False,
+                "can_delete": False,
+                "is_public_write": False,
+                "is_url_only": False,
+                "write_acl_labels": [],
+                "is_git_virtual": True,
+                "type_display": "GitHub",
+                "github_repo": {
+                    "id": repository.github_repo_id,
+                    "full_name": repository.full_name,
+                    "name": repository.repo_name,
+                    "owner": repository.owner_login,
+                    "private": bool(source_repository.get("private")),
+                    "fork": bool(source_repository.get("fork")),
+                    "default_branch": repository.default_branch,
+                    "html_url": repository.html_url,
+                    "clone_url": repository.clone_url,
+                    "can_push": repository.can_push,
+                },
+            }
+        )
+    return entries
+
+
 def list_directory_entries(directory: Path, request=None) -> list[dict]:
     """실제 디렉터리 엔트리와 가상 repo root 엔트리를 함께 구성한다."""
     entries = []
     existing_entry_paths = set()
+    folder_icon_stems = set()
+    folder_icon_owner_key = ""
+    if request is not None and hasattr(request, "user"):
+        folder_icon_owner_key = get_folder_icon_owner_key_for_user(request.user)
+        if folder_icon_owner_key and folder_icon_owner_key != "anon":
+            icons_dir = Path(settings.MEDIA_ROOT) / build_user_folder_icon_dir(folder_icon_owner_key)
+            try:
+                folder_icon_stems = {
+                    icon_path.stem
+                    for icon_path in icons_dir.iterdir()
+                    if icon_path.is_file()
+                }
+            except OSError:
+                folder_icon_stems = set()
     try:
         _children = [directory / p.name for p in directory.resolve().iterdir()]
     except (PermissionError, OSError):
         _children = []
     for child in sorted(_children, key=lambda p: (0 if p.is_dir() else 1, p.name.lower())):
         if child.is_dir():
-            entry = build_entry(child)
+            entry = build_entry(child, include_dir_size=False)
             can_edit = False
             can_read = True
             if request is not None:
@@ -2881,6 +3072,7 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
             if request is not None:
                 is_git_repo_root = is_handrive_git_repo_root_path(request, entry["path"])
                 entry["can_edit"] = can_edit
+                entry["can_read"] = can_read
                 entry["can_write_children"] = has_handrive_directory_write_access(request, entry["path"])
                 entry["can_delete"] = can_edit or is_git_repo_root
                 entry["is_public_write"] = False
@@ -2890,13 +3082,11 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                 entry["share_url"] = share_info["share_url"]
                 entry["share_is_inherited"] = share_info["share_is_inherited"]
                 # 커스텀 폴더 아이콘 URL 주입
-                _owner_key = get_folder_icon_owner_key_for_user(request.user)
-                if _owner_key and _owner_key != "anon":
+                if folder_icon_owner_key and folder_icon_owner_key != "anon":
                     _stem = sanitize_upload_segment(child.name) or "folder"
-                    _icons_dir = Path(settings.MEDIA_ROOT) / build_user_folder_icon_dir(_owner_key)
-                    if any(_icons_dir.glob(f"{_stem}.*")):
+                    if _stem in folder_icon_stems:
                         entry["folder_icon_url"] = (
-                            f"/handrive/api/folder-icon?owner_key={quote(_owner_key)}&folder_stem={quote(_stem)}"
+                            f"/handrive/api/folder-icon?owner_key={quote(folder_icon_owner_key)}&folder_stem={quote(_stem)}"
                         )
             entries.append(entry)
             existing_entry_paths.add(entry["path"])
@@ -2914,6 +3104,7 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                     continue
             if request is not None:
                 entry["can_edit"] = can_edit
+                entry["can_read"] = can_read
                 entry["can_write_children"] = False
                 entry["can_delete"] = can_edit
                 entry["is_public_write"] = is_handrive_public_write_enabled(request, entry["path"])
@@ -2987,6 +3178,7 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                     "modified_display": format_handrive_modified_display(getattr(repo, "updated_at", None)),
                     "size_display": _repo_size_display,
                     "can_edit": False,
+                    "can_read": True,
                     "can_write_children": False,
                     "can_delete": permission == "owner",
                     "is_public_write": False,
@@ -3005,6 +3197,16 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
             )
         if virtual_repo_entries:
             entries.extend(sorted(virtual_repo_entries, key=lambda item: (0, item["name"].lower())))
+            existing_entry_paths.update(entry["path"] for entry in virtual_repo_entries)
+        github_repo_entries = _selected_github_repository_entries_for_directory(
+            request,
+            current_dir_relative,
+            existing_entry_paths,
+        )
+        if github_repo_entries:
+            entries.extend(sorted(github_repo_entries, key=lambda item: (0, item["name"].lower())))
+            existing_entry_paths.update(entry["path"] for entry in github_repo_entries)
+        if virtual_repo_entries or github_repo_entries:
             entries.sort(key=lambda item: (0 if item.get("type") == "dir" else 1, item.get("name", "").lower()))
 
     return entries
@@ -3021,6 +3223,20 @@ def _get_current_dir_git_repo(request, current_dir: str):
             repo = git_virtual.get("repo")
     if repo:
         permission = _get_git_repo_permission_for_request(request, repo)
+        if _is_github_virtual_repo(repo):
+            return {
+                "id": repo.id,
+                "provider": "github",
+                "repo_name": repo.repo_name,
+                "full_name": repo.full_name,
+                "status": repo.status,
+                "permission": permission,
+                "is_owner": repo.owner_login == str(getattr(repo.mapping, "github_login", "") or "").strip(),
+                "owner_username": repo.owner_login,
+                "html_url": repo.html_url,
+                "can_delete": False,
+                "can_manage": True,
+            }
         return {
             "id": repo.id,
             "repo_name": str(repo.forgejo_repo_name or repo.repo_name or "").strip(),
@@ -3034,20 +3250,26 @@ def _get_current_dir_git_repo(request, current_dir: str):
     return None
 
 
-def _build_handrive_directory_meta(request, current_dir: str, entries: list | None = None) -> dict:
+def _build_handrive_directory_meta(
+    request,
+    current_dir: str,
+    entries: list | None = None,
+    *,
+    include_size: bool = False,
+) -> dict:
     """목록 페이지가 현재 디렉터리를 클라이언트에서 재구성할 수 있도록 메타데이터를 반환한다."""
     normalized_dir = normalize_relative_path(current_dir, allow_empty=True)
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     git_virtual = _get_git_virtual_context(request, normalized_dir)
     current_dir_size_display = ""
     current_dir_modified_display = ""
-    current_dir_commit_meta = {"subject": "", "author_username": "", "modified_display": ""}
+    current_dir_commit_meta = {"commit_id": "", "subject": "", "author_username": "", "modified_display": ""}
 
     if git_virtual is None:
         directory, normalized_dir = resolve_path(normalized_dir, must_exist=True)
         if not directory.is_dir():
             raise FileNotFoundError("폴더를 찾을 수 없습니다.")
-        if directory.is_dir():
+        if directory.is_dir() and include_size:
             dir_bytes = calculate_handrive_quota_breakdown(directory)[0]
             is_root = (scoped_home_dir and normalized_dir == scoped_home_dir) or (not scoped_home_dir and normalized_dir == "")
             if is_root and request.user.is_authenticated:
@@ -3069,25 +3291,37 @@ def _build_handrive_directory_meta(request, current_dir: str, entries: list | No
             )
 
     effective_entries = entries if entries is not None else []
+    current_share_info = {"share_url": "", "share_is_inherited": False}
+    current_is_url_only = False
+    if normalized_dir:
+        current_is_url_only = is_handrive_url_only_enabled(request, normalized_dir)
+        current_share_info = build_handrive_existing_share_info(request, normalized_dir)
     return {
         "path": normalized_dir,
         "is_root": bool((scoped_home_dir and normalized_dir == scoped_home_dir) or (not scoped_home_dir and normalized_dir == "")),
         "can_edit": has_handrive_write_access(request, normalized_dir),
         "can_write_children": has_handrive_directory_write_access(request, normalized_dir),
         "has_children": bool(effective_entries),
-        "is_git_repo_root": is_handrive_git_repo_root_path(request, normalized_dir),
+        "is_git_repo_root": bool(
+            is_handrive_git_repo_root_path(request, normalized_dir)
+            or (git_virtual is not None and git_virtual["kind"] == "repo_root")
+        ),
         "requires_commit_message": bool(git_virtual is not None and git_virtual["kind"] == "branch_dir"),
         "git_branch_root": bool(
             git_virtual is not None
             and git_virtual["kind"] == "branch_dir"
             and not git_virtual["repo_relative_path"]
         ),
+        "git_commit_id": current_dir_commit_meta.get("commit_id", ""),
         "git_commit_message": current_dir_commit_meta.get("subject", ""),
         "git_commit_author_username": current_dir_commit_meta.get("author_username", ""),
         "modified_display": current_dir_commit_meta.get("modified_display", "") or current_dir_modified_display,
         "size_display": current_dir_size_display,
         "write_acl_labels": get_write_acl_display_labels(request, normalized_dir),
         "git_repo": _get_current_dir_git_repo(request, normalized_dir),
+        "is_url_only": current_is_url_only,
+        "share_url": current_share_info["share_url"],
+        "share_is_inherited": current_share_info["share_is_inherited"],
     }
 
 
@@ -3201,6 +3435,8 @@ def _get_visible_git_repositories(request):
 
 def _get_git_repo_permission_for_request(request, repo) -> str:
     """현재 요청 사용자의 repo permission 문자열을 반환한다."""
+    if _is_github_virtual_repo(repo):
+        return "write" if getattr(repo, "can_push", False) else "read"
     permissions = getattr(request, "_visible_git_repo_permissions", None)
     if permissions is None:
         _get_visible_git_repositories(request)
@@ -3257,6 +3493,153 @@ def _get_repo_storage_path(owner, repo_name: str) -> Path:
     return (Path(settings.FORGEJO_REPOS_ROOT) / owner.username / f"{repo_name}.git").resolve()
 
 
+class GitHubVirtualRepository:
+    """HanDrive 에 선택 표시된 GitHub repo 를 기존 git virtual 흐름에 맞춘 얇은 어댑터."""
+
+    provider = "github"
+    status = "active"
+    forgejo_owner = ""
+    forgejo_repo_name = ""
+
+    def __init__(self, *, mapping: GitHubAccountMapping, repository: dict, user):
+        self.mapping = mapping
+        self.owner = user
+        self.owner_id = getattr(user, "id", None)
+        self.github_repo_id = int(repository["id"])
+        self.id = f"github:{self.github_repo_id}"
+        self.full_name = str(repository.get("full_name") or "").strip()
+        self.repo_name = str(repository.get("name") or "").strip() or self.full_name.rsplit("/", 1)[-1]
+        self.owner_login = str(repository.get("owner") or "").strip() or self.full_name.split("/", 1)[0]
+        self.default_branch = str(repository.get("default_branch") or "").strip()
+        self.html_url = str(repository.get("html_url") or "").strip()
+        self.clone_url = str(repository.get("clone_url") or "").strip()
+        self.can_push = bool(repository.get("can_push"))
+        self.access_token = str(mapping.user_access_token or "").strip()
+        self._cache_ready = False
+
+
+def _is_github_virtual_repo(repo) -> bool:
+    return getattr(repo, "provider", "") == "github"
+
+
+def _github_virtual_repo_root_relative(request, repo: GitHubVirtualRepository) -> str:
+    scoped_home_dir = get_scoped_handrive_home_dir(request)
+    root_relative = scoped_home_dir if scoped_home_dir else ""
+    path_name = f".github-repo-{repo.github_repo_id}"
+    return f"{root_relative}/{path_name}" if root_relative else path_name
+
+
+def _selected_github_virtual_repositories(request) -> list[GitHubVirtualRepository]:
+    cached = getattr(request, "_selected_github_virtual_repositories", None)
+    if cached is not None:
+        return cached
+    if request is None or not hasattr(request, "user") or not request.user.is_authenticated:
+        setattr(request, "_selected_github_virtual_repositories", [])
+        return []
+
+    mapping = GitHubAccountMapping.objects.filter(user=request.user).first()
+    selected_repositories = mapping.selected_repositories if mapping and isinstance(mapping.selected_repositories, list) else []
+    repositories: list[GitHubVirtualRepository] = []
+    for repository in selected_repositories:
+        if not isinstance(repository, dict):
+            continue
+        try:
+            repo_id = int(repository.get("id"))
+        except (TypeError, ValueError):
+            continue
+        full_name = str(repository.get("full_name") or "").strip()
+        if not full_name:
+            continue
+        clone_url = str(repository.get("clone_url") or "").strip()
+        if not clone_url:
+            clone_url = f"https://github.com/{full_name}.git"
+            repository = {**repository, "id": repo_id, "clone_url": clone_url}
+        else:
+            repository = {**repository, "id": repo_id}
+        repositories.append(GitHubVirtualRepository(mapping=mapping, repository=repository, user=request.user))
+    setattr(request, "_selected_github_virtual_repositories", repositories)
+    return repositories
+
+
+def _get_github_virtual_repo_for_relative_path(request, relative_path: str):
+    normalized = normalize_relative_path(relative_path, allow_empty=False)
+    for repo in _selected_github_virtual_repositories(request):
+        if _github_virtual_repo_root_relative(request, repo) == normalized:
+            return repo
+    return None
+
+
+def _get_github_git_cache_path(repo: GitHubVirtualRepository) -> Path:
+    owner_key = sanitize_upload_segment(str(getattr(repo.owner, "username", "") or "user")) or "user"
+    cache_root = Path(
+        str(
+            getattr(settings, "GITHUB_REPO_CACHE_ROOT", "")
+            or (Path(tempfile.gettempdir()) / "hanplanet_handrive_github_repo_cache")
+        )
+    ).expanduser()
+    return (cache_root / owner_key / f"{repo.github_repo_id}.git").resolve()
+
+
+@contextmanager
+def _github_git_auth_env(access_token: str):
+    if not access_token:
+        raise RuntimeError("GitHub access token missing")
+    with tempfile.TemporaryDirectory(prefix="handrive_github_askpass_") as temp_dir:
+        askpass_path = Path(temp_dir) / "askpass.sh"
+        askpass_path.write_text(
+            "#!/bin/sh\n"
+            "case \"$1\" in\n"
+            "*Username*) printf '%s\\n' x-access-token ;;\n"
+            "*) printf '%s\\n' \"$GITHUB_TOKEN\" ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        askpass_path.chmod(0o700)
+        env = os.environ.copy()
+        env.update({
+            "GIT_ASKPASS": str(askpass_path),
+            "GIT_TERMINAL_PROMPT": "0",
+            "GITHUB_TOKEN": access_token,
+        })
+        yield env
+
+
+def _run_github_git_command(repo: GitHubVirtualRepository, command: list[str], *, timeout: int = 180):
+    with _github_git_auth_env(repo.access_token) as env:
+        return subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=env)
+
+
+def _ensure_github_repo_cache(repo: GitHubVirtualRepository, *, force: bool = False) -> Path:
+    cache_path = _get_github_git_cache_path(repo)
+    if getattr(repo, "_cache_ready", False) and not force:
+        return cache_path
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    if not cache_path.exists():
+        result = _run_github_git_command(
+            repo,
+            [GIT_BIN, "clone", "--mirror", repo.clone_url, str(cache_path)],
+            timeout=240,
+        )
+    else:
+        result = _run_github_git_command(
+            repo,
+            [
+                GIT_BIN,
+                f"--git-dir={cache_path}",
+                "fetch",
+                "--prune",
+                "origin",
+                "+refs/heads/*:refs/heads/*",
+            ],
+            timeout=180,
+        )
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or "").strip() or "GitHub repository fetch failed")
+    repo._cache_ready = True
+    return cache_path
+
+
 def _encode_git_branch_segment(branch_name: str) -> str:
     """브랜치명을 HanDrive path segment 로 안전하게 인코딩한다."""
     return quote(str(branch_name or ""), safe="")
@@ -3265,6 +3648,38 @@ def _encode_git_branch_segment(branch_name: str) -> str:
 def _decode_git_branch_segment(branch_segment: str) -> str:
     """HanDrive path segment 에서 원래 브랜치명을 복원한다."""
     return unquote(str(branch_segment or ""))
+
+
+def _decode_breadcrumb_label(label: str) -> str:
+    """URL-encoded path segment 를 breadcrumb 표시용 텍스트로 복원한다."""
+    source = str(label or "")
+    if "%" not in source:
+        return source
+    return unquote(source)
+
+
+def _apply_github_virtual_breadcrumb_labels(request, breadcrumbs: list[dict]) -> list[dict]:
+    """GitHub 가상 repo root crumb 은 내부 경로명 대신 repo 이름으로 표시한다."""
+    if not breadcrumbs:
+        return breadcrumbs
+
+    labels_by_path = {}
+    for repo in _selected_github_virtual_repositories(request):
+        root_path = _github_virtual_repo_root_relative(request, repo)
+        if root_path and repo.repo_name:
+            labels_by_path[root_path] = repo.repo_name
+
+    if not labels_by_path:
+        return breadcrumbs
+
+    for crumb in breadcrumbs:
+        if not isinstance(crumb, dict):
+            continue
+        crumb_path = normalize_relative_path(crumb.get("path") or "", allow_empty=True)
+        label = labels_by_path.get(crumb_path)
+        if label:
+            crumb["label"] = label
+    return breadcrumbs
 
 
 def _copy_tree_contents(source_dir: Path, destination_dir: Path) -> None:
@@ -3280,7 +3695,7 @@ def _copy_tree_contents(source_dir: Path, destination_dir: Path) -> None:
 
 def _run_git_repo_command(repo, *args: str, text: bool = True, check: bool = True, timeout: int = 120):
     """bare repo 를 대상으로 git 명령을 실행하는 공통 helper."""
-    repo_storage_path = _get_repo_storage_path(repo.owner, repo.repo_name)
+    repo_storage_path = _ensure_github_repo_cache(repo) if _is_github_virtual_repo(repo) else _get_repo_storage_path(repo.owner, repo.repo_name)
     command = [GIT_BIN, f"--git-dir={repo_storage_path}", *args]
     result = subprocess.run(
         command,
@@ -3350,18 +3765,20 @@ def _git_repo_list_tree(repo, branch_name: str, repo_relative_path: str = "") ->
 
 
 def _git_repo_latest_commit_meta(repo, branch_name: str, repo_relative_path: str = "") -> dict[str, str]:
-    """경로 기준 최신 커밋 subject/author 를 조회한다."""
-    args = ["log", "-1", "--format=%s%x1f%an%x1f%ct", branch_name]
+    """경로 기준 최신 커밋 id/subject/author 를 조회한다."""
+    args = ["log", "-1", "--format=%h%x1f%s%x1f%an%x1f%ct", branch_name]
     normalized_path = normalize_relative_path(repo_relative_path, allow_empty=True)
     if normalized_path:
         args.extend(["--", normalized_path])
     result = _run_git_repo_command(repo, *args)
     output = (result.stdout or "").strip()
     if not output:
-        return {"subject": "", "author_username": "", "modified_display": ""}
-    subject, _, remainder = output.partition("\x1f")
+        return {"commit_id": "", "subject": "", "author_username": "", "modified_display": ""}
+    commit_id, _, remainder = output.partition("\x1f")
+    subject, _, remainder = remainder.partition("\x1f")
     author_username, _, committed_at = remainder.partition("\x1f")
     return {
+        "commit_id": str(commit_id or "").strip(),
         "subject": str(subject or "").strip(),
         "author_username": str(author_username or "").strip(),
         "modified_display": format_handrive_modified_display_from_timestamp(str(committed_at or "").strip()),
@@ -3430,40 +3847,49 @@ def _commit_git_branch_mutation(repo, branch_name: str, commit_message: str, aut
     if not message:
         raise ValueError("커밋 메시지를 입력해주세요.")
 
-    client = ForgejoClient()
-    clone_url = client.internal_authed_clone_url(repo.forgejo_owner or repo.owner.username, repo.forgejo_repo_name or repo.repo_name)
+    if _is_github_virtual_repo(repo):
+        clone_url = repo.clone_url
+        auth_env_context = _github_git_auth_env(repo.access_token)
+    else:
+        client = ForgejoClient()
+        clone_url = client.internal_authed_clone_url(repo.forgejo_owner or repo.owner.username, repo.forgejo_repo_name or repo.repo_name)
+        auth_env_context = nullcontext(None)
     with tempfile.TemporaryDirectory(prefix="handrive_git_commit_") as temp_dir:
-        clone_result = subprocess.run(
-            [GIT_BIN, "clone", "--branch", branch_name, "--single-branch", clone_url, temp_dir],
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        if clone_result.returncode != 0:
-            raise RuntimeError(clone_result.stderr.strip() or "repo clone failed")
+        with auth_env_context as git_env:
+            clone_result = subprocess.run(
+                [GIT_BIN, "clone", "--branch", branch_name, "--single-branch", clone_url, temp_dir],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                env=git_env,
+            )
+            if clone_result.returncode != 0:
+                raise RuntimeError(clone_result.stderr.strip() or "repo clone failed")
 
-        subprocess.run([GIT_BIN, "-C", temp_dir, "config", "user.name", author_user.username], capture_output=True, timeout=10)
-        subprocess.run(
-            [GIT_BIN, "-C", temp_dir, "config", "user.email", getattr(author_user, "email", "") or f"{author_user.username}@hanplanet.local"],
-            capture_output=True,
-            timeout=10,
-        )
+            subprocess.run([GIT_BIN, "-C", temp_dir, "config", "user.name", author_user.username], capture_output=True, timeout=10)
+            subprocess.run(
+                [GIT_BIN, "-C", temp_dir, "config", "user.email", getattr(author_user, "email", "") or f"{author_user.username}@hanplanet.local"],
+                capture_output=True,
+                timeout=10,
+            )
 
-        mutator(Path(temp_dir))
+            mutator(Path(temp_dir))
 
-        status_result = subprocess.run([GIT_BIN, "-C", temp_dir, "status", "--porcelain"], capture_output=True, text=True, timeout=30)
-        if not (status_result.stdout or "").strip():
-            raise ValueError("변경된 내용이 없습니다.")
+            status_result = subprocess.run([GIT_BIN, "-C", temp_dir, "status", "--porcelain"], capture_output=True, text=True, timeout=30)
+            if not (status_result.stdout or "").strip():
+                raise ValueError("변경된 내용이 없습니다.")
 
-        add_result = subprocess.run([GIT_BIN, "-C", temp_dir, "add", "-A"], capture_output=True, text=True, timeout=60)
-        if add_result.returncode != 0:
-            raise RuntimeError(add_result.stderr.strip() or "git add failed")
-        commit_result = subprocess.run([GIT_BIN, "-C", temp_dir, "commit", "-m", message], capture_output=True, text=True, timeout=60)
-        if commit_result.returncode != 0:
-            raise RuntimeError(commit_result.stderr.strip() or "git commit failed")
-        push_result = subprocess.run([GIT_BIN, "-C", temp_dir, "push", "origin", branch_name], capture_output=True, text=True, timeout=180)
-        if push_result.returncode != 0:
-            raise RuntimeError(push_result.stderr.strip() or "git push failed")
+            add_result = subprocess.run([GIT_BIN, "-C", temp_dir, "add", "-A"], capture_output=True, text=True, timeout=60)
+            if add_result.returncode != 0:
+                raise RuntimeError(add_result.stderr.strip() or "git add failed")
+            commit_result = subprocess.run([GIT_BIN, "-C", temp_dir, "commit", "-m", message], capture_output=True, text=True, timeout=60)
+            if commit_result.returncode != 0:
+                raise RuntimeError(commit_result.stderr.strip() or "git commit failed")
+            push_result = subprocess.run([GIT_BIN, "-C", temp_dir, "push", "origin", branch_name], capture_output=True, text=True, timeout=180, env=git_env)
+            if push_result.returncode != 0:
+                raise RuntimeError(push_result.stderr.strip() or "git push failed")
+            if _is_github_virtual_repo(repo):
+                repo._cache_ready = False
 
 
 def _build_available_git_repo_filename(repo, branch_name: str, repo_relative_dir: str, original_name: str) -> str:
@@ -3520,6 +3946,12 @@ def _get_git_virtual_context(request, path_value: str | None):
             if len(candidate_root) > len(repo_root):
                 repo = candidate
                 repo_root = candidate_root
+    for candidate in _selected_github_virtual_repositories(request):
+        candidate_root = _github_virtual_repo_root_relative(request, candidate)
+        if normalized == candidate_root or normalized.startswith(candidate_root + "/"):
+            if len(candidate_root) > len(repo_root):
+                repo = candidate
+                repo_root = candidate_root
     if repo is None:
         return None
 
@@ -3567,13 +3999,14 @@ def _build_git_virtual_breadcrumbs(request, base_url: str, current_path: str, *,
     """repo/branch 가상 경로를 포함한 breadcrumb 목록을 생성한다."""
     context = _get_git_virtual_context(request, current_path)
     if context is None:
-        return build_handrive_breadcrumbs(
+        breadcrumbs = build_handrive_breadcrumbs(
             base_url,
             current_path,
             scoped_home_dir=scoped_home_dir,
             root_label=get_handrive_root_label(request, scoped_home_dir),
             root_url=root_url,
         )
+        return _apply_github_virtual_breadcrumb_labels(request, breadcrumbs)
 
     breadcrumbs = build_handrive_breadcrumbs(
         base_url,
@@ -3582,8 +4015,10 @@ def _build_git_virtual_breadcrumbs(request, base_url: str, current_path: str, *,
         root_label=get_handrive_root_label(request, scoped_home_dir),
         root_url=root_url,
     )
+    if _is_github_virtual_repo(context["repo"]) and breadcrumbs:
+        breadcrumbs[-1]["label"] = context["repo"].repo_name
     if context["kind"] == "repo_root":
-        return breadcrumbs
+        return _apply_github_virtual_breadcrumb_labels(request, breadcrumbs)
 
     if breadcrumbs:
         breadcrumbs[-1]["is_current"] = False
@@ -3605,13 +4040,13 @@ def _build_git_virtual_breadcrumbs(request, base_url: str, current_path: str, *,
             path_value = branch_path + "/" + "/".join(accumulated)
             breadcrumbs.append(
                 {
-                    "label": part,
+                    "label": _decode_breadcrumb_label(part),
                     "url": build_handrive_list_url(base_url, path_value),
                     "is_current": index == len(parts) - 1,
                     "path": path_value,
                 }
             )
-    return breadcrumbs
+    return _apply_github_virtual_breadcrumb_labels(request, breadcrumbs)
 
 
 def _build_git_virtual_entries(request, context) -> list[dict]:
@@ -3621,28 +4056,36 @@ def _build_git_virtual_entries(request, context) -> list[dict]:
     repo_permission = str(context.get("repo_permission") or "").lower()
     can_write_repo = repo_permission in {"write", "admin", "owner"}
     can_delete_repo_items = repo_permission in {"write", "admin", "owner"}
+    is_github_repo = _is_github_virtual_repo(repo)
     if context["kind"] == "repo_root":
-        return [
-            {
+        entries = []
+        for branch_name in _git_repo_branches(repo):
+            commit_meta = _git_repo_latest_commit_meta(repo, branch_name)
+            entries.append({
                 "name": branch_name,
                 "path": f"{repo_root}/{_encode_git_branch_segment(branch_name)}",
                 "type": "dir",
                 "has_children": True,
-                "modified_display": _git_repo_latest_commit_meta(repo, branch_name).get("modified_display", ""),
+                "modified_display": commit_meta.get("modified_display", ""),
                 "size_display": "",
                 "can_edit": False,
+                "can_read": True,
                 "can_write_children": can_write_repo,
                 "can_delete": False,
                 "is_public_write": False,
                 "is_url_only": False,
                 "write_acl_labels": [],
                 "git_branch_root": True,
+                "git_provider": "github" if is_github_repo else "forgejo",
                 "git_repo_branch": branch_name,
                 "git_repo_id": repo.id,
+                "git_commit_id": commit_meta.get("commit_id", ""),
+                "git_commit_message": commit_meta.get("subject", ""),
+                "git_commit_author_username": commit_meta.get("author_username", ""),
                 "requires_commit_message": True,
-            }
-            for branch_name in _git_repo_branches(repo)
-        ]
+                "type_display": "Branch",
+            })
+        return entries
 
     branch_prefix = f"{repo_root}/{context['branch_segment']}"
     entries = []
@@ -3655,11 +4098,13 @@ def _build_git_virtual_entries(request, context) -> list[dict]:
             "modified_display": "",
             "size_display": item.get("size_display", ""),
             "can_edit": can_write_repo,
+            "can_read": True,
             "can_write_children": item["type"] == "tree" and can_write_repo,
             "can_delete": can_delete_repo_items,
             "is_public_write": False,
             "is_url_only": False,
             "write_acl_labels": [],
+            "git_provider": "github" if is_github_repo else "forgejo",
             "git_repo_branch": context["branch_name"],
             "requires_commit_message": True,
         }
@@ -3668,10 +4113,12 @@ def _build_git_virtual_entries(request, context) -> list[dict]:
         entry["modified_display"] = commit_meta.get("modified_display", "")
         if item["type"] == "tree":
             entry["has_children"] = True
+            entry["git_commit_id"] = commit_meta.get("commit_id", "")
             entry["git_commit_message"] = commit_meta.get("subject", "")
             entry["git_commit_author_username"] = commit_meta.get("author_username", "")
         else:
             entry["slug_path"] = entry_path
+            entry["git_commit_id"] = commit_meta.get("commit_id", "")
             entry["git_commit_message"] = commit_meta.get("subject", "")
             entry["git_commit_author_username"] = commit_meta.get("author_username", "")
         entries.append(entry)
@@ -4015,7 +4462,7 @@ def build_handrive_breadcrumbs(
             parent_path = "/".join(parts[: index + 1])
             breadcrumbs.append(
                 {
-                    "label": part,
+                    "label": _decode_breadcrumb_label(part),
                     "url": build_handrive_list_url(base_url, parent_path),
                     "is_current": index == len(parts) - 1,
                     "path": parent_path,
@@ -4025,7 +4472,7 @@ def build_handrive_breadcrumbs(
 
     current_parts = [part for part in current_dir.split("/") if part]
     home_parts = [part for part in scoped_home_dir.split("/") if part]
-    home_label = home_parts[-1] if home_parts else scoped_home_dir
+    home_label = _decode_breadcrumb_label(home_parts[-1] if home_parts else scoped_home_dir)
     breadcrumbs = []
     if include_root_parent:
         breadcrumbs.append(
@@ -4050,7 +4497,7 @@ def build_handrive_breadcrumbs(
         parent_path = "/".join(current_parts[: index + 1])
         breadcrumbs.append(
             {
-                "label": part,
+                "label": _decode_breadcrumb_label(part),
                 "url": build_handrive_list_url(base_url, parent_path),
                 "is_current": index == len(current_parts) - 1,
                 "path": parent_path,
@@ -4311,7 +4758,7 @@ def build_handrive_shared_breadcrumbs(
         normalized_current = shared_root
 
     base_url = build_handrive_shared_view_url(ui_lang, owner_username, share_slug)
-    root_label = Path(shared_root).name or shared_root
+    root_label = _decode_breadcrumb_label(Path(shared_root).name or shared_root)
     breadcrumbs = [
         {
             "label": owner_username,
@@ -4338,7 +4785,7 @@ def build_handrive_shared_breadcrumbs(
         absolute_path = f"{shared_root}/{child_path}"
         breadcrumbs.append(
             {
-                "label": part,
+                "label": _decode_breadcrumb_label(part),
                 "url": build_handrive_shared_view_child_url(ui_lang, owner_username, share_slug, child_path),
                 "is_current": index == len(child_parts) - 1,
                 "path": absolute_path,
@@ -4610,6 +5057,7 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_markdown_image_cleanup_url": reverse("main:handrive_api_markdown_image_cleanup"),
             "handrive_api_upload_cancel_url": reverse("main:handrive_api_upload_cancel"),
             "handrive_api_download_url": reverse("main:handrive_api_download"),
+            "handrive_api_pdf_preview_url": reverse("main:handrive_api_pdf_preview"),
             "handrive_api_acl_url": reverse("main:handrive_api_acl"),
             "handrive_api_acl_options_url": reverse("main:handrive_api_acl_options"),
             "handrive_api_url_share_url": reverse("main:handrive_api_url_share"),
@@ -4750,6 +5198,7 @@ def _finalize_handrive_login_session(request, user) -> str:
     token = _issue_session_token(user)
     auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
     request.user = user
+    _link_pending_github_auth_for_user(request, user)
     request.session["_hp_session_token"] = token
     request.session.modified = True
     try:
@@ -5383,9 +5832,10 @@ class HandriveSignupForm(UserCreationForm):
     # 이메일 AJAX 인증 완료 후 서버에서 발급한 서명 토큰 (hidden)
     email_2fa_token = forms.CharField(required=False, widget=forms.HiddenInput)
 
-    def __init__(self, *args, ui_lang: str | None = None, **kwargs):
+    def __init__(self, *args, ui_lang: str | None = None, github_identity: GitHubIdentity | None = None, **kwargs):
         super().__init__(*args, **kwargs)
         handrive_text = get_handrive_text(ui_lang)
+        self.github_identity = github_identity
         self.fields["first_name"].label = handrive_text.get("auth_name_label", "이름")
         self.fields["email"].label = handrive_text.get("auth_email_label", "이메일 주소")
         self.fields["privacy_consent"].label = handrive_text.get("auth_privacy_consent_label", "개인정보 처리방침 및 이용약관에 동의합니다.")
@@ -5398,6 +5848,17 @@ class HandriveSignupForm(UserCreationForm):
         self.fields["password2"].widget.attrs.update({"autocomplete": "new-password", "placeholder": "비밀번호 다시 입력"})
         self.fields["first_name"].widget.attrs.update({"autocomplete": "name", "placeholder": "이름 입력"})
         self.fields["email"].widget.attrs.update({"autocomplete": "email", "placeholder": "example@email.com", "id": "id_signup_email"})
+        if self.github_identity is not None:
+            github_name = self.github_identity.name or self.github_identity.login
+            github_email = self.github_identity.email if self.github_identity.email_verified else ""
+            self.fields["first_name"].initial = github_name
+            self.fields["email"].initial = github_email
+            self.fields["first_name"].disabled = True
+            self.fields["email"].disabled = True
+            self.fields["first_name"].widget.attrs.update({"aria-disabled": "true"})
+            self.fields["email"].widget.attrs.update({"aria-disabled": "true"})
+            self.fields["privacy_consent"].required = False
+            self.fields["email_2fa_token"].required = False
 
     def clean_email(self):
         email = str(self.cleaned_data.get("email", "") or "").strip()
@@ -5410,6 +5871,10 @@ class HandriveSignupForm(UserCreationForm):
         cleaned = super().clean()
         token = str(cleaned.get("email_2fa_token", "") or "").strip()
         email = str(cleaned.get("email", "") or "").strip()
+        if self.github_identity is not None:
+            if not self.github_identity.email_verified or not email:
+                self.add_error("email", "GitHub 계정의 확인된 이메일 주소를 가져오지 못했습니다.")
+            return cleaned
         not_verified_msg = (
             getattr(self, "_handrive_text", {}).get("auth_2fa_email_not_verified", "이메일 인증을 완료해주세요.")
         )
@@ -5707,6 +6172,168 @@ def _github_auth_context(request, ui_lang: str | None, next_url: str) -> dict:
     }
 
 
+def _github_auth_action_url(base_url: str, next_url: str, action: str) -> str:
+    return f"{base_url}?{urlencode({'next': next_url or '', 'github_action': action})}"
+
+
+def _datetime_to_github_session_value(value) -> str:
+    if value is None:
+        return ""
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value, timezone.get_current_timezone())
+    return value.isoformat()
+
+
+def _datetime_from_github_session_value(value):
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw_value)
+    except ValueError:
+        return None
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
+def _serialize_github_identity_for_session(identity: GitHubIdentity) -> dict:
+    return {
+        "github_user_id": identity.github_user_id,
+        "login": identity.login,
+        "name": identity.name,
+        "email": identity.email,
+        "avatar_url": identity.avatar_url,
+        "email_verified": bool(identity.email_verified),
+    }
+
+
+def _deserialize_github_identity_from_session(data: dict) -> GitHubIdentity | None:
+    if not isinstance(data, dict):
+        return None
+    try:
+        github_user_id = int(data.get("github_user_id"))
+    except (TypeError, ValueError):
+        return None
+    login = str(data.get("login") or "").strip()
+    if not login:
+        return None
+    return GitHubIdentity(
+        github_user_id=github_user_id,
+        login=login,
+        name=str(data.get("name") or "").strip(),
+        email=str(data.get("email") or "").strip(),
+        avatar_url=str(data.get("avatar_url") or "").strip(),
+        email_verified=bool(data.get("email_verified")),
+    )
+
+
+def _serialize_github_token_for_session(token_data: GitHubTokenData) -> dict:
+    return {
+        "access_token": token_data.access_token,
+        "token_type": token_data.token_type,
+        "scope": token_data.scope,
+        "expires_at": _datetime_to_github_session_value(token_data.expires_at),
+        "refresh_token": token_data.refresh_token,
+        "refresh_token_expires_at": _datetime_to_github_session_value(token_data.refresh_token_expires_at),
+    }
+
+
+def _deserialize_github_token_from_session(data: dict) -> GitHubTokenData | None:
+    if not isinstance(data, dict):
+        return None
+    access_token = str(data.get("access_token") or "").strip()
+    if not access_token:
+        return None
+    return GitHubTokenData(
+        access_token=access_token,
+        token_type=str(data.get("token_type") or "").strip(),
+        scope=str(data.get("scope") or "").strip(),
+        expires_at=_datetime_from_github_session_value(data.get("expires_at")),
+        refresh_token=str(data.get("refresh_token") or "").strip(),
+        refresh_token_expires_at=_datetime_from_github_session_value(data.get("refresh_token_expires_at")),
+    )
+
+
+def _store_pending_github_auth(
+    request,
+    identity: GitHubIdentity,
+    token_data: GitHubTokenData,
+    *,
+    next_url: str,
+    ui_lang: str,
+    action: str,
+) -> None:
+    request.session[HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY] = {
+        "identity": _serialize_github_identity_for_session(identity),
+        "token": _serialize_github_token_for_session(token_data),
+        "next_url": next_url or "",
+        "ui_lang": ui_lang,
+        "action": action,
+        "created_at": time.time(),
+    }
+    request.session.modified = True
+
+
+def _clear_pending_github_auth(request) -> None:
+    if HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY in request.session:
+        request.session.pop(HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY, None)
+        request.session.modified = True
+
+
+def _get_pending_github_auth(request, *, clear_expired: bool = True) -> dict | None:
+    pending = request.session.get(HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY) or {}
+    if not isinstance(pending, dict):
+        if clear_expired:
+            _clear_pending_github_auth(request)
+        return None
+    created_at = float(pending.get("created_at") or 0)
+    if not created_at or time.time() - created_at > 30 * 60:
+        if clear_expired:
+            _clear_pending_github_auth(request)
+        return None
+    identity = _deserialize_github_identity_from_session(pending.get("identity") or {})
+    token_data = _deserialize_github_token_from_session(pending.get("token") or {})
+    if identity is None or token_data is None:
+        if clear_expired:
+            _clear_pending_github_auth(request)
+        return None
+    return {
+        "identity": identity,
+        "token_data": token_data,
+        "next_url": str(pending.get("next_url") or ""),
+        "ui_lang": str(pending.get("ui_lang") or ""),
+        "action": str(pending.get("action") or "").strip().lower(),
+    }
+
+
+def _set_pending_github_auth_action(request, action: str) -> None:
+    pending = request.session.get(HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY) or {}
+    if not isinstance(pending, dict):
+        return
+    pending["action"] = action
+    request.session[HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY] = pending
+    request.session.modified = True
+
+
+def _link_pending_github_auth_for_user(request, user) -> bool:
+    pending = _get_pending_github_auth(request)
+    if not pending or pending["action"] != "link" or not user:
+        return False
+    identity = pending["identity"]
+    linked_mapping = GitHubAccountMapping.objects.filter(github_user_id=identity.github_user_id).first()
+    if linked_mapping is not None and linked_mapping.user_id != user.id:
+        logger.warning(
+            "Pending GitHub link conflict for user=%s github_user_id=%s",
+            getattr(user, "username", "unknown"),
+            identity.github_user_id,
+        )
+        return False
+    save_github_mapping(user, identity, pending["token_data"])
+    _clear_pending_github_auth(request)
+    return True
+
+
 def _initialize_github_signup_user(user) -> None:
     profile, _ = UserProfile.objects.get_or_create(user=user)
     consented_at = timezone.now()
@@ -5769,6 +6396,9 @@ def _render_handrive_login_page(
     twofa_error_message: str = "",
 ):
     handrive_text = context["handrive_text"]
+    pending_github = _get_pending_github_auth(request)
+    github_choice_required = bool(pending_github and pending_github["action"] == "choice")
+    github_link_pending = bool(pending_github and pending_github["action"] == "link")
     return render(
         request,
         "handrive/login.html",
@@ -5789,6 +6419,11 @@ def _render_handrive_login_page(
             "handrive_login_2fa_masked_email": twofa_masked_email,
             "handrive_login_2fa_error_message": twofa_error_message,
             "handrive_api_login_2fa_resend_code_url": reverse("main:handrive_api_login_2fa_resend_code"),
+            "handrive_github_choice_required": github_choice_required,
+            "handrive_github_choice_link_url": _github_auth_action_url(context["handrive_login_url"], next_url, "link"),
+            "handrive_github_choice_signup_url": _github_auth_action_url(context["handrive_signup_url"], next_url, "signup"),
+            "handrive_github_link_pending": github_link_pending,
+            "handrive_github_pending_login": pending_github["identity"].login if pending_github else "",
             **_github_auth_context(request, context.get("ui_lang"), next_url),
         },
     )
@@ -5805,6 +6440,9 @@ def _render_handrive_signup_page(
     hide_global_nav: bool,
 ):
     handrive_text = context["handrive_text"]
+    pending_github = _get_pending_github_auth(request)
+    github_signup_pending = bool(pending_github and pending_github["action"] == "signup")
+    github_identity = pending_github["identity"] if github_signup_pending else None
     return render(
         request,
         "handrive/signup.html",
@@ -5819,6 +6457,8 @@ def _render_handrive_signup_page(
             "hide_global_nav": hide_global_nav,
             "handrive_api_signup_2fa_send_code_url": reverse("main:handrive_api_signup_2fa_send_code"),
             "handrive_api_signup_2fa_verify_code_url": reverse("main:handrive_api_signup_2fa_verify_code"),
+            "handrive_signup_github_pending": github_signup_pending,
+            "handrive_signup_github_login": github_identity.login if github_identity else "",
             **_github_auth_context(request, context.get("ui_lang"), next_url),
         },
     )
@@ -5832,8 +6472,17 @@ def handrive_github_auth_start(request, ui_lang=None):
     handrive_text = context["handrive_text"]
     next_url = resolve_next_url(request, context["handrive_base_url"])
     mode = str(request.POST.get("mode") or request.GET.get("mode") or "login").strip().lower()
-    if mode not in {"login", "signup"}:
+    if mode not in {"login", "signup", "link"}:
         mode = "login"
+
+    if mode == "link" and not request.user.is_authenticated:
+        return _render_github_auth_error(
+            request,
+            resolved_lang,
+            "login",
+            next_url,
+            handrive_text.get("auth_github_link_requires_login", "Sign in before connecting GitHub."),
+        )
 
     if not is_github_auth_configured():
         return _render_github_auth_error(
@@ -5886,7 +6535,7 @@ def handrive_github_auth_callback(request):
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
     mode = str(pending.get("mode") or "login").strip().lower()
-    if mode not in {"login", "signup"}:
+    if mode not in {"login", "signup", "link"}:
         mode = "login"
     next_url = str(pending.get("next_url") or context["handrive_base_url"])
     generic_error = handrive_text.get("auth_github_failed", "GitHub authentication failed. Please try again.")
@@ -5907,26 +6556,68 @@ def handrive_github_auth_callback(request):
     try:
         token_data = exchange_github_code(code, _build_github_auth_callback_url(request))
         identity = fetch_github_identity(token_data.access_token)
+        if mode == "link":
+            if not request.user.is_authenticated:
+                return _render_github_auth_error(
+                    request,
+                    resolved_lang,
+                    "login",
+                    next_url,
+                    handrive_text.get("auth_github_link_requires_login", generic_error),
+                )
+            linked_mapping = GitHubAccountMapping.objects.filter(github_user_id=identity.github_user_id).first()
+            if linked_mapping is not None and linked_mapping.user_id != request.user.id:
+                return _render_github_auth_error(
+                    request,
+                    resolved_lang,
+                    "login",
+                    next_url,
+                    handrive_text.get("auth_github_link_conflict", generic_error),
+                )
+            save_github_mapping(request.user, identity, token_data)
+            return _build_forgejo_authenticated_redirect(next_url, request.user)
+
         current_user = request.user if getattr(request.user, "is_authenticated", False) else None
-        user, created = resolve_github_user(identity, mode=mode, current_user=current_user)
-        if user is None:
-            return _render_github_auth_error(
+        linked_mapping = GitHubAccountMapping.objects.filter(github_user_id=identity.github_user_id).select_related("user").first()
+        if linked_mapping is not None:
+            user = linked_mapping.user
+            save_github_mapping(user, identity, token_data)
+        elif current_user is not None:
+            save_github_mapping(current_user, identity, token_data)
+            return _build_forgejo_authenticated_redirect(next_url, current_user)
+        else:
+            email_owner = None
+            if identity.email and identity.email_verified:
+                UserModel = get_user_model()
+                email_owner = UserModel.objects.filter(email__iexact=identity.email).order_by("id").first()
+            if email_owner is not None:
+                _store_pending_github_auth(
+                    request,
+                    identity,
+                    token_data,
+                    next_url=next_url,
+                    ui_lang=resolved_lang,
+                    action="choice",
+                )
+                choice_url = f"{context['handrive_login_url']}?{urlencode({'next': next_url or '', 'github_choice': '1'})}"
+                return redirect(choice_url)
+            if not identity.email or not identity.email_verified:
+                return _render_github_auth_error(request, resolved_lang, mode, next_url, generic_error)
+            _store_pending_github_auth(
                 request,
-                resolved_lang,
-                "login",
-                next_url,
-                handrive_text.get("auth_github_login_new_account_error", generic_error),
+                identity,
+                token_data,
+                next_url=next_url,
+                ui_lang=resolved_lang,
+                action="signup",
             )
-        save_github_mapping(user, identity, token_data)
+            return redirect(_github_auth_action_url(context["handrive_signup_url"], next_url, "signup"))
     except GitHubAuthError:
         logger.exception("GitHub authentication failed")
         return _render_github_auth_error(request, resolved_lang, mode, next_url, generic_error)
     except Exception:
         logger.exception("GitHub account login failed")
         return _render_github_auth_error(request, resolved_lang, mode, next_url, generic_error)
-
-    if created:
-        _initialize_github_signup_user(user)
 
     target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, user)
     requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
@@ -5950,9 +6641,110 @@ def handrive_github_auth_callback(request):
         if forgejo_session_key:
             response = _apply_forgejo_session_cookie(response, forgejo_session_key)
 
-    if created:
-        _send_signup_welcome_email(user, resolved_lang)
     return response
+
+
+def _serialize_github_repository(repository: dict) -> dict | None:
+    try:
+        repo_id = int(repository.get("id"))
+    except (TypeError, ValueError):
+        return None
+
+    owner = repository.get("owner") if isinstance(repository.get("owner"), dict) else {}
+    permissions = repository.get("permissions") if isinstance(repository.get("permissions"), dict) else {}
+    return {
+        "id": repo_id,
+        "full_name": str(repository.get("full_name") or "").strip(),
+        "name": str(repository.get("name") or "").strip(),
+        "owner": str(owner.get("login") or "").strip(),
+        "private": bool(repository.get("private")),
+        "fork": bool(repository.get("fork")),
+        "default_branch": str(repository.get("default_branch") or "").strip(),
+        "html_url": str(repository.get("html_url") or "").strip(),
+        "clone_url": str(repository.get("clone_url") or "").strip(),
+        "updated_at": str(repository.get("updated_at") or "").strip(),
+        "pushed_at": str(repository.get("pushed_at") or "").strip(),
+        "can_push": bool(permissions.get("push") or permissions.get("admin") or permissions.get("maintain")),
+    }
+
+
+def _github_selected_repository_ids(mapping: GitHubAccountMapping) -> set[int]:
+    selected = mapping.selected_repositories if isinstance(mapping.selected_repositories, list) else []
+    selected_ids: set[int] = set()
+    for item in selected:
+        if not isinstance(item, dict):
+            continue
+        try:
+            selected_ids.add(int(item.get("id")))
+        except (TypeError, ValueError):
+            continue
+    return selected_ids
+
+
+@require_http_methods(["GET", "POST"])
+@csrf_protect
+def handrive_api_github_repositories(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"ok": False, "error": "authentication_required"}, status=401)
+
+    mapping = GitHubAccountMapping.objects.filter(user=request.user).first()
+    if mapping is None:
+        return JsonResponse({"ok": True, "connected": False, "repositories": []})
+    if not mapping.user_access_token:
+        return JsonResponse({"ok": False, "connected": True, "error": "github_reconnect_required"}, status=400)
+    if not github_token_has_configured_repository_scope(mapping.token_scope):
+        return JsonResponse({
+            "ok": True,
+            "connected": False,
+            "repositories": [],
+            "error": "github_reconnect_required",
+        })
+
+    try:
+        raw_repositories = list_github_repositories(mapping.user_access_token)
+    except GitHubAuthError:
+        logger.exception("Failed to list GitHub repositories for user %s", request.user.get_username())
+        return JsonResponse({"ok": False, "connected": True, "error": "github_repository_list_failed"}, status=502)
+
+    repositories = [
+        serialized
+        for serialized in (_serialize_github_repository(repository) for repository in raw_repositories)
+        if serialized is not None and serialized.get("full_name")
+    ]
+    selected_ids = _github_selected_repository_ids(mapping)
+
+    if request.method == "POST":
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return JsonResponse({"ok": False, "error": "invalid_json"}, status=400)
+        requested_ids = payload.get("repository_ids")
+        if not isinstance(requested_ids, list):
+            return JsonResponse({"ok": False, "error": "invalid_repository_ids"}, status=400)
+        normalized_requested_ids: set[int] = set()
+        for value in requested_ids:
+            try:
+                normalized_requested_ids.add(int(value))
+            except (TypeError, ValueError):
+                continue
+        selected_repositories = [
+            repository for repository in repositories
+            if repository["id"] in normalized_requested_ids
+        ]
+        mapping.selected_repositories = selected_repositories
+        mapping.save(update_fields=["selected_repositories", "updated_at"])
+        selected_ids = {repository["id"] for repository in selected_repositories}
+
+    for repository in repositories:
+        repository["selected"] = repository["id"] in selected_ids
+
+    return JsonResponse({
+        "ok": True,
+        "connected": True,
+        "login": mapping.github_login,
+        "repositories": repositories,
+        "selected_ids": sorted(selected_ids),
+    })
 
 
 @require_http_methods(["GET"])
@@ -5998,8 +6790,15 @@ def handrive_login(request, ui_lang=None):
     next_url = resolve_next_url(request, context["handrive_base_url"])
     auth_breadcrumb_url = resolve_auth_breadcrumb_url(request, context["handrive_base_url"])
     hide_global_nav = is_handrive_share_auth_entry(request, context["handrive_base_url"])
+    pending_github = _get_pending_github_auth(request)
+    github_action = str(request.GET.get("github_action") or "").strip().lower()
+    if request.method == "GET" and pending_github and github_action == "link":
+        _set_pending_github_auth_action(request, "link")
+        pending_github = _get_pending_github_auth(request)
 
     if request.user.is_authenticated:
+        if pending_github and pending_github["action"] == "link":
+            _link_pending_github_auth_for_user(request, request.user)
         db_token = getattr(getattr(request.user, "profile", None), "session_token", "")
         if db_token:
             # 정상 로그인 상태 → next로 이동
@@ -6364,6 +7163,12 @@ def handrive_signup(request, ui_lang=None):
     next_url = resolve_next_url(request, context["handrive_base_url"])
     auth_breadcrumb_url = resolve_auth_breadcrumb_url(request, context["handrive_base_url"])
     hide_global_nav = is_handrive_share_auth_entry(request, context["handrive_base_url"])
+    pending_github = _get_pending_github_auth(request)
+    github_action = str(request.GET.get("github_action") or "").strip().lower()
+    if request.method == "GET" and pending_github and github_action == "signup":
+        _set_pending_github_auth_action(request, "signup")
+        pending_github = _get_pending_github_auth(request)
+    github_identity = pending_github["identity"] if pending_github and pending_github["action"] == "signup" else None
 
     if request.user.is_authenticated:
         return _build_post_hanplanet_login_response(
@@ -6371,30 +7176,50 @@ def handrive_signup(request, ui_lang=None):
             request.user,
         )
 
-    form = HandriveSignupForm(request.POST or None, ui_lang=resolved_lang)
+    form = HandriveSignupForm(request.POST or None, ui_lang=resolved_lang, github_identity=github_identity)
     signup_error_message = ""
     signup_error_popup_message = ""
 
     if request.method == "POST":
         if form.is_valid():
+            if github_identity is not None:
+                linked_mapping = GitHubAccountMapping.objects.filter(github_user_id=github_identity.github_user_id).first()
+                if linked_mapping is not None:
+                    signup_error_message = handrive_text.get("auth_github_link_conflict", "이미 다른 계정에 연결된 GitHub 계정입니다.")
+                    signup_error_popup_message = signup_error_message
+                    return _render_handrive_signup_page(
+                        request,
+                        context,
+                        form,
+                        next_url,
+                        signup_error_message,
+                        signup_error_popup_message,
+                        auth_breadcrumb_url,
+                        hide_global_nav,
+                    )
             user = form.save()
-            profile, _ = UserProfile.objects.get_or_create(user=user)
-            consented_at = timezone.now()
-            profile.privacy_policy_agreed_at = consented_at
-            profile.terms_of_service_agreed_at = consented_at
-            profile.save(update_fields=["privacy_policy_agreed_at", "terms_of_service_agreed_at", "updated_at"])
-            public_group = get_handrive_public_write_group()
-            user.groups.add(public_group)
-            scoped_home_dir = get_scoped_handrive_home_dir(request)
-            if not scoped_home_dir:
+            if github_identity is not None and pending_github is not None:
+                _initialize_github_signup_user(user)
+                save_github_mapping(user, github_identity, pending_github["token_data"])
+                _clear_pending_github_auth(request)
+            else:
+                profile, _ = UserProfile.objects.get_or_create(user=user)
+                consented_at = timezone.now()
+                profile.privacy_policy_agreed_at = consented_at
+                profile.terms_of_service_agreed_at = consented_at
+                profile.save(update_fields=["privacy_policy_agreed_at", "terms_of_service_agreed_at", "updated_at"])
+                public_group = get_handrive_public_write_group()
+                user.groups.add(public_group)
+                scoped_home_dir = get_scoped_handrive_home_dir(request)
+                if not scoped_home_dir:
+                    try:
+                        scoped_home_dir = normalize_relative_path(f"users/{user.get_username()}", allow_empty=False)
+                    except ValueError:
+                        scoped_home_dir = ""
                 try:
-                    scoped_home_dir = normalize_relative_path(f"users/{user.get_username()}", allow_empty=False)
-                except ValueError:
-                    scoped_home_dir = ""
-            try:
-                ensure_scoped_home_dir(scoped_home_dir)
-            except OSError:
-                logger.exception("Failed to initialize scoped HanDrive home for signup user %s", user.get_username())
+                    ensure_scoped_home_dir(scoped_home_dir)
+                except OSError:
+                    logger.exception("Failed to initialize scoped HanDrive home for signup user %s", user.get_username())
             authed_user = authenticate(
                 request,
                 username=user.get_username(),
@@ -6693,9 +7518,13 @@ def handrive_list(request, folder_path="", ui_lang=None):
             "current_dir_is_git_repo_root": directory_meta["is_git_repo_root"],
             "current_dir_requires_commit_message": directory_meta["requires_commit_message"],
             "current_dir_git_branch_root": directory_meta["git_branch_root"],
+            "current_dir_git_commit_id": directory_meta["git_commit_id"],
             "current_dir_git_commit_message": directory_meta["git_commit_message"],
             "current_dir_git_commit_author_username": directory_meta["git_commit_author_username"],
             "current_dir_write_acl_labels": directory_meta.get("write_acl_labels", []),
+            "current_dir_is_url_only": directory_meta["is_url_only"],
+            "current_dir_share_url": directory_meta["share_url"],
+            "current_dir_share_is_inherited": directory_meta["share_is_inherited"],
             "breadcrumbs": breadcrumbs,
             "initial_entries": initial_entries,
             "current_dir_git_repo": directory_meta["git_repo"],
@@ -6858,6 +7687,10 @@ def handrive_view(request, doc_path, ui_lang=None):
             or doc_is_media_editor_file
         )
     )
+    doc_can_print = render_profile["mode"] not in {
+        DOCS_RENDER_MODE_MEDIA_VIDEO,
+        DOCS_RENDER_MODE_UNSUPPORTED,
+    }
 
     context.update(
         {
@@ -6865,6 +7698,8 @@ def handrive_view(request, doc_path, ui_lang=None):
             "doc_relative_path": relative_file_path,
             "doc_slug_path": slug_path,
             "doc_parent_dir": parent_dir,
+            "doc_can_read": True,
+            "doc_can_print": doc_can_print,
             "doc_can_edit": doc_can_edit,
             "doc_can_show_edit": doc_can_show_edit,
             "doc_is_url_only": doc_is_url_only,
@@ -6959,6 +7794,11 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
             "doc_relative_path": "",
             "doc_slug_path": share_slug,
             "doc_parent_dir": "",
+            "doc_can_read": True,
+            "doc_can_print": render_profile["mode"] not in {
+                DOCS_RENDER_MODE_MEDIA_VIDEO,
+                DOCS_RENDER_MODE_UNSUPPORTED,
+            },
             "doc_can_edit": False,
             "doc_is_url_only": True,
             "doc_share_url": request.build_absolute_uri(build_handrive_shared_view_url(resolved_lang, owner_username, share_slug)),
@@ -7115,11 +7955,11 @@ def handrive_write(request, ui_lang=None):
             "available_directories": list_all_directories(request=request),
             "markdown_help_html": render_markdown_safely(markdown_help_content),
             "page_help_html": build_page_help_html(resolved_lang, "write", handrive_text),
-            "write_breadcrumbs": build_handrive_breadcrumbs(
+            "write_breadcrumbs": _build_git_virtual_breadcrumbs(
+                request,
                 context["handrive_base_url"],
                 initial_dir,
                 scoped_home_dir=scoped_home_dir,
-                root_label=get_handrive_root_label(request, scoped_home_dir),
                 root_url=context["handrive_root_url"],
             ),
             "write_current_file_name": write_current_file_name,
@@ -7588,6 +8428,7 @@ def handrive_api_search(request):
                         "modified_display": format_handrive_modified_display_from_timestamp(file_path.stat().st_mtime) if file_path.exists() else "",
                         "size_display": "",
                         "can_edit": has_handrive_write_access(request, rel_dir),
+                        "can_read": True,
                         "can_write_children": has_handrive_directory_write_access(request, rel_dir),
                         "can_delete": has_handrive_write_access(request, rel_dir),
                         "is_public_write": False,
@@ -7617,6 +8458,7 @@ def handrive_api_search(request):
                         "modified_display": format_handrive_modified_display_from_timestamp(file_path.stat().st_mtime),
                         "size_display": size_display,
                         "can_edit": has_handrive_write_access(request, rel_file),
+                        "can_read": True,
                         "can_write_children": False,
                         "can_delete": has_handrive_write_access(request, rel_file),
                         "is_public_write": is_handrive_public_write_enabled(request, rel_file),
@@ -7628,10 +8470,11 @@ def handrive_api_search(request):
                     matches.append(entry)
 
     # git 가상 경로 검색: 검색 범위에 포함되는 repo 를 재귀 탐색한다.
-    for repo in _get_visible_git_repositories(request):
+    searchable_repos = list(_get_visible_git_repositories(request)) + list(_selected_github_virtual_repositories(request))
+    for repo in searchable_repos:
         if repo.status != "active":
             continue
-        repo_root = _get_visible_git_repo_root_relative(request, repo)
+        repo_root = _github_virtual_repo_root_relative(request, repo) if _is_github_virtual_repo(repo) else _get_visible_git_repo_root_relative(request, repo)
         # 검색 base 가 repo root 의 부모이거나 동일한 경우에만 탐색
         if not (
             normalized_base == ""
@@ -9305,10 +10148,23 @@ def handrive_api_download(request):
         raise Http404("다운로드할 파일을 찾을 수 없습니다.")
     git_virtual = _get_git_virtual_context(request, rel_path)
     if git_virtual is None:
+        resolved_path = None
+        resolved_relative = rel_path
         try:
-            file_path, rel_path = normalize_handrive_relative_path(rel_path, must_exist=True)
+            resolved_path, resolved_relative = resolve_path(rel_path, must_exist=True)
         except (ValueError, FileNotFoundError):
-            raise Http404("다운로드할 파일을 찾을 수 없습니다.")
+            pass
+        if resolved_path is not None and resolved_path.is_dir():
+            if not has_handrive_read_access(request, resolved_relative):
+                raise PermissionDenied("폴더를 볼 권한이 없습니다.")
+            return build_handrive_directory_download_response(request, resolved_path)
+        if resolved_path is not None and resolved_path.is_file():
+            file_path, rel_path = resolved_path, resolved_relative
+        else:
+            try:
+                file_path, rel_path = normalize_handrive_relative_path(rel_path, must_exist=True)
+            except (ValueError, FileNotFoundError):
+                raise Http404("다운로드할 파일을 찾을 수 없습니다.")
         filename = file_path.name
         file_handle = file_path.open("rb")
         file_size   = file_path.stat().st_size
@@ -9632,21 +10488,68 @@ def handrive_api_vtt(request):
 @xframe_options_sameorigin
 @with_request_handrive_root
 def handrive_api_pdf_preview(request):
-    """PDF 파일을 inline으로 제공해 브라우저에서 바로 표시할 수 있게 한다."""
+    """PDF 파일 또는 Office 파일의 PDF 변환본을 inline으로 제공한다."""
+    shared_context = get_handrive_shared_access_context(request)
     try:
-        rel_path = normalize_relative_path(request.GET.get("path"), allow_empty=False)
+        rel_path = normalize_scoped_home_api_path(
+            request,
+            request.GET.get("path"),
+            allow_empty=bool(shared_context),
+        )
     except ValueError:
         raise Http404("파일을 찾을 수 없습니다.")
-    try:
-        file_path, rel_path = normalize_handrive_relative_path(request.GET.get("path"), must_exist=True)
-    except (ValueError, FileNotFoundError):
-        raise Http404("파일을 찾을 수 없습니다.")
-    if file_path.suffix.lower() != ".pdf":
-        raise Http404("PDF 파일이 아닙니다.")
+    if not rel_path and shared_context:
+        rel_path = shared_context["root_path"]
+
+    git_virtual = _get_git_virtual_context(request, rel_path)
+    source_bytes = None
+    file_path = None
+    if git_virtual is None:
+        try:
+            file_path, rel_path = normalize_handrive_relative_path(rel_path, must_exist=True)
+        except (ValueError, FileNotFoundError):
+            raise Http404("파일을 찾을 수 없습니다.")
+        filename = file_path.name
+        extension = file_path.suffix.lower()
+    else:
+        if git_virtual["kind"] != "branch_file":
+            raise Http404("파일을 찾을 수 없습니다.")
+        filename = Path(git_virtual["repo_relative_path"]).name
+        extension = Path(filename).suffix.lower()
+        source_bytes = _git_repo_read_file_bytes(
+            git_virtual["repo"],
+            git_virtual["branch_name"],
+            git_virtual["repo_relative_path"],
+        )
+
     if not has_handrive_read_access(request, rel_path):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
-    response = FileResponse(file_path.open("rb"), content_type="application/pdf")
-    response["Content-Disposition"] = f"inline; filename*=UTF-8''{quote(file_path.name)}"
+
+    if extension == ".pdf":
+        if file_path is not None:
+            response = FileResponse(file_path.open("rb"), content_type="application/pdf")
+        else:
+            response = FileResponse(io.BytesIO(source_bytes or b""), content_type="application/pdf")
+        response["Content-Disposition"] = f"inline; filename*=UTF-8''{quote(filename)}"
+        return response
+
+    if extension not in HANDRIVE_OFFICE_PDF_EXTENSIONS:
+        raise Http404("PDF로 변환할 수 없는 파일입니다.")
+
+    if source_bytes is None:
+        try:
+            source_bytes = file_path.read_bytes() if file_path is not None else b""
+        except OSError:
+            source_bytes = b""
+    pdf_bytes = convert_office_bytes_to_pdf(extension, source_bytes or b"", filename)
+    if not pdf_bytes:
+        return HttpResponse("PDF 변환에 실패했습니다.", status=502, content_type="text/plain; charset=utf-8")
+
+    pdf_filename = f"{Path(filename).stem or 'preview'}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f"inline; filename*=UTF-8''{quote(pdf_filename)}"
+    response["Content-Length"] = str(len(pdf_bytes))
+    response["Cache-Control"] = "no-store"
     return response
 
 

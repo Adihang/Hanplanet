@@ -26,6 +26,8 @@ body.ui-page {
     --handrive-surface-toolbar: transparent;
     --handrive-surface-muted: var(--site-surface-muted);
     --handrive-surface-muted-strong: var(--site-surface-muted-strong);
+    --handrive-markdown-inline-code-bg: #eef2f7;
+    --handrive-markdown-inline-code-color: #19324d;
     --handrive-backdrop: var(--site-backdrop);
     --handrive-backdrop-strong: var(--site-backdrop-strong);
     --handrive-shadow-md: var(--site-shadow-md);
@@ -153,6 +155,8 @@ body.ui-page.theme-dark {
     --handrive-surface-toolbar: transparent;
     --handrive-surface-muted: rgba(40, 40, 40, 0.94);
     --handrive-surface-muted-strong: rgba(46, 46, 46, 0.96);
+    --handrive-markdown-inline-code-bg: rgba(255, 255, 255, 0.16);
+    --handrive-markdown-inline-code-color: #f4f7fb;
     --handrive-link: #d2d2d2;
     --handrive-elevated-bg: rgba(46, 46, 46, 0.97);
     --handrive-drop-target-bg: rgba(96, 165, 250, 0.16);
@@ -190,6 +194,11 @@ body.ui-page .portfolio-print-btn {
     background: var(--handrive-surface-toolbar);
 }
 
+body.handrive-view-page .handrive-toolbar-wrap,
+body.handrive-write-page .handrive-toolbar-wrap {
+    border-bottom: 1px solid var(--handrive-border);
+}
+
 .handrive-toolbar,
 .ui-toolbar {
     position: relative;
@@ -202,6 +211,11 @@ body.ui-page .portfolio-print-btn {
     max-width: 1300px;
     margin-left: auto;
     margin-right: auto;
+}
+
+body.handrive-view-page .handrive-toolbar,
+body.handrive-write-page .handrive-toolbar {
+    border-bottom: 0;
 }
 
 .handrive-toolbar-left,
@@ -843,18 +857,67 @@ body.theme-dark .ui-auth-account-menu-actions .ui-auth-account-menu-item:focus-v
 }
 
 .ui-auth-account-profile-image-button {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 112px;
+    height: 112px;
     border: 0;
     border-radius: 50%;
     background: transparent;
     padding: 0;
     line-height: 0;
     cursor: pointer;
+    transition: transform 0.16s ease;
 }
 
 .ui-auth-account-profile-image-button:hover,
 .ui-auth-account-profile-image-button:focus-visible {
     transform: translateY(-1px);
     outline: none;
+}
+
+.ui-auth-account-profile-image-button::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.32);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.16s ease;
+}
+
+.ui-auth-account-profile-image-button::after {
+    content: "";
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    z-index: 2;
+    width: 28px;
+    height: 28px;
+    border: 2px solid var(--site-bg, var(--handrive-bg, #fff));
+    border-radius: 50%;
+    background-color: var(--btn-template-primary-bg, var(--site-btn-primary-bg, #161616));
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 16px 16px;
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--site-text-stronger, #151515) 22%, transparent);
+    pointer-events: none;
+}
+
+body.theme-dark .ui-auth-account-profile-image-button::after {
+    border-color: var(--site-bg, var(--handrive-bg, #222222));
+    background-color: var(--btn-template-primary-bg, var(--site-btn-primary-bg, rgba(95, 95, 95, 0.9)));
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f7f7f7' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'/%3E%3C/svg%3E");
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.44);
+}
+
+.ui-auth-account-profile-image-button:hover::before,
+.ui-auth-account-profile-image-button:focus-visible::before {
+    opacity: 1;
 }
 
 .ui-auth-account-profile-image {
@@ -914,9 +977,16 @@ img.ui-auth-account-avatar {
 .handrive-title,
 .ui-title {
     margin: 0;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
     font-size: 24px;
     font-weight: 700;
     color: var(--handrive-text-stronger);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: keep-all;
 }
 
 .handrive-title-row,
@@ -925,6 +995,9 @@ img.ui-auth-account-avatar {
     align-items: center;
     justify-content: flex-start;
     gap: 8px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
     flex-wrap: wrap;
 }
 
@@ -938,8 +1011,8 @@ img.ui-auth-account-avatar {
 }
 
 .handrive-toolbar-actions .handrive-icon-btn {
-    width: 32px;
-    height: 32px;
+    width: 22px;
+    height: 22px;
 }
 
 .handrive-help-icon-link {
@@ -1054,7 +1127,8 @@ body.theme-dark .handrive-help-icon-symbol {
     margin-top: 0;
 }
 
-.handrive-subtitle-wrap .ui-path-breadcrumbs {
+.handrive-subtitle-wrap .ui-path-breadcrumbs,
+.handrive-toolbar-left > .ui-path-breadcrumbs {
     flex: 0 1 auto;
     flex-wrap: nowrap;
     max-width: 100%;
@@ -1064,7 +1138,9 @@ body.theme-dark .handrive-help-icon-symbol {
 }
 
 .handrive-subtitle-wrap .ui-path-link,
-.handrive-subtitle-wrap .ui-path-current {
+.handrive-subtitle-wrap .ui-path-current,
+.handrive-toolbar-left > .ui-path-breadcrumbs .ui-path-link,
+.handrive-toolbar-left > .ui-path-breadcrumbs .ui-path-current {
     display: block;
     flex: 0 0 auto;
     min-width: 0;
@@ -1072,6 +1148,8 @@ body.theme-dark .handrive-help-icon-symbol {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: keep-all;
 }
 
 .handrive-subtitle-wrap .handrive-path-sep,
@@ -1080,7 +1158,9 @@ body.theme-dark .handrive-help-icon-symbol {
 }
 
 .handrive-subtitle-wrap .ui-path-breadcrumbs.is-equal-truncated .ui-path-link,
-.handrive-subtitle-wrap .ui-path-breadcrumbs.is-equal-truncated .ui-path-current {
+.handrive-subtitle-wrap .ui-path-breadcrumbs.is-equal-truncated .ui-path-current,
+.handrive-toolbar-left > .ui-path-breadcrumbs.is-equal-truncated .ui-path-link,
+.handrive-toolbar-left > .ui-path-breadcrumbs.is-equal-truncated .ui-path-current {
     flex: 0 1 auto;
     max-width: var(--handrive-breadcrumb-item-width, var(--handrive-breadcrumb-segment-width));
 }
@@ -1094,6 +1174,10 @@ body.theme-dark .handrive-help-icon-symbol {
     font-variant-numeric: tabular-nums;
     font-weight: 400;
     padding: 2px;
+}
+
+.handrive-path-current-size:empty {
+    display: none;
 }
 
 .handrive-path-sep,
@@ -2076,6 +2160,33 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     animation: handrive-list-loading-spin 0.8s linear infinite;
 }
 
+.handrive-list-preview-content.handrive-media,
+.handrive-list-preview-content.handrive-office,
+.handrive-content[data-handrive-page="view"] > article.handrive-media,
+.handrive-content[data-handrive-page="view"] > article.handrive-office {
+    position: relative;
+}
+
+.handrive-frame-loading {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--handrive-bg) 88%, transparent);
+    pointer-events: none;
+}
+
+.handrive-frame-loading[hidden] {
+    display: none;
+}
+
+body.handrive-page.theme-dark .handrive-frame-loading {
+    background: color-mix(in srgb, var(--handrive-bg) 82%, transparent);
+}
+
 .ui-btn {
     --ui-btn-current-bg: var(--ui-btn-base-bg);
     --ui-btn-current-border: var(--ui-btn-base-border);
@@ -2230,6 +2341,8 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     -webkit-appearance: none;
     appearance: none;
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
+    position: relative;
+    overflow: hidden;
 }
 
 .handrive-item-row:hover,
@@ -2243,6 +2356,42 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 
 .handrive-item-row.is-dragging {
     opacity: 0.55;
+}
+
+.handrive-item-row.is-delayed-loading {
+    pointer-events: none;
+}
+
+.handrive-item-row.is-delayed-loading > * {
+    filter: blur(2px);
+    opacity: 0.42;
+}
+
+.handrive-item-row.is-delayed-loading::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: color-mix(in srgb, var(--handrive-bg) 58%, transparent);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    z-index: 4;
+    pointer-events: none;
+}
+
+.handrive-item-row.is-delayed-loading::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 22px;
+    height: 22px;
+    margin: -11px 0 0 -11px;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--handrive-text-subtle) 45%, transparent);
+    border-top-color: var(--handrive-text-stronger);
+    animation: handrive-list-loading-spin 0.8s linear infinite;
+    z-index: 5;
+    pointer-events: none;
 }
 
 .handrive-item-row.is-drop-target {
@@ -2564,6 +2713,31 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     overflow: visible;
     text-overflow: clip;
     white-space: nowrap;
+}
+
+.handrive-item-commit.has-commit-tooltip {
+    cursor: help;
+}
+
+.handrive-commit-tooltip {
+    position: fixed;
+    z-index: 11000;
+    max-width: min(420px, calc(100vw - 16px));
+    padding: 7px 9px;
+    border: 1px solid var(--handrive-border);
+    border-radius: 6px;
+    background: var(--handrive-bg);
+    color: var(--handrive-text-strong);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+}
+
+.handrive-commit-tooltip[hidden] {
+    display: none;
 }
 
 .handrive-item-id {
@@ -3067,6 +3241,26 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     width: min(380px, 100%);
 }
 
+.handrive-item-type-icon.is-dir.is-github-repo::before {
+    --handrive-github-mark-icon: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2016%2016%27%3E%3Cpath%20fill=%27%23000%27%20d=%27M8%200C3.58%200%200%203.58%200%208a8%208%200%200%200%205.47%207.59c.4.07.55-.17.55-.38%200-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01%201.08.58%201.23.82.72%201.21%201.87.87%202.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95%200-.87.31-1.59.82-2.15-.08-.2-.36-1.01.08-2.11%200%200%20.67-.21%202.2.82a7.53%207.53%200%200%201%204%200c1.53-1.04%202.2-.82%202.2-.82.44%201.1.16%201.91.08%202.11.51.56.82%201.27.82%202.15%200%203.07-1.87%203.75-3.65%203.95.29.25.54.73.54%201.48%200%201.07-.01%201.93-.01%202.2%200%20.21.15.46.55.38A8%208%200%200%200%2016%208c0-4.42-3.58-8-8-8z%27/%3E%3C/svg%3E");
+    content: "";
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    margin: 0;
+    transform: scale(1.22);
+    background-color: currentColor;
+    background-image: none;
+    -webkit-mask-image: var(--handrive-github-mark-icon);
+    -webkit-mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    mask-image: var(--handrive-github-mark-icon);
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: contain;
+}
+
 .handrive-item-type-icon.is-dir.is-repo::before {
     content: "";
     width: 18px;
@@ -3549,6 +3743,22 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     flex: 0 0 auto;
 }
 
+.handrive-icon-btn .portfolio-print-btn-icon {
+    width: 18px;
+    height: 18px;
+}
+
+.handrive-toolbar-actions .handrive-icon-btn svg,
+.ui-toolbar-actions .handrive-icon-btn svg {
+    width: 100%;
+    height: 100%;
+}
+
+.handrive-list-preview-actions .handrive-icon-btn .portfolio-print-btn-icon {
+    width: 22px;
+    height: 22px;
+}
+
 .handrive-permission-modal-dialog {
     width: min(680px, 100%);
 }
@@ -3720,7 +3930,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 .ui-markdown td,
 .handrive-markdown th,
 .handrive-markdown td {
-    border: 0;
+    border: 1px solid var(--handrive-border);
     text-align: left;
     vertical-align: top;
     padding: 8px 10px;
@@ -3742,7 +3952,8 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     font-size: 1em;
     border: 0;
     border-radius: 6px;
-    background: var(--handrive-surface-muted);
+    background: var(--handrive-markdown-inline-code-bg);
+    color: var(--handrive-markdown-inline-code-color);
     padding: 2px 6px;
     overflow-wrap: anywhere;
 }
@@ -3762,6 +3973,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     border: 0;
     border-radius: 0;
     background: transparent;
+    color: inherit;
     padding: 0;
     font-size: var(--handrive-text-font-size, 16px);
     line-height: 1.45;
@@ -4347,6 +4559,7 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     max-width: 1300px;
     margin-left: auto;
     margin-right: auto;
+    padding-top: 10px;
 }
 
 .handrive-content[data-handrive-page="write"] {
@@ -4358,6 +4571,7 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     max-width: 1300px;
     margin-left: auto;
     margin-right: auto;
+    padding-top: 10px;
 }
 
 .handrive-content[data-handrive-page="write"] .handrive-form-grid {
@@ -4562,12 +4776,75 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
     width: min(560px, 100%);
     margin-left: auto;
     margin-right: auto;
+    border: 1px solid var(--handrive-border);
+    border-radius: 999px;
+    box-sizing: border-box;
     filter: brightness(1.03) saturate(0.88);
 }
 
 .handrive-media-audio .handrive-media-wrap {
     width: 100%;
     justify-content: center;
+}
+
+.handrive-media-audio-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 640px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.handrive-media-audio-wrap .handrive-media-audio-element {
+    flex: 1 1 320px;
+    min-width: 0;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+.handrive-media-loop-button {
+    flex: 0 0 54px;
+    width: 54px;
+    height: 54px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 999px;
+    background: var(--handrive-elevated-bg);
+    color: var(--handrive-text-muted);
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.handrive-media-loop-button:hover,
+.handrive-media-loop-button:focus-visible,
+.handrive-media-loop-button.is-loop-enabled {
+    color: var(--handrive-text-stronger);
+    background: var(--handrive-hover-soft);
+    border-color: var(--handrive-border);
+}
+
+.handrive-media-loop-button.is-loop-enabled {
+    color: var(--handrive-text-stronger);
+    background: var(--handrive-elevated-bg);
+    border-color: var(--handrive-border);
+}
+
+.handrive-media-loop-icon,
+.handrive-media-loop-icon svg {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+
+.handrive-loop-check-path {
+    stroke-width: 2.25;
 }
 
 .handrive-list-preview-content.handrive-media-image,
@@ -4769,22 +5046,25 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
 
 /* 컨트롤바: 2행 레이아웃 (1행=진행바, 2행=버튼) */
 .video-js .vjs-control-bar {
+    --handrive-video-control-pill-bg: rgba(15, 15, 15, 0.38);
+    --handrive-video-control-pill-hover-bg: rgba(15, 15, 15, 0.52);
+    --handrive-video-progress-hover-bg: rgba(255, 255, 255, 0.56);
     display: flex !important;
     flex-wrap: wrap;
     align-items: center;
     height: auto !important;
-    padding: 0;
+    padding: 0 8px 8px;
+    background: transparent;
+    background-color: transparent;
 }
 
 .handrive-media-video-wrap .video-js .vjs-control-bar {
-    left: -1px;
-    right: -1px;
-    bottom: -1px;
-    width: calc(100% + 2px);
-    padding-bottom: 1px;
-    border-radius: 0 0 var(--handrive-radius-md) var(--handrive-radius-md);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    border-radius: 0;
     overflow: visible;
-    background-clip: padding-box;
     z-index: 20;
 }
 
@@ -4799,18 +5079,64 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     order: -1;
     width: 100% !important;
     flex: 0 0 100% !important;
+    display: flex;
+    align-items: center;
+    position: relative;
     height: 10px;
     min-height: 0;
-    margin: 0;
-    padding: 0 8px;
+    margin: 0 0 5px;
+    padding: 0;
+    border-radius: 999px;
     box-sizing: border-box;
+    background: transparent;
+    overflow: visible;
 }
 .video-js .vjs-progress-control .vjs-progress-holder {
+    position: relative;
     height: 4px;
     margin: 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+    overflow: hidden;
 }
 .video-js .vjs-progress-control:hover .vjs-progress-holder {
     height: 6px;
+}
+
+.video-js .vjs-progress-control .vjs-progress-hover-indicator {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 1;
+    border-radius: 999px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+}
+
+.video-js .vjs-progress-control.is-progress-hovering .vjs-progress-hover-indicator {
+    opacity: 1;
+}
+
+.video-js .vjs-progress-hover-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: calc(var(--handrive-progress-hover-ratio, 0) * 100%);
+    border-radius: 999px;
+    background: var(--handrive-video-progress-hover-bg);
+}
+
+.video-js .vjs-progress-control .vjs-load-progress,
+.video-js .vjs-progress-control .vjs-load-progress div {
+    z-index: 0;
+}
+
+.video-js .vjs-progress-control .vjs-play-progress {
+    z-index: 2;
 }
 
 /* 2행 버튼들 높이 통일 */
@@ -4823,6 +5149,17 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     min-width: 36px;
     padding: 0;
     line-height: 36px;
+}
+
+.video-js .vjs-control-bar > .vjs-play-control {
+    margin-right: 8px;
+    border-radius: 999px;
+    background: var(--handrive-video-control-pill-bg);
+}
+
+.video-js .vjs-control-bar > .vjs-play-control:hover,
+.video-js .vjs-control-bar > .vjs-play-control:focus-visible {
+    background: var(--handrive-video-control-pill-hover-bg);
 }
 
 .video-js .vjs-control-bar .vjs-button > .vjs-icon-placeholder,
@@ -4843,6 +5180,33 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     font-family: VideoJS;
 }
 
+.video-js .vjs-control-bar .vjs-handrive-loop-button .vjs-icon-placeholder {
+    background: none;
+}
+
+.video-js .vjs-control-bar .vjs-handrive-loop-button .vjs-icon-placeholder,
+.video-js .vjs-control-bar .vjs-handrive-loop-button .vjs-icon-placeholder svg {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+
+.video-js .vjs-control-bar .vjs-handrive-loop-button .vjs-icon-placeholder::before {
+    content: none;
+}
+
+.video-js .vjs-control-bar .vjs-handrive-loop-button .handrive-loop-check-path {
+    stroke-width: 2.25;
+}
+
+.video-js .vjs-control-bar .vjs-handrive-loop-button.is-loop-enabled,
+.video-js .vjs-control-bar .vjs-handrive-loop-button[aria-pressed="true"] {
+    color: #ffffff;
+    background: var(--handrive-video-control-pill-bg);
+    box-shadow: none;
+    opacity: 1;
+}
+
 .video-js .vjs-control-bar .vjs-play-control > .vjs-icon-placeholder,
 .video-js .vjs-control-bar .vjs-play-control > .vjs-icon-placeholder::before,
 .video-js .vjs-control-bar .vjs-fullscreen-control > .vjs-icon-placeholder,
@@ -4857,14 +5221,28 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     position: relative;
     width: 36px;
     min-width: 36px;
+    flex: 0 0 36px;
+    margin-right: 8px;
+    border-radius: 999px;
+    background: var(--handrive-video-control-pill-bg);
     overflow: visible;
+    transition: width 0.18s ease, min-width 0.18s ease, flex-basis 0.18s ease, background-color 0.15s ease;
 }
 
 .video-js .vjs-control-bar > .vjs-volume-panel.vjs-volume-panel-horizontal {
+    width: 36px;
+    min-width: 36px;
+    flex: 0 0 36px;
+    justify-content: flex-start;
+}
+
+.video-js .vjs-control-bar > .vjs-volume-panel.vjs-volume-panel-horizontal:hover,
+.video-js .vjs-control-bar > .vjs-volume-panel.vjs-volume-panel-horizontal.vjs-hover,
+.video-js .vjs-control-bar > .vjs-volume-panel.vjs-volume-panel-horizontal.vjs-slider-active {
     width: 118px;
     min-width: 118px;
-    flex: 0 0 118px;
-    justify-content: flex-start;
+    flex-basis: 118px;
+    background: var(--handrive-video-control-pill-hover-bg);
 }
 
 .video-js .vjs-control-bar .vjs-volume-panel .vjs-mute-control {
@@ -4892,12 +5270,25 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     align-items: center;
     justify-content: center;
     position: relative;
-    width: 82px;
+    width: 0;
     height: 36px;
     margin: 0;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-6px);
+    transition: width 0.18s ease, opacity 0.16s ease, transform 0.18s ease, visibility 0s linear 0.18s;
+}
+
+.video-js .vjs-control-bar .vjs-volume-panel:hover .vjs-volume-control.vjs-volume-horizontal,
+.video-js .vjs-control-bar .vjs-volume-panel.vjs-hover .vjs-volume-control.vjs-volume-horizontal,
+.video-js .vjs-control-bar .vjs-volume-panel.vjs-slider-active .vjs-volume-control.vjs-volume-horizontal {
+    width: 82px;
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
+    transform: translateX(0);
+    transition-delay: 0s;
 }
 
 .video-js .vjs-control-bar .vjs-volume-panel .vjs-volume-bar.vjs-slider-horizontal {
@@ -5009,17 +5400,59 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
 .video-js .vjs-current-time,
 .video-js .vjs-duration {
     display: flex;
-    padding: 0 4px;
+    padding: 0 6px;
     min-width: 0;
+    background: var(--handrive-video-control-pill-bg);
 }
 .video-js .vjs-time-divider {
     display: flex;
     min-width: 0;
     padding: 0;
+    background: var(--handrive-video-control-pill-bg);
+}
+.video-js .vjs-current-time {
+    border-radius: 999px 0 0 999px;
+    padding-left: 6px;
+}
+.video-js .vjs-duration {
+    margin-right: 8px;
+    border-radius: 0 999px 999px 0;
+    padding-right: 6px;
 }
 .video-js .vjs-custom-control-spacer {
     display: flex;
     flex: 1 1 auto;
+}
+
+.video-js .vjs-control-bar .vjs-custom-control-spacer ~ .vjs-control:not(.vjs-progress-control) {
+    background: var(--handrive-video-control-pill-bg);
+    border-radius: 0;
+}
+
+.video-js .vjs-control-bar .vjs-custom-control-spacer ~ .vjs-control:not(.vjs-progress-control).is-loop-enabled,
+.video-js .vjs-control-bar .vjs-custom-control-spacer ~ .vjs-control:not(.vjs-progress-control)[aria-pressed="true"] {
+    background: var(--handrive-video-control-pill-bg);
+}
+
+.video-js .vjs-control-bar .vjs-custom-control-spacer ~ .vjs-control:not(.vjs-progress-control):hover,
+.video-js .vjs-control-bar .vjs-custom-control-spacer ~ .vjs-control:not(.vjs-progress-control):focus-visible {
+    background: var(--handrive-video-control-pill-hover-bg);
+}
+
+.video-js .vjs-control-bar .vjs-custom-control-spacer + .vjs-control:not(.vjs-progress-control) {
+    border-radius: 999px 0 0 999px;
+}
+
+.video-js .vjs-control-bar > .vjs-control:not(.vjs-progress-control):last-child {
+    border-radius: 0 999px 999px 0;
+}
+
+.video-js.is-right-actions-collapsed .vjs-control-bar .vjs-custom-control-spacer ~ :not(.vjs-fullscreen-control) {
+    display: none;
+}
+
+.video-js.is-right-actions-collapsed .vjs-control-bar .vjs-fullscreen-control {
+    border-radius: 999px;
 }
 
 /* Cast 버튼: SDK 로드 시 항상 표시 + 아이콘 크기 보정 */
@@ -5184,20 +5617,33 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 
 /* 컨트롤바 배경 */
 .video-js .vjs-control-bar {
-    background: rgba(15, 15, 15, 0.88);
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0);
-    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-    will-change: transform;
+    background: transparent;
+    background-color: transparent;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: none;
+    transition: opacity 160ms ease, visibility 0s linear 160ms;
+    will-change: opacity;
 }
 
 .video-js.vjs-user-inactive.vjs-playing .vjs-control-bar {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: none;
+    transition: opacity 160ms ease, visibility 0s linear 160ms;
+}
+
+.video-js:hover .vjs-control-bar,
+.video-js.is-controlbar-hovered .vjs-control-bar,
+.video-js.vjs-user-inactive.vjs-playing:hover .vjs-control-bar,
+.video-js.vjs-user-inactive.vjs-playing.is-controlbar-hovered .vjs-control-bar {
     opacity: 1;
     visibility: visible;
-    pointer-events: none;
-    transform: translateY(calc(100% + 2px));
-    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: auto;
+    transform: none;
+    transition: opacity 160ms ease, visibility 0s;
 }
 
 /* 빅 플레이 버튼 */
@@ -5700,6 +6146,11 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     font-size: 16px;
 }
 
+.handrive-login-info {
+    border-color: color-mix(in srgb, #2563eb 45%, var(--handrive-border-heavy));
+    background: color-mix(in srgb, #2563eb 9%, var(--handrive-surface-muted-strong));
+}
+
 .handrive-login-actions {
     display: flex;
     align-items: center;
@@ -5710,6 +6161,35 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 .handrive-login-actions .ui-btn {
     flex: 1;
     text-align: center;
+}
+
+.handrive-login-github-icon-btn {
+    flex: 0 0 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: var(--handrive-radius-sm);
+    background: var(--handrive-surface);
+    color: var(--handrive-text-secondary);
+    text-decoration: none;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.handrive-login-github-icon-btn:hover,
+.handrive-login-github-icon-btn:focus-visible {
+    background: var(--handrive-surface-muted-strong);
+    border-color: var(--handrive-border-mid);
+    color: var(--handrive-text-strong);
+}
+
+.handrive-login-github-icon {
+    display: block;
+    width: 22px;
+    height: 22px;
+    pointer-events: none;
 }
 
 .handrive-2fa-resend-row {

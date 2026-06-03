@@ -1,11 +1,12 @@
 import base64
+import io
 import json
 import hashlib
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from django.contrib.auth.signals import user_logged_in
 from django.conf import settings
@@ -23,7 +24,14 @@ from datetime import date, datetime, timedelta
 from importlib import import_module
 
 from .models import EmailVerificationCode, HandriveAccessRule, HandriveLoginAttemptGuard, NavLink, SyncFile, UserProfile
-from portfolio.models import Career, PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject
+from portfolio.models import (
+    Career,
+    PortfolioActionButton,
+    PortfolioCareer,
+    PortfolioCoverLetter,
+    PortfolioProfile,
+    PortfolioProject,
+)
 from stratagem.models import Stratagem_Hero_Score
 from oauth2_provider.models import get_application_model
 from git.models import GitHubAccountMapping
@@ -34,6 +42,7 @@ from .handrive_views import (
     HANDRIVE_2FA_PENDING_NEXT_URL_SESSION_KEY,
     HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY,
     HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY,
+    HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY,
     HANDRIVE_EDITOR_GROUP_NAME,
     DOCS_PUBLIC_WRITE_GROUP_NAME,
     DOCS_USER_SCOPED_ENTRY_LIMIT,
@@ -326,6 +335,9 @@ class HandriveListApiMetaTests(TestCase):
             shared_dir = handrive_root / "shared_meta"
             shared_dir.mkdir(parents=True, exist_ok=True)
             (shared_dir / "child.md").write_text("# child", encoding="utf-8")
+            nested_dir = shared_dir / "nested"
+            nested_dir.mkdir()
+            (nested_dir / "large-child.bin").write_bytes(b"x" * 128)
 
             with override_settings(MEDIA_ROOT=str(media_root)):
                 self.client.force_login(user)
@@ -344,6 +356,9 @@ class HandriveListApiMetaTests(TestCase):
             self.assertTrue(payload["directory_meta"]["can_write_children"])
             self.assertTrue(payload["directory_meta"]["has_children"])
             self.assertFalse(payload["directory_meta"]["is_root"])
+            self.assertEqual(payload["directory_meta"]["size_display"], "")
+            nested_entry = next(entry for entry in payload["entries"] if entry["path"] == "shared_meta/nested")
+            self.assertEqual(nested_entry["size_display"], "")
 
 
 class MarkdownSafetyTests(TestCase):
@@ -700,6 +715,32 @@ class StorageProfileDiscModeTests(TestCase):
             return_value={"DISC": "hdd"},
         ):
             self.assertEqual(storage_profile.get_disc_mode(), "hdd")
+
+    def test_github_repo_cache_root_follows_disc_mode(self):
+        storage_profile = import_module("storage_profile")
+
+        self.assertEqual(
+            storage_profile.get_github_repo_cache_root("hdd"),
+            Path("/Volumes/HANPLANET_HDD/Hanplanet/github-repo-cache"),
+        )
+        self.assertEqual(
+            storage_profile.get_github_repo_cache_root("ssd"),
+            Path("/Users/imhanbyeol/temporary/hanplanet-ssd/github-repo-cache"),
+        )
+
+    def test_github_git_cache_path_uses_disc_derived_root(self):
+        handrive_views = import_module("main.handrive_views")
+        storage_profile = import_module("storage_profile")
+        repo = mock.Mock()
+        repo.owner.username = "admin"
+        repo.github_repo_id = 741375081
+
+        cache_root = storage_profile.get_github_repo_cache_root("ssd")
+        with override_settings(GITHUB_REPO_CACHE_ROOT=str(cache_root)):
+            self.assertEqual(
+                handrive_views._get_github_git_cache_path(repo),
+                (cache_root / "admin" / "741375081.git").resolve(),
+            )
 
     def test_hls_cache_root_uses_dedicated_hdd_setting(self):
         handrive_hls = import_module("main.handrive_hls")
@@ -1102,6 +1143,7 @@ class PortfolioPerUserRoutingTests(TestCase):
 
         PortfolioActionButton.objects.filter(user=self.owner).delete()
         PortfolioCareer.objects.filter(user=self.owner).delete()
+        PortfolioCoverLetter.objects.filter(user=self.owner).delete()
         PortfolioProject.objects.filter(user=self.owner).delete()
         PortfolioProfile.objects.filter(user=self.owner).delete()
 
@@ -1136,6 +1178,12 @@ class PortfolioPerUserRoutingTests(TestCase):
             content="Owner project content",
             create_date=date(2024, 2, 1),
         )
+        self.cover_letter = PortfolioCoverLetter.objects.create(
+            user=self.owner,
+            company="Acme Corp",
+            name="Owner Applicant",
+            content="Cover **letter** body",
+        )
         PortfolioActionButton.objects.create(
             user=self.owner,
             order=1,
@@ -1148,6 +1196,23 @@ class PortfolioPerUserRoutingTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Owner <strong>Title</strong>", html=False)
         self.assertContains(response, "Owner Company")
+        self.assertNotContains(response, "main_coverletter", html=False)
+
+    def test_portfolio_company_url_renders_cover_letter_below_projects(self):
+        response = self.client.get("/ko/portfolio/HanbyelLim/Acme-Corp/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="main_projects"', html=False)
+        self.assertContains(response, 'class="main_coverletter"', html=False)
+        self.assertContains(response, "Owner Applicant")
+        self.assertContains(response, "Cover <strong>letter</strong> body", html=False)
+        self.assertNotContains(response, "Acme Corp")
+
+    def test_portfolio_company_url_accepts_raw_company_name(self):
+        response = self.client.get("/ko/portfolio/HanbyelLim/Acme%20Corp")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="main_coverletter"', html=False)
 
     def test_project_detail_user_url_renders_project(self):
         response = self.client.get(f"/ko/project/HanbyelLim/{self.project.number}/")
@@ -1176,7 +1241,32 @@ class PortfolioPerUserRoutingTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "+ 경력사항 추가")
         self.assertContains(response, "Owner Company")
+        self.assertContains(response, "+ 자기소개서 추가")
+        self.assertContains(response, "Acme Corp")
         self.assertContains(response, 'value="add_career"', html=False)
+
+    def test_portfolio_write_adds_cover_letter(self):
+        self.client.login(username="HanbyelLim", password="pw12345")
+
+        response = self.client.post(
+            "/ko/portfolio/write/",
+            {
+                "action": "add_cover_letter",
+                "company": "테스트 회사",
+                "name": "지원자",
+                "content": "지원 동기입니다.",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            PortfolioCoverLetter.objects.filter(
+                user=self.owner,
+                company="테스트 회사",
+                slug="테스트-회사",
+                name="지원자",
+            ).exists()
+        )
 
     def test_logged_in_user_redirects_from_localized_portfolio_to_own_page(self):
         self.client.login(username="GuestUser", password="pw12345")
@@ -1232,6 +1322,12 @@ class PortfolioPerUserRoutingTests(TestCase):
         self.assertContains(response, "data-auth-account", html=False)
         self.assertContains(response, "data-root-nav-account-host", html=False)
         self.assertContains(response, "GuestUser", html=False)
+        self.assertContains(response, 'aria-label="GitHub 연동"', html=False)
+        self.assertNotContains(response, 'aria-label="GitHub 연동\n', html=False)
+        self.assertContains(response, 'aria-label="프로필 사진 변경"', html=False)
+        self.assertContains(response, 'title="프로필 사진 변경"', html=False)
+        self.assertNotContains(response, 'aria-label="프로필 사진 변경\n', html=False)
+        self.assertNotContains(response, 'title="프로필 사진 변경\n', html=False)
 
     def test_non_root_page_does_not_render_root_account_widget(self):
         self.client.login(username="GuestUser", password="pw12345")
@@ -1344,11 +1440,21 @@ class HandriveAuthFlowTests(TestCase):
         self.assertNotContains(response, 'input.addEventListener("keydown"', html=False)
         self.assertContains(response, 'loginForm.dataset.submitting = "1"', html=False)
 
+    @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
+    def test_docs_login_page_shows_github_icon_in_actions_when_enabled(self):
+        response = self.client.get("/ko/login/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="handrive-login-actions"', html=False)
+        self.assertContains(response, 'class="handrive-login-github-icon-btn"', html=False)
+        self.assertContains(response, 'aria-label="GitHub로 로그인"', html=False)
+
     @override_settings(
         GITHUB_APP_CLIENT_ID="github-client-id",
         GITHUB_APP_CLIENT_SECRET="github-client-secret",
         GITHUB_AUTH_AUTHORIZE_URL="https://github.example/login/oauth/authorize",
         GITHUB_AUTH_CALLBACK_URL="https://www.hanplanet.com/auth/github/callback",
+        GITHUB_AUTH_SCOPE="repo user:email",
     )
     def test_github_login_start_redirects_to_github(self):
         response = self.client.get("/ko/auth/github/start/", {"mode": "login", "next": "/ko/handrive/"})
@@ -1356,19 +1462,79 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         location = response["Location"]
         self.assertTrue(location.startswith("https://github.example/login/oauth/authorize?"))
-        self.assertIn("client_id=github-client-id", location)
-        self.assertIn("state=", location)
+        query = parse_qs(urlparse(location).query)
+        self.assertEqual(query["client_id"], ["github-client-id"])
+        self.assertEqual(query["scope"], ["repo user:email"])
+        self.assertIn("state", query)
         pending = self.client.session[HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY]
         self.assertEqual(pending["mode"], "login")
         self.assertEqual(pending["next_url"], "/ko/handrive/")
 
-    @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
-    def test_github_signup_start_requires_privacy_consent(self):
-        response = self.client.post("/ko/auth/github/start/", data={"mode": "signup", "next": "/ko/handrive/"})
+    @override_settings(GITHUB_AUTH_SCOPE="repo user:email")
+    @mock.patch("main.handrive_views.list_github_repositories")
+    def test_github_repositories_requires_reconnect_for_legacy_unscoped_token(self, mock_list_repositories):
+        GitHubAccountMapping.objects.create(
+            user=self.user,
+            github_user_id=12345,
+            github_login="github-user",
+            user_access_token="legacy-token",
+            token_scope="",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("main:handrive_api_github_repositories"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "개인정보 처리방침 및 이용약관 동의가 필요합니다.")
-        self.assertNotIn(HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY, self.client.session)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["connected"])
+        self.assertEqual(payload["error"], "github_reconnect_required")
+        mock_list_repositories.assert_not_called()
+
+    @override_settings(GITHUB_AUTH_SCOPE="repo user:email")
+    @mock.patch("main.handrive_views.list_github_repositories")
+    def test_github_repositories_include_non_owner_repos_with_push_access(self, mock_list_repositories):
+        GitHubAccountMapping.objects.create(
+            user=self.user,
+            github_user_id=12345,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+        )
+        mock_list_repositories.return_value = [
+            {
+                "id": 1,
+                "full_name": "github-user/owned",
+                "name": "owned",
+                "owner": {"login": "github-user"},
+                "permissions": {"admin": True, "push": True, "pull": True},
+            },
+            {
+                "id": 2,
+                "full_name": "team/writeable",
+                "name": "writeable",
+                "owner": {"login": "team"},
+                "permissions": {"admin": False, "push": True, "pull": True},
+            },
+        ]
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("main:handrive_api_github_repositories"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["connected"])
+        repo_names = [repository["full_name"] for repository in payload["repositories"]]
+        self.assertEqual(repo_names, ["github-user/owned", "team/writeable"])
+        self.assertTrue(payload["repositories"][1]["can_push"])
+
+    @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
+    def test_signup_page_does_not_render_github_signup_button(self):
+        response = self.client.get("/ko/signup/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "GitHub로 회원가입")
 
     def _seed_github_auth_session(self, *, mode="login", state="github-state", next_url="/ko/handrive/"):
         session = self.client.session
@@ -1383,16 +1549,12 @@ class HandriveAuthFlowTests(TestCase):
         session.save()
 
     @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
-    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
-    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
     @mock.patch("main.handrive_views.fetch_github_identity")
     @mock.patch("main.handrive_views.exchange_github_code")
-    def test_github_login_existing_email_skips_handrive_2fa(
+    def test_github_login_existing_email_redirects_to_link_or_signup_choice(
         self,
         mock_exchange_code,
         mock_fetch_identity,
-        mock_prepare_session,
-        mock_send_2fa,
     ):
         self.user.email = "github-user@example.com"
         self.user.save(update_fields=["email"])
@@ -1410,30 +1572,62 @@ class HandriveAuthFlowTests(TestCase):
         response = self.client.get("/auth/github/callback/", {"code": "code-1", "state": "github-state"})
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(self.client.session["_auth_user_id"], str(self.user.pk))
-        self.assertNotIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
-        self.assertIn("i_like_gitea", response.cookies)
-        mock_send_2fa.assert_not_called()
-        mock_prepare_session.assert_called_once_with(self.user)
+        self.assertIn("/ko/login", response["Location"])
+        self.assertIn("github_choice=1", response["Location"])
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertFalse(GitHubAccountMapping.objects.filter(user=self.user).exists())
+        pending = self.client.session[HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY]
+        self.assertEqual(pending["action"], "choice")
+        self.assertEqual(pending["identity"]["github_user_id"], 12345)
+
+    def test_github_pending_link_action_attaches_to_authenticated_user(self):
+        profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        profile.session_token = "existing-session-token"
+        profile.save(update_fields=["session_token", "updated_at"])
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["_hp_session_token"] = "existing-session-token"
+        session[HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY] = {
+            "identity": {
+                "github_user_id": 12345,
+                "login": "github-user",
+                "name": "GitHub User",
+                "email": "github-user@example.com",
+                "avatar_url": "",
+                "email_verified": True,
+            },
+            "token": {
+                "access_token": "github-access-token",
+                "token_type": "bearer",
+                "scope": "repo,user:email",
+                "expires_at": "",
+                "refresh_token": "",
+                "refresh_token_expires_at": "",
+            },
+            "next_url": "/ko/handrive/",
+            "ui_lang": "ko",
+            "action": "choice",
+            "created_at": timezone.now().timestamp(),
+        }
+        session.save()
+
+        response = self.client.get("/ko/login/", {"github_action": "link", "next": "/ko/handrive/"})
+
+        self.assertEqual(response.status_code, 302)
         mapping = GitHubAccountMapping.objects.get(user=self.user)
         self.assertEqual(mapping.github_user_id, 12345)
-        self.assertEqual(mapping.github_login, "github-user")
+        self.assertEqual(mapping.user_access_token, "github-access-token")
+        self.assertNotIn(HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY, self.client.session)
 
     @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
-    @mock.patch("main.handrive_views._send_signup_welcome_email", return_value=True)
-    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
-    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
     @mock.patch("main.handrive_views.fetch_github_identity")
     @mock.patch("main.handrive_views.exchange_github_code")
-    def test_github_signup_creates_user_without_handrive_2fa(
+    def test_github_login_unknown_account_redirects_to_github_signup_form(
         self,
         mock_exchange_code,
         mock_fetch_identity,
-        mock_prepare_session,
-        mock_send_2fa,
-        mock_welcome_email,
     ):
-        self._seed_github_auth_session(mode="signup")
+        self._seed_github_auth_session(mode="login")
         mock_exchange_code.return_value = GitHubTokenData(access_token="github-access-token")
         mock_fetch_identity.return_value = GitHubIdentity(
             github_user_id=67890,
@@ -1447,13 +1641,72 @@ class HandriveAuthFlowTests(TestCase):
         response = self.client.get("/auth/github/callback/", {"code": "code-2", "state": "github-state"})
 
         self.assertEqual(response.status_code, 302)
-        user = get_user_model().objects.get(username="new-github-user")
+        self.assertIn("/ko/signup", response["Location"])
+        self.assertIn("github_action=signup", response["Location"])
+        self.assertFalse(get_user_model().objects.filter(username="new-github-user").exists())
+        pending = self.client.session[HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY]
+        self.assertEqual(pending["action"], "signup")
+        self.assertEqual(pending["identity"]["email"], "new-github-user@example.com")
+
+        signup_page = self.client.get(response["Location"])
+        self.assertEqual(signup_page.status_code, 200)
+        self.assertContains(signup_page, 'name="first_name"', html=False)
+        self.assertContains(signup_page, 'disabled', html=False)
+        self.assertNotContains(signup_page, 'id="handrive-signup-code-block"', html=False)
+        self.assertNotContains(signup_page, 'id="handrive-signup-send-code-btn"', html=False)
+
+    @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
+    @mock.patch("main.handrive_views._send_signup_welcome_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_github_pending_signup_creates_user_and_links_mapping(self, mock_prepare_session, mock_welcome_email):
+        session = self.client.session
+        session[HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY] = {
+            "identity": {
+                "github_user_id": 67890,
+                "login": "new-github-user",
+                "name": "New GitHub User",
+                "email": "new-github-user@example.com",
+                "avatar_url": "",
+                "email_verified": True,
+            },
+            "token": {
+                "access_token": "github-access-token",
+                "token_type": "bearer",
+                "scope": "repo,user:email",
+                "expires_at": "",
+                "refresh_token": "",
+                "refresh_token_expires_at": "",
+            },
+            "next_url": "/ko/handrive/",
+            "ui_lang": "ko",
+            "action": "signup",
+            "created_at": timezone.now().timestamp(),
+        }
+        session.save()
+
+        response = self.client.post(
+            reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
+            data={
+                "username": "new_github_user",
+                "password1": "pw123456!!AA",
+                "password2": "pw123456!!AA",
+                "next": "/ko/handrive/",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        user = get_user_model().objects.get(username="new_github_user")
+        self.assertEqual(user.first_name, "New GitHub User")
+        self.assertEqual(user.email, "new-github-user@example.com")
         self.assertEqual(self.client.session["_auth_user_id"], str(user.pk))
-        self.assertFalse(user.has_usable_password())
         self.assertNotIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
-        mock_send_2fa.assert_not_called()
+        self.assertNotIn(HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY, self.client.session)
         mock_prepare_session.assert_called_once_with(user)
         mock_welcome_email.assert_called_once_with(user, "ko")
+        mapping = GitHubAccountMapping.objects.get(user=user)
+        self.assertEqual(mapping.github_user_id, 67890)
+        self.assertEqual(mapping.github_login, "new-github-user")
+        self.assertEqual(mapping.user_access_token, "github-access-token")
         profile = UserProfile.objects.get(user=user)
         self.assertIsNotNone(profile.privacy_policy_agreed_at)
         self.assertIsNotNone(profile.terms_of_service_agreed_at)
@@ -2628,6 +2881,433 @@ class HandriveAccessRuleTests(TestCase):
         self.assertIn("visible.png", {entry["name"] for entry in payload["entries"]})
         self.assertNotIn("root-secret.png", {entry["name"] for entry in payload["entries"]})
 
+    def test_docs_api_list_includes_selected_github_repositories_at_scoped_root(self):
+        editor = self.create_scoped_handrive_editor("github_repo_list_editor")
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98765,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 2468,
+                    "full_name": "team/writeable",
+                    "name": "writeable",
+                    "owner": "team",
+                    "private": True,
+                    "fork": False,
+                    "default_branch": "main",
+                    "html_url": "https://github.com/team/writeable",
+                    "clone_url": "https://github.com/team/writeable.git",
+                    "updated_at": "2026-06-01T00:00:00Z",
+                    "pushed_at": "2026-06-01T01:00:00Z",
+                    "can_push": True,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+
+        response = self.client.get(
+            reverse("main:handrive_api_list"),
+            data={"path": f"users/{editor.username}"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        entries = response.json().get("entries", [])
+        github_entry = next((entry for entry in entries if entry.get("github_repo", {}).get("id") == 2468), None)
+        self.assertIsNotNone(github_entry)
+        self.assertEqual(github_entry["name"], "writeable")
+        self.assertEqual(github_entry["github_repo"]["full_name"], "team/writeable")
+        self.assertEqual(github_entry["type"], "dir")
+        self.assertEqual(github_entry["type_display"], "GitHub")
+        self.assertTrue(github_entry["is_git_virtual"])
+        self.assertTrue(github_entry["has_children"])
+        self.assertFalse(github_entry["can_write_children"])
+        self.assertEqual(github_entry["github_repo"]["html_url"], "https://github.com/team/writeable")
+        self.assertTrue(github_entry["github_repo"]["can_push"])
+
+    def test_docs_api_list_expands_selected_github_repository_branches(self):
+        editor = self.create_scoped_handrive_editor("github_branch_list_editor")
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98766,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 2469,
+                    "full_name": "team/branchable",
+                    "name": "branchable",
+                    "owner": "team",
+                    "default_branch": "main",
+                    "html_url": "https://github.com/team/branchable",
+                    "clone_url": "https://github.com/team/branchable.git",
+                    "can_push": True,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+
+        with (
+            mock.patch("main.handrive_views._git_repo_branches", return_value=["main"]),
+            mock.patch(
+                "main.handrive_views._git_repo_latest_commit_meta",
+                return_value={"commit_id": "abc1234", "subject": "Initial commit", "author_username": "github-user", "modified_display": "2026-06-01 10:00"},
+            ),
+        ):
+            response = self.client.get(
+                reverse("main:handrive_api_list"),
+                data={"path": f"users/{editor.username}/.github-repo-2469"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        entries = response.json().get("entries", [])
+        self.assertEqual([entry["name"] for entry in entries], ["main"])
+        branch_entry = entries[0]
+        self.assertEqual(branch_entry["path"], f"users/{editor.username}/.github-repo-2469/main")
+        self.assertTrue(branch_entry["can_write_children"])
+        self.assertTrue(branch_entry["requires_commit_message"])
+        self.assertTrue(branch_entry["git_branch_root"])
+        self.assertEqual(branch_entry["git_provider"], "github")
+        self.assertEqual(branch_entry["git_commit_id"], "abc1234")
+        self.assertEqual(branch_entry["git_commit_message"], "Initial commit")
+        self.assertEqual(branch_entry["type_display"], "Branch")
+
+    def test_docs_api_list_expands_selected_github_repository_files(self):
+        editor = self.create_scoped_handrive_editor("github_file_list_editor")
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98767,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 2470,
+                    "full_name": "team/files",
+                    "name": "files",
+                    "owner": "team",
+                    "default_branch": "main",
+                    "html_url": "https://github.com/team/files",
+                    "clone_url": "https://github.com/team/files.git",
+                    "can_push": True,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+
+        with (
+            mock.patch("main.handrive_views._git_repo_branches", return_value=["main"]),
+            mock.patch(
+                "main.handrive_views._git_repo_list_tree",
+                return_value=[{"name": "README.md", "type": "blob", "sha": "abc", "size_display": "7 B"}],
+            ),
+            mock.patch(
+                "main.handrive_views._git_repo_latest_commit_meta",
+                return_value={"commit_id": "def5678", "subject": "Readme", "author_username": "github-user", "modified_display": "2026-06-01 10:00"},
+            ),
+        ):
+            response = self.client.get(
+                reverse("main:handrive_api_list"),
+                data={"path": f"users/{editor.username}/.github-repo-2470/main"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        entries = response.json().get("entries", [])
+        self.assertEqual([entry["name"] for entry in entries], ["README.md"])
+        file_entry = entries[0]
+        self.assertEqual(file_entry["type"], "file")
+        self.assertTrue(file_entry["can_edit"])
+        self.assertTrue(file_entry["requires_commit_message"])
+        self.assertEqual(file_entry["git_commit_id"], "def5678")
+        self.assertEqual(file_entry["git_commit_message"], "Readme")
+        self.assertEqual(file_entry["slug_path"], f"users/{editor.username}/.github-repo-2470/main/README.md")
+
+    def test_docs_api_save_commits_new_file_to_selected_github_repository(self):
+        editor = self.create_scoped_handrive_editor("github_save_editor")
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98768,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 2471,
+                    "full_name": "team/writable",
+                    "name": "writable",
+                    "owner": "team",
+                    "default_branch": "main",
+                    "html_url": "https://github.com/team/writable",
+                    "clone_url": "https://github.com/team/writable.git",
+                    "can_push": True,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+
+        with (
+            mock.patch("main.handrive_views._git_repo_branches", return_value=["main"]),
+            mock.patch("main.handrive_views._git_repo_path_exists", return_value=False),
+            mock.patch("main.handrive_views._commit_git_branch_changes") as mock_commit,
+        ):
+            response = self.client.post(
+                reverse("main:handrive_api_save"),
+                data=json.dumps(
+                    {
+                        "target_dir": f"users/{editor.username}/.github-repo-2471/main",
+                        "filename": "README.md",
+                        "extension": ".md",
+                        "content": "# Hello",
+                        "commit_message": "Add README",
+                    }
+                ),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["path"], f"users/{editor.username}/.github-repo-2471/main/README.md")
+        commit_repo, branch_name, commit_message, updates, author = mock_commit.call_args.args
+        self.assertEqual(commit_repo.provider, "github")
+        self.assertEqual(commit_repo.github_repo_id, 2471)
+        self.assertEqual(branch_name, "main")
+        self.assertEqual(commit_message, "Add README")
+        self.assertEqual(updates, {"README.md": b"# Hello"})
+        self.assertEqual(author, editor)
+
+    def test_docs_api_preview_reads_selected_github_repository_file(self):
+        editor = self.create_scoped_handrive_editor("github_preview_editor")
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98769,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 2472,
+                    "full_name": "team/readable",
+                    "name": "readable",
+                    "owner": "team",
+                    "default_branch": "main",
+                    "html_url": "https://github.com/team/readable",
+                    "clone_url": "https://github.com/team/readable.git",
+                    "can_push": True,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+
+        with (
+            mock.patch("main.handrive_views._git_repo_branches", return_value=["main"]),
+            mock.patch("main.handrive_views._git_repo_object_type", return_value="blob"),
+            mock.patch("main.handrive_views._git_repo_read_file_bytes", return_value=b"# GitHub file"),
+            mock.patch("main.handrive_views.load_git_repo_html_companion_assets", return_value=("", "")),
+        ):
+            response = self.client.post(
+                reverse("main:handrive_api_preview"),
+                data=json.dumps({"path": f"users/{editor.username}/.github-repo-2472/main/README.md"}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["title"], "README.md")
+        self.assertEqual(payload["path"], f"users/{editor.username}/.github-repo-2472/main/README.md")
+        self.assertIn("GitHub file", payload["html"])
+
+    def test_docs_api_mkdir_commits_to_selected_github_repository(self):
+        editor = self.create_scoped_handrive_editor("github_mkdir_editor")
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98770,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 2473,
+                    "full_name": "team/folders",
+                    "name": "folders",
+                    "owner": "team",
+                    "default_branch": "main",
+                    "html_url": "https://github.com/team/folders",
+                    "clone_url": "https://github.com/team/folders.git",
+                    "can_push": True,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+
+        with (
+            mock.patch("main.handrive_views._git_repo_branches", return_value=["main"]),
+            mock.patch("main.handrive_views._git_repo_path_exists", return_value=False),
+            mock.patch("main.handrive_views._commit_git_branch_mutation") as mock_commit,
+        ):
+            response = self.client.post(
+                reverse("main:handrive_api_mkdir"),
+                data=json.dumps(
+                    {
+                        "parent_dir": f"users/{editor.username}/.github-repo-2473/main",
+                        "folder_name": "docs",
+                        "commit_message": "Add docs folder",
+                    }
+                ),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["path"], f"users/{editor.username}/.github-repo-2473/main/docs")
+        commit_repo, branch_name, commit_message, author, _mutator = mock_commit.call_args.args
+        self.assertEqual(commit_repo.provider, "github")
+        self.assertEqual(branch_name, "main")
+        self.assertEqual(commit_message, "Add docs folder")
+        self.assertEqual(author, editor)
+
+    def test_docs_api_delete_commits_selected_github_repository_file_delete(self):
+        editor = self.create_scoped_handrive_editor("github_delete_editor")
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98771,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 2474,
+                    "full_name": "team/deleteable",
+                    "name": "deleteable",
+                    "owner": "team",
+                    "default_branch": "main",
+                    "html_url": "https://github.com/team/deleteable",
+                    "clone_url": "https://github.com/team/deleteable.git",
+                    "can_push": True,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+
+        with (
+            mock.patch("main.handrive_views._git_repo_branches", return_value=["main"]),
+            mock.patch("main.handrive_views._git_repo_object_type", return_value="blob"),
+            mock.patch("main.handrive_views._commit_git_branch_mutation") as mock_commit,
+        ):
+            response = self.client.post(
+                reverse("main:handrive_api_delete"),
+                data=json.dumps(
+                    {
+                        "paths": [f"users/{editor.username}/.github-repo-2474/main/README.md"],
+                        "commit_message": "Delete README",
+                    }
+                ),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["deleted_paths"], [f"users/{editor.username}/.github-repo-2474/main/README.md"])
+        commit_repo, branch_name, commit_message, author, _mutator = mock_commit.call_args.args
+        self.assertEqual(commit_repo.provider, "github")
+        self.assertEqual(branch_name, "main")
+        self.assertEqual(commit_message, "Delete README")
+        self.assertEqual(author, editor)
+
+    def test_git_branch_create_pushes_selected_github_repository_branch(self):
+        editor = self.create_scoped_handrive_editor("github_branch_create_editor")
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98772,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 2475,
+                    "full_name": "team/branches",
+                    "name": "branches",
+                    "owner": "team",
+                    "default_branch": "main",
+                    "html_url": "https://github.com/team/branches",
+                    "clone_url": "https://github.com/team/branches.git",
+                    "can_push": True,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+
+        rev_parse_result = mock.Mock(stdout="abc123\n", stderr="", returncode=0)
+        update_ref_result = mock.Mock(stdout="", stderr="", returncode=0)
+        push_result = mock.Mock(stdout="", stderr="", returncode=0)
+
+        with (
+            mock.patch("main.handrive_views._ensure_github_repo_cache", return_value=Path("/tmp/cache.git")),
+            mock.patch("main.handrive_views._get_github_git_cache_path", return_value=Path("/tmp/cache.git")),
+            mock.patch("main.handrive_views._git_repo_branches", return_value=["main"]),
+            mock.patch("main.handrive_views._run_git_repo_command", side_effect=[rev_parse_result, update_ref_result]),
+            mock.patch("main.handrive_views._run_github_git_command", return_value=push_result) as mock_push,
+        ):
+            response = self.client.post(
+                reverse("main:git_branch_create", kwargs={"repo_id": "github:2475"}),
+                data=json.dumps({"source_branch": "main", "new_branch": "feature/test"}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["ok"])
+        push_repo, push_command = mock_push.call_args.args
+        self.assertEqual(push_repo.provider, "github")
+        self.assertEqual(push_repo.github_repo_id, 2475)
+        self.assertIn("abc123:refs/heads/feature/test", push_command)
+
+    def test_git_branch_delete_pushes_selected_github_repository_branch_delete(self):
+        editor = self.create_scoped_handrive_editor("github_branch_delete_editor")
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98773,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 2476,
+                    "full_name": "team/delete-branches",
+                    "name": "delete-branches",
+                    "owner": "team",
+                    "default_branch": "main",
+                    "html_url": "https://github.com/team/delete-branches",
+                    "clone_url": "https://github.com/team/delete-branches.git",
+                    "can_push": True,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+
+        update_ref_result = mock.Mock(stdout="", stderr="", returncode=0)
+        push_result = mock.Mock(stdout="", stderr="", returncode=0)
+
+        with (
+            mock.patch("main.handrive_views._ensure_github_repo_cache", return_value=Path("/tmp/cache.git")),
+            mock.patch("main.handrive_views._get_github_git_cache_path", return_value=Path("/tmp/cache.git")),
+            mock.patch("main.handrive_views._git_repo_branches", return_value=["main", "feature/test"]),
+            mock.patch("main.handrive_views._run_git_repo_command", return_value=update_ref_result),
+            mock.patch("main.handrive_views._run_github_git_command", return_value=push_result) as mock_push,
+        ):
+            response = self.client.delete(
+                reverse("main:git_branch_delete", kwargs={"repo_id": "github:2476"}),
+                data=json.dumps({"branch": "feature/test"}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        push_repo, push_command = mock_push.call_args.args
+        self.assertEqual(push_repo.provider, "github")
+        self.assertEqual(push_repo.github_repo_id, 2476)
+        self.assertIn(":refs/heads/feature/test", push_command)
+
     def test_scope_home_download_blocks_superuser_outside_scoped_user_folder(self):
         admin = self.user_model.objects.create_user(
             username="scoped_download_admin",
@@ -2653,6 +3333,56 @@ class HandriveAccessRuleTests(TestCase):
 
         self.assertEqual(blocked_response.status_code, 404)
         self.assertEqual(allowed_response.status_code, 200)
+
+    def test_docs_api_download_zips_folder_without_creating_archive_file(self):
+        editor = self.create_handrive_editor("folder_download_editor")
+        self.client.force_login(editor)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        source_dir = handrive_root / "restricted"
+        (source_dir / "child").mkdir(parents=True, exist_ok=True)
+        (source_dir / "child" / "nested.txt").write_text("nested", encoding="utf-8")
+
+        response = self.client.get(
+            reverse("main:handrive_api_download"),
+            data={"path": "restricted"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/zip")
+        self.assertIn("restricted.zip", response["Content-Disposition"])
+        body = b"".join(response.streaming_content)
+        with zipfile.ZipFile(io.BytesIO(body)) as archive:
+            names = set(archive.namelist())
+            self.assertIn("restricted/", names)
+            self.assertEqual(archive.read("restricted/secret.md").decode("utf-8"), "# secret")
+            self.assertEqual(archive.read("restricted/child/nested.txt").decode("utf-8"), "nested")
+        self.assertFalse((Path(settings.MEDIA_ROOT) / "HanDrive" / "restricted.zip").exists())
+
+    def test_docs_api_download_folder_omits_unreadable_descendants(self):
+        editor = self.create_handrive_editor("folder_download_acl_editor")
+        reader_group = Group.objects.create(name="folder_download_private_readers")
+        private_rule = HandriveAccessRule.objects.create(path="restricted/private")
+        private_rule.read_groups.add(reader_group)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        private_dir = handrive_root / "restricted" / "private"
+        private_dir.mkdir(parents=True, exist_ok=True)
+        (private_dir / "secret.txt").write_text("nope", encoding="utf-8")
+
+        self.client.force_login(editor)
+        response = self.client.get(
+            reverse("main:handrive_api_download"),
+            data={"path": "restricted"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = b"".join(response.streaming_content)
+        with zipfile.ZipFile(io.BytesIO(body)) as archive:
+            names = set(archive.namelist())
+            self.assertIn("restricted/secret.md", names)
+            self.assertNotIn("restricted/private/", names)
+            self.assertNotIn("restricted/private/secret.txt", names)
 
     def test_restricted_path_blocks_non_allowed_user_from_read(self):
         reader_group = Group.objects.create(name="handrive_readers")
@@ -2908,6 +3638,19 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(download_response.status_code, 200)
         self.assertEqual(b"".join(download_response.streaming_content), b"# child")
 
+        folder_download_response = self.client.get(
+            reverse("main:handrive_api_download"),
+            data={
+                "path": "shared_folder",
+                "share_owner": payload["owner_username"],
+                "share_slug": payload["share_slug"],
+            },
+        )
+        self.assertEqual(folder_download_response.status_code, 200)
+        folder_zip_body = b"".join(folder_download_response.streaming_content)
+        with zipfile.ZipFile(io.BytesIO(folder_zip_body)) as archive:
+            self.assertEqual(archive.read("shared_folder/child.md").decode("utf-8"), "# child")
+
         blocked_download = self.client.get(
             reverse("main:handrive_api_download"),
             data={"path": "shared_folder/child.md"},
@@ -2989,6 +3732,93 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'href="/ko/handrive/users/admin/list"')
         self.assertContains(response, ">admin<")
+
+    def test_handrive_breadcrumb_labels_decode_url_encoded_korean_segments(self):
+        handrive_views = import_module("main.handrive_views")
+
+        breadcrumbs = handrive_views.build_handrive_breadcrumbs(
+            "/ko/handrive",
+            "users/admin/.github-repo-555094540/%ED%95%A0%EC%9D%B8%EB%A1%9C%EC%A7%81%EB%B3%80%EA%B2%BD/docs",
+            scoped_home_dir="users/admin",
+            root_label="admin",
+        )
+
+        labels = [crumb["label"] for crumb in breadcrumbs]
+        self.assertIn("할인로직변경", labels)
+        self.assertNotIn("%ED%95%A0%EC%9D%B8%EB%A1%9C%EC%A7%81%EB%B3%80%EA%B2%BD", labels)
+
+    def test_github_breadcrumb_repo_link_uses_repo_name_when_git_context_unavailable(self):
+        editor = self.create_scoped_handrive_editor("github_breadcrumb_editor")
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98774,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 555094540,
+                    "full_name": "team/discounts",
+                    "name": "discounts",
+                    "owner": "team",
+                    "default_branch": "main",
+                    "html_url": "https://github.com/team/discounts",
+                    "clone_url": "https://github.com/team/discounts.git",
+                    "can_push": True,
+                }
+            ],
+        )
+        request = RequestFactory().get("/ko/handrive/")
+        request.user = editor
+        handrive_views = import_module("main.handrive_views")
+
+        with mock.patch("main.handrive_views._git_repo_branches", return_value=[]):
+            breadcrumbs = handrive_views._build_git_virtual_breadcrumbs(
+                request,
+                "/ko/handrive",
+                f"users/{editor.username}/.github-repo-555094540/%ED%95%A0%EC%9D%B8%EB%A1%9C%EC%A7%81%EB%B3%80%EA%B2%BD",
+                scoped_home_dir=f"users/{editor.username}",
+            )
+
+        repo_crumb = next(
+            crumb for crumb in breadcrumbs
+            if crumb["path"] == f"users/{editor.username}/.github-repo-555094540"
+        )
+        self.assertEqual(repo_crumb["label"], "discounts")
+
+    def test_github_write_page_breadcrumb_repo_link_uses_repo_name(self):
+        editor = self.create_scoped_handrive_editor("github_write_breadcrumb_editor")
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98775,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 555094540,
+                    "full_name": "team/discounts",
+                    "name": "discounts",
+                    "owner": "team",
+                    "default_branch": "할인로직변경",
+                    "html_url": "https://github.com/team/discounts",
+                    "clone_url": "https://github.com/team/discounts.git",
+                    "can_push": True,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+
+        with mock.patch("main.handrive_views._git_repo_branches", return_value=["할인로직변경"]):
+            response = self.client.get(
+                "/ko/handrive/write/",
+                data={"dir": f"users/{editor.username}/.github-repo-555094540/%ED%95%A0%EC%9D%B8%EB%A1%9C%EC%A7%81%EB%B3%80%EA%B2%BD"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn(">discounts<", html)
+        self.assertNotIn(">.github-repo-555094540<", html)
 
     def test_handrive_root_for_staff_user_keeps_scoped_home_dir(self):
         staff_user = self.create_handrive_editor("handrive_staff_scoped")
@@ -3882,6 +4712,110 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(edit_response.status_code, 200)
         self.assertContains(edit_response, "Alice,10")
 
+    def test_xlsx_fallback_preview_renders_all_sheets_rows_and_columns(self):
+        from main.handrive import preview as handrive_preview
+
+        def excel_column_name(index):
+            name = ""
+            value = index
+            while value:
+                value, remainder = divmod(value - 1, 26)
+                name = chr(65 + remainder) + name
+            return name
+
+        def worksheet_xml(sheet_index):
+            rows = []
+            for row_index in range(1, 36):
+                cells = []
+                for column_index in range(1, 23):
+                    reference = f"{excel_column_name(column_index)}{row_index}"
+                    cells.append(
+                        f'<c r="{reference}" t="inlineStr"><is><t>S{sheet_index}R{row_index}C{column_index}</t></is></c>'
+                    )
+                rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
+            return (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                f'<sheetData>{"".join(rows)}</sheetData>'
+                '</worksheet>'
+            )
+
+        workbook_sheets = "".join(
+            f'<sheet name="Sheet{index}" sheetId="{index}" r:id="rId{index}"/>'
+            for index in range(1, 5)
+        )
+        workbook_rels = "".join(
+            '<Relationship '
+            f'Id="rId{index}" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+            f'Target="worksheets/sheet{index}.xml"/>'
+            for index in range(1, 5)
+        )
+        xlsx_buffer = io.BytesIO()
+        with zipfile.ZipFile(xlsx_buffer, "w") as archive:
+            archive.writestr(
+                "xl/workbook.xml",
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                f'<sheets>{workbook_sheets}</sheets>'
+                '</workbook>',
+            )
+            archive.writestr(
+                "xl/_rels/workbook.xml.rels",
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                f'{workbook_rels}'
+                '</Relationships>',
+            )
+            for index in range(1, 5):
+                archive.writestr(f"xl/worksheets/sheet{index}.xml", worksheet_xml(index))
+
+        with mock.patch.object(handrive_preview, "convert_office_bytes_to_html", return_value=None), \
+                mock.patch.object(handrive_preview, "convert_office_bytes_to_pdf", return_value=None):
+            rendered = str(handrive_preview.render_handrive_office_preview_safely(".xlsx", xlsx_buffer.getvalue()))
+
+        self.assertIn("Sheet4", rendered)
+        self.assertIn("S4R35C22", rendered)
+        self.assertIn("S1R35C22", rendered)
+        self.assertNotIn("omitted", rendered.lower())
+
+    def test_xlsx_live_preview_script_accounts_for_scaled_bottom_height(self):
+        from main.handrive import preview as handrive_preview
+
+        html_source = (
+            "<html><body><table>"
+            + "".join(f"<tr><td>row {index}</td></tr>" for index in range(1, 80))
+            + "</table></body></html>"
+        )
+
+        with mock.patch.object(handrive_preview, "convert_office_bytes_to_html", return_value=html_source):
+            rendered = str(handrive_preview.render_handrive_office_preview_safely(".xlsx", b"fake-xlsx"))
+
+        self.assertIn("FRAME_HEIGHT_BUFFER", rendered)
+        self.assertIn("readScaledFrameHeight", rendered)
+        self.assertIn("viewportOffsetTop + scaledContentHeight + readBodyBottomSpacing()", rendered)
+        self.assertIn("height: frameHeight", rendered)
+
+    def test_pdf_preview_converts_office_file_to_inline_pdf(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "report.docx").write_bytes(b"office-bytes")
+        pdf_bytes = b"%PDF-1.4\n% test\n%%EOF"
+        editor = self.create_handrive_editor("office_pdf_preview_editor")
+        self.client.force_login(editor)
+
+        with mock.patch("main.handrive_views.convert_office_bytes_to_pdf", return_value=pdf_bytes) as convert_mock:
+            response = self.client.get(
+                reverse("main:handrive_api_pdf_preview"),
+                data={"path": "report.docx"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertEqual(response["Content-Disposition"], "inline; filename*=UTF-8''report.pdf")
+        self.assertEqual(response.content, pdf_bytes)
+        convert_mock.assert_called_once_with(".docx", b"office-bytes", "report.docx")
+
     def test_docs_api_preview_returns_unsupported_message_for_binary_file(self):
         handrive_root = Path(settings.MEDIA_ROOT) / "docs"
         (handrive_root / "notes.txt").write_bytes(b"\xff\xfe\x00\x00")
@@ -3989,7 +4923,24 @@ class HandriveAccessRuleTests(TestCase):
         html = response.content.decode("utf-8")
         self.assertIn('class="handrive-media handrive-media-image"', html)
         self.assertIn("/handrive/api/download?path=sample.png", html)
+        self.assertIn('id="handrive-print-btn"', html)
         self.assertNotIn("/ko/docs/write?path=sample.png", html)
+
+    def test_docs_view_hides_print_button_for_video_file(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "sample.mkv").write_bytes(b"\x1a\x45\xdf\xa3")
+        editor = self.create_handrive_editor("video_viewer")
+        self.client.force_login(editor)
+
+        response = self.client.get(
+            reverse("main:handrive_view_lang", kwargs={"ui_lang": "ko", "doc_path": "sample.mkv"})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn('class="handrive-media handrive-media-video"', html)
+        self.assertIn("<video", html)
+        self.assertNotIn('id="handrive-print-btn"', html)
 
     def test_docs_api_preview_renders_audio_preview_for_media_file(self):
         handrive_root = Path(settings.MEDIA_ROOT) / "docs"

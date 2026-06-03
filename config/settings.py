@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
-from storage_profile import get_disc_mode, get_forgejo_repos_root, get_media_root
+from storage_profile import get_disc_mode, get_forgejo_repos_root, get_github_repo_cache_root, get_media_root
 
 mimetypes.add_type("application/javascript", ".js", strict=True)
 mimetypes.add_type("application/javascript", ".mjs", strict=True)
@@ -219,10 +219,12 @@ FORGEJO_REPOS_ROOT  = str(get_forgejo_repos_root(DISC))
 GITHUB_APP_CLIENT_ID     = load_optional_secret("GITHUB_APP_CLIENT_ID", "")
 GITHUB_APP_CLIENT_SECRET = load_optional_secret("GITHUB_APP_CLIENT_SECRET", "")
 GITHUB_AUTH_CALLBACK_URL = load_optional_secret("GITHUB_AUTH_CALLBACK_URL", "")
+GITHUB_AUTH_SCOPE        = load_optional_secret("GITHUB_AUTH_SCOPE", "repo user:email")
 GITHUB_AUTH_AUTHORIZE_URL = load_optional_secret("GITHUB_AUTH_AUTHORIZE_URL", "https://github.com/login/oauth/authorize")
 GITHUB_AUTH_TOKEN_URL     = load_optional_secret("GITHUB_AUTH_TOKEN_URL", "https://github.com/login/oauth/access_token")
 GITHUB_API_BASE_URL       = load_optional_secret("GITHUB_API_BASE_URL", "https://api.github.com")
 GITHUB_API_VERSION        = load_optional_secret("GITHUB_API_VERSION", "2022-11-28")
+GITHUB_REPO_CACHE_ROOT    = str(get_github_repo_cache_root(DISC))
 
 # MinIO (S3 호환 오브젝트 스토리지) 설정
 MINIO_ENDPOINT        = load_optional_secret("MINIO_ENDPOINT", "localhost:9000")

@@ -92,14 +92,30 @@
         var canEditEntry = Boolean(targetEntry.can_edit);
         var canShowEditEntry = Boolean(canEditEntry && isEditableHandriveFileEntry(targetEntry));
         var canWriteChildren = Boolean(targetEntry.type === "dir" && targetEntry.can_write_children);
+        function isGitVirtualDirectoryEntry(entry) {
+            return Boolean(
+                entry &&
+                entry.type === "dir" &&
+                (
+                    entry.git_repo ||
+                    entry.github_repo ||
+                    entry.git_branch_root ||
+                    entry.git_repo_branch ||
+                    entry.is_git_virtual
+                )
+            );
+        }
         var isGitVirtualEntry = Boolean(
             targetEntry.git_repo ||
+            targetEntry.github_repo ||
             targetEntry.git_branch_root ||
             targetEntry.git_repo_branch ||
             targetEntry.is_git_virtual
         );
-        var canDownloadAllFiles = targets.length > 0 && targets.every(function (entry) {
-            return Boolean(entry) && !entry.isCurrentFolder && entry.type === "file";
+        var canDownloadAllEntries = targets.length > 0 && targets.every(function (entry) {
+            return Boolean(entry) &&
+                !entry.isCurrentFolder &&
+                (entry.type === "file" || (entry.type === "dir" && !isGitVirtualDirectoryEntry(entry)));
         });
         var isPublicWriteFile = Boolean(targetEntry.type === "file" && targetEntry.is_public_write);
         var isSingleRepoDirectory = Boolean(!isMultiSelection && targetEntry.type === "dir" && targetEntry.git_repo);
@@ -107,6 +123,12 @@
         var canManageRepo = Boolean(repoMeta && repoMeta.can_manage);
         var canDeleteRepo = Boolean(repoMeta && repoMeta.can_delete);
         var hasGitRepo = Boolean(targetEntry.git_repo);
+        var isGithubVirtualEntry = Boolean(
+            targetEntry.github_repo ||
+            targetEntry.git_provider === "github" ||
+            (targetEntry.git_repo && targetEntry.git_repo.provider === "github")
+        );
+        var hasShareablePath = Boolean(targetEntry.path || !isCurrentFolder);
 
         if (isMultiSelection) {
             var canDeleteAll = targets.every(function (entry) {
@@ -116,15 +138,15 @@
                 return Boolean(entry && entry.type === "dir" && entry.git_repo);
             });
             flags.open = true;
-            flags.download = canDownloadAllFiles;
+            flags.download = canDownloadAllEntries;
             flags.deleteEntry = canDeleteAll && !includesRepoDirectory;
             return flags;
         }
 
         flags.open = !isCurrentFolder;
-        flags.download = !isCurrentFolder && !isDirectory;
+        flags.download = !isCurrentFolder && (!isDirectory || !isGitVirtualDirectoryEntry(targetEntry));
         flags.extractArchive = Boolean(!isCurrentFolder && !isMultiSelection && targetEntry.is_archive && targetEntry.can_extract);
-        flags.share = !isCurrentFolder && canEditEntry && !isGitVirtualEntry;
+        flags.share = canEditEntry && !isGitVirtualEntry && hasShareablePath;
         flags.upload = isDirectory && canWriteChildren && !hasGitRepo;
         flags.createArchive = Boolean(isDirectory && !isCurrentFolder && canEditEntry && !hasGitRepo && !isGitVirtualEntry);
         flags.edit = !isDirectory && canShowEditEntry;

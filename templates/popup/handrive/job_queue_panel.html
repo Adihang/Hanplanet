@@ -1,3 +1,4 @@
+{% load template_utils %}
 <aside class="handrive-job-queue-panel" id="handrive-job-queue-panel" aria-live="polite" hidden>
     <header class="handrive-job-queue-head">
         <div class="handrive-job-queue-head-main">
@@ -11,11 +12,11 @@
                 type="button"
                 aria-controls="handrive-job-queue-list"
                 aria-expanded="true"
-                aria-label="{% include 'partials/ui_i18n.html' with key='collapse' %}"
-                title="{% include 'partials/ui_i18n.html' with key='collapse' %}">
+                aria-label="{% include_trimmed 'partials/ui_i18n.html' key='collapse' %}"
+                title="{% include_trimmed 'partials/ui_i18n.html' key='collapse' %}">
                 <span class="handrive-job-queue-toggle-icon" aria-hidden="true"></span>
             </button>
-            <button class="handrive-job-queue-close" id="handrive-job-queue-close" type="button" aria-label="{% include 'partials/ui_i18n.html' with key='close' %}" title="{% include 'partials/ui_i18n.html' with key='close' %}">
+            <button class="handrive-job-queue-close" id="handrive-job-queue-close" type="button" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='close' %}" title="{% include_trimmed 'partials/ui_i18n.html' key='close' %}">
                 <span class="handrive-job-queue-close-icon" aria-hidden="true"></span>
             </button>
         </div>

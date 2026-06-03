@@ -1,4 +1,20 @@
+{% load template_utils %}
 <div class="ui-auth-account-menu" data-auth-account-menu data-popup-fit-bottom hidden>
+    <button
+        type="button"
+        class="ui-auth-account-github-btn{% if account_github_connected %} is-connected{% endif %}"
+        data-auth-github-trigger
+        data-github-enabled="{{ account_github_auth_enabled|yesno:'1,0' }}"
+        data-github-connected="{{ account_github_connected|yesno:'1,0' }}"
+        data-github-connect-url="{{ account_github_connect_url }}"
+        data-github-repos-url="{{ account_github_repos_url }}"
+        title="{{ account_github_connect_label }}"
+        aria-label="{{ account_github_connect_label }}"
+    >
+        <svg class="ui-auth-account-github-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="currentColor">
+            <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.01.08-2.11 0 0 .67-.21 2.2.82a7.53 7.53 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.91.08 2.11.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+    </button>
     {% if user.is_superuser %}
     <a href="/admin" class="ui-auth-account-admin-btn" title="Admin" aria-label="Admin"
     ><span class="ui-auth-account-admin-icon" aria-hidden="true"></span></a>
@@ -34,8 +50,8 @@
                 type="button"
                 class="ui-auth-account-profile-image-button"
                 data-root-account-profile-image-trigger
-                aria-label="{% include 'partials/ui_i18n.html' with key='change_profile_image' %}"
-                title="{% include 'partials/ui_i18n.html' with key='change_profile_image' %}"
+                aria-label="{% include_trimmed 'partials/ui_i18n.html' key='change_profile_image' %}"
+                title="{% include_trimmed 'partials/ui_i18n.html' key='change_profile_image' %}"
             >
                 {% if account_profile_image_url %}
                 <img class="ui-auth-account-profile-image" src="{{ account_profile_image_url }}" alt="{{ account_display_name|default:user.get_username }}">
@@ -57,7 +73,7 @@
             type="button"
             class="ui-auth-account-menu-item"
             data-auth-account-logout
-            data-confirm-message="{% include 'partials/ui_i18n.html' with key='logout_confirm' %}"
+            data-confirm-message="{% include_trimmed 'partials/ui_i18n.html' key='logout_confirm' %}"
         >
             {% include 'partials/ui_i18n.html' with key='logout' %}
         </button>

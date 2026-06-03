@@ -1,4 +1,4 @@
-{% load static static_versioned %}
+{% load static static_versioned template_utils %}
 
 <!doctype html>
 <html lang="ko">
@@ -40,7 +40,7 @@
                     <div class="input_score">
                         <div class="input_name">
                             <input class="ui-input input_score_name" id="input_score_name" type="text"
-                                   placeholder="{% include 'partials/ui_i18n.html' with key='stratagem_name_placeholder' %}"
+                                   placeholder="{% include_trimmed 'partials/ui_i18n.html' key='stratagem_name_placeholder' %}"
                                    {% if account_display_name %}value="{{ account_display_name }}"{% endif %}>
                             <button class="ui-btn ui-btn-primary input_score_button" id="input_score_button" type="button">등록</button>
                         </div>

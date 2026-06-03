@@ -593,11 +593,13 @@ Hanplanet은 `config/secrets.json`의 `DISC` 값으로 저장소 위치를 전�
   - 운영 기본값
   - `MEDIA_ROOT` -> `/Volumes/HANPLANET_HDD/Hanplanet/media`
   - `FORGEJO_REPOS_ROOT` -> `/Volumes/HANPLANET_HDD/Hanplanet/forgejo-repos`
+  - `GITHUB_REPO_CACHE_ROOT` -> `/Volumes/HANPLANET_HDD/Hanplanet/github-repo-cache`
   - gunicorn / gitea / celery는 외장 스토리지를 기다린 뒤 실행
 - `DISC = "ssd"`
   - 외장 디스크 장애 시 임시 운영 모드
   - `MEDIA_ROOT` -> `/Users/imhanbyeol/temporary/hanplanet-ssd/media`
   - `FORGEJO_REPOS_ROOT` -> `/Users/imhanbyeol/temporary/hanplanet-ssd/forgejo-repos`
+  - `GITHUB_REPO_CACHE_ROOT` -> `/Users/imhanbyeol/temporary/hanplanet-ssd/github-repo-cache`
   - 외장 스토리지 대기 없이 바로 실행
 
 예시:
@@ -607,6 +609,8 @@ Hanplanet은 `config/secrets.json`의 `DISC` 값으로 저장소 위치를 전�
   "DISC": "ssd"
 }
 ```
+
+GitHub repo 캐시 위치도 `DISC` 값에서 파생되며 별도 secret 설정은 사용하지 않습니다.
 
 `DISC`를 바꾼 뒤 즉시 적용하려면:
 

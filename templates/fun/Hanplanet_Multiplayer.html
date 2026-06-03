@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load static_versioned %}
+{% load static_versioned template_utils %}
 {% block body_class %}ui-page hanplanet-multiplayer-page{% endblock %}
 {% block extra_head %}
 <link rel="stylesheet" type="text/css" href="{% static_v 'css/fun/bumpercar_spiky/multiplayer.css' %}">
@@ -36,14 +36,14 @@
             data-encounter-stage-two-label="{{ game_encounter_stage_two_label }}"
             data-encounter-stage-three-label="{{ game_encounter_stage_three_label }}"
             data-encounter-finale-label="{{ game_encounter_finale_label }}"
-            data-connecting-label="{% include 'partials/ui_i18n.html' with key='multiplayer_connecting' %}"
-            data-connected-label="{% include 'partials/ui_i18n.html' with key='multiplayer_connected' %}"
-            data-disconnected-label="{% include 'partials/ui_i18n.html' with key='multiplayer_disconnected' %}"
-            data-death-title-label="{% include 'partials/ui_i18n.html' with key='multiplayer_death_modal_title' %}"
-            data-death-game-over-title-label="{% include 'partials/ui_i18n.html' with key='multiplayer_death_modal_game_over_title' %}"
-            data-death-respawn-label="{% include 'partials/ui_i18n.html' with key='multiplayer_death_modal_respawn' %}"
-            data-death-no-lives-label="{% include 'partials/ui_i18n.html' with key='multiplayer_death_modal_no_lives' %}"
-            data-death-spectate-empty-label="{% include 'partials/ui_i18n.html' with key='multiplayer_death_modal_spectate_empty' %}"
+            data-connecting-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_connecting' %}"
+            data-connected-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_connected' %}"
+            data-disconnected-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_disconnected' %}"
+            data-death-title-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_death_modal_title' %}"
+            data-death-game-over-title-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_death_modal_game_over_title' %}"
+            data-death-respawn-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_death_modal_respawn' %}"
+            data-death-no-lives-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_death_modal_no_lives' %}"
+            data-death-spectate-empty-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_death_modal_spectate_empty' %}"
         >
             <section class="multiplayer-grid" aria-label="{{ multiplayer_title }}">
                 <div class="multiplayer-canvas-wrap">
@@ -54,8 +54,8 @@
                                         class="multiplayer-start-audio-button"
                                         type="button"
                                         data-game-music-mute-toggle
-                                        aria-label="{% include 'partials/ui_i18n.html' with key='multiplayer_music_mute' %}"
-                                        title="{% include 'partials/ui_i18n.html' with key='multiplayer_music_mute' %}"
+                                        aria-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_music_mute' %}"
+                                        title="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_music_mute' %}"
                                     >
                                         {% include 'partials/ui_i18n.html' with key='multiplayer_music_button' %}
                                     </button>
@@ -63,12 +63,12 @@
                                         class="multiplayer-start-audio-button"
                                         type="button"
                                         data-game-sfx-mute-toggle
-                                        aria-label="{% include 'partials/ui_i18n.html' with key='multiplayer_sfx_mute' %}"
-                                        title="{% include 'partials/ui_i18n.html' with key='multiplayer_sfx_mute' %}"
+                                        aria-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_sfx_mute' %}"
+                                        title="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_sfx_mute' %}"
                                     >
                                         {% include 'partials/ui_i18n.html' with key='multiplayer_sfx_button' %}
                                     </button>
-                                    <label class="multiplayer-start-volume-wrap" aria-label="{% include 'partials/ui_i18n.html' with key='multiplayer_sound_volume' %}">
+                                    <label class="multiplayer-start-volume-wrap" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_sound_volume' %}">
                                         <input
                                             class="multiplayer-start-volume-slider"
                                             type="range"
@@ -91,7 +91,7 @@
                                 <p class="multiplayer-start-skin-hint">
                                     {% include 'partials/ui_i18n.html' with key='multiplayer_start_skin_hint' %}
                                 </p>
-                                <button class="multiplayer-start-character-button" type="button" data-game-skin-open aria-label="{% include 'partials/ui_i18n.html' with key='multiplayer_skin_open' %}">
+                                <button class="multiplayer-start-character-button" type="button" data-game-skin-open aria-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_skin_open' %}">
                                     <img
                                         class="multiplayer-start-character"
                                         src="{{ bumpercar_default_skin.assets.preview_icon_url }}"
@@ -127,7 +127,7 @@
                                             min="0"
                                             step="1"
                                             value="{{ gameplay_settings.npc_max_health|default:20 }}"
-                                            aria-label="{% include 'partials/ui_i18n.html' with key='multiplayer_set_npc_health' %}"
+                                            aria-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_set_npc_health' %}"
                                         >
                                         <button class="ui-btn ui-btn-primary multiplayer-primary-btn multiplayer-npc-health-submit" type="submit">
                                             {% include 'partials/ui_i18n.html' with key='multiplayer_set_npc_health' %}
@@ -171,7 +171,7 @@
                                         class="multiplayer-top-button"
                                         type="button"
                                         data-game-mobile-controls-toggle
-                                        aria-label="{% include 'partials/ui_i18n.html' with key='multiplayer_joystick_toggle' %}"
+                                        aria-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_joystick_toggle' %}"
                                     >
                                         <img
                                             class="multiplayer-top-button-image"
@@ -184,7 +184,7 @@
                                         class="multiplayer-top-button"
                                         type="button"
                                         data-game-fullscreen-toggle
-                                        aria-label="{% include 'partials/ui_i18n.html' with key='multiplayer_rotate_mobile' %}"
+                                        aria-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_rotate_mobile' %}"
                                     >
                                         <svg aria-hidden="true" viewBox="0 0 24 24" class="multiplayer-top-button-icon">
                                             <path d="M8 6.5h8a1.5 1.5 0 0 1 1.5 1.5v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -196,7 +196,7 @@
                                 </div>
                                 <canvas class="multiplayer-minimap-canvas" width="160" height="160" data-game-minimap aria-label="Player minimap"></canvas>
                             </div>
-                            <div class="multiplayer-lives" data-game-shared-lives aria-label="{% include 'partials/ui_i18n.html' with key='bumpercar_shared_lives' %}">
+                            <div class="multiplayer-lives" data-game-shared-lives aria-label="{% include_trimmed 'partials/ui_i18n.html' key='bumpercar_shared_lives' %}">
                                 <img class="multiplayer-lives-icon" src="{% static_v 'media/Spikip/speaki_default/icon/main.png' %}" alt="">
                                 <span class="multiplayer-lives-count" data-game-shared-lives-count>{{ multiplayer_hud_counter_text|default:"x 3" }}</span>
                             </div>
@@ -217,7 +217,7 @@
                         type="button"
                         data-game-fullscreen-exit
                         hidden
-                        aria-label="{% include 'partials/ui_i18n.html' with key='multiplayer_exit_fullscreen' %}"
+                        aria-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_exit_fullscreen' %}"
                     >
                         <svg aria-hidden="true" viewBox="0 0 24 24" class="multiplayer-fullscreen-exit-icon">
                             <path d="M14.5 5.5L8 12l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>

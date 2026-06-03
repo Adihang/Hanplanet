@@ -1,6 +1,16 @@
 from django.contrib import admin
 
-from .models import Career, Hobby, PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject, Project, Project_Tag
+from .models import (
+    Career,
+    Hobby,
+    PortfolioActionButton,
+    PortfolioCareer,
+    PortfolioCoverLetter,
+    PortfolioProfile,
+    PortfolioProject,
+    Project,
+    Project_Tag,
+)
 
 
 @admin.register(Project)
@@ -56,3 +66,12 @@ class PortfolioActionButtonAdmin(admin.ModelAdmin):
     search_fields = ["user__username", "label", "url"]
     list_filter = ["user"]
     ordering = ["user__username", "order", "id"]
+
+
+@admin.register(PortfolioCoverLetter)
+class PortfolioCoverLetterAdmin(admin.ModelAdmin):
+    list_display = ["user", "company", "name", "slug", "updated_at"]
+    search_fields = ["user__username", "company", "name", "content"]
+    list_filter = ["user"]
+    readonly_fields = ["slug", "created_at", "updated_at"]
+    ordering = ["user__username", "company", "id"]

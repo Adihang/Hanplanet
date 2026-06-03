@@ -78,6 +78,407 @@
         return baseUrl + separator + encodeURIComponent(key) + "=" + encodeURIComponent(value || "");
     }
 
+    function getAbsoluteResourceUrl(rawUrl) {
+        const url = String(rawUrl || "").trim();
+        if (!url) {
+            return "";
+        }
+        try {
+            return new URL(url, window.location.href).href;
+        } catch (error) {
+            return url;
+        }
+    }
+
+    function getPrintStylesheetLinks() {
+        return Array.from(document.querySelectorAll('link[rel~="stylesheet"][href]'))
+            .map(function (link) {
+                return '<link rel="stylesheet" href="' + escapeHtml(link.href) + '">';
+            })
+            .join("");
+    }
+
+    function waitForPrintImages(printDocument, timeoutMs) {
+        const images = Array.from(printDocument.querySelectorAll("img"));
+        if (!images.length) {
+            return Promise.resolve();
+        }
+        const imagePromises = images.map(function (image) {
+            if (image.complete && image.naturalWidth > 0) {
+                return Promise.resolve();
+            }
+            if (typeof image.decode === "function") {
+                return image.decode().catch(function () {});
+            }
+            return new Promise(function (resolve) {
+                image.addEventListener("load", resolve, { once: true });
+                image.addEventListener("error", resolve, { once: true });
+            });
+        });
+        return Promise.race([
+            Promise.all(imagePromises),
+            new Promise(function (resolve) {
+                window.setTimeout(resolve, timeoutMs || 3000);
+            }),
+        ]);
+    }
+
+    function sanitizeStyleTextForPrint(styleText) {
+        return String(styleText || "").replace(/<\/style/gi, "<\\/style");
+    }
+
+    function sanitizePrintHtmlFragment(rootElement) {
+        if (!rootElement) {
+            return;
+        }
+        rootElement.querySelectorAll("script,iframe,object,embed,form").forEach(function (node) {
+            node.remove();
+        });
+        rootElement.querySelectorAll("*").forEach(function (node) {
+            Array.from(node.attributes || []).forEach(function (attribute) {
+                const name = String(attribute.name || "").toLowerCase();
+                const value = String(attribute.value || "").trim();
+                if (
+                    name.indexOf("on") === 0 ||
+                    name === "srcdoc" ||
+                    ((name === "href" || name === "src") && /^javascript:/i.test(value))
+                ) {
+                    node.removeAttribute(attribute.name);
+                }
+            });
+        });
+    }
+
+    function extractSrcdocForOfficePrint(srcdoc) {
+        const source = String(srcdoc || "").trim();
+        if (!source || typeof DOMParser === "undefined") {
+            return null;
+        }
+        const parsed = new DOMParser().parseFromString(source, "text/html");
+        if (!parsed || !parsed.body) {
+            return null;
+        }
+        sanitizePrintHtmlFragment(parsed.body);
+        const cssText = Array.from(parsed.querySelectorAll("style"))
+            .map(function (styleNode) {
+                return styleNode.textContent || "";
+            })
+            .join("\n");
+        const bodyHtml = parsed.body.innerHTML || "";
+        if (!bodyHtml.trim()) {
+            return null;
+        }
+        return {
+            bodyHtml: bodyHtml,
+            cssText: sanitizeStyleTextForPrint(cssText),
+        };
+    }
+
+    function getOfficePrintStyle(options) {
+        const settings = options || {};
+        const pageRule = settings.isSheet
+            ? "@page{size:landscape;margin:10mm;}@media print{@page{size:landscape;margin:10mm;}}"
+            : "@page{margin:12mm;}@media print{@page{margin:12mm;}}";
+        return pageRule
+            + "body.handrive-print-office-body{overflow:visible;padding:0;background:#fff;color:#111;}"
+            + ".handrive-print-office-live{display:block;width:100%;max-width:100%;overflow:visible;margin:0;padding:0;background:#fff;color:#111;font-family:Inter,KakaoBigFont,'Noto Sans KR',Arial,sans-serif;font-size:12px;line-height:1.35;}"
+            + ".handrive-print-office-live *{box-sizing:border-box;}"
+            + ".handrive-print-office-live #handrive-office-zoom-viewport,.handrive-print-office-live #handrive-office-zoom-content{display:block;width:auto;height:auto;min-width:0;min-height:0;max-width:none;max-height:none;overflow:visible;transform:none;}"
+            + ".handrive-print-office-live table{width:100%;max-width:100%;border-collapse:collapse;border-spacing:0;table-layout:auto;break-inside:auto;page-break-inside:auto;background:#fff;}"
+            + ".handrive-print-office-live col{width:auto;}"
+            + ".handrive-print-office-live tr{break-inside:avoid;page-break-inside:avoid;}"
+            + ".handrive-print-office-live td,.handrive-print-office-live th{border:1px solid #d0d7de;padding:4px 6px;vertical-align:top;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;background:#fff;color:#111;}"
+            + ".handrive-print-office-live th{font-weight:700;background:#f6f8fa;}"
+            + ".handrive-print-office-live img{max-width:100%;height:auto;}"
+            + ".handrive-print-office-live p{margin:0 0 8px;}"
+            + ".handrive-print-office-live h1,.handrive-print-office-live h2,.handrive-print-office-live h3{break-after:avoid;page-break-after:avoid;}";
+    }
+
+    function writePrintDocument(printWindow, options) {
+        const settings = options || {};
+        const title = String(settings.title || document.title || "HanDrive").trim() || "HanDrive";
+        const bodyClass = String(settings.bodyClass || "").trim();
+        const bodyHtml = String(settings.bodyHtml || "");
+        const extraStyle = String(settings.extraStyle || "");
+        printWindow.document.open();
+        printWindow.document.write(
+            "<!doctype html><html><head><meta charset=\"utf-8\">"
+            + "<title>" + escapeHtml(title) + "</title>"
+            + "<base href=\"" + escapeHtml(window.location.href) + "\">"
+            + getPrintStylesheetLinks()
+            + "<style>"
+            + "html,body{margin:0;padding:0;background:#fff;color:#111;}"
+            + "body.handrive-print-document{display:block;min-height:0;overflow:visible;padding:12mm;box-sizing:border-box;}"
+            + ".handrive-print-rendered{display:block;width:100%;max-width:none;height:auto;min-height:0;max-height:none;overflow:visible;margin:0;padding:0;border:0;border-radius:0;background:#fff;color:#111;box-shadow:none;}"
+            + ".handrive-print-rendered pre,.handrive-print-rendered code{white-space:pre-wrap;overflow:visible;}"
+            + ".handrive-print-rendered table{max-width:none;break-inside:auto;page-break-inside:auto;}"
+            + ".handrive-print-rendered.ui-markdown table,.handrive-print-rendered.handrive-markdown table,.handrive-print-rendered .ui-markdown table,.handrive-print-rendered .handrive-markdown table{width:calc(100% - 1px);max-width:calc(100% - 1px);box-sizing:border-box;}"
+            + ".handrive-print-rendered.ui-markdown th,.handrive-print-rendered.ui-markdown td,.handrive-print-rendered.handrive-markdown th,.handrive-print-rendered.handrive-markdown td,.handrive-print-rendered .ui-markdown th,.handrive-print-rendered .ui-markdown td,.handrive-print-rendered .handrive-markdown th,.handrive-print-rendered .handrive-markdown td{box-sizing:border-box;}"
+            + ".handrive-print-rendered.handrive-office,.handrive-print-rendered .handrive-office{display:block;overflow:visible;max-width:100%;}"
+            + ".handrive-print-rendered.handrive-office .handrive-office-sheet-section,.handrive-print-rendered.handrive-office .handrive-office-slide,.handrive-print-rendered .handrive-office .handrive-office-sheet-section,.handrive-print-rendered .handrive-office .handrive-office-slide{break-inside:auto;page-break-inside:auto;border:1px solid #d0d7de;border-radius:0;background:#fff;}"
+            + ".handrive-print-rendered.handrive-office .handrive-office-table-wrap,.handrive-print-rendered .handrive-office .handrive-office-table-wrap{overflow:visible;max-width:100%;}"
+            + ".handrive-print-rendered.handrive-office .handrive-office-table,.handrive-print-rendered .handrive-office .handrive-office-table{width:100%;max-width:100%;min-width:0;table-layout:auto;}"
+            + ".handrive-print-rendered.handrive-office .handrive-office-table td,.handrive-print-rendered.handrive-office .handrive-office-table th,.handrive-print-rendered .handrive-office .handrive-office-table td,.handrive-print-rendered .handrive-office .handrive-office-table th{box-sizing:border-box;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;}"
+            + ".handrive-print-rendered tr,.handrive-print-rendered img{break-inside:avoid;page-break-inside:avoid;}"
+            + ".handrive-print-rendered .handrive-office-table-wrap,.handrive-print-rendered .handrive-html-live-wrap,.handrive-print-rendered .handrive-media-wrap{overflow:visible;max-width:none;}"
+            + ".handrive-print-image{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 24mm);margin:0;}"
+            + ".handrive-print-image img{display:block;max-width:100%;max-height:calc(100vh - 24mm);object-fit:contain;}"
+            + ".handrive-print-file-card{font-family:Inter,KakaoBigFont,'Noto Sans KR',Arial,sans-serif;border:1px solid #d0d0d0;border-radius:8px;padding:18px;}"
+            + ".handrive-print-file-card-title{font-size:18px;font-weight:700;margin:0 0 8px;color:#111;}"
+            + ".handrive-print-file-card-meta{font-size:13px;color:#555;word-break:break-all;}"
+            + ".handrive-print-frame-body{padding:0;}"
+            + ".handrive-print-frame{position:fixed;inset:0;width:100%;height:100%;border:0;background:#fff;}"
+            + "@page{margin:12mm;}"
+            + "@media print{body.handrive-print-document{padding:0}.handrive-print-frame-body{padding:0}@page{margin:12mm}}"
+            + extraStyle
+            + "</style></head><body class=\"handrive-page handrive-print-document " + escapeHtml(bodyClass) + "\">"
+            + bodyHtml
+            + "</body></html>"
+        );
+        printWindow.document.close();
+    }
+
+    function openPrintWindow(options) {
+        const printWindow = window.open("", "_blank");
+        if (!printWindow) {
+            window.alert(t("print_popup_blocked", "인쇄 창을 열 수 없습니다. 팝업 차단을 해제해주세요."));
+            return null;
+        }
+        writePrintDocument(printWindow, options);
+        return printWindow;
+    }
+
+    function runPrintWindow(printWindow, waitForImages) {
+        if (!printWindow) {
+            return;
+        }
+        const printDocument = printWindow.document;
+        let printed = false;
+        const triggerPrint = function () {
+            if (printed) {
+                return;
+            }
+            printed = true;
+            const readyPromise = waitForImages
+                ? waitForPrintImages(printDocument, 3500)
+                : Promise.resolve();
+            readyPromise.then(function () {
+                printWindow.focus();
+                printWindow.print();
+            });
+        };
+        printWindow.addEventListener("afterprint", function () {
+            window.setTimeout(function () {
+                try {
+                    printWindow.close();
+                } catch (error) {}
+            }, 250);
+        }, { once: true });
+        if (printDocument.readyState === "complete") {
+            window.setTimeout(triggerPrint, 120);
+        } else {
+            printWindow.addEventListener("load", function () {
+                window.setTimeout(triggerPrint, 120);
+            }, { once: true });
+            window.setTimeout(triggerPrint, 1800);
+        }
+    }
+
+    function printFrameSource(frameSource, title) {
+        const sourceUrl = getAbsoluteResourceUrl(frameSource);
+        if (!sourceUrl) {
+            return false;
+        }
+        const printWindow = openPrintWindow({
+            title: title,
+            bodyClass: "handrive-print-frame-body",
+            bodyHtml: '<iframe class="handrive-print-frame" src="' + escapeHtml(sourceUrl) + '"></iframe>',
+            extraStyle: "@page{margin:0;}@media print{@page{margin:0;}}",
+        });
+        if (!printWindow) {
+            return false;
+        }
+        const frame = printWindow.document.querySelector(".handrive-print-frame");
+        let printed = false;
+        const triggerFramePrint = function () {
+            if (printed) {
+                return;
+            }
+            printed = true;
+            try {
+                frame.contentWindow.focus();
+                frame.contentWindow.print();
+            } catch (error) {
+                printWindow.focus();
+                printWindow.print();
+            }
+        };
+        printWindow.addEventListener("afterprint", function () {
+            window.setTimeout(function () {
+                try {
+                    printWindow.close();
+                } catch (error) {}
+            }, 250);
+        }, { once: true });
+        if (frame) {
+            frame.addEventListener("load", function () {
+                window.setTimeout(triggerFramePrint, 500);
+            }, { once: true });
+        }
+        window.setTimeout(triggerFramePrint, 2200);
+        return true;
+    }
+
+    function printSrcdocFrame(frame, title) {
+        if (!frame) {
+            return false;
+        }
+        const srcdoc = frame.getAttribute("srcdoc") || "";
+        if (!srcdoc) {
+            return false;
+        }
+        const rect = frame.getBoundingClientRect();
+        const frameHeight = Math.max(900, Math.ceil(Number(rect.height || 0)));
+        const printWindow = openPrintWindow({
+            title: title,
+            bodyClass: "handrive-print-frame-body",
+            bodyHtml: '<iframe class="handrive-print-frame" sandbox="allow-scripts" srcdoc="' + escapeHtml(srcdoc) + '"></iframe>',
+            extraStyle:
+                ".handrive-print-frame{position:static;display:block;width:100%;height:" + frameHeight + "px;min-height:100vh;}"
+                + "@media print{.handrive-print-frame{height:" + frameHeight + "px;min-height:100vh;}}",
+        });
+        runPrintWindow(printWindow, false);
+        return Boolean(printWindow);
+    }
+
+    function printOfficeSrcdocFrame(frame, title, options) {
+        if (!frame) {
+            return false;
+        }
+        const parsedOfficeDocument = extractSrcdocForOfficePrint(frame.getAttribute("srcdoc") || "");
+        if (!parsedOfficeDocument) {
+            return false;
+        }
+        const officeStyle = parsedOfficeDocument.cssText + "\n" + getOfficePrintStyle(options);
+        const printWindow = openPrintWindow({
+            title: title,
+            bodyClass: "handrive-print-office-body",
+            bodyHtml: '<section class="handrive-print-office-live">' + parsedOfficeDocument.bodyHtml + "</section>",
+            extraStyle: officeStyle,
+        });
+        runPrintWindow(printWindow, true);
+        return Boolean(printWindow);
+    }
+
+    function cloneRenderedContentForPrint(contentElement) {
+        if (!contentElement) {
+            return "";
+        }
+        const clone = contentElement.cloneNode(true);
+        clone.removeAttribute("id");
+        clone.querySelectorAll("script,.handrive-list-preview-loading,.handrive-frame-loading,.handrive-office-frame-loading").forEach(function (node) {
+            node.remove();
+        });
+        clone.querySelectorAll("video,audio").forEach(function (mediaElement) {
+            mediaElement.setAttribute("controls", "");
+            mediaElement.removeAttribute("autoplay");
+        });
+        clone.classList.add("handrive-print-rendered");
+        return clone.outerHTML;
+    }
+
+    function printRenderedHtmlContent(contentElement, title) {
+        const printWindow = openPrintWindow({
+            title: title,
+            bodyClass: "handrive-print-content-body",
+            bodyHtml: cloneRenderedContentForPrint(contentElement),
+        });
+        runPrintWindow(printWindow, true);
+        return Boolean(printWindow);
+    }
+
+    function printImageUrl(imageUrl, title) {
+        const safeUrl = getAbsoluteResourceUrl(imageUrl);
+        if (!safeUrl) {
+            return false;
+        }
+        const printWindow = openPrintWindow({
+            title: title,
+            bodyClass: "handrive-print-image-body",
+            bodyHtml: '<figure class="handrive-print-image"><img src="' + escapeHtml(safeUrl) + '" alt="' + escapeHtml(title || "") + '"></figure>',
+        });
+        runPrintWindow(printWindow, true);
+        return Boolean(printWindow);
+    }
+
+    function printFileCard(title, sourceUrl) {
+        const safeTitle = String(title || "HanDrive").trim() || "HanDrive";
+        const safeSourceUrl = getAbsoluteResourceUrl(sourceUrl);
+        const printWindow = openPrintWindow({
+            title: safeTitle,
+            bodyClass: "handrive-print-file-card-body",
+            bodyHtml:
+                '<section class="handrive-print-file-card">'
+                + '<h1 class="handrive-print-file-card-title">' + escapeHtml(safeTitle) + '</h1>'
+                + (safeSourceUrl ? '<div class="handrive-print-file-card-meta">' + escapeHtml(safeSourceUrl) + '</div>' : "")
+                + "</section>",
+        });
+        runPrintWindow(printWindow, false);
+        return Boolean(printWindow);
+    }
+
+    function printRenderedHandriveFile(contentElement, options) {
+        const settings = options || {};
+        const title = String(settings.title || document.title || "HanDrive").trim() || "HanDrive";
+        if (!contentElement) {
+            return false;
+        }
+
+        const isOfficeContent = contentElement.classList.contains("handrive-office");
+        const officePdfUrl = String(settings.officePdfUrl || "").trim();
+        if (isOfficeContent && officePdfUrl && printFrameSource(officePdfUrl, title)) {
+            return true;
+        }
+
+        const pdfFrame = contentElement.querySelector(".handrive-media-pdf-element");
+        if (pdfFrame && printFrameSource(pdfFrame.getAttribute("src") || pdfFrame.src, title)) {
+            return true;
+        }
+
+        const liveFrame = contentElement.querySelector(".handrive-html-live-frame");
+        if (
+            liveFrame &&
+            isOfficeContent &&
+            printOfficeSrcdocFrame(liveFrame, title, {
+                isSheet: contentElement.classList.contains("handrive-office-sheet"),
+                isPresentation: contentElement.classList.contains("handrive-office-presentation"),
+                isWord: contentElement.classList.contains("handrive-office-word"),
+            })
+        ) {
+            return true;
+        }
+        if (liveFrame && printSrcdocFrame(liveFrame, title)) {
+            return true;
+        }
+
+        const imageElement = contentElement.querySelector(".handrive-media-image-element");
+        if (imageElement && printImageUrl(imageElement.currentSrc || imageElement.src, title)) {
+            return true;
+        }
+
+        const videoElement = contentElement.querySelector("video");
+        if (videoElement) {
+            return false;
+        }
+
+        const audioElement = contentElement.querySelector("audio");
+        if (audioElement) {
+            return printFileCard(title, audioElement.currentSrc || audioElement.src || settings.sourceUrl || "");
+        }
+
+        return printRenderedHtmlContent(contentElement, title);
+    }
+
     // CSRF 토큰을 가져오는 함수
     function getCsrfToken() {
         const meta = document.querySelector('meta[name="csrf-token"]');
@@ -127,6 +528,18 @@
                 return encodeURIComponent(segment);
             })
             .join("/");
+    }
+
+    function decodeBreadcrumbLabel(label) {
+        const source = String(label || "");
+        if (source.indexOf("%") < 0) {
+            return source;
+        }
+        try {
+            return decodeURIComponent(source);
+        } catch (error) {
+            return source;
+        }
     }
 
     // 목록 URL을 구축하는 함수
@@ -427,6 +840,22 @@
     // page.js 는 상태와 이벤트 wiring 을 담당하고, 순수 UI/flow 로직은 helper 에 위임한다.
     const handrivePageHelpers = window.HandrivePageHelpers || {};
     const getPathFileExtension = handrivePageHelpers.getPathFileExtension || function () { return ""; };
+    const HANDRIVE_OFFICE_PDF_PRINT_EXTENSIONS = new Set([".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]);
+
+    function isHandriveOfficePdfPrintPath(pathValue) {
+        return HANDRIVE_OFFICE_PDF_PRINT_EXTENSIONS.has(getPathFileExtension(pathValue || ""));
+    }
+
+    function buildHandrivePdfPreviewUrl(pdfPreviewApiUrl, pathValue) {
+        const baseUrl = String(pdfPreviewApiUrl || "").trim();
+        const normalizedPath = String(pathValue || "").trim();
+        if (!baseUrl || (!normalizedPath && !hasSharedContext())) {
+            return "";
+        }
+        const query = new URLSearchParams({ path: normalizedPath }).toString();
+        return appendSharedQuery(query ? baseUrl + "?" + query : baseUrl);
+    }
+
     const getFileIconKey = handrivePageHelpers.getFileIconKey || function () { return "file"; };
     const isGenericFileIconKey = handrivePageHelpers.isGenericFileIconKey || function () { return false; };
     const handriveContextMenuHelpers = window.HandriveContextMenuHelpers || {};
@@ -440,6 +869,17 @@
     const createTypeMarker = handriveListRenderHelpers.createTypeMarker || function () { return document.createElement("span"); };
     const handriveNavigationHelpers = window.HandriveNavigationHelpers || {};
     const buildNavigationBreadcrumbItems = handriveNavigationHelpers.buildBreadcrumbItems || function () { return []; };
+    const formatNavigationPathLabel = handriveNavigationHelpers.formatPathLabel || function (pathValue) {
+        const normalized = normalizePath(pathValue, true);
+        if (!normalized) {
+            return "";
+        }
+        return "/" + normalized
+            .split("/")
+            .filter(Boolean)
+            .map(decodeBreadcrumbLabel)
+            .join("/");
+    };
     const getCachedDirectoryEntries = handriveNavigationHelpers.getCachedEntries || function () { return []; };
     const loadDirectoryEntries = handriveNavigationHelpers.loadDirectory || function () { return Promise.resolve([]); };
     const refreshDirectoryEntries = handriveNavigationHelpers.refreshCurrentDirectory || function () { return Promise.resolve(); };
@@ -497,6 +937,7 @@
     const runMoveQueueOperation = handriveQueueOperationHelpers.runMoveOperationQueueItem || function () { return Promise.resolve(); };
 
     const HANDRIVE_MEDIA_AUDIO_VOLUME_STORAGE_KEY = "handrive-media-audio-volume";
+    const HANDRIVE_MEDIA_LOOP_STORAGE_KEY = "handrive-media-loop-enabled";
 
     function getStoredMediaAudioVolume() {
         // Persist preview-audio volume across files so repeated media previews feel consistent.
@@ -524,6 +965,110 @@
         } catch (error) {
             // ignore storage failures
         }
+    }
+
+    function getStoredMediaLoopEnabled() {
+        try {
+            return Boolean(window.localStorage && window.localStorage.getItem(HANDRIVE_MEDIA_LOOP_STORAGE_KEY) === "1");
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function storeMediaLoopEnabled(enabled) {
+        try {
+            if (window.localStorage) {
+                window.localStorage.setItem(HANDRIVE_MEDIA_LOOP_STORAGE_KEY, enabled ? "1" : "0");
+            }
+        } catch (error) {
+            // ignore storage failures
+        }
+        window.dispatchEvent(new CustomEvent("handrive:media-loop-change", {
+            detail: { enabled: Boolean(enabled) },
+        }));
+    }
+
+    function syncMediaLoopButton(button, enabled) {
+        if (!button) {
+            return;
+        }
+        const isEnabled = Boolean(enabled);
+        button.classList.toggle("is-loop-enabled", isEnabled);
+        button.setAttribute("aria-pressed", isEnabled ? "true" : "false");
+        button.setAttribute("aria-label", isEnabled
+            ? t("media_loop_on", textByLang("연속재생 켜짐", "Loop playback on"))
+            : t("media_loop_off", textByLang("연속재생 꺼짐", "Loop playback off")));
+        button.setAttribute("title", isEnabled
+            ? t("media_loop_on", textByLang("연속재생 켜짐", "Loop playback on"))
+            : t("media_loop_off", textByLang("연속재생 꺼짐", "Loop playback off")));
+        const checkPath = button.querySelector(".handrive-loop-check-path");
+        if (checkPath) {
+            checkPath.hidden = !isEnabled;
+        }
+    }
+
+    let mediaLoopGlobalListenerBound = false;
+
+    function syncAudioLoopElements(enabled) {
+        document.querySelectorAll(".handrive-media-audio-element").forEach(function (audioElement) {
+            if (!(audioElement instanceof HTMLMediaElement)) {
+                return;
+            }
+            const button = audioElement
+                .closest(".handrive-media-audio-wrap")
+                ?.querySelector(".handrive-media-loop-button");
+            audioElement.loop = Boolean(enabled);
+            syncMediaLoopButton(button, enabled);
+        });
+    }
+
+    function ensureMediaLoopGlobalListener() {
+        if (mediaLoopGlobalListenerBound) {
+            return;
+        }
+        mediaLoopGlobalListenerBound = true;
+        window.addEventListener("handrive:media-loop-change", function (event) {
+            const enabled = Boolean(event && event.detail && event.detail.enabled);
+            syncAudioLoopElements(enabled);
+        });
+    }
+
+    function bindMediaLoopElement(mediaElement, button) {
+        if (!(mediaElement instanceof HTMLMediaElement) || !button) {
+            return;
+        }
+        const applyLoopState = function (enabled) {
+            mediaElement.loop = Boolean(enabled);
+            syncMediaLoopButton(button, enabled);
+        };
+        ensureMediaLoopGlobalListener();
+        applyLoopState(getStoredMediaLoopEnabled());
+        if (button.dataset.handriveLoopBound !== "1") {
+            button.dataset.handriveLoopBound = "1";
+            button.addEventListener("click", function () {
+                storeMediaLoopEnabled(!mediaElement.loop);
+            });
+        }
+    }
+
+    function buildMediaLoopButton() {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "handrive-media-loop-button";
+        button.innerHTML = [
+            '<span class="handrive-media-loop-icon" aria-hidden="true">',
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ',
+            'stroke-linecap="round" stroke-linejoin="round">',
+            '<path d="M17 2l4 4-4 4"></path>',
+            '<path d="M3 11V9a4 4 0 0 1 4-4h14"></path>',
+            '<path d="M7 22l-4-4 4-4"></path>',
+            '<path d="M21 13v2a4 4 0 0 1-4 4H3"></path>',
+            '<path class="handrive-loop-check-path" d="M8.4 12.8l2.4 2.4 5.2-5.7" hidden></path>',
+            "</svg>",
+            "</span>",
+        ].join("");
+        syncMediaLoopButton(button, false);
+        return button;
     }
 
     function resetAudioPlaybackPosition(audioElement) {
@@ -561,6 +1106,15 @@
             audioElement.preload = "metadata";
             audioElement.autoplay = false;
             resetAudioPlaybackPosition(audioElement);
+            const wrap = audioElement.closest(".handrive-media-audio-wrap");
+            if (wrap) {
+                let loopButton = wrap.querySelector(".handrive-media-loop-button");
+                if (!loopButton) {
+                    loopButton = buildMediaLoopButton();
+                    audioElement.insertAdjacentElement("afterend", loopButton);
+                }
+                bindMediaLoopElement(audioElement, loopButton);
+            }
             if (audioElement.dataset.handriveVolumeBound === "1") {
                 return;
             }
@@ -947,12 +1501,76 @@
         targetElement.classList.add("handrive-plain-text");
     }
 
+    function bindHandrivePdfFrameLoading(container) {
+        if (!container || !(container instanceof Element)) {
+            return;
+        }
+        const frames = Array.prototype.slice.call(container.querySelectorAll(".handrive-media-pdf-element"))
+            .filter(function (frame) {
+                return frame && frame.dataset.handriveFrameLoadingBound !== "1";
+            });
+        if (!frames.length) {
+            return;
+        }
+
+        let overlay = Array.prototype.slice.call(container.children).find(function (child) {
+            return child && child.classList && child.classList.contains("handrive-frame-loading");
+        });
+        if (!overlay) {
+            overlay = document.createElement("div");
+            overlay.className = "handrive-frame-loading";
+            overlay.setAttribute("role", "status");
+            overlay.setAttribute("aria-label", t("list_preview_loading", "미리보기를 불러오는 중..."));
+            overlay.innerHTML = '<span class="handrive-list-preview-loading-spinner" aria-hidden="true"></span>';
+            container.appendChild(overlay);
+        }
+        overlay.hidden = false;
+
+        let hidden = false;
+        const hideOverlay = function () {
+            if (hidden) {
+                return;
+            }
+            hidden = true;
+            overlay.hidden = true;
+        };
+
+        let pendingFrameCount = frames.length;
+        const markFrameReady = function () {
+            pendingFrameCount -= 1;
+            if (pendingFrameCount <= 0) {
+                hideOverlay();
+            }
+        };
+
+        frames.forEach(function (frame) {
+            frame.dataset.handriveFrameLoadingBound = "1";
+            frame.addEventListener("load", markFrameReady, { once: true });
+            frame.addEventListener("error", markFrameReady, { once: true });
+            try {
+                const frameDocument = frame.contentDocument;
+                const frameDocumentUrl = frameDocument ? String(frameDocument.URL || "") : "";
+                if (
+                    frameDocument &&
+                    frameDocument.readyState === "complete" &&
+                    frameDocumentUrl &&
+                    frameDocumentUrl !== "about:blank"
+                ) {
+                    window.requestAnimationFrame(markFrameReady);
+                }
+            } catch (error) {}
+        });
+        window.setTimeout(hideOverlay, 12000);
+    }
+
     // HTML을 이스케이프하는 함수
     function escapeHtml(value) {
         return String(value || "")
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
     }
 
     function calculateCursorPosition(textarea, position) {
@@ -1617,7 +2235,7 @@
             }
 
             var settings = options || {};
-            target.textContent = settings.targetPath || "";
+            target.textContent = settings.targetText || decodeBreadcrumbLabel(settings.targetPath || "");
             input.value = String(settings.initialValue || "");
             modal.hidden = false;
             isOpen = true;
@@ -2077,7 +2695,7 @@
     }
 
     function initializeHandriveBreadcrumbOverflow() {
-        const breadcrumbsList = Array.from(document.querySelectorAll(".handrive-subtitle-wrap .ui-path-breadcrumbs"));
+        const breadcrumbsList = Array.from(document.querySelectorAll(".handrive-subtitle-wrap .ui-path-breadcrumbs, .handrive-toolbar-left > .ui-path-breadcrumbs"));
         if (!breadcrumbsList.length) {
             return;
         }
@@ -2230,6 +2848,7 @@
         const uploadCancelApiUrl = root.dataset.uploadCancelApiUrl;
         const downloadApiUrl = root.dataset.downloadApiUrl;
         const previewApiUrl = root.dataset.previewApiUrl;
+        const pdfPreviewApiUrl = root.dataset.pdfPreviewApiUrl || "";
         const aclApiUrl = root.dataset.aclApiUrl;
         const aclOptionsApiUrl = root.dataset.aclOptionsApiUrl;
         const urlShareApiUrl = root.dataset.urlShareApiUrl;
@@ -2264,6 +2883,7 @@
         const previewNavBgPrev = previewNavBg ? previewNavBg.querySelector("span:first-child") : null;
         const previewNavBgNext = previewNavBg ? previewNavBg.querySelector("span:last-child") : null;
         const previewDownloadButton = document.getElementById("handrive-list-preview-download-btn");
+        const previewPrintButton = document.getElementById("handrive-list-preview-print-btn");
         const previewEditButton = document.getElementById("handrive-list-preview-edit-btn");
         const previewDeleteButton = document.getElementById("handrive-list-preview-delete-btn");
         const previewUrlShareButton = document.getElementById("handrive-list-preview-url-share-btn");
@@ -2481,10 +3101,14 @@
         const currentDirIsGitRepoRoot = root.dataset.currentDirIsGitRepoRoot === "1";
         const currentDirRequiresCommitMessage = root.dataset.currentDirRequiresCommitMessage === "1";
         const currentDirGitBranchRoot = root.dataset.currentDirGitBranchRoot === "1";
+        const currentDirGitCommitId = String(root.dataset.currentDirGitCommitId || "").trim();
         const currentDirGitCommitMessage = String(root.dataset.currentDirGitCommitMessage || "").trim();
         const currentDirGitCommitAuthorUsername = String(root.dataset.currentDirGitCommitAuthorUsername || "").trim();
         const currentDirModifiedDisplay = String(root.dataset.currentDirModifiedDisplay || "").trim();
         const currentDirSizeDisplay = String(root.dataset.currentDirSizeDisplay || "").trim();
+        const currentDirIsUrlOnly = root.dataset.currentDirIsUrlOnly === "1";
+        const currentDirShareUrl = String(root.dataset.currentDirShareUrl || "").trim();
+        const currentDirShareIsInherited = root.dataset.currentDirShareIsInherited === "1";
         const accountProfileImageUrl = String(root.dataset.accountProfileImageUrl || "").trim();
         const handriveRootLabel = (root.dataset.handriveRootLabel || breadcrumbRootLabel || "HanDrive").trim() || "HanDrive";
         const effectiveRootLabel = handriveRootLabel;
@@ -2496,7 +3120,10 @@
         let currentDirGitRepo = getJsonScriptData("handrive-current-dir-git-repo", null);
 
         async function promptCommitMessage(targetPath) {
-            return requestCommitMessageDialog({ targetPath: targetPath || "" });
+            return requestCommitMessageDialog({
+                targetPath: targetPath || "",
+                targetText: getHandrivePathLabel(targetPath || ""),
+            });
         }
 
         function requiresCommitMessageForDirectory(pathValue) {
@@ -2527,10 +3154,14 @@
                 is_git_repo_root: currentDirIsGitRepoRoot,
                 requires_commit_message: currentDirRequiresCommitMessage,
                 git_branch_root: currentDirGitBranchRoot,
+                git_commit_id: currentDirGitCommitId,
                 git_commit_message: currentDirGitCommitMessage,
                 git_commit_author_username: currentDirGitCommitAuthorUsername,
                 modified_display: currentDirModifiedDisplay,
                 size_display: currentDirSizeDisplay,
+                is_url_only: currentDirIsUrlOnly,
+                share_url: currentDirShareUrl,
+                share_is_inherited: currentDirShareIsInherited,
                 write_acl_labels: Array.isArray(currentDirWriteAclLabels) ? currentDirWriteAclLabels : [],
                 git_repo: currentDirGitRepo,
             },
@@ -2548,6 +3179,7 @@
             expandedFolders: new Set(),
             openingFolderPath: "",
             openingAnimationOrder: 0,
+            suppressOpeningAnimation: false,
             directoryCache: new Map(),
             directoryMetaCache: new Map(),
             aclOptionsLoaded: false,
@@ -2584,7 +3216,7 @@
             pendingContextUploadDir: "",
             searchQuery: "",
             searchResults: null,
-            listSortKey: "",
+            listSortKey: "type",
             listSortDirection: "asc",
             searchGeneration: 0,
             navigationGeneration: 0,
@@ -2593,6 +3225,186 @@
             syncExpandedFolders: new Set(),
         };
         state.directoryMetaCache.set(currentDir, state.currentDirMeta);
+
+        const githubRepoLabelByPath = new Map();
+        const githubRepoLabelById = new Map();
+
+        function normalizeGithubRepoId(repoId) {
+            const idText = String(repoId || "").trim();
+            if (!idText) {
+                return "";
+            }
+            return idText.replace(/^github:/, "");
+        }
+
+        function resolveGithubRepoIdFromGitRepo(gitRepo) {
+            if (!gitRepo || gitRepo.provider !== "github") {
+                return "";
+            }
+            return normalizeGithubRepoId(gitRepo.id || gitRepo.github_repo_id);
+        }
+
+        function resolveGithubRepoLabelFromGitRepo(gitRepo) {
+            if (!gitRepo || gitRepo.provider !== "github") {
+                return "";
+            }
+            return String(gitRepo.name || gitRepo.repo_name || gitRepo.full_name || "").trim();
+        }
+
+        function resolveGithubRepoLabelFromEntry(entry) {
+            if (!entry) {
+                return "";
+            }
+            if (entry.github_repo) {
+                return String(entry.github_repo.name || entry.name || entry.github_repo.full_name || "").trim();
+            }
+            return resolveGithubRepoLabelFromGitRepo(entry.git_repo);
+        }
+
+        function resolveGithubRepoIdFromEntry(entry) {
+            if (!entry) {
+                return "";
+            }
+            if (entry.github_repo) {
+                return normalizeGithubRepoId(entry.github_repo.id);
+            }
+            return resolveGithubRepoIdFromGitRepo(entry.git_repo);
+        }
+
+        function resolveGithubRepoIdFromVirtualPath(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            if (!normalizedPath) {
+                return "";
+            }
+            const parts = normalizedPath.split("/").filter(Boolean);
+            for (let index = 0; index < parts.length; index += 1) {
+                const match = /^\.github-repo-(\d+)(?:-\d+)?$/.exec(parts[index]);
+                if (match) {
+                    return match[1];
+                }
+            }
+            return "";
+        }
+
+        function resolveGithubVirtualRootPath(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            if (!normalizedPath) {
+                return "";
+            }
+            const parts = normalizedPath.split("/").filter(Boolean);
+            const rootIndex = parts.findIndex(function (part) {
+                return /^\.github-repo-\d+(?:-\d+)?$/.test(part);
+            });
+            if (rootIndex < 0) {
+                return "";
+            }
+            return parts.slice(0, rootIndex + 1).join("/");
+        }
+
+        function registerGithubRepoLabel(pathValue, label) {
+            const normalizedPath = normalizePath(pathValue, true);
+            const normalizedLabel = String(label || "").trim();
+            if (!normalizedPath || !normalizedLabel) {
+                return;
+            }
+            githubRepoLabelByPath.set(normalizedPath, normalizedLabel);
+            const repoId = resolveGithubRepoIdFromVirtualPath(normalizedPath);
+            if (repoId) {
+                githubRepoLabelById.set(repoId, normalizedLabel);
+            }
+        }
+
+        function registerGithubRepoLabelById(repoId, label) {
+            const normalizedId = normalizeGithubRepoId(repoId);
+            const normalizedLabel = String(label || "").trim();
+            if (!normalizedId || !normalizedLabel) {
+                return;
+            }
+            githubRepoLabelById.set(normalizedId, normalizedLabel);
+        }
+
+        function registerGithubRepoLabelsFromEntries(entries) {
+            if (!Array.isArray(entries)) {
+                return;
+            }
+            entries.forEach(function (entry) {
+                const label = resolveGithubRepoLabelFromEntry(entry);
+                registerGithubRepoLabelById(resolveGithubRepoIdFromEntry(entry), label);
+                if (label && entry && entry.path) {
+                    registerGithubRepoLabel(entry.path, label);
+                }
+            });
+        }
+
+        function registerGithubRepoLabelFromMeta(meta) {
+            const safeMeta = meta || {};
+            const label = resolveGithubRepoLabelFromGitRepo(safeMeta.git_repo);
+            if (!label) {
+                return;
+            }
+            registerGithubRepoLabelById(resolveGithubRepoIdFromGitRepo(safeMeta.git_repo), label);
+            const metaPath = normalizePath(safeMeta.path || state.currentDir, true);
+            const repoRootPath = safeMeta.is_git_repo_root
+                ? metaPath
+                : resolveGithubVirtualRootPath(metaPath);
+            registerGithubRepoLabel(repoRootPath, label);
+        }
+
+        function resolveGithubBreadcrumbLabel(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            if (!normalizedPath) {
+                return "";
+            }
+
+            const registeredLabel = githubRepoLabelByPath.get(normalizedPath);
+            if (registeredLabel) {
+                return registeredLabel;
+            }
+
+            const repoRootPath = resolveGithubVirtualRootPath(normalizedPath);
+            if (repoRootPath && normalizedPath === repoRootPath) {
+                const idLabel = githubRepoLabelById.get(resolveGithubRepoIdFromVirtualPath(repoRootPath));
+                if (idLabel) {
+                    registerGithubRepoLabel(repoRootPath, idLabel);
+                    return idLabel;
+                }
+            }
+
+            const cachedMeta = state.directoryMetaCache.get(normalizedPath);
+            if (cachedMeta && cachedMeta.is_git_repo_root) {
+                const cachedLabel = resolveGithubRepoLabelFromGitRepo(cachedMeta.git_repo);
+                if (cachedLabel) {
+                    registerGithubRepoLabel(normalizedPath, cachedLabel);
+                    return cachedLabel;
+                }
+            }
+
+            const currentMeta = state.currentDirMeta || {};
+            const currentLabel = resolveGithubRepoLabelFromGitRepo(currentMeta.git_repo);
+            const currentRepoRootPath = resolveGithubVirtualRootPath(currentMeta.path || state.currentDir);
+            if (currentLabel && currentRepoRootPath && normalizedPath === currentRepoRootPath) {
+                registerGithubRepoLabel(currentRepoRootPath, currentLabel);
+                return currentLabel;
+            }
+
+            return "";
+        }
+
+        function applyGithubBreadcrumbLabels(crumbs) {
+            if (!Array.isArray(crumbs)) {
+                return [];
+            }
+            return crumbs.map(function (crumb) {
+                const githubLabel = resolveGithubBreadcrumbLabel(crumb && crumb.path);
+                if (!githubLabel) {
+                    return crumb;
+                }
+                return Object.assign({}, crumb, { label: githubLabel });
+            });
+        }
+
+        registerGithubRepoLabelsFromEntries(initialEntries);
+        registerGithubRepoLabelFromMeta(state.currentDirMeta);
 
         let activeListEditorSuggestions = [];
         let activeListEditorSuggestionIndex = -1;
@@ -3753,6 +4565,12 @@
                 return explicitLabel;
             }
             if (safeEntry.type === "dir") {
+                if (safeEntry.github_repo) {
+                    return "GitHub";
+                }
+                if (safeEntry.git_repo && safeEntry.git_repo.provider === "github") {
+                    return "GitHub";
+                }
                 if (safeEntry.git_repo) {
                     return t("repository_badge", "Repository");
                 }
@@ -3798,6 +4616,11 @@
         }
 
         function resolveEntryCommitMeta(entry) {
+            const safeEntry = entry || {};
+            return String(safeEntry.git_commit_id || safeEntry.git_commit_hash || safeEntry.git_commit_message || "").trim();
+        }
+
+        function resolveEntryCommitSubject(entry) {
             return String(entry && entry.git_commit_message || "").trim();
         }
 
@@ -3810,6 +4633,12 @@
             const repoMeta = safeEntry.git_repo || safeEntry.git_repo_meta || null;
             if (repoMeta && !repoMeta.is_owner) {
                 return String(repoMeta.owner_username || "").trim();
+            }
+            if (safeEntry.github_repo) {
+                return String(safeEntry.github_repo.owner || "").trim();
+            }
+            if (safeEntry.git_repo && safeEntry.git_repo.provider === "github") {
+                return String(safeEntry.git_repo.owner_username || "").trim();
             }
             return "";
         }
@@ -3899,16 +4728,19 @@
             }
             const safeEntry = entry || {};
             if (safeEntry.type === "dir") {
+                if (safeEntry.github_repo || (safeEntry.git_repo && safeEntry.git_repo.provider === "github")) {
+                    return "000:github";
+                }
                 if (safeEntry.git_repo) {
-                    return "000:repo";
+                    return "001:repo";
                 }
                 if (safeEntry.git_branch_root) {
-                    return "001:branch";
+                    return "002:branch";
                 }
                 if (safeEntry.is_map_folder) {
-                    return "002:map-folder";
+                    return "003:map-folder";
                 }
-                return "003:folder";
+                return "004:folder";
             }
             const extension = getEntryFileExtension(safeEntry) || getPathFileExtension(safeEntry.path || safeEntry.name || "");
             const normalizedExtension = String(extension || "").replace(/^\./, "").toLocaleLowerCase();
@@ -4077,13 +4909,21 @@
         }
 
         function setPreviewActionTargets(entry) {
+            const entryPath = entry ? normalizePath(entry.path, true) : "";
             previewSetActionTargets({
                 entry: entry,
                 previewRenderMode: state.activePreviewRenderMode || "",
                 previewDownloadButton: previewDownloadButton,
+                previewPrintButton: previewPrintButton,
                 previewEditButton: previewEditButton,
                 previewDeleteButton: previewDeleteButton,
                 previewUrlShareButton: previewUrlShareButton,
+                previewCanPrint: Boolean(
+                    entryPath &&
+                    state.activeRenderedPreviewPath === entryPath &&
+                    state.activePreviewRenderMode !== "unsupported" &&
+                    state.activePreviewRenderMode !== "media_video"
+                ),
                 urlShareApiUrl: urlShareApiUrl,
                 isPreviewableFileEntry: isPreviewableFileEntry,
                 isEditableHandriveFileEntry: isEditableHandriveFileEntry,
@@ -4827,10 +5667,14 @@
 
         function navigateToPreviewEntry(entry) {
             if (!entry) return;
-            state.selectedPaths = new Set([entry.path]);
-            state.selectedPath = entry.path;
+            const previousActivePreviewPath = state.activePreviewPath;
+            applySelection([entry.path], {
+                primaryPath: entry.path,
+                anchorPath: entry.path,
+                skipPreview: true,
+            });
             state.activePreviewPath = normalizePath(entry.path, true);
-            renderList({ skipPreview: true });
+            syncEntryRowSelectedStates([previousActivePreviewPath, entry.path]);
             loadPreviewForEntry(entry)
                 .then(function () { return updatePreviewNavButtons(entry); })
                 .catch(alertError);
@@ -4854,11 +5698,13 @@
         }
 
         function clearPreviewPane() {
+            const previousActivePreviewPath = state.activePreviewPath;
             state.activePreviewPath = "";
             state.activeRenderedPreviewPath = "";
             state.activePreviewRenderMode = "";
             state.previewRequestToken += 1;
             state.previewImageZoom = 1;
+            syncEntryRowSelectedStates([previousActivePreviewPath]);
             setPreviewVisibility(false);
             if (previewNavBgPrev) previewNavBgPrev.hidden = true;
             if (previewNavBgNext) previewNavBgNext.hidden = true;
@@ -4971,6 +5817,7 @@
                 syncPreviewImageZoom: syncPreviewImageZoom,
                 t: t,
             });
+            bindHandrivePdfFrameLoading(previewContent);
             initializePreviewVideoPlayers(previewContent);
             releasePreviewBodyHeightWhenRendered(renderMode);
         }
@@ -5023,10 +5870,10 @@
                 clearPreviewPane();
                 return;
             }
-            // 새 파일로 전환 시 activePreviewPath를 먼저 업데이트하고 재렌더해서
-            // 이전 파일의 선택 효과가 남지 않도록 함
+            // 새 파일로 전환 시 이전/현재 row 상태만 갱신해서 큰 목록 전체를 다시 그리지 않는다.
+            const previousActivePreviewPath = state.activePreviewPath;
             state.activePreviewPath = entryPath;
-            renderList({ skipPreview: true });
+            syncEntryRowSelectedStates([previousActivePreviewPath, entryPath]);
             loadPreviewForEntry(entry)
                 .then(function () { return updatePreviewNavButtons(entry); })
                 .catch(alertError);
@@ -5070,8 +5917,34 @@
             return [entry];
         }
 
+        function syncEntryRowSelectedStates(pathValues) {
+            const pathsToSync = new Set();
+            const addPath = function (pathValue) {
+                try {
+                    pathsToSync.add(normalizePath(pathValue, true));
+                } catch (error) {}
+            };
+            (Array.isArray(pathValues) ? pathValues : []).forEach(addPath);
+            state.selectedPaths.forEach(addPath);
+            addPath(state.selectedPath);
+            addPath(state.activePreviewPath);
+
+            pathsToSync.forEach(function (pathValue) {
+                const row = state.entryRowByPath.get(pathValue);
+                if (!row) {
+                    return;
+                }
+                row.classList.toggle(
+                    "is-selected",
+                    state.selectedPaths.has(pathValue) || pathValue === state.activePreviewPath
+                );
+            });
+        }
+
         function applySelection(pathValues, options) {
             const settings = options || {};
+            const previousSelectedPaths = Array.from(state.selectedPaths || []);
+            const previousSelectedPath = state.selectedPath || "";
             const nextSelectedPaths = new Set();
             (Array.isArray(pathValues) ? pathValues : []).forEach(function (pathValue) {
                 try {
@@ -5109,12 +5982,16 @@
             }
 
             if (settings.render === false) {
+                syncEntryRowSelectedStates(previousSelectedPaths.concat([previousSelectedPath]));
                 updatePathCurrentSize();
                 return;
             }
             renderPathBreadcrumbs(state.selectedPath || state.currentDir);
-            renderList({ skipPreview: Boolean(settings.skipPreview) });
+            syncEntryRowSelectedStates(previousSelectedPaths.concat([previousSelectedPath]));
             updatePathCurrentSize();
+            if (!settings.skipPreview) {
+                syncPreviewFromSelection();
+            }
         }
 
         function updatePathCurrentSize() {
@@ -5269,27 +6146,27 @@
                     },
                 ];
                 if (effectivePath === normalizedSharedRootPath) {
-                    return crumbs;
+                    return applyGithubBreadcrumbLabels(crumbs);
                 }
                 const childPath = effectivePath.slice(normalizedSharedRootPath.length + 1);
                 const childParts = childPath.split("/").filter(Boolean);
                 childParts.forEach(function (part, index) {
                     const relativeChildPath = childParts.slice(0, index + 1).join("/");
                     crumbs.push({
-                        label: part,
+                        label: decodeBreadcrumbLabel(part),
                         path: normalizedSharedRootPath + "/" + relativeChildPath,
                         url: sharedBaseUrl.replace(/\/$/, "") + "/" + encodePathSegments(relativeChildPath),
                         isCurrent: index === childParts.length - 1,
                     });
                 });
-                return crumbs;
+                return applyGithubBreadcrumbLabels(crumbs);
             }
-            return buildNavigationBreadcrumbItems(pathValue, {
+            return applyGithubBreadcrumbLabels(buildNavigationBreadcrumbItems(pathValue, {
                 effectiveRootLabel: effectiveRootLabel,
                 isSuperuser: isSuperuser,
                 normalizePath: normalizePath,
                 scopedHomeDir: scopedHomeDir,
-            });
+            }));
         }
 
         function renderPathBreadcrumbs(pathValue) {
@@ -5312,13 +6189,74 @@
         }
 
         async function loadDirectory(dirPath) {
-            return loadDirectoryEntries(dirPath, {
+            const entries = await loadDirectoryEntries(dirPath, {
                 getCachedEntries: getCachedEntries,
                 listApiUrl: appendSharedQuery(listApiUrl),
                 normalizePath: normalizePath,
                 requestJson: requestJson,
                 state: state,
             });
+            registerGithubRepoLabelsFromEntries(entries);
+            registerGithubRepoLabelFromMeta(state.directoryMetaCache.get(normalizePath(dirPath, true)));
+            return entries;
+        }
+
+        const delayedEntryRowLoadingCounts = new WeakMap();
+
+        function startDelayedEntryRowLoading(entryOrPath, options) {
+            const settings = options || {};
+            const row = settings.row || state.entryRowByPath.get(
+                normalizePath(
+                    typeof entryOrPath === "string"
+                        ? entryOrPath
+                        : (entryOrPath && entryOrPath.path) || "",
+                    true
+                )
+            );
+            if (!row) {
+                return null;
+            }
+            let active = false;
+            let cancelled = false;
+            const timerId = window.setTimeout(function () {
+                if (cancelled) {
+                    return;
+                }
+                active = true;
+                const nextCount = (delayedEntryRowLoadingCounts.get(row) || 0) + 1;
+                delayedEntryRowLoadingCounts.set(row, nextCount);
+                if (nextCount === 1) {
+                    row.classList.add("is-delayed-loading");
+                    row.setAttribute("aria-busy", "true");
+                }
+            }, 500);
+
+            return function stopDelayedEntryRowLoading() {
+                cancelled = true;
+                window.clearTimeout(timerId);
+                if (!active) {
+                    return;
+                }
+                const nextCount = Math.max(0, (delayedEntryRowLoadingCounts.get(row) || 1) - 1);
+                if (nextCount > 0) {
+                    delayedEntryRowLoadingCounts.set(row, nextCount);
+                    return;
+                }
+                delayedEntryRowLoadingCounts.delete(row);
+                row.classList.remove("is-delayed-loading");
+                row.removeAttribute("aria-busy");
+            };
+        }
+
+        async function withDelayedEntryRowLoading(entryOrPath, task, options) {
+            const stopLoading = startDelayedEntryRowLoading(entryOrPath, options);
+            try {
+                return await task();
+            } finally {
+                if (typeof stopLoading === "function") {
+                    stopLoading();
+                }
+            }
         }
 
         function syncCurrentDirectoryMetaFromCache(dirPath) {
@@ -5326,6 +6264,7 @@
             const cachedMeta = state.directoryMetaCache.get(normalizedDirPath);
             if (cachedMeta) {
                 applyCurrentDirectoryMeta(cachedMeta);
+                registerGithubRepoLabelFromMeta(cachedMeta);
             }
         }
 
@@ -5394,8 +6333,11 @@
 
             state.navigationGeneration += 1;
             const navigationGeneration = state.navigationGeneration;
+            const stopRowLoading = settings.sourceEntry || settings.sourceRow
+                ? startDelayedEntryRowLoading(settings.sourceEntry || normalizedDirPath, { row: settings.sourceRow || null })
+                : null;
             resetDirectoryScopedUi();
-            setListLoading(true);
+            setListLoading(!stopRowLoading);
             try {
                 await loadDirectory(normalizedDirPath);
                 if (navigationGeneration !== state.navigationGeneration) {
@@ -5416,6 +6358,9 @@
                 }
                 throw error;
             } finally {
+                if (typeof stopRowLoading === "function") {
+                    stopRowLoading();
+                }
                 if (navigationGeneration === state.navigationGeneration) {
                     setListLoading(false);
                 }
@@ -5518,12 +6463,12 @@
             if (!normalized) {
                 return "/handrive";
             }
-            const parts = normalized.split("/").filter(Boolean);
-            const hiddenRootPrefixes = new Set(["users", "groups"]);
-            const displayParts = hiddenRootPrefixes.has(parts[0]) && parts.length > 1
-                ? parts.slice(1)
-                : parts;
-            return "/" + displayParts.join("/");
+            return formatNavigationPathLabel(normalized, {
+                buildBreadcrumbItems: buildBreadcrumbItems,
+                emptyLabel: "/handrive",
+                leadingSlash: true,
+                normalizePath: normalizePath,
+            });
         }
 
         function getParentDirectory(pathValue) {
@@ -6443,7 +7388,7 @@
         async function resolveClipboardUploadFilenames(files, targetDirPath) {
             const resolvedFiles = [];
             const targetLabel = targetDirPath
-                ? t("clipboard_filename_target_prefix", "업로드 위치") + ": " + targetDirPath
+                ? t("clipboard_filename_target_prefix", "업로드 위치") + ": " + getHandrivePathLabel(targetDirPath)
                 : t("clipboard_filename_target_root", "업로드 위치: HanDrive");
             for (let index = 0; index < files.length; index += 1) {
                 const file = files[index];
@@ -6803,6 +7748,16 @@
         }
 
         function getCurrentFolderName(pathValue) {
+            const currentMeta = getCurrentDirMeta();
+            if (
+                currentMeta &&
+                currentMeta.is_git_repo_root &&
+                currentMeta.git_repo &&
+                currentMeta.git_repo.provider === "github" &&
+                currentMeta.git_repo.repo_name
+            ) {
+                return currentMeta.git_repo.repo_name;
+            }
             const normalized = normalizePath(pathValue, true);
             if (!normalized) {
                 return effectiveRootLabel;
@@ -6827,6 +7782,7 @@
             state.currentDir = normalizedPath;
             state.currentDirMeta = nextMeta;
             state.directoryMetaCache.set(normalizedPath, nextMeta);
+            registerGithubRepoLabelFromMeta(nextMeta);
             root.dataset.currentDir = normalizedPath;
             root.dataset.currentDirIsRoot = nextMeta.is_root ? "1" : "0";
             root.dataset.currentDirCanEdit = nextMeta.can_edit ? "1" : "0";
@@ -6835,10 +7791,14 @@
             root.dataset.currentDirIsGitRepoRoot = nextMeta.is_git_repo_root ? "1" : "0";
             root.dataset.currentDirRequiresCommitMessage = nextMeta.requires_commit_message ? "1" : "0";
             root.dataset.currentDirGitBranchRoot = nextMeta.git_branch_root ? "1" : "0";
+            root.dataset.currentDirGitCommitId = nextMeta.git_commit_id || "";
             root.dataset.currentDirGitCommitMessage = nextMeta.git_commit_message || "";
             root.dataset.currentDirGitCommitAuthorUsername = nextMeta.git_commit_author_username || "";
             root.dataset.currentDirModifiedDisplay = nextMeta.modified_display || "";
             root.dataset.currentDirSizeDisplay = nextMeta.size_display || "";
+            root.dataset.currentDirIsUrlOnly = nextMeta.is_url_only ? "1" : "0";
+            root.dataset.currentDirShareUrl = nextMeta.share_url || "";
+            root.dataset.currentDirShareIsInherited = nextMeta.share_is_inherited ? "1" : "0";
             currentDirGitRepo = nextMeta.git_repo || null;
         }
 
@@ -6848,6 +7808,7 @@
                 path: state.currentDir,
                 type: "dir",
                 isCurrentFolder: true,
+                is_root: Boolean(currentDirMeta.is_root),
                 can_edit: Boolean(currentDirMeta.can_edit),
                 can_write_children: Boolean(currentDirMeta.can_write_children),
                 can_delete: Boolean(currentDirMeta.git_repo && currentDirMeta.is_git_repo_root),
@@ -6856,13 +7817,81 @@
                 git_repo_meta: currentDirMeta.git_repo || null,
                 git_branch_root: Boolean(currentDirMeta.git_branch_root),
                 is_git_virtual: Boolean(currentDirMeta.git_repo || currentDirMeta.git_branch_root || currentDirMeta.requires_commit_message),
+                git_commit_id: currentDirMeta.git_commit_id || "",
                 git_commit_message: currentDirMeta.git_commit_message || "",
                 git_commit_author_username: currentDirMeta.git_commit_author_username || "",
                 write_acl_labels: Array.isArray(currentDirMeta.write_acl_labels) ? currentDirMeta.write_acl_labels : [],
                 is_public_write: false,
+                is_url_only: Boolean(currentDirMeta.is_url_only),
+                share_url: currentDirMeta.share_url || "",
+                share_is_inherited: Boolean(currentDirMeta.share_is_inherited),
                 modified_display: currentDirMeta.modified_display || "",
                 size_display: currentDirMeta.size_display || "",
             };
+        }
+
+        let commitTooltipEl = null;
+
+        function ensureCommitTooltip() {
+            if (commitTooltipEl) {
+                return commitTooltipEl;
+            }
+            commitTooltipEl = document.createElement("div");
+            commitTooltipEl.className = "handrive-commit-tooltip";
+            commitTooltipEl.hidden = true;
+            commitTooltipEl.setAttribute("role", "tooltip");
+            document.body.appendChild(commitTooltipEl);
+            return commitTooltipEl;
+        }
+
+        function positionCommitTooltip(anchorX, anchorY) {
+            const tooltip = ensureCommitTooltip();
+            const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            const offset = 14;
+            tooltip.hidden = false;
+            const rect = tooltip.getBoundingClientRect();
+            const placeLeft = anchorX > viewportWidth / 2;
+            const placeAbove = anchorY > viewportHeight / 2;
+            let left = placeLeft ? anchorX - rect.width - offset : anchorX + offset;
+            let top = placeAbove ? anchorY - rect.height - offset : anchorY + offset;
+            left = Math.max(8, Math.min(left, Math.max(8, viewportWidth - rect.width - 8)));
+            top = Math.max(8, Math.min(top, Math.max(8, viewportHeight - rect.height - 8)));
+            tooltip.style.left = String(Math.round(left)) + "px";
+            tooltip.style.top = String(Math.round(top)) + "px";
+        }
+
+        function showCommitTooltip(message, anchorX, anchorY) {
+            const normalizedMessage = String(message || "").trim();
+            if (!normalizedMessage) {
+                return;
+            }
+            const tooltip = ensureCommitTooltip();
+            tooltip.textContent = normalizedMessage;
+            positionCommitTooltip(anchorX, anchorY);
+        }
+
+        function hideCommitTooltip() {
+            if (!commitTooltipEl) {
+                return;
+            }
+            commitTooltipEl.hidden = true;
+        }
+
+        function bindCommitTooltip(commitField, commitSubject) {
+            const normalizedSubject = String(commitSubject || "").trim();
+            if (!commitField || !normalizedSubject) {
+                return;
+            }
+            commitField.classList.add("has-commit-tooltip");
+            commitField.dataset.commitSubject = normalizedSubject;
+            commitField.addEventListener("pointerenter", function (event) {
+                showCommitTooltip(normalizedSubject, event.clientX, event.clientY);
+            });
+            commitField.addEventListener("pointermove", function (event) {
+                showCommitTooltip(normalizedSubject, event.clientX, event.clientY);
+            });
+            commitField.addEventListener("pointerleave", hideCommitTooltip);
         }
 
         function appendEntryMetaColumns(row, entry) {
@@ -6884,6 +7913,7 @@
             permissionField.setAttribute("data-sort-key", "permission");
             const commitField = createEntryMetaField("handrive-item-commit", resolveEntryCommitMeta(safeEntry));
             commitField.setAttribute("data-sort-key", "commit");
+            bindCommitTooltip(commitField, resolveEntryCommitSubject(safeEntry));
             const idField = createEntryMetaField("handrive-item-id", resolveEntryIdMeta(safeEntry));
             idField.setAttribute("data-sort-key", "id");
             metaTrail.appendChild(modifiedField);
@@ -6910,7 +7940,7 @@
             sizeField.setAttribute("data-sort-key", "size");
             const permissionField = createEntryMetaField("handrive-item-permission", t("list_sort_permission", textByLang("권한", "Permission")));
             permissionField.setAttribute("data-sort-key", "permission");
-            const commitField = createEntryMetaField("handrive-item-commit", t("list_sort_commit", textByLang("커밋명", "Commit")));
+            const commitField = createEntryMetaField("handrive-item-commit", t("list_sort_commit", textByLang("커밋", "Commit")));
             commitField.setAttribute("data-sort-key", "commit");
             const idField = createEntryMetaField("handrive-item-id", t("list_sort_id", "ID"));
             idField.setAttribute("data-sort-key", "id");
@@ -7263,6 +8293,7 @@
                 isDir: true,
                 isRootAvatar: Boolean(currentDirMeta.is_root),
                 accountProfileImageUrl: accountProfileImageUrl,
+                isGithubRepo: Boolean(currentDirMeta.is_git_repo_root && currentDirMeta.git_repo && currentDirMeta.git_repo.provider === "github"),
                 isRepo: Boolean(currentDirMeta.is_git_repo_root),
                 isBranch: Boolean(currentDirMeta.git_branch_root),
                 isEmpty: !currentDirMeta.has_children,
@@ -7344,7 +8375,7 @@
             return Boolean(
                 entry
                 && entry.type === "dir"
-                && (entry.git_repo || entry.git_branch_root || entry.is_git_virtual)
+                && (entry.git_repo || entry.github_repo || entry.git_branch_root || entry.is_git_virtual)
             );
         }
 
@@ -7582,6 +8613,7 @@
                 isDir: true,
                 isRootAvatar: Boolean(currentDirMeta.is_root),
                 accountProfileImageUrl: accountProfileImageUrl,
+                isGithubRepo: Boolean(currentDirMeta.is_git_repo_root && currentDirMeta.git_repo && currentDirMeta.git_repo.provider === "github"),
                 isRepo: Boolean(currentDirMeta.is_git_repo_root),
                 isBranch: Boolean(currentDirMeta.git_branch_root),
                 isEmpty: !currentDirMeta.has_children,
@@ -7634,6 +8666,7 @@
             const fileIconKey = entry.type === "file" ? getFileIconKey(entry.path) : "";
             const typeMarker = createTypeMarker({
                 isDir: entry.type === "dir",
+                isGithubRepo: entry.type === "dir" && entry.github_repo,
                 isRepo: entry.type === "dir" && entry.git_repo,
                 isBranch: entry.type === "dir" && entry.git_branch_root,
                 isMap: entry.type === "dir" && entry.is_map_folder,
@@ -7764,7 +8797,16 @@
                 return;
             }
             state.renameTargetEntry = entry || null;
-            modalSetRenameModalOpen(renameModal, renameTarget, renameInput, syncModalBodyState, true, state.renameTargetEntry, getEntryEditableName);
+            modalSetRenameModalOpen(
+                renameModal,
+                renameTarget,
+                renameInput,
+                syncModalBodyState,
+                true,
+                state.renameTargetEntry,
+                getEntryEditableName,
+                getHandrivePathLabel(entry && entry.path ? entry.path : "")
+            );
         }
 
         function setArchiveExtractModalOpen(opened, entry) {
@@ -7855,7 +8897,7 @@
                 syncModalBodyState,
                 true,
                 state.folderIconTargetEntry,
-                entry ? entry.path : ""
+                getHandrivePathLabel(entry && entry.path ? entry.path : "")
             );
             const hasExistingIcon = Boolean(entry && entry.folder_icon_url);
             if (folderIconDeleteButton) { folderIconDeleteButton.hidden = !hasExistingIcon; }
@@ -7895,7 +8937,8 @@
                 syncModalBodyState,
                 true,
                 entries,
-                multipleLabel
+                multipleLabel,
+                getHandrivePathLabel
             );
             state.permissionTargetEntry = state.permissionTargetEntries[0] || null;
         }
@@ -8205,7 +9248,9 @@
                 return;
             }
 
-            await loadDirectory(folderPath);
+            await withDelayedEntryRowLoading(entry, function () {
+                return loadDirectory(folderPath);
+            });
             state.expandedFolders.add(folderPath);
             state.openingFolderPath = folderPath;
             renderList();
@@ -8227,7 +9272,9 @@
                 scheduleListColumnVisibilityAfterTreeToggle();
                 return;
             }
-            await loadDirectory(virtualPath);
+            await withDelayedEntryRowLoading(entry, function () {
+                return loadDirectory(virtualPath);
+            });
             state.expandedFolders.add(archivePath);
             state.openingFolderPath = archivePath;
             renderList();
@@ -8254,7 +9301,7 @@
                     window.location.href = appendSharedQuery(targetUrl);
                     return;
                 }
-                navigateToDirectory(entry.path).catch(alertError);
+                navigateToDirectory(entry.path, { sourceEntry: entry }).catch(alertError);
                 return;
             }
             window.location.href = buildViewUrl(handriveBaseUrl, entry.slug_path || entry.path);
@@ -8301,10 +9348,12 @@
             if (!Array.isArray(entries) || entries.length === 0 || !downloadApiUrl) {
                 return;
             }
-            const fileEntries = entries.filter(function (entry) {
-                return Boolean(entry) && entry.type === "file" && !entry.isCurrentFolder;
+            const downloadableEntries = entries.filter(function (entry) {
+                return Boolean(entry) &&
+                    (entry.type === "file" || entry.type === "dir") &&
+                    !entry.isCurrentFolder;
             });
-            fileEntries.forEach(function (entry) {
+            downloadableEntries.forEach(function (entry) {
                 const targetUrl = buildDownloadUrl(entry.path);
                 if (!targetUrl) {
                     return;
@@ -8393,6 +9442,7 @@
             item.className = "handrive-item";
             const openingFolderPath = state.openingFolderPath;
             if (
+                !state.suppressOpeningAnimation &&
                 openingFolderPath &&
                 entry.path &&
                 entry.path !== openingFolderPath &&
@@ -8419,6 +9469,7 @@
             const fileIconKey = entry.type === "file" ? getFileIconKey(entry.path) : "";
             const typeMarker = createTypeMarker({
                 isDir: entry.type === "dir",
+                isGithubRepo: entry.type === "dir" && entry.github_repo,
                 isRepo: entry.type === "dir" && entry.git_repo,
                 isBranch: entry.type === "dir" && entry.git_branch_root,
                 isMap: entry.type === "dir" && entry.is_map_folder,
@@ -8564,6 +9615,7 @@
             if (!listContainer) {
                 return;
             }
+            hideCommitTooltip();
             const existingCurrentDirItem = listContainer.querySelector(".handrive-current-dir-item");
             const existingCurrentDirRow = existingCurrentDirItem
                 ? existingCurrentDirItem.querySelector(".handrive-current-dir-row")
@@ -8584,6 +9636,13 @@
                 ? state.searchResults
                 : getCachedEntries(state.currentDir);
             const renderEntries = getSortedEntriesForRender(entries);
+            const openedFolderEntries = state.openingFolderPath
+                ? getCachedEntries(state.openingFolderPath)
+                : [];
+            state.suppressOpeningAnimation = Boolean(
+                renderEntries.length > 200 ||
+                (Array.isArray(openedFolderEntries) && openedFolderEntries.length > 200)
+            );
             const currentFolderEntryForReuse = buildCurrentDirectoryEntry();
             if (existingCurrentDirItem && savedCurrentDirPath === currentFolderEntryForReuse.path) {
                 if (existingCurrentDirRow) {
@@ -8627,6 +9686,7 @@
                 scheduleListBodyHeight();
                 if (!renderListOptions.skipPreview) { syncPreviewFromSelection(); }
                 state.openingFolderPath = "";
+                state.suppressOpeningAnimation = false;
                 return;
             }
             if (state.searchQuery) {
@@ -8653,6 +9713,7 @@
             if (!renderListOptions.skipPreview) { syncPreviewFromSelection(); }
             scheduleSyncCurrentDirRowHeightWithSideHead();
             state.openingFolderPath = "";
+            state.suppressOpeningAnimation = false;
         }
 
         function openContextMenuForEntry(entry, x, y) {
@@ -8751,7 +9812,7 @@
                     return;
                 }
                 if (action === "share") {
-                    if (!entry || entry.isCurrentFolder || !entry.can_edit || !urlShareApiUrl) {
+                    if (!entry || !entry.can_edit || !entry.path || !urlShareApiUrl) {
                         return;
                     }
                     function resolveShareUrl(rawUrl) {
@@ -9113,6 +10174,7 @@
                         gitRepoModal: gitRepoModal,
                         syncModalBodyState: syncModalBodyState,
                         entry: nextEntry,
+                        formatPathLabel: getHandrivePathLabel,
                         isManageMode: isManageMode,
                         t: t,
                     });
@@ -9362,6 +10424,36 @@
                     return;
                 }
                 deleteEntries(selectedEntry).catch(alertError);
+            });
+        }
+
+        if (previewPrintButton) {
+            previewPrintButton.addEventListener("click", function () {
+                const entry = state.activePreviewPath
+                    ? state.entryByPath.get(state.activePreviewPath) || null
+                    : null;
+                if (
+                    !isPreviewableFileEntry(entry) ||
+                    entry.can_read === false ||
+                    state.activeRenderedPreviewPath !== normalizePath(entry.path, true) ||
+                    state.activePreviewRenderMode === "unsupported" ||
+                    state.activePreviewRenderMode === "media_video"
+                ) {
+                    return;
+                }
+                const previewTitleText = previewTitle
+                    ? previewTitle.querySelector(".handrive-list-preview-title-text") || previewTitle
+                    : null;
+                printRenderedHandriveFile(previewContent, {
+                    title: previewTitleText
+                        ? previewTitleText.textContent
+                        : entry.name || document.title,
+                    officePdfUrl: isHandriveOfficePdfPrintPath(entry.name || entry.path)
+                        ? buildHandrivePdfPreviewUrl(pdfPreviewApiUrl, entry.path)
+                        : "",
+                    sourceUrl: buildDownloadUrl(entry.path),
+                    renderMode: state.activePreviewRenderMode || "",
+                });
             });
         }
 
@@ -9807,6 +10899,12 @@
         window.addEventListener("orientationchange", schedulePreviewBodyHeight, { passive: true });
         window.addEventListener("resize", scheduleEditorBodyHeight, { passive: true });
         window.addEventListener("orientationchange", scheduleEditorBodyHeight, { passive: true });
+        window.addEventListener("handrive:github-repositories-updated", function () {
+            if (root.dataset.currentDirIsRoot !== "1") {
+                return;
+            }
+            refreshCurrentDirectory({ skipPreview: true }).catch(alertError);
+        });
 
         if (window.ResizeObserver && previewHead) {
             const previewHeadResizeObserver = new ResizeObserver(function () {
@@ -10005,11 +11103,13 @@
         const urlShareApiUrl = root.dataset.urlShareApiUrl;
         const listApiUrl = root.dataset.listApiUrl || "";
         const previewApiUrl = root.dataset.previewApiUrl || "";
+        const pdfPreviewApiUrl = root.dataset.pdfPreviewApiUrl || "";
         let currentDocPath = root.dataset.docPath || "";
         let currentDocSlugPath = root.dataset.docSlugPath || currentDocPath;
         const docIsUrlOnly = root.dataset.docIsUrlOnly === "1";
         const parentDir = root.dataset.parentDir || "";
         const deleteButton = document.getElementById("handrive-delete-btn");
+        const printButton = document.getElementById("handrive-print-btn");
         const urlShareButton = document.getElementById("handrive-url-share-btn");
         const contentArticle = document.querySelector(".handrive-content > article");
         const viewZoomWrap = document.getElementById("handrive-view-zoom");
@@ -10199,6 +11299,7 @@
                 contentArticle.innerHTML = newHtml;
 
                 hydrateMediaAudioElements(contentArticle);
+                bindHandrivePdfFrameLoading(contentArticle);
                 initializePreviewVideoPlayers(contentArticle);
 
                 viewImageZoom = 1;
@@ -10249,6 +11350,7 @@
         }
 
         hydrateMediaAudioElements(contentArticle);
+        bindHandrivePdfFrameLoading(contentArticle);
 
         viewImageZoom = 1;
         syncViewImageZoom();
@@ -10307,6 +11409,21 @@
                         }
                         return { isUrlOnly: Boolean(data.is_url_only), shareUrl: data.share_url || "" };
                     },
+                });
+            });
+        }
+
+        if (printButton && contentArticle) {
+            printButton.addEventListener("click", function () {
+                const titleElement = document.querySelector(".handrive-toolbar-left .handrive-title");
+                const downloadLink = document.querySelector(".handrive-toolbar-actions a[href*='/handrive/api/download']");
+                const printPath = currentDocPath || sharedRootPath;
+                printRenderedHandriveFile(contentArticle, {
+                    title: titleElement ? titleElement.textContent : document.title,
+                    officePdfUrl: contentArticle.classList.contains("handrive-office") && isHandriveOfficePdfPrintPath(printPath)
+                        ? buildHandrivePdfPreviewUrl(pdfPreviewApiUrl, printPath)
+                        : "",
+                    sourceUrl: downloadLink ? downloadLink.href : "",
                 });
             });
         }
@@ -10407,7 +11524,10 @@
         );
         const DOCS_CUSTOM_EXTENSION_OPTION_VALUE = "__custom__";
         async function promptWriteCommitMessage(targetPath) {
-            return requestCommitMessageDialog({ targetPath: targetPath || "" });
+            return requestCommitMessageDialog({
+                targetPath: targetPath || "",
+                targetText: getHandrivePathLabel(targetPath || ""),
+            });
         }
         const extensionPresetValues = saveExtensionSelect
             ? Array.from(saveExtensionSelect.options)
@@ -10446,6 +11566,10 @@
         let activeEditorSuggestionIndex = -1;
         let writeSuggestEventsBound = false;
         let writeMarkdownUploadedImagePaths = [];
+        let writeUndoStack = [];
+        let writeRedoStack = [];
+        let writeUndoApplying = false;
+        const WRITE_UNDO_STACK_LIMIT = 200;
         // 자동완성 단어 리스트는 전역 단일 맵(window.__handriveEditorCompletionMap)만 사용
         const editorCompletionMap = window.__handriveEditorCompletionMap || {};
         const writeMarkdownImageInput = createMarkdownImageInputHandler({
@@ -10476,6 +11600,103 @@
                 renderWriteEditorHighlight();
             }
         });
+
+        function getWriteEditorSnapshot() {
+            if (!contentInput) {
+                return null;
+            }
+            return {
+                value: contentInput.value || "",
+                selectionStart: contentInput.selectionStart || 0,
+                selectionEnd: contentInput.selectionEnd || 0,
+                scrollTop: contentInput.scrollTop || 0,
+                scrollLeft: contentInput.scrollLeft || 0,
+            };
+        }
+
+        function clampSelectionIndex(value, maxLength) {
+            return Math.max(0, Math.min(maxLength, Number(value) || 0));
+        }
+
+        function applyWriteEditorSnapshot(snapshot) {
+            if (!contentInput || !snapshot) {
+                return;
+            }
+            writeUndoApplying = true;
+            contentInput.value = snapshot.value || "";
+            const maxLength = contentInput.value.length;
+            const selectionStart = clampSelectionIndex(snapshot.selectionStart, maxLength);
+            const selectionEnd = clampSelectionIndex(snapshot.selectionEnd, maxLength);
+            contentInput.focus();
+            contentInput.setSelectionRange(selectionStart, selectionEnd);
+            contentInput.scrollTop = snapshot.scrollTop || 0;
+            contentInput.scrollLeft = snapshot.scrollLeft || 0;
+            contentInput.dispatchEvent(new Event("input", { bubbles: true }));
+            writeUndoApplying = false;
+        }
+
+        function recordWriteEditorSnapshot() {
+            if (!contentInput || writeUndoApplying) {
+                return;
+            }
+            const snapshot = getWriteEditorSnapshot();
+            if (!snapshot) {
+                return;
+            }
+            const latest = writeUndoStack.length ? writeUndoStack[writeUndoStack.length - 1] : null;
+            if (latest && latest.value === snapshot.value) {
+                latest.selectionStart = snapshot.selectionStart;
+                latest.selectionEnd = snapshot.selectionEnd;
+                latest.scrollTop = snapshot.scrollTop;
+                latest.scrollLeft = snapshot.scrollLeft;
+                return;
+            }
+            writeUndoStack.push(snapshot);
+            if (writeUndoStack.length > WRITE_UNDO_STACK_LIMIT) {
+                writeUndoStack.shift();
+            }
+            writeRedoStack = [];
+        }
+
+        function syncLatestWriteEditorSnapshotSelection() {
+            if (!contentInput || !writeUndoStack.length) {
+                return;
+            }
+            const snapshot = getWriteEditorSnapshot();
+            const latest = writeUndoStack[writeUndoStack.length - 1];
+            if (!snapshot || latest.value !== snapshot.value) {
+                return;
+            }
+            latest.selectionStart = snapshot.selectionStart;
+            latest.selectionEnd = snapshot.selectionEnd;
+            latest.scrollTop = snapshot.scrollTop;
+            latest.scrollLeft = snapshot.scrollLeft;
+        }
+
+        function undoWriteEditorChange() {
+            if (writeUndoStack.length <= 1) {
+                return false;
+            }
+            const current = writeUndoStack.pop();
+            writeRedoStack.push(current);
+            applyWriteEditorSnapshot(writeUndoStack[writeUndoStack.length - 1]);
+            return true;
+        }
+
+        function redoWriteEditorChange() {
+            if (!writeRedoStack.length) {
+                return false;
+            }
+            const next = writeRedoStack.pop();
+            writeUndoStack.push(next);
+            applyWriteEditorSnapshot(next);
+            return true;
+        }
+
+        if (contentInput) {
+            const initialSnapshot = getWriteEditorSnapshot();
+            writeUndoStack = initialSnapshot ? [initialSnapshot] : [];
+        }
 
         function markCurrentAsSaved() {
             savedFilenameValue = filenameInput ? filenameInput.value : "";
@@ -10850,13 +12071,15 @@
             }
             const start = contentInput.selectionStart || 0;
             const end = contentInput.selectionEnd || 0;
+            contentInput.focus();
+            contentInput.setSelectionRange(start, end);
             contentInput.setRangeText(insertText, start, end, "end");
 
             const nextStart = start + (selectionStartOffset || 0);
             const nextEnd = start + (selectionEndOffset || insertText.length);
             contentInput.setSelectionRange(nextStart, nextEnd);
-            contentInput.focus();
             contentInput.dispatchEvent(new Event("input", { bubbles: true }));
+            syncLatestWriteEditorSnapshotSelection();
         }
 
         function buildWrappedSnippet(prefix, suffix, placeholder) {
@@ -11726,7 +12949,7 @@
                     if (!ancestorPath) {
                         return effectiveRootLabel;
                     }
-                    return ancestorPath.split("/").slice(-1)[0];
+                    return decodeBreadcrumbLabel(ancestorPath.split("/").slice(-1)[0]);
                 })
                 .join("/");
         }
@@ -11764,6 +12987,59 @@
             return parentPath;
         }
 
+        function getRenderedToolbarBreadcrumbItems() {
+            const breadcrumbs = document.querySelector(".handrive-toolbar-left .ui-path-breadcrumbs");
+            if (!breadcrumbs) {
+                return [];
+            }
+            return Array.from(breadcrumbs.querySelectorAll(".ui-path-link, .ui-path-current"))
+                .map(function (item) {
+                    const label = String(item.textContent || "").trim();
+                    const rawPath = item.getAttribute("data-handrive-dir");
+                    return {
+                        label: label,
+                        path: rawPath === null ? "" : normalizePath(rawPath, true),
+                    };
+                })
+                .filter(function (item) {
+                    return Boolean(item.label);
+                });
+        }
+
+        function applyRenderedToolbarBreadcrumbLabels(crumbs) {
+            const labelsByPath = new Map();
+            getRenderedToolbarBreadcrumbItems().forEach(function (item) {
+                labelsByPath.set(item.path, item.label);
+            });
+            return crumbs.map(function (crumb) {
+                const normalizedCrumbPath = normalizePath(crumb && crumb.path || "", true);
+                const renderedLabel = labelsByPath.get(normalizedCrumbPath);
+                return Object.assign({}, crumb, {
+                    label: renderedLabel || decodeBreadcrumbLabel(crumb && crumb.label),
+                });
+            });
+        }
+
+        function buildWriteBreadcrumbItems(pathValue) {
+            const normalized = normalizePath(pathValue, true);
+            const targetPath = normalized || scopedHomeDir || "";
+            return applyRenderedToolbarBreadcrumbLabels(buildNavigationBreadcrumbItems(targetPath, {
+                effectiveRootLabel: effectiveRootLabel,
+                isSuperuser: isSuperuser,
+                normalizePath: normalizePath,
+                scopedHomeDir: scopedHomeDir,
+            }));
+        }
+
+        function getHandrivePathTailLabel(pathValue) {
+            const crumbs = buildWriteBreadcrumbItems(pathValue);
+            if (crumbs.length) {
+                return crumbs[crumbs.length - 1].label;
+            }
+            const normalized = normalizePath(pathValue, true);
+            return normalized ? decodeBreadcrumbLabel(normalized.split("/").slice(-1)[0]) : effectiveRootLabel;
+        }
+
         function renderBreadcrumb() {
             if (!saveBreadcrumb) {
                 return;
@@ -11789,7 +13065,7 @@
 
             const currentPath = normalizePath(state.selectedDir || state.browserDir, true);
             if (scopedHomeDir && isPathInsideScopedHome(currentPath || scopedHomeDir)) {
-                buildBreadcrumbItems(currentPath || scopedHomeDir).forEach(function (crumb, index) {
+                buildWriteBreadcrumbItems(currentPath || scopedHomeDir).forEach(function (crumb, index) {
                     if (index > 0) {
                         const separator = document.createElement("span");
                         separator.className = "handrive-save-crumb-sep";
@@ -11815,7 +13091,7 @@
                         fragment.appendChild(separator);
                     }
                     const label = ancestorPath
-                        ? ancestorPath.split("/").slice(-1)[0]
+                        ? getHandrivePathTailLabel(ancestorPath)
                         : effectiveRootLabel;
                     addCrumb(label, ancestorPath, ancestorPath === currentPath);
                 });
@@ -11839,7 +13115,7 @@
                 if (pathValue === state.browserDir) {
                     button.classList.add("is-active");
                 }
-                button.textContent = pathValue ? pathValue.split("/").slice(-1)[0] : "HanDrive";
+                button.textContent = pathValue ? getHandrivePathTailLabel(pathValue) : "HanDrive";
                 if (pathValue === scopedHomeDir) {
                     button.textContent = getSaveBrowserRootLabel();
                 } else if (!pathValue) {
@@ -11885,7 +13161,7 @@
 
                 const name = document.createElement("span");
                 name.className = "handrive-save-folder-name";
-                name.textContent = dirPath.split("/").slice(-1)[0];
+                name.textContent = getHandrivePathTailLabel(dirPath);
 
                 row.appendChild(icon);
                 row.appendChild(name);
@@ -11920,14 +13196,14 @@
         }
 
         function getHandrivePathLabel(pathValue) {
-            if (scopedHomeDir && isPathInsideScopedHome(pathValue || scopedHomeDir)) {
-                return buildBreadcrumbItems(pathValue || scopedHomeDir)
-                    .map(function (crumb) {
-                        return crumb.label;
-                    })
-                    .join("/");
-            }
-            return getWritablePathLabel(pathValue) || (isSuperuser ? effectiveRootLabel : "");
+            const normalized = normalizePath(pathValue || scopedHomeDir || "", true);
+            const label = formatNavigationPathLabel(normalized, {
+                buildBreadcrumbItems: buildWriteBreadcrumbItems,
+                emptyLabel: isSuperuser ? effectiveRootLabel : getSaveBrowserRootLabel(),
+                leadingSlash: false,
+                normalizePath: normalizePath,
+            });
+            return label || getWritablePathLabel(normalized) || (isSuperuser ? effectiveRootLabel : "");
         }
 
         function getFolderCreateBasePath() {
@@ -12415,6 +13691,7 @@
             contentInput.addEventListener("input", function () {
                 renderWriteEditorHighlight();
                 updateEditorSuggestion();
+                recordWriteEditorSnapshot();
             });
             contentInput.addEventListener("scroll", syncEditorHighlightScroll, { passive: true });
             let editorFontSize = 16;
@@ -12433,7 +13710,22 @@
                 clearEditorSuggestion();
             });
             contentInput.addEventListener("keydown", function (event) {
-                if ((event.metaKey || event.ctrlKey) && !event.altKey && String(event.key || "").toLowerCase() === "s") {
+                const loweredKey = String(event.key || "").toLowerCase();
+                if ((event.metaKey || event.ctrlKey) && !event.altKey && loweredKey === "z") {
+                    event.preventDefault();
+                    if (event.shiftKey) {
+                        redoWriteEditorChange();
+                    } else {
+                        undoWriteEditorChange();
+                    }
+                    return;
+                }
+                if ((event.metaKey || event.ctrlKey) && !event.altKey && loweredKey === "y") {
+                    event.preventDefault();
+                    redoWriteEditorChange();
+                    return;
+                }
+                if ((event.metaKey || event.ctrlKey) && !event.altKey && loweredKey === "s") {
                     event.preventDefault();
                     if (saveButton && !saveButton.disabled) {
                         saveButton.click();

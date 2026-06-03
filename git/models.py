@@ -36,6 +36,7 @@ class GitHubAccountMapping(models.Model):
     user_refresh_token_expires_at = models.DateTimeField(null=True, blank=True)
     token_scope              = models.CharField(max_length=512, blank=True, default="")
     token_type               = models.CharField(max_length=64, blank=True, default="")
+    selected_repositories    = models.JSONField(blank=True, default=list)
     created_at               = models.DateTimeField(auto_now_add=True)
     updated_at               = models.DateTimeField(auto_now=True)
 

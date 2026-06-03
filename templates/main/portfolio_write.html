@@ -95,6 +95,17 @@
     flex-wrap: wrap;
 }
 
+.portfolio-write-public-url {
+    padding: 0 12px 12px;
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    word-break: break-all;
+}
+
+.portfolio-write-public-url a {
+    color: var(--handrive-link);
+}
+
 .portfolio-write-status {
     margin: 12px 0 0;
     padding: 10px 12px;
@@ -280,6 +291,64 @@
                 <input type="hidden" name="project_id" value="{{ selected_project.id }}" />
                 <div class="portfolio-write-actions">
                     <button class="ui-btn" type="submit">선택 프로젝트 삭제</button>
+                </div>
+            </form>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="portfolio-write-section handrive-list-layout is-landscape has-editor">
+        <aside class="handrive-list-pane">
+            <div class="handrive-list-preview-head">
+                <h3 class="handrive-list-preview-title">자기소개서</h3>
+            </div>
+            <div>
+                {% for cover_letter in cover_letters %}
+                <a
+                    class="portfolio-write-list-item {% if selected_cover_letter_id == cover_letter.id and cover_letter_mode != 'add' %}is-active{% endif %}"
+                    href="?cover_letter_id={{ cover_letter.id }}"
+                >{{ cover_letter.company }}</a>
+                {% empty %}
+                <p class="portfolio-write-list-empty">등록된 자기소개서가 없습니다.</p>
+                {% endfor %}
+                <a
+                    class="portfolio-write-list-item is-add"
+                    href="?cover_letter_new=1"
+                >+ 자기소개서 추가</a>
+            </div>
+        </aside>
+        <div class="handrive-list-editor">
+            <div class="handrive-list-editor-head">
+                <strong>{% if cover_letter_mode == 'add' %}자기소개서 추가{% else %}자기소개서 수정{% endif %}</strong>
+            </div>
+            <form method="post" class="portfolio-write-form">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="{% if cover_letter_mode == 'add' %}add_cover_letter{% else %}update_cover_letter{% endif %}" />
+                {% if selected_cover_letter and cover_letter_mode != 'add' %}
+                <input type="hidden" name="cover_letter_id" value="{{ selected_cover_letter.id }}" />
+                {% endif %}
+                <div class="portfolio-write-form-grid">
+                    <label class="portfolio-write-field">company (URL)<input type="text" name="company" value="{% if selected_cover_letter %}{{ selected_cover_letter.company }}{% endif %}" maxlength="120" required /></label>
+                    <label class="portfolio-write-field">name<input type="text" name="name" value="{% if selected_cover_letter %}{{ selected_cover_letter.name }}{% endif %}" maxlength="120" required /></label>
+                    <label class="portfolio-write-field full">content<textarea name="content" rows="8" required>{% if selected_cover_letter %}{{ selected_cover_letter.content }}{% endif %}</textarea></label>
+                </div>
+                <div class="portfolio-write-actions">
+                    <button class="ui-btn ui-btn-primary" type="submit">{% if cover_letter_mode == 'add' %}자기소개서 추가{% else %}자기소개서 수정{% endif %}</button>
+                </div>
+            </form>
+            {% if selected_cover_letter and cover_letter_mode != 'add' %}
+            <div class="portfolio-write-public-url">
+                공개 URL:
+                <a href="{% url 'main:portfolio_user_cover_letter_lang' ui_lang=ui_lang user_id=request.user.username company_slug=selected_cover_letter.slug %}" target="_blank" rel="noopener noreferrer">
+                    {% url 'main:portfolio_user_cover_letter_lang' ui_lang=ui_lang user_id=request.user.username company_slug=selected_cover_letter.slug %}
+                </a>
+            </div>
+            <form method="post" class="portfolio-write-form" style="padding-top: 0;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete_cover_letter" />
+                <input type="hidden" name="cover_letter_id" value="{{ selected_cover_letter.id }}" />
+                <div class="portfolio-write-actions">
+                    <button class="ui-btn" type="submit">선택 자기소개서 삭제</button>
                 </div>
             </form>
             {% endif %}

@@ -10,6 +10,7 @@ DEFAULT_DISC = "hdd"
 TEMPORARY_ROOT = Path("/Users/imhanbyeol/temporary/hanplanet-ssd")
 HDD_MEDIA_ROOT = Path("/Volumes/HANPLANET_HDD/Hanplanet/media")
 HDD_FORGEJO_REPOS_ROOT = Path("/Volumes/HANPLANET_HDD/Hanplanet/forgejo-repos")
+HDD_GITHUB_REPO_CACHE_ROOT = Path("/Volumes/HANPLANET_HDD/Hanplanet/github-repo-cache")
 
 
 def _load_secrets() -> dict:
@@ -46,6 +47,13 @@ def get_forgejo_repos_root(disc_mode: str | None = None) -> Path:
     if mode == "ssd":
         return TEMPORARY_ROOT / "forgejo-repos"
     return HDD_FORGEJO_REPOS_ROOT
+
+
+def get_github_repo_cache_root(disc_mode: str | None = None) -> Path:
+    mode = (disc_mode or get_disc_mode()).strip().lower()
+    if mode == "ssd":
+        return TEMPORARY_ROOT / "github-repo-cache"
+    return HDD_GITHUB_REPO_CACHE_ROOT
 
 
 def get_required_storage_paths(disc_mode: str | None = None) -> list[Path]:

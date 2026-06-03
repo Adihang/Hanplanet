@@ -1,0 +1,34 @@
+{% load template_utils %}
+<div
+    class="root-auth-modal ui-auth-github-modal"
+    data-auth-github-modal
+    data-connect-title="{% include_trimmed 'partials/ui_i18n.html' key='github_connect_title' %}"
+    data-connect-message="{% include_trimmed 'partials/ui_i18n.html' key='github_connect_message' %}"
+    data-connect-confirm="{% include_trimmed 'partials/ui_i18n.html' key='github_connect_confirm' %}"
+    data-repo-title="{% include_trimmed 'partials/ui_i18n.html' key='github_repo_select_title' %}"
+    data-repo-message="{% include_trimmed 'partials/ui_i18n.html' key='github_repo_select_message' %}"
+    data-repo-loading="{% include_trimmed 'partials/ui_i18n.html' key='github_repo_select_loading' %}"
+    data-repo-empty="{% include_trimmed 'partials/ui_i18n.html' key='github_repo_select_empty' %}"
+    data-repo-error="{% include_trimmed 'partials/ui_i18n.html' key='github_repo_select_error' %}"
+    data-unconfigured="{% include_trimmed 'partials/ui_i18n.html' key='github_unconfigured' %}"
+    data-save-label="{% include_trimmed 'partials/ui_i18n.html' key='save' %}"
+    data-saved-label="{% include_trimmed 'partials/ui_i18n.html' key='saved' %}"
+    data-cancel-label="{% include_trimmed 'partials/ui_i18n.html' key='cancel' %}"
+    hidden
+>
+    <div class="root-auth-modal-backdrop" data-auth-github-modal-backdrop></div>
+    <div class="root-auth-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true">
+        <h3 data-auth-github-modal-title></h3>
+        <p class="root-auth-modal-message" data-auth-github-modal-message></p>
+        <div class="root-auth-modal-message ui-auth-github-modal-status" data-auth-github-status hidden></div>
+        <div class="ui-auth-github-repo-list" data-auth-github-repo-list hidden></div>
+        <div class="root-auth-modal-actions">
+            <button type="button" class="root-auth-modal-btn" data-auth-github-cancel>
+                {% include 'partials/ui_i18n.html' with key='cancel' %}
+            </button>
+            <button type="button" class="root-auth-modal-btn root-auth-modal-btn-primary" data-auth-github-confirm>
+                {% include 'partials/ui_i18n.html' with key='github_connect_confirm' %}
+            </button>
+        </div>
+    </div>
+</div>

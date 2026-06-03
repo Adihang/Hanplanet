@@ -311,7 +311,7 @@ def _extract_xlsx_preview_html(file_bytes: bytes) -> str:
 
             workbook_root = ET.fromstring(workbook_xml)
             sheet_specs = []
-            for sheet in workbook_root.findall(".//{*}sheet")[:3]:
+            for sheet in workbook_root.findall(".//{*}sheet"):
                 rel_id = sheet.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id", "")
                 target = rel_map.get(rel_id, "")
                 if not target:
@@ -325,7 +325,7 @@ def _extract_xlsx_preview_html(file_bytes: bytes) -> str:
                     continue
                 sheet_root = ET.fromstring(sheet_xml)
                 rows_html = []
-                for row in sheet_root.findall(".//{*}sheetData/{*}row")[:30]:
+                for row in sheet_root.findall(".//{*}sheetData/{*}row"):
                     values: dict[int, str] = {}
                     max_index = -1
                     for cell in row.findall("./{*}c"):
@@ -349,7 +349,7 @@ def _extract_xlsx_preview_html(file_bytes: bytes) -> str:
                     if max_index < 0:
                         continue
                     cells_html = []
-                    for column_index in range(min(max_index + 1, 20)):
+                    for column_index in range(max_index + 1):
                         cells_html.append(f"<td>{escape(values.get(column_index, ''))}</td>")
                     rows_html.append("<tr>" + "".join(cells_html) + "</tr>")
                 if rows_html:
@@ -443,8 +443,7 @@ html, body {
 }
 html body {
     padding: 14px;
-    overflow-x: auto;
-    overflow-y: auto;
+    overflow: visible;
     box-sizing: border-box;
     width: 100%;
     min-width: 100%;
@@ -490,6 +489,7 @@ html body col {
 #handrive-office-zoom-viewport {
     position: relative;
     transform: translateZ(0);
+    overflow: visible;
 }
 #handrive-office-zoom-content {
     transform-origin: top left;
@@ -500,6 +500,7 @@ html body col {
     var MIN_ZOOM = 0.35;
     var MAX_ZOOM = 3;
     var MAX_FIT_ZOOM = 1.25;
+    var FRAME_HEIGHT_BUFFER = 24;
     var userZoom = 1;
     var scheduled = false;
     var root = document.documentElement;
@@ -588,16 +589,59 @@ html body col {
         return Math.max(1, width);
     }
 
+    function readCssPixelValue(style, propertyName) {
+        var value = style ? Number.parseFloat(style.getPropertyValue(propertyName)) : 0;
+        return Number.isFinite(value) ? value : 0;
+    }
+
+    function readBodyBottomSpacing() {
+        if (!document.body || !window.getComputedStyle) {
+            return 0;
+        }
+        var style = window.getComputedStyle(document.body);
+        return readCssPixelValue(style, "padding-bottom")
+            + readCssPixelValue(style, "border-bottom-width");
+    }
+
     function readUnscaledContentHeight(canvas) {
         if (!canvas) {
             return 1;
         }
         canvas.content.style.transform = "none";
         canvas.viewport.style.height = "auto";
+        canvas.viewport.style.overflow = "visible";
+        var contentRect = canvas.content.getBoundingClientRect();
+        var contentTop = Number(contentRect && contentRect.top ? contentRect.top : 0);
+        var descendantTop = 0;
+        var descendantBottom = 0;
+        Array.prototype.slice.call(canvas.content.querySelectorAll("*")).forEach(function (node) {
+            var rect = node.getBoundingClientRect();
+            if (!rect) {
+                return;
+            }
+            descendantTop = Math.min(descendantTop, Number(rect.top || 0) - contentTop);
+            descendantBottom = Math.max(descendantBottom, Number(rect.bottom || 0) - contentTop);
+        });
         return Math.max(
             1,
+            Number(canvas.viewport.scrollHeight || 0),
             Number(canvas.content.scrollHeight || 0),
-            Number(canvas.content.offsetHeight || 0)
+            Number(canvas.content.offsetHeight || 0),
+            Number(contentRect && contentRect.height ? contentRect.height : 0),
+            descendantBottom - Math.min(0, descendantTop)
+        );
+    }
+
+    function readScaledFrameHeight(canvas, scaledContentHeight) {
+        if (!canvas) {
+            return Math.max(1, scaledContentHeight + FRAME_HEIGHT_BUFFER);
+        }
+        var viewportOffsetTop = Number(canvas.viewport.offsetTop || 0);
+        var bodyScrollHeight = document.body ? Number(document.body.scrollHeight || 0) : 0;
+        return Math.max(
+            1,
+            Math.ceil(viewportOffsetTop + scaledContentHeight + readBodyBottomSpacing() + FRAME_HEIGHT_BUFFER),
+            Math.ceil(bodyScrollHeight + FRAME_HEIGHT_BUFFER)
         );
     }
 
@@ -610,21 +654,25 @@ html body col {
         var fitZoom = clamp(availableWidth / baseWidth, MIN_ZOOM, MAX_FIT_ZOOM);
         var appliedZoom = clamp(fitZoom * userZoom, MIN_ZOOM, MAX_ZOOM);
         var scaledWidth = Math.ceil(baseWidth * appliedZoom);
-        var scaledHeight = Math.ceil(baseHeight * appliedZoom);
+        var scaledContentHeight = Math.ceil(baseHeight * appliedZoom);
+        var frameHeight = readScaledFrameHeight(canvas, scaledContentHeight);
 
         root.style.setProperty("--handrive-office-fit-zoom", String(fitZoom.toFixed(3)));
         root.style.setProperty("--handrive-office-applied-zoom", String(appliedZoom.toFixed(3)));
         if (canvas) {
             canvas.content.style.width = baseWidth + "px";
+            canvas.content.style.transformOrigin = "top left";
             canvas.content.style.transform = "scale(" + String(appliedZoom.toFixed(3)) + ")";
             canvas.viewport.style.width = Math.max(availableWidth, scaledWidth) + "px";
-            canvas.viewport.style.height = scaledHeight + "px";
+            canvas.viewport.style.height = scaledContentHeight + "px";
+            canvas.viewport.style.overflow = "visible";
+            frameHeight = readScaledFrameHeight(canvas, scaledContentHeight);
         }
         if (window.parent && window.parent !== window) {
             window.parent.postMessage({
                 type: "handrive-office-preview-size",
                 width: Math.max(availableWidth, scaledWidth),
-                height: scaledHeight
+                height: frameHeight
             }, "*");
         }
         if (document.body) {
@@ -643,6 +691,12 @@ html body col {
         window.requestAnimationFrame(function () {
             scheduled = false;
             applyZoom(userZoom);
+        });
+    }
+
+    function scheduleFollowUpFits() {
+        [80, 250, 700, 1400].forEach(function (delay) {
+            window.setTimeout(scheduleFit, delay);
         });
     }
 
@@ -671,11 +725,18 @@ html body col {
         document.fonts.ready.then(scheduleFit).catch(function () {});
     }
     if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", scheduleFit, { once: true });
+        document.addEventListener("DOMContentLoaded", function () {
+            scheduleFit();
+            scheduleFollowUpFits();
+        }, { once: true });
     } else {
         scheduleFit();
+        scheduleFollowUpFits();
     }
-    window.addEventListener("load", scheduleFit, { once: true });
+    window.addEventListener("load", function () {
+        scheduleFit();
+        scheduleFollowUpFits();
+    }, { once: true });
 })();
 """
             return render_handrive_html_live_safely(

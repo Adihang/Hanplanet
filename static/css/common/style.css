@@ -718,18 +718,67 @@ body.theme-dark .root-shell-controls-fixed .ui-auth-account-menu {
 }
 
 .root-shell-controls-fixed .ui-auth-account-profile-image-button {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 112px;
+    height: 112px;
     border: 0;
     border-radius: 50%;
     background: transparent;
     padding: 0;
     line-height: 0;
     cursor: pointer;
+    transition: transform 0.16s ease;
 }
 
 .root-shell-controls-fixed .ui-auth-account-profile-image-button:hover,
 .root-shell-controls-fixed .ui-auth-account-profile-image-button:focus-visible {
     transform: translateY(-1px);
     outline: none;
+}
+
+.root-shell-controls-fixed .ui-auth-account-profile-image-button::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.32);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.16s ease;
+}
+
+.root-shell-controls-fixed .ui-auth-account-profile-image-button::after {
+    content: "";
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    z-index: 2;
+    width: 28px;
+    height: 28px;
+    border: 2px solid var(--site-bg, var(--handrive-bg, #fff));
+    border-radius: 50%;
+    background-color: var(--btn-template-primary-bg, var(--site-btn-primary-bg, #161616));
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 16px 16px;
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--site-text-stronger, #151515) 22%, transparent);
+    pointer-events: none;
+}
+
+body.theme-dark .root-shell-controls-fixed .ui-auth-account-profile-image-button::after {
+    border-color: var(--site-bg, var(--handrive-bg, #222222));
+    background-color: var(--btn-template-primary-bg, var(--site-btn-primary-bg, rgba(95, 95, 95, 0.9)));
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f7f7f7' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'/%3E%3C/svg%3E");
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.44);
+}
+
+.root-shell-controls-fixed .ui-auth-account-profile-image-button:hover::before,
+.root-shell-controls-fixed .ui-auth-account-profile-image-button:focus-visible::before {
+    opacity: 1;
 }
 
 .root-shell-controls-fixed .ui-auth-account-profile-image {
@@ -890,6 +939,9 @@ body.theme-dark .root-auth-modal-dialog {
 }
 
 .root-auth-modal-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border: 1px solid var(--btn-template-base-border);
     border-radius: var(--btn-template-radius, 8px);
     background: var(--btn-template-base-bg);
@@ -897,6 +949,7 @@ body.theme-dark .root-auth-modal-dialog {
     padding: 6px 12px;
     min-height: 32px;
     cursor: pointer;
+    text-decoration: none;
     transition: var(--btn-template-transition);
 }
 
@@ -918,6 +971,32 @@ body.theme-dark .root-auth-modal-dialog {
     background: var(--btn-template-primary-hover-bg);
     border-color: var(--btn-template-primary-hover-border);
     color: var(--btn-template-primary-hover-color);
+}
+
+.ui-auth-github-modal .root-auth-modal-btn-primary {
+    background: var(--print-button-bg);
+    border-color: transparent;
+    color: #ffffff;
+}
+
+.ui-auth-github-modal .root-auth-modal-btn-primary:hover,
+.ui-auth-github-modal .root-auth-modal-btn-primary:focus-visible {
+    background: rgb(57, 124, 57);
+    border-color: transparent;
+    color: #ffffff;
+}
+
+body.theme-dark .ui-auth-github-modal .root-auth-modal-btn-primary {
+    background: var(--print-button-dark-bg);
+    border-color: transparent;
+    color: #f3f3f3;
+}
+
+body.theme-dark .ui-auth-github-modal .root-auth-modal-btn-primary:hover,
+body.theme-dark .ui-auth-github-modal .root-auth-modal-btn-primary:focus-visible {
+    background: rgb(84, 84, 84);
+    border-color: transparent;
+    color: #f3f3f3;
 }
 
 .root-auth-modal-dialog,
@@ -2211,6 +2290,60 @@ body.portfolio-page section {
     --project-card-gap: clamp(7px, 1vw, 10px);
     --project-content-gap: 10px;
     --project-tags-area-height: 86px;
+}
+
+.main_coverletter {
+    margin-top: 30px;
+}
+
+.coverletter_section {
+    text-align: left;
+}
+
+.coverletter_name {
+    margin: 0 0 16px;
+    color: var(--theme-ink);
+    font-size: 26px;
+    font-weight: 800;
+    line-height: 1.3;
+}
+
+.coverletter_content {
+    color: var(--theme-subtle);
+    font-size: 16px;
+    line-height: 1.8;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+}
+
+.coverletter_content p,
+.coverletter_content ul,
+.coverletter_content ol,
+.coverletter_content blockquote {
+    margin-top: 0;
+    margin-bottom: 14px;
+}
+
+.coverletter_content > :last-child {
+    margin-bottom: 0;
+}
+
+.coverletter_content table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.coverletter_content th,
+.coverletter_content td {
+    border: 1px solid var(--theme-border);
+    padding: 8px 10px;
+}
+
+.coverletter_content code {
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: var(--site-hover-soft);
+    color: var(--theme-ink);
 }
 
 .hover-dark {

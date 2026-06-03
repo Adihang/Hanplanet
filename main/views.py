@@ -3,9 +3,24 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
-from .forms import PortfolioActionButtonForm, PortfolioCareerForm, PortfolioProfileForm, PortfolioProjectForm
+from .forms import (
+    PortfolioActionButtonForm,
+    PortfolioCareerForm,
+    PortfolioCoverLetterForm,
+    PortfolioProfileForm,
+    PortfolioProjectForm,
+)
 from .models import NavLink, QuickLink, UserProfile, WargameSolve
-from portfolio.models import PortfolioActionButton, PortfolioCareer, PortfolioProfile, PortfolioProject, Project, Project_Tag, upload_to_portfolio_profile
+from portfolio.models import (
+    PortfolioActionButton,
+    PortfolioCareer,
+    PortfolioCoverLetter,
+    PortfolioProfile,
+    PortfolioProject,
+    Project,
+    Project_Tag,
+    upload_to_portfolio_profile,
+)
 from stratagem.models import Stratagem, Stratagem_Hero_Score
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
@@ -41,11 +56,13 @@ from django.db.utils import OperationalError, ProgrammingError
 from django.db.models import Max
 from django.db import transaction
 from django.templatetags.static import static
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 from pathlib import Path
 from types import SimpleNamespace
 
+from git.models import GitHubAccountMapping
+from .github_auth import is_github_auth_configured
 from .restart_utils import restart_gunicorn_and_wait
 
 PORTFOLIO_DEFAULT_USERNAME = "HanbyelLim"
@@ -997,6 +1014,14 @@ def apply_ui_context(request, context, ui_lang):
     context["licenses_url"] = build_localized_url(request, "main:licenses_page_lang")
     context["account_privacy_policy_agreed_at"] = ""
     context["account_terms_of_service_agreed_at"] = ""
+    context["account_github_auth_enabled"] = is_github_auth_configured()
+    context["account_github_connected"] = False
+    context["account_github_login"] = ""
+    context["account_github_connect_label"] = "Connect GitHub" if ui_lang == "en" else "GitHub 연동"
+    github_next_url = request.get_full_path() or f"/{ui_lang}/"
+    github_start_url = reverse("main:handrive_github_auth_start_lang", kwargs={"ui_lang": ui_lang})
+    context["account_github_connect_url"] = f"{github_start_url}?{urlencode({'mode': 'link', 'next': github_next_url})}"
+    context["account_github_repos_url"] = reverse("main:handrive_api_github_repositories")
     if request.user.is_authenticated:
         profile_preferences = (
             UserProfile.objects.filter(user=request.user)
@@ -1024,6 +1049,18 @@ def apply_ui_context(request, context, ui_lang):
             context["account_privacy_policy_agreed_at"] = timezone.localtime(privacy_agreed_at).strftime("%Y-%m-%d %H:%M")
         if terms_agreed_at:
             context["account_terms_of_service_agreed_at"] = timezone.localtime(terms_agreed_at).strftime("%Y-%m-%d %H:%M")
+        try:
+            github_mapping = (
+                GitHubAccountMapping.objects
+                .filter(user=request.user)
+                .only("github_login")
+                .first()
+            )
+        except (OperationalError, ProgrammingError):
+            github_mapping = None
+        if github_mapping is not None:
+            context["account_github_connected"] = True
+            context["account_github_login"] = github_mapping.github_login
     try:
         nav_links = list(NavLink.objects.all())
         removed_nav_names = {"github", "thingiverse", "portfolio", "wargame"}
@@ -3662,8 +3699,8 @@ def _get_portfolio_owner(username):
     return user
 
 
-def _build_portfolio_view_context(request, ui_lang, owner):
-    """Assemble shared public portfolio context for owner profile, career, projects, and actions."""
+def _build_portfolio_view_context(request, ui_lang, owner, cover_letter=None):
+    """Assemble shared public portfolio context for owner profile, career, projects, actions, and optional cover letter."""
     context = {}
     apply_ui_context(request, context, ui_lang)
     context["show_chat_widget"] = True
@@ -3768,6 +3805,10 @@ def _build_portfolio_view_context(request, ui_lang, owner):
             for index, sample in enumerate(sample_projects)
         ]
     context["projects"] = projects
+    context["portfolio_cover_letter"] = cover_letter
+    context["portfolio_cover_letter_content_html"] = (
+        render_markdown_safely(cover_letter.content) if cover_letter is not None else ""
+    )
 
     action_buttons = list(PortfolioActionButton.objects.filter(user=owner).order_by("order", "id")[:3])
     context["portfolio_action_buttons"] = action_buttons
@@ -3883,9 +3924,30 @@ def portfolio_user(request, user_id, ui_lang=None):
     return render(request, "main.html", context)
 
 
+def portfolio_user_cover_letter(request, user_id, company_slug, ui_lang=None):
+    """Render one account portfolio with a company-addressed cover letter below projects."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    owner = get_object_or_404(get_user_model(), username=user_id)
+    normalized_slug = PortfolioCoverLetter.build_slug(unquote(company_slug))
+    cover_letter = get_object_or_404(PortfolioCoverLetter, user=owner, slug=normalized_slug)
+    context = _build_portfolio_view_context(request, resolved_lang, owner, cover_letter=cover_letter)
+    is_english = resolved_lang == "en"
+    context["meta_title"] = (
+        f"{owner.username} Portfolio | Hanplanet" if is_english else f"{owner.username} 포트폴리오 | Hanplanet"
+    )
+    context["meta_og_title"] = context["meta_title"]
+    context["meta_description"] = (
+        f"{owner.username}'s portfolio on Hanplanet."
+        if is_english
+        else f"Hanplanet의 {owner.username} 포트폴리오 페이지입니다."
+    )
+    context["meta_og_description"] = context["meta_description"]
+    return render(request, "main.html", context)
+
+
 @require_http_methods(["GET", "POST"])
 def portfolio_write(request, ui_lang=None):
-    """Render and process the authenticated portfolio editor for profile, career, project, and button CRUD."""
+    """Render and process the authenticated portfolio editor for profile, career, project, cover letter, and button CRUD."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
     auth_redirect = _ensure_authenticated_for_write(request)
     if auth_redirect is not None:
@@ -3954,6 +4016,33 @@ def portfolio_write(request, ui_lang=None):
             project.delete()
             return _portfolio_write_redirect_with_status(request, "project_deleted")
 
+        if action in {"add_cover_letter", "update_cover_letter"}:
+            cover_letter_instance = None
+            if action == "update_cover_letter":
+                cover_letter_id = request.POST.get("cover_letter_id")
+                cover_letter_instance = get_object_or_404(
+                    PortfolioCoverLetter,
+                    id=cover_letter_id,
+                    user=request.user,
+                )
+            cover_letter_form = PortfolioCoverLetterForm(
+                request.POST,
+                instance=cover_letter_instance,
+                user=request.user,
+            )
+            if cover_letter_form.is_valid():
+                cover_letter = cover_letter_form.save(commit=False)
+                cover_letter.user = request.user
+                cover_letter.save()
+                return _portfolio_write_redirect_with_status(request, "cover_letter_saved")
+            return _portfolio_write_redirect_with_status(request, "cover_letter_invalid")
+
+        if action == "delete_cover_letter":
+            cover_letter_id = request.POST.get("cover_letter_id")
+            cover_letter = get_object_or_404(PortfolioCoverLetter, id=cover_letter_id, user=request.user)
+            cover_letter.delete()
+            return _portfolio_write_redirect_with_status(request, "cover_letter_deleted")
+
         if action in {"add_button", "update_button"}:
             button_instance = None
             if action == "add_button" and PortfolioActionButton.objects.filter(user=request.user).count() >= 3:
@@ -3984,6 +4073,9 @@ def portfolio_write(request, ui_lang=None):
         "project_saved": "프로젝트가 저장되었습니다.",
         "project_invalid": "프로젝트 입력값을 확인해주세요.",
         "project_deleted": "프로젝트가 삭제되었습니다.",
+        "cover_letter_saved": "자기소개서가 저장되었습니다.",
+        "cover_letter_invalid": "자기소개서 입력값을 확인해주세요. 같은 회사명 URL이 이미 있는지도 확인해주세요.",
+        "cover_letter_deleted": "자기소개서가 삭제되었습니다.",
         "button_saved": "버튼이 저장되었습니다.",
         "button_invalid": "버튼 입력값을 확인해주세요.",
         "button_deleted": "버튼이 삭제되었습니다.",
@@ -3992,15 +4084,19 @@ def portfolio_write(request, ui_lang=None):
     status = str(request.GET.get("status", "")).strip()
     careers_qs = PortfolioCareer.objects.filter(user=request.user).order_by("-order", "-id")
     projects_qs = PortfolioProject.objects.filter(user=request.user).order_by("-create_date", "-id")
+    cover_letters_qs = PortfolioCoverLetter.objects.filter(user=request.user).order_by("company", "id")
 
     career_mode = "add" if str(request.GET.get("career_new", "")).strip() == "1" else "edit"
     project_mode = "add" if str(request.GET.get("project_new", "")).strip() == "1" else "edit"
+    cover_letter_mode = "add" if str(request.GET.get("cover_letter_new", "")).strip() == "1" else "edit"
 
     selected_career = None
     selected_project = None
+    selected_cover_letter = None
 
     selected_career_id = None
     selected_project_id = None
+    selected_cover_letter_id = None
 
     if career_mode != "add":
         try:
@@ -4024,17 +4120,34 @@ def portfolio_write(request, ui_lang=None):
             selected_project = projects_qs.first()
             selected_project_id = selected_project.id if selected_project else None
 
+    if cover_letter_mode != "add":
+        try:
+            selected_cover_letter_id = int(request.GET.get("cover_letter_id", "") or 0)
+        except (TypeError, ValueError):
+            selected_cover_letter_id = None
+        if selected_cover_letter_id:
+            selected_cover_letter = cover_letters_qs.filter(id=selected_cover_letter_id).first()
+        if selected_cover_letter is None:
+            selected_cover_letter = cover_letters_qs.first()
+            selected_cover_letter_id = selected_cover_letter.id if selected_cover_letter else None
+    if selected_cover_letter is None:
+        cover_letter_mode = "add"
+
     context = {
         "write_status_message": status_map.get(status, ""),
         "profile": profile,
         "careers": careers_qs,
         "projects": projects_qs,
+        "cover_letters": cover_letters_qs,
         "career_mode": career_mode,
         "project_mode": project_mode,
+        "cover_letter_mode": cover_letter_mode,
         "selected_career": selected_career,
         "selected_project": selected_project,
+        "selected_cover_letter": selected_cover_letter,
         "selected_career_id": selected_career_id,
         "selected_project_id": selected_project_id,
+        "selected_cover_letter_id": selected_cover_letter_id,
         "action_buttons": PortfolioActionButton.objects.filter(user=request.user).order_by("order", "id"),
         "all_tags": Project_Tag.objects.all(),
     }
@@ -5491,9 +5604,133 @@ def git_repo_retry(request, repo_id: int):
     return JsonResponse({"ok": True, "status": repo.status})
 
 
+def _is_github_api_repo_id(repo_id) -> bool:
+    return str(repo_id or "").startswith("github:")
+
+
+def _is_valid_git_branch_name(branch_name: str) -> bool:
+    import re as _re
+    return bool(branch_name) and not (
+        _re.search(r'[\x00-\x1f\x7f ~^:?*\[\\]|\.\.|\.$|^@\{|@\{|//', branch_name)
+        or branch_name.startswith(".")
+        or branch_name.endswith("/")
+        or branch_name.endswith(".lock")
+    )
+
+
+def _get_writable_github_virtual_repo_for_api(request, repo_id):
+    repo_id_text = str(repo_id or "")
+    try:
+        github_repo_id = int(repo_id_text.split(":", 1)[1])
+    except (IndexError, TypeError, ValueError):
+        return None, _git_json_error("저장소를 찾을 수 없습니다.", status=404)
+
+    from .handrive_views import _get_git_repo_permission_for_request, _selected_github_virtual_repositories
+
+    for repo in _selected_github_virtual_repositories(request):
+        if getattr(repo, "github_repo_id", None) != github_repo_id:
+            continue
+        permission = _get_git_repo_permission_for_request(request, repo)
+        if permission not in {"write", "admin", "owner"}:
+            return None, _git_json_error("브랜치를 수정할 권한이 없습니다.", status=403)
+        if not getattr(repo, "access_token", ""):
+            return None, _git_json_error("GitHub 연동 토큰을 찾을 수 없습니다.", status=403)
+        return repo, None
+
+    return None, _git_json_error("저장소를 찾을 수 없습니다.", status=404)
+
+
+def _github_branch_create(request, repo_id, source_branch: str, new_branch: str):
+    if not _is_valid_git_branch_name(new_branch):
+        return _git_json_error("유효하지 않은 브랜치 이름입니다.")
+
+    repo, error_response = _get_writable_github_virtual_repo_for_api(request, repo_id)
+    if error_response is not None:
+        return error_response
+
+    from .handrive_views import (
+        GIT_BIN,
+        _ensure_github_repo_cache,
+        _get_github_git_cache_path,
+        _git_repo_branches,
+        _run_git_repo_command,
+        _run_github_git_command,
+    )
+
+    try:
+        _ensure_github_repo_cache(repo, force=True)
+        existing_branches = _git_repo_branches(repo)
+        if source_branch not in existing_branches:
+            return _git_json_error("원본 브랜치를 찾을 수 없습니다.", status=404)
+        if new_branch in existing_branches:
+            return _git_json_error("같은 이름의 브랜치가 이미 존재합니다.", status=409)
+        source_sha = (
+            _run_git_repo_command(repo, "rev-parse", f"refs/heads/{source_branch}").stdout
+            or ""
+        ).strip()
+    except RuntimeError as exc:
+        return _git_json_error(f"GitHub 저장소 동기화 실패: {exc}", status=502)
+
+    if not source_sha:
+        return _git_json_error("원본 브랜치 커밋을 찾을 수 없습니다.", status=404)
+
+    cache_path = _get_github_git_cache_path(repo)
+    result = _run_github_git_command(
+        repo,
+        [GIT_BIN, f"--git-dir={cache_path}", "push", "origin", f"{source_sha}:refs/heads/{new_branch}"],
+        timeout=180,
+    )
+    if result.returncode != 0:
+        return _git_json_error((result.stderr or "").strip() or "브랜치 생성에 실패했습니다.", status=502)
+
+    _run_git_repo_command(repo, "update-ref", f"refs/heads/{new_branch}", source_sha, check=False)
+    return JsonResponse({"ok": True, "branch": new_branch}, status=201)
+
+
+def _github_branch_delete(request, repo_id, branch: str):
+    if branch == "main":
+        return _git_json_error("main 브랜치는 삭제할 수 없습니다.", status=403)
+
+    repo, error_response = _get_writable_github_virtual_repo_for_api(request, repo_id)
+    if error_response is not None:
+        return error_response
+    if getattr(repo, "default_branch", "") and branch == repo.default_branch:
+        return _git_json_error("기본 브랜치는 삭제할 수 없습니다.", status=403)
+
+    from .handrive_views import (
+        GIT_BIN,
+        _ensure_github_repo_cache,
+        _get_github_git_cache_path,
+        _git_repo_branches,
+        _run_git_repo_command,
+        _run_github_git_command,
+    )
+
+    try:
+        _ensure_github_repo_cache(repo, force=True)
+        existing_branches = _git_repo_branches(repo)
+    except RuntimeError as exc:
+        return _git_json_error(f"GitHub 저장소 동기화 실패: {exc}", status=502)
+
+    if branch not in existing_branches:
+        return _git_json_error("브랜치를 찾을 수 없습니다.", status=404)
+
+    cache_path = _get_github_git_cache_path(repo)
+    result = _run_github_git_command(
+        repo,
+        [GIT_BIN, f"--git-dir={cache_path}", "push", "origin", f":refs/heads/{branch}"],
+        timeout=180,
+    )
+    if result.returncode != 0:
+        return _git_json_error((result.stderr or "").strip() or "브랜치 삭제에 실패했습니다.", status=502)
+
+    _run_git_repo_command(repo, "update-ref", "-d", f"refs/heads/{branch}", check=False)
+    return JsonResponse({"ok": True, "branch": branch})
+
+
 @require_http_methods(["POST"])
 @login_required
-def git_branch_create(request, repo_id: int):
+def git_branch_create(request, repo_id):
     """Create a new branch from an existing branch in a Git repository."""
     from git.models import GitCollaborator
     from .handrive_views import _get_repo_storage_path, _git_repo_branches
@@ -5510,6 +5747,9 @@ def git_branch_create(request, repo_id: int):
         return _git_json_error("source_branch is required")
     if not new_branch:
         return _git_json_error("new_branch is required")
+
+    if _is_github_api_repo_id(repo_id):
+        return _github_branch_create(request, repo_id, source_branch, new_branch)
 
     # owner 또는 write/admin 권한의 collaborator 만 허용
     try:
@@ -5531,12 +5771,10 @@ def git_branch_create(request, repo_id: int):
     if new_branch in existing_branches:
         return _git_json_error("같은 이름의 브랜치가 이미 존재합니다.", status=409)
 
-    import re as _re
-    if not new_branch or _re.search(r'[\x00-\x1f\x7f ~^:?*\[\\]|\.\.|\.$|^@\{|@\{|//', new_branch) or new_branch.startswith(".") or new_branch.endswith("/") or new_branch.endswith(".lock"):
+    if not _is_valid_git_branch_name(new_branch):
         return _git_json_error("유효하지 않은 브랜치 이름입니다.")
 
     import subprocess as _subprocess
-    from pathlib import Path as _Path
     GIT_BIN = "/usr/bin/git"
     repo_storage_path = _get_repo_storage_path(repo.owner, repo.repo_name)
     result = _subprocess.run(
@@ -5553,7 +5791,7 @@ def git_branch_create(request, repo_id: int):
 
 @require_http_methods(["DELETE"])
 @login_required
-def git_branch_delete(request, repo_id: int):
+def git_branch_delete(request, repo_id):
     """Delete a branch from a Git repository. The 'main' branch cannot be deleted."""
     from git.models import GitCollaborator
     from .handrive_views import _get_repo_storage_path, _git_repo_branches
@@ -5568,6 +5806,9 @@ def git_branch_delete(request, repo_id: int):
         return _git_json_error("branch is required")
     if branch == "main":
         return _git_json_error("main 브랜치는 삭제할 수 없습니다.", status=403)
+
+    if _is_github_api_repo_id(repo_id):
+        return _github_branch_delete(request, repo_id, branch)
 
     try:
         repo = GitRepository.objects.get(id=repo_id, owner=request.user)

@@ -30,6 +30,7 @@
         remove: (k)    => { try { localStorage.removeItem(k); }        catch {} },
     };
     const timeKey = (src) => `vjs-time-${encodeURIComponent(src)}`;
+    const MEDIA_LOOP_STORAGE_KEY = 'handrive-media-loop-enabled';
 
     // ── Player registry ────────────────────────────────────────────────
     const players = new Map(); // videoEl → { player, cleanups[] }
@@ -52,6 +53,55 @@
         return `${m}:${String(ss).padStart(2,'0')}`;
     }
 
+    function getUiLang() {
+        const root = document.querySelector('[data-handrive-page]');
+        return String(root && root.dataset && root.dataset.uiLang || document.documentElement.lang || 'ko')
+            .trim()
+            .toLowerCase() === 'en' ? 'en' : 'ko';
+    }
+
+    function textByLang(ko, en) {
+        return getUiLang() === 'en' ? en : ko;
+    }
+
+    function getHandriveI18nText(key, fallback) {
+        const element = document.getElementById('handrive-i18n');
+        if (!element) {
+            return fallback;
+        }
+        try {
+            const values = JSON.parse(element.textContent || '{}') || {};
+            return typeof values[key] === 'string' ? values[key] : fallback;
+        } catch (_) {
+            return fallback;
+        }
+    }
+
+    function isMediaLoopEnabled() {
+        return ls.get(MEDIA_LOOP_STORAGE_KEY) === '1';
+    }
+
+    function storeMediaLoopEnabled(enabled) {
+        ls.set(MEDIA_LOOP_STORAGE_KEY, enabled ? '1' : '0');
+        window.dispatchEvent(new CustomEvent('handrive:media-loop-change', {
+            detail: { enabled: Boolean(enabled) },
+        }));
+    }
+
+    function buildLoopIconSvg(enabled) {
+        const checkPath = enabled
+            ? '<path class="handrive-loop-check-path" d="M8.4 12.8l2.4 2.4 5.2-5.7"/>'
+            : '';
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+            + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="1.35em" height="1.35em">'
+            + '<path d="M17 2l4 4-4 4"/>'
+            + '<path d="M3 11V9a4 4 0 0 1 4-4h14"/>'
+            + '<path d="M7 22l-4-4 4-4"/>'
+            + '<path d="M21 13v2a4 4 0 0 1-4 4H3"/>'
+            + checkPath
+            + '</svg>';
+    }
+
     // ── 진입점 ────────────────────────────────────────────────────────
     function init(el) {
         if (el.dataset.vjsInitialized || videojs.getPlayer(el)) return;
@@ -62,6 +112,9 @@
         players.set(el, { player, cleanups });
 
         setupControls(player);
+        setupControlBarHoverState(player, cleanups);
+        setupResponsiveControlBar(player, cleanups);
+        setupLoop(player, cleanups);
         setupPip(player, cleanups);
         setupCast(player);
         setupThumbnailPreview(player, el);
@@ -138,6 +191,160 @@
             players.forEach(({ player: other }) => {
                 if (other !== player && !other.paused()) other.pause();
             });
+        });
+    }
+
+    function setupControlBarHoverState(player, cleanups) {
+        const root = player.el();
+        if (!root) return;
+
+        const showControls = () => root.classList.add('is-controlbar-hovered');
+        const hideControls = () => root.classList.remove('is-controlbar-hovered');
+
+        root.addEventListener('pointerenter', showControls);
+        root.addEventListener('pointerleave', hideControls);
+        cleanups.push(() => {
+            root.removeEventListener('pointerenter', showControls);
+            root.removeEventListener('pointerleave', hideControls);
+            hideControls();
+        });
+    }
+
+    function setupResponsiveControlBar(player, cleanups) {
+        const root = player.el();
+        const barComponent = player.getChild('controlBar');
+        const bar = barComponent && typeof barComponent.el === 'function' ? barComponent.el() : null;
+        if (!root || !bar) return;
+
+        let frameId = 0;
+
+        function getHorizontalSize(element) {
+            if (!element || element.classList.contains('vjs-progress-control')) return 0;
+            if (element.classList.contains('vjs-custom-control-spacer')) return 0;
+            const style = window.getComputedStyle(element);
+            if (style.display === 'none') return 0;
+            return element.offsetWidth
+                + (parseFloat(style.marginLeft) || 0)
+                + (parseFloat(style.marginRight) || 0);
+        }
+
+        function update() {
+            frameId = 0;
+            root.classList.remove('is-right-actions-collapsed');
+
+            const style = window.getComputedStyle(bar);
+            const availableWidth = bar.clientWidth
+                - (parseFloat(style.paddingLeft) || 0)
+                - (parseFloat(style.paddingRight) || 0);
+            const requiredWidth = Array.from(bar.children).reduce(
+                (total, child) => total + getHorizontalSize(child),
+                0
+            );
+            root.classList.toggle('is-right-actions-collapsed', requiredWidth > availableWidth);
+        }
+
+        function scheduleUpdate() {
+            if (frameId) return;
+            frameId = window.requestAnimationFrame(update);
+        }
+
+        const resizeObserver = typeof ResizeObserver === 'function'
+            ? new ResizeObserver(scheduleUpdate)
+            : null;
+        if (resizeObserver) {
+            resizeObserver.observe(root);
+            resizeObserver.observe(bar);
+        } else {
+            window.addEventListener('resize', scheduleUpdate);
+            cleanups.push(() => window.removeEventListener('resize', scheduleUpdate));
+        }
+
+        const mutationObserver = typeof MutationObserver === 'function'
+            ? new MutationObserver(scheduleUpdate)
+            : null;
+        if (mutationObserver) {
+            mutationObserver.observe(bar, { childList: true, subtree: false });
+        }
+
+        player.ready(scheduleUpdate);
+        scheduleUpdate();
+        cleanups.push(() => {
+            if (frameId) {
+                window.cancelAnimationFrame(frameId);
+                frameId = 0;
+            }
+            if (resizeObserver) resizeObserver.disconnect();
+            if (mutationObserver) mutationObserver.disconnect();
+            root.classList.remove('is-right-actions-collapsed');
+        });
+    }
+
+    // ── 반복 재생 ────────────────────────────────────────────────────
+    function setupLoop(player, cleanups) {
+        const buttonLabel = () => getHandriveI18nText('media_loop_toggle', textByLang('연속재생 켜기/끄기', 'Toggle loop playback'));
+        const enabledLabel = () => getHandriveI18nText('media_loop_on', textByLang('연속재생 켜짐', 'Loop playback on'));
+        const disabledLabel = () => getHandriveI18nText('media_loop_off', textByLang('연속재생 꺼짐', 'Loop playback off'));
+
+        class HandriveLoopButton extends videojs.getComponent('Button') {
+            constructor(p, opts) {
+                super(p, opts);
+                this.controlText(buttonLabel());
+                this.addClass('vjs-handrive-loop-button');
+                this.el().setAttribute('title', buttonLabel());
+                const icon = this.el().querySelector('.vjs-icon-placeholder');
+                if (icon) {
+                    icon.innerHTML = buildLoopIconSvg(false);
+                }
+                this.syncLoopState(isMediaLoopEnabled());
+                this._syncFromEvent = (event) => {
+                    const enabled = Boolean(event && event.detail && event.detail.enabled);
+                    this.syncLoopState(enabled);
+                };
+                window.addEventListener('handrive:media-loop-change', this._syncFromEvent);
+                p.on('dispose', () => {
+                    window.removeEventListener('handrive:media-loop-change', this._syncFromEvent);
+                });
+            }
+
+            syncLoopState(enabled) {
+                const nextEnabled = Boolean(enabled);
+                this.player().loop(nextEnabled);
+                this.el().setAttribute('aria-pressed', nextEnabled ? 'true' : 'false');
+                this.el().setAttribute('aria-label', nextEnabled ? enabledLabel() : disabledLabel());
+                this.el().setAttribute('title', nextEnabled ? enabledLabel() : disabledLabel());
+                this.el().classList.toggle('is-loop-enabled', nextEnabled);
+                const icon = this.el().querySelector('.vjs-icon-placeholder');
+                if (icon) {
+                    icon.innerHTML = buildLoopIconSvg(nextEnabled);
+                }
+            }
+
+            handleClick() {
+                storeMediaLoopEnabled(!this.player().loop());
+            }
+
+            buildCSSClass() {
+                return `vjs-handrive-loop-button ${super.buildCSSClass()}`;
+            }
+        }
+
+        if (!videojs.getComponent('HandriveLoopButton')) {
+            videojs.registerComponent('HandriveLoopButton', HandriveLoopButton);
+        }
+
+        player.ready(() => {
+            const bar = player.getChild('controlBar');
+            if (!bar || bar.getChild('handriveLoopButton') || bar.getChild('HandriveLoopButton')) {
+                return;
+            }
+            const rateIdx = bar.children().findIndex(
+                c => c.name_ === 'playbackRateMenuButton' || c.name_ === 'PlaybackRateMenuButton'
+            );
+            const fsIdx = bar.children().findIndex(
+                c => c.name_ === 'fullscreenToggle' || c.name_ === 'FullscreenToggle'
+            );
+            const idx = rateIdx >= 0 ? rateIdx + 1 : (fsIdx >= 0 ? fsIdx : undefined);
+            bar.addChild('HandriveLoopButton', {}, idx);
         });
     }
 
@@ -260,6 +467,7 @@
     // ── 썸네일 프리뷰 ────────────────────────────────────────────────
     function setupThumbnailPreview(player, el) {
         if (isMobile) return;
+        setupProgressHoverIndicator(player);
         const videoEl = player.el().querySelector('video');
         const vttUrl  = (videoEl && videoEl.dataset.thumbnailVttUrl) || (el && el.dataset.thumbnailVttUrl);
         if (vttUrl) {
@@ -267,6 +475,44 @@
         } else {
             setupRealtimeThumbnails(player, el);
         }
+    }
+
+    function setupProgressHoverIndicator(player) {
+        player.ready(() => {
+            const bar     = player.getChild('controlBar');
+            const progCtl = bar && bar.getChild('progressControl');
+            const barEl   = bar && typeof bar.el === 'function' ? bar.el() : null;
+            const progEl  = progCtl && typeof progCtl.el === 'function' ? progCtl.el() : null;
+            const holderEl = progEl && progEl.querySelector('.vjs-progress-holder');
+            if (!barEl || !progEl || !holderEl || progEl.dataset.handriveProgressHoverIndicator === '1') return;
+
+            progEl.dataset.handriveProgressHoverIndicator = '1';
+            const indicator = document.createElement('span');
+            indicator.className = 'vjs-progress-hover-indicator';
+            indicator.setAttribute('aria-hidden', 'true');
+            indicator.innerHTML = '<span class="vjs-progress-hover-fill"></span>';
+            holderEl.appendChild(indicator);
+
+            function update(event) {
+                const rect = holderEl.getBoundingClientRect();
+                if (!rect.width) return;
+                const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+                progEl.style.setProperty('--handrive-progress-hover-ratio', String(ratio));
+                progEl.classList.add('is-progress-hovering');
+            }
+
+            function hide() {
+                progEl.classList.remove('is-progress-hovering');
+            }
+
+            barEl.addEventListener('mousemove', update);
+            barEl.addEventListener('mouseleave', hide);
+            player.on('dispose', () => {
+                barEl.removeEventListener('mousemove', update);
+                barEl.removeEventListener('mouseleave', hide);
+                indicator.remove();
+            });
+        });
     }
 
     function attachThumbOverlay(player, tooltip) {

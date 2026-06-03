@@ -4,6 +4,18 @@
     // Navigation helpers own breadcrumb generation plus directory-cache refresh behavior for the
     // tree/list UI. They are shared by path bar rendering and reload-after-mutation flows.
 
+    function decodeBreadcrumbLabel(label) {
+        var source = String(label || "");
+        if (source.indexOf("%") < 0) {
+            return source;
+        }
+        try {
+            return decodeURIComponent(source);
+        } catch (error) {
+            return source;
+        }
+    }
+
     function buildBreadcrumbItems(pathValue, options) {
         // Breadcrumb generation understands scoped homes,
         // so page rendering can stay agnostic about user/root path differences.
@@ -39,7 +51,7 @@
             for (var index = homeParts.length; index < parts.length; index += 1) {
                 var composedPath = parts.slice(0, index + 1).join("/");
                 crumbs.push({
-                    label: parts[index],
+                    label: decodeBreadcrumbLabel(parts[index]),
                     path: composedPath,
                     isCurrent: index === parts.length - 1,
                 });
@@ -61,12 +73,45 @@
         normalizedParts.forEach(function (part, index) {
             nextPath = nextPath ? nextPath + "/" + part : part;
             rootCrumbs.push({
-                label: part,
+                label: decodeBreadcrumbLabel(part),
                 path: nextPath,
                 isCurrent: index === normalizedParts.length - 1,
             });
         });
         return rootCrumbs;
+    }
+
+    function formatPathLabel(pathValue, options) {
+        var settings = options || {};
+        var normalizePath = settings.normalizePath || function (value) { return value || ""; };
+        var buildItems = settings.buildBreadcrumbItems || buildBreadcrumbItems;
+        var leadingSlash = settings.leadingSlash !== false;
+        var emptyLabel = typeof settings.emptyLabel === "string" ? settings.emptyLabel : "";
+        var normalized = normalizePath(pathValue, true);
+        if (!normalized && emptyLabel) {
+            return emptyLabel;
+        }
+
+        var crumbs = buildItems(normalized, settings) || [];
+        var labels = crumbs
+            .map(function (crumb) {
+                return decodeBreadcrumbLabel(crumb && crumb.label);
+            })
+            .map(function (label) {
+                return String(label || "").trim();
+            })
+            .filter(Boolean);
+        if (labels.length) {
+            return (leadingSlash ? "/" : "") + labels.join("/");
+        }
+        if (!normalized) {
+            return leadingSlash ? "/" : "";
+        }
+        return (leadingSlash ? "/" : "") + normalized
+            .split("/")
+            .filter(Boolean)
+            .map(decodeBreadcrumbLabel)
+            .join("/");
     }
 
     function renderPathBreadcrumbs(pathValue, options) {
@@ -185,6 +230,7 @@
 
     window.HandriveNavigationHelpers = {
         buildBreadcrumbItems: buildBreadcrumbItems,
+        formatPathLabel: formatPathLabel,
         getCachedEntries: getCachedEntries,
         loadDirectory: loadDirectory,
         refreshCurrentDirectory: refreshCurrentDirectory,

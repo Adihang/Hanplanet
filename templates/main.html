@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load template_utils %}
 {% block body_class %}portfolio-page{% endblock %}
 {% block content %}
 <style data-surface-light="portfolio-main">
@@ -27,8 +28,8 @@
     <a
         class="own-portfolio-edit-widget ui-nav-link"
         href="{{ portfolio_write_url }}"
-        aria-label="{% include 'partials/ui_i18n.html' with key='edit_portfolio' %}"
-        title="{% include 'partials/ui_i18n.html' with key='edit_portfolio' %}"
+        aria-label="{% include_trimmed 'partials/ui_i18n.html' key='edit_portfolio' %}"
+        title="{% include_trimmed 'partials/ui_i18n.html' key='edit_portfolio' %}"
     >
         {% include 'partials/ui_i18n.html' with key='edit' %}
     </a>
@@ -59,14 +60,24 @@
         <div class="main_projects">
             {% include "main/Projects.html" %}
         </div>
+        {% if portfolio_cover_letter %}
+        <div class="main_coverletter">
+            <section class="coverletter_section">
+                <h2 class="coverletter_name">{{ portfolio_cover_letter.name }}</h2>
+                <div class="coverletter_content">
+                    {{ portfolio_cover_letter_content_html }}
+                </div>
+            </section>
+        </div>
+        {% endif %}
     </div>
     <div class="portfolio-floating-actions" aria-hidden="true">
         <button
             type="button"
             class="portfolio-print-btn ui-nav-link"
             data-portfolio-print
-            aria-label="{% include 'partials/ui_i18n.html' with key='print_summary' %}"
-            title="{% include 'partials/ui_i18n.html' with key='print_summary' %}"
+            aria-label="{% include_trimmed 'partials/ui_i18n.html' key='print_summary' %}"
+            title="{% include_trimmed 'partials/ui_i18n.html' key='print_summary' %}"
         >
             <svg class="portfolio-print-btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M7 9V4h10v5"/>

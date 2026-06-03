@@ -163,6 +163,7 @@ Secrets go in `config/secrets.json` (git-ignored). Key env vars:
 - `FORGEJO_BASE_URL` — Gitea 서버 주소 (기본: `http://localhost:3000`)
 - `FORGEJO_ADMIN_TOKEN` — Gitea 관리자 API 토큰 (repo 생성/collaborator 관리용)
 - `PUBLIC_GIT_BASE_URL` — 외부 노출 Git URL (운영: `https://hanplanet.com/git`)
+- `GITHUB_AUTH_SCOPE` — GitHub OAuth 권한 범위 (기본: `repo user:email`, collaborator/private repo 목록 조회용)
 
 Do not commit API keys or secrets. Production uses `DEBUG = False`.
 

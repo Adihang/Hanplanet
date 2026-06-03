@@ -44,6 +44,28 @@ def is_github_auth_configured() -> bool:
     )
 
 
+def get_github_auth_scope() -> str:
+    return str(getattr(settings, "GITHUB_AUTH_SCOPE", "repo user:email") or "").strip()
+
+
+def _github_scope_set(scope_value: str) -> set[str]:
+    return {
+        item.strip()
+        for item in re.split(r"[\s,]+", str(scope_value or ""))
+        if item.strip()
+    }
+
+
+def github_token_has_configured_repository_scope(token_scope: str) -> bool:
+    requested_scopes = _github_scope_set(get_github_auth_scope())
+    granted_scopes = _github_scope_set(token_scope)
+    if "repo" in requested_scopes:
+        return "repo" in granted_scopes
+    if "public_repo" in requested_scopes:
+        return "repo" in granted_scopes or "public_repo" in granted_scopes
+    return True
+
+
 def build_github_authorize_url(callback_url: str, state: str) -> str:
     client_id = str(getattr(settings, "GITHUB_APP_CLIENT_ID", "") or "").strip()
     if not client_id:
@@ -53,6 +75,9 @@ def build_github_authorize_url(callback_url: str, state: str) -> str:
         "redirect_uri": callback_url,
         "state": state,
     }
+    scope = get_github_auth_scope()
+    if scope:
+        params["scope"] = scope
     base_url = str(getattr(settings, "GITHUB_AUTH_AUTHORIZE_URL", "https://github.com/login/oauth/authorize") or "").strip()
     return f"{base_url}?{urlencode(params)}"
 
@@ -186,6 +211,44 @@ def fetch_github_identity(access_token: str) -> GitHubIdentity:
         avatar_url=str(payload.get("avatar_url") or "").strip(),
         email_verified=email_verified,
     )
+
+
+def list_github_repositories(access_token: str, *, limit: int = 300) -> list[dict]:
+    if not access_token:
+        raise GitHubAuthError("GitHub access token missing")
+
+    repositories: list[dict] = []
+    page = 1
+    per_page = 100
+    while len(repositories) < limit:
+        try:
+            response = httpx.get(
+                _github_api_url("/user/repos"),
+                headers=_github_headers(access_token),
+                params={
+                    "affiliation": "owner,collaborator,organization_member",
+                    "sort": "updated",
+                    "direction": "desc",
+                    "per_page": per_page,
+                    "page": page,
+                },
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise GitHubAuthError("GitHub repository request failed") from exc
+
+        if not isinstance(payload, list):
+            raise GitHubAuthError("GitHub repository response invalid")
+        if not payload:
+            break
+        repositories.extend(item for item in payload if isinstance(item, dict))
+        if len(payload) < per_page:
+            break
+        page += 1
+
+    return repositories[:limit]
 
 
 def build_unique_github_username(identity: GitHubIdentity) -> str:

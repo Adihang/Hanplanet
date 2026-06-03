@@ -50,7 +50,9 @@
             return typeMarker;
         }
 
-        if (settings.isRepo) {
+        if (settings.isGithubRepo) {
+            typeMarker.classList.add("is-github-repo");
+        } else if (settings.isRepo) {
             typeMarker.classList.add("is-repo");
         } else if (settings.isBranch) {
             typeMarker.classList.add("is-branch");

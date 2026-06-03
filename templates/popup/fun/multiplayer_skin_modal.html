@@ -1,10 +1,11 @@
+{% load template_utils %}
 <div class="multiplayer-skin-modal-backdrop" data-game-skin-modal hidden>
     <div class="multiplayer-skin-modal" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="multiplayer-skin-modal-title">
         <div class="multiplayer-skin-modal-header">
             <h2 class="multiplayer-skin-modal-title" id="multiplayer-skin-modal-title">
                 {% include 'partials/ui_i18n.html' with key='multiplayer_skin_title' %}
             </h2>
-            <button class="multiplayer-skin-modal-close" type="button" data-game-skin-modal-close aria-label="{% include 'partials/ui_i18n.html' with key='close' %}">
+            <button class="multiplayer-skin-modal-close" type="button" data-game-skin-modal-close aria-label="{% include_trimmed 'partials/ui_i18n.html' key='close' %}">
                 ×
             </button>
         </div>

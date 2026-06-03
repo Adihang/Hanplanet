@@ -13,11 +13,11 @@
             <div class="ui-subtitle ui-path-breadcrumbs">
                 {% for crumb in write_breadcrumbs %}
                     {% if not forloop.first %}<span class="handrive-path-sep ui-path-sep">/</span>{% endif %}
-                    <a class="ui-path-link" href="{{ crumb.url }}">{{ crumb.label }}</a>
+                    <a class="ui-path-link" href="{{ crumb.url }}" data-handrive-dir="{{ crumb.path|default:'' }}">{{ crumb.label }}</a>
                 {% endfor %}
                 {% if write_current_file_name %}
                     <span class="handrive-path-sep ui-path-sep">/</span>
-                    <span class="ui-path-current">{{ write_current_file_name }}</span>
+                    <span class="ui-path-current" data-handrive-dir="{{ original_relative_path }}">{{ write_current_file_name }}</span>
                 {% endif %}
             </div>
         </div>

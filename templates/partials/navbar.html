@@ -1,3 +1,4 @@
+{% load template_utils %}
 <!-- 네비게이션바 -->
 <nav class="navbar ui-nav">
     <div class="container-fluid">
@@ -29,8 +30,8 @@
                 type="button"
                 class="ui-pwa-install-btn"
                 data-pwa-install
-                aria-label="{% include 'partials/ui_i18n.html' with key='install_app' %}"
-                title="{% include 'partials/ui_i18n.html' with key='install_app' %}"
+                aria-label="{% include_trimmed 'partials/ui_i18n.html' key='install_app' %}"
+                title="{% include_trimmed 'partials/ui_i18n.html' key='install_app' %}"
             >
                 <span class="ui-pwa-install-icon" aria-hidden="true"></span>
             </button>

@@ -4,7 +4,7 @@
     // Modal helpers keep open/close state and checkbox list rendering outside page.js so the
     // page controller only manages target entries and follow-up API calls.
 
-    function setRenameModalOpen(modal, renameTarget, renameInput, syncModalBodyState, opened, entry, getEntryEditableName) {
+    function setRenameModalOpen(modal, renameTarget, renameInput, syncModalBodyState, opened, entry, getEntryEditableName, targetLabel) {
         if (!modal) {
             return;
         }
@@ -16,7 +16,7 @@
             return;
         }
         if (renameTarget) {
-            renameTarget.textContent = entry ? entry.path : "";
+            renameTarget.textContent = targetLabel || (entry ? entry.path : "");
         }
         if (renameInput) {
             renameInput.value = typeof getEntryEditableName === "function" ? getEntryEditableName(entry) : "";
@@ -119,7 +119,7 @@
             });
     }
 
-    function setPermissionModalOpen(modal, permissionTarget, syncModalBodyState, opened, entries, multipleLabel) {
+    function setPermissionModalOpen(modal, permissionTarget, syncModalBodyState, opened, entries, multipleLabel, formatPathLabel) {
         if (!modal) {
             return [];
         }
@@ -135,7 +135,10 @@
             if (normalizedEntries.length > 1) {
                 permissionTarget.textContent = multipleLabel || "";
             } else {
-                permissionTarget.textContent = normalizedEntries[0] ? normalizedEntries[0].path : "";
+                var entryPath = normalizedEntries[0] ? normalizedEntries[0].path : "";
+                permissionTarget.textContent = typeof formatPathLabel === "function"
+                    ? formatPathLabel(entryPath)
+                    : entryPath;
             }
         }
         return normalizedEntries;

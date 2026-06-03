@@ -163,6 +163,7 @@
         var settings = options || {};
         var entry = settings.entry || null;
         var previewDownloadButton = settings.previewDownloadButton || null;
+        var previewPrintButton = settings.previewPrintButton || null;
         var previewEditButton = settings.previewEditButton || null;
         var previewDeleteButton = settings.previewDeleteButton || null;
         var previewUrlShareButton = settings.previewUrlShareButton || null;
@@ -172,10 +173,13 @@
         var buildDownloadUrl = settings.buildDownloadUrl || function () { return ""; };
         var onEdit = settings.onEdit || function () {};
         var previewRenderMode = String(settings.previewRenderMode || "").trim();
+        var previewCanPrint = Boolean(settings.previewCanPrint);
 
         var isFileEntry = Boolean(isPreviewableFileEntry(entry));
+        var canRead = Boolean(entry && entry.can_read !== false);
         var canEdit = Boolean(entry && entry.can_edit);
         var canEditPreview = previewRenderMode !== "unsupported";
+        var canPrintPreview = previewRenderMode !== "unsupported" && previewRenderMode !== "media_video";
 
         if (previewDownloadButton) {
             if (!isFileEntry) {
@@ -190,6 +194,10 @@
                     previewDownloadButton.removeAttribute("href");
                 }
             }
+        }
+
+        if (previewPrintButton) {
+            previewPrintButton.hidden = !(isFileEntry && canRead && previewCanPrint && canPrintPreview);
         }
 
         if (previewEditButton) {

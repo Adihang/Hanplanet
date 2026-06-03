@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load static_versioned %}
+{% load static_versioned template_utils %}
 {% block body_class %}root-page{% endblock %}
 {% block content %}
 <div class="root-shell-controls root-shell-controls-fixed" data-root-controls-host>
@@ -10,7 +10,7 @@
     {% endif %}
 </div>
 <main class="main main-surface-layer root-search-page">
-    <section class="root-search-shell" aria-label="{% include 'partials/ui_i18n.html' with key='search_and_favorites' %}">
+    <section class="root-search-shell" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='search_and_favorites' %}">
         <h1 class="root-search-title">Hanplanet</h1>
         <div class="root-shell-links">
             <div data-root-nav-links-host></div>
@@ -19,8 +19,8 @@
             <button
                 type="submit"
                 class="root-search-submit"
-                aria-label="{% include 'partials/ui_i18n.html' with key='search' %}"
-                title="{% include 'partials/ui_i18n.html' with key='search' %}"
+                aria-label="{% include_trimmed 'partials/ui_i18n.html' key='search' %}"
+                title="{% include_trimmed 'partials/ui_i18n.html' key='search' %}"
             >
                 <span class="root-search-submit-icon" aria-hidden="true"></span>
             </button>
@@ -33,7 +33,7 @@
                 type="text"
                 inputmode="search"
                 autocomplete="off"
-                placeholder="{% include 'partials/ui_i18n.html' with key='search_keyword_or_url' %}"
+                placeholder="{% include_trimmed 'partials/ui_i18n.html' key='search_keyword_or_url' %}"
                 data-root-search-input
             >
             <div class="root-search-engine root-search-engine-picker" data-root-engine-picker>
@@ -44,7 +44,7 @@
                     data-root-engine-toggle
                     aria-haspopup="listbox"
                     aria-expanded="false"
-                    aria-label="{% include 'partials/ui_i18n.html' with key='search_engine' %}"
+                    aria-label="{% include_trimmed 'partials/ui_i18n.html' key='search_engine' %}"
                 >
                     <span class="root-search-engine-icon" data-root-engine-icon aria-hidden="true"></span>
                     <span class="root-search-engine-label" data-root-engine-label>Google</span>
@@ -56,13 +56,13 @@
             class="root-translate-panel"
             data-root-translate-panel
             data-translate-api-url="{{ root_translate_api_url }}"
-            data-translating-label="{% include 'partials/ui_i18n.html' with key='translating' %}"
-            data-translate-error-label="{% include 'partials/ui_i18n.html' with key='translation_failed' %}"
-            data-placeholder-ko="{% include 'partials/ui_i18n.html' with key='translation_placeholder_ko' %}"
-            data-placeholder-en="{% include 'partials/ui_i18n.html' with key='translation_placeholder_en' %}"
-            data-placeholder-result="{% include 'partials/ui_i18n.html' with key='translation_placeholder_result' %}"
-            data-copy-label="{% include 'partials/ui_i18n.html' with key='copy' %}"
-            data-copied-label="{% include 'partials/ui_i18n.html' with key='copied' %}"
+            data-translating-label="{% include_trimmed 'partials/ui_i18n.html' key='translating' %}"
+            data-translate-error-label="{% include_trimmed 'partials/ui_i18n.html' key='translation_failed' %}"
+            data-placeholder-ko="{% include_trimmed 'partials/ui_i18n.html' key='translation_placeholder_ko' %}"
+            data-placeholder-en="{% include_trimmed 'partials/ui_i18n.html' key='translation_placeholder_en' %}"
+            data-placeholder-result="{% include_trimmed 'partials/ui_i18n.html' key='translation_placeholder_result' %}"
+            data-copy-label="{% include_trimmed 'partials/ui_i18n.html' key='copy' %}"
+            data-copied-label="{% include_trimmed 'partials/ui_i18n.html' key='copied' %}"
         >
             <div class="root-translate-row">
                 <label class="root-search-sr-only" for="rootTranslateSourceInput">
@@ -79,8 +79,8 @@
                         type="button"
                         class="root-input-clear root-translate-source-clear"
                         data-root-translate-source-clear
-                        aria-label="{% include 'partials/ui_i18n.html' with key='clear' %}"
-                        title="{% include 'partials/ui_i18n.html' with key='clear' %}"
+                        aria-label="{% include_trimmed 'partials/ui_i18n.html' key='clear' %}"
+                        title="{% include_trimmed 'partials/ui_i18n.html' key='clear' %}"
                         hidden
                     ></button>
                     <span class="root-translate-textarea-placeholder" data-root-translate-source-placeholder aria-hidden="true">
@@ -91,8 +91,8 @@
                     type="button"
                     class="root-translate-swap"
                     data-root-translate-swap
-                    aria-label="{% include 'partials/ui_i18n.html' with key='swap_languages' %}"
-                    title="{% include 'partials/ui_i18n.html' with key='swap_languages' %}"
+                    aria-label="{% include_trimmed 'partials/ui_i18n.html' key='swap_languages' %}"
+                    title="{% include_trimmed 'partials/ui_i18n.html' key='swap_languages' %}"
                 >
                     <span aria-hidden="true">⇄</span>
                 </button>
@@ -104,7 +104,7 @@
                         id="rootTranslateTargetOutput"
                         class="ui-markdown root-translate-textarea root-translate-textarea-output"
                         data-root-translate-target
-                        data-placeholder="{% include 'partials/ui_i18n.html' with key='translation_placeholder_result' %}"
+                        data-placeholder="{% include_trimmed 'partials/ui_i18n.html' key='translation_placeholder_result' %}"
                         aria-live="polite"
                         aria-labelledby="rootTranslateTargetLabel"
                         aria-readonly="true"
@@ -114,8 +114,8 @@
                         type="button"
                         class="root-translate-copy"
                         data-root-translate-copy
-                        aria-label="{% include 'partials/ui_i18n.html' with key='copy' %}"
-                        title="{% include 'partials/ui_i18n.html' with key='copy' %}"
+                        aria-label="{% include_trimmed 'partials/ui_i18n.html' key='copy' %}"
+                        title="{% include_trimmed 'partials/ui_i18n.html' key='copy' %}"
                         disabled
                     >
                         <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -130,12 +130,12 @@
             class="root-shortcuts"
             data-root-shortcuts
             data-authenticated="{% if request.user.is_authenticated %}1{% else %}0{% endif %}"
-            data-login-hint="{% include 'partials/ui_i18n.html' with key='login_hint_shortcuts' %}"
-            data-empty-message="{% include 'partials/ui_i18n.html' with key='empty_shortcuts' %}"
-            data-add-label="{% include 'partials/ui_i18n.html' with key='add' %}"
-            data-edit-label="{% include 'partials/ui_i18n.html' with key='edit' %}"
-            data-name-placeholder="{% include 'partials/ui_i18n.html' with key='name_placeholder' %}"
-            data-url-placeholder="{% include 'partials/ui_i18n.html' with key='url_placeholder' %}"
+            data-login-hint="{% include_trimmed 'partials/ui_i18n.html' key='login_hint_shortcuts' %}"
+            data-empty-message="{% include_trimmed 'partials/ui_i18n.html' key='empty_shortcuts' %}"
+            data-add-label="{% include_trimmed 'partials/ui_i18n.html' key='add' %}"
+            data-edit-label="{% include_trimmed 'partials/ui_i18n.html' key='edit' %}"
+            data-name-placeholder="{% include_trimmed 'partials/ui_i18n.html' key='name_placeholder' %}"
+            data-url-placeholder="{% include_trimmed 'partials/ui_i18n.html' key='url_placeholder' %}"
         >
             <p class="root-shortcuts-hint" data-root-shortcuts-hint></p>
             {% if not request.user.is_authenticated %}

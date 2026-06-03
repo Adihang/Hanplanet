@@ -1,4 +1,6 @@
 import calendar
+import re
+import unicodedata
 import uuid
 
 from django.conf import settings
@@ -390,3 +392,44 @@ class PortfolioActionButton(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.label}"
+
+
+class PortfolioCoverLetter(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="portfolio_cover_letters",
+        verbose_name="사용자",
+    )
+    company = models.CharField("회사명", max_length=120)
+    slug = models.CharField("URL 회사명", max_length=180)
+    name = models.CharField("이름", max_length=120)
+    content = models.TextField("내용")
+    created_at = models.DateTimeField("생성일", auto_now_add=True)
+    updated_at = models.DateTimeField("수정일", auto_now=True)
+
+    class Meta:
+        db_table = "main_portfoliocoverletter"
+        ordering = ["company", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "slug"], name="unique_portfolio_cover_letter_slug_per_user"),
+        ]
+        verbose_name = "포트폴리오 자기소개서"
+        verbose_name_plural = "포트폴리오 자기소개서"
+
+    @staticmethod
+    def build_slug(company):
+        value = unicodedata.normalize("NFKC", str(company or "")).strip()
+        value = re.sub(r"[\\/#?]+", "-", value)
+        value = re.sub(r"\s+", "-", value)
+        value = re.sub(r"-{2,}", "-", value).strip(" .-")
+        return (value or "coverletter")[:180]
+
+    def save(self, *args, **kwargs):
+        self.company = str(self.company or "").strip()
+        self.name = str(self.name or "").strip()
+        self.slug = self.build_slug(self.company)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.user} - {self.company}"

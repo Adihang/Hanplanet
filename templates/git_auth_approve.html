@@ -81,6 +81,18 @@
             statusMsg.style.display = "block";
         }
 
+        function selectServerMessage(data, fallback) {
+            if (!data || typeof data !== "object") {
+                return fallback || "";
+            }
+            const lang = "{{ ui_lang|default:'ko'|escapejs }}" === "en" ? "en" : "ko";
+            const messages = data.error_messages || data.messages;
+            if (messages && typeof messages === "object") {
+                return messages[lang] || messages.ko || messages.en || fallback || "";
+            }
+            return data.error_message || data.message || data.error || fallback || "";
+        }
+
         function disableButtons() {
             approveBtn.disabled = true;
             denyBtn.disabled    = true;
@@ -107,7 +119,7 @@
                         '<p style="font-size:0.9em;color:#888;">' + GIT_AUTH_STRINGS.approved_sub + '</p>' +
                         '</div>';
                 } else {
-                    setStatus(GIT_AUTH_STRINGS.error_prefix + (data.error || GIT_AUTH_STRINGS.unknown_error));
+                    setStatus(GIT_AUTH_STRINGS.error_prefix + selectServerMessage(data, GIT_AUTH_STRINGS.unknown_error));
                     approveBtn.disabled = false;
                     denyBtn.disabled    = false;
                 }

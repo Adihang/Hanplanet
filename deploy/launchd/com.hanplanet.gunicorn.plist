@@ -16,7 +16,7 @@
     <key>DJANGO_SETTINGS_MODULE</key>
     <string>config.settings</string>
     <key>OLLAMA_MODEL</key>
-    <string>gemma4:latest</string>
+    <string>gemma4:12b</string>
     <key>OLLAMA_NUM_CTX</key>
     <string>16384</string>
     <key>PYTHONPATH</key>

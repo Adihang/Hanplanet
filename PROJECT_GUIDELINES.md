@@ -138,7 +138,7 @@ This is a Django 5.0.1 portfolio + content management + multiplayer game platfor
 - Django issues JWT tokens at `/api/game-auth-token/`; game server verifies them
 - `world/world.js` — core game simulation; `world/spatialGrid.js` — AOI optimization
 
-**AI chatbot:** Ollama at `http://localhost:11434` (default model: `gemma4:latest`, injected via `OLLAMA_MODEL`), accessed via `/api/chat/`
+**AI chatbot:** Ollama at `http://localhost:11434` (default model: `gemma4:12b`, injected via `OLLAMA_MODEL`), accessed via `/api/chat/`
 
 **OpenHarness AI 프록시:** Django `ai` 앱이 Ollama를 외부에 OpenAI-compatible API로 노출한다.
 - 엔드포인트: `https://hanplanet.com/ai/v1`
@@ -156,7 +156,7 @@ This is a Django 5.0.1 portfolio + content management + multiplayer game platfor
 
 Secrets go in `config/secrets.json` (git-ignored). Key env vars:
 - `DJANGO_DEBUG`, `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`
-- `OLLAMA_BASE_URL`, `OLLAMA_MODEL` (launchd sets `gemma4:latest` by default)
+- `OLLAMA_BASE_URL`, `OLLAMA_MODEL` (launchd sets `gemma4:12b` by default)
 - `OLLAMA_PROXY_API_KEY` — OpenHarness 프록시 인증 키 (secrets.json에 저장, 비어있으면 인증 없음)
 - `GAME_JWT_SECRET`, `GAME_WS_PUBLIC_URL`
 - `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` (Cloudflare CAPTCHA)

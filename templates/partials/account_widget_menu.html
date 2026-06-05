@@ -6,13 +6,36 @@
         data-auth-github-trigger
         data-github-enabled="{{ account_github_auth_enabled|yesno:'1,0' }}"
         data-github-connected="{{ account_github_connected|yesno:'1,0' }}"
+        data-github-login="{{ account_github_login }}"
         data-github-connect-url="{{ account_github_connect_url }}"
         data-github-repos-url="{{ account_github_repos_url }}"
+        data-github-unlink-url="{{ account_github_unlink_url }}"
         title="{{ account_github_connect_label }}"
         aria-label="{{ account_github_connect_label }}"
     >
         <svg class="ui-auth-account-github-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="currentColor">
             <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.01.08-2.11 0 0 .67-.21 2.2.82a7.53 7.53 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.91.08 2.11.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+    </button>
+    <button
+        type="button"
+        class="ui-auth-account-google-btn{% if account_google_connected %} is-connected{% endif %}"
+        data-auth-google-trigger
+        data-google-enabled="{{ account_google_auth_enabled|yesno:'1,0' }}"
+        data-google-connected="{{ account_google_connected|yesno:'1,0' }}"
+        data-google-connect-url="{{ account_google_connect_url }}"
+        data-google-email="{{ account_google_email }}"
+        data-google-drive-enabled="{{ account_google_drive_enabled|yesno:'1,0' }}"
+        data-google-drive-settings-url="{{ account_google_drive_settings_url }}"
+        data-google-unlink-url="{{ account_google_unlink_url }}"
+        title="{{ account_google_connect_label }}"
+        aria-label="{{ account_google_connect_label }}"
+    >
+        <svg class="ui-auth-account-google-icon" viewBox="0 0 18 18" aria-hidden="true" focusable="false">
+            <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.33-1.58-5.04-3.72H.94v2.34A9 9 0 0 0 9 18z"/>
+            <path fill="#FBBC05" d="M3.96 10.7A5.4 5.4 0 0 1 3.68 9c0-.59.1-1.16.28-1.7V4.96H.94A9 9 0 0 0 0 9c0 1.45.34 2.82.94 4.04l3.02-2.34z"/>
+            <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .94 4.96L3.96 7.3C4.67 5.16 6.66 3.58 9 3.58z"/>
         </svg>
     </button>
     {% if user.is_superuser %}

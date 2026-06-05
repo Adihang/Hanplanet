@@ -60,13 +60,38 @@ def _make_placeholder_png() -> bytes:
     return buf.getvalue()
 
 
+def _normalize_avatar_png(image_bytes: bytes) -> bytes:
+    """Convert a Django profile image into a square PNG accepted by Forgejo."""
+    from PIL import Image, ImageOps
+
+    avatar_size = 256
+    resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+    with Image.open(io.BytesIO(image_bytes)) as image:
+        image = ImageOps.exif_transpose(image)
+        if getattr(image, "is_animated", False):
+            image.seek(0)
+        image = image.convert("RGBA")
+        image = ImageOps.fit(
+            image,
+            (avatar_size, avatar_size),
+            method=resample,
+            centering=(0.5, 0.5),
+        )
+        buf = io.BytesIO()
+        image.save(buf, format="PNG", optimize=True)
+        return buf.getvalue()
+
+
 def _get_avatar_bytes(user) -> bytes:
-    """유저 프로필 사진 바이너리 반환. 없으면 placeholder PNG."""
+    """유저 프로필 사진을 Forgejo 아바타용 PNG로 반환. 없으면 placeholder PNG."""
     try:
         profile = user.portfolio_profile
         if profile.profile_img:
-            with open(profile.profile_img.path, "rb") as f:
-                return f.read()
+            profile.profile_img.open("rb")
+            try:
+                return _normalize_avatar_png(profile.profile_img.read())
+            finally:
+                profile.profile_img.close()
     except Exception:
         pass
     return _make_placeholder_png()
@@ -421,14 +446,25 @@ def sync_gitea_avatar_task(self, user_id: int):
     except GitUserMapping.DoesNotExist:
         return
 
-    if not mapping.forgejo_token:
-        logger.debug("sync_gitea_avatar_task: no token for user_id=%s, skipping", user_id)
-        return
-
     try:
-        image_bytes = _get_avatar_bytes(mapping.user)
         client = ForgejoClient()
-        client.update_user_avatar(mapping.forgejo_token, image_bytes)
+        token = mapping.forgejo_token
+        if not token:
+            gitea_user, token = client.ensure_user_with_token(
+                mapping.forgejo_username or mapping.user.username,
+                getattr(mapping.user, "email", "") or "",
+            )
+            mapping.forgejo_user_id = gitea_user["id"]
+            mapping.forgejo_username = gitea_user["login"]
+            mapping.forgejo_token = token
+            GitUserMapping.objects.filter(pk=mapping.pk).update(
+                forgejo_user_id=mapping.forgejo_user_id,
+                forgejo_username=mapping.forgejo_username,
+                forgejo_token=mapping.forgejo_token,
+            )
+
+        image_bytes = _get_avatar_bytes(mapping.user)
+        client.update_user_avatar(token, image_bytes)
         logger.info("sync_gitea_avatar_task: avatar synced for user_id=%s", user_id)
     except Exception as exc:
         logger.warning("sync_gitea_avatar_task failed for user_id=%s: %s", user_id, exc)

@@ -34,8 +34,10 @@ from portfolio.models import (
 )
 from stratagem.models import Stratagem_Hero_Score
 from oauth2_provider.models import get_application_model
-from git.models import GitHubAccountMapping
-from .github_auth import GitHubIdentity, GitHubTokenData
+from git.models import GitHubAccountMapping, GitUserMapping, GoogleAccountMapping
+from .github_auth import GitHubAuthError, GitHubIdentity, GitHubTokenData
+from .google_auth import GoogleIdentity, GoogleTokenData
+from .google_drive import GoogleDriveDownload
 from .handrive_views import (
     DOCS_EDIT_PERMISSION_CODE,
     HANDRIVE_2FA_PENDING_FORGEJO_KEY_SESSION_KEY,
@@ -43,6 +45,8 @@ from .handrive_views import (
     HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY,
     HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY,
     HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY,
+    HANDRIVE_GOOGLE_AUTH_STATE_SESSION_KEY,
+    HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY,
     HANDRIVE_EDITOR_GROUP_NAME,
     DOCS_PUBLIC_WRITE_GROUP_NAME,
     DOCS_USER_SCOPED_ENTRY_LIMIT,
@@ -173,6 +177,23 @@ class SyncIndexTests(TestCase):
             self.assertEqual(sync_file.hash, hashlib.sha256(b"server file").hexdigest())
 
 
+class SyncApiErrorMessageTests(TestCase):
+    def test_sync_auth_token_error_keeps_code_and_returns_display_messages(self):
+        response = self.client.post(
+            reverse("main:sync_auth_token"),
+            data=json.dumps({"username": "", "password": ""}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["error"], "username and password required")
+        self.assertEqual(payload["error_code"], "username and password required")
+        self.assertEqual(payload["error_message"], "아이디와 비밀번호를 입력해주세요.")
+        self.assertEqual(payload["error_messages"]["ko"], "아이디와 비밀번호를 입력해주세요.")
+        self.assertEqual(payload["error_messages"]["en"], "Username and password are required.")
+
+
 class HandriveSyncSettingsTests(TestCase):
     def test_sync_settings_requires_login(self):
         response = self.client.post(
@@ -182,6 +203,11 @@ class HandriveSyncSettingsTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 401)
+        payload = response.json()
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error_message"], "로그인이 필요합니다.")
+        self.assertEqual(payload["error_messages"]["ko"], "로그인이 필요합니다.")
+        self.assertEqual(payload["error_messages"]["en"], "Login required.")
 
     def test_sync_settings_persists_file_and_directory_paths(self):
         user = get_user_model().objects.create_user(username="syncuser", password="pw123456")
@@ -440,7 +466,7 @@ class AddScoreViewTests(TestCase):
 
 
 class TranslateTextViewTests(TestCase):
-    @override_settings(OLLAMA_BASE_URL="http://127.0.0.1:11434", OLLAMA_MODEL="gemma4:latest")
+    @override_settings(OLLAMA_BASE_URL="http://127.0.0.1:11434", OLLAMA_MODEL="gemma4:12b")
     @mock.patch("main.views.httpx.post")
     def test_call_ollama_uses_configured_model(self, mocked_post):
         mocked_response = mock.Mock()
@@ -453,7 +479,7 @@ class TranslateTextViewTests(TestCase):
         response_text = call_ollama("system message", [{"role": "user", "content": "hello"}])
 
         self.assertEqual(response_text, "ok")
-        self.assertEqual(mocked_post.call_args.kwargs["json"]["model"], "gemma4:latest")
+        self.assertEqual(mocked_post.call_args.kwargs["json"]["model"], "gemma4:12b")
         self.assertFalse(mocked_post.call_args.kwargs["json"]["think"])
 
     def test_translate_text_returns_ollama_translation(self):
@@ -527,7 +553,11 @@ class TranslateTextViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["error"], "Source and target languages must differ")
+        payload = response.json()
+        self.assertEqual(payload["error"], "원본 언어와 번역 언어는 달라야 합니다.")
+        self.assertEqual(payload["error_message"], "원본 언어와 번역 언어는 달라야 합니다.")
+        self.assertEqual(payload["error_messages"]["ko"], "원본 언어와 번역 언어는 달라야 합니다.")
+        self.assertEqual(payload["error_messages"]["en"], "Source and target languages must differ.")
 
 
 @override_settings(
@@ -977,10 +1007,87 @@ class LanguageUrlRoutingTests(TestCase):
             self.assertEqual(response.status_code, 404)
             self.assertNotIn("Location", response.headers)
 
+    def test_salvations_edge_uses_common_footer(self):
+        response = self.client.get(reverse("main:Salvations_Edge_4_lang", kwargs={"ui_lang": "ko"}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<footer class="site-footer-links"', html=False)
+        self.assertContains(response, 'href="/ko/privacy"', html=False)
+        self.assertContains(response, 'href="/ko/terms"', html=False)
+        self.assertNotContains(response, "made by Adihang")
+        self.assertNotContains(response, 'class="sub-footer"', html=False)
+
+    def test_root_page_exposes_hanplanet_purpose_for_oauth_review(self):
+        response = self.client.get(reverse("main:none_lang", kwargs={"ui_lang": "ko"}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "<title>Hanplanet</title>", html=False)
+        self.assertContains(response, '<meta property="og:title" content="Hanplanet">', html=False)
+        self.assertContains(response, '<meta name="twitter:title" content="Hanplanet">', html=False)
+        self.assertContains(response, "HanDrive의 파일 업로드, 정리, 미리보기, 편집, 공유", html=False)
+        self.assertContains(response, "Google Drive 파일은 사용자 허용 시에만 표시하고 관리", html=False)
+        self.assertContains(response, '"description": "Hanplanet은 HanDrive를 통해 파일 업로드', html=False)
+
+    def test_handrive_pages_use_handrive_title_metadata(self):
+        with TemporaryDirectory() as tmpdir, override_settings(MEDIA_ROOT=tmpdir):
+            response = self.client.get(
+                reverse("main:handrive_list_lang", kwargs={"ui_lang": "ko", "folder_path": "all"})
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "<title>Handrive</title>", html=False)
+        self.assertContains(response, '<meta property="og:title" content="Handrive">', html=False)
+        self.assertContains(response, '<meta name="twitter:title" content="Handrive">', html=False)
+
 
 class HandriveSignupAutoLoginTests(TestCase):
     def build_signup_email_token(self, email):
         return signing.dumps({"email": email}, salt="signup-email-verified")
+
+    def test_signup_page_marks_auth_inputs_for_local_safety_filtering(self):
+        response = self.client.get(reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-handrive-auth-safe-input="username"', html=False)
+        self.assertContains(response, 'data-handrive-auth-safe-input="password"', html=False)
+        self.assertContains(response, "forbiddenAuthCharPattern", html=False)
+        self.assertContains(response, "beforeinput", html=False)
+
+    def test_signup_rejects_unsafe_username_chars_server_side(self):
+        response = self.client.post(
+            reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
+            data={
+                "username": "unsafe/user",
+                "password1": "pw123456!!AA",
+                "password2": "pw123456!!AA",
+                "first_name": "Unsafe",
+                "email": "unsafe-user@example.com",
+                "email_2fa_token": self.build_signup_email_token("unsafe-user@example.com"),
+                "privacy_consent": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "아이디에는 공백, 따옴표, 슬래시 등 보안상 위험한 문자를 사용할 수 없습니다.")
+        self.assertFalse(get_user_model().objects.filter(username="unsafe/user").exists())
+
+    def test_signup_rejects_unsafe_password_chars_server_side(self):
+        response = self.client.post(
+            reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
+            data={
+                "username": "unsafe_password_user",
+                "password1": "pw/123456AA",
+                "password2": "pw/123456AA",
+                "first_name": "Unsafe",
+                "email": "unsafe-password@example.com",
+                "email_2fa_token": self.build_signup_email_token("unsafe-password@example.com"),
+                "privacy_consent": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "비밀번호에는 공백, 따옴표, 슬래시 등 보안상 위험한 문자를 사용할 수 없습니다.")
+        self.assertFalse(get_user_model().objects.filter(username="unsafe_password_user").exists())
 
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
     @mock.patch("django.core.mail.send_mail")
@@ -1107,12 +1214,46 @@ class HandriveSignupAutoLoginTests(TestCase):
 
 
 class LegalPageTests(TestCase):
+    def test_unprefixed_privacy_page_renders_english_without_redirect(self):
+        session = self.client.session
+        session[UI_LANG_SESSION_KEY] = "ko"
+        session.save()
+
+        response = self.client.get("/privacy", HTTP_ACCEPT_LANGUAGE="ko-KR,ko;q=0.9")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Location", response.headers)
+        self.assertContains(response, 'lang="en"', html=False)
+        self.assertContains(response, "Privacy Policy")
+        self.assertContains(response, "Google Drive display")
+        self.assertContains(response, "Google API Services User Data Policy")
+        self.assertEqual(self.client.session[UI_LANG_SESSION_KEY], "ko")
+
+    def test_unprefixed_terms_page_renders_english_without_redirect(self):
+        session = self.client.session
+        session[UI_LANG_SESSION_KEY] = "ko"
+        session.save()
+
+        response = self.client.get("/terms", HTTP_ACCEPT_LANGUAGE="ko-KR,ko;q=0.9")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Location", response.headers)
+        self.assertContains(response, 'lang="en"', html=False)
+        self.assertContains(response, "Terms of Service")
+        self.assertContains(response, "Google Drive Integration")
+        self.assertContains(response, "GitHub Repositories")
+        self.assertEqual(self.client.session[UI_LANG_SESSION_KEY], "ko")
+
     def test_privacy_page_renders(self):
         response = self.client.get(reverse("main:privacy_page_lang", kwargs={"ui_lang": "ko"}))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "개인정보 처리방침")
         self.assertContains(response, "Privacy Policy")
+        self.assertContains(response, "Google Drive 표시 옵션")
+        self.assertContains(response, "GitHub 저장소")
+        self.assertContains(response, "Google API Services User Data Policy")
+        self.assertContains(response, "Limited Use")
         self.assertNotContains(response, '<nav class="navbar ui-nav">', html=False)
 
     def test_terms_page_renders(self):
@@ -1121,6 +1262,9 @@ class LegalPageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "이용약관")
         self.assertContains(response, "Terms of Service")
+        self.assertContains(response, "Google Drive 연동")
+        self.assertContains(response, "GitHub 저장소")
+        self.assertContains(response, "공개 공유")
         self.assertNotContains(response, '<nav class="navbar ui-nav">', html=False)
 
     def test_licenses_page_renders(self):
@@ -1244,6 +1388,11 @@ class PortfolioPerUserRoutingTests(TestCase):
         self.assertContains(response, "+ 자기소개서 추가")
         self.assertContains(response, "Acme Corp")
         self.assertContains(response, 'value="add_career"', html=False)
+        self.assertContains(response, '<a class="ui-path-link" href="/ko/">Hanplanet</a>', html=False)
+        self.assertContains(response, '<a class="ui-path-link" href="/ko/portfolio/HanbyelLim/">portfolio</a>', html=False)
+        self.assertContains(response, '<span class="ui-path-current">write</span>', html=False)
+        self.assertNotContains(response, '<span class="ui-path-current">/portfolio/write</span>', html=False)
+        self.assertNotContains(response, '<a class="ui-btn" href="/ko/portfolio/HanbyelLim/">Portfolio</a>', html=False)
 
     def test_portfolio_write_adds_cover_letter(self):
         self.client.login(username="HanbyelLim", password="pw12345")
@@ -1440,14 +1589,74 @@ class HandriveAuthFlowTests(TestCase):
         self.assertNotContains(response, 'input.addEventListener("keydown"', html=False)
         self.assertContains(response, 'loginForm.dataset.submitting = "1"', html=False)
 
+    def test_docs_login_page_marks_auth_inputs_for_local_safety_filtering(self):
+        response = self.client.get("/ko/login/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-handrive-auth-safe-input="username"', html=False)
+        self.assertContains(response, 'data-handrive-auth-safe-input="password"', html=False)
+        self.assertContains(response, "forbiddenAuthCharPattern", html=False)
+        self.assertContains(response, "beforeinput", html=False)
+
+    def test_docs_login_rejects_unsafe_username_chars_server_side(self):
+        response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive/login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "아이디에는 공백, 따옴표, 슬래시 등 보안상 위험한 문자를 사용할 수 없습니다.")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_docs_login_rejects_unsafe_password_chars_server_side(self):
+        response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw/123456", "next": "/ko/handrive/all/list/"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "비밀번호에는 공백, 따옴표, 슬래시 등 보안상 위험한 문자를 사용할 수 없습니다.")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_login_2fa_resend_error_returns_display_messages(self):
+        response = self.client.post(reverse("main:handrive_api_login_2fa_resend_code"))
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error"], "인증 세션이 만료되었습니다. 다시 로그인해주세요.")
+        self.assertEqual(payload["error_message"], "인증 세션이 만료되었습니다. 다시 로그인해주세요.")
+        self.assertEqual(payload["error_messages"]["ko"], "인증 세션이 만료되었습니다. 다시 로그인해주세요.")
+        self.assertEqual(payload["error_messages"]["en"], "Session expired. Please log in again.")
+
     @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
-    def test_docs_login_page_shows_github_icon_in_actions_when_enabled(self):
+    def test_docs_login_page_shows_github_icon_below_actions_when_enabled(self):
         response = self.client.get("/ko/login/")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'class="handrive-login-actions"', html=False)
+        self.assertContains(response, 'class="handrive-login-auth-options"', html=False)
+        self.assertContains(response, 'class="handrive-login-auth-methods"', html=False)
         self.assertContains(response, 'class="handrive-login-github-icon-btn"', html=False)
         self.assertContains(response, 'aria-label="GitHub로 로그인"', html=False)
+        content = response.content.decode()
+        self.assertLess(
+            content.index('class="handrive-login-actions"'),
+            content.index('class="handrive-login-auth-options"'),
+        )
+        self.assertLess(
+            content.index('class="handrive-login-auth-options"'),
+            content.index('class="handrive-login-github-icon-btn"'),
+        )
+
+    @override_settings(GOOGLE_AUTH_CLIENT_ID="google-client-id", GOOGLE_AUTH_CLIENT_SECRET="google-client-secret")
+    def test_docs_login_page_shows_google_icon_below_actions_when_enabled(self):
+        response = self.client.get("/ko/login/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="handrive-login-auth-options"', html=False)
+        self.assertContains(response, 'class="handrive-login-google-icon-btn"', html=False)
+        self.assertContains(response, 'aria-label="Google로 로그인"', html=False)
 
     @override_settings(
         GITHUB_APP_CLIENT_ID="github-client-id",
@@ -1470,6 +1679,29 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(pending["mode"], "login")
         self.assertEqual(pending["next_url"], "/ko/handrive/")
 
+    @override_settings(
+        GOOGLE_AUTH_CLIENT_ID="google-client-id",
+        GOOGLE_AUTH_CLIENT_SECRET="google-client-secret",
+        GOOGLE_AUTH_AUTHORIZE_URL="https://accounts.google.example/o/oauth2/v2/auth",
+        GOOGLE_AUTH_CALLBACK_URL="https://www.hanplanet.com/auth/google/callback",
+        GOOGLE_AUTH_SCOPE="openid email profile",
+    )
+    def test_google_login_start_redirects_to_google(self):
+        response = self.client.get("/ko/auth/google/start/", {"mode": "login", "next": "/ko/handrive/"})
+
+        self.assertEqual(response.status_code, 302)
+        location = response["Location"]
+        self.assertTrue(location.startswith("https://accounts.google.example/o/oauth2/v2/auth?"))
+        query = parse_qs(urlparse(location).query)
+        self.assertEqual(query["client_id"], ["google-client-id"])
+        self.assertEqual(query["redirect_uri"], ["https://www.hanplanet.com/auth/google/callback"])
+        self.assertEqual(query["response_type"], ["code"])
+        self.assertEqual(query["scope"], ["openid email profile"])
+        self.assertIn("state", query)
+        pending = self.client.session[HANDRIVE_GOOGLE_AUTH_STATE_SESSION_KEY]
+        self.assertEqual(pending["mode"], "login")
+        self.assertEqual(pending["next_url"], "/ko/handrive/")
+
     @override_settings(GITHUB_AUTH_SCOPE="repo user:email")
     @mock.patch("main.handrive_views.list_github_repositories")
     def test_github_repositories_requires_reconnect_for_legacy_unscoped_token(self, mock_list_repositories):
@@ -1489,7 +1721,33 @@ class HandriveAuthFlowTests(TestCase):
         self.assertTrue(payload["ok"])
         self.assertFalse(payload["connected"])
         self.assertEqual(payload["error"], "github_reconnect_required")
+        self.assertEqual(payload["error_message"], "GitHub 저장소 권한이 없거나 만료되었습니다. GitHub를 다시 연동해주세요.")
+        self.assertEqual(payload["error_messages"]["ko"], "GitHub 저장소 권한이 없거나 만료되었습니다. GitHub를 다시 연동해주세요.")
+        self.assertEqual(payload["error_messages"]["en"], "GitHub repository access is missing or expired. Please reconnect GitHub.")
         mock_list_repositories.assert_not_called()
+
+    @override_settings(GITHUB_AUTH_SCOPE="repo user:email")
+    @mock.patch("main.handrive_views.list_github_repositories")
+    def test_github_repositories_list_failure_returns_display_messages(self, mock_list_repositories):
+        GitHubAccountMapping.objects.create(
+            user=self.user,
+            github_user_id=12345,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+        )
+        mock_list_repositories.side_effect = GitHubAuthError("github api failed")
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("main:handrive_api_github_repositories"))
+
+        self.assertEqual(response.status_code, 502)
+        payload = response.json()
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error"], "github_repository_list_failed")
+        self.assertEqual(payload["error_message"], "GitHub 저장소를 불러오지 못했습니다.")
+        self.assertEqual(payload["error_messages"]["ko"], "GitHub 저장소를 불러오지 못했습니다.")
+        self.assertEqual(payload["error_messages"]["en"], "Failed to load GitHub repositories.")
 
     @override_settings(GITHUB_AUTH_SCOPE="repo user:email")
     @mock.patch("main.handrive_views.list_github_repositories")
@@ -1528,6 +1786,131 @@ class HandriveAuthFlowTests(TestCase):
         repo_names = [repository["full_name"] for repository in payload["repositories"]]
         self.assertEqual(repo_names, ["github-user/owned", "team/writeable"])
         self.assertTrue(payload["repositories"][1]["can_push"])
+
+    @override_settings(GITHUB_AUTH_SCOPE="repo user:email")
+    @mock.patch("main.handrive_views.time.sleep")
+    @mock.patch("main.handrive_views.list_github_repositories")
+    def test_github_repositories_retry_transient_failure_after_fresh_link(self, mock_list_repositories, mock_sleep):
+        GitHubAccountMapping.objects.create(
+            user=self.user,
+            github_user_id=12345,
+            github_login="github-user",
+            user_access_token="fresh-token",
+            token_scope="repo,user:email",
+        )
+        mock_list_repositories.side_effect = [
+            GitHubAuthError("fresh token not ready"),
+            [
+                {
+                    "id": 1,
+                    "full_name": "github-user/owned",
+                    "name": "owned",
+                    "owner": {"login": "github-user"},
+                    "permissions": {"push": True},
+                },
+            ],
+        ]
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("main:handrive_api_github_repositories"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["connected"])
+        self.assertEqual([repository["full_name"] for repository in payload["repositories"]], ["github-user/owned"])
+        self.assertEqual(mock_list_repositories.call_count, 2)
+        mock_sleep.assert_called_once()
+
+    @override_settings(GITHUB_AUTH_SCOPE="repo user:email")
+    @mock.patch("main.handrive_views.list_github_repositories")
+    def test_github_repositories_missing_token_returns_reconnect_mode(self, mock_list_repositories):
+        GitHubAccountMapping.objects.create(
+            user=self.user,
+            github_user_id=12345,
+            github_login="github-user",
+            user_access_token="",
+            token_scope="repo,user:email",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("main:handrive_api_github_repositories"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["connected"])
+        self.assertEqual(payload["error"], "github_reconnect_required")
+        self.assertEqual(payload["error_message"], "GitHub 저장소 권한이 없거나 만료되었습니다. GitHub를 다시 연동해주세요.")
+        self.assertEqual(payload["error_messages"]["ko"], "GitHub 저장소 권한이 없거나 만료되었습니다. GitHub를 다시 연동해주세요.")
+        self.assertEqual(payload["error_messages"]["en"], "GitHub repository access is missing or expired. Please reconnect GitHub.")
+        mock_list_repositories.assert_not_called()
+
+    def test_github_unlink_api_deletes_connected_account(self):
+        GitHubAccountMapping.objects.create(
+            user=self.user,
+            github_user_id=990001,
+            github_login="github-user",
+            user_access_token="github-access-token",
+            token_scope="repo,user:email",
+            selected_repositories=[{"id": 1, "full_name": "github-user/repo"}],
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.delete(reverse("main:handrive_api_github_unlink"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["connected"])
+        self.assertTrue(payload["deleted"])
+        self.assertFalse(GitHubAccountMapping.objects.filter(user=self.user).exists())
+
+    def test_google_unlink_api_deletes_connected_account(self):
+        GoogleAccountMapping.objects.create(
+            user=self.user,
+            google_user_id="google-sub-990001",
+            google_email="google-user@example.com",
+            google_name="Google User",
+            user_access_token="google-access-token",
+            user_refresh_token="google-refresh-token",
+            token_scope="openid email profile https://www.googleapis.com/auth/drive",
+            token_type="Bearer",
+            google_drive_enabled=True,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.delete(reverse("main:handrive_api_google_unlink"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["connected"])
+        self.assertTrue(payload["deleted"])
+        self.assertFalse(payload["google_drive_enabled"])
+        self.assertFalse(GoogleAccountMapping.objects.filter(user=self.user).exists())
+
+    def test_account_widget_modals_include_unlink_controls(self):
+        GitHubAccountMapping.objects.create(
+            user=self.user,
+            github_user_id=990002,
+            github_login="github-user",
+            user_access_token="github-access-token",
+            token_scope="repo,user:email",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get("/ko/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-github-login="github-user"', html=False)
+        self.assertContains(response, 'data-github-unlink-url="/api/account/github/unlink"', html=False)
+        self.assertContains(response, 'data-google-unlink-url="/api/account/google/unlink"', html=False)
+        self.assertContains(response, "data-auth-github-account", html=False)
+        self.assertContains(response, "연동된 GitHub 계정:")
+        self.assertContains(response, "data-auth-github-unlink", html=False)
+        self.assertContains(response, "data-auth-google-unlink", html=False)
+        self.assertContains(response, "연동해제")
 
     @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
     def test_signup_page_does_not_render_github_signup_button(self):
@@ -1580,7 +1963,51 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(pending["action"], "choice")
         self.assertEqual(pending["identity"]["github_user_id"], 12345)
 
-    def test_github_pending_link_action_attaches_to_authenticated_user(self):
+    def _seed_google_auth_session(self, *, mode="login", state="google-state", next_url="/ko/handrive/"):
+        session = self.client.session
+        session[HANDRIVE_GOOGLE_AUTH_STATE_SESSION_KEY] = {
+            "state": state,
+            "mode": mode,
+            "next_url": next_url,
+            "ui_lang": "ko",
+            "created_at": timezone.now().timestamp(),
+            "privacy_consent": mode == "signup",
+        }
+        session.save()
+
+    @override_settings(GOOGLE_AUTH_CLIENT_ID="google-client-id", GOOGLE_AUTH_CLIENT_SECRET="google-client-secret")
+    @mock.patch("main.handrive_views.fetch_google_identity")
+    @mock.patch("main.handrive_views.exchange_google_code")
+    def test_google_login_existing_email_redirects_to_link_or_signup_choice(
+        self,
+        mock_exchange_code,
+        mock_fetch_identity,
+    ):
+        self.user.email = "google-user@example.com"
+        self.user.save(update_fields=["email"])
+        self._seed_google_auth_session(mode="login")
+        mock_exchange_code.return_value = GoogleTokenData(access_token="google-access-token")
+        mock_fetch_identity.return_value = GoogleIdentity(
+            google_user_id="google-sub-12345",
+            name="Google User",
+            email="google-user@example.com",
+            avatar_url="https://google.example/avatar.png",
+            email_verified=True,
+        )
+
+        response = self.client.get("/auth/google/callback/", {"code": "code-1", "state": "google-state"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/ko/login", response["Location"])
+        self.assertIn("google_choice=1", response["Location"])
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertFalse(GoogleAccountMapping.objects.filter(user=self.user).exists())
+        pending = self.client.session[HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY]
+        self.assertEqual(pending["action"], "choice")
+        self.assertEqual(pending["identity"]["google_user_id"], "google-sub-12345")
+
+    @mock.patch("main.handrive_views.list_github_repositories")
+    def test_github_pending_link_action_attaches_to_authenticated_user(self, mock_list_repositories):
         profile, _ = UserProfile.objects.get_or_create(user=self.user)
         profile.session_token = "existing-session-token"
         profile.save(update_fields=["session_token", "updated_at"])
@@ -1619,6 +2046,66 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(mapping.user_access_token, "github-access-token")
         self.assertNotIn(HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY, self.client.session)
 
+        mock_list_repositories.return_value = [
+            {
+                "id": 1,
+                "full_name": "github-user/owned",
+                "name": "owned",
+                "owner": {"login": "github-user"},
+                "permissions": {"push": True},
+            },
+        ]
+
+        repositories_response = self.client.get(reverse("main:handrive_api_github_repositories"))
+
+        self.assertEqual(repositories_response.status_code, 200)
+        repositories_payload = repositories_response.json()
+        self.assertTrue(repositories_payload["ok"])
+        self.assertTrue(repositories_payload["connected"])
+        self.assertEqual(
+            [repository["full_name"] for repository in repositories_payload["repositories"]],
+            ["github-user/owned"],
+        )
+
+    def test_google_pending_link_action_attaches_to_authenticated_user(self):
+        profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        profile.session_token = "existing-session-token"
+        profile.save(update_fields=["session_token", "updated_at"])
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["_hp_session_token"] = "existing-session-token"
+        session[HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY] = {
+            "identity": {
+                "google_user_id": "google-sub-12345",
+                "name": "Google User",
+                "email": "google-user@example.com",
+                "avatar_url": "",
+                "email_verified": True,
+            },
+            "token": {
+                "access_token": "google-access-token",
+                "token_type": "Bearer",
+                "scope": "openid email profile",
+                "expires_at": "",
+                "refresh_token": "",
+                "refresh_token_expires_at": "",
+            },
+            "next_url": "/ko/handrive/",
+            "ui_lang": "ko",
+            "action": "choice",
+            "created_at": timezone.now().timestamp(),
+        }
+        session.save()
+
+        response = self.client.get("/ko/login/", {"google_action": "link", "next": "/ko/handrive/"})
+
+        self.assertEqual(response.status_code, 302)
+        mapping = GoogleAccountMapping.objects.get(user=self.user)
+        self.assertEqual(mapping.google_user_id, "google-sub-12345")
+        self.assertEqual(mapping.google_email, "google-user@example.com")
+        self.assertEqual(mapping.user_access_token, "google-access-token")
+        self.assertNotIn(HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY, self.client.session)
+
     @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
     @mock.patch("main.handrive_views.fetch_github_identity")
     @mock.patch("main.handrive_views.exchange_github_code")
@@ -1652,6 +2139,39 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(signup_page.status_code, 200)
         self.assertContains(signup_page, 'name="first_name"', html=False)
         self.assertContains(signup_page, 'disabled', html=False)
+        self.assertNotContains(signup_page, 'id="handrive-signup-code-block"', html=False)
+        self.assertNotContains(signup_page, 'id="handrive-signup-send-code-btn"', html=False)
+
+    @override_settings(GOOGLE_AUTH_CLIENT_ID="google-client-id", GOOGLE_AUTH_CLIENT_SECRET="google-client-secret")
+    @mock.patch("main.handrive_views.fetch_google_identity")
+    @mock.patch("main.handrive_views.exchange_google_code")
+    def test_google_login_unknown_account_redirects_to_google_signup_form(
+        self,
+        mock_exchange_code,
+        mock_fetch_identity,
+    ):
+        self._seed_google_auth_session(mode="login")
+        mock_exchange_code.return_value = GoogleTokenData(access_token="google-access-token")
+        mock_fetch_identity.return_value = GoogleIdentity(
+            google_user_id="google-sub-67890",
+            name="New Google User",
+            email="new-google-user@example.com",
+            avatar_url="",
+            email_verified=True,
+        )
+
+        response = self.client.get("/auth/google/callback/", {"code": "code-2", "state": "google-state"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/ko/signup", response["Location"])
+        self.assertIn("google_action=signup", response["Location"])
+        pending = self.client.session[HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY]
+        self.assertEqual(pending["action"], "signup")
+        self.assertEqual(pending["identity"]["email"], "new-google-user@example.com")
+
+        signup_page = self.client.get(response["Location"])
+        self.assertEqual(signup_page.status_code, 200)
+        self.assertContains(signup_page, "Google: new-google-user@example.com", html=False)
         self.assertNotContains(signup_page, 'id="handrive-signup-code-block"', html=False)
         self.assertNotContains(signup_page, 'id="handrive-signup-send-code-btn"', html=False)
 
@@ -1707,6 +2227,61 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(mapping.github_user_id, 67890)
         self.assertEqual(mapping.github_login, "new-github-user")
         self.assertEqual(mapping.user_access_token, "github-access-token")
+        profile = UserProfile.objects.get(user=user)
+        self.assertIsNotNone(profile.privacy_policy_agreed_at)
+        self.assertIsNotNone(profile.terms_of_service_agreed_at)
+        self.assertTrue(user.groups.filter(name=DOCS_PUBLIC_WRITE_GROUP_NAME).exists())
+
+    @override_settings(GOOGLE_AUTH_CLIENT_ID="google-client-id", GOOGLE_AUTH_CLIENT_SECRET="google-client-secret")
+    @mock.patch("main.handrive_views._send_signup_welcome_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_google_pending_signup_creates_user_and_links_mapping(self, mock_prepare_session, mock_welcome_email):
+        session = self.client.session
+        session[HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY] = {
+            "identity": {
+                "google_user_id": "google-sub-67890",
+                "name": "New Google User",
+                "email": "new-google-user@example.com",
+                "avatar_url": "",
+                "email_verified": True,
+            },
+            "token": {
+                "access_token": "google-access-token",
+                "token_type": "Bearer",
+                "scope": "openid email profile",
+                "expires_at": "",
+                "refresh_token": "",
+                "refresh_token_expires_at": "",
+            },
+            "next_url": "/ko/handrive/",
+            "ui_lang": "ko",
+            "action": "signup",
+            "created_at": timezone.now().timestamp(),
+        }
+        session.save()
+
+        response = self.client.post(
+            reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
+            data={
+                "username": "new_google_user",
+                "password1": "pw123456!!AA",
+                "password2": "pw123456!!AA",
+                "next": "/ko/handrive/",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        user = get_user_model().objects.get(username="new_google_user")
+        self.assertEqual(user.first_name, "New Google User")
+        self.assertEqual(user.email, "new-google-user@example.com")
+        self.assertEqual(self.client.session["_auth_user_id"], str(user.pk))
+        self.assertNotIn(HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY, self.client.session)
+        mock_prepare_session.assert_called_once_with(user)
+        mock_welcome_email.assert_called_once_with(user, "ko")
+        mapping = GoogleAccountMapping.objects.get(user=user)
+        self.assertEqual(mapping.google_user_id, "google-sub-67890")
+        self.assertEqual(mapping.google_email, "new-google-user@example.com")
+        self.assertEqual(mapping.user_access_token, "google-access-token")
         profile = UserProfile.objects.get(user=user)
         self.assertIsNotNone(profile.privacy_policy_agreed_at)
         self.assertIsNotNone(profile.terms_of_service_agreed_at)
@@ -2290,6 +2865,166 @@ class ForgejoAvatarSignalTests(TestCase):
 
         mock_delay.assert_called_once_with(user.id)
 
+    def test_git_user_mapping_token_update_queues_avatar_sync_task(self):
+        user = get_user_model().objects.create_user(username="mapping_signal_user", password="pw12345")
+        with mock.patch("main.git_tasks.sync_gitea_avatar_task.delay"):
+            mapping = GitUserMapping.objects.create(
+                user=user,
+                forgejo_user_id=123,
+                forgejo_username=user.username,
+                forgejo_token="",
+            )
+
+        with mock.patch("main.git_tasks.sync_gitea_avatar_task.delay") as mock_delay:
+            mapping.forgejo_token = "forgejo-token"
+            mapping.save(update_fields=["forgejo_token"])
+
+        mock_delay.assert_called_once_with(user.id)
+
+    def test_avatar_bytes_normalizes_django_profile_image_to_png(self):
+        from PIL import Image
+        from .git_tasks import _get_avatar_bytes
+
+        user = get_user_model().objects.create_user(username="avatar_bytes_user", password="pw12345")
+        source = io.BytesIO()
+        Image.new("RGB", (32, 16), (220, 40, 20)).save(source, format="JPEG")
+
+        with TemporaryDirectory() as tmpdir, override_settings(MEDIA_ROOT=tmpdir):
+            profile = PortfolioProfile.objects.create(user=user)
+            profile.profile_img.save(
+                "profile.jpg",
+                SimpleUploadedFile("profile.jpg", source.getvalue(), content_type="image/jpeg"),
+                save=True,
+            )
+
+            avatar_bytes = _get_avatar_bytes(user)
+
+        self.assertTrue(avatar_bytes.startswith(b"\x89PNG\r\n\x1a\n"))
+        with Image.open(io.BytesIO(avatar_bytes)) as avatar:
+            self.assertEqual(avatar.format, "PNG")
+            self.assertEqual(avatar.size, (256, 256))
+
+    def test_avatar_sync_task_creates_token_when_mapping_has_none(self):
+        from .git_tasks import sync_gitea_avatar_task
+
+        user = get_user_model().objects.create_user(
+            username="avatar_token_user",
+            password="pw12345",
+            email="avatar-token@example.com",
+        )
+        with mock.patch("main.git_tasks.sync_gitea_avatar_task.delay"):
+            mapping = GitUserMapping.objects.create(
+                user=user,
+                forgejo_user_id=123,
+                forgejo_username=user.username,
+                forgejo_token="",
+            )
+
+        client = mock.Mock()
+        client.ensure_user_with_token.return_value = (
+            {"id": 456, "login": user.username},
+            "new-forgejo-token",
+        )
+        with (
+            mock.patch("main.git_tasks.ForgejoClient", return_value=client),
+            mock.patch("main.git_tasks._get_avatar_bytes", return_value=b"avatar-png"),
+        ):
+            sync_gitea_avatar_task.run(user.id)
+
+        mapping.refresh_from_db()
+        self.assertEqual(mapping.forgejo_user_id, 456)
+        self.assertEqual(mapping.forgejo_token, "new-forgejo-token")
+        client.ensure_user_with_token.assert_called_once_with(user.username, user.email)
+        client.update_user_avatar.assert_called_once_with("new-forgejo-token", b"avatar-png")
+
+    def test_ensure_forgejo_mapping_for_user_stores_avatar_sync_token(self):
+        from .handrive_views import _ensure_forgejo_mapping_for_user
+
+        user = get_user_model().objects.create_user(username="mapping_token_user", password="pw12345")
+        client = mock.Mock()
+        client.ensure_user_with_token.return_value = (
+            {"id": 789, "login": user.username},
+            "session-forgejo-token",
+        )
+
+        with (
+            mock.patch("main.handrive_views.ForgejoClient", return_value=client),
+            mock.patch("main.git_tasks.sync_gitea_avatar_task.delay"),
+        ):
+            mapping = _ensure_forgejo_mapping_for_user(user)
+
+        self.assertEqual(mapping.forgejo_user_id, 789)
+        self.assertEqual(mapping.forgejo_username, user.username)
+        self.assertEqual(mapping.forgejo_token, "session-forgejo-token")
+        client.ensure_user_with_token.assert_called_once_with(user.username, "")
+
+
+class NetworkEnvironmentPageTests(TestCase):
+    def test_network_environment_page_renders_under_sub(self):
+        response = self.client.get(reverse("main:network_environment_lang", kwargs={"ui_lang": "ko"}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "네트워크 환경", html=False)
+        self.assertContains(response, "network-environment-page", html=False)
+        self.assertContains(response, "/ko/sub/network-info/api/environment", html=False)
+
+    def test_unprefixed_network_environment_redirects_to_localized_url(self):
+        response = self.client.get("/sub/network-info/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/ko/sub/network-info/")
+
+    def test_network_environment_api_reports_observed_ip(self):
+        response = self.client.get(
+            reverse("main:network_environment_api_lang", kwargs={"ui_lang": "ko"}),
+            HTTP_CF_CONNECTING_IP="203.0.113.5",
+            HTTP_X_FORWARDED_FOR="198.51.100.10, 10.0.0.4",
+            REMOTE_ADDR="127.0.0.1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["observed_ip"], "203.0.113.5")
+        self.assertEqual(payload["ip_candidates"]["x_forwarded_for"][0], "198.51.100.10")
+        self.assertEqual(payload["ip_candidates"]["remote_addr"], "127.0.0.1")
+
+    def test_network_speed_download_returns_requested_payload_size(self):
+        response = self.client.get(
+            reverse("main:network_speed_download_lang", kwargs={"ui_lang": "ko"}),
+            {"size": 262144},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(int(response["Content-Length"]), 262144)
+        self.assertEqual(len(response.content), 262144)
+
+    def test_network_speed_upload_counts_received_bytes(self):
+        response = self.client.post(
+            reverse("main:network_speed_upload_lang", kwargs={"ui_lang": "ko"}),
+            data=b"abcdef",
+            content_type="application/octet-stream",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["bytes"], 6)
+
+    def test_network_speed_upload_streams_larger_payload(self):
+        payload_bytes = b"x" * (3 * 1024 * 1024)
+
+        response = self.client.post(
+            reverse("main:network_speed_upload_lang", kwargs={"ui_lang": "ko"}),
+            data=payload_bytes,
+            content_type="application/octet-stream",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["bytes"], len(payload_bytes))
+
 
 class HanplanetMultiplayerPageTests(TestCase):
     def setUp(self):
@@ -2754,6 +3489,16 @@ class HanplanetMultiplayerPageTests(TestCase):
         self.assertContains(response, "youtube-downloader-og-1200.png", html=False)
         self.assertFalse(response.context["show_account_bumpercar_spiky_stats"])
 
+    def test_sub_page_groups_text_speaki_as_game(self):
+        response = self.client.get("/ko/sub/")
+
+        self.assertEqual(response.status_code, 200)
+        groups = {group["slug"]: group["items"] for group in response.context["sub_link_groups"]}
+        game_slugs = {item["slug"] for item in groups["games"]}
+        tool_slugs = {item["slug"] for item in groups["tools"]}
+        self.assertIn("text-speaki", game_slugs)
+        self.assertNotIn("text-speaki", tool_slugs)
+
     def test_old_sub_urls_are_not_redirected(self):
         for url in ("/ko/fun/minigame/", "/fun/youtube-downloader/", "/minigame/"):
             response = self.client.get(url)
@@ -2765,6 +3510,37 @@ class HanplanetMultiplayerPageTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], "/ko/sub/youtube-downloader/")
+
+    def test_youtube_downloader_page_allows_indexing(self):
+        response = self.client.get("/ko/sub/youtube-downloader/")
+        canonical_url = "https://www.hanplanet.com/ko/sub/youtube-downloader"
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["meta_robots"], "index,follow")
+        self.assertEqual(response.context["meta_canonical_url"], canonical_url)
+        self.assertContains(response, '<meta name="robots" content="index,follow">', html=False)
+        self.assertContains(response, f'<link rel="canonical" href="{canonical_url}">', html=False)
+        self.assertNotContains(response, "noindex", html=False)
+
+    def test_qrbarcode_page_allows_indexing(self):
+        response = self.client.get("/ko/sub/qrbarcode/")
+        canonical_url = "https://www.hanplanet.com/ko/sub/qrbarcode"
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["meta_robots"], "index,follow")
+        self.assertEqual(response.context["meta_canonical_url"], canonical_url)
+        self.assertContains(response, '<meta name="robots" content="index,follow">', html=False)
+        self.assertContains(response, f'<link rel="canonical" href="{canonical_url}">', html=False)
+        self.assertNotContains(response, "noindex", html=False)
+
+    def test_sitemap_includes_public_tool_canonical_urls(self):
+        response = self.client.get("/sitemap.xml")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/ko/sub/qrbarcode</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/en/sub/qrbarcode</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/ko/sub/youtube-downloader</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/en/sub/youtube-downloader</loc>", html=False)
 
     def test_youtube_download_file_cleans_token_dir_after_attachment_download(self):
         with TemporaryDirectory() as tmpdir:
@@ -2855,6 +3631,300 @@ class HandriveAccessRuleTests(TestCase):
         user_home = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / username
         user_home.mkdir(parents=True, exist_ok=True)
         return user
+
+    def create_google_drive_mapping(self, user):
+        return GoogleAccountMapping.objects.create(
+            user=user,
+            google_user_id=f"google-{user.username}",
+            google_email=f"{user.username}@example.com",
+            google_name="Google User",
+            user_access_token="google-access-token",
+            user_refresh_token="google-refresh-token",
+            token_scope="openid email profile https://www.googleapis.com/auth/drive",
+            token_type="Bearer",
+            google_drive_enabled=True,
+        )
+
+    def build_minimal_ico_bytes(self):
+        png_bytes = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wn8S7sAAAAASUVORK5CYII="
+        )
+        return (
+            b"\x00\x00\x01\x00\x01\x00"
+            + bytes([1, 1, 0, 0])
+            + (1).to_bytes(2, "little")
+            + (32).to_bytes(2, "little")
+            + len(png_bytes).to_bytes(4, "little")
+            + (22).to_bytes(4, "little")
+            + png_bytes
+        )
+
+    def test_google_drive_root_entry_shows_in_scoped_root(self):
+        user = self.create_scoped_handrive_editor("gdrive_root_user")
+        mapping = self.create_google_drive_mapping(user)
+        self.client.force_login(user)
+
+        response = self.client.get(f"/ko/handrive/users/{user.username}/list")
+
+        self.assertEqual(response.status_code, 200)
+        entries = response.context["initial_entries"]
+        google_entries = [entry for entry in entries if entry.get("google_drive")]
+        self.assertEqual(len(google_entries), 1)
+        self.assertEqual(google_entries[0]["name"], "Google User")
+        self.assertEqual(google_entries[0]["path"], f"users/{user.username}/.google-drive-{mapping.id}")
+        self.assertEqual(google_entries[0]["type_display"], "Google Drive")
+
+    @mock.patch("main.handrive_views.list_google_drive_files")
+    def test_google_drive_api_list_returns_drive_files(self, mock_list_files):
+        user = self.create_scoped_handrive_editor("gdrive_list_user")
+        mapping = self.create_google_drive_mapping(user)
+        mock_list_files.return_value = [
+            {
+                "id": "folder-id",
+                "name": "Projects",
+                "mimeType": "application/vnd.google-apps.folder",
+                "modifiedTime": "2026-06-01T01:02:03Z",
+            },
+            {
+                "id": "file-id",
+                "name": "note.md",
+                "mimeType": "text/markdown",
+                "size": "12",
+                "modifiedTime": "2026-06-01T01:03:03Z",
+            },
+        ]
+        self.client.force_login(user)
+        root_path = f"users/{user.username}/.google-drive-{mapping.id}"
+
+        response = self.client.get(reverse("main:handrive_api_list"), {"path": root_path})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["directory_meta"]["google_drive"]["name"], "Google User")
+        self.assertEqual([entry["name"] for entry in payload["entries"]], ["Projects", "note.md"])
+        self.assertEqual(payload["entries"][0]["path"], f"{root_path}/folder-id")
+        self.assertTrue(payload["entries"][0]["google_drive"]["is_folder"])
+        self.assertEqual(payload["entries"][1]["size_display"], "12 B")
+
+    def test_google_drive_root_entry_hidden_when_disabled(self):
+        user = self.create_scoped_handrive_editor("gdrive_disabled_root_user")
+        mapping = self.create_google_drive_mapping(user)
+        mapping.google_drive_enabled = False
+        mapping.save(update_fields=["google_drive_enabled", "updated_at"])
+        self.client.force_login(user)
+
+        response = self.client.get(f"/ko/handrive/users/{user.username}/list")
+
+        self.assertEqual(response.status_code, 200)
+        entries = response.context["initial_entries"]
+        google_entries = [entry for entry in entries if entry.get("google_drive")]
+        self.assertEqual(google_entries, [])
+
+    @mock.patch("main.handrive_views.list_google_drive_files")
+    def test_google_drive_api_list_blocked_when_disabled(self, mock_list_files):
+        user = self.create_scoped_handrive_editor("gdrive_disabled_api_user")
+        mapping = self.create_google_drive_mapping(user)
+        mapping.google_drive_enabled = False
+        mapping.save(update_fields=["google_drive_enabled", "updated_at"])
+        self.client.force_login(user)
+        root_path = f"users/{user.username}/.google-drive-{mapping.id}"
+
+        response = self.client.get(reverse("main:handrive_api_list"), {"path": root_path})
+
+        self.assertEqual(response.status_code, 404)
+        mock_list_files.assert_not_called()
+
+    @mock.patch("main.handrive_views.create_google_drive_file")
+    @mock.patch("main.handrive_views.list_google_drive_files")
+    def test_google_drive_save_creates_file(self, mock_list_files, mock_create_file):
+        user = self.create_scoped_handrive_editor("gdrive_save_user")
+        mapping = self.create_google_drive_mapping(user)
+        mock_list_files.return_value = []
+        mock_create_file.return_value = {
+            "id": "created-file-id",
+            "name": "hello.md",
+            "mimeType": "text/markdown",
+            "size": "5",
+        }
+        self.client.force_login(user)
+        root_path = f"users/{user.username}/.google-drive-{mapping.id}"
+
+        response = self.client.post(
+            reverse("main:handrive_api_save"),
+            data=json.dumps({
+                "target_dir": root_path,
+                "filename": "hello",
+                "extension": ".md",
+                "content": "hello",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["path"], f"{root_path}/created-file-id")
+        mock_create_file.assert_called_once()
+        self.assertEqual(mock_create_file.call_args.args[1], "root")
+        self.assertEqual(mock_create_file.call_args.args[2], "hello.md")
+        self.assertEqual(mock_create_file.call_args.args[3], b"hello")
+
+    @mock.patch("main.handrive_views.delete_google_drive_file")
+    def test_google_drive_delete_calls_drive_delete(self, mock_delete_file):
+        user = self.create_scoped_handrive_editor("gdrive_delete_user")
+        mapping = self.create_google_drive_mapping(user)
+        self.client.force_login(user)
+        file_path = f"users/{user.username}/.google-drive-{mapping.id}/file-id"
+
+        response = self.client.post(
+            reverse("main:handrive_api_delete"),
+            data=json.dumps({"path": file_path}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["deleted"], [file_path])
+        mock_delete_file.assert_called_once_with(mapping, "file-id")
+
+    @mock.patch("main.handrive_views.download_google_drive_file")
+    @mock.patch("main.handrive_views.get_google_drive_file")
+    def test_google_drive_file_drag_to_handrive_copies_file(self, mock_get_file, mock_download_file):
+        user = self.create_scoped_handrive_editor("gdrive_copy_user")
+        mapping = self.create_google_drive_mapping(user)
+        mock_get_file.return_value = {
+            "id": "file-id",
+            "name": "note.txt",
+            "mimeType": "text/plain",
+        }
+        mock_download_file.return_value = GoogleDriveDownload(
+            content=b"hello from google drive",
+            filename="note.txt",
+            mime_type="text/plain",
+        )
+        self.client.force_login(user)
+        source_path = f"users/{user.username}/.google-drive-{mapping.id}/file-id"
+        target_dir = f"users/{user.username}"
+
+        response = self.client.post(
+            reverse("main:handrive_api_move"),
+            data=json.dumps({
+                "source_path": source_path,
+                "target_dir": target_dir,
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["copied"])
+        self.assertEqual(payload["path"], f"{target_dir}/note.txt")
+        copied_file = Path(settings.MEDIA_ROOT) / "HanDrive" / target_dir / "note.txt"
+        self.assertEqual(copied_file.read_bytes(), b"hello from google drive")
+        mock_download_file.assert_called_once_with(mapping, "file-id", mock_get_file.return_value)
+
+    def test_google_drive_settings_toggle_updates_mapping(self):
+        user = self.create_scoped_handrive_editor("gdrive_toggle_user")
+        mapping = self.create_google_drive_mapping(user)
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("main:handrive_api_google_drive_settings"),
+            data=json.dumps({"enabled": False}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["google_drive_enabled"])
+        mapping.refresh_from_db()
+        self.assertFalse(mapping.google_drive_enabled)
+
+        response = self.client.post(
+            reverse("main:handrive_api_google_drive_settings"),
+            data=json.dumps({"enabled": True}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mapping.refresh_from_db()
+        self.assertTrue(mapping.google_drive_enabled)
+
+    @mock.patch("main.handrive_views._validate_handrive_mp3_duration")
+    @mock.patch("main.handrive_views.subprocess.run")
+    @mock.patch("main.handrive_views._resolve_handrive_ffmpeg_bin", return_value=Path("/usr/bin/ffmpeg"))
+    def test_convert_mp3_writes_temp_in_destination_before_atomic_replace(
+        self,
+        _mock_ffmpeg_bin,
+        mock_run,
+        mock_validate_duration,
+    ):
+        user = self.create_scoped_handrive_editor("mp3_convert_user")
+        user_home = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / user.username
+        source_path = user_home / "clip.mp4"
+        source_path.write_bytes(b"video")
+
+        def fake_run(command, **_kwargs):
+            temp_output = Path(command[-1])
+            self.assertEqual(temp_output.parent.resolve(), source_path.parent.resolve())
+            self.assertTrue(temp_output.name.startswith(".clip-"))
+            self.assertEqual(temp_output.suffix, ".mp3")
+            self.assertNotEqual(temp_output, source_path.with_suffix(".mp3"))
+            temp_output.write_bytes(b"ID3 full mp3")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = fake_run
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("main:handrive_api_convert_mp3"),
+            data=json.dumps({"path": f"users/{user.username}/clip.mp4"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        destination_path = source_path.with_suffix(".mp3")
+        self.assertEqual(destination_path.read_bytes(), b"ID3 full mp3")
+        self.assertFalse(list(user_home.glob(".clip-*.mp3")))
+        command = mock_run.call_args.args[0]
+        self.assertIn("-map", command)
+        self.assertIn("0:a:0", command)
+        mock_validate_duration.assert_called_once()
+        validate_source_path, validate_temp_path = mock_validate_duration.call_args.args
+        self.assertEqual(validate_source_path.resolve(), source_path.resolve())
+        self.assertEqual(validate_temp_path.parent.resolve(), source_path.parent.resolve())
+
+    @mock.patch("main.handrive_views._validate_handrive_mp3_duration", side_effect=ValueError("short output"))
+    @mock.patch("main.handrive_views.subprocess.run")
+    @mock.patch("main.handrive_views._resolve_handrive_ffmpeg_bin", return_value=Path("/usr/bin/ffmpeg"))
+    def test_convert_mp3_removes_temp_when_duration_validation_fails(
+        self,
+        _mock_ffmpeg_bin,
+        mock_run,
+        _mock_validate_duration,
+    ):
+        user = self.create_scoped_handrive_editor("mp3_short_user")
+        user_home = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / user.username
+        source_path = user_home / "short.mp4"
+        source_path.write_bytes(b"video")
+
+        def fake_run(command, **_kwargs):
+            Path(command[-1]).write_bytes(b"ID3 partial")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = fake_run
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("main:handrive_api_convert_mp3"),
+            data=json.dumps({"path": f"users/{user.username}/short.mp4"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("short output", response.json()["error"])
+        self.assertFalse(source_path.with_suffix(".mp3").exists())
+        self.assertFalse(list(user_home.glob(".short-*.mp3")))
 
     def test_scope_home_list_starts_at_scoped_user_folder_for_superuser(self):
         admin = self.user_model.objects.create_user(
@@ -3007,7 +4077,7 @@ class HandriveAccessRuleTests(TestCase):
             mock.patch(
                 "main.handrive_views._git_repo_latest_commit_meta",
                 return_value={"commit_id": "def5678", "subject": "Readme", "author_username": "github-user", "modified_display": "2026-06-01 10:00"},
-            ),
+            ) as mock_latest_commit_meta,
         ):
             response = self.client.get(
                 reverse("main:handrive_api_list"),
@@ -3021,8 +4091,9 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(file_entry["type"], "file")
         self.assertTrue(file_entry["can_edit"])
         self.assertTrue(file_entry["requires_commit_message"])
-        self.assertEqual(file_entry["git_commit_id"], "def5678")
-        self.assertEqual(file_entry["git_commit_message"], "Readme")
+        self.assertEqual(file_entry["git_commit_id"], "")
+        self.assertEqual(file_entry["git_commit_message"], "")
+        mock_latest_commit_meta.assert_not_called()
         self.assertEqual(file_entry["slug_path"], f"users/{editor.username}/.github-repo-2470/main/README.md")
 
     def test_docs_api_save_commits_new_file_to_selected_github_repository(self):
@@ -4925,6 +5996,46 @@ class HandriveAccessRuleTests(TestCase):
         self.assertIn("/handrive/api/download?path=sample.png", html)
         self.assertIn('id="handrive-print-btn"', html)
         self.assertNotIn("/ko/docs/write?path=sample.png", html)
+
+    def test_docs_api_preview_renders_ico_as_image_media_file(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "favicon.ico").write_bytes(self.build_minimal_ico_bytes())
+        editor = self.create_handrive_editor("ico_preview_editor")
+        self.client.force_login(editor)
+
+        response = self.client.post(
+            reverse("main:handrive_api_preview"),
+            data=json.dumps({"path": "favicon.ico"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("render_mode"), "media_image")
+        self.assertIn("handrive-media-image-element", payload.get("html", ""))
+        self.assertIn("/handrive/api/download?path=favicon.ico", payload.get("html", ""))
+        self.assertNotIn("미리보기 미지원", payload.get("html", ""))
+
+    def test_docs_view_renders_ico_preview_and_download_uses_icon_mime(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "favicon.ico").write_bytes(self.build_minimal_ico_bytes())
+        editor = self.create_handrive_editor("ico_viewer")
+        self.client.force_login(editor)
+
+        response = self.client.get(
+            reverse("main:handrive_view_lang", kwargs={"ui_lang": "ko", "doc_path": "favicon.ico"})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn('class="handrive-media handrive-media-image"', html)
+        self.assertIn("/handrive/api/download?path=favicon.ico", html)
+        self.assertNotIn("/ko/docs/write?path=favicon.ico", html)
+
+        download_response = self.client.get(reverse("main:handrive_api_download"), data={"path": "favicon.ico"})
+        self.assertEqual(download_response.status_code, 200)
+        self.assertEqual(download_response["Content-Type"], "image/x-icon")
+        download_response.close()
 
     def test_docs_view_hides_print_button_for_video_file(self):
         handrive_root = Path(settings.MEDIA_ROOT) / "docs"

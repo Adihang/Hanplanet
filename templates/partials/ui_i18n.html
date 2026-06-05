@@ -19,6 +19,66 @@
 {% elif key == "copy" %}{% if ui_lang|default:'ko' == 'en' %}Copy{% else %}복사{% endif %}
 {% elif key == "copied" %}{% if ui_lang|default:'ko' == 'en' %}Copied{% else %}복사됨{% endif %}
 {% elif key == "stratagem_name_placeholder" %}{% if ui_lang|default:'ko' == 'en' %}Enter your name{% else %}이름을 입력하세요{% endif %}
+{% elif key == "salvations_page_title" %}{% if ui_lang|default:'ko' == 'en' %}Salvation's Edge 4th Encounter Calculator{% else %}구원의 경계 4네임드 계산기{% endif %}
+{% elif key == "salvations_meta_description" %}{% if ui_lang|default:'ko' == 'en' %}Salvation's Edge 4th encounter calculator{% else %}구원의 경계 4네임드 계산기{% endif %}
+{% elif key == "salvations_meta_og_description" %}{% if ui_lang|default:'ko' == 'en' %}Helper for the 4th encounter{% else %}능지박살 아이익 전용{% endif %}
+{% elif key == "salvations_select_team" %}{% if ui_lang|default:'ko' == 'en' %}Choose your team.{% else %}자신의 조를 선택하세요.{% endif %}
+{% elif key == "salvations_outside_team" %}{% if ui_lang|default:'ko' == 'en' %}Outside{% else %}외부조{% endif %}
+{% elif key == "salvations_inside_team" %}{% if ui_lang|default:'ko' == 'en' %}Inside{% else %}내부조{% endif %}
+{% elif key == "salvations_team_select" %}{% if ui_lang|default:'ko' == 'en' %}Team Select{% else %}조 선택{% endif %}
+{% elif key == "salvations_reset" %}{% if ui_lang|default:'ko' == 'en' %}Reset{% else %}초기화{% endif %}
+{% elif key == "salvations_inside_help" %}{% if ui_lang|default:'ko' == 'en' %}Choose your statue symbol and the number of jackpot teammates to calculate the inside transfer order.{% else %}내 동상 문양과 잭팟 인원 수를 선택하면 내부조 전달 순서를 계산합니다.{% endif %}
+{% elif key == "salvations_outside_help" %}{% if ui_lang|default:'ko' == 'en' %}Choose the inside statue symbol and outside 3D shape for left / center / right to calculate the dissection order.{% else %}좌/중/우 기준으로 내부 동상 문양과 외부 3D 도형을 선택하면 해부 순서를 계산합니다.{% endif %}
+{% elif key == "salvations_inside_calculator" %}{% if ui_lang|default:'ko' == 'en' %}Inside Calculator{% else %}내부조 계산기{% endif %}
+{% elif key == "salvations_outside_calculator" %}{% if ui_lang|default:'ko' == 'en' %}Outside Calculator{% else %}외부조 계산기{% endif %}
+{% elif key == "salvations_position_left" %}{% if ui_lang|default:'ko' == 'en' %}Left{% else %}좌{% endif %}
+{% elif key == "salvations_position_middle" %}{% if ui_lang|default:'ko' == 'en' %}Center{% else %}중{% endif %}
+{% elif key == "salvations_position_right" %}{% if ui_lang|default:'ko' == 'en' %}Right{% else %}우{% endif %}
+{% elif key == "salvations_shape_triangle" %}{% if ui_lang|default:'ko' == 'en' %}Triangle{% else %}세모{% endif %}
+{% elif key == "salvations_shape_square" %}{% if ui_lang|default:'ko' == 'en' %}Square{% else %}네모{% endif %}
+{% elif key == "salvations_shape_circle" %}{% if ui_lang|default:'ko' == 'en' %}Circle{% else %}동그라미{% endif %}
+{% elif key == "salvations_volume_cube" %}{% if ui_lang|default:'ko' == 'en' %}Cube{% else %}정육면체{% endif %}
+{% elif key == "salvations_volume_sphere" %}{% if ui_lang|default:'ko' == 'en' %}Sphere{% else %}구{% endif %}
+{% elif key == "salvations_volume_pyramid" %}{% if ui_lang|default:'ko' == 'en' %}Pyramid{% else %}삼각뿔{% endif %}
+{% elif key == "salvations_volume_cylinder" %}{% if ui_lang|default:'ko' == 'en' %}Cylinder{% else %}원기둥{% endif %}
+{% elif key == "salvations_volume_prism" %}{% if ui_lang|default:'ko' == 'en' %}Triangular Prism{% else %}삼각기둥{% endif %}
+{% elif key == "salvations_volume_cone" %}{% if ui_lang|default:'ko' == 'en' %}Cone{% else %}원뿔{% endif %}
+{% elif key == "salvations_jackpot_zero" %}{% if ui_lang|default:'ko' == 'en' %}0 players{% else %}0명{% endif %}
+{% elif key == "salvations_jackpot_one" %}{% if ui_lang|default:'ko' == 'en' %}1 player{% else %}1명{% endif %}
+{% elif key == "salvations_jackpot_three" %}{% if ui_lang|default:'ko' == 'en' %}3 players{% else %}3명{% endif %}
+{% elif key == "salvations_yes" %}{% if ui_lang|default:'ko' == 'en' %}Yes{% else %}O{% endif %}
+{% elif key == "salvations_no" %}{% if ui_lang|default:'ko' == 'en' %}No{% else %}X{% endif %}
+{% elif key == "salvations_my_statue_symbol" %}{% if ui_lang|default:'ko' == 'en' %}My Statue Symbol{% else %}내 동상 문양{% endif %}
+{% elif key == "salvations_jackpot_teammates" %}{% if ui_lang|default:'ko' == 'en' %}Jackpot Teammates{% else %}잭팟인 팀원 수{% endif %}
+{% elif key == "salvations_am_i_jackpot" %}{% if ui_lang|default:'ko' == 'en' %}Am I Jackpot?{% else %}나는 잭팟인가요?{% endif %}
+{% elif key == "salvations_final_hold" %}{% if ui_lang|default:'ko' == 'en' %}Final Symbols to Hold{% else %}최종 보유 문양{% endif %}
+{% elif key == "salvations_choose_my_symbol" %}{% if ui_lang|default:'ko' == 'en' %}Choose your statue symbol.{% else %}내 동상 문양을 선택하세요.{% endif %}
+{% elif key == "salvations_choose_jackpot_count" %}{% if ui_lang|default:'ko' == 'en' %}Choose the number of jackpot teammates. Jackpot means the two wall symbols are the same.{% else %}잭팟인 팀원 수를 선택하세요. 잭팟은 벽의 문양 두 개가 동일한 경우입니다.{% endif %}
+{% elif key == "salvations_wall_symbols" %}{% if ui_lang|default:'ko' == 'en' %}Wall symbols {mine} {other}{% else %}벽 문양 {mine} {other}{% endif %}
+{% elif key == "salvations_give_both_to_holder" %}{% if ui_lang|default:'ko' == 'en' %}Give both to the {shape} holder{% else %}{shape} 담당에게 둘 다 전달{% endif %}
+{% elif key == "salvations_transfer_order" %}{% if ui_lang|default:'ko' == 'en' %}Transfer Order{% else %}전달 순서{% endif %}
+{% elif key == "salvations_split_transfer" %}{% if ui_lang|default:'ko' == 'en' %}Give the two symbols to two different teammates, one each{% else %}두 문양을 다른 팀원 2명에게 하나씩 나누어 전달{% endif %}
+{% elif key == "salvations_choose_self_jackpot" %}{% if ui_lang|default:'ko' == 'en' %}Choose whether you are jackpot.{% else %}본인이 잭팟인지 선택하세요.{% endif %}
+{% elif key == "salvations_first_transfer" %}{% if ui_lang|default:'ko' == 'en' %}First Transfer{% else %}첫 번째 전달{% endif %}
+{% elif key == "salvations_second_transfer" %}{% if ui_lang|default:'ko' == 'en' %}Second Transfer{% else %}두 번째 전달{% endif %}
+{% elif key == "salvations_give_shape_to_non_jackpot" %}{% if ui_lang|default:'ko' == 'en' %}Give {shape} to a non-jackpot teammate{% else %}{shape}를 잭팟이 아닌 팀원에게 전달{% endif %}
+{% elif key == "salvations_give_remaining_to_jackpot" %}{% if ui_lang|default:'ko' == 'en' %}Give the remaining one to the jackpot teammate{% else %}나머지 하나를 잭팟인 팀원에게 전달{% endif %}
+{% elif key == "salvations_select_all_inside" %}{% if ui_lang|default:'ko' == 'en' %}Choose all left / center / right inside statue symbols.{% else %}내부 동상 문양을 좌/중/우 모두 선택하세요.{% endif %}
+{% elif key == "salvations_inside_unique" %}{% if ui_lang|default:'ko' == 'en' %}Inside statue symbols must all be different.{% else %}내부 동상 문양은 서로 달라야 합니다.{% endif %}
+{% elif key == "salvations_final_target_error" %}{% if ui_lang|default:'ko' == 'en' %}Unable to calculate the final target.{% else %}최종 목표를 계산할 수 없습니다.{% endif %}
+{% elif key == "salvations_select_all_outside" %}{% if ui_lang|default:'ko' == 'en' %}Choose all left / center / right outside 3D shapes.{% else %}외부 3D 도형을 좌/중/우 모두 선택하세요.{% endif %}
+{% elif key == "salvations_outside_counts" %}{% if ui_lang|default:'ko' == 'en' %}Outside shapes must include △, □, and ○ exactly twice each.{% else %}외부 도형은 △, □, ○가 각각 2개씩 포함되는 조합이어야 합니다.{% endif %}
+{% elif key == "salvations_calculated" %}{% if ui_lang|default:'ko' == 'en' %}Dissection order calculated.{% else %}해부 순서가 계산되었습니다.{% endif %}
+{% elif key == "salvations_inside_label" %}{% if ui_lang|default:'ko' == 'en' %}Inside{% else %}내부{% endif %}
+{% elif key == "salvations_outside_label" %}{% if ui_lang|default:'ko' == 'en' %}Outside{% else %}외부{% endif %}
+{% elif key == "salvations_none" %}{% if ui_lang|default:'ko' == 'en' %}None{% else %}없음{% endif %}
+{% elif key == "salvations_step" %}{% if ui_lang|default:'ko' == 'en' %}Step{% else %}단계{% endif %}
+{% elif key == "salvations_dissect" %}{% if ui_lang|default:'ko' == 'en' %}Dissect{% else %}해부{% endif %}
+{% elif key == "salvations_answer" %}{% if ui_lang|default:'ko' == 'en' %}Answer{% else %}해답{% endif %}
+{% elif key == "salvations_create" %}{% if ui_lang|default:'ko' == 'en' %}Create{% else %}생성{% endif %}
+{% elif key == "salvations_loop_error" %}{% if ui_lang|default:'ko' == 'en' %}A calculation loop occurred. Check the input combination.{% else %}계산 중 순환이 발생했습니다. 입력 조합을 다시 확인하세요.{% endif %}
+{% elif key == "salvations_already_matches" %}{% if ui_lang|default:'ko' == 'en' %}Already matches the final target.{% else %}이미 최종 목표와 일치합니다.{% endif %}
+{% elif key == "root_footer_purpose" %}{% if ui_lang|default:'ko' == 'en' %}Hanplanet provides HanDrive for file upload, organization, preview, editing, and sharing; connected Google Drive files are shown and managed only with user permission.{% else %}Hanplanet은 HanDrive의 파일 업로드, 정리, 미리보기, 편집, 공유를 제공하며, 연결된 Google Drive 파일은 사용자 허용 시에만 표시하고 관리합니다.{% endif %}
 {% elif key == "login_hint_shortcuts" %}{% if ui_lang|default:'ko' == 'en' %}Sign in to save personal shortcuts.{% else %}로그인하면 개인 바로가기를 저장할 수 있습니다.{% endif %}
 {% elif key == "empty_shortcuts" %}{% if ui_lang|default:'ko' == 'en' %}No shortcuts yet.{% else %}아직 등록된 바로가기가 없습니다.{% endif %}
 {% elif key == "add" %}{% if ui_lang|default:'ko' == 'en' %}Add{% else %}추가{% endif %}
@@ -31,6 +91,8 @@
 {% elif key == "saved" %}{% if ui_lang|default:'ko' == 'en' %}Saved{% else %}저장됨{% endif %}
 {% elif key == "cancel" %}{% if ui_lang|default:'ko' == 'en' %}Cancel{% else %}취소{% endif %}
 {% elif key == "clear" %}{% if ui_lang|default:'ko' == 'en' %}Clear{% else %}지우기{% endif %}
+{% elif key == "account_unlink" %}{% if ui_lang|default:'ko' == 'en' %}Disconnect{% else %}연동해제{% endif %}
+{% elif key == "account_unlinked" %}{% if ui_lang|default:'ko' == 'en' %}Disconnected{% else %}연동해제됨{% endif %}
 {% elif key == "logout" %}{% if ui_lang|default:'ko' == 'en' %}Logout{% else %}로그아웃{% endif %}
 {% elif key == "logout_confirm" %}{% if ui_lang|default:'ko' == 'en' %}Do you want to log out?{% else %}로그아웃 하시겠습니까?{% endif %}
 {% elif key == "my_portfolio" %}{% if ui_lang|default:'ko' == 'en' %}My Portfolio{% else %}내 포트폴리오{% endif %}
@@ -38,12 +100,27 @@
 {% elif key == "github_connect_title" %}{% if ui_lang|default:'ko' == 'en' %}Connect GitHub{% else %}GitHub 연동{% endif %}
 {% elif key == "github_connect_message" %}{% if ui_lang|default:'ko' == 'en' %}No GitHub account is connected. Connect GitHub now?{% else %}연동된 GitHub 계정이 없습니다. 지금 연동하시겠습니까?{% endif %}
 {% elif key == "github_connect_confirm" %}{% if ui_lang|default:'ko' == 'en' %}Connect{% else %}연동{% endif %}
+{% elif key == "github_connected_message" %}{% if ui_lang|default:'ko' == 'en' %}Connected GitHub account:{% else %}연동된 GitHub 계정:{% endif %}
 {% elif key == "github_repo_select_title" %}{% if ui_lang|default:'ko' == 'en' %}GitHub Repositories{% else %}GitHub 저장소 선택{% endif %}
 {% elif key == "github_repo_select_message" %}{% if ui_lang|default:'ko' == 'en' %}Select repositories to show in HanDrive.{% else %}HanDrive에 표시할 저장소를 선택하세요.{% endif %}
 {% elif key == "github_repo_select_loading" %}{% if ui_lang|default:'ko' == 'en' %}Loading repositories...{% else %}저장소를 불러오는 중...{% endif %}
 {% elif key == "github_repo_select_empty" %}{% if ui_lang|default:'ko' == 'en' %}No repositories available.{% else %}표시할 수 있는 저장소가 없습니다.{% endif %}
 {% elif key == "github_repo_select_error" %}{% if ui_lang|default:'ko' == 'en' %}Failed to load GitHub repositories.{% else %}GitHub 저장소를 불러오지 못했습니다.{% endif %}
 {% elif key == "github_unconfigured" %}{% if ui_lang|default:'ko' == 'en' %}GitHub connection is not configured yet.{% else %}GitHub 연동 설정이 아직 완료되지 않았습니다.{% endif %}
+{% elif key == "github_unlink_confirm" %}{% if ui_lang|default:'ko' == 'en' %}Disconnect GitHub? Selected repositories will be removed from HanDrive.{% else %}GitHub 연동을 해제하시겠습니까? 선택한 저장소가 HanDrive에서 사라집니다.{% endif %}
+{% elif key == "github_unlink_error" %}{% if ui_lang|default:'ko' == 'en' %}Failed to disconnect GitHub.{% else %}GitHub 연동을 해제하지 못했습니다.{% endif %}
+{% elif key == "google_connect" %}{% if ui_lang|default:'ko' == 'en' %}Connect Google{% else %}Google 연동{% endif %}
+{% elif key == "google_connect_title" %}{% if ui_lang|default:'ko' == 'en' %}Connect Google{% else %}Google 연동{% endif %}
+{% elif key == "google_connect_message" %}{% if ui_lang|default:'ko' == 'en' %}No Google account is connected. Connect Google now?{% else %}연동된 Google 계정이 없습니다. 지금 연동하시겠습니까?{% endif %}
+{% elif key == "google_connect_confirm" %}{% if ui_lang|default:'ko' == 'en' %}Connect{% else %}연동{% endif %}
+{% elif key == "google_connected_title" %}{% if ui_lang|default:'ko' == 'en' %}Google Connected{% else %}Google 연동됨{% endif %}
+{% elif key == "google_connected_message" %}{% if ui_lang|default:'ko' == 'en' %}Connected Google account:{% else %}연동된 Google 계정:{% endif %}
+{% elif key == "google_drive_toggle_label" %}{% if ui_lang|default:'ko' == 'en' %}Show Google Drive in HanDrive{% else %}HanDrive에 Google Drive 표시{% endif %}
+{% elif key == "google_drive_toggle_hint" %}{% if ui_lang|default:'ko' == 'en' %}When unchecked, Google Drive paths and APIs are disabled.{% else %}체크 해제하면 Google Drive 경로와 API가 비활성화됩니다.{% endif %}
+{% elif key == "google_drive_toggle_error" %}{% if ui_lang|default:'ko' == 'en' %}Failed to save Google Drive setting.{% else %}Google Drive 설정을 저장하지 못했습니다.{% endif %}
+{% elif key == "google_unconfigured" %}{% if ui_lang|default:'ko' == 'en' %}Google connection is not configured yet.{% else %}Google 연동 설정이 아직 완료되지 않았습니다.{% endif %}
+{% elif key == "google_unlink_confirm" %}{% if ui_lang|default:'ko' == 'en' %}Disconnect Google? Google Drive will be removed from HanDrive.{% else %}Google 연동을 해제하시겠습니까? Google Drive가 HanDrive에서 사라집니다.{% endif %}
+{% elif key == "google_unlink_error" %}{% if ui_lang|default:'ko' == 'en' %}Failed to disconnect Google.{% else %}Google 연동을 해제하지 못했습니다.{% endif %}
 {% elif key == "close" %}{% if ui_lang|default:'ko' == 'en' %}Close{% else %}닫기{% endif %}
 {% elif key == "collapse" %}{% if ui_lang|default:'ko' == 'en' %}Collapse{% else %}접기{% endif %}
 {% elif key == "expand" %}{% if ui_lang|default:'ko' == 'en' %}Expand{% else %}펼치기{% endif %}

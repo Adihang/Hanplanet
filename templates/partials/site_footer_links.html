@@ -1,7 +1,12 @@
 <footer class="site-footer-links" aria-label="Legal links">
-    <a class="site-footer-link" href="{{ privacy_url }}">Privacy Policy</a>
-    <span class="site-footer-sep">/</span>
-    <a class="site-footer-link" href="{{ terms_url }}">Terms of Service</a>
+    <div class="site-footer-nav">
+        <a class="site-footer-link" href="{{ privacy_url }}">Privacy Policy</a>
+        <span class="site-footer-sep">/</span>
+        <a class="site-footer-link" href="{{ terms_url }}">Terms of Service</a>
+    </div>
+    {% if is_root_entry %}
+    <p class="site-footer-purpose">{% include 'partials/ui_i18n.html' with key='root_footer_purpose' %}</p>
+    {% endif %}
 </footer>
 
 <script>

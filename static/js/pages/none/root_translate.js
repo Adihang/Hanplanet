@@ -31,6 +31,18 @@
     const copiedLabel = String(panel.dataset.copiedLabel || '복사됨');
     let copyResetTimer = 0;
 
+    const selectServerMessage = function (payload, fallback) {
+        if (!payload || typeof payload !== 'object') {
+            return fallback || '';
+        }
+        const lang = (document.documentElement.getAttribute('lang') || '').toLowerCase().indexOf('en') === 0 ? 'en' : 'ko';
+        const messages = payload.error_messages || payload.messages;
+        if (messages && typeof messages === 'object') {
+            return messages[lang] || messages.ko || messages.en || fallback || '';
+        }
+        return payload.error_message || payload.message || payload.error || fallback || '';
+    };
+
     const escapeHtml = function (value) {
         return String(value || '')
             .replace(/&/g, '&amp;')
@@ -516,7 +528,7 @@
                     return {};
                 }).then(function (payload) {
                     if (!response.ok) {
-                        throw new Error(String(payload.error || translateErrorLabel));
+                        throw new Error(String(selectServerMessage(payload, translateErrorLabel)));
                     }
                     return payload;
                 });

@@ -42,6 +42,8 @@ import sys
 import tempfile
 import unicodedata
 import zipfile
+import ipaddress
+import socket
 from django.utils import timezone
 from django.utils.safestring import mark_safe
 import markdown
@@ -61,8 +63,9 @@ from urllib.request import Request, urlopen
 from pathlib import Path
 from types import SimpleNamespace
 
-from git.models import GitHubAccountMapping
+from git.models import GitHubAccountMapping, GoogleAccountMapping
 from .github_auth import is_github_auth_configured
+from .google_auth import is_google_auth_configured
 from .restart_utils import restart_gunicorn_and_wait
 
 PORTFOLIO_DEFAULT_USERNAME = "HanbyelLim"
@@ -99,6 +102,102 @@ IDENTITY_IMPERSONATION_PATTERNS = [
 ]
 WARGAME_ALLOWED_ORIGIN = "https://wargame.hanplanet.com"
 WARGAME_CHALLENGE_ID_PATTERN = re.compile(r"^level\d{1,3}$")
+NETWORK_SPEED_DOWNLOAD_DEFAULT_BYTES = 8 * 1024 * 1024
+NETWORK_SPEED_DOWNLOAD_MAX_BYTES = 16 * 1024 * 1024
+NETWORK_SPEED_UPLOAD_DEFAULT_BYTES = 5 * 1024 * 1024
+NETWORK_SPEED_UPLOAD_MAX_BYTES = 24 * 1024 * 1024
+
+JSON_ERROR_MESSAGE_TRANSLATIONS = {
+    "POST only.": {"ko": "POST 요청만 허용됩니다.", "en": "Only POST requests are allowed."},
+    "Invalid request body.": {"ko": "요청 데이터 형식이 올바르지 않습니다.", "en": "The request body is invalid."},
+    "Invalid request data": {"ko": "요청 데이터 형식이 올바르지 않습니다.", "en": "The request data is invalid."},
+    "Invalid message": {"ko": "메시지 내용이 올바르지 않습니다.", "en": "The message is invalid."},
+    "Invalid text": {"ko": "텍스트 내용이 올바르지 않습니다.", "en": "The text is invalid."},
+    "Source and target languages must differ": {"ko": "원본 언어와 번역 언어는 달라야 합니다.", "en": "Source and target languages must differ."},
+    "Error communicating with AI service": {"ko": "AI 서비스와 통신하는 중 오류가 발생했습니다.", "en": "Error communicating with AI service."},
+    "Could not generate response": {"ko": "응답을 생성하지 못했습니다.", "en": "Could not generate response."},
+    "Could not generate translation": {"ko": "번역 결과를 생성하지 못했습니다.", "en": "Could not generate translation."},
+    "An unexpected error occurred": {"ko": "예상치 못한 오류가 발생했습니다.", "en": "An unexpected error occurred."},
+    "Login required.": {"ko": "로그인이 필요합니다.", "en": "Login required."},
+    "Invalid token.": {"ko": "잘못된 토큰입니다.", "en": "Invalid token."},
+    "File expired.": {"ko": "파일이 만료되었습니다.", "en": "File expired."},
+    "File not found.": {"ko": "파일을 찾을 수 없습니다.", "en": "File not found."},
+    "Save failed.": {"ko": "저장에 실패했습니다.", "en": "Save failed."},
+    "invalid JSON": {"ko": "요청 데이터 형식이 올바르지 않습니다.", "en": "The request body is invalid."},
+    "path is required": {"ko": "경로가 필요합니다.", "en": "Path is required."},
+    "repo_name is required": {"ko": "리포지토리 이름이 필요합니다.", "en": "Repository name is required."},
+    "username is required": {"ko": "사용자명이 필요합니다.", "en": "Username is required."},
+    "source_branch is required": {"ko": "원본 브랜치가 필요합니다.", "en": "Source branch is required."},
+    "new_branch is required": {"ko": "새 브랜치 이름이 필요합니다.", "en": "New branch name is required."},
+    "branch is required": {"ko": "브랜치 이름이 필요합니다.", "en": "Branch name is required."},
+    "user_code is required": {"ko": "인증 코드가 필요합니다.", "en": "Auth code is required."},
+    "device_code is required": {"ko": "디바이스 코드가 필요합니다.", "en": "Device code is required."},
+    "유효한 폴더 경로가 아닙니다.": {"ko": "유효한 폴더 경로가 아닙니다.", "en": "This is not a valid folder path."},
+    "폴더에만 Repo를 생성할 수 있습니다.": {"ko": "폴더에만 Repo를 생성할 수 있습니다.", "en": "A repository can only be created from a folder."},
+    "이미 Git 저장소가 연결된 경로입니다.": {"ko": "이미 Git 저장소가 연결된 경로입니다.", "en": "This path is already connected to a Git repository."},
+    "Repo를 생성할 권한이 없습니다.": {"ko": "Repo를 생성할 권한이 없습니다.", "en": "You do not have permission to create a repository."},
+    "저장소를 찾을 수 없습니다.": {"ko": "저장소를 찾을 수 없습니다.", "en": "Repository not found."},
+    "permission은 read/write/admin 중 하나여야 합니다.": {"ko": "permission은 read/write/admin 중 하나여야 합니다.", "en": "Permission must be read, write, or admin."},
+    "사용자를 찾을 수 없습니다.": {"ko": "사용자를 찾을 수 없습니다.", "en": "User not found."},
+    "retry는 failed 상태에서만 가능합니다.": {"ko": "retry는 failed 상태에서만 가능합니다.", "en": "Retry is only available for failed repositories."},
+    "브랜치를 수정할 권한이 없습니다.": {"ko": "브랜치를 수정할 권한이 없습니다.", "en": "You do not have permission to edit branches."},
+    "GitHub 연동 토큰을 찾을 수 없습니다.": {"ko": "GitHub 연동 토큰을 찾을 수 없습니다.", "en": "GitHub connection token was not found."},
+    "유효하지 않은 브랜치 이름입니다.": {"ko": "유효하지 않은 브랜치 이름입니다.", "en": "Invalid branch name."},
+    "원본 브랜치를 찾을 수 없습니다.": {"ko": "원본 브랜치를 찾을 수 없습니다.", "en": "Source branch not found."},
+    "같은 이름의 브랜치가 이미 존재합니다.": {"ko": "같은 이름의 브랜치가 이미 존재합니다.", "en": "A branch with the same name already exists."},
+    "원본 브랜치 커밋을 찾을 수 없습니다.": {"ko": "원본 브랜치 커밋을 찾을 수 없습니다.", "en": "Source branch commit not found."},
+    "브랜치 생성에 실패했습니다.": {"ko": "브랜치 생성에 실패했습니다.", "en": "Failed to create branch."},
+    "main 브랜치는 삭제할 수 없습니다.": {"ko": "main 브랜치는 삭제할 수 없습니다.", "en": "The main branch cannot be deleted."},
+    "기본 브랜치는 삭제할 수 없습니다.": {"ko": "기본 브랜치는 삭제할 수 없습니다.", "en": "The default branch cannot be deleted."},
+    "브랜치를 찾을 수 없습니다.": {"ko": "브랜치를 찾을 수 없습니다.", "en": "Branch not found."},
+    "브랜치 삭제에 실패했습니다.": {"ko": "브랜치 삭제에 실패했습니다.", "en": "Failed to delete branch."},
+    "저장소가 아직 준비되지 않았습니다.": {"ko": "저장소가 아직 준비되지 않았습니다.", "en": "Repository is not ready yet."},
+    "유효하지 않거나 이미 사용된 코드입니다.": {"ko": "유효하지 않거나 이미 사용된 코드입니다.", "en": "Invalid or already used code."},
+    "인증 코드가 만료되었습니다.": {"ko": "인증 코드가 만료되었습니다.", "en": "Auth code has expired."},
+}
+
+
+def _json_error_messages(message, fallback_en=None):
+    text = str(message or "")
+    if text in JSON_ERROR_MESSAGE_TRANSLATIONS:
+        return dict(JSON_ERROR_MESSAGE_TRANSLATIONS[text])
+    for messages in JSON_ERROR_MESSAGE_TRANSLATIONS.values():
+        if text == messages.get("ko") or text == messages.get("en"):
+            return dict(messages)
+    if fallback_en:
+        return {"ko": text, "en": str(fallback_en)}
+    return {"ko": text, "en": text}
+
+
+def _select_json_message(messages, ui_lang):
+    return messages.get("en" if ui_lang == "en" else "ko") or messages.get("ko") or messages.get("en") or ""
+
+
+def _json_error_payload(request, message_ko, message_en=None, *, code="", ok=None, ui_lang=None, **extra):
+    messages = _json_error_messages(message_ko, message_en)
+    resolved_lang = ui_lang or resolve_ui_lang(
+        request,
+        getattr(getattr(request, "resolver_match", None), "kwargs", {}).get("ui_lang") if request is not None else None,
+    )
+    selected_message = _select_json_message(messages, resolved_lang)
+    payload = {
+        "error": selected_message,
+        "error_message": selected_message,
+        "error_messages": messages,
+        **extra,
+    }
+    if code:
+        payload["error_code"] = code
+    if ok is not None:
+        payload["ok"] = ok
+    return payload
+
+
+def _json_error_response(request, message_ko, message_en=None, *, status=400, code="", ok=None, ui_lang=None, **extra):
+    return JsonResponse(
+        _json_error_payload(request, message_ko, message_en, code=code, ok=ok, ui_lang=ui_lang, **extra),
+        status=status,
+    )
 
 
 FENCED_BLOCK_PATTERN = re.compile(r"^\s*(`{3,}|~{3,})")
@@ -1022,6 +1121,17 @@ def apply_ui_context(request, context, ui_lang):
     github_start_url = reverse("main:handrive_github_auth_start_lang", kwargs={"ui_lang": ui_lang})
     context["account_github_connect_url"] = f"{github_start_url}?{urlencode({'mode': 'link', 'next': github_next_url})}"
     context["account_github_repos_url"] = reverse("main:handrive_api_github_repositories")
+    context["account_github_unlink_url"] = reverse("main:handrive_api_github_unlink")
+    context["account_google_auth_enabled"] = is_google_auth_configured()
+    context["account_google_connected"] = False
+    context["account_google_email"] = ""
+    context["account_google_drive_enabled"] = False
+    context["account_google_connect_label"] = "Connect Google" if ui_lang == "en" else "Google 연동"
+    google_next_url = request.get_full_path() or f"/{ui_lang}/"
+    google_start_url = reverse("main:handrive_google_auth_start_lang", kwargs={"ui_lang": ui_lang})
+    context["account_google_connect_url"] = f"{google_start_url}?{urlencode({'mode': 'link', 'next': google_next_url})}"
+    context["account_google_drive_settings_url"] = reverse("main:handrive_api_google_drive_settings")
+    context["account_google_unlink_url"] = reverse("main:handrive_api_google_unlink")
     if request.user.is_authenticated:
         profile_preferences = (
             UserProfile.objects.filter(user=request.user)
@@ -1061,6 +1171,19 @@ def apply_ui_context(request, context, ui_lang):
         if github_mapping is not None:
             context["account_github_connected"] = True
             context["account_github_login"] = github_mapping.github_login
+        try:
+            google_mapping = (
+                GoogleAccountMapping.objects
+                .filter(user=request.user)
+                .only("google_email", "google_drive_enabled")
+                .first()
+            )
+        except (OperationalError, ProgrammingError):
+            google_mapping = None
+        if google_mapping is not None:
+            context["account_google_connected"] = True
+            context["account_google_email"] = google_mapping.google_email
+            context["account_google_drive_enabled"] = bool(google_mapping.google_drive_enabled)
     try:
         nav_links = list(NavLink.objects.all())
         removed_nav_names = {"github", "thingiverse", "portfolio", "wargame"}
@@ -1121,21 +1244,39 @@ def build_localized_url(request, route_name, **kwargs):
     return localized_path
 
 
-def _read_legal_markdown(filename: str) -> str:
+LOCALIZED_LEGAL_MARKDOWN_FILES = {"Privacy_Policy.md", "Terms_of_Service.md"}
+
+
+def _select_legal_markdown_language(content: str, filename: str, ui_lang: str) -> str:
+    """Return the localized half of bilingual legal markdown documents."""
+    if filename not in LOCALIZED_LEGAL_MARKDOWN_FILES:
+        return content
+    korean_content, separator, english_content = content.partition("\n---\n\n")
+    if not separator:
+        return content
+    if ui_lang == "en" and english_content.strip():
+        return english_content
+    return korean_content
+
+
+def _read_legal_markdown(filename: str, ui_lang: str = "ko") -> str:
     """Load a legal markdown file from static storage, falling back to a readable placeholder."""
     legal_path = settings.BASE_DIR / "static" / filename
     try:
-        return legal_path.read_text(encoding="utf-8")
+        return _select_legal_markdown_language(legal_path.read_text(encoding="utf-8"), filename, ui_lang)
     except OSError:
         return "# Document Not Found\n\nThe requested document could not be loaded."
 
 
-def _render_legal_page(request, ui_lang, *, title_ko: str, title_en: str, filename: str):
+def _render_legal_page(request, ui_lang, *, title_ko: str, title_en: str, filename: str, forced_ui_lang=None):
     """Render one of the legal document pages with shared UI context and localized titles."""
-    resolved_lang = resolve_ui_lang(request, ui_lang)
+    if forced_ui_lang in SUPPORTED_UI_LANGS:
+        resolved_lang = forced_ui_lang
+    else:
+        resolved_lang = resolve_ui_lang(request, ui_lang)
     context = {
         "page_title": title_en if resolved_lang == "en" else title_ko,
-        "page_content_html": render_markdown_safely(_read_legal_markdown(filename)),
+        "page_content_html": render_markdown_safely(_read_legal_markdown(filename, resolved_lang)),
         "meta_title": title_en if resolved_lang == "en" else title_ko,
         "meta_og_title": title_en if resolved_lang == "en" else title_ko,
         "meta_description": title_en if resolved_lang == "en" else title_ko,
@@ -1157,6 +1298,18 @@ def privacy_page(request, ui_lang=None):
     )
 
 
+def privacy_page_unprefixed(request):
+    """Render the public unprefixed privacy URL in English without changing user language preference."""
+    return _render_legal_page(
+        request,
+        None,
+        title_ko="개인정보 처리방침",
+        title_en="Privacy Policy",
+        filename="Privacy_Policy.md",
+        forced_ui_lang="en",
+    )
+
+
 def terms_page(request, ui_lang=None):
     """Render the terms of service page using the shared legal-page template."""
     return _render_legal_page(
@@ -1165,6 +1318,18 @@ def terms_page(request, ui_lang=None):
         title_ko="이용약관",
         title_en="Terms of Service",
         filename="Terms_of_Service.md",
+    )
+
+
+def terms_page_unprefixed(request):
+    """Render the public unprefixed terms URL in English without changing user language preference."""
+    return _render_legal_page(
+        request,
+        None,
+        title_ko="이용약관",
+        title_en="Terms of Service",
+        filename="Terms_of_Service.md",
+        forced_ui_lang="en",
     )
 
 
@@ -1181,7 +1346,7 @@ def licenses_page(request, ui_lang=None):
 
 def get_account_display_name(user):
     """Prefer a user's full name and fall back to username for shared account UI surfaces."""
-    if user is None:
+    if user is None or not getattr(user, "is_authenticated", False):
         return ""
     full_name = str(user.get_full_name() or "").strip()
     if full_name:
@@ -1797,7 +1962,7 @@ def sub_page(request, ui_lang=None):
         },
         {
             "slug": "text-speaki",
-            "category": "tool",
+            "category": "game",
             "title": "Text Bubble | Hanplanet" if is_english else "책먹는 스핔이 | Hanplanet",
             "url": reverse("main:text_bubble_lang", kwargs={"ui_lang": resolved_lang}),
             "description": (
@@ -1817,6 +1982,19 @@ def sub_page(request, ui_lang=None):
                 "Drop or paste an image, then click it to open Picture-in-Picture."
                 if is_english
                 else "이미지를 드롭하거나 붙여넣고 클릭해서 PiP로 띄웁니다."
+            ),
+            "site_name": hanplanet_site_name,
+            "image_url": hanplanet_og_image,
+        },
+        {
+            "slug": "network-info",
+            "category": "tool",
+            "title": "Network Environment" if is_english else "네트워크 환경",
+            "url": reverse("main:network_environment_lang", kwargs={"ui_lang": resolved_lang}),
+            "description": (
+                "Inspect IP, browser network hints, GPS, WebRTC candidates, and transfer speed."
+                if is_english
+                else "IP, 브라우저 네트워크 힌트, GPS, WebRTC 후보, 전송 속도를 확인합니다."
             ),
             "site_name": hanplanet_site_name,
             "image_url": hanplanet_og_image,
@@ -1928,6 +2106,289 @@ def sub_page(request, ui_lang=None):
     return response
 
 
+def _classify_ip_address(address):
+    value = str(address or "").strip().strip("[]")
+    if not value:
+        return ""
+    if value.endswith(".local"):
+        return "mDNS"
+    if "%" in value:
+        value = value.split("%", 1)[0]
+    try:
+        parsed = ipaddress.ip_address(value)
+    except ValueError:
+        return "hostname"
+    if parsed.is_loopback:
+        return "loopback"
+    if parsed.is_link_local:
+        return "link-local"
+    if parsed.is_private:
+        return "private"
+    if parsed.is_global:
+        return "public"
+    if parsed.is_multicast:
+        return "multicast"
+    if parsed.is_unspecified:
+        return "unspecified"
+    return "reserved"
+
+
+def _get_server_local_addresses():
+    addresses = {}
+
+    def add_address(raw_address, source):
+        address = str(raw_address or "").strip()
+        if not address:
+            return
+        if "%" in address:
+            address = address.split("%", 1)[0]
+        addresses.setdefault(
+            address,
+            {
+                "address": address,
+                "kind": _classify_ip_address(address),
+                "sources": [],
+            },
+        )
+        if source not in addresses[address]["sources"]:
+            addresses[address]["sources"].append(source)
+
+    try:
+        hostname = socket.gethostname()
+        for item in socket.getaddrinfo(hostname, None):
+            sockaddr = item[4]
+            if sockaddr:
+                add_address(sockaddr[0], "hostname")
+    except OSError:
+        pass
+
+    for family, target in (
+        (socket.AF_INET, ("8.8.8.8", 80)),
+        (socket.AF_INET6, ("2001:4860:4860::8888", 80, 0, 0)),
+    ):
+        try:
+            with socket.socket(family, socket.SOCK_DGRAM) as probe:
+                probe.settimeout(0.2)
+                probe.connect(target)
+                add_address(probe.getsockname()[0], "default-route")
+        except OSError:
+            continue
+
+    return sorted(addresses.values(), key=lambda item: (item["kind"], item["address"]))
+
+
+def _network_meta_value(request, key):
+    return str(request.META.get(key) or "").strip()
+
+
+def _network_environment_payload(request):
+    x_forwarded_for = _network_meta_value(request, "HTTP_X_FORWARDED_FOR")
+    forwarded_chain = [part.strip() for part in x_forwarded_for.split(",") if part.strip()]
+    cf_connecting_ip = _network_meta_value(request, "HTTP_CF_CONNECTING_IP")
+    x_real_ip = _network_meta_value(request, "HTTP_X_REAL_IP")
+    remote_addr = _network_meta_value(request, "REMOTE_ADDR")
+    observed_ip = cf_connecting_ip or x_real_ip or (forwarded_chain[0] if forwarded_chain else "") or get_client_ip(request)
+    server_addresses_visible = bool(
+        getattr(settings, "DEBUG", False)
+        or (getattr(request, "user", None) is not None and request.user.is_authenticated and request.user.is_superuser)
+    )
+
+    selected_headers = {
+        "Host": _network_meta_value(request, "HTTP_HOST"),
+        "User-Agent": _network_meta_value(request, "HTTP_USER_AGENT"),
+        "Accept-Language": _network_meta_value(request, "HTTP_ACCEPT_LANGUAGE"),
+        "Accept-Encoding": _network_meta_value(request, "HTTP_ACCEPT_ENCODING"),
+        "Referer": _network_meta_value(request, "HTTP_REFERER"),
+        "X-Forwarded-For": x_forwarded_for,
+        "X-Forwarded-Proto": _network_meta_value(request, "HTTP_X_FORWARDED_PROTO"),
+        "X-Forwarded-Host": _network_meta_value(request, "HTTP_X_FORWARDED_HOST"),
+        "X-Real-IP": x_real_ip,
+        "CF-Connecting-IP": cf_connecting_ip,
+        "CF-IPCountry": _network_meta_value(request, "HTTP_CF_IPCOUNTRY"),
+        "CF-Ray": _network_meta_value(request, "HTTP_CF_RAY"),
+        "CF-Visitor": _network_meta_value(request, "HTTP_CF_VISITOR"),
+    }
+
+    server_info = {
+        "time": timezone.now().isoformat(),
+        "timezone": str(timezone.get_current_timezone()),
+        "local_addresses_visible": server_addresses_visible,
+        "local_addresses": _get_server_local_addresses() if server_addresses_visible else [],
+    }
+    if server_addresses_visible:
+        server_info["hostname"] = socket.gethostname()
+
+    return {
+        "ok": True,
+        "observed_ip": observed_ip,
+        "observed_ip_kind": _classify_ip_address(observed_ip),
+        "ip_candidates": {
+            "cf_connecting_ip": cf_connecting_ip,
+            "x_real_ip": x_real_ip,
+            "x_forwarded_for": forwarded_chain,
+            "remote_addr": remote_addr,
+        },
+        "request": {
+            "scheme": request.scheme,
+            "is_secure": request.is_secure(),
+            "host": request.get_host(),
+            "path": request.path,
+            "method": request.method,
+            "server_name": _network_meta_value(request, "SERVER_NAME"),
+            "server_port": _network_meta_value(request, "SERVER_PORT"),
+            "remote_addr": remote_addr,
+            "headers": {key: value for key, value in selected_headers.items() if value},
+        },
+        "cloudflare": {
+            "connecting_ip": cf_connecting_ip,
+            "country": _network_meta_value(request, "HTTP_CF_IPCOUNTRY"),
+            "colo_ray": _network_meta_value(request, "HTTP_CF_RAY"),
+            "visitor": _network_meta_value(request, "HTTP_CF_VISITOR"),
+        },
+        "server": server_info,
+        "limits": {
+            "download_default_bytes": NETWORK_SPEED_DOWNLOAD_DEFAULT_BYTES,
+            "download_max_bytes": NETWORK_SPEED_DOWNLOAD_MAX_BYTES,
+            "upload_default_bytes": NETWORK_SPEED_UPLOAD_DEFAULT_BYTES,
+            "upload_max_bytes": NETWORK_SPEED_UPLOAD_MAX_BYTES,
+        },
+    }
+
+
+def network_environment_page(request, ui_lang=None):
+    """Render a browser network diagnostics page under Sub."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+    context = {
+        "ui_lang": resolved_lang,
+        "page_title": "Network Environment" if is_english else "네트워크 환경",
+        "home_label": "Home" if is_english else "홈",
+        "sub_label": "Sub" if is_english else "기타",
+        "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
+        "environment_api_url": reverse("main:network_environment_api_lang", kwargs={"ui_lang": resolved_lang}),
+        "download_api_url": reverse("main:network_speed_download_lang", kwargs={"ui_lang": resolved_lang}),
+        "upload_api_url": reverse("main:network_speed_upload_lang", kwargs={"ui_lang": resolved_lang}),
+        "download_size_bytes": NETWORK_SPEED_DOWNLOAD_DEFAULT_BYTES,
+        "upload_size_bytes": NETWORK_SPEED_UPLOAD_DEFAULT_BYTES,
+        "summary_title": "Summary" if is_english else "요약",
+        "public_ip_label": "External IP" if is_english else "외부 IP",
+        "local_ip_label": "Local IP candidates" if is_english else "내부 IP 후보",
+        "location_label": "GPS location" if is_english else "GPS 위치",
+        "speed_label": "Speed" if is_english else "속도",
+        "download_button_label": "Measure download" if is_english else "다운로드 측정",
+        "upload_button_label": "Measure upload" if is_english else "업로드 측정",
+        "webrtc_button_label": "Read local IP candidates" if is_english else "내부 IP 후보 읽기",
+        "gps_button_label": "Read GPS" if is_english else "GPS 읽기",
+        "refresh_button_label": "Refresh request info" if is_english else "요청 정보 새로고침",
+        "browser_section_title": "Browser network" if is_english else "브라우저 네트워크",
+        "request_section_title": "Request and headers" if is_english else "요청 및 헤더",
+        "device_section_title": "Device and browser" if is_english else "기기 및 브라우저",
+        "server_section_title": "Server view" if is_english else "서버 기준 정보",
+        "location_section_title": "Geolocation" if is_english else "위치 정보",
+        "webrtc_section_title": "WebRTC candidates" if is_english else "WebRTC 후보",
+        "meta_title": "Network Environment | Hanplanet" if is_english else "네트워크 환경 | Hanplanet",
+        "meta_og_title": "Network Environment | Hanplanet" if is_english else "네트워크 환경 | Hanplanet",
+        "meta_description": (
+            "Inspect public IP, browser network hints, WebRTC local address candidates, GPS, and upload/download speed."
+            if is_english
+            else "외부 IP, 브라우저 네트워크 힌트, WebRTC 내부 주소 후보, GPS, 업로드/다운로드 속도를 확인합니다."
+        ),
+        "meta_robots": "noindex",
+    }
+    context["meta_og_description"] = context["meta_description"]
+    apply_ui_context(request, context, resolved_lang)
+    return render(request, "fun/network_environment.html", context)
+
+
+@require_http_methods(["GET"])
+def network_environment_api(request, ui_lang=None):
+    response = JsonResponse(_network_environment_payload(request), json_dumps_params={"ensure_ascii": False})
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    return response
+
+
+def _coerce_network_speed_size(raw_value, default_size, max_size):
+    try:
+        requested_size = int(raw_value)
+    except (TypeError, ValueError):
+        requested_size = default_size
+    return max(256 * 1024, min(requested_size, max_size))
+
+
+@require_http_methods(["GET"])
+def network_speed_download(request, ui_lang=None):
+    size = _coerce_network_speed_size(
+        request.GET.get("size"),
+        NETWORK_SPEED_DOWNLOAD_DEFAULT_BYTES,
+        NETWORK_SPEED_DOWNLOAD_MAX_BYTES,
+    )
+    response = HttpResponse(secrets.token_bytes(size), content_type="application/octet-stream")
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    response["Content-Length"] = str(size)
+    response["X-Hanplanet-Payload-Bytes"] = str(size)
+    return response
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def network_speed_upload(request, ui_lang=None):
+    raw_content_length = str(request.META.get("CONTENT_LENGTH") or "").strip()
+    try:
+        content_length = int(raw_content_length) if raw_content_length else 0
+    except ValueError:
+        content_length = 0
+    if content_length > NETWORK_SPEED_UPLOAD_MAX_BYTES:
+        response = JsonResponse(
+            {
+                "ok": False,
+                "error": "Payload too large.",
+                "max_bytes": NETWORK_SPEED_UPLOAD_MAX_BYTES,
+            },
+            status=413,
+        )
+        response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        return response
+
+    stream = request.META.get("wsgi.input")
+    bytes_received = 0
+    if stream is not None:
+        remaining = content_length if content_length > 0 else NETWORK_SPEED_UPLOAD_MAX_BYTES + 1
+        while remaining > 0:
+            chunk = stream.read(min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            bytes_received += len(chunk)
+            if bytes_received > NETWORK_SPEED_UPLOAD_MAX_BYTES:
+                response = JsonResponse(
+                    {
+                        "ok": False,
+                        "error": "Payload too large.",
+                        "max_bytes": NETWORK_SPEED_UPLOAD_MAX_BYTES,
+                    },
+                    status=413,
+                )
+                response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                return response
+            remaining -= len(chunk)
+    else:
+        bytes_received = len(request.body)
+
+    response = JsonResponse(
+        {
+            "ok": True,
+            "bytes": bytes_received,
+            "content_length": content_length,
+            "max_bytes": NETWORK_SPEED_UPLOAD_MAX_BYTES,
+            "server_time": timezone.now().isoformat(),
+        }
+    )
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    return response
+
+
 def image_pip_demo_page(request, ui_lang=None):
     """Render a small demo for opening images in native Picture-in-Picture."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
@@ -2024,6 +2485,7 @@ def qrbarcode_page(request, ui_lang=None):
     """Render the QR / barcode generator page."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
+    canonical_url = build_public_absolute_url(f"/{resolved_lang}/sub/qrbarcode")
     context = {
         "ui_lang": resolved_lang,
         "page_title": "QR/Barcode" if is_english else "QR/Barcode",
@@ -2062,7 +2524,9 @@ def qrbarcode_page(request, ui_lang=None):
             else "URL 또는 텍스트로 QR 코드와 바코드를 생성하는 도구입니다."
         ),
         "meta_og_image": build_public_absolute_url(static("media/icons/qrbarcode-og-1200.png")),
-        "meta_robots": "noindex",
+        "meta_robots": "index,follow",
+        "meta_canonical_url": canonical_url,
+        "meta_og_url": canonical_url,
     }
     context["meta_og_description"] = context["meta_description"]
     context["meta_twitter_image"] = context["meta_og_image"]
@@ -2218,7 +2682,14 @@ def qrbarcode_generate(request, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
     if request.method != "POST":
-        return JsonResponse({"ok": False, "error": "POST only."}, status=405)
+        return _json_error_response(
+            request,
+            "POST 요청만 허용됩니다.",
+            "Only POST requests are allowed.",
+            status=405,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
 
     payload = _normalize_qrbarcode_payload(request)
     input_kind = payload["input_kind"]
@@ -2234,16 +2705,35 @@ def qrbarcode_generate(request, ui_lang=None):
     value = _normalize_qrbarcode_value(input_kind, payload["value"], code_kind=code_kind, barcode_kind=barcode_kind)
     if not value:
         if input_kind == "url" and (code_kind != "barcode" or barcode_kind == "code128"):
-            message = "Enter a valid URL." if is_english else "올바른 URL을 입력해주세요."
+            return _json_error_response(
+                request,
+                "올바른 URL을 입력해주세요.",
+                "Enter a valid URL.",
+                status=400,
+                ok=False,
+                ui_lang=resolved_lang,
+            )
         else:
-            message = "Enter a valid value." if is_english else "올바른 내용을 입력해주세요."
-        return JsonResponse({"ok": False, "error": message}, status=400)
+            return _json_error_response(
+                request,
+                "올바른 내용을 입력해주세요.",
+                "Enter a valid value.",
+                status=400,
+                ok=False,
+                ui_lang=resolved_lang,
+            )
 
     if code_kind == "barcode":
         value = _normalize_barcode_value(barcode_kind, value)
         if not value:
-            message = _barcode_validation_message(barcode_kind, is_english=is_english)
-            return JsonResponse({"ok": False, "error": message}, status=400)
+            return _json_error_response(
+                request,
+                _barcode_validation_message(barcode_kind, is_english=False),
+                _barcode_validation_message(barcode_kind, is_english=True),
+                status=400,
+                ok=False,
+                ui_lang=resolved_lang,
+            )
 
     try:
         if code_kind == "qr":
@@ -2254,8 +2744,14 @@ def qrbarcode_generate(request, ui_lang=None):
             filename = BARCODE_KIND_META[barcode_kind]["filename"]
     except Exception as exc:
         logger.warning("QR/barcode generation failed: %s", exc, exc_info=True)
-        message = "Could not generate this code." if is_english else "이 코드로 생성할 수 없습니다."
-        return JsonResponse({"ok": False, "error": message}, status=400)
+        return _json_error_response(
+            request,
+            "이 코드로 생성할 수 없습니다.",
+            "Could not generate this code.",
+            status=400,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
 
     return JsonResponse({
         "ok": True,
@@ -2271,6 +2767,7 @@ def youtube_downloader_page(request, ui_lang=None):
     """Render the YouTube URL to MP4/MP3 utility page."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
+    canonical_url = build_public_absolute_url(f"/{resolved_lang}/sub/youtube-downloader")
     context = {
         "ui_lang": resolved_lang,
         "page_title": "YouTube Downloader" if is_english else "유튜브 다운로더",
@@ -2302,7 +2799,9 @@ def youtube_downloader_page(request, ui_lang=None):
             else "유튜브 URL을 붙여넣고 MP4 또는 MP3 파일로 저장하는 도구입니다."
         ),
         "meta_og_image": build_public_absolute_url(static("media/icons/youtube-downloader-og-1200.png")),
-        "meta_robots": "noindex",
+        "meta_robots": "index,follow",
+        "meta_canonical_url": canonical_url,
+        "meta_og_url": canonical_url,
     }
     if request.user.is_authenticated:
         from .handrive_views import get_scoped_handrive_home_dir
@@ -2458,8 +2957,14 @@ def youtube_formats(request, ui_lang=None):
 
     youtube_url = _normalize_youtube_url(payload.get("url", ""))
     if not youtube_url:
-        message = "Enter a valid YouTube URL." if is_english else "올바른 유튜브 URL을 입력해주세요."
-        return JsonResponse({"ok": False, "error": message}, status=400)
+        return _json_error_response(
+            request,
+            "올바른 유튜브 URL을 입력해주세요.",
+            "Enter a valid YouTube URL.",
+            status=400,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
 
     command = _youtube_base_command()
     command.extend(["--no-playlist", "--dump-json"])
@@ -2470,8 +2975,13 @@ def youtube_formats(request, ui_lang=None):
         result = subprocess.run(command, capture_output=True, text=True, timeout=90, check=True)
         info = json.loads(result.stdout)
     except (subprocess.CalledProcessError, OSError, ValueError, subprocess.TimeoutExpired):
-        message = "Could not load quality options." if is_english else "화질 목록을 불러올 수 없습니다."
-        return JsonResponse({"ok": False, "error": message})
+        return _json_error_response(
+            request,
+            "화질 목록을 불러올 수 없습니다.",
+            "Could not load quality options.",
+            ok=False,
+            ui_lang=resolved_lang,
+        )
 
     heights = set()
     for item in info.get("formats", []):
@@ -2502,8 +3012,14 @@ def youtube_download(request, ui_lang=None):
     is_english = resolved_lang == "en"
 
     if not _is_youtube_download_allowed(request):
-        message = "Too many requests. Try again later." if is_english else "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."
-        return JsonResponse({"ok": False, "error": message}, status=429)
+        return _json_error_response(
+            request,
+            "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+            "Too many requests. Try again later.",
+            status=429,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
 
     try:
         payload = json.loads(request.body)
@@ -2514,14 +3030,32 @@ def youtube_download(request, ui_lang=None):
     download_quality = str(payload.get("quality", "best")).strip().lower() or "best"
     youtube_url = _normalize_youtube_url(payload.get("url", ""))
     if download_format not in YOUTUBE_DOWNLOAD_FORMATS:
-        message = "Choose MP4 or MP3." if is_english else "MP4 또는 MP3를 선택해주세요."
-        return JsonResponse({"ok": False, "error": message}, status=400)
+        return _json_error_response(
+            request,
+            "MP4 또는 MP3를 선택해주세요.",
+            "Choose MP4 or MP3.",
+            status=400,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
     if not youtube_url:
-        message = "Enter a valid YouTube URL." if is_english else "올바른 유튜브 URL을 입력해주세요."
-        return JsonResponse({"ok": False, "error": message}, status=400)
+        return _json_error_response(
+            request,
+            "올바른 유튜브 URL을 입력해주세요.",
+            "Enter a valid YouTube URL.",
+            status=400,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
     if download_format == "mp4" and download_quality != "best" and not YOUTUBE_DOWNLOAD_QUALITY_PATTERN.fullmatch(download_quality):
-        message = "Choose a valid quality." if is_english else "올바른 화질을 선택해주세요."
-        return JsonResponse({"ok": False, "error": message}, status=400)
+        return _json_error_response(
+            request,
+            "올바른 화질을 선택해주세요.",
+            "Choose a valid quality.",
+            status=400,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
 
     temp_dir = tempfile.mkdtemp(prefix="hanplanet-ytdl-")
     output_template = str(Path(temp_dir) / "%(title).160B_%(id)s.%(ext)s")
@@ -2577,14 +3111,30 @@ def youtube_download(request, ui_lang=None):
         shutil.rmtree(temp_dir, ignore_errors=True)
         stderr = (error.stderr or error.stdout or "").strip()
         if "No module named yt_dlp" in stderr:
-            message = "yt-dlp is not installed on the server." if is_english else "서버에 yt-dlp가 설치되어 있지 않습니다."
+            return _json_error_response(
+                request,
+                "서버에 yt-dlp가 설치되어 있지 않습니다.",
+                "yt-dlp is not installed on the server.",
+                ok=False,
+                ui_lang=resolved_lang,
+            )
         else:
-            message = "Could not extract this video." if is_english else "이 영상을 추출할 수 없습니다."
-        return JsonResponse({"ok": False, "error": message})
+            return _json_error_response(
+                request,
+                "이 영상을 추출할 수 없습니다.",
+                "Could not extract this video.",
+                ok=False,
+                ui_lang=resolved_lang,
+            )
     except (OSError, RuntimeError, subprocess.TimeoutExpired):
         shutil.rmtree(temp_dir, ignore_errors=True)
-        message = "The download timed out or failed." if is_english else "다운로드 시간이 초과되었거나 실패했습니다."
-        return JsonResponse({"ok": False, "error": message})
+        return _json_error_response(
+            request,
+            "다운로드 시간이 초과되었거나 실패했습니다.",
+            "The download timed out or failed.",
+            ok=False,
+            ui_lang=resolved_lang,
+        )
 
     file_path = candidates[0]
     file_path = _normalize_youtube_download_filename(file_path)
@@ -2637,23 +3187,50 @@ def youtube_download_file(request, token, ui_lang=None):
 def youtube_save_to_handrive(request, ui_lang=None):
     _cleanup_old_token_dirs()
     resolved_lang = resolve_ui_lang(request, ui_lang)
-    is_english = resolved_lang == "en"
     if not request.user.is_authenticated:
-        return JsonResponse({"ok": False, "error": "Login required." if is_english else "로그인이 필요합니다."}, status=401)
+        return _json_error_response(
+            request,
+            "로그인이 필요합니다.",
+            "Login required.",
+            status=401,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
     try:
         payload = json.loads(request.body)
     except (TypeError, ValueError):
         payload = {}
     token = str(payload.get("token", "")).strip()
     if not YOUTUBE_DOWNLOAD_TOKEN_PATTERN.fullmatch(token):
-        return JsonResponse({"ok": False, "error": "Invalid token." if is_english else "잘못된 토큰입니다."}, status=400)
+        return _json_error_response(
+            request,
+            "잘못된 토큰입니다.",
+            "Invalid token.",
+            status=400,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
     token_dir = YOUTUBE_DOWNLOAD_TOKEN_DIR / token
     if not token_dir.exists() or time.time() - token_dir.stat().st_mtime > YOUTUBE_DOWNLOAD_TOKEN_TTL:
         shutil.rmtree(token_dir, ignore_errors=True)
-        return JsonResponse({"ok": False, "error": "File expired." if is_english else "파일이 만료되었습니다."}, status=404)
+        return _json_error_response(
+            request,
+            "파일이 만료되었습니다.",
+            "File expired.",
+            status=404,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
     files = [f for f in token_dir.iterdir() if f.is_file()]
     if not files:
-        return JsonResponse({"ok": False, "error": "File not found." if is_english else "파일을 찾을 수 없습니다."}, status=404)
+        return _json_error_response(
+            request,
+            "파일을 찾을 수 없습니다.",
+            "File not found.",
+            status=404,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
     file_path = files[0]
     try:
         from .handrive_views import get_request_handrive_root_dir, get_scoped_handrive_home_dir
@@ -2671,7 +3248,14 @@ def youtube_save_to_handrive(request, ui_lang=None):
                 counter += 1
         shutil.copy2(str(file_path), str(dest_path))
     except (OSError, PermissionError):
-        return JsonResponse({"ok": False, "error": "Save failed." if is_english else "저장에 실패했습니다."}, status=500)
+        return _json_error_response(
+            request,
+            "저장에 실패했습니다.",
+            "Save failed.",
+            status=500,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
 
     dest_relative_dir = "youtube-downloader"
     if scoped_home:
@@ -3196,7 +3780,7 @@ def game_auth_token(request, ui_lang=None):
     resolve_ui_lang(request, ui_lang)
     secret = str(getattr(settings, "GAME_JWT_SECRET", "") or "").strip()
     if not secret:
-        return JsonResponse({"error": "game_jwt_secret_not_configured"}, status=503)
+        return _json_error_response(request, "게임 인증 설정이 올바르지 않습니다.", "Game authentication is not configured.", status=503, code="game_jwt_secret_not_configured")
     requested_game = str(request.GET.get("game") or "").strip().lower()
     game_slug = "raise-speaki" if requested_game == "raise-speaki" else "bumpercar-spiky"
 
@@ -3234,22 +3818,22 @@ def map_collab_auth_token(request, ui_lang=None):
     resolve_ui_lang(request, ui_lang)
     secret = str(getattr(settings, "GAME_JWT_SECRET", "") or "").strip()
     if not secret:
-        return JsonResponse({"error": "game_jwt_secret_not_configured"}, status=503)
+        return _json_error_response(request, "지도 협업 인증 설정이 올바르지 않습니다.", "Map collaboration authentication is not configured.", status=503, code="game_jwt_secret_not_configured")
     map_path = str(request.GET.get("map_path") or "").strip()
     if not map_path:
-        return JsonResponse({"error": "map_path_required"}, status=400)
+        return _json_error_response(request, "지도 경로가 필요합니다.", "Map path is required.", status=400, code="map_path_required")
     from .handrive_views import has_handrive_read_access, has_handrive_shared_read_access, normalize_relative_path
     try:
         normalized = normalize_relative_path(map_path, allow_empty=False)
     except ValueError:
-        return JsonResponse({"error": "invalid_map_path"}, status=400)
+        return _json_error_response(request, "지도 경로가 올바르지 않습니다.", "Map path is invalid.", status=400, code="invalid_map_path")
     shared_owner = str(request.GET.get("share_owner") or "").strip()
     shared_slug_val = str(request.GET.get("share_slug") or "").strip()
     if shared_owner and shared_slug_val:
         setattr(request, "_handrive_shared_owner_username", shared_owner)
         setattr(request, "_handrive_shared_slug", shared_slug_val)
     if not has_handrive_read_access(request, normalized):
-        return JsonResponse({"error": "forbidden"}, status=403)
+        return _json_error_response(request, "지도를 볼 권한이 없습니다.", "You do not have permission to view this map.", status=403, code="forbidden")
     is_auth = request.user.is_authenticated
     if is_auth:
         token = build_game_auth_token(user=request.user, game_slug=f"map:{normalized}")
@@ -3285,15 +3869,15 @@ def map_collab_presence(request, ui_lang=None):
     try:
         body = json.loads(request.body)
     except Exception:
-        return JsonResponse({"error": "invalid_json"}, status=400)
+        return _json_error_response(request, "요청 데이터 형식이 올바르지 않습니다.", "The request body is invalid.", status=400, code="invalid_json")
     map_path = str(body.get("map_path") or "").strip()
     if not map_path:
-        return JsonResponse({"error": "map_path_required"}, status=400)
+        return _json_error_response(request, "지도 경로가 필요합니다.", "Map path is required.", status=400, code="map_path_required")
     from .handrive_views import has_handrive_read_access, normalize_relative_path
     try:
         normalized = normalize_relative_path(map_path, allow_empty=False)
     except ValueError:
-        return JsonResponse({"error": "invalid_map_path"}, status=400)
+        return _json_error_response(request, "지도 경로가 올바르지 않습니다.", "Map path is invalid.", status=400, code="invalid_map_path")
     shared_owner = str(body.get("shared_owner") or "").strip()
     shared_slug_val = str(body.get("shared_slug") or "").strip()
     if shared_owner and shared_slug_val:
@@ -3302,7 +3886,7 @@ def map_collab_presence(request, ui_lang=None):
     has_access = has_handrive_read_access(request, normalized)
     import logging as _logging; _logging.getLogger("django").warning(f"[collab-presence] map={normalized!r} user={getattr(request.user,'username','anon')!r} shared_owner={shared_owner!r} has_access={has_access}")
     if not has_access:
-        return JsonResponse({"error": "forbidden"}, status=403)
+        return _json_error_response(request, "지도를 볼 권한이 없습니다.", "You do not have permission to view this map.", status=403, code="forbidden")
     # tab_id makes each browser tab unique (same user in two tabs = two presence entries)
     tab_id = str(body.get("tab_id") or "").strip()[:64]
     if request.user.is_authenticated:
@@ -3350,13 +3934,13 @@ def bumpercar_spiky_stats_record(request):
     try:
         payload = json.loads((request.body or b"{}").decode("utf-8"))
     except (TypeError, ValueError, UnicodeDecodeError):
-        return JsonResponse({"ok": False, "error": "invalid_json"}, status=400)
+        return _json_error_response(request, "요청 데이터 형식이 올바르지 않습니다.", "The request body is invalid.", status=400, code="invalid_json", ok=False)
 
     username = str(payload.get("username") or "").strip()
     increments = payload.get("increments") or {}
     maxima = payload.get("maxima") or {}
     if not username or not isinstance(increments, dict) or not isinstance(maxima, dict):
-        return JsonResponse({"ok": False, "error": "invalid_payload"}, status=400)
+        return _json_error_response(request, "요청 값이 올바르지 않습니다.", "The request payload is invalid.", status=400, code="invalid_payload", ok=False)
 
     user = get_user_model().objects.filter(username=username).first()
     if not user:
@@ -3397,12 +3981,12 @@ def none(request, ui_lang=None):
     apply_ui_context(request, context, resolved_lang)
     context["is_root_entry"] = True
     is_english = resolved_lang == "en"
-    context["meta_title"] = "Hanplanet | Search and Favorites" if is_english else "Hanplanet | 검색과 즐겨찾기"
+    context["meta_title"] = "Hanplanet"
     context["meta_og_title"] = context["meta_title"]
     context["meta_description"] = (
-        "Hanplanet home with search and favorites, quick shortcuts, and PWA install."
+        "Hanplanet provides HanDrive, a personal file workspace for uploading, organizing, previewing, editing, and sharing files. With user permission, HanDrive can display and manage connected Google Drive files inside HanDrive."
         if is_english
-        else "검색과 즐겨찾기, 개인 바로가기, PWA 설치를 지원하는 Hanplanet 홈입니다."
+        else "Hanplanet은 HanDrive를 통해 파일 업로드, 정리, 미리보기, 편집, 공유를 지원하는 개인 파일 워크스페이스입니다. 사용자가 허용하면 연결된 Google Drive 파일을 HanDrive 안에서 표시하고 관리할 수 있습니다."
     )
     context["meta_og_description"] = context["meta_description"]
     context["meta_json_ld"] = json.dumps(
@@ -3411,6 +3995,12 @@ def none(request, ui_lang=None):
             "@type": "WebSite",
             "name": "Hanplanet",
             "url": get_public_base_url(),
+            "description": context["meta_description"],
+            "about": [
+                "HanDrive personal file workspace",
+                "File upload, preview, editing, sharing, and organization",
+                "Google Drive file display and management with user permission",
+            ],
             "potentialAction": {
                 "@type": "SearchAction",
                 "target": f"{get_public_base_url()}/?q={{search_term_string}}",
@@ -3494,6 +4084,30 @@ def sitemap_xml(request):
             "loc": build_public_absolute_url("/en/handrive/"),
             "changefreq": "weekly",
             "priority": "0.8",
+            "lastmod": now_iso,
+        },
+        {
+            "loc": build_public_absolute_url("/ko/sub/qrbarcode"),
+            "changefreq": "weekly",
+            "priority": "0.7",
+            "lastmod": now_iso,
+        },
+        {
+            "loc": build_public_absolute_url("/en/sub/qrbarcode"),
+            "changefreq": "weekly",
+            "priority": "0.7",
+            "lastmod": now_iso,
+        },
+        {
+            "loc": build_public_absolute_url("/ko/sub/youtube-downloader"),
+            "changefreq": "weekly",
+            "priority": "0.7",
+            "lastmod": now_iso,
+        },
+        {
+            "loc": build_public_absolute_url("/en/sub/youtube-downloader"),
+            "changefreq": "weekly",
+            "priority": "0.7",
             "lastmod": now_iso,
         },
     ]
@@ -4261,25 +4875,56 @@ def Stratagem_Hero_Scoreboard_page(request, ui_lang=None):
 @csrf_protect
 def add_score(request, ui_lang=None):
     """Validate and persist a public Stratagem Hero score submission."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
     if not is_score_submission_allowed(request):
-        return JsonResponse({"error": "Too many requests. Try again later."}, status=429)
+        return _json_error_response(
+            request,
+            "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+            "Too many requests. Try again later.",
+            status=429,
+            ui_lang=resolved_lang,
+        )
 
     try:
         data = json.loads(request.body)
     except (TypeError, ValueError):
-        return JsonResponse({"error": "Invalid request body."}, status=400)
+        return _json_error_response(
+            request,
+            "요청 데이터 형식이 올바르지 않습니다.",
+            "The request body is invalid.",
+            status=400,
+            ui_lang=resolved_lang,
+        )
 
     name = str(data.get("name", "")).strip()
     if not SCORE_NAME_PATTERN.fullmatch(name):
-        return JsonResponse({"error": "Invalid name."}, status=400)
+        return _json_error_response(
+            request,
+            "이름이 올바르지 않습니다.",
+            "Invalid name.",
+            status=400,
+            ui_lang=resolved_lang,
+        )
 
     try:
         score = float(data.get("score"))
     except (TypeError, ValueError):
-        return JsonResponse({"error": "Invalid score."}, status=400)
+        return _json_error_response(
+            request,
+            "점수가 올바르지 않습니다.",
+            "Invalid score.",
+            status=400,
+            ui_lang=resolved_lang,
+        )
 
     if not math.isfinite(score) or score < 0 or score > MAX_SCORE_SECONDS:
-        return JsonResponse({"error": "Score is out of allowed range."}, status=400)
+        return _json_error_response(
+            request,
+            "점수가 허용 범위를 벗어났습니다.",
+            "Score is out of allowed range.",
+            status=400,
+            ui_lang=resolved_lang,
+        )
 
     new_score = Stratagem_Hero_Score(name=name, score=round(score, 2))
     new_score.save()
@@ -4311,10 +4956,10 @@ def _normalize_root_search_engine(raw_value):
 @csrf_protect
 def theme_preference(request, ui_lang=None):
     """Expose and update the authenticated user's light/dark theme preference."""
-    resolve_ui_lang(request, ui_lang)
+    resolved_lang = resolve_ui_lang(request, ui_lang)
 
     if not request.user.is_authenticated:
-        return JsonResponse({"error": "Login required."}, status=401)
+        return _json_error_response(request, "로그인이 필요합니다.", "Login required.", status=401, ui_lang=resolved_lang)
 
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
 
@@ -4325,7 +4970,13 @@ def theme_preference(request, ui_lang=None):
     try:
         payload = json.loads(request.body or "{}")
     except (TypeError, ValueError):
-        return JsonResponse({"error": "Invalid request body."}, status=400)
+        return _json_error_response(
+            request,
+            "요청 데이터 형식이 올바르지 않습니다.",
+            "The request body is invalid.",
+            status=400,
+            ui_lang=resolved_lang,
+        )
 
     mode = _normalize_theme_mode(payload.get("mode"))
     profile.theme_mode = mode
@@ -4337,10 +4988,10 @@ def theme_preference(request, ui_lang=None):
 @csrf_protect
 def user_preferences(request, ui_lang=None):
     """Expose and update lightweight user preferences shared by common site UI."""
-    resolve_ui_lang(request, ui_lang)
+    resolved_lang = resolve_ui_lang(request, ui_lang)
 
     if not request.user.is_authenticated:
-        return JsonResponse({"error": "Login required."}, status=401)
+        return _json_error_response(request, "로그인이 필요합니다.", "Login required.", status=401, ui_lang=resolved_lang)
 
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
 
@@ -4356,14 +5007,20 @@ def user_preferences(request, ui_lang=None):
     try:
         payload = json.loads(request.body or "{}")
     except (TypeError, ValueError):
-        return JsonResponse({"error": "Invalid request body."}, status=400)
+        return _json_error_response(
+            request,
+            "요청 데이터 형식이 올바르지 않습니다.",
+            "The request body is invalid.",
+            status=400,
+            ui_lang=resolved_lang,
+        )
 
     update_fields = []
 
     if "ui_lang" in payload:
         next_ui_lang = str(payload.get("ui_lang") or "").strip().lower()
         if next_ui_lang and next_ui_lang not in SUPPORTED_UI_LANGS:
-            return JsonResponse({"error": "Invalid ui_lang."}, status=400)
+            return _json_error_response(request, "언어 설정 값이 올바르지 않습니다.", "Invalid language setting.", status=400, ui_lang=resolved_lang)
         if profile.preferred_ui_lang != next_ui_lang:
             profile.preferred_ui_lang = next_ui_lang
             update_fields.append("preferred_ui_lang")
@@ -4374,7 +5031,7 @@ def user_preferences(request, ui_lang=None):
         next_engine = _normalize_root_search_engine(payload.get("root_search_engine"))
         raw_engine = payload.get("root_search_engine")
         if raw_engine not in ("", None) and not next_engine:
-            return JsonResponse({"error": "Invalid root_search_engine."}, status=400)
+            return _json_error_response(request, "검색 엔진 설정 값이 올바르지 않습니다.", "Invalid search engine setting.", status=400, ui_lang=resolved_lang)
         if profile.preferred_root_search_engine != next_engine:
             profile.preferred_root_search_engine = next_engine
             update_fields.append("preferred_root_search_engine")
@@ -4454,10 +5111,7 @@ def root_shortcuts(request, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
 
     if not request.user.is_authenticated:
-        return JsonResponse(
-            {"error": _root_shortcuts_unauthorized_message(resolved_lang)},
-            status=401,
-        )
+        return _json_error_response(request, "로그인이 필요합니다.", "Login required.", status=401, ui_lang=resolved_lang)
 
     if request.method == "GET":
         items = QuickLink.objects.filter(user=request.user).order_by("display_order", "id")
@@ -4466,15 +5120,15 @@ def root_shortcuts(request, ui_lang=None):
     try:
         data = json.loads(request.body or "{}")
     except (TypeError, ValueError):
-        return JsonResponse({"error": "Invalid request body."}, status=400)
+        return _json_error_response(request, "요청 데이터 형식이 올바르지 않습니다.", "The request body is invalid.", status=400, ui_lang=resolved_lang)
 
     name = str(data.get("name", "")).strip()
     if len(name) > 80:
-        return JsonResponse({"error": "Name is too long."}, status=400)
+        return _json_error_response(request, "이름이 너무 깁니다.", "Name is too long.", status=400, ui_lang=resolved_lang)
 
     normalized_url = _normalize_shortcut_url(data.get("url", ""))
     if not normalized_url:
-        return JsonResponse({"error": "Invalid URL."}, status=400)
+        return _json_error_response(request, "URL이 올바르지 않습니다.", "Invalid URL.", status=400, ui_lang=resolved_lang)
     if not name:
         name = _build_shortcut_display_name(normalized_url)[:80]
 
@@ -4496,10 +5150,7 @@ def root_shortcuts_detail(request, shortcut_id, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
 
     if not request.user.is_authenticated:
-        return JsonResponse(
-            {"error": _root_shortcuts_unauthorized_message(resolved_lang)},
-            status=401,
-        )
+        return _json_error_response(request, "로그인이 필요합니다.", "Login required.", status=401, ui_lang=resolved_lang)
 
     item = get_object_or_404(QuickLink, id=shortcut_id, user=request.user)
 
@@ -4510,15 +5161,15 @@ def root_shortcuts_detail(request, shortcut_id, ui_lang=None):
     try:
         data = json.loads(request.body or "{}")
     except (TypeError, ValueError):
-        return JsonResponse({"error": "Invalid request body."}, status=400)
+        return _json_error_response(request, "요청 데이터 형식이 올바르지 않습니다.", "The request body is invalid.", status=400, ui_lang=resolved_lang)
 
     name = str(data.get("name", "")).strip()
     if len(name) > 80:
-        return JsonResponse({"error": "Name is too long."}, status=400)
+        return _json_error_response(request, "이름이 너무 깁니다.", "Name is too long.", status=400, ui_lang=resolved_lang)
 
     normalized_url = _normalize_shortcut_url(data.get("url", ""))
     if not normalized_url:
-        return JsonResponse({"error": "Invalid URL."}, status=400)
+        return _json_error_response(request, "URL이 올바르지 않습니다.", "Invalid URL.", status=400, ui_lang=resolved_lang)
     if not name:
         name = _build_shortcut_display_name(normalized_url)[:80]
 
@@ -4536,19 +5187,16 @@ def root_shortcuts_reorder(request, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
 
     if not request.user.is_authenticated:
-        return JsonResponse(
-            {"error": _root_shortcuts_unauthorized_message(resolved_lang)},
-            status=401,
-        )
+        return _json_error_response(request, "로그인이 필요합니다.", "Login required.", status=401, ui_lang=resolved_lang)
 
     try:
         payload = json.loads(request.body or "{}")
     except (TypeError, ValueError):
-        return JsonResponse({"error": "Invalid request body."}, status=400)
+        return _json_error_response(request, "요청 데이터 형식이 올바르지 않습니다.", "The request body is invalid.", status=400, ui_lang=resolved_lang)
 
     ordered_ids_raw = payload.get("ordered_ids")
     if not isinstance(ordered_ids_raw, list):
-        return JsonResponse({"error": "ordered_ids must be a list."}, status=400)
+        return _json_error_response(request, "정렬 값이 올바르지 않습니다.", "The shortcut order is invalid.", status=400, ui_lang=resolved_lang)
 
     ordered_ids = []
     seen = set()
@@ -4556,7 +5204,7 @@ def root_shortcuts_reorder(request, ui_lang=None):
         try:
             parsed = int(value)
         except (TypeError, ValueError):
-            return JsonResponse({"error": "ordered_ids contains invalid value."}, status=400)
+            return _json_error_response(request, "정렬 값이 올바르지 않습니다.", "The shortcut order is invalid.", status=400, ui_lang=resolved_lang)
         if parsed in seen:
             continue
         seen.add(parsed)
@@ -4765,11 +5413,23 @@ def chat_with_ai(request, ui_lang=None):
             # Sanitize and validate user input
             user_message = sanitize_text(user_message)
             if not is_valid_message(user_message):
-                return JsonResponse({'error': 'Invalid message'}, status=400)
+                return _json_error_response(
+                    request,
+                    "메시지 내용이 올바르지 않습니다.",
+                    "The message is invalid.",
+                    status=400,
+                    ui_lang=ui_lang,
+                )
                 
         except (json.JSONDecodeError, AttributeError) as e:
             logger.error(f"Invalid request data: {str(e)}")
-            return JsonResponse({'error': 'Invalid request data'}, status=400)
+            return _json_error_response(
+                request,
+                "요청 데이터 형식이 올바르지 않습니다.",
+                "The request data is invalid.",
+                status=400,
+                ui_lang=ui_lang,
+            )
         logger.info(f"User message: {user_message}")
 
         if should_return_github_link(user_message):
@@ -5006,12 +5666,24 @@ def chat_with_ai(request, ui_lang=None):
             bot_response = call_ollama(system_message, chat_history)
         except Exception as e:
             logger.error(f"Error calling AI API: {str(e)}")
-            return JsonResponse({'error': 'Error communicating with AI service'}, status=500)
+            return _json_error_response(
+                request,
+                "AI 서비스와 통신하는 중 오류가 발생했습니다.",
+                "Error communicating with AI service.",
+                status=500,
+                ui_lang=ui_lang,
+            )
 
         # Sanitize the response before sending to client
         bot_response = sanitize_text(bot_response)
         if not bot_response:
-            return JsonResponse({'error': 'Could not generate response'}, status=500)
+            return _json_error_response(
+                request,
+                "응답을 생성하지 못했습니다.",
+                "Could not generate response.",
+                status=500,
+                ui_lang=ui_lang,
+            )
 
         # Fallback: enforce target language based on UI language.
         if not is_english_mode and has_excessive_foreign_text(bot_response):
@@ -5184,7 +5856,13 @@ def chat_with_ai(request, ui_lang=None):
         
     except Exception as e:
         logger.error(f"Unexpected error in chat_with_ai: {str(e)}", exc_info=True)
-        return JsonResponse({'error': 'An unexpected error occurred'}, status=500)
+        return _json_error_response(
+            request,
+            "예상치 못한 오류가 발생했습니다.",
+            "An unexpected error occurred.",
+            status=500,
+            ui_lang=resolve_ui_lang(request, ui_lang),
+        )
 
 
 def _normalize_translation_lang(raw_value, fallback):
@@ -5256,7 +5934,7 @@ def translate_text(request, ui_lang=None):
         try:
             data = json.loads(request.body)
         except (json.JSONDecodeError, TypeError):
-            return JsonResponse({"error": "Invalid request data"}, status=400)
+            return _json_error_response(request, "요청 데이터 형식이 올바르지 않습니다.", "The request data is invalid.", status=400, ui_lang=resolved_lang)
 
         # Translation direction follows the translator's current mode (sent by the client).
         source_lang = _normalize_translation_lang(data.get("source"), "ko")
@@ -5264,10 +5942,10 @@ def translate_text(request, ui_lang=None):
         source_text = sanitize_text(data.get("text", ""), max_length=8000)
 
         if source_lang == target_lang:
-            return JsonResponse({"error": "Source and target languages must differ"}, status=400)
+            return _json_error_response(request, "원본 언어와 번역 언어는 달라야 합니다.", "Source and target languages must differ.", status=400, ui_lang=resolved_lang)
 
         if not is_valid_message(source_text):
-            return JsonResponse({"error": "Invalid text"}, status=400)
+            return _json_error_response(request, "텍스트 내용이 올바르지 않습니다.", "The text is invalid.", status=400, ui_lang=resolved_lang)
 
         # Explanation is written in the page's UI language.
         explanation_lang = resolved_lang  # "ko" or "en"
@@ -5377,10 +6055,10 @@ def translate_text(request, ui_lang=None):
             )
         except Exception as error:
             logger.error("Error calling Ollama translate endpoint: %s", str(error))
-            return JsonResponse({"error": "Error communicating with AI service"}, status=500)
+            return _json_error_response(request, "AI 서비스와 통신하는 중 오류가 발생했습니다.", "Error communicating with AI service.", status=500, ui_lang=resolved_lang)
 
         if not raw_output:
-            return JsonResponse({"error": "Could not generate translation"}, status=500)
+            return _json_error_response(request, "번역 결과를 생성하지 못했습니다.", "Could not generate translation.", status=500, ui_lang=resolved_lang)
 
         translation, explanation = _parse_structured_translation(raw_output)
 
@@ -5395,7 +6073,7 @@ def translate_text(request, ui_lang=None):
         )
     except Exception as error:
         logger.error("Unexpected error in translate_text: %s", str(error), exc_info=True)
-        return JsonResponse({"error": "An unexpected error occurred"}, status=500)
+        return _json_error_response(request, "예상치 못한 오류가 발생했습니다.", "An unexpected error occurred.", status=500, ui_lang=resolve_ui_lang(request, ui_lang))
 # ──────────────────────────────────────────────────────
 # Git Integration API Views
 # ──────────────────────────────────────────────────────
@@ -5409,7 +6087,16 @@ from .forgejo_client import ForgejoClient
 
 def _git_json_error(msg: str, status: int = 400) -> JsonResponse:
     """Return a consistent JSON error payload for Git integration endpoints."""
-    return JsonResponse({"ok": False, "error": msg}, status=status)
+    messages = _json_error_messages(msg)
+    return JsonResponse(
+        {
+            "ok": False,
+            "error": msg,
+            "error_message": msg,
+            "error_messages": messages,
+        },
+        status=status,
+    )
 
 
 @require_http_methods(["POST"])
@@ -5570,6 +6257,7 @@ def git_repo_status(request, repo_id: int):
         "status":                    repo.status,
         "handrive_path":             repo.handrive_path,
         "error_message":             repo.error_message,
+        "error_messages":            _json_error_messages(repo.error_message) if repo.error_message else {},
         "clone_http_url":            _build_public_clone_url(repo.forgejo_clone_http_url),
         "clone_http_url_authed":     _build_user_authed_clone_url(repo, request.user),
         "gitea_web_url":             _build_gitea_web_url(repo.forgejo_clone_http_url),
@@ -5890,12 +6578,14 @@ def _git_repo_dict(repo: GitRepository, request) -> dict:
         permission = str((collaborator or {}).get("permission", "") or "").lower()
     public_http = _build_public_clone_url(repo.forgejo_clone_http_url)
     authed_http = _build_user_authed_clone_url(repo, request.user)
+    error_messages = _json_error_messages(repo.error_message) if repo.error_message else {}
     return {
         "id":                        repo.id,
         "repo_name":                 repo.repo_name,
         "handrive_path":             repo.handrive_path,
         "status":                    repo.status,
         "error_message":             repo.error_message,
+        "error_messages":            error_messages,
         "forgejo_clone_http":        public_http,
         "forgejo_clone_http_authed": authed_http,
         "forgejo_clone_ssh":         repo.forgejo_clone_ssh_url,
@@ -6106,9 +6796,9 @@ def hanharness_page(request, ui_lang=None):
         "hanharness_download_url": download_url,
         "hanharness_download_windows_url": download_windows_url,
         "handrive_url": reverse("main:handrive_root_lang", kwargs={"ui_lang": resolved_lang}),
-        "meta_title": f"{hanharness_text['title']} | Hanplanet",
+        "meta_title": "Handrive",
         "meta_description": hanharness_text["subtitle"],
-        "meta_og_title": f"{hanharness_text['title']} | Hanplanet",
+        "meta_og_title": "Handrive",
         "meta_og_description": hanharness_text["subtitle"],
     }
     apply_ui_context(request, context, resolved_lang)

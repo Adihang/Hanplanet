@@ -28,6 +28,9 @@
         {% if handrive_github_link_pending and not handrive_login_show_2fa %}
             <div class="handrive-login-error handrive-login-info">{{ handrive_text.auth_github_link_pending }}</div>
         {% endif %}
+        {% if handrive_google_link_pending and not handrive_login_show_2fa %}
+            <div class="handrive-login-error handrive-login-info">{{ handrive_text.auth_google_link_pending }}</div>
+        {% endif %}
 
         {# ── 로그인 필드 (2FA 모드에서는 숨김) ───────────────────────── #}
         <div id="handrive-login-credential-block"{% if handrive_login_show_2fa %} hidden{% endif %}>
@@ -38,6 +41,9 @@
                     name="username"
                     value="{{ handrive_login_form.username.value|default:'' }}"
                     autocomplete="username"
+                    data-handrive-auth-safe-input="username"
+                    pattern="{{ handrive_auth_safe_input_pattern }}"
+                    title="{{ handrive_text.auth_username_forbidden_chars }}"
                     {% if not handrive_login_show_2fa %}required{% endif %}
                     {% if handrive_login_show_2fa %}disabled{% endif %}
                     {% if not handrive_login_show_2fa %}autofocus{% endif %}
@@ -50,6 +56,9 @@
                     type="password"
                     name="password"
                     autocomplete="current-password"
+                    data-handrive-auth-safe-input="password"
+                    pattern="{{ handrive_auth_safe_input_pattern }}"
+                    title="{{ handrive_text.auth_password_forbidden_chars }}"
                     {% if not handrive_login_show_2fa %}required{% endif %}
                     {% if handrive_login_show_2fa %}disabled{% endif %}
                 >
@@ -128,19 +137,42 @@
             <button class="ui-btn ui-btn-primary" type="submit" id="handrive-login-submit-btn">
                 {% if handrive_login_show_2fa %}{{ handrive_text.auth_2fa_submit }}{% else %}{{ handrive_text.auth_login_submit }}{% endif %}
             </button>
-            {% if handrive_github_auth_enabled and not handrive_login_show_2fa %}
-                <a
-                    class="handrive-login-github-icon-btn"
-                    href="{{ handrive_github_login_url }}"
-                    title="{{ handrive_text.auth_github_login_button }}"
-                    aria-label="{{ handrive_text.auth_github_login_button }}"
-                >
-                    <svg class="handrive-login-github-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="currentColor">
-                        <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.01.08-2.11 0 0 .67-.21 2.2.82a7.53 7.53 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.91.08 2.11.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
-                    </svg>
-                </a>
-            {% endif %}
         </div>
+        {% if handrive_github_auth_enabled or handrive_google_auth_enabled %}
+        {% if not handrive_login_show_2fa %}
+            <div class="handrive-login-auth-options">
+                <div class="handrive-login-auth-methods">
+                    {% if handrive_google_auth_enabled %}
+                    <a
+                        class="handrive-login-google-icon-btn"
+                        href="{{ handrive_google_login_url }}"
+                        title="{{ handrive_text.auth_google_login_button }}"
+                        aria-label="{{ handrive_text.auth_google_login_button }}"
+                    >
+                        <svg class="handrive-login-google-icon" viewBox="0 0 18 18" aria-hidden="true" focusable="false">
+                            <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
+                            <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.33-1.58-5.04-3.72H.94v2.34A9 9 0 0 0 9 18z"/>
+                            <path fill="#FBBC05" d="M3.96 10.7A5.4 5.4 0 0 1 3.68 9c0-.59.1-1.16.28-1.7V4.96H.94A9 9 0 0 0 0 9c0 1.45.34 2.82.94 4.04l3.02-2.34z"/>
+                            <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .94 4.96L3.96 7.3C4.67 5.16 6.66 3.58 9 3.58z"/>
+                        </svg>
+                    </a>
+                    {% endif %}
+                    {% if handrive_github_auth_enabled %}
+                    <a
+                        class="handrive-login-github-icon-btn"
+                        href="{{ handrive_github_login_url }}"
+                        title="{{ handrive_text.auth_github_login_button }}"
+                        aria-label="{{ handrive_text.auth_github_login_button }}"
+                    >
+                        <svg class="handrive-login-github-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="currentColor">
+                            <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.01.08-2.11 0 0 .67-.21 2.2.82a7.53 7.53 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.91.08 2.11.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+                        </svg>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+        {% endif %}
     </form>
 
 </main>
@@ -160,8 +192,25 @@
     </div>
 </div>
 {% endif %}
+{% if handrive_google_choice_required %}
+<div class="root-auth-modal ui-auth-google-choice-modal">
+    <div class="root-auth-modal-backdrop"></div>
+    <div class="root-auth-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-google-choice-title">
+        <h3 id="handrive-google-choice-title">{{ handrive_text.auth_google_choice_title }}</h3>
+        <p class="root-auth-modal-message">{{ handrive_text.auth_google_choice_message }}</p>
+        {% if handrive_google_pending_email %}
+            <p class="root-auth-modal-message">Google: {{ handrive_google_pending_email }}</p>
+        {% endif %}
+        <div class="root-auth-modal-actions">
+            <a class="root-auth-modal-btn" href="{{ handrive_google_choice_signup_url }}">{{ handrive_text.auth_google_choice_signup }}</a>
+            <a class="root-auth-modal-btn root-auth-modal-btn-primary" href="{{ handrive_google_choice_link_url }}">{{ handrive_text.auth_google_choice_link }}</a>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% include "partials/site_footer_links.html" %}
 
+{% include "handrive/_auth_safe_input_script.html" %}
 <script>
     (function () {
         const errorPopupMessage = "{{ handrive_login_error_popup_message|default:''|escapejs }}";
@@ -173,6 +222,15 @@
         const submitButton = document.getElementById("handrive-login-submit-btn");
         if (!loginForm || !submitButton) {
             return;
+        }
+
+        function selectServerMessage(data, fallback) {
+            const lang = (document.documentElement.getAttribute("lang") || "").toLowerCase().indexOf("en") === 0 ? "en" : "ko";
+            const messages = data && (data.error_messages || data.messages);
+            if (messages && typeof messages === "object") {
+                return messages[lang] || messages.ko || messages.en || fallback || "";
+            }
+            return (data && (data.error_message || data.message || data.error)) || fallback || "";
         }
 
         function normalizeOtp(value, maxLength) {
@@ -241,6 +299,9 @@
         loginForm.querySelectorAll("[data-handrive-otp-input]").forEach(initOtpInput);
 
         loginForm.addEventListener("submit", function (event) {
+            if (event.defaultPrevented) {
+                return;
+            }
             if (loginForm.dataset.submitting === "1") {
                 event.preventDefault();
                 return;
@@ -521,7 +582,7 @@
                         } else {
                             resendBtn.disabled = false;
                             if (twoFaErrorEl) {
-                                twoFaErrorEl.textContent = data.error || "재전송에 실패했습니다.";
+                                twoFaErrorEl.textContent = selectServerMessage(data, "재전송에 실패했습니다.");
                                 twoFaErrorEl.style.display = "block";
                             }
                         }

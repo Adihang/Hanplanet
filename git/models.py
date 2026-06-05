@@ -51,6 +51,36 @@ class GitHubAccountMapping(models.Model):
         return f"{self.user.username} → github:{self.github_login}"
 
 
+class GoogleAccountMapping(models.Model):
+    """Django User ↔ Google 계정 매핑."""
+
+    user                          = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="google_account")
+    google_user_id                = models.CharField(max_length=255, unique=True)
+    google_email                  = models.EmailField()
+    google_name                   = models.CharField(max_length=255, blank=True, default="")
+    google_avatar_url             = models.URLField(max_length=1024, blank=True, default="")
+    user_access_token             = models.TextField(blank=True, default="")
+    user_access_token_expires_at  = models.DateTimeField(null=True, blank=True)
+    user_refresh_token            = models.TextField(blank=True, default="")
+    user_refresh_token_expires_at = models.DateTimeField(null=True, blank=True)
+    token_scope                   = models.CharField(max_length=512, blank=True, default="")
+    token_type                    = models.CharField(max_length=64, blank=True, default="")
+    google_drive_enabled          = models.BooleanField(default=False)
+    google_profile_synced_at      = models.DateTimeField(null=True, blank=True)
+    created_at                    = models.DateTimeField(auto_now_add=True)
+    updated_at                    = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "main_googleaccountmapping"
+        indexes = [
+            models.Index(fields=["google_email"]),
+            models.Index(fields=["user", "updated_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} → google:{self.google_email}"
+
+
 class GitRepository(models.Model):
     """Handrive 폴더와 연결된 Git 저장소 (DB가 진실의 원천)"""
     STATUS_CHOICES = [

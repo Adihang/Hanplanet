@@ -10,6 +10,21 @@
         }
     }
 
+    function selectServerMessage(payload, fallback) {
+        if (window.HandriveSelectServerMessage) {
+            return window.HandriveSelectServerMessage(payload, fallback);
+        }
+        if (!payload || typeof payload !== "object") {
+            return fallback || "";
+        }
+        var lang = (document.documentElement.getAttribute("lang") || "").toLowerCase().indexOf("en") === 0 ? "en" : "ko";
+        var messages = payload.error_messages || payload.messages;
+        if (messages && typeof messages === "object") {
+            return messages[lang] || messages.ko || messages.en || fallback || "";
+        }
+        return payload.error_message || payload.message || payload.error || fallback || "";
+    }
+
     async function pollStatus(options) {
         // Poll the repository status endpoint and translate status transitions into
         // modal updates, list refreshes, and route remaps when the handrive path changes.
@@ -63,7 +78,7 @@
             } else if (data.status === "failed") {
                 stopPolling(state);
 	                showStatus(
-	                    t("git_repo_create_failed", "생성 실패") + ": " + (data.error_message || t("git_repo_unknown_error", "알 수 없는 오류")),
+	                    t("git_repo_create_failed", "생성 실패") + ": " + selectServerMessage(data, t("git_repo_unknown_error", "알 수 없는 오류")),
 	                    true,
                     null,
                     null
@@ -152,7 +167,7 @@
                 );
             } else if (repo.status === "failed") {
 	                showStatus(
-	                    t("git_repo_create_failed", "생성 실패") + ": " + (repo.error_message || t("git_repo_unknown_error", "알 수 없는 오류")),
+	                    t("git_repo_create_failed", "생성 실패") + ": " + selectServerMessage(repo, t("git_repo_unknown_error", "알 수 없는 오류")),
                     true,
                     null,
                     null

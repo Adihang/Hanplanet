@@ -1,0 +1,48 @@
+{% load template_utils %}
+<div
+    class="root-auth-modal ui-auth-google-modal"
+    data-auth-google-modal
+    data-connect-title="{% include_trimmed 'partials/ui_i18n.html' key='google_connect_title' %}"
+    data-connect-message="{% include_trimmed 'partials/ui_i18n.html' key='google_connect_message' %}"
+    data-connect-confirm="{% include_trimmed 'partials/ui_i18n.html' key='google_connect_confirm' %}"
+    data-connected-title="{% include_trimmed 'partials/ui_i18n.html' key='google_connected_title' %}"
+    data-connected-message="{% include_trimmed 'partials/ui_i18n.html' key='google_connected_message' %}"
+    data-drive-label="{% include_trimmed 'partials/ui_i18n.html' key='google_drive_toggle_label' %}"
+    data-drive-hint="{% include_trimmed 'partials/ui_i18n.html' key='google_drive_toggle_hint' %}"
+    data-save-label="{% include_trimmed 'partials/ui_i18n.html' key='save' %}"
+    data-saved-label="{% include_trimmed 'partials/ui_i18n.html' key='saved' %}"
+    data-save-error="{% include_trimmed 'partials/ui_i18n.html' key='google_drive_toggle_error' %}"
+    data-unlink-label="{% include_trimmed 'partials/ui_i18n.html' key='account_unlink' %}"
+    data-unlink-confirm="{% include_trimmed 'partials/ui_i18n.html' key='google_unlink_confirm' %}"
+    data-unlinked-label="{% include_trimmed 'partials/ui_i18n.html' key='account_unlinked' %}"
+    data-unlink-error="{% include_trimmed 'partials/ui_i18n.html' key='google_unlink_error' %}"
+    data-unconfigured="{% include_trimmed 'partials/ui_i18n.html' key='google_unconfigured' %}"
+    hidden
+>
+    <div class="root-auth-modal-backdrop" data-auth-google-modal-backdrop></div>
+    <div class="root-auth-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true">
+        <h3 data-auth-google-modal-title></h3>
+        <p class="root-auth-modal-message" data-auth-google-modal-message></p>
+        <label class="ui-auth-google-drive-toggle" data-auth-google-drive-toggle-wrap hidden>
+            <input type="checkbox" class="ui-auth-google-drive-checkbox" data-auth-google-drive-toggle>
+            <span class="ui-auth-google-drive-toggle-text">
+                {% include 'partials/ui_i18n.html' with key='google_drive_toggle_label' %}
+            </span>
+        </label>
+        <p class="root-auth-modal-message ui-auth-google-drive-hint" data-auth-google-drive-hint hidden>
+            {% include 'partials/ui_i18n.html' with key='google_drive_toggle_hint' %}
+        </p>
+        <div class="root-auth-modal-message ui-auth-google-modal-status" data-auth-google-status hidden></div>
+        <div class="root-auth-modal-actions">
+            <button type="button" class="root-auth-modal-btn root-auth-modal-btn-danger" data-auth-google-unlink hidden>
+                {% include 'partials/ui_i18n.html' with key='account_unlink' %}
+            </button>
+            <button type="button" class="root-auth-modal-btn" data-auth-google-cancel>
+                {% include 'partials/ui_i18n.html' with key='cancel' %}
+            </button>
+            <button type="button" class="root-auth-modal-btn root-auth-modal-btn-primary" data-auth-google-confirm>
+                {% include 'partials/ui_i18n.html' with key='google_connect_confirm' %}
+            </button>
+        </div>
+    </div>
+</div>

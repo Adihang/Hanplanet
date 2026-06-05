@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static_versioned %}
 {% block body_class %}handrive-page{% endblock %}
 {% block content %}
 {% include 'handrive/_assets_head.html' %}
@@ -57,6 +58,7 @@
     data-current-dir-can-write-children="{% if current_dir_can_write_children %}1{% else %}0{% endif %}"
     data-current-dir-has-children="{% if current_dir_has_children %}1{% else %}0{% endif %}"
     data-current-dir-is-git-repo-root="{% if current_dir_is_git_repo_root %}1{% else %}0{% endif %}"
+    data-current-dir-is-google-drive="{% if current_dir_is_google_drive %}1{% else %}0{% endif %}"
     data-current-dir-requires-commit-message="{% if current_dir_requires_commit_message %}1{% else %}0{% endif %}"
     data-current-dir-git-branch-root="{% if current_dir_git_branch_root %}1{% else %}0{% endif %}"
     data-current-dir-git-commit-id="{{ current_dir_git_commit_id|default:''|escape }}"
@@ -105,6 +107,15 @@
     data-image-editor-remove-background-url="{{ handrive_image_editor_remove_background_url }}"
     data-audio-editor-save-url="{{ handrive_audio_editor_save_url }}"
     data-video-editor-save-url="{{ handrive_video_editor_save_url }}"
+    data-image-editor-script-url="{% static_v 'js/handrive/image_editor.js' %}"
+    data-video-editor-script-url="{% static_v 'js/handrive/video_editor.js' %}"
+    data-audio-editor-script-url="{% static_v 'js/handrive/audio_editor.js' %}"
+    data-videojs-script-url="{% static_v 'vendor/videojs/video.min.js' %}"
+    data-videojs-compat-script-url="{% static_v 'js/handrive/videojs_compat.js' %}"
+    data-videojs-seek-buttons-script-url="{% static_v 'vendor/videojs/videojs-seek-buttons.min.js' %}"
+    data-videojs-hotkeys-script-url="{% static_v 'vendor/videojs/videojs.hotkeys.min.js' %}"
+    data-videojs-mobile-ui-script-url="{% static_v 'vendor/videojs/videojs-mobile-ui.js' %}"
+    data-video-player-script-url="{% static_v 'js/handrive/video_player.js' %}"
     data-folder-icon-upload-api-url="{{ handrive_api_folder_icon_upload_url }}"
     data-folder-icon-delete-api-url="{{ handrive_api_folder_icon_delete_url }}"
 >
@@ -225,6 +236,9 @@
                 <article class="ui-markdown handrive-list-preview-content" id="handrive-list-preview-content">
                     <p class="handrive-list-preview-placeholder">{{ handrive_text.list_preview_empty }}</p>
                 </article>
+                <div class="handrive-list-preview-body-loading" id="handrive-list-preview-body-loading" role="status" aria-live="polite" aria-label="{{ handrive_text.list_preview_loading }}" hidden>
+                    <span class="handrive-list-preview-body-loading-spinner" aria-hidden="true"></span>
+                </div>
             </div>
         </aside>
         <!-- 편집기 요소 (초기에는 hidden) -->
@@ -248,6 +262,9 @@
                     </div>
                     <textarea id="handrive-list-content-input" spellcheck="false" wrap="off"></textarea>
                 </div>
+            </div>
+            <div class="handrive-list-editor-saving" id="handrive-list-editor-saving" role="status" aria-live="polite" aria-label="{{ handrive_text.save_loading }}" hidden>
+                <span class="handrive-list-editor-saving-spinner" aria-hidden="true"></span>
             </div>
         </aside>
     </div>
@@ -284,6 +301,7 @@
 {{ handrive_text|json_script:"handrive-i18n" }}
 {{ initial_entries|json_script:"handrive-initial-entries" }}
 {{ current_dir_git_repo|json_script:"handrive-current-dir-git-repo" }}
+{{ current_dir_google_drive|json_script:"handrive-current-dir-google-drive" }}
 {{ current_dir_write_acl_labels|json_script:"handrive-current-dir-write-acl-labels" }}
 {{ sync_excluded_paths|json_script:"handrive-sync-excluded-paths" }}
 {% include 'handrive/_assets_script.html' %}

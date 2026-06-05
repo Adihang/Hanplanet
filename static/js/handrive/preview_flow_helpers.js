@@ -4,6 +4,36 @@
     // Preview flow helpers orchestrate fetch -> cache -> render without touching the broader
     // selection logic. page.js passes state/callbacks so these helpers stay mostly pure.
 
+    function touchPreviewCacheEntry(cache, key) {
+        if (!cache || !cache.has(key)) {
+            return null;
+        }
+        var cached = cache.get(key);
+        cache.delete(key);
+        cache.set(key, cached);
+        return cached;
+    }
+
+    function trimPreviewCache(state, protectedKey) {
+        if (!state || !state.previewCache) {
+            return;
+        }
+        var maxEntries = Math.max(5, Number(state.previewCacheMaxEntries) || 30);
+        while (state.previewCache.size > maxEntries) {
+            var firstKey = state.previewCache.keys().next().value;
+            if (!firstKey) {
+                break;
+            }
+            if (firstKey === protectedKey) {
+                var protectedValue = state.previewCache.get(firstKey);
+                state.previewCache.delete(firstKey);
+                state.previewCache.set(firstKey, protectedValue);
+                continue;
+            }
+            state.previewCache.delete(firstKey);
+        }
+    }
+
     function renderPreviewHtml(options) {
         // Take one API preview payload and hydrate the preview pane without depending on
         // the caller's page state structure beyond the callbacks passed in.
@@ -130,7 +160,7 @@
         setPreviewActionTargets(entry);
 
         if (state.previewCache.has(pathValue)) {
-            var cached = state.previewCache.get(pathValue);
+            var cached = touchPreviewCacheEntry(state.previewCache, pathValue);
             await beforePreviewContentReplace();
             if (state.activePreviewPath !== pathValue) {
                 return;
@@ -177,6 +207,7 @@
                 renderMode: renderMode,
                 renderClass: renderClass,
             });
+            trimPreviewCache(state, pathValue);
             if (previewTitle && data && typeof data.title === "string" && data.title.trim()) {
                 var previewTitleText2 = previewTitle.querySelector(".handrive-list-preview-title-text") || previewTitle;
                 previewTitleText2.textContent = data.title;

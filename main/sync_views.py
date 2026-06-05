@@ -52,6 +52,45 @@ from main.handrive_views import (
 
 logger = logging.getLogger(__name__)
 
+SYNC_ERROR_MESSAGES = {
+    "unauthorized": {"ko": "인증이 필요합니다.", "en": "Authentication is required."},
+    "username and password required": {"ko": "아이디와 비밀번호를 입력해주세요.", "en": "Username and password are required."},
+    "invalid credentials": {"ko": "아이디 또는 비밀번호를 확인해주세요.", "en": "Please check your username or password."},
+    "refresh_token required": {"ko": "refresh_token이 필요합니다.", "en": "refresh_token is required."},
+    "invalid or expired refresh_token": {"ko": "refresh_token이 올바르지 않거나 만료되었습니다.", "en": "The refresh_token is invalid or expired."},
+    "path, size, hash required": {"ko": "path, size, hash 값이 필요합니다.", "en": "path, size, and hash are required."},
+    "invalid size": {"ko": "파일 크기 값이 올바르지 않습니다.", "en": "The file size is invalid."},
+    "quota_exceeded": {"ko": "저장 공간이 부족합니다.", "en": "Storage quota exceeded."},
+    "upload session not found": {"ko": "업로드 세션을 찾을 수 없습니다.", "en": "Upload session not found."},
+    "content_length_mismatch": {"ko": "업로드 파일 크기가 일치하지 않습니다.", "en": "Uploaded content length does not match."},
+    "not found": {"ko": "파일을 찾을 수 없습니다.", "en": "File not found."},
+    "target_path required": {"ko": "target_path가 필요합니다.", "en": "target_path is required."},
+    "path_conflict": {"ko": "같은 경로에 파일이 이미 존재합니다.", "en": "A file already exists at the target path."},
+    "storage move failed": {"ko": "파일 이동에 실패했습니다.", "en": "Failed to move the file in storage."},
+    "conflict": {"ko": "파일 버전이 충돌했습니다.", "en": "File version conflict."},
+}
+
+
+def _sync_error_response(error_code: str, *, status: int = 400, message_ko=None, message_en=None, **extra):
+    messages = dict(SYNC_ERROR_MESSAGES.get(error_code) or {})
+    if message_ko:
+        messages["ko"] = message_ko
+    if message_en:
+        messages["en"] = message_en
+    if not messages:
+        messages = {"ko": error_code, "en": error_code}
+    selected_message = messages.get("ko") or messages.get("en") or error_code
+    return JsonResponse(
+        {
+            "error": error_code,
+            "error_code": error_code,
+            "error_message": selected_message,
+            "error_messages": messages,
+            **extra,
+        },
+        status=status,
+    )
+
 
 # ── 내부 유틸리티 ──────────────────────────────────────────────────────────────
 
@@ -275,7 +314,7 @@ def _auth_required(request):
     """인증 필요 뷰에서 사용. User 또는 JsonResponse(401) 반환."""
     user = require_sync_auth(request)
     if user is None:
-        return None, JsonResponse({"error": "unauthorized"}, status=401)
+        return None, _sync_error_response("unauthorized", status=401)
     return user, None
 
 
@@ -289,11 +328,11 @@ def sync_auth_token(request):
     username = body.get("username", "").strip()
     password = body.get("password", "")
     if not username or not password:
-        return JsonResponse({"error": "username and password required"}, status=400)
+        return _sync_error_response("username and password required", status=400)
 
     tokens = login_and_issue_tokens(username, password)
     if tokens is None:
-        return JsonResponse({"error": "invalid credentials"}, status=401)
+        return _sync_error_response("invalid credentials", status=401)
     return JsonResponse(tokens)
 
 
@@ -304,11 +343,11 @@ def sync_auth_refresh(request):
     body = _json_body(request)
     refresh_token = body.get("refresh_token", "")
     if not refresh_token:
-        return JsonResponse({"error": "refresh_token required"}, status=400)
+        return _sync_error_response("refresh_token required", status=400)
 
     new_access = refresh_access_token(refresh_token)
     if new_access is None:
-        return JsonResponse({"error": "invalid or expired refresh_token"}, status=401)
+        return _sync_error_response("invalid or expired refresh_token", status=401)
     return JsonResponse({"access_token": new_access})
 
 
@@ -360,15 +399,15 @@ def sync_files_init_upload(request):
     client_modified_at = body.get("client_modified_at", _now_ms())
 
     if not path or size is None or not file_hash:
-        return JsonResponse({"error": "path, size, hash required"}, status=400)
+        return _sync_error_response("path, size, hash required", status=400)
     if not isinstance(size, int) or size < 0:
-        return JsonResponse({"error": "invalid size"}, status=400)
+        return _sync_error_response("invalid size", status=400)
 
     # 쿼터 체크 (기존 파일이면 delta만 계산)
     existing_at_path = SyncFile.objects.filter(user=user, path=path, deleted=False).first()
     delta = size - (existing_at_path.size if existing_at_path else 0)
     if delta > 0 and not _check_quota(user, delta):
-        return JsonResponse({"error": "quota_exceeded"}, status=413)
+        return _sync_error_response("quota_exceeded", status=413)
 
     # Dedup: 같은 hash 파일이 이미 존재하면 storage 재사용
     same_hash = SyncFile.objects.filter(user=user, hash=file_hash, deleted=False).first()
@@ -460,7 +499,7 @@ def sync_files_complete(request):
     try:
         session = SyncUploadSession.objects.get(upload_id=upload_id, user=user)
     except SyncUploadSession.DoesNotExist:
-        return JsonResponse({"error": "upload session not found"}, status=404)
+        return _sync_error_response("upload session not found", status=404)
 
     now_ms = _now_ms()
 
@@ -474,9 +513,7 @@ def sync_files_complete(request):
         if existing:
             # 덮어쓰기: version 충돌 체크
             if existing.version != expected_version:
-                return JsonResponse(
-                    {"error": "conflict", "server_version": existing.version}, status=409
-                )
+                return _sync_error_response("conflict", status=409, server_version=existing.version)
             existing.size = session.size
             existing.hash = session.hash
             existing.version += 1
@@ -535,11 +572,11 @@ def sync_upload_data(request, upload_id):
     try:
         session = SyncUploadSession.objects.get(upload_id=upload_id, user=user)
     except SyncUploadSession.DoesNotExist:
-        return JsonResponse({"error": "upload session not found"}, status=404)
+        return _sync_error_response("upload session not found", status=404)
 
     body = request.body or b""
     if len(body) != session.size:
-        return JsonResponse({"error": "content_length_mismatch"}, status=400)
+        return _sync_error_response("content_length_mismatch", status=400)
     content_type = request.headers.get("Content-Type", "application/octet-stream")
     try:
         target_path, normalized_path = _resolve_sync_storage_path(user, session.path, must_exist=False)
@@ -555,7 +592,12 @@ def sync_upload_data(request, upload_id):
             session.storage_key,
             len(body),
         )
-        return JsonResponse({"error": f"storage error: {exc}"}, status=502)
+        return _sync_error_response(
+            "storage error",
+            status=502,
+            message_ko=f"저장소 오류가 발생했습니다: {exc}",
+            message_en=f"Storage error: {exc}",
+        )
 
     logger.info(
         "[sync] upload-data ok user=%s upload_id=%s path=%s normalized=%s storage_key=%s size=%s",
@@ -582,7 +624,7 @@ def sync_files_download_url(request, file_id):
     try:
         sync_file = SyncFile.objects.get(id=file_id, user=user, deleted=False)
     except SyncFile.DoesNotExist:
-        return JsonResponse({"error": "not found"}, status=404)
+        return _sync_error_response("not found", status=404)
 
     url = request.build_absolute_uri(
         reverse("main:sync_files_download_proxy", kwargs={"file_id": sync_file.id})
@@ -608,7 +650,7 @@ def sync_files_download_proxy(request, file_id):
     try:
         sync_file = SyncFile.objects.get(id=file_id, user=user, deleted=False)
     except SyncFile.DoesNotExist:
-        return JsonResponse({"error": "not found"}, status=404)
+        return _sync_error_response("not found", status=404)
 
     try:
         actual_path, _ = _resolve_sync_storage_path(user, sync_file.path, must_exist=True)
@@ -626,7 +668,12 @@ def sync_files_download_proxy(request, file_id):
                 sync_file.path,
                 sync_file.storage_key,
             )
-            return JsonResponse({"error": f"storage error: {exc}"}, status=502)
+            return _sync_error_response(
+                "storage error",
+                status=502,
+                message_ko=f"저장소 오류가 발생했습니다: {exc}",
+                message_en=f"Storage error: {exc}",
+            )
 
     response = HttpResponse(data, content_type="application/octet-stream")
     response["Content-Length"] = str(len(data))
@@ -673,7 +720,7 @@ def sync_files_delete(request, file_id):
                 created_at=_now_ms(),
             )
     except SyncFile.DoesNotExist:
-        return JsonResponse({"error": "not found"}, status=404)
+        return _sync_error_response("not found", status=404)
 
     return JsonResponse({"ok": True})
 
@@ -700,20 +747,18 @@ def sync_files_move(request, file_id):
     expected_version = body.get("expected_version")
 
     if not target_path:
-        return JsonResponse({"error": "target_path required"}, status=400)
+        return _sync_error_response("target_path required", status=400)
 
     try:
         with transaction.atomic():
             sync_file = SyncFile.objects.select_for_update().get(id=file_id, user=user, deleted=False)
 
             if expected_version is not None and sync_file.version != expected_version:
-                return JsonResponse(
-                    {"error": "conflict", "server_version": sync_file.version}, status=409
-                )
+                return _sync_error_response("conflict", status=409, server_version=sync_file.version)
 
             # 목표 경로 충돌 체크
             if SyncFile.objects.filter(user=user, path=target_path, deleted=False).exclude(id=file_id).exists():
-                return JsonResponse({"error": "path_conflict"}, status=409)
+                return _sync_error_response("path_conflict", status=409)
 
             old_path = sync_file.path
             try:
@@ -725,7 +770,7 @@ def sync_files_move(request, file_id):
                 target_path = normalized_target_path
             except Exception:
                 logger.exception("[sync] move physical file failed user=%s old=%s new=%s", user.username, old_path, target_path)
-                return JsonResponse({"error": "storage move failed"}, status=502)
+                return _sync_error_response("storage move failed", status=502)
             now_ms = _now_ms()
             sync_file.path = target_path
             sync_file.version += 1
@@ -742,7 +787,7 @@ def sync_files_move(request, file_id):
                 created_at=now_ms,
             )
     except SyncFile.DoesNotExist:
-        return JsonResponse({"error": "not found"}, status=404)
+        return _sync_error_response("not found", status=404)
 
     return JsonResponse(_file_to_dict(sync_file))
 
@@ -821,7 +866,7 @@ def sync_me(request):
     """
     user = require_sync_auth(request)
     if not user:
-        return JsonResponse({"error": "unauthorized"}, status=401)
+        return _sync_error_response("unauthorized", status=401)
     quota_total = get_user_handrive_quota_bytes(user)
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     if scoped_home_dir:

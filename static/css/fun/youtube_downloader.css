@@ -319,6 +319,8 @@ body.theme-dark .youtube-downloader-status.is-error {
 
 .youtube-downloader-player-slot .youtube-downloader-player.is-audio {
     aspect-ratio: auto;
+    display: block;
+    width: 100%;
     height: 96px;
     min-height: 96px;
     max-height: 96px;

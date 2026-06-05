@@ -2,9 +2,36 @@
 // One-at-a-time mode: shows one stratagem card at a time, with a real-time timer and remaining count.
 
 // ── Sound ──────────────────────────────────────────────────────────────────
-async function playSound(soundURL) {
+function waitForAudioEnd(audioElement) {
+    return new Promise(resolve => {
+        let resolved = false;
+        let timeoutId = null;
+        const finish = () => {
+            if (resolved) return;
+            resolved = true;
+            if (timeoutId) clearTimeout(timeoutId);
+            audioElement.removeEventListener('ended', finish);
+            audioElement.removeEventListener('error', finish);
+            resolve();
+        };
+
+        audioElement.addEventListener('ended', finish);
+        audioElement.addEventListener('error', finish);
+        timeoutId = setTimeout(finish, 600);
+    });
+}
+
+async function playSound(soundURL, options = {}) {
     const soundEffect = new Audio(soundURL);
-    await soundEffect.play();
+    const endPromise = options.waitUntilEnd ? waitForAudioEnd(soundEffect) : null;
+    try {
+        await soundEffect.play();
+    } catch (error) {
+        return;
+    }
+    if (endPromise) {
+        await endPromise;
+    }
 }
 
 // ── CSRF ───────────────────────────────────────────────────────────────────
@@ -19,6 +46,7 @@ let typecommand = "";    // 현재 입력 중인 커맨드 문자열
 let startTime = null;    // performance.now() 기준 시작 시각
 let timerInterval = null;
 let seconds = 0;         // 최종 기록 (게임 완료 후)
+let isClearingCard = false;
 const TOTAL = 10;
 
 // ── Timer ──────────────────────────────────────────────────────────────────
@@ -131,6 +159,7 @@ document.addEventListener('DOMContentLoaded', function () {
 document.addEventListener('keydown', async function (event) {
     const currentCard = queue[currentIdx];
     if (!currentCard) return; // 게임 종료 상태
+    if (isClearingCard) return;
 
     // 유효 키 판별 (방향키 or WASD)
     const key = event.key;
@@ -159,6 +188,8 @@ document.addEventListener('keydown', async function (event) {
 
         if (typecommand === command) {
             // 완전 일치 → 카드 클리어
+            isClearingCard = true;
+            await playSound('/static/media/mp3/stratagem/stratagem1.mp3', { waitUntilEnd: true });
             playSound('/static/media/mp3/stratagem/stratagem4.mp3');
             setTimeout(() => {
                 currentCard.style.display = 'none';
@@ -166,6 +197,7 @@ document.addEventListener('keydown', async function (event) {
                 typecommand = '';
                 currentIdx++;
                 updateStatusBar();
+                isClearingCard = false;
 
                 if (currentIdx >= TOTAL) {
                     // 모든 카드 클리어 → 게임 완료

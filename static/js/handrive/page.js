@@ -78,6 +78,106 @@
         return baseUrl + separator + encodeURIComponent(key) + "=" + encodeURIComponent(value || "");
     }
 
+    const lazyScriptLoadPromises = Object.create(null);
+
+    function loadLazyScriptOnce(scriptUrl, globalName) {
+        const url = String(scriptUrl || "").trim();
+        if (globalName && window[globalName]) {
+            return Promise.resolve(window[globalName]);
+        }
+        if (!url) {
+            return Promise.reject(new Error("Required script URL is missing."));
+        }
+        if (lazyScriptLoadPromises[url]) {
+            return lazyScriptLoadPromises[url];
+        }
+        lazyScriptLoadPromises[url] = new Promise(function (resolve, reject) {
+            const existingScript = Array.prototype.slice.call(document.scripts || []).find(function (candidate) {
+                return candidate && candidate.getAttribute("src") === url;
+            });
+            if (existingScript && (globalName ? window[globalName] : true)) {
+                resolve(globalName ? window[globalName] : existingScript);
+                return;
+            }
+            const script = document.createElement("script");
+            script.src = url;
+            script.async = false;
+            script.onload = function () {
+                resolve(globalName ? window[globalName] : script);
+            };
+            script.onerror = function () {
+                delete lazyScriptLoadPromises[url];
+                reject(new Error("Script load failed: " + url));
+            };
+            document.head.appendChild(script);
+        });
+        return lazyScriptLoadPromises[url];
+    }
+
+    function getMediaEditorGlobalName(kind) {
+        if (kind === "image") return "HandriveImageEditor";
+        if (kind === "video") return "HandriveVideoEditor";
+        if (kind === "audio") return "HandriveAudioEditor";
+        return "";
+    }
+
+    let videoPlayerStackPromise = null;
+
+    function loadOptionalLazyScriptOnce(scriptUrl) {
+        const url = String(scriptUrl || "").trim();
+        if (!url) {
+            return Promise.resolve(null);
+        }
+        return loadLazyScriptOnce(url).catch(function () {
+            return null;
+        });
+    }
+
+    function loadVideoPlayerStack() {
+        if (
+            window.HandriveVideoPlayer &&
+            typeof window.HandriveVideoPlayer.init === "function"
+        ) {
+            return Promise.resolve(window.HandriveVideoPlayer);
+        }
+        if (videoPlayerStackPromise) {
+            return videoPlayerStackPromise;
+        }
+
+        const videojsScriptUrl = root.dataset.videojsScriptUrl || "";
+        const compatScriptUrl = root.dataset.videojsCompatScriptUrl || "";
+        const seekButtonsScriptUrl = root.dataset.videojsSeekButtonsScriptUrl || "";
+        const hotkeysScriptUrl = root.dataset.videojsHotkeysScriptUrl || "";
+        const mobileUiScriptUrl = root.dataset.videojsMobileUiScriptUrl || "";
+        const videoPlayerScriptUrl = root.dataset.videoPlayerScriptUrl || "";
+        const chromecastScriptUrl = root.dataset.videojsChromecastScriptUrl || "https://cdn.jsdelivr.net/npm/@silvermine/videojs-chromecast@1.5.0/dist/silvermine-videojs-chromecast.min.js";
+        const castSenderScriptUrl = root.dataset.googleCastSenderScriptUrl || "https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1";
+        const hlsQualitySelectorScriptUrl = root.dataset.videojsHlsQualitySelectorScriptUrl || "https://cdn.jsdelivr.net/npm/videojs-hls-quality-selector@2.0.0/dist/videojs-hls-quality-selector.min.js";
+
+        videoPlayerStackPromise = loadLazyScriptOnce(videojsScriptUrl, "videojs")
+            .then(function () {
+                return loadOptionalLazyScriptOnce(compatScriptUrl);
+            })
+            .then(function () {
+                return Promise.all([
+                    loadOptionalLazyScriptOnce(seekButtonsScriptUrl),
+                    loadOptionalLazyScriptOnce(hotkeysScriptUrl),
+                    loadOptionalLazyScriptOnce(mobileUiScriptUrl),
+                    loadOptionalLazyScriptOnce(chromecastScriptUrl),
+                    loadOptionalLazyScriptOnce(castSenderScriptUrl),
+                    loadOptionalLazyScriptOnce(hlsQualitySelectorScriptUrl),
+                ]);
+            })
+            .then(function () {
+                return loadLazyScriptOnce(videoPlayerScriptUrl, "HandriveVideoPlayer");
+            })
+            .catch(function (error) {
+                videoPlayerStackPromise = null;
+                throw error;
+            });
+        return videoPlayerStackPromise;
+    }
+
     function getAbsoluteResourceUrl(rawUrl) {
         const url = String(rawUrl || "").trim();
         if (!url) {
@@ -542,9 +642,22 @@
         }
     }
 
+    function resolveReadableUrlPath(pathValue) {
+        const normalized = normalizePath(pathValue, true);
+        const resolver = window.HandriveUrlPathResolver;
+        if (!normalized || !resolver || typeof resolver.toUrlPath !== "function") {
+            return normalized;
+        }
+        try {
+            return normalizePath(resolver.toUrlPath(normalized) || normalized, true);
+        } catch (error) {
+            return normalized;
+        }
+    }
+
     // 목록 URL을 구축하는 함수
     function buildListUrl(baseUrl, relativePath, rootUrl) {
-        const encoded = encodePathSegments(relativePath);
+        const encoded = encodePathSegments(resolveReadableUrlPath(relativePath));
         if (!encoded) {
             return appendSharedQuery(rootUrl || baseUrl);
         }
@@ -553,7 +666,7 @@
 
     // 보기 URL을 구축하는 함수
     function buildViewUrl(baseUrl, slugPath) {
-        const encoded = encodePathSegments(slugPath);
+        const encoded = encodePathSegments(resolveReadableUrlPath(slugPath));
         if (!encoded) {
             return appendSharedQuery(baseUrl);
         }
@@ -577,11 +690,47 @@
         return query ? writeBaseUrl + "?" + query : writeBaseUrl;
     }
 
+    function selectServerMessage(payload, fallbackValue) {
+        if (!payload || typeof payload !== "object") {
+            return fallbackValue || "";
+        }
+        const messages = payload.error_messages || payload.messages;
+        if (messages && typeof messages === "object") {
+            const localized = messages[uiLang] || messages.ko || messages.en;
+            if (localized) {
+                return String(localized).trim();
+            }
+        }
+        return String(payload.error_message || payload.message || payload.error || fallbackValue || "").trim();
+    }
+
+    window.HandriveSelectServerMessage = selectServerMessage;
+
+    function shouldRetryJsonRequest(options) {
+        const method = String((options && options.method) || "GET").trim().toUpperCase();
+        return method === "GET" || method === "HEAD";
+    }
+
+    function waitForRequestRetry(delayMs) {
+        return new Promise(function (resolve) {
+            window.setTimeout(resolve, delayMs);
+        });
+    }
+
     // JSON 요청을 보내는 비동기 함수
     async function requestJson(url, options) {
         // Centralize JSON error normalization so every API caller gets the same
         // user-facing message shape regardless of the backend endpoint.
-        const response = await fetch(url, options || {});
+        let response = null;
+        try {
+            response = await fetch(url, options || {});
+        } catch (error) {
+            if (!shouldRetryJsonRequest(options)) {
+                throw error;
+            }
+            await waitForRequestRetry(350);
+            response = await fetch(url, options || {});
+        }
         let payload = null;
         try {
             payload = await response.json();
@@ -590,10 +739,9 @@
         }
 
         if (!response.ok) {
-            const message = payload && payload.error
-                ? payload.error
-                : t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다.");
-            throw new Error(message);
+            const error = new Error(selectServerMessage(payload, t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다.")));
+            error.payload = payload;
+            throw error;
         }
 
         return payload;
@@ -616,10 +764,9 @@
         }
 
         if (!response.ok) {
-            const message = payload && payload.error
-                ? payload.error
-                : t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다.");
-            throw new Error(message);
+            const error = new Error(selectServerMessage(payload, t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다.")));
+            error.payload = payload;
+            throw error;
         }
 
         return payload;
@@ -1170,10 +1317,14 @@
         return Promise.resolve();
     }
 
-    function initializePreviewVideoPlayers(container) {
+    async function initializePreviewVideoPlayers(container) {
         if (!container || !(container instanceof Element)) {
             return;
         }
+        if (!container.querySelector("video.video-js")) {
+            return;
+        }
+        await loadVideoPlayerStack();
         if (
             !window.HandriveVideoPlayer ||
             typeof window.HandriveVideoPlayer.init !== "function"
@@ -2874,6 +3025,7 @@
         const previewHead = previewPanel ? previewPanel.querySelector(".handrive-list-preview-head") : null;
         const previewTitle = document.getElementById("handrive-list-preview-title");
         const previewContent = document.getElementById("handrive-list-preview-content");
+        const previewBodyLoadingOverlay = document.getElementById("handrive-list-preview-body-loading");
         const previewZoomWrap = document.getElementById("handrive-list-preview-zoom");
         const previewZoomOutButton = document.getElementById("handrive-list-preview-zoom-out");
         const previewZoomInButton = document.getElementById("handrive-list-preview-zoom-in");
@@ -2896,6 +3048,7 @@
         const editorContentInput = document.getElementById("handrive-list-content-input");
         const editorCancelButton = document.getElementById("handrive-list-cancel-btn");
         const editorSaveButton = document.getElementById("handrive-list-save-btn");
+        const editorSavingOverlay = document.getElementById("handrive-list-editor-saving");
         const editorHighlightCode = document.getElementById("handrive-list-editor-highlight-code");
         const editorSurface = document.getElementById("handrive-list-editor-surface");
         const editorHighlight = document.getElementById("handrive-list-editor-highlight");
@@ -2906,6 +3059,9 @@
         const imageEditorRemoveBackgroundUrl = root.dataset.imageEditorRemoveBackgroundUrl || "";
         const videoEditorSaveUrl = root.dataset.videoEditorSaveUrl || "";
         const audioEditorSaveUrl = root.dataset.audioEditorSaveUrl || "";
+        const imageEditorScriptUrl = root.dataset.imageEditorScriptUrl || "";
+        const videoEditorScriptUrl = root.dataset.videoEditorScriptUrl || "";
+        const audioEditorScriptUrl = root.dataset.audioEditorScriptUrl || "";
         const editorSuggest = document.getElementById("handrive-list-editor-suggest");
         const editorSuggestLabel = document.getElementById("handrive-list-editor-suggest-label");
         const markdownSnippetMenu = document.getElementById("ui-markdown-snippet-menu");
@@ -3033,6 +3189,7 @@
             ".svg",
             ".bmp",
             ".avif",
+            ".ico",
             ".mp4",
             ".webm",
             ".mov",
@@ -3067,7 +3224,7 @@
         }
 
         const mediaNavExtensions = new Set([
-            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif",
+            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif", ".ico",
             ".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv",
         ]);
         function isMediaNavEntry(entry) {
@@ -3099,6 +3256,7 @@
             root.dataset.currentDirCanWriteChildren === "1" || currentDirCanEdit;
         const currentDirHasChildren = root.dataset.currentDirHasChildren === "1";
         const currentDirIsGitRepoRoot = root.dataset.currentDirIsGitRepoRoot === "1";
+        const currentDirIsGoogleDrive = root.dataset.currentDirIsGoogleDrive === "1";
         const currentDirRequiresCommitMessage = root.dataset.currentDirRequiresCommitMessage === "1";
         const currentDirGitBranchRoot = root.dataset.currentDirGitBranchRoot === "1";
         const currentDirGitCommitId = String(root.dataset.currentDirGitCommitId || "").trim();
@@ -3118,6 +3276,7 @@
         const currentDirWriteAclLabels = getJsonScriptData("handrive-current-dir-write-acl-labels", []);
         const initialSyncExcludedPaths = getJsonScriptData("handrive-sync-excluded-paths", []);
         let currentDirGitRepo = getJsonScriptData("handrive-current-dir-git-repo", null);
+        let currentDirGoogleDrive = getJsonScriptData("handrive-current-dir-google-drive", null);
 
         async function promptCommitMessage(targetPath) {
             return requestCommitMessageDialog({
@@ -3164,6 +3323,8 @@
                 share_is_inherited: currentDirShareIsInherited,
                 write_acl_labels: Array.isArray(currentDirWriteAclLabels) ? currentDirWriteAclLabels : [],
                 git_repo: currentDirGitRepo,
+                is_google_drive: currentDirIsGoogleDrive,
+                google_drive: currentDirGoogleDrive,
             },
             selectedPath: "",
             selectedPaths: new Set(),
@@ -3181,6 +3342,8 @@
             openingAnimationOrder: 0,
             suppressOpeningAnimation: false,
             directoryCache: new Map(),
+            directoryLoadPromises: new Map(),
+            directoryCacheMaxEntries: 120,
             directoryMetaCache: new Map(),
             aclOptionsLoaded: false,
             aclOptions: {
@@ -3201,6 +3364,7 @@
             hoverExpandTimerId: null,
             hoverExpandPath: "",
             previewCache: new Map(),
+            previewCacheMaxEntries: 30,
             previewRequestToken: 0,
             activePreviewPath: "",
             activeRenderedPreviewPath: "",
@@ -3228,6 +3392,7 @@
 
         const githubRepoLabelByPath = new Map();
         const githubRepoLabelById = new Map();
+        const googleDriveLabelByPath = new Map();
 
         function normalizeGithubRepoId(repoId) {
             const idText = String(repoId || "").trim();
@@ -3361,6 +3526,13 @@
                 return registeredLabel;
             }
 
+            const entry = state.entryByPath.get(normalizedPath);
+            const entryLabel = resolveGithubRepoLabelFromEntry(entry);
+            if (entryLabel) {
+                registerGithubRepoLabel(normalizedPath, entryLabel);
+                return entryLabel;
+            }
+
             const repoRootPath = resolveGithubVirtualRootPath(normalizedPath);
             if (repoRootPath && normalizedPath === repoRootPath) {
                 const idLabel = githubRepoLabelById.get(resolveGithubRepoIdFromVirtualPath(repoRootPath));
@@ -3403,8 +3575,247 @@
             });
         }
 
+        function resolveGoogleDriveLabelFromEntry(entry) {
+            if (!entry || !entry.google_drive) {
+                return "";
+            }
+            return String(entry.google_drive.name || entry.name || "").trim();
+        }
+
+        function isGoogleDriveRootMeta(meta) {
+            return Boolean(meta && meta.is_google_drive && meta.google_drive && meta.google_drive.is_root);
+        }
+
+        function isGoogleDriveRootEntry(entry) {
+            return Boolean(entry && entry.type === "dir" && entry.google_drive && entry.google_drive.is_root);
+        }
+
+        function resolveGoogleDriveLabelFromMeta(meta) {
+            if (!meta || !meta.google_drive) {
+                return "";
+            }
+            return String(meta.google_drive.name || "").trim();
+        }
+
+        function registerGoogleDriveLabel(pathValue, label) {
+            const normalizedPath = normalizePath(pathValue, true);
+            const normalizedLabel = String(label || "").trim();
+            if (!normalizedPath || !normalizedLabel) {
+                return;
+            }
+            googleDriveLabelByPath.set(normalizedPath, normalizedLabel);
+        }
+
+        function registerGoogleDriveLabelsFromEntries(entries) {
+            if (!Array.isArray(entries)) {
+                return;
+            }
+            entries.forEach(function (entry) {
+                const label = resolveGoogleDriveLabelFromEntry(entry);
+                if (label && entry && entry.path) {
+                    registerGoogleDriveLabel(entry.path, label);
+                }
+            });
+        }
+
+        function registerGoogleDriveLabelFromMeta(meta) {
+            const safeMeta = meta || {};
+            const label = resolveGoogleDriveLabelFromMeta(safeMeta);
+            if (!label) {
+                return;
+            }
+            registerGoogleDriveLabel(safeMeta.path || state.currentDir, label);
+        }
+
+        function resolveGoogleDriveBreadcrumbLabel(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            if (!normalizedPath) {
+                return "";
+            }
+            const registeredLabel = googleDriveLabelByPath.get(normalizedPath);
+            if (registeredLabel) {
+                return registeredLabel;
+            }
+            const entry = state.entryByPath.get(normalizedPath);
+            const entryLabel = resolveGoogleDriveLabelFromEntry(entry);
+            if (entryLabel) {
+                registerGoogleDriveLabel(normalizedPath, entryLabel);
+                return entryLabel;
+            }
+            const cachedMeta = state.directoryMetaCache.get(normalizedPath);
+            const cachedLabel = resolveGoogleDriveLabelFromMeta(cachedMeta);
+            if (cachedLabel) {
+                registerGoogleDriveLabel(normalizedPath, cachedLabel);
+                return cachedLabel;
+            }
+            const currentMeta = state.currentDirMeta || {};
+            const currentPath = normalizePath(currentMeta.path || state.currentDir, true);
+            const currentLabel = resolveGoogleDriveLabelFromMeta(currentMeta);
+            if (currentLabel && currentPath === normalizedPath) {
+                registerGoogleDriveLabel(currentPath, currentLabel);
+                return currentLabel;
+            }
+            return "";
+        }
+
+        function applyGoogleDriveBreadcrumbLabels(crumbs) {
+            if (!Array.isArray(crumbs)) {
+                return [];
+            }
+            return crumbs.map(function (crumb) {
+                const googleLabel = resolveGoogleDriveBreadcrumbLabel(crumb && crumb.path);
+                if (!googleLabel) {
+                    return crumb;
+                }
+                return Object.assign({}, crumb, { label: googleLabel });
+            });
+        }
+
+        function applyVirtualBreadcrumbLabels(crumbs) {
+            return applyGoogleDriveBreadcrumbLabels(applyGithubBreadcrumbLabels(crumbs));
+        }
+
+        function makeReadableUrlSegment(value, fallback) {
+            return String(value || fallback || "item").trim().replace(/[\\/]/g, "-") || String(fallback || "item");
+        }
+
+        function makeReadableUrlIdSegment(label, idValue, fallback) {
+            const labelText = makeReadableUrlSegment(label, fallback);
+            const idText = String(idValue || "").trim();
+            return idText ? labelText + "~" + idText : labelText;
+        }
+
+        function resolveGithubRepoUrlMetaFromGitRepo(gitRepo) {
+            if (!gitRepo || gitRepo.provider !== "github") {
+                return null;
+            }
+            const fullName = String(gitRepo.full_name || "").trim();
+            const fullNameParts = fullName.split("/");
+            const owner = String(gitRepo.owner_username || gitRepo.owner || fullNameParts[0] || "").trim();
+            const name = String(gitRepo.repo_name || gitRepo.name || fullNameParts[1] || fullName || "").trim();
+            if (!owner || !name) {
+                return null;
+            }
+            return {
+                id: resolveGithubRepoIdFromGitRepo(gitRepo),
+                owner: owner,
+                name: name,
+            };
+        }
+
+        function resolveGithubRepoUrlMetaFromEntry(entry) {
+            if (!entry) {
+                return null;
+            }
+            if (entry.github_repo) {
+                return {
+                    id: normalizeGithubRepoId(entry.github_repo.id),
+                    owner: String(entry.github_repo.owner || "").trim(),
+                    name: String(entry.github_repo.name || entry.name || "").trim(),
+                };
+            }
+            return resolveGithubRepoUrlMetaFromGitRepo(entry.git_repo);
+        }
+
+        function resolveGithubRepoUrlMeta(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            const repoId = resolveGithubRepoIdFromVirtualPath(normalizedPath);
+            const entry = state.entryByPath.get(normalizedPath);
+            const entryMeta = resolveGithubRepoUrlMetaFromEntry(entry);
+            if (entryMeta && entryMeta.owner && entryMeta.name) {
+                return entryMeta;
+            }
+            const cachedMeta = state.directoryMetaCache.get(normalizedPath);
+            const cachedUrlMeta = resolveGithubRepoUrlMetaFromGitRepo(cachedMeta && cachedMeta.git_repo);
+            if (cachedUrlMeta) {
+                return cachedUrlMeta;
+            }
+            const currentMeta = state.currentDirMeta || {};
+            const currentRepoRootPath = resolveGithubVirtualRootPath(currentMeta.path || state.currentDir);
+            const currentUrlMeta = resolveGithubRepoUrlMetaFromGitRepo(currentMeta.git_repo);
+            if (currentUrlMeta && currentRepoRootPath && normalizedPath === currentRepoRootPath) {
+                return currentUrlMeta;
+            }
+            if (repoId) {
+                const label = githubRepoLabelById.get(repoId);
+                if (label) {
+                    return { id: repoId, owner: "github", name: label };
+                }
+            }
+            return null;
+        }
+
+        function resolveGoogleDriveRootPath(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            const parts = normalizedPath.split("/").filter(Boolean);
+            const rootIndex = parts.findIndex(function (part) {
+                return /^\.google-drive-\d+$/.test(part);
+            });
+            return rootIndex < 0 ? "" : parts.slice(0, rootIndex + 1).join("/");
+        }
+
+        function resolveGoogleDriveMappingIdFromRoot(rootPath) {
+            const rootPart = String(rootPath || "").split("/").filter(Boolean).slice(-1)[0] || "";
+            const match = /^\.google-drive-(\d+)$/.exec(rootPart);
+            return match ? match[1] : "";
+        }
+
+        function toReadableVirtualUrlPath(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            if (!normalizedPath) {
+                return normalizedPath;
+            }
+            const parts = normalizedPath.split("/").filter(Boolean);
+            const githubRootPath = resolveGithubVirtualRootPath(normalizedPath);
+            if (githubRootPath) {
+                const rootParts = githubRootPath.split("/").filter(Boolean);
+                const repoMeta = resolveGithubRepoUrlMeta(githubRootPath);
+                if (repoMeta && repoMeta.owner && repoMeta.name) {
+                    const tailParts = parts.slice(rootParts.length);
+                    if (tailParts.length) {
+                        const branchLabel = decodeBreadcrumbLabel(tailParts[0]);
+                        if (branchLabel && branchLabel.indexOf("/") < 0) {
+                            tailParts[0] = branchLabel;
+                        }
+                    }
+                    return rootParts.slice(0, -1).concat([
+                        "github",
+                        makeReadableUrlSegment(repoMeta.owner, "owner"),
+                        makeReadableUrlSegment(repoMeta.name, "repo"),
+                    ], tailParts).join("/");
+                }
+            }
+
+            const googleRootPath = resolveGoogleDriveRootPath(normalizedPath);
+            if (googleRootPath) {
+                const rootParts = googleRootPath.split("/").filter(Boolean);
+                const mappingId = resolveGoogleDriveMappingIdFromRoot(googleRootPath);
+                const rootLabel = resolveGoogleDriveBreadcrumbLabel(googleRootPath) || "Google Drive";
+                const publicParts = rootParts.slice(0, -1).concat([
+                    "google-drive",
+                    makeReadableUrlIdSegment(rootLabel, mappingId, "Google Drive"),
+                ]);
+                const tailParts = parts.slice(rootParts.length);
+                let accumulatedPath = googleRootPath;
+                tailParts.forEach(function (part) {
+                    const idValue = decodeBreadcrumbLabel(part);
+                    accumulatedPath += "/" + part;
+                    const label = resolveGoogleDriveBreadcrumbLabel(accumulatedPath) || idValue || "file";
+                    publicParts.push(makeReadableUrlIdSegment(label, idValue, "file"));
+                });
+                return publicParts.join("/");
+            }
+            return normalizedPath;
+        }
+
+        window.HandriveUrlPathResolver = {
+            toUrlPath: toReadableVirtualUrlPath,
+        };
+
         registerGithubRepoLabelsFromEntries(initialEntries);
         registerGithubRepoLabelFromMeta(state.currentDirMeta);
+        registerGoogleDriveLabelsFromEntries(initialEntries);
+        registerGoogleDriveLabelFromMeta(state.currentDirMeta);
 
         let activeListEditorSuggestions = [];
         let activeListEditorSuggestionIndex = -1;
@@ -4541,6 +4952,9 @@
         }
 
         function isEditableHandriveFileEntry(entry) {
+            if (entry && entry.google_drive && entry.google_drive.can_edit_content === false) {
+                return false;
+            }
             return !nonEditableMediaExtensions.has(getEntryFileExtension(entry))
                 || isImageEditorEntry(entry)
                 || isVideoEditorEntry(entry)
@@ -4565,6 +4979,9 @@
                 return explicitLabel;
             }
             if (safeEntry.type === "dir") {
+                if (safeEntry.google_drive && safeEntry.google_drive.is_root) {
+                    return "Google Drive";
+                }
                 if (safeEntry.github_repo) {
                     return "GitHub";
                 }
@@ -4617,15 +5034,24 @@
 
         function resolveEntryCommitMeta(entry) {
             const safeEntry = entry || {};
+            if (safeEntry.git_branch_root) {
+                return "";
+            }
             return String(safeEntry.git_commit_id || safeEntry.git_commit_hash || safeEntry.git_commit_message || "").trim();
         }
 
         function resolveEntryCommitSubject(entry) {
+            if (entry && entry.git_branch_root) {
+                return "";
+            }
             return String(entry && entry.git_commit_message || "").trim();
         }
 
         function resolveEntryIdMeta(entry) {
             const safeEntry = entry || {};
+            if (safeEntry.git_branch_root) {
+                return "";
+            }
             const commitAuthor = String(safeEntry.git_commit_author_username || "").trim();
             if (commitAuthor) {
                 return commitAuthor;
@@ -4633,6 +5059,9 @@
             const repoMeta = safeEntry.git_repo || safeEntry.git_repo_meta || null;
             if (repoMeta && !repoMeta.is_owner) {
                 return String(repoMeta.owner_username || "").trim();
+            }
+            if (safeEntry.google_drive) {
+                return "";
             }
             if (safeEntry.github_repo) {
                 return String(safeEntry.github_repo.owner || "").trim();
@@ -4728,19 +5157,22 @@
             }
             const safeEntry = entry || {};
             if (safeEntry.type === "dir") {
+                if (safeEntry.google_drive) {
+                    return "000:google-drive";
+                }
                 if (safeEntry.github_repo || (safeEntry.git_repo && safeEntry.git_repo.provider === "github")) {
-                    return "000:github";
+                    return "001:github";
                 }
                 if (safeEntry.git_repo) {
-                    return "001:repo";
+                    return "002:repo";
                 }
                 if (safeEntry.git_branch_root) {
-                    return "002:branch";
+                    return "003:branch";
                 }
                 if (safeEntry.is_map_folder) {
-                    return "003:map-folder";
+                    return "004:map-folder";
                 }
-                return "004:folder";
+                return "005:folder";
             }
             const extension = getEntryFileExtension(safeEntry) || getPathFileExtension(safeEntry.path || safeEntry.name || "");
             const normalizedExtension = String(extension || "").replace(/^\./, "").toLocaleLowerCase();
@@ -4934,8 +5366,24 @@
 
         function setPreviewPlaceholder(message) {
             void releasePreviewVideoPlayers(previewContent);
+            setPreviewBodyLoading(false);
             previewSetPlaceholder(previewContent, escapeHtml, message);
             releasePreviewBodyHeightAfterPortraitLoading();
+        }
+
+        function setPreviewBodyLoading(isLoading) {
+            const previewBody = getPreviewBodyElement();
+            if (!previewBody) {
+                return;
+            }
+            previewBody.classList.toggle("is-loading", isLoading);
+            previewBody.setAttribute("aria-busy", isLoading ? "true" : "false");
+            if (isLoading) {
+                previewBody.scrollTop = 0;
+            }
+            if (previewBodyLoadingOverlay) {
+                previewBodyLoadingOverlay.hidden = !isLoading;
+            }
         }
 
         function setPreviewLoading() {
@@ -4945,10 +5393,24 @@
             previewCancelScrollIntoView({ freezePosition: true });
             lockPreviewBodyHeightForPortraitLoading();
             void releasePreviewVideoPlayers(previewContent);
-            applyRenderedContentModeClass(previewContent, "plain_text", "handrive-plain-text");
-            previewContent.innerHTML = '<div class="handrive-list-preview-loading" role="status" aria-label="' +
-                escapeHtml(t("list_preview_loading", "미리보기를 불러오는 중...")) +
-                '"><span class="handrive-list-preview-loading-spinner" aria-hidden="true"></span></div>';
+            setPreviewBodyLoading(true);
+        }
+
+        function ensureListMediaEditorScript(kind) {
+            const normalizedKind = String(kind || "").trim().toLowerCase();
+            const scriptUrl = normalizedKind === "image"
+                ? imageEditorScriptUrl
+                : normalizedKind === "video"
+                    ? videoEditorScriptUrl
+                    : normalizedKind === "audio"
+                        ? audioEditorScriptUrl
+                        : "";
+            if (normalizedKind === "video") {
+                return loadVideoPlayerStack().then(function () {
+                    return loadLazyScriptOnce(scriptUrl, getMediaEditorGlobalName(normalizedKind));
+                });
+            }
+            return loadLazyScriptOnce(scriptUrl, getMediaEditorGlobalName(normalizedKind));
         }
 
         function updateEditorHighlight() {
@@ -5018,7 +5480,7 @@
             setupEditorEvents(entry);
         }
 
-        function switchToImageEditor(entry) {
+        async function switchToImageEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
 
@@ -5049,6 +5511,17 @@
 
             // ImageEditor 초기화
             const imageServeUrl = buildDownloadUrl(entry.path);
+            if (editorSaveButton) editorSaveButton.disabled = true;
+            setListEditorSaving(true);
+            try {
+                await ensureListMediaEditorScript("image");
+            } catch (error) {
+                setListEditorSaving(false);
+                if (editorSaveButton) editorSaveButton.disabled = false;
+                alertError(error);
+                return;
+            }
+            setListEditorSaving(false);
             if (window.HandriveImageEditor) {
                 window.HandriveImageEditor.init({
                     entry: entry,
@@ -5064,9 +5537,10 @@
             scheduleListEditorHorizontalScrollReset();
 
             setupEditorEvents(entry);
+            if (editorSaveButton) editorSaveButton.disabled = false;
         }
 
-        function switchToVideoEditor(entry) {
+        async function switchToVideoEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
 
@@ -5093,6 +5567,17 @@
             syncSearchFormVisibility();
 
             const videoServeUrl = buildDownloadUrl(entry.path);
+            if (editorSaveButton) editorSaveButton.disabled = true;
+            setListEditorSaving(true);
+            try {
+                await ensureListMediaEditorScript("video");
+            } catch (error) {
+                setListEditorSaving(false);
+                if (editorSaveButton) editorSaveButton.disabled = false;
+                alertError(error);
+                return;
+            }
+            setListEditorSaving(false);
             if (window.HandriveVideoEditor) {
                 window.HandriveVideoEditor.init({
                     entry: entry,
@@ -5110,9 +5595,10 @@
             scheduleListEditorHorizontalScrollReset();
 
             setupEditorEvents(entry);
+            if (editorSaveButton) editorSaveButton.disabled = false;
         }
 
-        function switchToAudioEditor(entry) {
+        async function switchToAudioEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
 
@@ -5139,6 +5625,17 @@
             syncSearchFormVisibility();
 
             const audioServeUrl = buildDownloadUrl(entry.path);
+            if (editorSaveButton) editorSaveButton.disabled = true;
+            setListEditorSaving(true);
+            try {
+                await ensureListMediaEditorScript("audio");
+            } catch (error) {
+                setListEditorSaving(false);
+                if (editorSaveButton) editorSaveButton.disabled = false;
+                alertError(error);
+                return;
+            }
+            setListEditorSaving(false);
             if (window.HandriveAudioEditor) {
                 window.HandriveAudioEditor.init({
                     entry: entry,
@@ -5156,6 +5653,7 @@
             scheduleListEditorHorizontalScrollReset();
 
             setupEditorEvents(entry);
+            if (editorSaveButton) editorSaveButton.disabled = false;
         }
 
         function switchToPreview() {
@@ -5382,6 +5880,7 @@
                                     return null;
                                 }
                             }
+                            setListEditorSaving(true);
                             return requestJson(renameApiUrl, buildPostOptions({
                                 path: entry.path,
                                 new_name: imageFilename,
@@ -5395,6 +5894,7 @@
                             })
                             .catch(alertError)
                             .finally(function () {
+                                setListEditorSaving(false);
                                 editorSaveButton.disabled = false;
                                 editorSaveButton.textContent = origText;
                             });
@@ -5402,17 +5902,19 @@
                     }
                     editorSaveButton.disabled = true;
                     editorSaveButton.textContent = savingText;
+                    setListEditorSaving(true);
                     window.HandriveImageEditor.saveToServer(
                         imageEditorSaveUrl,
                         csrfToken,
                         entry.path,
                         function (result) {
+                            setListEditorSaving(false);
                             editorSaveButton.disabled = false;
                             editorSaveButton.textContent = origText;
                             if (result.ok) {
                                 handleMediaEditorSaved(result, { openPreview: true });
                             } else {
-                                alertError(new Error(result.error || t("image_editor_save_error", "저장 실패")));
+                                alertError(new Error(selectServerMessage(result, t("image_editor_save_error", "저장 실패"))));
                             }
                         },
                         { filename: imageFilename }
@@ -5425,17 +5927,19 @@
                     const origText = editorSaveButton.textContent;
                     editorSaveButton.disabled = true;
                     editorSaveButton.textContent = savingText;
+                    setListEditorSaving(true);
                     window.HandriveVideoEditor.saveToServer(
                         videoEditorSaveUrl,
                         csrfToken,
                         entry.path,
                         function (result) {
+                            setListEditorSaving(false);
                             editorSaveButton.disabled = false;
                             editorSaveButton.textContent = origText;
                             if (result && result.ok) {
                                 handleMediaEditorSaved(result);
                             } else {
-                                alertError(new Error((result && result.error) || t("video_editor_save_error", "비디오 저장 실패")));
+                                alertError(new Error(selectServerMessage(result, t("video_editor_save_error", "비디오 저장 실패"))));
                             }
                         }
                     );
@@ -5447,17 +5951,19 @@
                     const origText = editorSaveButton.textContent;
                     editorSaveButton.disabled = true;
                     editorSaveButton.textContent = savingText;
+                    setListEditorSaving(true);
                     window.HandriveAudioEditor.saveToServer(
                         audioEditorSaveUrl,
                         csrfToken,
                         entry.path,
                         function (result) {
+                            setListEditorSaving(false);
                             editorSaveButton.disabled = false;
                             editorSaveButton.textContent = origText;
                             if (result && result.ok) {
                                 handleMediaEditorSaved(result);
                             } else {
-                                alertError(new Error((result && result.error) || t("audio_editor_save_error", "오디오 저장 실패")));
+                                alertError(new Error(selectServerMessage(result, t("audio_editor_save_error", "오디오 저장 실패"))));
                             }
                         }
                     );
@@ -5511,6 +6017,22 @@
             return editorResolveFilenameAndExtension(rawFilename, sourcePath, t);
         }
 
+        function setListEditorSaving(isSaving) {
+            if (!editorPanel) {
+                return;
+            }
+            editorPanel.classList.toggle("is-saving", isSaving);
+            editorPanel.setAttribute("aria-busy", isSaving ? "true" : "false");
+            if (editorSavingOverlay) {
+                editorSavingOverlay.hidden = !isSaving;
+            }
+            [editorFilenameInput, editorContentInput, editorCancelButton].forEach(function (control) {
+                if (control) {
+                    control.disabled = isSaving;
+                }
+            });
+        }
+
         async function saveEditorContent(entry) {
             if (!editorContentInput || !editorFilenameInput) {
                 return;
@@ -5524,6 +6046,7 @@
             const resolved = resolveListEditorFilenameAndExtension(editorFilenameInput.value, entry.path);
             const sourcePath = normalizePath(entry.path, false);
             const targetDir = getParentDirectory(sourcePath);
+            let editorSavingShown = false;
 
             // 중복 저장 방지를 위해 저장 중 버튼 비활성화
             if (editorSaveButton) {
@@ -5545,6 +6068,8 @@
                     }
                     payload.commit_message = commitMessage;
                 }
+                setListEditorSaving(true);
+                editorSavingShown = true;
                 const data = await requestJson(saveApiUrl, buildPostOptions(payload));
                 listMarkdownUploadedImagePaths = [];
 
@@ -5579,6 +6104,9 @@
                 await loadPreviewForEntry(savedEntry);
                 await updatePreviewNavButtons(savedEntry);
             } finally {
+                if (editorSavingShown) {
+                    setListEditorSaving(false);
+                }
                 if (editorSaveButton) {
                     editorSaveButton.disabled = false;
                 }
@@ -5699,6 +6227,7 @@
 
         function clearPreviewPane() {
             const previousActivePreviewPath = state.activePreviewPath;
+            setPreviewBodyLoading(false);
             state.activePreviewPath = "";
             state.activeRenderedPreviewPath = "";
             state.activePreviewRenderMode = "";
@@ -5799,6 +6328,7 @@
         }
 
         function renderPreviewHtml(entry, html, renderMode, renderClass) {
+            setPreviewBodyLoading(false);
             renderPreviewHtmlFlow({
                 applyHandriveCodeHighlighting: applyHandriveCodeHighlighting,
                 applyRenderedContentModeClass: applyRenderedContentModeClass,
@@ -5818,7 +6348,7 @@
                 t: t,
             });
             bindHandrivePdfFrameLoading(previewContent);
-            initializePreviewVideoPlayers(previewContent);
+            initializePreviewVideoPlayers(previewContent).catch(alertError);
             releasePreviewBodyHeightWhenRendered(renderMode);
         }
 
@@ -6146,7 +6676,7 @@
                     },
                 ];
                 if (effectivePath === normalizedSharedRootPath) {
-                    return applyGithubBreadcrumbLabels(crumbs);
+                    return applyVirtualBreadcrumbLabels(crumbs);
                 }
                 const childPath = effectivePath.slice(normalizedSharedRootPath.length + 1);
                 const childParts = childPath.split("/").filter(Boolean);
@@ -6159,9 +6689,9 @@
                         isCurrent: index === childParts.length - 1,
                     });
                 });
-                return applyGithubBreadcrumbLabels(crumbs);
+                return applyVirtualBreadcrumbLabels(crumbs);
             }
-            return applyGithubBreadcrumbLabels(buildNavigationBreadcrumbItems(pathValue, {
+            return applyVirtualBreadcrumbLabels(buildNavigationBreadcrumbItems(pathValue, {
                 effectiveRootLabel: effectiveRootLabel,
                 isSuperuser: isSuperuser,
                 normalizePath: normalizePath,
@@ -6198,12 +6728,14 @@
             });
             registerGithubRepoLabelsFromEntries(entries);
             registerGithubRepoLabelFromMeta(state.directoryMetaCache.get(normalizePath(dirPath, true)));
+            registerGoogleDriveLabelsFromEntries(entries);
+            registerGoogleDriveLabelFromMeta(state.directoryMetaCache.get(normalizePath(dirPath, true)));
             return entries;
         }
 
-        const delayedEntryRowLoadingCounts = new WeakMap();
+        const entryRowLoadingCounts = new WeakMap();
 
-        function startDelayedEntryRowLoading(entryOrPath, options) {
+        function startEntryRowLoading(entryOrPath, options) {
             const settings = options || {};
             const row = settings.row || state.entryRowByPath.get(
                 normalizePath(
@@ -6216,40 +6748,27 @@
             if (!row) {
                 return null;
             }
-            let active = false;
-            let cancelled = false;
-            const timerId = window.setTimeout(function () {
-                if (cancelled) {
-                    return;
-                }
-                active = true;
-                const nextCount = (delayedEntryRowLoadingCounts.get(row) || 0) + 1;
-                delayedEntryRowLoadingCounts.set(row, nextCount);
-                if (nextCount === 1) {
-                    row.classList.add("is-delayed-loading");
-                    row.setAttribute("aria-busy", "true");
-                }
-            }, 500);
+            const nextCount = (entryRowLoadingCounts.get(row) || 0) + 1;
+            entryRowLoadingCounts.set(row, nextCount);
+            if (nextCount === 1) {
+                row.classList.add("is-row-loading");
+                row.setAttribute("aria-busy", "true");
+            }
 
-            return function stopDelayedEntryRowLoading() {
-                cancelled = true;
-                window.clearTimeout(timerId);
-                if (!active) {
-                    return;
-                }
-                const nextCount = Math.max(0, (delayedEntryRowLoadingCounts.get(row) || 1) - 1);
+            return function stopEntryRowLoading() {
+                const nextCount = Math.max(0, (entryRowLoadingCounts.get(row) || 1) - 1);
                 if (nextCount > 0) {
-                    delayedEntryRowLoadingCounts.set(row, nextCount);
+                    entryRowLoadingCounts.set(row, nextCount);
                     return;
                 }
-                delayedEntryRowLoadingCounts.delete(row);
-                row.classList.remove("is-delayed-loading");
+                entryRowLoadingCounts.delete(row);
+                row.classList.remove("is-row-loading");
                 row.removeAttribute("aria-busy");
             };
         }
 
-        async function withDelayedEntryRowLoading(entryOrPath, task, options) {
-            const stopLoading = startDelayedEntryRowLoading(entryOrPath, options);
+        async function withEntryRowLoading(entryOrPath, task, options) {
+            const stopLoading = startEntryRowLoading(entryOrPath, options);
             try {
                 return await task();
             } finally {
@@ -6265,6 +6784,7 @@
             if (cachedMeta) {
                 applyCurrentDirectoryMeta(cachedMeta);
                 registerGithubRepoLabelFromMeta(cachedMeta);
+                registerGoogleDriveLabelFromMeta(cachedMeta);
             }
         }
 
@@ -6334,7 +6854,7 @@
             state.navigationGeneration += 1;
             const navigationGeneration = state.navigationGeneration;
             const stopRowLoading = settings.sourceEntry || settings.sourceRow
-                ? startDelayedEntryRowLoading(settings.sourceEntry || normalizedDirPath, { row: settings.sourceRow || null })
+                ? startEntryRowLoading(settings.sourceEntry || normalizedDirPath, { row: settings.sourceRow || null })
                 : null;
             resetDirectoryScopedUi();
             setListLoading(!stopRowLoading);
@@ -6464,7 +6984,9 @@
                 return "/handrive";
             }
             return formatNavigationPathLabel(normalized, {
-                buildBreadcrumbItems: buildBreadcrumbItems,
+                buildBreadcrumbItems: function (nextPath) {
+                    return buildBreadcrumbItems(nextPath);
+                },
                 emptyLabel: "/handrive",
                 leadingSlash: true,
                 normalizePath: normalizePath,
@@ -6692,6 +7214,41 @@
             return Array.isArray(state.draggingEntries) && state.draggingEntries.length > 0;
         }
 
+        function isGoogleDriveEntry(entry) {
+            return Boolean(entry && entry.google_drive);
+        }
+
+        function isGoogleDrivePath(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            if (!normalizedPath) {
+                return false;
+            }
+            const cachedMeta = state.directoryMetaCache.get(normalizedPath);
+            if (cachedMeta && cachedMeta.is_google_drive) {
+                return true;
+            }
+            const currentMetaPath = normalizePath((state.currentDirMeta || {}).path || state.currentDir, true);
+            if (currentMetaPath === normalizedPath && state.currentDirMeta && state.currentDirMeta.is_google_drive) {
+                return true;
+            }
+            const entry = state.entryByPath.get(normalizedPath);
+            if (isGoogleDriveEntry(entry)) {
+                return true;
+            }
+            return normalizedPath.indexOf("/.google-drive-") !== -1 || normalizedPath.indexOf(".google-drive-") === 0;
+        }
+
+        function isGoogleDriveUploadDrop(targetDirPath) {
+            const targetIsGoogleDrive = isGoogleDrivePath(targetDirPath);
+            return !targetIsGoogleDrive && Array.isArray(state.draggingEntries) && state.draggingEntries.length > 0 && state.draggingEntries.every(function (entry) {
+                return isGoogleDriveEntry(entry) && entry.type === "file";
+            });
+        }
+
+        function resolveDriveDropEffect(targetDirPath) {
+            return isGoogleDriveUploadDrop(targetDirPath) ? "copy" : "move";
+        }
+
         function resolveFileDropHighlightElement(targetNode) {
             if (!(targetNode instanceof Element)) {
                 return null;
@@ -6907,7 +7464,7 @@
                 title: t("delete_button", "삭제"),
                 message: formatTemplate(
                     t("js_confirm_delete_entry", "정말 삭제할까요?\n{path}"),
-                    { path: item.savedPath }
+                    { path: getHandrivePathLabel(item.savedPath) }
                 ),
                 cancelText: t("cancel", "취소"),
                 confirmText: t("delete_button", "삭제")
@@ -7057,9 +7614,7 @@
                             resolve(payload);
                             return;
                         }
-                        let message = payload && payload.error
-                            ? payload.error
-                            : t("job_status_failed", "실패");
+                        let message = selectServerMessage(payload, t("job_status_failed", "실패"));
                         if (!payload || !payload.error) {
                             if (xhr.status === 413) {
                                 message = t("upload_error_file_too_large", "단일 용량 초과");
@@ -7500,6 +8055,19 @@
             if (hasArchiveSources && (hasNormalSources || !archiveExtractApiUrl || isArchiveVirtualPath(targetPath))) {
                 return false;
             }
+            const targetIsGoogleDrive = isGoogleDrivePath(targetPath);
+            const googleDriveSources = state.draggingEntries.filter(isGoogleDriveEntry);
+            if (googleDriveSources.length > 0 && googleDriveSources.length !== state.draggingEntries.length) {
+                return false;
+            }
+            if (googleDriveSources.length > 0 && !targetIsGoogleDrive && googleDriveSources.some(function (entry) {
+                return entry.type !== "file";
+            })) {
+                return false;
+            }
+            if (googleDriveSources.length === 0 && targetIsGoogleDrive && hasNormalSources) {
+                return false;
+            }
             let hasMovableSource = false;
 
             for (let index = 0; index < state.draggingEntries.length; index += 1) {
@@ -7593,7 +8161,7 @@
         }
 
         function activateDriveMoveDropTarget(event, targetDirPath, highlightElement) {
-            activateDropPreviewTarget(event, targetDirPath, highlightElement, "move", "drive");
+            activateDropPreviewTarget(event, targetDirPath, highlightElement, resolveDriveDropEffect(targetDirPath), "drive");
         }
 
         function bindDropTarget(targetElement, targetDirPath, options) {
@@ -7758,6 +8326,9 @@
             ) {
                 return currentMeta.git_repo.repo_name;
             }
+            if (currentMeta && currentMeta.is_google_drive && currentMeta.google_drive && currentMeta.google_drive.name) {
+                return String(currentMeta.google_drive.name || "").trim();
+            }
             const normalized = normalizePath(pathValue, true);
             if (!normalized) {
                 return effectiveRootLabel;
@@ -7789,6 +8360,7 @@
             root.dataset.currentDirCanWriteChildren = nextMeta.can_write_children ? "1" : "0";
             root.dataset.currentDirHasChildren = nextMeta.has_children ? "1" : "0";
             root.dataset.currentDirIsGitRepoRoot = nextMeta.is_git_repo_root ? "1" : "0";
+            root.dataset.currentDirIsGoogleDrive = nextMeta.is_google_drive ? "1" : "0";
             root.dataset.currentDirRequiresCommitMessage = nextMeta.requires_commit_message ? "1" : "0";
             root.dataset.currentDirGitBranchRoot = nextMeta.git_branch_root ? "1" : "0";
             root.dataset.currentDirGitCommitId = nextMeta.git_commit_id || "";
@@ -7800,6 +8372,8 @@
             root.dataset.currentDirShareUrl = nextMeta.share_url || "";
             root.dataset.currentDirShareIsInherited = nextMeta.share_is_inherited ? "1" : "0";
             currentDirGitRepo = nextMeta.git_repo || null;
+            currentDirGoogleDrive = nextMeta.google_drive || null;
+            registerGoogleDriveLabelFromMeta(nextMeta);
         }
 
         function buildCurrentDirectoryEntry() {
@@ -7811,10 +8385,15 @@
                 is_root: Boolean(currentDirMeta.is_root),
                 can_edit: Boolean(currentDirMeta.can_edit),
                 can_write_children: Boolean(currentDirMeta.can_write_children),
-                can_delete: Boolean(currentDirMeta.git_repo && currentDirMeta.is_git_repo_root),
+                can_delete: Boolean(
+                    (currentDirMeta.git_repo && currentDirMeta.is_git_repo_root) ||
+                    (currentDirMeta.is_google_drive && currentDirMeta.can_delete)
+                ),
                 requires_commit_message: Boolean(currentDirMeta.requires_commit_message),
                 git_repo: currentDirMeta.is_git_repo_root ? (currentDirMeta.git_repo || null) : null,
                 git_repo_meta: currentDirMeta.git_repo || null,
+                google_drive: currentDirMeta.google_drive || null,
+                is_google_drive: Boolean(currentDirMeta.is_google_drive),
                 git_branch_root: Boolean(currentDirMeta.git_branch_root),
                 is_git_virtual: Boolean(currentDirMeta.git_repo || currentDirMeta.git_branch_root || currentDirMeta.requires_commit_message),
                 git_commit_id: currentDirMeta.git_commit_id || "",
@@ -8293,6 +8872,7 @@
                 isDir: true,
                 isRootAvatar: Boolean(currentDirMeta.is_root),
                 accountProfileImageUrl: accountProfileImageUrl,
+                isGoogleDrive: isGoogleDriveRootMeta(currentDirMeta),
                 isGithubRepo: Boolean(currentDirMeta.is_git_repo_root && currentDirMeta.git_repo && currentDirMeta.git_repo.provider === "github"),
                 isRepo: Boolean(currentDirMeta.is_git_repo_root),
                 isBranch: Boolean(currentDirMeta.git_branch_root),
@@ -8375,7 +8955,7 @@
             return Boolean(
                 entry
                 && entry.type === "dir"
-                && (entry.git_repo || entry.github_repo || entry.git_branch_root || entry.is_git_virtual)
+                && (entry.git_repo || entry.github_repo || entry.google_drive || entry.git_branch_root || entry.is_git_virtual)
             );
         }
 
@@ -8613,6 +9193,7 @@
                 isDir: true,
                 isRootAvatar: Boolean(currentDirMeta.is_root),
                 accountProfileImageUrl: accountProfileImageUrl,
+                isGoogleDrive: isGoogleDriveRootMeta(currentDirMeta),
                 isGithubRepo: Boolean(currentDirMeta.is_git_repo_root && currentDirMeta.git_repo && currentDirMeta.git_repo.provider === "github"),
                 isRepo: Boolean(currentDirMeta.is_git_repo_root),
                 isBranch: Boolean(currentDirMeta.git_branch_root),
@@ -8633,11 +9214,7 @@
             appendCurrentDirRepoName(nameWrap, currentDirMeta.git_repo || null, {
                 showForBranchOrRepoInner: Boolean(currentDirMeta.git_branch_root || currentDirMeta.requires_commit_message),
             });
-            appendEntryMetaColumns(row, currentFolderEntry);
-            const currentDirMetaTrail = ensureEntryMetaTrail(row);
-            if (currentDirMetaTrail) {
-                currentDirMetaTrail.appendChild(createSyncCheckbox(currentFolderEntry.path, currentFolderEntry.type));
-            }
+            row.appendChild(createSyncCheckbox(currentFolderEntry.path, currentFolderEntry.type));
 
             row.addEventListener("click", function (event) {
                 if (event.button !== 0) {
@@ -8666,6 +9243,7 @@
             const fileIconKey = entry.type === "file" ? getFileIconKey(entry.path) : "";
             const typeMarker = createTypeMarker({
                 isDir: entry.type === "dir",
+                isGoogleDrive: isGoogleDriveRootEntry(entry),
                 isGithubRepo: entry.type === "dir" && entry.github_repo,
                 isRepo: entry.type === "dir" && entry.git_repo,
                 isBranch: entry.type === "dir" && entry.git_branch_root,
@@ -8684,11 +9262,7 @@
             name.textContent = entry.name;
             nameWrap.appendChild(name);
             row.appendChild(nameWrap);
-            appendEntryMetaColumns(row, entry);
-            const metaTrail = ensureEntryMetaTrail(row);
-            if (metaTrail) {
-                metaTrail.appendChild(createSyncCheckbox(entry.path, entry.type));
-            }
+            row.appendChild(createSyncCheckbox(entry.path, entry.type));
 
             row.addEventListener("click", function (event) {
                 if (event.button !== 0) {
@@ -9187,6 +9761,9 @@
             const targetPaths = entries.map(function (entry) {
                 return entry.path;
             });
+            const targetDisplayPaths = entries.map(function (entry) {
+                return getHandrivePathLabel(entry && entry.path ? entry.path : "");
+            });
             const includesRepo = entries.some(function (entry) {
                 return Boolean(entry && entry.type === "dir" && entry.git_repo);
             });
@@ -9204,7 +9781,7 @@
                         )
                         : formatTemplate(
                             t("js_confirm_delete_repo_entry", "이 Repo 폴더를 삭제하면 Forgejo 저장소도 함께 삭제됩니다.\n정말 삭제할까요?\n{path}"),
-                            { path: targetPaths[0] }
+                            { path: targetDisplayPaths[0] || targetPaths[0] }
                         ))
                     : (isMultiple
                         ? formatTemplate(
@@ -9213,7 +9790,7 @@
                         )
                         : formatTemplate(
                             t("js_confirm_delete_entry", "정말 삭제할까요?\n{path}"),
-                            { path: targetPaths[0] }
+                            { path: targetDisplayPaths[0] || targetPaths[0] }
                         )),
                 cancelText: t("cancel", "취소"),
                 confirmText: isSingleRepoDelete ? t("delete_repo_button", "Repo 삭제") : t("delete_button", "삭제")
@@ -9248,7 +9825,7 @@
                 return;
             }
 
-            await withDelayedEntryRowLoading(entry, function () {
+            await withEntryRowLoading(entry, function () {
                 return loadDirectory(folderPath);
             });
             state.expandedFolders.add(folderPath);
@@ -9272,7 +9849,7 @@
                 scheduleListColumnVisibilityAfterTreeToggle();
                 return;
             }
-            await withDelayedEntryRowLoading(entry, function () {
+            await withEntryRowLoading(entry, function () {
                 return loadDirectory(virtualPath);
             });
             state.expandedFolders.add(archivePath);
@@ -9469,6 +10046,7 @@
             const fileIconKey = entry.type === "file" ? getFileIconKey(entry.path) : "";
             const typeMarker = createTypeMarker({
                 isDir: entry.type === "dir",
+                isGoogleDrive: isGoogleDriveRootEntry(entry),
                 isGithubRepo: entry.type === "dir" && entry.github_repo,
                 isRepo: entry.type === "dir" && entry.git_repo,
                 isBranch: entry.type === "dir" && entry.git_branch_root,
@@ -9551,7 +10129,7 @@
                     clearDragOverTarget();
                     closeContextMenu();
                     if (event.dataTransfer) {
-                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.effectAllowed = draggingEntries.some(isGoogleDriveEntry) ? "copyMove" : "move";
                         event.dataTransfer.setData(
                             "text/plain",
                             draggingEntries.map(function (item) {
@@ -10365,6 +10943,7 @@
                 mapEditorBaseUrl: mapEditorBaseUrl,
                 requestJson: requestJson,
                 buildPostOptions: buildPostOptions,
+                selectServerMessage: selectServerMessage,
                 onClose: closeMapCreateModal,
                 onError: alertError,
             });
@@ -10723,7 +11302,7 @@
                 if (isInsideCurrentFileDropGroup(event.target)) {
                     event.preventDefault();
                     if (event.dataTransfer) {
-                        event.dataTransfer.dropEffect = "move";
+                        event.dataTransfer.dropEffect = resolveDriveDropEffect(state.fileDropGroupPath || state.currentDir);
                     }
                     return;
                 }
@@ -10746,7 +11325,7 @@
                 if (isInsideCurrentFileDropGroup(event.target)) {
                     event.preventDefault();
                     if (event.dataTransfer) {
-                        event.dataTransfer.dropEffect = "move";
+                        event.dataTransfer.dropEffect = resolveDriveDropEffect(state.fileDropGroupPath || state.currentDir);
                     }
                     return;
                 }
@@ -10904,6 +11483,11 @@
                 return;
             }
             refreshCurrentDirectory({ skipPreview: true }).catch(alertError);
+        });
+        window.addEventListener("handrive:google-drive-updated", function () {
+            if (root.dataset.currentDirIsRoot === "1" || root.dataset.currentDirIsGoogleDrive === "1") {
+                refreshCurrentDirectory({ skipPreview: true }).catch(alertError);
+            }
         });
 
         if (window.ResizeObserver && previewHead) {
@@ -11079,21 +11663,11 @@
         var initialSearchQuery = listSearchInput
             ? String(new URLSearchParams(window.location.search).get("q") || "").trim()
             : "";
-        setListLoading(true);
-        loadDirectory(state.currentDir)
-            .then(function () {
-                if (initialSearchQuery && listSearchInput) {
-                    listSearchInput.value = initialSearchQuery;
-                    syncSearchInputValues(initialSearchQuery, listSearchInput);
-                    return applyListSearch();
-                }
-                renderList();
-                return null;
-            })
-            .finally(function () {
-                setListLoading(false);
-            })
-            .catch(alertError);
+        if (initialSearchQuery && listSearchInput) {
+            listSearchInput.value = initialSearchQuery;
+            syncSearchInputValues(initialSearchQuery, listSearchInput);
+            applyListSearch(listSearchInput).catch(alertError);
+        }
     }
 
     function initializeViewPage() {
@@ -11123,7 +11697,7 @@
         let viewImageZoom = 1;
 
         const viewMediaNavExtensions = new Set([
-            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif",
+            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif", ".ico",
             ".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv",
         ]);
 
@@ -11300,7 +11874,7 @@
 
                 hydrateMediaAudioElements(contentArticle);
                 bindHandrivePdfFrameLoading(contentArticle);
-                initializePreviewVideoPlayers(contentArticle);
+                await initializePreviewVideoPlayers(contentArticle);
 
                 viewImageZoom = 1;
                 syncViewImageZoom();
@@ -11351,6 +11925,7 @@
 
         hydrateMediaAudioElements(contentArticle);
         bindHandrivePdfFrameLoading(contentArticle);
+        initializePreviewVideoPlayers(contentArticle).catch(alertError);
 
         viewImageZoom = 1;
         syncViewImageZoom();
@@ -11464,6 +12039,9 @@
         const imageEditorRemoveBackgroundUrl = root.dataset.imageEditorRemoveBackgroundUrl || "";
         const audioEditorSaveUrl = root.dataset.audioEditorSaveUrl || "";
         const videoEditorSaveUrl = root.dataset.videoEditorSaveUrl || "";
+        const imageEditorScriptUrl = root.dataset.imageEditorScriptUrl || "";
+        const videoEditorScriptUrl = root.dataset.videoEditorScriptUrl || "";
+        const audioEditorScriptUrl = root.dataset.audioEditorScriptUrl || "";
         const markdownImageUploadApiUrl = root.dataset.markdownImageUploadApiUrl || "";
         const markdownImageCleanupApiUrl = root.dataset.markdownImageCleanupApiUrl || "";
         const mkdirApiUrl = root.dataset.mkdirApiUrl;
@@ -11497,7 +12075,9 @@
         const saveButton = document.getElementById("handrive-save-btn");
         const createFolderButton = document.getElementById("handrive-create-folder-btn");
         const saveModal = document.getElementById("handrive-save-modal");
+        const saveModalDialog = saveModal ? saveModal.querySelector(".handrive-save-modal-dialog") : null;
         const saveModalBackdrop = document.getElementById("handrive-save-modal-backdrop");
+        const saveLoadingOverlay = document.getElementById("handrive-save-loading");
         const saveCloseButton = document.getElementById("handrive-save-close-btn");
         const saveCancelButton = document.getElementById("handrive-save-cancel-btn");
         const saveConfirmButton = document.getElementById("handrive-save-confirm-btn");
@@ -11553,6 +12133,13 @@
         const state = {
             browserDir: "",
             selectedDir: "",
+            selectedOverwritePath: "",
+            directoryCache: new Map(),
+            directoryMetaCache: new Map(),
+            directoryLoadPromises: new Map(),
+            entryByPath: new Map(),
+            browserRenderToken: 0,
+            isSaving: false,
         };
         let contentHeightRafId = null;
         let savedFilenameValue = filenameInput ? filenameInput.value : "";
@@ -11723,6 +12310,23 @@
             return "";
         }
 
+        function ensureWriteMediaEditorScript(kind) {
+            const normalizedKind = String(kind || "").trim().toLowerCase();
+            const scriptUrl = normalizedKind === "image"
+                ? imageEditorScriptUrl
+                : normalizedKind === "video"
+                    ? videoEditorScriptUrl
+                    : normalizedKind === "audio"
+                        ? audioEditorScriptUrl
+                        : "";
+            if (normalizedKind === "video") {
+                return loadVideoPlayerStack().then(function () {
+                    return loadLazyScriptOnce(scriptUrl, getMediaEditorGlobalName(normalizedKind));
+                });
+            }
+            return loadLazyScriptOnce(scriptUrl, getMediaEditorGlobalName(normalizedKind));
+        }
+
         function hasUnsavedMediaWriteChanges() {
             const editor = getActiveWriteMediaEditor();
             return Boolean(editor && typeof editor.getIsDirty === "function" && editor.getIsDirty());
@@ -11830,7 +12434,7 @@
             };
         }
 
-        function showWriteMediaSurface() {
+        async function showWriteMediaSurface() {
             if (!isMediaWriteEditor) {
                 if (imageEditorSurface) imageEditorSurface.hidden = true;
                 if (videoEditorSurface) videoEditorSurface.hidden = true;
@@ -11854,6 +12458,13 @@
                     saveButton.classList.toggle("is-dirty", Boolean(dirty));
                 }
             };
+            if (saveButton) saveButton.disabled = true;
+            try {
+                await ensureWriteMediaEditorScript(writeEditorKind);
+            } catch (error) {
+                if (saveButton) saveButton.disabled = false;
+                throw error;
+            }
             if (writeEditorKind === "image" && window.HandriveImageEditor && entry) {
                 window.HandriveImageEditor.init({
                     entry: entry,
@@ -11880,6 +12491,7 @@
                     onDirtyChange: dirtyHandler,
                 });
             }
+            if (saveButton) saveButton.disabled = false;
             scheduleWriteEditorHorizontalScrollReset();
         }
 
@@ -12334,6 +12946,67 @@
             return directorySet.has(normalized);
         }
 
+        function registerSaveEntry(entry) {
+            if (!entry || !entry.path) {
+                return;
+            }
+            const normalizedPath = normalizePath(entry.path, true);
+            if (!normalizedPath) {
+                return;
+            }
+            state.entryByPath.set(normalizedPath, entry);
+            if (entry.type === "dir") {
+                upsertDirectory(normalizedPath);
+            }
+        }
+
+        function cacheSaveDirectoryData(pathValue, entries, directoryMeta) {
+            const normalized = normalizePath(pathValue, true);
+            const safeEntries = Array.isArray(entries) ? entries : [];
+            upsertDirectory(normalized);
+            state.directoryCache.set(normalized, safeEntries);
+            if (directoryMeta && typeof directoryMeta === "object") {
+                state.directoryMetaCache.set(normalized, directoryMeta);
+            }
+            safeEntries.forEach(registerSaveEntry);
+        }
+
+        function getCachedSaveEntries(pathValue) {
+            const normalized = normalizePath(pathValue, true);
+            return state.directoryCache.get(normalized) || null;
+        }
+
+        async function ensureSaveDirectoryLoaded(pathValue) {
+            const normalized = normalizePath(pathValue, true);
+            if (state.directoryCache.has(normalized) || !listApiUrl) {
+                return getCachedSaveEntries(normalized) || [];
+            }
+            if (state.directoryLoadPromises.has(normalized)) {
+                return state.directoryLoadPromises.get(normalized);
+            }
+            const loadPromise = requestJson(appendQueryParam(appendSharedQuery(listApiUrl), "path", normalized))
+                .then(function (data) {
+                    cacheSaveDirectoryData(
+                        data && typeof data.path === "string" ? data.path : normalized,
+                        data && Array.isArray(data.entries) ? data.entries : [],
+                        data && data.directory_meta ? data.directory_meta : null
+                    );
+                    return getCachedSaveEntries(normalized) || [];
+                })
+                .finally(function () {
+                    state.directoryLoadPromises.delete(normalized);
+                });
+            state.directoryLoadPromises.set(normalized, loadPromise);
+            return loadPromise;
+        }
+
+        function invalidateSaveDirectory(pathValue) {
+            const normalized = normalizePath(pathValue, true);
+            state.directoryCache.delete(normalized);
+            state.directoryMetaCache.delete(normalized);
+            state.directoryLoadPromises.delete(normalized);
+        }
+
         function normalizeDirectoryInput() {
             return normalizePath(state.selectedDir || state.browserDir || "", true);
         }
@@ -12461,6 +13134,57 @@
                 filename: finalFilename,
                 extension: targetExtension,
             };
+        }
+
+        function buildSaveTargetPath(targetDir, filenameValue, extensionValue) {
+            const filename = String(filenameValue || "").trim();
+            if (!filename) {
+                return "";
+            }
+            const extension = normalizeFileExtensionValue(extensionValue || DOCS_DEFAULT_EXTENSION, false);
+            const fileName = filename + extension;
+            const normalizedDir = normalizePath(targetDir || "", true);
+            return normalizePath(normalizedDir ? normalizedDir + "/" + fileName : fileName, true);
+        }
+
+        function getSaveRequestOriginalPath(targetDir, filenameValue, extensionValue) {
+            const overwritePath = normalizePath(state.selectedOverwritePath || "", true);
+            if (overwritePath) {
+                return overwritePath;
+            }
+            const normalizedOriginalPath = normalizePath(originalPath || "", true);
+            if (!normalizedOriginalPath) {
+                return "";
+            }
+            if (isPublicWriteDirectSave || !saveModal || saveModal.hidden) {
+                return normalizedOriginalPath;
+            }
+            const targetPath = buildSaveTargetPath(targetDir, filenameValue, extensionValue);
+            return targetPath === normalizedOriginalPath ? normalizedOriginalPath : "";
+        }
+
+        function setSaveModalSaving(isSaving) {
+            state.isSaving = Boolean(isSaving);
+            if (saveModalDialog) {
+                saveModalDialog.classList.toggle("is-saving", state.isSaving);
+                saveModalDialog.setAttribute("aria-busy", state.isSaving ? "true" : "false");
+            }
+            if (saveLoadingOverlay) {
+                saveLoadingOverlay.hidden = !state.isSaving;
+            }
+            [
+                saveCloseButton,
+                saveCancelButton,
+                saveConfirmButton,
+                saveUpButton,
+                createFolderButton,
+                saveFilenameInput,
+                saveExtensionSelect,
+            ].forEach(function (control) {
+                if (control) {
+                    control.disabled = state.isSaving;
+                }
+            });
         }
 
         function resolveWriteFilenameExtension() {
@@ -12802,8 +13526,40 @@
             return baseName + normalizedExtension;
         }
 
+        function getCurrentSaveTargetExtension() {
+            try {
+                const parsed = parseFileNameWithExtension(saveFilenameInput ? saveFilenameInput.value : "");
+                if (parsed.extension) {
+                    return normalizeFileExtensionValue(parsed.extension, false);
+                }
+                return getSelectedExtensionOrDefault();
+            } catch (error) {
+                return getPathFileExtension(originalPath) || DOCS_DEFAULT_EXTENSION;
+            }
+        }
+
+        function getSaveEntrySortName(entryOrPath) {
+            if (entryOrPath && typeof entryOrPath === "object") {
+                return String(entryOrPath.name || entryOrPath.path || "").toLocaleLowerCase();
+            }
+            return String(entryOrPath || "").split("/").pop().toLocaleLowerCase();
+        }
+
         function getChildDirectories(pathValue) {
             const normalized = normalizePath(pathValue, true);
+            const cachedEntries = getCachedSaveEntries(normalized);
+            if (cachedEntries) {
+                return cachedEntries
+                    .filter(function (entry) {
+                        return entry && entry.type === "dir" && entry.path;
+                    })
+                    .sort(function (a, b) {
+                        return getSaveEntrySortName(a).localeCompare(getSaveEntrySortName(b));
+                    })
+                    .map(function (entry) {
+                        return normalizePath(entry.path, true);
+                    });
+            }
             return directories
                 .filter(function (dirPath) {
                     if (!dirPath) {
@@ -12812,8 +13568,119 @@
                     return getParentPath(dirPath) === normalized;
                 })
                 .sort(function (a, b) {
-                    return a.localeCompare(b);
+                    return getSaveEntrySortName(a).localeCompare(getSaveEntrySortName(b));
                 });
+        }
+
+        function isSaveOverwriteCandidate(entry) {
+            if (!entry || entry.type !== "file" || !entry.path) {
+                return false;
+            }
+            if (entry.can_edit === false) {
+                return false;
+            }
+            if (entry.google_drive && entry.google_drive.can_edit_content === false) {
+                return false;
+            }
+            const targetExtension = getCurrentSaveTargetExtension();
+            return Boolean(targetExtension) && getPathFileExtension(entry.name || entry.path) === targetExtension;
+        }
+
+        function getSaveBrowserEntries(pathValue) {
+            const normalized = normalizePath(pathValue, true);
+            const cachedEntries = getCachedSaveEntries(normalized);
+            if (cachedEntries) {
+                return {
+                    dirs: cachedEntries
+                        .filter(function (entry) {
+                            return entry && entry.type === "dir" && entry.path;
+                        })
+                        .sort(function (a, b) {
+                            return getSaveEntrySortName(a).localeCompare(getSaveEntrySortName(b));
+                        }),
+                    overwriteFiles: cachedEntries
+                        .filter(isSaveOverwriteCandidate)
+                        .sort(function (a, b) {
+                            return getSaveEntrySortName(a).localeCompare(getSaveEntrySortName(b));
+                        }),
+                    fromCache: true,
+                };
+            }
+            return {
+                dirs: getChildDirectories(normalized).map(function (dirPath) {
+                    return state.entryByPath.get(normalizePath(dirPath, true)) || {
+                        name: dirPath.split("/").pop() || dirPath,
+                        path: dirPath,
+                        type: "dir",
+                        can_write_children: true,
+                    };
+                }),
+                overwriteFiles: [],
+                fromCache: false,
+            };
+        }
+
+        function createSaveEntryIcon(entry) {
+            const safeEntry = entry || {};
+            const fileIconKey = safeEntry.type === "file" ? getFileIconKey(safeEntry.path || safeEntry.name || "") : "";
+            const typeMarker = createTypeMarker({
+                isDir: safeEntry.type === "dir",
+                isGoogleDrive: Boolean(safeEntry.type === "dir" && safeEntry.google_drive && safeEntry.google_drive.is_root),
+                isGithubRepo: Boolean(safeEntry.type === "dir" && safeEntry.github_repo),
+                isRepo: Boolean(safeEntry.type === "dir" && safeEntry.git_repo),
+                isBranch: Boolean(safeEntry.type === "dir" && safeEntry.git_branch_root),
+                isMap: Boolean(safeEntry.type === "dir" && safeEntry.is_map_folder),
+                isEmpty: Boolean(safeEntry.type === "dir" && safeEntry.has_children === false),
+                customIconUrl: safeEntry.type === "dir" && safeEntry.folder_icon_url ? safeEntry.folder_icon_url : "",
+                fileIconKey: fileIconKey,
+                isGenericFileIcon: Boolean(fileIconKey && isGenericFileIconKey(fileIconKey)),
+            });
+            typeMarker.classList.add("handrive-save-entry-icon");
+            return typeMarker;
+        }
+
+        function resolveSaveEntryLabel(entry) {
+            if (!entry) {
+                return "";
+            }
+            if (entry.google_drive && entry.google_drive.is_root) {
+                return String(entry.google_drive.name || entry.name || "").trim();
+            }
+            if (entry.github_repo) {
+                return String(entry.github_repo.name || entry.name || "").trim();
+            }
+            if (entry.git_repo && entry.git_repo.repo_name) {
+                return String(entry.git_repo.repo_name || entry.name || "").trim();
+            }
+            return String(entry.name || "").trim();
+        }
+
+        function selectOverwriteEntry(entry) {
+            if (!entry || !entry.path) {
+                return;
+            }
+            const overwritePath = normalizePath(entry.path, true);
+            state.selectedOverwritePath = overwritePath;
+            updateSelectedDir(getParentPath(overwritePath), { keepOverwrite: true });
+            const entryName = String(entry.name || overwritePath.split("/").pop() || "").trim();
+            if (entryName && saveFilenameInput) {
+                saveFilenameInput.value = entryName;
+                syncExtensionSelectFromValue(getPathFileExtension(entryName));
+            }
+        }
+
+        function shouldNavigateSaveDirOnClick(entry) {
+            return Boolean(
+                entry
+                && entry.type === "dir"
+                && entry.has_children !== false
+                && (
+                    (entry.google_drive && entry.google_drive.is_root) ||
+                    entry.github_repo ||
+                    entry.git_repo ||
+                    entry.can_write_children === false
+                )
+            );
         }
 
         function renderDirectoryOptions() {
@@ -12833,9 +13700,12 @@
                 });
         }
 
-        function updateSelectedDir(pathValue) {
+        function updateSelectedDir(pathValue, options) {
             const normalized = normalizePath(pathValue, true);
             state.selectedDir = normalized;
+            if (!options || !options.keepOverwrite) {
+                state.selectedOverwritePath = "";
+            }
         }
 
         function getSaveBrowserRootDir() {
@@ -12891,10 +13761,10 @@
                 quickPaths.push(normalized);
             }
 
-            if (isSuperuser && hasDirectory("")) {
-                pushQuickPath("");
-            } else if (rootDir && hasDirectory(rootDir)) {
+            if (rootDir && hasDirectory(rootDir)) {
                 pushQuickPath(rootDir);
+            } else if (isSuperuser && hasDirectory("")) {
+                pushQuickPath("");
             }
             getWritableAncestorPaths(activePath).forEach(function (ancestorPath) {
                 if (ancestorPath && ancestorPath !== rootDir) {
@@ -13020,15 +13890,61 @@
             });
         }
 
+        function applySaveEntryBreadcrumbLabels(crumbs) {
+            return crumbs.map(function (crumb) {
+                const normalizedCrumbPath = normalizePath(crumb && crumb.path || "", true);
+                const entry = state.entryByPath.get(normalizedCrumbPath);
+                const cachedMeta = state.directoryMetaCache.get(normalizedCrumbPath);
+                let label = "";
+                if (entry) {
+                    label = resolveSaveEntryLabel(entry);
+                }
+                if (!label && cachedMeta && cachedMeta.google_drive) {
+                    label = String(cachedMeta.google_drive.name || "").trim();
+                }
+                if (!label && cachedMeta && cachedMeta.git_repo && cachedMeta.git_repo.repo_name) {
+                    label = String(cachedMeta.git_repo.repo_name || "").trim();
+                }
+                if (!label) {
+                    return crumb;
+                }
+                return Object.assign({}, crumb, { label: label });
+            });
+        }
+
+        function scopeWriteBreadcrumbsToSaveRoot(crumbs, pathValue) {
+            const rootDir = getSaveBrowserRootDir();
+            const normalized = normalizePath(pathValue, true);
+            if (!rootDir || !(normalized === rootDir || normalized.startsWith(rootDir + "/"))) {
+                return crumbs;
+            }
+            const rootIndex = crumbs.findIndex(function (crumb) {
+                return normalizePath(crumb && crumb.path || "", true) === rootDir;
+            });
+            if (rootIndex < 0) {
+                return crumbs;
+            }
+            return crumbs.slice(rootIndex).map(function (crumb, index, sliced) {
+                const nextCrumb = Object.assign({}, crumb, {
+                    isCurrent: index === sliced.length - 1,
+                });
+                if (index === 0) {
+                    nextCrumb.label = getSaveBrowserRootLabel();
+                }
+                return nextCrumb;
+            });
+        }
+
         function buildWriteBreadcrumbItems(pathValue) {
             const normalized = normalizePath(pathValue, true);
             const targetPath = normalized || scopedHomeDir || "";
-            return applyRenderedToolbarBreadcrumbLabels(buildNavigationBreadcrumbItems(targetPath, {
+            const renderedCrumbs = applySaveEntryBreadcrumbLabels(applyRenderedToolbarBreadcrumbLabels(buildNavigationBreadcrumbItems(targetPath, {
                 effectiveRootLabel: effectiveRootLabel,
                 isSuperuser: isSuperuser,
                 normalizePath: normalizePath,
                 scopedHomeDir: scopedHomeDir,
-            }));
+            })));
+            return scopeWriteBreadcrumbsToSaveRoot(renderedCrumbs, targetPath);
         }
 
         function getHandrivePathTailLabel(pathValue) {
@@ -13131,51 +14047,90 @@
             });
         }
 
-        function renderFolderList() {
+        function navigateSaveBrowserTo(pathValue) {
+            const normalized = normalizePath(pathValue, true);
+            state.browserDir = normalized;
+            updateSelectedDir(normalized);
+            renderBrowser();
+        }
+
+        function renderFolderList(options) {
             if (!saveFolderList) {
                 return;
             }
+            const settings = options || {};
             saveFolderList.innerHTML = "";
 
-            const childDirs = getChildDirectories(state.browserDir);
-            if (childDirs.length === 0) {
+            const browserEntries = getSaveBrowserEntries(state.browserDir);
+            const rows = browserEntries.dirs.concat(browserEntries.overwriteFiles);
+            if (settings.loading && !browserEntries.fromCache && rows.length === 0) {
+                const loadingItem = document.createElement("li");
+                loadingItem.className = "handrive-save-folder-empty";
+                loadingItem.textContent = t("js_loading_folders", "폴더를 불러오는 중...");
+                saveFolderList.appendChild(loadingItem);
+                return;
+            }
+            if (rows.length === 0) {
                 const emptyItem = document.createElement("li");
                 emptyItem.className = "handrive-save-folder-empty";
-                emptyItem.textContent = t("js_no_child_folders", "하위 폴더가 없습니다.");
+                emptyItem.textContent = t("js_no_save_targets", "하위 폴더나 덮어쓸 파일이 없습니다.");
                 saveFolderList.appendChild(emptyItem);
                 return;
             }
 
-            childDirs.forEach(function (dirPath) {
+            rows.forEach(function (entry) {
+                const entryPath = normalizePath(entry && entry.path || "", true);
+                const isOverwriteFile = entry && entry.type === "file";
                 const item = document.createElement("li");
                 const row = document.createElement("button");
                 row.type = "button";
                 row.className = "handrive-save-folder-row";
-                if (dirPath === state.selectedDir) {
+                if (isOverwriteFile) {
+                    row.classList.add("is-overwrite-file");
+                }
+                if (
+                    (!isOverwriteFile && entryPath === state.selectedDir && !state.selectedOverwritePath) ||
+                    (isOverwriteFile && entryPath === state.selectedOverwritePath)
+                ) {
                     row.classList.add("is-selected");
                 }
 
-                const icon = document.createElement("span");
-                icon.className = "handrive-save-folder-icon";
-                icon.setAttribute("aria-hidden", "true");
+                const icon = createSaveEntryIcon(entry);
 
                 const name = document.createElement("span");
                 name.className = "handrive-save-folder-name";
-                name.textContent = getHandrivePathTailLabel(dirPath);
+                name.textContent = resolveSaveEntryLabel(entry) || getHandrivePathTailLabel(entryPath);
 
                 row.appendChild(icon);
                 row.appendChild(name);
+                if (isOverwriteFile) {
+                    const badge = document.createElement("span");
+                    badge.className = "handrive-save-overwrite-badge";
+                    badge.textContent = t("save_overwrite_badge", "덮어쓰기");
+                    row.appendChild(badge);
+                }
 
                 row.addEventListener("click", function () {
-                    updateSelectedDir(dirPath);
+                    if (isOverwriteFile) {
+                        selectOverwriteEntry(entry);
+                    } else if (shouldNavigateSaveDirOnClick(entry)) {
+                        navigateSaveBrowserTo(entryPath);
+                        return;
+                    } else {
+                        updateSelectedDir(entryPath);
+                    }
                     renderBreadcrumb();
                     renderFolderList();
                 });
 
                 row.addEventListener("dblclick", function () {
-                    state.browserDir = dirPath;
-                    updateSelectedDir(dirPath);
-                    renderBrowser();
+                    if (isOverwriteFile) {
+                        selectOverwriteEntry(entry);
+                        renderBreadcrumb();
+                        renderFolderList();
+                        return;
+                    }
+                    navigateSaveBrowserTo(entryPath);
                 });
 
                 item.appendChild(row);
@@ -13189,10 +14144,36 @@
             }
             renderBreadcrumb();
             renderQuickList();
-            renderFolderList();
+            const renderToken = state.browserRenderToken + 1;
+            state.browserRenderToken = renderToken;
+            renderFolderList({ loading: !getCachedSaveEntries(state.browserDir) && Boolean(listApiUrl) });
             if (saveUpButton) {
                 saveUpButton.disabled = !getSaveUpTarget(state.browserDir);
             }
+            ensureSaveDirectoryLoaded(state.browserDir)
+                .then(function () {
+                    if (state.browserRenderToken !== renderToken || !saveModal || saveModal.hidden) {
+                        return;
+                    }
+                    renderBreadcrumb();
+                    renderQuickList();
+                    renderFolderList();
+                    if (saveUpButton) {
+                        saveUpButton.disabled = !getSaveUpTarget(state.browserDir);
+                    }
+                })
+                .catch(function (error) {
+                    if (state.browserRenderToken !== renderToken || !saveFolderList) {
+                        return;
+                    }
+                    saveFolderList.innerHTML = "";
+                    const errorItem = document.createElement("li");
+                    errorItem.className = "handrive-save-folder-empty";
+                    errorItem.textContent = error && error.message
+                        ? error.message
+                        : t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다.");
+                    saveFolderList.appendChild(errorItem);
+                });
         }
 
         function getHandrivePathLabel(pathValue) {
@@ -13305,6 +14286,7 @@
             syncModalBodyState();
 
             if (!opened) {
+                setSaveModalSaving(false);
                 setFolderModalOpen(false);
                 return;
             }
@@ -13321,6 +14303,7 @@
             if (!hasDirectory(modalInitialDir)) {
                 modalInitialDir = getNearestWritableDirectory(modalInitialDir || initialDir);
             }
+            state.selectedOverwritePath = "";
             state.browserDir = modalInitialDir;
             updateSelectedDir(modalInitialDir);
             renderBrowser();
@@ -13404,7 +14387,7 @@
                         : writeEditorKind === "video"
                             ? t("video_editor_save_error", "비디오 저장 실패")
                             : t("audio_editor_save_error", "오디오 저장 실패");
-                    alertError(new Error((result && result.error) || fallbackMessage));
+                    alertError(new Error(selectServerMessage(result, fallbackMessage)));
                     return;
                 }
                 markCurrentAsSaved();
@@ -13468,26 +14451,30 @@
                 saveFilenameInput.value = buildFilenameWithExtension(finalFilename, targetExtension);
             }
 
+            let keepSaveLoading = false;
             try {
+                const requestOriginalPath = getSaveRequestOriginalPath(targetDir, finalFilename, targetExtension);
+                const saveTargetPath = buildSaveTargetPath(targetDir, finalFilename, targetExtension);
                 const payload = {
-                    original_path: originalPath,
+                    original_path: requestOriginalPath,
                     target_dir: targetDir,
                     filename: finalFilename,
                     extension: targetExtension,
                     content: contentInput ? contentInput.value : ""
                 };
                 if (writeRequiresCommitMessage) {
-                    const commitMessage = await promptWriteCommitMessage(originalPath || targetDir);
+                    const commitMessage = await promptWriteCommitMessage(requestOriginalPath || saveTargetPath || targetDir);
                     if (commitMessage === null) {
                         return;
                     }
                     payload.commit_message = commitMessage;
                 }
+                setSaveModalSaving(true);
                 const data = await requestJson(saveApiUrl, buildPostOptions(payload));
                 writeMarkdownUploadedImagePaths = [];
                 markCurrentAsSaved();
 
-                if (saveModal && !saveModal.hidden) {
+                if ((onSuccess || !redirectOnSuccess) && saveModal && !saveModal.hidden) {
                     setSaveModalOpen(false);
                 }
 
@@ -13501,17 +14488,23 @@
                 }
 
                 if (data && data.slug_path) {
+                    keepSaveLoading = Boolean(saveModal && !saveModal.hidden);
                     runWithBeforeUnloadBypass(function () {
                         window.location.href = buildViewUrl(handriveBaseUrl, data.slug_path);
                     });
                     return data || {};
                 }
+                keepSaveLoading = Boolean(saveModal && !saveModal.hidden);
                 runWithBeforeUnloadBypass(function () {
                     window.location.href = handriveRootUrl;
                 });
                 return data || {};
             } catch (error) {
                 alertError(error);
+            } finally {
+                if (!keepSaveLoading) {
+                    setSaveModalSaving(false);
+                }
             }
         }
 
@@ -13537,7 +14530,7 @@
             syncExtensionSelectFromValue(initialExtension);
         }
         syncMarkdownHelpButtonVisibility();
-        showWriteMediaSurface();
+        showWriteMediaSurface().catch(alertError);
         scheduleWriteEditorHorizontalScrollReset();
 
         async function createFolderFromModal() {
@@ -13573,6 +14566,7 @@
                     })
                 );
                 const createdPath = upsertDirectory(data.path || "");
+                invalidateSaveDirectory(parentDir);
                 renderDirectoryOptions();
                 updateSelectedDir(createdPath);
                 state.browserDir = parentDir;
@@ -13647,15 +14641,23 @@
                 const parsed = parseFileNameWithExtension(saveFilenameInput.value);
                 const baseName = parsed.filename || String(filenameInput ? filenameInput.value : "").trim();
                 saveFilenameInput.value = buildFilenameWithExtension(baseName, selectedExtension);
+                state.selectedOverwritePath = "";
                 saveFilenameInput.focus();
                 syncMarkdownHelpButtonVisibility();
+                if (saveModal && !saveModal.hidden) {
+                    renderFolderList();
+                }
             });
 
             saveFilenameInput.addEventListener("input", function () {
+                state.selectedOverwritePath = "";
                 try {
                     const parsed = parseFileNameWithExtension(saveFilenameInput.value);
                     if (parsed.extension && extensionPresetSet.has(parsed.extension)) {
                         saveExtensionSelect.value = parsed.extension;
+                        if (saveModal && !saveModal.hidden) {
+                            renderFolderList();
+                        }
                         return;
                     }
                     if (parsed.extension) {
@@ -13666,6 +14668,9 @@
                     }
                 } catch (error) {
                     // Ignore extension auto-sync errors while typing.
+                }
+                if (saveModal && !saveModal.hidden) {
+                    renderFolderList();
                 }
             });
         }
@@ -13890,6 +14895,9 @@
 
         if (saveModalBackdrop) {
             saveModalBackdrop.addEventListener("click", function () {
+                if (state.isSaving) {
+                    return;
+                }
                 pendingSaveThenLeaveAction = null;
                 setSaveModalOpen(false);
             });
@@ -13897,6 +14905,9 @@
 
         if (saveCloseButton) {
             saveCloseButton.addEventListener("click", function () {
+                if (state.isSaving) {
+                    return;
+                }
                 pendingSaveThenLeaveAction = null;
                 setSaveModalOpen(false);
             });
@@ -13904,6 +14915,9 @@
 
         if (saveCancelButton) {
             saveCancelButton.addEventListener("click", function () {
+                if (state.isSaving) {
+                    return;
+                }
                 pendingSaveThenLeaveAction = null;
                 setSaveModalOpen(false);
             });
@@ -13911,6 +14925,9 @@
 
         if (saveConfirmButton) {
             saveConfirmButton.addEventListener("click", function () {
+                if (state.isSaving) {
+                    return;
+                }
                 if (pendingSaveThenLeaveAction) {
                     submitSaveThenLeave();
                     return;

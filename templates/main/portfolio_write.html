@@ -129,12 +129,11 @@
                 <h1 class="handrive-title ui-title">{% include 'partials/ui_i18n.html' with key='portfolio_write_title' %}</h1>
             </div>
             <div class="ui-subtitle ui-path-breadcrumbs">
-                <span class="ui-path-current">/portfolio/write</span>
-            </div>
-        </div>
-        <div class="handrive-toolbar-right ui-toolbar-right">
-            <div class="handrive-toolbar-actions ui-toolbar-actions">
-                <a class="ui-btn" href="{% url 'main:portfolio_user_lang' ui_lang=ui_lang user_id=request.user.username %}">Portfolio</a>
+                <a class="ui-path-link" href="{% url 'main:none_lang' ui_lang=ui_lang %}">Hanplanet</a>
+                <span class="ui-path-sep">/</span>
+                <a class="ui-path-link" href="{% url 'main:portfolio_user_lang' ui_lang=ui_lang user_id=request.user.username %}">portfolio</a>
+                <span class="ui-path-sep">/</span>
+                <span class="ui-path-current">write</span>
             </div>
         </div>
     </div>

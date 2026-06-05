@@ -46,6 +46,10 @@
                 <button type="button" class="ui-btn ui-btn-primary" id="handrive-save-confirm-btn">{{ handrive_text.save_confirm_button }}</button>
             </div>
         </div>
+        <div class="handrive-save-loading" id="handrive-save-loading" role="status" aria-live="polite" aria-label="{{ handrive_text.save_loading }}" hidden>
+            <span class="handrive-save-loading-spinner" aria-hidden="true"></span>
+            <span class="handrive-save-loading-text">{{ handrive_text.save_loading }}</span>
+        </div>
 
         {% include "popup/handrive/folder_modal.html" %}
     </div>

@@ -1,7 +1,7 @@
-{% load static static_versioned %}
+{% load static static_versioned template_utils %}
 
 <!doctype html>
-<html lang="ko">
+<html lang="{{ ui_lang|default:'ko' }}" data-account-theme-mode="{{ account_theme_mode|default:'' }}">
     <head>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -10,12 +10,13 @@
         <meta charset="utf-8">
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-        <meta name="description" content="구원의 경계 4네임드 계산기">
+        <meta name="description" content="{% include_trimmed 'partials/ui_i18n.html' key='salvations_meta_description' %}">
         <meta name="author" content="Hanplanet">
         <meta name="generator" content="Django">
         <meta name="robots" content="noindex">
-        <meta property="og:title" content="구원의 경계 4네임드 계산기">
-        <meta property="og:description" content="능지박살 아이익 전용">
+        <meta name="csrf-token" content="{{ csrf_token }}">
+        <meta property="og:title" content="{% include_trimmed 'partials/ui_i18n.html' key='salvations_page_title' %}">
+        <meta property="og:description" content="{% include_trimmed 'partials/ui_i18n.html' key='salvations_meta_og_description' %}">
         <meta property="og:image" content="https://github.com/Adihang/Hanplanet/assets/56463432/14fcd76f-770a-4c42-9e94-06aaa73efe5e">
         {% include "partials/pwa.html" %}
         {% include "partials/static_script_fallback.html" %}
@@ -24,47 +25,143 @@
     <link rel="shortcut icon" href="/favicon.ico">
         <link rel="icon" type="image/png" href="{% static 'media/icons/pwa-192.png' %}">
         <link rel="stylesheet" type="text/css" href="{% static_v 'css/vendor/bootstrap.min.css' %}">
+        <link rel="stylesheet" type="text/css" href="{% static_v 'css/common/layout.css' %}">
         <link rel="stylesheet" type="text/css" href="{% static_v 'css/common/style.css' %}">
         <link rel="stylesheet" type="text/css" href="{% static_v 'css/fun/salvations_edge_4/style.css' %}">
+        <script id="salvations-i18n" type="application/json">
+            {
+                "selectTeam": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_select_team' %}",
+                "outsideTeam": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_outside_team' %}",
+                "insideTeam": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_inside_team' %}",
+                "teamSelect": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_team_select' %}",
+                "reset": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_reset' %}",
+                "insideHelp": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_inside_help' %}",
+                "outsideHelp": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_outside_help' %}",
+                "insideCalculator": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_inside_calculator' %}",
+                "outsideCalculator": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_outside_calculator' %}",
+                "positionLeft": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_position_left' %}",
+                "positionMiddle": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_position_middle' %}",
+                "positionRight": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_position_right' %}",
+                "shapeTriangle": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_shape_triangle' %}",
+                "shapeSquare": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_shape_square' %}",
+                "shapeCircle": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_shape_circle' %}",
+                "volumeCube": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_volume_cube' %}",
+                "volumeSphere": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_volume_sphere' %}",
+                "volumePyramid": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_volume_pyramid' %}",
+                "volumeCylinder": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_volume_cylinder' %}",
+                "volumePrism": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_volume_prism' %}",
+                "volumeCone": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_volume_cone' %}",
+                "jackpotZero": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_jackpot_zero' %}",
+                "jackpotOne": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_jackpot_one' %}",
+                "jackpotThree": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_jackpot_three' %}",
+                "yes": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_yes' %}",
+                "no": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_no' %}",
+                "myStatueSymbol": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_my_statue_symbol' %}",
+                "jackpotTeammates": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_jackpot_teammates' %}",
+                "amIJackpot": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_am_i_jackpot' %}",
+                "finalHold": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_final_hold' %}",
+                "chooseMySymbol": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_choose_my_symbol' %}",
+                "chooseJackpotCount": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_choose_jackpot_count' %}",
+                "wallSymbols": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_wall_symbols' %}",
+                "giveBothToHolder": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_give_both_to_holder' %}",
+                "transferOrder": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_transfer_order' %}",
+                "splitTransfer": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_split_transfer' %}",
+                "chooseSelfJackpot": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_choose_self_jackpot' %}",
+                "firstTransfer": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_first_transfer' %}",
+                "secondTransfer": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_second_transfer' %}",
+                "giveShapeToNonJackpot": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_give_shape_to_non_jackpot' %}",
+                "giveRemainingToJackpot": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_give_remaining_to_jackpot' %}",
+                "selectAllInside": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_select_all_inside' %}",
+                "insideUnique": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_inside_unique' %}",
+                "finalTargetError": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_final_target_error' %}",
+                "selectAllOutside": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_select_all_outside' %}",
+                "outsideCounts": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_outside_counts' %}",
+                "calculated": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_calculated' %}",
+                "insideLabel": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_inside_label' %}",
+                "outsideLabel": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_outside_label' %}",
+                "none": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_none' %}",
+                "step": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_step' %}",
+                "dissect": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_dissect' %}",
+                "answer": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_answer' %}",
+                "create": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_create' %}",
+                "loopError": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_loop_error' %}",
+                "alreadyMatches": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_already_matches' %}"
+            }
+        </script>
+        <script src="{% static_v 'js/common/site_nav_responsive_manager.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
+        <script src="{% static_v 'js/common/site.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
+        <script src="{% static_v 'js/vendor/bootstrap.min.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
         <script src="{% static_v 'js/fun/salvations_edge_4/page.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
-        <title>
-            구원의 경계 4네임드 계산기</title>
+        <title>{% include_trimmed 'partials/ui_i18n.html' key='salvations_page_title' %}</title>
     </head>
-    <body>
+    <body
+        class="salvations-page"
+        data-authenticated="{% if request.user.is_authenticated %}1{% else %}0{% endif %}"
+        data-theme-preference-url="{{ theme_preference_url|default:'' }}"
+        data-user-preference-url="{{ user_preference_url|default:'' }}"
+    >
+        <script>
+            (function () {
+                const body = document.body;
+                const accountThemeMode = (document.documentElement.getAttribute('data-account-theme-mode') || '').trim().toLowerCase();
+                let prefersDark = false;
+
+                if (accountThemeMode === 'dark') {
+                    prefersDark = true;
+                } else if (accountThemeMode === 'light') {
+                    prefersDark = false;
+                } else {
+                    try {
+                        const cookieMatch = document.cookie.match(/(?:^|;\s*)portfolio_theme_mode=([^;]+)/);
+                        const storedThemeMode = (cookieMatch ? decodeURIComponent(cookieMatch[1]) : null) || window.localStorage.getItem('portfolio_theme_mode');
+                        if (storedThemeMode === 'dark') {
+                            prefersDark = true;
+                        } else if (storedThemeMode === 'light') {
+                            prefersDark = false;
+                        } else {
+                            prefersDark = Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                        }
+                    } catch (error) {
+                        prefersDark = Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                    }
+                }
+
+                body.classList.toggle('theme-dark', prefersDark);
+            })();
+        </script>
+        {% include "partials/navbar.html" %}
         <div class="Salvations_Edge_4">
-            <div class="title">
-                <img src="{% static 'media/img/Salvations_Edge_4_title_img.png' %}" alt="title_img" class="title_img_big">
-                <img src="{% static 'media/img/Salvations_Edge_4_title_img_s.png' %}" alt="title_img" class="title_img_small">
-                <h3 class="title_text">능지박살 아이익들을 위한 구경 4네임드 계산기</h3>
-            </div>
-            
             <div class="content">
-                <h1 class="main_title" id="main_title1">자신의 조를 선택하세요.</h1>
+                <h1 class="main_title" id="main_title1">{% include_trimmed 'partials/ui_i18n.html' key='salvations_select_team' %}</h1>
                 <h1 class="main_title" id="main_title2"></h1>
-                <div class="description">잭팟 : 벽의 문양 두개가 동일 할 경우</div>
                 <div class="select_team">
-                    <h2 class="main_text" id="team_out">외부조</h2>
-                    <h2 class="main_text" id="team_in">내부조</h2>
+                    <h2 class="main_text" id="team_out">{% include_trimmed 'partials/ui_i18n.html' key='salvations_outside_team' %}</h2>
+                    <h2 class="main_text" id="team_in">{% include_trimmed 'partials/ui_i18n.html' key='salvations_inside_team' %}</h2>
                 </div>
-                <div class="select_ico">
-                    <h2 class="main_text" id="ico_t"> △ </h2>
-                    <h2 class="main_text" id="ico_s"> □ </h2>
-                    <h2 class="main_text" id="ico_r"> ○ </h2>
+                <div class="inside_calculator" id="inside_calculator" hidden>
+                    <div class="outside_calculator_actions">
+                        <button type="button" class="outside_action_button" id="inside_back">{% include_trimmed 'partials/ui_i18n.html' key='salvations_team_select' %}</button>
+                        <button type="button" class="outside_action_button" id="inside_reset">{% include_trimmed 'partials/ui_i18n.html' key='salvations_reset' %}</button>
+                    </div>
+                    <p class="outside_help">
+                        {% include_trimmed 'partials/ui_i18n.html' key='salvations_inside_help' %}
+                    </p>
+                    <div class="inside_grid" id="inside_grid"></div>
+                    <div class="inside_result" id="inside_result"></div>
                 </div>
-                <div class="select_num">
-                    <h2 class="main_text" id="zero">0명</h2>
-                    <h2 class="main_text" id="one">1명</h2>
-                    <h2 class="main_text" id="three">3명</h2>
-                </div>
-                <div class="select_bool">
-                    <h2 class="main_text" id="yes">O</h2>
-                    <h2 class="main_text" id="no">X</h2>
+                <div class="outside_calculator" id="outside_calculator" hidden>
+                    <div class="outside_calculator_actions">
+                        <button type="button" class="outside_action_button" id="outside_back">{% include_trimmed 'partials/ui_i18n.html' key='salvations_team_select' %}</button>
+                        <button type="button" class="outside_action_button" id="outside_reset">{% include_trimmed 'partials/ui_i18n.html' key='salvations_reset' %}</button>
+                    </div>
+                    <p class="outside_help">
+                        {% include_trimmed 'partials/ui_i18n.html' key='salvations_outside_help' %}
+                    </p>
+                    <div class="outside_grid" id="outside_grid"></div>
+                    <div class="outside_result" id="outside_result"></div>
                 </div>
             </div>
         </div>
-        <div class="sub-footer">
-            <hr>
-            <div class="lowtext">made by Adihang</div>
-        </div>
+        {% include "partials/site_footer_links.html" %}
     </body>
 </html>

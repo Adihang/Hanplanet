@@ -31,6 +31,32 @@
         statusElement.textContent = normalizedMessage;
     };
 
+    const getUiLang = function () {
+        const lang = String(document.documentElement.getAttribute("lang") || "").toLowerCase();
+        return lang.indexOf("en") === 0 ? "en" : "ko";
+    };
+
+    const selectLocalizedMessage = function (messages) {
+        if (!messages || typeof messages !== "object") {
+            return "";
+        }
+        const lang = getUiLang();
+        return String(messages[lang] || messages.ko || messages.en || "").trim();
+    };
+
+    const payloadMessage = function (payload, fallback) {
+        if (!payload || typeof payload !== "object") {
+            return fallback || "";
+        }
+        return (
+            selectLocalizedMessage(payload.error_messages)
+            || selectLocalizedMessage(payload.messages)
+            || String(payload.error_message || payload.message || "").trim()
+            || fallback
+            || ""
+        );
+    };
+
     const closeMenu = function (host) {
         const menu = host.querySelector("[data-auth-account-menu]");
         const trigger = host.querySelector("[data-auth-account-trigger]");
@@ -47,7 +73,7 @@
             return {};
         });
         if (!response.ok || payload.ok === false) {
-            const error = new Error(payload.error || "request_failed");
+            const error = new Error(payloadMessage(payload, payload.error || "request_failed"));
             error.payload = payload;
             throw error;
         }
@@ -101,14 +127,27 @@
         const backdrop = modal.querySelector("[data-auth-github-modal-backdrop]");
         const title = modal.querySelector("[data-auth-github-modal-title]");
         const message = modal.querySelector("[data-auth-github-modal-message]");
+        const account = modal.querySelector("[data-auth-github-account]");
         const status = modal.querySelector("[data-auth-github-status]");
         const repoList = modal.querySelector("[data-auth-github-repo-list]");
         const cancelButton = modal.querySelector("[data-auth-github-cancel]");
         const confirmButton = modal.querySelector("[data-auth-github-confirm]");
+        const unlinkButton = modal.querySelector("[data-auth-github-unlink]");
         let lastFocusedElement = null;
 
         const label = function (key, fallback) {
             return modal.dataset[key] || fallback || "";
+        };
+
+        const setAccountMessage = function (login) {
+            if (!account) {
+                return;
+            }
+            const normalizedLogin = String(login || "").trim();
+            account.hidden = !normalizedLogin;
+            account.textContent = normalizedLogin
+                ? label("connectedMessage", "Connected GitHub account:") + " " + normalizedLogin
+                : "";
         };
 
         const setModalOpen = function (opened) {
@@ -126,15 +165,20 @@
             lastFocusedElement = null;
         };
 
-        const setConnectMode = function () {
+        const setConnectMode = function (statusMessage, statusIsError) {
             modal.dataset.mode = "connect";
             setElementText(title, label("connectTitle", "Connect GitHub"));
             setElementText(message, label("connectMessage", "No GitHub account is connected. Connect GitHub now?"));
+            setAccountMessage("");
             if (repoList) {
                 repoList.hidden = true;
                 repoList.textContent = "";
             }
-            setStatus(status, "", false);
+            if (unlinkButton) {
+                unlinkButton.hidden = true;
+                unlinkButton.textContent = label("unlinkLabel", "Disconnect");
+            }
+            setStatus(status, statusMessage || "", Boolean(statusIsError));
             if (confirmButton) {
                 confirmButton.hidden = false;
                 confirmButton.textContent = label("connectConfirm", "Connect");
@@ -145,9 +189,14 @@
             modal.dataset.mode = "repositories";
             setElementText(title, label("repoTitle", "GitHub Repositories"));
             setElementText(message, label("repoMessage", "Select repositories to show in HanDrive."));
+            setAccountMessage(triggerButton.dataset.githubLogin || "");
             if (repoList) {
                 repoList.hidden = true;
                 repoList.textContent = "";
+            }
+            if (unlinkButton) {
+                unlinkButton.hidden = false;
+                unlinkButton.textContent = label("unlinkLabel", "Disconnect");
             }
             setStatus(status, label("repoLoading", "Loading repositories..."), false);
             if (confirmButton) {
@@ -165,12 +214,14 @@
             if (!payload.connected) {
                 triggerButton.dataset.githubConnected = "0";
                 triggerButton.classList.remove("is-connected");
-                setConnectMode();
+                setConnectMode(payloadMessage(payload, ""), Boolean(payload.error));
                 return;
             }
 
             triggerButton.dataset.githubConnected = "1";
+            triggerButton.dataset.githubLogin = String(payload.login || triggerButton.dataset.githubLogin || "").trim();
             triggerButton.classList.add("is-connected");
+            setAccountMessage(triggerButton.dataset.githubLogin || "");
             const repositories = Array.isArray(payload.repositories) ? payload.repositories : [];
             if (!repositories.length) {
                 setStatus(status, label("repoEmpty", "No repositories available."), false);
@@ -196,15 +247,23 @@
             try {
                 await setRepositoryMode();
             } catch (error) {
-                if (error && error.payload && error.payload.connected === false) {
+                if (
+                    error &&
+                    error.payload &&
+                    (error.payload.connected === false || error.payload.error === "github_reconnect_required")
+                ) {
                     triggerButton.dataset.githubConnected = "0";
                     triggerButton.classList.remove("is-connected");
-                    setConnectMode();
+                    setConnectMode(payloadMessage(error.payload, ""), Boolean(error.payload.error));
                     return;
                 }
                 setElementText(title, label("repoTitle", "GitHub Repositories"));
                 setElementText(message, label("repoMessage", "Select repositories to show in HanDrive."));
-                setStatus(status, label("repoError", "Failed to load GitHub repositories."), true);
+                setStatus(status, payloadMessage(error && error.payload, label("repoError", "Failed to load GitHub repositories.")), true);
+                if (unlinkButton) {
+                    unlinkButton.hidden = false;
+                    unlinkButton.textContent = label("unlinkLabel", "Disconnect");
+                }
                 if (repoList) {
                     repoList.hidden = true;
                     repoList.textContent = "";
@@ -235,8 +294,53 @@
                 window.dispatchEvent(new CustomEvent("handrive:github-repositories-updated", {
                     detail: payload
                 }));
+                setModalOpen(false);
             } catch (error) {
-                setStatus(status, label("repoError", "Failed to load GitHub repositories."), true);
+                setStatus(status, payloadMessage(error && error.payload, label("repoError", "Failed to load GitHub repositories.")), true);
+            }
+        };
+
+        const unlinkGitHub = async function () {
+            const unlinkUrl = triggerButton.dataset.githubUnlinkUrl || "";
+            if (!unlinkUrl) {
+                setStatus(status, label("unlinkError", "Failed to disconnect GitHub."), true);
+                return;
+            }
+            const confirmMessage = label("unlinkConfirm", "Disconnect GitHub?");
+            if (confirmMessage && !window.confirm(confirmMessage)) {
+                return;
+            }
+            if (unlinkButton) {
+                unlinkButton.disabled = true;
+            }
+            if (confirmButton) {
+                confirmButton.disabled = true;
+            }
+            try {
+                const payload = await fetch(unlinkUrl, {
+                    method: "DELETE",
+                    credentials: "same-origin",
+                    headers: {
+                        "Accept": "application/json",
+                        "X-CSRFToken": getCsrfToken()
+                    }
+                }).then(parseJsonResponse);
+                triggerButton.dataset.githubConnected = "0";
+                triggerButton.dataset.githubLogin = "";
+                triggerButton.classList.remove("is-connected");
+                setConnectMode(label("unlinkedLabel", "Disconnected"), false);
+                window.dispatchEvent(new CustomEvent("handrive:github-repositories-updated", {
+                    detail: payload
+                }));
+            } catch (error) {
+                setStatus(status, payloadMessage(error && error.payload, label("unlinkError", "Failed to disconnect GitHub.")), true);
+            } finally {
+                if (unlinkButton) {
+                    unlinkButton.disabled = false;
+                }
+                if (confirmButton) {
+                    confirmButton.disabled = false;
+                }
             }
         };
 
@@ -255,6 +359,12 @@
         if (cancelButton) {
             cancelButton.addEventListener("click", function () {
                 setModalOpen(false);
+            });
+        }
+
+        if (unlinkButton) {
+            unlinkButton.addEventListener("click", function () {
+                unlinkGitHub();
             });
         }
 

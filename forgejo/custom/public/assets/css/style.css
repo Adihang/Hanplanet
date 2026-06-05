@@ -1807,6 +1807,18 @@ body.theme-dark {
     font-family: inherit;
 }
 
+.ui-nav,
+.ui-nav * {
+    overscroll-behavior: none;
+    scrollbar-width: none;
+    touch-action: none;
+}
+
+.ui-nav::-webkit-scrollbar,
+.ui-nav *::-webkit-scrollbar {
+    display: none;
+}
+
 /* 메뉴바 숨김 효과 */
 .ui-nav.navbar-hidden {
     transform: translateY(-100%);
@@ -1886,9 +1898,16 @@ body.theme-dark .ui-nav::after {
     font-family: inherit;
 }
 
+.ui-brand-group,
+.ui-brand,
+.ui-brand-text {
+    overflow: visible;
+}
+
 .ui-brand-text {
     font-size: 28px;
     display: inline-block;
+    padding-inline: 0.08em;
     transition: transform 0.2s ease;
 }
 

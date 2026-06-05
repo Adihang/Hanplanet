@@ -57,7 +57,7 @@
             <div class="handrive-login-error">{{ handrive_signup_form.password2.errors|join:", " }}</div>
         {% endif %}
 
-        <label class="handrive-field handrive-field-full{% if handrive_signup_github_pending %} handrive-field-readonly{% endif %}">
+        <label class="handrive-field handrive-field-full{% if handrive_signup_github_pending or handrive_signup_google_pending %} handrive-field-readonly{% endif %}">
             <span>{{ handrive_text.auth_name_label }}</span>
             {{ handrive_signup_form.first_name }}
         </label>
@@ -66,11 +66,11 @@
         {% endif %}
 
         {# ── 이메일 + 인증번호 요청 버튼 (가로 배치) ─────────────────── #}
-        <div class="handrive-field handrive-field-full{% if handrive_signup_github_pending %} handrive-field-readonly{% endif %}">
+        <div class="handrive-field handrive-field-full{% if handrive_signup_github_pending or handrive_signup_google_pending %} handrive-field-readonly{% endif %}">
             <span>{{ handrive_text.auth_email_label }}</span>
             <div class="handrive-signup-email-row" id="handrive-signup-email-row">
                 {{ handrive_signup_form.email }}
-                {% if not handrive_signup_github_pending %}
+                {% if not handrive_signup_github_pending and not handrive_signup_google_pending %}
                 <button type="button" class="ui-btn" id="handrive-signup-send-code-btn">{{ handrive_text.auth_2fa_send_code_button }}</button>
                 {% endif %}
             </div>
@@ -80,10 +80,13 @@
             {% if handrive_signup_github_pending and handrive_signup_github_login %}
                 <span class="ui-subtitle">GitHub: {{ handrive_signup_github_login }}</span>
             {% endif %}
+            {% if handrive_signup_google_pending and handrive_signup_google_email %}
+                <span class="ui-subtitle">Google: {{ handrive_signup_google_email }}</span>
+            {% endif %}
             <div id="handrive-signup-send-code-error" class="handrive-login-error" style="display:none;"></div>
         </div>
 
-        {% if not handrive_signup_github_pending %}
+        {% if not handrive_signup_github_pending and not handrive_signup_google_pending %}
         {# ── 인증번호 입력 + 확인 버튼 (발송 후 표시) ────────────────── #}
         <div class="handrive-field handrive-field-full" id="handrive-signup-code-block" hidden>
             <span>{{ handrive_text.auth_2fa_code_label }}</span>
@@ -135,6 +138,7 @@
     </form>
 
 </main>
+{% include "handrive/_auth_safe_input_script.html" %}
 <script>
     (function () {
         const errorPopupMessage = "{{ handrive_signup_error_popup_message|default:''|escapejs }}";
@@ -155,6 +159,14 @@
         const verifyCodeBtn = document.getElementById("handrive-signup-verify-code-btn");
         const verifyCodeError = document.getElementById("handrive-signup-verify-code-error");
         const verifiedMsg = document.getElementById("handrive-signup-verified-msg");
+        function selectServerMessage(data, fallback) {
+            const lang = (document.documentElement.getAttribute("lang") || "").toLowerCase().indexOf("en") === 0 ? "en" : "ko";
+            const messages = data && (data.error_messages || data.messages);
+            if (messages && typeof messages === "object") {
+                return messages[lang] || messages.ko || messages.en || fallback || "";
+            }
+            return (data && (data.error_message || data.message || data.error)) || fallback || "";
+        }
         function showError(el, msg) {
             if (!el) return;
             el.textContent = msg;
@@ -216,7 +228,7 @@
                             if (tokenInput) tokenInput.value = data.token;
                             setEmailVerified();
                         } else {
-                            showError(verifyCodeError, data.error || "인증에 실패했습니다.");
+                            showError(verifyCodeError, selectServerMessage(data, "인증에 실패했습니다."));
                         }
                     })
                     .catch(function () {
@@ -340,7 +352,7 @@
                         }
                         startCodeSendCooldown(email);
                     } else {
-                        showError(sendCodeError, data.error || "오류가 발생했습니다.");
+                        showError(sendCodeError, selectServerMessage(data, "오류가 발생했습니다."));
                         if (resendBtn) resendBtn.disabled = false;
                         if (sendCodeBtn) sendCodeBtn.disabled = false;
                     }

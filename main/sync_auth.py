@@ -12,6 +12,8 @@ from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 
+from .auth_safety import contains_forbidden_auth_char
+
 
 _ALGORITHM = "HS256"
 _ACCESS_TYPE = "access"
@@ -74,6 +76,8 @@ def refresh_access_token(refresh_token: str) -> Optional[str]:
 
 def login_and_issue_tokens(username: str, password: str) -> Optional[dict]:
     """username/password 검증 후 토큰 쌍 발급. 실패 시 None."""
+    if contains_forbidden_auth_char(username) or contains_forbidden_auth_char(password):
+        return None
     user = authenticate(username=username, password=password)
     if user is None or not user.is_active:
         return None

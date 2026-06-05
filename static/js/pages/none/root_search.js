@@ -628,6 +628,28 @@
     let contextTargetShortcutId = null;
     let currentShortcutItems = [];
 
+    const selectServerMessage = function (payload, fallback) {
+        if (!payload || typeof payload !== 'object') {
+            return fallback || '';
+        }
+        const lang = (document.documentElement.getAttribute('lang') || '').toLowerCase().indexOf('en') === 0 ? 'en' : 'ko';
+        const messages = payload.error_messages || payload.messages;
+        if (messages && typeof messages === 'object') {
+            return messages[lang] || messages.ko || messages.en || fallback || '';
+        }
+        return payload.error_message || payload.message || payload.error || fallback || '';
+    };
+
+    const readShortcutJson = async function (response, fallback) {
+        const payload = await response.json().catch(function () {
+            return {};
+        });
+        if (!response.ok) {
+            throw new Error(selectServerMessage(payload, fallback));
+        }
+        return payload;
+    };
+
     const escapeHtml = function (value) {
         return String(value || '')
             .replace(/&/g, '&amp;')
@@ -780,9 +802,7 @@
             },
             body: JSON.stringify({ ordered_ids: orderedIds })
         });
-        if (!response.ok) {
-            throw new Error('Failed to reorder shortcuts');
-        }
+        await readShortcutJson(response, 'Failed to reorder shortcuts');
     };
 
     const renderShortcuts = function (items) {
@@ -837,13 +857,10 @@
                 credentials: 'same-origin',
                 headers: { 'Accept': 'application/json' }
             });
-            if (!response.ok) {
-                throw new Error('Failed to load shortcuts');
-            }
-            const payload = await response.json();
+            const payload = await readShortcutJson(response, 'Failed to load shortcuts');
             renderShortcuts(Array.isArray(payload.items) ? payload.items : []);
         } catch (error) {
-            shortcutsGrid.innerHTML = '<p class="root-shortcuts-empty">Failed to load.</p>';
+            shortcutsGrid.innerHTML = '<p class="root-shortcuts-empty">' + escapeHtml(error && error.message ? error.message : 'Failed to load.') + '</p>';
         }
     };
 
@@ -859,9 +876,7 @@
             body: JSON.stringify({ name: name, url: url })
         });
 
-        if (!response.ok) {
-            throw new Error('Failed to create shortcut');
-        }
+        await readShortcutJson(response, 'Failed to create shortcut');
     };
 
     const updateShortcut = async function (shortcutId, name, url) {
@@ -875,9 +890,7 @@
             },
             body: JSON.stringify({ name: name, url: url })
         });
-        if (!response.ok) {
-            throw new Error('Failed to update shortcut');
-        }
+        await readShortcutJson(response, 'Failed to update shortcut');
     };
 
     const removeShortcut = async function (shortcutId) {
@@ -890,9 +903,7 @@
             }
         });
 
-        if (!response.ok) {
-            throw new Error('Failed to remove shortcut');
-        }
+        await readShortcutJson(response, 'Failed to remove shortcut');
     };
 
     if (shortcutNameInput) {
@@ -921,7 +932,9 @@
                 shortcutForm.hidden = true;
                 resetEditMode();
                 await fetchShortcuts();
-            } catch (error) {}
+            } catch (error) {
+                shortcutsHint.textContent = error && error.message ? error.message : '';
+            }
         });
     }
 
@@ -970,7 +983,9 @@
                 resetEditMode();
             }
             await fetchShortcuts();
-        } catch (error) {}
+        } catch (error) {
+            shortcutsHint.textContent = error && error.message ? error.message : '';
+        }
     });
 
     shortcutsGrid.addEventListener('contextmenu', function (event) {

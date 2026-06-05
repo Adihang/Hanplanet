@@ -69,6 +69,18 @@
         statusEl.classList.toggle('is-error', Boolean(isError));
     };
 
+    const selectServerMessage = function (payload, fallback) {
+        if (!payload || typeof payload !== 'object') {
+            return fallback || '';
+        }
+        const lang = (document.documentElement.getAttribute('lang') || '').toLowerCase().indexOf('en') === 0 ? 'en' : 'ko';
+        const messages = payload.error_messages || payload.messages;
+        if (messages && typeof messages === 'object') {
+            return messages[lang] || messages.ko || messages.en || fallback || '';
+        }
+        return payload.error_message || payload.message || payload.error || fallback || '';
+    };
+
     const setBusy = function (busy) {
         if (!submitButton) {
             return;
@@ -146,7 +158,7 @@
             })
             .then(function (data) {
                 if (!data || data.ok === false) {
-                    throw new Error((data && data.error) || downloadFailedMessage);
+                    throw new Error(selectServerMessage(data, downloadFailedMessage));
                 }
                 setStatus('', false);
                 renderQualityMenu(data.qualities || [], url);
@@ -200,23 +212,25 @@
             saveButton.classList.remove('is-saved');
         }
 
-        const video = document.createElement('video');
-        video.className = 'video-js vjs-default-skin youtube-downloader-player';
-        if (format === 'mp3') {
-            video.classList.add('is-audio');
+        const isAudio = format === 'mp3';
+        const media = document.createElement(isAudio ? 'audio' : 'video');
+        media.className = isAudio
+            ? 'youtube-downloader-player is-audio'
+            : 'video-js vjs-default-skin youtube-downloader-player';
+        media.controls = true;
+        media.preload = 'metadata';
+        if (!isAudio) {
+            media.playsInline = true;
         }
-        video.controls = true;
-        video.preload = 'metadata';
-        video.playsInline = true;
 
         const source = document.createElement('source');
         source.src = fileUrl;
         source.type = mimeType;
-        video.appendChild(source);
+        media.appendChild(source);
 
         if (playerSlot) {
             playerSlot.textContent = '';
-            playerSlot.appendChild(video);
+            playerSlot.appendChild(media);
         }
         if (previewMeta) {
             previewMeta.textContent = filename;
@@ -227,7 +241,9 @@
         if (preview) {
             preview.hidden = false;
         }
-        initHandrivePlayer(video);
+        if (!isAudio) {
+            initHandrivePlayer(media);
+        }
     };
 
     const downloadCurrentResult = function () {
@@ -301,7 +317,7 @@
             })
             .then(function (data) {
                 if (!data || !data.ok || !data.file_url) {
-                    throw new Error((data && data.error) || downloadFailedMessage);
+                    throw new Error(selectServerMessage(data, downloadFailedMessage));
                 }
                 renderPreview(data.file_url, data.filename || ('youtube.' + format), data.format || format, data.token || '');
             })

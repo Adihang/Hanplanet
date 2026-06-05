@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static_versioned %}
 {% block body_class %}handrive-page handrive-write-page{% endblock %}
 {% block content %}
 {% include 'handrive/_assets_head.html' %}
@@ -47,6 +48,15 @@
     data-image-editor-remove-background-url="{{ handrive_image_editor_remove_background_url }}"
     data-audio-editor-save-url="{{ handrive_audio_editor_save_url }}"
     data-video-editor-save-url="{{ handrive_video_editor_save_url }}"
+    data-image-editor-script-url="{% static_v 'js/handrive/image_editor.js' %}"
+    data-video-editor-script-url="{% static_v 'js/handrive/video_editor.js' %}"
+    data-audio-editor-script-url="{% static_v 'js/handrive/audio_editor.js' %}"
+    data-videojs-script-url="{% static_v 'vendor/videojs/video.min.js' %}"
+    data-videojs-compat-script-url="{% static_v 'js/handrive/videojs_compat.js' %}"
+    data-videojs-seek-buttons-script-url="{% static_v 'vendor/videojs/videojs-seek-buttons.min.js' %}"
+    data-videojs-hotkeys-script-url="{% static_v 'vendor/videojs/videojs.hotkeys.min.js' %}"
+    data-videojs-mobile-ui-script-url="{% static_v 'vendor/videojs/videojs-mobile-ui.js' %}"
+    data-video-player-script-url="{% static_v 'js/handrive/video_player.js' %}"
     data-markdown-image-upload-api-url="{{ handrive_api_markdown_image_upload_url }}"
     data-markdown-image-cleanup-api-url="{{ handrive_api_markdown_image_cleanup_url }}"
     data-mkdir-api-url="{{ handrive_api_mkdir_url }}"

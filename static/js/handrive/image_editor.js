@@ -7,6 +7,21 @@
         "#0055ff","#7700ff","#cc0055","#884400","#000000","#ffffff",
     ];
 
+    function selectServerMessage(payload, fallback) {
+        if (window.HandriveSelectServerMessage) {
+            return window.HandriveSelectServerMessage(payload, fallback);
+        }
+        if (!payload || typeof payload !== "object") {
+            return fallback || "";
+        }
+        var lang = (document.documentElement.getAttribute("lang") || "").toLowerCase().indexOf("en") === 0 ? "en" : "ko";
+        var messages = payload.error_messages || payload.messages;
+        if (messages && typeof messages === "object") {
+            return messages[lang] || messages.ko || messages.en || fallback || "";
+        }
+        return payload.error_message || payload.message || payload.error || fallback || "";
+    }
+
     var state = {
         activeTool: "pencil",
         brushSize: 4,
@@ -1780,7 +1795,7 @@
                 .then(function (response) {
                     if (!response.ok) {
                         return response.json().catch(function () { return {}; }).then(function (data) {
-                            throw new Error(data.error || getEditorText("image_editor_remove_bg_error", "배경제거 실패"));
+                            throw new Error(selectServerMessage(data, getEditorText("image_editor_remove_bg_error", "배경제거 실패")));
                         });
                     }
                     return response.blob();
@@ -1883,16 +1898,65 @@
             var hInput = document.getElementById("ie-resize-height");
             var lockCb = document.getElementById("ie-resize-lock-ratio");
             var unitInputs = resizeModal.querySelectorAll("input[name='ie-resize-unit-type']");
-            var origW = 0, origH = 0;
+            var unitLabels = resizeModal.querySelectorAll(".ie-resize-unit");
+            var syncingResizeInputs = false;
+
+            function getActiveResizeUnit() {
+                var activeUnit = "px";
+                unitInputs.forEach(function (r) { if (r.checked) activeUnit = r.value; });
+                return activeUnit;
+            }
+
+            function getResizeNumber(input, fallback) {
+                var value = parseFloat(input ? input.value : "");
+                return Number.isFinite(value) && value > 0 ? value : fallback;
+            }
+
+            function setResizeInputValue(input, value) {
+                if (!input) return;
+                input.value = String(Math.max(1, Math.round(value)));
+            }
+
+            function syncResizeRatio(changedAxis) {
+                if (!wInput || !hInput || !lockCb || !lockCb.checked || syncingResizeInputs) return;
+                var baseW = Math.max(1, state.canvasWidth || 1);
+                var baseH = Math.max(1, state.canvasHeight || 1);
+                var activeUnit = getActiveResizeUnit();
+                if (changedAxis === "width") {
+                    var widthValue = getResizeNumber(wInput, null);
+                    if (widthValue === null) return;
+                    syncingResizeInputs = true;
+                    setResizeInputValue(hInput, activeUnit === "percent" ? widthValue : widthValue * baseH / baseW);
+                } else {
+                    var heightValue = getResizeNumber(hInput, null);
+                    if (heightValue === null) return;
+                    syncingResizeInputs = true;
+                    setResizeInputValue(wInput, activeUnit === "percent" ? heightValue : heightValue * baseW / baseH);
+                }
+                syncingResizeInputs = false;
+            }
+
+            function setResizeFieldsForUnit() {
+                var activeUnit = getActiveResizeUnit();
+                unitLabels.forEach(function (label) {
+                    label.textContent = activeUnit === "percent" ? "%" : "px";
+                });
+                if (activeUnit === "percent") {
+                    setResizeInputValue(wInput, 100);
+                    setResizeInputValue(hInput, 100);
+                    return;
+                }
+                setResizeInputValue(wInput, state.canvasWidth || 1);
+                setResizeInputValue(hInput, state.canvasHeight || 1);
+            }
 
             if (wInput && hInput && lockCb) {
-                wInput.addEventListener("input", function () {
-                    if (lockCb.checked && origW) hInput.value = Math.round(parseInt(wInput.value,10) / origW * origH) || 1;
-                });
-                hInput.addEventListener("input", function () {
-                    if (lockCb.checked && origH) wInput.value = Math.round(parseInt(hInput.value,10) / origH * origW) || 1;
-                });
+                wInput.addEventListener("input", function () { syncResizeRatio("width"); });
+                hInput.addEventListener("input", function () { syncResizeRatio("height"); });
             }
+            unitInputs.forEach(function (r) {
+                r.addEventListener("change", setResizeFieldsForUnit);
+            });
 
             var confirmBtn = document.getElementById("ie-resize-confirm-btn");
             var cancelBtn  = document.getElementById("ie-resize-cancel-btn");
@@ -1900,8 +1964,8 @@
 
             if (confirmBtn) {
                 confirmBtn.addEventListener("click", function () {
-                    var newW = parseInt(wInput ? wInput.value : state.canvasWidth,  10);
-                    var newH = parseInt(hInput ? hInput.value : state.canvasHeight, 10);
+                    var newW = Math.round(getResizeNumber(wInput, state.canvasWidth || 1));
+                    var newH = Math.round(getResizeNumber(hInput, state.canvasHeight || 1));
                     var activeUnit = "px";
                     unitInputs.forEach(function (r) { if (r.checked) activeUnit = r.value; });
                     if (activeUnit === "percent") {
@@ -1940,6 +2004,10 @@
         if (!resizeModal) return;
         var wInput = document.getElementById("ie-resize-width");
         var hInput = document.getElementById("ie-resize-height");
+        var unitInputs = resizeModal.querySelectorAll("input[name='ie-resize-unit-type']");
+        var unitLabels = resizeModal.querySelectorAll(".ie-resize-unit");
+        unitInputs.forEach(function (r) { r.checked = r.value === "px"; });
+        unitLabels.forEach(function (label) { label.textContent = "px"; });
         if (wInput) wInput.value = state.canvasWidth;
         if (hInput) hInput.value = state.canvasHeight;
         openModal(resizeModal);

@@ -1242,6 +1242,18 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         return item;
     }
 
+    function selectServerMessage(data, fallbackMessage) {
+        if (!data || typeof data !== "object") {
+            return fallbackMessage || "";
+        }
+        var lang = (document.documentElement.getAttribute("lang") || "").toLowerCase().indexOf("en") === 0 ? "en" : "ko";
+        var messages = data.error_messages || data.messages;
+        if (messages && typeof messages === "object") {
+            return messages[lang] || messages.ko || messages.en || fallbackMessage || "";
+        }
+        return data.error_message || data.message || data.error || fallbackMessage || "";
+    }
+
     function uploadFormDataWithQueue(item, url, formData, fallbackErrorMessage) {
         return new Promise(function(resolve, reject) {
             if (!url) {
@@ -1286,7 +1298,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                     resolve(data);
                     return;
                 }
-                var message = data && data.error ? data.error : (fallbackErrorMessage || "업로드에 실패했습니다.");
+                var message = selectServerMessage(data, fallbackErrorMessage || "업로드에 실패했습니다.");
                 item.status = "failed";
                 item.errorMessage = message;
                 item.progress = 100;
@@ -4030,7 +4042,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
                 btn.remove();
             } else {
                 queueItem.status = "failed";
-                queueItem.errorMessage = data.error || "아이콘 삭제에 실패했습니다.";
+                queueItem.errorMessage = selectServerMessage(data, "아이콘 삭제에 실패했습니다.");
                 queueItem.progress = 100;
                 renderMapUploadQueue();
             }
@@ -4270,7 +4282,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (saveStatusEl) {
-                saveStatusEl.textContent = data.ok ? "저장 완료" : (data.error || "저장 실패");
+                saveStatusEl.textContent = data.ok ? "저장 완료" : selectServerMessage(data, "저장 실패");
                 setTimeout(function() { if (saveStatusEl) saveStatusEl.textContent = ""; }, 2000);
             }
         })

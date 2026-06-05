@@ -45,6 +45,12 @@
         var mapEditorBaseUrl = settings.mapEditorBaseUrl;
         var requestJson = settings.requestJson;
         var buildPostOptions = settings.buildPostOptions;
+        var selectServerMessage = settings.selectServerMessage || window.HandriveSelectServerMessage || function (payload, fallback) {
+            if (!payload || typeof payload !== "object") {
+                return fallback || "";
+            }
+            return payload.error_message || payload.message || payload.error || fallback || "";
+        };
         var onClose = settings.onClose || function () {};
         var onError = settings.onError || function () {};
 
@@ -61,7 +67,7 @@
         requestJson(mapCreateApiUrl, buildPostOptions({ image_path: entry.path, map_name: mapName }))
             .then(function (data) {
                 if (!data.ok) {
-                    onError(data.error || "지도 생성에 실패했습니다.");
+                    onError(selectServerMessage(data, "지도 생성에 실패했습니다."));
                     return;
                 }
                 var editorUrl = (mapEditorBaseUrl || "/handrive/map-editor/") + (data.map_path || "");

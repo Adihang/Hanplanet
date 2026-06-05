@@ -32,6 +32,16 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
     const i18n = i18nByLang[uiLang];
+    const selectServerMessage = function(payload, fallback) {
+        if (!payload || typeof payload !== 'object') {
+            return fallback || '';
+        }
+        const messages = payload.error_messages || payload.messages;
+        if (messages && typeof messages === 'object') {
+            return messages[uiLang] || messages.ko || messages.en || fallback || '';
+        }
+        return payload.error_message || payload.message || payload.error || fallback || '';
+    };
     const initialBotMessage = i18n.initialBotMessage;
     const STORAGE_KEY = 'portfolio_chat_history_v1';
     const conversationHistory = [];
@@ -500,21 +510,21 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 console.error('API Error:', response.status, errorData);
-                throw new Error(`${i18n.apiRequestFailed}: ${response.status} ${response.statusText}`);
+                throw new Error(selectServerMessage(errorData, `${i18n.apiRequestFailed}: ${response.status} ${response.statusText}`));
             }
             
             const data = await response.json();
 
             if (data.error) {
                 console.error('Error from server:', data.error);
-                return i18n.genericError;
+                return selectServerMessage(data, i18n.genericError);
             }
             
             return data.response || i18n.responseProcessingError;
             
         } catch (error) {
             console.error('Error calling GPT API:', error);
-            return i18n.serverCommunicationError;
+            return error && error.message ? error.message : i18n.serverCommunicationError;
         } finally {
             stopLoadingAnimation();
         }

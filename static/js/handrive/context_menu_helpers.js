@@ -99,6 +99,7 @@
                 (
                     entry.git_repo ||
                     entry.github_repo ||
+                    entry.google_drive ||
                     entry.git_branch_root ||
                     entry.git_repo_branch ||
                     entry.is_git_virtual
@@ -112,6 +113,7 @@
             targetEntry.git_repo_branch ||
             targetEntry.is_git_virtual
         );
+        var isGoogleDriveEntry = Boolean(targetEntry.google_drive || targetEntry.is_google_drive);
         var canDownloadAllEntries = targets.length > 0 && targets.every(function (entry) {
             return Boolean(entry) &&
                 !entry.isCurrentFolder &&
@@ -146,16 +148,16 @@
         flags.open = !isCurrentFolder;
         flags.download = !isCurrentFolder && (!isDirectory || !isGitVirtualDirectoryEntry(targetEntry));
         flags.extractArchive = Boolean(!isCurrentFolder && !isMultiSelection && targetEntry.is_archive && targetEntry.can_extract);
-        flags.share = canEditEntry && !isGitVirtualEntry && hasShareablePath;
+        flags.share = canEditEntry && !isGitVirtualEntry && !isGoogleDriveEntry && hasShareablePath;
         flags.upload = isDirectory && canWriteChildren && !hasGitRepo;
-        flags.createArchive = Boolean(isDirectory && !isCurrentFolder && canEditEntry && !hasGitRepo && !isGitVirtualEntry);
+        flags.createArchive = Boolean(isDirectory && !isCurrentFolder && canEditEntry && !hasGitRepo && !isGitVirtualEntry && !isGoogleDriveEntry);
         flags.edit = !isDirectory && canShowEditEntry;
         flags.rename = !isCurrentFolder && canEditEntry && !isPublicWriteFile && !hasGitRepo;
         flags.deleteEntry = isEntryDeletable(targetEntry);
         flags.newFolder = isDirectory && canWriteChildren && !hasGitRepo;
         flags.newDoc = isDirectory && canWriteChildren && !hasGitRepo;
-        flags.permissions = !isGitVirtualEntry;
-        flags.gitCreateRepo = isDirectory && canWriteChildren && isEntryDeletable(targetEntry) && !hasGitRepo && !isGitVirtualEntry;
+        flags.permissions = !isGitVirtualEntry && !isGoogleDriveEntry;
+        flags.gitCreateRepo = isDirectory && canWriteChildren && isEntryDeletable(targetEntry) && !hasGitRepo && !isGitVirtualEntry && !isGoogleDriveEntry;
         flags.gitManageRepo = isDirectory && hasGitRepo && canManageRepo;
         flags.gitDeleteRepo = isSingleRepoDirectory && canDeleteRepo;
         flags.gitCreateBranch = Boolean(!isMultiSelection && targetEntry.git_branch_root && canWriteChildren);
@@ -171,7 +173,8 @@
             !isCurrentFolder &&
             canEditEntry &&
             !hasGitRepo &&
-            !isGitVirtualEntry
+            !isGitVirtualEntry &&
+            !isGoogleDriveEntry
         );
         return flags;
     }

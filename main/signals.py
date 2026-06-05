@@ -30,9 +30,9 @@ def on_portfolio_profile_saved(sender, instance, **kwargs):
 
 
 @receiver(post_save, sender="git.GitUserMapping")
-def on_git_user_mapping_created(sender, instance, created, **kwargs):
-    """GitUserMapping이 새로 생성될 때 현재 프로필 사진을 Forgejo에 동기화."""
-    if not created:
+def on_git_user_mapping_saved(sender, instance, created, **kwargs):
+    """GitUserMapping 생성 또는 토큰 준비 시 현재 프로필 사진을 Forgejo에 동기화."""
+    if not created and not instance.forgejo_token:
         return
 
     from .git_tasks import sync_gitea_avatar_task
@@ -41,7 +41,7 @@ def on_git_user_mapping_created(sender, instance, created, **kwargs):
         sync_gitea_avatar_task.delay(instance.user_id)
     except Exception as exc:
         logger.warning(
-            "on_git_user_mapping_created: failed to queue avatar sync for user_id=%s: %s",
+            "on_git_user_mapping_saved: failed to queue avatar sync for user_id=%s: %s",
             instance.user_id,
             exc,
         )

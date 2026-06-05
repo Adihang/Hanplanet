@@ -50,7 +50,9 @@
             return typeMarker;
         }
 
-        if (settings.isGithubRepo) {
+        if (settings.isGoogleDrive) {
+            typeMarker.classList.add("is-google-drive");
+        } else if (settings.isGithubRepo) {
             typeMarker.classList.add("is-github-repo");
         } else if (settings.isRepo) {
             typeMarker.classList.add("is-repo");

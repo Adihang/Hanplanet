@@ -163,7 +163,69 @@
     }
 
     function getCachedEntries(dirPath, state) {
-        return state.directoryCache.get(dirPath) || [];
+        var normalizedPath = String(dirPath || "");
+        if (!state || !state.directoryCache || !state.directoryCache.has(normalizedPath)) {
+            return [];
+        }
+        var entries = state.directoryCache.get(normalizedPath) || [];
+        state.directoryCache.delete(normalizedPath);
+        state.directoryCache.set(normalizedPath, entries);
+        return entries;
+    }
+
+    function trimDirectoryCache(state, protectedPaths) {
+        if (!state || !state.directoryCache) {
+            return;
+        }
+        var maxEntries = Math.max(10, Number(state.directoryCacheMaxEntries) || 120);
+        if (state.directoryCache.size <= maxEntries) {
+            return;
+        }
+        var protectedSet = new Set(Array.isArray(protectedPaths) ? protectedPaths.filter(Boolean) : []);
+        if (state.currentDir) {
+            protectedSet.add(state.currentDir);
+        }
+        if (state.expandedFolders && typeof state.expandedFolders.forEach === "function") {
+            state.expandedFolders.forEach(function (pathValue) {
+                if (pathValue) {
+                    protectedSet.add(pathValue);
+                }
+            });
+        }
+        var keys = Array.from(state.directoryCache.keys());
+        for (var index = 0; index < keys.length && state.directoryCache.size > maxEntries; index += 1) {
+            var key = keys[index];
+            if (protectedSet.has(key)) {
+                continue;
+            }
+            state.directoryCache.delete(key);
+            if (state.directoryMetaCache) {
+                state.directoryMetaCache.delete(key);
+            }
+        }
+    }
+
+    async function mapWithConcurrency(items, limit, worker) {
+        var sourceItems = Array.isArray(items) ? items : [];
+        var concurrency = Math.max(1, Number(limit) || 1);
+        var results = new Array(sourceItems.length);
+        var nextIndex = 0;
+
+        async function runWorker() {
+            while (nextIndex < sourceItems.length) {
+                var currentIndex = nextIndex;
+                nextIndex += 1;
+                results[currentIndex] = await worker(sourceItems[currentIndex], currentIndex);
+            }
+        }
+
+        var workers = [];
+        var workerCount = Math.min(concurrency, sourceItems.length);
+        for (var index = 0; index < workerCount; index += 1) {
+            workers.push(runWorker());
+        }
+        await Promise.all(workers);
+        return results;
     }
 
     async function loadDirectory(dirPath, options) {
@@ -178,16 +240,28 @@
         if (state.directoryCache.has(normalizedDirPath)) {
             return getCachedEntries(normalizedDirPath);
         }
-
-        var data = await requestJson(
-            listApiUrl + "?path=" + encodeURIComponent(normalizedDirPath)
-        );
-        var entries = Array.isArray(data.entries) ? data.entries : [];
-        state.directoryCache.set(normalizedDirPath, entries);
-        if (state.directoryMetaCache && data && data.directory_meta) {
-            state.directoryMetaCache.set(normalizedDirPath, data.directory_meta);
+        if (!state.directoryLoadPromises) {
+            state.directoryLoadPromises = new Map();
         }
-        return entries;
+        if (state.directoryLoadPromises.has(normalizedDirPath)) {
+            return state.directoryLoadPromises.get(normalizedDirPath);
+        }
+
+        var loadPromise = requestJson(
+            listApiUrl + "?path=" + encodeURIComponent(normalizedDirPath)
+        ).then(function (data) {
+            var entries = Array.isArray(data.entries) ? data.entries : [];
+            state.directoryCache.set(normalizedDirPath, entries);
+            if (state.directoryMetaCache && data && data.directory_meta) {
+                state.directoryMetaCache.set(normalizedDirPath, data.directory_meta);
+            }
+            trimDirectoryCache(state, [normalizedDirPath]);
+            return entries;
+        }).finally(function () {
+            state.directoryLoadPromises.delete(normalizedDirPath);
+        });
+        state.directoryLoadPromises.set(normalizedDirPath, loadPromise);
+        return loadPromise;
     }
 
     async function refreshCurrentDirectory(options) {
@@ -208,22 +282,30 @@
         if (state.directoryMetaCache && data && data.directory_meta) {
             state.directoryMetaCache.set(currentDir, data.directory_meta);
         }
+        trimDirectoryCache(state, [currentDir]);
 
         var preserved = new Map();
         preserved.set(currentDir, state.directoryCache.get(currentDir));
         state.directoryCache = preserved;
+        state.directoryLoadPromises = new Map();
 
-        var restoredExpandedFolders = new Set();
+        var expandedPathsToRestore = [];
         for (var index = 0; index < expandedBeforeRefresh.length; index += 1) {
             var expandedPath = normalizePath(expandedBeforeRefresh[index], true);
             if (!expandedPath || expandedPath === currentDir) {
                 continue;
             }
+            expandedPathsToRestore.push(expandedPath);
+        }
+        var restoredPaths = await mapWithConcurrency(expandedPathsToRestore, 4, async function (expandedPath) {
             try {
                 await loadDirectory(expandedPath);
-                restoredExpandedFolders.add(expandedPath);
-            } catch (error) {}
-        }
+                return expandedPath;
+            } catch (error) {
+                return "";
+            }
+        });
+        var restoredExpandedFolders = new Set(restoredPaths.filter(Boolean));
         state.expandedFolders = restoredExpandedFolders;
         renderList();
     }

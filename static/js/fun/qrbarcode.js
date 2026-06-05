@@ -44,6 +44,16 @@
         statusEl.classList.toggle("is-error", Boolean(isError));
     }
 
+    function selectServerMessage(payload, fallback) {
+        if (!payload || typeof payload !== "object") return fallback || "";
+        var lang = (document.documentElement.getAttribute("lang") || "").toLowerCase().indexOf("en") === 0 ? "en" : "ko";
+        var messages = payload.error_messages || payload.messages;
+        if (messages && typeof messages === "object") {
+            return messages[lang] || messages.ko || messages.en || fallback || "";
+        }
+        return payload.error_message || payload.message || payload.error || fallback || "";
+    }
+
     function updatePlaceholder() {
         if (!valueInput) return;
         var inputKind = getCheckedValue("input_kind", "url");
@@ -209,7 +219,7 @@
             })
             .then(function (data) {
                 if (!data || data.ok === false) {
-                    throw new Error((data && data.error) || failedMessage);
+                    throw new Error(selectServerMessage(data, failedMessage));
                 }
                 renderResult(data);
             })

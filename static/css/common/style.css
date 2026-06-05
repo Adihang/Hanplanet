@@ -935,6 +935,7 @@ body.theme-dark .root-auth-modal-dialog {
     display: flex;
     align-items: center;
     justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
@@ -973,27 +974,60 @@ body.theme-dark .root-auth-modal-dialog {
     color: var(--btn-template-primary-hover-color);
 }
 
-.ui-auth-github-modal .root-auth-modal-btn-primary {
+.root-auth-modal-btn-danger {
+    margin-right: auto;
+    border-color: rgba(180, 35, 24, 0.34);
+    background: rgba(180, 35, 24, 0.08);
+    color: #b42318;
+}
+
+.root-auth-modal-btn-danger:hover,
+.root-auth-modal-btn-danger:focus-visible {
+    border-color: rgba(180, 35, 24, 0.58);
+    background: rgba(180, 35, 24, 0.14);
+    color: #8f1d14;
+}
+
+body.theme-dark .root-auth-modal-btn-danger {
+    border-color: rgba(255, 180, 171, 0.36);
+    background: rgba(255, 180, 171, 0.1);
+    color: #ffb4ab;
+}
+
+body.theme-dark .root-auth-modal-btn-danger:hover,
+body.theme-dark .root-auth-modal-btn-danger:focus-visible {
+    border-color: rgba(255, 180, 171, 0.62);
+    background: rgba(255, 180, 171, 0.18);
+    color: #ffd7d2;
+}
+
+.ui-auth-github-modal .root-auth-modal-btn-primary,
+.ui-auth-google-modal .root-auth-modal-btn-primary {
     background: var(--print-button-bg);
     border-color: transparent;
     color: #ffffff;
 }
 
 .ui-auth-github-modal .root-auth-modal-btn-primary:hover,
-.ui-auth-github-modal .root-auth-modal-btn-primary:focus-visible {
+.ui-auth-github-modal .root-auth-modal-btn-primary:focus-visible,
+.ui-auth-google-modal .root-auth-modal-btn-primary:hover,
+.ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible {
     background: rgb(57, 124, 57);
     border-color: transparent;
     color: #ffffff;
 }
 
-body.theme-dark .ui-auth-github-modal .root-auth-modal-btn-primary {
+body.theme-dark .ui-auth-github-modal .root-auth-modal-btn-primary,
+body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary {
     background: var(--print-button-dark-bg);
     border-color: transparent;
     color: #f3f3f3;
 }
 
 body.theme-dark .ui-auth-github-modal .root-auth-modal-btn-primary:hover,
-body.theme-dark .ui-auth-github-modal .root-auth-modal-btn-primary:focus-visible {
+body.theme-dark .ui-auth-github-modal .root-auth-modal-btn-primary:focus-visible,
+body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:hover,
+body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible {
     background: rgb(84, 84, 84);
     border-color: transparent;
     color: #f3f3f3;
@@ -2297,15 +2331,21 @@ body.portfolio-page section {
 }
 
 .coverletter_section {
+    padding-top: 25px;
     text-align: left;
 }
 
 .coverletter_name {
-    margin: 0 0 16px;
+    margin: 0;
     color: var(--theme-ink);
     font-size: 26px;
     font-weight: 800;
     line-height: 1.3;
+}
+
+.coverletter_divider {
+    width: 100%;
+    margin: 18px 0 22px;
 }
 
 .coverletter_content {
@@ -2426,6 +2466,27 @@ body.theme-dark .ui-nav::after {
     flex-wrap: nowrap;
 }
 
+.ui-nav,
+.ui-nav * {
+    overflow: hidden;
+    overscroll-behavior: none;
+    scrollbar-width: none;
+    touch-action: none;
+}
+
+.ui-nav::-webkit-scrollbar,
+.ui-nav *::-webkit-scrollbar {
+    display: none;
+}
+
+.ui-nav,
+.ui-nav .container-fluid,
+.ui-nav .ui-brand-group,
+.ui-nav .ui-brand,
+.ui-nav .ui-brand-text {
+    overflow: visible;
+}
+
 .ui-brand-group {
     display: flex;
     align-items: center;
@@ -2450,6 +2511,7 @@ body.theme-dark .ui-nav::after {
 .ui-brand-text {
     font-size: 28px;
     display: inline-block;
+    padding-inline: 0.08em;
     transition: transform 0.2s ease;
 }
 
@@ -3614,8 +3676,29 @@ body.portfolio-page.theme-dark .career_cards hr {
     margin-top: auto;
 }
 
+body.root-page .site-footer-links {
+    flex-direction: column;
+    gap: 4px;
+}
+
 body.portfolio-page .site-footer-links {
     padding-top: 10px;
+}
+
+.site-footer-nav {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.site-footer-purpose {
+    max-width: min(760px, calc(100vw - 32px));
+    margin: 0;
+    color: rgba(107, 114, 128, 0.68);
+    font-size: 11px;
+    line-height: 1.35;
+    text-align: center;
 }
 
 .site-footer-link {
@@ -3635,6 +3718,10 @@ body.portfolio-page .site-footer-links {
 
 body.theme-dark .site-footer-links {
     color: rgba(255, 255, 255, 0.72);
+}
+
+body.theme-dark .site-footer-purpose {
+    color: rgba(255, 255, 255, 0.38);
 }
 
 body.theme-dark .site-footer-link:hover,

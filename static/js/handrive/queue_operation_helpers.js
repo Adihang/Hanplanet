@@ -139,7 +139,9 @@
                 { signal: controller.signal }
             ));
             var movedPath = data && data.path ? data.path : entry.path;
-            onEntryMoved(entry.path, movedPath);
+            if (!data || data.copied !== true) {
+                onEntryMoved(entry.path, movedPath);
+            }
             movedPaths.push(movedPath);
             item.progress = ((index + 1) / totalCount) * 100;
             item.savedPath = movedPath;

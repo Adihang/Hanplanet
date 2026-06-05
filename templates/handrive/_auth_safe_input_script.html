@@ -1,0 +1,71 @@
+<script>
+    (function () {
+        const forbiddenAuthCharPattern = /[\s'"`\/\\<>;|&“”‘’\x00-\x1F\x7F]/;
+        const forbiddenAuthCharReplacePattern = /[\s'"`\/\\<>;|&“”‘’\x00-\x1F\x7F]/g;
+        const messages = {
+            username: "{{ handrive_text.auth_username_forbidden_chars|escapejs }}",
+            password: "{{ handrive_text.auth_password_forbidden_chars|escapejs }}"
+        };
+
+        function messageFor(input) {
+            const key = input && input.dataset ? input.dataset.handriveAuthSafeInput : "";
+            return messages[key] || messages.username;
+        }
+
+        function setTemporaryValidity(input) {
+            if (!input || typeof input.setCustomValidity !== "function") return;
+            input.setCustomValidity(messageFor(input));
+            if (typeof input.reportValidity === "function") {
+                input.reportValidity();
+            }
+            window.setTimeout(function () {
+                input.setCustomValidity("");
+            }, 1200);
+        }
+
+        function bindInput(input) {
+            if (!input || input.dataset.handriveAuthSafeReady === "1") return;
+            input.dataset.handriveAuthSafeReady = "1";
+
+            input.addEventListener("beforeinput", function (event) {
+                if (!event.data || event.inputType.indexOf("delete") === 0) return;
+                if (!forbiddenAuthCharPattern.test(event.data)) return;
+                event.preventDefault();
+                setTemporaryValidity(input);
+            });
+
+            input.addEventListener("input", function () {
+                const safeValue = String(input.value || "").replace(forbiddenAuthCharReplacePattern, "");
+                if (input.value !== safeValue) {
+                    const selectionStart = input.selectionStart;
+                    input.value = safeValue;
+                    try {
+                        const nextPosition = Math.min(
+                            selectionStart === null ? safeValue.length : selectionStart,
+                            safeValue.length
+                        );
+                        input.setSelectionRange(nextPosition, nextPosition);
+                    } catch (error) {}
+                    setTemporaryValidity(input);
+                    return;
+                }
+                input.setCustomValidity("");
+            });
+        }
+
+        document.querySelectorAll("[data-handrive-auth-safe-input]").forEach(bindInput);
+        document.querySelectorAll("form").forEach(function (form) {
+            form.addEventListener("submit", function (event) {
+                const invalidInput = form.querySelector("[data-handrive-auth-safe-input]")
+                    && Array.from(form.querySelectorAll("[data-handrive-auth-safe-input]")).find(function (input) {
+                        return forbiddenAuthCharPattern.test(String(input.value || ""));
+                    });
+                if (!invalidInput) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                setTemporaryValidity(invalidInput);
+                invalidInput.focus({ preventScroll: true });
+            }, true);
+        });
+    })();
+</script>

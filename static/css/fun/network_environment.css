@@ -1,0 +1,301 @@
+body.network-environment-page {
+    min-height: 100dvh;
+}
+
+.network-environment-content {
+    display: grid;
+    gap: 12px;
+    padding-top: 14px;
+}
+
+.network-summary,
+.network-speed-panel,
+.network-info-section {
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    background: var(--shared-card-bg);
+    padding: 14px;
+    box-sizing: border-box;
+}
+
+.network-section-title {
+    margin: 0;
+    color: var(--handrive-text-stronger);
+    font-size: 17px;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.network-summary {
+    display: grid;
+    gap: 12px;
+}
+
+.network-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.network-summary-item {
+    min-width: 0;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    background: var(--handrive-surface-muted);
+    padding: 12px;
+    display: grid;
+    gap: 5px;
+    box-sizing: border-box;
+}
+
+.network-summary-label,
+.network-meter-label {
+    color: var(--handrive-text-faint);
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.network-summary-value {
+    min-width: 0;
+    color: var(--handrive-text-stronger);
+    font-size: 19px;
+    font-weight: 850;
+    line-height: 1.22;
+    overflow-wrap: anywhere;
+}
+
+.network-summary-meta {
+    min-height: 17px;
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.network-speed-panel {
+    display: grid;
+    gap: 12px;
+}
+
+.network-action-row,
+.network-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.network-action-row {
+    justify-content: flex-start;
+}
+
+.network-inline-status {
+    margin: 0;
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.network-inline-status.is-error {
+    color: #dc2626;
+}
+
+.network-speed-results {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.network-meter {
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    background: var(--handrive-surface-muted-strong);
+    padding: 12px;
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+}
+
+.network-meter strong {
+    color: #166534;
+    font-size: 20px;
+    font-weight: 850;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+body.theme-dark .network-meter strong {
+    color: #86efac;
+}
+
+.network-meter span:last-child {
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.network-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.network-info-section {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+}
+
+.network-info-list {
+    margin: 0;
+    display: grid;
+    grid-template-columns: minmax(120px, 0.38fr) minmax(0, 1fr);
+    gap: 1px 10px;
+}
+
+.network-info-list-wide {
+    grid-template-columns: minmax(150px, 0.22fr) minmax(0, 1fr);
+}
+
+.network-info-list dt,
+.network-info-list dd {
+    min-width: 0;
+    border-top: 1px solid var(--handrive-border-soft);
+    padding: 9px 0;
+    line-height: 1.4;
+}
+
+.network-info-list dt {
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.network-info-list dd {
+    margin: 0;
+    color: var(--handrive-text-stronger);
+    font-size: 14px;
+    overflow-wrap: anywhere;
+}
+
+.network-info-list dd code,
+.network-table code {
+    color: inherit;
+    background: var(--handrive-surface-muted);
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 6px;
+    padding: 1px 5px;
+    font-size: 0.92em;
+}
+
+.network-location-section,
+.network-webrtc-section {
+    width: 100%;
+}
+
+.network-location-map {
+    color: #1d4ed8;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.network-location-map:hover,
+.network-location-map:focus-visible {
+    text-decoration: underline;
+}
+
+body.theme-dark .network-location-map {
+    color: #93c5fd;
+}
+
+.network-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+}
+
+.network-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 640px;
+}
+
+.network-table th,
+.network-table td {
+    border-bottom: 1px solid var(--handrive-border-soft);
+    padding: 10px;
+    color: var(--handrive-text-stronger);
+    font-size: 14px;
+    line-height: 1.35;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+
+.network-table th {
+    background: var(--handrive-surface-muted);
+    color: var(--handrive-text-muted);
+    font-size: 12px;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.network-table tr:last-child td {
+    border-bottom: 0;
+}
+
+.network-table td[data-network-empty-cell] {
+    color: var(--handrive-text-faint);
+    text-align: center;
+}
+
+.network-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 999px;
+    background: var(--handrive-surface-muted);
+    color: var(--handrive-text-muted);
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+@media (max-width: 980px) {
+    .network-summary-grid,
+    .network-speed-results,
+    .network-info-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 680px) {
+    .network-summary-grid,
+    .network-speed-results,
+    .network-info-grid,
+    .network-info-list,
+    .network-info-list-wide {
+        grid-template-columns: 1fr;
+    }
+
+    .network-info-list dt {
+        padding-bottom: 2px;
+    }
+
+    .network-info-list dd {
+        border-top: 0;
+        padding-top: 0;
+    }
+
+    .network-action-row .ui-btn,
+    .network-section-head .ui-btn,
+    .ui-toolbar-right .ui-btn {
+        width: 100%;
+    }
+}

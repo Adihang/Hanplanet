@@ -11,6 +11,26 @@
             return;
         }
 
+        const blockNavInternalScroll = function (event) {
+            if (event.cancelable) {
+                event.preventDefault();
+            }
+        };
+
+        const resetNavInternalScroll = function (event) {
+            const target = event.target;
+            if (!(target instanceof HTMLElement) || target === nav) {
+                return;
+            }
+
+            target.scrollTop = 0;
+            target.scrollLeft = 0;
+        };
+
+        nav.addEventListener('wheel', blockNavInternalScroll, { passive: false });
+        nav.addEventListener('touchmove', blockNavInternalScroll, { passive: false });
+        nav.addEventListener('scroll', resetNavInternalScroll, true);
+
         const navContainer = nav.querySelector('.container-fluid');
         const navBrandGroup = nav.querySelector('.ui-brand-group');
         const navLinks = nav.querySelector('.ui-nav-links');

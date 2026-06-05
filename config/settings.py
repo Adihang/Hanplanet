@@ -226,6 +226,15 @@ GITHUB_API_BASE_URL       = load_optional_secret("GITHUB_API_BASE_URL", "https:/
 GITHUB_API_VERSION        = load_optional_secret("GITHUB_API_VERSION", "2022-11-28")
 GITHUB_REPO_CACHE_ROOT    = str(get_github_repo_cache_root(DISC))
 
+# Google OAuth 설정
+GOOGLE_AUTH_CLIENT_ID     = load_optional_secret("GOOGLE_AUTH_CLIENT_ID", "")
+GOOGLE_AUTH_CLIENT_SECRET = load_optional_secret("GOOGLE_AUTH_CLIENT_SECRET", "")
+GOOGLE_AUTH_CALLBACK_URL  = load_optional_secret("GOOGLE_AUTH_CALLBACK_URL", "")
+GOOGLE_AUTH_SCOPE         = load_optional_secret("GOOGLE_AUTH_SCOPE", "openid email profile https://www.googleapis.com/auth/drive")
+GOOGLE_AUTH_AUTHORIZE_URL = load_optional_secret("GOOGLE_AUTH_AUTHORIZE_URL", "https://accounts.google.com/o/oauth2/v2/auth")
+GOOGLE_AUTH_TOKEN_URL     = load_optional_secret("GOOGLE_AUTH_TOKEN_URL", "https://oauth2.googleapis.com/token")
+GOOGLE_AUTH_USERINFO_URL  = load_optional_secret("GOOGLE_AUTH_USERINFO_URL", "https://www.googleapis.com/oauth2/v3/userinfo")
+
 # MinIO (S3 호환 오브젝트 스토리지) 설정
 MINIO_ENDPOINT        = load_optional_secret("MINIO_ENDPOINT", "localhost:9000")
 MINIO_ACCESS_KEY      = load_optional_secret("MINIO_ACCESS_KEY", "minioadmin")

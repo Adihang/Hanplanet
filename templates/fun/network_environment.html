@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+{% load static_versioned %}
+
+{% block body_class %}ui-page network-environment-page{% endblock %}
+
+{% block extra_head %}
+{% include 'handrive/_assets_head.html' %}
+<link rel="stylesheet" type="text/css" href="{% static_v 'css/fun/network_environment.css' %}">
+<script src="{% static_v 'js/fun/network_environment.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+{% endblock %}
+
+{% block content %}
+<div class="ui-toolbar-wrap">
+    <div class="ui-shell ui-toolbar">
+        <div class="ui-toolbar-left">
+            <div class="ui-title-row">
+                <h1 class="ui-title">{{ page_title }}</h1>
+            </div>
+            <div class="ui-subtitle ui-path-breadcrumbs">
+                <a class="ui-path-link" href="/">{{ home_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <a class="ui-path-link" href="{{ sub_url }}">{{ sub_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <span class="ui-path-current">{{ page_title }}</span>
+            </div>
+        </div>
+        <div class="ui-toolbar-right">
+            <button class="ui-btn" type="button" data-network-refresh>{{ refresh_button_label }}</button>
+        </div>
+    </div>
+</div>
+
+<main
+    class="ui-shell ui-content network-environment-content"
+    data-network-environment
+    data-environment-url="{{ environment_api_url }}"
+    data-download-url="{{ download_api_url }}"
+    data-upload-url="{{ upload_api_url }}"
+    data-download-size="{{ download_size_bytes }}"
+    data-upload-size="{{ upload_size_bytes }}"
+>
+    <section class="network-summary" aria-labelledby="networkSummaryTitle">
+        <h2 class="network-section-title" id="networkSummaryTitle">{{ summary_title }}</h2>
+        <div class="network-summary-grid">
+            <article class="network-summary-item">
+                <span class="network-summary-label">{{ public_ip_label }}</span>
+                <strong class="network-summary-value" data-network-value="summary-public-ip">-</strong>
+                <span class="network-summary-meta" data-network-value="summary-public-ip-kind">-</span>
+            </article>
+            <article class="network-summary-item">
+                <span class="network-summary-label">{{ local_ip_label }}</span>
+                <strong class="network-summary-value" data-network-value="summary-local-ip">-</strong>
+                <span class="network-summary-meta" data-network-value="summary-local-ip-kind">-</span>
+            </article>
+            <article class="network-summary-item">
+                <span class="network-summary-label">{{ location_label }}</span>
+                <strong class="network-summary-value" data-network-value="summary-location">-</strong>
+                <span class="network-summary-meta" data-network-value="summary-location-accuracy">-</span>
+            </article>
+            <article class="network-summary-item">
+                <span class="network-summary-label">{{ speed_label }}</span>
+                <strong class="network-summary-value" data-network-value="summary-speed">-</strong>
+                <span class="network-summary-meta" data-network-value="summary-speed-meta">-</span>
+            </article>
+        </div>
+    </section>
+
+    <section class="network-speed-panel" aria-label="{{ speed_label }}">
+        <div class="network-action-row">
+            <button class="ui-btn ui-btn-primary" type="button" data-network-download-test>{{ download_button_label }}</button>
+            <button class="ui-btn ui-btn-primary" type="button" data-network-upload-test>{{ upload_button_label }}</button>
+            <p class="network-inline-status" data-network-speed-status role="status" aria-live="polite"></p>
+        </div>
+        <div class="network-speed-results">
+            <div class="network-meter">
+                <span class="network-meter-label">Download</span>
+                <strong data-network-value="download-speed">-</strong>
+                <span data-network-value="download-meta">-</span>
+            </div>
+            <div class="network-meter">
+                <span class="network-meter-label">Upload</span>
+                <strong data-network-value="upload-speed">-</strong>
+                <span data-network-value="upload-meta">-</span>
+            </div>
+            <div class="network-meter">
+                <span class="network-meter-label">Latency</span>
+                <strong data-network-value="api-latency">-</strong>
+                <span data-network-value="api-latency-meta">-</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="network-info-grid">
+        <section class="network-info-section" aria-labelledby="networkBrowserTitle">
+            <h2 class="network-section-title" id="networkBrowserTitle">{{ browser_section_title }}</h2>
+            <dl class="network-info-list" data-network-list="browser"></dl>
+        </section>
+
+        <section class="network-info-section" aria-labelledby="networkRequestTitle">
+            <h2 class="network-section-title" id="networkRequestTitle">{{ request_section_title }}</h2>
+            <dl class="network-info-list" data-network-list="request"></dl>
+        </section>
+
+        <section class="network-info-section" aria-labelledby="networkDeviceTitle">
+            <h2 class="network-section-title" id="networkDeviceTitle">{{ device_section_title }}</h2>
+            <dl class="network-info-list" data-network-list="device"></dl>
+        </section>
+
+        <section class="network-info-section" aria-labelledby="networkServerTitle">
+            <h2 class="network-section-title" id="networkServerTitle">{{ server_section_title }}</h2>
+            <dl class="network-info-list" data-network-list="server"></dl>
+        </section>
+    </div>
+
+    <section class="network-info-section network-location-section" aria-labelledby="networkLocationTitle">
+        <div class="network-section-head">
+            <h2 class="network-section-title" id="networkLocationTitle">{{ location_section_title }}</h2>
+            <button class="ui-btn" type="button" data-network-gps>{{ gps_button_label }}</button>
+        </div>
+        <dl class="network-info-list network-info-list-wide" data-network-list="location"></dl>
+    </section>
+
+    <section class="network-info-section network-webrtc-section" aria-labelledby="networkWebrtcTitle">
+        <div class="network-section-head">
+            <h2 class="network-section-title" id="networkWebrtcTitle">{{ webrtc_section_title }}</h2>
+            <button class="ui-btn" type="button" data-network-webrtc>{{ webrtc_button_label }}</button>
+        </div>
+        <div class="network-table-wrap">
+            <table class="network-table">
+                <thead>
+                    <tr>
+                        <th>Address</th>
+                        <th>Kind</th>
+                        <th>Protocol</th>
+                        <th>Candidate</th>
+                    </tr>
+                </thead>
+                <tbody data-network-table="webrtc">
+                    <tr>
+                        <td colspan="4" data-network-empty-cell>-</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="network-inline-status" data-network-webrtc-status role="status" aria-live="polite"></p>
+    </section>
+</main>
+{% include "partials/site_footer_links.html" %}
+{% endblock %}

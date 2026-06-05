@@ -113,6 +113,7 @@
 
         setupControls(player);
         setupControlBarHoverState(player, cleanups);
+        setupDelayedMenuPopups(player, cleanups);
         setupResponsiveControlBar(player, cleanups);
         setupLoop(player, cleanups);
         setupPip(player, cleanups);
@@ -121,7 +122,6 @@
         setupPersist(player);
         setupMobile(player, cleanups);
         setupErrors(player);
-        setupNetwork(player);
         setupAnalytics(player);
         setupMediaSession(player, el);
         setupHls(player, el, cleanups);
@@ -133,10 +133,15 @@
         const savedRate  = parseFloat(ls.get('vjs-playback-rate')) || 1;
         const fallbackSrc  = el.dataset.fallbackSrc  || '';
         const fallbackType = el.dataset.fallbackType || 'video/mp4';
+        const faststartSrc = el.dataset.faststartUrl || '';
+        const startupSrc = faststartSrc || fallbackSrc;
+        const startupType = faststartSrc ? 'video/mp4' : fallbackType;
+        const preloadMode = isPreview ? 'metadata' : 'auto';
+        el.preload = preloadMode;
 
         const player = videojs(el, {
             controls:            true,
-            preload:             isPreview ? 'none' : 'metadata',
+            preload:             preloadMode,
             playbackRates:       [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
             defaultPlaybackRate: savedRate,
             muted:               false,
@@ -156,9 +161,9 @@
             },
         });
 
-        // 초기 소스: fallback MP4로 먼저 설정 (setupHls가 HLS로 교체)
-        if (fallbackSrc) {
-            player.src({ src: fallbackSrc, type: fallbackType });
+        // 초기 소스: faststart MP4가 있으면 먼저 사용해 첫 재생 버퍼링을 줄인다.
+        if (startupSrc) {
+            player.src({ src: startupSrc, type: startupType });
         }
 
         // 포스터 이미지
@@ -167,9 +172,35 @@
             player.ready(() => player.poster(posterUrl));
         }
 
-        // preload:none 패널에서 hover 시 warmup (첫 재생 딜레이 완화)
+        // 상세 재생 화면은 idle 시점에 미리 로드를 걸어 첫 클릭 지연을 줄인다.
+        if (!isPreview && startupSrc) {
+            player.ready(() => {
+                const warmup = () => {
+                    if (player.isDisposed && player.isDisposed()) return;
+                    try {
+                        player.preload('auto');
+                        player.load();
+                    } catch (_) {}
+                };
+                if ('requestIdleCallback' in window) {
+                    window.requestIdleCallback(warmup, { timeout: 800 });
+                } else {
+                    window.setTimeout(warmup, 250);
+                }
+            });
+        }
+
+        // 미리보기 패널은 hover/touch 직전에만 warmup 한다.
         if (isPreview) {
-            el.addEventListener('mouseenter', () => player.load(), { once: true });
+            const warmupPreview = () => {
+                try {
+                    player.preload('metadata');
+                    player.load();
+                } catch (_) {}
+            };
+            ['mouseenter', 'pointerdown', 'touchstart', 'focusin'].forEach(eventName => {
+                el.addEventListener(eventName, warmupPreview, { once: true, passive: true });
+            });
         }
 
         return player;
@@ -210,6 +241,94 @@
         });
     }
 
+    function setupDelayedMenuPopups(player, cleanups) {
+        const barComponent = player.getChild('controlBar');
+        const bar = barComponent && typeof barComponent.el === 'function' ? barComponent.el() : null;
+        if (!bar) return;
+
+        const boundTargets = new WeakSet();
+        const selector = '.vjs-playback-rate, .vjs-quality-selector';
+
+        function bindTarget(target) {
+            if (!target || boundTargets.has(target)) return;
+
+            const getMenu = () => target.querySelector('.vjs-menu');
+            const menu = getMenu();
+            if (!menu) return;
+
+            boundTargets.add(target);
+
+            let closeTimer = null;
+            const clearCloseTimer = () => {
+                if (!closeTimer) return;
+                window.clearTimeout(closeTimer);
+                closeTimer = null;
+            };
+            const openMenu = () => {
+                clearCloseTimer();
+                const currentMenu = getMenu();
+                if (!currentMenu) return;
+                target.classList.add('handrive-delayed-menu-open');
+                currentMenu.classList.add('vjs-lock-showing');
+            };
+            const closeMenu = () => {
+                clearCloseTimer();
+                target.classList.remove('handrive-delayed-menu-open');
+                target.querySelectorAll('.vjs-menu.vjs-lock-showing').forEach(currentMenu => {
+                    currentMenu.classList.remove('vjs-lock-showing');
+                });
+            };
+            const scheduleCloseMenu = () => {
+                clearCloseTimer();
+                closeTimer = window.setTimeout(closeMenu, 500);
+            };
+            const closeWhenLeavingPopup = (event) => {
+                if (event.relatedTarget && target.contains(event.relatedTarget)) return;
+                if (event.target && event.target.closest('.vjs-menu')) {
+                    closeMenu();
+                }
+            };
+            const closeAfterSelection = (event) => {
+                if (event.target && event.target.closest('.vjs-menu-item')) {
+                    closeMenu();
+                }
+            };
+
+            target.addEventListener('pointerenter', openMenu);
+            target.addEventListener('pointerleave', scheduleCloseMenu);
+            target.addEventListener('pointerout', closeWhenLeavingPopup);
+            target.addEventListener('focusin', openMenu);
+            target.addEventListener('focusout', scheduleCloseMenu);
+            target.addEventListener('click', closeAfterSelection);
+
+            cleanups.push(() => {
+                target.removeEventListener('pointerenter', openMenu);
+                target.removeEventListener('pointerleave', scheduleCloseMenu);
+                target.removeEventListener('pointerout', closeWhenLeavingPopup);
+                target.removeEventListener('focusin', openMenu);
+                target.removeEventListener('focusout', scheduleCloseMenu);
+                target.removeEventListener('click', closeAfterSelection);
+                closeMenu();
+            });
+        }
+
+        function bindMenus() {
+            bar.querySelectorAll(selector).forEach(bindTarget);
+        }
+
+        const observer = typeof MutationObserver === 'function'
+            ? new MutationObserver(bindMenus)
+            : null;
+
+        player.ready(bindMenus);
+        bindMenus();
+
+        if (observer) {
+            observer.observe(bar, { childList: true, subtree: true });
+            cleanups.push(() => observer.disconnect());
+        }
+    }
+
     function setupResponsiveControlBar(player, cleanups) {
         const root = player.el();
         const barComponent = player.getChild('controlBar');
@@ -217,30 +336,133 @@
         if (!root || !bar) return;
 
         let frameId = 0;
+        const toggleButton = document.createElement('button');
+        const toggleIcon = document.createElement('span');
+        toggleButton.type = 'button';
+        toggleButton.className = 'vjs-control vjs-button vjs-handrive-right-actions-toggle';
+        toggleButton.setAttribute('aria-expanded', 'false');
+        toggleButton.setAttribute('aria-label', textByLang('우측 버튼 펼치기', 'Expand right controls'));
+        toggleButton.setAttribute('title', textByLang('우측 버튼 펼치기', 'Expand right controls'));
+        toggleIcon.className = 'vjs-icon-placeholder';
+        toggleIcon.setAttribute('aria-hidden', 'true');
+        toggleIcon.textContent = '<';
+        toggleButton.appendChild(toggleIcon);
+
+        function isHiddenControl(element) {
+            return !element || element.hidden || element.classList.contains('vjs-hidden');
+        }
 
         function getHorizontalSize(element) {
             if (!element || element.classList.contains('vjs-progress-control')) return 0;
             if (element.classList.contains('vjs-custom-control-spacer')) return 0;
+            if (isHiddenControl(element)) return 0;
+            if (!element.classList.contains('vjs-control')) return 0;
             const style = window.getComputedStyle(element);
-            if (style.display === 'none') return 0;
-            return element.offsetWidth
+            const width = element.offsetWidth
+                || element.getBoundingClientRect().width
+                || parseFloat(style.width)
+                || 36;
+            return width
                 + (parseFloat(style.marginLeft) || 0)
                 + (parseFloat(style.marginRight) || 0);
         }
 
+        function getControls() {
+            return Array.from(bar.children);
+        }
+
+        function getSpacerIndex(controls) {
+            return controls.findIndex(child => child.classList.contains('vjs-custom-control-spacer'));
+        }
+
+        function isToggleControl(element) {
+            return element && element.classList.contains('vjs-handrive-right-actions-toggle');
+        }
+
+        function isFullscreenControl(element) {
+            return element && element.classList.contains('vjs-fullscreen-control');
+        }
+
+        function isAuxiliaryRightControl(element, index, spacerIndex) {
+            return index > spacerIndex
+                && !isHiddenControl(element)
+                && !isToggleControl(element)
+                && !isFullscreenControl(element)
+                && !element.classList.contains('vjs-progress-control')
+                && !element.classList.contains('vjs-custom-control-spacer');
+        }
+
+        function getAuxiliaryRightControls(controls) {
+            const spacerIndex = getSpacerIndex(controls);
+            if (spacerIndex < 0) return [];
+            return controls.filter((child, index) => isAuxiliaryRightControl(child, index, spacerIndex));
+        }
+
+        function placeToggleButton() {
+            const spacer = bar.querySelector('.vjs-custom-control-spacer');
+            if (!spacer) return;
+            const fullscreen = bar.querySelector('.vjs-fullscreen-control');
+            if (fullscreen && toggleButton.nextElementSibling === fullscreen) return;
+            if (fullscreen) {
+                bar.insertBefore(toggleButton, fullscreen);
+                return;
+            }
+            const next = spacer.nextElementSibling;
+            if (next === toggleButton) return;
+            bar.insertBefore(toggleButton, next);
+        }
+
+        function assignOverlayIndexes() {
+            const auxiliaryControls = getAuxiliaryRightControls(getControls());
+            auxiliaryControls.forEach((element, index) => {
+                const reverseIndex = auxiliaryControls.length - index - 1;
+                element.style.setProperty('--handrive-right-action-overlay-index', String(reverseIndex));
+                element.classList.toggle('is-right-actions-overlay-first', index === 0);
+                element.classList.toggle('is-right-actions-overlay-last', index === auxiliaryControls.length - 1);
+                element.classList.toggle('is-right-actions-overlay-only', auxiliaryControls.length === 1);
+            });
+        }
+
+        function syncToggleButton() {
+            const expanded = root.classList.contains('is-right-actions-expanded');
+            toggleIcon.textContent = expanded ? '>' : '<';
+            toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            toggleButton.setAttribute(
+                'aria-label',
+                expanded ? textByLang('우측 버튼 접기', 'Collapse right controls') : textByLang('우측 버튼 펼치기', 'Expand right controls')
+            );
+            toggleButton.setAttribute(
+                'title',
+                expanded ? textByLang('우측 버튼 접기', 'Collapse right controls') : textByLang('우측 버튼 펼치기', 'Expand right controls')
+            );
+        }
+
         function update() {
             frameId = 0;
-            root.classList.remove('is-right-actions-collapsed');
+            placeToggleButton();
+            assignOverlayIndexes();
 
             const style = window.getComputedStyle(bar);
             const availableWidth = bar.clientWidth
                 - (parseFloat(style.paddingLeft) || 0)
                 - (parseFloat(style.paddingRight) || 0);
-            const requiredWidth = Array.from(bar.children).reduce(
-                (total, child) => total + getHorizontalSize(child),
-                0
-            );
-            root.classList.toggle('is-right-actions-collapsed', requiredWidth > availableWidth);
+            const controls = getControls();
+            const spacerIndex = getSpacerIndex(controls);
+            const fullRequiredWidth = controls.reduce((total, child) => {
+                if (isToggleControl(child)) return total;
+                return total + getHorizontalSize(child);
+            }, 0);
+            const isWrapped = bar.getBoundingClientRect().height > 80;
+            const shouldCollapse = spacerIndex >= 0
+                && (fullRequiredWidth > availableWidth || isWrapped);
+
+            root.classList.toggle('is-right-actions-collapsible', shouldCollapse);
+            if (!shouldCollapse) {
+                root.classList.remove('is-right-actions-collapsed', 'is-right-actions-expanded');
+            } else {
+                root.classList.toggle('is-right-actions-collapsed', !root.classList.contains('is-right-actions-expanded'));
+            }
+            syncToggleButton();
         }
 
         function scheduleUpdate() {
@@ -268,6 +490,13 @@
 
         player.ready(scheduleUpdate);
         scheduleUpdate();
+        toggleButton.addEventListener('click', () => {
+            if (!root.classList.contains('is-right-actions-collapsible')) return;
+            const expanded = !root.classList.contains('is-right-actions-expanded');
+            root.classList.toggle('is-right-actions-expanded', expanded);
+            root.classList.toggle('is-right-actions-collapsed', !expanded);
+            syncToggleButton();
+        });
         cleanups.push(() => {
             if (frameId) {
                 window.cancelAnimationFrame(frameId);
@@ -275,7 +504,8 @@
             }
             if (resizeObserver) resizeObserver.disconnect();
             if (mutationObserver) mutationObserver.disconnect();
-            root.classList.remove('is-right-actions-collapsed');
+            toggleButton.remove();
+            root.classList.remove('is-right-actions-collapsible', 'is-right-actions-collapsed', 'is-right-actions-expanded');
         });
     }
 
@@ -833,6 +1063,7 @@
 
     // ── 에러 UI ───────────────────────────────────────────────────────
     function setupErrors(player) {
+        let renderTimer = null;
         const msgs = {
             1: '재생이 중단되었습니다.',
             2: '네트워크 오류가 발생했습니다.',
@@ -840,9 +1071,49 @@
             4: '파일을 재생할 수 없습니다.',
         };
 
-        player.on('error', () => {
+        function getVideoElement() {
+            return player.el().querySelector('video');
+        }
+
+        function hasPlayableState() {
+            const videoEl = getVideoElement();
+            return Boolean(videoEl && videoEl.readyState >= 2 && (!player.paused() || player.currentTime() > 0));
+        }
+
+        function hasRecoverableTransientError(code) {
+            if (code === 1) return true;
+            if (player.handriveHlsSwitching_) return true;
+            if (player.handriveHlsSourceActive_ && player.handriveHlsRecoverable_) return true;
+            return Number(player.handriveSourceTransitionUntil_ || 0) > Date.now();
+        }
+
+        function getRecoverableErrorDelay() {
+            const remaining = Number(player.handriveSourceTransitionUntil_ || 0) - Date.now();
+            return Math.max(180, Math.min(1500, remaining > 0 ? remaining + 80 : 260));
+        }
+
+        function clearErrorState() {
+            const root = player.el();
+            try { player.error(null); } catch (_) {}
+            if (root) root.classList.remove('vjs-error');
+        }
+
+        function renderError() {
             const err  = player.error();
             const code = err ? err.code : 0;
+            if (!err) return;
+            if (code === 1 || hasPlayableState()) {
+                clearErrorState();
+                return;
+            }
+            if (hasRecoverableTransientError(code)) {
+                if (renderTimer) clearTimeout(renderTimer);
+                renderTimer = setTimeout(() => {
+                    renderTimer = null;
+                    renderError();
+                }, getRecoverableErrorDelay());
+                return;
+            }
             const msg  = msgs[code] || '알 수 없는 오류가 발생했습니다.';
 
             console.error('[VideoPlayer]', { code, msg, src: player.currentSrc(), userAgent: navigator.userAgent });
@@ -863,41 +1134,36 @@
                     player.play().catch(() => {});
                 });
             }
-        });
-    }
+        }
 
-    // ── 버퍼링 · 네트워크 UI ─────────────────────────────────────────
-    function setupNetwork(player) {
-        let timer  = null;
-        const root = player.el();
+        player.on('error', () => {
+            if (renderTimer) clearTimeout(renderTimer);
 
-        function getOverlay() {
-            let ov = root.querySelector('.vjs-network-overlay');
-            if (!ov) {
-                ov = document.createElement('div');
-                ov.className = 'vjs-network-overlay';
-                root.appendChild(ov);
+            const err = player.error();
+            const code = err ? err.code : 0;
+            if (code === 1 || hasPlayableState()) {
+                renderTimer = setTimeout(() => {
+                    renderTimer = null;
+                    if (player.error()) clearErrorState();
+                }, 0);
+                return;
             }
-            return ov;
-        }
 
-        function showOverlay(msg) {
-            const ov = getOverlay();
-            ov.textContent = msg;
-            ov.hidden = false;
-        }
+            renderTimer = setTimeout(() => {
+                renderTimer = null;
+                renderError();
+            }, 120);
+        });
 
-        function hideOverlay() {
-            clearTimeout(timer);
-            timer = null;
-            const ov = root.querySelector('.vjs-network-overlay');
-            if (ov) ov.hidden = true;
-        }
+        ['loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'playing', 'timeupdate'].forEach(eventName => {
+            player.on(eventName, () => {
+                if (player.error() && hasPlayableState()) clearErrorState();
+            });
+        });
 
-        player.on('waiting', () => { timer = setTimeout(() => showOverlay('버퍼링 중...'), 1500); });
-        player.on('stalled', () => showOverlay('네트워크가 느립니다...'));
-        player.on('playing', hideOverlay);
-        player.on('ended',   hideOverlay);
+        player.on('dispose', () => {
+            if (renderTimer) clearTimeout(renderTimer);
+        });
     }
 
     // ── Analytics ─────────────────────────────────────────────────────
@@ -966,23 +1232,79 @@
         const manifestUrl = el.dataset.hlsManifestUrl || '';
         const statusUrl   = el.dataset.hlsStatusUrl   || '';
         if (!manifestUrl || !statusUrl) return;
+        const faststartUrl = el.dataset.faststartUrl || '';
+        const fallbackSrc = el.dataset.fallbackSrc || '';
+        const fallbackType = el.dataset.fallbackType || 'video/mp4';
+        const startupSrc = faststartUrl || fallbackSrc;
+        const startupType = faststartUrl ? 'video/mp4' : fallbackType;
+        const hasFaststartStartupSource = Boolean(faststartUrl);
+        const canUseNativeStartupSource = hasFaststartStartupSource
+            || /^(video\/mp4|video\/quicktime|video\/x-m4v)$/i.test(fallbackType);
 
         const POLL_MS = 3000;
         let pollTimer = null;
         let qualitySelectorRetryTimer = null;
         let qualitySelectorRetryCount = 0;
         let qualitySelectorEnabled = false;
+        let hlsKickoffStarted = false;
+        let hlsSwitching = false;
+        let hlsActive = false;
+        let hlsSwitchTimer = null;
+        let hlsPlaybackPending = false;
+        let resumeAfterHlsSwitch = false;
+        let userWantsPlayback = false;
+
+        player.handriveHlsRecoverable_ = Boolean(startupSrc);
+        player.handriveHlsSourceActive_ = false;
 
         function stopPoll() {
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         }
+        function stopHlsSwitchTimer() {
+            if (hlsSwitchTimer) {
+                clearTimeout(hlsSwitchTimer);
+                hlsSwitchTimer = null;
+            }
+        }
         cleanups.push(stopPoll);
+        cleanups.push(stopHlsSwitchTimer);
         cleanups.push(() => {
             if (qualitySelectorRetryTimer) {
                 clearTimeout(qualitySelectorRetryTimer);
                 qualitySelectorRetryTimer = null;
             }
+            player.handriveHlsSwitching_ = false;
+            player.handriveHlsSourceActive_ = false;
+            player.handriveSourceTransitionUntil_ = 0;
         });
+
+        player.on('play', () => { userWantsPlayback = true; });
+        function markHlsPlaybackReady() {
+            hlsPlaybackPending = false;
+            stopHlsSwitchTimer();
+        }
+
+        player.on('playing', () => {
+            userWantsPlayback = true;
+            markHlsPlaybackReady();
+        });
+        player.on('loadeddata', markHlsPlaybackReady);
+        player.on('canplay', markHlsPlaybackReady);
+        player.on('canplaythrough', markHlsPlaybackReady);
+        player.on('pause', () => {
+            if (!hlsSwitching) userWantsPlayback = false;
+        });
+        player.on('ended', () => { userWantsPlayback = false; });
+
+        function markSourceTransition(ms = 3500) {
+            player.handriveSourceTransitionUntil_ = Date.now() + ms;
+        }
+
+        function clearSourceTransitionSoon() {
+            setTimeout(() => {
+                if (!hlsSwitching) player.handriveSourceTransitionUntil_ = 0;
+            }, 600);
+        }
 
         // 화질 선택기 활성화
         function enableQualitySelector() {
@@ -1013,18 +1335,86 @@
             } catch (_) {}
         }
 
+        function sourceIsHls() {
+            const currentSource = typeof player.currentSource === 'function' ? player.currentSource() : null;
+            return Boolean(
+                hlsActive
+                || hlsSwitching
+                || player.handriveHlsSourceActive_
+                || (currentSource && currentSource.src === manifestUrl)
+            );
+        }
+
+        function finishHlsSwitch(previousTime) {
+            hlsSwitching = false;
+            hlsActive = true;
+            player.handriveHlsSwitching_ = false;
+            player.handriveHlsSourceActive_ = true;
+            clearSourceTransitionSoon();
+
+            if (previousTime > 1) {
+                try { player.currentTime(previousTime); } catch (_) {}
+            }
+            if (resumeAfterHlsSwitch) {
+                hlsPlaybackPending = true;
+                player.play().catch(() => {});
+            } else {
+                markHlsPlaybackReady();
+            }
+        }
+
+        function restoreStartupSource(previousTime, shouldResume) {
+            if (!startupSrc) return false;
+
+            stopHlsSwitchTimer();
+            hlsSwitching = false;
+            hlsActive = false;
+            hlsPlaybackPending = false;
+            player.handriveHlsSwitching_ = false;
+            player.handriveHlsSourceActive_ = false;
+            markSourceTransition();
+
+            try { player.error(null); } catch (_) {}
+            player.src({ src: startupSrc, type: startupType });
+            player.one('loadedmetadata', () => {
+                clearSourceTransitionSoon();
+                if (previousTime > 1) {
+                    try { player.currentTime(previousTime); } catch (_) {}
+                }
+                if (shouldResume) {
+                    player.play().catch(() => {});
+                }
+            });
+            return true;
+        }
+
         // HLS 소스로 전환 (재생 중이면 위치 보존)
         function switchToHls() {
+            if (sourceIsHls()) {
+                enableQualitySelector();
+                return;
+            }
             const currentTime = player.currentTime();
-            const wasPlaying  = !player.paused();
+            resumeAfterHlsSwitch = userWantsPlayback || !player.paused();
+            hlsSwitching = true;
+            hlsPlaybackPending = false;
+            player.handriveHlsSwitching_ = true;
+            player.handriveHlsSourceActive_ = true;
+            markSourceTransition();
+
+            try { player.error(null); } catch (_) {}
             player.src({ src: manifestUrl, type: 'application/x-mpegURL' });
             player.ready(() => {
                 enableQualitySelector();
                 player.one('loadedmetadata', () => {
-                    if (currentTime > 1) player.currentTime(currentTime);
-                    if (wasPlaying) player.play().catch(() => {});
+                    finishHlsSwitch(currentTime);
                 });
             });
+            stopHlsSwitchTimer();
+            hlsSwitchTimer = setTimeout(() => {
+                if (!hlsSwitching && !hlsPlaybackPending) return;
+                restoreStartupSource(currentTime, resumeAfterHlsSwitch);
+            }, 12000);
         }
 
         // 트랜스코딩 진행 배지
@@ -1046,27 +1436,9 @@
             const b = player.el().querySelector('.vjs-hls-badge');
             if (b) b.hidden = true;
         }
-        // "HD 사용 가능" 배지 — 클릭 시 HLS로 전환
-        function showHdBadge() {
-            const b = getOrCreateBadge();
-            b.textContent = 'HD 화질 사용 가능 ▸';
-            b.className = 'vjs-hls-badge vjs-hls-badge--ready';
-            b.hidden = false;
-            b.onclick = () => { b.hidden = true; switchToHls(); };
-        }
-
-        function handleStatus(data) {
-            if (data.status === 'ready') {
-                stopPoll();
-                hideBadge();
-                switchToHls();
-            } else if (data.status === 'error') {
-                stopPoll();
-                hideBadge();
-            } else {
-                const pct = data.progress || 0;
-                showBadge(`화질 선택 준비 중... ${pct}%`);
-            }
+        function useHlsWhenReady() {
+            hideBadge();
+            switchToHls();
         }
 
         function fetchHlsStatus() {
@@ -1078,46 +1450,79 @@
             });
         }
 
+        function startPolling() {
+            if (pollTimer) return;
+            pollTimer = setInterval(() => {
+                fetchHlsStatus()
+                    .then(d => {
+                        if (d.status === 'ready') {
+                            stopPoll();
+                            useHlsWhenReady();
+                        } else if (d.status === 'error') {
+                            stopPoll();
+                            hideBadge();
+                        } else {
+                            showBadge(`화질 선택 준비 중... ${d.progress || 0}%`);
+                        }
+                    })
+                    .catch(stopHlsFallback);
+            }, POLL_MS);
+        }
+
+        function kickoffHlsTranscoding() {
+            if (hlsKickoffStarted) return;
+            hlsKickoffStarted = true;
+            showBadge('화질 선택 준비 중... 0%');
+            fetch(manifestUrl).then(r => {
+                if (!r.ok && r.status !== 202) {
+                    throw new Error('HLS manifest failed');
+                }
+                return r;
+            }).then(startPolling).catch(stopHlsFallback);
+        }
+
+        function deferHlsKickoffUntilStartupBuffered() {
+            const kickoffAfterStartup = () => {
+                if (player.isDisposed && player.isDisposed()) return;
+                kickoffHlsTranscoding();
+            };
+            player.one('canplay', kickoffAfterStartup);
+            player.one('loadeddata', kickoffAfterStartup);
+            player.one('error', kickoffHlsTranscoding);
+        }
+
         function stopHlsFallback() {
             stopPoll();
             hideBadge();
         }
 
+        player.on('error', () => {
+            const err = player.error();
+            if (!err || !sourceIsHls()) return;
+            const currentTime = player.currentTime();
+            restoreStartupSource(currentTime, resumeAfterHlsSwitch || userWantsPlayback || !player.paused());
+        });
+
         // 상태 조회 → 필요하면 트랜스코딩 시작
         fetchHlsStatus()
             .then(data => {
                 if (data.status === 'ready') {
-                    // 이미 완료 → 바로 HLS
-                    switchToHls();
+                    // HLS가 준비되면 바로 전환해 control bar에 화질 선택기를 만든다.
+                    useHlsWhenReady();
                 } else if (data.status === 'error') {
                     // 오류 → fallback MP4 그대로 유지
                 } else {
-                    // not_started 또는 transcoding → 트랜스코딩 킥오프
+                    // not_started 또는 transcoding → 첫 재생 버퍼링을 방해하지 않도록 가능하면 지연
                     if (data.status === 'not_started') {
-                        fetch(manifestUrl).then(r => {
-                            if (!r.ok && r.status !== 202) {
-                                throw new Error('HLS manifest failed');
-                            }
-                            return r;
-                        }).catch(stopHlsFallback);
+                        if (canUseNativeStartupSource) {
+                            deferHlsKickoffUntilStartupBuffered();
+                            return;
+                        }
+                        kickoffHlsTranscoding();
+                        return;
                     }
                     showBadge(`화질 선택 준비 중... ${data.progress || 0}%`);
-                    pollTimer = setInterval(() => {
-                        fetchHlsStatus()
-                            .then(d => {
-                                if (d.status === 'ready') {
-                                    stopPoll();
-                                    hideBadge();
-                                    showHdBadge();
-                                } else if (d.status === 'error') {
-                                    stopPoll();
-                                    hideBadge();
-                                } else {
-                                    showBadge(`화질 선택 준비 중... ${d.progress || 0}%`);
-                                }
-                            })
-                            .catch(stopHlsFallback);
-                    }, POLL_MS);
+                    startPolling();
                 }
             })
             .catch(stopHlsFallback); // 상태 조회 실패 시 fallback MP4 그대로

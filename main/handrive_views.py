@@ -18,6 +18,7 @@ import fcntl
 import io
 import logging
 import json
+import mimetypes
 import os
 import sqlite3
 import re
@@ -30,7 +31,7 @@ import time
 import unicodedata
 import uuid
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta, timezone as datetime_timezone
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from functools import wraps
@@ -85,6 +86,41 @@ from .github_auth import (
     list_github_repositories,
     save_github_mapping,
 )
+from .google_auth import (
+    GoogleAuthError,
+    GoogleIdentity,
+    GoogleTokenData,
+    build_google_authorize_url,
+    exchange_google_code,
+    fetch_google_identity,
+    google_token_has_drive_scope,
+    is_google_auth_configured,
+    refresh_google_access_token,
+    save_google_mapping,
+)
+from .google_drive import (
+    GOOGLE_DRIVE_FOLDER_MIME,
+    GoogleDriveDownload,
+    GoogleDriveError,
+    build_available_google_drive_name,
+    create_google_drive_file,
+    create_google_drive_folder,
+    delete_google_drive_file,
+    download_google_drive_file,
+    get_google_drive_file,
+    google_drive_guess_mime_type,
+    is_google_workspace_file,
+    list_google_drive_files,
+    move_google_drive_file,
+    rename_google_drive_file,
+    update_google_drive_file_content,
+)
+from .auth_safety import (
+    HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
+    HANDRIVE_AUTH_VALIDATION_ERROR_CODE,
+    get_auth_forbidden_char_message,
+    validate_auth_safe_value,
+)
 from .handrive.html_assets import load_local_html_companion_assets, load_repo_html_companion_assets
 from .handrive.preview import (
     convert_office_bytes_to_pdf,
@@ -94,7 +130,7 @@ from .handrive.preview import (
     render_handrive_pdf_safely,
 )
 from .models import HandriveAccessRule, HandriveLoginAttemptGuard, HandriveSharedLink, HandriveUserQuota, UserProfile
-from git.models import GitHubAccountMapping, GitUserMapping
+from git.models import GitHubAccountMapping, GitUserMapping, GoogleAccountMapping
 from portfolio.models import PortfolioProfile
 
 logger = logging.getLogger(__name__)
@@ -103,6 +139,12 @@ FORGEJO_SESSION_HELPER_BINARY_NAME = "hanplanet_forgejo_session_blob"
 FORGEJO_AUTH_ERROR_CODE = "FORGEJO"
 HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY = "handrive_github_auth_state"
 HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY = "handrive_github_pending_auth"
+HANDRIVE_GOOGLE_AUTH_STATE_SESSION_KEY = "handrive_google_auth_state"
+HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY = "handrive_google_pending_auth"
+GOOGLE_DRIVE_VIRTUAL_PREFIX = ".google-drive-"
+HANDRIVE_GITHUB_URL_PREFIX = "github"
+HANDRIVE_GOOGLE_DRIVE_URL_PREFIX = "google-drive"
+HANDRIVE_URL_ID_SEPARATOR = "~"
 
 DOCS_FILE_EXTENSION = ".md"
 DOCS_ALLOWED_FILE_EXTENSIONS = (
@@ -147,7 +189,7 @@ MARKDOWN_IMAGE_CONTENT_TYPE_EXTENSIONS = {
     "image/webp": ".webp",
 }
 DOCS_URL_ONLY_GROUP_NAME = "url-only"
-DOCS_META_TITLE = "Hanplanet"
+DOCS_META_TITLE = "Handrive"
 DOCS_META_DESCRIPTION = "Hanplanet workspace"
 DOCS_LOGIN_CAPTCHA_THRESHOLD = 1
 DOCS_UPLOAD_RATE_LIMIT_BYTES_PER_SECOND = 10 * 1024 * 1024
@@ -186,7 +228,15 @@ def _storage_unavailable_response(request, exc: Exception | None = None):
     if exc is not None:
         logger.warning("HanDrive storage unavailable path=%s error=%s", getattr(request, "path", ""), exc)
     if str(getattr(request, "path", "")).startswith("/handrive/api/"):
-        return JsonResponse({"error": message}, status=503)
+        messages = _handrive_json_error_messages(message)
+        return JsonResponse(
+            {
+                "error": message,
+                "error_message": message,
+                "error_messages": messages,
+            },
+            status=503,
+        )
     return HttpResponse(message, status=503)
 
 
@@ -339,6 +389,82 @@ HANDRIVE_VIDEO_EDITOR_CODECS = {
     ".webm": ["-codec:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-codec:a", "libopus", "-b:a", "128k"],
     ".ogv": ["-codec:v", "libtheora", "-q:v", "7", "-codec:a", "libvorbis", "-q:a", "5"],
 }
+
+
+def _resolve_handrive_ffmpeg_bin() -> Path | None:
+    ffmpeg_candidate = shutil.which("ffmpeg")
+    return HANDRIVE_FFMPEG_BIN if HANDRIVE_FFMPEG_BIN.exists() else (Path(ffmpeg_candidate) if ffmpeg_candidate else None)
+
+
+def _resolve_handrive_ffprobe_bin() -> Path | None:
+    bundled_ffprobe = HANDRIVE_FFMPEG_BIN.with_name("ffprobe")
+    ffprobe_candidate = shutil.which("ffprobe")
+    return bundled_ffprobe if bundled_ffprobe.exists() else (Path(ffprobe_candidate) if ffprobe_candidate else None)
+
+
+def _probe_handrive_media_duration(file_path: Path, stream_selector: str | None = None) -> float | None:
+    ffprobe_bin = _resolve_handrive_ffprobe_bin()
+    if ffprobe_bin is None:
+        return None
+    command = [
+        str(ffprobe_bin),
+        "-v",
+        "error",
+    ]
+    if stream_selector:
+        command.extend([
+            "-select_streams",
+            stream_selector,
+            "-show_entries",
+            "stream=duration",
+        ])
+    else:
+        command.extend([
+            "-show_entries",
+            "format=duration",
+        ])
+    command.extend([
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(file_path),
+    ])
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in (result.stdout or "").splitlines():
+        try:
+            duration = float(line.strip())
+        except (TypeError, ValueError):
+            continue
+        if duration > 0:
+            return duration
+    return None
+
+
+def _probe_handrive_audio_duration(file_path: Path, *, allow_format_fallback: bool = True) -> float | None:
+    stream_duration = _probe_handrive_media_duration(file_path, "a:0")
+    if stream_duration is not None or not allow_format_fallback:
+        return stream_duration
+    return _probe_handrive_media_duration(file_path)
+
+
+def _validate_handrive_mp3_duration(source_path: Path, output_path: Path) -> None:
+    source_duration = _probe_handrive_audio_duration(source_path, allow_format_fallback=False)
+    output_duration = _probe_handrive_audio_duration(output_path)
+    if source_duration is None or output_duration is None:
+        return
+    tolerance = max(2.0, min(15.0, source_duration * 0.02))
+    if output_duration + tolerance < source_duration:
+        raise ValueError("mp3 변환 결과가 원본 오디오보다 짧아 중단했습니다.")
+
+
 MAP_MEDIA_EXTENSIONS = MAP_IMAGE_EXTENSIONS | MAP_VIDEO_EXTENSIONS
 MAP_IMAGE_MIME_TYPES = {
     ".png": "image/png",
@@ -511,6 +637,10 @@ DOCS_RENDER_PROFILES_BY_EXTENSION = {
         "css_class": "handrive-media handrive-media-image",
     },
     ".avif": {
+        "mode": DOCS_RENDER_MODE_MEDIA_IMAGE,
+        "css_class": "handrive-media handrive-media-image",
+    },
+    ".ico": {
         "mode": DOCS_RENDER_MODE_MEDIA_IMAGE,
         "css_class": "handrive-media handrive-media-image",
     },
@@ -770,6 +900,8 @@ DOCS_TEXT = {
         "selected_path_placeholder": "경로 선택",
         "create_folder_button": "폴더 생성",
         "save_confirm_button": "저장",
+        "save_loading": "저장 중...",
+        "save_overwrite_badge": "덮어쓰기",
         "folder_modal_title": "새 폴더 생성",
         "folder_name_label": "폴더명",
         "folder_name_placeholder": "폴더명 입력",
@@ -885,6 +1017,8 @@ DOCS_TEXT = {
         "js_current_folder_label": "현재 폴더",
         "js_handrive_root_label": "HanDrive",
         "js_no_child_folders": "하위 폴더가 없습니다.",
+        "js_no_save_targets": "하위 폴더나 덮어쓸 파일이 없습니다.",
+        "js_loading_folders": "폴더를 불러오는 중...",
         "js_filename_required": "파일명을 입력해주세요.",
         "js_extension_required": "확장자를 입력해주세요.",
         "js_extension_invalid": "확장자 형식이 올바르지 않습니다. 예: .md",
@@ -914,6 +1048,8 @@ DOCS_TEXT = {
         "auth_privacy_consent_error": "개인정보 처리방침 및 이용약관 동의가 필요합니다.",
         "auth_signup_error": "회원가입 정보를 확인해주세요.",
         "auth_login_error": "아이디 또는 비밀번호를 확인해주세요.",
+        "auth_username_forbidden_chars": "아이디에는 공백, 따옴표, 슬래시 등 보안상 위험한 문자를 사용할 수 없습니다.",
+        "auth_password_forbidden_chars": "비밀번호에는 공백, 따옴표, 슬래시 등 보안상 위험한 문자를 사용할 수 없습니다.",
         "auth_github_login_button": "GitHub로 로그인",
         "auth_github_signup_button": "GitHub로 회원가입",
         "auth_github_unconfigured": "GitHub 로그인이 아직 설정되지 않았습니다.",
@@ -927,6 +1063,22 @@ DOCS_TEXT = {
         "auth_github_choice_link": "연동",
         "auth_github_choice_signup": "회원가입",
         "auth_github_link_pending": "GitHub 계정을 연동하려면 로그인해주세요.",
+        "auth_google_login_button": "Google로 로그인",
+        "auth_google_unconfigured": "Google 로그인이 아직 설정되지 않았습니다.",
+        "auth_google_failed": "Google 인증에 실패했습니다. 다시 시도해주세요.",
+        "auth_google_consent_error": "Google 회원가입을 계속하려면 개인정보 처리방침 및 이용약관 동의가 필요합니다.",
+        "auth_google_link_requires_login": "Google 계정을 연동하려면 먼저 로그인해주세요.",
+        "auth_google_link_conflict": "이미 다른 계정에 연결된 Google 계정입니다.",
+        "auth_google_choice_title": "Google 계정 연결",
+        "auth_google_choice_message": "이 Google 이메일 주소를 사용하는 계정이 이미 있습니다. 기존 계정에 연동하거나 새 계정으로 회원가입할 수 있습니다.",
+        "auth_google_choice_link": "연동",
+        "auth_google_choice_signup": "회원가입",
+        "auth_google_link_pending": "Google 계정을 연동하려면 로그인해주세요.",
+        "github_repo_select_error": "GitHub 저장소를 불러오지 못했습니다.",
+        "github_repo_reconnect_required": "GitHub 저장소 권한이 없거나 만료되었습니다. GitHub를 다시 연동해주세요.",
+        "github_repo_authentication_required": "로그인 후 GitHub 저장소를 불러올 수 있습니다.",
+        "github_repo_invalid_request": "GitHub 저장소 요청 형식이 올바르지 않습니다.",
+        "github_repo_invalid_repository_ids": "저장소 선택 값이 올바르지 않습니다.",
         "auth_login_captcha_label": "캡챠 인증",
         "auth_login_captcha_hint": "아래 보안 인증을 완료해주세요.",
         "auth_login_captcha_placeholder": "정답 입력",
@@ -1130,6 +1282,8 @@ DOCS_TEXT = {
         "selected_path_placeholder": "Select a path",
         "create_folder_button": "Create Folder",
         "save_confirm_button": "Save",
+        "save_loading": "Saving...",
+        "save_overwrite_badge": "Overwrite",
         "folder_modal_title": "Create Folder",
         "folder_name_label": "Folder name",
         "folder_name_placeholder": "Enter folder name",
@@ -1264,6 +1418,8 @@ DOCS_TEXT = {
         "js_current_folder_label": "Current folder",
         "js_handrive_root_label": "HanDrive",
         "js_no_child_folders": "No subfolders.",
+        "js_no_save_targets": "No subfolders or matching files to overwrite.",
+        "js_loading_folders": "Loading folders...",
         "js_filename_required": "Please enter a file name.",
         "js_extension_required": "Please enter a file extension.",
         "js_extension_invalid": "Invalid extension format. Example: .md",
@@ -1293,6 +1449,8 @@ DOCS_TEXT = {
         "auth_privacy_consent_error": "You must agree to the Privacy Policy and Terms of Service.",
         "auth_signup_error": "Please check the sign up information.",
         "auth_login_error": "Please check your username or password.",
+        "auth_username_forbidden_chars": "Usernames cannot contain spaces, quotes, slashes, or other unsafe characters.",
+        "auth_password_forbidden_chars": "Passwords cannot contain spaces, quotes, slashes, or other unsafe characters.",
         "auth_github_login_button": "Login with GitHub",
         "auth_github_signup_button": "Sign up with GitHub",
         "auth_github_unconfigured": "GitHub login is not configured yet.",
@@ -1306,6 +1464,22 @@ DOCS_TEXT = {
         "auth_github_choice_link": "Link",
         "auth_github_choice_signup": "Sign Up",
         "auth_github_link_pending": "Sign in to link this GitHub account.",
+        "auth_google_login_button": "Login with Google",
+        "auth_google_unconfigured": "Google login is not configured yet.",
+        "auth_google_failed": "Google authentication failed. Please try again.",
+        "auth_google_consent_error": "You must agree to continue Google sign up.",
+        "auth_google_link_requires_login": "Sign in before connecting Google.",
+        "auth_google_link_conflict": "This Google account is already linked to another account.",
+        "auth_google_choice_title": "Connect Google Account",
+        "auth_google_choice_message": "An account already uses this Google email address. Link it to the existing account or sign up as a new account.",
+        "auth_google_choice_link": "Link",
+        "auth_google_choice_signup": "Sign Up",
+        "auth_google_link_pending": "Sign in to link this Google account.",
+        "github_repo_select_error": "Failed to load GitHub repositories.",
+        "github_repo_reconnect_required": "GitHub repository access is missing or expired. Please reconnect GitHub.",
+        "github_repo_authentication_required": "Sign in before loading GitHub repositories.",
+        "github_repo_invalid_request": "The GitHub repository request is invalid.",
+        "github_repo_invalid_repository_ids": "The repository selection is invalid.",
         "auth_login_captcha_label": "Captcha Verification",
         "auth_login_captcha_hint": "Complete the security verification below.",
         "auth_login_captcha_placeholder": "Enter answer",
@@ -2136,7 +2310,7 @@ def render_handrive_media_safely(source_path: Path, relative_path: str, share_ow
     """이미지·비디오·오디오 파일을 HanDrive 미리보기용 HTML로 감싼다."""
     source_url = escape(build_handrive_download_url(relative_path, share_owner=share_owner, share_slug=share_slug))
     extension = source_path.suffix.lower()
-    if extension in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif"}:
+    if extension in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".ico"}:
         return mark_safe(
             '<div class="handrive-media-wrap handrive-media-image-wrap">'
             f'<img class="handrive-media-element handrive-media-image-element" src="{source_url}" alt="{escape(source_path.name)}" loading="eager">'
@@ -2698,6 +2872,9 @@ def has_handrive_read_access(request, path_value: str | None) -> bool:
         return True
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     normalized_path = normalize_relative_path(path_value, allow_empty=True)
+    google_drive = _parse_google_drive_virtual_path(request, normalized_path)
+    if google_drive is not None:
+        return True
     if not is_path_in_handrive_scope(normalized_path, scoped_home_dir):
         return False
     if scoped_home_dir:
@@ -2737,6 +2914,12 @@ def has_handrive_write_access(request, path_value: str | None) -> bool:
     user = getattr(request, "user", None)
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     normalized_path = normalize_relative_path(path_value, allow_empty=True)
+    google_drive = _parse_google_drive_virtual_path(request, normalized_path)
+    if google_drive is not None:
+        if google_drive["is_root"]:
+            return False
+        mapping = google_drive["mapping"]
+        return google_token_has_drive_scope(getattr(mapping, "token_scope", ""))
     git_virtual = _get_git_virtual_context(request, normalized_path)
     if git_virtual is not None:
         return git_virtual["kind"] == "branch_file" and str(git_virtual.get("repo_permission") or "").lower() in {"write", "admin", "owner"}
@@ -2788,6 +2971,10 @@ def has_handrive_directory_write_access(request, path_value: str | None) -> bool
     user = getattr(request, "user", None)
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     normalized_path = normalize_relative_path(path_value, allow_empty=True)
+    google_drive = _parse_google_drive_virtual_path(request, normalized_path)
+    if google_drive is not None:
+        mapping = google_drive["mapping"]
+        return google_token_has_drive_scope(getattr(mapping, "token_scope", ""))
     git_virtual = _get_git_virtual_context(request, normalized_path)
     if git_virtual is not None:
         return git_virtual["kind"] == "branch_dir" and str(git_virtual.get("repo_permission") or "").lower() in {"write", "admin", "owner"}
@@ -3035,6 +3222,466 @@ def _selected_github_repository_entries_for_directory(request, current_dir_relat
     return entries
 
 
+def _get_google_drive_mapping_for_request(request):
+    if request is None or not hasattr(request, "user") or not request.user.is_authenticated:
+        return None
+    cached = getattr(request, "_google_drive_mapping", None)
+    if cached is not None:
+        return cached
+    mapping = GoogleAccountMapping.objects.filter(user=request.user, google_drive_enabled=True).first()
+    setattr(request, "_google_drive_mapping", mapping)
+    return mapping
+
+
+def _google_drive_display_name(mapping: GoogleAccountMapping | None) -> str:
+    if mapping is None:
+        return "Google Drive"
+    return (
+        str(getattr(mapping, "google_name", "") or "").strip()
+        or str(getattr(mapping, "google_email", "") or "").split("@", 1)[0].strip()
+        or "Google Drive"
+    )
+
+
+def _refresh_google_profile_once_per_day(mapping: GoogleAccountMapping | None) -> None:
+    if mapping is None:
+        return
+    now = timezone.now()
+    last_synced_at = getattr(mapping, "google_profile_synced_at", None)
+    if last_synced_at and last_synced_at > now - timedelta(days=1):
+        return
+
+    update_fields = ["google_profile_synced_at", "updated_at"]
+    mapping.google_profile_synced_at = now
+    try:
+        access_token = str(getattr(mapping, "user_access_token", "") or "").strip()
+        expires_at = getattr(mapping, "user_access_token_expires_at", None)
+        refresh_token = str(getattr(mapping, "user_refresh_token", "") or "").strip()
+        if (not access_token or (expires_at and expires_at <= now + timedelta(seconds=60))) and refresh_token:
+            refresh_google_access_token(mapping)
+            access_token = str(getattr(mapping, "user_access_token", "") or "").strip()
+        if not access_token:
+            mapping.save(update_fields=update_fields)
+            return
+        identity = fetch_google_identity(access_token)
+        if identity.google_user_id != str(getattr(mapping, "google_user_id", "") or "").strip():
+            mapping.save(update_fields=update_fields)
+            return
+        if mapping.google_email != identity.email:
+            mapping.google_email = identity.email
+            update_fields.append("google_email")
+        if mapping.google_name != identity.name:
+            mapping.google_name = identity.name
+            update_fields.append("google_name")
+        if mapping.google_avatar_url != identity.avatar_url:
+            mapping.google_avatar_url = identity.avatar_url
+            update_fields.append("google_avatar_url")
+    except GoogleAuthError:
+        logger.warning("Google profile refresh failed for mapping_id=%s", getattr(mapping, "id", ""), exc_info=True)
+    mapping.save(update_fields=update_fields)
+
+
+def _google_drive_root_relative(request, mapping: GoogleAccountMapping) -> str:
+    root_relative = get_scoped_handrive_home_dir(request) or ""
+    root_name = f"{GOOGLE_DRIVE_VIRTUAL_PREFIX}{mapping.id}"
+    return f"{root_relative}/{root_name}" if root_relative else root_name
+
+
+def _parse_google_drive_virtual_path(request, path_value: str | None):
+    mapping = _get_google_drive_mapping_for_request(request)
+    if mapping is None:
+        return None
+    normalized = normalize_relative_path(path_value, allow_empty=True)
+    root_path = _google_drive_root_relative(request, mapping)
+    if normalized != root_path and not normalized.startswith(root_path + "/"):
+        return None
+
+    relative_part = normalized[len(root_path):].lstrip("/")
+    segments = [unquote(segment) for segment in relative_part.split("/") if segment]
+    file_id = segments[-1] if segments else ""
+    parent_id = "root" if len(segments) <= 1 else segments[-2]
+    return {
+        "mapping": mapping,
+        "root_path": root_path,
+        "path": normalized,
+        "display_name": _google_drive_display_name(mapping),
+        "segments": segments,
+        "is_root": not segments,
+        "folder_id": file_id or "root",
+        "file_id": file_id,
+        "parent_id": parent_id or "root",
+    }
+
+
+def _google_drive_child_virtual_path(parent_path: str, file_id: str) -> str:
+    return f"{parent_path.rstrip('/')}/{quote(str(file_id or ''), safe='')}"
+
+
+def _parse_google_drive_datetime(value) -> datetime | None:
+    source = str(value or "").strip()
+    if not source:
+        return None
+    try:
+        parsed = datetime.fromisoformat(source.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, datetime_timezone.utc)
+    return parsed
+
+
+def _build_google_drive_file_entry(mapping: GoogleAccountMapping, parent_path: str, file_info: dict, *, parent_public_path: str = "") -> dict:
+    file_id = str(file_info.get("id") or "").strip()
+    name = str(file_info.get("name") or file_id or "Google Drive 파일").strip()
+    mime_type = str(file_info.get("mimeType") or "").strip()
+    is_folder = mime_type == GOOGLE_DRIVE_FOLDER_MIME
+    is_workspace = is_google_workspace_file(mime_type)
+    size_bytes = 0
+    try:
+        size_bytes = int(file_info.get("size") or 0)
+    except (TypeError, ValueError):
+        size_bytes = 0
+    modified_dt = _parse_google_drive_datetime(file_info.get("modifiedTime"))
+    entry_path = _google_drive_child_virtual_path(parent_path, file_id)
+    can_edit_content = not is_folder and not is_workspace
+    entry = {
+        "name": name,
+        "path": entry_path,
+        "type": "dir" if is_folder else "file",
+        "has_children": True if is_folder else False,
+        "modified_display": format_handrive_modified_display(modified_dt),
+        "modified_sort": str(file_info.get("modifiedTime") or ""),
+        "size_display": format_handrive_bytes_display(size_bytes) if size_bytes else "",
+        "size_bytes": size_bytes,
+        "can_edit": True,
+        "can_read": True,
+        "can_write_children": bool(is_folder),
+        "can_delete": True,
+        "is_public_write": False,
+        "is_url_only": False,
+        "write_acl_labels": [],
+        "is_google_drive": True,
+        "google_drive": {
+            "id": file_id,
+            "name": name,
+            "owner": str(getattr(mapping, "google_email", "") or "").strip(),
+            "mime_type": mime_type,
+            "is_root": False,
+            "is_folder": is_folder,
+            "is_workspace_file": is_workspace,
+            "can_edit_content": can_edit_content,
+            "web_view_url": str(file_info.get("webViewLink") or "").strip(),
+        },
+    }
+    if parent_public_path:
+        public_path = normalize_relative_path(
+            f"{parent_public_path.rstrip('/')}/{_handrive_url_label_id_segment(name, file_id, fallback='file')}",
+            allow_empty=False,
+        )
+        entry["url_path"] = public_path
+    if not is_folder:
+        entry["slug_path"] = entry.get("url_path") or entry_path
+    return entry
+
+
+def _google_drive_download_extension(download: GoogleDriveDownload) -> str:
+    extension = Path(download.filename or "").suffix.lower()
+    if extension:
+        return extension
+    guessed = mimetypes.guess_extension(str(download.mime_type or "").split(";", 1)[0].strip())
+    if guessed == ".jpe":
+        return ".jpg"
+    return str(guessed or "").lower()
+
+
+def _google_drive_download_filename(download: GoogleDriveDownload) -> str:
+    filename = str(download.filename or "google-drive-file").strip() or "google-drive-file"
+    extension = _google_drive_download_extension(download)
+    if extension and not Path(filename).suffix:
+        return f"{filename}{extension}"
+    return filename
+
+
+def _google_drive_root_entry_for_directory(request, current_dir_relative: str, existing_entry_paths: set[str]) -> list[dict]:
+    mapping = _get_google_drive_mapping_for_request(request)
+    if mapping is None:
+        return []
+    normalized_current_dir = normalize_relative_path(current_dir_relative, allow_empty=True)
+    scoped_home_dir = get_scoped_handrive_home_dir(request)
+    root_relative = scoped_home_dir if scoped_home_dir else ""
+    if normalized_current_dir != root_relative:
+        return []
+    root_path = _google_drive_root_relative(request, mapping)
+    if root_path in existing_entry_paths:
+        return []
+    display_name = _google_drive_display_name(mapping)
+    has_drive_scope = google_token_has_drive_scope(getattr(mapping, "token_scope", ""))
+    public_root_path = build_handrive_public_url_path(request, root_path)
+    return [
+        {
+            "name": display_name,
+            "path": root_path,
+            "url_path": public_root_path,
+            "type": "dir",
+            "has_children": True,
+            "modified_display": format_handrive_modified_display(getattr(mapping, "updated_at", None)),
+            "size_display": "",
+            "can_edit": False,
+            "can_read": True,
+            "can_write_children": has_drive_scope,
+            "can_delete": False,
+            "is_public_write": False,
+            "is_url_only": False,
+            "write_acl_labels": [],
+            "is_google_drive": True,
+            "type_display": "Google Drive",
+            "google_drive": {
+                "id": "root",
+                "name": display_name,
+                "owner": str(getattr(mapping, "google_email", "") or "").strip(),
+                "mime_type": GOOGLE_DRIVE_FOLDER_MIME,
+                "is_root": True,
+                "is_folder": True,
+                "has_drive_scope": has_drive_scope,
+            },
+        }
+    ]
+
+
+def _build_google_drive_entries(request, context) -> list[dict]:
+    files = list_google_drive_files(context["mapping"], context["folder_id"])
+    parent_public_path = build_handrive_public_url_path(request, context["path"])
+    return [
+        _build_google_drive_file_entry(
+            context["mapping"],
+            context["path"],
+            file_info,
+            parent_public_path=parent_public_path,
+        )
+        for file_info in sorted(
+            files,
+            key=lambda item: (
+                0 if str(item.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME else 1,
+                str(item.get("name") or "").lower(),
+            ),
+        )
+    ]
+
+
+def _build_google_drive_directory_meta(request, context, entries: list | None = None) -> dict:
+    mapping = context["mapping"]
+    google_meta = {
+        "id": "root" if context["is_root"] else context["file_id"],
+        "name": context["display_name"],
+        "owner": str(getattr(mapping, "google_email", "") or "").strip(),
+        "mime_type": GOOGLE_DRIVE_FOLDER_MIME,
+        "is_root": bool(context["is_root"]),
+        "is_folder": True,
+        "has_drive_scope": google_token_has_drive_scope(getattr(mapping, "token_scope", "")),
+    }
+    if not context["is_root"]:
+        try:
+            metadata = get_google_drive_file(mapping, context["file_id"])
+            google_meta["name"] = str(metadata.get("name") or google_meta["name"]).strip()
+            google_meta["mime_type"] = str(metadata.get("mimeType") or "").strip()
+            if google_meta["mime_type"] != GOOGLE_DRIVE_FOLDER_MIME:
+                raise FileNotFoundError("폴더를 찾을 수 없습니다.")
+        except GoogleDriveError as exc:
+            raise FileNotFoundError(str(exc)) from exc
+
+    return {
+        "path": context["path"],
+        "is_root": False,
+        "can_edit": not context["is_root"],
+        "can_write_children": True,
+        "can_delete": not context["is_root"],
+        "has_children": bool(entries),
+        "is_git_repo_root": False,
+        "requires_commit_message": False,
+        "git_branch_root": False,
+        "git_commit_id": "",
+        "git_commit_message": "",
+        "git_commit_author_username": "",
+        "modified_display": "",
+        "size_display": "",
+        "write_acl_labels": [],
+        "git_repo": None,
+        "is_url_only": False,
+        "share_url": "",
+        "share_is_inherited": False,
+        "is_google_drive": True,
+        "google_drive": google_meta,
+    }
+
+
+def _apply_google_drive_virtual_breadcrumb_labels(request, breadcrumbs: list[dict]) -> list[dict]:
+    mapping = _get_google_drive_mapping_for_request(request)
+    if mapping is None:
+        return breadcrumbs
+    root_path = _google_drive_root_relative(request, mapping)
+    root_label = _google_drive_display_name(mapping)
+    for crumb in breadcrumbs:
+        if not isinstance(crumb, dict):
+            continue
+        crumb_path = normalize_relative_path(crumb.get("path") or "", allow_empty=True)
+        if crumb_path == root_path:
+            crumb["label"] = root_label
+    return breadcrumbs
+
+
+def _build_google_drive_virtual_breadcrumbs(request, base_url: str, current_path: str, *, scoped_home_dir: str = "", root_url: str | None = None):
+    context = _parse_google_drive_virtual_path(request, current_path)
+    if context is None:
+        return None
+    breadcrumbs = build_handrive_breadcrumbs(
+        base_url,
+        context["root_path"],
+        scoped_home_dir=scoped_home_dir,
+        root_label=get_handrive_root_label(request, scoped_home_dir),
+        root_url=root_url,
+        request=request,
+    )
+    if breadcrumbs:
+        breadcrumbs[-1]["label"] = context["display_name"]
+        breadcrumbs[-1]["is_current"] = context["is_root"]
+    if context["is_root"]:
+        return breadcrumbs
+
+    accumulated_path = context["root_path"]
+    for index, segment in enumerate(context["segments"]):
+        accumulated_path = f"{accumulated_path}/{quote(segment, safe='')}"
+        label = segment
+        try:
+            metadata = get_google_drive_file(context["mapping"], segment)
+            label = str(metadata.get("name") or segment).strip()
+        except GoogleDriveError:
+            label = segment
+        breadcrumbs.append(
+            {
+                "label": label,
+                "url": build_handrive_list_url(base_url, accumulated_path, request=request),
+                "is_current": index == len(context["segments"]) - 1,
+                "path": accumulated_path,
+            }
+        )
+    return breadcrumbs
+
+
+def _ensure_google_drive_folder_context(context):
+    if context is None:
+        raise GoogleDriveError("저장 위치가 폴더가 아닙니다.", status_code=400)
+    if context["is_root"]:
+        return
+    metadata = get_google_drive_file(context["mapping"], context["file_id"])
+    if str(metadata.get("mimeType") or "") != GOOGLE_DRIVE_FOLDER_MIME:
+        raise GoogleDriveError("저장 위치가 폴더가 아닙니다.", status_code=400)
+
+
+def _handle_google_drive_save_request(request, payload: dict, *, original_relative_path: str, target_dir: str, requested_extension: str, content: str):
+    source_context = _parse_google_drive_virtual_path(request, original_relative_path) if original_relative_path else None
+    target_context = _parse_google_drive_virtual_path(request, target_dir)
+    if source_context is None and target_context is None:
+        return None
+    if target_context is None:
+        return json_error("Google Drive 파일은 Google Drive 폴더에만 저장할 수 있습니다.", status=400)
+    try:
+        _ensure_google_drive_folder_context(target_context)
+    except GoogleDriveError as exc:
+        return json_error(str(exc), status=exc.status_code)
+    if not has_handrive_directory_write_access(request, target_dir):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+    source_extension = DOCS_FILE_EXTENSION
+    source_metadata = None
+    if source_context is not None:
+        if source_context["is_root"]:
+            return json_error("파일을 찾을 수 없습니다.", status=404)
+        try:
+            source_metadata = get_google_drive_file(source_context["mapping"], source_context["file_id"])
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+        if str(source_metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME:
+            return json_error("Google Drive 폴더는 파일로 저장할 수 없습니다.", status=400)
+        if is_google_workspace_file(source_metadata.get("mimeType")):
+            return json_error("Google Workspace 문서는 HanDrive에서 직접 저장할 수 없습니다.", status=400)
+        source_extension = Path(str(source_metadata.get("name") or "")).suffix.lower() or DOCS_FILE_EXTENSION
+        if not has_handrive_write_access(request, original_relative_path):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+    target_extension = requested_extension or source_extension or DOCS_FILE_EXTENSION
+    try:
+        filename, resolved_extension = resolve_file_name_and_extension(
+            payload.get("filename"),
+            fallback_extension=target_extension,
+        )
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+    target_name = f"{filename}{resolved_extension}"
+    target_parent_id = target_context["folder_id"]
+    target_bytes = content.encode("utf-8")
+
+    try:
+        siblings = list_google_drive_files(target_context["mapping"], target_parent_id)
+    except GoogleDriveError as exc:
+        return json_error(str(exc), status=exc.status_code)
+
+    if source_context is not None:
+        source_id = source_context["file_id"]
+        source_parent_path = normalize_relative_path(str(Path(original_relative_path).parent).replace("\\", "/"), allow_empty=True)
+        if source_parent_path == ".":
+            source_parent_path = ""
+        name_conflict = any(
+            str(item.get("name") or "").strip() == target_name
+            and str(item.get("id") or "").strip() != source_id
+            for item in siblings
+        )
+        if name_conflict:
+            return json_error("같은 이름의 파일이 이미 존재합니다.", status=409)
+        try:
+            if str(source_metadata.get("name") or "").strip() != target_name:
+                rename_google_drive_file(source_context["mapping"], source_id, target_name)
+            if source_parent_path != target_dir:
+                move_google_drive_file(source_context["mapping"], source_id, target_parent_id)
+            update_google_drive_file_content(
+                source_context["mapping"],
+                source_id,
+                target_bytes,
+                google_drive_guess_mime_type(target_name),
+            )
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+        destination_path = _google_drive_child_virtual_path(target_dir, source_id)
+        return JsonResponse(
+            {
+                "ok": True,
+                "path": destination_path,
+                "slug_path": build_handrive_public_url_path(request, destination_path),
+            }
+        )
+
+    if any(str(item.get("name") or "").strip() == target_name for item in siblings):
+        return json_error("같은 이름의 파일이 이미 존재합니다.", status=409)
+    try:
+        created = create_google_drive_file(
+            target_context["mapping"],
+            target_parent_id,
+            target_name,
+            target_bytes,
+            google_drive_guess_mime_type(target_name),
+        )
+    except GoogleDriveError as exc:
+        return json_error(str(exc), status=exc.status_code)
+    created_id = str(created.get("id") or "").strip()
+    destination_path = _google_drive_child_virtual_path(target_dir, created_id)
+    return JsonResponse(
+        {
+            "ok": True,
+            "path": destination_path,
+            "slug_path": build_handrive_public_url_path(request, destination_path),
+        }
+    )
+
+
 def list_directory_entries(directory: Path, request=None) -> list[dict]:
     """실제 디렉터리 엔트리와 가상 repo root 엔트리를 함께 구성한다."""
     entries = []
@@ -3206,7 +3853,15 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
         if github_repo_entries:
             entries.extend(sorted(github_repo_entries, key=lambda item: (0, item["name"].lower())))
             existing_entry_paths.update(entry["path"] for entry in github_repo_entries)
-        if virtual_repo_entries or github_repo_entries:
+        google_drive_entries = _google_drive_root_entry_for_directory(
+            request,
+            current_dir_relative,
+            existing_entry_paths,
+        )
+        if google_drive_entries:
+            entries.extend(sorted(google_drive_entries, key=lambda item: (0, item["name"].lower())))
+            existing_entry_paths.update(entry["path"] for entry in google_drive_entries)
+        if virtual_repo_entries or github_repo_entries or google_drive_entries:
             entries.sort(key=lambda item: (0 if item.get("type") == "dir" else 1, item.get("name", "").lower()))
 
     return entries
@@ -3260,6 +3915,9 @@ def _build_handrive_directory_meta(
     """목록 페이지가 현재 디렉터리를 클라이언트에서 재구성할 수 있도록 메타데이터를 반환한다."""
     normalized_dir = normalize_relative_path(current_dir, allow_empty=True)
     scoped_home_dir = get_scoped_handrive_home_dir(request)
+    google_drive = _parse_google_drive_virtual_path(request, normalized_dir)
+    if google_drive is not None:
+        return _build_google_drive_directory_meta(request, google_drive, entries)
     git_virtual = _get_git_virtual_context(request, normalized_dir)
     current_dir_size_display = ""
     current_dir_modified_display = ""
@@ -3693,7 +4351,7 @@ def _copy_tree_contents(source_dir: Path, destination_dir: Path) -> None:
             shutil.copy2(child, target_child)
 
 
-def _run_git_repo_command(repo, *args: str, text: bool = True, check: bool = True, timeout: int = 120):
+def _run_git_repo_command(repo, *args: str, text: bool = True, check: bool = True, timeout: int = 120, input_data=None):
     """bare repo 를 대상으로 git 명령을 실행하는 공통 helper."""
     repo_storage_path = _ensure_github_repo_cache(repo) if _is_github_virtual_repo(repo) else _get_repo_storage_path(repo.owner, repo.repo_name)
     command = [GIT_BIN, f"--git-dir={repo_storage_path}", *args]
@@ -3702,11 +4360,59 @@ def _run_git_repo_command(repo, *args: str, text: bool = True, check: bool = Tru
         capture_output=True,
         text=text,
         timeout=timeout,
+        input=input_data,
     )
     if check and result.returncode != 0:
         stderr = result.stderr.strip() if isinstance(result.stderr, str) else ""
         raise RuntimeError(stderr or f"git command failed: {' '.join(command)}")
     return result
+
+
+def _empty_git_commit_meta() -> dict[str, str]:
+    return {"commit_id": "", "subject": "", "author_username": "", "modified_display": ""}
+
+
+def _parse_git_commit_meta_fields(fields: list[str]) -> dict[str, str]:
+    commit_id = str(fields[0] if len(fields) > 0 else "").strip()
+    subject = str(fields[1] if len(fields) > 1 else "").strip()
+    author_username = str(fields[2] if len(fields) > 2 else "").strip()
+    committed_at = str(fields[3] if len(fields) > 3 else "").strip()
+    return {
+        "commit_id": commit_id,
+        "subject": subject,
+        "author_username": author_username,
+        "modified_display": format_handrive_modified_display_from_timestamp(committed_at),
+    }
+
+
+def _git_repo_blob_size_map(repo, object_shas) -> dict[str, int]:
+    unique_shas = []
+    seen = set()
+    for object_sha in object_shas or []:
+        normalized_sha = str(object_sha or "").strip()
+        if not normalized_sha or normalized_sha in seen:
+            continue
+        seen.add(normalized_sha)
+        unique_shas.append(normalized_sha)
+    if not unique_shas:
+        return {}
+
+    result = _run_git_repo_command(
+        repo,
+        "cat-file",
+        "--batch-check=%(objectname) %(objectsize)",
+        input_data="\n".join(unique_shas) + "\n",
+    )
+    sizes = {}
+    for line in (result.stdout or "").splitlines():
+        parts = line.strip().split(" ", 1)
+        if len(parts) != 2:
+            continue
+        try:
+            sizes[parts[0]] = int(parts[1])
+        except ValueError:
+            continue
+    return sizes
 
 
 def _git_repo_branches(repo) -> list[str]:
@@ -3718,6 +4424,28 @@ def _git_repo_branches(repo) -> list[str]:
         "refs/heads",
     )
     return [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+
+
+def _git_repo_branch_latest_commit_meta_map(repo, branch_names: list[str]) -> dict[str, dict[str, str]]:
+    """branch 목록의 최신 커밋 메타를 한 번의 git 호출로 조회한다."""
+    targets = [str(branch_name or "").strip() for branch_name in branch_names or [] if str(branch_name or "").strip()]
+    if not targets:
+        return {}
+    result = _run_git_repo_command(
+        repo,
+        "for-each-ref",
+        "--format=%(refname:short)%1f%(objectname:short)%1f%(contents:subject)%1f%(authorname)%1f%(committerdate:unix)",
+        "refs/heads",
+    )
+    target_set = set(targets)
+    metas = {}
+    for line in (result.stdout or "").splitlines():
+        fields = line.split("\x1f")
+        branch_name = str(fields[0] if fields else "").strip()
+        if branch_name not in target_set:
+            continue
+        metas[branch_name] = _parse_git_commit_meta_fields(fields[1:])
+    return metas
 
 
 def _git_repo_object_type(repo, branch_name: str, repo_relative_path: str = "") -> str:
@@ -3740,6 +4468,7 @@ def _git_repo_list_tree(repo, branch_name: str, repo_relative_path: str = "") ->
     result = _run_git_repo_command(repo, "ls-tree", "-z", spec, text=False)
     payload = result.stdout or b""
     entries = []
+    blob_shas = []
     for raw_item in payload.split(b"\x00"):
         if not raw_item:
             continue
@@ -3755,12 +4484,14 @@ def _git_repo_list_tree(repo, branch_name: str, repo_relative_path: str = "") ->
             "size_display": "",
         }
         if object_type == "blob":
-            size_result = _run_git_repo_command(repo, "cat-file", "-s", object_sha)
-            try:
-                entry["size_display"] = format_handrive_bytes_display(int((size_result.stdout or "0").strip() or "0"))
-            except ValueError:
-                entry["size_display"] = ""
+            blob_shas.append(object_sha)
         entries.append(entry)
+    blob_sizes = _git_repo_blob_size_map(repo, blob_shas)
+    for entry in entries:
+        if entry["type"] != "blob":
+            continue
+        size_bytes = blob_sizes.get(entry["sha"])
+        entry["size_display"] = format_handrive_bytes_display(size_bytes) if size_bytes else ""
     return sorted(entries, key=lambda item: (0 if item["type"] == "tree" else 1, item["name"].lower()))
 
 
@@ -3773,16 +4504,50 @@ def _git_repo_latest_commit_meta(repo, branch_name: str, repo_relative_path: str
     result = _run_git_repo_command(repo, *args)
     output = (result.stdout or "").strip()
     if not output:
-        return {"commit_id": "", "subject": "", "author_username": "", "modified_display": ""}
-    commit_id, _, remainder = output.partition("\x1f")
-    subject, _, remainder = remainder.partition("\x1f")
-    author_username, _, committed_at = remainder.partition("\x1f")
-    return {
-        "commit_id": str(commit_id or "").strip(),
-        "subject": str(subject or "").strip(),
-        "author_username": str(author_username or "").strip(),
-        "modified_display": format_handrive_modified_display_from_timestamp(str(committed_at or "").strip()),
-    }
+        return _empty_git_commit_meta()
+    return _parse_git_commit_meta_fields(output.split("\x1f"))
+
+
+def _git_repo_latest_commit_meta_map(repo, branch_name: str, repo_relative_paths: list[str]) -> dict[str, dict[str, str]]:
+    """현재 목록에 필요한 경로별 최신 커밋 메타를 한 번의 git log 로 조회한다."""
+    targets = []
+    seen = set()
+    for repo_relative_path in repo_relative_paths or []:
+        normalized_path = normalize_relative_path(repo_relative_path, allow_empty=True)
+        if not normalized_path or normalized_path in seen:
+            continue
+        seen.add(normalized_path)
+        targets.append(normalized_path)
+    if not targets:
+        return {}
+
+    result = _run_git_repo_command(
+        repo,
+        "log",
+        "--format=%x1e%h%x1f%s%x1f%an%x1f%ct",
+        "--name-only",
+        branch_name,
+        "--",
+        *targets,
+        timeout=180,
+    )
+    metas = {}
+    remaining = set(targets)
+    for raw_block in (result.stdout or "").split("\x1e"):
+        block = raw_block.strip("\n")
+        if not block or not remaining:
+            continue
+        lines = [line for line in block.splitlines() if line.strip()]
+        if not lines:
+            continue
+        commit_meta = _parse_git_commit_meta_fields(lines[0].split("\x1f"))
+        changed_paths = [normalize_relative_path(line.strip(), allow_empty=True) for line in lines[1:] if line.strip()]
+        for target_path in list(remaining):
+            target_prefix = target_path.rstrip("/") + "/"
+            if any(changed_path == target_path or changed_path.startswith(target_prefix) for changed_path in changed_paths):
+                metas[target_path] = commit_meta
+                remaining.remove(target_path)
+    return metas
 
 
 def _git_repo_latest_commit_subject(repo, branch_name: str, repo_relative_path: str = "") -> str:
@@ -3997,6 +4762,16 @@ def _get_git_virtual_context(request, path_value: str | None):
 
 def _build_git_virtual_breadcrumbs(request, base_url: str, current_path: str, *, scoped_home_dir: str = "", root_url: str | None = None):
     """repo/branch 가상 경로를 포함한 breadcrumb 목록을 생성한다."""
+    google_breadcrumbs = _build_google_drive_virtual_breadcrumbs(
+        request,
+        base_url,
+        current_path,
+        scoped_home_dir=scoped_home_dir,
+        root_url=root_url,
+    )
+    if google_breadcrumbs is not None:
+        return google_breadcrumbs
+
     context = _get_git_virtual_context(request, current_path)
     if context is None:
         breadcrumbs = build_handrive_breadcrumbs(
@@ -4005,8 +4780,10 @@ def _build_git_virtual_breadcrumbs(request, base_url: str, current_path: str, *,
             scoped_home_dir=scoped_home_dir,
             root_label=get_handrive_root_label(request, scoped_home_dir),
             root_url=root_url,
+            request=request,
         )
-        return _apply_github_virtual_breadcrumb_labels(request, breadcrumbs)
+        breadcrumbs = _apply_github_virtual_breadcrumb_labels(request, breadcrumbs)
+        return _apply_google_drive_virtual_breadcrumb_labels(request, breadcrumbs)
 
     breadcrumbs = build_handrive_breadcrumbs(
         base_url,
@@ -4014,11 +4791,13 @@ def _build_git_virtual_breadcrumbs(request, base_url: str, current_path: str, *,
         scoped_home_dir=scoped_home_dir,
         root_label=get_handrive_root_label(request, scoped_home_dir),
         root_url=root_url,
+        request=request,
     )
     if _is_github_virtual_repo(context["repo"]) and breadcrumbs:
         breadcrumbs[-1]["label"] = context["repo"].repo_name
     if context["kind"] == "repo_root":
-        return _apply_github_virtual_breadcrumb_labels(request, breadcrumbs)
+        breadcrumbs = _apply_github_virtual_breadcrumb_labels(request, breadcrumbs)
+        return _apply_google_drive_virtual_breadcrumb_labels(request, breadcrumbs)
 
     if breadcrumbs:
         breadcrumbs[-1]["is_current"] = False
@@ -4026,7 +4805,7 @@ def _build_git_virtual_breadcrumbs(request, base_url: str, current_path: str, *,
     breadcrumbs.append(
         {
             "label": context["branch_name"],
-            "url": build_handrive_list_url(base_url, branch_path),
+            "url": build_handrive_list_url(base_url, branch_path, request=request),
             "is_current": context["kind"] == "branch_dir" and not context["repo_relative_path"],
             "path": branch_path,
         }
@@ -4041,12 +4820,13 @@ def _build_git_virtual_breadcrumbs(request, base_url: str, current_path: str, *,
             breadcrumbs.append(
                 {
                     "label": _decode_breadcrumb_label(part),
-                    "url": build_handrive_list_url(base_url, path_value),
+                    "url": build_handrive_list_url(base_url, path_value, request=request),
                     "is_current": index == len(parts) - 1,
                     "path": path_value,
                 }
             )
-    return _apply_github_virtual_breadcrumb_labels(request, breadcrumbs)
+    breadcrumbs = _apply_github_virtual_breadcrumb_labels(request, breadcrumbs)
+    return _apply_google_drive_virtual_breadcrumb_labels(request, breadcrumbs)
 
 
 def _build_git_virtual_entries(request, context) -> list[dict]:
@@ -4059,8 +4839,13 @@ def _build_git_virtual_entries(request, context) -> list[dict]:
     is_github_repo = _is_github_virtual_repo(repo)
     if context["kind"] == "repo_root":
         entries = []
-        for branch_name in _git_repo_branches(repo):
-            commit_meta = _git_repo_latest_commit_meta(repo, branch_name)
+        branch_names = _git_repo_branches(repo)
+        try:
+            commit_meta_by_branch = _git_repo_branch_latest_commit_meta_map(repo, branch_names)
+        except RuntimeError:
+            commit_meta_by_branch = {}
+        for branch_name in branch_names:
+            commit_meta = commit_meta_by_branch.get(branch_name) or _git_repo_latest_commit_meta(repo, branch_name)
             entries.append({
                 "name": branch_name,
                 "path": f"{repo_root}/{_encode_git_branch_segment(branch_name)}",
@@ -4089,7 +4874,13 @@ def _build_git_virtual_entries(request, context) -> list[dict]:
 
     branch_prefix = f"{repo_root}/{context['branch_segment']}"
     entries = []
-    for item in _git_repo_list_tree(repo, context["branch_name"], context["repo_relative_path"]):
+    tree_items = _git_repo_list_tree(repo, context["branch_name"], context["repo_relative_path"])
+    repo_relative_paths = [
+        item["name"] if not context["repo_relative_path"] else f"{context['repo_relative_path']}/{item['name']}"
+        for item in tree_items
+    ]
+    commit_meta_by_path = {} if is_github_repo else _git_repo_latest_commit_meta_map(repo, context["branch_name"], repo_relative_paths)
+    for item in tree_items:
         entry_path = f"{branch_prefix}/{item['name']}" if not context["repo_relative_path"] else f"{branch_prefix}/{context['repo_relative_path']}/{item['name']}"
         entry = {
             "name": item["name"],
@@ -4109,7 +4900,7 @@ def _build_git_virtual_entries(request, context) -> list[dict]:
             "requires_commit_message": True,
         }
         repo_relative_entry_path = item["name"] if not context["repo_relative_path"] else f"{context['repo_relative_path']}/{item['name']}"
-        commit_meta = _git_repo_latest_commit_meta(repo, context["branch_name"], repo_relative_entry_path)
+        commit_meta = commit_meta_by_path.get(repo_relative_entry_path) or _empty_git_commit_meta()
         entry["modified_display"] = commit_meta.get("modified_display", "")
         if item["type"] == "tree":
             entry["has_children"] = True
@@ -4199,8 +4990,157 @@ def list_all_directories(request=None) -> list[str]:
     return directories
 
 
-def build_handrive_list_url(base_url: str, relative_path: str) -> str:
+def _handrive_url_safe_label(value: str, fallback: str = "item") -> str:
+    label = str(value or "").strip() or fallback
+    return label.replace("/", "-").replace("\\", "-")
+
+
+def _handrive_url_label_id_segment(label: str, identifier: str | int, fallback: str = "item") -> str:
+    safe_label = _handrive_url_safe_label(label, fallback=fallback)
+    safe_identifier = str(identifier or "").strip()
+    return f"{safe_label}{HANDRIVE_URL_ID_SEPARATOR}{safe_identifier}" if safe_identifier else safe_label
+
+
+def _handrive_url_segment_identifier(segment: str) -> str:
+    source = str(segment or "").strip()
+    if HANDRIVE_URL_ID_SEPARATOR not in source:
+        return ""
+    return source.rsplit(HANDRIVE_URL_ID_SEPARATOR, 1)[1].strip()
+
+
+def _handrive_path_parts_start_index(parts: list[str], scoped_home_dir: str) -> int | None:
+    if not scoped_home_dir:
+        return 0
+    scoped_parts = [part for part in scoped_home_dir.split("/") if part]
+    if parts[: len(scoped_parts)] == scoped_parts:
+        return len(scoped_parts)
+    return None
+
+
+def _selected_github_repo_by_owner_name(request, owner_login: str, repo_name: str):
+    owner_key = str(owner_login or "").strip().lower()
+    repo_key = str(repo_name or "").strip().lower()
+    if not owner_key or not repo_key:
+        return None
+    for repo in _selected_github_virtual_repositories(request):
+        if str(repo.owner_login or "").strip().lower() == owner_key and str(repo.repo_name or "").strip().lower() == repo_key:
+            return repo
+    return None
+
+
+def resolve_handrive_route_path(request, path_value: str | None) -> str:
+    """보기 좋은 HanDrive URL alias 를 내부 상대경로로 복원한다."""
+    normalized = normalize_relative_path(path_value, allow_empty=True)
+    if not normalized:
+        return normalized
+    parts = [part for part in normalized.split("/") if part]
+    start_index = _handrive_path_parts_start_index(parts, get_scoped_handrive_home_dir(request))
+    if start_index is None or start_index >= len(parts):
+        return normalized
+
+    prefix_parts = parts[:start_index]
+    alias_prefix = parts[start_index]
+    if alias_prefix == HANDRIVE_GITHUB_URL_PREFIX and len(parts) >= start_index + 3:
+        owner_login = unquote(parts[start_index + 1])
+        repo_name = unquote(parts[start_index + 2])
+        repo = _selected_github_repo_by_owner_name(request, owner_login, repo_name)
+        if repo is None:
+            return normalized
+        repo_root = _github_virtual_repo_root_relative(request, repo)
+        tail = parts[start_index + 3 :]
+        return normalize_relative_path("/".join([repo_root] + tail), allow_empty=False)
+
+    if alias_prefix == HANDRIVE_GOOGLE_DRIVE_URL_PREFIX and len(parts) >= start_index + 2:
+        mapping = _get_google_drive_mapping_for_request(request)
+        if mapping is None:
+            return normalized
+        mapping_id = _handrive_url_segment_identifier(unquote(parts[start_index + 1]))
+        if mapping_id and mapping_id != str(mapping.id):
+            return normalized
+        root_path = _google_drive_root_relative(request, mapping)
+        internal_parts = [root_path]
+        for segment in parts[start_index + 2 :]:
+            file_id = _handrive_url_segment_identifier(unquote(segment)) or unquote(segment)
+            if file_id:
+                internal_parts.append(quote(file_id, safe=""))
+        return normalize_relative_path("/".join(internal_parts), allow_empty=False)
+
+    return normalized
+
+
+def handrive_path_uses_internal_virtual_url(path_value: str | None) -> bool:
+    try:
+        normalized = normalize_relative_path(path_value, allow_empty=True)
+    except ValueError:
+        return False
+    return any(
+        part.startswith(".github-repo-") or part.startswith(GOOGLE_DRIVE_VIRTUAL_PREFIX)
+        for part in normalized.split("/")
+    )
+
+
+def build_handrive_public_url_path(request, relative_path: str) -> str:
+    """내부 HanDrive path 를 사람이 읽기 좋은 URL path 로 변환한다."""
     normalized = normalize_relative_path(relative_path, allow_empty=True)
+    if not normalized or request is None:
+        return normalized
+    scoped_home_dir = get_scoped_handrive_home_dir(request)
+    prefix = scoped_home_dir if scoped_home_dir and is_path_in_handrive_scope(normalized, scoped_home_dir) else ""
+
+    google_drive = _parse_google_drive_virtual_path(request, normalized)
+    if google_drive is not None:
+        root_segment = _handrive_url_label_id_segment(google_drive["display_name"], google_drive["mapping"].id, fallback="Google Drive")
+        public_parts = [part for part in prefix.split("/") if part] + [HANDRIVE_GOOGLE_DRIVE_URL_PREFIX, root_segment]
+        for segment in google_drive["segments"]:
+            file_id = str(segment or "").strip()
+            label = file_id
+            try:
+                metadata = get_google_drive_file(google_drive["mapping"], file_id)
+                label = str(metadata.get("name") or file_id).strip()
+            except GoogleDriveError:
+                label = file_id
+            public_parts.append(_handrive_url_label_id_segment(label, file_id, fallback="file"))
+        return normalize_relative_path("/".join(public_parts), allow_empty=False)
+
+    git_virtual = _get_git_virtual_context(request, normalized)
+    if git_virtual is not None and _is_github_virtual_repo(git_virtual["repo"]):
+        repo = git_virtual["repo"]
+        public_parts = [part for part in prefix.split("/") if part] + [
+            HANDRIVE_GITHUB_URL_PREFIX,
+            _handrive_url_safe_label(repo.owner_login, fallback="owner"),
+            _handrive_url_safe_label(repo.repo_name, fallback="repo"),
+        ]
+        if git_virtual["branch_segment"]:
+            branch_label = git_virtual["branch_name"]
+            public_parts.append(branch_label if "/" not in branch_label else git_virtual["branch_segment"])
+        if git_virtual["repo_relative_path"]:
+            public_parts.extend(part for part in git_virtual["repo_relative_path"].split("/") if part)
+        return normalize_relative_path("/".join(public_parts), allow_empty=False)
+
+    return normalized
+
+
+def apply_handrive_entry_url_paths(request, entries: list[dict]) -> list[dict]:
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        entry_path = str(entry.get("path") or "").strip()
+        if not entry_path or not handrive_path_uses_internal_virtual_url(entry_path):
+            continue
+        if entry.get("url_path"):
+            if entry.get("type") == "file" and not entry.get("slug_path"):
+                entry["slug_path"] = entry["url_path"]
+            continue
+        public_path = build_handrive_public_url_path(request, entry_path)
+        entry["url_path"] = public_path
+        if entry.get("type") == "file":
+            entry["slug_path"] = public_path
+    return entries
+
+
+def build_handrive_list_url(base_url: str, relative_path: str, *, request=None) -> str:
+    normalized = normalize_relative_path(relative_path, allow_empty=True)
+    normalized = build_handrive_public_url_path(request, normalized)
     if not normalized:
         return base_url
     encoded = "/".join(quote(segment, safe="") for segment in normalized.split("/"))
@@ -4450,6 +5390,7 @@ def build_handrive_breadcrumbs(
     root_url: str | None = None,
     include_root_parent: bool = False,
     root_parent_label: str = "Hanplanet",
+    request=None,
 ) -> list[dict]:
     effective_root_url = root_url or base_url
     if not scoped_home_dir:
@@ -4463,7 +5404,7 @@ def build_handrive_breadcrumbs(
             breadcrumbs.append(
                 {
                     "label": _decode_breadcrumb_label(part),
-                    "url": build_handrive_list_url(base_url, parent_path),
+                    "url": build_handrive_list_url(base_url, parent_path, request=request),
                     "is_current": index == len(parts) - 1,
                     "path": parent_path,
                 }
@@ -4484,12 +5425,12 @@ def build_handrive_breadcrumbs(
             }
         )
     breadcrumbs.append(
-        {
-            "label": home_label,
-            "url": build_handrive_list_url(base_url, scoped_home_dir),
-            "is_current": current_dir == scoped_home_dir,
-            "path": scoped_home_dir,
-        }
+            {
+                "label": home_label,
+                "url": build_handrive_list_url(base_url, scoped_home_dir, request=request),
+                "is_current": current_dir == scoped_home_dir,
+                "path": scoped_home_dir,
+            }
     )
     start_index = len(home_parts) if current_parts[: len(home_parts)] == home_parts else 0
     for index in range(start_index, len(current_parts)):
@@ -4498,7 +5439,7 @@ def build_handrive_breadcrumbs(
         breadcrumbs.append(
             {
                 "label": _decode_breadcrumb_label(part),
-                "url": build_handrive_list_url(base_url, parent_path),
+                "url": build_handrive_list_url(base_url, parent_path, request=request),
                 "is_current": index == len(current_parts) - 1,
                 "path": parent_path,
             }
@@ -4720,6 +5661,20 @@ def build_handrive_view_url(ui_lang: str | None, slug_path: str) -> str:
     if ui_lang in SUPPORTED_UI_LANGS:
         return reverse("main:handrive_view_lang", kwargs={"ui_lang": ui_lang, "doc_path": slug_path})
     return reverse("main:handrive_view", kwargs={"doc_path": slug_path})
+
+
+def build_handrive_view_url_for_path(request, ui_lang: str | None, relative_path: str) -> str:
+    url_path = build_handrive_public_url_path(request, relative_path)
+    if ui_lang in SUPPORTED_UI_LANGS:
+        return reverse("main:handrive_view_lang", kwargs={"ui_lang": ui_lang, "doc_path": url_path})
+    return reverse("main:handrive_view", kwargs={"doc_path": url_path})
+
+
+def redirect_internal_virtual_handrive_url_if_needed(request, canonical_url: str, raw_path: str | None):
+    if not handrive_path_uses_internal_virtual_url(raw_path):
+        return None
+    query = request.META.get("QUERY_STRING", "")
+    return redirect(canonical_url + (f"?{query}" if query else ""))
 
 
 def build_handrive_shared_view_url(ui_lang: str | None, owner_username: str, share_slug: str) -> str:
@@ -5199,6 +6154,7 @@ def _finalize_handrive_login_session(request, user) -> str:
     auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
     request.user = user
     _link_pending_github_auth_for_user(request, user)
+    _link_pending_google_auth_for_user(request, user)
     request.session["_hp_session_token"] = token
     request.session.modified = True
     try:
@@ -5825,6 +6781,46 @@ def _resolve_handrive_post_login_url(request, ui_lang: str | None, fallback_next
     return lang_base
 
 
+def _first_auth_safety_error_message(form) -> str:
+    if not form:
+        return ""
+    for field_errors in form.errors.as_data().values():
+        for error in field_errors:
+            if getattr(error, "code", "") == HANDRIVE_AUTH_VALIDATION_ERROR_CODE:
+                return str(error.message)
+    return ""
+
+
+class HandriveAuthenticationForm(AuthenticationForm):
+    def __init__(self, request=None, *args, ui_lang: str | None = None, **kwargs):
+        super().__init__(request, *args, **kwargs)
+        self._handrive_text = get_handrive_text(ui_lang)
+        safe_attrs = {
+            "data-handrive-auth-safe-input": "username",
+            "pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
+            "title": get_auth_forbidden_char_message("username", self._handrive_text),
+        }
+        self.fields["username"].widget.attrs.update(safe_attrs)
+        self.fields["password"].widget.attrs.update({
+            "data-handrive-auth-safe-input": "password",
+            "pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
+            "title": get_auth_forbidden_char_message("password", self._handrive_text),
+        })
+
+    def _raw_value(self, field_name: str):
+        if self.is_bound:
+            return self.data.get(self.add_prefix(field_name), "")
+        return self.cleaned_data.get(field_name, "")
+
+    def clean_username(self):
+        validate_auth_safe_value(self._raw_value("username"), "username", self._handrive_text)
+        return self.cleaned_data.get("username")
+
+    def clean_password(self):
+        validate_auth_safe_value(self._raw_value("password"), "password", self._handrive_text)
+        return self.cleaned_data.get("password")
+
+
 class HandriveSignupForm(UserCreationForm):
     first_name = forms.CharField(max_length=150, required=False)
     email = forms.EmailField(required=True)
@@ -5832,10 +6828,20 @@ class HandriveSignupForm(UserCreationForm):
     # 이메일 AJAX 인증 완료 후 서버에서 발급한 서명 토큰 (hidden)
     email_2fa_token = forms.CharField(required=False, widget=forms.HiddenInput)
 
-    def __init__(self, *args, ui_lang: str | None = None, github_identity: GitHubIdentity | None = None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        ui_lang: str | None = None,
+        github_identity: GitHubIdentity | None = None,
+        google_identity: GoogleIdentity | None = None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         handrive_text = get_handrive_text(ui_lang)
         self.github_identity = github_identity
+        self.google_identity = google_identity
+        self.oauth_identity = google_identity or github_identity
+        self.oauth_provider_label = "Google" if google_identity is not None else "GitHub"
         self.fields["first_name"].label = handrive_text.get("auth_name_label", "이름")
         self.fields["email"].label = handrive_text.get("auth_email_label", "이메일 주소")
         self.fields["privacy_consent"].label = handrive_text.get("auth_privacy_consent_label", "개인정보 처리방침 및 이용약관에 동의합니다.")
@@ -5843,16 +6849,34 @@ class HandriveSignupForm(UserCreationForm):
             "required": handrive_text.get("auth_privacy_consent_error", "개인정보 처리방침 및 이용약관 동의가 필요합니다."),
         }
         self._handrive_text = handrive_text
-        self.fields["username"].widget.attrs.update({"autocomplete": "username", "placeholder": "아이디를 입력하세요"})
-        self.fields["password1"].widget.attrs.update({"autocomplete": "new-password", "placeholder": "비밀번호 입력"})
-        self.fields["password2"].widget.attrs.update({"autocomplete": "new-password", "placeholder": "비밀번호 다시 입력"})
+        self.fields["username"].widget.attrs.update({
+            "autocomplete": "username",
+            "placeholder": "아이디를 입력하세요",
+            "data-handrive-auth-safe-input": "username",
+            "pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
+            "title": get_auth_forbidden_char_message("username", handrive_text),
+        })
+        self.fields["password1"].widget.attrs.update({
+            "autocomplete": "new-password",
+            "placeholder": "비밀번호 입력",
+            "data-handrive-auth-safe-input": "password",
+            "pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
+            "title": get_auth_forbidden_char_message("password", handrive_text),
+        })
+        self.fields["password2"].widget.attrs.update({
+            "autocomplete": "new-password",
+            "placeholder": "비밀번호 다시 입력",
+            "data-handrive-auth-safe-input": "password",
+            "pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
+            "title": get_auth_forbidden_char_message("password", handrive_text),
+        })
         self.fields["first_name"].widget.attrs.update({"autocomplete": "name", "placeholder": "이름 입력"})
         self.fields["email"].widget.attrs.update({"autocomplete": "email", "placeholder": "example@email.com", "id": "id_signup_email"})
-        if self.github_identity is not None:
-            github_name = self.github_identity.name or self.github_identity.login
-            github_email = self.github_identity.email if self.github_identity.email_verified else ""
-            self.fields["first_name"].initial = github_name
-            self.fields["email"].initial = github_email
+        if self.oauth_identity is not None:
+            oauth_name = getattr(self.oauth_identity, "name", "") or getattr(self.oauth_identity, "login", "")
+            oauth_email = self.oauth_identity.email if self.oauth_identity.email_verified else ""
+            self.fields["first_name"].initial = oauth_name
+            self.fields["email"].initial = oauth_email
             self.fields["first_name"].disabled = True
             self.fields["email"].disabled = True
             self.fields["first_name"].widget.attrs.update({"aria-disabled": "true"})
@@ -5871,9 +6895,9 @@ class HandriveSignupForm(UserCreationForm):
         cleaned = super().clean()
         token = str(cleaned.get("email_2fa_token", "") or "").strip()
         email = str(cleaned.get("email", "") or "").strip()
-        if self.github_identity is not None:
-            if not self.github_identity.email_verified or not email:
-                self.add_error("email", "GitHub 계정의 확인된 이메일 주소를 가져오지 못했습니다.")
+        if self.oauth_identity is not None:
+            if not self.oauth_identity.email_verified or not email:
+                self.add_error("email", f"{self.oauth_provider_label} 계정의 확인된 이메일 주소를 가져오지 못했습니다.")
             return cleaned
         not_verified_msg = (
             getattr(self, "_handrive_text", {}).get("auth_2fa_email_not_verified", "이메일 인증을 완료해주세요.")
@@ -5902,8 +6926,14 @@ class HandriveSignupForm(UserCreationForm):
         lowered = value.lower()
         return any(term in lowered for term in DOCS_SIGNUP_FORBIDDEN_TERMS)
 
+    def _raw_value(self, field_name: str):
+        if self.is_bound:
+            return self.data.get(self.add_prefix(field_name), "")
+        return self.cleaned_data.get(field_name, "")
+
     def clean_username(self):
         username = str(self.cleaned_data.get("username", "") or "").strip()
+        validate_auth_safe_value(self._raw_value("username"), "username", self._handrive_text)
         if self._contains_forbidden_term(username):
             raise ValidationError("아이디에 사용할 수 없는 단어가 포함되어 있습니다.")
         if DOCS_SIGNUP_SQL_PATTERN.search(username):
@@ -5912,26 +6942,32 @@ class HandriveSignupForm(UserCreationForm):
 
     def clean_password1(self):
         password = str(self.cleaned_data.get("password1", "") or "")
+        validate_auth_safe_value(self._raw_value("password1"), "password", self._handrive_text)
         if self._contains_forbidden_term(password):
             raise ValidationError("비밀번호에 사용할 수 없는 단어가 포함되어 있습니다.")
         if DOCS_SIGNUP_SQL_PATTERN.search(password):
             raise ValidationError("비밀번호에 SQL 구문으로 해석될 수 있는 입력은 사용할 수 없습니다.")
         return password
 
+    def clean_password2(self):
+        password = str(self.cleaned_data.get("password2", "") or "")
+        validate_auth_safe_value(self._raw_value("password2"), "password", self._handrive_text)
+        return password
+
 
 def _ensure_forgejo_mapping_for_user(user):
-    """Forgejo 계정이 없으면 만들고, GitUserMapping을 보장한다."""
+    """Forgejo 계정과 아바타 동기화용 사용자 토큰을 보장한다."""
     if not user or not user.is_authenticated:
         return None
 
     mapping = GitUserMapping.objects.filter(user=user).first()
-    if mapping and mapping.forgejo_user_id and mapping.forgejo_username:
+    if mapping and mapping.forgejo_user_id and mapping.forgejo_username and mapping.forgejo_token:
         return mapping
 
     try:
         client = ForgejoClient()
         # 실제 이메일은 기존 Forgejo 계정과 충돌할 수 있으므로 placeholder 사용
-        gitea_user = client.ensure_user(user.username, "")
+        gitea_user, token = client.ensure_user_with_token(user.username, "")
     except Exception:
         logger.exception("Failed to ensure Forgejo user for %s", getattr(user, "username", "unknown"))
         return mapping
@@ -5941,7 +6977,7 @@ def _ensure_forgejo_mapping_for_user(user):
         defaults={
             "forgejo_user_id":  gitea_user["id"],
             "forgejo_username": gitea_user["login"],
-            "forgejo_token":    (mapping.forgejo_token if mapping and mapping.forgejo_token else ""),
+            "forgejo_token":    token,
         },
     )
     return mapping
@@ -6176,6 +7212,33 @@ def _github_auth_action_url(base_url: str, next_url: str, action: str) -> str:
     return f"{base_url}?{urlencode({'next': next_url or '', 'github_action': action})}"
 
 
+def _build_google_auth_start_url(request, ui_lang: str | None, next_url: str, mode: str) -> str:
+    kwargs = {"ui_lang": ui_lang} if ui_lang in SUPPORTED_UI_LANGS else {}
+    route_name = "main:handrive_google_auth_start_lang" if kwargs else "main:handrive_google_auth_start"
+    base_url = reverse(route_name, kwargs=kwargs) if kwargs else reverse(route_name)
+    query = urlencode({"mode": mode, "next": next_url or ""})
+    return f"{base_url}?{query}"
+
+
+def _build_google_auth_callback_url(request) -> str:
+    configured = str(getattr(settings, "GOOGLE_AUTH_CALLBACK_URL", "") or "").strip()
+    if configured:
+        return configured
+    return request.build_absolute_uri(reverse("main:handrive_google_auth_callback"))
+
+
+def _google_auth_context(request, ui_lang: str | None, next_url: str) -> dict:
+    return {
+        "handrive_google_auth_enabled": is_google_auth_configured(),
+        "handrive_google_login_url": _build_google_auth_start_url(request, ui_lang, next_url, "login"),
+        "handrive_google_signup_url": _build_google_auth_start_url(request, ui_lang, next_url, "signup"),
+    }
+
+
+def _google_auth_action_url(base_url: str, next_url: str, action: str) -> str:
+    return f"{base_url}?{urlencode({'next': next_url or '', 'google_action': action})}"
+
+
 def _datetime_to_github_session_value(value) -> str:
     if value is None:
         return ""
@@ -6334,7 +7397,139 @@ def _link_pending_github_auth_for_user(request, user) -> bool:
     return True
 
 
-def _initialize_github_signup_user(user) -> None:
+def _serialize_google_identity_for_session(identity: GoogleIdentity) -> dict:
+    return {
+        "google_user_id": identity.google_user_id,
+        "email": identity.email,
+        "name": identity.name,
+        "avatar_url": identity.avatar_url,
+        "email_verified": bool(identity.email_verified),
+    }
+
+
+def _deserialize_google_identity_from_session(data: dict) -> GoogleIdentity | None:
+    if not isinstance(data, dict):
+        return None
+    google_user_id = str(data.get("google_user_id") or "").strip()
+    email = str(data.get("email") or "").strip()
+    if not google_user_id or not email:
+        return None
+    return GoogleIdentity(
+        google_user_id=google_user_id,
+        email=email,
+        name=str(data.get("name") or "").strip(),
+        avatar_url=str(data.get("avatar_url") or "").strip(),
+        email_verified=bool(data.get("email_verified")),
+    )
+
+
+def _serialize_google_token_for_session(token_data: GoogleTokenData) -> dict:
+    return {
+        "access_token": token_data.access_token,
+        "token_type": token_data.token_type,
+        "scope": token_data.scope,
+        "expires_at": _datetime_to_github_session_value(token_data.expires_at),
+        "refresh_token": token_data.refresh_token,
+        "refresh_token_expires_at": _datetime_to_github_session_value(token_data.refresh_token_expires_at),
+    }
+
+
+def _deserialize_google_token_from_session(data: dict) -> GoogleTokenData | None:
+    if not isinstance(data, dict):
+        return None
+    access_token = str(data.get("access_token") or "").strip()
+    if not access_token:
+        return None
+    return GoogleTokenData(
+        access_token=access_token,
+        token_type=str(data.get("token_type") or "").strip(),
+        scope=str(data.get("scope") or "").strip(),
+        expires_at=_datetime_from_github_session_value(data.get("expires_at")),
+        refresh_token=str(data.get("refresh_token") or "").strip(),
+        refresh_token_expires_at=_datetime_from_github_session_value(data.get("refresh_token_expires_at")),
+    )
+
+
+def _store_pending_google_auth(
+    request,
+    identity: GoogleIdentity,
+    token_data: GoogleTokenData,
+    *,
+    next_url: str,
+    ui_lang: str,
+    action: str,
+) -> None:
+    request.session[HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY] = {
+        "identity": _serialize_google_identity_for_session(identity),
+        "token": _serialize_google_token_for_session(token_data),
+        "next_url": next_url or "",
+        "ui_lang": ui_lang,
+        "action": action,
+        "created_at": time.time(),
+    }
+    request.session.modified = True
+
+
+def _clear_pending_google_auth(request) -> None:
+    if HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY in request.session:
+        request.session.pop(HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY, None)
+        request.session.modified = True
+
+
+def _get_pending_google_auth(request, *, clear_expired: bool = True) -> dict | None:
+    pending = request.session.get(HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY) or {}
+    if not isinstance(pending, dict):
+        if clear_expired:
+            _clear_pending_google_auth(request)
+        return None
+    created_at = float(pending.get("created_at") or 0)
+    if not created_at or time.time() - created_at > 30 * 60:
+        if clear_expired:
+            _clear_pending_google_auth(request)
+        return None
+    identity = _deserialize_google_identity_from_session(pending.get("identity") or {})
+    token_data = _deserialize_google_token_from_session(pending.get("token") or {})
+    if identity is None or token_data is None:
+        if clear_expired:
+            _clear_pending_google_auth(request)
+        return None
+    return {
+        "identity": identity,
+        "token_data": token_data,
+        "next_url": str(pending.get("next_url") or ""),
+        "ui_lang": str(pending.get("ui_lang") or ""),
+        "action": str(pending.get("action") or "").strip().lower(),
+    }
+
+
+def _set_pending_google_auth_action(request, action: str) -> None:
+    pending = request.session.get(HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY) or {}
+    if not isinstance(pending, dict):
+        return
+    pending["action"] = action
+    request.session[HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY] = pending
+    request.session.modified = True
+
+
+def _link_pending_google_auth_for_user(request, user) -> bool:
+    pending = _get_pending_google_auth(request)
+    if not pending or pending["action"] != "link" or not user:
+        return False
+    identity = pending["identity"]
+    linked_mapping = GoogleAccountMapping.objects.filter(google_user_id=identity.google_user_id).first()
+    if linked_mapping is not None and linked_mapping.user_id != user.id:
+        logger.warning(
+            "Pending Google link conflict for user=%s google_user_id=%s",
+            getattr(user, "username", "unknown"),
+            identity.google_user_id,
+        )
+        return False
+    save_google_mapping(user, identity, pending["token_data"])
+    _clear_pending_google_auth(request)
+    return True
+
+
+def _initialize_oauth_signup_user(user) -> None:
     profile, _ = UserProfile.objects.get_or_create(user=user)
     consented_at = timezone.now()
     profile.privacy_policy_agreed_at = consented_at
@@ -6345,7 +7540,7 @@ def _initialize_github_signup_user(user) -> None:
         scoped_home_dir = normalize_relative_path(f"users/{user.get_username()}", allow_empty=False)
         ensure_scoped_home_dir(scoped_home_dir)
     except (OSError, ValueError):
-        logger.exception("Failed to initialize scoped HanDrive home for GitHub signup user %s", user.get_username())
+        logger.exception("Failed to initialize scoped HanDrive home for OAuth signup user %s", user.get_username())
 
 
 def _render_github_auth_error(request, ui_lang: str | None, mode: str, next_url: str, message: str):
@@ -6367,7 +7562,38 @@ def _render_github_auth_error(request, ui_lang: str | None, mode: str, next_url:
     return _render_handrive_login_page(
         request,
         context,
-        AuthenticationForm(request),
+        HandriveAuthenticationForm(request, ui_lang=resolved_lang),
+        next_url,
+        message,
+        message,
+        False,
+        "",
+        "",
+        auth_breadcrumb_url,
+        hide_global_nav,
+    )
+
+
+def _render_google_auth_error(request, ui_lang: str | None, mode: str, next_url: str, message: str):
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    context = handrive_common_context(request, resolved_lang)
+    auth_breadcrumb_url = resolve_auth_breadcrumb_url(request, context["handrive_base_url"])
+    hide_global_nav = is_handrive_share_auth_entry(request, context["handrive_base_url"])
+    if mode == "signup":
+        return _render_handrive_signup_page(
+            request,
+            context,
+            HandriveSignupForm(ui_lang=resolved_lang),
+            next_url,
+            message,
+            message,
+            auth_breadcrumb_url,
+            hide_global_nav,
+        )
+    return _render_handrive_login_page(
+        request,
+        context,
+        HandriveAuthenticationForm(request, ui_lang=resolved_lang),
         next_url,
         message,
         message,
@@ -6397,8 +7623,11 @@ def _render_handrive_login_page(
 ):
     handrive_text = context["handrive_text"]
     pending_github = _get_pending_github_auth(request)
+    pending_google = _get_pending_google_auth(request)
     github_choice_required = bool(pending_github and pending_github["action"] == "choice")
     github_link_pending = bool(pending_github and pending_github["action"] == "link")
+    google_choice_required = bool(pending_google and pending_google["action"] == "choice")
+    google_link_pending = bool(pending_google and pending_google["action"] == "link")
     return render(
         request,
         "handrive/login.html",
@@ -6419,12 +7648,19 @@ def _render_handrive_login_page(
             "handrive_login_2fa_masked_email": twofa_masked_email,
             "handrive_login_2fa_error_message": twofa_error_message,
             "handrive_api_login_2fa_resend_code_url": reverse("main:handrive_api_login_2fa_resend_code"),
+            "handrive_auth_safe_input_pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
             "handrive_github_choice_required": github_choice_required,
             "handrive_github_choice_link_url": _github_auth_action_url(context["handrive_login_url"], next_url, "link"),
             "handrive_github_choice_signup_url": _github_auth_action_url(context["handrive_signup_url"], next_url, "signup"),
             "handrive_github_link_pending": github_link_pending,
             "handrive_github_pending_login": pending_github["identity"].login if pending_github else "",
+            "handrive_google_choice_required": google_choice_required,
+            "handrive_google_choice_link_url": _google_auth_action_url(context["handrive_login_url"], next_url, "link"),
+            "handrive_google_choice_signup_url": _google_auth_action_url(context["handrive_signup_url"], next_url, "signup"),
+            "handrive_google_link_pending": google_link_pending,
+            "handrive_google_pending_email": pending_google["identity"].email if pending_google else "",
             **_github_auth_context(request, context.get("ui_lang"), next_url),
+            **_google_auth_context(request, context.get("ui_lang"), next_url),
         },
     )
 
@@ -6441,8 +7677,11 @@ def _render_handrive_signup_page(
 ):
     handrive_text = context["handrive_text"]
     pending_github = _get_pending_github_auth(request)
+    pending_google = _get_pending_google_auth(request)
     github_signup_pending = bool(pending_github and pending_github["action"] == "signup")
+    google_signup_pending = bool(pending_google and pending_google["action"] == "signup")
     github_identity = pending_github["identity"] if github_signup_pending else None
+    google_identity = pending_google["identity"] if google_signup_pending else None
     return render(
         request,
         "handrive/signup.html",
@@ -6457,9 +7696,13 @@ def _render_handrive_signup_page(
             "hide_global_nav": hide_global_nav,
             "handrive_api_signup_2fa_send_code_url": reverse("main:handrive_api_signup_2fa_send_code"),
             "handrive_api_signup_2fa_verify_code_url": reverse("main:handrive_api_signup_2fa_verify_code"),
+            "handrive_auth_safe_input_pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
             "handrive_signup_github_pending": github_signup_pending,
             "handrive_signup_github_login": github_identity.login if github_identity else "",
+            "handrive_signup_google_pending": google_signup_pending,
+            "handrive_signup_google_email": google_identity.email if google_identity else "",
             **_github_auth_context(request, context.get("ui_lang"), next_url),
+            **_google_auth_context(request, context.get("ui_lang"), next_url),
         },
     )
 
@@ -6644,6 +7887,237 @@ def handrive_github_auth_callback(request):
     return response
 
 
+def _parse_boolean_payload_value(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+def handrive_api_google_drive_settings(request):
+    user = getattr(request, "user", None)
+    if not (user and user.is_authenticated):
+        return json_error("로그인이 필요합니다.", status=401)
+    try:
+        payload = parse_json_body(request)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+    mapping = GoogleAccountMapping.objects.filter(user=user).first()
+    if mapping is None:
+        return json_error("연동된 Google 계정이 없습니다.", status=404)
+    enabled = _parse_boolean_payload_value(payload.get("enabled"))
+    if mapping.google_drive_enabled != enabled:
+        mapping.google_drive_enabled = enabled
+        mapping.save(update_fields=["google_drive_enabled", "updated_at"])
+    return JsonResponse(
+        {
+            "ok": True,
+            "connected": True,
+            "google_drive_enabled": bool(mapping.google_drive_enabled),
+        }
+    )
+
+
+@require_http_methods(["POST", "DELETE"])
+@csrf_protect
+def handrive_api_google_unlink(request):
+    user = getattr(request, "user", None)
+    if not (user and user.is_authenticated):
+        return json_error("로그인이 필요합니다.", status=401)
+    deleted_count, _ = GoogleAccountMapping.objects.filter(user=user).delete()
+    return JsonResponse(
+        {
+            "ok": True,
+            "connected": False,
+            "deleted": deleted_count > 0,
+            "google_drive_enabled": False,
+        }
+    )
+
+
+@require_http_methods(["GET", "POST"])
+@csrf_protect
+def handrive_google_auth_start(request, ui_lang=None):
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    context = handrive_common_context(request, resolved_lang)
+    handrive_text = context["handrive_text"]
+    next_url = resolve_next_url(request, context["handrive_base_url"])
+    mode = str(request.POST.get("mode") or request.GET.get("mode") or "login").strip().lower()
+    if mode not in {"login", "signup", "link"}:
+        mode = "login"
+
+    if mode == "link" and not request.user.is_authenticated:
+        return _render_google_auth_error(
+            request,
+            resolved_lang,
+            "login",
+            next_url,
+            handrive_text.get("auth_google_link_requires_login", "Sign in before connecting Google."),
+        )
+
+    if not is_google_auth_configured():
+        return _render_google_auth_error(
+            request,
+            resolved_lang,
+            mode,
+            next_url,
+            handrive_text.get("auth_google_unconfigured", "Google login is not configured yet."),
+        )
+
+    if mode == "signup":
+        if request.method != "POST" or not request.POST.get("privacy_consent"):
+            return _render_google_auth_error(
+                request,
+                resolved_lang,
+                "signup",
+                next_url,
+                handrive_text.get("auth_google_consent_error", "You must agree to continue Google sign up."),
+            )
+
+    state = secrets.token_urlsafe(32)
+    request.session[HANDRIVE_GOOGLE_AUTH_STATE_SESSION_KEY] = {
+        "state": state,
+        "mode": mode,
+        "next_url": next_url,
+        "ui_lang": resolved_lang,
+        "created_at": time.time(),
+        "privacy_consent": mode == "signup",
+    }
+    request.session.modified = True
+
+    try:
+        authorize_url = build_google_authorize_url(_build_google_auth_callback_url(request), state)
+    except GoogleAuthError:
+        return _render_google_auth_error(
+            request,
+            resolved_lang,
+            mode,
+            next_url,
+            handrive_text.get("auth_google_unconfigured", "Google login is not configured yet."),
+        )
+    return redirect(authorize_url)
+
+
+@require_http_methods(["GET"])
+def handrive_google_auth_callback(request):
+    pending = request.session.pop(HANDRIVE_GOOGLE_AUTH_STATE_SESSION_KEY, None) or {}
+    request.session.modified = True
+    resolved_lang = resolve_ui_lang(request, pending.get("ui_lang"))
+    context = handrive_common_context(request, resolved_lang)
+    handrive_text = context["handrive_text"]
+    mode = str(pending.get("mode") or "login").strip().lower()
+    if mode not in {"login", "signup", "link"}:
+        mode = "login"
+    next_url = str(pending.get("next_url") or context["handrive_base_url"])
+    generic_error = handrive_text.get("auth_google_failed", "Google authentication failed. Please try again.")
+
+    state = str(request.GET.get("state") or "").strip()
+    expected_state = str(pending.get("state") or "").strip()
+    created_at = float(pending.get("created_at") or 0)
+    if not expected_state or not secrets.compare_digest(state, expected_state) or time.time() - created_at > 600:
+        return _render_google_auth_error(request, resolved_lang, mode, next_url, generic_error)
+
+    if request.GET.get("error"):
+        return _render_google_auth_error(request, resolved_lang, mode, next_url, generic_error)
+
+    code = str(request.GET.get("code") or "").strip()
+    if not code:
+        return _render_google_auth_error(request, resolved_lang, mode, next_url, generic_error)
+
+    try:
+        token_data = exchange_google_code(code, _build_google_auth_callback_url(request))
+        identity = fetch_google_identity(token_data.access_token)
+        if mode == "link":
+            if not request.user.is_authenticated:
+                return _render_google_auth_error(
+                    request,
+                    resolved_lang,
+                    "login",
+                    next_url,
+                    handrive_text.get("auth_google_link_requires_login", generic_error),
+                )
+            linked_mapping = GoogleAccountMapping.objects.filter(google_user_id=identity.google_user_id).first()
+            if linked_mapping is not None and linked_mapping.user_id != request.user.id:
+                return _render_google_auth_error(
+                    request,
+                    resolved_lang,
+                    "login",
+                    next_url,
+                    handrive_text.get("auth_google_link_conflict", generic_error),
+                )
+            save_google_mapping(request.user, identity, token_data)
+            return _build_forgejo_authenticated_redirect(next_url, request.user)
+
+        current_user = request.user if getattr(request.user, "is_authenticated", False) else None
+        linked_mapping = GoogleAccountMapping.objects.filter(google_user_id=identity.google_user_id).select_related("user").first()
+        if linked_mapping is not None:
+            user = linked_mapping.user
+            save_google_mapping(user, identity, token_data)
+        elif current_user is not None:
+            save_google_mapping(current_user, identity, token_data)
+            return _build_forgejo_authenticated_redirect(next_url, current_user)
+        else:
+            email_owner = None
+            if identity.email and identity.email_verified:
+                UserModel = get_user_model()
+                email_owner = UserModel.objects.filter(email__iexact=identity.email).order_by("id").first()
+            if email_owner is not None:
+                _store_pending_google_auth(
+                    request,
+                    identity,
+                    token_data,
+                    next_url=next_url,
+                    ui_lang=resolved_lang,
+                    action="choice",
+                )
+                choice_url = f"{context['handrive_login_url']}?{urlencode({'next': next_url or '', 'google_choice': '1'})}"
+                return redirect(choice_url)
+            if not identity.email or not identity.email_verified:
+                return _render_google_auth_error(request, resolved_lang, mode, next_url, generic_error)
+            _store_pending_google_auth(
+                request,
+                identity,
+                token_data,
+                next_url=next_url,
+                ui_lang=resolved_lang,
+                action="signup",
+            )
+            return redirect(_google_auth_action_url(context["handrive_signup_url"], next_url, "signup"))
+    except GoogleAuthError:
+        logger.exception("Google authentication failed")
+        return _render_google_auth_error(request, resolved_lang, mode, next_url, generic_error)
+    except Exception:
+        logger.exception("Google account login failed")
+        return _render_google_auth_error(request, resolved_lang, mode, next_url, generic_error)
+
+    target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, user)
+    requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
+    forgejo_session_key = None
+    if requires_direct_attach:
+        forgejo_session_key, forgejo_error_code = _prepare_forgejo_login_session(user)
+        if forgejo_error_code or not forgejo_session_key:
+            return _render_google_auth_error(
+                request,
+                resolved_lang,
+                mode,
+                next_url,
+                _build_forgejo_auth_error_message(resolved_lang, forgejo_error_code or FORGEJO_AUTH_ERROR_CODE),
+            )
+
+    _finalize_handrive_login_session(request, user)
+    if not requires_direct_attach:
+        response = _build_post_hanplanet_login_response(target_url, user)
+    else:
+        response = _build_forgejo_redirect_base(target_url)
+        if forgejo_session_key:
+            response = _apply_forgejo_session_cookie(response, forgejo_session_key)
+
+    return response
+
+
 def _serialize_github_repository(repository: dict) -> dict | None:
     try:
         repo_id = int(repository.get("id"))
@@ -6681,30 +8155,126 @@ def _github_selected_repository_ids(mapping: GitHubAccountMapping) -> set[int]:
     return selected_ids
 
 
+def _list_github_repositories_with_retry(access_token: str, *, attempts: int = 2, retry_delay: float = 0.6) -> list[dict]:
+    last_error = None
+    normalized_attempts = max(1, int(attempts or 1))
+    for attempt_index in range(normalized_attempts):
+        try:
+            return list_github_repositories(access_token)
+        except GitHubAuthError as exc:
+            last_error = exc
+            if attempt_index + 1 >= normalized_attempts:
+                break
+            time.sleep(max(0, float(retry_delay or 0)))
+    raise last_error or GitHubAuthError("GitHub repository request failed")
+
+
+def _handrive_message_pair(message_key: str, fallback_ko: str, fallback_en: str) -> dict[str, str]:
+    return {
+        "ko": get_handrive_text("ko").get(message_key, fallback_ko),
+        "en": get_handrive_text("en").get(message_key, fallback_en),
+    }
+
+
+def _select_handrive_message(messages: dict[str, str], ui_lang: str | None) -> str:
+    return messages.get("en" if ui_lang == "en" else "ko") or messages.get("ko") or messages.get("en") or ""
+
+
+def _handrive_error_response(
+    request,
+    message_key: str,
+    *,
+    fallback_ko: str,
+    fallback_en: str,
+    status: int = 400,
+    **extra,
+) -> JsonResponse:
+    ui_lang = resolve_ui_lang(request, getattr(getattr(request, "resolver_match", None), "kwargs", {}).get("ui_lang"))
+    messages = _handrive_message_pair(message_key, fallback_ko, fallback_en)
+    message = _select_handrive_message(messages, ui_lang)
+    return JsonResponse(
+        {
+            "ok": False,
+            "error": message,
+            "error_message": message,
+            "error_messages": messages,
+            **extra,
+        },
+        status=status,
+    )
+
+
+def _github_repository_error_payload(
+    code: str,
+    message_key: str,
+    *,
+    ui_lang: str | None,
+    fallback_ko: str,
+    fallback_en: str,
+    **extra,
+) -> dict:
+    messages = _handrive_message_pair(message_key, fallback_ko, fallback_en)
+    return {
+        **extra,
+        "error": code,
+        "error_message": _select_handrive_message(messages, ui_lang),
+        "error_messages": messages,
+    }
+
+
 @require_http_methods(["GET", "POST"])
 @csrf_protect
 def handrive_api_github_repositories(request):
+    ui_lang = resolve_ui_lang(request, getattr(getattr(request, "resolver_match", None), "kwargs", {}).get("ui_lang"))
     if not request.user.is_authenticated:
-        return JsonResponse({"ok": False, "error": "authentication_required"}, status=401)
+        return JsonResponse(_github_repository_error_payload(
+            "authentication_required",
+            "github_repo_authentication_required",
+            ui_lang=ui_lang,
+            fallback_ko="로그인 후 GitHub 저장소를 불러올 수 있습니다.",
+            fallback_en="Sign in before loading GitHub repositories.",
+            ok=False,
+        ), status=401)
 
     mapping = GitHubAccountMapping.objects.filter(user=request.user).first()
     if mapping is None:
         return JsonResponse({"ok": True, "connected": False, "repositories": []})
     if not mapping.user_access_token:
-        return JsonResponse({"ok": False, "connected": True, "error": "github_reconnect_required"}, status=400)
+        return JsonResponse(_github_repository_error_payload(
+            "github_reconnect_required",
+            "github_repo_reconnect_required",
+            ui_lang=ui_lang,
+            fallback_ko="GitHub 저장소 권한이 없거나 만료되었습니다. GitHub를 다시 연동해주세요.",
+            fallback_en="GitHub repository access is missing or expired. Please reconnect GitHub.",
+            ok=True,
+            connected=False,
+            repositories=[],
+        ))
     if not github_token_has_configured_repository_scope(mapping.token_scope):
-        return JsonResponse({
-            "ok": True,
-            "connected": False,
-            "repositories": [],
-            "error": "github_reconnect_required",
-        })
+        return JsonResponse(_github_repository_error_payload(
+            "github_reconnect_required",
+            "github_repo_reconnect_required",
+            ui_lang=ui_lang,
+            fallback_ko="GitHub 저장소 권한이 없거나 만료되었습니다. GitHub를 다시 연동해주세요.",
+            fallback_en="GitHub repository access is missing or expired. Please reconnect GitHub.",
+            ok=True,
+            connected=False,
+            repositories=[],
+        ))
 
     try:
-        raw_repositories = list_github_repositories(mapping.user_access_token)
+        raw_repositories = _list_github_repositories_with_retry(mapping.user_access_token)
     except GitHubAuthError:
         logger.exception("Failed to list GitHub repositories for user %s", request.user.get_username())
-        return JsonResponse({"ok": False, "connected": True, "error": "github_repository_list_failed"}, status=502)
+        return JsonResponse(_github_repository_error_payload(
+            "github_repository_list_failed",
+            "github_repo_select_error",
+            ui_lang=ui_lang,
+            fallback_ko="GitHub 저장소를 불러오지 못했습니다.",
+            fallback_en="Failed to load GitHub repositories.",
+            ok=False,
+            connected=True,
+        ), status=502)
 
     repositories = [
         serialized
@@ -6717,10 +8287,24 @@ def handrive_api_github_repositories(request):
         try:
             payload = json.loads(request.body.decode("utf-8") or "{}")
         except (UnicodeDecodeError, json.JSONDecodeError):
-            return JsonResponse({"ok": False, "error": "invalid_json"}, status=400)
+            return JsonResponse(_github_repository_error_payload(
+                "invalid_json",
+                "github_repo_invalid_request",
+                ui_lang=ui_lang,
+                fallback_ko="GitHub 저장소 요청 형식이 올바르지 않습니다.",
+                fallback_en="The GitHub repository request is invalid.",
+                ok=False,
+            ), status=400)
         requested_ids = payload.get("repository_ids")
         if not isinstance(requested_ids, list):
-            return JsonResponse({"ok": False, "error": "invalid_repository_ids"}, status=400)
+            return JsonResponse(_github_repository_error_payload(
+                "invalid_repository_ids",
+                "github_repo_invalid_repository_ids",
+                ui_lang=ui_lang,
+                fallback_ko="저장소 선택 값이 올바르지 않습니다.",
+                fallback_en="The repository selection is invalid.",
+                ok=False,
+            ), status=400)
         normalized_requested_ids: set[int] = set()
         for value in requested_ids:
             try:
@@ -6745,6 +8329,24 @@ def handrive_api_github_repositories(request):
         "repositories": repositories,
         "selected_ids": sorted(selected_ids),
     })
+
+
+@require_http_methods(["POST", "DELETE"])
+@csrf_protect
+def handrive_api_github_unlink(request):
+    user = getattr(request, "user", None)
+    if not (user and user.is_authenticated):
+        return json_error("로그인이 필요합니다.", status=401)
+    deleted_count, _ = GitHubAccountMapping.objects.filter(user=user).delete()
+    return JsonResponse(
+        {
+            "ok": True,
+            "connected": False,
+            "deleted": deleted_count > 0,
+            "repositories": [],
+            "selected_ids": [],
+        }
+    )
 
 
 @require_http_methods(["GET"])
@@ -6791,14 +8393,21 @@ def handrive_login(request, ui_lang=None):
     auth_breadcrumb_url = resolve_auth_breadcrumb_url(request, context["handrive_base_url"])
     hide_global_nav = is_handrive_share_auth_entry(request, context["handrive_base_url"])
     pending_github = _get_pending_github_auth(request)
+    pending_google = _get_pending_google_auth(request)
     github_action = str(request.GET.get("github_action") or "").strip().lower()
+    google_action = str(request.GET.get("google_action") or "").strip().lower()
     if request.method == "GET" and pending_github and github_action == "link":
         _set_pending_github_auth_action(request, "link")
         pending_github = _get_pending_github_auth(request)
+    if request.method == "GET" and pending_google and google_action == "link":
+        _set_pending_google_auth_action(request, "link")
+        pending_google = _get_pending_google_auth(request)
 
     if request.user.is_authenticated:
         if pending_github and pending_github["action"] == "link":
             _link_pending_github_auth_for_user(request, request.user)
+        if pending_google and pending_google["action"] == "link":
+            _link_pending_google_auth_for_user(request, request.user)
         db_token = getattr(getattr(request.user, "profile", None), "session_token", "")
         if db_token:
             # 정상 로그인 상태 → next로 이동
@@ -6836,7 +8445,7 @@ def handrive_login(request, ui_lang=None):
     def _render_login_with_2fa(masked_email, send_failed=False):
         err = handrive_text.get("auth_2fa_email_send_error", "인증 코드 발송에 실패했습니다.") if send_failed else ""
         return _render_handrive_login_page(
-            request, context, AuthenticationForm(request),
+            request, context, HandriveAuthenticationForm(request, ui_lang=resolved_lang),
             next_url, "", "", False, turnstile_site_key, "",
             auth_breadcrumb_url, hide_global_nav,
             show_2fa=True, twofa_masked_email=masked_email, twofa_error_message=err,
@@ -6877,14 +8486,14 @@ def handrive_login(request, ui_lang=None):
             # 코드 오류 → 2FA 화면 유지
             _masked = _mask_email(str(getattr(pending_user, "email", "") or ""))
             return _render_handrive_login_page(
-                request, context, AuthenticationForm(request),
+                request, context, HandriveAuthenticationForm(request, ui_lang=resolved_lang),
                 next_url, "", "", False, turnstile_site_key, "",
                 auth_breadcrumb_url, hide_global_nav,
                 show_2fa=True, twofa_masked_email=_masked,
                 twofa_error_message=handrive_text.get("auth_2fa_code_error", "인증 코드가 올바르지 않거나 만료되었습니다."),
             )
 
-    form = AuthenticationForm(request, data=request.POST or None)
+    form = HandriveAuthenticationForm(request, data=request.POST or None, ui_lang=resolved_lang)
 
     if request.method == "POST":
         username_value = request.POST.get("username", "")
@@ -6945,7 +8554,10 @@ def handrive_login(request, ui_lang=None):
                     on_2fa_needed=_render_login_with_2fa,
                 )
             else:
-                login_error_message = handrive_text.get("auth_login_error", "아이디 또는 비밀번호를 확인해주세요.")
+                login_error_message = (
+                    _first_auth_safety_error_message(form)
+                    or handrive_text.get("auth_login_error", "아이디 또는 비밀번호를 확인해주세요.")
+                )
                 captcha_question = _build_handrive_login_captcha(request, refresh=True)
                 if target_user is not None:
                     _register_handrive_login_failure(target_user)
@@ -6981,7 +8593,10 @@ def handrive_login(request, ui_lang=None):
                 on_2fa_needed=_render_login_with_2fa,
             )
         else:
-            login_error_message = handrive_text.get("auth_login_error", "아이디 또는 비밀번호를 확인해주세요.")
+            login_error_message = (
+                _first_auth_safety_error_message(form)
+                or handrive_text.get("auth_login_error", "아이디 또는 비밀번호를 확인해주세요.")
+            )
             if target_user is not None:
                 _register_handrive_login_failure(target_user)
                 show_captcha = _is_handrive_login_captcha_required(target_user)
@@ -7024,12 +8639,14 @@ def handrive_api_login_2fa_resend_code(request, ui_lang=None):
     """
     from .models import EmailVerificationCode
     resolved_lang = resolve_ui_lang(request, ui_lang)
-    handrive_text = get_handrive_text(resolved_lang)
 
     pending_user_id = request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)
     if not pending_user_id:
-        return JsonResponse(
-            {"ok": False, "error": handrive_text.get("auth_2fa_session_expired", "인증 세션이 만료되었습니다. 다시 로그인해주세요.")},
+        return _handrive_error_response(
+            request,
+            "auth_2fa_session_expired",
+            fallback_ko="인증 세션이 만료되었습니다. 다시 로그인해주세요.",
+            fallback_en="Session expired. Please log in again.",
             status=400,
         )
 
@@ -7038,8 +8655,11 @@ def handrive_api_login_2fa_resend_code(request, ui_lang=None):
         pending_user = UserModel.objects.get(pk=pending_user_id)
     except UserModel.DoesNotExist:
         _clear_2fa_pending_session(request)
-        return JsonResponse(
-            {"ok": False, "error": handrive_text.get("auth_2fa_session_expired", "인증 세션이 만료되었습니다. 다시 로그인해주세요.")},
+        return _handrive_error_response(
+            request,
+            "auth_2fa_session_expired",
+            fallback_ko="인증 세션이 만료되었습니다. 다시 로그인해주세요.",
+            fallback_en="Session expired. Please log in again.",
             status=400,
         )
 
@@ -7048,15 +8668,21 @@ def handrive_api_login_2fa_resend_code(request, ui_lang=None):
     if last_code:
         elapsed = (timezone.now() - last_code.created_at).total_seconds()
         if elapsed < 30:
-            return JsonResponse(
-                {"ok": False, "error": handrive_text.get("auth_2fa_rate_limit", "잠시 후 다시 시도해주세요.")},
+            return _handrive_error_response(
+                request,
+                "auth_2fa_rate_limit",
+                fallback_ko="잠시 후 다시 시도해주세요.",
+                fallback_en="Please wait a moment before trying again.",
                 status=429,
             )
 
     email_sent = _send_or_reuse_login_2fa_email(pending_user, ui_lang=resolved_lang)
     if not email_sent:
-        return JsonResponse(
-            {"ok": False, "error": handrive_text.get("auth_2fa_email_send_error", "인증 코드 발송에 실패했습니다.")},
+        return _handrive_error_response(
+            request,
+            "auth_2fa_email_send_error",
+            fallback_ko="인증 코드 발송에 실패했습니다. 잠시 후 다시 시도해주세요.",
+            fallback_en="Failed to send the verification code. Please try again later.",
             status=500,
         )
 
@@ -7068,19 +8694,29 @@ def handrive_api_login_2fa_resend_code(request, ui_lang=None):
 def handrive_api_signup_2fa_send_code(request, ui_lang=None):
     """회원가입 이메일 2FA 인증 코드 발송 API (AJAX)."""
     from django.core.mail import send_mail as _send_mail
-    resolved_lang = resolve_ui_lang(request, ui_lang)
-    handrive_text = get_handrive_text(resolved_lang)
 
     email = str(request.POST.get("email", "") or "").strip()
     if not email or "@" not in email or "." not in email.split("@")[-1]:
-        return JsonResponse({"ok": False, "error": handrive_text.get("auth_register_email_invalid", "올바른 이메일 주소를 입력해주세요.")}, status=400)
+        return _handrive_error_response(
+            request,
+            "auth_register_email_invalid",
+            fallback_ko="올바른 이메일 주소를 입력해주세요.",
+            fallback_en="Please enter a valid email address.",
+            status=400,
+        )
 
     # 연속 발송 속도 제한 (30초)
     pending = request.session.get(HANDRIVE_SIGNUP_2FA_SESSION_KEY) or {}
     import time as _time
     now_ts = _time.time()
     if pending.get("email") == email and (now_ts - pending.get("sent_at_ts", 0)) < 30:
-        return JsonResponse({"ok": False, "error": handrive_text.get("auth_2fa_rate_limit", "잠시 후 다시 시도해주세요.")}, status=429)
+        return _handrive_error_response(
+            request,
+            "auth_2fa_rate_limit",
+            fallback_ko="잠시 후 다시 시도해주세요.",
+            fallback_en="Please wait a moment before trying again.",
+            status=429,
+        )
 
     code = str(secrets.randbelow(1000000)).zfill(6)
     expires_at_ts = now_ts + 600  # 10분
@@ -7114,7 +8750,13 @@ def handrive_api_signup_2fa_send_code(request, ui_lang=None):
         )
     except Exception:
         logger.exception("Failed to send signup 2FA email to %s", email)
-        return JsonResponse({"ok": False, "error": handrive_text.get("auth_2fa_email_send_error", "인증 코드 발송에 실패했습니다.")}, status=500)
+        return _handrive_error_response(
+            request,
+            "auth_2fa_email_send_error",
+            fallback_ko="인증 코드 발송에 실패했습니다. 잠시 후 다시 시도해주세요.",
+            fallback_en="Failed to send the verification code. Please try again later.",
+            status=500,
+        )
 
     return JsonResponse({"ok": True})
 
@@ -7125,21 +8767,36 @@ def handrive_api_signup_2fa_verify_code(request, ui_lang=None):
     """회원가입 이메일 2FA 코드 검증 API (AJAX) → 검증 성공 시 서명 토큰 반환."""
     from django.core import signing
     import time as _time
-    resolved_lang = resolve_ui_lang(request, ui_lang)
-    handrive_text = get_handrive_text(resolved_lang)
-    code_error = handrive_text.get("auth_2fa_code_error", "인증 코드가 올바르지 않거나 만료되었습니다.")
 
     submitted_code = str(request.POST.get("code", "") or "").strip()
     pending = request.session.get(HANDRIVE_SIGNUP_2FA_SESSION_KEY) or {}
 
     if not pending or not submitted_code:
-        return JsonResponse({"ok": False, "error": code_error}, status=400)
+        return _handrive_error_response(
+            request,
+            "auth_2fa_code_error",
+            fallback_ko="인증 코드가 올바르지 않거나 만료되었습니다. 다시 확인해주세요.",
+            fallback_en="The code is invalid or expired. Please check and try again.",
+            status=400,
+        )
 
     if _time.time() > pending.get("expires_at_ts", 0):
-        return JsonResponse({"ok": False, "error": code_error}, status=400)
+        return _handrive_error_response(
+            request,
+            "auth_2fa_code_error",
+            fallback_ko="인증 코드가 올바르지 않거나 만료되었습니다. 다시 확인해주세요.",
+            fallback_en="The code is invalid or expired. Please check and try again.",
+            status=400,
+        )
 
     if pending.get("code") != submitted_code:
-        return JsonResponse({"ok": False, "error": code_error}, status=400)
+        return _handrive_error_response(
+            request,
+            "auth_2fa_code_error",
+            fallback_ko="인증 코드가 올바르지 않거나 만료되었습니다. 다시 확인해주세요.",
+            fallback_en="The code is invalid or expired. Please check and try again.",
+            status=400,
+        )
 
     email = pending.get("email", "")
     # 세션 코드 소비
@@ -7164,11 +8821,17 @@ def handrive_signup(request, ui_lang=None):
     auth_breadcrumb_url = resolve_auth_breadcrumb_url(request, context["handrive_base_url"])
     hide_global_nav = is_handrive_share_auth_entry(request, context["handrive_base_url"])
     pending_github = _get_pending_github_auth(request)
+    pending_google = _get_pending_google_auth(request)
     github_action = str(request.GET.get("github_action") or "").strip().lower()
+    google_action = str(request.GET.get("google_action") or "").strip().lower()
     if request.method == "GET" and pending_github and github_action == "signup":
         _set_pending_github_auth_action(request, "signup")
         pending_github = _get_pending_github_auth(request)
+    if request.method == "GET" and pending_google and google_action == "signup":
+        _set_pending_google_auth_action(request, "signup")
+        pending_google = _get_pending_google_auth(request)
     github_identity = pending_github["identity"] if pending_github and pending_github["action"] == "signup" else None
+    google_identity = pending_google["identity"] if pending_google and pending_google["action"] == "signup" else None
 
     if request.user.is_authenticated:
         return _build_post_hanplanet_login_response(
@@ -7176,7 +8839,12 @@ def handrive_signup(request, ui_lang=None):
             request.user,
         )
 
-    form = HandriveSignupForm(request.POST or None, ui_lang=resolved_lang, github_identity=github_identity)
+    form = HandriveSignupForm(
+        request.POST or None,
+        ui_lang=resolved_lang,
+        github_identity=github_identity,
+        google_identity=google_identity,
+    )
     signup_error_message = ""
     signup_error_popup_message = ""
 
@@ -7197,11 +8865,30 @@ def handrive_signup(request, ui_lang=None):
                         auth_breadcrumb_url,
                         hide_global_nav,
                     )
+            if google_identity is not None:
+                linked_mapping = GoogleAccountMapping.objects.filter(google_user_id=google_identity.google_user_id).first()
+                if linked_mapping is not None:
+                    signup_error_message = handrive_text.get("auth_google_link_conflict", "이미 다른 계정에 연결된 Google 계정입니다.")
+                    signup_error_popup_message = signup_error_message
+                    return _render_handrive_signup_page(
+                        request,
+                        context,
+                        form,
+                        next_url,
+                        signup_error_message,
+                        signup_error_popup_message,
+                        auth_breadcrumb_url,
+                        hide_global_nav,
+                    )
             user = form.save()
             if github_identity is not None and pending_github is not None:
-                _initialize_github_signup_user(user)
+                _initialize_oauth_signup_user(user)
                 save_github_mapping(user, github_identity, pending_github["token_data"])
                 _clear_pending_github_auth(request)
+            elif google_identity is not None and pending_google is not None:
+                _initialize_oauth_signup_user(user)
+                save_google_mapping(user, google_identity, pending_google["token_data"])
+                _clear_pending_google_auth(request)
             else:
                 profile, _ = UserProfile.objects.get_or_create(user=user)
                 consented_at = timezone.now()
@@ -7434,7 +9121,8 @@ def handrive_list(request, folder_path="", ui_lang=None):
     shared_context = get_handrive_shared_access_context(request)
     is_superuser = bool(getattr(request.user, "is_superuser", False))
     scoped_home_dir = get_scoped_handrive_home_dir(request)
-    requested_dir = normalize_relative_path(folder_path, allow_empty=True)
+    route_folder_path = resolve_handrive_route_path(request, folder_path)
+    requested_dir = normalize_relative_path(route_folder_path, allow_empty=True)
     if scoped_home_dir and not shared_context:
         ensure_scoped_home_dir(scoped_home_dir)
         if not requested_dir:
@@ -7454,14 +9142,22 @@ def handrive_list(request, folder_path="", ui_lang=None):
             raise PermissionDenied("파일을 볼 권한이 없습니다.")
 
     try:
-        current_dir = normalize_relative_path(folder_path, allow_empty=True)
+        current_dir = normalize_relative_path(route_folder_path, allow_empty=True)
     except ValueError:
         raise Http404("폴더를 찾을 수 없습니다.")
 
-    git_virtual = _get_git_virtual_context(request, current_dir)
-    if git_virtual is None:
+    google_drive = _parse_google_drive_virtual_path(request, current_dir)
+    git_virtual = None if google_drive is not None else _get_git_virtual_context(request, current_dir)
+    if google_drive is not None:
+        _refresh_google_profile_once_per_day(google_drive["mapping"])
+        google_drive["display_name"] = _google_drive_display_name(google_drive["mapping"])
         try:
-            directory, current_dir = resolve_path(folder_path, must_exist=True)
+            initial_entries = _build_google_drive_entries(request, google_drive)
+        except GoogleDriveError as exc:
+            raise Http404(str(exc))
+    elif git_virtual is None:
+        try:
+            directory, current_dir = resolve_path(current_dir, must_exist=True)
         except (ValueError, FileNotFoundError):
             raise Http404("폴더를 찾을 수 없습니다.")
         if not directory.is_dir():
@@ -7475,8 +9171,18 @@ def handrive_list(request, folder_path="", ui_lang=None):
         except RuntimeError:
             raise Http404("Git 저장소를 찾을 수 없습니다.")
 
+    apply_handrive_entry_url_paths(request, initial_entries)
+
     if not has_handrive_read_access(request, current_dir):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
+
+    canonical_redirect = redirect_internal_virtual_handrive_url_if_needed(
+        request,
+        build_handrive_list_url(context["handrive_base_url"], current_dir, request=request),
+        folder_path,
+    )
+    if canonical_redirect is not None:
+        return canonical_redirect
 
     directory_meta = _build_handrive_directory_meta(request, current_dir, initial_entries)
 
@@ -7525,6 +9231,8 @@ def handrive_list(request, folder_path="", ui_lang=None):
             "current_dir_is_url_only": directory_meta["is_url_only"],
             "current_dir_share_url": directory_meta["share_url"],
             "current_dir_share_is_inherited": directory_meta["share_is_inherited"],
+            "current_dir_is_google_drive": directory_meta.get("is_google_drive", False),
+            "current_dir_google_drive": directory_meta.get("google_drive"),
             "breadcrumbs": breadcrumbs,
             "initial_entries": initial_entries,
             "current_dir_git_repo": directory_meta["git_repo"],
@@ -7553,14 +9261,67 @@ def handrive_view(request, doc_path, ui_lang=None):
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     is_superuser = bool(getattr(request.user, "is_superuser", False))
 
+    route_doc_path = resolve_handrive_route_path(request, doc_path)
     try:
-        relative_file_path = normalize_relative_path(doc_path, allow_empty=False)
+        relative_file_path = normalize_relative_path(route_doc_path, allow_empty=False)
     except ValueError:
         raise Http404("파일을 찾을 수 없습니다.")
-    git_virtual = _get_git_virtual_context(request, relative_file_path)
-    if git_virtual is None:
+    google_drive = _parse_google_drive_virtual_path(request, relative_file_path)
+    google_drive_file_metadata = None
+    git_virtual = None if google_drive is not None else _get_git_virtual_context(request, relative_file_path)
+    if google_drive is not None:
+        if google_drive["is_root"]:
+            raise Http404("파일을 찾을 수 없습니다.")
         try:
-            file_path, relative_file_path = normalize_handrive_relative_path(doc_path, must_exist=True)
+            google_drive_file_metadata = get_google_drive_file(google_drive["mapping"], google_drive["file_id"])
+            if str(google_drive_file_metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME:
+                raise Http404("파일을 찾을 수 없습니다.")
+            download = download_google_drive_file(google_drive["mapping"], google_drive["file_id"], google_drive_file_metadata)
+        except GoogleDriveError as exc:
+            raise Http404(str(exc))
+        file_name = _google_drive_download_filename(download)
+        file_extension = _google_drive_download_extension(download)
+        file_size_display = format_handrive_bytes_display(len(download.content or b""))
+        if is_handrive_non_editable_media_extension(file_extension):
+            content = ""
+            rendered_content_html, render_profile = render_handrive_content(
+                content,
+                file_extension,
+                source_path=Path(file_name),
+                source_bytes=download.content,
+                relative_path=relative_file_path,
+                request=request,
+            )
+        else:
+            try:
+                content = ""
+                if resolve_handrive_render_profile(file_extension).get("mode") not in {
+                    DOCS_RENDER_MODE_OFFICE,
+                    DOCS_RENDER_MODE_PDF,
+                }:
+                    content = decode_handrive_text_bytes(
+                        download.content,
+                        request=request,
+                        relative_path=relative_file_path,
+                    )
+                rendered_content_html, render_profile = render_handrive_content(
+                    content,
+                    file_extension,
+                    source_path=Path(file_name),
+                    source_bytes=download.content,
+                    relative_path=relative_file_path,
+                    request=request,
+                )
+            except Http404:
+                rendered_content_html = render_handrive_unsupported_safely(
+                    file_name,
+                    file_extension,
+                    message=handrive_text.get("view_read_unsupported", "읽기 미지원"),
+                )
+                render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
+    elif git_virtual is None:
+        try:
+            file_path, relative_file_path = normalize_handrive_relative_path(route_doc_path, must_exist=True)
         except (ValueError, FileNotFoundError):
             raise Http404("파일을 찾을 수 없습니다.")
         file_name = file_path.name
@@ -7648,15 +9409,32 @@ def handrive_view(request, doc_path, ui_lang=None):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
     if not has_handrive_read_access(request, relative_file_path):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
-    slug_path = markdown_slug_from_relative(relative_file_path)
+
+    canonical_redirect = redirect_internal_virtual_handrive_url_if_needed(
+        request,
+        build_handrive_view_url_for_path(request, resolved_lang, relative_file_path),
+        doc_path,
+    )
+    if canonical_redirect is not None:
+        return canonical_redirect
+
+    if handrive_path_uses_internal_virtual_url(relative_file_path):
+        slug_path = build_handrive_public_url_path(request, relative_file_path)
+    else:
+        slug_path = markdown_slug_from_relative(relative_file_path)
     parent_dir = str(Path(relative_file_path).parent).replace("\\", "/")
     if parent_dir == ".":
         parent_dir = ""
 
-    doc_is_url_only = is_handrive_url_only_enabled(request, relative_file_path)
-    doc_share_info = build_handrive_existing_share_info(request, relative_file_path)
-    doc_share_url = doc_share_info["share_url"]
-    doc_share_is_inherited = doc_share_info["share_is_inherited"]
+    if google_drive is not None:
+        doc_is_url_only = False
+        doc_share_url = ""
+        doc_share_is_inherited = False
+    else:
+        doc_is_url_only = is_handrive_url_only_enabled(request, relative_file_path)
+        doc_share_info = build_handrive_existing_share_info(request, relative_file_path)
+        doc_share_url = doc_share_info["share_url"]
+        doc_share_is_inherited = doc_share_info["share_is_inherited"]
 
     shared_root_url = context["handrive_root_url"]
     if shared_context:
@@ -7678,13 +9456,17 @@ def handrive_view(request, doc_path, ui_lang=None):
         )
 
     doc_can_edit = has_handrive_write_access(request, relative_file_path)
-    doc_is_media_editor_file = git_virtual is None and is_handrive_media_editor_extension(file_extension)
+    doc_is_media_editor_file = git_virtual is None and google_drive is None and is_handrive_media_editor_extension(file_extension)
     doc_can_show_edit = (
         doc_can_edit
         and render_profile["mode"] != DOCS_RENDER_MODE_UNSUPPORTED
         and (
             not is_handrive_non_editable_media_extension(file_extension)
             or doc_is_media_editor_file
+        )
+        and not (
+            google_drive is not None
+            and is_google_workspace_file(google_drive_file_metadata.get("mimeType") if isinstance(google_drive_file_metadata, dict) else "")
         )
     )
     doc_can_print = render_profile["mode"] not in {
@@ -7857,8 +9639,32 @@ def handrive_write(request, ui_lang=None):
             original_relative_path = normalize_relative_path(requested_path, allow_empty=False)
         except ValueError:
             raise Http404("수정할 파일을 찾을 수 없습니다.")
-        git_virtual = _get_git_virtual_context(request, original_relative_path)
-        if git_virtual is None:
+        google_drive = _parse_google_drive_virtual_path(request, original_relative_path)
+        git_virtual = None if google_drive is not None else _get_git_virtual_context(request, original_relative_path)
+        if google_drive is not None:
+            if google_drive["is_root"]:
+                raise Http404("수정할 파일을 찾을 수 없습니다.")
+            try:
+                file_metadata = get_google_drive_file(google_drive["mapping"], google_drive["file_id"])
+                if str(file_metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME:
+                    raise Http404("수정할 파일을 찾을 수 없습니다.")
+                if is_google_workspace_file(file_metadata.get("mimeType")):
+                    raise Http404("Google Workspace 문서는 HanDrive에서 직접 수정할 수 없습니다.")
+                download = download_google_drive_file(google_drive["mapping"], google_drive["file_id"], file_metadata)
+            except GoogleDriveError as exc:
+                raise Http404(str(exc))
+            file_name = _google_drive_download_filename(download)
+            initial_filename = Path(file_name).stem
+            initial_extension = _google_drive_download_extension(download) or DOCS_FILE_EXTENSION
+            try:
+                initial_content = decode_handrive_text_bytes(
+                    download.content,
+                    request=request,
+                    relative_path=original_relative_path,
+                )
+            except Http404:
+                raise Http404("수정할 파일을 찾을 수 없습니다.")
+        elif git_virtual is None:
             try:
                 file_path, original_relative_path = resolve_path(original_relative_path, must_exist=True)
             except (ValueError, FileNotFoundError):
@@ -7909,8 +9715,17 @@ def handrive_write(request, ui_lang=None):
         initial_dir = normalize_relative_path(requested_dir)
         if not is_superuser and not is_path_in_handrive_scope(initial_dir, scoped_home_dir):
             raise PermissionDenied("파일을 수정할 권한이 없습니다.")
-        git_virtual = _get_git_virtual_context(request, initial_dir)
-        if git_virtual is None:
+        google_drive = _parse_google_drive_virtual_path(request, initial_dir)
+        git_virtual = None if google_drive is not None else _get_git_virtual_context(request, initial_dir)
+        if google_drive is not None:
+            if not google_drive["is_root"]:
+                try:
+                    folder_metadata = get_google_drive_file(google_drive["mapping"], google_drive["file_id"])
+                except GoogleDriveError as exc:
+                    raise Http404(str(exc))
+                if str(folder_metadata.get("mimeType") or "") != GOOGLE_DRIVE_FOLDER_MIME:
+                    raise Http404("대상 폴더를 찾을 수 없습니다.")
+        elif git_virtual is None:
             target_dir, _ = resolve_path(initial_dir, must_exist=True)
             if not target_dir.is_dir():
                 raise Http404("대상 폴더를 찾을 수 없습니다.")
@@ -7952,7 +9767,9 @@ def handrive_write(request, ui_lang=None):
             "initial_filename_input": initial_filename_input,
             "initial_dir": initial_dir,
             "initial_content": initial_content,
-            "available_directories": list_all_directories(request=request),
+            "scoped_home_dir": scoped_home_dir,
+            "handrive_root_label": get_handrive_js_root_label(request, scoped_home_dir),
+            "available_directories": sorted(set(list_all_directories(request=request) + ([initial_dir] if initial_dir else []))),
             "markdown_help_html": render_markdown_safely(markdown_help_content),
             "page_help_html": build_page_help_html(resolved_lang, "write", handrive_text),
             "write_breadcrumbs": _build_git_virtual_breadcrumbs(
@@ -7977,8 +9794,96 @@ def parse_json_body(request):
         raise ValueError("요청 데이터 형식이 올바르지 않습니다.")
 
 
+HANDRIVE_JSON_ERROR_MESSAGE_TRANSLATIONS = {
+    "외장 저장소를 읽거나 쓸 수 없습니다.": "External storage cannot be read or written.",
+    "파일 수정 권한이 필요합니다.": "File edit permission is required.",
+    "권한 관리는 관리자만 사용할 수 있습니다.": "Only administrators can manage permissions.",
+    "로그인이 필요합니다.": "Login required.",
+    "연동된 Google 계정이 없습니다.": "No Google account is connected.",
+    "Google Drive가 비활성화되어 있습니다.": "Google Drive is disabled.",
+    "잘못된 요청입니다.": "Invalid request.",
+    "요청 데이터 형식이 올바르지 않습니다.": "The request body is invalid.",
+    "파일을 찾을 수 없습니다.": "File not found.",
+    "파일을 볼 권한이 없습니다.": "You do not have permission to view this file.",
+    "파일을 수정할 권한이 없습니다.": "You do not have permission to edit this file.",
+    "파일을 삭제할 권한이 없습니다.": "You do not have permission to delete this file.",
+    "폴더를 찾을 수 없습니다.": "Folder not found.",
+    "지도 폴더를 찾을 수 없습니다.": "Map folder not found.",
+    "폴더 생성 위치가 올바르지 않습니다.": "The folder creation location is invalid.",
+    "같은 이름의 폴더가 이미 존재합니다.": "A folder with the same name already exists.",
+    "같은 이름의 파일이 이미 존재합니다.": "A file with the same name already exists.",
+    "같은 이름의 항목이 이미 존재합니다.": "An item with the same name already exists.",
+    "Google Drive 파일은 일반 HanDrive 폴더로만 업로드할 수 있습니다.": "Google Drive files can only be uploaded to regular HanDrive folders.",
+    "Google Drive 폴더는 HanDrive로 업로드할 수 없습니다.": "Google Drive folders cannot be uploaded to HanDrive.",
+    "업로드 위치가 폴더가 아닙니다.": "The upload location is not a folder.",
+    "업로드할 파일 이름이 올바르지 않습니다.": "The upload file name is invalid.",
+    "업로드할 파일이 없습니다.": "No file was uploaded.",
+    "업로드할 이미지가 없습니다.": "No image was uploaded.",
+    "업로드 청크 정보가 올바르지 않습니다.": "The upload chunk information is invalid.",
+    "업로드 청크 순서가 올바르지 않습니다.": "The upload chunk order is invalid.",
+    "업로드 청크가 누락되었습니다.": "An upload chunk is missing.",
+    "취소할 업로드가 없습니다.": "There is no upload to cancel.",
+    "루트 폴더는 이동할 수 없습니다.": "The root folder cannot be moved.",
+    "이동 대상 경로가 올바르지 않습니다.": "The destination path is invalid.",
+    "이동 대상 경로가 폴더가 아닙니다.": "The destination path is not a folder.",
+    "폴더를 자기 자신 또는 하위 폴더로 이동할 수 없습니다.": "A folder cannot be moved into itself or a child folder.",
+    "전체 허용 파일은 이동할 수 없습니다.": "Publicly writable files cannot be moved.",
+    "전체 허용 파일은 위치나 이름을 바꿀 수 없습니다.": "Publicly writable files cannot be moved or renamed.",
+    "전체 허용 파일은 오디오 편집기로 저장할 수 없습니다.": "Publicly writable files cannot be saved with the audio editor.",
+    "전체 허용 파일은 비디오 편집기로 저장할 수 없습니다.": "Publicly writable files cannot be saved with the video editor.",
+    "Repo 브랜치 항목은 같은 브랜치 안에서만 이동할 수 있습니다.": "Repository branch items can only be moved within the same branch.",
+    "브랜치 루트는 이동할 수 없습니다.": "The branch root cannot be moved.",
+    "Repo 브랜치 파일만 저장할 수 있습니다.": "Only repository branch files can be saved here.",
+    "Repo 브랜치 파일은 같은 브랜치 안에서만 저장할 수 있습니다.": "Repository branch files can only be saved within the same branch.",
+    "Repo 브랜치 파일은 이름이나 위치를 바꿀 수 없습니다.": "Repository branch files cannot be renamed or moved.",
+    "이미지 파일이 아닙니다.": "This is not an image file.",
+    "지원하지 않는 이미지 형식입니다.": "Unsupported image format.",
+    "지원하지 않는 이미지/영상 형식입니다.": "Unsupported image or video format.",
+    "파일이 없습니다.": "No file was provided.",
+    "파일이 아닙니다.": "This is not a file.",
+    "아이콘 파일이 아닙니다.": "This is not an icon file.",
+    "icon_path가 필요합니다.": "icon_path is required.",
+    "path가 필요합니다.": "path is required.",
+    "POST 요청만 허용됩니다.": "Only POST requests are allowed.",
+    "이미지 편집기가 지원하지 않는 파일 형식입니다.": "This file type is not supported by the image editor.",
+    "오디오 편집기가 지원하지 않는 파일 형식입니다.": "This file type is not supported by the audio editor.",
+    "비디오 편집기가 지원하지 않는 파일 형식입니다.": "This file type is not supported by the video editor.",
+    "이미지 데이터가 없습니다.": "No image data was provided.",
+    "배경제거 라이브러리가 설치되지 않았습니다.": "The background removal library is not installed.",
+    "오디오 편집 값이 올바르지 않습니다.": "The audio edit values are invalid.",
+    "비디오 편집 값이 올바르지 않습니다.": "The video edit values are invalid.",
+    "끝 시간은 시작 시간보다 커야 합니다.": "The end time must be greater than the start time.",
+    "ffmpeg를 찾을 수 없습니다.": "ffmpeg could not be found.",
+    "붙일 수 없는 오디오 파일 형식입니다.": "This audio file type cannot be appended.",
+    "붙일 수 없는 비디오 파일 형식입니다.": "This video file type cannot be appended.",
+    "오디오 저장 시간이 초과되었습니다.": "Audio saving timed out.",
+    "비디오 저장 시간이 초과되었습니다.": "Video saving timed out.",
+    "오디오 저장에 실패했습니다.": "Failed to save audio.",
+    "비디오 저장에 실패했습니다.": "Failed to save video.",
+}
+
+
+def _handrive_json_error_messages(message):
+    text = str(message or "")
+    if text in HANDRIVE_JSON_ERROR_MESSAGE_TRANSLATIONS:
+        return {"ko": text, "en": HANDRIVE_JSON_ERROR_MESSAGE_TRANSLATIONS[text]}
+    for ko_message, en_message in HANDRIVE_JSON_ERROR_MESSAGE_TRANSLATIONS.items():
+        if text == en_message:
+            return {"ko": ko_message, "en": en_message}
+    return {"ko": text, "en": text}
+
+
 def json_error(message, status=400):
-    return JsonResponse({"ok": False, "error": message}, status=status)
+    messages = _handrive_json_error_messages(message)
+    return JsonResponse(
+        {
+            "ok": False,
+            "error": str(message or ""),
+            "error_message": str(message or ""),
+            "error_messages": messages,
+        },
+        status=status,
+    )
 
 
 def get_folder_icon_owner_key_for_user(user) -> str:
@@ -8271,16 +10176,25 @@ def handrive_api_url_share(request):
 @csrf_protect
 @with_request_handrive_root
 def handrive_api_sync_settings(request):
-    is_english = (resolve_ui_lang(request, getattr(getattr(request, "resolver_match", None), "kwargs", {}).get("ui_lang")) == "en")
     if not request.user.is_authenticated:
-        msg = "Login required." if is_english else "로그인이 필요합니다."
-        return JsonResponse({"ok": False, "error": msg}, status=401)
+        return _handrive_error_response(
+            request,
+            "auth_login_required",
+            fallback_ko="로그인이 필요합니다.",
+            fallback_en="Login required.",
+            status=401,
+        )
 
     try:
         payload = json.loads(request.body or "{}")
     except (TypeError, ValueError):
-        msg = "Invalid request." if is_english else "잘못된 요청입니다."
-        return JsonResponse({"ok": False, "error": msg}, status=400)
+        return _handrive_error_response(
+            request,
+            "handrive_invalid_request",
+            fallback_ko="잘못된 요청입니다.",
+            fallback_en="Invalid request.",
+            status=400,
+        )
 
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     excluded_paths = _sanitize_sync_excluded_paths(payload.get("excluded_paths"), scoped_home_dir)
@@ -8331,8 +10245,18 @@ def handrive_api_list(request):
             }
         )
 
-    git_virtual = _get_git_virtual_context(request, normalized)
-    if git_virtual is None:
+    google_drive = _parse_google_drive_virtual_path(request, normalized)
+    git_virtual = None if google_drive is not None else _get_git_virtual_context(request, normalized)
+    if google_drive is not None:
+        _refresh_google_profile_once_per_day(google_drive["mapping"])
+        google_drive["display_name"] = _google_drive_display_name(google_drive["mapping"])
+        if not has_handrive_read_access(request, normalized):
+            return json_error("폴더를 찾을 수 없습니다.", status=404)
+        try:
+            entries = _build_google_drive_entries(request, google_drive)
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+    elif git_virtual is None:
         # 경로 존재 여부 노출을 막기 위해 권한 검사를 먼저 수행한다.
         if not has_handrive_read_access(request, normalized):
             return json_error("폴더를 찾을 수 없습니다.", status=404)
@@ -8357,6 +10281,8 @@ def handrive_api_list(request):
         directory_meta = _build_handrive_directory_meta(request, normalized, entries)
     except (ValueError, FileNotFoundError):
         return json_error("폴더를 찾을 수 없습니다.", status=404)
+
+    apply_handrive_entry_url_paths(request, entries)
 
     return JsonResponse(
         {
@@ -8542,6 +10468,7 @@ def handrive_api_search(request):
                     entry["share_url"] = ""
                 matches.append(entry)
 
+    apply_handrive_entry_url_paths(request, matches)
     return JsonResponse({"ok": True, "entries": matches})
 
 
@@ -8558,8 +10485,12 @@ def handrive_api_rename(request):
         rel_path = normalize_relative_path(payload.get("path"), allow_empty=False)
         new_name = validate_name(payload.get("new_name"), for_file=False)
         commit_message = str(payload.get("commit_message") or "").strip()
-        git_virtual_source = _get_git_virtual_context(request, rel_path)
-        if git_virtual_source is None:
+        google_drive_source = _parse_google_drive_virtual_path(request, rel_path)
+        git_virtual_source = None if google_drive_source is not None else _get_git_virtual_context(request, rel_path)
+        if google_drive_source is not None:
+            source_path = None
+            source_relative = rel_path
+        elif git_virtual_source is None:
             source_path, source_relative = resolve_path(rel_path, must_exist=True)
         else:
             source_path = None
@@ -8569,6 +10500,46 @@ def handrive_api_rename(request):
 
     if source_relative == "":
         return json_error("루트 폴더는 이름을 바꿀 수 없습니다.", status=400)
+    if google_drive_source is not None:
+        if google_drive_source["is_root"]:
+            return json_error("Google Drive 루트는 이름을 바꿀 수 없습니다.", status=400)
+        try:
+            metadata = get_google_drive_file(google_drive_source["mapping"], google_drive_source["file_id"])
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+        is_folder = str(metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME
+        if is_folder:
+            target_name = validate_name(new_name, for_file=False)
+        else:
+            source_extension = Path(str(metadata.get("name") or "")).suffix.lower()
+            candidate_name, candidate_extension = resolve_file_name_and_extension(
+                new_name,
+                fallback_extension=source_extension,
+            )
+            target_name = f"{candidate_name}{candidate_extension}"
+        try:
+            siblings = list_google_drive_files(google_drive_source["mapping"], google_drive_source["parent_id"])
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+        source_id = google_drive_source["file_id"]
+        if any(
+            str(item.get("name") or "").strip() == target_name
+            and str(item.get("id") or "").strip() != source_id
+            for item in siblings
+        ):
+            return json_error("같은 이름의 항목이 이미 존재합니다.", status=409)
+        try:
+            rename_google_drive_file(google_drive_source["mapping"], source_id, target_name)
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+        response = {
+            "ok": True,
+            "path": source_relative,
+            "type": "dir" if is_folder else "file",
+        }
+        if not is_folder:
+            response["slug_path"] = build_handrive_public_url_path(request, source_relative)
+        return JsonResponse(response)
     mounted_repo = _get_git_repo_for_relative_path(request, source_relative)
     if mounted_repo is not None:
         return json_error("Repo 루트는 이름을 바꿀 수 없습니다.", status=400)
@@ -8614,7 +10585,7 @@ def handrive_api_rename(request):
             "type": "dir" if git_virtual_source["kind"] == "branch_dir" else "file",
         }
         if git_virtual_source["kind"] == "branch_file":
-            response["slug_path"] = relative_destination
+            response["slug_path"] = build_handrive_public_url_path(request, relative_destination)
         return JsonResponse(response)
     if not has_handrive_write_access(request, source_relative):
         return json_error("파일을 수정할 권한이 없습니다.", status=403)
@@ -8675,10 +10646,19 @@ def handrive_api_delete(request):
         return json_error(str(exc), status=400)
 
     resolved_targets: list[tuple[Path | None, str, dict | None]] = []
+    google_drive_targets: list[dict] = []
     seen_paths = set()
     try:
         for path_value in path_values:
-            git_virtual = _get_git_virtual_context(request, path_value)
+            google_drive = _parse_google_drive_virtual_path(request, path_value)
+            git_virtual = None if google_drive is not None else _get_git_virtual_context(request, path_value)
+            if google_drive is not None:
+                target_relative = path_value
+                if target_relative in seen_paths:
+                    continue
+                seen_paths.add(target_relative)
+                google_drive_targets.append(google_drive)
+                continue
             if git_virtual is None:
                 target_path, target_relative = resolve_path(path_value, must_exist=True)
             else:
@@ -8690,6 +10670,26 @@ def handrive_api_delete(request):
             resolved_targets.append((target_path, target_relative, git_virtual))
     except (ValueError, FileNotFoundError) as exc:
         return json_error(str(exc), status=400)
+
+    if google_drive_targets:
+        if resolved_targets:
+            return json_error("Google Drive 항목과 일반 항목은 함께 삭제할 수 없습니다.", status=400)
+        for google_drive in google_drive_targets:
+            if google_drive["is_root"]:
+                return json_error("Google Drive 루트는 삭제할 수 없습니다.", status=400)
+            if not has_handrive_write_access(request, google_drive["path"]):
+                return json_error("파일을 삭제할 권한이 없습니다.", status=403)
+        try:
+            for google_drive in google_drive_targets:
+                delete_google_drive_file(google_drive["mapping"], google_drive["file_id"])
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+        return JsonResponse(
+            {
+                "ok": True,
+                "deleted": [item["path"] for item in google_drive_targets],
+            }
+        )
 
     git_virtual_targets = [item for item in resolved_targets if item[2] is not None]
     if git_virtual_targets:
@@ -9039,13 +11039,17 @@ def handrive_api_convert_mp3(request):
     if destination_path.exists():
         return json_error("같은 이름의 mp3 파일이 이미 존재합니다.", status=409)
 
-    ffmpeg_candidate = shutil.which("ffmpeg")
-    ffmpeg_bin = HANDRIVE_FFMPEG_BIN if HANDRIVE_FFMPEG_BIN.exists() else (Path(ffmpeg_candidate) if ffmpeg_candidate else None)
+    ffmpeg_bin = _resolve_handrive_ffmpeg_bin()
     if ffmpeg_bin is None:
         return json_error("ffmpeg를 찾을 수 없습니다.", status=500)
 
     try:
-        with tempfile.NamedTemporaryFile(prefix="handrive-mp3-", suffix=".mp3", delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{destination_path.stem}-",
+            suffix=".mp3",
+            dir=destination_path.parent,
+            delete=False,
+        ) as temp_file:
             temp_path = Path(temp_file.name)
         command = [
             str(ffmpeg_bin),
@@ -9053,26 +11057,37 @@ def handrive_api_convert_mp3(request):
             "-hide_banner",
             "-loglevel",
             "error",
+            "-fflags",
+            "+genpts",
             "-i",
             str(source_path),
+            "-map",
+            "0:a:0",
             "-vn",
+            "-sn",
+            "-dn",
             "-codec:a",
             "libmp3lame",
             "-q:a",
             "2",
+            "-f",
+            "mp3",
             "-y",
             str(temp_path),
         ]
         subprocess.run(command, capture_output=True, text=True, timeout=900, check=True)
         output_size = temp_path.stat().st_size
+        if output_size <= 0:
+            raise ValueError("mp3 변환 결과가 비어 있습니다.")
+        _validate_handrive_mp3_duration(source_path, temp_path)
         destination_relative = relative_from_root(destination_path)
+        # The temp file lives in the destination directory so final promotion is
+        # atomic. Quota scanning already sees that temp file, so do not add it twice.
         enforce_handrive_scoped_quota(
             request,
             quota_path=destination_relative,
-            extra_bytes=output_size,
-            extra_entries=1,
         )
-        shutil.move(str(temp_path), str(destination_path))
+        os.replace(temp_path, destination_path)
         temp_path = None
     except subprocess.TimeoutExpired:
         return json_error("mp3 변환 시간이 초과되었습니다.", status=504)
@@ -9113,8 +11128,11 @@ def handrive_api_mkdir(request):
         parent_dir = normalize_relative_path(payload.get("parent_dir"), allow_empty=True)
         folder_name = validate_name(payload.get("folder_name"), for_file=False)
         commit_message = str(payload.get("commit_message") or "").strip()
-        git_virtual_parent = _get_git_virtual_context(request, parent_dir)
-        if git_virtual_parent is None:
+        google_drive_parent = _parse_google_drive_virtual_path(request, parent_dir)
+        git_virtual_parent = None if google_drive_parent is not None else _get_git_virtual_context(request, parent_dir)
+        if google_drive_parent is not None:
+            parent_path = None
+        elif git_virtual_parent is None:
             parent_path, _ = resolve_path(parent_dir, must_exist=True)
             enforce_handrive_scoped_quota(request, quota_path=parent_dir, extra_entries=1)
         else:
@@ -9122,10 +11140,30 @@ def handrive_api_mkdir(request):
     except (ValueError, FileNotFoundError) as exc:
         return json_error(str(exc), status=400)
 
-    if git_virtual_parent is None and not parent_path.is_dir():
-        return json_error("폴더 생성 위치가 올바르지 않습니다.", status=400)
     if not has_handrive_directory_write_access(request, parent_dir):
         return json_error("파일을 수정할 권한이 없습니다.", status=403)
+    if google_drive_parent is not None:
+        try:
+            _ensure_google_drive_folder_context(google_drive_parent)
+            siblings = list_google_drive_files(google_drive_parent["mapping"], google_drive_parent["folder_id"])
+            if any(
+                str(item.get("name") or "").strip() == folder_name
+                and str(item.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME
+                for item in siblings
+            ):
+                return json_error("같은 이름의 폴더가 이미 존재합니다.", status=409)
+            created = create_google_drive_folder(
+                google_drive_parent["mapping"],
+                google_drive_parent["folder_id"],
+                folder_name,
+            )
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+        created_id = str(created.get("id") or "").strip()
+        return JsonResponse({"ok": True, "path": _google_drive_child_virtual_path(parent_dir, created_id)})
+
+    if git_virtual_parent is None and not parent_path.is_dir():
+        return json_error("폴더 생성 위치가 올바르지 않습니다.", status=400)
     if git_virtual_parent is not None:
         if git_virtual_parent["kind"] != "branch_dir":
             return json_error("폴더 생성 위치가 올바르지 않습니다.", status=400)
@@ -9170,14 +11208,22 @@ def handrive_api_move(request):
         source_path_value = normalize_relative_path(payload.get("source_path"), allow_empty=False)
         target_dir_value = normalize_relative_path(payload.get("target_dir"), allow_empty=True)
         commit_message = str(payload.get("commit_message") or "").strip()
-        git_virtual_source = _get_git_virtual_context(request, source_path_value)
-        git_virtual_target = _get_git_virtual_context(request, target_dir_value)
-        if git_virtual_source is None:
+        google_drive_source = _parse_google_drive_virtual_path(request, source_path_value)
+        google_drive_target = _parse_google_drive_virtual_path(request, target_dir_value)
+        git_virtual_source = None if google_drive_source is not None else _get_git_virtual_context(request, source_path_value)
+        git_virtual_target = None if google_drive_target is not None else _get_git_virtual_context(request, target_dir_value)
+        if google_drive_source is not None:
+            source_path = None
+            source_relative = source_path_value
+        elif git_virtual_source is None:
             source_path, source_relative = resolve_path(source_path_value, must_exist=True)
         else:
             source_path = None
             source_relative = source_path_value
-        if git_virtual_target is None:
+        if google_drive_target is not None:
+            target_dir_path = None
+            target_dir_relative = target_dir_value
+        elif git_virtual_target is None:
             target_dir_path, target_dir_relative = resolve_path(target_dir_value, must_exist=True)
         else:
             target_dir_path = None
@@ -9187,6 +11233,108 @@ def handrive_api_move(request):
 
     if source_relative == "":
         return json_error("루트 폴더는 이동할 수 없습니다.", status=400)
+    if google_drive_source is not None and google_drive_target is None:
+        if google_drive_source["is_root"]:
+            return json_error("Google Drive 루트는 이동할 수 없습니다.", status=400)
+        if git_virtual_target is not None:
+            return json_error("Google Drive 파일은 일반 HanDrive 폴더로만 업로드할 수 있습니다.", status=400)
+        if not target_dir_path.is_dir():
+            return json_error("이동 대상 경로가 폴더가 아닙니다.", status=400)
+        if not has_handrive_read_access(request, source_relative):
+            return json_error("파일을 볼 권한이 없습니다.", status=403)
+        if not has_handrive_directory_write_access(request, target_dir_relative):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
+        try:
+            source_metadata = get_google_drive_file(google_drive_source["mapping"], google_drive_source["file_id"])
+            if str(source_metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME:
+                return json_error("Google Drive 폴더는 HanDrive로 업로드할 수 없습니다.", status=400)
+            download = download_google_drive_file(
+                google_drive_source["mapping"],
+                google_drive_source["file_id"],
+                source_metadata,
+            )
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+
+        content_bytes = download.content or b""
+        try:
+            destination_path = build_available_upload_path(
+                target_dir_path,
+                _google_drive_download_filename(download),
+            )
+            enforce_handrive_scoped_quota(
+                request,
+                quota_path=target_dir_relative,
+                extra_bytes=len(content_bytes),
+                extra_entries=1,
+            )
+        except ValueError as exc:
+            return json_error(str(exc), status=400)
+
+        try:
+            with destination_path.open("wb") as destination_handle:
+                destination_handle.write(content_bytes)
+        except OSError as exc:
+            return json_error(f"파일 저장에 실패했습니다: {exc}", status=500)
+
+        destination_relative = relative_from_root(destination_path)
+        response = {
+            "ok": True,
+            "copied": True,
+            "path": destination_relative,
+            "slug_path": markdown_slug_from_relative(destination_relative),
+            "type": "file",
+            "entries": [build_entry(destination_path)],
+        }
+        return JsonResponse(response)
+    if google_drive_source is not None or google_drive_target is not None:
+        if google_drive_source is None or google_drive_target is None:
+            return json_error("Google Drive 항목은 Google Drive 안에서만 이동할 수 있습니다.", status=400)
+        if google_drive_source["is_root"]:
+            return json_error("Google Drive 루트는 이동할 수 없습니다.", status=400)
+        if not has_handrive_write_access(request, source_relative):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
+        if not has_handrive_directory_write_access(request, target_dir_relative):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
+        try:
+            _ensure_google_drive_folder_context(google_drive_target)
+            source_metadata = get_google_drive_file(google_drive_source["mapping"], google_drive_source["file_id"])
+            target_siblings = list_google_drive_files(google_drive_target["mapping"], google_drive_target["folder_id"])
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+        source_parent_relative = normalize_relative_path(str(Path(source_relative).parent).replace("\\", "/"), allow_empty=True)
+        if source_parent_relative == ".":
+            source_parent_relative = ""
+        if source_parent_relative == target_dir_relative:
+            response = {
+                "ok": True,
+                "path": source_relative,
+                "type": "dir" if str(source_metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME else "file",
+            }
+            if response["type"] == "file":
+                response["slug_path"] = build_handrive_public_url_path(request, source_relative)
+            return JsonResponse(response)
+        source_id = google_drive_source["file_id"]
+        source_name = str(source_metadata.get("name") or "").strip()
+        if any(
+            str(item.get("name") or "").strip() == source_name
+            and str(item.get("id") or "").strip() != source_id
+            for item in target_siblings
+        ):
+            return json_error("같은 이름의 항목이 이미 존재합니다.", status=409)
+        try:
+            move_google_drive_file(google_drive_source["mapping"], source_id, google_drive_target["folder_id"])
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+        destination_relative = _google_drive_child_virtual_path(target_dir_relative, source_id)
+        response = {
+            "ok": True,
+            "path": destination_relative,
+            "type": "dir" if str(source_metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME else "file",
+        }
+        if response["type"] == "file":
+            response["slug_path"] = build_handrive_public_url_path(request, destination_relative)
+        return JsonResponse(response)
     if git_virtual_source is not None or git_virtual_target is not None:
         if git_virtual_source is None and git_virtual_target is not None:
             if not target_dir_relative:
@@ -9236,7 +11384,7 @@ def handrive_api_move(request):
                 "type": "dir" if source_was_dir else "file",
             }
             if not source_was_dir:
-                response["slug_path"] = destination_relative
+                response["slug_path"] = build_handrive_public_url_path(request, destination_relative)
             return JsonResponse(response)
         if git_virtual_source is None or git_virtual_target is None:
             return json_error("Repo 브랜치 항목은 같은 브랜치 안에서만 이동할 수 있습니다.", status=400)
@@ -9262,7 +11410,7 @@ def handrive_api_move(request):
                 "type": "dir" if git_virtual_source["kind"] == "branch_dir" else "file",
             }
             if git_virtual_source["kind"] == "branch_file":
-                response["slug_path"] = source_relative
+                response["slug_path"] = build_handrive_public_url_path(request, source_relative)
             return JsonResponse(response)
         if _git_repo_path_exists(git_virtual_source["repo"], git_virtual_source["branch_name"], target_repo_relative):
             return json_error("같은 이름의 항목이 이미 존재합니다.", status=409)
@@ -9292,7 +11440,7 @@ def handrive_api_move(request):
             "type": "dir" if git_virtual_source["kind"] == "branch_dir" else "file",
         }
         if git_virtual_source["kind"] == "branch_file":
-            response["slug_path"] = destination_relative
+            response["slug_path"] = build_handrive_public_url_path(request, destination_relative)
         return JsonResponse(response)
     if not target_dir_path.is_dir():
         return json_error("이동 대상 경로가 폴더가 아닙니다.", status=400)
@@ -9355,8 +11503,12 @@ def handrive_api_upload(request):
     """
     try:
         target_dir_value = normalize_relative_path(request.POST.get("dir"), allow_empty=True)
-        git_virtual_target = _get_git_virtual_context(request, target_dir_value)
-        if git_virtual_target is None:
+        google_drive_target = _parse_google_drive_virtual_path(request, target_dir_value)
+        git_virtual_target = None if google_drive_target is not None else _get_git_virtual_context(request, target_dir_value)
+        if google_drive_target is not None:
+            target_dir_path = None
+            target_dir_relative = target_dir_value
+        elif git_virtual_target is None:
             target_dir_path, target_dir_relative = resolve_path(target_dir_value, must_exist=True)
         else:
             target_dir_path = None
@@ -9364,7 +11516,12 @@ def handrive_api_upload(request):
     except (ValueError, FileNotFoundError) as exc:
         return json_error(str(exc), status=400)
 
-    if git_virtual_target is None and not target_dir_path.is_dir():
+    if google_drive_target is not None:
+        try:
+            _ensure_google_drive_folder_context(google_drive_target)
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+    elif git_virtual_target is None and not target_dir_path.is_dir():
         return json_error("업로드 위치가 폴더가 아닙니다.", status=400)
     if not has_handrive_directory_write_access(request, target_dir_relative):
         return json_error("파일을 수정할 권한이 없습니다.", status=403)
@@ -9436,7 +11593,10 @@ def handrive_api_upload(request):
                 (session_dir / f"{index:06d}.part").stat().st_size
                 for index in range(total_chunks)
             )
-            if git_virtual_target is None:
+            if google_drive_target is not None:
+                existing_files = list_google_drive_files(google_drive_target["mapping"], google_drive_target["folder_id"])
+                destination_name = build_available_google_drive_name(existing_files, original_name)
+            elif git_virtual_target is None:
                 destination_path = build_available_upload_path(target_dir_path, original_name)
                 enforce_handrive_scoped_quota(
                     request,
@@ -9453,6 +11613,8 @@ def handrive_api_upload(request):
                     git_virtual_target["repo_relative_path"],
                     original_name,
                 )
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
         except ValueError as exc:
             return json_error(str(exc), status=400)
 
@@ -9461,7 +11623,23 @@ def handrive_api_upload(request):
             part_path = session_dir / f"{index:06d}.part"
             content_bytes.extend(part_path.read_bytes())
         shutil.rmtree(session_dir, ignore_errors=True)
-        if git_virtual_target is None:
+        if google_drive_target is not None:
+            try:
+                created = create_google_drive_file(
+                    google_drive_target["mapping"],
+                    google_drive_target["folder_id"],
+                    destination_name,
+                    bytes(content_bytes),
+                    google_drive_guess_mime_type(destination_name),
+                )
+            except GoogleDriveError as exc:
+                return json_error(str(exc), status=exc.status_code)
+            uploaded_entry = _build_google_drive_file_entry(
+                google_drive_target["mapping"],
+                target_dir_relative,
+                created,
+            )
+        elif git_virtual_target is None:
             with destination_path.open("wb") as destination_handle:
                 destination_handle.write(bytes(content_bytes))
             uploaded_entry = build_entry(destination_path)
@@ -9482,9 +11660,9 @@ def handrive_api_upload(request):
                 "name": destination_name,
                 "path": f"{git_virtual_target['repo_root']}/{git_virtual_target['branch_segment']}/{repo_relative_path}",
                 "type": "file",
-                "slug_path": f"{git_virtual_target['repo_root']}/{git_virtual_target['branch_segment']}/{repo_relative_path}",
                 "size_display": format_handrive_bytes_display(len(content_bytes)),
             }
+            uploaded_entry["slug_path"] = build_handrive_public_url_path(request, uploaded_entry["path"])
         return JsonResponse(
             {
                 "ok": True,
@@ -9502,6 +11680,8 @@ def handrive_api_upload(request):
     upload_total_entries = 0
     for uploaded_file in uploaded_files:
         try:
+            if google_drive_target is not None:
+                continue
             if git_virtual_target is None:
                 build_available_upload_path(target_dir_path, uploaded_file.name)
             else:
@@ -9518,7 +11698,29 @@ def handrive_api_upload(request):
         upload_total_size += uploaded_file.size or 0
         upload_total_entries += 1
 
-    if git_virtual_target is None:
+    if google_drive_target is not None:
+        try:
+            existing_files = list_google_drive_files(google_drive_target["mapping"], google_drive_target["folder_id"])
+            for uploaded_file in uploaded_files:
+                destination_name = build_available_google_drive_name(existing_files, uploaded_file.name)
+                created = create_google_drive_file(
+                    google_drive_target["mapping"],
+                    google_drive_target["folder_id"],
+                    destination_name,
+                    uploaded_file.read(),
+                    google_drive_guess_mime_type(destination_name),
+                )
+                existing_files.append(created)
+                uploaded_entries.append(
+                    _build_google_drive_file_entry(
+                        google_drive_target["mapping"],
+                        target_dir_relative,
+                        created,
+                    )
+                )
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
+    elif git_virtual_target is None:
         try:
             enforce_handrive_scoped_quota(
                 request,
@@ -9556,7 +11758,10 @@ def handrive_api_upload(request):
                     "name": destination_name,
                     "path": f"{git_virtual_target['repo_root']}/{git_virtual_target['branch_segment']}/{repo_relative_path}",
                     "type": "file",
-                    "slug_path": f"{git_virtual_target['repo_root']}/{git_virtual_target['branch_segment']}/{repo_relative_path}",
+                    "slug_path": build_handrive_public_url_path(
+                        request,
+                        f"{git_virtual_target['repo_root']}/{git_virtual_target['branch_segment']}/{repo_relative_path}",
+                    ),
                     "size_display": format_handrive_bytes_display(len(file_updates[repo_relative_path])),
                 }
             )
@@ -9728,8 +11933,63 @@ def handrive_api_preview(request):
         preview_relative_path = normalize_relative_path(payload.get("path"), allow_empty=True)
         preview_target_dir = normalize_relative_path(payload.get("target_dir"), allow_empty=True)
         if preview_relative_path:
-            git_virtual = _get_git_virtual_context(request, preview_relative_path)
-            if git_virtual is None:
+            google_drive = _parse_google_drive_virtual_path(request, preview_relative_path)
+            git_virtual = None if google_drive is not None else _get_git_virtual_context(request, preview_relative_path)
+            if google_drive is not None:
+                if google_drive["is_root"]:
+                    return json_error("파일을 찾을 수 없습니다.", status=404)
+                try:
+                    file_metadata = get_google_drive_file(google_drive["mapping"], google_drive["file_id"])
+                    if str(file_metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME:
+                        return json_error("파일을 찾을 수 없습니다.", status=404)
+                    download = download_google_drive_file(google_drive["mapping"], google_drive["file_id"], file_metadata)
+                except GoogleDriveError as exc:
+                    return json_error(str(exc), status=exc.status_code)
+                relative_file_path = preview_relative_path
+                title = _google_drive_download_filename(download)
+                file_extension = _google_drive_download_extension(download)
+                if is_handrive_non_editable_media_extension(file_extension):
+                    content = ""
+                    rendered_html, render_profile = render_handrive_content(
+                        content,
+                        file_extension,
+                        source_path=Path(title),
+                        source_bytes=download.content,
+                        relative_path=relative_file_path,
+                        request=request,
+                        share_owner=shared_context["owner_username"] if shared_context else "",
+                        share_slug=shared_context["share_slug"] if shared_context else "",
+                    )
+                else:
+                    try:
+                        content = ""
+                        if resolve_handrive_render_profile(file_extension).get("mode") not in {
+                            DOCS_RENDER_MODE_OFFICE,
+                            DOCS_RENDER_MODE_PDF,
+                        }:
+                            content = decode_handrive_text_bytes(
+                                download.content,
+                                request=request,
+                                relative_path=relative_file_path,
+                            )
+                        rendered_html, render_profile = render_handrive_content(
+                            content,
+                            file_extension,
+                            source_path=Path(title),
+                            source_bytes=download.content,
+                            relative_path=relative_file_path,
+                            request=request,
+                            share_owner=shared_context["owner_username"] if shared_context else "",
+                            share_slug=shared_context["share_slug"] if shared_context else "",
+                        )
+                    except Http404:
+                        rendered_html = render_handrive_unsupported_safely(
+                            title,
+                            file_extension,
+                            message=get_handrive_text(resolve_ui_lang(request)).get("list_preview_unsupported", "미리보기 미지원"),
+                        )
+                        render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
+            elif git_virtual is None:
                 file_path, relative_file_path = normalize_handrive_relative_path(
                     preview_relative_path, must_exist=True
                 )
@@ -9740,7 +12000,9 @@ def handrive_api_preview(request):
                 relative_file_path = preview_relative_path
             if not has_handrive_read_access(request, relative_file_path):
                 return json_error("파일을 볼 권한이 없습니다.", status=403)
-            if git_virtual is None:
+            if google_drive is not None:
+                pass
+            elif git_virtual is None:
                 file_extension = file_path.suffix.lower()
                 render_mode = resolve_handrive_render_profile(file_extension).get("mode")
                 if render_mode in (DOCS_RENDER_MODE_OFFICE, DOCS_RENDER_MODE_PDF):
@@ -9834,7 +12096,7 @@ def handrive_api_preview(request):
                     "ok": True,
                     "html": rendered_html,
                     "path": relative_file_path,
-                    "slug_path": relative_file_path if git_virtual is not None else markdown_slug_from_relative(relative_file_path),
+                    "slug_path": build_handrive_public_url_path(request, relative_file_path) if (git_virtual is not None or google_drive is not None) else markdown_slug_from_relative(relative_file_path),
                     "title": title,
                     "render_mode": render_profile["mode"],
                     "render_class": render_profile["css_class"],
@@ -9852,9 +12114,19 @@ def handrive_api_preview(request):
     source_extension = preview_extension or DOCS_FILE_EXTENSION
     source_path = None
     git_virtual = None
+    google_drive_source = None
     if original_relative_path:
-        git_virtual = _get_git_virtual_context(request, original_relative_path)
-        if git_virtual is None:
+        google_drive_source = _parse_google_drive_virtual_path(request, original_relative_path)
+        git_virtual = None if google_drive_source is not None else _get_git_virtual_context(request, original_relative_path)
+        if google_drive_source is not None:
+            try:
+                metadata = get_google_drive_file(google_drive_source["mapping"], google_drive_source["file_id"])
+            except GoogleDriveError as exc:
+                return json_error(str(exc), status=exc.status_code)
+            source_relative = original_relative_path
+            source_extension = Path(str(metadata.get("name") or "")).suffix.lower() or source_extension
+            source_path = Path(str(metadata.get("name") or "google-drive-file"))
+        elif git_virtual is None:
             try:
                 source_path, source_relative = normalize_handrive_relative_path(
                     original_relative_path, must_exist=True
@@ -9930,6 +12202,17 @@ def handrive_api_save(request):
         if not isinstance(content, str):
             raise ValueError("내용 형식이 올바르지 않습니다.")
 
+        google_drive_save_response = _handle_google_drive_save_request(
+            request,
+            payload,
+            original_relative_path=original_relative_path,
+            target_dir=target_dir,
+            requested_extension=requested_extension,
+            content=content,
+        )
+        if google_drive_save_response is not None:
+            return google_drive_save_response
+
         git_virtual_target = _get_git_virtual_context(request, target_dir)
         if git_virtual_target is None:
             target_dir_path, target_dir_rel = resolve_path(target_dir, must_exist=True)
@@ -10002,7 +12285,7 @@ def handrive_api_save(request):
                 {
                     "ok": True,
                     "path": original_relative_path,
-                    "slug_path": original_relative_path,
+                    "slug_path": build_handrive_public_url_path(request, original_relative_path),
                 }
             )
         destination = target_dir_path / f"{filename}{target_extension}"
@@ -10097,6 +12380,9 @@ _STREAM_MIME: dict[str, str] = {
     ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".flac": "audio/flac",
     ".wav": "audio/wav", ".m4a": "audio/mp4", ".aac": "audio/aac",
 }
+_DOWNLOAD_MIME_BY_EXTENSION: dict[str, str] = {
+    ".ico": "image/x-icon",
+}
 
 
 def _stream_response(request, fh, file_size: int, content_type: str, filename: str):
@@ -10146,8 +12432,24 @@ def handrive_api_download(request):
         rel_path = normalize_scoped_home_api_path(request, request.GET.get("path"), allow_empty=False)
     except ValueError:
         raise Http404("다운로드할 파일을 찾을 수 없습니다.")
-    git_virtual = _get_git_virtual_context(request, rel_path)
-    if git_virtual is None:
+    google_drive = _parse_google_drive_virtual_path(request, rel_path)
+    git_virtual = None if google_drive is not None else _get_git_virtual_context(request, rel_path)
+    if google_drive is not None:
+        if google_drive["is_root"]:
+            raise Http404("다운로드할 파일을 찾을 수 없습니다.")
+        try:
+            metadata = get_google_drive_file(google_drive["mapping"], google_drive["file_id"])
+            if str(metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME:
+                raise Http404("다운로드할 파일을 찾을 수 없습니다.")
+            download = download_google_drive_file(google_drive["mapping"], google_drive["file_id"], metadata)
+        except GoogleDriveError as exc:
+            if exc.status_code == 403:
+                raise PermissionDenied(str(exc))
+            raise Http404(str(exc))
+        filename = _google_drive_download_filename(download)
+        file_handle = io.BytesIO(download.content or b"")
+        file_size = len(download.content or b"")
+    elif git_virtual is None:
         resolved_path = None
         resolved_relative = rel_path
         try:
@@ -10186,6 +12488,14 @@ def handrive_api_download(request):
     ext = Path(filename).suffix.lower()
     if ext in _STREAM_MIME:
         return _stream_response(request, file_handle, file_size, _STREAM_MIME[ext], filename)
+
+    if ext in _DOWNLOAD_MIME_BY_EXTENSION:
+        return FileResponse(
+            file_handle,
+            as_attachment=True,
+            filename=filename,
+            content_type=_DOWNLOAD_MIME_BY_EXTENSION[ext],
+        )
 
     return FileResponse(file_handle, as_attachment=True, filename=filename)
 
@@ -10501,10 +12811,24 @@ def handrive_api_pdf_preview(request):
     if not rel_path and shared_context:
         rel_path = shared_context["root_path"]
 
-    git_virtual = _get_git_virtual_context(request, rel_path)
+    google_drive = _parse_google_drive_virtual_path(request, rel_path)
+    git_virtual = None if google_drive is not None else _get_git_virtual_context(request, rel_path)
     source_bytes = None
     file_path = None
-    if git_virtual is None:
+    if google_drive is not None:
+        if google_drive["is_root"]:
+            raise Http404("파일을 찾을 수 없습니다.")
+        try:
+            metadata = get_google_drive_file(google_drive["mapping"], google_drive["file_id"])
+            if str(metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME:
+                raise Http404("파일을 찾을 수 없습니다.")
+            download = download_google_drive_file(google_drive["mapping"], google_drive["file_id"], metadata)
+        except GoogleDriveError as exc:
+            raise Http404(str(exc))
+        filename = _google_drive_download_filename(download)
+        extension = _google_drive_download_extension(download)
+        source_bytes = download.content or b""
+    elif git_virtual is None:
         try:
             file_path, rel_path = normalize_handrive_relative_path(rel_path, must_exist=True)
         except (ValueError, FileNotFoundError):
@@ -12020,7 +14344,8 @@ def handrive_map_viewer(request, map_path, ui_lang=None):
         "shared_owner": shared_owner,
         "shared_slug": shared_slug,
         "hide_global_nav": True,
-        "meta_title": "Hanplanet | Map Viewer" if resolved_lang == "en" else "Hanplanet | 맵 뷰어",
+        "meta_title": DOCS_META_TITLE,
+        "meta_og_title": DOCS_META_TITLE,
         "map_collab_auth_url": "/api/map-collab-auth-token/",
         "map_collab_enabled": request.user.is_authenticated or has_handrive_shared_read_access(request, normalized),
     })

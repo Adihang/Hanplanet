@@ -708,7 +708,7 @@ PORT=8083 ADMIN_PORT=8084 node server.js
 필요하면 Ollama도 별도로 올립니다.
 
 ```bash
-ollama pull gemma4:latest
+ollama pull gemma4:12b
 ollama serve
 ```
 

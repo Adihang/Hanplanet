@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import GitCollaborator, GitHubAccountMapping, GitRepository, GitUserMapping
+from .models import GitCollaborator, GitHubAccountMapping, GitRepository, GitUserMapping, GoogleAccountMapping
 
 
 @admin.register(GitUserMapping)
@@ -13,6 +13,14 @@ class GitUserMappingAdmin(admin.ModelAdmin):
 class GitHubAccountMappingAdmin(admin.ModelAdmin):
     list_display = ["user", "github_login", "github_user_id", "github_email", "updated_at"]
     search_fields = ["user__username", "github_login", "github_email"]
+    readonly_fields = ["created_at", "updated_at"]
+
+
+@admin.register(GoogleAccountMapping)
+class GoogleAccountMappingAdmin(admin.ModelAdmin):
+    list_display = ["user", "google_email", "google_user_id", "google_drive_enabled", "updated_at"]
+    list_filter = ["google_drive_enabled"]
+    search_fields = ["user__username", "google_email", "google_user_id"]
     readonly_fields = ["created_at", "updated_at"]
 
 

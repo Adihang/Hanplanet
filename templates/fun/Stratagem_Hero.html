@@ -5,7 +5,7 @@
     <head>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Noto+Sans+KR:wght@100..900&display=swap" rel="stylesheet">
         <!-- Required meta tags -->
         <meta name="csrf-token" content="{{ csrf_token }}">
         <meta charset="utf-8">
@@ -15,6 +15,9 @@
         <meta name="author" content="Hanplanet">
         <meta name="generator" content="Django">
         <meta name="robots" content="noindex">
+        {% if sub_category %}
+        <meta name="hanplanet:sub-category" content="{{ sub_category }}">
+        {% endif %}
         <meta property="og:title" content="Stratagem Hero">
         <meta property="og:description" content="Helldivers Sub">
         <meta property="og:image" content="https://github.com/Adihang/Hanplanet/assets/56463432/484730d2-3edb-47ee-b598-206096312261">

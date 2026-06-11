@@ -1,5 +1,5 @@
 body {
-    font-family: "Inter", 'Noto Sans KR', "Helvetica Neue", Helvetica, Arial, "맑은 고딕", malgun gothic, "돋움", Dotum, sans-serif, "Apple Color Emoji", "Noto Color Emoji";
+    font-family: var(--site-font-body);
     color: white;
     background-color: rgb(54, 54, 54)
 }

@@ -8,8 +8,8 @@ body.salvations-page {
     --salvation-text-soft: rgba(15, 29, 19, 0.62);
     --salvation-text-faint: rgba(15, 29, 19, 0.44);
     --salvation-text-disabled: rgba(15, 29, 19, 0.34);
-    --salvation-accent: var(--btn-template-primary-bg, var(--print-button-bg, rgb(65, 141, 65)));
-    --salvation-accent-hover: var(--btn-template-primary-hover-bg, rgb(57, 124, 57));
+    --salvation-accent: #dc2626;
+    --salvation-accent-hover: #b91c1c;
     --salvation-accent-on: #ffffff;
     --salvation-accent-fill: color-mix(in srgb, var(--salvation-accent) 18%, transparent);
     --salvation-accent-soft: color-mix(in srgb, var(--salvation-accent) 10%, transparent);
@@ -27,7 +27,7 @@ body.salvations-page {
     --salvation-footer-bg: rgba(246, 248, 245, 0.88);
     --salvation-footer-border: rgba(15, 29, 19, 0.14);
     --salvation-footer-text: rgba(15, 29, 19, 0.62);
-    font-family: "Inter", 'Noto Sans KR', "Helvetica Neue", Helvetica, Arial, "맑은 고딕", malgun gothic, "돋움", Dotum, sans-serif, "Apple Color Emoji", "Noto Color Emoji";
+    font-family: var(--site-font-body);
     color: var(--salvation-text);
     background: var(--salvation-bg);
     background-image: none;
@@ -76,6 +76,7 @@ ul{
 
 .main_title{
     color: var(--salvation-text-strong);
+    font-weight: 800;
 }
 
 body.salvations-page .site-footer-links {
@@ -97,6 +98,10 @@ hr{
     text-align: center;
     cursor: pointer;
     color: var(--salvation-accent);
+}
+
+.select_team .main_text {
+    font-weight: 800;
 }
 
 body.salvations-outside-active .Salvations_Edge_4 {

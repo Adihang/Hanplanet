@@ -47,10 +47,14 @@ class GoogleDriveError(Exception):
         self.status_code = status_code
 
 
+def _drive_auth_required_message() -> str:
+    return "Google Drive 권한 승인이 필요합니다."
+
+
 def _drive_headers(mapping: GoogleAccountMapping, *, accept: str = "application/json") -> dict[str, str]:
     access_token = str(getattr(mapping, "user_access_token", "") or "").strip()
     if not access_token:
-        raise GoogleDriveError("Google Drive 권한이 없습니다. Google 계정을 다시 연동해주세요.", status_code=403)
+        raise GoogleDriveError(_drive_auth_required_message(), status_code=403)
     return {
         "Accept": accept,
         "Authorization": f"Bearer {access_token}",
@@ -61,25 +65,25 @@ def _ensure_drive_access_token(mapping: GoogleAccountMapping) -> None:
     if not bool(getattr(mapping, "google_drive_enabled", False)):
         raise GoogleDriveError("Google Drive가 비활성화되어 있습니다.", status_code=403)
     if not google_token_has_drive_scope(getattr(mapping, "token_scope", "")):
-        raise GoogleDriveError("Google Drive 권한이 없습니다. Google 계정을 다시 연동해주세요.", status_code=403)
+        raise GoogleDriveError(_drive_auth_required_message(), status_code=403)
 
     access_token = str(getattr(mapping, "user_access_token", "") or "").strip()
     expires_at = getattr(mapping, "user_access_token_expires_at", None)
     refresh_token = str(getattr(mapping, "user_refresh_token", "") or "").strip()
     if not access_token:
         if not refresh_token:
-            raise GoogleDriveError("Google Drive 권한이 없습니다. Google 계정을 다시 연동해주세요.", status_code=403)
+            raise GoogleDriveError(_drive_auth_required_message(), status_code=403)
         try:
             refresh_google_access_token(mapping)
         except GoogleAuthError as exc:
-            raise GoogleDriveError("Google Drive 권한이 없습니다. Google 계정을 다시 연동해주세요.", status_code=403) from exc
+            raise GoogleDriveError(_drive_auth_required_message(), status_code=403) from exc
         return
 
     if expires_at and expires_at <= timezone.now() + timedelta(seconds=60) and refresh_token:
         try:
             refresh_google_access_token(mapping)
         except GoogleAuthError as exc:
-            raise GoogleDriveError("Google Drive 권한이 없습니다. Google 계정을 다시 연동해주세요.", status_code=403) from exc
+            raise GoogleDriveError(_drive_auth_required_message(), status_code=403) from exc
 
 
 def _extract_google_error_message(response: httpx.Response) -> str:
@@ -128,7 +132,7 @@ def _drive_request(
         try:
             refresh_google_access_token(mapping)
         except GoogleAuthError as exc:
-            raise GoogleDriveError("Google Drive 권한이 없습니다. Google 계정을 다시 연동해주세요.", status_code=403) from exc
+            raise GoogleDriveError(_drive_auth_required_message(), status_code=403) from exc
         return _drive_request(
             mapping,
             method,

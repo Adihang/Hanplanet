@@ -1,8 +1,8 @@
 <div class="ui-controls-stack">
     <div class="ui-lang-toggle ui-control-toggle ui-lang-toggle-inline" aria-label="Language Toggle">
-        <a class="ui-lang-link ui-control-link{% if ui_lang|default:'ko' == 'ko' %} is-active{% endif %}" href="{{ lang_switch_ko_url }}">KO</a>
+        <a class="ui-lang-link ui-control-link{% if ui_lang|default:'ko' == 'ko' %} is-active{% endif %}" href="{{ lang_switch_ko_url }}" data-ui-lang-mode="ko">KO</a>
         <span class="ui-lang-divider">|</span>
-        <a class="ui-lang-link ui-control-link{% if ui_lang|default:'ko' == 'en' %} is-active{% endif %}" href="{{ lang_switch_en_url }}">EN</a>
+        <a class="ui-lang-link ui-control-link{% if ui_lang|default:'ko' == 'en' %} is-active{% endif %}" href="{{ lang_switch_en_url }}" data-ui-lang-mode="en">EN</a>
     </div>
     <div class="ui-lang-toggle ui-control-toggle ui-theme-toggle" aria-label="Theme Toggle">
         <a href="#" role="button" class="ui-lang-link ui-control-link is-active" data-theme-mode="light">LT</a>

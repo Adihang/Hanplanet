@@ -1,0 +1,187 @@
+{% extends 'base.html' %}
+{% load static_versioned %}
+
+{% block body_class %}ui-page image-color-picker-page video-to-gif-page{% endblock %}
+
+{% block extra_head %}
+{% include 'handrive/_assets_head.html' %}
+<link rel="stylesheet" type="text/css" href="{% static_v 'css/fun/image_color_picker.css' %}">
+<link rel="stylesheet" type="text/css" href="{% static_v 'css/fun/video_to_gif.css' %}">
+<script src="{% static_v 'js/handrive/page_helpers.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+<script src="{% static_v 'js/handrive/list_render_helpers.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+<script src="{% static_v 'js/fun/video_to_gif.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+{% endblock %}
+
+{% block content %}
+<div class="ui-toolbar-wrap">
+    <div class="ui-shell ui-toolbar">
+        <div class="ui-toolbar-left">
+            <div class="ui-title-row">
+                <h1 class="ui-title">{{ page_title }}</h1>
+            </div>
+            <div class="ui-subtitle ui-path-breadcrumbs">
+                <a class="ui-path-link" href="/">{{ home_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <a class="ui-path-link" href="{{ sub_url }}">{{ sub_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <span class="ui-path-current">{{ page_title }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<main class="ui-shell ui-content image-color-picker-content video-to-gif-content">
+    <section
+        class="image-color-picker-panel video-to-gif-panel"
+        data-video-to-gif
+        data-metadata-url="{{ metadata_api_url }}"
+        data-convert-url="{{ convert_api_url }}"
+        data-handrive-enabled="{{ handrive_picker_enabled|yesno:'1,0' }}"
+        data-handrive-list-url="{{ handrive_list_url }}"
+        data-handrive-download-url="{{ handrive_download_url }}"
+        data-max-upload-bytes="{{ max_upload_bytes }}"
+        data-max-output-bytes="{{ max_output_bytes }}"
+        data-max-dimension="{{ max_dimension }}"
+        data-status-ready="{{ status_ready }}"
+        data-status-metadata-loading="{{ status_metadata_loading }}"
+        data-status-metadata-loaded="{{ status_metadata_loaded }}"
+        data-status-invalid-file="{{ status_invalid_file }}"
+        data-status-convert-ready="{{ status_convert_ready }}"
+        data-status-converting="{{ status_converting }}"
+        data-status-done="{{ status_done }}"
+        data-status-failed="{{ status_failed }}"
+        data-status-missing-file="{{ status_missing_file }}"
+        data-status-empty-url="{{ status_empty_url }}"
+        data-handrive-empty-label="{{ handrive_empty_label }}"
+        data-handrive-loading-label="{{ handrive_loading_label }}"
+        data-handrive-root-label="{{ handrive_root_label }}"
+        data-handrive-open-folder-label="{{ handrive_open_folder_label }}"
+        data-handrive-select-file-label="{{ handrive_select_file_label }}"
+        data-source-label="{{ source_label }}"
+        data-output-label="{{ output_label }}"
+        data-frame-max-label="{{ frame_max_label }}"
+        aria-label="{{ page_title }}"
+    >
+        <div class="image-color-picker-workspace video-to-gif-workspace">
+            <section class="image-color-picker-source video-to-gif-source" aria-label="{{ upload_label }}">
+                <form class="video-to-gif-form" data-video-to-gif-form>
+                    {% csrf_token %}
+                    <div class="image-color-picker-url-form video-to-gif-url-form" data-video-to-gif-url-form>
+                        <label class="image-color-picker-url-field video-to-gif-url-field">
+                            <span>{{ video_url_label }}</span>
+                            <input type="url" name="url" placeholder="{{ video_url_placeholder }}" autocomplete="url" data-video-to-gif-url>
+                        </label>
+                        <button class="ui-btn ui-btn-primary" type="button" data-video-to-gif-url-submit>{{ url_load_label }}</button>
+                    </div>
+                    <div class="media-upload-stage video-to-gif-dropzone" data-video-to-gif-dropzone>
+                        <div class="image-color-picker-empty" data-video-to-gif-empty>
+                            <button
+                                class="image-color-picker-upload-mark"
+                                type="button"
+                                data-video-to-gif-file-open
+                                aria-label="{{ upload_label }}"
+                                title="{{ upload_label }}"
+                            >
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 16V4"></path>
+                                    <path d="m7 9 5-5 5 5"></path>
+                                    <path d="M20 16.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.5"></path>
+                                </svg>
+                            </button>
+                            <span>{{ drop_label }}</span>
+                        </div>
+                        <video class="video-to-gif-video" data-video-to-gif-video controls muted playsinline hidden></video>
+                    </div>
+
+                    <div class="video-to-gif-controls">
+                        <fieldset class="video-to-gif-control-group">
+                            <legend>{{ resolution_label }}</legend>
+                            <div class="video-to-gif-segmented" role="radiogroup" aria-label="{{ resolution_label }}">
+                                <label>
+                                    <input type="radio" name="resolution_mode" value="ratio" data-video-to-gif-resolution-mode checked>
+                                    <span>{{ ratio_mode_label }}</span>
+                                </label>
+                                <label>
+                                    <input type="radio" name="resolution_mode" value="pixels" data-video-to-gif-resolution-mode>
+                                    <span>{{ pixels_mode_label }}</span>
+                                </label>
+                            </div>
+
+                            <label class="video-to-gif-field" data-video-to-gif-ratio-field>
+                                <span>{{ scale_ratio_label }}</span>
+                                <input type="number" name="scale_ratio" min="1" max="100" step="0.1" value="100" data-video-to-gif-scale-ratio>
+                            </label>
+
+                            <div class="video-to-gif-size-fields" data-video-to-gif-pixels-field hidden>
+                                <label class="video-to-gif-field">
+                                    <span>{{ width_label }}</span>
+                                    <input type="number" name="width" min="1" max="{{ max_dimension }}" step="1" data-video-to-gif-width>
+                                </label>
+                                <label class="video-to-gif-field">
+                                    <span>{{ height_label }}</span>
+                                    <input type="number" name="height" min="1" max="{{ max_dimension }}" step="1" data-video-to-gif-height>
+                                </label>
+                            </div>
+                        </fieldset>
+
+                        <label class="video-to-gif-field">
+                            <span>{{ frames_label }}</span>
+                            <input type="number" name="fps" min="0.1" step="0.1" disabled data-video-to-gif-frames>
+                            <small data-video-to-gif-frame-max></small>
+                        </label>
+
+                        <dl class="video-to-gif-metadata">
+                            <div>
+                                <dt>{{ source_label }}</dt>
+                                <dd data-video-to-gif-source-meta>-</dd>
+                            </div>
+                            <div>
+                                <dt>{{ output_label }}</dt>
+                                <dd data-video-to-gif-output-meta>-</dd>
+                            </div>
+                        </dl>
+                    </div>
+
+                    <div class="image-color-picker-actions video-to-gif-actions">
+                        <input
+                            class="image-color-picker-file-input"
+                            type="file"
+                            accept="video/*,.3g2,.3gp,.asf,.avi,.divx,.dv,.f4v,.flv,.m2ts,.m4v,.mkv,.mod,.mov,.mp4,.mpeg,.mpg,.mts,.mxf,.ogv,.rm,.rmvb,.tod,.ts,.vob,.webm,.wmv"
+                            data-video-to-gif-file
+                            aria-label="{{ upload_label }}"
+                        >
+                        <button class="ui-btn ui-btn-primary" type="submit" data-video-to-gif-convert disabled>{{ convert_label }}</button>
+                    </div>
+                    <p class="video-to-gif-status" data-video-to-gif-status role="status" aria-live="polite">{{ status_ready }}</p>
+                </form>
+            </section>
+
+            <aside class="image-color-picker-result video-to-gif-result" aria-labelledby="videoToGifResultTitle">
+                <h2 class="image-color-picker-section-title" id="videoToGifResultTitle">{{ result_label }}</h2>
+                <div class="video-to-gif-result-stack">
+                    <div class="video-to-gif-result-stage">
+                        <p class="video-to-gif-result-empty" data-video-to-gif-result-empty>{{ empty_result_label }}</p>
+                        <img class="video-to-gif-result-image" data-video-to-gif-result-image alt="{{ result_label }}" hidden>
+                    </div>
+                    <div class="video-to-gif-result-toolbar">
+                        <p class="video-to-gif-result-meta" data-video-to-gif-result-meta hidden></p>
+                        <a class="video-to-gif-download" data-video-to-gif-download href="#" download="hanplanet.gif" aria-label="{{ download_label }}" title="{{ download_label }}" hidden>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <path d="M7 10l5 5 5-5"></path>
+                                <path d="M12 15V3"></path>
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </section>
+</main>
+
+{% include "popup/fun/upload_source_modal.html" %}
+{% if handrive_picker_enabled %}
+    {% include "popup/fun/video_to_gif_handrive_modal.html" %}
+{% endif %}
+{% include "partials/site_footer_links.html" %}
+{% endblock %}

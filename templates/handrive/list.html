@@ -76,6 +76,7 @@
     data-list-api-url="{{ handrive_api_list_url }}"
     data-search-api-url="{{ handrive_api_search_url }}"
     data-save-api-url="{{ handrive_api_save_url }}"
+    data-spreadsheet-save-api-url="{{ handrive_api_spreadsheet_save_url }}"
     data-rename-api-url="{{ handrive_api_rename_url }}"
     data-delete-api-url="{{ handrive_api_delete_url }}"
     data-mkdir-api-url="{{ handrive_api_mkdir_url }}"
@@ -107,9 +108,14 @@
     data-image-editor-remove-background-url="{{ handrive_image_editor_remove_background_url }}"
     data-audio-editor-save-url="{{ handrive_audio_editor_save_url }}"
     data-video-editor-save-url="{{ handrive_video_editor_save_url }}"
+    data-pdf-editor-meta-url="{{ handrive_pdf_editor_meta_url }}"
+    data-pdf-editor-page-url="{{ handrive_pdf_editor_page_url }}"
+    data-pdf-editor-save-url="{{ handrive_pdf_editor_save_url }}"
+    data-handsontable-license-key="{{ handrive_handsontable_license_key|default:'non-commercial-and-evaluation' }}"
     data-image-editor-script-url="{% static_v 'js/handrive/image_editor.js' %}"
     data-video-editor-script-url="{% static_v 'js/handrive/video_editor.js' %}"
     data-audio-editor-script-url="{% static_v 'js/handrive/audio_editor.js' %}"
+    data-pdf-editor-script-url="{% static_v 'js/handrive/pdf_editor.js' %}"
     data-videojs-script-url="{% static_v 'vendor/videojs/video.min.js' %}"
     data-videojs-compat-script-url="{% static_v 'js/handrive/videojs_compat.js' %}"
     data-videojs-seek-buttons-script-url="{% static_v 'vendor/videojs/videojs-seek-buttons.min.js' %}"
@@ -178,6 +184,16 @@
                         title="{{ handrive_text.print_button }}"
                         hidden
                     ><svg class="portfolio-print-btn-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V4h10v5"/><rect x="4" y="9" width="16" height="8" rx="2"/><rect x="8" y="15" width="8" height="5"/><line x1="9" y1="18" x2="15" y2="18"/></svg></button>
+                    <button
+                        id="handrive-list-preview-spreadsheet-save-btn"
+                        class="handrive-icon-btn"
+                        type="button"
+                        data-handrive-spreadsheet-preview-save
+                        aria-label="{{ handrive_text.save_button }}"
+                        title="{{ handrive_text.save_button }}"
+                        hidden
+                        disabled
+                    ><svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h10l2 2v12H4z"/><path d="M7 3v5h6V3"/><path d="M7 13h6v4H7z"/></svg></button>
                     <a
                         id="handrive-list-preview-download-btn"
                         class="handrive-icon-btn"
@@ -254,6 +270,22 @@
             </header>
             <div class="handrive-list-editor-body">
                 {% include "handrive/_media_editor_surfaces.html" %}
+                <div class="handrive-spreadsheet-editor-surface" id="handrive-spreadsheet-editor-surface" hidden>
+                    <div class="handrive-spreadsheet-toolbar">
+                        <select class="handrive-spreadsheet-sheet-select" data-handrive-spreadsheet-sheet aria-label="시트"></select>
+                        <button class="ui-btn handrive-spreadsheet-icon-btn" type="button" data-handrive-spreadsheet-add-row aria-label="행 추가" title="행 추가">
+                            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h12"/><path d="M10 4v12"/></svg>
+                        </button>
+                        <button class="ui-btn handrive-spreadsheet-icon-btn" type="button" data-handrive-spreadsheet-add-col aria-label="열 추가" title="열 추가">
+                            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h10v12H5z"/><path d="M10 4v12"/><path d="M13 10h4"/><path d="M15 8v4"/></svg>
+                        </button>
+                        <button class="ui-btn handrive-spreadsheet-icon-btn" type="button" data-handrive-spreadsheet-export aria-label="내보내기" title="내보내기">
+                            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10"/><path d="M6 9l4 4 4-4"/><path d="M4 16h12"/></svg>
+                        </button>
+                        <span class="handrive-spreadsheet-status" data-handrive-spreadsheet-status aria-live="polite"></span>
+                    </div>
+                    <div class="handrive-spreadsheet-hot" data-handrive-spreadsheet-hot></div>
+                </div>
                 <div class="handrive-editor-surface" id="handrive-list-editor-surface">
                     <pre class="handrive-editor-highlight handrive-plain-text" id="handrive-list-editor-highlight" aria-hidden="true"><code id="handrive-list-editor-highlight-code"></code></pre>
                     <div class="handrive-editor-suggest" id="handrive-list-editor-suggest" hidden>

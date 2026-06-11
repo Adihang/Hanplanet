@@ -77,6 +77,101 @@
         }
     }
 
+    function canPlayVideoSourceType(type) {
+        const normalizedType = String(type || '').trim();
+        if (!normalizedType) return false;
+        try {
+            if (!canPlayVideoSourceType.probe) {
+                canPlayVideoSourceType.probe = document.createElement('video');
+            }
+            return Boolean(canPlayVideoSourceType.probe.canPlayType(normalizedType));
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function isAbortError(error) {
+        return Boolean(error && error.name === 'AbortError');
+    }
+
+    function isPlayerDisposed(player) {
+        return Boolean(player && player.isDisposed && player.isDisposed());
+    }
+
+    function releaseNativeMediaElement(mediaElement) {
+        if (
+            !mediaElement ||
+            typeof HTMLMediaElement === 'undefined' ||
+            !(mediaElement instanceof HTMLMediaElement)
+        ) {
+            return;
+        }
+        try { mediaElement.pause(); } catch (_) {}
+        try {
+            if ('srcObject' in mediaElement && mediaElement.srcObject) {
+                mediaElement.srcObject = null;
+            }
+        } catch (_) {}
+        try {
+            mediaElement.querySelectorAll('source, track').forEach(source => {
+                source.removeAttribute('src');
+                source.removeAttribute('srcset');
+            });
+        } catch (_) {}
+        try { mediaElement.removeAttribute('src'); } catch (_) {}
+        try { mediaElement.load(); } catch (_) {}
+    }
+
+    function releasePlayerMediaResources(player, el) {
+        if (player && !isPlayerDisposed(player)) {
+            try { player.pause(); } catch (_) {}
+            try { player.src({ src: '', type: '' }); } catch (_) {}
+            try { player.reset(); } catch (_) {}
+            try {
+                const tech = typeof player.tech === 'function' ? player.tech(true) : null;
+                const techEl = tech && typeof tech.el === 'function' ? tech.el() : null;
+                releaseNativeMediaElement(techEl);
+            } catch (_) {}
+        }
+        releaseNativeMediaElement(el);
+    }
+
+    function resolveStartupSource(el, options) {
+        const allowUnsupportedFallback = Boolean(options && options.allowUnsupportedFallback);
+        const fallbackSrc = el.dataset.fallbackSrc || '';
+        const fallbackType = el.dataset.fallbackType || 'video/mp4';
+        const faststartSrc = el.dataset.faststartUrl || '';
+
+        if (faststartSrc && canPlayVideoSourceType('video/mp4')) {
+            return {
+                src: faststartSrc,
+                type: 'video/mp4',
+                kind: 'faststart',
+                fallbackSrc,
+                fallbackType,
+                faststartSrc,
+            };
+        }
+        if (fallbackSrc && (allowUnsupportedFallback || canPlayVideoSourceType(fallbackType))) {
+            return {
+                src: fallbackSrc,
+                type: fallbackType,
+                kind: 'fallback',
+                fallbackSrc,
+                fallbackType,
+                faststartSrc,
+            };
+        }
+        return {
+            src: '',
+            type: '',
+            kind: 'none',
+            fallbackSrc,
+            fallbackType,
+            faststartSrc,
+        };
+    }
+
     function isMediaLoopEnabled() {
         return ls.get(MEDIA_LOOP_STORAGE_KEY) === '1';
     }
@@ -118,7 +213,7 @@
         setupLoop(player, cleanups);
         setupPip(player, cleanups);
         setupCast(player);
-        setupThumbnailPreview(player, el);
+        setupThumbnailPreview(player, el, cleanups);
         setupPersist(player);
         setupMobile(player, cleanups);
         setupErrors(player);
@@ -131,11 +226,12 @@
     function buildPlayer(el) {
         const isPreview  = !!el.closest('.handrive-list-preview-content');
         const savedRate  = parseFloat(ls.get('vjs-playback-rate')) || 1;
-        const fallbackSrc  = el.dataset.fallbackSrc  || '';
-        const fallbackType = el.dataset.fallbackType || 'video/mp4';
-        const faststartSrc = el.dataset.faststartUrl || '';
-        const startupSrc = faststartSrc || fallbackSrc;
-        const startupType = faststartSrc ? 'video/mp4' : fallbackType;
+        const hasHlsFallback = Boolean(el.dataset.hlsManifestUrl && el.dataset.hlsStatusUrl);
+        const startupSource = resolveStartupSource(el, {
+            allowUnsupportedFallback: !hasHlsFallback,
+        });
+        const startupSrc = startupSource.src;
+        const startupType = startupSource.type;
         const preloadMode = isPreview ? 'metadata' : 'auto';
         el.preload = preloadMode;
 
@@ -161,7 +257,7 @@
             },
         });
 
-        // 초기 소스: faststart MP4가 있으면 먼저 사용해 첫 재생 버퍼링을 줄인다.
+        // 초기 소스: native 재생 가능한 faststart MP4/fallback만 먼저 사용한다.
         if (startupSrc) {
             player.src({ src: startupSrc, type: startupType });
         }
@@ -175,11 +271,16 @@
         // 상세 재생 화면은 idle 시점에 미리 로드를 걸어 첫 클릭 지연을 줄인다.
         if (!isPreview && startupSrc) {
             player.ready(() => {
+                const hasStartedPlayback = () => {
+                    return Number(player.currentTime() || 0) > 0.05 || !player.paused();
+                };
                 const warmup = () => {
                     if (player.isDisposed && player.isDisposed()) return;
                     try {
                         player.preload('auto');
-                        player.load();
+                        if (!hasStartedPlayback()) {
+                            player.load();
+                        }
                     } catch (_) {}
                 };
                 if ('requestIdleCallback' in window) {
@@ -193,9 +294,12 @@
         // 미리보기 패널은 hover/touch 직전에만 warmup 한다.
         if (isPreview) {
             const warmupPreview = () => {
+                if (player.isDisposed && player.isDisposed()) return;
                 try {
                     player.preload('metadata');
-                    player.load();
+                    if (Number(player.currentTime() || 0) <= 0.05 && player.paused()) {
+                        player.load();
+                    }
                 } catch (_) {}
             };
             ['mouseenter', 'pointerdown', 'touchstart', 'focusin'].forEach(eventName => {
@@ -695,15 +799,15 @@
     }
 
     // ── 썸네일 프리뷰 ────────────────────────────────────────────────
-    function setupThumbnailPreview(player, el) {
+    function setupThumbnailPreview(player, el, cleanups) {
         if (isMobile) return;
         setupProgressHoverIndicator(player);
         const videoEl = player.el().querySelector('video');
         const vttUrl  = (videoEl && videoEl.dataset.thumbnailVttUrl) || (el && el.dataset.thumbnailVttUrl);
         if (vttUrl) {
-            setupVttThumbnails(player, vttUrl, el);
+            setupVttThumbnails(player, vttUrl, el, cleanups);
         } else {
-            setupRealtimeThumbnails(player, el);
+            setupRealtimeThumbnails(player, el, cleanups);
         }
     }
 
@@ -770,7 +874,7 @@
     }
 
     // VTT 스프라이트 방식: 미리 생성된 sprite.jpg + sprite.vtt 사용
-    function setupVttThumbnails(player, vttUrl, el) {
+    function setupVttThumbnails(player, vttUrl, el, cleanups) {
         const THUMB_W = 160;
         const THUMB_H = 90;
 
@@ -788,14 +892,27 @@
 
         let entries = null; // [{start, end, x, y, w, h, spriteUrl}]
         let spritePreloaded = false;
+        let disposed = false;
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const abort = () => {
+            disposed = true;
+            if (controller) {
+                try { controller.abort(); } catch (_) {}
+            }
+        };
+        if (Array.isArray(cleanups)) {
+            cleanups.push(abort);
+        }
+        player.on('dispose', abort);
 
         // VTT 파싱
-        fetch(vttUrl)
+        fetch(vttUrl, controller ? { signal: controller.signal } : undefined)
             .then(r => {
                 if (!r.ok) throw new Error('thumbnail vtt unavailable');
                 return r.text();
             })
             .then(text => {
+                if (disposed || isPlayerDisposed(player)) return;
                 const lines = text.split(/\r?\n/);
                 const parsed = [];
                 for (let i = 0; i < lines.length; i++) {
@@ -816,9 +933,10 @@
                 }
                 entries = parsed;
             })
-            .catch(() => {
+            .catch(error => {
+                if (disposed || isAbortError(error) || isPlayerDisposed(player)) return;
                 tooltip.remove();
-                setupRealtimeThumbnails(player, el);
+                setupRealtimeThumbnails(player, el, cleanups);
             });
 
         player.ready(() => {
@@ -888,7 +1006,7 @@
     }
 
     // 실시간 seek 방식: canvas + 숨김 video (VTT 없을 때 fallback)
-    function setupRealtimeThumbnails(player, el) {
+    function setupRealtimeThumbnails(player, el, cleanups) {
         const THUMB_W = 160;
         const THUMB_H = 90;
 
@@ -919,6 +1037,18 @@
         let lastRatio    = -1;  // 마지막 hover 위치 (metadata 로드 후 재처리용)
         let lastClientX  = -1;
         let lastProgEl   = null;
+        let disposed     = false;
+
+        function cleanupThumbVideo() {
+            if (disposed) return;
+            disposed = true;
+            releaseNativeMediaElement(thumbVid);
+            try { thumbVid.remove(); } catch (_) {}
+        }
+        if (Array.isArray(cleanups)) {
+            cleanups.push(cleanupThumbVideo);
+        }
+        player.on('dispose', cleanupThumbVideo);
 
         function tryDraw() {
             if (thumbVid.readyState < 2) return;
@@ -971,10 +1101,10 @@
             // preload:none 미니 플레이어용: mouseenter 시 thumbVid 소스 미리 로드
             progEl.addEventListener('mouseenter', () => {
                 if (!thumbVid.src) {
-                    const videoEl = player.el().querySelector('video');
-                    const src = (el && el.dataset.faststartUrl)
-                        || (videoEl && videoEl.dataset.fallbackSrc)
-                        || player.currentSrc();
+                    const startup = resolveStartupSource(el, { allowUnsupportedFallback: false });
+                    const src = (startup.kind === 'faststart' ? startup.src : '')
+                        || player.currentSrc()
+                        || startup.src;
                     if (src) {
                         thumbVid.src = src;
                         thumbVid.load();
@@ -1080,6 +1210,23 @@
             return Boolean(videoEl && videoEl.readyState >= 2 && (!player.paused() || player.currentTime() > 0));
         }
 
+        function getRetrySource() {
+            const currentSource = typeof player.currentSource === 'function' ? player.currentSource() : null;
+            const currentSrc = player.currentSrc() || (currentSource && currentSource.src) || '';
+            if (currentSrc) {
+                return {
+                    src: currentSrc,
+                    type: currentSource && currentSource.type ? currentSource.type : '',
+                };
+            }
+            const videoEl = getVideoElement();
+            if (!videoEl) return null;
+            const startupSource = resolveStartupSource(videoEl, { allowUnsupportedFallback: true });
+            return startupSource && startupSource.src
+                ? { src: startupSource.src, type: startupSource.type || '' }
+                : null;
+        }
+
         function hasRecoverableTransientError(code) {
             if (code === 1) return true;
             if (player.handriveHlsSwitching_) return true;
@@ -1127,10 +1274,12 @@
             const btn = content.querySelector('.vjs-retry-btn');
             if (btn) {
                 btn.addEventListener('click', () => {
-                    const src = player.currentSrc();
+                    const retrySource = getRetrySource();
                     player.error(null);
-                    player.src(src);
-                    player.load();
+                    if (retrySource && retrySource.src) {
+                        player.src({ src: retrySource.src, type: retrySource.type || undefined });
+                    }
+                    try { player.load(); } catch (_) {}
                     player.play().catch(() => {});
                 });
             }
@@ -1232,14 +1381,10 @@
         const manifestUrl = el.dataset.hlsManifestUrl || '';
         const statusUrl   = el.dataset.hlsStatusUrl   || '';
         if (!manifestUrl || !statusUrl) return;
-        const faststartUrl = el.dataset.faststartUrl || '';
-        const fallbackSrc = el.dataset.fallbackSrc || '';
-        const fallbackType = el.dataset.fallbackType || 'video/mp4';
-        const startupSrc = faststartUrl || fallbackSrc;
-        const startupType = faststartUrl ? 'video/mp4' : fallbackType;
-        const hasFaststartStartupSource = Boolean(faststartUrl);
-        const canUseNativeStartupSource = hasFaststartStartupSource
-            || /^(video\/mp4|video\/quicktime|video\/x-m4v)$/i.test(fallbackType);
+        const startupSource = resolveStartupSource(el, { allowUnsupportedFallback: false });
+        const startupSrc = startupSource.src;
+        const startupType = startupSource.type;
+        const canUseNativeStartupSource = Boolean(startupSrc);
 
         const POLL_MS = 3000;
         let pollTimer = null;
@@ -1253,9 +1398,32 @@
         let hlsPlaybackPending = false;
         let resumeAfterHlsSwitch = false;
         let userWantsPlayback = false;
+        let latestHlsStatus = '';
+        let disposed = false;
+        const hlsAbortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
 
         player.handriveHlsRecoverable_ = Boolean(startupSrc);
         player.handriveHlsSourceActive_ = false;
+
+        function shouldIgnoreHlsAsync() {
+            return disposed || isPlayerDisposed(player);
+        }
+
+        function hlsFetch(url, options) {
+            if (shouldIgnoreHlsAsync()) {
+                return Promise.reject({ name: 'AbortError' });
+            }
+            const fetchOptions = Object.assign({}, options || {});
+            if (hlsAbortController) {
+                fetchOptions.signal = hlsAbortController.signal;
+            }
+            return fetch(url, fetchOptions);
+        }
+
+        function handleHlsFetchError(error) {
+            if (shouldIgnoreHlsAsync() || isAbortError(error)) return;
+            stopHlsFallback();
+        }
 
         function stopPoll() {
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
@@ -1269,6 +1437,10 @@
         cleanups.push(stopPoll);
         cleanups.push(stopHlsSwitchTimer);
         cleanups.push(() => {
+            disposed = true;
+            if (hlsAbortController) {
+                try { hlsAbortController.abort(); } catch (_) {}
+            }
             if (qualitySelectorRetryTimer) {
                 clearTimeout(qualitySelectorRetryTimer);
                 qualitySelectorRetryTimer = null;
@@ -1276,12 +1448,14 @@
             player.handriveHlsSwitching_ = false;
             player.handriveHlsSourceActive_ = false;
             player.handriveSourceTransitionUntil_ = 0;
+            setHlsLoading(false);
         });
 
         player.on('play', () => { userWantsPlayback = true; });
         function markHlsPlaybackReady() {
             hlsPlaybackPending = false;
             stopHlsSwitchTimer();
+            setHlsLoading(false);
         }
 
         player.on('playing', () => {
@@ -1304,6 +1478,13 @@
             setTimeout(() => {
                 if (!hlsSwitching) player.handriveSourceTransitionUntil_ = 0;
             }, 600);
+        }
+
+        function setHlsLoading(loading) {
+            const root = player.el();
+            if (!root) return;
+            root.classList.toggle('vjs-waiting', Boolean(loading));
+            root.classList.toggle('is-handrive-hls-loading', Boolean(loading));
         }
 
         // 화질 선택기 활성화
@@ -1345,6 +1526,11 @@
             );
         }
 
+        function hasCurrentSource() {
+            const currentSource = typeof player.currentSource === 'function' ? player.currentSource() : null;
+            return Boolean(player.currentSrc() || (currentSource && currentSource.src));
+        }
+
         function finishHlsSwitch(previousTime) {
             hlsSwitching = false;
             hlsActive = true;
@@ -1375,7 +1561,6 @@
             markSourceTransition();
 
             try { player.error(null); } catch (_) {}
-            player.src({ src: startupSrc, type: startupType });
             player.one('loadedmetadata', () => {
                 clearSourceTransitionSoon();
                 if (previousTime > 1) {
@@ -1385,30 +1570,39 @@
                     player.play().catch(() => {});
                 }
             });
+            player.src({ src: startupSrc, type: startupType });
             return true;
         }
 
         // HLS 소스로 전환 (재생 중이면 위치 보존)
-        function switchToHls() {
+        function switchToHls(options = {}) {
             if (sourceIsHls()) {
                 enableQualitySelector();
+                if (options.resume || userWantsPlayback) {
+                    hlsPlaybackPending = true;
+                    player.play().catch(() => {});
+                }
                 return;
             }
             const currentTime = player.currentTime();
-            resumeAfterHlsSwitch = userWantsPlayback || !player.paused();
+            resumeAfterHlsSwitch = Boolean(options.resume || userWantsPlayback || !player.paused());
             hlsSwitching = true;
             hlsPlaybackPending = false;
             player.handriveHlsSwitching_ = true;
             player.handriveHlsSourceActive_ = true;
             markSourceTransition();
+            setHlsLoading(true);
 
+            player.one('loadedmetadata', () => {
+                finishHlsSwitch(currentTime);
+            });
             try { player.error(null); } catch (_) {}
             player.src({ src: manifestUrl, type: 'application/x-mpegURL' });
+            if (resumeAfterHlsSwitch) {
+                hlsPlaybackPending = true;
+            }
             player.ready(() => {
                 enableQualitySelector();
-                player.one('loadedmetadata', () => {
-                    finishHlsSwitch(currentTime);
-                });
             });
             stopHlsSwitchTimer();
             hlsSwitchTimer = setTimeout(() => {
@@ -1436,13 +1630,75 @@
             const b = player.el().querySelector('.vjs-hls-badge');
             if (b) b.hidden = true;
         }
-        function useHlsWhenReady() {
+        function showHlsUnavailableBadge() {
+            setHlsLoading(false);
+            if (startupSrc) {
+                hideBadge();
+                return;
+            }
+            showBadge(textByLang('재생 변환을 준비하지 못했습니다.', 'Playback conversion is unavailable.'));
+        }
+        function useHlsWhenReady(options = {}) {
             hideBadge();
-            switchToHls();
+            switchToHls(options);
+        }
+
+        function rememberPlayIntent(options = {}) {
+            userWantsPlayback = true;
+            resumeAfterHlsSwitch = true;
+            if (sourceIsHls()) {
+                player.play().catch(() => {});
+                return;
+            }
+            if (latestHlsStatus === 'ready') {
+                useHlsWhenReady({ resume: true });
+                return;
+            }
+            if (!startupSrc) {
+                kickoffHlsTranscoding();
+            }
+            if (options.showPreparing !== false && !hasCurrentSource()) {
+                setHlsLoading(true);
+                showBadge('화질 선택 준비 중... 0%');
+            }
+        }
+
+        function bindPlayIntentHandlers() {
+            const root = player.el();
+            if (!root) return;
+            const playSelector = '.vjs-big-play-button, .vjs-play-control';
+            const isPlayTarget = target => Boolean(target && target.closest && target.closest(playSelector));
+            const interceptIfWaitingForHls = event => {
+                if (!isPlayTarget(event.target)) return;
+                if (startupSrc || sourceIsHls() || hasCurrentSource()) {
+                    userWantsPlayback = true;
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                if (typeof event.stopImmediatePropagation === 'function') {
+                    event.stopImmediatePropagation();
+                }
+                rememberPlayIntent({ showPreparing: true });
+            };
+            const handlePlayKey = event => {
+                if (!isPlayTarget(event.target)) return;
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                interceptIfWaitingForHls(event);
+            };
+
+            root.addEventListener('pointerdown', interceptIfWaitingForHls, true);
+            root.addEventListener('click', interceptIfWaitingForHls, true);
+            root.addEventListener('keydown', handlePlayKey, true);
+            cleanups.push(() => {
+                root.removeEventListener('pointerdown', interceptIfWaitingForHls, true);
+                root.removeEventListener('click', interceptIfWaitingForHls, true);
+                root.removeEventListener('keydown', handlePlayKey, true);
+            });
         }
 
         function fetchHlsStatus() {
-            return fetch(statusUrl).then(r => {
+            return hlsFetch(statusUrl).then(r => {
                 if (!r.ok) {
                     throw new Error('HLS status failed');
                 }
@@ -1455,30 +1711,39 @@
             pollTimer = setInterval(() => {
                 fetchHlsStatus()
                     .then(d => {
+                        if (shouldIgnoreHlsAsync()) return;
+                        latestHlsStatus = String(d.status || '');
                         if (d.status === 'ready') {
                             stopPoll();
                             useHlsWhenReady();
                         } else if (d.status === 'error') {
                             stopPoll();
-                            hideBadge();
+                            showHlsUnavailableBadge();
                         } else {
                             showBadge(`화질 선택 준비 중... ${d.progress || 0}%`);
                         }
                     })
-                    .catch(stopHlsFallback);
+                    .catch(handleHlsFetchError);
             }, POLL_MS);
         }
 
         function kickoffHlsTranscoding() {
             if (hlsKickoffStarted) return;
             hlsKickoffStarted = true;
+            if (userWantsPlayback) {
+                setHlsLoading(true);
+            }
             showBadge('화질 선택 준비 중... 0%');
-            fetch(manifestUrl).then(r => {
+            hlsFetch(manifestUrl).then(r => {
                 if (!r.ok && r.status !== 202) {
                     throw new Error('HLS manifest failed');
                 }
                 return r;
-            }).then(startPolling).catch(stopHlsFallback);
+            }).then(() => {
+                if (!shouldIgnoreHlsAsync()) {
+                    startPolling();
+                }
+            }).catch(handleHlsFetchError);
         }
 
         function deferHlsKickoffUntilStartupBuffered() {
@@ -1493,24 +1758,37 @@
 
         function stopHlsFallback() {
             stopPoll();
-            hideBadge();
+            showHlsUnavailableBadge();
         }
 
         player.on('error', () => {
             const err = player.error();
             if (!err || !sourceIsHls()) return;
             const currentTime = player.currentTime();
-            restoreStartupSource(currentTime, resumeAfterHlsSwitch || userWantsPlayback || !player.paused());
+            if (!restoreStartupSource(currentTime, resumeAfterHlsSwitch || userWantsPlayback || !player.paused())) {
+                try { player.error(null); } catch (_) {}
+                hlsSwitching = false;
+                hlsPlaybackPending = false;
+                player.handriveHlsSwitching_ = false;
+                player.handriveHlsSourceActive_ = false;
+                clearSourceTransitionSoon();
+                setHlsLoading(false);
+                showHlsUnavailableBadge();
+            }
         });
+
+        bindPlayIntentHandlers();
 
         // 상태 조회 → 필요하면 트랜스코딩 시작
         fetchHlsStatus()
             .then(data => {
+                if (shouldIgnoreHlsAsync()) return;
+                latestHlsStatus = String(data.status || '');
                 if (data.status === 'ready') {
                     // HLS가 준비되면 바로 전환해 control bar에 화질 선택기를 만든다.
                     useHlsWhenReady();
                 } else if (data.status === 'error') {
-                    // 오류 → fallback MP4 그대로 유지
+                    showHlsUnavailableBadge();
                 } else {
                     // not_started 또는 transcoding → 첫 재생 버퍼링을 방해하지 않도록 가능하면 지연
                     if (data.status === 'not_started') {
@@ -1525,17 +1803,23 @@
                     startPolling();
                 }
             })
-            .catch(stopHlsFallback); // 상태 조회 실패 시 fallback MP4 그대로
+            .catch(handleHlsFetchError); // 상태 조회 실패 시 fallback MP4 그대로
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────
     function disposePlayer(el) {
         const entry = players.get(el);
         if (!entry) return;
-        entry.cleanups.forEach(fn => fn());
-        try { entry.player.dispose(); } catch (_) {}
         players.delete(el);
-        delete el.dataset.vjsInitialized;
+        entry.cleanups.forEach(fn => {
+            try { fn(); } catch (_) {}
+        });
+        releasePlayerMediaResources(entry.player, el);
+        try { entry.player.dispose(); } catch (_) {}
+        releaseNativeMediaElement(el);
+        if (el && el.dataset) {
+            delete el.dataset.vjsInitialized;
+        }
     }
 
     function cleanup(el) {

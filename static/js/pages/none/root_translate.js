@@ -454,6 +454,16 @@
         sourceInputShell.style.height = '';
         sourceInput.style.height = String(sharedHeight) + 'px';
         targetOutput.style.height = String(sharedHeight) + 'px';
+        sourceInputShell.setAttribute(
+            'data-compact-border',
+            sourceInputShell.getAttribute('data-empty') === '1' && sharedHeight <= sourceHeight + 0.5 ? '1' : '0'
+        );
+        if (targetOutputShell) {
+            targetOutputShell.setAttribute(
+                'data-compact-border',
+                targetOutputShell.getAttribute('data-empty') === '1' && sharedHeight <= outputHeight + 0.5 ? '1' : '0'
+            );
+        }
     };
 
     const syncPlaceholders = function () {

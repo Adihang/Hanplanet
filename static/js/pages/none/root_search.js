@@ -25,6 +25,8 @@
         ? Array.from(themeToggle.querySelectorAll('.ui-control-link[data-theme-mode]'))
         : [];
     const THEME_MODE_STORAGE_KEY = 'portfolio_theme_mode';
+    const THEME_MODE_COOKIE_KEY = 'portfolio_theme_mode';
+    const COOKIE_MAX_AGE_SECONDS = 31536000;
     const accountThemeMode = (document.documentElement.getAttribute('data-account-theme-mode') || '').trim().toLowerCase();
 
     if (!form || !input || !engineSelect || !enginePicker || !engineToggle || !enginePopup || !engineLabel || !engineIcon || !engineOptions.length) {
@@ -242,9 +244,33 @@
         return meta ? meta.getAttribute('content') : '';
     };
 
+    const readThemeCookie = function () {
+        try {
+            const match = document.cookie.match(/(?:^|;\s*)portfolio_theme_mode=([^;]+)/);
+            if (match) {
+                return decodeURIComponent(match[1]);
+            }
+        } catch (error) {}
+        return '';
+    };
+
+    const writeThemeCookie = function (value) {
+        try {
+            const normalizedValue = encodeURIComponent(String(value || ''));
+            const maxAge = value ? COOKIE_MAX_AGE_SECONDS : 0;
+            const cookie = THEME_MODE_COOKIE_KEY + '=' + normalizedValue + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
+            document.cookie = cookie;
+
+            const hostname = String(window.location.hostname || '').toLowerCase();
+            if (hostname === 'hanplanet.com' || hostname.endsWith('.hanplanet.com')) {
+                document.cookie = cookie + '; domain=.hanplanet.com';
+            }
+        } catch (error) {}
+    };
+
     const readStoredThemeMode = function () {
         try {
-            const stored = window.localStorage.getItem(THEME_MODE_STORAGE_KEY);
+            const stored = readThemeCookie() || window.localStorage.getItem(THEME_MODE_STORAGE_KEY);
             if (stored === 'dark') {
                 return true;
             }
@@ -274,7 +300,9 @@
 
     const persistThemeModeLocal = function (isDark) {
         try {
-            window.localStorage.setItem(THEME_MODE_STORAGE_KEY, isDark ? 'dark' : 'light');
+            const mode = isDark ? 'dark' : 'light';
+            window.localStorage.setItem(THEME_MODE_STORAGE_KEY, mode);
+            writeThemeCookie(mode);
         } catch (error) {}
     };
 
@@ -317,14 +345,18 @@
     const initRootThemeMode = function () {
         // Theme preference priority is: account setting -> local storage -> system preference.
         let currentThemeMode = readAccountThemeMode();
+        let shouldPersistInitialThemeMode = currentThemeMode !== null;
         if (currentThemeMode === null) {
             currentThemeMode = readStoredThemeMode();
+            shouldPersistInitialThemeMode = currentThemeMode !== null;
         }
         if (currentThemeMode === null) {
             currentThemeMode = readSystemThemeMode();
         }
         applyRootThemeMode(Boolean(currentThemeMode));
-        persistThemeModeLocal(Boolean(currentThemeMode));
+        if (shouldPersistInitialThemeMode) {
+            persistThemeModeLocal(Boolean(currentThemeMode));
+        }
 
         themeToggleButtons.forEach(function (button) {
             button.addEventListener('click', function (event) {

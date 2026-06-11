@@ -35,6 +35,8 @@ class GoogleAuthError(Exception):
 
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
+GOOGLE_DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+GOOGLE_BASE_AUTH_SCOPE = "openid email profile"
 
 
 def is_google_auth_configured() -> bool:
@@ -48,16 +50,43 @@ def get_google_auth_scope() -> str:
     return str(getattr(settings, "GOOGLE_AUTH_SCOPE", "openid email profile") or "").strip()
 
 
+def get_google_base_auth_scope() -> str:
+    return str(getattr(settings, "GOOGLE_AUTH_BASE_SCOPE", GOOGLE_BASE_AUTH_SCOPE) or "").strip()
+
+
+def get_google_drive_file_scope() -> str:
+    return str(getattr(settings, "GOOGLE_AUTH_DRIVE_FILE_SCOPE", GOOGLE_DRIVE_FILE_SCOPE) or "").strip()
+
+
+def merge_google_scope_values(*scope_values: str | None) -> str:
+    seen: set[str] = set()
+    scopes: list[str] = []
+    for scope_value in scope_values:
+        for item in str(scope_value or "").replace(",", " ").split():
+            scope = item.strip()
+            if not scope or scope in seen:
+                continue
+            seen.add(scope)
+            scopes.append(scope)
+    return " ".join(scopes)
+
+
 def google_token_has_drive_scope(scope: str | None) -> bool:
     scopes = {
         item.strip()
         for item in str(scope or "").replace(",", " ").split()
         if item.strip()
     }
-    return GOOGLE_DRIVE_SCOPE in scopes
+    return GOOGLE_DRIVE_SCOPE in scopes or GOOGLE_DRIVE_FILE_SCOPE in scopes
 
 
-def build_google_authorize_url(callback_url: str, state: str) -> str:
+def build_google_authorize_url(
+    callback_url: str,
+    state: str,
+    *,
+    scope: str | None = None,
+    login_hint: str | None = None,
+) -> str:
     client_id = str(getattr(settings, "GOOGLE_AUTH_CLIENT_ID", "") or "").strip()
     if not client_id:
         raise GoogleAuthError("Google client id is not configured")
@@ -65,12 +94,15 @@ def build_google_authorize_url(callback_url: str, state: str) -> str:
         "client_id": client_id,
         "redirect_uri": callback_url,
         "response_type": "code",
-        "scope": get_google_auth_scope(),
+        "scope": str(scope or get_google_auth_scope() or "").strip(),
         "state": state,
         "access_type": "offline",
         "include_granted_scopes": "true",
         "prompt": "consent",
     }
+    normalized_login_hint = str(login_hint or "").strip()
+    if normalized_login_hint:
+        params["login_hint"] = normalized_login_hint
     base_url = str(
         getattr(settings, "GOOGLE_AUTH_AUTHORIZE_URL", "https://accounts.google.com/o/oauth2/v2/auth") or ""
     ).strip()
@@ -228,6 +260,7 @@ def save_google_mapping(user, identity: GoogleIdentity, token_data: GoogleTokenD
     existing_mapping = GoogleAccountMapping.objects.filter(google_user_id=identity.google_user_id).first()
     refresh_token = token_data.refresh_token or str(getattr(existing_mapping, "user_refresh_token", "") or "")
     refresh_token_expires_at = token_data.refresh_token_expires_at or getattr(existing_mapping, "user_refresh_token_expires_at", None)
+    token_scope = merge_google_scope_values(getattr(existing_mapping, "token_scope", ""), token_data.scope)
     mapping, _ = GoogleAccountMapping.objects.update_or_create(
         google_user_id=identity.google_user_id,
         defaults={
@@ -240,7 +273,7 @@ def save_google_mapping(user, identity: GoogleIdentity, token_data: GoogleTokenD
             "user_access_token_expires_at": token_data.expires_at,
             "user_refresh_token": refresh_token,
             "user_refresh_token_expires_at": refresh_token_expires_at,
-            "token_scope": token_data.scope,
+            "token_scope": token_scope,
             "token_type": token_data.token_type,
         },
     )

@@ -26,7 +26,7 @@ from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.cache import cache_control
-from django.urls import reverse
+from django.urls import NoReverseMatch, get_resolver, reverse
 import json
 import re
 import logging
@@ -58,7 +58,7 @@ from django.db.utils import OperationalError, ProgrammingError
 from django.db.models import Max
 from django.db import transaction
 from django.templatetags.static import static
-from urllib.parse import quote, unquote, urlencode, urlparse
+from urllib.parse import quote, unquote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 from pathlib import Path
 from types import SimpleNamespace
@@ -75,6 +75,9 @@ SCORE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9가-힣 _-]{1,20}$")
 MAX_SCORE_SECONDS = 3600.0
 SUPPORTED_UI_LANGS = {"ko", "en"}
 UI_LANG_SESSION_KEY = "portfolio_ui_lang"
+UI_LANG_COOKIE_NAME = "portfolio_ui_lang"
+SEO_INDEX_ROBOTS = "index,follow"
+SEO_NOINDEX_ROBOTS = "noindex,follow"
 SUPPORTED_ROOT_SEARCH_ENGINES = {"google", "youtube", "duckduckgo", "bing", "naver", "gpt", "claude", "gemini"}
 SUPPORTED_TRANSLATION_LANGS = {"ko", "en"}
 YOUTUBE_DOWNLOAD_FORMATS = {"mp4", "mp3"}
@@ -93,6 +96,31 @@ YOUTUBE_DOWNLOAD_ALLOWED_HOSTS = {
     "www.youtu.be",
 }
 UI_LANG_PATH_PREFIX_PATTERN = re.compile(r"^/(ko|en)(/|$)")
+SEO_NOINDEX_EXACT_PATHS = {
+    "/2fa-verify",
+    "/login",
+    "/login/handrive",
+    "/logout",
+    "/portfolio/write",
+    "/register-email",
+    "/signup",
+    "/sub",
+}
+SEO_NOINDEX_PATH_PREFIXES = (
+    "/account/profile-image",
+    "/api/",
+    "/auth/",
+    "/comment/create/",
+    "/handrive",
+    "/project/sample/",
+    "/sub/",
+)
+SEO_INDEX_PATH_PREFIXES = (
+    "/sub/image-color-picker",
+    "/sub/qrbarcode",
+    "/sub/video-to-gif",
+    "/sub/youtube-downloader",
+)
 IDENTITY_IMPERSONATION_PATTERNS = [
     re.compile(
         r"(저는|제가|저의\s*이름은|제\s*이름은|내\s*이름은)\s*(바로\s*)?(임\s*한별|임한별|한별님|한별)\s*(입니다|이에요|예요)?"
@@ -102,10 +130,76 @@ IDENTITY_IMPERSONATION_PATTERNS = [
 ]
 WARGAME_ALLOWED_ORIGIN = "https://wargame.hanplanet.com"
 WARGAME_CHALLENGE_ID_PATTERN = re.compile(r"^level\d{1,3}$")
-NETWORK_SPEED_DOWNLOAD_DEFAULT_BYTES = 8 * 1024 * 1024
-NETWORK_SPEED_DOWNLOAD_MAX_BYTES = 16 * 1024 * 1024
-NETWORK_SPEED_UPLOAD_DEFAULT_BYTES = 5 * 1024 * 1024
-NETWORK_SPEED_UPLOAD_MAX_BYTES = 24 * 1024 * 1024
+NETWORK_REVERSE_GEOCODE_URL = "https://nominatim.openstreetmap.org/reverse"
+NETWORK_REVERSE_GEOCODE_TIMEOUT = 3.0
+NETWORK_REVERSE_GEOCODE_USER_AGENT = "Hanplanet network-info/1.0 (https://www.hanplanet.com/)"
+IMAGE_COLOR_PICKER_MAX_URL_LENGTH = 2048
+IMAGE_COLOR_PICKER_MAX_BYTES = 12 * 1024 * 1024
+IMAGE_COLOR_PICKER_MAX_PIXELS = 80_000_000
+IMAGE_COLOR_PICKER_ALLOWED_MIME_PREFIX = "image/"
+IMAGE_COLOR_PICKER_BLOCKED_MIME_TYPES = {"image/svg+xml"}
+VIDEO_TO_GIF_MAX_UPLOAD_BYTES = 250 * 1024 * 1024
+VIDEO_TO_GIF_MAX_OUTPUT_BYTES = 80 * 1024 * 1024
+VIDEO_TO_GIF_MAX_DIMENSION = 1920
+VIDEO_TO_GIF_MIN_DIMENSION = 1
+VIDEO_TO_GIF_MIN_RATIO = 1
+VIDEO_TO_GIF_MAX_RATIO = 100
+VIDEO_TO_GIF_MIN_FPS = 0.1
+VIDEO_TO_GIF_PROBE_TIMEOUT_SECONDS = 90
+VIDEO_TO_GIF_CONVERT_TIMEOUT_SECONDS = 900
+VIDEO_TO_GIF_VIDEO_EXTENSIONS = {
+    ".3g2",
+    ".3gp",
+    ".asf",
+    ".avi",
+    ".divx",
+    ".dv",
+    ".f4v",
+    ".flv",
+    ".m4v",
+    ".m2ts",
+    ".mkv",
+    ".mod",
+    ".mov",
+    ".mp4",
+    ".mpeg",
+    ".mpg",
+    ".mts",
+    ".mxf",
+    ".ogv",
+    ".rm",
+    ".rmvb",
+    ".tod",
+    ".ts",
+    ".vob",
+    ".webm",
+    ".wmv",
+}
+VIDEO_TO_GIF_ALLOWED_MIME_TYPES = {
+    "application/mp4",
+    "application/mxf",
+    "application/ogg",
+    "application/octet-stream",
+    "application/vnd.rn-realmedia",
+    "application/x-matroska",
+    "video/3gpp",
+    "video/3gpp2",
+    "video/mp2t",
+    "video/mp4",
+    "video/mpeg",
+    "video/ogg",
+    "video/quicktime",
+    "video/webm",
+    "video/x-dv",
+    "video/x-f4v",
+    "video/x-flv",
+    "video/x-m4v",
+    "video/x-matroska",
+    "video/x-ms-asf",
+    "video/x-ms-wmv",
+    "video/x-msvideo",
+    "video/x-ms-vob",
+}
 
 JSON_ERROR_MESSAGE_TRANSLATIONS = {
     "POST only.": {"ko": "POST 요청만 허용됩니다.", "en": "Only POST requests are allowed."},
@@ -884,6 +978,36 @@ def _restore_fenced_code_blocks(rendered_html: str, blocks: list[tuple[str, str]
     return result
 
 
+def _insert_markdown_blank_line_placeholders(text: str) -> tuple[str, list[str]]:
+    """Keep intentional empty markdown lines visible after HTML rendering."""
+    source = text or ""
+    output_lines: list[str] = []
+    tokens: list[str] = []
+
+    for line in source.splitlines():
+        if line.strip():
+            output_lines.append(line)
+            continue
+
+        token = f"@@DOCS_MARKDOWN_BLANK_LINE_{len(tokens)}@@"
+        tokens.append(token)
+        output_lines.extend(["", token, ""])
+
+    prepared = "\n".join(output_lines)
+    if source.endswith("\n") and not prepared.endswith("\n"):
+        prepared += "\n"
+    return prepared, tokens
+
+
+def _restore_markdown_blank_lines(rendered_html: str, tokens: list[str]) -> str:
+    result = rendered_html
+    spacer_html = '<div class="handrive-markdown-blank-line" aria-hidden="true"></div>'
+    for token in tokens:
+        result = re.sub(rf"<p>\s*{re.escape(token)}\s*</p>", spacer_html, result)
+        result = result.replace(token, spacer_html)
+    return result
+
+
 def _escape_raw_html_outside_fences(text: str) -> str:
     """Escape raw HTML tag starts outside fenced code blocks.
 
@@ -925,12 +1049,17 @@ def _escape_raw_html_outside_fences(text: str) -> str:
     return "".join(escaped_lines)
 
 
-def render_markdown_safely(text):
+def render_markdown_safely(text, *, preserve_blank_lines: bool = False):
     """Render markdown while neutralizing raw HTML input to prevent script injection."""
     prepared_source, extracted_blocks = _extract_fenced_code_blocks(text or "")
+    blank_line_tokens: list[str] = []
+    if preserve_blank_lines:
+        prepared_source, blank_line_tokens = _insert_markdown_blank_line_placeholders(prepared_source)
     safe_source = _escape_raw_html_outside_fences(prepared_source)
     rendered_html = markdown.markdown(safe_source, extensions=MARKDOWN_EXTENSIONS)
     rendered_html = _restore_fenced_code_blocks(rendered_html, extracted_blocks)
+    if preserve_blank_lines:
+        rendered_html = _restore_markdown_blank_lines(rendered_html, blank_line_tokens)
     return mark_safe(rendered_html)
 
 
@@ -985,6 +1114,42 @@ def build_public_absolute_url(path):
     if not normalized_path.startswith("/"):
         normalized_path = f"/{normalized_path}"
     return f"{get_public_base_url()}{normalized_path}"
+
+
+def strip_supported_ui_lang_prefix(path):
+    """Return a path without a leading supported UI language prefix."""
+    normalized_path = str(path or "/").strip() or "/"
+    if not normalized_path.startswith("/"):
+        normalized_path = f"/{normalized_path}"
+    if normalized_path in {"/ko", "/en", "/ko/", "/en/"}:
+        return "/"
+    if normalized_path.startswith("/ko/") or normalized_path.startswith("/en/"):
+        return normalized_path[3:] or "/"
+    return normalized_path
+
+
+def path_matches_route_prefix(path, prefix):
+    """Return whether a normalized path is exactly under a route prefix."""
+    normalized_prefix = str(prefix or "/").rstrip("/") or "/"
+    return path == normalized_prefix or path.startswith(f"{normalized_prefix}/")
+
+
+def get_default_meta_robots_for_path(path):
+    """Choose the default robots directive for public HTML routes."""
+    stripped_path = strip_supported_ui_lang_prefix(path).rstrip("/")
+    if not stripped_path:
+        stripped_path = "/"
+
+    if any(path_matches_route_prefix(stripped_path, index_path) for index_path in SEO_INDEX_PATH_PREFIXES):
+        return SEO_INDEX_ROBOTS
+
+    if stripped_path in SEO_NOINDEX_EXACT_PATHS:
+        return SEO_NOINDEX_ROBOTS
+
+    if any(path_matches_route_prefix(stripped_path, prefix) for prefix in SEO_NOINDEX_PATH_PREFIXES):
+        return SEO_NOINDEX_ROBOTS
+
+    return SEO_INDEX_ROBOTS
 
 
 def detect_preferred_ui_lang(request):
@@ -1056,6 +1221,11 @@ def resolve_ui_lang(request, url_lang=None):
             request.session[UI_LANG_SESSION_KEY] = account_ui_lang
             return account_ui_lang
 
+    cookie_lang = str(request.COOKIES.get(UI_LANG_COOKIE_NAME, "") or "").strip().lower()
+    if cookie_lang in SUPPORTED_UI_LANGS:
+        request.session[UI_LANG_SESSION_KEY] = cookie_lang
+        return cookie_lang
+
     session_lang = request.session.get(UI_LANG_SESSION_KEY)
     if session_lang in SUPPORTED_UI_LANGS:
         return session_lang
@@ -1095,7 +1265,7 @@ def apply_ui_context(request, context, ui_lang):
     context["lang_switch_en_url"] = build_lang_switch_url(request, "en")
     canonical_url = build_public_absolute_url(request.path)
     default_meta_image = "https://www.hanplanet.com/static/media/icons/hanplanet-og-1200.png"
-    context["meta_robots"] = context.get("meta_robots", "index,follow")
+    context["meta_robots"] = context.get("meta_robots") or get_default_meta_robots_for_path(request.path)
     context["meta_site_name"] = context.get("meta_site_name", "Hanplanet")
     context["meta_canonical_url"] = context.get("meta_canonical_url", canonical_url)
     context["meta_og_url"] = context.get("meta_og_url", canonical_url)
@@ -1126,11 +1296,14 @@ def apply_ui_context(request, context, ui_lang):
     context["account_google_connected"] = False
     context["account_google_email"] = ""
     context["account_google_drive_enabled"] = False
+    context["account_google_drive_selected_count"] = 0
     context["account_google_connect_label"] = "Connect Google" if ui_lang == "en" else "Google 연동"
     google_next_url = request.get_full_path() or f"/{ui_lang}/"
     google_start_url = reverse("main:handrive_google_auth_start_lang", kwargs={"ui_lang": ui_lang})
     context["account_google_connect_url"] = f"{google_start_url}?{urlencode({'mode': 'link', 'next': google_next_url})}"
     context["account_google_drive_settings_url"] = reverse("main:handrive_api_google_drive_settings")
+    context["account_google_picker_config_url"] = reverse("main:handrive_api_google_picker_config")
+    context["account_google_drive_items_url"] = reverse("main:handrive_api_google_drive_items")
     context["account_google_unlink_url"] = reverse("main:handrive_api_google_unlink")
     if request.user.is_authenticated:
         profile_preferences = (
@@ -1175,7 +1348,7 @@ def apply_ui_context(request, context, ui_lang):
             google_mapping = (
                 GoogleAccountMapping.objects
                 .filter(user=request.user)
-                .only("google_email", "google_drive_enabled")
+                .only("google_email", "google_drive_enabled", "google_drive_preference_set", "selected_drive_items")
                 .first()
             )
         except (OperationalError, ProgrammingError):
@@ -1183,7 +1356,10 @@ def apply_ui_context(request, context, ui_lang):
         if google_mapping is not None:
             context["account_google_connected"] = True
             context["account_google_email"] = google_mapping.google_email
-            context["account_google_drive_enabled"] = bool(google_mapping.google_drive_enabled)
+            if bool(getattr(google_mapping, "google_drive_preference_set", False)):
+                context["account_google_drive_enabled"] = bool(google_mapping.google_drive_enabled)
+            selected_items = getattr(google_mapping, "selected_drive_items", [])
+            context["account_google_drive_selected_count"] = len(selected_items) if isinstance(selected_items, list) else 0
     try:
         nav_links = list(NavLink.objects.all())
         removed_nav_names = {"github", "thingiverse", "portfolio", "wargame"}
@@ -1899,166 +2075,79 @@ def image_pip_demo_sample_image(request, ui_lang=None):
     raise Http404("sample image not found")
 
 
+def _iter_urlconf_patterns(patterns):
+    """Yield leaf URL patterns in resolver order."""
+    for pattern in patterns:
+        nested_patterns = getattr(pattern, "url_patterns", None)
+        if nested_patterns is not None:
+            yield from _iter_urlconf_patterns(nested_patterns)
+        else:
+            yield pattern
+
+
+def _is_public_sub_child_url(url, resolved_lang):
+    path = urlparse(str(url or "")).path.rstrip("/")
+    sub_prefix = f"/{resolved_lang}/sub"
+    if not path.startswith(f"{sub_prefix}/"):
+        return False
+
+    sub_child_path = path[len(sub_prefix):].strip("/")
+    parts = [part for part in sub_child_path.split("/") if part]
+    if len(parts) != 1:
+        return False
+    if "." in parts[0]:
+        return False
+    return True
+
+
+def _build_sub_links(resolved_lang):
+    """Return the actual public Sub child URLs from URLConf in resolver order."""
+    links = []
+    seen_urls = set()
+
+    for pattern in _iter_urlconf_patterns(get_resolver().url_patterns):
+        route_name = getattr(pattern, "name", "") or ""
+        if not route_name:
+            continue
+        if "_legacy" in route_name:
+            continue
+
+        try:
+            url = reverse(f"main:{route_name}", kwargs={"ui_lang": resolved_lang})
+        except NoReverseMatch:
+            continue
+
+        if not _is_public_sub_child_url(url, resolved_lang):
+            continue
+
+        normalized_url = url.rstrip("/")
+        if normalized_url in seen_urls:
+            continue
+        seen_urls.add(normalized_url)
+
+        slug = unquote(urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]).lower()
+        links.append({
+            "slug": slug,
+            "url": url,
+        })
+
+    return links
+
+
 def sub_page(request, ui_lang=None):
     """Render the sub landing page that links to the browser game collection."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
-    hanplanet_site_name = "Hanplanet"
-    hanplanet_og_image = build_public_absolute_url(static("media/icons/hanplanet-og-1200.png"))
-    speaki_icon_image = build_public_absolute_url(static("media/Spikip/speaki_default/icon/main.png"))
-    speaki_main_image = build_public_absolute_url(static("media/Spikip/main.png"))
-    bubble_og_image = build_public_absolute_url(static("media/img/bubble_og_icon.svg"))
-    text_bubble_og_image = build_public_absolute_url(static("media/img/text-bubble.png"))
-    youtube_downloader_og_image = build_public_absolute_url(static("media/icons/youtube-downloader-og-1200.png"))
-    qrbarcode_og_image = build_public_absolute_url(static("media/icons/qrbarcode-og-1200.png"))
-    salvation_edge_og_image = "https://github.com/Adihang/Hanplanet/assets/56463432/14fcd76f-770a-4c42-9e94-06aaa73efe5e"
-    stratagem_hero_og_image = "https://github.com/Adihang/Hanplanet/assets/56463432/484730d2-3edb-47ee-b598-206096312261"
-    wargame_description = (
-        "Practice web and system security through hands-on Hanplanet Wargame challenges."
-        if is_english
-        else "직접 문제를 풀며 웹과 시스템 보안을 연습하는 Hanplanet 워게임입니다."
-    )
-
-    links = [
-        {
-            "slug": "wargame",
-            "category": "game",
-            "title": "Wargame",
-            "url": "https://wargame.hanplanet.com/",
-            "description": wargame_description,
-            "site_name": "Hanplanet Wargame",
-            "image_url": hanplanet_og_image,
-        },
-        {
-            "slug": "salvations-edge-4",
-            "category": "game",
-            "title": "구원의 경계 4네임드 계산기",
-            "url": reverse("main:Salvations_Edge_4_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": "능지박살 아이익 전용",
-            "site_name": hanplanet_site_name,
-            "image_url": salvation_edge_og_image,
-        },
-        {
-            "slug": "stratagem-hero",
-            "category": "game",
-            "title": "Stratagem Hero",
-            "url": reverse("main:Stratagem_Hero_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": "Helldivers Sub",
-            "site_name": hanplanet_site_name,
-            "image_url": stratagem_hero_og_image,
-        },
-        {
-            "slug": "bubble",
-            "category": "game",
-            "title": "Bubble Playground" if is_english else "버블 플레이그라운드",
-            "url": reverse("main:bubble_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": (
-                "Pop all bubbles to roll a random background color."
-                if is_english
-                else "버블을 전부 터뜨리면 배경색이 랜덤으로 바뀝니다."
-            ),
-            "site_name": hanplanet_site_name,
-            "image_url": bubble_og_image,
-        },
-        {
-            "slug": "text-speaki",
-            "category": "game",
-            "title": "Text Bubble | Hanplanet" if is_english else "책먹는 스핔이 | Hanplanet",
-            "url": reverse("main:text_bubble_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": (
-                "Bubbles float through a New York Times article, reshaping the text around them."
-                if is_english
-                else "타임지의 기사를 책처럼 볼 수 있습니다\n하지만 그때 스핔이가 나타났다."
-            ),
-            "site_name": hanplanet_site_name,
-            "image_url": text_bubble_og_image,
-        },
-        {
-            "slug": "image-pip-demo",
-            "category": "tool",
-            "title": "Image PiP Demo" if is_english else "이미지 PiP 데모",
-            "url": reverse("main:image_pip_demo_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": (
-                "Drop or paste an image, then click it to open Picture-in-Picture."
-                if is_english
-                else "이미지를 드롭하거나 붙여넣고 클릭해서 PiP로 띄웁니다."
-            ),
-            "site_name": hanplanet_site_name,
-            "image_url": hanplanet_og_image,
-        },
-        {
-            "slug": "network-info",
-            "category": "tool",
-            "title": "Network Environment" if is_english else "네트워크 환경",
-            "url": reverse("main:network_environment_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": (
-                "Inspect IP, browser network hints, GPS, WebRTC candidates, and transfer speed."
-                if is_english
-                else "IP, 브라우저 네트워크 힌트, GPS, WebRTC 후보, 전송 속도를 확인합니다."
-            ),
-            "site_name": hanplanet_site_name,
-            "image_url": hanplanet_og_image,
-        },
-        {
-            "slug": "youtube-downloader",
-            "category": "tool",
-            "title": "YouTube Downloader | Hanplanet" if is_english else "유튜브 다운로더 | Hanplanet",
-            "url": reverse("main:youtube_downloader_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": (
-                "Paste a YouTube URL and export it as an MP4 or MP3 file."
-                if is_english
-                else "유튜브 URL을 붙여넣고 MP4 또는 MP3 파일로 저장하는 도구입니다."
-            ),
-            "site_name": hanplanet_site_name,
-            "image_url": youtube_downloader_og_image,
-        },
-        {
-            "slug": "qrbarcode",
-            "category": "tool",
-            "title": "QR/Barcode | Hanplanet",
-            "url": reverse("main:qrbarcode_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": (
-                "Generate a QR code or Code128 barcode from a URL or text."
-                if is_english
-                else "URL 또는 텍스트로 QR 코드와 바코드를 생성하는 도구입니다."
-            ),
-            "site_name": hanplanet_site_name,
-            "image_url": qrbarcode_og_image,
-        },
-        {
-            "slug": "bumpercar-spiky",
-            "category": "game",
-            "title": "Bumper Car Spiky" if is_english else "범퍼카 스핔이",
-            "url": reverse("main:bumpercar_spiky_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": "A multiplayer Spiky bumper car game." if is_english else "멀티플레이 가능한 스핔이 범퍼카 게임.",
-            "site_name": "Bumper Car Spiky" if is_english else "범퍼카 스핔이",
-            "image_url": speaki_icon_image,
-        },
-        {
-            "slug": "raise-speaki",
-            "category": "game",
-            "title": "Raise Speaki" if is_english else "스핔이 키우기",
-            "url": reverse("main:raise_speaki_lang", kwargs={"ui_lang": resolved_lang}),
-            "description": (
-                "Raise your Speaki and evolve it into Speaki."
-                if is_english
-                else "스핔이를 키워서 스피키로 진화시키세요!"
-            ),
-            "site_name": "Raise Speaki" if is_english else "스핔이 키우기",
-            "image_url": speaki_main_image,
-        },
-    ]
+    links = _build_sub_links(resolved_lang)
 
     link_groups = [
         {
-            "slug": "games",
+            "slug": "game",
             "title": "Games" if is_english else "게임",
-            "items": [link for link in links if link.get("category") == "game"],
         },
         {
-            "slug": "tools",
+            "slug": "tool",
             "title": "Tools" if is_english else "도구",
-            "items": [link for link in links if link.get("category") == "tool"],
         },
     ]
 
@@ -2066,7 +2155,7 @@ def sub_page(request, ui_lang=None):
         "page_title": "Sub",
         "sub_links": links,
         "sub_link_groups": link_groups,
-        "sub_home_label": "Home" if is_english else "홈",
+        "sub_home_label": "Hanplanet",
         "handrive_login_url": reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}),
         "handrive_signup_url": reverse("main:handrive_signup_lang", kwargs={"ui_lang": resolved_lang}),
         "meta_title": "Hanplanet Sub" if is_english else "Hanplanet 기타",
@@ -2136,7 +2225,7 @@ def _classify_ip_address(address):
 def _get_server_local_addresses():
     addresses = {}
 
-    def add_address(raw_address, source):
+    def add_address(raw_address, source, interface=""):
         address = str(raw_address or "").strip()
         if not address:
             return
@@ -2148,10 +2237,50 @@ def _get_server_local_addresses():
                 "address": address,
                 "kind": _classify_ip_address(address),
                 "sources": [],
+                "interfaces": [],
             },
         )
         if source not in addresses[address]["sources"]:
             addresses[address]["sources"].append(source)
+        interface = str(interface or "").strip()
+        if interface and interface not in addresses[address]["interfaces"]:
+            addresses[address]["interfaces"].append(interface)
+
+    def command_output(command, timeout=0.8):
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        if result.returncode != 0:
+            return ""
+        return result.stdout or ""
+
+    def default_route_interface():
+        output = command_output(["route", "-n", "get", "default"])
+        interface = ""
+        gateway = ""
+        for raw_line in output.splitlines():
+            line = raw_line.strip()
+            if line.startswith("interface:"):
+                interface = line.split(":", 1)[1].strip()
+            elif line.startswith("gateway:"):
+                gateway = line.split(":", 1)[1].strip()
+        return interface, gateway
+
+    def interface_ipv4(interface):
+        if not interface:
+            return ""
+        output = command_output(["ipconfig", "getifaddr", interface])
+        if output.strip():
+            return output.strip().splitlines()[0].strip()
+        output = command_output(["ifconfig", interface])
+        match = re.search(r"\binet\s+(\d{1,3}(?:\.\d{1,3}){3})\b", output)
+        return match.group(1) if match else ""
+
+    route_interface, route_gateway = default_route_interface()
+    route_interface_ipv4 = interface_ipv4(route_interface)
+    if route_interface_ipv4:
+        add_address(route_interface_ipv4, "default-gateway", route_interface)
 
     try:
         hostname = socket.gethostname()
@@ -2174,7 +2303,52 @@ def _get_server_local_addresses():
         except OSError:
             continue
 
+    if route_gateway and route_interface_ipv4:
+        addresses[route_interface_ipv4]["gateway"] = route_gateway
+
     return sorted(addresses.values(), key=lambda item: (item["kind"], item["address"]))
+
+
+def _parse_ip_address(value):
+    address = str(value or "").strip().strip("[]")
+    if "%" in address:
+        address = address.split("%", 1)[0]
+    try:
+        return ipaddress.ip_address(address)
+    except ValueError:
+        return None
+
+
+def _select_preferred_local_address(addresses):
+    def is_preferred_private_ipv4(item):
+        parsed = _parse_ip_address(item.get("address"))
+        return bool(
+            parsed
+            and parsed.version == 4
+            and parsed.is_private
+            and not parsed.is_loopback
+            and not parsed.is_link_local
+        )
+
+    def is_usable_ipv4(item):
+        parsed = _parse_ip_address(item.get("address"))
+        return bool(parsed and parsed.version == 4 and not parsed.is_loopback)
+
+    for source in ("default-gateway", "default-route", "hostname"):
+        for item in addresses:
+            if source in item.get("sources", []) and is_preferred_private_ipv4(item):
+                return item
+    for item in addresses:
+        if is_preferred_private_ipv4(item):
+            return item
+    for item in addresses:
+        if is_usable_ipv4(item):
+            return item
+    for item in addresses:
+        parsed = _parse_ip_address(item.get("address"))
+        if parsed and not parsed.is_loopback:
+            return item
+    return None
 
 
 def _network_meta_value(request, key):
@@ -2192,6 +2366,8 @@ def _network_environment_payload(request):
         getattr(settings, "DEBUG", False)
         or (getattr(request, "user", None) is not None and request.user.is_authenticated and request.user.is_superuser)
     )
+    local_addresses = _get_server_local_addresses()
+    preferred_local_address = _select_preferred_local_address(local_addresses)
 
     selected_headers = {
         "Host": _network_meta_value(request, "HTTP_HOST"),
@@ -2213,7 +2389,7 @@ def _network_environment_payload(request):
         "time": timezone.now().isoformat(),
         "timezone": str(timezone.get_current_timezone()),
         "local_addresses_visible": server_addresses_visible,
-        "local_addresses": _get_server_local_addresses() if server_addresses_visible else [],
+        "local_addresses": local_addresses if server_addresses_visible else [],
     }
     if server_addresses_visible:
         server_info["hostname"] = socket.gethostname()
@@ -2222,6 +2398,11 @@ def _network_environment_payload(request):
         "ok": True,
         "observed_ip": observed_ip,
         "observed_ip_kind": _classify_ip_address(observed_ip),
+        "local_ip": (preferred_local_address or {}).get("address", ""),
+        "local_ip_kind": (preferred_local_address or {}).get("kind", ""),
+        "local_ip_sources": (preferred_local_address or {}).get("sources", []),
+        "local_ip_interfaces": (preferred_local_address or {}).get("interfaces", []),
+        "local_ip_gateway": (preferred_local_address or {}).get("gateway", ""),
         "ip_candidates": {
             "cf_connecting_ip": cf_connecting_ip,
             "x_real_ip": x_real_ip,
@@ -2246,12 +2427,6 @@ def _network_environment_payload(request):
             "visitor": _network_meta_value(request, "HTTP_CF_VISITOR"),
         },
         "server": server_info,
-        "limits": {
-            "download_default_bytes": NETWORK_SPEED_DOWNLOAD_DEFAULT_BYTES,
-            "download_max_bytes": NETWORK_SPEED_DOWNLOAD_MAX_BYTES,
-            "upload_default_bytes": NETWORK_SPEED_UPLOAD_DEFAULT_BYTES,
-            "upload_max_bytes": NETWORK_SPEED_UPLOAD_MAX_BYTES,
-        },
     }
 
 
@@ -2259,24 +2434,27 @@ def network_environment_page(request, ui_lang=None):
     """Render a browser network diagnostics page under Sub."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
+    meta_image = build_public_absolute_url(static("media/icons/network-info-og-1200.png"))
     context = {
         "ui_lang": resolved_lang,
         "page_title": "Network Environment" if is_english else "네트워크 환경",
-        "home_label": "Home" if is_english else "홈",
+        "home_label": "Hanplanet",
         "sub_label": "Sub" if is_english else "기타",
         "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
         "environment_api_url": reverse("main:network_environment_api_lang", kwargs={"ui_lang": resolved_lang}),
-        "download_api_url": reverse("main:network_speed_download_lang", kwargs={"ui_lang": resolved_lang}),
-        "upload_api_url": reverse("main:network_speed_upload_lang", kwargs={"ui_lang": resolved_lang}),
-        "download_size_bytes": NETWORK_SPEED_DOWNLOAD_DEFAULT_BYTES,
-        "upload_size_bytes": NETWORK_SPEED_UPLOAD_DEFAULT_BYTES,
+        "reverse_geocode_api_url": reverse("main:network_reverse_geocode_api_lang", kwargs={"ui_lang": resolved_lang}),
+        "sub_category": "tool",
         "summary_title": "Summary" if is_english else "요약",
         "public_ip_label": "External IP" if is_english else "외부 IP",
-        "local_ip_label": "Local IP candidates" if is_english else "내부 IP 후보",
+        "local_ip_label": "Local IP" if is_english else "로컬 IP",
         "location_label": "GPS location" if is_english else "GPS 위치",
         "speed_label": "Speed" if is_english else "속도",
-        "download_button_label": "Measure download" if is_english else "다운로드 측정",
-        "upload_button_label": "Measure upload" if is_english else "업로드 측정",
+        "summary_download_speed_label": "Download" if is_english else "다운로드",
+        "summary_upload_speed_label": "Upload" if is_english else "업로드",
+        "mlab_button_label": "Measure network speed" if is_english else "네트워크 속도 측정",
+        "mlab_download_meter_label": "Download" if is_english else "다운로드",
+        "mlab_upload_meter_label": "Upload" if is_english else "업로드",
+        "latency_meter_label": "API latency" if is_english else "API 지연",
         "webrtc_button_label": "Read local IP candidates" if is_english else "내부 IP 후보 읽기",
         "gps_button_label": "Read GPS" if is_english else "GPS 읽기",
         "refresh_button_label": "Refresh request info" if is_english else "요청 정보 새로고침",
@@ -2289,11 +2467,14 @@ def network_environment_page(request, ui_lang=None):
         "meta_title": "Network Environment | Hanplanet" if is_english else "네트워크 환경 | Hanplanet",
         "meta_og_title": "Network Environment | Hanplanet" if is_english else "네트워크 환경 | Hanplanet",
         "meta_description": (
-            "Inspect public IP, browser network hints, WebRTC local address candidates, GPS, and upload/download speed."
+            "Inspect public IP, local IP, browser network hints, WebRTC candidates, GPS, and upload/download speed."
             if is_english
-            else "외부 IP, 브라우저 네트워크 힌트, WebRTC 내부 주소 후보, GPS, 업로드/다운로드 속도를 확인합니다."
+            else "외부 IP, 로컬 IP, 브라우저 네트워크 힌트, WebRTC 후보, GPS, 업로드/다운로드 속도를 확인합니다."
         ),
+        "meta_og_image": meta_image,
+        "meta_twitter_image": meta_image,
         "meta_robots": "noindex",
+        "site_footer_purpose_i18n_key": "network_mlab_footer_purpose",
     }
     context["meta_og_description"] = context["meta_description"]
     apply_ui_context(request, context, resolved_lang)
@@ -2308,82 +2489,97 @@ def network_environment_api(request, ui_lang=None):
     return response
 
 
-def _coerce_network_speed_size(raw_value, default_size, max_size):
+def _coerce_network_coordinate(raw_value, minimum, maximum):
     try:
-        requested_size = int(raw_value)
+        value = float(str(raw_value or "").strip())
     except (TypeError, ValueError):
-        requested_size = default_size
-    return max(256 * 1024, min(requested_size, max_size))
+        return None
+    if not math.isfinite(value) or value < minimum or value > maximum:
+        return None
+    return value
+
+
+def _network_reverse_geocode_language(ui_lang):
+    return "en,ko" if str(ui_lang or "").lower() == "en" else "ko,en"
+
+
+def _extract_network_reverse_geocode_place(payload):
+    address = payload.get("address") if isinstance(payload, dict) else {}
+    if not isinstance(address, dict):
+        address = {}
+    country = str(address.get("country") or "").strip()
+    country_code = str(address.get("country_code") or "").strip().upper()
+    city = ""
+    for key in ("city", "town", "village", "municipality", "county", "state_district", "state", "region"):
+        candidate = str(address.get(key) or "").strip()
+        if candidate:
+            city = candidate
+            break
+    if not country and country_code:
+        country = country_code
+    parts = []
+    for value in (country, city):
+        if value and value not in parts:
+            parts.append(value)
+    return {
+        "country": country,
+        "country_code": country_code,
+        "city": city,
+        "place": " · ".join(parts),
+    }
+
+
+def _network_reverse_geocode_payload(latitude, longitude, ui_lang):
+    rounded_latitude = round(latitude, 4)
+    rounded_longitude = round(longitude, 4)
+    language = _network_reverse_geocode_language(ui_lang)
+    cache_key = f"network-reverse-geocode:v1:{language}:{rounded_latitude:.4f}:{rounded_longitude:.4f}"
+    cached_payload = cache.get(cache_key)
+    if cached_payload:
+        return cached_payload
+
+    response = httpx.get(
+        NETWORK_REVERSE_GEOCODE_URL,
+        params={
+            "format": "jsonv2",
+            "lat": f"{rounded_latitude:.4f}",
+            "lon": f"{rounded_longitude:.4f}",
+            "zoom": "10",
+            "addressdetails": "1",
+            "accept-language": language,
+        },
+        headers={
+            "Accept": "application/json",
+            "Referer": "https://www.hanplanet.com/",
+            "User-Agent": NETWORK_REVERSE_GEOCODE_USER_AGENT,
+        },
+        timeout=NETWORK_REVERSE_GEOCODE_TIMEOUT,
+    )
+    response.raise_for_status()
+    place_payload = _extract_network_reverse_geocode_place(response.json())
+    place_payload.update(
+        {
+            "ok": True,
+            "provider": "OpenStreetMap Nominatim",
+            "latitude": rounded_latitude,
+            "longitude": rounded_longitude,
+        }
+    )
+    cache.set(cache_key, place_payload, 24 * 60 * 60)
+    return place_payload
 
 
 @require_http_methods(["GET"])
-def network_speed_download(request, ui_lang=None):
-    size = _coerce_network_speed_size(
-        request.GET.get("size"),
-        NETWORK_SPEED_DOWNLOAD_DEFAULT_BYTES,
-        NETWORK_SPEED_DOWNLOAD_MAX_BYTES,
-    )
-    response = HttpResponse(secrets.token_bytes(size), content_type="application/octet-stream")
-    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response["Pragma"] = "no-cache"
-    response["Content-Length"] = str(size)
-    response["X-Hanplanet-Payload-Bytes"] = str(size)
-    return response
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def network_speed_upload(request, ui_lang=None):
-    raw_content_length = str(request.META.get("CONTENT_LENGTH") or "").strip()
+def network_reverse_geocode_api(request, ui_lang=None):
+    latitude = _coerce_network_coordinate(request.GET.get("lat"), -90, 90)
+    longitude = _coerce_network_coordinate(request.GET.get("lon"), -180, 180)
+    if latitude is None or longitude is None:
+        return JsonResponse({"ok": False, "error": "Invalid coordinates."}, status=400)
     try:
-        content_length = int(raw_content_length) if raw_content_length else 0
-    except ValueError:
-        content_length = 0
-    if content_length > NETWORK_SPEED_UPLOAD_MAX_BYTES:
-        response = JsonResponse(
-            {
-                "ok": False,
-                "error": "Payload too large.",
-                "max_bytes": NETWORK_SPEED_UPLOAD_MAX_BYTES,
-            },
-            status=413,
-        )
-        response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        return response
-
-    stream = request.META.get("wsgi.input")
-    bytes_received = 0
-    if stream is not None:
-        remaining = content_length if content_length > 0 else NETWORK_SPEED_UPLOAD_MAX_BYTES + 1
-        while remaining > 0:
-            chunk = stream.read(min(1024 * 1024, remaining))
-            if not chunk:
-                break
-            bytes_received += len(chunk)
-            if bytes_received > NETWORK_SPEED_UPLOAD_MAX_BYTES:
-                response = JsonResponse(
-                    {
-                        "ok": False,
-                        "error": "Payload too large.",
-                        "max_bytes": NETWORK_SPEED_UPLOAD_MAX_BYTES,
-                    },
-                    status=413,
-                )
-                response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-                return response
-            remaining -= len(chunk)
-    else:
-        bytes_received = len(request.body)
-
-    response = JsonResponse(
-        {
-            "ok": True,
-            "bytes": bytes_received,
-            "content_length": content_length,
-            "max_bytes": NETWORK_SPEED_UPLOAD_MAX_BYTES,
-            "server_time": timezone.now().isoformat(),
-        }
-    )
+        payload = _network_reverse_geocode_payload(latitude, longitude, ui_lang)
+    except (httpx.HTTPError, ValueError, TypeError, KeyError) as error:
+        return JsonResponse({"ok": False, "error": str(error) or "Reverse geocoding failed."}, status=502)
+    response = JsonResponse(payload, json_dumps_params={"ensure_ascii": False})
     response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response["Pragma"] = "no-cache"
     return response
@@ -2393,11 +2589,13 @@ def image_pip_demo_page(request, ui_lang=None):
     """Render a small demo for opening images in native Picture-in-Picture."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
+    meta_image = build_public_absolute_url(static("media/icons/image-pip-demo-og-1200.png"))
     context = {
         "page_title": "Image PiP Demo" if is_english else "이미지 PiP 데모",
-        "home_label": "Home" if is_english else "홈",
+        "home_label": "Hanplanet",
         "sub_label": "Sub" if is_english else "기타",
         "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
+        "sub_category": "tool",
         "sample_image_url": reverse("main:image_pip_demo_sample_image"),
         "drop_label": (
             "Drop an image here or paste one with Ctrl/Command+V."
@@ -2440,10 +2638,911 @@ def image_pip_demo_page(request, ui_lang=None):
             if is_english
             else "붙여넣거나 드롭한 이미지를 브라우저 Picture-in-Picture로 여는 Hanplanet 데모입니다."
         ),
+        "meta_og_image": meta_image,
+        "meta_twitter_image": meta_image,
     }
     context["meta_og_description"] = context["meta_description"]
     apply_ui_context(request, context, resolved_lang)
     return render(request, "fun/image_pip_demo.html", context)
+
+
+def _image_color_picker_json_body(request):
+    try:
+        payload = json.loads(request.body or "{}")
+    except (TypeError, ValueError):
+        payload = request.POST
+    return payload if isinstance(payload, dict) else {}
+
+
+def _image_color_picker_public_ip_address(address):
+    try:
+        parsed = ipaddress.ip_address(str(address or "").strip().strip("[]"))
+    except ValueError:
+        return False
+    return parsed.is_global
+
+
+def _image_color_picker_public_hostname(hostname):
+    host = str(hostname or "").strip().strip("[]").lower()
+    if not host or host == "localhost" or host.endswith(".localhost") or host.endswith(".local"):
+        return False
+    if _image_color_picker_public_ip_address(host):
+        return True
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    try:
+        addresses = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except OSError:
+        return False
+    resolved_ips = {item[4][0] for item in addresses if item and len(item) >= 5}
+    return bool(resolved_ips) and all(_image_color_picker_public_ip_address(address) for address in resolved_ips)
+
+
+def _image_color_picker_validate_url(raw_url):
+    value = str(raw_url or "").strip()
+    if not value or len(value) > IMAGE_COLOR_PICKER_MAX_URL_LENGTH or re.search(r"\s", value):
+        raise ValueError("invalid_url")
+    if not re.match(r"^https?://", value, re.IGNORECASE):
+        value = "https://" + value
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("invalid_url")
+    if not _image_color_picker_public_hostname(parsed.hostname):
+        raise ValueError("blocked_url")
+    return value
+
+
+def _image_color_picker_read_response_bytes(response):
+    content_length = response.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > IMAGE_COLOR_PICKER_MAX_BYTES:
+                raise ValueError("too_large")
+        except ValueError as exc:
+            if str(exc) == "too_large":
+                raise
+    data = bytearray()
+    for chunk in response.iter_bytes(chunk_size=64 * 1024):
+        if not chunk:
+            continue
+        data.extend(chunk)
+        if len(data) > IMAGE_COLOR_PICKER_MAX_BYTES:
+            raise ValueError("too_large")
+    return bytes(data)
+
+
+def _image_color_picker_probe_image(raw_bytes, content_type):
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with Image.open(io.BytesIO(raw_bytes)) as image:
+            image_format = str(image.format or "").upper()
+            width, height = image.size
+            image.verify()
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise ValueError("invalid_image") from exc
+    if width <= 0 or height <= 0 or width * height > IMAGE_COLOR_PICKER_MAX_PIXELS:
+        raise ValueError("too_large")
+    mime_type = Image.MIME.get(image_format) or content_type or "image/png"
+    mime_type = str(mime_type or "").split(";", 1)[0].strip().lower()
+    if not mime_type.startswith(IMAGE_COLOR_PICKER_ALLOWED_MIME_PREFIX) or mime_type in IMAGE_COLOR_PICKER_BLOCKED_MIME_TYPES:
+        raise ValueError("invalid_image")
+    return mime_type, width, height
+
+
+def _image_color_picker_fetch_remote_image(source_url):
+    current_url = _image_color_picker_validate_url(source_url)
+    timeout = httpx.Timeout(12.0, connect=4.0, read=8.0)
+    headers = {
+        "Accept": "image/avif,image/webp,image/png,image/jpeg,image/gif,image/bmp,image/x-icon,*/*;q=0.5",
+        "User-Agent": "Mozilla/5.0 (compatible; Hanplanet Image Color Picker/1.0)",
+    }
+    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+        for _redirect_count in range(5):
+            current_url = _image_color_picker_validate_url(current_url)
+            with client.stream("GET", current_url, headers=headers) as response:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = str(response.headers.get("location") or "").strip()
+                    if not location:
+                        raise ValueError("invalid_url")
+                    current_url = urljoin(current_url, location)
+                    continue
+                response.raise_for_status()
+                content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+                if content_type and (
+                    not content_type.startswith(IMAGE_COLOR_PICKER_ALLOWED_MIME_PREFIX)
+                    or content_type in IMAGE_COLOR_PICKER_BLOCKED_MIME_TYPES
+                ):
+                    raise ValueError("invalid_image")
+                raw_bytes = _image_color_picker_read_response_bytes(response)
+                mime_type, width, height = _image_color_picker_probe_image(raw_bytes, content_type)
+                return {
+                    "bytes": raw_bytes,
+                    "mime_type": mime_type,
+                    "width": width,
+                    "height": height,
+                    "source_url": str(response.url),
+                }
+    raise ValueError("too_many_redirects")
+
+
+def image_color_picker_page(request, ui_lang=None):
+    """Render the image pixel color picker tool under Sub."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+    canonical_url = build_public_absolute_url(f"/{resolved_lang}/sub/image-color-picker")
+    context = {
+        "ui_lang": resolved_lang,
+        "page_title": "Image Color Picker" if is_english else "이미지 색상 피커",
+        "home_label": "Hanplanet",
+        "sub_label": "Sub" if is_english else "기타",
+        "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
+        "fetch_url": reverse("main:image_color_picker_fetch_url_lang", kwargs={"ui_lang": resolved_lang}),
+        "sub_category": "tool",
+        "handrive_picker_enabled": bool(request.user.is_authenticated),
+        "handrive_list_url": reverse("main:handrive_api_list") if request.user.is_authenticated else "",
+        "handrive_download_url": reverse("main:handrive_api_download") if request.user.is_authenticated else "",
+        "url_label": "Image URL" if is_english else "이미지 URL",
+        "url_placeholder": "https://example.com/image.png",
+        "url_load_label": "Load" if is_english else "불러오기",
+        "upload_label": "Upload image" if is_english else "이미지 업로드",
+        "upload_source_modal_title": "Choose image source" if is_english else "이미지 가져오기",
+        "upload_source_local_label": "Local file" if is_english else "로컬 파일",
+        "upload_source_handrive_label": "HanDrive" if is_english else "HanDrive",
+        "drop_label": "Drop image here" if is_english else "이미지를 여기에 드롭",
+        "empty_stage_label": "No image loaded" if is_english else "이미지 없음",
+        "result_label": "Picked color" if is_english else "선택한 색상",
+        "hex_label": "HEX",
+        "rgb_label": "RGB",
+        "hsv_label": "HSV",
+        "copy_label": "Copy" if is_english else "복사",
+        "status_ready": "Ready" if is_english else "준비됨",
+        "status_loaded": "Image loaded. Click a pixel." if is_english else "이미지를 불러왔습니다. 픽셀을 클릭하세요.",
+        "status_loading": "Loading image..." if is_english else "이미지를 불러오는 중...",
+        "status_pick": "Color picked" if is_english else "색상을 선택했습니다",
+        "status_copied": "Copied" if is_english else "복사됨",
+        "status_invalid_file": "Use an image file." if is_english else "이미지 파일을 사용해주세요.",
+        "status_load_failed": "Could not load this image." if is_english else "이미지를 불러오지 못했습니다.",
+        "status_empty_url": "Enter an image URL." if is_english else "이미지 URL을 입력해주세요.",
+        "status_canvas_failed": (
+            "This image cannot be sampled by the browser."
+            if is_english
+            else "브라우저에서 이 이미지를 샘플링할 수 없습니다."
+        ),
+        "handrive_modal_title": "Choose image from HanDrive" if is_english else "HanDrive 이미지 선택",
+        "handrive_close_label": "Close" if is_english else "닫기",
+        "handrive_empty_label": "No images in this folder." if is_english else "이 폴더에 이미지가 없습니다.",
+        "handrive_loading_label": "Loading..." if is_english else "불러오는 중...",
+        "handrive_root_label": "HanDrive",
+        "handrive_open_folder_label": "Open folder" if is_english else "폴더 열기",
+        "handrive_select_file_label": "Select image" if is_english else "이미지 선택",
+        "meta_title": "Image Color Picker | Hanplanet" if is_english else "이미지 색상 피커 | Hanplanet",
+        "meta_og_title": "Image Color Picker | Hanplanet" if is_english else "이미지 색상 피커 | Hanplanet",
+        "meta_description": (
+            "Upload or load an image, click a pixel, and read its HEX, RGB, and HSV color values."
+            if is_english
+            else "이미지를 업로드하거나 불러온 뒤 픽셀을 클릭해 HEX, RGB, HSV 색상 값을 확인합니다."
+        ),
+        "meta_og_image": build_public_absolute_url(static("media/icons/image-color-picker-og-1200.png")),
+        "meta_robots": "index,follow",
+        "meta_canonical_url": canonical_url,
+        "meta_og_url": canonical_url,
+    }
+    context["meta_og_description"] = context["meta_description"]
+    context["meta_twitter_image"] = context["meta_og_image"]
+    apply_ui_context(request, context, resolved_lang)
+    return render(request, "fun/image_color_picker.html", context)
+
+
+@csrf_protect
+@require_http_methods(["POST"])
+def image_color_picker_fetch_url(request, ui_lang=None):
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    payload = _image_color_picker_json_body(request)
+    raw_url = str(payload.get("url") or "").strip()
+    if not raw_url:
+        return _json_error_response(
+            request,
+            "이미지 URL을 입력해주세요.",
+            "Enter an image URL.",
+            status=400,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
+    try:
+        result = _image_color_picker_fetch_remote_image(raw_url)
+    except ValueError as exc:
+        code = str(exc) or "invalid_image"
+        if code == "too_large":
+            return _json_error_response(
+                request,
+                "이미지가 너무 큽니다.",
+                "The image is too large.",
+                status=413,
+                ok=False,
+                ui_lang=resolved_lang,
+            )
+        if code == "blocked_url":
+            return _json_error_response(
+                request,
+                "이 URL은 사용할 수 없습니다.",
+                "This URL cannot be used.",
+                status=400,
+                ok=False,
+                ui_lang=resolved_lang,
+            )
+        return _json_error_response(
+            request,
+            "이미지 URL을 확인해주세요.",
+            "Check the image URL.",
+            status=400,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
+    except httpx.HTTPStatusError:
+        return _json_error_response(
+            request,
+            "이미지 서버가 오류를 반환했습니다.",
+            "The image server returned an error.",
+            status=400,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
+    except httpx.HTTPError:
+        return _json_error_response(
+            request,
+            "이미지를 가져오지 못했습니다.",
+            "Could not fetch the image.",
+            status=400,
+            ok=False,
+            ui_lang=resolved_lang,
+        )
+
+    encoded = base64.b64encode(result["bytes"]).decode("ascii")
+    response = JsonResponse(
+        {
+            "ok": True,
+            "image": f"data:{result['mime_type']};base64,{encoded}",
+            "mime_type": result["mime_type"],
+            "width": result["width"],
+            "height": result["height"],
+            "source_url": result["source_url"],
+        }
+    )
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    return response
+
+
+def _resolve_video_to_gif_ffmpeg_bin():
+    ffmpeg_candidate = shutil.which("ffmpeg")
+    return YOUTUBE_DOWNLOAD_FFMPEG_BIN if YOUTUBE_DOWNLOAD_FFMPEG_BIN.exists() else (Path(ffmpeg_candidate) if ffmpeg_candidate else None)
+
+
+def _resolve_video_to_gif_ffprobe_bin():
+    bundled_ffprobe = YOUTUBE_DOWNLOAD_FFMPEG_BIN.with_name("ffprobe")
+    ffprobe_candidate = shutil.which("ffprobe")
+    return bundled_ffprobe if bundled_ffprobe.exists() else (Path(ffprobe_candidate) if ffprobe_candidate else None)
+
+
+def _video_to_gif_upload_suffix(uploaded_file):
+    suffix = Path(str(getattr(uploaded_file, "name", "") or "")).suffix.lower()
+    return suffix if suffix in VIDEO_TO_GIF_VIDEO_EXTENSIONS else ".mp4"
+
+
+def _is_video_to_gif_upload(uploaded_file):
+    if not uploaded_file:
+        return False
+    suffix = Path(str(getattr(uploaded_file, "name", "") or "")).suffix.lower()
+    content_type = str(getattr(uploaded_file, "content_type", "") or "").split(";", 1)[0].strip().lower()
+    if content_type.startswith("video/"):
+        return True
+    if content_type in {"", *VIDEO_TO_GIF_ALLOWED_MIME_TYPES}:
+        return suffix in VIDEO_TO_GIF_VIDEO_EXTENSIONS
+    return False
+
+
+def _save_video_to_gif_upload(uploaded_file):
+    temp_path = None
+    total_size = 0
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="hanplanet-videotogif-",
+            suffix=_video_to_gif_upload_suffix(uploaded_file),
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            for chunk in uploaded_file.chunks():
+                if not chunk:
+                    continue
+                total_size += len(chunk)
+                if total_size > VIDEO_TO_GIF_MAX_UPLOAD_BYTES:
+                    raise ValueError("too_large")
+                temp_file.write(chunk)
+        if total_size <= 0:
+            raise ValueError("empty")
+        return temp_path
+    except Exception:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+
+
+def _video_to_gif_suffix_from_url(source_url):
+    suffix = Path(unquote(urlparse(str(source_url or "")).path or "")).suffix.lower()
+    return suffix if suffix in VIDEO_TO_GIF_VIDEO_EXTENSIONS else ".mp4"
+
+
+def _video_to_gif_filename_from_url(source_url):
+    filename = Path(unquote(urlparse(str(source_url or "")).path or "")).name
+    if not filename:
+        return "video" + _video_to_gif_suffix_from_url(source_url)
+    if Path(filename).suffix.lower() not in VIDEO_TO_GIF_VIDEO_EXTENSIONS:
+        filename = f"{Path(filename).stem or 'video'}{_video_to_gif_suffix_from_url(source_url)}"
+    return filename
+
+
+def _is_video_to_gif_remote_content(content_type, source_url):
+    normalized_type = str(content_type or "").split(";", 1)[0].strip().lower()
+    suffix = _video_to_gif_suffix_from_url(source_url)
+    if normalized_type.startswith("video/"):
+        return True
+    if normalized_type in {"", "application/octet-stream"}:
+        return suffix in VIDEO_TO_GIF_VIDEO_EXTENSIONS
+    return normalized_type in VIDEO_TO_GIF_ALLOWED_MIME_TYPES and suffix in VIDEO_TO_GIF_VIDEO_EXTENSIONS
+
+
+def _video_to_gif_url_from_request(request):
+    raw_url = str(
+        request.POST.get("url")
+        or request.POST.get("video_url")
+        or request.POST.get("source_url")
+        or ""
+    ).strip()
+    if raw_url:
+        return raw_url
+    content_type = str(request.META.get("CONTENT_TYPE") or "").split(";", 1)[0].strip().lower()
+    if content_type == "application/json":
+        payload = _image_color_picker_json_body(request)
+        return str(payload.get("url") or payload.get("video_url") or payload.get("source_url") or "").strip()
+    return ""
+
+
+def _fetch_video_to_gif_remote_video(source_url):
+    current_url = _image_color_picker_validate_url(source_url)
+    timeout = httpx.Timeout(60.0, connect=6.0, read=30.0)
+    headers = {
+        "Accept": "video/*,application/octet-stream,*/*;q=0.4",
+        "User-Agent": "Mozilla/5.0 (compatible; Hanplanet Video to GIF/1.0)",
+    }
+    temp_path = None
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+            for _redirect_count in range(5):
+                current_url = _image_color_picker_validate_url(current_url)
+                with client.stream("GET", current_url, headers=headers) as response:
+                    if response.status_code in {301, 302, 303, 307, 308}:
+                        location = str(response.headers.get("location") or "").strip()
+                        if not location:
+                            raise ValueError("invalid_url")
+                        current_url = urljoin(current_url, location)
+                        continue
+                    try:
+                        response.raise_for_status()
+                    except httpx.HTTPStatusError as exc:
+                        if response.status_code in {401, 403}:
+                            raise ValueError("remote_forbidden") from exc
+                        if response.status_code == 404:
+                            raise ValueError("remote_not_found") from exc
+                        raise ValueError("remote_error") from exc
+                    content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+                    final_url = str(response.url)
+                    if not _is_video_to_gif_remote_content(content_type, final_url):
+                        raise ValueError("invalid_file")
+                    content_length = response.headers.get("content-length")
+                    if content_length:
+                        try:
+                            if int(content_length) > VIDEO_TO_GIF_MAX_UPLOAD_BYTES:
+                                raise ValueError("too_large")
+                        except ValueError as exc:
+                            if str(exc) == "too_large":
+                                raise
+
+                    with tempfile.NamedTemporaryFile(
+                        prefix="hanplanet-videotogif-url-",
+                        suffix=_video_to_gif_suffix_from_url(final_url),
+                        delete=False,
+                    ) as temp_file:
+                        temp_path = Path(temp_file.name)
+                        total_size = 0
+                        for chunk in response.iter_bytes(chunk_size=256 * 1024):
+                            if not chunk:
+                                continue
+                            total_size += len(chunk)
+                            if total_size > VIDEO_TO_GIF_MAX_UPLOAD_BYTES:
+                                raise ValueError("too_large")
+                            temp_file.write(chunk)
+                    if total_size <= 0:
+                        raise ValueError("empty")
+                    return {
+                        "path": temp_path,
+                        "filename": _video_to_gif_filename_from_url(final_url),
+                        "source_url": final_url,
+                        "source_kind": "url",
+                    }
+        raise ValueError("too_many_redirects")
+    except httpx.HTTPError as exc:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise ValueError("invalid_url") from exc
+    except Exception:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+
+
+def _video_to_gif_source_from_request(request):
+    uploaded_file = request.FILES.get("file") or request.FILES.get("video")
+    if uploaded_file:
+        if not _is_video_to_gif_upload(uploaded_file):
+            raise ValueError("invalid_file")
+        return {
+            "path": _save_video_to_gif_upload(uploaded_file),
+            "filename": str(getattr(uploaded_file, "name", "") or "video"),
+            "source_url": "",
+            "source_kind": "file",
+        }
+    raw_url = _video_to_gif_url_from_request(request)
+    if raw_url:
+        return _fetch_video_to_gif_remote_video(raw_url)
+    raise ValueError("missing_file")
+
+
+def _parse_video_to_gif_float(value):
+    try:
+        parsed = float(str(value or "").strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed > 0 else None
+
+
+def _parse_video_to_gif_int(value):
+    try:
+        parsed = int(float(str(value or "").strip()))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _parse_video_to_gif_rate(value):
+    text = str(value or "").strip()
+    if not text or text == "0/0":
+        return None
+    if "/" in text:
+        numerator, denominator = text.split("/", 1)
+        top = _parse_video_to_gif_float(numerator)
+        bottom = _parse_video_to_gif_float(denominator)
+        if top and bottom:
+            return top / bottom
+        return None
+    return _parse_video_to_gif_float(text)
+
+
+def _probe_video_to_gif_metadata(file_path):
+    ffprobe_bin = _resolve_video_to_gif_ffprobe_bin()
+    if ffprobe_bin is None:
+        raise RuntimeError("ffprobe_missing")
+
+    command = [
+        str(ffprobe_bin),
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-count_frames",
+        "-show_entries",
+        "stream=width,height,duration,nb_frames,nb_read_frames,r_frame_rate,avg_frame_rate:format=duration",
+        "-of",
+        "json",
+        str(file_path),
+    ]
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=VIDEO_TO_GIF_PROBE_TIMEOUT_SECONDS,
+        check=True,
+    )
+    payload = json.loads(result.stdout or "{}")
+    streams = payload.get("streams") if isinstance(payload, dict) else None
+    stream = streams[0] if streams else {}
+    format_info = payload.get("format") if isinstance(payload, dict) else {}
+
+    width = _parse_video_to_gif_int(stream.get("width"))
+    height = _parse_video_to_gif_int(stream.get("height"))
+    duration = _parse_video_to_gif_float(stream.get("duration")) or _parse_video_to_gif_float(format_info.get("duration"))
+    fps = _parse_video_to_gif_rate(stream.get("avg_frame_rate")) or _parse_video_to_gif_rate(stream.get("r_frame_rate"))
+    frame_count = _parse_video_to_gif_int(stream.get("nb_read_frames")) or _parse_video_to_gif_int(stream.get("nb_frames"))
+    estimated_frame_count = False
+    if not frame_count and duration and fps:
+        frame_count = max(1, int(math.ceil(duration * fps)))
+        estimated_frame_count = True
+    if not fps and duration and frame_count:
+        fps = frame_count / duration
+
+    if not width or not height or not frame_count:
+        raise ValueError("invalid_video")
+
+    return {
+        "width": width,
+        "height": height,
+        "duration": duration or 0,
+        "fps": fps or 0,
+        "frame_count": frame_count,
+        "estimated_frame_count": estimated_frame_count,
+    }
+
+
+def _video_to_gif_upload_from_request(request):
+    uploaded_file = request.FILES.get("file") or request.FILES.get("video")
+    if not uploaded_file:
+        raise ValueError("missing_file")
+    if not _is_video_to_gif_upload(uploaded_file):
+        raise ValueError("invalid_file")
+    return uploaded_file
+
+
+def _coerce_video_to_gif_dimensions(request, metadata):
+    mode = str(request.POST.get("resolution_mode") or "ratio").strip().lower()
+    source_width = int(metadata["width"])
+    source_height = int(metadata["height"])
+    if mode == "pixels":
+        width = _parse_video_to_gif_int(request.POST.get("width"))
+        height = _parse_video_to_gif_int(request.POST.get("height"))
+        size_axis = str(request.POST.get("size_axis") or "width").strip().lower()
+        if size_axis == "height" and height:
+            width = max(1, int(round(source_width * (height / source_height))))
+        elif width:
+            height = max(1, int(round(source_height * (width / source_width))))
+        elif height:
+            width = max(1, int(round(source_width * (height / source_height))))
+        else:
+            width = source_width
+            height = source_height
+    else:
+        ratio = _parse_video_to_gif_float(request.POST.get("scale_ratio")) or 100
+        if ratio < VIDEO_TO_GIF_MIN_RATIO or ratio > VIDEO_TO_GIF_MAX_RATIO:
+            raise ValueError("invalid_resolution")
+        width = max(1, int(round(source_width * ratio / 100)))
+        height = max(1, int(round(source_height * ratio / 100)))
+
+    if (
+        not width
+        or not height
+        or width < VIDEO_TO_GIF_MIN_DIMENSION
+        or height < VIDEO_TO_GIF_MIN_DIMENSION
+        or width > VIDEO_TO_GIF_MAX_DIMENSION
+        or height > VIDEO_TO_GIF_MAX_DIMENSION
+    ):
+        raise ValueError("invalid_resolution")
+    return int(width), int(height)
+
+
+def _coerce_video_to_gif_fps(request, metadata):
+    duration = _parse_video_to_gif_float(metadata.get("duration"))
+    frame_count = _parse_video_to_gif_int(metadata.get("frame_count"))
+    max_fps = _parse_video_to_gif_float(metadata.get("fps"))
+    if not max_fps and duration and frame_count:
+        max_fps = frame_count / duration
+    if not max_fps:
+        max_fps = 60.0
+    fps = _parse_video_to_gif_float(request.POST.get("fps")) or _parse_video_to_gif_float(request.POST.get("frames"))
+    if not fps:
+        fps = min(max_fps, 12.0)
+    if fps < VIDEO_TO_GIF_MIN_FPS or fps > max_fps + 0.0001:
+        raise ValueError("invalid_fps")
+    return float(fps), float(max_fps)
+
+
+def _video_to_gif_error_response(request, code, ui_lang):
+    messages = {
+        "missing_file": ("비디오 파일 또는 URL을 선택해주세요.", "Choose a video file or URL."),
+        "empty": ("비디오 파일이 비어 있습니다.", "The video file is empty."),
+        "invalid_file": ("비디오 파일을 사용해주세요.", "Use a video file."),
+        "invalid_url": ("비디오 URL을 확인해주세요.", "Check the video URL."),
+        "blocked_url": ("이 URL은 사용할 수 없습니다.", "This URL cannot be used."),
+        "too_many_redirects": ("비디오 URL 리디렉션이 너무 많습니다.", "The video URL redirects too many times."),
+        "remote_forbidden": (
+            "원격 서버가 비디오 접근을 거부했습니다. 파일을 다운로드한 뒤 로컬 파일로 업로드해주세요.",
+            "The remote server denied access to the video. Download it first, then upload the local file.",
+        ),
+        "remote_not_found": ("비디오 URL을 찾을 수 없습니다.", "The video URL was not found."),
+        "remote_error": ("비디오 서버가 오류를 반환했습니다.", "The video server returned an error."),
+        "invalid_video": ("비디오 정보를 읽을 수 없습니다.", "Could not read the video metadata."),
+        "too_large": ("비디오 파일이 너무 큽니다.", "The video file is too large."),
+        "ffprobe_missing": ("ffprobe를 찾을 수 없습니다.", "ffprobe could not be found."),
+        "ffmpeg_missing": ("ffmpeg를 찾을 수 없습니다.", "ffmpeg could not be found."),
+        "probe_timeout": ("비디오 정보 읽기 시간이 초과되었습니다.", "Reading the video metadata timed out."),
+        "convert_timeout": ("GIF 변환 시간이 초과되었습니다.", "GIF conversion timed out."),
+        "invalid_resolution": ("해상도 값을 확인해주세요.", "Check the resolution values."),
+        "invalid_frames": ("초당 프레임 값을 확인해주세요.", "Check the FPS value."),
+        "invalid_fps": ("초당 프레임 값을 확인해주세요.", "Check the FPS value."),
+        "output_too_large": ("GIF 결과물이 너무 큽니다.", "The generated GIF is too large."),
+        "convert_failed": ("GIF 변환에 실패했습니다.", "GIF conversion failed."),
+    }
+    message_ko, message_en = messages.get(code, messages["convert_failed"])
+    status = {
+        "missing_file": 400,
+        "empty": 400,
+        "invalid_file": 400,
+        "invalid_url": 400,
+        "blocked_url": 400,
+        "too_many_redirects": 400,
+        "remote_forbidden": 403,
+        "remote_not_found": 404,
+        "remote_error": 502,
+        "invalid_video": 400,
+        "too_large": 413,
+        "ffprobe_missing": 503,
+        "ffmpeg_missing": 503,
+        "probe_timeout": 504,
+        "convert_timeout": 504,
+        "invalid_resolution": 400,
+        "invalid_frames": 400,
+        "invalid_fps": 400,
+        "output_too_large": 413,
+    }.get(code, 500)
+    return _json_error_response(
+        request,
+        message_ko,
+        message_en,
+        status=status,
+        code=code,
+        ok=False,
+        ui_lang=ui_lang,
+    )
+
+
+def _video_to_gif_metadata_response(request, source, ui_lang):
+    input_path = source.get("path") if source else None
+    try:
+        metadata = _probe_video_to_gif_metadata(input_path)
+    except ValueError as exc:
+        return _video_to_gif_error_response(request, str(exc) or "invalid_video", ui_lang)
+    except RuntimeError as exc:
+        return _video_to_gif_error_response(request, str(exc) or "ffprobe_missing", ui_lang)
+    except subprocess.TimeoutExpired:
+        return _video_to_gif_error_response(request, "probe_timeout", ui_lang)
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError):
+        return _video_to_gif_error_response(request, "invalid_video", ui_lang)
+    finally:
+        if input_path is not None:
+            try:
+                input_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    response = JsonResponse(
+        {
+            "ok": True,
+            "filename": str(source.get("filename") or "video"),
+            "source_kind": str(source.get("source_kind") or "file"),
+            "source_url": str(source.get("source_url") or ""),
+            **metadata,
+        }
+    )
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    return response
+
+
+def video_to_gif_page(request, ui_lang=None):
+    """Render the video to GIF converter under Sub."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+    canonical_url = build_public_absolute_url(f"/{resolved_lang}/sub/video-to-gif")
+    meta_image = build_public_absolute_url(static("media/icons/video-to-gif-og-1200-v3.png"))
+    context = {
+        "ui_lang": resolved_lang,
+        "page_title": "Video to GIF" if is_english else "비디오 GIF 변환",
+        "home_label": "Hanplanet",
+        "sub_label": "Sub" if is_english else "기타",
+        "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
+        "sub_category": "tool",
+        "metadata_api_url": reverse("main:video_to_gif_metadata_lang", kwargs={"ui_lang": resolved_lang}),
+        "convert_api_url": reverse("main:video_to_gif_convert_lang", kwargs={"ui_lang": resolved_lang}),
+        "handrive_picker_enabled": bool(request.user.is_authenticated),
+        "handrive_list_url": reverse("main:handrive_api_list") if request.user.is_authenticated else "",
+        "handrive_download_url": reverse("main:handrive_api_download") if request.user.is_authenticated else "",
+        "max_upload_bytes": VIDEO_TO_GIF_MAX_UPLOAD_BYTES,
+        "max_output_bytes": VIDEO_TO_GIF_MAX_OUTPUT_BYTES,
+        "max_dimension": VIDEO_TO_GIF_MAX_DIMENSION,
+        "video_url_label": "Video URL" if is_english else "비디오 URL",
+        "video_url_placeholder": "https://example.com/video.mp4",
+        "url_load_label": "Load" if is_english else "불러오기",
+        "upload_label": "Upload video" if is_english else "비디오 업로드",
+        "upload_source_modal_title": "Choose video source" if is_english else "비디오 가져오기",
+        "upload_source_local_label": "Local file" if is_english else "로컬 파일",
+        "upload_source_handrive_label": "HanDrive" if is_english else "HanDrive",
+        "drop_label": "Drop video here" if is_english else "비디오를 여기에 드롭",
+        "result_label": "GIF result" if is_english else "변환 결과",
+        "empty_result_label": "No GIF yet" if is_english else "아직 변환 결과가 없습니다",
+        "resolution_label": "Resolution" if is_english else "해상도",
+        "ratio_mode_label": "Scale ratio" if is_english else "축소비율",
+        "pixels_mode_label": "Actual size" if is_english else "실제 값",
+        "scale_ratio_label": "Ratio (%)" if is_english else "비율 (%)",
+        "width_label": "Width" if is_english else "가로",
+        "height_label": "Height" if is_english else "세로",
+        "frames_label": "FPS" if is_english else "초당 프레임(FPS)",
+        "frame_max_label": "Source max" if is_english else "원본 최대",
+        "source_label": "Source" if is_english else "원본",
+        "output_label": "Output" if is_english else "출력",
+        "convert_label": "Convert" if is_english else "변환",
+        "download_label": "Download GIF" if is_english else "GIF 다운로드",
+        "status_ready": "Ready" if is_english else "준비됨",
+        "status_metadata_loading": "Reading video..." if is_english else "비디오 정보를 읽는 중...",
+        "status_metadata_loaded": "Video loaded." if is_english else "비디오를 불러왔습니다.",
+        "status_invalid_file": "Use a video file." if is_english else "비디오 파일을 사용해주세요.",
+        "status_empty_url": "Enter a video URL." if is_english else "비디오 URL을 입력해주세요.",
+        "status_convert_ready": "Ready to convert." if is_english else "변환할 수 있습니다.",
+        "status_converting": "Converting..." if is_english else "변환 중...",
+        "status_done": "GIF created." if is_english else "GIF를 만들었습니다.",
+        "status_failed": "GIF conversion failed." if is_english else "GIF 변환에 실패했습니다.",
+        "status_missing_file": "Choose a video file or URL." if is_english else "비디오 파일 또는 URL을 선택해주세요.",
+        "handrive_modal_title": "Choose video from HanDrive" if is_english else "HanDrive 비디오 선택",
+        "handrive_close_label": "Close" if is_english else "닫기",
+        "handrive_empty_label": "No videos in this folder." if is_english else "이 폴더에 비디오가 없습니다.",
+        "handrive_loading_label": "Loading..." if is_english else "불러오는 중...",
+        "handrive_root_label": "HanDrive",
+        "handrive_open_folder_label": "Open folder" if is_english else "폴더 열기",
+        "handrive_select_file_label": "Select video" if is_english else "비디오 선택",
+        "meta_title": "Video to GIF | Hanplanet" if is_english else "비디오 GIF 변환 | Hanplanet",
+        "meta_og_title": "Video to GIF | Hanplanet" if is_english else "비디오 GIF 변환 | Hanplanet",
+        "meta_description": (
+            "Upload a video and convert it to a GIF at a chosen resolution and FPS."
+            if is_english
+            else "비디오를 업로드하고 해상도와 초당 프레임을 지정해 GIF로 변환합니다."
+        ),
+        "meta_og_image": meta_image,
+        "meta_twitter_image": meta_image,
+        "meta_robots": "index,follow",
+        "meta_canonical_url": canonical_url,
+        "meta_og_url": canonical_url,
+    }
+    context["meta_og_description"] = context["meta_description"]
+    apply_ui_context(request, context, resolved_lang)
+    return render(request, "fun/video_to_gif.html", context)
+
+
+def video_to_gif_legacy_redirect(request, ui_lang=None):
+    """Redirect the old videotogif page URL to the hyphenated canonical route."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    target_url = f"/{resolved_lang}/sub/video-to-gif"
+    query_params = request.GET.copy()
+    query_params.pop("lang", None)
+    query_string = query_params.urlencode()
+    if query_string:
+        target_url = f"{target_url}?{query_string}"
+    return redirect(target_url, permanent=True)
+
+
+@csrf_protect
+@require_http_methods(["POST"])
+def video_to_gif_metadata(request, ui_lang=None):
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    try:
+        source = _video_to_gif_source_from_request(request)
+    except ValueError as exc:
+        return _video_to_gif_error_response(request, str(exc) or "missing_file", resolved_lang)
+    return _video_to_gif_metadata_response(request, source, resolved_lang)
+
+
+@csrf_protect
+@require_http_methods(["POST"])
+def video_to_gif_convert(request, ui_lang=None):
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    input_path = None
+    output_path = None
+    source_filename = "video"
+    try:
+        source = _video_to_gif_source_from_request(request)
+        input_path = source["path"]
+        source_filename = str(source.get("filename") or "video")
+        metadata = _probe_video_to_gif_metadata(input_path)
+        width, height = _coerce_video_to_gif_dimensions(request, metadata)
+        target_fps, _max_fps = _coerce_video_to_gif_fps(request, metadata)
+        ffmpeg_bin = _resolve_video_to_gif_ffmpeg_bin()
+        if ffmpeg_bin is None:
+            raise RuntimeError("ffmpeg_missing")
+
+        with tempfile.NamedTemporaryFile(prefix="hanplanet-videotogif-", suffix=".gif", delete=False) as output_file:
+            output_path = Path(output_file.name)
+
+        duration = float(metadata.get("duration") or 0)
+        target_fps = max(0.1, target_fps)
+        estimated_output_frames = max(1, int(math.ceil(duration * target_fps))) if duration > 0 else 0
+        video_filter = (
+            f"fps={target_fps:.6f},"
+            f"scale={width}:{height}:flags=lanczos,"
+            "split[s0][s1];[s0]palettegen=stats_mode=full[p];[s1][p]paletteuse=dither=sierra2_4a"
+        )
+        command = [
+            str(ffmpeg_bin),
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(input_path),
+            "-an",
+            "-sn",
+            "-dn",
+            "-vf",
+            video_filter,
+            "-loop",
+            "0",
+            "-f",
+            "gif",
+            "-y",
+            str(output_path),
+        ]
+        subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=VIDEO_TO_GIF_CONVERT_TIMEOUT_SECONDS,
+            check=True,
+        )
+        output_size = output_path.stat().st_size
+        if output_size <= 0:
+            raise ValueError("convert_failed")
+        if output_size > VIDEO_TO_GIF_MAX_OUTPUT_BYTES:
+            raise ValueError("output_too_large")
+        gif_bytes = output_path.read_bytes()
+    except ValueError as exc:
+        return _video_to_gif_error_response(request, str(exc) or "convert_failed", resolved_lang)
+    except RuntimeError as exc:
+        return _video_to_gif_error_response(request, str(exc) or "convert_failed", resolved_lang)
+    except subprocess.TimeoutExpired:
+        return _video_to_gif_error_response(request, "convert_timeout", resolved_lang)
+    except subprocess.CalledProcessError as exc:
+        logger.warning("Video to GIF conversion failed: %s", (exc.stderr or exc.stdout or "").strip()[:500])
+        return _video_to_gif_error_response(request, "convert_failed", resolved_lang)
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError) as exc:
+        logger.warning("Video to GIF conversion error: %s", exc, exc_info=True)
+        return _video_to_gif_error_response(request, "convert_failed", resolved_lang)
+    finally:
+        for path in (input_path, output_path):
+            if path is not None:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+    stem = Path(source_filename).stem
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip(".-") or "video"
+    response = HttpResponse(gif_bytes, content_type="image/gif")
+    response["Content-Disposition"] = f'inline; filename="{safe_stem}.gif"'
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    response["X-Video-Gif-Width"] = str(width)
+    response["X-Video-Gif-Height"] = str(height)
+    response["X-Video-Gif-Fps"] = f"{target_fps:.6g}"
+    response["X-Video-Gif-Frames"] = str(estimated_output_frames)
+    response["X-Video-Gif-Size"] = str(len(gif_bytes))
+    return response
 
 
 def bubble_page(request, ui_lang=None):
@@ -2459,6 +3558,7 @@ def bubble_page(request, ui_lang=None):
             if is_english
             else "버블을 전부 터뜨리면 배경색이 랜덤으로 바뀝니다."
         ),
+        "sub_category": "game",
         "back_to_sub_text": "Back to Sub" if is_english else "기타로 돌아가기",
     }
     return render(request, "fun/bubble.html", context)
@@ -2476,6 +3576,7 @@ def text_bubble_page(request, ui_lang=None):
             if is_english
             else "타임지의 기사를 책처럼 볼 수 있습니다\n하지만 그때 스핔이가 나타났다."
         ),
+        "sub_category": "game",
         "page_image_url": build_public_absolute_url(static("media/img/text-bubble.png")),
     }
     return render(request, "fun/text-bubble.html", context)
@@ -2489,9 +3590,10 @@ def qrbarcode_page(request, ui_lang=None):
     context = {
         "ui_lang": resolved_lang,
         "page_title": "QR/Barcode" if is_english else "QR/Barcode",
-        "home_label": "Home" if is_english else "홈",
+        "home_label": "Hanplanet",
         "sub_label": "Sub" if is_english else "기타",
         "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
+        "sub_category": "tool",
         "generate_api_url": reverse("main:qrbarcode_generate_lang", kwargs={"ui_lang": resolved_lang}),
         "input_kind_label": "Input" if is_english else "입력",
         "url_label": "URL",
@@ -2523,7 +3625,7 @@ def qrbarcode_page(request, ui_lang=None):
             if is_english
             else "URL 또는 텍스트로 QR 코드와 바코드를 생성하는 도구입니다."
         ),
-        "meta_og_image": build_public_absolute_url(static("media/icons/qrbarcode-og-1200.png")),
+        "meta_og_image": build_public_absolute_url(static("media/icons/qrbarcode-og-1200-v2.png")),
         "meta_robots": "index,follow",
         "meta_canonical_url": canonical_url,
         "meta_og_url": canonical_url,
@@ -2771,9 +3873,10 @@ def youtube_downloader_page(request, ui_lang=None):
     context = {
         "ui_lang": resolved_lang,
         "page_title": "YouTube Downloader" if is_english else "유튜브 다운로더",
-        "home_label": "Home" if is_english else "홈",
+        "home_label": "Hanplanet",
         "sub_label": "Sub" if is_english else "기타",
         "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
+        "sub_category": "tool",
         "download_api_url": reverse("main:youtube_download_lang", kwargs={"ui_lang": resolved_lang}),
         "formats_api_url": reverse("main:youtube_formats_lang", kwargs={"ui_lang": resolved_lang}),
         "url_label": "YouTube URL",
@@ -3446,6 +4549,7 @@ def _build_multiplayer_page_context(
         "meta_description": page_description,
         "meta_og_image": multiplayer_meta_image,
         "meta_twitter_image": multiplayer_meta_image,
+        "sub_category": "game",
         "bumpercar_default_skin": default_skin,
         "show_account_bumpercar_spiky_stats": True,
         "game_encounter_stage_one_label": render_to_string("partials/ui_i18n.html", {"key": "multiplayer_encounter_stage_one", "ui_lang": resolved_lang}).strip(),
@@ -3984,9 +5088,9 @@ def none(request, ui_lang=None):
     context["meta_title"] = "Hanplanet"
     context["meta_og_title"] = context["meta_title"]
     context["meta_description"] = (
-        "Hanplanet provides HanDrive, a personal file workspace for uploading, organizing, previewing, editing, and sharing files. With user permission, HanDrive can display and manage connected Google Drive files inside HanDrive."
+        "Hanplanet is a personal web workspace for smart search, translation, shortcuts, HanDrive file management, portfolios, and utility tools."
         if is_english
-        else "Hanplanet은 HanDrive를 통해 파일 업로드, 정리, 미리보기, 편집, 공유를 지원하는 개인 파일 워크스페이스입니다. 사용자가 허용하면 연결된 Google Drive 파일을 HanDrive 안에서 표시하고 관리할 수 있습니다."
+        else "Hanplanet은 스마트 검색, 번역, 바로가기, HanDrive 파일 관리, 포트폴리오와 유틸리티 도구를 제공하는 개인 웹 워크스페이스입니다."
     )
     context["meta_og_description"] = context["meta_description"]
     context["meta_json_ld"] = json.dumps(
@@ -3997,9 +5101,10 @@ def none(request, ui_lang=None):
             "url": get_public_base_url(),
             "description": context["meta_description"],
             "about": [
-                "HanDrive personal file workspace",
-                "File upload, preview, editing, sharing, and organization",
-                "Google Drive file display and management with user permission",
+                "Smart search and translation",
+                "Personal shortcuts",
+                "HanDrive file upload, preview, editing, sharing, and organization",
+                "Portfolio and utility pages",
             ],
             "potentialAction": {
                 "@type": "SearchAction",
@@ -4053,7 +5158,7 @@ def robots_txt(request):
 
 
 def sitemap_xml(request):
-    """Build the lightweight XML sitemap for public root, handrive, and default portfolio pages."""
+    """Build the lightweight XML sitemap for indexable public pages."""
     now_iso = timezone.now().date().isoformat()
     urls = [
         {
@@ -4074,52 +5179,32 @@ def sitemap_xml(request):
             "priority": "0.9",
             "lastmod": now_iso,
         },
-        {
-            "loc": build_public_absolute_url("/ko/handrive/"),
-            "changefreq": "weekly",
-            "priority": "0.8",
-            "lastmod": now_iso,
-        },
-        {
-            "loc": build_public_absolute_url("/en/handrive/"),
-            "changefreq": "weekly",
-            "priority": "0.8",
-            "lastmod": now_iso,
-        },
-        {
-            "loc": build_public_absolute_url("/ko/sub/qrbarcode"),
-            "changefreq": "weekly",
-            "priority": "0.7",
-            "lastmod": now_iso,
-        },
-        {
-            "loc": build_public_absolute_url("/en/sub/qrbarcode"),
-            "changefreq": "weekly",
-            "priority": "0.7",
-            "lastmod": now_iso,
-        },
-        {
-            "loc": build_public_absolute_url("/ko/sub/youtube-downloader"),
-            "changefreq": "weekly",
-            "priority": "0.7",
-            "lastmod": now_iso,
-        },
-        {
-            "loc": build_public_absolute_url("/en/sub/youtube-downloader"),
-            "changefreq": "weekly",
-            "priority": "0.7",
-            "lastmod": now_iso,
-        },
     ]
-
-    owner_exists = get_user_model().objects.filter(username=PORTFOLIO_DEFAULT_USERNAME).exists()
-    if owner_exists:
-        for ui_lang in ("ko", "en"):
+    localized_sections = [
+        ("handrive", "weekly", "0.8"),
+        ("handrive/cli", "monthly", "0.7"),
+        ("sub", "weekly", "0.8"),
+        ("sub/Salvations_Edge_4/", "weekly", "0.6"),
+        ("sub/Stratagem_Hero/", "weekly", "0.6"),
+        ("sub/Stratagem_Hero/Scoreboard/", "weekly", "0.6"),
+        ("sub/bubble", "weekly", "0.6"),
+        ("sub/text-speaki", "weekly", "0.6"),
+        ("sub/image-pip-demo", "weekly", "0.7"),
+        ("sub/image-color-picker", "weekly", "0.7"),
+        ("sub/video-to-gif", "weekly", "0.7"),
+        ("sub/network-info", "weekly", "0.7"),
+        ("sub/qrbarcode", "weekly", "0.7"),
+        ("sub/youtube-downloader", "weekly", "0.7"),
+        ("sub/bumpercar-spiky", "weekly", "0.6"),
+        ("sub/raise-speaki", "weekly", "0.6"),
+    ]
+    for ui_lang in ("ko", "en"):
+        for path, changefreq, priority in localized_sections:
             urls.append(
                 {
-                    "loc": build_public_absolute_url(f"/{ui_lang}/portfolio/{PORTFOLIO_DEFAULT_USERNAME}/"),
-                    "changefreq": "weekly",
-                    "priority": "0.8",
+                    "loc": build_public_absolute_url(f"/{ui_lang}/{path}"),
+                    "changefreq": changefreq,
+                    "priority": priority,
                     "lastmod": now_iso,
                 }
             )
@@ -4848,14 +5933,14 @@ def ProjectComment_create(request, project_id, ui_lang=None):
 
 def Salvations_Edge_4(request, ui_lang=None):
     """Render the Salvation's Edge 4 helper page."""
-    context = dict()
+    context = {"sub_category": "game"}
     resolved_lang = resolve_ui_lang(request, ui_lang)
     apply_ui_context(request, context, resolved_lang)
     return render(request, 'fun/Salvations_Edge_4.html', context)
 
 def Stratagem_Hero_page(request, ui_lang=None):
     """Render the Stratagem Hero game page with a randomized challenge set."""
-    context = dict()
+    context = {"sub_category": "game"}
     resolved_lang = resolve_ui_lang(request, ui_lang)
     apply_ui_context(request, context, resolved_lang)
     all_stratagems = list(Stratagem.objects.all())

@@ -81,6 +81,61 @@
                         <span id="ie-zoom-display">100%</span>
                     </div>
                 </div>
+                <div class="handrive-pdf-editor-surface" id="handrive-pdf-editor-surface" hidden>
+                    <div class="pe-ribbon">
+                        <div class="pe-ribbon-section">
+                            <button class="pe-tool-btn is-active" type="button" data-pdf-tool="draw" title="서명/선 그리기">
+                                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 15c2.3-5.2 4.4-5.2 6.2 0 1-2.1 2-3.1 3-3 1.1.1 1.8 1 2.4 2.7.5-2.2 1.4-3.7 2.4-4.7"/></svg>
+                            </button>
+                            <button class="pe-tool-btn" type="button" data-pdf-tool="text" title="텍스트 입력">
+                                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="5" x2="16" y2="5"/><line x1="10" y1="5" x2="10" y2="16"/><line x1="7" y1="16" x2="13" y2="16"/></svg>
+                            </button>
+                            <div class="pe-ribbon-sep"></div>
+                            <button class="pe-action-btn" type="button" data-pdf-action="undo" title="실행취소 (Ctrl+Z)">
+                                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9A6 6 0 1 1 5.5 15"/><polyline points="4,5 4,9 8,9"/></svg>
+                            </button>
+                            <button class="pe-action-btn" type="button" data-pdf-action="redo" title="다시실행 (Ctrl+Y)">
+                                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 9A6 6 0 1 0 14.5 15"/><polyline points="16,5 16,9 12,9"/></svg>
+                            </button>
+                        </div>
+                        <div class="pe-ribbon-sep pe-ribbon-sep--vertical"></div>
+                        <div class="pe-ribbon-section pe-ribbon-section--line">
+                            <input type="range" id="pe-line-width" min="1" max="12" step="0.5" value="2.5" class="pe-line-width-slider" title="선 두께">
+                            <span id="pe-line-width-display" class="pe-size-value">2.5px</span>
+                        </div>
+                        <div class="pe-ribbon-sep pe-ribbon-sep--vertical"></div>
+                        <div class="pe-ribbon-section pe-ribbon-section--text">
+                            <label class="pe-icon-field" aria-label="폰트" title="폰트">
+                                <span class="pe-style-icon" aria-hidden="true">F</span>
+                                <select id="pe-font-family" class="pe-font-family-select">
+                                    <option value="system">기본</option>
+                                    <option value="sans-serif">Sans Serif</option>
+                                    <option value="serif">Serif</option>
+                                    <option value="monospace">Monospace</option>
+                                    <option value="Arial">Arial</option>
+                                    <option value="Helvetica">Helvetica</option>
+                                    <option value="Georgia">Georgia</option>
+                                    <option value="Times New Roman">Times New Roman</option>
+                                    <option value="Verdana">Verdana</option>
+                                    <option value="Trebuchet MS">Trebuchet MS</option>
+                                    <option value="Courier New">Courier New</option>
+                                </select>
+                            </label>
+                            <label class="pe-icon-field" aria-label="폰트 크기" title="폰트 크기">
+                                <span class="pe-style-icon" aria-hidden="true">T</span>
+                                <input class="pe-font-size-input" type="number" id="pe-font-size" min="8" max="96" step="1" value="18">
+                            </label>
+                            <label class="pe-icon-field pe-color-field" aria-label="색상" title="색상">
+                                <span class="pe-style-icon" aria-hidden="true">A</span>
+                                <input type="color" id="pe-font-color" value="#111827">
+                            </label>
+                        </div>
+                        <span class="pe-status" id="pe-status" aria-live="polite"></span>
+                    </div>
+                    <div class="pe-page-area" id="pe-page-area">
+                        <div class="pe-page-list" id="pe-page-list"></div>
+                    </div>
+                </div>
                 <div class="handrive-video-editor-surface" id="handrive-video-editor-surface" hidden>
                     <div class="ve-ribbon">
                         <button class="ae-btn" type="button" id="ve-reset-btn">{{ handrive_text.video_editor_reset }}</button>

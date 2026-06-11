@@ -180,6 +180,10 @@ ALLOWED_HOSTS = env_list(
 )
 
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://www.hanplanet.com").rstrip("/")
+CANONICAL_PUBLIC_HOST_REDIRECT = load_optional_bool_secret(
+    "CANONICAL_PUBLIC_HOST_REDIRECT",
+    default=not DEBUG and not RUNNING_TESTS,
+)
 DJANGO_SERVE_FILES = env_bool("DJANGO_SERVE_FILES", default=True)
 GAME_WS_PUBLIC_URL = os.environ.get("GAME_WS_PUBLIC_URL", "wss://game.hanplanet.com").rstrip("/")
 GAME_WS_LOCAL_URL = os.environ.get("GAME_WS_LOCAL_URL", "ws://127.0.0.1:8081").rstrip("/")
@@ -230,10 +234,14 @@ GITHUB_REPO_CACHE_ROOT    = str(get_github_repo_cache_root(DISC))
 GOOGLE_AUTH_CLIENT_ID     = load_optional_secret("GOOGLE_AUTH_CLIENT_ID", "")
 GOOGLE_AUTH_CLIENT_SECRET = load_optional_secret("GOOGLE_AUTH_CLIENT_SECRET", "")
 GOOGLE_AUTH_CALLBACK_URL  = load_optional_secret("GOOGLE_AUTH_CALLBACK_URL", "")
-GOOGLE_AUTH_SCOPE         = load_optional_secret("GOOGLE_AUTH_SCOPE", "openid email profile https://www.googleapis.com/auth/drive")
+GOOGLE_AUTH_BASE_SCOPE    = load_optional_secret("GOOGLE_AUTH_BASE_SCOPE", "openid email profile")
+GOOGLE_AUTH_DRIVE_FILE_SCOPE = load_optional_secret("GOOGLE_AUTH_DRIVE_FILE_SCOPE", "https://www.googleapis.com/auth/drive.file")
+GOOGLE_AUTH_SCOPE         = load_optional_secret("GOOGLE_AUTH_SCOPE", GOOGLE_AUTH_BASE_SCOPE)
 GOOGLE_AUTH_AUTHORIZE_URL = load_optional_secret("GOOGLE_AUTH_AUTHORIZE_URL", "https://accounts.google.com/o/oauth2/v2/auth")
 GOOGLE_AUTH_TOKEN_URL     = load_optional_secret("GOOGLE_AUTH_TOKEN_URL", "https://oauth2.googleapis.com/token")
 GOOGLE_AUTH_USERINFO_URL  = load_optional_secret("GOOGLE_AUTH_USERINFO_URL", "https://www.googleapis.com/oauth2/v3/userinfo")
+GOOGLE_PICKER_API_KEY     = load_optional_secret("GOOGLE_PICKER_API_KEY", "")
+GOOGLE_PICKER_APP_ID      = load_optional_secret("GOOGLE_PICKER_APP_ID", GOOGLE_AUTH_CLIENT_ID.split("-", 1)[0] if GOOGLE_AUTH_CLIENT_ID else "")
 
 # MinIO (S3 호환 오브젝트 스토리지) 설정
 MINIO_ENDPOINT        = load_optional_secret("MINIO_ENDPOINT", "localhost:9000")
@@ -270,8 +278,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "main.middleware.CanonicalPublicHostMiddleware",
     "django.middleware.gzip.GZipMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "main.middleware.UiLanguagePreferenceCookieMiddleware",
     "django.middleware.common.CommonMiddleware",
     "main.middleware.GlobalRateLimitMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -512,3 +522,8 @@ DEFAULT_FROM_EMAIL = load_optional_secret("DEFAULT_FROM_EMAIL", "noreply@hanplan
 TWO_FA_CODE_EXPIRY_MINUTES = 10
 TWO_FA_DEVICE_COOKIE_NAME = "hp_device_id"
 TWO_FA_DEVICE_TRUSTED_DAYS = 3
+HANDRIVE_2FA_BYPASS_USERNAMES = {
+    item.strip().casefold()
+    for item in load_optional_secret("HANDRIVE_2FA_BYPASS_USERNAMES", "").split(",")
+    if item.strip()
+}

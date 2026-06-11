@@ -1504,7 +1504,9 @@
         if (state.onDirtyChange) state.onDirtyChange(state.isDirty);
     }
 
-    function saveToServer(saveUrl, csrfToken, path, onDone) {
+    function saveToServer(saveUrl, csrfToken, path, onDone, options) {
+        var saveOptions = options || {};
+        var targetFilename = String(saveOptions.filename || "").trim();
         if (!saveUrl || !path) {
             onDone && onDone({ ok: false, error: "요청 처리 중 오류가 발생했습니다." });
             return;
@@ -1518,6 +1520,9 @@
         formData.append("volume", String(Number(volumeInput && volumeInput.value) || 1));
         formData.append("subtitles_json", JSON.stringify(serializableSubtitles));
         formData.append("images_json", JSON.stringify(getSerializableImages()));
+        if (targetFilename) {
+            formData.append("filename", targetFilename);
+        }
         state.images.forEach(function (image, index) {
             if (image.file) {
                 formData.append("image_overlay_" + index, image.file, image.file.name || ("overlay-" + index));

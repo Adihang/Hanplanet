@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% load static_versioned %}
+
+{% block body_class %}ui-page image-color-picker-page{% endblock %}
+
+{% block extra_head %}
+{% include 'handrive/_assets_head.html' %}
+<link rel="stylesheet" type="text/css" href="{% static_v 'css/fun/image_color_picker.css' %}">
+<script src="{% static_v 'js/handrive/page_helpers.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+<script src="{% static_v 'js/handrive/list_render_helpers.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+<script src="{% static_v 'js/fun/image_color_picker.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
+{% endblock %}
+
+{% block content %}
+<div class="ui-toolbar-wrap">
+    <div class="ui-shell ui-toolbar">
+        <div class="ui-toolbar-left">
+            <div class="ui-title-row">
+                <h1 class="ui-title">{{ page_title }}</h1>
+            </div>
+            <div class="ui-subtitle ui-path-breadcrumbs">
+                <a class="ui-path-link" href="/">{{ home_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <a class="ui-path-link" href="{{ sub_url }}">{{ sub_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <span class="ui-path-current">{{ page_title }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<main class="ui-shell ui-content image-color-picker-content">
+    <section
+        class="image-color-picker-panel"
+        data-image-color-picker
+        data-fetch-url="{{ fetch_url }}"
+        data-handrive-enabled="{{ handrive_picker_enabled|yesno:'1,0' }}"
+        data-handrive-list-url="{{ handrive_list_url }}"
+        data-handrive-download-url="{{ handrive_download_url }}"
+        data-status-ready="{{ status_ready }}"
+        data-status-loaded="{{ status_loaded }}"
+        data-status-loading="{{ status_loading }}"
+        data-status-pick="{{ status_pick }}"
+        data-status-copied="{{ status_copied }}"
+        data-status-invalid-file="{{ status_invalid_file }}"
+        data-status-load-failed="{{ status_load_failed }}"
+        data-status-empty-url="{{ status_empty_url }}"
+        data-status-canvas-failed="{{ status_canvas_failed }}"
+        data-handrive-empty-label="{{ handrive_empty_label }}"
+        data-handrive-loading-label="{{ handrive_loading_label }}"
+        data-handrive-root-label="{{ handrive_root_label }}"
+        data-handrive-open-folder-label="{{ handrive_open_folder_label }}"
+        data-handrive-select-file-label="{{ handrive_select_file_label }}"
+        aria-label="{{ page_title }}"
+    >
+        <div class="image-color-picker-workspace">
+            <section class="image-color-picker-source" aria-label="{{ upload_label }}">
+                <form class="image-color-picker-url-form" data-image-color-picker-url-form>
+                    {% csrf_token %}
+                    <label class="image-color-picker-url-field">
+                        <span>{{ url_label }}</span>
+                        <input type="url" name="url" placeholder="{{ url_placeholder }}" autocomplete="url" data-image-color-picker-url>
+                    </label>
+                    <button class="ui-btn ui-btn-primary" type="submit" data-image-color-picker-url-submit>{{ url_load_label }}</button>
+                </form>
+
+                <div class="media-upload-stage" data-image-color-picker-dropzone>
+                    <div class="image-color-picker-empty" data-image-color-picker-empty>
+                        <button
+                            class="image-color-picker-upload-mark"
+                            type="button"
+                            data-image-color-picker-file-open
+                            aria-label="{{ upload_label }}"
+                            title="{{ upload_label }}"
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 16V4"></path>
+                                <path d="m7 9 5-5 5 5"></path>
+                                <path d="M20 16.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.5"></path>
+                            </svg>
+                        </button>
+                        <span>{{ drop_label }}</span>
+                    </div>
+                    <img class="image-color-picker-image" data-image-color-picker-image alt="{{ page_title }}" draggable="false" hidden>
+                    <div class="image-color-picker-crosshair" data-image-color-picker-crosshair hidden aria-hidden="true"></div>
+                </div>
+
+                <div class="image-color-picker-actions">
+                    <input
+                        class="image-color-picker-file-input"
+                        type="file"
+                        accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,image/x-icon,image/vnd.microsoft.icon"
+                        data-image-color-picker-file
+                        aria-label="{{ upload_label }}"
+                    >
+                </div>
+                <p class="image-color-picker-status" data-image-color-picker-status role="status" aria-live="polite" hidden>{{ status_ready }}</p>
+            </section>
+
+            <aside class="image-color-picker-result" aria-labelledby="imageColorPickerResultTitle">
+                <h2 class="image-color-picker-section-title" id="imageColorPickerResultTitle">{{ result_label }}</h2>
+                <div class="image-color-picker-swatch" data-image-color-picker-swatch></div>
+                <dl class="image-color-picker-values">
+                    <div class="image-color-picker-value-row">
+                        <dt>{{ hex_label }}</dt>
+                        <dd><code data-image-color-picker-value="hex">#F9F9F9</code></dd>
+                        <button class="image-color-picker-copy" type="button" data-image-color-picker-copy="hex" aria-label="{{ copy_label }} {{ hex_label }}"></button>
+                    </div>
+                    <div class="image-color-picker-value-row">
+                        <dt>{{ rgb_label }}</dt>
+                        <dd><code data-image-color-picker-value="rgb">rgb(249,249,249)</code></dd>
+                        <button class="image-color-picker-copy" type="button" data-image-color-picker-copy="rgb" aria-label="{{ copy_label }} {{ rgb_label }}"></button>
+                    </div>
+                    <div class="image-color-picker-value-row">
+                        <dt>{{ hsv_label }}</dt>
+                        <dd><code data-image-color-picker-value="hsv">0° 0% 97.65%</code></dd>
+                        <button class="image-color-picker-copy" type="button" data-image-color-picker-copy="hsv" aria-label="{{ copy_label }} {{ hsv_label }}"></button>
+                    </div>
+                </dl>
+            </aside>
+        </div>
+        <canvas class="image-color-picker-canvas" data-image-color-picker-canvas hidden></canvas>
+    </section>
+</main>
+
+{% include "popup/fun/upload_source_modal.html" %}
+{% if handrive_picker_enabled %}
+    {% include "popup/fun/image_color_picker_handrive_modal.html" %}
+{% endif %}
+{% include "partials/site_footer_links.html" %}
+{% endblock %}

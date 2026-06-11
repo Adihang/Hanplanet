@@ -57,6 +57,32 @@ def render_handrive_pdf_safely(pdf_bytes: bytes, file_name: str = "preview.pdf",
     )
 
 
+def render_handrive_external_frame_safely(
+    frame_url: str,
+    file_name: str = "preview",
+    *,
+    wrapper_class: str = "",
+    frame_class: str = "",
+) -> str:
+    """외부 미리보기 URL을 HanDrive iframe 레이아웃으로 렌더한다."""
+    safe_title = escape(file_name)
+    safe_src = escape(frame_url)
+    wrapper_classes = " ".join(
+        ["handrive-media-wrap", "handrive-media-pdf-wrap"]
+        + [class_name for class_name in str(wrapper_class or "").split() if class_name]
+    )
+    frame_classes = " ".join(
+        ["handrive-media-element", "handrive-media-pdf-element"]
+        + [class_name for class_name in str(frame_class or "").split() if class_name]
+    )
+    return mark_safe(
+        f'<div class="{escape(wrapper_classes)}">'
+        f'<iframe class="{escape(frame_classes)}" src="{safe_src}" title="{safe_title}" loading="lazy" '
+        'referrerpolicy="no-referrer-when-downgrade"></iframe>'
+        "</div>"
+    )
+
+
 def find_libreoffice_binary() -> str:
     """현재 서버에서 사용할 수 있는 LibreOffice 실행 파일 경로를 찾는다."""
     for candidate in LIBREOFFICE_CANDIDATE_BINS:
@@ -756,3 +782,27 @@ html body col {
     if extension in {".doc", ".xls", ".ppt"}:
         return mark_safe("<p>이 형식은 구형 Office 포맷이라 미리보기를 지원하지 않습니다. 최신 형식으로 저장하면 미리보기가 가능합니다.</p>")
     return mark_safe("<p>미리보기를 지원하지 않는 Office 파일입니다.</p>")
+
+
+def render_handrive_spreadsheet_preview_shell(
+    *,
+    file_name: str = "spreadsheet",
+    relative_path: str = "",
+    file_extension: str = "",
+    can_edit: bool = False,
+) -> str:
+    """Handsontable이 브라우저에서 원본 파일을 직접 읽어 렌더링할 shell."""
+    editable_flag = "1" if can_edit else "0"
+    return mark_safe(
+        '<section class="handrive-spreadsheet-preview is-loading" data-handrive-spreadsheet-preview="1"'
+        f' data-path="{escape(relative_path)}"'
+        f' data-filename="{escape(file_name)}"'
+        f' data-extension="{escape(str(file_extension or "").lower())}"'
+        f' data-editable="{editable_flag}">'
+        '<div class="handrive-spreadsheet-preview-toolbar">'
+        '<select class="handrive-spreadsheet-sheet-select" data-handrive-spreadsheet-preview-sheet aria-label="시트"></select>'
+        '<span class="handrive-spreadsheet-status" data-handrive-spreadsheet-preview-status aria-live="polite"></span>'
+        "</div>"
+        '<div class="handrive-spreadsheet-preview-hot" data-handrive-spreadsheet-preview-hot></div>'
+        "</section>"
+    )

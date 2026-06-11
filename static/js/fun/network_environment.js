@@ -5,17 +5,19 @@
     if (!root) return;
 
     var environmentUrl = root.dataset.environmentUrl || "";
-    var downloadUrl = root.dataset.downloadUrl || "";
-    var uploadUrl = root.dataset.uploadUrl || "";
-    var downloadSize = Number(root.dataset.downloadSize || 8388608);
-    var uploadSize = Number(root.dataset.uploadSize || 5242880);
+    var reverseGeocodeUrl = root.dataset.reverseGeocodeUrl || "";
+    var mlabDownloadWorkerUrl = root.dataset.mlabDownloadWorkerUrl || "";
+    var mlabUploadWorkerUrl = root.dataset.mlabUploadWorkerUrl || "";
     var refreshButton = document.querySelector("[data-network-refresh]");
-    var downloadButton = document.querySelector("[data-network-download-test]");
-    var uploadButton = document.querySelector("[data-network-upload-test]");
+    var mlabButton = document.querySelector("[data-network-mlab-test]");
+    var summaryGpsButton = document.querySelector("[data-network-summary-gps]");
+    var summarySpeedButton = document.querySelector("[data-network-summary-speed]");
     var gpsButton = document.querySelector("[data-network-gps]");
     var webrtcButton = document.querySelector("[data-network-webrtc]");
     var speedStatus = document.querySelector("[data-network-speed-status]");
     var webrtcStatus = document.querySelector("[data-network-webrtc-status]");
+    var environmentLocalIp = "";
+    var environmentLocalIpKind = "";
 
     function isEnglishUi() {
         return String(document.documentElement.lang || "").toLowerCase().indexOf("en") === 0;
@@ -43,21 +45,21 @@
         element.classList.toggle("is-error", Boolean(isError));
     }
 
-    function getCsrfToken() {
-        var meta = document.querySelector('meta[name="csrf-token"]');
-        return meta ? meta.getAttribute("content") || "" : "";
+    function isMlabClientReady() {
+        return Boolean(window.ndt7 && typeof window.ndt7.test === "function");
     }
 
-    function formatBytes(bytes) {
-        var value = Number(bytes || 0);
-        if (!Number.isFinite(value) || value <= 0) return "0 B";
-        var units = ["B", "KB", "MB", "GB"];
-        var index = 0;
-        while (value >= 1024 && index < units.length - 1) {
-            value /= 1024;
-            index += 1;
+    function updateMlabClientAvailability() {
+        var ready = isMlabClientReady();
+        root.dataset.mlabClientReady = ready ? "true" : "false";
+        if (mlabButton) {
+            mlabButton.disabled = !ready;
+            mlabButton.title = ready ? "" : text("M-Lab NDT7 client unavailable", "M-Lab NDT7 클라이언트를 사용할 수 없습니다.");
         }
-        return value.toFixed(index === 0 ? 0 : 2) + " " + units[index];
+        if (summarySpeedButton) {
+            summarySpeedButton.disabled = !ready;
+            summarySpeedButton.title = ready ? text("Measure network speed", "네트워크 속도 측정") : text("M-Lab NDT7 client unavailable", "M-Lab NDT7 클라이언트를 사용할 수 없습니다.");
+        }
     }
 
     function formatDuration(ms) {
@@ -67,18 +69,10 @@
         return (value / 1000).toFixed(2) + " s";
     }
 
-    function formatMbps(bytes, ms) {
-        var durationSeconds = Number(ms || 0) / 1000;
-        if (!durationSeconds) return "-";
-        var mbps = (Number(bytes || 0) * 8) / durationSeconds / 1000000;
+    function formatMbpsNumber(value) {
+        var mbps = Number(value);
+        if (!Number.isFinite(mbps) || mbps < 0) return "-";
         return mbps.toFixed(mbps >= 100 ? 1 : 2) + " Mbps";
-    }
-
-    function formatMegabytesPerSecond(bytes, ms) {
-        var durationSeconds = Number(ms || 0) / 1000;
-        if (!durationSeconds) return "-";
-        var value = Number(bytes || 0) / durationSeconds / 1048576;
-        return value.toFixed(value >= 100 ? 1 : 2) + " MB/s";
     }
 
     function appendInfoRow(list, label, value, options) {
@@ -193,11 +187,22 @@
         var ipCandidates = payload.ip_candidates || {};
         var cloudflare = payload.cloudflare || {};
         var server = payload.server || {};
-        var limits = payload.limits || {};
         var headers = request.headers || {};
+        environmentLocalIp = payload.local_ip || "";
+        environmentLocalIpKind = payload.local_ip_kind || "";
+        var localIpSources = payload.local_ip_sources || [];
+        var localIpInterfaces = payload.local_ip_interfaces || [];
+        var localIpGateway = payload.local_ip_gateway || "";
+        var localIpMetaParts = [environmentLocalIpKind]
+            .concat(localIpSources)
+            .concat(localIpInterfaces)
+            .filter(Boolean);
+        if (localIpGateway) localIpMetaParts.push("gw " + localIpGateway);
         var requestRows = [
             { label: text("Observed external IP", "서버가 본 외부 IP"), value: payload.observed_ip || "-", code: true },
             { label: text("Observed IP kind", "외부 IP 분류"), value: payload.observed_ip_kind || "-" },
+            { label: text("Local IP", "로컬 IP"), value: environmentLocalIp || "-", code: true },
+            { label: text("Local IP source", "로컬 IP 출처"), value: localIpMetaParts.join(" · ") || "-" },
             { label: text("Forwarded chain", "Forwarded 체인"), value: ipCandidates.x_forwarded_for || "-" },
             { label: "CF-Connecting-IP", value: ipCandidates.cf_connecting_ip || "-", code: true },
             { label: "X-Real-IP", value: ipCandidates.x_real_ip || "-", code: true },
@@ -221,29 +226,35 @@
             { label: text("Server timezone", "서버 시간대"), value: server.timezone || "-" },
             { label: text("Server hostname", "서버 호스트명"), value: server.hostname || text("Hidden", "숨김"), code: true },
             { label: text("Server local addresses visible", "서버 내부 주소 표시"), value: Boolean(server.local_addresses_visible) },
-            { label: text("Download test size", "다운로드 측정 크기"), value: formatBytes(limits.download_default_bytes || downloadSize) },
-            { label: text("Upload test size", "업로드 측정 크기"), value: formatBytes(limits.upload_default_bytes || uploadSize) },
-            { label: text("Download max", "다운로드 최대 크기"), value: formatBytes(limits.download_max_bytes || 0) },
-            { label: text("Upload max", "업로드 최대 크기"), value: formatBytes(limits.upload_max_bytes || 0) },
         ];
 
         if (localAddresses.length) {
             localAddresses.forEach(function (item, index) {
+                var itemMetaParts = [item.kind]
+                    .concat(item.sources || [])
+                    .concat(item.interfaces || [])
+                    .filter(Boolean);
+                if (item.gateway) itemMetaParts.push("gw " + item.gateway);
                 serverRows.push({
-                    label: text("Server local IP ", "서버 내부 IP ") + (index + 1),
-                    value: item.address + " (" + item.kind + ", " + (item.sources || []).join(", ") + ")",
+                    label: text("Server local IP ", "서버 로컬 IP ") + (index + 1),
+                    value: item.address + " (" + itemMetaParts.join(", ") + ")",
                     code: true,
                 });
             });
         } else {
             serverRows.push({
-                label: text("Server local IP", "서버 내부 IP"),
+                label: text("Server local IP", "서버 로컬 IP"),
                 value: server.local_addresses_visible ? "-" : text("Hidden outside DEBUG or superuser", "DEBUG 또는 superuser가 아니면 숨김"),
             });
         }
 
         setValue("summary-public-ip", payload.observed_ip || "-");
         setValue("summary-public-ip-kind", payload.observed_ip_kind || "-");
+        setValue("summary-local-ip", environmentLocalIp || "-");
+        setValue(
+            "summary-local-ip-kind",
+            environmentLocalIp ? localIpMetaParts.join(" · ") : text("Not found", "찾을 수 없음")
+        );
         setValue("api-latency", Math.round(latencyMs) + " ms");
         setValue("api-latency-meta", text("Environment API", "환경 API"));
         renderList("request", requestRows);
@@ -273,89 +284,187 @@
         }
     }
 
-    async function measureDownload() {
-        if (!downloadUrl || !downloadButton) return;
-        downloadButton.disabled = true;
-        setStatus(speedStatus, text("Measuring download...", "다운로드 측정 중..."), false);
-        var bytes = 0;
-        var start = performance.now();
+    function setSpeedControlsDisabled(disabled) {
+        if (mlabButton) mlabButton.disabled = disabled;
+        if (summarySpeedButton) summarySpeedButton.disabled = disabled;
+    }
+
+    function formatMlabServerLocation(server) {
+        if (!server) return "-";
+        var location = server.location || {};
+        var locationParts = [location.city, location.country].filter(Boolean);
+        return locationParts.join(", ") || "-";
+    }
+
+    function formatMlabMegabytesPerSecond(mbps) {
+        var value = Number(mbps) / 8;
+        if (!Number.isFinite(value) || value < 0) return "-";
+        return value.toFixed(value >= 100 ? 1 : 2) + " MB/s";
+    }
+
+    function formatMlabSpeedMeta(mbps, location) {
+        var speed = formatMlabMegabytesPerSecond(mbps);
+        var place = location && location !== "-" ? location : "M-Lab NDT7";
+        return speed + " · " + place;
+    }
+
+    function extractMeanClientMbps(measurement) {
+        var value = Number((measurement || {}).MeanClientMbps);
+        return Number.isFinite(value) && value >= 0 ? value : null;
+    }
+
+    function extractServerUploadMbps(measurement) {
+        var tcpInfo = (measurement || {}).TCPInfo || {};
+        var bytesReceived = Number(tcpInfo.BytesReceived);
+        var elapsedTime = Number(tcpInfo.ElapsedTime);
+        if (!Number.isFinite(bytesReceived) || !Number.isFinite(elapsedTime) || elapsedTime <= 0) return null;
+        return (bytesReceived * 8) / elapsedTime;
+    }
+
+    function updateMlabDownload(mbps, location) {
+        var speed = formatMbpsNumber(mbps);
+        setValue("mlab-download-speed", speed);
+        setValue("mlab-download-meta", formatMlabSpeedMeta(mbps, location));
+        setValue("summary-download-speed", speed);
+        setValue("summary-speed-meta", "M-Lab NDT7");
+    }
+
+    function updateMlabUpload(mbps, location) {
+        var speed = formatMbpsNumber(mbps);
+        setValue("mlab-upload-speed", speed);
+        setValue("mlab-upload-meta", formatMlabSpeedMeta(mbps, location));
+        setValue("summary-upload-speed", speed);
+        setValue("summary-speed-meta", "M-Lab NDT7");
+    }
+
+    function formatLocationAccuracy(coords) {
+        return typeof coords.accuracy === "number" ? "± " + Math.round(coords.accuracy) + " m" : "-";
+    }
+
+    async function readLocationPlace(latitude, longitude) {
+        if (!reverseGeocodeUrl) {
+            setValue("summary-location-place", "-");
+            return;
+        }
+        setValue("summary-location-place", text("Resolving place", "위치 확인 중"));
         try {
-            var separator = downloadUrl.indexOf("?") === -1 ? "?" : "&";
-            var response = await fetch(downloadUrl + separator + "size=" + encodeURIComponent(downloadSize) + "&t=" + Date.now(), {
-                credentials: "same-origin",
-                headers: { Accept: "application/octet-stream" },
-            });
-            if (!response.ok) throw new Error(text("Download test failed.", "다운로드 측정에 실패했습니다."));
-            if (response.body && response.body.getReader) {
-                var reader = response.body.getReader();
-                while (true) {
-                    var result = await reader.read();
-                    if (result.done) break;
-                    bytes += result.value ? result.value.byteLength : 0;
+            var separator = reverseGeocodeUrl.indexOf("?") === -1 ? "?" : "&";
+            var response = await fetch(
+                reverseGeocodeUrl
+                    + separator
+                    + "lat=" + encodeURIComponent(latitude.toFixed(7))
+                    + "&lon=" + encodeURIComponent(longitude.toFixed(7))
+                    + "&t=" + Date.now(),
+                {
+                    credentials: "same-origin",
+                    headers: { Accept: "application/json" },
                 }
-            } else {
-                bytes = (await response.arrayBuffer()).byteLength;
-            }
-            var elapsed = performance.now() - start;
-            var speed = formatMbps(bytes, elapsed);
-            var meta = formatMegabytesPerSecond(bytes, elapsed) + " · " + formatBytes(bytes) + " · " + formatDuration(elapsed);
-            setValue("download-speed", speed);
-            setValue("download-meta", meta);
-            setValue("summary-speed", speed);
-            setValue("summary-speed-meta", text("Download", "다운로드"));
-            setStatus(speedStatus, text("Download measurement complete.", "다운로드 측정 완료."), false);
-        } catch (error) {
-            setStatus(speedStatus, error && error.message ? error.message : text("Download test failed.", "다운로드 측정에 실패했습니다."), true);
-        } finally {
-            downloadButton.disabled = false;
-        }
-    }
-
-    function buildUploadPayload(size) {
-        var payload = new Uint8Array(size);
-        for (var index = 0; index < payload.length; index += 1) {
-            payload[index] = index % 251;
-        }
-        return payload;
-    }
-
-    async function measureUpload() {
-        if (!uploadUrl || !uploadButton) return;
-        uploadButton.disabled = true;
-        setStatus(speedStatus, text("Preparing upload payload...", "업로드 데이터를 준비 중..."), false);
-        var payload = buildUploadPayload(uploadSize);
-        setStatus(speedStatus, text("Measuring upload...", "업로드 측정 중..."), false);
-        var start = performance.now();
-        try {
-            var response = await fetch(uploadUrl, {
-                method: "POST",
-                credentials: "same-origin",
-                headers: {
-                    "Accept": "application/json",
-                    "Content-Type": "application/octet-stream",
-                    "X-CSRFToken": getCsrfToken(),
-                },
-                body: payload,
-            });
-            var data = await response.json().catch(function () {
+            );
+            var payload = await response.json().catch(function () {
                 return null;
             });
-            if (!response.ok || !data || data.ok === false) {
-                throw new Error(text("Upload test failed.", "업로드 측정에 실패했습니다."));
+            if (!response.ok || !payload || payload.ok === false || !payload.place) {
+                throw new Error(text("Could not resolve place.", "위치를 확인하지 못했습니다."));
             }
-            var bytes = Number(data.bytes || payload.byteLength || 0);
-            var elapsed = performance.now() - start;
-            var speed = formatMbps(bytes, elapsed);
-            var meta = formatMegabytesPerSecond(bytes, elapsed) + " · " + formatBytes(bytes) + " · " + formatDuration(elapsed);
-            setValue("upload-speed", speed);
-            setValue("upload-meta", meta);
-            setValue("summary-speed", speed);
-            setValue("summary-speed-meta", text("Upload", "업로드"));
-            setStatus(speedStatus, text("Upload measurement complete.", "업로드 측정 완료."), false);
+            setValue("summary-location-place", payload.place);
         } catch (error) {
-            setStatus(speedStatus, error && error.message ? error.message : text("Upload test failed.", "업로드 측정에 실패했습니다."), true);
+            setValue("summary-location-place", "-");
+        }
+    }
+
+    async function measureMlabNdt7() {
+        if (!mlabButton) return;
+        if (!isMlabClientReady()) {
+            updateMlabClientAvailability();
+            setStatus(speedStatus, text("M-Lab NDT7 client is unavailable.", "M-Lab NDT7 클라이언트를 불러오지 못했습니다."), true);
+            return;
+        }
+        if (!mlabDownloadWorkerUrl || !mlabUploadWorkerUrl) {
+            setStatus(speedStatus, text("M-Lab worker URL is missing.", "M-Lab worker URL이 없습니다."), true);
+            return;
+        }
+
+        var mlabErrorMessage = "";
+        var mlabServerLocation = "-";
+        var startedAt = performance.now();
+        setSpeedControlsDisabled(true);
+        setValue("mlab-download-speed", text("Running", "측정 중"));
+        setValue("mlab-download-meta", "M-Lab NDT7");
+        setValue("mlab-upload-speed", text("Waiting", "대기 중"));
+        setValue("mlab-upload-meta", "M-Lab NDT7");
+        setValue("summary-download-speed", text("Running", "측정 중"));
+        setValue("summary-upload-speed", text("Waiting", "대기 중"));
+        setValue("summary-speed-meta", "M-Lab NDT7");
+        setStatus(speedStatus, text("Finding an M-Lab NDT7 server...", "M-Lab NDT7 서버를 찾는 중..."), false);
+
+        try {
+            var exitCode = await window.ndt7.test(
+                {
+                    userAcceptedDataPolicy: true,
+                    downloadworkerfile: mlabDownloadWorkerUrl,
+                    uploadworkerfile: mlabUploadWorkerUrl,
+                    metadata: {
+                        client_name: "hanplanet-network-info",
+                        client_version: "1.0.0",
+                    },
+                },
+                {
+                    serverDiscovery: function () {
+                        setStatus(speedStatus, text("Finding an M-Lab NDT7 server...", "M-Lab NDT7 서버를 찾는 중..."), false);
+                    },
+                    serverChosen: function (server) {
+                        mlabServerLocation = formatMlabServerLocation(server);
+                        setValue("mlab-download-meta", mlabServerLocation);
+                        setValue("mlab-upload-meta", mlabServerLocation);
+                        setStatus(speedStatus, text("M-Lab server selected. Measuring download...", "M-Lab 서버 선택 완료. 다운로드 측정 중..."), false);
+                    },
+                    downloadStart: function () {
+                        setStatus(speedStatus, text("Measuring M-Lab download...", "M-Lab 다운로드 측정 중..."), false);
+                    },
+                    downloadMeasurement: function (data) {
+                        if (!data || data.Source !== "client") return;
+                        var mbps = extractMeanClientMbps(data.Data);
+                        if (mbps !== null) updateMlabDownload(mbps, mlabServerLocation);
+                    },
+                    downloadComplete: function (data) {
+                        var mbps = extractMeanClientMbps((data || {}).LastClientMeasurement);
+                        if (mbps !== null) updateMlabDownload(mbps, mlabServerLocation);
+                        setValue("mlab-upload-speed", text("Running", "측정 중"));
+                        setValue("summary-upload-speed", text("Running", "측정 중"));
+                        setStatus(speedStatus, text("Download complete. Measuring M-Lab upload...", "다운로드 완료. M-Lab 업로드 측정 중..."), false);
+                    },
+                    uploadStart: function () {
+                        setStatus(speedStatus, text("Measuring M-Lab upload...", "M-Lab 업로드 측정 중..."), false);
+                    },
+                    uploadMeasurement: function (data) {
+                        if (!data || !data.Data) return;
+                        var mbps = data.Source === "server" ? extractServerUploadMbps(data.Data) : extractMeanClientMbps(data.Data);
+                        if (mbps !== null) updateMlabUpload(mbps, mlabServerLocation);
+                    },
+                    uploadComplete: function (data) {
+                        var serverMbps = extractServerUploadMbps((data || {}).LastServerMeasurement);
+                        var clientMbps = extractMeanClientMbps((data || {}).LastClientMeasurement);
+                        var mbps = serverMbps !== null ? serverMbps : clientMbps;
+                        if (mbps !== null) updateMlabUpload(mbps, mlabServerLocation);
+                    },
+                    error: function (error) {
+                        mlabErrorMessage = error && error.message ? error.message : String(error || "");
+                        setStatus(speedStatus, mlabErrorMessage || text("M-Lab NDT7 failed.", "M-Lab NDT7 측정에 실패했습니다."), true);
+                    },
+                }
+            );
+            if (exitCode) {
+                throw new Error(mlabErrorMessage || text("M-Lab NDT7 failed.", "M-Lab NDT7 측정에 실패했습니다."));
+            }
+            setStatus(
+                speedStatus,
+                text("M-Lab NDT7 measurement complete.", "M-Lab NDT7 측정 완료.") + " · " + formatDuration(performance.now() - startedAt),
+                false
+            );
+        } catch (error) {
+            setStatus(speedStatus, error && error.message ? error.message : text("M-Lab NDT7 failed.", "M-Lab NDT7 측정에 실패했습니다."), true);
         } finally {
-            uploadButton.disabled = false;
+            setSpeedControlsDisabled(false);
         }
     }
 
@@ -380,28 +489,37 @@
         renderList("location", rows);
         if (latitude !== null && longitude !== null) {
             setValue("summary-location", latitude.toFixed(5) + ", " + longitude.toFixed(5));
-            setValue("summary-location-accuracy", typeof coords.accuracy === "number" ? "± " + Math.round(coords.accuracy) + " m" : "-");
+            setValue("summary-location-accuracy", formatLocationAccuracy(coords));
+            readLocationPlace(latitude, longitude);
         }
     }
 
     function readGeolocation() {
         if (!navigator.geolocation) {
             renderList("location", [{ label: text("Status", "상태"), value: text("Geolocation is unavailable.", "Geolocation을 사용할 수 없습니다.") }]);
+            setValue("summary-location-place", "-");
+            setValue("summary-location-accuracy", text("Unavailable", "사용 불가"));
             return;
         }
         if (gpsButton) gpsButton.disabled = true;
+        if (summaryGpsButton) summaryGpsButton.disabled = true;
+        setValue("summary-location-place", "-");
+        setValue("summary-location-accuracy", text("Waiting for permission", "권한 대기"));
         renderList("location", [{ label: text("Status", "상태"), value: text("Waiting for permission...", "권한 응답을 기다리는 중...") }]);
         navigator.geolocation.getCurrentPosition(
             function (position) {
                 renderLocationRows(position);
                 if (gpsButton) gpsButton.disabled = false;
+                if (summaryGpsButton) summaryGpsButton.disabled = false;
             },
             function (error) {
                 var message = error && error.message ? error.message : text("Could not read GPS.", "GPS를 읽지 못했습니다.");
                 renderList("location", [{ label: text("Status", "상태"), value: message }]);
                 setValue("summary-location", "-");
+                setValue("summary-location-place", "-");
                 setValue("summary-location-accuracy", message);
                 if (gpsButton) gpsButton.disabled = false;
+                if (summaryGpsButton) summaryGpsButton.disabled = false;
             },
             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
@@ -440,8 +558,10 @@
             emptyCell.textContent = text("No candidate was exposed. Browser mDNS/privacy protection may be hiding local IPs.", "노출된 후보가 없습니다. 브라우저 mDNS/개인정보 보호가 내부 IP를 숨길 수 있습니다.");
             emptyRow.appendChild(emptyCell);
             tbody.appendChild(emptyRow);
-            setValue("summary-local-ip", "-");
-            setValue("summary-local-ip-kind", text("Not exposed", "노출 안 됨"));
+            if (!environmentLocalIp) {
+                setValue("summary-local-ip", "-");
+                setValue("summary-local-ip-kind", text("Not exposed", "노출 안 됨"));
+            }
             return;
         }
         candidates.forEach(function (candidate) {
@@ -469,8 +589,10 @@
         }) || candidates.find(function (candidate) {
             return candidate.kind === "mDNS";
         }) || candidates[0];
-        setValue("summary-local-ip", preferred.address);
-        setValue("summary-local-ip-kind", preferred.kind);
+        if (!environmentLocalIp) {
+            setValue("summary-local-ip", preferred.address);
+            setValue("summary-local-ip-kind", preferred.kind);
+        }
     }
 
     async function collectWebrtcCandidates() {
@@ -538,11 +660,13 @@
 
     refreshBrowserLists();
     renderList("location", [{ label: text("Status", "상태"), value: text("Not requested", "요청 전") }]);
+    updateMlabClientAvailability();
     refreshEnvironment();
 
     if (refreshButton) refreshButton.addEventListener("click", refreshEnvironment);
-    if (downloadButton) downloadButton.addEventListener("click", measureDownload);
-    if (uploadButton) uploadButton.addEventListener("click", measureUpload);
+    if (mlabButton) mlabButton.addEventListener("click", measureMlabNdt7);
+    if (summaryGpsButton) summaryGpsButton.addEventListener("click", readGeolocation);
+    if (summarySpeedButton) summarySpeedButton.addEventListener("click", measureMlabNdt7);
     if (gpsButton) gpsButton.addEventListener("click", readGeolocation);
     if (webrtcButton) webrtcButton.addEventListener("click", collectWebrtcCandidates);
     window.addEventListener("resize", refreshBrowserLists);

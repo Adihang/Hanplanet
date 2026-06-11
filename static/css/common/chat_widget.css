@@ -36,7 +36,7 @@
     width: var(--chat-widget-width);
     min-width: var(--chat-widget-min-width);
     z-index: 1000;
-    font-family: "Inter", 'KakaoBigFont', 'Noto Sans KR', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: var(--site-font-body);
     box-shadow: var(--chat-widget-shadow);
     border-radius: var(--chat-widget-radius);
     border: var(--chat-widget-border);

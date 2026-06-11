@@ -8,6 +8,9 @@
     <meta name="description" content="{{ bubble_description }}">
     <meta name="author" content="Hanplanet">
     <meta name="robots" content="noindex">
+    {% if sub_category %}
+    <meta name="hanplanet:sub-category" content="{{ sub_category }}">
+    {% endif %}
     <meta property="og:title" content="{{ bubble_title }}">
     <meta property="og:description" content="{{ bubble_description }}">
     <meta property="og:image" content="https://www.hanplanet.com{% static 'media/img/bubble_og_icon.svg' %}">

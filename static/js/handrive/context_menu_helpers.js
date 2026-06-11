@@ -63,6 +63,7 @@
             extractArchive: false,
             createArchive: false,
             share: false,
+            googleDriveAddItems: false,
             upload: false,
             edit: false,
             rename: false,
@@ -114,6 +115,11 @@
             targetEntry.is_git_virtual
         );
         var isGoogleDriveEntry = Boolean(targetEntry.google_drive || targetEntry.is_google_drive);
+        var isGoogleDriveRootEntry = Boolean(
+            isGoogleDriveEntry &&
+            targetEntry.google_drive &&
+            targetEntry.google_drive.is_root
+        );
         var canDownloadAllEntries = targets.length > 0 && targets.every(function (entry) {
             return Boolean(entry) &&
                 !entry.isCurrentFolder &&
@@ -149,6 +155,7 @@
         flags.download = !isCurrentFolder && (!isDirectory || !isGitVirtualDirectoryEntry(targetEntry));
         flags.extractArchive = Boolean(!isCurrentFolder && !isMultiSelection && targetEntry.is_archive && targetEntry.can_extract);
         flags.share = canEditEntry && !isGitVirtualEntry && !isGoogleDriveEntry && hasShareablePath;
+        flags.googleDriveAddItems = !isMultiSelection && isGoogleDriveRootEntry;
         flags.upload = isDirectory && canWriteChildren && !hasGitRepo;
         flags.createArchive = Boolean(isDirectory && !isCurrentFolder && canEditEntry && !hasGitRepo && !isGitVirtualEntry && !isGoogleDriveEntry);
         flags.edit = !isDirectory && canShowEditEntry;

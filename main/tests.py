@@ -62,10 +62,14 @@ from .handrive_views import (
     _forgejo_server_logout,
     _resolve_handrive_post_login_url,
     _send_or_reuse_login_2fa_email,
+    build_google_drive_docs_editor_url,
+    build_google_drive_docs_preview_url,
+    build_page_help_html,
     get_handrive_text,
     get_handrive_upload_tmp_dir,
     get_handrive_public_write_group,
     is_handrive_editor,
+    render_handrive_markdown_safely,
 )
 from .views import (
     build_game_auth_token,
@@ -74,6 +78,7 @@ from .views import (
     render_markdown_safely,
     render_markdown_with_raw_html,
     resolve_ui_lang,
+    UI_LANG_COOKIE_NAME,
     should_return_github_link,
     UI_LANG_SESSION_KEY,
 )
@@ -424,6 +429,44 @@ class MarkdownSafetyTests(TestCase):
         self.assertIn("b=2", rendered)
         self.assertNotIn("<code>python", rendered)
 
+    def test_render_markdown_can_preserve_blank_lines_outside_fences(self):
+        rendered = render_markdown_safely(
+            "first\n\n\nsecond\n\n```text\n\ninside\n```\n\nthird",
+            preserve_blank_lines=True,
+        )
+
+        self.assertEqual(rendered.count('class="handrive-markdown-blank-line"'), 4)
+        self.assertIn("<p>first</p>", rendered)
+        self.assertIn("<p>second</p>", rendered)
+        self.assertIn("<p>third</p>", rendered)
+        self.assertIn('<pre><code class="language-text">', rendered)
+        self.assertIn("\ninside\n", rendered)
+
+
+class HandriveMarkdownRenderingTests(TestCase):
+    def test_common_handrive_markdown_renderer_preserves_blank_lines(self):
+        rendered = render_handrive_markdown_safely("first\n\nsecond\n\n```text\n\ninside\n```")
+
+        self.assertEqual(str(rendered).count('class="handrive-markdown-blank-line"'), 2)
+        self.assertIn("<p>first</p>", rendered)
+        self.assertIn("<p>second</p>", rendered)
+        self.assertIn('<pre><code class="language-text">', rendered)
+        self.assertIn("\ninside\n", rendered)
+
+    def test_page_help_markdown_uses_common_handrive_renderer(self):
+        with TemporaryDirectory() as tmpdir, override_settings(MEDIA_ROOT=tmpdir):
+            help_dir = Path(tmpdir) / "HanDrive" / "help"
+            help_dir.mkdir(parents=True)
+            (help_dir / "write_ko.md").write_text("도움말\n\n본문\n\n```text\n\ninside\n```", encoding="utf-8")
+
+            rendered = build_page_help_html("ko", "write", get_handrive_text("ko"))
+
+        self.assertEqual(str(rendered).count('class="handrive-markdown-blank-line"'), 2)
+        self.assertIn("<p>도움말</p>", rendered)
+        self.assertIn("<p>본문</p>", rendered)
+        self.assertIn('<pre><code class="language-text">', rendered)
+        self.assertIn("\ninside\n", rendered)
+
 
 class AddScoreViewTests(TestCase):
     def setUp(self):
@@ -598,6 +641,35 @@ class GlobalRateLimitMiddlewareTests(TestCase):
 
         self.assertNotEqual(first.status_code, 429)
         self.assertNotEqual(second.status_code, 429)
+
+
+class CanonicalPublicHostMiddlewareTests(TestCase):
+    @override_settings(
+        CANONICAL_PUBLIC_HOST_REDIRECT=True,
+        PUBLIC_BASE_URL="https://www.hanplanet.com",
+    )
+    def test_redirects_bare_public_host_to_canonical_www_before_session(self):
+        response = self.client.get(
+            "/ko/auth/github/start/?mode=login&next=/ko/handrive/",
+            HTTP_HOST="hanplanet.com",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 301)
+        self.assertEqual(
+            response["Location"],
+            "https://www.hanplanet.com/ko/auth/github/start/?mode=login&next=/ko/handrive/",
+        )
+        self.assertNotIn(settings.SESSION_COOKIE_NAME, response.cookies)
+
+    @override_settings(
+        CANONICAL_PUBLIC_HOST_REDIRECT=True,
+        PUBLIC_BASE_URL="https://www.hanplanet.com",
+    )
+    def test_does_not_redirect_local_development_hosts(self):
+        response = self.client.get("/ko/login/", HTTP_HOST="127.0.0.1")
+
+        self.assertEqual(response.status_code, 200)
 
 
 class MediaServeRetryTests(TestCase):
@@ -784,6 +856,69 @@ class StorageProfileDiscModeTests(TestCase):
 
 
 class HandriveHlsThumbnailTests(TestCase):
+    def test_video_player_does_not_reload_or_play_before_resume_point_is_ready(self):
+        video_js = (Path(settings.BASE_DIR) / "static/js/handrive/video_player.js").read_text(encoding="utf-8")
+
+        self.assertIn("const hasStartedPlayback = () =>", video_js)
+        self.assertIn("if (!hasStartedPlayback())", video_js)
+
+        restore_start = video_js.index("function restoreStartupSource")
+        switch_start = video_js.index("function switchToHls")
+        badge_start = video_js.index("// 트랜스코딩 진행 배지")
+        restore_body = video_js[restore_start:switch_start]
+        switch_body = video_js[switch_start:badge_start]
+
+        self.assertLess(
+            restore_body.index("player.one('loadedmetadata'"),
+            restore_body.index("player.src({ src: startupSrc"),
+        )
+        self.assertLess(
+            switch_body.index("player.one('loadedmetadata'"),
+            switch_body.index("player.src({ src: manifestUrl"),
+        )
+
+        after_hls_src = switch_body[switch_body.index("player.src({ src: manifestUrl"):switch_body.index("stopHlsSwitchTimer();")]
+        self.assertNotIn("player.play().catch", after_hls_src)
+
+    def test_video_player_cleanup_releases_media_network_resources(self):
+        video_js = (Path(settings.BASE_DIR) / "static/js/handrive/video_player.js").read_text(encoding="utf-8")
+
+        self.assertIn("function releaseNativeMediaElement", video_js)
+        self.assertIn("mediaElement.removeAttribute('src')", video_js)
+        self.assertIn("mediaElement.load()", video_js)
+        self.assertIn("hlsAbortController.abort()", video_js)
+        self.assertIn("releasePlayerMediaResources(entry.player, el)", video_js)
+
+    def test_preview_flow_aborts_stale_preview_request(self):
+        preview_flow_js = (Path(settings.BASE_DIR) / "static/js/handrive/preview_flow_helpers.js").read_text(encoding="utf-8")
+
+        self.assertIn("state.previewAbortController.abort()", preview_flow_js)
+        self.assertIn("requestOptions.signal = requestAbortController.signal", preview_flow_js)
+        self.assertIn('error.name === "AbortError"', preview_flow_js)
+
+    def test_preview_loading_does_not_start_second_video_cleanup(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        preview_flow_js = (Path(settings.BASE_DIR) / "static/js/handrive/preview_flow_helpers.js").read_text(encoding="utf-8")
+
+        loading_start = page_js.index("function setPreviewLoading")
+        loading_end = page_js.index("function ensureListMediaEditorScript", loading_start)
+        loading_body = page_js[loading_start:loading_end]
+        uncached_preview_start = preview_flow_js.index("await beforePreviewContentReplace();")
+        loading_call = preview_flow_js.index("setPreviewLoading();", uncached_preview_start)
+
+        self.assertLess(uncached_preview_start, loading_call)
+        self.assertNotIn("releasePreviewVideoPlayers", loading_body)
+        self.assertIn('const mediaElements = Array.prototype.slice.call(container.querySelectorAll("audio, video"));', page_js)
+        self.assertIn("stopPreviewMediaElements(container, mediaElements)", page_js)
+        self.assertIn("targetMediaElements.indexOf(activePipElement) !== -1", page_js)
+
+    def test_video_retry_button_recovers_source_from_video_dataset(self):
+        video_js = (Path(settings.BASE_DIR) / "static/js/handrive/video_player.js").read_text(encoding="utf-8")
+
+        self.assertIn("function getRetrySource()", video_js)
+        self.assertIn("resolveStartupSource(videoEl, { allowUnsupportedFallback: true })", video_js)
+        self.assertIn("player.src({ src: retrySource.src", video_js)
+
     @mock.patch("main.handrive_hls.subprocess.run")
     def test_thumbnail_sprite_preserves_aspect_ratio_with_padding(self, mock_run):
         handrive_hls = import_module("main.handrive_hls")
@@ -960,13 +1095,22 @@ class LanguageUrlRoutingTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
 
-    def test_localized_portfolio_page_uses_english_context(self):
-        response = self.client.get("/en/portfolio/")
+    def test_localized_sub_page_uses_english_context(self):
+        response = self.client.get("/en/sub/")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'lang="en"', html=False)
-        self.assertContains(response, 'href="/ko/portfolio/"', html=False)
-        self.assertContains(response, 'href="/en/portfolio/"', html=False)
+        self.assertContains(response, 'href="/ko/sub/"', html=False)
+        self.assertContains(response, 'href="/en/sub/"', html=False)
+        self.assertContains(response, 'data-ui-lang-mode="ko"', html=False)
+        self.assertContains(response, 'data-ui-lang-mode="en"', html=False)
+
+    def test_localized_page_sets_ui_language_cookie(self):
+        response = self.client.get("/en/sub/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(UI_LANG_COOKIE_NAME, response.cookies)
+        self.assertEqual(response.cookies[UI_LANG_COOKIE_NAME].value, "en")
 
     def test_build_lang_switch_url_replaces_existing_lang_prefix(self):
         request = self.factory.get("/ko/project/1/?tab=info")
@@ -983,6 +1127,27 @@ class LanguageUrlRoutingTests(TestCase):
         resolved = resolve_ui_lang(request, "en")
 
         self.assertEqual(resolved, "en")
+
+    def test_resolve_ui_lang_uses_cookie_before_session_and_browser_language(self):
+        request = self.factory.get(
+            "/portfolio/",
+            HTTP_COOKIE=f"{UI_LANG_COOKIE_NAME}=en",
+            HTTP_ACCEPT_LANGUAGE="ko-KR,ko;q=0.9",
+        )
+        request.session = {UI_LANG_SESSION_KEY: "ko"}
+
+        resolved = resolve_ui_lang(request, None)
+
+        self.assertEqual(resolved, "en")
+        self.assertEqual(request.session[UI_LANG_SESSION_KEY], "en")
+
+    def test_unprefixed_url_redirects_by_ui_language_cookie(self):
+        self.client.cookies[UI_LANG_COOKIE_NAME] = "en"
+
+        response = self.client.get("/portfolio/?tab=projects", HTTP_ACCEPT_LANGUAGE="ko-KR,ko;q=0.9")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/en/portfolio/?tab=projects")
 
     def test_resolve_ui_lang_uses_account_preference_before_browser_language(self):
         user = get_user_model().objects.create_user(username="lang_pref_user", password="pw123456")
@@ -1024,9 +1189,11 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, "<title>Hanplanet</title>", html=False)
         self.assertContains(response, '<meta property="og:title" content="Hanplanet">', html=False)
         self.assertContains(response, '<meta name="twitter:title" content="Hanplanet">', html=False)
+        self.assertContains(response, "Hanplanet은 스마트 검색, 번역, 바로가기, HanDrive 파일 관리", html=False)
         self.assertContains(response, "HanDrive의 파일 업로드, 정리, 미리보기, 편집, 공유", html=False)
         self.assertContains(response, "Google Drive 파일은 사용자 허용 시에만 표시하고 관리", html=False)
-        self.assertContains(response, '"description": "Hanplanet은 HanDrive를 통해 파일 업로드', html=False)
+        self.assertContains(response, '"description": "Hanplanet은 스마트 검색, 번역, 바로가기', html=False)
+        self.assertContains(response, '"Smart search and translation"', html=False)
 
     def test_handrive_pages_use_handrive_title_metadata(self):
         with TemporaryDirectory() as tmpdir, override_settings(MEDIA_ROOT=tmpdir):
@@ -1038,6 +1205,168 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, "<title>Handrive</title>", html=False)
         self.assertContains(response, '<meta property="og:title" content="Handrive">', html=False)
         self.assertContains(response, '<meta name="twitter:title" content="Handrive">', html=False)
+        self.assertEqual(response.context["meta_robots"], "noindex,follow")
+        self.assertContains(response, '<meta name="robots" content="noindex,follow">', html=False)
+        self.assertContains(response, "site-footer-purpose", html=False)
+        self.assertContains(response, "HanDrive의 파일 업로드, 정리, 미리보기, 편집, 공유", html=False)
+        self.assertContains(response, "Google Drive 파일은 사용자 허용 시에만 표시하고 관리", html=False)
+
+    def test_low_value_public_html_pages_use_noindex(self):
+        for url in ("/ko/login", "/ko/sub/", "/ko/sub/image-pip-demo/", "/ko/project/sample/1/"):
+            with self.subTest(url=url):
+                response = self.client.get(url)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.context["meta_robots"], "noindex,follow")
+                self.assertContains(response, '<meta name="robots" content="noindex,follow">', html=False)
+
+    def test_image_pip_demo_uses_custom_meta_image(self):
+        response = self.client.get(reverse("main:image_pip_demo_lang", kwargs={"ui_lang": "ko"}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "image-pip-demo-og-1200.png", html=False)
+        self.assertEqual(
+            response.context["meta_og_image"],
+            "https://www.hanplanet.com/static/media/icons/image-pip-demo-og-1200.png",
+        )
+        self.assertEqual(response.context["meta_twitter_image"], response.context["meta_og_image"])
+
+
+class CanvasPictureInPictureBehaviorTests(TestCase):
+    def read_project_file(self, relative_path):
+        return (Path(settings.BASE_DIR) / relative_path).read_text(encoding="utf-8")
+
+    def test_canvas_picture_in_picture_uses_manual_frame_capture(self):
+        source_paths = [
+            "static/js/fun/image_pip_demo.js",
+            "static/js/handrive/page.js",
+            "static/js/fun/qrbarcode.js",
+            "templates/handrive/map_viewer.html",
+        ]
+
+        for source_path in source_paths:
+            with self.subTest(source_path=source_path):
+                source = self.read_project_file(source_path)
+
+                self.assertIn("captureStream(0)", source)
+                self.assertIn("requestFrame", source)
+                self.assertIn("srcObject = null", source)
+                self.assertIn('removeAttribute("src")', source)
+                self.assertIn(".load()", source)
+
+    def test_map_picture_in_picture_freezes_hidden_page_capture(self):
+        source = self.read_project_file("templates/handrive/map_viewer.html")
+
+        self.assertIn("if (document.hidden) return;", source)
+        self.assertIn('document.addEventListener("visibilitychange"', source)
+        self.assertIn("refreshMapPictureInPicture();", source)
+
+
+class HandriveMarkdownSnippetSourceTests(TestCase):
+    def test_markdown_snippets_strip_existing_syntax_before_applying_new_syntax(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+
+        self.assertIn("function getMarkdownSnippetSelection(textarea)", page_js)
+        self.assertIn("function stripMarkdownDecorations(text)", page_js)
+        self.assertIn("function expandMarkdownSelectionRange(value, start, end)", page_js)
+        self.assertIn("body: stripMarkdownDecorations(value.slice(range.start, range.end))", page_js)
+        self.assertIn("const selection = getMarkdownSnippetSelection(editorContentInput);", page_js)
+        self.assertIn("const selection = getMarkdownSnippetSelection(contentInput);", page_js)
+        self.assertIn(
+            "replaceListEditorSelection(snippet.text, snippet.selectStart, snippet.selectEnd, snippet.replaceStart, snippet.replaceEnd);",
+            page_js,
+        )
+        self.assertIn(
+            "replaceTextareaSelection(snippet.text, snippet.selectStart, snippet.selectEnd, snippet.replaceStart, snippet.replaceEnd);",
+            page_js,
+        )
+
+
+class SitePreferenceSourceTests(TestCase):
+    def test_common_site_script_persists_theme_and_language_to_cookies(self):
+        site_js = (Path(settings.BASE_DIR) / "static/js/common/site.js").read_text(encoding="utf-8")
+
+        self.assertIn("const UI_LANG_COOKIE_KEY = 'portfolio_ui_lang';", site_js)
+        self.assertIn("const languageToggleButtons = Array.from(document.querySelectorAll('.ui-lang-link[data-ui-lang-mode]'));", site_js)
+        self.assertIn("function (name, value)", site_js)
+        self.assertIn("document.cookie = cookie;", site_js)
+        self.assertIn("domain=.hanplanet.com", site_js)
+        self.assertIn("writeUiLangCookie(String(button.dataset.uiLangMode || '').trim().toLowerCase());", site_js)
+
+    def test_root_search_theme_prefers_cookie_over_local_storage(self):
+        root_search_js = (Path(settings.BASE_DIR) / "static/js/pages/none/root_search.js").read_text(encoding="utf-8")
+
+        self.assertIn("const stored = readThemeCookie() || window.localStorage.getItem(THEME_MODE_STORAGE_KEY);", root_search_js)
+        self.assertIn("let shouldPersistInitialThemeMode = currentThemeMode !== null;", root_search_js)
+        self.assertIn("if (shouldPersistInitialThemeMode) {", root_search_js)
+        self.assertIn("writeThemeCookie(mode);", root_search_js)
+        self.assertIn("domain=.hanplanet.com", root_search_js)
+
+
+class HandriveStyleSourceTests(TestCase):
+    def test_handrive_markdown_uses_square_corners(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        markdown_start = handrive_css.index(".ui-markdown,\n.handrive-markdown")
+        markdown_end = handrive_css.index(".ui-markdown h1", markdown_start)
+        inline_code_start = handrive_css.index(".ui-markdown code,\n.handrive-markdown code")
+        inline_code_end = handrive_css.index(".ui-markdown pre,", inline_code_start)
+        pre_start = handrive_css.index(".ui-markdown pre,\n.handrive-markdown pre")
+        pre_end = handrive_css.index(".ui-markdown pre code,", pre_start)
+
+        self.assertIn("border-radius: 0;", handrive_css[markdown_start:markdown_end])
+        self.assertIn("border-radius: 0;", handrive_css[inline_code_start:inline_code_end])
+        self.assertIn("border-radius: 0;", handrive_css[pre_start:pre_end])
+
+    def test_handrive_markdown_code_blocks_use_distinct_light_background(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        inline_code_start = handrive_css.index("--handrive-markdown-inline-code-bg")
+        inline_code_end = handrive_css.index("--handrive-backdrop", inline_code_start)
+        pre_start = handrive_css.index(".ui-markdown pre,\n.handrive-markdown pre")
+        pre_end = handrive_css.index(".ui-markdown pre code,", pre_start)
+        help_code_start = handrive_css.index(".handrive-help-markdown code")
+        help_code_end = handrive_css.index(".handrive-help-markdown pre", help_code_start)
+        help_pre_start = help_code_end
+        help_pre_end = handrive_css.index(".handrive-help-markdown pre code", help_pre_start)
+
+        self.assertIn("--handrive-markdown-inline-code-bg: color-mix(in srgb, var(--handrive-bg) 94%, var(--handrive-text-stronger));", handrive_css)
+        self.assertIn("--handrive-markdown-inline-code-color: var(--handrive-text-stronger);", handrive_css)
+        self.assertIn("--handrive-markdown-code-block-bg: color-mix(in srgb, var(--handrive-bg) 94%, var(--handrive-text-stronger));", handrive_css)
+        self.assertIn("--handrive-markdown-code-block-bg: var(--handrive-surface-muted);", handrive_css)
+        self.assertNotIn("--handrive-markdown-code-block-bg: #", handrive_css)
+        self.assertNotIn("#eef2f7", handrive_css[inline_code_start:inline_code_end])
+        self.assertNotIn("#19324d", handrive_css[inline_code_start:inline_code_end])
+        self.assertIn("margin: 8px 0;", handrive_css[pre_start:pre_end])
+        self.assertIn("background: var(--handrive-markdown-code-block-bg);", handrive_css[pre_start:pre_end])
+        self.assertIn("border-radius: 0;", handrive_css[help_code_start:help_code_end])
+        self.assertIn("background: var(--handrive-markdown-inline-code-bg);", handrive_css[help_code_start:help_code_end])
+        self.assertIn("margin: 8px 0;", handrive_css[help_pre_start:help_pre_end])
+        self.assertIn("border-radius: 0;", handrive_css[help_pre_start:help_pre_end])
+        self.assertIn("background: var(--handrive-markdown-code-block-bg);", handrive_css[help_pre_start:help_pre_end])
+
+    def test_spreadsheet_preview_has_portrait_height_fallback(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        self.assertIn(
+            ".handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-office-sheet",
+            handrive_css,
+        )
+        self.assertIn("min-height: min(520px, max(360px, calc(100vh - 220px)));", handrive_css)
+        self.assertIn(
+            ".handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-office-sheet .handrive-spreadsheet-preview-hot",
+            handrive_css,
+        )
+        self.assertIn("min-height: 320px;", handrive_css)
+
+    def test_spreadsheet_preview_recalculates_handsontable_height_on_resize(self):
+        spreadsheet_js = (Path(settings.BASE_DIR) / "static/js/handrive/spreadsheet_editor.js").read_text(encoding="utf-8")
+
+        self.assertIn("function getPreviewHotHeight(state)", spreadsheet_js)
+        self.assertIn("function schedulePreviewHotLayout(state)", spreadsheet_js)
+        self.assertIn("state.hot.updateSettings({ height: height });", spreadsheet_js)
+        self.assertIn('window.addEventListener("orientationchange", scheduleAllPreviewHotLayouts', spreadsheet_js)
+        self.assertIn("new window.ResizeObserver(function ()", spreadsheet_js)
 
 
 class HandriveSignupAutoLoginTests(TestCase):
@@ -1547,6 +1876,67 @@ class HandriveEditorPermissionTests(TestCase):
         self.assertNotEqual(response.status_code, 403)
 
 
+class HandrivePdfEditorSaveTests(TestCase):
+    def test_pdf_editor_save_temp_file_is_created_next_to_destination(self):
+        handrive_views = import_module("main.handrive_views")
+
+        with TemporaryDirectory() as tmp:
+            media_root = Path(tmp) / "media"
+            handrive_root = media_root / "HanDrive"
+            target_dir = handrive_root / "users" / "pdf_save_check"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            source = target_dir / "source.pdf"
+
+            fitz = handrive_views._load_pymupdf()
+            doc = fitz.open()
+            page = doc.new_page(width=240, height=160)
+            page.insert_text((20, 40), "source", fontsize=12)
+            doc.save(str(source))
+            doc.close()
+
+            with override_settings(MEDIA_ROOT=str(media_root), ALLOWED_HOSTS=["testserver"]):
+                user = get_user_model().objects.create_user(
+                    username="pdf_save_check",
+                    password="pw123456",
+                    is_superuser=True,
+                    is_staff=True,
+                )
+                self.client.force_login(user)
+
+                real_replace = handrive_views.os.replace
+                replace_parents = []
+
+                def checked_replace(src, dst):
+                    src_path = Path(src)
+                    dst_path = Path(dst)
+                    replace_parents.append((src_path.parent, dst_path.parent))
+                    self.assertEqual(src_path.parent, dst_path.parent)
+                    return real_replace(src, dst)
+
+                annotations = [{
+                    "type": "text",
+                    "page": 0,
+                    "x": 20,
+                    "y": 60,
+                    "width": 120,
+                    "height": 32,
+                    "text": "saved",
+                    "fontFamily": "system",
+                    "fontSize": 14,
+                    "color": "#111827",
+                }]
+                with mock.patch("main.handrive_views.os.replace", side_effect=checked_replace):
+                    response = self.client.post(reverse("main:handrive_api_pdf_editor_save"), {
+                        "path": "users/pdf_save_check/source.pdf",
+                        "filename": "saved.pdf",
+                        "annotations_json": json.dumps(annotations),
+                    })
+
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(replace_parents)
+                self.assertTrue((target_dir / "saved.pdf").exists())
+
+
 class UserPreferenceApiTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="pref_user", password="pw123456")
@@ -1587,7 +1977,11 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "handleEnterSubmit", html=False)
         self.assertNotContains(response, 'input.addEventListener("keydown"', html=False)
-        self.assertContains(response, 'loginForm.dataset.submitting = "1"', html=False)
+        self.assertContains(response, 'loginForm.dataset.submitting = submitting ? "1" : "0"', html=False)
+        self.assertContains(response, 'id="handrive-login-loading"', html=False)
+        self.assertContains(response, 'class="handrive-login-loading-spinner"', html=False)
+        self.assertContains(response, 'loginForm.classList.toggle("is-submitting", submitting)', html=False)
+        self.assertContains(response, 'loginForm.setAttribute("aria-busy"', html=False)
 
     def test_docs_login_page_marks_auth_inputs_for_local_safety_filtering(self):
         response = self.client.get("/ko/login/")
@@ -1597,6 +1991,24 @@ class HandriveAuthFlowTests(TestCase):
         self.assertContains(response, 'data-handrive-auth-safe-input="password"', html=False)
         self.assertContains(response, "forbiddenAuthCharPattern", html=False)
         self.assertContains(response, "beforeinput", html=False)
+
+    def test_otp_boxes_mask_previous_digits_with_icon(self):
+        login_template = (Path(settings.BASE_DIR) / "templates/handrive/login.html").read_text(encoding="utf-8")
+        verify_template = (Path(settings.BASE_DIR) / "templates/handrive/2fa_verify.html").read_text(encoding="utf-8")
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        for source in (login_template, verify_template):
+            self.assertIn('box.classList.toggle("is-masked", isMasked)', source)
+            self.assertNotIn(': "•"', source)
+
+        self.assertIn(".handrive-otp-box.is-masked::before", handrive_css)
+        self.assertIn("mask-image: url(\"data:image/svg+xml", handrive_css)
+        otp_mask_rule = handrive_css[
+            handrive_css.index(".handrive-otp-box.is-masked::before"):
+            handrive_css.index(".handrive-otp-input-wrap.is-focused")
+        ]
+        self.assertIn("fill='black'", otp_mask_rule)
+        self.assertNotIn("stroke-linecap", otp_mask_rule)
 
     def test_docs_login_rejects_unsafe_username_chars_server_side(self):
         response = self.client.post(
@@ -1684,7 +2096,8 @@ class HandriveAuthFlowTests(TestCase):
         GOOGLE_AUTH_CLIENT_SECRET="google-client-secret",
         GOOGLE_AUTH_AUTHORIZE_URL="https://accounts.google.example/o/oauth2/v2/auth",
         GOOGLE_AUTH_CALLBACK_URL="https://www.hanplanet.com/auth/google/callback",
-        GOOGLE_AUTH_SCOPE="openid email profile",
+        GOOGLE_AUTH_SCOPE="openid email profile https://www.googleapis.com/auth/drive.file",
+        GOOGLE_AUTH_BASE_SCOPE="openid email profile",
     )
     def test_google_login_start_redirects_to_google(self):
         response = self.client.get("/ko/auth/google/start/", {"mode": "login", "next": "/ko/handrive/"})
@@ -1697,9 +2110,38 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(query["redirect_uri"], ["https://www.hanplanet.com/auth/google/callback"])
         self.assertEqual(query["response_type"], ["code"])
         self.assertEqual(query["scope"], ["openid email profile"])
+        self.assertNotIn("https://www.googleapis.com/auth/drive.file", query["scope"][0])
         self.assertIn("state", query)
         pending = self.client.session[HANDRIVE_GOOGLE_AUTH_STATE_SESSION_KEY]
         self.assertEqual(pending["mode"], "login")
+        self.assertEqual(pending["next_url"], "/ko/handrive/")
+
+    @override_settings(
+        GOOGLE_AUTH_CLIENT_ID="google-client-id",
+        GOOGLE_AUTH_CLIENT_SECRET="google-client-secret",
+        GOOGLE_AUTH_AUTHORIZE_URL="https://accounts.google.example/o/oauth2/v2/auth",
+        GOOGLE_AUTH_CALLBACK_URL="https://www.hanplanet.com/auth/google/callback",
+        GOOGLE_AUTH_BASE_SCOPE="openid email profile",
+        GOOGLE_AUTH_DRIVE_FILE_SCOPE="https://www.googleapis.com/auth/drive.file",
+    )
+    def test_google_drive_auth_start_requests_drive_scope_with_login_hint(self):
+        GoogleAccountMapping.objects.create(
+            user=self.user,
+            google_user_id="google-sub-drive",
+            google_email="google-drive@example.com",
+            user_access_token="base-token",
+            token_scope="openid email profile",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get("/ko/auth/google/start/", {"mode": "drive", "next": "/ko/handrive/"})
+
+        self.assertEqual(response.status_code, 302)
+        query = parse_qs(urlparse(response["Location"]).query)
+        self.assertEqual(query["scope"], ["openid email profile https://www.googleapis.com/auth/drive.file"])
+        self.assertEqual(query["login_hint"], ["google-drive@example.com"])
+        pending = self.client.session[HANDRIVE_GOOGLE_AUTH_STATE_SESSION_KEY]
+        self.assertEqual(pending["mode"], "drive")
         self.assertEqual(pending["next_url"], "/ko/handrive/")
 
     @override_settings(GITHUB_AUTH_SCOPE="repo user:email")
@@ -1874,9 +2316,10 @@ class HandriveAuthFlowTests(TestCase):
             google_name="Google User",
             user_access_token="google-access-token",
             user_refresh_token="google-refresh-token",
-            token_scope="openid email profile https://www.googleapis.com/auth/drive",
+            token_scope="openid email profile https://www.googleapis.com/auth/drive.file",
             token_type="Bearer",
             google_drive_enabled=True,
+            google_profile_synced_at=timezone.now(),
         )
         self.client.force_login(self.user)
 
@@ -1911,6 +2354,33 @@ class HandriveAuthFlowTests(TestCase):
         self.assertContains(response, "data-auth-github-unlink", html=False)
         self.assertContains(response, "data-auth-google-unlink", html=False)
         self.assertContains(response, "연동해제")
+
+    def test_account_widget_defaults_google_drive_toggle_off_until_saved(self):
+        mapping = GoogleAccountMapping.objects.create(
+            user=self.user,
+            google_user_id="google-sub-default-drive",
+            google_email="google-default@example.com",
+            user_access_token="google-access-token",
+            token_scope="openid email profile",
+            google_drive_enabled=False,
+            google_drive_preference_set=False,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get("/ko/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-google-connected="1"', html=False)
+        self.assertContains(response, 'data-google-drive-enabled="0"', html=False)
+
+        mapping.google_drive_enabled = True
+        mapping.google_drive_preference_set = True
+        mapping.save(update_fields=["google_drive_enabled", "google_drive_preference_set", "updated_at"])
+
+        response = self.client.get("/ko/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-google-drive-enabled="1"', html=False)
 
     @override_settings(GITHUB_APP_CLIENT_ID="github-client-id", GITHUB_APP_CLIENT_SECRET="github-client-secret")
     def test_signup_page_does_not_render_github_signup_button(self):
@@ -2005,6 +2475,89 @@ class HandriveAuthFlowTests(TestCase):
         pending = self.client.session[HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY]
         self.assertEqual(pending["action"], "choice")
         self.assertEqual(pending["identity"]["google_user_id"], "google-sub-12345")
+
+    @override_settings(GOOGLE_AUTH_CLIENT_ID="google-client-id", GOOGLE_AUTH_CLIENT_SECRET="google-client-secret")
+    @mock.patch("main.handrive_views.fetch_google_identity")
+    @mock.patch("main.handrive_views.exchange_google_code")
+    def test_google_drive_callback_merges_drive_scope_after_identity_match(
+        self,
+        mock_exchange_code,
+        mock_fetch_identity,
+    ):
+        GoogleAccountMapping.objects.create(
+            user=self.user,
+            google_user_id="google-sub-drive-callback",
+            google_email="google-drive-callback@example.com",
+            user_access_token="base-token",
+            user_refresh_token="base-refresh",
+            token_scope="openid email profile",
+            google_drive_enabled=False,
+        )
+        self.client.force_login(self.user)
+        self._seed_google_auth_session(mode="drive", next_url="/ko/handrive/")
+        mock_exchange_code.return_value = GoogleTokenData(
+            access_token="drive-token",
+            scope="https://www.googleapis.com/auth/drive.file",
+            token_type="Bearer",
+        )
+        mock_fetch_identity.return_value = GoogleIdentity(
+            google_user_id="google-sub-drive-callback",
+            name="Google Drive User",
+            email="google-drive-callback@example.com",
+            email_verified=True,
+        )
+
+        response = self.client.get("/auth/google/callback/", {"code": "code-1", "state": "google-state"})
+
+        self.assertEqual(response.status_code, 302)
+        mapping = GoogleAccountMapping.objects.get(user=self.user)
+        self.assertEqual(mapping.user_access_token, "drive-token")
+        self.assertEqual(mapping.user_refresh_token, "base-refresh")
+        self.assertIn("openid", mapping.token_scope)
+        self.assertIn("https://www.googleapis.com/auth/drive.file", mapping.token_scope)
+        self.assertTrue(mapping.google_drive_enabled)
+        self.assertTrue(mapping.google_drive_preference_set)
+        mock_fetch_identity.assert_called_once_with("drive-token")
+
+    @override_settings(GOOGLE_AUTH_CLIENT_ID="google-client-id", GOOGLE_AUTH_CLIENT_SECRET="google-client-secret")
+    @mock.patch("main.handrive_views.fetch_google_identity")
+    @mock.patch("main.handrive_views.exchange_google_code")
+    def test_google_drive_callback_rejects_different_google_account(
+        self,
+        mock_exchange_code,
+        mock_fetch_identity,
+    ):
+        GoogleAccountMapping.objects.create(
+            user=self.user,
+            google_user_id="google-sub-drive-callback",
+            google_email="google-drive-callback@example.com",
+            user_access_token="base-token",
+            user_refresh_token="base-refresh",
+            token_scope="openid email profile",
+            google_drive_enabled=False,
+        )
+        self.client.force_login(self.user)
+        self._seed_google_auth_session(mode="drive", next_url="/ko/handrive/")
+        mock_exchange_code.return_value = GoogleTokenData(
+            access_token="other-drive-token",
+            scope="https://www.googleapis.com/auth/drive.file",
+            token_type="Bearer",
+        )
+        mock_fetch_identity.return_value = GoogleIdentity(
+            google_user_id="different-google-sub",
+            name="Other Google User",
+            email="other-google@example.com",
+            email_verified=True,
+        )
+
+        response = self.client.get("/auth/google/callback/", {"code": "code-1", "state": "google-state"})
+
+        self.assertEqual(response.status_code, 200)
+        mapping = GoogleAccountMapping.objects.get(user=self.user)
+        self.assertEqual(mapping.user_access_token, "base-token")
+        self.assertEqual(mapping.user_refresh_token, "base-refresh")
+        self.assertEqual(mapping.token_scope, "openid email profile")
+        self.assertFalse(mapping.google_drive_enabled)
 
     @mock.patch("main.handrive_views.list_github_repositories")
     def test_github_pending_link_action_attaches_to_authenticated_user(self, mock_list_repositories):
@@ -2965,8 +3518,32 @@ class NetworkEnvironmentPageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "네트워크 환경", html=False)
+        self.assertContains(response, "로컬 IP", html=False)
+        self.assertContains(response, "네트워크 속도 측정", html=False)
+        self.assertNotContains(response, ">M-Lab NDT7 측정<", html=False)
+        self.assertContains(response, "network-info-og-1200.png", html=False)
+        self.assertContains(response, "data-network-summary-gps", html=False)
+        self.assertContains(response, "data-network-summary-speed", html=False)
+        self.assertContains(response, "data-network-value=\"summary-download-speed\"", html=False)
+        self.assertContains(response, "data-network-value=\"summary-upload-speed\"", html=False)
+        self.assertContains(response, "data-reverse-geocode-url=\"/ko/sub/network-info/api/reverse-geocode", html=False)
+        self.assertContains(response, "data-network-value=\"summary-location-place\"", html=False)
+        self.assertContains(response, '<span class="network-meter-label">다운로드</span>', html=False)
+        self.assertContains(response, '<span class="network-meter-label">업로드</span>', html=False)
+        self.assertNotContains(response, '<span class="network-meter-label">M-Lab 다운로드</span>', html=False)
+        self.assertContains(response, "vendor/mlab-ndt7/0.1.4/ndt7-download-worker.js", html=False)
+        self.assertNotContains(response, "Hanplanet 다운로드", html=False)
+        self.assertNotContains(response, "data-network-download-test", html=False)
+        self.assertNotContains(response, "/api/download", html=False)
+        self.assertNotContains(response, "/api/upload", html=False)
+        self.assertContains(response, "공인 IP와 측정 결과가 M-Lab에 전송", html=False)
+        self.assertContains(response, "site-footer-purpose", html=False)
         self.assertContains(response, "network-environment-page", html=False)
         self.assertContains(response, "/ko/sub/network-info/api/environment", html=False)
+        network_css = (Path(settings.BASE_DIR) / "static/css/fun/network_environment.css").read_text()
+        self.assertIn(".network-summary-action .network-summary-value", network_css)
+        self.assertIn("overflow-y: auto", network_css)
+        self.assertIn("-webkit-overflow-scrolling: touch", network_css)
 
     def test_unprefixed_network_environment_redirects_to_localized_url(self):
         response = self.client.get("/sub/network-info/")
@@ -2975,56 +3552,89 @@ class NetworkEnvironmentPageTests(TestCase):
         self.assertEqual(response["Location"], "/ko/sub/network-info/")
 
     def test_network_environment_api_reports_observed_ip(self):
-        response = self.client.get(
-            reverse("main:network_environment_api_lang", kwargs={"ui_lang": "ko"}),
-            HTTP_CF_CONNECTING_IP="203.0.113.5",
-            HTTP_X_FORWARDED_FOR="198.51.100.10, 10.0.0.4",
-            REMOTE_ADDR="127.0.0.1",
-        )
+        with mock.patch(
+            "main.views._get_server_local_addresses",
+            return_value=[
+                {"address": "127.0.0.1", "kind": "loopback", "sources": ["hostname"]},
+                {"address": "192.168.0.42", "kind": "private", "sources": ["default-route"]},
+            ],
+        ):
+            response = self.client.get(
+                reverse("main:network_environment_api_lang", kwargs={"ui_lang": "ko"}),
+                HTTP_CF_CONNECTING_IP="203.0.113.5",
+                HTTP_X_FORWARDED_FOR="198.51.100.10, 10.0.0.4",
+                REMOTE_ADDR="127.0.0.1",
+            )
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["observed_ip"], "203.0.113.5")
+        self.assertEqual(payload["local_ip"], "192.168.0.42")
+        self.assertEqual(payload["local_ip_kind"], "private")
+        self.assertEqual(payload["local_ip_sources"], ["default-route"])
         self.assertEqual(payload["ip_candidates"]["x_forwarded_for"][0], "198.51.100.10")
         self.assertEqual(payload["ip_candidates"]["remote_addr"], "127.0.0.1")
 
-    def test_network_speed_download_returns_requested_payload_size(self):
+    def test_network_environment_prefers_default_gateway_local_ip(self):
+        with mock.patch(
+            "main.views._get_server_local_addresses",
+            return_value=[
+                {"address": "10.1.0.4", "kind": "private", "sources": ["default-route"], "interfaces": ["utun4"]},
+                {
+                    "address": "192.168.0.20",
+                    "kind": "private",
+                    "sources": ["hostname", "default-gateway"],
+                    "interfaces": ["en1"],
+                    "gateway": "192.168.0.1",
+                },
+            ],
+        ):
+            response = self.client.get(reverse("main:network_environment_api_lang", kwargs={"ui_lang": "ko"}))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["local_ip"], "192.168.0.20")
+        self.assertEqual(payload["local_ip_sources"], ["hostname", "default-gateway"])
+        self.assertEqual(payload["local_ip_interfaces"], ["en1"])
+        self.assertEqual(payload["local_ip_gateway"], "192.168.0.1")
+
+    def test_network_reverse_geocode_api_reports_country_and_city(self):
+        cache.clear()
+        upstream_response = mock.Mock()
+        upstream_response.raise_for_status.return_value = None
+        upstream_response.json.return_value = {
+            "address": {
+                "country": "대한민국",
+                "city": "서울특별시",
+                "country_code": "kr",
+            }
+        }
+
+        with mock.patch("main.views.httpx.get", return_value=upstream_response) as mocked_get:
+            response = self.client.get(
+                reverse("main:network_reverse_geocode_api_lang", kwargs={"ui_lang": "ko"}),
+                {"lat": "37.5665", "lon": "126.9780"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["country"], "대한민국")
+        self.assertEqual(payload["city"], "서울특별시")
+        self.assertEqual(payload["place"], "대한민국 · 서울특별시")
+        call_kwargs = mocked_get.call_args.kwargs
+        self.assertEqual(call_kwargs["params"]["zoom"], "10")
+        self.assertIn("User-Agent", call_kwargs["headers"])
+
+    def test_network_reverse_geocode_api_rejects_invalid_coordinates(self):
         response = self.client.get(
-            reverse("main:network_speed_download_lang", kwargs={"ui_lang": "ko"}),
-            {"size": 262144},
+            reverse("main:network_reverse_geocode_api_lang", kwargs={"ui_lang": "ko"}),
+            {"lat": "200", "lon": "126.9780"},
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(int(response["Content-Length"]), 262144)
-        self.assertEqual(len(response.content), 262144)
-
-    def test_network_speed_upload_counts_received_bytes(self):
-        response = self.client.post(
-            reverse("main:network_speed_upload_lang", kwargs={"ui_lang": "ko"}),
-            data=b"abcdef",
-            content_type="application/octet-stream",
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["bytes"], 6)
-
-    def test_network_speed_upload_streams_larger_payload(self):
-        payload_bytes = b"x" * (3 * 1024 * 1024)
-
-        response = self.client.post(
-            reverse("main:network_speed_upload_lang", kwargs={"ui_lang": "ko"}),
-            data=payload_bytes,
-            content_type="application/octet-stream",
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["bytes"], len(payload_bytes))
-
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["ok"])
 
 class HanplanetMultiplayerPageTests(TestCase):
     def setUp(self):
@@ -3489,6 +4099,13 @@ class HanplanetMultiplayerPageTests(TestCase):
         self.assertContains(response, "youtube-downloader-og-1200.png", html=False)
         self.assertFalse(response.context["show_account_bumpercar_spiky_stats"])
 
+    def test_sub_page_uses_wide_layout_above_portrait_breakpoint(self):
+        response = self.client.get("/ko/sub/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "@media (min-width: 841px)", html=False)
+        self.assertNotContains(response, "@media (orientation: landscape) and (min-width: 900px)", html=False)
+
     def test_sub_page_groups_text_speaki_as_game(self):
         response = self.client.get("/ko/sub/")
 
@@ -3537,10 +4154,28 @@ class HanplanetMultiplayerPageTests(TestCase):
         response = self.client.get("/sitemap.xml")
 
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/ko/handrive</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/en/handrive</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/ko/handrive/cli</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/en/handrive/cli</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/ko/sub</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/en/sub</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/ko/sub/Salvations_Edge_4/</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/en/sub/Stratagem_Hero/Scoreboard/</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/ko/sub/bubble</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/en/sub/text-speaki</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/ko/sub/image-pip-demo</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/en/sub/network-info</loc>", html=False)
         self.assertContains(response, "<loc>https://www.hanplanet.com/ko/sub/qrbarcode</loc>", html=False)
         self.assertContains(response, "<loc>https://www.hanplanet.com/en/sub/qrbarcode</loc>", html=False)
         self.assertContains(response, "<loc>https://www.hanplanet.com/ko/sub/youtube-downloader</loc>", html=False)
         self.assertContains(response, "<loc>https://www.hanplanet.com/en/sub/youtube-downloader</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/ko/sub/bumpercar-spiky</loc>", html=False)
+        self.assertContains(response, "<loc>https://www.hanplanet.com/en/sub/raise-speaki</loc>", html=False)
+        self.assertNotContains(response, "https://www.hanplanet.com/ko/portfolio/HanbyelLim/", html=False)
+        self.assertNotContains(response, "https://www.hanplanet.com/en/portfolio/HanbyelLim/", html=False)
+        self.assertNotContains(response, "/sub/bumpercar-spiky/admin", html=False)
+        self.assertNotContains(response, "/sub/youtube-downloader/download", html=False)
 
     def test_youtube_download_file_cleans_token_dir_after_attachment_download(self):
         with TemporaryDirectory() as tmpdir:
@@ -3640,9 +4275,10 @@ class HandriveAccessRuleTests(TestCase):
             google_name="Google User",
             user_access_token="google-access-token",
             user_refresh_token="google-refresh-token",
-            token_scope="openid email profile https://www.googleapis.com/auth/drive",
+            token_scope="openid email profile https://www.googleapis.com/auth/drive.file",
             token_type="Bearer",
             google_drive_enabled=True,
+            google_profile_synced_at=timezone.now(),
         )
 
     def build_minimal_ico_bytes(self):
@@ -3674,11 +4310,10 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(google_entries[0]["path"], f"users/{user.username}/.google-drive-{mapping.id}")
         self.assertEqual(google_entries[0]["type_display"], "Google Drive")
 
-    @mock.patch("main.handrive_views.list_google_drive_files")
-    def test_google_drive_api_list_returns_drive_files(self, mock_list_files):
+    def test_google_drive_api_list_returns_drive_files(self):
         user = self.create_scoped_handrive_editor("gdrive_list_user")
         mapping = self.create_google_drive_mapping(user)
-        mock_list_files.return_value = [
+        mapping.selected_drive_items = [
             {
                 "id": "folder-id",
                 "name": "Projects",
@@ -3693,6 +4328,7 @@ class HandriveAccessRuleTests(TestCase):
                 "modifiedTime": "2026-06-01T01:03:03Z",
             },
         ]
+        mapping.save(update_fields=["selected_drive_items", "updated_at"])
         self.client.force_login(user)
         root_path = f"users/{user.username}/.google-drive-{mapping.id}"
 
@@ -3706,6 +4342,186 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(payload["entries"][0]["path"], f"{root_path}/folder-id")
         self.assertTrue(payload["entries"][0]["google_drive"]["is_folder"])
         self.assertEqual(payload["entries"][1]["size_display"], "12 B")
+
+    def test_google_drive_docs_editor_url_maps_office_and_workspace_files(self):
+        self.assertEqual(
+            build_google_drive_docs_editor_url(
+                "word id",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "proposal.docx",
+            ),
+            "https://docs.google.com/document/d/word%20id/edit",
+        )
+        self.assertEqual(
+            build_google_drive_docs_editor_url("sheet-id", "", "budget.xlsx"),
+            "https://docs.google.com/spreadsheets/d/sheet-id/edit",
+        )
+        self.assertEqual(
+            build_google_drive_docs_editor_url("slides-id", "application/vnd.google-apps.presentation", "Deck"),
+            "https://docs.google.com/presentation/d/slides-id/edit",
+        )
+        self.assertEqual(build_google_drive_docs_editor_url("plain-id", "text/plain", "note.txt"), "")
+        self.assertEqual(
+            build_google_drive_docs_preview_url(
+                "word id",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "proposal.docx",
+            ),
+            "https://docs.google.com/document/d/word%20id/preview",
+        )
+        self.assertEqual(
+            build_google_drive_docs_preview_url("sheet-id", "", "budget.xlsx"),
+            "https://docs.google.com/spreadsheets/d/sheet-id/preview",
+        )
+        self.assertEqual(
+            build_google_drive_docs_preview_url("slides-id", "application/vnd.google-apps.presentation", "Deck"),
+            "https://docs.google.com/presentation/d/slides-id/preview",
+        )
+        self.assertEqual(build_google_drive_docs_preview_url("plain-id", "text/plain", "note.txt"), "")
+
+    @mock.patch("main.handrive_views._refresh_google_profile_once_per_day", return_value=None)
+    def test_google_drive_api_list_includes_docs_editor_url_for_office_files(self, _mock_refresh_profile):
+        user = self.create_scoped_handrive_editor("gdrive_docs_url_user")
+        mapping = self.create_google_drive_mapping(user)
+        mapping.selected_drive_items = [
+            {
+                "id": "docx-file-id",
+                "name": "Proposal.docx",
+                "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "size": "1200",
+                "modifiedTime": "2026-06-01T01:03:03Z",
+            },
+            {
+                "id": "workspace-sheet-id",
+                "name": "Budget",
+                "mimeType": "application/vnd.google-apps.spreadsheet",
+                "modifiedTime": "2026-06-01T01:04:03Z",
+            },
+        ]
+        mapping.save(update_fields=["selected_drive_items", "updated_at"])
+        self.client.force_login(user)
+        root_path = f"users/{user.username}/.google-drive-{mapping.id}"
+
+        response = self.client.get(reverse("main:handrive_api_list"), {"path": root_path})
+
+        self.assertEqual(response.status_code, 200)
+        entries = response.json()["entries"]
+        docx_entry = next(entry for entry in entries if entry["google_drive"]["id"] == "docx-file-id")
+        workspace_entry = next(entry for entry in entries if entry["google_drive"]["id"] == "workspace-sheet-id")
+        self.assertEqual(
+            docx_entry["google_drive"]["docs_editor_url"],
+            "https://docs.google.com/document/d/docx-file-id/edit",
+        )
+        self.assertEqual(
+            docx_entry["google_drive"]["docs_preview_url"],
+            "https://docs.google.com/document/d/docx-file-id/preview",
+        )
+        self.assertTrue(docx_entry["google_drive"]["can_edit_content"])
+        self.assertEqual(
+            workspace_entry["google_drive"]["docs_editor_url"],
+            "https://docs.google.com/spreadsheets/d/workspace-sheet-id/edit",
+        )
+        self.assertEqual(
+            workspace_entry["google_drive"]["docs_preview_url"],
+            "https://docs.google.com/spreadsheets/d/workspace-sheet-id/preview",
+        )
+        self.assertFalse(workspace_entry["google_drive"]["can_edit_content"])
+
+    @mock.patch("main.handrive_views.download_google_drive_file")
+    @mock.patch("main.handrive_views.get_google_drive_file")
+    def test_google_drive_office_preview_embeds_google_docs_preview(self, mock_get_file, mock_download_file):
+        user = self.create_scoped_handrive_editor("gdrive_preview_docs_user")
+        mapping = self.create_google_drive_mapping(user)
+        mock_get_file.return_value = {
+            "id": "office-file-id",
+            "name": "Proposal.docx",
+            "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }
+        self.client.force_login(user)
+        file_path = f"users/{user.username}/.google-drive-{mapping.id}/office-file-id"
+
+        response = self.client.post(
+            reverse("main:handrive_api_preview"),
+            data=json.dumps({"path": file_path}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["render_mode"], "office")
+        self.assertEqual(payload["render_class"], "handrive-office handrive-office-word")
+        self.assertIn('src="https://docs.google.com/document/d/office-file-id/preview"', payload["html"])
+        self.assertIn("handrive-google-docs-preview-frame", payload["html"])
+        mock_download_file.assert_not_called()
+
+    @mock.patch("main.handrive_views.download_google_drive_file")
+    @mock.patch("main.handrive_views.get_google_drive_file")
+    def test_google_drive_workspace_preview_embeds_google_docs_preview(self, mock_get_file, mock_download_file):
+        user = self.create_scoped_handrive_editor("gdrive_preview_sheet_user")
+        mapping = self.create_google_drive_mapping(user)
+        mock_get_file.return_value = {
+            "id": "workspace-sheet-id",
+            "name": "Budget",
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+        }
+        self.client.force_login(user)
+        file_path = f"users/{user.username}/.google-drive-{mapping.id}/workspace-sheet-id"
+
+        response = self.client.post(
+            reverse("main:handrive_api_preview"),
+            data=json.dumps({"path": file_path}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["render_mode"], "office")
+        self.assertEqual(payload["render_class"], "handrive-office handrive-office-sheet")
+        self.assertIn('src="https://docs.google.com/spreadsheets/d/workspace-sheet-id/preview"', payload["html"])
+        mock_download_file.assert_not_called()
+
+    @mock.patch("main.handrive_views.download_google_drive_file")
+    @mock.patch("main.handrive_views.get_google_drive_file")
+    def test_google_drive_office_view_redirects_to_google_docs(self, mock_get_file, mock_download_file):
+        user = self.create_scoped_handrive_editor("gdrive_view_docs_user")
+        mapping = self.create_google_drive_mapping(user)
+        mock_get_file.return_value = {
+            "id": "office-file-id",
+            "name": "Proposal.docx",
+            "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }
+        self.client.force_login(user)
+        file_path = f"users/{user.username}/.google-drive-{mapping.id}/office-file-id"
+
+        response = self.client.get(f"/ko/handrive/{file_path}")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "https://docs.google.com/document/d/office-file-id/edit")
+        mock_download_file.assert_not_called()
+
+    @mock.patch("main.handrive_views.download_google_drive_file")
+    @mock.patch("main.handrive_views.get_google_drive_file")
+    def test_google_drive_workspace_write_redirects_to_google_docs(self, mock_get_file, mock_download_file):
+        user = self.create_scoped_handrive_editor("gdrive_write_docs_user")
+        mapping = self.create_google_drive_mapping(user)
+        mock_get_file.return_value = {
+            "id": "workspace-doc-id",
+            "name": "Workspace Doc",
+            "mimeType": "application/vnd.google-apps.document",
+        }
+        self.client.force_login(user)
+        file_path = f"users/{user.username}/.google-drive-{mapping.id}/workspace-doc-id"
+
+        response = self.client.get(
+            reverse("main:handrive_write_lang", kwargs={"ui_lang": "ko"}),
+            {"path": file_path},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "https://docs.google.com/document/d/workspace-doc-id/edit")
+        mock_download_file.assert_not_called()
 
     def test_google_drive_root_entry_hidden_when_disabled(self):
         user = self.create_scoped_handrive_editor("gdrive_disabled_root_user")
@@ -3839,6 +4655,7 @@ class HandriveAccessRuleTests(TestCase):
         self.assertFalse(payload["google_drive_enabled"])
         mapping.refresh_from_db()
         self.assertFalse(mapping.google_drive_enabled)
+        self.assertTrue(mapping.google_drive_preference_set)
 
         response = self.client.post(
             reverse("main:handrive_api_google_drive_settings"),
@@ -3849,6 +4666,132 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         mapping.refresh_from_db()
         self.assertTrue(mapping.google_drive_enabled)
+        self.assertTrue(mapping.google_drive_preference_set)
+
+    def test_google_drive_settings_enable_requires_incremental_drive_auth_when_scope_missing(self):
+        user = self.create_scoped_handrive_editor("gdrive_incremental_user")
+        mapping = self.create_google_drive_mapping(user)
+        mapping.token_scope = "openid email profile"
+        mapping.google_drive_enabled = False
+        mapping.save(update_fields=["token_scope", "google_drive_enabled", "updated_at"])
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("main:handrive_api_google_drive_settings"),
+            data=json.dumps({"enabled": True}),
+            content_type="application/json",
+            HTTP_REFERER="/ko/handrive/users/gdrive_incremental_user/list",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["requires_google_drive_auth"])
+        self.assertFalse(payload["google_drive_enabled"])
+        self.assertIn("mode=drive", payload["auth_url"])
+        mapping.refresh_from_db()
+        self.assertFalse(mapping.google_drive_enabled)
+        self.assertFalse(mapping.google_drive_preference_set)
+
+    @override_settings(GOOGLE_PICKER_API_KEY="picker-api-key", GOOGLE_PICKER_APP_ID="516810234938")
+    def test_google_drive_picker_config_requires_incremental_auth_when_scope_missing(self):
+        user = self.create_scoped_handrive_editor("gdrive_picker_incremental_user")
+        mapping = self.create_google_drive_mapping(user)
+        mapping.token_scope = "openid email profile"
+        mapping.google_drive_enabled = True
+        mapping.save(update_fields=["token_scope", "google_drive_enabled", "updated_at"])
+        self.client.force_login(user)
+
+        response = self.client.get(
+            reverse("main:handrive_api_google_picker_config"),
+            HTTP_REFERER="/ko/handrive/users/gdrive_picker_incremental_user/list",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        payload = response.json()
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["requires_google_drive_auth"])
+        self.assertIn("mode=drive", payload["auth_url"])
+        auth_query = parse_qs(urlparse(payload["auth_url"]).query)
+        self.assertEqual(auth_query["next"], ["/ko/handrive/users/gdrive_picker_incremental_user/list"])
+
+    @override_settings(GOOGLE_PICKER_API_KEY="picker-api-key", GOOGLE_PICKER_APP_ID="516810234938")
+    def test_google_drive_picker_config_returns_access_token(self):
+        user = self.create_scoped_handrive_editor("gdrive_picker_user")
+        mapping = self.create_google_drive_mapping(user)
+        mapping.selected_drive_items = [
+            {"id": "selected-file-id", "name": "Selected.txt", "mimeType": "text/plain"}
+        ]
+        mapping.save(update_fields=["selected_drive_items", "updated_at"])
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("main:handrive_api_google_picker_config"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["access_token"], "google-access-token")
+        self.assertEqual(payload["api_key"], "picker-api-key")
+        self.assertEqual(payload["app_id"], "516810234938")
+        self.assertEqual(payload["selected_count"], 1)
+
+    @override_settings(GOOGLE_PICKER_API_KEY="picker-api-key", GOOGLE_PICKER_APP_ID="516810234938")
+    def test_google_drive_picker_config_blocked_when_drive_disabled(self):
+        user = self.create_scoped_handrive_editor("gdrive_picker_disabled_user")
+        mapping = self.create_google_drive_mapping(user)
+        mapping.google_drive_enabled = False
+        mapping.save(update_fields=["google_drive_enabled", "updated_at"])
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("main:handrive_api_google_picker_config"))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_google_drive_items_requires_incremental_auth_when_scope_missing(self):
+        user = self.create_scoped_handrive_editor("gdrive_items_incremental_user")
+        mapping = self.create_google_drive_mapping(user)
+        mapping.token_scope = "openid email profile"
+        mapping.google_drive_enabled = True
+        mapping.save(update_fields=["token_scope", "google_drive_enabled", "updated_at"])
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("main:handrive_api_google_drive_items"),
+            data=json.dumps({"items": []}),
+            content_type="application/json",
+            HTTP_REFERER="/ko/handrive/users/gdrive_items_incremental_user/list",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        payload = response.json()
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["requires_google_drive_auth"])
+        self.assertIn("mode=drive", payload["auth_url"])
+
+    def test_google_drive_items_persists_picker_selection(self):
+        user = self.create_scoped_handrive_editor("gdrive_items_user")
+        mapping = self.create_google_drive_mapping(user)
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("main:handrive_api_google_drive_items"),
+            data=json.dumps({
+                "items": [
+                    {
+                        "id": "picker-folder-id",
+                        "name": "Picker Folder",
+                        "mimeType": "application/vnd.google-apps.folder",
+                        "url": "https://drive.google.com/drive/folders/picker-folder-id",
+                    }
+                ]
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["selected_count"], 1)
+        mapping.refresh_from_db()
+        self.assertEqual(mapping.selected_drive_items[0]["id"], "picker-folder-id")
+        self.assertEqual(mapping.selected_drive_items[0]["webViewLink"], "https://drive.google.com/drive/folders/picker-folder-id")
 
     @mock.patch("main.handrive_views._validate_handrive_mp3_duration")
     @mock.patch("main.handrive_views.subprocess.run")
@@ -5714,6 +6657,49 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(payload.get("render_mode"), "markdown")
         self.assertIn("<h1>", payload.get("html", ""))
 
+    def test_docs_api_preview_preserves_markdown_blank_lines(self):
+        public_group = get_handrive_public_write_group()
+        rule = HandriveAccessRule.objects.create(path="public.md")
+        rule.write_groups.add(public_group)
+
+        response = self.client.post(
+            reverse("main:handrive_api_preview"),
+            data=json.dumps(
+                {
+                    "original_path": "public.md",
+                    "content": "첫 줄\n\n\n둘째 줄",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("render_mode"), "markdown")
+        self.assertEqual(payload.get("html", "").count("handrive-markdown-blank-line"), 2)
+
+    def test_docs_view_preserves_markdown_blank_lines(self):
+        admin_user = self.user_model.objects.create_user(
+            username="markdown_blank_reader",
+            password="pw123456",
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_login(admin_user)
+        public_group = get_handrive_public_write_group()
+        rule = HandriveAccessRule.objects.create(path="public.md")
+        rule.write_groups.add(public_group)
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "public.md").write_text("첫 줄\n\n\n둘째 줄", encoding="utf-8")
+
+        response = self.client.get("/ko/handrive/public/")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        main_html = html.split("<main", 1)[1].split("</main>", 1)[0]
+        self.assertEqual(main_html.count("handrive-markdown-blank-line"), 2)
+
     def test_docs_view_shows_edit_button_for_anonymous_public_writable_file(self):
         public_group = get_handrive_public_write_group()
         rule = HandriveAccessRule.objects.create(path="public.md")
@@ -5767,21 +6753,56 @@ class HandriveAccessRuleTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload.get("render_mode"), "plain_text")
+        self.assertEqual(payload.get("render_mode"), "office")
         self.assertIn("handrive-office-sheet", payload.get("render_class", ""))
-        self.assertIn('<table class="handrive-office-table handrive-csv-table">', payload.get("html", ""))
-        self.assertIn("<th>name</th>", payload.get("html", ""))
-        self.assertIn("<td>Alice</td>", payload.get("html", ""))
+        self.assertIn('data-handrive-spreadsheet-preview="1"', payload.get("html", ""))
+        self.assertIn('data-path="data.csv"', payload.get("html", ""))
+        self.assertIn('data-editable="1"', payload.get("html", ""))
+        self.assertNotIn('data-handrive-spreadsheet-preview-save', payload.get("html", ""))
+        self.assertIn('data-handrive-spreadsheet-preview-hot', payload.get("html", ""))
+        self.assertLess(
+            payload.get("html", "").index("handrive-spreadsheet-preview-toolbar"),
+            payload.get("html", "").index('data-handrive-spreadsheet-preview-hot'),
+        )
 
-        view_response = self.client.get("/ko/docs/data.csv/")
+        view_response = self.client.get("/ko/handrive/data.csv/")
         self.assertEqual(view_response.status_code, 200)
         view_html = view_response.content.decode("utf-8")
-        self.assertIn("handrive-csv-table", view_html)
-        self.assertIn("path=data.csv", view_html)
+        self.assertIn('data-handrive-spreadsheet-preview="1"', view_html)
+        self.assertIn('data-download-api-url=', view_html)
+        self.assertIn('data-spreadsheet-save-api-url=', view_html)
+        self.assertIn('id="handrive-view-spreadsheet-save-btn"', view_html)
+        self.assertIn('data-handrive-spreadsheet-preview-save', view_html)
+        self.assertNotIn(f'href="/ko/handrive/list?edit=data.csv"', view_html)
+        self.assertIn('data-doc-is-spreadsheet="1"', view_html)
+        self.assertIn("data.csv", view_html)
 
-        edit_response = self.client.get("/ko/docs/write/", data={"path": "data.csv"})
+        edit_response = self.client.get("/ko/handrive/list", data={"edit": "data.csv"})
         self.assertEqual(edit_response.status_code, 200)
-        self.assertContains(edit_response, "Alice,10")
+        self.assertContains(edit_response, 'data-spreadsheet-save-api-url=')
+        self.assertContains(edit_response, 'id="handrive-list-preview-spreadsheet-save-btn"')
+        self.assertContains(edit_response, 'id="handrive-spreadsheet-editor-surface"')
+
+    def test_docs_api_preview_renders_xlsx_as_handsontable_shell(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "data.xlsx").write_bytes(b"fake-xlsx")
+        editor = self.create_handrive_editor("xlsx_preview_editor")
+        self.client.force_login(editor)
+
+        response = self.client.post(
+            reverse("main:handrive_api_preview"),
+            data=json.dumps({"path": "data.xlsx"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("render_mode"), "office")
+        self.assertIn("handrive-office-sheet", payload.get("render_class", ""))
+        self.assertIn('data-handrive-spreadsheet-preview="1"', payload.get("html", ""))
+        self.assertIn('data-path="data.xlsx"', payload.get("html", ""))
+        self.assertIn('data-editable="1"', payload.get("html", ""))
+        self.assertNotIn('data-handrive-spreadsheet-preview-save', payload.get("html", ""))
 
     def test_xlsx_fallback_preview_renders_all_sheets_rows_and_columns(self):
         from main.handrive import preview as handrive_preview
@@ -6434,6 +7455,57 @@ class HandriveAccessRuleTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("확장자 형식이 올바르지 않습니다", response.json().get("error", ""))
+
+    def test_handrive_spreadsheet_save_updates_local_binary_file(self):
+        editor = self.create_handrive_editor("spreadsheet_editor")
+        self.client.force_login(editor)
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
+        handrive_root.mkdir(parents=True, exist_ok=True)
+        workbook_path = handrive_root / "budget.xlsx"
+        workbook_path.write_bytes(b"old-workbook")
+        updated_bytes = b"updated-workbook-bytes"
+
+        response = self.client.post(
+            reverse("main:handrive_api_spreadsheet_save"),
+            data=json.dumps(
+                {
+                    "original_path": "budget.xlsx",
+                    "target_dir": "",
+                    "filename": "budget",
+                    "extension": ".xlsx",
+                    "data_base64": base64.b64encode(updated_bytes).decode("ascii"),
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("path"), "budget.xlsx")
+        self.assertEqual(workbook_path.read_bytes(), updated_bytes)
+
+    def test_handrive_spreadsheet_save_rejects_unsupported_extension(self):
+        editor = self.create_handrive_editor("spreadsheet_invalid_ext_editor")
+        self.client.force_login(editor)
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
+        handrive_root.mkdir(parents=True, exist_ok=True)
+
+        response = self.client.post(
+            reverse("main:handrive_api_spreadsheet_save"),
+            data=json.dumps(
+                {
+                    "original_path": "",
+                    "target_dir": "",
+                    "filename": "notes",
+                    "extension": ".txt",
+                    "data_base64": base64.b64encode(b"plain text").decode("ascii"),
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("지원하지 않는 스프레드시트 확장자", response.json().get("error", ""))
 
 
 class HanharnessDownloadTests(TestCase):

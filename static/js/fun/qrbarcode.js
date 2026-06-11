@@ -319,11 +319,45 @@
         pipSession = null;
         if (session.frameTimer) window.clearInterval(session.frameTimer);
         if (session.frameRequest) window.cancelAnimationFrame(session.frameRequest);
-        if (session.video) session.video.remove();
+        if (session.video) {
+            try {
+                session.video.srcObject = null;
+                session.video.removeAttribute("src");
+                session.video.load();
+            } catch (error) {
+                // ignore cleanup failures on detached mobile video layers
+            }
+        }
         if (session.stream) {
             session.stream.getTracks().forEach(function (track) {
                 track.stop();
             });
+        }
+        if (session.video) session.video.remove();
+    }
+
+    function createManualCanvasStream(canvas, fallbackFrameRate) {
+        var stream = canvas.captureStream(0);
+        var track = stream.getVideoTracks()[0] || null;
+        if (track && typeof track.requestFrame === "function") {
+            return { stream: stream, track: track };
+        }
+        stream.getTracks().forEach(function (streamTrack) {
+            streamTrack.stop();
+        });
+        stream = canvas.captureStream(fallbackFrameRate || 1);
+        track = stream.getVideoTracks()[0] || null;
+        return { stream: stream, track: track };
+    }
+
+    function requestCanvasStreamFrame(session) {
+        var track = session && session.track;
+        if (track && typeof track.requestFrame === "function") {
+            try {
+                track.requestFrame();
+            } catch (error) {
+                // Some mobile browsers throw while a tab is backgrounding.
+            }
         }
     }
 
@@ -394,23 +428,22 @@
                 }
                 drawPipFrame();
 
-                var stream = canvas.captureStream(30);
+                var capture = createManualCanvasStream(canvas, 1);
+                var stream = capture.stream;
                 var video = document.createElement("video");
                 video.muted = true;
                 video.playsInline = true;
                 video.srcObject = stream;
                 video.style.cssText = "position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0;pointer-events:none;";
                 document.body.appendChild(video);
-                pipSession = { stream: stream, video: video, frameRequest: 0 };
-                function tickPipFrame() {
-                    if (!pipSession || pipSession.video !== video) return;
-                    drawPipFrame();
-                    pipSession.frameRequest = window.requestAnimationFrame(tickPipFrame);
-                }
-                pipSession.frameRequest = window.requestAnimationFrame(tickPipFrame);
+                pipSession = { stream: stream, track: capture.track, video: video, frameRequest: 0 };
                 video.addEventListener("leavepictureinpicture", closePipSession, { once: true });
+                requestCanvasStreamFrame(pipSession);
                 return video.play().then(function () {
+                    requestCanvasStreamFrame(pipSession);
                     return video.requestPictureInPicture();
+                }).then(function () {
+                    requestCanvasStreamFrame(pipSession);
                 }).catch(function (error) {
                     closePipSession();
                     throw error;

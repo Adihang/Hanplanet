@@ -203,6 +203,7 @@
     const flipDurationSeconds = 0.18;
     const doubleUnitDeathFadeMs = 3000;
     const soundHearingRadius = 560;
+    const remoteCharacterSoundMinVolume = 0.2;
     const inputSendIntervalMs = 33;
     const inputHeartbeatMs = 150;
     const input = { up: false, down: false, left: false, right: false, boost: false, respawn: false };
@@ -298,6 +299,7 @@
     const playerAudioStates = new Map();
     const activePlayerSounds = new Map();
     const pendingPlayerSoundTimers = new Map();
+    const lastRandomSoundUrlByList = new WeakMap();
     const playerVisuals = new Map();
     const spriteOverlayNodes = new Map();
     let canvasScale = 1;
@@ -1612,18 +1614,41 @@
         sendInputNow();
     };
 
-    const getSpatialVolume = function (listenerPlayer, emitterPlayer, maxVolume) {
+    const getSpatialVolume = function (listenerPlayer, emitterPlayer, maxVolume, minVolume) {
         if (!listenerPlayer || !emitterPlayer) {
             return maxVolume;
         }
 
+        const normalizedMinVolume = Math.max(0, Math.min(maxVolume, Number(minVolume || 0)));
         const distance = Math.hypot(emitterPlayer.x - listenerPlayer.x, emitterPlayer.y - listenerPlayer.y);
         if (distance >= soundHearingRadius) {
-            return 0;
+            return normalizedMinVolume;
         }
 
         const distanceRatio = 1 - distance / soundHearingRadius;
-        return maxVolume * distanceRatio * distanceRatio * distanceRatio * distanceRatio;
+        return Math.max(
+            normalizedMinVolume,
+            maxVolume * distanceRatio * distanceRatio * distanceRatio * distanceRatio
+        );
+    };
+
+    const getSpatialPan = function (listenerPlayer, emitterPlayer) {
+        if (!listenerPlayer || !emitterPlayer) {
+            return 0;
+        }
+        const dx = Number(emitterPlayer.x || 0) - Number(listenerPlayer.x || 0);
+        return Math.max(-1, Math.min(1, dx / soundHearingRadius));
+    };
+
+    const getSpatialAudio = function (listenerPlayer, emitterPlayer, maxVolume, minVolume) {
+        return {
+            volume: getSpatialVolume(listenerPlayer, emitterPlayer, maxVolume, minVolume),
+            pan: getSpatialPan(listenerPlayer, emitterPlayer)
+        };
+    };
+
+    const getRemoteCharacterSpatialAudio = function (listenerPlayer, emitterPlayer) {
+        return getSpatialAudio(listenerPlayer, emitterPlayer, 0.95, remoteCharacterSoundMinVolume);
     };
 
     const stopPlayerSound = function (playerId) {
@@ -1641,6 +1666,18 @@
             try {
                 activeSound.audio.pause();
                 activeSound.audio.currentTime = 0;
+            } catch (error) {}
+        }
+
+        if (activeSound.source) {
+            try {
+                activeSound.source.disconnect();
+            } catch (error) {}
+        }
+
+        if (activeSound.panner) {
+            try {
+                activeSound.panner.disconnect();
             } catch (error) {}
         }
 
@@ -1819,7 +1856,27 @@
         return Math.max(0, Math.min(1, normalizedVolume * masterVolume));
     };
 
-    const playAudioFile = function (url, volume, playerId) {
+    const connectSoundToStereoOutput = function (sound, pan) {
+        const context = getAudioContext();
+        if (!context || typeof context.createMediaElementSource !== 'function' || typeof context.createStereoPanner !== 'function') {
+            return null;
+        }
+        try {
+            const source = context.createMediaElementSource(sound);
+            const panner = context.createStereoPanner();
+            panner.pan.value = Math.max(-1, Math.min(1, Number(pan || 0)));
+            source.connect(panner);
+            panner.connect(context.destination);
+            return {
+                source: source,
+                panner: panner
+            };
+        } catch (error) {
+            return null;
+        }
+    };
+
+    const playAudioFile = function (url, volume, playerId, pan) {
         const effectiveVolume = getEffectiveVolume(volume);
         if (!url || effectiveVolume <= 0.01) {
             return;
@@ -1828,50 +1885,74 @@
         stopPlayerSound(playerId);
         const sound = new window.Audio(url);
         sound.volume = effectiveVolume;
+        const stereoNodes = connectSoundToStereoOutput(sound, pan);
         activePlayerSounds.set(playerId, {
             kind: 'audio',
-            audio: sound
+            audio: sound,
+            source: stereoNodes ? stereoNodes.source : null,
+            panner: stereoNodes ? stereoNodes.panner : null
         });
         sound.addEventListener('ended', function () {
             if (activePlayerSounds.get(playerId)?.audio === sound) {
+                if (stereoNodes) {
+                    try {
+                        stereoNodes.source.disconnect();
+                    } catch (error) {}
+                    try {
+                        stereoNodes.panner.disconnect();
+                    } catch (error) {}
+                }
                 activePlayerSounds.delete(playerId);
             }
         });
         sound.play().catch(function () {});
     };
 
-    const playRandomSoundFromList = function (urls, fallbackVolume, volume, playerId) {
+    const selectRandomSoundUrl = function (urls) {
         if (!Array.isArray(urls) || !urls.length) {
-            return;
+            return '';
         }
-        const selectedUrl = urls[Math.floor(Math.random() * urls.length)];
+        if (urls.length === 1) {
+            return urls[0] || '';
+        }
+        const lastUrl = lastRandomSoundUrlByList.get(urls) || '';
+        const availableUrls = urls.filter(function (url) {
+            return url && url !== lastUrl;
+        });
+        const candidateUrls = availableUrls.length ? availableUrls : urls.filter(Boolean);
+        if (!candidateUrls.length) {
+            return '';
+        }
+        const selectedUrl = candidateUrls[Math.floor(Math.random() * candidateUrls.length)];
+        if (selectedUrl) {
+            lastRandomSoundUrlByList.set(urls, selectedUrl);
+        }
+        return selectedUrl || '';
+    };
+
+    const playRandomSoundFromList = function (urls, fallbackVolume, volume, playerId, pan) {
+        const selectedUrl = selectRandomSoundUrl(urls);
         if (!selectedUrl) {
             return;
         }
-        playAudioFile(selectedUrl, typeof volume === 'number' ? volume : fallbackVolume, playerId);
+        playAudioFile(selectedUrl, typeof volume === 'number' ? volume : fallbackVolume, playerId, pan);
     };
 
-    const playMergedDoubleSoundFromList = function (urls, fallbackVolume, volume, playerId) {
+    const playMergedDoubleSoundFromList = function (urls, fallbackVolume, volume, playerId, pan) {
         if (!Array.isArray(urls) || !urls.length || !playerId) {
             return;
         }
-        const selectedUrl = urls[Math.floor(Math.random() * urls.length)];
+        const selectedUrl = selectRandomSoundUrl(urls);
         if (!selectedUrl) {
             return;
         }
         const resolvedVolume = typeof volume === 'number' ? volume : fallbackVolume;
-        const secondaryPlayerId = playerId + ':merged-echo';
         stopPlayerSoundFamily(playerId);
-        playAudioFile(selectedUrl, resolvedVolume, playerId);
-        const timerId = window.setTimeout(function () {
-            pendingPlayerSoundTimers.delete(secondaryPlayerId);
-            playAudioFile(selectedUrl, resolvedVolume, secondaryPlayerId);
-        }, 300);
-        pendingPlayerSoundTimers.set(secondaryPlayerId, timerId);
+        playAudioFile(selectedUrl, resolvedVolume, playerId, pan);
     };
 
-    const playRandomBoostSound = function (urls, volume, playerId) {
-        playRandomSoundFromList(urls, 0.9, volume, playerId);
+    const playRandomBoostSound = function (urls, volume, playerId, pan) {
+        playRandomSoundFromList(urls, 0.9, volume, playerId, pan);
     };
 
     const getAudioContext = function () {
@@ -1888,24 +1969,24 @@
         return audioContext;
     };
 
-    const playRandomCrashSound = function (urls, volume, playerId) {
-        playRandomSoundFromList(urls, 0.95, volume, playerId);
+    const playRandomCrashSound = function (urls, volume, playerId, pan) {
+        playRandomSoundFromList(urls, 0.95, volume, playerId, pan);
     };
 
-    const playRandomDefeatSound = function (urls, volume, playerId) {
-        playRandomSoundFromList(urls, 0.95, volume, playerId);
+    const playRandomDefeatSound = function (urls, volume, playerId, pan) {
+        playRandomSoundFromList(urls, 0.95, volume, playerId, pan);
     };
 
-    const playRandomDieSound = function (urls, volume, playerId) {
-        playRandomSoundFromList(urls, 0.98, volume, playerId);
+    const playRandomDieSound = function (urls, volume, playerId, pan) {
+        playRandomSoundFromList(urls, 0.98, volume, playerId, pan);
     };
 
-    const playRandomRespawnSound = function (urls, volume, playerId) {
-        playRandomSoundFromList(urls, 0.92, volume, playerId);
+    const playRandomRespawnSound = function (urls, volume, playerId, pan) {
+        playRandomSoundFromList(urls, 0.92, volume, playerId, pan);
     };
 
-    const playRandomNtrSound = function (urls, volume, playerId) {
-        playRandomSoundFromList(urls, 0.95, volume, playerId);
+    const playRandomNtrSound = function (urls, volume, playerId, pan) {
+        playRandomSoundFromList(urls, 0.95, volume, playerId, pan);
     };
 
     const processDoubleUnitSounds = function (player, listenerPlayer, isSelfPlayer) {
@@ -1923,35 +2004,35 @@
                 inactive: false,
                 health: Math.max(0, Number(unit && unit.currentHealth !== undefined ? unit.currentHealth : unit && unit.health || 0))
             };
-            const listenerVolume = isSelfPlayer
-                ? undefined
-                : getSpatialVolume(listenerPlayer, {
+            const unitAudio = isSelfPlayer
+                ? { volume: undefined, pan: 0 }
+                : getRemoteCharacterSpatialAudio(listenerPlayer, {
                     x: Number(unit.x || player.x || 0),
                     y: Number(unit.y || player.y || 0)
-                }, 0.95);
+                });
 
             const unitInactive = Boolean(unit.inactive);
             if (!unitInactive) {
                 if (unit.boostState === 'charging' && previousState.boostState !== 'charging') {
-                    playRandomBoostSound(skinRuntime.sounds.boost, listenerVolume, audioId);
+                    playRandomBoostSound(skinRuntime.sounds.boost, unitAudio.volume, audioId, unitAudio.pan);
                 }
 
                 if (unit.collisionActive && !previousState.collisionActive) {
                     if ((unit.collisionVisualType || 'win') === 'defeat') {
-                        playRandomDefeatSound(skinRuntime.sounds.defeat, listenerVolume, audioId);
+                        playRandomDefeatSound(skinRuntime.sounds.defeat, unitAudio.volume, audioId, unitAudio.pan);
                     } else {
-                        playRandomCrashSound(skinRuntime.sounds.crash, listenerVolume, audioId);
+                        playRandomCrashSound(skinRuntime.sounds.crash, unitAudio.volume, audioId, unitAudio.pan);
                     }
                 }
             }
 
             const unitHealth = Math.max(0, Number(unit && unit.currentHealth !== undefined ? unit.currentHealth : unit && unit.health || 0));
             if (unitInactive && Number(previousState.health || 0) > 0 && unitHealth <= 0) {
-                playRandomDieSound(skinRuntime.sounds.die, listenerVolume, audioId);
+                playRandomDieSound(skinRuntime.sounds.die, unitAudio.volume, audioId, unitAudio.pan);
             }
 
             if (!unitInactive && Number(previousState.health || 0) <= 0 && unitHealth > 0) {
-                playRandomRespawnSound(skinRuntime.sounds.respawn, listenerVolume, audioId);
+                playRandomRespawnSound(skinRuntime.sounds.respawn, unitAudio.volume, audioId, unitAudio.pan);
             }
 
             playerAudioStates.set(audioId, {
@@ -1964,30 +2045,30 @@
         });
     };
 
-    const playRandomNerTrackingSound = function (volume, playerId) {
+    const playRandomNerTrackingSound = function (volume, playerId, pan) {
         if (!nerTrackingSoundUrls.length) {
             return;
         }
 
-        const selectedUrl = nerTrackingSoundUrls[Math.floor(Math.random() * nerTrackingSoundUrls.length)];
+        const selectedUrl = selectRandomSoundUrl(nerTrackingSoundUrls);
         if (!selectedUrl) {
             return;
         }
 
-        playAudioFile(selectedUrl, typeof volume === 'number' ? volume : 0.9, playerId);
+        playAudioFile(selectedUrl, typeof volume === 'number' ? volume : 0.9, playerId, pan);
     };
 
-    const playRandomNerAccelerationSound = function (volume, playerId) {
+    const playRandomNerAccelerationSound = function (volume, playerId, pan) {
         if (!nerAccelerationSoundUrls.length) {
             return;
         }
 
-        const selectedUrl = nerAccelerationSoundUrls[Math.floor(Math.random() * nerAccelerationSoundUrls.length)];
+        const selectedUrl = selectRandomSoundUrl(nerAccelerationSoundUrls);
         if (!selectedUrl) {
             return;
         }
 
-        playAudioFile(selectedUrl, typeof volume === 'number' ? volume : 0.95, playerId);
+        playAudioFile(selectedUrl, typeof volume === 'number' ? volume : 0.95, playerId, pan);
     };
 
     const processRemotePlayerSounds = function (players, listenerPlayer) {
@@ -2014,20 +2095,20 @@
             }
 
             if (player.id !== selfId && player.isNpc) {
-                const volume = getSpatialVolume(listenerPlayer, player, 0.95);
+                const npcAudio = getSpatialAudio(listenerPlayer, player, 0.95);
 
                 if ((player.npcState || '') === 'chase' && previousState.npcState !== 'chase') {
-                    playRandomNerTrackingSound(volume, player.id);
+                    playRandomNerTrackingSound(npcAudio.volume, player.id, npcAudio.pan);
                 }
 
                 if ((player.npcState || '') === 'windup' && previousState.npcState !== 'windup') {
-                    playRandomNerAccelerationSound(volume, player.id);
+                    playRandomNerAccelerationSound(npcAudio.volume, player.id, npcAudio.pan);
                 }
             } else if (player.id !== selfId && !player.isNpc && !player.isPumpkinNpc && !player.isDummy && !player.isHouse) {
                 if (getPlayerSkinProfile(player.skinName || 'default').type === 'double' && player.doubleState && !player.doubleState.merged) {
                     processDoubleUnitSounds(player, listenerPlayer, false);
                 }
-                const volume = getSpatialVolume(listenerPlayer, player, 0.95);
+                const playerAudio = getRemoteCharacterSpatialAudio(listenerPlayer, player);
                 const skinRuntime = getSkinConfig(player.skinName);
                 const isMergedDouble = getPlayerSkinProfile(player.skinName || 'default').type === 'double'
                     && player.doubleState
@@ -2035,46 +2116,46 @@
                 const enteredPumpkinForm = player.skinName === 'pumkin' && previousState.skinName && previousState.skinName !== 'pumkin';
 
                 if (enteredPumpkinForm) {
-                    playRandomRespawnSound(getSkinConfig('pumkin').sounds.respawn, volume, player.id + ':pumpkin-respawn');
+                    playRandomRespawnSound(getSkinConfig('pumkin').sounds.respawn, playerAudio.volume, player.id, playerAudio.pan);
                 }
 
                 if (player.boostState === 'charging' && previousState.boostState !== 'charging') {
                     if (isMergedDouble) {
-                        playMergedDoubleSoundFromList(skinRuntime.sounds.boost, 0.9, volume * 0.95, player.id);
+                        playMergedDoubleSoundFromList(skinRuntime.sounds.boost, 0.9, playerAudio.volume * 0.95, player.id, playerAudio.pan);
                     } else {
-                        playRandomBoostSound(skinRuntime.sounds.boost, volume * 0.95, player.id);
+                        playRandomBoostSound(skinRuntime.sounds.boost, playerAudio.volume * 0.95, player.id, playerAudio.pan);
                     }
                 }
 
                 if (player.collisionActive && !previousState.collisionActive) {
                     if ((player.collisionVisualType || 'win') === 'defeat') {
                         if (isMergedDouble) {
-                            playMergedDoubleSoundFromList(skinRuntime.sounds.defeat, 0.95, volume, player.id);
+                            playMergedDoubleSoundFromList(skinRuntime.sounds.defeat, 0.95, playerAudio.volume, player.id, playerAudio.pan);
                         } else {
-                            playRandomDefeatSound(skinRuntime.sounds.defeat, volume, player.id);
+                            playRandomDefeatSound(skinRuntime.sounds.defeat, playerAudio.volume, player.id, playerAudio.pan);
                         }
                     } else {
                         if (isMergedDouble) {
-                            playMergedDoubleSoundFromList(skinRuntime.sounds.crash, 0.95, volume, player.id);
+                            playMergedDoubleSoundFromList(skinRuntime.sounds.crash, 0.95, playerAudio.volume, player.id, playerAudio.pan);
                         } else {
-                            playRandomCrashSound(skinRuntime.sounds.crash, volume, player.id);
+                            playRandomCrashSound(skinRuntime.sounds.crash, playerAudio.volume, player.id, playerAudio.pan);
                         }
                     }
                 }
 
                 if (player.deathActive && !previousState.deathActive) {
                     if (isMergedDouble) {
-                        playMergedDoubleSoundFromList(skinRuntime.sounds.die, 0.98, volume, player.id);
+                        playMergedDoubleSoundFromList(skinRuntime.sounds.die, 0.98, playerAudio.volume, player.id, playerAudio.pan);
                     } else {
-                        playRandomDieSound(skinRuntime.sounds.die, volume, player.id);
+                        playRandomDieSound(skinRuntime.sounds.die, playerAudio.volume, player.id, playerAudio.pan);
                     }
                 }
 
                 if (!player.deathActive && previousState.deathActive) {
                     if (isMergedDouble) {
-                        playMergedDoubleSoundFromList(skinRuntime.sounds.respawn, 0.92, volume, player.id);
+                        playMergedDoubleSoundFromList(skinRuntime.sounds.respawn, 0.92, playerAudio.volume, player.id, playerAudio.pan);
                     } else {
-                        playRandomRespawnSound(skinRuntime.sounds.respawn, volume, player.id);
+                        playRandomRespawnSound(skinRuntime.sounds.respawn, playerAudio.volume, player.id, playerAudio.pan);
                     }
                 }
             }
@@ -2818,10 +2899,10 @@
                         }
                     }
                     if (selfServerAudioStateInitialized && previousSelfSkinName && previousSelfSkinName !== 'pumkin' && nextSelfSkinName === 'pumkin') {
-                        playRandomRespawnSound(getSkinConfig('pumkin').sounds.respawn, undefined, (selfId || '__self__') + ':pumpkin-respawn');
+                        playRandomRespawnSound(getSkinConfig('pumkin').sounds.respawn, undefined, selfId || '__self__');
                     }
                     if (selfServerAudioStateInitialized && selfPumpkinNtrTriggerCount > previousSelfPumpkinNtrTriggerCount) {
-                        playRandomNtrSound(getSkinConfig('pumkin').sounds.ntr, undefined, (selfId || '__self__') + ':pumpkin-ntr');
+                        playRandomNtrSound(getSkinConfig('pumkin').sounds.ntr, undefined, selfId || '__self__');
                         selfPumpkinNtrVisualUntil = window.performance.now() + SELF_PUMPKIN_NTR_VISUAL_DURATION_MS;
                     }
                     selfServerAudioStateInitialized = true;

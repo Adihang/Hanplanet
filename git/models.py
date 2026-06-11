@@ -66,6 +66,8 @@ class GoogleAccountMapping(models.Model):
     token_scope                   = models.CharField(max_length=512, blank=True, default="")
     token_type                    = models.CharField(max_length=64, blank=True, default="")
     google_drive_enabled          = models.BooleanField(default=False)
+    google_drive_preference_set   = models.BooleanField(default=False)
+    selected_drive_items          = models.JSONField(blank=True, default=list)
     google_profile_synced_at      = models.DateTimeField(null=True, blank=True)
     created_at                    = models.DateTimeField(auto_now_add=True)
     updated_at                    = models.DateTimeField(auto_now=True)

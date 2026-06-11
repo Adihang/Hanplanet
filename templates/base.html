@@ -73,7 +73,6 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Noto+Sans+KR:wght@100..900&display=swap" rel="stylesheet">
     <!-- Required meta tags -->
     <meta charset="utf-8">
@@ -83,6 +82,9 @@
     <meta name="author" content="{{ meta_author|default:'Hanplanet' }}">
     <meta name="generator" content="Django">
     <meta name="robots" content="{{ meta_robots|default:'index,follow' }}">
+    {% if sub_category %}
+    <meta name="hanplanet:sub-category" content="{{ sub_category }}">
+    {% endif %}
     <meta property="og:title" content="{{ meta_og_title|default:'Hanplanet' }}">
     <meta property="og:site_name" content="{{ meta_site_name|default:'Hanplanet' }}">
     <meta property="og:description" content="{{ meta_og_description|default:'Django로 작성한 포트폴리오 입니다.' }}">

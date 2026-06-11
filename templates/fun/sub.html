@@ -36,37 +36,38 @@
 <main class="ui-shell ui-content sub-ui-content">
     <section class="sub-ui-panel" aria-label="{{ page_title }}">
         {% for group in sub_link_groups %}
-            <section class="sub-group" aria-labelledby="sub-group-{{ group.slug }}">
+            <section class="sub-group" aria-labelledby="sub-group-{{ group.slug }}" data-sub-category-group="{{ group.slug }}" hidden>
                 <h2 class="sub-group-title" id="sub-group-{{ group.slug }}">{{ group.title }}</h2>
-                <ul class="sub-list">
-                    {% for item in group.items %}
-                        <li>
-                            <div class="sub-link-shell">
-                                {% if request.user.is_authenticated %}
-                                    {% if item.slug == "bumpercar-spiky" or item.slug == "raise-speaki" %}
-                                        <button class="ui-btn sub-link-stats-button" type="button" data-bumpercar-stats-open>
-                                            {% include 'partials/ui_i18n.html' with key='account_bumpercar_stats_button' %}
-                                        </button>
-                                    {% endif %}
-                                {% endif %}
-                                <a class="sub-link" href="{{ item.url }}">
-                                    <span class="sub-link-image-wrap">
-                                        <img class="sub-link-image" src="{{ item.image_url|default:'' }}" alt="{{ item.title }}" loading="lazy" {% if not item.image_url %}hidden{% endif %}>
-                                    </span>
-                                    <span class="sub-link-content" data-sub-card data-meta-url="{{ item.url }}">
-                                        <span class="sub-link-site-name" {% if not item.site_name %}hidden{% endif %}>{{ item.site_name|default:'' }}</span>
-                                        <span class="sub-link-head">
-                                            <span class="sub-link-title">{{ item.title }}</span>
-                                        </span>
-                                        <span class="sub-link-description" {% if not item.description %}hidden{% endif %}>{{ item.description|default:'' }}</span>
-                                    </span>
-                                </a>
-                            </div>
-                        </li>
-                    {% endfor %}
-                </ul>
+                <ul class="sub-list" data-sub-category-list="{{ group.slug }}"></ul>
             </section>
         {% endfor %}
+        <ul class="sub-list sub-pending-list" data-sub-pending-list hidden>
+            {% for item in sub_links %}
+                <li data-sub-card-item data-sub-card-index="{{ forloop.counter0 }}" hidden>
+                    <div class="sub-link-shell">
+                        {% if request.user.is_authenticated %}
+                            {% if item.slug == "bumpercar-spiky" or item.slug == "raise-speaki" %}
+                                <button class="ui-btn sub-link-stats-button" type="button" data-bumpercar-stats-open>
+                                    {% include 'partials/ui_i18n.html' with key='account_bumpercar_stats_button' %}
+                                </button>
+                            {% endif %}
+                        {% endif %}
+                        <a class="sub-link" href="{{ item.url }}" aria-label="{{ item.url }}">
+                            <span class="sub-link-image-wrap is-empty">
+                                <img class="sub-link-image" alt="" loading="lazy" hidden>
+                            </span>
+                            <span class="sub-link-content" data-sub-card data-meta-url="{{ item.url }}">
+                                <span class="sub-link-site-name" hidden></span>
+                                <span class="sub-link-head">
+                                    <span class="sub-link-title" hidden></span>
+                                </span>
+                                <span class="sub-link-description" hidden></span>
+                            </span>
+                        </a>
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
     </section>
 </main>
 {% include "partials/site_footer_links.html" %}
@@ -99,6 +100,12 @@
         gap: 10px;
     }
 
+    .sub-group[hidden],
+    [data-sub-card-item][hidden],
+    [data-sub-pending-list][hidden] {
+        display: none;
+    }
+
     .sub-group + .sub-group {
         border-top: 1px solid var(--handrive-border-soft);
         padding-top: 16px;
@@ -108,7 +115,7 @@
         margin: 0;
         color: var(--handrive-text-stronger);
         font-size: 18px;
-        font-weight: 800;
+        font-weight: var(--site-weight-title-strong);
         line-height: 1.2;
     }
 
@@ -157,7 +164,7 @@
     .sub-link-title {
         display: block;
         font-size: 16px;
-        font-weight: 700;
+        font-weight: var(--site-weight-title);
         line-height: 1.3;
     }
 
@@ -177,7 +184,7 @@
         display: -webkit-box;
         margin-top: 4px;
         color: var(--handrive-text-muted);
-        font-size: 16px;
+        font-size: 13px;
         line-height: 1.35;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -203,13 +210,6 @@
         height: 100%;
         object-fit: cover;
         display: block;
-    }
-
-    .sub-link-image-wrap.is-empty::before {
-        content: "No Image";
-        color: var(--handrive-text-faint);
-        font-size: 16px;
-        letter-spacing: 0.02em;
     }
 
     .sub-link-content {
@@ -304,6 +304,30 @@
         background: rgba(255, 255, 255, 0.08);
     }
 
+    @media (min-width: 841px) {
+        .sub-ui-panel {
+            width: min(1180px, 100%);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            align-items: stretch;
+        }
+
+        .sub-group {
+            align-content: start;
+            min-width: 0;
+        }
+
+        .sub-group + .sub-group {
+            border-top: 0;
+            border-left: 1px solid var(--handrive-border-soft);
+            padding-top: 0;
+            padding-left: 16px;
+        }
+
+        .sub-list {
+            grid-template-columns: 1fr;
+        }
+    }
+
     @media (max-width: 840px) {
         .sub-list {
             grid-template-columns: 1fr;
@@ -322,7 +346,7 @@
         }
 
         .sub-link-description {
-            font-size: 16px;
+            font-size: 13px;
         }
     }
 </style>
@@ -335,6 +359,10 @@
         }
 
         const parser = new DOMParser();
+        const categoryLists = {
+            game: document.querySelector('[data-sub-category-list="game"]'),
+            tool: document.querySelector('[data-sub-category-list="tool"]'),
+        };
 
         const getMetaContent = function (doc, attrs) {
             const selectors = [];
@@ -370,11 +398,53 @@
             }
         };
 
-        const isSameOriginUrl = function (rawUrl) {
-            try {
-                return new URL(rawUrl, window.location.href).origin === window.location.origin;
-            } catch (error) {
-                return false;
+        const readMetadataFromHtml = function (html) {
+            const doc = parser.parseFromString(html, 'text/html');
+            return {
+                title: getMetaContent(doc, { property: 'og:title' }) ||
+                    getMetaContent(doc, { name: 'twitter:title' }) ||
+                    ((doc.querySelector('title') || {}).textContent || '').trim(),
+                siteName: getMetaContent(doc, { property: 'og:site_name' }) ||
+                    getMetaContent(doc, { name: 'application-name' }) ||
+                    getMetaContent(doc, { name: 'author' }),
+                description: getMetaContent(doc, { property: 'og:description' }) ||
+                    getMetaContent(doc, { name: 'twitter:description' }) ||
+                    getMetaContent(doc, { name: 'description' }),
+                image: getMetaContent(doc, { property: 'og:image' }) ||
+                    getMetaContent(doc, { name: 'twitter:image' }),
+                category: getMetaContent(doc, { name: 'hanplanet:sub-category' }) ||
+                    getMetaContent(doc, { property: 'hanplanet:sub-category' }),
+            };
+        };
+
+        const normalizeSubCategory = function (rawCategory) {
+            const category = (rawCategory || '').trim().toLowerCase();
+            return category === 'game' ? 'game' : 'tool';
+        };
+
+        const insertCardInOrder = function (list, item) {
+            const itemIndex = Number(item.getAttribute('data-sub-card-index') || '0');
+            const siblings = Array.from(list.querySelectorAll('[data-sub-card-item]'));
+            const nextSibling = siblings.find(function (sibling) {
+                const siblingIndex = Number(sibling.getAttribute('data-sub-card-index') || '0');
+                return siblingIndex > itemIndex;
+            });
+            list.insertBefore(item, nextSibling || null);
+        };
+
+        const placeCard = function (card, rawCategory) {
+            const item = card.closest('[data-sub-card-item]');
+            const category = normalizeSubCategory(rawCategory);
+            const list = categoryLists[category] || categoryLists.tool;
+            if (!item || !list) {
+                return;
+            }
+
+            const group = list.closest('[data-sub-category-group]');
+            item.hidden = false;
+            insertCardInOrder(list, item);
+            if (group) {
+                group.hidden = false;
             }
         };
 
@@ -392,18 +462,8 @@
             const cardLink = card.closest('.sub-link');
             const imageWrap = cardLink ? cardLink.querySelector('.sub-link-image-wrap') : null;
             const imageNode = cardLink ? cardLink.querySelector('.sub-link-image') : null;
-            const initialDescription = descriptionNode ? (descriptionNode.textContent || '').trim() : '';
-            const initialImageUrl = imageNode ? (imageNode.getAttribute('src') || '').trim() : '';
 
-            if (imageWrap) {
-                if (!initialImageUrl) {
-                    imageWrap.classList.add('is-empty');
-                }
-            }
-
-            if (!isSameOriginUrl(requestUrl)) {
-                return;
-            }
+            if (imageWrap) imageWrap.classList.add('is-empty');
 
             fetch(requestUrl, { credentials: 'same-origin' })
                 .then(function (response) {
@@ -412,28 +472,26 @@
                     }
                     return response.text();
                 })
-                .then(function (html) {
-                    const doc = parser.parseFromString(html, 'text/html');
-                    const parsedTitle = getMetaContent(doc, { property: 'og:title' }) ||
-                        getMetaContent(doc, { name: 'twitter:title' });
-                    const parsedSiteName = getMetaContent(doc, { property: 'og:site_name' }) ||
-                        getMetaContent(doc, { name: 'application-name' }) ||
-                        getMetaContent(doc, { name: 'author' });
-                    const parsedDescription = getMetaContent(doc, { property: 'og:description' }) ||
-                        getMetaContent(doc, { name: 'twitter:description' }) ||
-                        getMetaContent(doc, { name: 'description' });
-                    const parsedImage = getMetaContent(doc, { property: 'og:image' }) ||
-                        getMetaContent(doc, { name: 'twitter:image' });
+                .then(readMetadataFromHtml)
+                .then(function (metadata) {
+                    const parsedTitle = metadata.title || '';
+                    const parsedSiteName = metadata.siteName || '';
+                    const parsedDescription = metadata.description || '';
+                    const parsedImage = metadata.image || '';
+                    const parsedCategory = metadata.category || '';
 
                     if (titleNode && parsedTitle) {
                         titleNode.textContent = parsedTitle;
+                        titleNode.hidden = false;
+                    }
+
+                    if (cardLink && parsedTitle) {
+                        cardLink.setAttribute('aria-label', parsedTitle);
                     }
 
                     if (siteNameNode) {
                         if (parsedSiteName) {
                             siteNameNode.textContent = parsedSiteName;
-                            siteNameNode.hidden = false;
-                        } else if ((siteNameNode.textContent || '').trim()) {
                             siteNameNode.hidden = false;
                         } else {
                             siteNameNode.hidden = true;
@@ -444,8 +502,6 @@
                         if (parsedDescription) {
                             descriptionNode.textContent = parsedDescription;
                             descriptionNode.hidden = false;
-                        } else if (initialDescription) {
-                            descriptionNode.hidden = false;
                         } else {
                             descriptionNode.hidden = true;
                         }
@@ -455,15 +511,15 @@
                         const absoluteImageUrl = toAbsoluteUrl(parsedImage, requestUrl);
                         if (absoluteImageUrl) {
                             imageNode.src = absoluteImageUrl;
+                            imageNode.alt = parsedTitle || (titleNode ? (titleNode.textContent || '').trim() : '');
                             imageNode.hidden = false;
                             imageWrap.classList.remove('is-empty');
                         }
                     }
+                    placeCard(card, parsedCategory);
                 })
                 .catch(function () {
-                    if (descriptionNode && (descriptionNode.textContent || '').trim()) {
-                        descriptionNode.hidden = false;
-                    }
+                    placeCard(card, 'tool');
                 });
         });
 

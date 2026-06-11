@@ -75,7 +75,7 @@
             '<style>' +
             '@page{margin:0;}' +
             'html,body{margin:0;padding:0;background:#fff;color:#111;}' +
-            'body{font-family:"Inter","KakaoBigFont","Noto Sans KR","Helvetica Neue",Arial,sans-serif;line-height:1.45;}' +
+            'body{font-family:"KakaoSmallFont","Inter","Helvetica Neue",Arial,sans-serif;line-height:1.45;}' +
             'body::before{content:"www.hanplanet.com/portfolio/";position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-45deg);font-weight:900;font-size:clamp(24px,4.8vw,62px);letter-spacing:.06em;color:rgba(0,0,0,.11);pointer-events:none;z-index:0;white-space:nowrap;}' +
             '.print-root{position:relative;z-index:1;padding:3mm;box-sizing:border-box;}' +
             '.print-summary,.print-project{padding-top:8mm;padding-bottom:8mm;padding-left:0;padding-right:0;box-sizing:border-box;border:none;border-radius:0;background:transparent;overflow:visible;}' +
@@ -121,7 +121,7 @@
         }
 
         printWindow.document.open();
-        printWindow.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Preparing...</title></head><body style="font-family:Inter,KakaoBigFont,\'Noto Sans KR\',\'Helvetica Neue\',Arial,sans-serif;padding:24px;">' + options.escapeHtml(options.printText.loading) + '</body></html>');
+        printWindow.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Preparing...</title></head><body style="font-family:KakaoSmallFont,Inter,\'Helvetica Neue\',Arial,sans-serif;padding:24px;">' + options.escapeHtml(options.printText.loading) + '</body></html>');
         printWindow.document.close();
 
         const summaryHtml = options.buildSummaryPrintHtml();

@@ -87,7 +87,9 @@
                 if (input.value !== value) input.value = value;
                 if (value.length < maxLength) autoSubmitted = false;
                 boxes.forEach(function (box, index) {
-                    box.textContent = value[index] ? (index === value.length - 1 ? value[index] : "•") : "";
+                    const isMasked = Boolean(value[index]) && index < value.length - 1;
+                    box.textContent = value[index] && !isMasked ? value[index] : "";
+                    box.classList.toggle("is-masked", isMasked);
                     box.classList.toggle("is-filled", index < value.length);
                     box.classList.toggle("is-active", index === Math.min(value.length, maxLength - 1) && document.activeElement === input);
                 });

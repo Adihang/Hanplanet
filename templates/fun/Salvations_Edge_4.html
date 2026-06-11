@@ -5,7 +5,7 @@
     <head>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Noto+Sans+KR:wght@100..900&display=swap" rel="stylesheet">
         <!-- Required meta tags -->
         <meta charset="utf-8">
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -14,6 +14,9 @@
         <meta name="author" content="Hanplanet">
         <meta name="generator" content="Django">
         <meta name="robots" content="noindex">
+        {% if sub_category %}
+        <meta name="hanplanet:sub-category" content="{{ sub_category }}">
+        {% endif %}
         <meta name="csrf-token" content="{{ csrf_token }}">
         <meta property="og:title" content="{% include_trimmed 'partials/ui_i18n.html' key='salvations_page_title' %}">
         <meta property="og:description" content="{% include_trimmed 'partials/ui_i18n.html' key='salvations_meta_og_description' %}">

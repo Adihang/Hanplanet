@@ -2119,6 +2119,9 @@
         destroy: destroy,
         saveToServer: saveToServer,
         getIsDirty: function () { return state.isDirty; },
+        getSaveExtensionOverride: function () {
+            return state.forcePngOnSave || state.selectionFloating ? ".png" : "";
+        },
         setZoom: setZoom,
         triggerAction: handleAction,
     };

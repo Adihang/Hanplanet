@@ -21,6 +21,16 @@
     <form method="post" class="handrive-login-form" id="handrive-login-form">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ handrive_login_next }}">
+        <div
+            class="handrive-login-loading"
+            id="handrive-login-loading"
+            role="status"
+            aria-live="polite"
+            aria-label="{% if handrive_login_show_2fa %}{{ handrive_text.auth_2fa_submit }}{% else %}{{ handrive_text.auth_login_submit }}{% endif %}"
+            hidden
+        >
+            <span class="handrive-login-loading-spinner" aria-hidden="true"></span>
+        </div>
 
         {% if handrive_login_error_message or handrive_login_form.non_field_errors %}
             <div class="handrive-login-error">{{ handrive_login_error_message|default:handrive_text.auth_login_error }}</div>
@@ -220,8 +230,20 @@
 
         const loginForm = document.getElementById("handrive-login-form");
         const submitButton = document.getElementById("handrive-login-submit-btn");
+        const loginLoading = document.getElementById("handrive-login-loading");
         if (!loginForm || !submitButton) {
             return;
+        }
+
+        function setLoginSubmitting(isSubmitting) {
+            const submitting = Boolean(isSubmitting);
+            loginForm.dataset.submitting = submitting ? "1" : "0";
+            loginForm.classList.toggle("is-submitting", submitting);
+            loginForm.setAttribute("aria-busy", submitting ? "true" : "false");
+            submitButton.disabled = submitting;
+            if (loginLoading) {
+                loginLoading.hidden = !submitting;
+            }
         }
 
         function selectServerMessage(data, fallback) {
@@ -263,7 +285,9 @@
                 if (input.value !== value) input.value = value;
                 if (value.length < maxLength) autoSubmitted = false;
                 boxes.forEach(function (box, index) {
-                    box.textContent = value[index] ? (index === value.length - 1 ? value[index] : "•") : "";
+                    const isMasked = Boolean(value[index]) && index < value.length - 1;
+                    box.textContent = value[index] && !isMasked ? value[index] : "";
+                    box.classList.toggle("is-masked", isMasked);
                     box.classList.toggle("is-filled", index < value.length);
                     box.classList.toggle("is-active", index === Math.min(value.length, maxLength - 1) && document.activeElement === input);
                 });
@@ -306,8 +330,7 @@
                 event.preventDefault();
                 return;
             }
-            loginForm.dataset.submitting = "1";
-            submitButton.disabled = true;
+            setLoginSubmitting(true);
         });
 
         const usernameInput = loginForm.querySelector('input[name="username"]');

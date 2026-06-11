@@ -66,6 +66,7 @@ from config.utils import build_user_folder_icon_dir, sanitize_upload_segment
 from .views import (
     SUPPORTED_UI_LANGS,
     apply_ui_context,
+    get_default_meta_robots_for_path,
     get_account_display_name,
     redirect_to_language_prefixed_path,
     redirect_to_localized_route,
@@ -93,8 +94,11 @@ from .google_auth import (
     build_google_authorize_url,
     exchange_google_code,
     fetch_google_identity,
+    get_google_base_auth_scope,
+    get_google_drive_file_scope,
     google_token_has_drive_scope,
     is_google_auth_configured,
+    merge_google_scope_values,
     refresh_google_access_token,
     save_google_mapping,
 )
@@ -125,9 +129,11 @@ from .handrive.html_assets import load_local_html_companion_assets, load_repo_ht
 from .handrive.preview import (
     convert_office_bytes_to_pdf,
     render_handrive_csv_preview_safely,
+    render_handrive_external_frame_safely,
     render_handrive_html_live_safely,
     render_handrive_office_preview_safely,
     render_handrive_pdf_safely,
+    render_handrive_spreadsheet_preview_shell,
 )
 from .models import HandriveAccessRule, HandriveLoginAttemptGuard, HandriveSharedLink, HandriveUserQuota, UserProfile
 from git.models import GitHubAccountMapping, GitUserMapping, GoogleAccountMapping
@@ -145,6 +151,7 @@ GOOGLE_DRIVE_VIRTUAL_PREFIX = ".google-drive-"
 HANDRIVE_GITHUB_URL_PREFIX = "github"
 HANDRIVE_GOOGLE_DRIVE_URL_PREFIX = "google-drive"
 HANDRIVE_URL_ID_SEPARATOR = "~"
+GOOGLE_DRIVE_SELECTED_ITEM_LIMIT = 300
 
 DOCS_FILE_EXTENSION = ".md"
 DOCS_ALLOWED_FILE_EXTENSIONS = (
@@ -365,6 +372,7 @@ MAP_IMAGE_ATTACHMENTS_DIR = "_images"
 MAP_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff", ".tif", ".avif"})
 FOLDER_ICON_EXTENSIONS = MAP_IMAGE_EXTENSIONS
 IMAGE_EDITOR_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".avif"})
+HANDRIVE_PDF_EDITOR_EXTENSIONS = frozenset({".pdf"})
 MAP_VIDEO_EXTENSIONS = frozenset({".mp4", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m4v", ".ogv"})
 HANDRIVE_MP3_SOURCE_EXTENSIONS = MAP_VIDEO_EXTENSIONS
 HANDRIVE_FFMPEG_BIN = Path("/opt/homebrew/bin/ffmpeg")
@@ -539,6 +547,25 @@ HANDRIVE_OFFICE_PDF_EXTENSIONS = frozenset({
     ".ppt",
     ".pptx",
 })
+GOOGLE_DRIVE_DOCS_EDITOR_KIND_BY_MIME = {
+    "application/vnd.google-apps.document": "document",
+    "application/vnd.google-apps.spreadsheet": "spreadsheets",
+    "application/vnd.google-apps.presentation": "presentation",
+    "application/msword": "document",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "document",
+    "application/vnd.ms-excel": "spreadsheets",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "spreadsheets",
+    "application/vnd.ms-powerpoint": "presentation",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "presentation",
+}
+GOOGLE_DRIVE_DOCS_EDITOR_KIND_BY_EXTENSION = {
+    ".doc": "document",
+    ".docx": "document",
+    ".xls": "spreadsheets",
+    ".xlsx": "spreadsheets",
+    ".ppt": "presentation",
+    ".pptx": "presentation",
+}
 HANDRIVE_ACTIVE_ROOT_DIR: ContextVar[Path | None] = ContextVar("handrive_active_root_dir", default=None)
 HANDRIVE_ACTIVE_REQUEST: ContextVar[object | None] = ContextVar("handrive_active_request", default=None)
 HANDRIVE_ARCHIVE_VIRTUAL_PREFIX = ".handrive-archive"
@@ -577,7 +604,7 @@ DOCS_RENDER_PROFILES_BY_EXTENSION = {
         "css_class": "handrive-json",
     },
     ".csv": {
-        "mode": DOCS_RENDER_MODE_PLAIN_TEXT,
+        "mode": DOCS_RENDER_MODE_OFFICE,
         "css_class": "handrive-office handrive-office-sheet handrive-csv",
     },
     ".doc": {
@@ -716,6 +743,7 @@ DOCS_TEXT = {
         "list_aria_label": "목록",
         "menu_open": "열기",
         "menu_download": "다운로드",
+        "menu_google_drive_add_items": "항목 추가",
         "menu_upload": "업로드",
         "menu_rename": "이름 바꾸기",
         "menu_permissions": "권한",
@@ -814,6 +842,11 @@ DOCS_TEXT = {
         "video_editor_reset": "초기화",
         "video_editor_save_error": "비디오 저장 실패",
         "video_editor_saving": "저장 중...",
+        "pdf_editor_load_error": "PDF 편집기를 불러오지 못했습니다.",
+        "pdf_editor_save_error": "PDF 저장 실패",
+        "pdf_editor_saving": "저장 중...",
+        "pdf_editor_loading": "PDF 불러오는 중...",
+        "pdf_editor_page_label": "페이지",
         "delete_button": "삭제",
         "delete_repo_button": "Repo 삭제",
         "download_button": "다운로드",
@@ -902,6 +935,10 @@ DOCS_TEXT = {
         "save_confirm_button": "저장",
         "save_loading": "저장 중...",
         "save_overwrite_badge": "덮어쓰기",
+        "save_overwrite_confirm_title": "파일 덮어쓰기",
+        "save_overwrite_confirm_message": "이미 있는 파일을 덮어씁니다. 계속할까요?",
+        "save_overwrite_confirm_button": "덮어쓰기",
+        "save_overwrite_folder_error": "같은 이름의 폴더가 이미 있어 파일로 덮어쓸 수 없습니다.",
         "folder_modal_title": "새 폴더 생성",
         "folder_name_label": "폴더명",
         "folder_name_placeholder": "폴더명 입력",
@@ -1117,6 +1154,7 @@ DOCS_TEXT = {
         "list_aria_label": "File list",
         "menu_open": "Open",
         "menu_download": "Download",
+        "menu_google_drive_add_items": "Add items",
         "menu_upload": "Upload",
         "menu_rename": "Rename",
         "menu_permissions": "Permissions",
@@ -1196,6 +1234,11 @@ DOCS_TEXT = {
         "video_editor_reset": "Reset",
         "video_editor_save_error": "Video save failed",
         "video_editor_saving": "Saving...",
+        "pdf_editor_load_error": "Could not load the PDF editor.",
+        "pdf_editor_save_error": "PDF save failed",
+        "pdf_editor_saving": "Saving...",
+        "pdf_editor_loading": "Loading PDF...",
+        "pdf_editor_page_label": "Page",
         "delete_button": "Delete",
         "delete_repo_button": "Delete Repo",
         "download_button": "Download",
@@ -1284,6 +1327,10 @@ DOCS_TEXT = {
         "save_confirm_button": "Save",
         "save_loading": "Saving...",
         "save_overwrite_badge": "Overwrite",
+        "save_overwrite_confirm_title": "Overwrite File",
+        "save_overwrite_confirm_message": "This will overwrite an existing file. Continue?",
+        "save_overwrite_confirm_button": "Overwrite",
+        "save_overwrite_folder_error": "A folder with the same name already exists, so this file cannot overwrite it.",
         "folder_modal_title": "Create Folder",
         "folder_name_label": "Folder name",
         "folder_name_placeholder": "Enter folder name",
@@ -1924,6 +1971,74 @@ def handrive_numbered_output_path(parent: Path, stem: str, suffix: str) -> Path:
     return candidate
 
 
+def resolve_handrive_editor_destination(
+    request,
+    source_path: Path,
+    requested_filename: str | None,
+    *,
+    fallback_extension: str,
+    allowed_extensions: set[str],
+    force_extension: str | None = None,
+) -> tuple[Path, str, bool]:
+    """Resolve common editor save target.
+
+    Same filename overwrites the source. A changed filename is save-as in the
+    same folder, overwriting an existing target file when the user confirmed it.
+    """
+    raw_filename = str(requested_filename or "").strip() or source_path.name
+    stem, extension = resolve_file_name_and_extension(
+        raw_filename,
+        fallback_extension=fallback_extension,
+    )
+    if force_extension:
+        extension = normalize_file_extension(force_extension)
+    extension = extension.lower()
+    if extension not in {item.lower() for item in allowed_extensions}:
+        raise ValueError("지원하지 않는 파일 형식입니다.")
+
+    destination_path = source_path.parent / f"{stem}{extension}"
+    destination_exists = destination_path.exists()
+    try:
+        is_same_as_source = destination_exists and destination_path.resolve() == source_path.resolve()
+    except OSError:
+        is_same_as_source = False
+
+    destination_relative = relative_from_root(destination_path)
+
+    if destination_exists and not destination_path.is_file():
+        raise FileExistsError("같은 이름의 폴더가 이미 존재합니다.")
+    if destination_exists and not is_same_as_source:
+        if not has_handrive_write_access(request, destination_relative):
+            raise PermissionError("파일을 수정할 권한이 없습니다.")
+    elif not is_same_as_source:
+        parent_relative = relative_from_root(source_path.parent)
+        if not has_handrive_directory_write_access(request, parent_relative):
+            raise PermissionError("파일을 수정할 권한이 없습니다.")
+
+    return destination_path, destination_relative, is_same_as_source
+
+
+def get_handrive_editor_quota_delta(
+    request,
+    source_path: Path,
+    destination_path: Path,
+    destination_relative: str,
+    new_size: int,
+    *,
+    is_same_as_source: bool,
+) -> tuple[int, int]:
+    """Return scoped quota delta for editor overwrite/save-as semantics."""
+    if get_handrive_scoped_quota_root(request, destination_relative) is None:
+        return 0, 0
+    if is_same_as_source:
+        source_size = source_path.stat().st_size if source_path.exists() else 0
+        return new_size - source_size, 0
+    if destination_path.exists():
+        destination_size = destination_path.stat().st_size
+        return new_size - destination_size, 0
+    return new_size, 1
+
+
 def markdown_slug_from_relative(relative_path: str) -> str:
     """문서 상대경로에서 기본 마크다운 확장자를 제거한 slug 를 만든다."""
     if relative_path.lower().endswith(DOCS_FILE_EXTENSION):
@@ -2251,6 +2366,52 @@ def get_handrive_file_icon_key(path_value: str) -> str:
     return "file"
 
 
+def _resolve_google_drive_docs_editor_kind(mime_type: str | None = "", filename: str | None = "") -> str:
+    """Google Drive의 Office/Workspace 문서를 Docs/Sheets/Slides URL 종류로 매핑한다."""
+    normalized_mime_type = str(mime_type or "").strip().lower()
+    editor_kind = GOOGLE_DRIVE_DOCS_EDITOR_KIND_BY_MIME.get(normalized_mime_type, "")
+    if not editor_kind:
+        extension = Path(str(filename or "")).suffix.lower()
+        editor_kind = GOOGLE_DRIVE_DOCS_EDITOR_KIND_BY_EXTENSION.get(extension, "")
+    return editor_kind
+
+
+def build_google_drive_docs_editor_url(file_id: str | None, mime_type: str | None = "", filename: str | None = "") -> str:
+    """Google Drive의 Office/Workspace 문서를 Google Docs 편집 URL로 매핑한다."""
+    normalized_file_id = str(file_id or "").strip()
+    if not normalized_file_id:
+        return ""
+    editor_kind = _resolve_google_drive_docs_editor_kind(mime_type, filename)
+    if not editor_kind:
+        return ""
+    return f"https://docs.google.com/{editor_kind}/d/{quote(normalized_file_id, safe='')}/edit"
+
+
+def build_google_drive_docs_preview_url(file_id: str | None, mime_type: str | None = "", filename: str | None = "") -> str:
+    """Google Drive의 Office/Workspace 문서를 Google Docs iframe 미리보기 URL로 매핑한다."""
+    normalized_file_id = str(file_id or "").strip()
+    if not normalized_file_id:
+        return ""
+    editor_kind = _resolve_google_drive_docs_editor_kind(mime_type, filename)
+    if not editor_kind:
+        return ""
+    return f"https://docs.google.com/{editor_kind}/d/{quote(normalized_file_id, safe='')}/preview"
+
+
+def _google_drive_docs_preview_render_profile(mime_type: str | None = "", filename: str | None = "") -> dict[str, str]:
+    editor_kind = _resolve_google_drive_docs_editor_kind(mime_type, filename)
+    office_class_by_kind = {
+        "document": "handrive-office-word",
+        "spreadsheets": "handrive-office-sheet",
+        "presentation": "handrive-office-presentation",
+    }
+    office_class = office_class_by_kind.get(editor_kind, "handrive-office-word")
+    return {
+        "mode": DOCS_RENDER_MODE_OFFICE,
+        "css_class": f"handrive-office {office_class}",
+    }
+
+
 def render_handrive_unsupported_safely(
     file_name: str,
     file_extension: str = "",
@@ -2457,6 +2618,11 @@ def get_handrive_save_extension_options() -> list[str]:
     return sorted(options)
 
 
+def render_handrive_markdown_safely(content: str):
+    """Render HanDrive markdown consistently across previews, reads, and help modals."""
+    return render_markdown_safely(content, preserve_blank_lines=True)
+
+
 def render_handrive_content(
     content: str,
     file_extension: str | None,
@@ -2469,6 +2635,7 @@ def render_handrive_content(
     request=None,
     share_owner: str = "",
     share_slug: str = "",
+    can_edit: bool = False,
 ) -> tuple[str, dict[str, str]]:
     """파일 확장자에 맞는 미리보기 렌더러를 선택한다.
 
@@ -2481,7 +2648,15 @@ def render_handrive_content(
             share_owner = shared_context["owner_username"]
             share_slug = shared_context["share_slug"]
     profile = resolve_handrive_render_profile(file_extension)
-    if profile["css_class"] == "handrive-html":
+    if profile["extension"] in {".csv", ".xls", ".xlsx"} and relative_path:
+        file_name = source_path.name if source_path is not None else Path(relative_path).name
+        rendered = render_handrive_spreadsheet_preview_shell(
+            file_name=file_name,
+            relative_path=relative_path,
+            file_extension=profile["extension"],
+            can_edit=can_edit,
+        )
+    elif profile["css_class"] == "handrive-html":
         resolved_companion_css = companion_css or ""
         resolved_companion_js = companion_js or ""
         if source_path is not None and not (resolved_companion_css or resolved_companion_js):
@@ -2501,6 +2676,9 @@ def render_handrive_content(
         else:
             pdf_url = ""
         rendered = render_handrive_pdf_safely(b"", file_name=file_name, pdf_url=pdf_url)
+    elif profile["extension"] == ".csv":
+        file_name = source_path.name if source_path is not None else "CSV"
+        rendered = render_handrive_csv_preview_safely(content, file_name=file_name)
     elif profile["mode"] == DOCS_RENDER_MODE_OFFICE:
         office_bytes = source_bytes
         if office_bytes is None and source_path is not None:
@@ -2509,11 +2687,8 @@ def render_handrive_content(
             except OSError:
                 office_bytes = b""
         rendered = render_handrive_office_preview_safely(profile["extension"], office_bytes or b"")
-    elif profile["extension"] == ".csv":
-        file_name = source_path.name if source_path is not None else "CSV"
-        rendered = render_handrive_csv_preview_safely(content, file_name=file_name)
     elif profile["mode"] == DOCS_RENDER_MODE_MARKDOWN:
-        rendered = render_markdown_safely(content)
+        rendered = render_handrive_markdown_safely(content)
     elif profile["mode"] in {
         DOCS_RENDER_MODE_MEDIA_IMAGE,
         DOCS_RENDER_MODE_MEDIA_VIDEO,
@@ -2533,7 +2708,12 @@ def is_handrive_non_editable_media_extension(file_extension: str | None) -> bool
 def is_handrive_media_editor_extension(file_extension: str | None) -> bool:
     """write 페이지 미디어 에디터로 수정 가능한 확장자인지 판별한다."""
     suffix = str(file_extension or "").lower()
-    return suffix in IMAGE_EDITOR_EXTENSIONS or suffix in HANDRIVE_AUDIO_EDITOR_EXTENSIONS or suffix in HANDRIVE_VIDEO_EDITOR_EXTENSIONS
+    return (
+        suffix in IMAGE_EDITOR_EXTENSIONS
+        or suffix in HANDRIVE_AUDIO_EDITOR_EXTENSIONS
+        or suffix in HANDRIVE_VIDEO_EDITOR_EXTENSIONS
+        or suffix in HANDRIVE_PDF_EDITOR_EXTENSIONS
+    )
 
 
 def load_handrive_source_content(file_path: Path, *, request=None, relative_path: str = "") -> str:
@@ -3243,6 +3423,91 @@ def _google_drive_display_name(mapping: GoogleAccountMapping | None) -> str:
     )
 
 
+def _normalize_google_drive_selected_item(raw_item) -> dict | None:
+    if not isinstance(raw_item, dict):
+        return None
+    file_id = str(raw_item.get("id") or raw_item.get("fileId") or "").strip()
+    if not file_id:
+        return None
+    name = str(raw_item.get("name") or raw_item.get("title") or file_id).strip() or file_id
+    mime_type = str(raw_item.get("mimeType") or raw_item.get("mime_type") or "").strip()
+    normalized = {
+        "id": file_id,
+        "name": name,
+        "mimeType": mime_type,
+    }
+    string_fields = {
+        "size": ("size", "sizeBytes"),
+        "modifiedTime": ("modifiedTime", "lastEditedUtc"),
+        "createdTime": ("createdTime",),
+        "iconLink": ("iconLink", "iconUrl"),
+        "thumbnailLink": ("thumbnailLink", "thumbnailUrl"),
+        "webViewLink": ("webViewLink", "url"),
+        "webContentLink": ("webContentLink",),
+    }
+    for target_key, source_keys in string_fields.items():
+        for source_key in source_keys:
+            value = str(raw_item.get(source_key) or "").strip()
+            if value:
+                normalized[target_key] = value
+                break
+    parents = raw_item.get("parents")
+    if isinstance(parents, list):
+        normalized["parents"] = [str(parent).strip() for parent in parents if str(parent).strip()]
+    return normalized
+
+
+def _get_google_drive_selected_items(mapping: GoogleAccountMapping | None) -> list[dict]:
+    raw_items = getattr(mapping, "selected_drive_items", []) if mapping is not None else []
+    if not isinstance(raw_items, list):
+        return []
+    selected_items: list[dict] = []
+    seen_ids: set[str] = set()
+    for raw_item in raw_items:
+        item = _normalize_google_drive_selected_item(raw_item)
+        if item is None or item["id"] in seen_ids:
+            continue
+        seen_ids.add(item["id"])
+        selected_items.append(item)
+        if len(selected_items) >= GOOGLE_DRIVE_SELECTED_ITEM_LIMIT:
+            break
+    return selected_items
+
+
+def _set_google_drive_selected_items(mapping: GoogleAccountMapping, items: list[dict]) -> list[dict]:
+    selected_items: list[dict] = []
+    seen_ids: set[str] = set()
+    for raw_item in items:
+        item = _normalize_google_drive_selected_item(raw_item)
+        if item is None or item["id"] in seen_ids:
+            continue
+        seen_ids.add(item["id"])
+        selected_items.append(item)
+        if len(selected_items) >= GOOGLE_DRIVE_SELECTED_ITEM_LIMIT:
+            break
+    mapping.selected_drive_items = selected_items
+    mapping.save(update_fields=["selected_drive_items", "updated_at"])
+    return selected_items
+
+
+def _remember_google_drive_selected_item(mapping: GoogleAccountMapping, file_info: dict | None) -> None:
+    item = _normalize_google_drive_selected_item(file_info or {})
+    if item is None:
+        return
+    items = _get_google_drive_selected_items(mapping)
+    by_id = {existing["id"]: existing for existing in items}
+    by_id[item["id"]] = {**by_id.get(item["id"], {}), **item}
+    _set_google_drive_selected_items(mapping, list(by_id.values()))
+
+
+def _forget_google_drive_selected_item(mapping: GoogleAccountMapping, file_id: str | None) -> None:
+    normalized_id = str(file_id or "").strip()
+    if not normalized_id:
+        return
+    items = [item for item in _get_google_drive_selected_items(mapping) if item.get("id") != normalized_id]
+    _set_google_drive_selected_items(mapping, items)
+
+
 def _refresh_google_profile_once_per_day(mapping: GoogleAccountMapping | None) -> None:
     if mapping is None:
         return
@@ -3344,6 +3609,8 @@ def _build_google_drive_file_entry(mapping: GoogleAccountMapping, parent_path: s
     modified_dt = _parse_google_drive_datetime(file_info.get("modifiedTime"))
     entry_path = _google_drive_child_virtual_path(parent_path, file_id)
     can_edit_content = not is_folder and not is_workspace
+    docs_editor_url = build_google_drive_docs_editor_url(file_id, mime_type, name)
+    docs_preview_url = build_google_drive_docs_preview_url(file_id, mime_type, name)
     entry = {
         "name": name,
         "path": entry_path,
@@ -3370,6 +3637,8 @@ def _build_google_drive_file_entry(mapping: GoogleAccountMapping, parent_path: s
             "is_folder": is_folder,
             "is_workspace_file": is_workspace,
             "can_edit_content": can_edit_content,
+            "docs_editor_url": docs_editor_url,
+            "docs_preview_url": docs_preview_url,
             "web_view_url": str(file_info.get("webViewLink") or "").strip(),
         },
     }
@@ -3416,6 +3685,7 @@ def _google_drive_root_entry_for_directory(request, current_dir_relative: str, e
         return []
     display_name = _google_drive_display_name(mapping)
     has_drive_scope = google_token_has_drive_scope(getattr(mapping, "token_scope", ""))
+    selected_count = len(_get_google_drive_selected_items(mapping))
     public_root_path = build_handrive_public_url_path(request, root_path)
     return [
         {
@@ -3443,13 +3713,17 @@ def _google_drive_root_entry_for_directory(request, current_dir_relative: str, e
                 "is_root": True,
                 "is_folder": True,
                 "has_drive_scope": has_drive_scope,
+                "selected_count": selected_count,
             },
         }
     ]
 
 
 def _build_google_drive_entries(request, context) -> list[dict]:
-    files = list_google_drive_files(context["mapping"], context["folder_id"])
+    if context["is_root"]:
+        files = _get_google_drive_selected_items(context["mapping"])
+    else:
+        files = list_google_drive_files(context["mapping"], context["folder_id"])
     parent_public_path = build_handrive_public_url_path(request, context["path"])
     return [
         _build_google_drive_file_entry(
@@ -3478,6 +3752,7 @@ def _build_google_drive_directory_meta(request, context, entries: list | None = 
         "is_root": bool(context["is_root"]),
         "is_folder": True,
         "has_drive_scope": google_token_has_drive_scope(getattr(mapping, "token_scope", "")),
+        "selected_count": len(_get_google_drive_selected_items(mapping)) if context["is_root"] else None,
     }
     if not context["is_root"]:
         try:
@@ -3620,10 +3895,13 @@ def _handle_google_drive_save_request(request, payload: dict, *, original_relati
     target_parent_id = target_context["folder_id"]
     target_bytes = content.encode("utf-8")
 
-    try:
-        siblings = list_google_drive_files(target_context["mapping"], target_parent_id)
-    except GoogleDriveError as exc:
-        return json_error(str(exc), status=exc.status_code)
+    if target_context["is_root"]:
+        siblings = _get_google_drive_selected_items(target_context["mapping"])
+    else:
+        try:
+            siblings = list_google_drive_files(target_context["mapping"], target_parent_id)
+        except GoogleDriveError as exc:
+            return json_error(str(exc), status=exc.status_code)
 
     if source_context is not None:
         source_id = source_context["file_id"]
@@ -3638,16 +3916,19 @@ def _handle_google_drive_save_request(request, payload: dict, *, original_relati
         if name_conflict:
             return json_error("같은 이름의 파일이 이미 존재합니다.", status=409)
         try:
+            updated_metadata = source_metadata
             if str(source_metadata.get("name") or "").strip() != target_name:
-                rename_google_drive_file(source_context["mapping"], source_id, target_name)
+                updated_metadata = rename_google_drive_file(source_context["mapping"], source_id, target_name)
             if source_parent_path != target_dir:
-                move_google_drive_file(source_context["mapping"], source_id, target_parent_id)
-            update_google_drive_file_content(
+                updated_metadata = move_google_drive_file(source_context["mapping"], source_id, target_parent_id)
+            updated_metadata = update_google_drive_file_content(
                 source_context["mapping"],
                 source_id,
                 target_bytes,
                 google_drive_guess_mime_type(target_name),
             )
+            if source_context["is_root"] or target_context["is_root"]:
+                _remember_google_drive_selected_item(source_context["mapping"], updated_metadata)
         except GoogleDriveError as exc:
             return json_error(str(exc), status=exc.status_code)
         destination_path = _google_drive_child_virtual_path(target_dir, source_id)
@@ -3672,6 +3953,8 @@ def _handle_google_drive_save_request(request, payload: dict, *, original_relati
     except GoogleDriveError as exc:
         return json_error(str(exc), status=exc.status_code)
     created_id = str(created.get("id") or "").strip()
+    if target_context["is_root"]:
+        _remember_google_drive_selected_item(target_context["mapping"], created)
     destination_path = _google_drive_child_virtual_path(target_dir, created_id)
     return JsonResponse(
         {
@@ -5628,7 +5911,7 @@ def build_page_help_html(ui_lang: str | None, page_type: str, handrive_text: dic
     page_help_path = resolve_page_help_file(ui_lang, page_type)
     try:
         if page_help_path is not None:
-            return render_markdown_safely(page_help_path.read_text(encoding="utf-8"))
+            return render_handrive_markdown_safely(page_help_path.read_text(encoding="utf-8"))
         fallback_markdown = (
             f"# {handrive_text.get('help_button', 'Help')}\n\n"
             f"{handrive_text['markdown_help_fallback_missing']}"
@@ -5638,7 +5921,7 @@ def build_page_help_html(ui_lang: str | None, page_type: str, handrive_text: dic
             f"# {handrive_text.get('help_button', 'Help')}\n\n"
             f"{handrive_text['markdown_help_fallback_read_error']}"
         )
-    return render_markdown_safely(fallback_markdown)
+    return render_handrive_markdown_safely(fallback_markdown)
 
 
 def build_handrive_help_url(ui_lang: str | None, handrive_base_url: str) -> str:
@@ -5976,7 +6259,8 @@ def handrive_common_context(request, ui_lang):
             "meta_site_name": DOCS_META_TITLE,
             "meta_description": DOCS_META_DESCRIPTION,
             "meta_og_description": DOCS_META_DESCRIPTION,
-            "meta_robots": "index,follow",
+            "meta_robots": get_default_meta_robots_for_path(request.path),
+            "site_footer_purpose_i18n_key": "root_footer_purpose",
             "handrive_base_url": handrive_base_url,
             "handrive_root_url": handrive_root_url,
             "handrive_write_url": handrive_write_url,
@@ -5999,6 +6283,7 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_list_url": reverse("main:handrive_api_list"),
             "handrive_api_search_url": reverse("main:handrive_api_search"),
             "handrive_api_save_url": reverse("main:handrive_api_save"),
+            "handrive_api_spreadsheet_save_url": reverse("main:handrive_api_spreadsheet_save"),
             "handrive_api_preview_url": reverse("main:handrive_api_preview"),
             "handrive_api_rename_url": reverse("main:handrive_api_rename"),
             "handrive_api_delete_url": reverse("main:handrive_api_delete"),
@@ -6030,6 +6315,14 @@ def handrive_common_context(request, ui_lang):
             "handrive_image_editor_remove_background_url": reverse("main:handrive_api_image_editor_remove_background"),
             "handrive_audio_editor_save_url": reverse("main:handrive_api_audio_editor_save"),
             "handrive_video_editor_save_url": reverse("main:handrive_api_video_editor_save"),
+            "handrive_pdf_editor_meta_url": reverse("main:handrive_api_pdf_editor_meta"),
+            "handrive_pdf_editor_page_url": reverse("main:handrive_api_pdf_editor_page"),
+            "handrive_pdf_editor_save_url": reverse("main:handrive_api_pdf_editor_save"),
+            "handrive_handsontable_license_key": getattr(
+                settings,
+                "HANDSONTABLE_LICENSE_KEY",
+                os.environ.get("HANDSONTABLE_LICENSE_KEY", "non-commercial-and-evaluation"),
+            ),
             "handrive_can_edit": has_handrive_directory_write_access(request, ""),
             "handrive_can_manage_acl": is_handrive_acl_admin(request),
             "handrive_file_extension_options": get_handrive_save_extension_options(),
@@ -6602,6 +6895,26 @@ def _mask_email(email: str) -> str:
     return f"{visible}{'*' * max(2, len(local) - 2)}@{domain}"
 
 
+def _is_handrive_2fa_bypass_user(user) -> bool:
+    username = str(getattr(user, "username", "") or "").strip().casefold()
+    if not username:
+        return False
+    configured = getattr(settings, "HANDRIVE_2FA_BYPASS_USERNAMES", set()) or set()
+    if isinstance(configured, str):
+        bypass_usernames = {
+            item.strip().casefold()
+            for item in configured.split(",")
+            if item.strip()
+        }
+    else:
+        bypass_usernames = {
+            str(item).strip().casefold()
+            for item in configured
+            if str(item).strip()
+        }
+    return username in bypass_usernames
+
+
 def _complete_login_or_require_2fa(
     request,
     user,
@@ -6637,6 +6950,15 @@ def _complete_login_or_require_2fa(
         )
         register_url = reverse("main:handrive_register_email_lang", kwargs={"ui_lang": resolved_ui_lang})
         return redirect(register_url)
+
+    if _is_handrive_2fa_bypass_user(user):
+        _finalize_handrive_login_session(request, user)
+        if not requires_direct_attach:
+            return _build_post_hanplanet_login_response(target_url, user)
+        response = _build_forgejo_redirect_base(target_url)
+        if forgejo_session_key:
+            response = _apply_forgejo_session_cookie(response, forgejo_session_key)
+        return response
 
     # 2) 신뢰된 기기인지 확인
     device_token = _read_device_token(request)
@@ -7895,6 +8217,57 @@ def _parse_boolean_payload_value(value) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _build_google_drive_incremental_auth_url(request, *, next_url: str = "") -> str:
+    resolved_lang = resolve_ui_lang(request, getattr(request, "LANGUAGE_CODE", None))
+    start_url = reverse("main:handrive_google_auth_start_lang", kwargs={"ui_lang": resolved_lang})
+    target_next_url = str(next_url or request.META.get("HTTP_REFERER") or request.get_full_path() or "/handrive/list").strip()
+    return f"{start_url}?{urlencode({'mode': 'drive', 'next': target_next_url})}"
+
+
+def _google_drive_incremental_auth_required_response(request, message: str, *, status: int = 403) -> JsonResponse:
+    messages = _handrive_json_error_messages(message)
+    return JsonResponse(
+        {
+            "ok": False,
+            "error": message,
+            "error_message": message,
+            "error_messages": messages,
+            "requires_google_drive_auth": True,
+            "auth_url": _build_google_drive_incremental_auth_url(request),
+        },
+        status=status,
+    )
+
+
+def _google_drive_auth_required_message() -> str:
+    return "Google Drive 권한 승인이 필요합니다."
+
+
+def _save_google_drive_token_for_mapping(mapping: GoogleAccountMapping, token_data: GoogleTokenData) -> None:
+    update_fields = [
+        "user_access_token",
+        "user_access_token_expires_at",
+        "token_scope",
+        "token_type",
+        "google_drive_enabled",
+        "google_drive_preference_set",
+        "updated_at",
+    ]
+    mapping.user_access_token = token_data.access_token
+    mapping.user_access_token_expires_at = token_data.expires_at
+    mapping.token_scope = merge_google_scope_values(getattr(mapping, "token_scope", ""), token_data.scope, get_google_drive_file_scope())
+    mapping.token_type = token_data.token_type or getattr(mapping, "token_type", "")
+    mapping.google_drive_enabled = True
+    mapping.google_drive_preference_set = True
+    if token_data.refresh_token:
+        mapping.user_refresh_token = token_data.refresh_token
+        update_fields.append("user_refresh_token")
+    if token_data.refresh_token_expires_at:
+        mapping.user_refresh_token_expires_at = token_data.refresh_token_expires_at
+        update_fields.append("user_refresh_token_expires_at")
+    mapping.save(update_fields=update_fields)
+
+
 @require_http_methods(["POST"])
 @csrf_protect
 def handrive_api_google_drive_settings(request):
@@ -7909,14 +8282,130 @@ def handrive_api_google_drive_settings(request):
     if mapping is None:
         return json_error("연동된 Google 계정이 없습니다.", status=404)
     enabled = _parse_boolean_payload_value(payload.get("enabled"))
-    if mapping.google_drive_enabled != enabled:
+    if enabled and not google_token_has_drive_scope(getattr(mapping, "token_scope", "")):
+        return JsonResponse(
+            {
+                "ok": True,
+                "connected": True,
+                "google_drive_enabled": False,
+                "requires_google_drive_auth": True,
+                "auth_url": _build_google_drive_incremental_auth_url(request),
+            }
+        )
+    if mapping.google_drive_enabled != enabled or not bool(getattr(mapping, "google_drive_preference_set", False)):
         mapping.google_drive_enabled = enabled
-        mapping.save(update_fields=["google_drive_enabled", "updated_at"])
+        mapping.google_drive_preference_set = True
+        mapping.save(update_fields=["google_drive_enabled", "google_drive_preference_set", "updated_at"])
     return JsonResponse(
         {
             "ok": True,
             "connected": True,
             "google_drive_enabled": bool(mapping.google_drive_enabled),
+        }
+    )
+
+
+def _ensure_google_picker_access_token(mapping: GoogleAccountMapping) -> str:
+    if not google_token_has_drive_scope(getattr(mapping, "token_scope", "")):
+        raise GoogleDriveError(_google_drive_auth_required_message(), status_code=403)
+
+    access_token = str(getattr(mapping, "user_access_token", "") or "").strip()
+    expires_at = getattr(mapping, "user_access_token_expires_at", None)
+    refresh_token = str(getattr(mapping, "user_refresh_token", "") or "").strip()
+    if (not access_token or (expires_at and expires_at <= timezone.now() + timedelta(seconds=60))) and refresh_token:
+        try:
+            refresh_google_access_token(mapping)
+        except GoogleAuthError as exc:
+            raise GoogleDriveError(_google_drive_auth_required_message(), status_code=403) from exc
+        access_token = str(getattr(mapping, "user_access_token", "") or "").strip()
+
+    if not access_token:
+        raise GoogleDriveError(_google_drive_auth_required_message(), status_code=403)
+    return access_token
+
+
+@require_http_methods(["GET"])
+@csrf_protect
+def handrive_api_google_picker_config(request):
+    user = getattr(request, "user", None)
+    if not (user and user.is_authenticated):
+        return json_error("로그인이 필요합니다.", status=401)
+    mapping = GoogleAccountMapping.objects.filter(user=user).first()
+    if mapping is None:
+        return json_error("연동된 Google 계정이 없습니다.", status=404)
+    if not bool(getattr(mapping, "google_drive_enabled", False)):
+        return json_error("Google Drive가 비활성화되어 있습니다.", status=403)
+    api_key = str(getattr(settings, "GOOGLE_PICKER_API_KEY", "") or "").strip()
+    app_id = str(getattr(settings, "GOOGLE_PICKER_APP_ID", "") or "").strip()
+    if not api_key:
+        return json_error("Google Picker API key가 설정되지 않았습니다.", status=503)
+    try:
+        access_token = _ensure_google_picker_access_token(mapping)
+    except GoogleDriveError as exc:
+        if exc.status_code == 403:
+            return _google_drive_incremental_auth_required_response(request, str(exc), status=403)
+        return json_error(str(exc), status=exc.status_code)
+    return JsonResponse(
+        {
+            "ok": True,
+            "access_token": access_token,
+            "api_key": api_key,
+            "app_id": app_id,
+            "selected_items": _get_google_drive_selected_items(mapping),
+            "selected_count": len(_get_google_drive_selected_items(mapping)),
+        }
+    )
+
+
+@require_http_methods(["POST", "DELETE"])
+@csrf_protect
+def handrive_api_google_drive_items(request):
+    user = getattr(request, "user", None)
+    if not (user and user.is_authenticated):
+        return json_error("로그인이 필요합니다.", status=401)
+    mapping = GoogleAccountMapping.objects.filter(user=user).first()
+    if mapping is None:
+        return json_error("연동된 Google 계정이 없습니다.", status=404)
+    if not bool(getattr(mapping, "google_drive_enabled", False)):
+        return json_error("Google Drive가 비활성화되어 있습니다.", status=403)
+    if not google_token_has_drive_scope(getattr(mapping, "token_scope", "")):
+        return _google_drive_incremental_auth_required_response(
+            request,
+            _google_drive_auth_required_message(),
+            status=403,
+        )
+    try:
+        payload = parse_json_body(request)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    if request.method == "DELETE":
+        item_id = str(payload.get("id") or payload.get("file_id") or "").strip()
+        if item_id:
+            _forget_google_drive_selected_item(mapping, item_id)
+            selected_items = _get_google_drive_selected_items(mapping)
+        else:
+            selected_items = _set_google_drive_selected_items(mapping, [])
+    else:
+        raw_items = payload.get("items")
+        if not isinstance(raw_items, list):
+            return json_error("선택한 Google Drive 항목이 없습니다.", status=400)
+        current_items = _get_google_drive_selected_items(mapping)
+        by_id = {item["id"]: item for item in current_items}
+        for raw_item in raw_items:
+            item = _normalize_google_drive_selected_item(raw_item)
+            if item is None:
+                continue
+            by_id[item["id"]] = {**by_id.get(item["id"], {}), **item}
+        selected_items = _set_google_drive_selected_items(mapping, list(by_id.values()))
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "connected": True,
+            "google_drive_enabled": bool(mapping.google_drive_enabled),
+            "selected_items": selected_items,
+            "selected_count": len(selected_items),
         }
     )
 
@@ -7946,10 +8435,21 @@ def handrive_google_auth_start(request, ui_lang=None):
     handrive_text = context["handrive_text"]
     next_url = resolve_next_url(request, context["handrive_base_url"])
     mode = str(request.POST.get("mode") or request.GET.get("mode") or "login").strip().lower()
-    if mode not in {"login", "signup", "link"}:
+    if mode not in {"login", "signup", "link", "drive"}:
         mode = "login"
 
-    if mode == "link" and not request.user.is_authenticated:
+    if mode in {"link", "drive"} and not request.user.is_authenticated:
+        return _render_google_auth_error(
+            request,
+            resolved_lang,
+            "login",
+            next_url,
+            handrive_text.get("auth_google_link_requires_login", "Sign in before connecting Google."),
+        )
+    drive_mapping = None
+    if mode == "drive":
+        drive_mapping = GoogleAccountMapping.objects.filter(user=request.user).first()
+    if mode == "drive" and drive_mapping is None:
         return _render_google_auth_error(
             request,
             resolved_lang,
@@ -7989,7 +8489,17 @@ def handrive_google_auth_start(request, ui_lang=None):
     request.session.modified = True
 
     try:
-        authorize_url = build_google_authorize_url(_build_google_auth_callback_url(request), state)
+        auth_scope = (
+            merge_google_scope_values(get_google_base_auth_scope(), get_google_drive_file_scope())
+            if mode == "drive"
+            else get_google_base_auth_scope()
+        )
+        authorize_url = build_google_authorize_url(
+            _build_google_auth_callback_url(request),
+            state,
+            scope=auth_scope,
+            login_hint=getattr(drive_mapping, "google_email", "") if mode == "drive" else "",
+        )
     except GoogleAuthError:
         return _render_google_auth_error(
             request,
@@ -8009,7 +8519,7 @@ def handrive_google_auth_callback(request):
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
     mode = str(pending.get("mode") or "login").strip().lower()
-    if mode not in {"login", "signup", "link"}:
+    if mode not in {"login", "signup", "link", "drive"}:
         mode = "login"
     next_url = str(pending.get("next_url") or context["handrive_base_url"])
     generic_error = handrive_text.get("auth_google_failed", "Google authentication failed. Please try again.")
@@ -8029,6 +8539,30 @@ def handrive_google_auth_callback(request):
 
     try:
         token_data = exchange_google_code(code, _build_google_auth_callback_url(request))
+        if mode == "drive":
+            if not request.user.is_authenticated:
+                return _render_google_auth_error(
+                    request,
+                    resolved_lang,
+                    "login",
+                    next_url,
+                    handrive_text.get("auth_google_link_requires_login", generic_error),
+                )
+            mapping = GoogleAccountMapping.objects.filter(user=request.user).first()
+            if mapping is None:
+                return _render_google_auth_error(request, resolved_lang, "login", next_url, generic_error)
+            identity = fetch_google_identity(token_data.access_token)
+            if identity.google_user_id != mapping.google_user_id:
+                return _render_google_auth_error(
+                    request,
+                    resolved_lang,
+                    "drive",
+                    next_url,
+                    handrive_text.get("auth_google_link_conflict", generic_error),
+                )
+            _save_google_drive_token_for_mapping(mapping, token_data)
+            return _build_forgejo_authenticated_redirect(next_url, request.user)
+
         identity = fetch_google_identity(token_data.access_token)
         if mode == "link":
             if not request.user.is_authenticated:
@@ -9276,6 +9810,15 @@ def handrive_view(request, doc_path, ui_lang=None):
             google_drive_file_metadata = get_google_drive_file(google_drive["mapping"], google_drive["file_id"])
             if str(google_drive_file_metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME:
                 raise Http404("파일을 찾을 수 없습니다.")
+            docs_editor_url = build_google_drive_docs_editor_url(
+                google_drive["file_id"],
+                google_drive_file_metadata.get("mimeType"),
+                google_drive_file_metadata.get("name"),
+            )
+            if docs_editor_url:
+                if not has_handrive_read_access(request, relative_file_path):
+                    raise PermissionDenied("파일을 볼 권한이 없습니다.")
+                return redirect(docs_editor_url)
             download = download_google_drive_file(google_drive["mapping"], google_drive["file_id"], google_drive_file_metadata)
         except GoogleDriveError as exc:
             raise Http404(str(exc))
@@ -9327,6 +9870,7 @@ def handrive_view(request, doc_path, ui_lang=None):
         file_name = file_path.name
         file_extension = file_path.suffix.lower()
         file_size_display = format_handrive_bytes_display(file_path.stat().st_size) if file_path.exists() else ""
+        file_can_edit = has_handrive_write_access(request, relative_file_path)
         if resolve_handrive_render_profile(file_extension).get("mode") == DOCS_RENDER_MODE_OFFICE:
             content = ""
             rendered_content_html, render_profile = render_handrive_content(
@@ -9335,6 +9879,7 @@ def handrive_view(request, doc_path, ui_lang=None):
                 source_path=file_path,
                 relative_path=relative_file_path,
                 request=request,
+                can_edit=file_can_edit,
             )
         else:
             try:
@@ -9345,6 +9890,7 @@ def handrive_view(request, doc_path, ui_lang=None):
                     source_path=file_path,
                     relative_path=relative_file_path,
                     request=request,
+                    can_edit=file_can_edit,
                 )
             except Http404:
                 rendered_content_html = render_handrive_unsupported_safely(
@@ -9457,9 +10003,20 @@ def handrive_view(request, doc_path, ui_lang=None):
 
     doc_can_edit = has_handrive_write_access(request, relative_file_path)
     doc_is_media_editor_file = git_virtual is None and google_drive is None and is_handrive_media_editor_extension(file_extension)
+    doc_is_spreadsheet_editor_file = (
+        git_virtual is None
+        and google_drive is None
+        and file_extension in HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS
+    )
+    doc_is_spreadsheet_file = file_extension in HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS
+    doc_is_excel_file = file_extension in {".xls", ".xlsx"}
     doc_can_show_edit = (
         doc_can_edit
         and render_profile["mode"] != DOCS_RENDER_MODE_UNSUPPORTED
+        and (
+            file_extension not in HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS
+            or doc_is_spreadsheet_editor_file
+        )
         and (
             not is_handrive_non_editable_media_extension(file_extension)
             or doc_is_media_editor_file
@@ -9469,6 +10026,14 @@ def handrive_view(request, doc_path, ui_lang=None):
             and is_google_workspace_file(google_drive_file_metadata.get("mimeType") if isinstance(google_drive_file_metadata, dict) else "")
         )
     )
+    if doc_is_spreadsheet_editor_file:
+        doc_edit_url = (
+            build_handrive_list_url(context["handrive_base_url"], parent_dir, request=request)
+            + "?"
+            + urlencode({"edit": relative_file_path})
+        )
+    else:
+        doc_edit_url = context["handrive_write_url"] + "?" + urlencode({"path": relative_file_path})
     doc_can_print = render_profile["mode"] not in {
         DOCS_RENDER_MODE_MEDIA_VIDEO,
         DOCS_RENDER_MODE_UNSUPPORTED,
@@ -9484,12 +10049,16 @@ def handrive_view(request, doc_path, ui_lang=None):
             "doc_can_print": doc_can_print,
             "doc_can_edit": doc_can_edit,
             "doc_can_show_edit": doc_can_show_edit,
+            "doc_edit_url": doc_edit_url,
             "doc_is_url_only": doc_is_url_only,
             "doc_share_url": doc_share_url,
             "doc_share_is_inherited": doc_share_is_inherited,
             "doc_content_html": rendered_content_html,
             "doc_content_mode": render_profile["mode"],
             "doc_content_class": render_profile["css_class"],
+            "doc_file_extension": file_extension,
+            "doc_is_excel_file": doc_is_excel_file,
+            "doc_is_spreadsheet_file": doc_is_spreadsheet_file,
             "view_breadcrumbs": view_breadcrumbs,
             "view_current_file_name": file_name,
             "view_current_file_size_display": file_size_display,
@@ -9648,6 +10217,15 @@ def handrive_write(request, ui_lang=None):
                 file_metadata = get_google_drive_file(google_drive["mapping"], google_drive["file_id"])
                 if str(file_metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME:
                     raise Http404("수정할 파일을 찾을 수 없습니다.")
+                docs_editor_url = build_google_drive_docs_editor_url(
+                    google_drive["file_id"],
+                    file_metadata.get("mimeType"),
+                    file_metadata.get("name"),
+                )
+                if docs_editor_url:
+                    if not has_handrive_write_access(request, original_relative_path):
+                        raise PermissionDenied("파일을 수정할 권한이 없습니다.")
+                    return redirect(docs_editor_url)
                 if is_google_workspace_file(file_metadata.get("mimeType")):
                     raise Http404("Google Workspace 문서는 HanDrive에서 직접 수정할 수 없습니다.")
                 download = download_google_drive_file(google_drive["mapping"], google_drive["file_id"], file_metadata)
@@ -9680,6 +10258,8 @@ def handrive_write(request, ui_lang=None):
                 write_editor_kind = "audio"
             elif initial_extension in HANDRIVE_VIDEO_EDITOR_EXTENSIONS:
                 write_editor_kind = "video"
+            elif initial_extension in HANDRIVE_PDF_EDITOR_EXTENSIONS:
+                write_editor_kind = "pdf"
             else:
                 try:
                     initial_content = file_path.read_text(encoding="utf-8")
@@ -9770,7 +10350,7 @@ def handrive_write(request, ui_lang=None):
             "scoped_home_dir": scoped_home_dir,
             "handrive_root_label": get_handrive_js_root_label(request, scoped_home_dir),
             "available_directories": sorted(set(list_all_directories(request=request) + ([initial_dir] if initial_dir else []))),
-            "markdown_help_html": render_markdown_safely(markdown_help_content),
+            "markdown_help_html": render_handrive_markdown_safely(markdown_help_content),
             "page_help_html": build_page_help_html(resolved_lang, "write", handrive_text),
             "write_breadcrumbs": _build_git_virtual_breadcrumbs(
                 request,
@@ -10517,10 +11097,13 @@ def handrive_api_rename(request):
                 fallback_extension=source_extension,
             )
             target_name = f"{candidate_name}{candidate_extension}"
-        try:
-            siblings = list_google_drive_files(google_drive_source["mapping"], google_drive_source["parent_id"])
-        except GoogleDriveError as exc:
-            return json_error(str(exc), status=exc.status_code)
+        if len(google_drive_source["segments"]) <= 1:
+            siblings = _get_google_drive_selected_items(google_drive_source["mapping"])
+        else:
+            try:
+                siblings = list_google_drive_files(google_drive_source["mapping"], google_drive_source["parent_id"])
+            except GoogleDriveError as exc:
+                return json_error(str(exc), status=exc.status_code)
         source_id = google_drive_source["file_id"]
         if any(
             str(item.get("name") or "").strip() == target_name
@@ -10529,7 +11112,8 @@ def handrive_api_rename(request):
         ):
             return json_error("같은 이름의 항목이 이미 존재합니다.", status=409)
         try:
-            rename_google_drive_file(google_drive_source["mapping"], source_id, target_name)
+            updated_metadata = rename_google_drive_file(google_drive_source["mapping"], source_id, target_name)
+            _remember_google_drive_selected_item(google_drive_source["mapping"], updated_metadata)
         except GoogleDriveError as exc:
             return json_error(str(exc), status=exc.status_code)
         response = {
@@ -10682,6 +11266,7 @@ def handrive_api_delete(request):
         try:
             for google_drive in google_drive_targets:
                 delete_google_drive_file(google_drive["mapping"], google_drive["file_id"])
+                _forget_google_drive_selected_item(google_drive["mapping"], google_drive["file_id"])
         except GoogleDriveError as exc:
             return json_error(str(exc), status=exc.status_code)
         return JsonResponse(
@@ -11145,7 +11730,11 @@ def handrive_api_mkdir(request):
     if google_drive_parent is not None:
         try:
             _ensure_google_drive_folder_context(google_drive_parent)
-            siblings = list_google_drive_files(google_drive_parent["mapping"], google_drive_parent["folder_id"])
+            siblings = (
+                _get_google_drive_selected_items(google_drive_parent["mapping"])
+                if google_drive_parent["is_root"]
+                else list_google_drive_files(google_drive_parent["mapping"], google_drive_parent["folder_id"])
+            )
             if any(
                 str(item.get("name") or "").strip() == folder_name
                 and str(item.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME
@@ -11160,6 +11749,8 @@ def handrive_api_mkdir(request):
         except GoogleDriveError as exc:
             return json_error(str(exc), status=exc.status_code)
         created_id = str(created.get("id") or "").strip()
+        if google_drive_parent["is_root"]:
+            _remember_google_drive_selected_item(google_drive_parent["mapping"], created)
         return JsonResponse({"ok": True, "path": _google_drive_child_virtual_path(parent_dir, created_id)})
 
     if git_virtual_parent is None and not parent_path.is_dir():
@@ -11299,7 +11890,11 @@ def handrive_api_move(request):
         try:
             _ensure_google_drive_folder_context(google_drive_target)
             source_metadata = get_google_drive_file(google_drive_source["mapping"], google_drive_source["file_id"])
-            target_siblings = list_google_drive_files(google_drive_target["mapping"], google_drive_target["folder_id"])
+            target_siblings = (
+                _get_google_drive_selected_items(google_drive_target["mapping"])
+                if google_drive_target["is_root"]
+                else list_google_drive_files(google_drive_target["mapping"], google_drive_target["folder_id"])
+            )
         except GoogleDriveError as exc:
             return json_error(str(exc), status=exc.status_code)
         source_parent_relative = normalize_relative_path(str(Path(source_relative).parent).replace("\\", "/"), allow_empty=True)
@@ -11323,7 +11918,9 @@ def handrive_api_move(request):
         ):
             return json_error("같은 이름의 항목이 이미 존재합니다.", status=409)
         try:
-            move_google_drive_file(google_drive_source["mapping"], source_id, google_drive_target["folder_id"])
+            moved_metadata = move_google_drive_file(google_drive_source["mapping"], source_id, google_drive_target["folder_id"])
+            if len(google_drive_source["segments"]) <= 1 or google_drive_target["is_root"]:
+                _remember_google_drive_selected_item(google_drive_source["mapping"], moved_metadata)
         except GoogleDriveError as exc:
             return json_error(str(exc), status=exc.status_code)
         destination_relative = _google_drive_child_virtual_path(target_dir_relative, source_id)
@@ -11594,7 +12191,11 @@ def handrive_api_upload(request):
                 for index in range(total_chunks)
             )
             if google_drive_target is not None:
-                existing_files = list_google_drive_files(google_drive_target["mapping"], google_drive_target["folder_id"])
+                existing_files = (
+                    _get_google_drive_selected_items(google_drive_target["mapping"])
+                    if google_drive_target["is_root"]
+                    else list_google_drive_files(google_drive_target["mapping"], google_drive_target["folder_id"])
+                )
                 destination_name = build_available_google_drive_name(existing_files, original_name)
             elif git_virtual_target is None:
                 destination_path = build_available_upload_path(target_dir_path, original_name)
@@ -11634,6 +12235,8 @@ def handrive_api_upload(request):
                 )
             except GoogleDriveError as exc:
                 return json_error(str(exc), status=exc.status_code)
+            if google_drive_target["is_root"]:
+                _remember_google_drive_selected_item(google_drive_target["mapping"], created)
             uploaded_entry = _build_google_drive_file_entry(
                 google_drive_target["mapping"],
                 target_dir_relative,
@@ -11700,7 +12303,11 @@ def handrive_api_upload(request):
 
     if google_drive_target is not None:
         try:
-            existing_files = list_google_drive_files(google_drive_target["mapping"], google_drive_target["folder_id"])
+            existing_files = (
+                _get_google_drive_selected_items(google_drive_target["mapping"])
+                if google_drive_target["is_root"]
+                else list_google_drive_files(google_drive_target["mapping"], google_drive_target["folder_id"])
+            )
             for uploaded_file in uploaded_files:
                 destination_name = build_available_google_drive_name(existing_files, uploaded_file.name)
                 created = create_google_drive_file(
@@ -11711,6 +12318,8 @@ def handrive_api_upload(request):
                     google_drive_guess_mime_type(destination_name),
                 )
                 existing_files.append(created)
+                if google_drive_target["is_root"]:
+                    _remember_google_drive_selected_item(google_drive_target["mapping"], created)
                 uploaded_entries.append(
                     _build_google_drive_file_entry(
                         google_drive_target["mapping"],
@@ -11940,38 +12549,33 @@ def handrive_api_preview(request):
                     return json_error("파일을 찾을 수 없습니다.", status=404)
                 try:
                     file_metadata = get_google_drive_file(google_drive["mapping"], google_drive["file_id"])
-                    if str(file_metadata.get("mimeType") or "") == GOOGLE_DRIVE_FOLDER_MIME:
+                    file_mime_type = str(file_metadata.get("mimeType") or "")
+                    title = str(file_metadata.get("name") or "Google Drive file").strip() or "Google Drive file"
+                    if file_mime_type == GOOGLE_DRIVE_FOLDER_MIME:
                         return json_error("파일을 찾을 수 없습니다.", status=404)
-                    download = download_google_drive_file(google_drive["mapping"], google_drive["file_id"], file_metadata)
+                    docs_preview_url = build_google_drive_docs_preview_url(
+                        google_drive["file_id"],
+                        file_mime_type,
+                        title,
+                    )
+                    if docs_preview_url:
+                        rendered_html = render_handrive_external_frame_safely(
+                            docs_preview_url,
+                            file_name=title,
+                            wrapper_class="handrive-google-docs-preview-wrap",
+                            frame_class="handrive-google-docs-preview-frame",
+                        )
+                        render_profile = _google_drive_docs_preview_render_profile(file_mime_type, title)
+                    else:
+                        download = download_google_drive_file(google_drive["mapping"], google_drive["file_id"], file_metadata)
                 except GoogleDriveError as exc:
                     return json_error(str(exc), status=exc.status_code)
                 relative_file_path = preview_relative_path
-                title = _google_drive_download_filename(download)
-                file_extension = _google_drive_download_extension(download)
-                if is_handrive_non_editable_media_extension(file_extension):
-                    content = ""
-                    rendered_html, render_profile = render_handrive_content(
-                        content,
-                        file_extension,
-                        source_path=Path(title),
-                        source_bytes=download.content,
-                        relative_path=relative_file_path,
-                        request=request,
-                        share_owner=shared_context["owner_username"] if shared_context else "",
-                        share_slug=shared_context["share_slug"] if shared_context else "",
-                    )
-                else:
-                    try:
+                if not docs_preview_url:
+                    title = _google_drive_download_filename(download)
+                    file_extension = _google_drive_download_extension(download)
+                    if is_handrive_non_editable_media_extension(file_extension):
                         content = ""
-                        if resolve_handrive_render_profile(file_extension).get("mode") not in {
-                            DOCS_RENDER_MODE_OFFICE,
-                            DOCS_RENDER_MODE_PDF,
-                        }:
-                            content = decode_handrive_text_bytes(
-                                download.content,
-                                request=request,
-                                relative_path=relative_file_path,
-                            )
                         rendered_html, render_profile = render_handrive_content(
                             content,
                             file_extension,
@@ -11982,13 +12586,35 @@ def handrive_api_preview(request):
                             share_owner=shared_context["owner_username"] if shared_context else "",
                             share_slug=shared_context["share_slug"] if shared_context else "",
                         )
-                    except Http404:
-                        rendered_html = render_handrive_unsupported_safely(
-                            title,
-                            file_extension,
-                            message=get_handrive_text(resolve_ui_lang(request)).get("list_preview_unsupported", "미리보기 미지원"),
-                        )
-                        render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
+                    else:
+                        try:
+                            content = ""
+                            if resolve_handrive_render_profile(file_extension).get("mode") not in {
+                                DOCS_RENDER_MODE_OFFICE,
+                                DOCS_RENDER_MODE_PDF,
+                            }:
+                                content = decode_handrive_text_bytes(
+                                    download.content,
+                                    request=request,
+                                    relative_path=relative_file_path,
+                                )
+                            rendered_html, render_profile = render_handrive_content(
+                                content,
+                                file_extension,
+                                source_path=Path(title),
+                                source_bytes=download.content,
+                                relative_path=relative_file_path,
+                                request=request,
+                                share_owner=shared_context["owner_username"] if shared_context else "",
+                                share_slug=shared_context["share_slug"] if shared_context else "",
+                            )
+                        except Http404:
+                            rendered_html = render_handrive_unsupported_safely(
+                                title,
+                                file_extension,
+                                message=get_handrive_text(resolve_ui_lang(request)).get("list_preview_unsupported", "미리보기 미지원"),
+                            )
+                            render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
             elif git_virtual is None:
                 file_path, relative_file_path = normalize_handrive_relative_path(
                     preview_relative_path, must_exist=True
@@ -12004,6 +12630,7 @@ def handrive_api_preview(request):
                 pass
             elif git_virtual is None:
                 file_extension = file_path.suffix.lower()
+                file_can_edit = has_handrive_write_access(request, relative_file_path)
                 render_mode = resolve_handrive_render_profile(file_extension).get("mode")
                 if render_mode in (DOCS_RENDER_MODE_OFFICE, DOCS_RENDER_MODE_PDF):
                     content = ""
@@ -12015,6 +12642,7 @@ def handrive_api_preview(request):
                         request=request,
                         share_owner=shared_context["owner_username"] if shared_context else "",
                         share_slug=shared_context["share_slug"] if shared_context else "",
+                        can_edit=file_can_edit,
                     )
                 else:
                     try:
@@ -12027,6 +12655,7 @@ def handrive_api_preview(request):
                             request=request,
                             share_owner=shared_context["owner_username"] if shared_context else "",
                             share_slug=shared_context["share_slug"] if shared_context else "",
+                            can_edit=file_can_edit,
                         )
                     except Http404:
                         rendered_html = render_handrive_unsupported_safely(
@@ -12271,7 +12900,13 @@ def handrive_api_save(request):
                 commit_updates = {git_virtual_source["repo_relative_path"]: content.encode("utf-8")}
             else:
                 if _git_repo_path_exists(git_virtual_target["repo"], git_virtual_target["branch_name"], destination_repo_relative):
-                    return json_error("같은 이름의 파일이 이미 존재합니다.", status=409)
+                    existing_type = _git_repo_object_type(
+                        git_virtual_target["repo"],
+                        git_virtual_target["branch_name"],
+                        destination_repo_relative,
+                    )
+                    if existing_type == "tree":
+                        return json_error("같은 이름의 폴더가 이미 존재합니다.", status=409)
                 commit_updates = {destination_repo_relative: content.encode("utf-8")}
                 original_relative_path = f"{git_virtual_target['repo_root']}/{git_virtual_target['branch_segment']}/{destination_repo_relative}"
             _commit_git_branch_changes(
@@ -12293,21 +12928,24 @@ def handrive_api_save(request):
         is_same_as_source = bool(
             source_path is not None and destination_exists and destination.resolve() == source_path.resolve()
         )
+        destination_relative = relative_from_root(destination)
 
         if source_is_public_write and not is_same_as_source:
             return json_error("전체 허용 파일은 위치나 이름을 바꿀 수 없습니다.", status=403)
 
-        if source_path is None or not is_same_as_source:
+        if destination_exists and not destination.is_file():
+            return json_error("같은 이름의 폴더가 이미 존재합니다.", status=409)
+
+        if is_same_as_source:
+            pass
+        elif destination_exists:
+            if not has_handrive_write_access(request, destination_relative):
+                return json_error("파일을 수정할 권한이 없습니다.", status=403)
+        else:
             if not has_handrive_directory_write_access(request, target_dir_rel):
                 return json_error("파일을 수정할 권한이 없습니다.", status=403)
 
-        if destination.exists():
-            if source_path is None or destination.resolve() != source_path.resolve():
-                return json_error("같은 이름의 파일이 이미 존재합니다.", status=409)
-
-        destination_relative = relative_from_root(destination)
         destination_in_scope = get_handrive_scoped_quota_root(request, destination_relative) is not None
-        source_in_scope = bool(source_relative) and get_handrive_scoped_quota_root(request, source_relative) is not None
         source_size = source_path.stat().st_size if source_path is not None and source_path.exists() else 0
         destination_size = destination.stat().st_size if destination_exists else 0
         new_size = len(content.encode("utf-8"))
@@ -12315,16 +12953,13 @@ def handrive_api_save(request):
         quota_extra_entries = 0
 
         if destination_in_scope:
-            if source_path is None:
+            if is_same_as_source:
+                quota_extra_bytes = new_size - source_size
+            elif destination_exists:
+                quota_extra_bytes = new_size - destination_size
+            else:
                 quota_extra_bytes = new_size
                 quota_extra_entries = 1
-            elif is_same_as_source:
-                quota_extra_bytes = new_size - source_size
-            elif source_in_scope:
-                quota_extra_bytes = new_size - source_size
-            else:
-                quota_extra_bytes = new_size - destination_size
-                quota_extra_entries = 0 if destination_exists else 1
 
         enforce_handrive_scoped_quota(
             request,
@@ -12338,13 +12973,8 @@ def handrive_api_save(request):
 
     destination.write_text(content, encoding="utf-8")
 
-    if source_path is not None and destination.resolve() != source_path.resolve():
-        move_handrive_acl_rules(source_relative, relative_from_root(destination))
-        move_handrive_shared_links(source_relative, relative_from_root(destination))
-        source_path.unlink(missing_ok=True)
-
     destination_relative = relative_from_root(destination)
-    if source_content_before_save:
+    if source_content_before_save and source_path is not None and destination.resolve() == source_path.resolve():
         cleanup_removed_markdown_image_files(
             request=request,
             markdown_relative_path=source_relative or destination_relative,
@@ -12361,6 +12991,136 @@ def handrive_api_save(request):
     else:
         list_url = reverse("main:handrive_root")
 
+    view_url = reverse("main:handrive_view", kwargs={"doc_path": destination_slug})
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "path": destination_relative,
+            "slug_path": destination_slug,
+            "view_url": view_url,
+            "list_url": list_url,
+        }
+    )
+
+
+HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS = {".csv", ".xls", ".xlsx"}
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_spreadsheet_save(request):
+    """Handsontable 기반 스프레드시트 에디터의 바이너리 저장 API."""
+    try:
+        payload = parse_json_body(request)
+        original_relative_path = normalize_relative_path(payload.get("original_path"), allow_empty=True)
+        target_dir = normalize_relative_path(payload.get("target_dir"), allow_empty=True)
+        requested_extension = normalize_file_extension(payload.get("extension"), allow_empty=True)
+        data_base64 = payload.get("data_base64", "")
+        if not isinstance(data_base64, str) or not data_base64.strip():
+            raise ValueError("저장할 스프레드시트 데이터가 없습니다.")
+        try:
+            file_bytes = base64.b64decode(data_base64.encode("ascii"), validate=True)
+        except (binascii.Error, UnicodeEncodeError) as exc:
+            raise ValueError("스프레드시트 데이터 형식이 올바르지 않습니다.") from exc
+
+        if requested_extension and requested_extension not in HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS:
+            raise ValueError("지원하지 않는 스프레드시트 확장자입니다.")
+
+        if _parse_google_drive_virtual_path(request, original_relative_path) is not None or _parse_google_drive_virtual_path(request, target_dir) is not None:
+            return json_error("Google Drive 스프레드시트 저장은 아직 지원하지 않습니다.", status=400)
+
+        if _get_git_virtual_context(request, original_relative_path) is not None or _get_git_virtual_context(request, target_dir) is not None:
+            return json_error("Repo 브랜치 스프레드시트 저장은 아직 지원하지 않습니다.", status=400)
+
+        target_dir_path, target_dir_rel = resolve_path(target_dir, must_exist=True)
+        if not target_dir_path.is_dir():
+            raise ValueError("저장 위치가 폴더가 아닙니다.")
+
+        source_path = None
+        source_relative = ""
+        source_is_public_write = False
+        source_extension = requested_extension or ".xlsx"
+        if original_relative_path:
+            source_path, source_relative = normalize_handrive_relative_path(original_relative_path, must_exist=True)
+            source_extension = source_path.suffix.lower() or source_extension
+            if source_extension not in HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS:
+                raise ValueError("지원하지 않는 스프레드시트 확장자입니다.")
+            if not has_handrive_write_access(request, source_relative):
+                return json_error("파일을 수정할 권한이 없습니다.", status=403)
+            source_is_public_write = is_handrive_public_write_enabled(request, source_relative)
+        else:
+            if not has_handrive_directory_write_access(request, target_dir_rel):
+                return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+        target_extension = requested_extension or source_extension or ".xlsx"
+        if source_is_public_write:
+            target_extension = source_extension
+
+        filename, resolved_extension = resolve_file_name_and_extension(
+            payload.get("filename"),
+            fallback_extension=target_extension,
+        )
+        if resolved_extension not in HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS:
+            raise ValueError("지원하지 않는 스프레드시트 확장자입니다.")
+
+        destination = target_dir_path / f"{filename}{resolved_extension}"
+        destination_exists = destination.exists()
+        is_same_as_source = bool(
+            source_path is not None and destination_exists and destination.resolve() == source_path.resolve()
+        )
+        destination_relative = relative_from_root(destination)
+
+        if source_is_public_write and not is_same_as_source:
+            return json_error("전체 허용 파일은 위치나 이름을 바꿀 수 없습니다.", status=403)
+
+        if destination_exists and not destination.is_file():
+            return json_error("같은 이름의 폴더가 이미 존재합니다.", status=409)
+
+        if is_same_as_source:
+            pass
+        elif destination_exists:
+            if not has_handrive_write_access(request, destination_relative):
+                return json_error("파일을 수정할 권한이 없습니다.", status=403)
+        else:
+            if not has_handrive_directory_write_access(request, target_dir_rel):
+                return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+        destination_in_scope = get_handrive_scoped_quota_root(request, destination_relative) is not None
+        source_size = source_path.stat().st_size if source_path is not None and source_path.exists() else 0
+        destination_size = destination.stat().st_size if destination_exists else 0
+        new_size = len(file_bytes)
+        quota_extra_bytes = 0
+        quota_extra_entries = 0
+
+        if destination_in_scope:
+            if is_same_as_source:
+                quota_extra_bytes = new_size - source_size
+            elif destination_exists:
+                quota_extra_bytes = new_size - destination_size
+            else:
+                quota_extra_bytes = new_size
+                quota_extra_entries = 1
+
+        enforce_handrive_scoped_quota(
+            request,
+            quota_path=destination_relative,
+            extra_bytes=quota_extra_bytes,
+            extra_entries=quota_extra_entries,
+        )
+
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=400)
+
+    destination.write_bytes(file_bytes)
+
+    destination_relative = relative_from_root(destination)
+    destination_slug = markdown_slug_from_relative(destination_relative)
+    parent_dir = str(Path(destination_relative).parent).replace("\\", "/")
+    if parent_dir == ".":
+        parent_dir = ""
+    list_url = reverse("main:handrive_list", kwargs={"folder_path": parent_dir}) if parent_dir else reverse("main:handrive_root")
     view_url = reverse("main:handrive_view", kwargs={"doc_path": destination_slug})
 
     return JsonResponse(
@@ -12401,13 +13161,19 @@ def _stream_response(request, fh, file_size: int, content_type: str, filename: s
         fh.seek(start)
 
         def _iter(fh, length, chunk=65536):
-            remaining = length
-            while remaining > 0:
-                data = fh.read(min(chunk, remaining))
-                if not data:
-                    break
-                remaining -= len(data)
-                yield data
+            try:
+                remaining = length
+                while remaining > 0:
+                    data = fh.read(min(chunk, remaining))
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+            finally:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
 
         resp = StreamingHttpResponse(_iter(fh, length), status=206, content_type=content_type)
         resp["Content-Range"]       = f"bytes {start}-{end}/{file_size}"
@@ -12875,6 +13641,440 @@ def handrive_api_pdf_preview(request):
     response["Content-Length"] = str(len(pdf_bytes))
     response["Cache-Control"] = "no-store"
     return response
+
+
+def _load_pymupdf():
+    try:
+        import fitz  # PyMuPDF
+    except ImportError as exc:
+        raise RuntimeError("PyMuPDF가 설치되어 있지 않습니다.") from exc
+    return fitz
+
+
+def _resolve_pdf_editor_file(request, raw_path: str | None) -> tuple[Path, str]:
+    normalized = normalize_scoped_home_api_path(request, raw_path, allow_empty=False)
+    file_path, normalized = resolve_path(normalized, must_exist=True)
+    if not file_path.is_file():
+        raise FileNotFoundError("파일을 찾을 수 없습니다.")
+    if file_path.suffix.lower() not in HANDRIVE_PDF_EDITOR_EXTENSIONS:
+        raise ValueError("PDF 편집기가 지원하지 않는 파일 형식입니다.")
+    return file_path, normalized
+
+
+def _parse_pdf_editor_color(value: str | None) -> tuple[float, float, float]:
+    raw = str(value or "").strip()
+    if raw.startswith("#"):
+        raw = raw[1:]
+    if len(raw) == 3:
+        raw = "".join(ch * 2 for ch in raw)
+    if not re.fullmatch(r"[0-9a-fA-F]{6}", raw or ""):
+        raw = "111827"
+    return (
+        int(raw[0:2], 16) / 255,
+        int(raw[2:4], 16) / 255,
+        int(raw[4:6], 16) / 255,
+    )
+
+
+def _clamp_pdf_editor_float(value, fallback: float, minimum: float, maximum: float) -> float:
+    try:
+        resolved = float(value)
+    except (TypeError, ValueError):
+        resolved = fallback
+    return max(minimum, min(maximum, resolved))
+
+
+def _normalize_pdf_editor_font_family(value: str | None) -> str:
+    normalized = str(value or "system").strip()
+    allowed = {
+        "system",
+        "sans-serif",
+        "serif",
+        "monospace",
+        "Arial",
+        "Helvetica",
+        "Georgia",
+        "Times New Roman",
+        "Verdana",
+        "Trebuchet MS",
+        "Courier New",
+    }
+    return normalized if normalized in allowed else "system"
+
+
+def _first_existing_path(paths: tuple[Path, ...]) -> Path | None:
+    return next((candidate for candidate in paths if candidate and candidate.exists()), None)
+
+
+def _pdf_editor_font_settings(font_family: str, text: str) -> tuple[str, Path | None]:
+    normalized = _normalize_pdf_editor_font_family(font_family)
+    korean_fallback = (
+        Path("/System/Library/Fonts/AppleSDGothicNeo.ttc"),
+        Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
+        Path("/Library/Fonts/Arial Unicode.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    )
+    if any(ord(ch) > 127 for ch in str(text or "")):
+        return "pdfhangul", _first_existing_path(korean_fallback)
+
+    candidates_by_family = {
+        "serif": (
+            Path("/System/Library/Fonts/Times.ttc"),
+            Path("/Library/Fonts/Times New Roman.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"),
+        ),
+        "Georgia": (
+            Path("/Library/Fonts/Georgia.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Georgia.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"),
+        ),
+        "Times New Roman": (
+            Path("/Library/Fonts/Times New Roman.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Times New Roman.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"),
+        ),
+        "monospace": (
+            Path("/System/Library/Fonts/Monaco.ttf"),
+            Path("/Library/Fonts/Courier New.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"),
+        ),
+        "Courier New": (
+            Path("/Library/Fonts/Courier New.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Courier New.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"),
+        ),
+        "Arial": (
+            Path("/Library/Fonts/Arial.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        ),
+        "Helvetica": (
+            Path("/System/Library/Fonts/Helvetica.ttc"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        ),
+        "Verdana": (
+            Path("/Library/Fonts/Verdana.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Verdana.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        ),
+        "Trebuchet MS": (
+            Path("/Library/Fonts/Trebuchet MS.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Trebuchet MS.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        ),
+    }
+    if normalized in {"serif", "Georgia", "Times New Roman"}:
+        resource_name = "pdfserif"
+        fallback_font = "tiro"
+    elif normalized in {"monospace", "Courier New"}:
+        resource_name = "pdfmono"
+        fallback_font = "cour"
+    else:
+        resource_name = "pdfsans"
+        fallback_font = "helv"
+    font_file = _first_existing_path(candidates_by_family.get(normalized, ()) + korean_fallback)
+    return (resource_name, font_file) if font_file is not None else (fallback_font, None)
+
+
+def _normalize_pdf_editor_annotations(raw_json: str | None) -> list[dict]:
+    try:
+        parsed = json.loads(raw_json or "[]")
+    except (TypeError, ValueError):
+        raise ValueError("PDF 편집 데이터가 올바르지 않습니다.")
+    if not isinstance(parsed, list):
+        raise ValueError("PDF 편집 데이터가 올바르지 않습니다.")
+
+    annotations: list[dict] = []
+    for item in parsed[:1000]:
+        if not isinstance(item, dict):
+            continue
+        item_type = str(item.get("type") or "").strip().lower()
+        try:
+            page_index = int(item.get("page") or 0)
+        except (TypeError, ValueError):
+            continue
+        if page_index < 0:
+            continue
+        if item_type == "draw":
+            raw_points = item.get("points")
+            if not isinstance(raw_points, list):
+                continue
+            points = []
+            for point in raw_points[:2000]:
+                if not isinstance(point, dict):
+                    continue
+                points.append({
+                    "x": _clamp_pdf_editor_float(point.get("x"), 0, -100000, 100000),
+                    "y": _clamp_pdf_editor_float(point.get("y"), 0, -100000, 100000),
+                })
+            if len(points) < 2:
+                continue
+            annotations.append({
+                "type": "draw",
+                "page": page_index,
+                "points": points,
+                "color": str(item.get("color") or "#111827"),
+                "width": _clamp_pdf_editor_float(item.get("width"), 2.5, 0.5, 32),
+            })
+        elif item_type == "text":
+            text = str(item.get("text") or "").replace("\r", "")[:5000].strip()
+            if not text:
+                continue
+            font_size = _clamp_pdf_editor_float(item.get("fontSize") or item.get("font_size"), 18, 8, 96)
+            annotations.append({
+                "type": "text",
+                "page": page_index,
+                "x": _clamp_pdf_editor_float(item.get("x"), 0, -100000, 100000),
+                "y": _clamp_pdf_editor_float(item.get("y"), 0, -100000, 100000),
+                "width": _clamp_pdf_editor_float(item.get("width"), 260, 20, 4000),
+                "height": _clamp_pdf_editor_float(item.get("height"), font_size * 1.8, font_size, 4000),
+                "text": text,
+                "font_family": _normalize_pdf_editor_font_family(item.get("fontFamily") or item.get("font_family")),
+                "font_size": font_size,
+                "color": str(item.get("color") or "#111827"),
+            })
+    return annotations
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_pdf_editor_meta(request):
+    try:
+        file_path, normalized = _resolve_pdf_editor_file(request, request.GET.get("path"))
+    except FileNotFoundError:
+        return json_error("파일을 찾을 수 없습니다.", status=404)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+    if not has_handrive_read_access(request, normalized):
+        return json_error("파일을 볼 권한이 없습니다.", status=403)
+
+    try:
+        fitz = _load_pymupdf()
+        doc = fitz.open(str(file_path))
+    except RuntimeError as exc:
+        return json_error(str(exc), status=500)
+    except Exception as exc:
+        logger.exception("HanDrive PDF editor meta failed path=%s", normalized)
+        return json_error(f"PDF 정보를 읽을 수 없습니다: {exc}", status=500)
+    try:
+        pages = []
+        for index, page in enumerate(doc):
+            rect = page.rect
+            pages.append({
+                "index": index,
+                "width": float(rect.width),
+                "height": float(rect.height),
+            })
+        return JsonResponse({
+            "ok": True,
+            "path": normalized,
+            "page_count": len(pages),
+            "pages": pages,
+        })
+    finally:
+        doc.close()
+
+
+@require_http_methods(["GET"])
+@with_request_handrive_root
+def handrive_api_pdf_editor_page(request):
+    try:
+        file_path, normalized = _resolve_pdf_editor_file(request, request.GET.get("path"))
+    except FileNotFoundError:
+        raise Http404("파일을 찾을 수 없습니다.")
+    except ValueError as exc:
+        return HttpResponse(str(exc), status=400, content_type="text/plain; charset=utf-8")
+    if not has_handrive_read_access(request, normalized):
+        raise PermissionDenied("파일을 볼 권한이 없습니다.")
+
+    try:
+        page_index = int(request.GET.get("page") or 0)
+    except (TypeError, ValueError):
+        page_index = 0
+    scale = _clamp_pdf_editor_float(request.GET.get("scale"), 2, 0.5, 3)
+
+    try:
+        fitz = _load_pymupdf()
+        doc = fitz.open(str(file_path))
+    except RuntimeError as exc:
+        return HttpResponse(str(exc), status=500, content_type="text/plain; charset=utf-8")
+    except Exception as exc:
+        logger.exception("HanDrive PDF editor page open failed path=%s", normalized)
+        return HttpResponse(f"PDF 페이지를 열 수 없습니다: {exc}", status=500, content_type="text/plain; charset=utf-8")
+    try:
+        if page_index < 0 or page_index >= len(doc):
+            raise Http404("PDF 페이지를 찾을 수 없습니다.")
+        page = doc[page_index]
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+        response = HttpResponse(pixmap.tobytes("png"), content_type="image/png")
+        response["Cache-Control"] = "no-store"
+        return response
+    finally:
+        doc.close()
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_pdf_editor_save(request):
+    try:
+        file_path, normalized = _resolve_pdf_editor_file(request, request.POST.get("path"))
+    except FileNotFoundError:
+        return json_error("파일을 찾을 수 없습니다.", status=404)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+    if not has_handrive_write_access(request, normalized):
+        return json_error("파일을 수정할 권한이 없습니다.", status=403)
+    if is_handrive_public_write_enabled(request, normalized):
+        return json_error("전체 허용 파일은 PDF 편집기로 저장할 수 없습니다.", status=403)
+
+    try:
+        annotations = _normalize_pdf_editor_annotations(request.POST.get("annotations_json"))
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    requested_filename = str(request.POST.get("filename") or "").strip() or file_path.name
+    try:
+        destination_path, destination_relative, is_same_as_source = resolve_handrive_editor_destination(
+            request,
+            file_path,
+            requested_filename,
+            fallback_extension=".pdf",
+            allowed_extensions={".pdf"},
+        )
+    except FileExistsError as exc:
+        return json_error(str(exc), status=409)
+    except PermissionError as exc:
+        return json_error(str(exc), status=403)
+    except ValueError as exc:
+        message = str(exc)
+        if message == "지원하지 않는 파일 형식입니다.":
+            message = "PDF 파일명만 사용할 수 있습니다."
+        return json_error(message, status=400)
+    if not annotations and is_same_as_source:
+        return json_error("저장할 PDF 편집 내용이 없습니다.", status=400)
+
+    output_path = None
+    try:
+        if not annotations:
+            new_size = file_path.stat().st_size
+            quota_extra_bytes, quota_extra_entries = get_handrive_editor_quota_delta(
+                request,
+                file_path,
+                destination_path,
+                destination_relative,
+                new_size,
+                is_same_as_source=is_same_as_source,
+            )
+            enforce_handrive_scoped_quota(
+                request,
+                quota_path=destination_relative,
+                extra_bytes=quota_extra_bytes,
+                extra_entries=quota_extra_entries,
+            )
+            shutil.copy2(file_path, destination_path)
+            return JsonResponse({
+                "ok": True,
+                "path": destination_relative,
+                "slug_path": destination_relative,
+                "type": "file",
+                "size_display": format_handrive_bytes_display(destination_path.stat().st_size),
+            })
+
+        fitz = _load_pymupdf()
+        doc = fitz.open(str(file_path))
+        try:
+            for annotation in annotations:
+                page_index = int(annotation["page"])
+                if page_index < 0 or page_index >= len(doc):
+                    continue
+                page = doc[page_index]
+                rect = page.rect
+                color = _parse_pdf_editor_color(annotation.get("color"))
+                if annotation["type"] == "draw":
+                    points = []
+                    for point in annotation["points"]:
+                        x = _clamp_pdf_editor_float(point.get("x"), 0, 0, float(rect.width))
+                        y = _clamp_pdf_editor_float(point.get("y"), 0, 0, float(rect.height))
+                        points.append((x, y))
+                    if len(points) >= 2:
+                        page.draw_polyline(points, color=color, width=float(annotation["width"]))
+                elif annotation["type"] == "text":
+                    font_size = float(annotation["font_size"])
+                    x = _clamp_pdf_editor_float(annotation.get("x"), 0, 0, float(rect.width))
+                    y = _clamp_pdf_editor_float(annotation.get("y"), 0, 0, float(rect.height))
+                    max_width = max(20, float(rect.width) - x)
+                    width = min(float(annotation["width"]), max_width)
+                    line_count = max(1, len(str(annotation["text"]).split("\n")))
+                    min_height = font_size * 1.45 * line_count
+                    max_height = max(font_size, float(rect.height) - y)
+                    height = min(max(float(annotation["height"]), min_height), max_height)
+                    if width <= 0 or height <= 0:
+                        continue
+                    font_name, font_file = _pdf_editor_font_settings(annotation.get("font_family"), annotation["text"])
+                    insert_kwargs = {
+                        "fontsize": font_size,
+                        "fontname": font_name,
+                        "color": color,
+                        "align": 0,
+                    }
+                    if font_file is not None:
+                        insert_kwargs["fontfile"] = str(font_file)
+                    page.insert_textbox(
+                        fitz.Rect(x, y, min(float(rect.width), x + width), min(float(rect.height), y + height)),
+                        str(annotation["text"]),
+                        **insert_kwargs,
+                    )
+
+            with tempfile.NamedTemporaryFile(
+                prefix="handrive-pdf-save-",
+                suffix=".pdf",
+                dir=str(destination_path.parent),
+                delete=False,
+            ) as output_file:
+                output_path = Path(output_file.name)
+            doc.save(str(output_path), garbage=4, deflate=True)
+        finally:
+            doc.close()
+
+        new_size = output_path.stat().st_size
+        quota_extra_bytes, quota_extra_entries = get_handrive_editor_quota_delta(
+            request,
+            file_path,
+            destination_path,
+            destination_relative,
+            new_size,
+            is_same_as_source=is_same_as_source,
+        )
+        enforce_handrive_scoped_quota(
+            request,
+            quota_path=destination_relative,
+            extra_bytes=quota_extra_bytes,
+            extra_entries=quota_extra_entries,
+        )
+        os.replace(str(output_path), str(destination_path))
+        output_path = None
+    except RuntimeError as exc:
+        return json_error(str(exc), status=500)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+    except Exception as exc:
+        logger.exception("HanDrive PDF editor save failed path=%s", normalized)
+        return json_error(f"PDF 저장에 실패했습니다: {exc}", status=500)
+    finally:
+        if output_path is not None:
+            try:
+                output_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    return JsonResponse({
+        "ok": True,
+        "path": destination_relative,
+        "slug_path": destination_relative,
+        "type": "file",
+        "size_display": format_handrive_bytes_display(destination_path.stat().st_size),
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -13424,8 +14624,8 @@ def handrive_api_image_editor_remove_background(request):
 def handrive_api_image_editor_save(request):
     """이미지 에디터 저장 API.
 
-    multipart/form-data 로 image_blob(file) + path(str) 을 받아
-    원본과 같은 폴더에 ``_편집`` 파일명으로 새 이미지 파일을 저장한다.
+    multipart/form-data 로 image_blob(file) + path(str) 을 받아 저장한다.
+    같은 파일명은 덮어쓰고, 다른 파일명은 같은 폴더에 save-as 로 저장한다.
     """
     if request.method != "POST":
         return json_error("POST 요청만 허용됩니다.", status=405)
@@ -13455,30 +14655,39 @@ def handrive_api_image_editor_save(request):
     force_png = str(request.POST.get("force_png") or "").strip().lower() in {"1", "true", "yes", "on"}
     output_source_path = file_path.with_suffix(".png") if force_png else file_path
     requested_filename = str(request.POST.get("filename") or "").strip()
-    destination_path = None
-    if requested_filename and requested_filename != file_path.name:
-        try:
-            requested_stem, requested_extension = resolve_file_name_and_extension(
-                requested_filename,
-                fallback_extension=output_source_path.suffix,
-            )
-        except ValueError as exc:
-            return json_error(str(exc), status=400)
-        if force_png:
-            requested_extension = ".png"
-        if requested_extension.lower() not in IMAGE_EDITOR_EXTENSIONS:
-            return json_error("이미지 편집기가 지원하지 않는 파일 형식입니다.", status=400)
-        destination_path = handrive_numbered_output_path(file_path.parent, requested_stem, requested_extension)
-    else:
-        destination_path = handrive_edited_output_path(output_source_path)
-    destination_relative = relative_from_root(destination_path)
+    try:
+        destination_path, destination_relative, is_same_as_source = resolve_handrive_editor_destination(
+            request,
+            file_path,
+            requested_filename,
+            fallback_extension=output_source_path.suffix,
+            allowed_extensions=IMAGE_EDITOR_EXTENSIONS,
+            force_extension=".png" if force_png else None,
+        )
+    except FileExistsError as exc:
+        return json_error(str(exc), status=409)
+    except PermissionError as exc:
+        return json_error(str(exc), status=403)
+    except ValueError as exc:
+        message = str(exc)
+        if message == "지원하지 않는 파일 형식입니다.":
+            message = "이미지 편집기가 지원하지 않는 파일 형식입니다."
+        return json_error(message, status=400)
     new_size = image_blob.size
+    quota_extra_bytes, quota_extra_entries = get_handrive_editor_quota_delta(
+        request,
+        file_path,
+        destination_path,
+        destination_relative,
+        new_size,
+        is_same_as_source=is_same_as_source,
+    )
     try:
         enforce_handrive_scoped_quota(
             request,
             quota_path=destination_relative,
-            extra_bytes=new_size,
-            extra_entries=1,
+            extra_bytes=quota_extra_bytes,
+            extra_entries=quota_extra_entries,
         )
     except ValueError as exc:
         return json_error(str(exc), status=400)
@@ -13504,7 +14713,7 @@ def handrive_api_audio_editor_save(request):
     """오디오 에디터 저장 API.
 
     multipart/form-data 로 path, trim_start, trim_end, volume, append_blob(optional) 을 받아
-    원본과 같은 폴더에 ``_편집`` 파일명으로 새 오디오 파일을 저장한다.
+    같은 파일명은 덮어쓰고, 다른 파일명은 같은 폴더에 save-as 로 저장한다.
     """
     if request.method != "POST":
         return json_error("POST 요청만 허용됩니다.", status=405)
@@ -13545,6 +14754,25 @@ def handrive_api_audio_editor_save(request):
     if ffmpeg_bin is None:
         return json_error("ffmpeg를 찾을 수 없습니다.", status=500)
 
+    requested_filename = str(request.POST.get("filename") or "").strip()
+    try:
+        destination_path, destination_relative, is_same_as_source = resolve_handrive_editor_destination(
+            request,
+            file_path,
+            requested_filename,
+            fallback_extension=suffix,
+            allowed_extensions=HANDRIVE_AUDIO_EDITOR_EXTENSIONS,
+        )
+    except FileExistsError as exc:
+        return json_error(str(exc), status=409)
+    except PermissionError as exc:
+        return json_error(str(exc), status=403)
+    except ValueError as exc:
+        message = str(exc)
+        if message == "지원하지 않는 파일 형식입니다.":
+            message = "오디오 편집기가 지원하지 않는 파일 형식입니다."
+        return json_error(message, status=400)
+
     append_blob = request.FILES.get("append_blob")
     append_path = None
     try:
@@ -13558,7 +14786,12 @@ def handrive_api_audio_editor_save(request):
                 for chunk in append_blob.chunks():
                     append_file.write(chunk)
 
-        with tempfile.NamedTemporaryFile(prefix="handrive-audio-save-", suffix=suffix, delete=False) as output_file:
+        with tempfile.NamedTemporaryFile(
+            prefix="handrive-audio-save-",
+            suffix=suffix,
+            dir=str(destination_path.parent),
+            delete=False,
+        ) as output_file:
             output_path = Path(output_file.name)
             temp_paths.append(output_path)
 
@@ -13592,16 +14825,22 @@ def handrive_api_audio_editor_save(request):
         command.extend(["-y", str(output_path)])
         subprocess.run(command, capture_output=True, text=True, timeout=900, check=True)
 
-        destination_path = handrive_edited_output_path(file_path)
-        destination_relative = relative_from_root(destination_path)
         new_size = output_path.stat().st_size
+        quota_extra_bytes, quota_extra_entries = get_handrive_editor_quota_delta(
+            request,
+            file_path,
+            destination_path,
+            destination_relative,
+            new_size,
+            is_same_as_source=is_same_as_source,
+        )
         enforce_handrive_scoped_quota(
             request,
             quota_path=destination_relative,
-            extra_bytes=new_size,
-            extra_entries=1,
+            extra_bytes=quota_extra_bytes,
+            extra_entries=quota_extra_entries,
         )
-        shutil.move(str(output_path), str(destination_path))
+        os.replace(str(output_path), str(destination_path))
         output_path = None
     except subprocess.TimeoutExpired:
         return json_error("오디오 저장 시간이 초과되었습니다.", status=504)
@@ -14047,7 +15286,7 @@ def handrive_api_video_editor_save(request):
     """비디오 에디터 저장 API.
 
     multipart/form-data 로 path, trim_start, trim_end, volume, subtitles_json 을 받아
-    원본과 같은 폴더에 ``_편집`` 파일명으로 새 비디오 파일을 저장한다.
+    같은 파일명은 덮어쓰고, 다른 파일명은 같은 폴더에 save-as 로 저장한다.
     """
     if request.method != "POST":
         return json_error("POST 요청만 허용됩니다.", status=405)
@@ -14093,6 +15332,25 @@ def handrive_api_video_editor_save(request):
     if ffmpeg_bin is None:
         return json_error("ffmpeg를 찾을 수 없습니다.", status=500)
 
+    requested_filename = str(request.POST.get("filename") or "").strip()
+    try:
+        destination_path, destination_relative, is_same_as_source = resolve_handrive_editor_destination(
+            request,
+            file_path,
+            requested_filename,
+            fallback_extension=suffix,
+            allowed_extensions=HANDRIVE_VIDEO_EDITOR_EXTENSIONS,
+        )
+    except FileExistsError as exc:
+        return json_error(str(exc), status=409)
+    except PermissionError as exc:
+        return json_error(str(exc), status=403)
+    except ValueError as exc:
+        message = str(exc)
+        if message == "지원하지 않는 파일 형식입니다.":
+            message = "비디오 편집기가 지원하지 않는 파일 형식입니다."
+        return json_error(message, status=400)
+
     append_blob = request.FILES.get("append_blob")
     try:
         if append_blob:
@@ -14105,7 +15363,12 @@ def handrive_api_video_editor_save(request):
                 for chunk in append_blob.chunks():
                     append_file.write(chunk)
 
-        with tempfile.NamedTemporaryFile(prefix="handrive-video-save-", suffix=suffix, delete=False) as output_file:
+        with tempfile.NamedTemporaryFile(
+            prefix="handrive-video-save-",
+            suffix=suffix,
+            dir=str(destination_path.parent),
+            delete=False,
+        ) as output_file:
             output_path = Path(output_file.name)
             temp_paths.append(output_path)
 
@@ -14230,16 +15493,22 @@ def handrive_api_video_editor_save(request):
         command.extend(["-y", str(output_path)])
         subprocess.run(command, capture_output=True, text=True, timeout=1800, check=True)
 
-        destination_path = handrive_edited_output_path(file_path)
-        destination_relative = relative_from_root(destination_path)
         new_size = output_path.stat().st_size
+        quota_extra_bytes, quota_extra_entries = get_handrive_editor_quota_delta(
+            request,
+            file_path,
+            destination_path,
+            destination_relative,
+            new_size,
+            is_same_as_source=is_same_as_source,
+        )
         enforce_handrive_scoped_quota(
             request,
             quota_path=destination_relative,
-            extra_bytes=new_size,
-            extra_entries=1,
+            extra_bytes=quota_extra_bytes,
+            extra_entries=quota_extra_entries,
         )
-        shutil.move(str(output_path), str(destination_path))
+        os.replace(str(output_path), str(destination_path))
         output_path = None
     except subprocess.TimeoutExpired:
         return json_error("비디오 저장 시간이 초과되었습니다.", status=504)

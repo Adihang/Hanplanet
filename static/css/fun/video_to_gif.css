@@ -1,0 +1,433 @@
+.video-to-gif-panel {
+    width: min(1180px, 100%);
+}
+
+.video-to-gif-workspace {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+}
+
+.video-to-gif-source {
+    display: block;
+}
+
+.video-to-gif-form {
+    display: grid;
+    grid-template-rows: auto minmax(160px, 1fr) auto auto auto;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+}
+
+.video-to-gif-url-form {
+    align-items: end;
+}
+
+.video-to-gif-dropzone {
+    min-height: 160px;
+}
+
+.video-to-gif-dropzone.is-loading {
+    pointer-events: none;
+}
+
+.video-to-gif-dropzone.is-loading > * {
+    filter: blur(2px);
+    opacity: 0.48;
+    transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+.video-to-gif-dropzone.is-loading::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    background: color-mix(in srgb, var(--shared-card-bg) 58%, transparent);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    pointer-events: none;
+}
+
+.video-to-gif-dropzone.is-loading::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 5;
+    width: 34px;
+    height: 34px;
+    margin: -17px 0 0 -17px;
+    border: 3px solid color-mix(in srgb, var(--handrive-text-muted) 32%, transparent);
+    border-top-color: var(--handrive-text-stronger);
+    border-radius: 50%;
+    animation: video-to-gif-spin 0.82s linear infinite;
+    pointer-events: none;
+}
+
+@keyframes video-to-gif-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.video-to-gif-video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+    background: #0f172a;
+}
+
+.video-to-gif-video[hidden] {
+    display: none;
+}
+
+.video-to-gif-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.72fr);
+    align-items: start;
+    gap: 10px;
+    min-width: 0;
+}
+
+.video-to-gif-control-group {
+    grid-row: span 2;
+    min-width: 0;
+    margin: 0;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    padding: 10px;
+    display: grid;
+    gap: 10px;
+    background: var(--handrive-surface-muted);
+}
+
+.video-to-gif-control-group legend,
+.video-to-gif-field > span,
+.video-to-gif-metadata dt {
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    font-weight: var(--site-weight-title-strong);
+    line-height: 1.25;
+}
+
+.video-to-gif-segmented {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    background: var(--shared-card-bg);
+    padding: 3px;
+}
+
+.video-to-gif-segmented label {
+    position: relative;
+    min-width: 0;
+}
+
+.video-to-gif-segmented input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+}
+
+.video-to-gif-segmented span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    border-radius: 6px;
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    font-weight: 850;
+    line-height: 1.2;
+    text-align: center;
+    cursor: pointer;
+    transition: var(--handrive-transition-fast);
+}
+
+.video-to-gif-segmented input:checked + span {
+    background: var(--handrive-surface-muted-strong);
+    color: var(--handrive-text-stronger);
+    box-shadow: inset 0 0 0 1px var(--handrive-border-soft);
+}
+
+.video-to-gif-segmented input:focus-visible + span {
+    outline: 2px solid rgba(37, 99, 235, 0.2);
+    outline-offset: 1px;
+}
+
+.video-to-gif-field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.video-to-gif-field input {
+    width: 100%;
+    height: 38px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    background: var(--shared-card-bg);
+    color: var(--handrive-text-stronger);
+    padding: 0 10px;
+    box-sizing: border-box;
+    font: inherit;
+}
+
+.video-to-gif-field input:focus {
+    border-color: var(--handrive-border-mid);
+    outline: 2px solid rgba(37, 99, 235, 0.18);
+    outline-offset: 1px;
+}
+
+.video-to-gif-field input:disabled {
+    cursor: not-allowed;
+    opacity: 0.68;
+}
+
+.video-to-gif-field small {
+    min-height: 17px;
+    color: var(--handrive-text-faint);
+    font-size: 12px;
+    line-height: 1.25;
+}
+
+.video-to-gif-size-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.video-to-gif-size-fields[hidden],
+.video-to-gif-field[hidden] {
+    display: none;
+}
+
+.video-to-gif-metadata {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin: 0;
+}
+
+.video-to-gif-metadata div {
+    min-width: 0;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    background: var(--handrive-surface-muted);
+    padding: 8px;
+}
+
+.video-to-gif-metadata dd {
+    margin: 3px 0 0;
+    min-width: 0;
+    color: var(--handrive-text-stronger);
+    font-size: 13px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.video-to-gif-actions {
+    align-items: center;
+}
+
+.video-to-gif-status {
+    min-height: 19px;
+    margin: 0;
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.video-to-gif-status.is-error {
+    color: #dc2626;
+}
+
+.video-to-gif-result {
+    grid-template-rows: auto minmax(0, 1fr);
+}
+
+.video-to-gif-result-stack {
+    display: grid;
+    align-content: center;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.video-to-gif-result-stage {
+    position: relative;
+    min-height: 220px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    background:
+        linear-gradient(45deg, rgba(128, 128, 128, 0.14) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(128, 128, 128, 0.14) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(128, 128, 128, 0.14) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(128, 128, 128, 0.14) 75%);
+    background-color: var(--shared-card-bg);
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    background-size: 20px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.video-to-gif-result-stage.has-result {
+    min-height: 0;
+    height: auto;
+}
+
+.video-to-gif-result-stage.is-loading > * {
+    filter: blur(2px);
+    opacity: 0.48;
+    transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+.video-to-gif-result-stage.is-loading::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    background: color-mix(in srgb, var(--shared-card-bg) 58%, transparent);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    pointer-events: none;
+}
+
+.video-to-gif-result-stage.is-loading::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 5;
+    width: 34px;
+    height: 34px;
+    margin: -17px 0 0 -17px;
+    border: 3px solid color-mix(in srgb, var(--handrive-text-muted) 32%, transparent);
+    border-top-color: var(--handrive-text-stronger);
+    border-radius: 50%;
+    animation: video-to-gif-spin 0.82s linear infinite;
+    pointer-events: none;
+}
+
+.video-to-gif-result-empty {
+    margin: 0;
+    color: var(--handrive-text-muted);
+    font-size: 14px;
+    text-align: center;
+}
+
+.video-to-gif-result-empty[hidden] {
+    display: none;
+}
+
+.video-to-gif-result-image {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: min(58dvh, 520px);
+    object-fit: contain;
+}
+
+.video-to-gif-result-image[hidden] {
+    display: none;
+}
+
+.video-to-gif-result-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    min-height: 38px;
+}
+
+.video-to-gif-result-meta {
+    min-height: 19px;
+    margin: 0;
+    color: var(--handrive-text-muted);
+    font-size: 13px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.video-to-gif-download {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: 8px;
+    background: var(--handrive-surface-muted);
+    color: var(--handrive-text-stronger);
+    box-sizing: border-box;
+    text-decoration: none;
+    transition: var(--handrive-transition-fast);
+}
+
+.video-to-gif-download:hover,
+.video-to-gif-download:focus-visible {
+    border-color: var(--handrive-border-mid);
+    background: var(--handrive-surface-muted-strong);
+    color: var(--handrive-text-stronger);
+}
+
+.video-to-gif-download:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.22);
+    outline-offset: 2px;
+}
+
+.video-to-gif-download svg {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+}
+
+.video-to-gif-download[hidden] {
+    display: none;
+}
+
+@media (max-width: 860px) {
+    .video-to-gif-form {
+        height: auto;
+    }
+
+    .video-to-gif-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .video-to-gif-control-group {
+        grid-row: auto;
+    }
+
+    .video-to-gif-result-stage {
+        min-height: 220px;
+    }
+
+    .video-to-gif-result-stage.has-result {
+        min-height: 0;
+        height: auto;
+    }
+}
+
+@media (max-width: 620px) {
+    .video-to-gif-size-fields,
+    .video-to-gif-metadata {
+        grid-template-columns: 1fr;
+    }
+
+    .video-to-gif-actions .ui-btn {
+        width: 100%;
+    }
+
+    .video-to-gif-dropzone {
+        min-height: 300px;
+    }
+}

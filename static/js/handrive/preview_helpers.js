@@ -71,6 +71,10 @@
     }
 
     function scrollPreviewIntoViewIfPortrait(previewPanel, previewHead) {
+        if (document.documentElement.dataset.googlePickerOpening === "1") {
+            cancelPreviewScrollIntoView({ freezePosition: true });
+            return;
+        }
         if (!previewPanel || previewPanel.hidden) {
             return;
         }
@@ -80,6 +84,10 @@
         }
         var targetElement = previewHead || previewPanel;
         var scrollToPreviewTop = function () {
+            if (document.documentElement.dataset.googlePickerOpening === "1") {
+                cancelPreviewScrollIntoView({ freezePosition: true });
+                return;
+            }
             if (!previewPanel || previewPanel.hidden || !targetElement) {
                 return;
             }
@@ -165,11 +173,13 @@
         var previewDownloadButton = settings.previewDownloadButton || null;
         var previewPrintButton = settings.previewPrintButton || null;
         var previewEditButton = settings.previewEditButton || null;
+        var previewSpreadsheetSaveButton = settings.previewSpreadsheetSaveButton || null;
         var previewDeleteButton = settings.previewDeleteButton || null;
         var previewUrlShareButton = settings.previewUrlShareButton || null;
         var urlShareApiUrl = settings.urlShareApiUrl || "";
         var isPreviewableFileEntry = settings.isPreviewableFileEntry || function () { return false; };
         var isEditableHandriveFileEntry = settings.isEditableHandriveFileEntry || function () { return false; };
+        var isSpreadsheetPreviewEntry = settings.isSpreadsheetPreviewEntry || function () { return false; };
         var buildDownloadUrl = settings.buildDownloadUrl || function () { return ""; };
         var onEdit = settings.onEdit || function () {};
         var previewRenderMode = String(settings.previewRenderMode || "").trim();
@@ -180,6 +190,7 @@
         var canEdit = Boolean(entry && entry.can_edit);
         var canEditPreview = previewRenderMode !== "unsupported";
         var canPrintPreview = previewRenderMode !== "unsupported" && previewRenderMode !== "media_video";
+        var isSpreadsheetPreview = Boolean(isSpreadsheetPreviewEntry(entry));
 
         if (previewDownloadButton) {
             if (!isFileEntry) {
@@ -201,7 +212,13 @@
         }
 
         if (previewEditButton) {
-            previewEditButton.hidden = !(isFileEntry && canEdit && canEditPreview && isEditableHandriveFileEntry(entry));
+            previewEditButton.hidden = !(
+                isFileEntry &&
+                canEdit &&
+                canEditPreview &&
+                !isSpreadsheetPreview &&
+                isEditableHandriveFileEntry(entry)
+            );
             if (!previewEditButton.hidden) {
                 previewEditButton.onclick = function (event) {
                     event.preventDefault();
@@ -210,6 +227,14 @@
             } else {
                 previewEditButton.removeAttribute("href");
                 previewEditButton.onclick = null;
+            }
+        }
+
+        if (previewSpreadsheetSaveButton) {
+            previewSpreadsheetSaveButton.hidden = !(isFileEntry && canEdit && isSpreadsheetPreview);
+            previewSpreadsheetSaveButton.disabled = true;
+            if (previewSpreadsheetSaveButton.hidden) {
+                previewSpreadsheetSaveButton.onclick = null;
             }
         }
 

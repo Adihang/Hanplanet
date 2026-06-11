@@ -839,7 +839,9 @@
         if (state.onDirtyChange) state.onDirtyChange(state.isDirty);
     }
 
-    function saveToServer(saveUrl, csrfToken, path, onDone) {
+    function saveToServer(saveUrl, csrfToken, path, onDone, options) {
+        var saveOptions = options || {};
+        var targetFilename = String(saveOptions.filename || "").trim();
         if (!saveUrl || !path) {
             onDone && onDone({ ok: false, error: "요청 처리 중 오류가 발생했습니다." });
             return;
@@ -850,6 +852,9 @@
         formData.append("trim_start", String(Number(startInput && startInput.value) || 0));
         formData.append("trim_end", String(Number(endInput && endInput.value) || 0));
         formData.append("volume", String(Number(volumeInput && volumeInput.value) || 1));
+        if (targetFilename) {
+            formData.append("filename", targetFilename);
+        }
         if (state.appendFile) {
             formData.append("append_blob", state.appendFile, state.appendFile.name);
         }

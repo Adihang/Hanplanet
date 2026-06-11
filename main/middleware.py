@@ -1,8 +1,83 @@
 import time
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.cache import caches
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, HttpResponsePermanentRedirect, JsonResponse
+
+
+SUPPORTED_UI_LANG_COOKIE_VALUES = {"ko", "en"}
+UI_LANG_COOKIE_NAME = "portfolio_ui_lang"
+UI_LANG_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+
+
+class CanonicalPublicHostMiddleware:
+    """Redirect bare public host requests to the configured canonical origin."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        redirect_response = self._build_redirect_response(request)
+        if redirect_response is not None:
+            return redirect_response
+        return self.get_response(request)
+
+    def _build_redirect_response(self, request):
+        if not getattr(settings, "CANONICAL_PUBLIC_HOST_REDIRECT", False):
+            return None
+        if request.method not in {"GET", "HEAD"}:
+            return None
+
+        public_base_url = str(getattr(settings, "PUBLIC_BASE_URL", "") or "").strip().rstrip("/")
+        parsed_public = urlparse(public_base_url)
+        canonical_hostname = str(parsed_public.hostname or "").strip().lower()
+        if not parsed_public.scheme or not parsed_public.netloc or not canonical_hostname:
+            return None
+
+        bare_hostname = canonical_hostname[4:] if canonical_hostname.startswith("www.") else ""
+        if not bare_hostname:
+            return None
+
+        request_hostname = str(request.get_host() or "").split(":", 1)[0].strip().lower()
+        if request_hostname != bare_hostname:
+            return None
+
+        return HttpResponsePermanentRedirect(f"{parsed_public.scheme}://{parsed_public.netloc}{request.get_full_path()}")
+
+
+class UiLanguagePreferenceCookieMiddleware:
+    """Keep the public UI language preference in a plain cookie for anonymous navigation."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        ui_lang = self._resolve_request_ui_lang(request)
+        if ui_lang:
+            response.set_cookie(
+                UI_LANG_COOKIE_NAME,
+                ui_lang,
+                max_age=UI_LANG_COOKIE_MAX_AGE,
+                path="/",
+                secure=request.is_secure(),
+                samesite="Lax",
+            )
+        return response
+
+    def _resolve_request_ui_lang(self, request):
+        query_lang = str(request.GET.get("lang", "") or "").strip().lower()
+        if query_lang in SUPPORTED_UI_LANG_COOKIE_VALUES:
+            return query_lang
+
+        path = str(getattr(request, "path", "") or "")
+        parts = path.split("/")
+        if len(parts) > 1:
+            path_lang = parts[1].strip().lower()
+            if path_lang in SUPPORTED_UI_LANG_COOKIE_VALUES:
+                return path_lang
+        return ""
 
 
 class GlobalRateLimitMiddleware:

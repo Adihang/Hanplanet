@@ -2723,6 +2723,20 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         }
     }
 
+    function createManualMapPipCanvasStream(canvas, fallbackFrameRate) {
+        var stream = canvas.captureStream(0);
+        var track = stream.getVideoTracks()[0] || null;
+        if (track && typeof track.requestFrame === "function") {
+            return { stream: stream, track: track };
+        }
+        stream.getTracks().forEach(function(streamTrack) {
+            streamTrack.stop();
+        });
+        stream = canvas.captureStream(fallbackFrameRate || 1);
+        track = stream.getVideoTracks()[0] || null;
+        return { stream: stream, track: track };
+    }
+
     function requestMapPipVideoFrame() {
         if (!mapPipSession || !mapPipSession.track || !mapPipSession.track.requestFrame) return;
         try {
@@ -2732,6 +2746,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 
     function refreshMapPictureInPicture() {
         if (!mapPipSession || !mapPipSession.canvas) return;
+        if (document.hidden) return;
         if (mapPipSession.rendering) {
             mapPipSession.pending = true;
             return;
@@ -2753,9 +2768,18 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         if (!mapPipSession) return;
         window.clearInterval(mapPipSession.intervalId);
         if (mapPipSession.video) {
-            if (mapPipSession.video.srcObject) {
-                mapPipSession.video.srcObject.getTracks().forEach(function(track) { track.stop(); });
-            }
+            try {
+                mapPipSession.video.srcObject = null;
+                mapPipSession.video.removeAttribute("src");
+                mapPipSession.video.load();
+            } catch (e) {}
+        }
+        if (mapPipSession.stream) {
+            mapPipSession.stream.getTracks().forEach(function(track) { track.stop(); });
+        } else if (mapPipSession.video && mapPipSession.video.srcObject) {
+            mapPipSession.video.srcObject.getTracks().forEach(function(track) { track.stop(); });
+        }
+        if (mapPipSession.video) {
             mapPipSession.video.remove();
         }
         mapPipSession = null;
@@ -2790,17 +2814,27 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         button.classList.add("is-busy");
         try {
             await renderMapToPipCanvas(canvas);
-            var stream = canvas.captureStream(MAP_PIP_FRAME_RATE);
-            var videoTrack = stream.getVideoTracks()[0] || null;
+            var capture = createManualMapPipCanvasStream(canvas, MAP_PIP_FRAME_RATE);
+            var stream = capture.stream;
+            var videoTrack = capture.track;
             video.srcObject = stream;
+            var primeFrame = function() {
+                if (videoTrack && typeof videoTrack.requestFrame === "function") {
+                    try { videoTrack.requestFrame(); } catch (e) {}
+                }
+            };
+            primeFrame();
             await video.play();
+            primeFrame();
             await video.requestPictureInPicture();
+            primeFrame();
             button.classList.remove("is-busy");
             button.classList.add("is-active");
             video.addEventListener("leavepictureinpicture", stopMapPictureInPicture, { once: true });
             mapPipSession = {
                 canvas: canvas,
                 video: video,
+                stream: stream,
                 track: videoTrack,
                 rendering: false,
                 pending: false,
@@ -2838,6 +2872,9 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         zoomControl.appendChild(button);
         mapPipButton = button;
         document.addEventListener("leavepictureinpicture", stopMapPictureInPicture);
+        document.addEventListener("visibilitychange", function() {
+            if (!document.hidden) refreshMapPictureInPicture();
+        });
     }
 
     function initMap() {

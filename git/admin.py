@@ -18,8 +18,8 @@ class GitHubAccountMappingAdmin(admin.ModelAdmin):
 
 @admin.register(GoogleAccountMapping)
 class GoogleAccountMappingAdmin(admin.ModelAdmin):
-    list_display = ["user", "google_email", "google_user_id", "google_drive_enabled", "updated_at"]
-    list_filter = ["google_drive_enabled"]
+    list_display = ["user", "google_email", "google_user_id", "google_drive_enabled", "google_drive_preference_set", "updated_at"]
+    list_filter = ["google_drive_enabled", "google_drive_preference_set"]
     search_fields = ["user__username", "google_email", "google_user_id"]
     readonly_fields = ["created_at", "updated_at"]
 

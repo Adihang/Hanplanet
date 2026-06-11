@@ -62,10 +62,15 @@
                 <a class="handrive-icon-btn" href="{{ handrive_api_download_url }}?path={{ doc_relative_path|urlencode }}{% if handrive_shared_owner_username and handrive_shared_slug %}&share_owner={{ handrive_shared_owner_username|urlencode }}&share_slug={{ handrive_shared_slug|urlencode }}{% endif %}" aria-label="{{ handrive_text.download_button }}" title="{{ handrive_text.download_button }}">
                     <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" y1="3" x2="10" y2="13"/><polyline points="6,9 10,13 14,9"/><line x1="4" y1="17" x2="16" y2="17"/></svg>
                 </a>
+                {% if doc_is_spreadsheet_file and doc_can_edit %}
+                    <button class="handrive-icon-btn" type="button" id="handrive-view-spreadsheet-save-btn" data-handrive-spreadsheet-preview-save aria-label="{{ handrive_text.save_button }}" title="{{ handrive_text.save_button }}" hidden disabled>
+                        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h10l2 2v12H4z"/><path d="M7 3v5h6V3"/><path d="M7 13h6v4H7z"/></svg>
+                    </button>
+                {% endif %}
                 {% include "handrive/_auth_button.html" %}
                 {% include "handrive/_superuser_ops_button.html" %}
-                {% if doc_can_show_edit %}
-                    <a class="handrive-icon-btn" href="{{ handrive_write_url }}?path={{ doc_relative_path|urlencode }}" aria-label="{{ handrive_text.edit_button }}" title="{{ handrive_text.edit_button }}"
+                {% if doc_can_show_edit and not doc_is_spreadsheet_file %}
+                    <a class="handrive-icon-btn" href="{{ doc_edit_url }}" aria-label="{{ handrive_text.edit_button }}" title="{{ handrive_text.edit_button }}"
                     ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true"><path d="M3 17l1-4L13 3l3 3L7 16l-4 1z"/><line x1="11" y1="5" x2="14" y2="8"/><line x1="4" y1="13" x2="7" y2="16"/></svg></a>
                 {% endif %}
                 {% if doc_can_edit %}
@@ -87,6 +92,9 @@
     data-url-share-api-url="{{ handrive_api_url_share_url }}"
     data-doc-path="{{ doc_relative_path }}"
     data-doc-slug-path="{{ doc_slug_path }}"
+    data-doc-extension="{{ doc_file_extension }}"
+    data-doc-is-excel="{% if doc_is_excel_file %}1{% else %}0{% endif %}"
+    data-doc-is-spreadsheet="{% if doc_is_spreadsheet_file %}1{% else %}0{% endif %}"
     data-doc-is-url-only="{% if doc_is_url_only %}1{% else %}0{% endif %}"
     data-doc-share-url="{{ doc_share_url }}"
     data-doc-share-is-inherited="{% if doc_share_is_inherited %}1{% else %}0{% endif %}"
@@ -96,8 +104,11 @@
     data-handrive-shared-slug="{{ handrive_shared_slug|default:'' }}"
     data-handrive-shared-root-path="{{ handrive_shared_root_path|default:'' }}"
     data-list-api-url="{{ handrive_api_list_url }}"
+    data-download-api-url="{{ handrive_api_download_url }}"
+    data-spreadsheet-save-api-url="{{ handrive_api_spreadsheet_save_url }}"
     data-preview-api-url="{{ handrive_api_preview_url }}"
     data-pdf-preview-api-url="{{ handrive_api_pdf_preview_url }}"
+    data-handsontable-license-key="{{ handrive_handsontable_license_key|default:'non-commercial-and-evaluation' }}"
     data-videojs-script-url="{% static_v 'vendor/videojs/video.min.js' %}"
     data-videojs-compat-script-url="{% static_v 'js/handrive/videojs_compat.js' %}"
     data-videojs-seek-buttons-script-url="{% static_v 'vendor/videojs/videojs-seek-buttons.min.js' %}"

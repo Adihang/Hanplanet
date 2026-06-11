@@ -153,6 +153,14 @@
         }
 
         state.activePreviewPath = pathValue;
+        if (state.previewAbortController && typeof state.previewAbortController.abort === "function") {
+            try {
+                state.previewAbortController.abort();
+            } catch (error) {
+                // ignore stale preview request cleanup failures
+            }
+        }
+        state.previewAbortController = null;
         if (previewTitle) {
             var previewTitleText = previewTitle.querySelector(".handrive-list-preview-title-text") || previewTitle;
             previewTitleText.textContent = entry.name || t("list_preview_title", "파일 미리보기");
@@ -190,14 +198,23 @@
         }
         var requestToken = state.previewRequestToken + 1;
         state.previewRequestToken = requestToken;
+        var requestAbortController = typeof AbortController !== "undefined" ? new AbortController() : null;
+        state.previewAbortController = requestAbortController;
 
         try {
+            var requestOptions = buildPostOptions({ path: pathValue }) || {};
+            if (requestAbortController && !requestOptions.signal) {
+                requestOptions.signal = requestAbortController.signal;
+            }
             var data = await requestJson(
                 previewApiUrl,
-                buildPostOptions({ path: pathValue })
+                requestOptions
             );
             if (requestToken !== state.previewRequestToken || state.activePreviewPath !== pathValue) {
                 return;
+            }
+            if (state.previewAbortController === requestAbortController) {
+                state.previewAbortController = null;
             }
             var html = data && typeof data.html === "string" ? data.html : "";
             var renderMode = data && typeof data.render_mode === "string" ? data.render_mode : "plain_text";
@@ -217,6 +234,12 @@
             setPreviewActionTargets(entry);
             scrollPreviewIntoViewIfPortrait();
         } catch (error) {
+            if (state.previewAbortController === requestAbortController) {
+                state.previewAbortController = null;
+            }
+            if (error && error.name === "AbortError") {
+                return;
+            }
             if (requestToken !== state.previewRequestToken || state.activePreviewPath !== pathValue) {
                 return;
             }

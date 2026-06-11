@@ -15,6 +15,9 @@
     <meta name="twitter:image" content="{{ page_image_url }}">
     <meta name="author" content="Hanplanet">
     <meta name="robots" content="noindex">
+    {% if sub_category %}
+    <meta name="hanplanet:sub-category" content="{{ sub_category }}">
+    {% endif %}
     {% include "partials/pwa.html" %}
     {% include "partials/static_script_fallback.html" %}
     <link rel="icon" type="image/x-icon" href="/favicon.ico">

@@ -114,10 +114,207 @@
         return lazyScriptLoadPromises[url];
     }
 
+    function clampMarkdownIndex(value, index) {
+        const length = String(value || "").length;
+        const numberValue = Number(index);
+        if (!Number.isFinite(numberValue)) {
+            return 0;
+        }
+        return Math.max(0, Math.min(length, Math.floor(numberValue)));
+    }
+
+    function stripMarkdownOuterDecorations(text) {
+        let result = String(text || "");
+        let removedCodeFence = false;
+        let changed = true;
+
+        while (changed) {
+            changed = false;
+            const patterns = [
+                {
+                    pattern: /^(\s*)```[^\r\n`]*\r?\n([\s\S]*?)\r?\n```(\s*)$/,
+                    isCodeFence: true,
+                },
+                { pattern: /^(\s*)!\[([\s\S]*?)\]\([^\r\n)]*\)(\s*)$/ },
+                { pattern: /^(\s*)\[([\s\S]*?)\]\([^\r\n)]*\)(\s*)$/ },
+                { pattern: /^(\s*)(\*\*|__)([\s\S]*?)\2(\s*)$/, bodyIndex: 3 },
+                { pattern: /^(\s*)`([\s\S]*?)`(\s*)$/ },
+                { pattern: /^(\s*)(\*|_)([\s\S]*?)\2(\s*)$/, bodyIndex: 3 },
+            ];
+
+            for (let index = 0; index < patterns.length; index += 1) {
+                const entry = patterns[index];
+                const match = result.match(entry.pattern);
+                if (!match) {
+                    continue;
+                }
+                const bodyIndex = entry.bodyIndex || 2;
+                const suffixIndex = bodyIndex + 1;
+                result = (match[1] || "") + (match[bodyIndex] || "") + (match[suffixIndex] || "");
+                removedCodeFence = removedCodeFence || Boolean(entry.isCodeFence);
+                changed = true;
+                break;
+            }
+        }
+
+        return { text: result, removedCodeFence: removedCodeFence };
+    }
+
+    function stripMarkdownLinePrefixes(text) {
+        const lines = String(text || "").split(/\r?\n/);
+        let changed = false;
+        const transformed = lines.map(function (line) {
+            if (!line.trim()) {
+                return line;
+            }
+            const nextLine = line.replace(
+                /^(\s{0,3})(?:#{1,6}\s+|>\s?|-\s+\[[ xX]\]\s+|[-*+]\s+|\d+\.\s+)/,
+                "$1"
+            );
+            if (nextLine !== line) {
+                changed = true;
+            }
+            return nextLine;
+        });
+        return changed ? transformed.join("\n") : String(text || "");
+    }
+
+    function stripMarkdownDecorations(text) {
+        const outer = stripMarkdownOuterDecorations(text);
+        if (outer.removedCodeFence) {
+            return outer.text;
+        }
+
+        let result = stripMarkdownLinePrefixes(outer.text);
+        let previous = "";
+        while (result !== previous) {
+            previous = result;
+            const nextOuter = stripMarkdownOuterDecorations(result);
+            result = nextOuter.removedCodeFence ? nextOuter.text : stripMarkdownLinePrefixes(nextOuter.text);
+        }
+        return result;
+    }
+
+    function getMarkdownLineStart(value, index) {
+        const previousBreak = String(value || "").lastIndexOf("\n", Math.max(0, index - 1));
+        return previousBreak === -1 ? 0 : previousBreak + 1;
+    }
+
+    function expandMarkdownInlineWrapper(value, range) {
+        const text = String(value || "");
+        const wrappers = [
+            ["**", "**"],
+            ["__", "__"],
+            ["`", "`"],
+            ["*", "*"],
+            ["_", "_"],
+        ];
+
+        for (let index = 0; index < wrappers.length; index += 1) {
+            const prefix = wrappers[index][0];
+            const suffix = wrappers[index][1];
+            if (
+                range.start >= prefix.length &&
+                text.slice(range.start - prefix.length, range.start) === prefix &&
+                text.slice(range.end, range.end + suffix.length) === suffix
+            ) {
+                return {
+                    start: range.start - prefix.length,
+                    end: range.end + suffix.length,
+                    changed: true,
+                };
+            }
+        }
+
+        const linkSuffix = text.slice(range.end).match(/^\]\([^\r\n)]*\)/);
+        if (linkSuffix) {
+            if (range.start >= 2 && text.slice(range.start - 2, range.start) === "![") {
+                return {
+                    start: range.start - 2,
+                    end: range.end + linkSuffix[0].length,
+                    changed: true,
+                };
+            }
+            if (range.start >= 1 && text.slice(range.start - 1, range.start) === "[") {
+                return {
+                    start: range.start - 1,
+                    end: range.end + linkSuffix[0].length,
+                    changed: true,
+                };
+            }
+        }
+
+        return { start: range.start, end: range.end, changed: false };
+    }
+
+    function expandMarkdownLinePrefix(value, range) {
+        const text = String(value || "");
+        const lineStart = getMarkdownLineStart(text, range.start);
+        if (lineStart >= range.start) {
+            return { start: range.start, end: range.end, changed: false };
+        }
+
+        const prefix = text.slice(lineStart, range.start);
+        if (/^(?:\s{0,3})(?:#{1,6}\s+|>\s?|-\s+\[[ xX]\]\s+|[-*+]\s+|\d+\.\s+)$/.test(prefix)) {
+            return { start: lineStart, end: range.end, changed: true };
+        }
+
+        return { start: range.start, end: range.end, changed: false };
+    }
+
+    function expandMarkdownSelectionRange(value, start, end) {
+        let range = {
+            start: clampMarkdownIndex(value, Math.min(start, end)),
+            end: clampMarkdownIndex(value, Math.max(start, end)),
+        };
+
+        let changed = true;
+        while (changed) {
+            changed = false;
+            const inlineRange = expandMarkdownInlineWrapper(value, range);
+            if (inlineRange.changed) {
+                range = { start: inlineRange.start, end: inlineRange.end };
+                changed = true;
+                continue;
+            }
+
+            const lineRange = expandMarkdownLinePrefix(value, range);
+            if (lineRange.changed) {
+                range = { start: lineRange.start, end: lineRange.end };
+                changed = true;
+            }
+        }
+
+        return range;
+    }
+
+    function getMarkdownSnippetSelection(textarea) {
+        if (!textarea) {
+            return { body: "", hasSelection: false, replaceStart: 0, replaceEnd: 0 };
+        }
+
+        const value = String(textarea.value || "");
+        const rawStart = clampMarkdownIndex(value, textarea.selectionStart || 0);
+        const rawEnd = clampMarkdownIndex(value, textarea.selectionEnd || 0);
+        const hasSelection = rawStart !== rawEnd;
+        if (!hasSelection) {
+            return { body: "", hasSelection: false, replaceStart: rawStart, replaceEnd: rawEnd };
+        }
+
+        const range = expandMarkdownSelectionRange(value, rawStart, rawEnd);
+        return {
+            body: stripMarkdownDecorations(value.slice(range.start, range.end)),
+            hasSelection: true,
+            replaceStart: range.start,
+            replaceEnd: range.end,
+        };
+    }
+
     function getMediaEditorGlobalName(kind) {
         if (kind === "image") return "HandriveImageEditor";
         if (kind === "video") return "HandriveVideoEditor";
         if (kind === "audio") return "HandriveAudioEditor";
+        if (kind === "pdf") return "HandrivePdfEditor";
         return "";
     }
 
@@ -281,7 +478,7 @@
             : "@page{margin:12mm;}@media print{@page{margin:12mm;}}";
         return pageRule
             + "body.handrive-print-office-body{overflow:visible;padding:0;background:#fff;color:#111;}"
-            + ".handrive-print-office-live{display:block;width:100%;max-width:100%;overflow:visible;margin:0;padding:0;background:#fff;color:#111;font-family:Inter,KakaoBigFont,'Noto Sans KR',Arial,sans-serif;font-size:12px;line-height:1.35;}"
+            + ".handrive-print-office-live{display:block;width:100%;max-width:100%;overflow:visible;margin:0;padding:0;background:#fff;color:#111;font-family:KakaoSmallFont,Inter,Arial,sans-serif;font-size:12px;line-height:1.35;}"
             + ".handrive-print-office-live *{box-sizing:border-box;}"
             + ".handrive-print-office-live #handrive-office-zoom-viewport,.handrive-print-office-live #handrive-office-zoom-content{display:block;width:auto;height:auto;min-width:0;min-height:0;max-width:none;max-height:none;overflow:visible;transform:none;}"
             + ".handrive-print-office-live table{width:100%;max-width:100%;border-collapse:collapse;border-spacing:0;table-layout:auto;break-inside:auto;page-break-inside:auto;background:#fff;}"
@@ -323,7 +520,7 @@
             + ".handrive-print-rendered .handrive-office-table-wrap,.handrive-print-rendered .handrive-html-live-wrap,.handrive-print-rendered .handrive-media-wrap{overflow:visible;max-width:none;}"
             + ".handrive-print-image{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 24mm);margin:0;}"
             + ".handrive-print-image img{display:block;max-width:100%;max-height:calc(100vh - 24mm);object-fit:contain;}"
-            + ".handrive-print-file-card{font-family:Inter,KakaoBigFont,'Noto Sans KR',Arial,sans-serif;border:1px solid #d0d0d0;border-radius:8px;padding:18px;}"
+            + ".handrive-print-file-card{font-family:KakaoSmallFont,Inter,Arial,sans-serif;border:1px solid #d0d0d0;border-radius:8px;padding:18px;}"
             + ".handrive-print-file-card-title{font-size:18px;font-weight:700;margin:0 0 8px;color:#111;}"
             + ".handrive-print-file-card-meta{font-size:13px;color:#555;word-break:break-all;}"
             + ".handrive-print-frame-body{padding:0;}"
@@ -535,6 +732,36 @@
         }
 
         const isOfficeContent = contentElement.classList.contains("handrive-office");
+        const hasSpreadsheetPreview = Boolean(
+            contentElement.matches &&
+            contentElement.matches("[data-handrive-spreadsheet-preview]")
+        ) || Boolean(
+            contentElement.querySelector &&
+            contentElement.querySelector("[data-handrive-spreadsheet-preview]")
+        );
+        if (
+            hasSpreadsheetPreview &&
+            window.HandriveSpreadsheetEditor &&
+            typeof window.HandriveSpreadsheetEditor.buildPreviewPrint === "function"
+        ) {
+            const spreadsheetPrint = window.HandriveSpreadsheetEditor.buildPreviewPrint(contentElement, { title: title });
+            if (spreadsheetPrint && spreadsheetPrint.bodyHtml) {
+                const printWindow = openPrintWindow({
+                    title: spreadsheetPrint.title || title,
+                    bodyClass: "handrive-print-spreadsheet-body",
+                    bodyHtml: spreadsheetPrint.bodyHtml,
+                    extraStyle: spreadsheetPrint.extraStyle || "",
+                });
+                runPrintWindow(printWindow, true);
+                return Boolean(printWindow);
+            }
+            window.alert(t("spreadsheet_print_not_ready", "스프레드시트를 불러온 뒤 다시 인쇄해주세요."));
+            return true;
+        }
+        if (hasSpreadsheetPreview) {
+            window.alert(t("spreadsheet_print_not_ready", "스프레드시트를 불러온 뒤 다시 인쇄해주세요."));
+            return true;
+        }
         const officePdfUrl = String(settings.officePdfUrl || "").trim();
         if (isOfficeContent && officePdfUrl && printFrameSource(officePdfUrl, title)) {
             return true;
@@ -671,6 +898,14 @@
             return appendSharedQuery(baseUrl);
         }
         return appendSharedQuery(baseUrl + "/" + encoded);
+    }
+
+    function getGoogleDriveDocsEditorUrl(entry) {
+        const googleDriveMeta = entry && entry.google_drive ? entry.google_drive : null;
+        const docsEditorUrl = googleDriveMeta && googleDriveMeta.docs_editor_url
+            ? String(googleDriveMeta.docs_editor_url).trim()
+            : "";
+        return docsEditorUrl.startsWith("https://docs.google.com/") ? docsEditorUrl : "";
     }
 
     function getParentPath(pathValue) {
@@ -1272,34 +1507,68 @@
         });
     }
 
-    function stopPreviewMediaElements(container) {
+    function releasePreviewMediaElement(mediaElement) {
+        if (
+            !mediaElement ||
+            typeof HTMLMediaElement === "undefined" ||
+            !(mediaElement instanceof HTMLMediaElement)
+        ) {
+            return;
+        }
+        try {
+            mediaElement.pause();
+        } catch (error) {
+            // ignore media state errors
+        }
+        try {
+            if ("srcObject" in mediaElement && mediaElement.srcObject) {
+                mediaElement.srcObject = null;
+            }
+        } catch (error) {
+            // ignore stream cleanup failures
+        }
+        try {
+            mediaElement.querySelectorAll("source, track").forEach(function (source) {
+                source.removeAttribute("src");
+                source.removeAttribute("srcset");
+            });
+        } catch (error) {
+            // ignore detached node errors
+        }
+        try {
+            mediaElement.removeAttribute("src");
+        } catch (error) {
+            // ignore detached node errors
+        }
+        try {
+            mediaElement.load();
+        } catch (error) {
+            // ignore load reset failures
+        }
+    }
+
+    function stopPreviewMediaElements(container, mediaElements) {
         if (!container || !(container instanceof Element)) {
             return;
         }
+        const targetMediaElements = Array.isArray(mediaElements)
+            ? mediaElements
+            : Array.prototype.slice.call(container.querySelectorAll("audio, video"));
         const activePipElement = document.pictureInPictureElement;
         if (
             activePipElement &&
             activePipElement instanceof HTMLVideoElement &&
             activePipElement.dataset.handriveImagePipHost !== "1" &&
-            container.contains(activePipElement) &&
+            targetMediaElements.indexOf(activePipElement) !== -1 &&
             typeof document.exitPictureInPicture === "function"
         ) {
             document.exitPictureInPicture().catch(function () {});
         }
-        container.querySelectorAll("audio, video").forEach(function (mediaElement) {
+        targetMediaElements.forEach(function (mediaElement) {
             if (!(mediaElement instanceof HTMLMediaElement)) {
                 return;
             }
-            try {
-                mediaElement.pause();
-            } catch (error) {
-                // ignore media state errors
-            }
-            try {
-                mediaElement.currentTime = 0;
-            } catch (error) {
-                // ignore seek failures for unloaded media
-            }
+            releasePreviewMediaElement(mediaElement);
         });
     }
 
@@ -1307,13 +1576,16 @@
         if (!container || !(container instanceof Element)) {
             return Promise.resolve();
         }
+        const mediaElements = Array.prototype.slice.call(container.querySelectorAll("audio, video"));
         if (
             window.HandriveVideoPlayer &&
             typeof window.HandriveVideoPlayer.cleanupPreview === "function"
         ) {
-            return window.HandriveVideoPlayer.cleanupPreview(container).catch(function () {});
+            return window.HandriveVideoPlayer.cleanupPreview(container).catch(function () {}).then(function () {
+                stopPreviewMediaElements(container, mediaElements);
+            });
         }
-        stopPreviewMediaElements(container);
+        stopPreviewMediaElements(container, mediaElements);
         return Promise.resolve();
     }
 
@@ -1364,6 +1636,15 @@
         }
         const session = imagePipSession;
         imagePipSession = null;
+        if (session.video) {
+            try {
+                session.video.srcObject = null;
+                session.video.removeAttribute("src");
+                session.video.load();
+            } catch (error) {
+                // ignore cleanup failures on detached mobile video layers
+            }
+        }
         if (session.stream) {
             session.stream.getTracks().forEach(function (track) {
                 track.stop();
@@ -1401,6 +1682,20 @@
             width: Math.max(1, Math.round(sourceWidth * scale)),
             height: Math.max(1, Math.round(sourceHeight * scale)),
         };
+    }
+
+    function createManualImagePipCanvasStream(canvas, fallbackFrameRate) {
+        let stream = canvas.captureStream(0);
+        let track = stream.getVideoTracks()[0] || null;
+        if (track && typeof track.requestFrame === "function") {
+            return { stream: stream, track: track };
+        }
+        stream.getTracks().forEach(function (streamTrack) {
+            streamTrack.stop();
+        });
+        stream = canvas.captureStream(fallbackFrameRate || 1);
+        track = stream.getVideoTracks()[0] || null;
+        return { stream: stream, track: track };
     }
 
     function waitForVideoMetadata(videoElement) {
@@ -1449,13 +1744,17 @@
     }
 
     function requestImagePipFrame(session) {
-        const stream = session && session.stream;
-        const tracks = stream && typeof stream.getVideoTracks === "function"
-            ? stream.getVideoTracks()
-            : [];
-        const track = tracks[0] || null;
+        const track = session && session.track
+            ? session.track
+            : session && session.stream && typeof session.stream.getVideoTracks === "function"
+                ? session.stream.getVideoTracks()[0] || null
+                : null;
         if (track && typeof track.requestFrame === "function") {
-            track.requestFrame();
+            try {
+                track.requestFrame();
+            } catch (error) {
+                // Some mobile browsers throw while a tab is backgrounding.
+            }
         }
     }
 
@@ -1503,13 +1802,15 @@
             context: context,
             mode: "image",
             stream: null,
+            track: null,
             video: null,
         };
         if (!drawImagePipFrame(imageElement, session)) {
             throw new Error(t("image_pip_no_image_error", "PiP로 띄울 이미지를 찾을 수 없습니다."));
         }
 
-        const stream = canvas.captureStream(1);
+        const capture = createManualImagePipCanvasStream(canvas, 1);
+        const stream = capture.stream;
         const video = document.createElement("video");
         video.muted = true;
         video.playsInline = true;
@@ -1519,17 +1820,20 @@
         document.body.appendChild(video);
 
         session.stream = stream;
+        session.track = capture.track;
         session.video = video;
         imagePipSession = session;
         video.addEventListener("leavepictureinpicture", closeImagePipSession, { once: true });
         try {
-            await waitForVideoMetadata(video);
-            const pictureInPicturePromise = video.requestPictureInPicture();
             const playPromise = video.play();
-            await pictureInPicturePromise;
-            if (playPromise && typeof playPromise.catch === "function") {
-                playPromise.catch(function () {});
+            requestImagePipFrame(session);
+            if (playPromise && typeof playPromise.then === "function") {
+                await playPromise;
             }
+            await waitForVideoMetadata(video);
+            requestImagePipFrame(session);
+            await video.requestPictureInPicture();
+            requestImagePipFrame(session);
         } catch (error) {
             closeImagePipSession();
             throw error;
@@ -2986,6 +3290,7 @@
         const listApiUrl = root.dataset.listApiUrl;
         const searchApiUrl = root.dataset.searchApiUrl;
         const saveApiUrl = root.dataset.saveApiUrl;
+        const spreadsheetSaveApiUrl = root.dataset.spreadsheetSaveApiUrl || "";
         const renameApiUrl = root.dataset.renameApiUrl;
         const deleteApiUrl = root.dataset.deleteApiUrl;
         const mkdirApiUrl = root.dataset.mkdirApiUrl;
@@ -3037,6 +3342,7 @@
         const previewDownloadButton = document.getElementById("handrive-list-preview-download-btn");
         const previewPrintButton = document.getElementById("handrive-list-preview-print-btn");
         const previewEditButton = document.getElementById("handrive-list-preview-edit-btn");
+        const previewSpreadsheetSaveButton = document.getElementById("handrive-list-preview-spreadsheet-save-btn");
         const previewDeleteButton = document.getElementById("handrive-list-preview-delete-btn");
         const previewUrlShareButton = document.getElementById("handrive-list-preview-url-share-btn");
         
@@ -3055,13 +3361,20 @@
         const imageEditorSurface = document.getElementById("handrive-image-editor-surface");
         const videoEditorSurface = document.getElementById("handrive-video-editor-surface");
         const audioEditorSurface = document.getElementById("handrive-audio-editor-surface");
+        const pdfEditorSurface = document.getElementById("handrive-pdf-editor-surface");
+        const spreadsheetEditorSurface = document.getElementById("handrive-spreadsheet-editor-surface");
         const imageEditorSaveUrl = root.dataset.imageEditorSaveUrl || "";
         const imageEditorRemoveBackgroundUrl = root.dataset.imageEditorRemoveBackgroundUrl || "";
         const videoEditorSaveUrl = root.dataset.videoEditorSaveUrl || "";
         const audioEditorSaveUrl = root.dataset.audioEditorSaveUrl || "";
+        const pdfEditorMetaUrl = root.dataset.pdfEditorMetaUrl || "";
+        const pdfEditorPageUrl = root.dataset.pdfEditorPageUrl || "";
+        const pdfEditorSaveUrl = root.dataset.pdfEditorSaveUrl || "";
+        const handsontableLicenseKey = root.dataset.handsontableLicenseKey || "non-commercial-and-evaluation";
         const imageEditorScriptUrl = root.dataset.imageEditorScriptUrl || "";
         const videoEditorScriptUrl = root.dataset.videoEditorScriptUrl || "";
         const audioEditorScriptUrl = root.dataset.audioEditorScriptUrl || "";
+        const pdfEditorScriptUrl = root.dataset.pdfEditorScriptUrl || "";
         const editorSuggest = document.getElementById("handrive-list-editor-suggest");
         const editorSuggestLabel = document.getElementById("handrive-list-editor-suggest-label");
         const markdownSnippetMenu = document.getElementById("ui-markdown-snippet-menu");
@@ -3100,6 +3413,7 @@
         const contextGitCreateBranchButton = contextMenu ? contextMenu.querySelector('button[data-action="git-create-branch"]') : null;
         const contextGitDeleteBranchButton = contextMenu ? contextMenu.querySelector('button[data-action="git-delete-branch"]') : null;
         const contextChangeIconButton = contextMenu ? contextMenu.querySelector('button[data-action="change-icon"]') : null;
+        const contextGoogleDriveAddItemsButton = contextMenu ? contextMenu.querySelector('button[data-action="google-drive-add-items"]') : null;
         const branchCreateModal = document.getElementById("handrive-branch-create-modal");
         const branchCreateModalBackdrop = document.getElementById("handrive-branch-create-modal-backdrop");
         const branchCreateTarget = document.getElementById("handrive-branch-create-target");
@@ -3203,6 +3517,7 @@
             ".aac",
             ".flac",
             ".weba",
+            ".pdf",
         ]);
         const imageEditorExtensions = new Set([
             ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".avif",
@@ -3213,6 +3528,12 @@
         const videoEditorExtensions = new Set([
             ".mp4", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m4v", ".ogv",
         ]);
+        const pdfEditorExtensions = new Set([
+            ".pdf",
+        ]);
+        const spreadsheetEditorExtensions = new Set([
+            ".csv", ".xls", ".xlsx",
+        ]);
         function isImageEditorEntry(entry) {
             return imageEditorExtensions.has(getEntryFileExtension(entry));
         }
@@ -3221,6 +3542,19 @@
         }
         function isVideoEditorEntry(entry) {
             return videoEditorExtensions.has(getEntryFileExtension(entry));
+        }
+        function isPdfEditorEntry(entry) {
+            return Boolean(
+                entry &&
+                entry.can_edit &&
+                !entry.google_drive &&
+                !entry.is_git_virtual &&
+                !entry.is_archive_member &&
+                pdfEditorExtensions.has(getEntryFileExtension(entry))
+            );
+        }
+        function isSpreadsheetEditorEntry(entry) {
+            return Boolean(entry && entry.can_edit && spreadsheetEditorExtensions.has(getEntryFileExtension(entry)));
         }
 
         const mediaNavExtensions = new Set([
@@ -3366,6 +3700,7 @@
             previewCache: new Map(),
             previewCacheMaxEntries: 30,
             previewRequestToken: 0,
+            previewAbortController: null,
             activePreviewPath: "",
             activeRenderedPreviewPath: "",
             previewImageZoom: 1,
@@ -3588,6 +3923,42 @@
 
         function isGoogleDriveRootEntry(entry) {
             return Boolean(entry && entry.type === "dir" && entry.google_drive && entry.google_drive.is_root);
+        }
+
+        function getGoogleDriveSelectedCount(entry) {
+            if (!entry || !entry.google_drive) {
+                return 0;
+            }
+            const rawCount = entry.google_drive.selected_count;
+            if (rawCount === null || rawCount === undefined || rawCount === "") {
+                return 0;
+            }
+            const parsed = Number(rawCount);
+            return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+        }
+
+        function shouldOpenGoogleDrivePickerOnClick(entry, event) {
+            if (!isGoogleDriveRootEntry(entry) || getGoogleDriveSelectedCount(entry) > 0) {
+                return false;
+            }
+            if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
+                return false;
+            }
+            return !event || event.detail <= 1;
+        }
+
+        function openGoogleDriveItemPicker() {
+            const pickerApi = window.HandriveGoogleDrivePicker;
+            if (!pickerApi || typeof pickerApi.open !== "function") {
+                return Promise.reject(new Error(t("google_drive_picker_error", textByLang("Google Picker를 열지 못했습니다.", "Failed to open Google Picker."))));
+            }
+            previewCancelScrollIntoView({ freezePosition: true });
+            return pickerApi.open({
+                throwOnError: true,
+                onSaved: function () {
+                    refreshCurrentDirectory({ skipPreview: true }).catch(alertError);
+                },
+            });
         }
 
         function resolveGoogleDriveLabelFromMeta(meta) {
@@ -3928,48 +4299,65 @@
             return visibleCount;
         }
 
-        function replaceListEditorSelection(insertText, selectionStartOffset, selectionEndOffset) {
+        function replaceListEditorSelection(insertText, selectionStartOffset, selectionEndOffset, replaceStartOffset, replaceEndOffset) {
             if (!editorContentInput) {
                 return;
             }
-            const start = editorContentInput.selectionStart || 0;
-            const end = editorContentInput.selectionEnd || 0;
-            editorContentInput.setRangeText(insertText, start, end, "end");
+            const valueLength = String(editorContentInput.value || "").length;
+            const selectedStart = editorContentInput.selectionStart || 0;
+            const selectedEnd = editorContentInput.selectionEnd || 0;
+            const start = Number.isFinite(Number(replaceStartOffset))
+                ? clampMarkdownIndex(editorContentInput.value, replaceStartOffset)
+                : clampMarkdownIndex(editorContentInput.value, selectedStart);
+            const end = Number.isFinite(Number(replaceEndOffset))
+                ? clampMarkdownIndex(editorContentInput.value, replaceEndOffset)
+                : clampMarkdownIndex(editorContentInput.value, selectedEnd);
+            const replaceStart = Math.min(start, end, valueLength);
+            const replaceEnd = Math.max(start, end);
+            editorContentInput.setRangeText(insertText, replaceStart, replaceEnd, "end");
 
-            const nextStart = start + (selectionStartOffset || 0);
-            const nextEnd = start + (selectionEndOffset || insertText.length);
+            const nextStart = replaceStart + (selectionStartOffset || 0);
+            const nextEnd = replaceStart + (selectionEndOffset || insertText.length);
             editorContentInput.setSelectionRange(nextStart, nextEnd);
             editorContentInput.focus();
             editorContentInput.dispatchEvent(new Event("input", { bubbles: true }));
         }
 
         function buildListWrappedSnippet(prefix, suffix, placeholder) {
-            const start = editorContentInput ? (editorContentInput.selectionStart || 0) : 0;
-            const end = editorContentInput ? (editorContentInput.selectionEnd || 0) : 0;
-            const selected = editorContentInput ? editorContentInput.value.slice(start, end) : "";
+            const selection = getMarkdownSnippetSelection(editorContentInput);
+            const selected = selection.body;
             const body = selected || placeholder;
             const text = prefix + body + suffix;
 
             if (selected) {
-                return { text: text, selectStart: text.length, selectEnd: text.length };
+                return {
+                    text: text,
+                    selectStart: text.length,
+                    selectEnd: text.length,
+                    replaceStart: selection.replaceStart,
+                    replaceEnd: selection.replaceEnd,
+                };
             }
             return {
                 text: text,
                 selectStart: prefix.length,
                 selectEnd: prefix.length + body.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd,
             };
         }
 
         function buildListPrefixedLinesSnippet(prefix, placeholder) {
-            const start = editorContentInput ? (editorContentInput.selectionStart || 0) : 0;
-            const end = editorContentInput ? (editorContentInput.selectionEnd || 0) : 0;
-            const selected = editorContentInput ? editorContentInput.value.slice(start, end) : "";
+            const selection = getMarkdownSnippetSelection(editorContentInput);
+            const selected = selection.body;
             if (!selected) {
                 const body = prefix + placeholder;
                 return {
                     text: body,
                     selectStart: prefix.length,
                     selectEnd: body.length,
+                    replaceStart: selection.replaceStart,
+                    replaceEnd: selection.replaceEnd,
                 };
             }
             const lines = selected.split(/\r?\n/);
@@ -3979,19 +4367,26 @@
                 }
                 return prefix + line;
             }).join("\n");
-            return { text: transformed, selectStart: transformed.length, selectEnd: transformed.length };
+            return {
+                text: transformed,
+                selectStart: transformed.length,
+                selectEnd: transformed.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd,
+            };
         }
 
         function buildListNumberedLinesSnippet(placeholder) {
-            const start = editorContentInput ? (editorContentInput.selectionStart || 0) : 0;
-            const end = editorContentInput ? (editorContentInput.selectionEnd || 0) : 0;
-            const selected = editorContentInput ? editorContentInput.value.slice(start, end) : "";
+            const selection = getMarkdownSnippetSelection(editorContentInput);
+            const selected = selection.body;
             if (!selected) {
                 const body = "1. " + placeholder;
                 return {
                     text: body,
                     selectStart: 3,
                     selectEnd: body.length,
+                    replaceStart: selection.replaceStart,
+                    replaceEnd: selection.replaceEnd,
                 };
             }
             let order = 1;
@@ -4006,22 +4401,41 @@
                     return row;
                 })
                 .join("\n");
-            return { text: transformed, selectStart: transformed.length, selectEnd: transformed.length };
+            return {
+                text: transformed,
+                selectStart: transformed.length,
+                selectEnd: transformed.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd,
+            };
         }
 
         function buildListCodeBlockSnippet() {
+            const selection = getMarkdownSnippetSelection(editorContentInput);
             const lang = t("markdown_placeholder_code_lang", "text");
-            const body = t("markdown_placeholder_code_body", "type your code");
+            const body = selection.body || t("markdown_placeholder_code_body", "type your code");
             const text = "```" + lang + "\n" + body + "\n```";
             const bodyStart = ("```" + lang + "\n").length;
+            if (selection.body) {
+                return {
+                    text: text,
+                    selectStart: text.length,
+                    selectEnd: text.length,
+                    replaceStart: selection.replaceStart,
+                    replaceEnd: selection.replaceEnd,
+                };
+            }
             return {
                 text: text,
                 selectStart: bodyStart,
                 selectEnd: bodyStart + body.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd,
             };
         }
 
         function buildListTableSnippet() {
+            const selection = getMarkdownSnippetSelection(editorContentInput);
             const col1 = t("markdown_placeholder_table_col1", "Column 1");
             const col2 = t("markdown_placeholder_table_col2", "Column 2");
             const table = [
@@ -4033,6 +4447,8 @@
                 text: table,
                 selectStart: 2,
                 selectEnd: 2 + col1.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd,
             };
         }
 
@@ -4066,14 +4482,21 @@
             } else if (snippetType === "quote") {
                 snippet = buildListPrefixedLinesSnippet("> ", t("markdown_placeholder_quote", "quote"));
             } else if (snippetType === "divider") {
-                snippet = { text: "\n---\n", selectStart: 5, selectEnd: 5 };
+                const selection = getMarkdownSnippetSelection(editorContentInput);
+                snippet = {
+                    text: "\n---\n",
+                    selectStart: 5,
+                    selectEnd: 5,
+                    replaceStart: selection.replaceStart,
+                    replaceEnd: selection.replaceEnd,
+                };
             } else if (snippetType === "table") {
                 snippet = buildListTableSnippet();
             }
             if (!snippet) {
                 return;
             }
-            replaceListEditorSelection(snippet.text, snippet.selectStart, snippet.selectEnd);
+            replaceListEditorSelection(snippet.text, snippet.selectStart, snippet.selectEnd, snippet.replaceStart, snippet.replaceEnd);
         }
 
         function findListEditorSuggestions(extension, tokenText) {
@@ -4153,6 +4576,7 @@
                 imageEditorSurface,
                 videoEditorSurface,
                 audioEditorSurface,
+                spreadsheetEditorSurface,
             ].forEach(function (element) {
                 if (element && typeof element.scrollLeft === "number") {
                     element.scrollLeft = 0;
@@ -4904,6 +5328,8 @@
         function setPreviewVisibility(isVisible) {
             if (!isVisible) {
                 void releasePreviewVideoPlayers(previewContent);
+                state.activeRenderedPreviewPath = "";
+                state.activePreviewRenderMode = "";
             }
             previewSetVisibility(previewPanel, listLayout, isVisible, scheduleSyncCurrentDirRowHeightWithSideHead);
             if (isVisible) {
@@ -4952,13 +5378,17 @@
         }
 
         function isEditableHandriveFileEntry(entry) {
+            if (getGoogleDriveDocsEditorUrl(entry)) {
+                return true;
+            }
             if (entry && entry.google_drive && entry.google_drive.can_edit_content === false) {
                 return false;
             }
             return !nonEditableMediaExtensions.has(getEntryFileExtension(entry))
                 || isImageEditorEntry(entry)
                 || isVideoEditorEntry(entry)
-                || isAudioEditorEntry(entry);
+                || isAudioEditorEntry(entry)
+                || isPdfEditorEntry(entry);
         }
 
         function isSortableListMetaKey(sortKey) {
@@ -5348,6 +5778,7 @@
                 previewDownloadButton: previewDownloadButton,
                 previewPrintButton: previewPrintButton,
                 previewEditButton: previewEditButton,
+                previewSpreadsheetSaveButton: previewSpreadsheetSaveButton,
                 previewDeleteButton: previewDeleteButton,
                 previewUrlShareButton: previewUrlShareButton,
                 previewCanPrint: Boolean(
@@ -5359,8 +5790,9 @@
                 urlShareApiUrl: urlShareApiUrl,
                 isPreviewableFileEntry: isPreviewableFileEntry,
                 isEditableHandriveFileEntry: isEditableHandriveFileEntry,
+                isSpreadsheetPreviewEntry: isSpreadsheetEditorEntry,
                 buildDownloadUrl: buildDownloadUrl,
-                onEdit: switchToEditor,
+                onEdit: editEntry,
             });
         }
 
@@ -5392,7 +5824,6 @@
             }
             previewCancelScrollIntoView({ freezePosition: true });
             lockPreviewBodyHeightForPortraitLoading();
-            void releasePreviewVideoPlayers(previewContent);
             setPreviewBodyLoading(true);
         }
 
@@ -5404,7 +5835,9 @@
                     ? videoEditorScriptUrl
                     : normalizedKind === "audio"
                         ? audioEditorScriptUrl
-                        : "";
+                        : normalizedKind === "pdf"
+                            ? pdfEditorScriptUrl
+                            : "";
             if (normalizedKind === "video") {
                 return loadVideoPlayerStack().then(function () {
                     return loadLazyScriptOnce(scriptUrl, getMediaEditorGlobalName(normalizedKind));
@@ -5429,6 +5862,10 @@
             }
             stopPreviewMediaElements(previewContent);
 
+            if (isPdfEditorEntry(entry)) {
+                switchToPdfEditor(entry);
+                return;
+            }
             if (isImageEditorEntry(entry)) {
                 switchToImageEditor(entry);
                 return;
@@ -5441,12 +5878,29 @@
                 switchToAudioEditor(entry);
                 return;
             }
+            if (isSpreadsheetEditorEntry(entry)) {
+                switchToSpreadsheetEditor(entry);
+                return;
+            }
 
             if (!editorContentInput) return;
 
             activeListEditorEntry = entry || null;
             listMarkdownUploadedImagePaths = [];
             clearListEditorSuggestion();
+            if (spreadsheetEditorSurface && !spreadsheetEditorSurface.hidden) {
+                if (window.HandriveSpreadsheetEditor) window.HandriveSpreadsheetEditor.destroy();
+                spreadsheetEditorSurface.hidden = true;
+            }
+            if (pdfEditorSurface && !pdfEditorSurface.hidden) {
+                if (window.HandrivePdfEditor) window.HandrivePdfEditor.destroy();
+                pdfEditorSurface.hidden = true;
+            }
+            if (editorSurface) editorSurface.hidden = false;
+            if (imageEditorSurface) imageEditorSurface.hidden = true;
+            if (videoEditorSurface) videoEditorSurface.hidden = true;
+            if (audioEditorSurface) audioEditorSurface.hidden = true;
+            if (pdfEditorSurface) pdfEditorSurface.hidden = true;
             editorSwitchToEditorUI({
                 entry: entry,
                 editorPanel: editorPanel,
@@ -5480,15 +5934,93 @@
             setupEditorEvents(entry);
         }
 
+        async function switchToPdfEditor(entry) {
+            activeListEditorEntry = entry || null;
+            stopPreviewMediaElements(previewContent);
+
+            if (editorSurface) editorSurface.hidden = true;
+            if (imageEditorSurface) imageEditorSurface.hidden = true;
+            if (videoEditorSurface) videoEditorSurface.hidden = true;
+            if (audioEditorSurface) audioEditorSurface.hidden = true;
+            if (spreadsheetEditorSurface) spreadsheetEditorSurface.hidden = true;
+            if (pdfEditorSurface) pdfEditorSurface.hidden = false;
+            if (window.HandriveSpreadsheetEditor) window.HandriveSpreadsheetEditor.destroy();
+
+            if (editorFilenameInput) editorFilenameInput.value = entry.name || "";
+
+            if (previewPanel) {
+                previewPanel.hidden = true;
+                previewPanel.setAttribute("aria-hidden", "true");
+            }
+            if (editorPanel) {
+                editorPanel.hidden = false;
+                editorPanel.setAttribute("aria-hidden", "false");
+            }
+            if (listLayout) {
+                listLayout.classList.remove("has-preview");
+                listLayout.classList.add("has-editor");
+            }
+            scheduleSyncCurrentDirRowHeightWithSideHead();
+            syncSearchFormVisibility();
+
+            if (editorSaveButton) editorSaveButton.disabled = true;
+            setListEditorSaving(true);
+            try {
+                await ensureListMediaEditorScript("pdf");
+            } catch (error) {
+                setListEditorSaving(false);
+                if (editorSaveButton) editorSaveButton.disabled = false;
+                alertError(error);
+                return;
+            }
+            try {
+                if (!window.HandrivePdfEditor) {
+                    throw new Error(t("pdf_editor_load_error", "PDF 편집기를 불러오지 못했습니다."));
+                }
+                await window.HandrivePdfEditor.init({
+                    entry: entry,
+                    metaUrl: buildPdfEditorApiUrl(pdfEditorMetaUrl, entry.path),
+                    pageUrlBuilder: function (pageIndex, scale) {
+                        return buildPdfEditorApiUrl(pdfEditorPageUrl, entry.path, {
+                            page: String(pageIndex),
+                            scale: String(scale || 2),
+                        });
+                    },
+                    onDirtyChange: function (dirty) {
+                        if (editorSaveButton) {
+                            editorSaveButton.classList.toggle("is-dirty", dirty);
+                        }
+                    },
+                });
+            } catch (error) {
+                setListEditorSaving(false);
+                if (editorSaveButton) editorSaveButton.disabled = false;
+                alertError(error);
+                switchToPreview();
+                return;
+            }
+            setListEditorSaving(false);
+            scheduleListEditorHorizontalScrollReset();
+
+            setupEditorEvents(entry);
+            if (editorSaveButton) editorSaveButton.disabled = false;
+        }
+
         async function switchToImageEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
+            if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
+                window.HandrivePdfEditor.destroy();
+            }
 
             // 텍스트 surface 숨김, 이미지 surface 표시
             if (editorSurface) editorSurface.hidden = true;
             if (videoEditorSurface) videoEditorSurface.hidden = true;
             if (audioEditorSurface) audioEditorSurface.hidden = true;
+            if (pdfEditorSurface) pdfEditorSurface.hidden = true;
+            if (spreadsheetEditorSurface) spreadsheetEditorSurface.hidden = true;
             if (imageEditorSurface) imageEditorSurface.hidden = false;
+            if (window.HandriveSpreadsheetEditor) window.HandriveSpreadsheetEditor.destroy();
 
             // 파일명 입력창 설정
             if (editorFilenameInput) editorFilenameInput.value = entry.name || "";
@@ -5543,11 +6075,17 @@
         async function switchToVideoEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
+            if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
+                window.HandrivePdfEditor.destroy();
+            }
 
             if (editorSurface) editorSurface.hidden = true;
             if (imageEditorSurface) imageEditorSurface.hidden = true;
             if (audioEditorSurface) audioEditorSurface.hidden = true;
+            if (pdfEditorSurface) pdfEditorSurface.hidden = true;
+            if (spreadsheetEditorSurface) spreadsheetEditorSurface.hidden = true;
             if (videoEditorSurface) videoEditorSurface.hidden = false;
+            if (window.HandriveSpreadsheetEditor) window.HandriveSpreadsheetEditor.destroy();
 
             if (editorFilenameInput) editorFilenameInput.value = entry.name || "";
 
@@ -5601,11 +6139,17 @@
         async function switchToAudioEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
+            if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
+                window.HandrivePdfEditor.destroy();
+            }
 
             if (editorSurface) editorSurface.hidden = true;
             if (imageEditorSurface) imageEditorSurface.hidden = true;
             if (videoEditorSurface) videoEditorSurface.hidden = true;
+            if (pdfEditorSurface) pdfEditorSurface.hidden = true;
+            if (spreadsheetEditorSurface) spreadsheetEditorSurface.hidden = true;
             if (audioEditorSurface) audioEditorSurface.hidden = false;
+            if (window.HandriveSpreadsheetEditor) window.HandriveSpreadsheetEditor.destroy();
 
             if (editorFilenameInput) editorFilenameInput.value = entry.name || "";
 
@@ -5656,6 +6200,67 @@
             if (editorSaveButton) editorSaveButton.disabled = false;
         }
 
+        async function switchToSpreadsheetEditor(entry) {
+            activeListEditorEntry = entry || null;
+            stopPreviewMediaElements(previewContent);
+            if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
+                window.HandrivePdfEditor.destroy();
+            }
+
+            if (editorSurface) editorSurface.hidden = true;
+            if (imageEditorSurface) imageEditorSurface.hidden = true;
+            if (videoEditorSurface) videoEditorSurface.hidden = true;
+            if (audioEditorSurface) audioEditorSurface.hidden = true;
+            if (pdfEditorSurface) pdfEditorSurface.hidden = true;
+            if (spreadsheetEditorSurface) spreadsheetEditorSurface.hidden = false;
+
+            if (editorFilenameInput) editorFilenameInput.value = entry.name || "";
+
+            if (previewPanel) {
+                previewPanel.hidden = true;
+                previewPanel.setAttribute("aria-hidden", "true");
+            }
+            if (editorPanel) {
+                editorPanel.hidden = false;
+                editorPanel.setAttribute("aria-hidden", "false");
+            }
+            if (listLayout) {
+                listLayout.classList.remove("has-preview");
+                listLayout.classList.add("has-editor");
+            }
+            scheduleSyncCurrentDirRowHeightWithSideHead();
+            syncSearchFormVisibility();
+
+            if (editorSaveButton) editorSaveButton.disabled = true;
+            setListEditorSaving(true);
+            try {
+                if (!window.HandriveSpreadsheetEditor) {
+                    throw new Error(t("spreadsheet_editor_load_error", "스프레드시트 에디터를 불러오지 못했습니다."));
+                }
+                await window.HandriveSpreadsheetEditor.init({
+                    surface: spreadsheetEditorSurface,
+                    entry: entry,
+                    downloadUrl: buildDownloadUrl(entry.path),
+                    licenseKey: handsontableLicenseKey,
+                    onDirtyChange: function (dirty) {
+                        if (editorSaveButton) {
+                            editorSaveButton.classList.toggle("is-dirty", dirty);
+                        }
+                    },
+                });
+            } catch (error) {
+                alertError(error);
+                switchToPreview();
+                return;
+            } finally {
+                setListEditorSaving(false);
+                if (editorSaveButton) editorSaveButton.disabled = false;
+            }
+
+            scheduleListEditorHorizontalScrollReset();
+            setupEditorEvents(entry);
+        }
+
         function switchToPreview() {
             // 이미지 에디터 정리
             if (imageEditorSurface && !imageEditorSurface.hidden) {
@@ -5671,6 +6276,16 @@
             if (audioEditorSurface && !audioEditorSurface.hidden) {
                 if (window.HandriveAudioEditor) window.HandriveAudioEditor.destroy();
                 audioEditorSurface.hidden = true;
+                if (editorSurface) editorSurface.hidden = false;
+            }
+            if (pdfEditorSurface && !pdfEditorSurface.hidden) {
+                if (window.HandrivePdfEditor) window.HandrivePdfEditor.destroy();
+                pdfEditorSurface.hidden = true;
+                if (editorSurface) editorSurface.hidden = false;
+            }
+            if (spreadsheetEditorSurface && !spreadsheetEditorSurface.hidden) {
+                if (window.HandriveSpreadsheetEditor) window.HandriveSpreadsheetEditor.destroy();
+                spreadsheetEditorSurface.hidden = true;
                 if (editorSurface) editorSurface.hidden = false;
             }
 
@@ -5852,9 +6467,190 @@
                     .catch(alertError);
             }
 
+            function buildListEditorTargetPath(targetDir, filenameValue, extensionValue) {
+                const filename = String(filenameValue || "").trim();
+                if (!filename) {
+                    return "";
+                }
+                const extension = String(extensionValue || "").trim();
+                const leafName = filename + extension;
+                const normalizedDir = normalizePath(targetDir || "", true);
+                return normalizePath(normalizedDir ? normalizedDir + "/" + leafName : leafName, true);
+            }
+
+            async function getListEditorSaveTargetEntry(targetPath) {
+                const normalizedTarget = normalizePath(targetPath || "", true);
+                if (!normalizedTarget) {
+                    return null;
+                }
+                const knownEntry = state.entryByPath.get(normalizedTarget);
+                if (knownEntry) {
+                    return knownEntry;
+                }
+                const parentPath = getParentDirectory(normalizedTarget);
+                try {
+                    await loadDirectory(parentPath);
+                } catch (error) {
+                    return state.entryByPath.get(normalizedTarget) || null;
+                }
+                return state.entryByPath.get(normalizedTarget) || null;
+            }
+
+            async function confirmListEditorOverwriteIfNeeded(sourcePath, targetPath) {
+                const normalizedSource = normalizePath(sourcePath || "", true);
+                const normalizedTarget = normalizePath(targetPath || "", true);
+                if (!normalizedTarget) {
+                    return false;
+                }
+                const targetEntry = await getListEditorSaveTargetEntry(normalizedTarget);
+                if (targetEntry && targetEntry.type === "dir") {
+                    throw new Error(t("save_overwrite_folder_error", "같은 이름의 폴더가 이미 있어 파일로 덮어쓸 수 없습니다."));
+                }
+                const willOverwrite = normalizedTarget === normalizedSource || Boolean(targetEntry && targetEntry.type === "file");
+                if (!willOverwrite) {
+                    return true;
+                }
+                return requestConfirmDialog({
+                    title: t("save_overwrite_confirm_title", "파일 덮어쓰기"),
+                    message: t("save_overwrite_confirm_message", "이미 있는 파일을 덮어씁니다. 계속할까요?") + " " + getHandrivePathLabel(normalizedTarget),
+                    cancelText: t("cancel", "취소"),
+                    confirmText: t("save_overwrite_confirm_button", "덮어쓰기"),
+                });
+            }
+
+            function resolveListEditorSaveTarget(rawFilename, sourcePath, extensionOverride) {
+                const resolved = resolveListEditorFilenameAndExtension(rawFilename, sourcePath);
+                const targetDir = getParentDirectory(sourcePath);
+                const targetExtension = extensionOverride || resolved.extension;
+                return {
+                    filename: resolved.filename,
+                    extension: targetExtension,
+                    targetDir: targetDir,
+                    targetPath: buildListEditorTargetPath(targetDir, resolved.filename, targetExtension),
+                };
+            }
+
+            function getListImageSaveExtensionOverride() {
+                if (
+                    window.HandriveImageEditor &&
+                    typeof window.HandriveImageEditor.getSaveExtensionOverride === "function"
+                ) {
+                    return String(window.HandriveImageEditor.getSaveExtensionOverride() || "").trim().toLowerCase();
+                }
+                return "";
+            }
+
             // 저장/취소 버튼 이벤트를 현재 편집 대상(entry)에 바인딩
             editorSaveButton.onclick = function (event) {
                 event.preventDefault();
+                if (spreadsheetEditorSurface && !spreadsheetEditorSurface.hidden && window.HandriveSpreadsheetEditor) {
+                    const csrfToken = getCsrfToken();
+                    const savingText = t("spreadsheet_editor_saving", "저장 중...");
+                    const origText = editorSaveButton.textContent;
+                    const spreadsheetFilename = String(editorFilenameInput ? editorFilenameInput.value || "" : "").trim();
+                    if (!spreadsheetFilename) {
+                        alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
+                        return;
+                    }
+                    const sourcePath = normalizePath(entry.path, false);
+                    let saveTarget;
+                    try {
+                        saveTarget = resolveListEditorSaveTarget(spreadsheetFilename, sourcePath);
+                    } catch (error) {
+                        alertError(error);
+                        return;
+                    }
+                    editorSaveButton.disabled = true;
+                    editorSaveButton.textContent = savingText;
+                    (async function () {
+                        const isDirty = typeof window.HandriveSpreadsheetEditor.getIsDirty === "function"
+                            ? window.HandriveSpreadsheetEditor.getIsDirty()
+                            : true;
+                        if (!isDirty && spreadsheetFilename === String(entry.name || "")) {
+                            switchToPreview();
+                            return null;
+                        }
+                        const overwriteConfirmed = await confirmListEditorOverwriteIfNeeded(sourcePath, saveTarget.targetPath);
+                        if (!overwriteConfirmed) {
+                            return null;
+                        }
+                        let commitMessage = "";
+                        if (entry.requires_commit_message) {
+                            commitMessage = await promptCommitMessage(entry.path);
+                            if (commitMessage === null) {
+                                return null;
+                            }
+                        }
+                        setListEditorSaving(true);
+                        return window.HandriveSpreadsheetEditor.saveToServer({
+                            saveUrl: spreadsheetSaveApiUrl,
+                            csrfToken: csrfToken,
+                            originalPath: sourcePath,
+                            targetDir: saveTarget.targetDir,
+                            filename: saveTarget.filename,
+                            extension: saveTarget.extension,
+                            commitMessage: commitMessage,
+                        });
+                    })()
+                        .then(function (result) {
+                            if (result) {
+                                handleMediaEditorSaved(result, { openPreview: true });
+                            }
+                        })
+                        .catch(alertError)
+                        .finally(function () {
+                            setListEditorSaving(false);
+                            editorSaveButton.disabled = false;
+                            editorSaveButton.textContent = origText;
+                    });
+                    return;
+                }
+                if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
+                    const csrfToken = getCsrfToken();
+                    const savingText = t("pdf_editor_saving", "저장 중...");
+                    const origText = editorSaveButton.textContent;
+                    const pdfFilename = String(editorFilenameInput ? editorFilenameInput.value || "" : "").trim();
+                    if (!pdfFilename) {
+                        alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
+                        return;
+                    }
+                    (async function () {
+                        if (
+                            typeof window.HandrivePdfEditor.getIsDirty === "function" &&
+                            !window.HandrivePdfEditor.getIsDirty() &&
+                            pdfFilename === String(entry.name || "")
+                        ) {
+                            switchToPreview();
+                            return;
+                        }
+                        const sourcePath = normalizePath(entry.path, false);
+                        const saveTarget = resolveListEditorSaveTarget(pdfFilename, sourcePath);
+                        const overwriteConfirmed = await confirmListEditorOverwriteIfNeeded(sourcePath, saveTarget.targetPath);
+                        if (!overwriteConfirmed) {
+                            return;
+                        }
+                        editorSaveButton.disabled = true;
+                        editorSaveButton.textContent = savingText;
+                        setListEditorSaving(true);
+                        window.HandrivePdfEditor.saveToServer(
+                            pdfEditorSaveUrl,
+                            csrfToken,
+                            entry.path,
+                            function (result) {
+                                setListEditorSaving(false);
+                                editorSaveButton.disabled = false;
+                                editorSaveButton.textContent = origText;
+                                if (result && result.ok) {
+                                    handleMediaEditorSaved(result, { openPreview: true });
+                                } else {
+                                    alertError(new Error(selectServerMessage(result, t("pdf_editor_save_error", "PDF 저장 실패"))));
+                                }
+                            },
+                            { filename: pdfFilename }
+                        );
+                    })().catch(alertError);
+                    return;
+                }
                 // 이미지 에디터 모드 분기
                 if (imageEditorSurface && !imageEditorSurface.hidden && window.HandriveImageEditor) {
                     const csrfToken = getCsrfToken();
@@ -5865,108 +6661,133 @@
                         alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
                         return;
                     }
-                    if (
-                        typeof window.HandriveImageEditor.getIsDirty === "function" &&
-                        !window.HandriveImageEditor.getIsDirty() &&
-                        imageFilename !== String(entry.name || "")
-                    ) {
+                    (async function () {
+                        if (
+                            typeof window.HandriveImageEditor.getIsDirty === "function" &&
+                            !window.HandriveImageEditor.getIsDirty() &&
+                            imageFilename === String(entry.name || "")
+                        ) {
+                            switchToPreview();
+                            return;
+                        }
+                        const sourcePath = normalizePath(entry.path, false);
+                        const saveTarget = resolveListEditorSaveTarget(imageFilename, sourcePath, getListImageSaveExtensionOverride());
+                        const overwriteConfirmed = await confirmListEditorOverwriteIfNeeded(sourcePath, saveTarget.targetPath);
+                        if (!overwriteConfirmed) {
+                            return;
+                        }
                         editorSaveButton.disabled = true;
                         editorSaveButton.textContent = savingText;
-                        (async function () {
-                            let commitMessage = "";
-                            if (entry.requires_commit_message) {
-                                commitMessage = await promptCommitMessage(entry.path);
-                                if (commitMessage === null) {
-                                    return null;
-                                }
-                            }
-                            setListEditorSaving(true);
-                            return requestJson(renameApiUrl, buildPostOptions({
-                                path: entry.path,
-                                new_name: imageFilename,
-                                commit_message: commitMessage,
-                            }));
-                        })()
-                            .then(function (result) {
-                                if (result) {
-                                    handleMediaEditorSaved(result, { openPreview: true });
-                                }
-                            })
-                            .catch(alertError)
-                            .finally(function () {
+                        setListEditorSaving(true);
+                        window.HandriveImageEditor.saveToServer(
+                            imageEditorSaveUrl,
+                            csrfToken,
+                            entry.path,
+                            function (result) {
                                 setListEditorSaving(false);
                                 editorSaveButton.disabled = false;
                                 editorSaveButton.textContent = origText;
-                            });
-                        return;
-                    }
-                    editorSaveButton.disabled = true;
-                    editorSaveButton.textContent = savingText;
-                    setListEditorSaving(true);
-                    window.HandriveImageEditor.saveToServer(
-                        imageEditorSaveUrl,
-                        csrfToken,
-                        entry.path,
-                        function (result) {
-                            setListEditorSaving(false);
-                            editorSaveButton.disabled = false;
-                            editorSaveButton.textContent = origText;
-                            if (result.ok) {
-                                handleMediaEditorSaved(result, { openPreview: true });
-                            } else {
-                                alertError(new Error(selectServerMessage(result, t("image_editor_save_error", "저장 실패"))));
-                            }
-                        },
-                        { filename: imageFilename }
-                    );
+                                if (result.ok) {
+                                    handleMediaEditorSaved(result, { openPreview: true });
+                                } else {
+                                    alertError(new Error(selectServerMessage(result, t("image_editor_save_error", "저장 실패"))));
+                                }
+                            },
+                            { filename: imageFilename }
+                        );
+                    })().catch(alertError);
                     return;
                 }
                 if (videoEditorSurface && !videoEditorSurface.hidden && window.HandriveVideoEditor) {
                     const csrfToken = getCsrfToken();
                     const savingText = t("video_editor_saving", "저장 중...");
                     const origText = editorSaveButton.textContent;
-                    editorSaveButton.disabled = true;
-                    editorSaveButton.textContent = savingText;
-                    setListEditorSaving(true);
-                    window.HandriveVideoEditor.saveToServer(
-                        videoEditorSaveUrl,
-                        csrfToken,
-                        entry.path,
-                        function (result) {
-                            setListEditorSaving(false);
-                            editorSaveButton.disabled = false;
-                            editorSaveButton.textContent = origText;
-                            if (result && result.ok) {
-                                handleMediaEditorSaved(result);
-                            } else {
-                                alertError(new Error(selectServerMessage(result, t("video_editor_save_error", "비디오 저장 실패"))));
-                            }
+                    const videoFilename = String(editorFilenameInput ? editorFilenameInput.value || "" : "").trim();
+                    if (!videoFilename) {
+                        alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
+                        return;
+                    }
+                    (async function () {
+                        if (
+                            typeof window.HandriveVideoEditor.getIsDirty === "function" &&
+                            !window.HandriveVideoEditor.getIsDirty() &&
+                            videoFilename === String(entry.name || "")
+                        ) {
+                            switchToPreview();
+                            return;
                         }
-                    );
+                        const sourcePath = normalizePath(entry.path, false);
+                        const saveTarget = resolveListEditorSaveTarget(videoFilename, sourcePath);
+                        const overwriteConfirmed = await confirmListEditorOverwriteIfNeeded(sourcePath, saveTarget.targetPath);
+                        if (!overwriteConfirmed) {
+                            return;
+                        }
+                        editorSaveButton.disabled = true;
+                        editorSaveButton.textContent = savingText;
+                        setListEditorSaving(true);
+                        window.HandriveVideoEditor.saveToServer(
+                            videoEditorSaveUrl,
+                            csrfToken,
+                            entry.path,
+                            function (result) {
+                                setListEditorSaving(false);
+                                editorSaveButton.disabled = false;
+                                editorSaveButton.textContent = origText;
+                                if (result && result.ok) {
+                                    handleMediaEditorSaved(result);
+                                } else {
+                                    alertError(new Error(selectServerMessage(result, t("video_editor_save_error", "비디오 저장 실패"))));
+                                }
+                            },
+                            { filename: videoFilename }
+                        );
+                    })().catch(alertError);
                     return;
                 }
                 if (audioEditorSurface && !audioEditorSurface.hidden && window.HandriveAudioEditor) {
                     const csrfToken = getCsrfToken();
                     const savingText = t("audio_editor_saving", "저장 중...");
                     const origText = editorSaveButton.textContent;
-                    editorSaveButton.disabled = true;
-                    editorSaveButton.textContent = savingText;
-                    setListEditorSaving(true);
-                    window.HandriveAudioEditor.saveToServer(
-                        audioEditorSaveUrl,
-                        csrfToken,
-                        entry.path,
-                        function (result) {
-                            setListEditorSaving(false);
-                            editorSaveButton.disabled = false;
-                            editorSaveButton.textContent = origText;
-                            if (result && result.ok) {
-                                handleMediaEditorSaved(result);
-                            } else {
-                                alertError(new Error(selectServerMessage(result, t("audio_editor_save_error", "오디오 저장 실패"))));
-                            }
+                    const audioFilename = String(editorFilenameInput ? editorFilenameInput.value || "" : "").trim();
+                    if (!audioFilename) {
+                        alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
+                        return;
+                    }
+                    (async function () {
+                        if (
+                            typeof window.HandriveAudioEditor.getIsDirty === "function" &&
+                            !window.HandriveAudioEditor.getIsDirty() &&
+                            audioFilename === String(entry.name || "")
+                        ) {
+                            switchToPreview();
+                            return;
                         }
-                    );
+                        const sourcePath = normalizePath(entry.path, false);
+                        const saveTarget = resolveListEditorSaveTarget(audioFilename, sourcePath);
+                        const overwriteConfirmed = await confirmListEditorOverwriteIfNeeded(sourcePath, saveTarget.targetPath);
+                        if (!overwriteConfirmed) {
+                            return;
+                        }
+                        editorSaveButton.disabled = true;
+                        editorSaveButton.textContent = savingText;
+                        setListEditorSaving(true);
+                        window.HandriveAudioEditor.saveToServer(
+                            audioEditorSaveUrl,
+                            csrfToken,
+                            entry.path,
+                            function (result) {
+                                setListEditorSaving(false);
+                                editorSaveButton.disabled = false;
+                                editorSaveButton.textContent = origText;
+                                if (result && result.ok) {
+                                    handleMediaEditorSaved(result);
+                                } else {
+                                    alertError(new Error(selectServerMessage(result, t("audio_editor_save_error", "오디오 저장 실패"))));
+                                }
+                            },
+                            { filename: audioFilename }
+                        );
+                    })().catch(alertError);
                     return;
                 }
                 saveEditorContent(entry).catch(alertError);
@@ -5989,6 +6810,20 @@
                 }
                 if (audioEditorSurface && !audioEditorSurface.hidden && window.HandriveAudioEditor) {
                     if (window.HandriveAudioEditor.getIsDirty()) {
+                        if (!window.confirm(t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"))) {
+                            return;
+                        }
+                    }
+                }
+                if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
+                    if (window.HandrivePdfEditor.getIsDirty()) {
+                        if (!window.confirm(t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"))) {
+                            return;
+                        }
+                    }
+                }
+                if (spreadsheetEditorSurface && !spreadsheetEditorSurface.hidden && window.HandriveSpreadsheetEditor) {
+                    if (window.HandriveSpreadsheetEditor.getIsDirty()) {
                         if (!window.confirm(t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"))) {
                             return;
                         }
@@ -6031,6 +6866,12 @@
                     control.disabled = isSaving;
                 }
             });
+            if (spreadsheetEditorSurface && !spreadsheetEditorSurface.hidden && window.HandriveSpreadsheetEditor) {
+                window.HandriveSpreadsheetEditor.setDisabled(isSaving);
+            }
+            if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
+                window.HandrivePdfEditor.setDisabled(isSaving);
+            }
         }
 
         async function saveEditorContent(entry) {
@@ -6046,6 +6887,7 @@
             const resolved = resolveListEditorFilenameAndExtension(editorFilenameInput.value, entry.path);
             const sourcePath = normalizePath(entry.path, false);
             const targetDir = getParentDirectory(sourcePath);
+            const targetPath = buildListEditorTargetPath(targetDir, resolved.filename, resolved.extension);
             let editorSavingShown = false;
 
             // 중복 저장 방지를 위해 저장 중 버튼 비활성화
@@ -6061,6 +6903,10 @@
                     extension: resolved.extension,
                     content: content,
                 };
+                const overwriteConfirmed = await confirmListEditorOverwriteIfNeeded(sourcePath, targetPath);
+                if (!overwriteConfirmed) {
+                    return;
+                }
                 if (entry && entry.requires_commit_message) {
                     const commitMessage = await promptCommitMessage(sourcePath);
                     if (commitMessage === null) {
@@ -6232,6 +7078,14 @@
             state.activeRenderedPreviewPath = "";
             state.activePreviewRenderMode = "";
             state.previewRequestToken += 1;
+            if (state.previewAbortController && typeof state.previewAbortController.abort === "function") {
+                try {
+                    state.previewAbortController.abort();
+                } catch (error) {
+                    // ignore stale preview request cleanup failures
+                }
+            }
+            state.previewAbortController = null;
             state.previewImageZoom = 1;
             syncEntryRowSelectedStates([previousActivePreviewPath]);
             setPreviewVisibility(false);
@@ -6347,6 +7201,9 @@
                 syncPreviewImageZoom: syncPreviewImageZoom,
                 t: t,
             });
+            if (window.HandriveSpreadsheetEditor && typeof window.HandriveSpreadsheetEditor.hydratePreviews === "function") {
+                window.HandriveSpreadsheetEditor.hydratePreviews(previewContent);
+            }
             bindHandrivePdfFrameLoading(previewContent);
             initializePreviewVideoPlayers(previewContent).catch(alertError);
             releasePreviewBodyHeightWhenRendered(renderMode);
@@ -6434,6 +7291,7 @@
             setContextButtonVisible(contextCreateMapButton, Boolean(visibility.createMap));
             setContextButtonVisible(contextConvertMp3Button, Boolean(visibility.convertMp3 && convertMp3ApiUrl));
             setContextButtonVisible(contextChangeIconButton, Boolean(visibility.changeIcon && folderIconUploadApiUrl));
+            setContextButtonVisible(contextGoogleDriveAddItemsButton, Boolean(visibility.googleDriveAddItems));
             syncContextMenuDividers(contextMenu);
         }
 
@@ -7073,6 +7931,9 @@
             if (listContainer) {
                 listContainer.classList.remove("is-file-drop-root-target");
             }
+            if (listPane) {
+                listPane.classList.remove("is-file-drop-root-target");
+            }
         }
 
         function addFileDropGroupRow(rows, row) {
@@ -7147,8 +8008,12 @@
             if (rows.length === 0) {
                 return;
             }
+            const isRootDropTarget = Boolean(targetPath && targetPath === currentDirPath);
             if (listContainer) {
-                listContainer.classList.toggle("is-file-drop-root-target", Boolean(targetPath && targetPath === currentDirPath));
+                listContainer.classList.toggle("is-file-drop-root-target", isRootDropTarget);
+            }
+            if (listPane) {
+                listPane.classList.toggle("is-file-drop-root-target", isRootDropTarget);
             }
             rows.forEach(function (row, index) {
                 const item = row.closest(".handrive-item");
@@ -7191,6 +8056,24 @@
             return Boolean(itemRow && state.fileDropGroupRows.indexOf(itemRow) !== -1);
         }
 
+        function isPointerInsideElement(event, element) {
+            if (!event || !(element instanceof Element)) {
+                return false;
+            }
+            const clientX = Number(event.clientX);
+            const clientY = Number(event.clientY);
+            if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+                return false;
+            }
+            const rect = element.getBoundingClientRect();
+            return (
+                clientX >= rect.left &&
+                clientX <= rect.right &&
+                clientY >= rect.top &&
+                clientY <= rect.bottom
+            );
+        }
+
         function getCurrentDirectoryDropRow() {
             const currentDirPath = normalizePath(state.currentDir || "", true);
             if (!currentDirPath) {
@@ -7201,6 +8084,29 @@
                 return null;
             }
             return state.entryRowByPath.get(currentDirPath) || null;
+        }
+
+        function isCurrentDirectoryDropEvent(event, currentDirRow) {
+            if (!(currentDirRow instanceof Element)) {
+                return false;
+            }
+            const targetNode = event && event.target instanceof Element ? event.target : null;
+            if (targetNode && (targetNode === currentDirRow || currentDirRow.contains(targetNode))) {
+                return true;
+            }
+            return isPointerInsideElement(event, currentDirRow);
+        }
+
+        function shouldDeferToCurrentDirectoryDropTarget(event, highlightElement) {
+            return Boolean(getDeferredCurrentDirectoryDropRow(event, highlightElement));
+        }
+
+        function getDeferredCurrentDirectoryDropRow(event, highlightElement) {
+            const currentDirRow = getCurrentDirectoryDropRow();
+            if (!currentDirRow || currentDirRow === highlightElement) {
+                return null;
+            }
+            return isPointerInsideElement(event, currentDirRow) ? currentDirRow : null;
         }
 
         function isBareListFileDropTarget(targetNode) {
@@ -8174,6 +9080,14 @@
             const driveMoveOptions = Object.assign({}, bindOptions, { allowSameParent: false });
 
             targetElement.addEventListener("dragenter", function (event) {
+                const deferredCurrentDirRow = getDeferredCurrentDirectoryDropRow(event, highlightElement);
+                if (deferredCurrentDirRow && isFileTransfer(event)) {
+                    activateFileDropTarget(event, state.currentDir, deferredCurrentDirRow);
+                    return;
+                }
+                if (deferredCurrentDirRow) {
+                    return;
+                }
                 if (isFileTransfer(event)) {
                     activateFileDropTarget(event, targetDirPath, highlightElement);
                     return;
@@ -8188,6 +9102,14 @@
             });
 
             targetElement.addEventListener("dragover", function (event) {
+                const deferredCurrentDirRow = getDeferredCurrentDirectoryDropRow(event, highlightElement);
+                if (deferredCurrentDirRow && isFileTransfer(event)) {
+                    activateFileDropTarget(event, state.currentDir, deferredCurrentDirRow);
+                    return;
+                }
+                if (deferredCurrentDirRow) {
+                    return;
+                }
                 if (isFileTransfer(event)) {
                     activateFileDropTarget(event, targetDirPath, highlightElement);
                     return;
@@ -8205,7 +9127,14 @@
                 if (!state.dragOverElement || state.dragOverElement !== highlightElement) {
                     return;
                 }
+                if (isPointerInsideElement(event, highlightElement)) {
+                    return;
+                }
                 if (isInsideCurrentFileDropGroup(event.relatedTarget)) {
+                    return;
+                }
+                const deferredCurrentDirRow = getDeferredCurrentDirectoryDropRow(event, highlightElement);
+                if (deferredCurrentDirRow && isPointerInsideElement(event, deferredCurrentDirRow)) {
                     return;
                 }
                 const nextHighlightElement = resolveFileDropHighlightElement(event.relatedTarget);
@@ -8220,6 +9149,9 @@
             });
 
             targetElement.addEventListener("drop", function (event) {
+                if (shouldDeferToCurrentDirectoryDropTarget(event, highlightElement)) {
+                    return;
+                }
                 if (isFileTransfer(event)) {
                     event.preventDefault();
                     event.stopPropagation();
@@ -8903,6 +9835,9 @@
                 closeContextMenu();
                 closePreviewPaneIfOpen();
                 selectEntriesByRowClick(currentFolderEntry, event);
+                if (shouldOpenGoogleDrivePickerOnClick(currentFolderEntry, event)) {
+                    openGoogleDriveItemPicker().catch(alertError);
+                }
             });
 
             row.addEventListener("contextmenu", function (event) {
@@ -9881,6 +10816,11 @@
                 navigateToDirectory(entry.path, { sourceEntry: entry }).catch(alertError);
                 return;
             }
+            const docsEditorUrl = getGoogleDriveDocsEditorUrl(entry);
+            if (docsEditorUrl) {
+                window.location.href = docsEditorUrl;
+                return;
+            }
             window.location.href = buildViewUrl(handriveBaseUrl, entry.slug_path || entry.path);
         }
 
@@ -9891,7 +10831,7 @@
             entries.forEach(function (entry) {
                 const targetUrl = entry.type === "dir"
                     ? buildListUrl(handriveBaseUrl, entry.path, handriveRootUrl)
-                    : buildViewUrl(handriveBaseUrl, entry.slug_path || entry.path);
+                    : (getGoogleDriveDocsEditorUrl(entry) || buildViewUrl(handriveBaseUrl, entry.slug_path || entry.path));
                 window.open(targetUrl, "_blank", "noopener");
             });
         }
@@ -9902,6 +10842,17 @@
             }
             const query = new URLSearchParams({ path: pathValue || "" }).toString();
             return appendSharedQuery(query ? downloadApiUrl + "?" + query : downloadApiUrl);
+        }
+
+        function buildPdfEditorApiUrl(baseUrl, pathValue, extraParams) {
+            if (!baseUrl) {
+                return "";
+            }
+            const params = new URLSearchParams({ path: pathValue || "" });
+            Object.keys(extraParams || {}).forEach(function (key) {
+                params.set(key, extraParams[key]);
+            });
+            return appendSharedQuery(baseUrl + "?" + params.toString());
         }
 
         function buildScopedHomeDownloadUrl(pathValue) {
@@ -9947,10 +10898,15 @@
                 window.location.href = buildWriteUrl(writeUrl, { dir: entry.path });
                 return;
             }
+            const docsEditorUrl = getGoogleDriveDocsEditorUrl(entry);
+            if (docsEditorUrl) {
+                window.location.href = docsEditorUrl;
+                return;
+            }
             if (!isEditableHandriveFileEntry(entry)) {
                 return;
             }
-            if (isImageEditorEntry(entry) || isVideoEditorEntry(entry) || isAudioEditorEntry(entry)) {
+            if (isPdfEditorEntry(entry) || isImageEditorEntry(entry) || isVideoEditorEntry(entry) || isAudioEditorEntry(entry)) {
                 switchToEditor(entry);
                 return;
             }
@@ -10084,6 +11040,10 @@
                 }
                 if (entry.type === "dir") {
                     if (event.detail === 1 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+                        if (shouldOpenGoogleDrivePickerOnClick(entry, event)) {
+                            openGoogleDriveItemPicker().catch(alertError);
+                            return;
+                        }
                         if (hasSharedContext() && entry.is_map_folder) {
                             openEntry(entry);
                             return;
@@ -10413,6 +11373,10 @@
                 }
                 if (action === "upload") {
                     openContextUploadPicker(entry);
+                    return;
+                }
+                if (action === "google-drive-add-items") {
+                    openGoogleDriveItemPicker().catch(alertError);
                     return;
                 }
                 if (action === "create-archive") {
@@ -11036,6 +12000,27 @@
             });
         }
 
+        document.addEventListener("keydown", function (event) {
+            const loweredKey = String(event.key || "").toLowerCase();
+            if (!(event.metaKey || event.ctrlKey) || event.altKey || loweredKey !== "s") {
+                return;
+            }
+            if (
+                !editorPanel ||
+                editorPanel.hidden ||
+                !spreadsheetEditorSurface ||
+                spreadsheetEditorSurface.hidden ||
+                !editorSaveButton
+            ) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            if (!editorSaveButton.disabled) {
+                editorSaveButton.click();
+            }
+        }, true);
+
         if (previewZoomOutButton) {
             previewZoomOutButton.addEventListener("click", function () {
                 setPreviewImageZoom(state.previewImageZoom - 0.25);
@@ -11237,11 +12222,15 @@
                 if (!isFileTransfer(event)) {
                     return;
                 }
+                const currentDirRow = getCurrentDirectoryDropRow();
+                if (currentDirRow && isCurrentDirectoryDropEvent(event, currentDirRow)) {
+                    activateFileDropTarget(event, state.currentDir, currentDirRow);
+                    return;
+                }
                 if (isInsideCurrentFileDropGroup(event.target)) {
                     event.preventDefault();
                     return;
                 }
-                const currentDirRow = getCurrentDirectoryDropRow();
                 if (currentDirRow && isBareListFileDropTarget(event.target)) {
                     activateFileDropTarget(event, state.currentDir, currentDirRow);
                     return;
@@ -11253,8 +12242,12 @@
                 if (!isFileTransfer(event)) {
                     return;
                 }
+                const currentDirRow = getCurrentDirectoryDropRow();
+                if (currentDirRow && isCurrentDirectoryDropEvent(event, currentDirRow)) {
+                    activateFileDropTarget(event, state.currentDir, currentDirRow);
+                    return;
+                }
                 if (!isInsideCurrentFileDropGroup(event.target)) {
-                    const currentDirRow = getCurrentDirectoryDropRow();
                     if (currentDirRow && isBareListFileDropTarget(event.target)) {
                         activateFileDropTarget(event, state.currentDir, currentDirRow);
                         return;
@@ -11275,6 +12268,9 @@
                 if (event.relatedTarget && listPane.contains(event.relatedTarget)) {
                     return;
                 }
+                if (isPointerInsideElement(event, listPane)) {
+                    return;
+                }
                 clearFileDragUiState();
             });
 
@@ -11283,9 +12279,14 @@
                     return;
                 }
                 event.preventDefault();
-                const targetDirPath = isInsideCurrentFileDropGroup(event.target) && state.fileDropGroupPath
-                    ? state.fileDropGroupPath
-                    : state.currentDir;
+                const currentDirRow = getCurrentDirectoryDropRow();
+                const targetDirPath = currentDirRow && isCurrentDirectoryDropEvent(event, currentDirRow)
+                    ? state.currentDir
+                    : (
+                        isInsideCurrentFileDropGroup(event.target) && state.fileDropGroupPath
+                            ? state.fileDropGroupPath
+                            : state.currentDir
+                    );
                 clearFileDragUiState();
                 enqueueUploadFiles(
                     event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files : [],
@@ -11299,6 +12300,15 @@
                 if (isFileTransfer(event) || !hasActiveDriveDrag()) {
                     return;
                 }
+                const currentDirRow = getCurrentDirectoryDropRow();
+                if (
+                    currentDirRow &&
+                    isCurrentDirectoryDropEvent(event, currentDirRow) &&
+                    canDropToDirectory(state.currentDir)
+                ) {
+                    activateDriveMoveDropTarget(event, state.currentDir, currentDirRow);
+                    return;
+                }
                 if (isInsideCurrentFileDropGroup(event.target)) {
                     event.preventDefault();
                     if (event.dataTransfer) {
@@ -11306,7 +12316,6 @@
                     }
                     return;
                 }
-                const currentDirRow = getCurrentDirectoryDropRow();
                 if (
                     currentDirRow &&
                     isBareListFileDropTarget(event.target) &&
@@ -11322,6 +12331,15 @@
                 if (isFileTransfer(event) || !hasActiveDriveDrag()) {
                     return;
                 }
+                const currentDirRow = getCurrentDirectoryDropRow();
+                if (
+                    currentDirRow &&
+                    isCurrentDirectoryDropEvent(event, currentDirRow) &&
+                    canDropToDirectory(state.currentDir)
+                ) {
+                    activateDriveMoveDropTarget(event, state.currentDir, currentDirRow);
+                    return;
+                }
                 if (isInsideCurrentFileDropGroup(event.target)) {
                     event.preventDefault();
                     if (event.dataTransfer) {
@@ -11329,7 +12347,6 @@
                     }
                     return;
                 }
-                const currentDirRow = getCurrentDirectoryDropRow();
                 if (
                     currentDirRow &&
                     isBareListFileDropTarget(event.target) &&
@@ -11345,9 +12362,14 @@
                 if (isFileTransfer(event) || !hasActiveDriveDrag()) {
                     return;
                 }
-                const targetDirPath = isInsideCurrentFileDropGroup(event.target) && state.fileDropGroupPath
-                    ? state.fileDropGroupPath
-                    : state.currentDir;
+                const currentDirRow = getCurrentDirectoryDropRow();
+                const targetDirPath = currentDirRow && isCurrentDirectoryDropEvent(event, currentDirRow)
+                    ? state.currentDir
+                    : (
+                        isInsideCurrentFileDropGroup(event.target) && state.fileDropGroupPath
+                            ? state.fileDropGroupPath
+                            : state.currentDir
+                    );
                 if (!canDropToDirectory(targetDirPath)) {
                     return;
                 }
@@ -11650,6 +12672,28 @@
             });
             updateSearchClearButtonVisibility();
         }
+
+        function openInitialEditTargetFromQuery() {
+            var editPath = "";
+            try {
+                editPath = normalizePath(new URLSearchParams(window.location.search).get("edit") || "", true);
+            } catch (error) {
+                editPath = "";
+            }
+            if (!editPath) {
+                return;
+            }
+            var entry = state.entryByPath.get(editPath) || null;
+            if (!entry || entry.type !== "file" || !entry.can_edit) {
+                return;
+            }
+            applySelection([entry.path], {
+                primaryPath: entry.path,
+                anchorPath: entry.path,
+                skipPreview: true,
+            });
+            switchToEditor(entry);
+        }
         
         // 초기화 시 약간의 지연 후 레이아웃 업데이트
         setTimeout(function() {
@@ -11659,6 +12703,7 @@
         
         clearPreviewPane();
         renderList();
+        openInitialEditTargetFromQuery();
         enqueuePendingYoutubeDownloaderSave();
         var initialSearchQuery = listSearchInput
             ? String(new URLSearchParams(window.location.search).get("q") || "").trim()
@@ -11854,6 +12899,10 @@
             const requestToken = viewNavRequestToken + 1;
             viewNavRequestToken = requestToken;
             try {
+                await releasePreviewVideoPlayers(contentArticle);
+                if (requestToken !== viewNavRequestToken) {
+                    return;
+                }
                 const data = await requestJson(
                     appendSharedQuery(previewApiUrl),
                     buildPostOptions({ path: entry.path })
@@ -11864,7 +12913,6 @@
                 const newHtml = data.html || "";
                 const newClass = data.render_class || "";
 
-                await releasePreviewVideoPlayers(contentArticle);
                 if (requestToken !== viewNavRequestToken) {
                     return;
                 }
@@ -11924,6 +12972,9 @@
         }
 
         hydrateMediaAudioElements(contentArticle);
+        if (window.HandriveSpreadsheetEditor && typeof window.HandriveSpreadsheetEditor.hydratePreviews === "function") {
+            window.HandriveSpreadsheetEditor.hydratePreviews(contentArticle);
+        }
         bindHandrivePdfFrameLoading(contentArticle);
         initializePreviewVideoPlayers(contentArticle).catch(alertError);
 
@@ -12039,16 +13090,20 @@
         const imageEditorRemoveBackgroundUrl = root.dataset.imageEditorRemoveBackgroundUrl || "";
         const audioEditorSaveUrl = root.dataset.audioEditorSaveUrl || "";
         const videoEditorSaveUrl = root.dataset.videoEditorSaveUrl || "";
+        const pdfEditorMetaUrl = root.dataset.pdfEditorMetaUrl || "";
+        const pdfEditorPageUrl = root.dataset.pdfEditorPageUrl || "";
+        const pdfEditorSaveUrl = root.dataset.pdfEditorSaveUrl || "";
         const imageEditorScriptUrl = root.dataset.imageEditorScriptUrl || "";
         const videoEditorScriptUrl = root.dataset.videoEditorScriptUrl || "";
         const audioEditorScriptUrl = root.dataset.audioEditorScriptUrl || "";
+        const pdfEditorScriptUrl = root.dataset.pdfEditorScriptUrl || "";
         const markdownImageUploadApiUrl = root.dataset.markdownImageUploadApiUrl || "";
         const markdownImageCleanupApiUrl = root.dataset.markdownImageCleanupApiUrl || "";
         const mkdirApiUrl = root.dataset.mkdirApiUrl;
         const originalPath = root.dataset.originalPath || "";
         const initialDir = root.dataset.initialDir || "";
         const writeEditorKind = String(root.dataset.writeEditorKind || "text").trim().toLowerCase();
-        const isMediaWriteEditor = writeEditorKind === "image" || writeEditorKind === "audio" || writeEditorKind === "video";
+        const isMediaWriteEditor = writeEditorKind === "image" || writeEditorKind === "audio" || writeEditorKind === "video" || writeEditorKind === "pdf";
         const isPublicWriteDirectSave = root.dataset.publicWriteDirectSave === "1";
         const writeRequiresCommitMessage = root.dataset.writeRequiresCommitMessage === "1";
 
@@ -12060,6 +13115,7 @@
         const imageEditorSurface = document.getElementById("handrive-image-editor-surface");
         const videoEditorSurface = document.getElementById("handrive-video-editor-surface");
         const audioEditorSurface = document.getElementById("handrive-audio-editor-surface");
+        const pdfEditorSurface = document.getElementById("handrive-pdf-editor-surface");
         const editorHighlight = document.getElementById("handrive-editor-highlight");
         const editorHighlightCode = document.getElementById("handrive-editor-highlight-code");
         const editorSuggest = document.getElementById("handrive-editor-suggest");
@@ -12300,6 +13356,9 @@
             if (writeEditorKind === "audio" && window.HandriveAudioEditor) {
                 return window.HandriveAudioEditor;
             }
+            if (writeEditorKind === "pdf" && window.HandrivePdfEditor) {
+                return window.HandrivePdfEditor;
+            }
             return null;
         }
 
@@ -12307,6 +13366,7 @@
             if (writeEditorKind === "image") return imageEditorSaveUrl;
             if (writeEditorKind === "video") return videoEditorSaveUrl;
             if (writeEditorKind === "audio") return audioEditorSaveUrl;
+            if (writeEditorKind === "pdf") return pdfEditorSaveUrl;
             return "";
         }
 
@@ -12318,7 +13378,9 @@
                     ? videoEditorScriptUrl
                     : normalizedKind === "audio"
                         ? audioEditorScriptUrl
-                        : "";
+                        : normalizedKind === "pdf"
+                            ? pdfEditorScriptUrl
+                            : "";
             if (normalizedKind === "video") {
                 return loadVideoPlayerStack().then(function () {
                     return loadLazyScriptOnce(scriptUrl, getMediaEditorGlobalName(normalizedKind));
@@ -12334,7 +13396,7 @@
 
         function hasUnsavedWriteChanges() {
             if (isMediaWriteEditor) {
-                const filenameChanged = writeEditorKind === "image" && filenameInput
+                const filenameChanged = filenameInput
                     ? filenameInput.value !== savedFilenameValue
                     : false;
                 return hasUnsavedMediaWriteChanges() || filenameChanged;
@@ -12379,6 +13441,17 @@
             return appendSharedQuery(query ? downloadApiUrl + "?" + query : downloadApiUrl);
         }
 
+        function buildWritePdfEditorApiUrl(baseUrl, pathValue, extraParams) {
+            if (!baseUrl) {
+                return "";
+            }
+            const params = new URLSearchParams({ path: pathValue || "" });
+            Object.keys(extraParams || {}).forEach(function (key) {
+                params.set(key, extraParams[key]);
+            });
+            return appendSharedQuery(baseUrl + "?" + params.toString());
+        }
+
         function buildWriteScopedHomeDownloadUrl(pathValue) {
             return appendQueryParam(buildWriteDownloadUrl(pathValue), "scope_home", "1");
         }
@@ -12389,37 +13462,6 @@
 
         function getWriteMediaOriginalFilename() {
             return String(originalPath || "").split("/").pop() || "";
-        }
-
-        async function submitImageRenameOnly() {
-            const nextName = getWriteMediaFilenameValue();
-            if (!nextName) {
-                alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
-                return;
-            }
-            if (!renameApiUrl || !originalPath) {
-                alertError(new Error(t("js_request_failed", "요청 처리 중 오류가 발생했습니다.")));
-                return;
-            }
-            let commitMessage = "";
-            if (writeRequiresCommitMessage) {
-                commitMessage = await promptWriteCommitMessage(originalPath);
-                if (commitMessage === null) {
-                    return;
-                }
-            }
-            const data = await requestJson(renameApiUrl, buildPostOptions({
-                path: originalPath,
-                new_name: nextName,
-                commit_message: commitMessage,
-            }));
-            markCurrentAsSaved();
-            const targetPath = data && (data.slug_path || data.path);
-            if (targetPath) {
-                runWithBeforeUnloadBypass(function () {
-                    window.location.href = buildViewUrl(handriveBaseUrl, targetPath);
-                });
-            }
         }
 
         function getWriteMediaEntry() {
@@ -12439,17 +13481,19 @@
                 if (imageEditorSurface) imageEditorSurface.hidden = true;
                 if (videoEditorSurface) videoEditorSurface.hidden = true;
                 if (audioEditorSurface) audioEditorSurface.hidden = true;
+                if (pdfEditorSurface) pdfEditorSurface.hidden = true;
                 return;
             }
             if (editorSurface) editorSurface.hidden = true;
             if (contentInput) contentInput.disabled = true;
-            if (filenameInput && writeEditorKind !== "image") {
-                filenameInput.readOnly = true;
-                filenameInput.setAttribute("aria-readonly", "true");
+            if (filenameInput) {
+                filenameInput.readOnly = false;
+                filenameInput.removeAttribute("aria-readonly");
             }
             if (imageEditorSurface) imageEditorSurface.hidden = writeEditorKind !== "image";
             if (videoEditorSurface) videoEditorSurface.hidden = writeEditorKind !== "video";
             if (audioEditorSurface) audioEditorSurface.hidden = writeEditorKind !== "audio";
+            if (pdfEditorSurface) pdfEditorSurface.hidden = writeEditorKind !== "pdf";
 
             const entry = getWriteMediaEntry();
             const mediaUrl = buildWriteDownloadUrl(originalPath);
@@ -12490,6 +13534,20 @@
                     scopedHomeDir: scopedHomeDir,
                     onDirtyChange: dirtyHandler,
                 });
+            } else if (writeEditorKind === "pdf" && window.HandrivePdfEditor && entry) {
+                await window.HandrivePdfEditor.init({
+                    entry: entry,
+                    metaUrl: buildWritePdfEditorApiUrl(pdfEditorMetaUrl, originalPath),
+                    pageUrlBuilder: function (pageIndex, scale) {
+                        return buildWritePdfEditorApiUrl(pdfEditorPageUrl, originalPath, {
+                            page: String(pageIndex),
+                            scale: String(scale || 2),
+                        });
+                    },
+                    onDirtyChange: dirtyHandler,
+                });
+            } else if (writeEditorKind === "pdf") {
+                throw new Error(t("pdf_editor_load_error", "PDF 편집기를 불러오지 못했습니다."));
             }
             if (saveButton) saveButton.disabled = false;
             scheduleWriteEditorHorizontalScrollReset();
@@ -12677,51 +13735,68 @@
             return visibleCount;
         }
 
-        function replaceTextareaSelection(insertText, selectionStartOffset, selectionEndOffset) {
+        function replaceTextareaSelection(insertText, selectionStartOffset, selectionEndOffset, replaceStartOffset, replaceEndOffset) {
             if (!contentInput) {
                 return;
             }
-            const start = contentInput.selectionStart || 0;
-            const end = contentInput.selectionEnd || 0;
+            const valueLength = String(contentInput.value || "").length;
+            const selectedStart = contentInput.selectionStart || 0;
+            const selectedEnd = contentInput.selectionEnd || 0;
+            const start = Number.isFinite(Number(replaceStartOffset))
+                ? clampMarkdownIndex(contentInput.value, replaceStartOffset)
+                : clampMarkdownIndex(contentInput.value, selectedStart);
+            const end = Number.isFinite(Number(replaceEndOffset))
+                ? clampMarkdownIndex(contentInput.value, replaceEndOffset)
+                : clampMarkdownIndex(contentInput.value, selectedEnd);
+            const replaceStart = Math.min(start, end, valueLength);
+            const replaceEnd = Math.max(start, end);
             contentInput.focus();
-            contentInput.setSelectionRange(start, end);
-            contentInput.setRangeText(insertText, start, end, "end");
+            contentInput.setSelectionRange(replaceStart, replaceEnd);
+            contentInput.setRangeText(insertText, replaceStart, replaceEnd, "end");
 
-            const nextStart = start + (selectionStartOffset || 0);
-            const nextEnd = start + (selectionEndOffset || insertText.length);
+            const nextStart = replaceStart + (selectionStartOffset || 0);
+            const nextEnd = replaceStart + (selectionEndOffset || insertText.length);
             contentInput.setSelectionRange(nextStart, nextEnd);
             contentInput.dispatchEvent(new Event("input", { bubbles: true }));
             syncLatestWriteEditorSnapshotSelection();
         }
 
         function buildWrappedSnippet(prefix, suffix, placeholder) {
-            const start = contentInput ? (contentInput.selectionStart || 0) : 0;
-            const end = contentInput ? (contentInput.selectionEnd || 0) : 0;
-            const selected = contentInput ? contentInput.value.slice(start, end) : "";
+            const selection = getMarkdownSnippetSelection(contentInput);
+            const selected = selection.body;
             const body = selected || placeholder;
             const text = prefix + body + suffix;
 
             if (selected) {
-                return { text: text, selectStart: text.length, selectEnd: text.length };
+                return {
+                    text: text,
+                    selectStart: text.length,
+                    selectEnd: text.length,
+                    replaceStart: selection.replaceStart,
+                    replaceEnd: selection.replaceEnd,
+                };
             }
 
             return {
                 text: text,
                 selectStart: prefix.length,
                 selectEnd: prefix.length + body.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd,
             };
         }
 
         function buildPrefixedLinesSnippet(prefix, placeholder) {
-            const start = contentInput ? (contentInput.selectionStart || 0) : 0;
-            const end = contentInput ? (contentInput.selectionEnd || 0) : 0;
-            const selected = contentInput ? contentInput.value.slice(start, end) : "";
+            const selection = getMarkdownSnippetSelection(contentInput);
+            const selected = selection.body;
             if (!selected) {
                 const body = prefix + placeholder;
                 return {
                     text: body,
                     selectStart: prefix.length,
                     selectEnd: body.length,
+                    replaceStart: selection.replaceStart,
+                    replaceEnd: selection.replaceEnd,
                 };
             }
 
@@ -12732,10 +13807,17 @@
                 }
                 return prefix + line;
             }).join("\n");
-            return { text: transformed, selectStart: transformed.length, selectEnd: transformed.length };
+            return {
+                text: transformed,
+                selectStart: transformed.length,
+                selectEnd: transformed.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd,
+            };
         }
 
         function buildTableSnippet() {
+            const selection = getMarkdownSnippetSelection(contentInput);
             const col1 = t("markdown_placeholder_table_col1", "Column 1");
             const col2 = t("markdown_placeholder_table_col2", "Column 2");
             const table = [
@@ -12747,19 +13829,22 @@
                 text: table,
                 selectStart: 2,
                 selectEnd: 2 + col1.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd,
             };
         }
 
         function buildNumberedLinesSnippet(placeholder) {
-            const start = contentInput ? (contentInput.selectionStart || 0) : 0;
-            const end = contentInput ? (contentInput.selectionEnd || 0) : 0;
-            const selected = contentInput ? contentInput.value.slice(start, end) : "";
+            const selection = getMarkdownSnippetSelection(contentInput);
+            const selected = selection.body;
             if (!selected) {
                 const body = "1. " + placeholder;
                 return {
                     text: body,
                     selectStart: 3,
                     selectEnd: body.length,
+                    replaceStart: selection.replaceStart,
+                    replaceEnd: selection.replaceEnd,
                 };
             }
 
@@ -12775,18 +13860,36 @@
                     return row;
                 })
                 .join("\n");
-            return { text: transformed, selectStart: transformed.length, selectEnd: transformed.length };
+            return {
+                text: transformed,
+                selectStart: transformed.length,
+                selectEnd: transformed.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd,
+            };
         }
 
         function buildCodeBlockSnippet() {
+            const selection = getMarkdownSnippetSelection(contentInput);
             const lang = t("markdown_placeholder_code_lang", "text");
-            const body = t("markdown_placeholder_code_body", "type your code");
+            const body = selection.body || t("markdown_placeholder_code_body", "type your code");
             const text = "```" + lang + "\n" + body + "\n```";
             const bodyStart = ("```" + lang + "\n").length;
+            if (selection.body) {
+                return {
+                    text: text,
+                    selectStart: text.length,
+                    selectEnd: text.length,
+                    replaceStart: selection.replaceStart,
+                    replaceEnd: selection.replaceEnd,
+                };
+            }
             return {
                 text: text,
                 selectStart: bodyStart,
                 selectEnd: bodyStart + body.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd,
             };
         }
 
@@ -12821,10 +13924,13 @@
             } else if (snippetType === "quote") {
                 snippet = buildPrefixedLinesSnippet("> ", t("markdown_placeholder_quote", "quote"));
             } else if (snippetType === "divider") {
+                const selection = getMarkdownSnippetSelection(contentInput);
                 snippet = {
                     text: "\n---\n",
                     selectStart: 5,
                     selectEnd: 5,
+                    replaceStart: selection.replaceStart,
+                    replaceEnd: selection.replaceEnd,
                 };
             } else if (snippetType === "table") {
                 snippet = buildTableSnippet();
@@ -12833,7 +13939,7 @@
             if (!snippet) {
                 return;
             }
-            replaceTextareaSelection(snippet.text, snippet.selectStart, snippet.selectEnd);
+            replaceTextareaSelection(snippet.text, snippet.selectStart, snippet.selectEnd, snippet.replaceStart, snippet.replaceEnd);
         }
 
         function insertLanguageSnippet(snippetType, extension) {
@@ -13005,6 +14111,67 @@
             state.directoryCache.delete(normalized);
             state.directoryMetaCache.delete(normalized);
             state.directoryLoadPromises.delete(normalized);
+        }
+
+        async function getWriteSaveTargetEntry(targetPath) {
+            const normalizedTarget = normalizePath(targetPath || "", true);
+            if (!normalizedTarget) {
+                return null;
+            }
+            const knownEntry = state.entryByPath.get(normalizedTarget);
+            if (knownEntry) {
+                return knownEntry;
+            }
+            const parentPath = getParentPath(normalizedTarget);
+            try {
+                await ensureSaveDirectoryLoaded(parentPath);
+            } catch (error) {
+                return state.entryByPath.get(normalizedTarget) || null;
+            }
+            return state.entryByPath.get(normalizedTarget) || null;
+        }
+
+        async function confirmWriteOverwriteIfNeeded(targetPath) {
+            const normalizedTarget = normalizePath(targetPath || "", true);
+            if (!normalizedTarget) {
+                return false;
+            }
+            const normalizedOriginal = normalizePath(originalPath || "", true);
+            const targetEntry = await getWriteSaveTargetEntry(normalizedTarget);
+            if (targetEntry && targetEntry.type === "dir") {
+                throw new Error(t("save_overwrite_folder_error", "같은 이름의 폴더가 이미 있어 파일로 덮어쓸 수 없습니다."));
+            }
+            const willOverwrite = normalizedTarget === normalizedOriginal || Boolean(targetEntry && targetEntry.type === "file");
+            if (!willOverwrite) {
+                return true;
+            }
+            return requestConfirmDialog({
+                title: t("save_overwrite_confirm_title", "파일 덮어쓰기"),
+                message: t("save_overwrite_confirm_message", "이미 있는 파일을 덮어씁니다. 계속할까요?") + " " + getHandrivePathLabel(normalizedTarget),
+                cancelText: t("cancel", "취소"),
+                confirmText: t("save_overwrite_confirm_button", "덮어쓰기"),
+            });
+        }
+
+        function getWriteMediaSaveExtensionOverride(editor) {
+            if (editor && typeof editor.getSaveExtensionOverride === "function") {
+                return String(editor.getSaveExtensionOverride() || "").trim().toLowerCase();
+            }
+            return "";
+        }
+
+        function resolveWriteMediaSaveTarget(mediaFilename, editor) {
+            const sourcePath = normalizePath(originalPath || "", false);
+            const resolved = editorResolveFilenameAndExtension(mediaFilename, sourcePath, t);
+            const extensionOverride = getWriteMediaSaveExtensionOverride(editor);
+            const targetExtension = extensionOverride || resolved.extension;
+            const targetDir = getParentPath(sourcePath);
+            return {
+                filename: resolved.filename,
+                extension: targetExtension,
+                targetDir: targetDir,
+                targetPath: buildSaveTargetPath(targetDir, resolved.filename, targetExtension),
+            };
         }
 
         function normalizeDirectoryInput() {
@@ -14338,71 +15505,100 @@
                 return;
             }
 
-            if (
-                writeEditorKind === "image" &&
-                editor &&
-                typeof editor.getIsDirty === "function" &&
-                !editor.getIsDirty() &&
-                getWriteMediaFilenameValue() &&
-                getWriteMediaFilenameValue() !== getWriteMediaOriginalFilename()
-            ) {
-                submitImageRenameOnly().catch(alertError);
-                return;
-            }
-
             const csrfToken = getCsrfToken();
             const savingText = writeEditorKind === "image"
                 ? t("image_editor_saving", "저장 중...")
                 : writeEditorKind === "video"
                     ? t("video_editor_saving", "저장 중...")
-                    : t("audio_editor_saving", "저장 중...");
+                    : writeEditorKind === "pdf"
+                        ? t("pdf_editor_saving", "저장 중...")
+                        : t("audio_editor_saving", "저장 중...");
             const originalButtonText = saveButton ? saveButton.textContent : "";
             if (saveButton) {
                 saveButton.disabled = true;
                 saveButton.textContent = savingText;
             }
 
-            let imageFilename = "";
-            if (writeEditorKind === "image") {
-                imageFilename = String(filenameInput ? filenameInput.value || "" : "").trim();
-                if (!imageFilename) {
-                    alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
+            const mediaFilename = getWriteMediaFilenameValue();
+            const originalMediaFilename = getWriteMediaOriginalFilename();
+            const editorIsDirty = typeof editor.getIsDirty === "function" ? editor.getIsDirty() : true;
+            if (!mediaFilename) {
+                alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
+                if (saveButton) {
+                    saveButton.disabled = false;
+                    saveButton.textContent = originalButtonText;
+                }
+                return;
+            }
+            if (!editorIsDirty && mediaFilename === originalMediaFilename) {
+                if (saveButton) {
+                    saveButton.disabled = false;
+                    saveButton.textContent = originalButtonText;
+                }
+                markCurrentAsSaved();
+                return;
+            }
+
+            let mediaSaveTarget;
+            try {
+                mediaSaveTarget = resolveWriteMediaSaveTarget(mediaFilename, editor);
+            } catch (error) {
+                alertError(error);
+                if (saveButton) {
+                    saveButton.disabled = false;
+                    saveButton.textContent = originalButtonText;
+                }
+                return;
+            }
+
+            (async function () {
+                const overwriteConfirmed = await confirmWriteOverwriteIfNeeded(mediaSaveTarget.targetPath);
+                if (!overwriteConfirmed) {
                     if (saveButton) {
                         saveButton.disabled = false;
                         saveButton.textContent = originalButtonText;
                     }
                     return;
                 }
-            }
 
-            editor.saveToServer(saveUrl, csrfToken, originalPath, function (result) {
+                editor.saveToServer(saveUrl, csrfToken, originalPath, function (result) {
+                    if (saveButton) {
+                        saveButton.disabled = false;
+                        saveButton.textContent = originalButtonText;
+                        saveButton.classList.toggle("is-dirty", hasUnsavedMediaWriteChanges());
+                    }
+                    if (!result || !result.ok) {
+                        const fallbackMessage = writeEditorKind === "image"
+                            ? t("image_editor_save_error", "저장 실패")
+                            : writeEditorKind === "video"
+                                ? t("video_editor_save_error", "비디오 저장 실패")
+                                : writeEditorKind === "pdf"
+                                    ? t("pdf_editor_save_error", "PDF 저장 실패")
+                                    : t("audio_editor_save_error", "오디오 저장 실패");
+                        alertError(new Error(selectServerMessage(result, fallbackMessage)));
+                        return;
+                    }
+                    markCurrentAsSaved();
+                    if (onSuccess) {
+                        onSuccess(result || {});
+                        return;
+                    }
+                    if (!redirectOnSuccess) {
+                        return;
+                    }
+                    const targetPath = (result && (result.slug_path || result.path)) || originalPath;
+                    runWithBeforeUnloadBypass(function () {
+                        window.location.href = buildViewUrl(handriveBaseUrl, targetPath);
+                    });
+                }, { filename: mediaFilename });
+            })().catch(function (error) {
                 if (saveButton) {
                     saveButton.disabled = false;
                     saveButton.textContent = originalButtonText;
                     saveButton.classList.toggle("is-dirty", hasUnsavedMediaWriteChanges());
                 }
-                if (!result || !result.ok) {
-                    const fallbackMessage = writeEditorKind === "image"
-                        ? t("image_editor_save_error", "저장 실패")
-                        : writeEditorKind === "video"
-                            ? t("video_editor_save_error", "비디오 저장 실패")
-                            : t("audio_editor_save_error", "오디오 저장 실패");
-                    alertError(new Error(selectServerMessage(result, fallbackMessage)));
-                    return;
-                }
-                markCurrentAsSaved();
-                if (onSuccess) {
-                    onSuccess(result || {});
-                    return;
-                }
-                if (!redirectOnSuccess) {
-                    return;
-                }
-                const targetPath = (result && (result.slug_path || result.path)) || originalPath;
-                runWithBeforeUnloadBypass(function () {
-                    window.location.href = buildViewUrl(handriveBaseUrl, targetPath);
-                });
-            }, writeEditorKind === "image" ? { filename: imageFilename } : {});
+                alertError(error);
+            });
         }
 
         async function submitSave(options) {
@@ -14462,6 +15658,10 @@
                     extension: targetExtension,
                     content: contentInput ? contentInput.value : ""
                 };
+                const overwriteConfirmed = await confirmWriteOverwriteIfNeeded(saveTargetPath);
+                if (!overwriteConfirmed) {
+                    return;
+                }
                 if (writeRequiresCommitMessage) {
                     const commitMessage = await promptWriteCommitMessage(requestOriginalPath || saveTargetPath || targetDir);
                     if (commitMessage === null) {

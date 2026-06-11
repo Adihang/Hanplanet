@@ -7,6 +7,9 @@
     {% if is_root_entry %}
     <p class="site-footer-purpose">{% include 'partials/ui_i18n.html' with key='root_footer_purpose' %}</p>
     {% endif %}
+    {% if site_footer_purpose_i18n_key %}
+    <p class="site-footer-purpose">{% include 'partials/ui_i18n.html' with key=site_footer_purpose_i18n_key %}</p>
+    {% endif %}
 </footer>
 
 <script>

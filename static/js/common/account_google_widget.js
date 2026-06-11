@@ -69,6 +69,143 @@
         return payload;
     };
 
+    const redirectToGoogleDriveAuthIfRequired = function (payload) {
+        if (payload && payload.requires_google_drive_auth && payload.auth_url) {
+            window.location.href = payload.auth_url;
+            return true;
+        }
+        return false;
+    };
+
+    const getWindowScrollSnapshot = function () {
+        return {
+            x: window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft || 0,
+            y: window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0
+        };
+    };
+
+    const restoreWindowScroll = function (snapshot) {
+        if (!snapshot) {
+            return;
+        }
+        try {
+            window.scrollTo(snapshot.x || 0, snapshot.y || 0);
+        } catch (error) {}
+    };
+
+    const preserveWindowScrollAfterPickerOpen = function (snapshot) {
+        restoreWindowScroll(snapshot);
+        [0, 50, 150, 350, 700].forEach(function (delay) {
+            window.setTimeout(function () {
+                restoreWindowScroll(snapshot);
+            }, delay);
+        });
+        window.requestAnimationFrame(function () {
+            restoreWindowScroll(snapshot);
+            window.requestAnimationFrame(function () {
+                restoreWindowScroll(snapshot);
+            });
+        });
+    };
+
+    const setGooglePickerOpeningFlag = function () {
+        document.documentElement.dataset.googlePickerOpening = "1";
+        window.setTimeout(function () {
+            if (document.documentElement.dataset.googlePickerOpening === "1") {
+                delete document.documentElement.dataset.googlePickerOpening;
+            }
+        }, 1200);
+    };
+
+    let googlePickerApiPromise = null;
+
+    const loadGooglePickerApi = function () {
+        if (window.google && window.google.picker) {
+            return Promise.resolve();
+        }
+        if (googlePickerApiPromise) {
+            return googlePickerApiPromise;
+        }
+        googlePickerApiPromise = new Promise(function (resolve, reject) {
+            const loadPicker = function () {
+                if (!window.gapi || typeof window.gapi.load !== "function") {
+                    reject(new Error("Google API loader is not available."));
+                    return;
+                }
+                window.gapi.load("picker", {
+                    callback: resolve,
+                    onerror: function () {
+                        reject(new Error("Google Picker API failed to load."));
+                    },
+                    timeout: 10000,
+                    ontimeout: function () {
+                        reject(new Error("Google Picker API load timed out."));
+                    }
+                });
+            };
+
+            if (window.gapi && typeof window.gapi.load === "function") {
+                loadPicker();
+                return;
+            }
+
+            const existingScript = document.querySelector('script[src="https://apis.google.com/js/api.js"]');
+            if (existingScript) {
+                existingScript.addEventListener("load", loadPicker, { once: true });
+                existingScript.addEventListener("error", function () {
+                    reject(new Error("Google API script failed to load."));
+                }, { once: true });
+                return;
+            }
+
+            const script = document.createElement("script");
+            script.src = "https://apis.google.com/js/api.js";
+            script.async = true;
+            script.defer = true;
+            script.onload = loadPicker;
+            script.onerror = function () {
+                reject(new Error("Google API script failed to load."));
+            };
+            document.head.appendChild(script);
+        });
+        return googlePickerApiPromise;
+    };
+
+    const getPickerDocumentValue = function (documentValue, constantName, fallbackKey) {
+        const picker = window.google && window.google.picker;
+        const constants = picker && picker.Document;
+        const constantKey = constants && constants[constantName];
+        return (
+            documentValue[constantKey]
+            || documentValue[fallbackKey]
+            || documentValue[constantName]
+            || ""
+        );
+    };
+
+    const normalizePickerDocument = function (documentValue) {
+        if (!documentValue || typeof documentValue !== "object") {
+            return null;
+        }
+        const id = String(getPickerDocumentValue(documentValue, "ID", "id") || "").trim();
+        if (!id) {
+            return null;
+        }
+        const name = String(
+            getPickerDocumentValue(documentValue, "NAME", "name")
+            || getPickerDocumentValue(documentValue, "TITLE", "title")
+            || id
+        ).trim();
+        return {
+            id,
+            name: name || id,
+            mimeType: String(getPickerDocumentValue(documentValue, "MIME_TYPE", "mimeType") || "").trim(),
+            url: String(getPickerDocumentValue(documentValue, "URL", "url") || "").trim(),
+            iconUrl: String(getPickerDocumentValue(documentValue, "ICON_URL", "iconUrl") || "").trim(),
+            lastEditedUtc: String(getPickerDocumentValue(documentValue, "LAST_EDITED_UTC", "lastEditedUtc") || "").trim()
+        };
+    };
+
     const closeMenu = function (host) {
         const menu = host.querySelector("[data-auth-account-menu]");
         const trigger = host.querySelector("[data-auth-account-trigger]");
@@ -196,6 +333,10 @@
                     },
                     body: JSON.stringify({ enabled: Boolean(driveToggle && driveToggle.checked) })
                 }).then(parseJsonResponse);
+                if (payload.requires_google_drive_auth && payload.auth_url) {
+                    window.location.href = payload.auth_url;
+                    return;
+                }
                 const enabled = payload.google_drive_enabled === true;
                 triggerButton.dataset.googleDriveEnabled = enabled ? "1" : "0";
                 if (driveToggle) {
@@ -212,6 +353,154 @@
                 if (confirmButton) {
                     confirmButton.disabled = false;
                 }
+            }
+        };
+
+        const saveGoogleDriveItems = async function (items) {
+            const driveItemsUrl = triggerButton.dataset.googleDriveItemsUrl || "";
+            if (!driveItemsUrl) {
+                throw new Error(label("pickerError", "Failed to open Google Picker."));
+            }
+            const payload = await fetch(driveItemsUrl, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": getCsrfToken()
+                },
+                body: JSON.stringify({ items })
+            }).then(parseJsonResponse);
+            triggerButton.dataset.googleDriveSelectedCount = String(payload.selected_count || 0);
+            window.dispatchEvent(new CustomEvent("handrive:google-drive-updated", {
+                detail: payload
+            }));
+            return payload;
+        };
+
+        const buildPickerView = function (viewId) {
+            const picker = window.google && window.google.picker;
+            const view = viewId ? new picker.DocsView(viewId) : new picker.DocsView();
+            if (typeof view.setIncludeFolders === "function") {
+                view.setIncludeFolders(true);
+            }
+            if (typeof view.setSelectFolderEnabled === "function") {
+                view.setSelectFolderEnabled(true);
+            }
+            if (picker.DocsViewMode && picker.DocsViewMode.LIST && typeof view.setMode === "function") {
+                view.setMode(picker.DocsViewMode.LIST);
+            }
+            return view;
+        };
+
+        const openGooglePicker = async function (options) {
+            const settings = options || {};
+            const statusElement = settings.statusElement === undefined ? status : settings.statusElement;
+            const busyElement = settings.busyElement || null;
+            const throwOnError = Boolean(settings.throwOnError);
+            const configUrl = triggerButton.dataset.googlePickerConfigUrl || "";
+            if (!configUrl) {
+                const error = new Error(label("pickerError", "Failed to open Google Picker."));
+                setStatus(statusElement, error.message, true);
+                if (throwOnError) {
+                    throw error;
+                }
+                return null;
+            }
+            if (busyElement) {
+                busyElement.disabled = true;
+            }
+            setStatus(statusElement, label("pickerLoading", "Opening Google Picker..."), false);
+            try {
+                const configPayload = await fetch(configUrl, {
+                    method: "GET",
+                    credentials: "same-origin",
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                }).then(parseJsonResponse);
+                await loadGooglePickerApi();
+
+                const picker = window.google && window.google.picker;
+                if (!picker || !picker.PickerBuilder) {
+                    throw new Error(label("pickerError", "Failed to open Google Picker."));
+                }
+
+                const builder = new picker.PickerBuilder()
+                    .setOAuthToken(configPayload.access_token)
+                    .setDeveloperKey(configPayload.api_key)
+                    .setCallback(function (data) {
+                        const action = data && data[picker.Response.ACTION];
+                        if (action !== picker.Action.PICKED) {
+                            return;
+                        }
+                        const documents = data[picker.Response.DOCUMENTS] || [];
+                        const items = documents.map(normalizePickerDocument).filter(Boolean);
+                        if (!items.length) {
+                            return;
+                        }
+                        saveGoogleDriveItems(items)
+                            .then(function (payload) {
+                                setStatus(statusElement, label("pickerSaved", "Google Drive items saved."), false);
+                                if (typeof settings.onSaved === "function") {
+                                    settings.onSaved(payload);
+                                }
+                            })
+                            .catch(function (error) {
+                                if (redirectToGoogleDriveAuthIfRequired(error && error.payload)) {
+                                    return;
+                                }
+                                const message = payloadMessage(error && error.payload, label("pickerError", "Failed to open Google Picker."));
+                                setStatus(statusElement, message, true);
+                                if (!statusElement && window.console && typeof window.console.error === "function") {
+                                    window.console.error(error);
+                                }
+                            });
+                    });
+
+                if (configPayload.app_id && typeof builder.setAppId === "function") {
+                    builder.setAppId(configPayload.app_id);
+                }
+                if (typeof builder.setOrigin === "function") {
+                    builder.setOrigin(window.location.protocol + "//" + window.location.host);
+                }
+
+                builder.addView(buildPickerView(picker.ViewId && picker.ViewId.DOCS));
+                if (picker.ViewId && picker.ViewId.FOLDERS) {
+                    builder.addView(buildPickerView(picker.ViewId.FOLDERS));
+                }
+                if (picker.Feature && picker.Feature.MULTISELECT_ENABLED) {
+                    builder.enableFeature(picker.Feature.MULTISELECT_ENABLED);
+                }
+                const scrollSnapshot = getWindowScrollSnapshot();
+                setGooglePickerOpeningFlag();
+                builder.build().setVisible(true);
+                preserveWindowScrollAfterPickerOpen(scrollSnapshot);
+                setStatus(statusElement, "", false);
+                return true;
+            } catch (error) {
+                if (redirectToGoogleDriveAuthIfRequired(error && error.payload)) {
+                    return null;
+                }
+                setStatus(statusElement, payloadMessage(error && error.payload, error.message || label("pickerError", "Failed to open Google Picker.")), true);
+                if (throwOnError) {
+                    throw error;
+                }
+                return null;
+            } finally {
+                if (busyElement) {
+                    busyElement.disabled = false;
+                }
+            }
+        };
+
+        window.HandriveGoogleDrivePicker = {
+            open: function (options) {
+                const settings = Object.assign({
+                    statusElement: null,
+                    throwOnError: true
+                }, options || {});
+                return openGooglePicker(settings);
             }
         };
 
@@ -243,6 +532,7 @@
                 triggerButton.dataset.googleConnected = "0";
                 triggerButton.dataset.googleEmail = "";
                 triggerButton.dataset.googleDriveEnabled = "0";
+                triggerButton.dataset.googleDriveSelectedCount = "0";
                 triggerButton.classList.remove("is-connected");
                 if (driveToggle) {
                     driveToggle.checked = false;

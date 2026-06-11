@@ -31,7 +31,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const themeToggleButtons = themeToggle
         ? Array.from(themeToggle.querySelectorAll('.ui-control-link[data-theme-mode]'))
         : [];
+    const languageToggleButtons = Array.from(document.querySelectorAll('.ui-lang-link[data-ui-lang-mode]'));
     const THEME_MODE_STORAGE_KEY = 'portfolio_theme_mode';
+    const THEME_MODE_COOKIE_KEY = 'portfolio_theme_mode';
+    const UI_LANG_COOKIE_KEY = 'portfolio_ui_lang';
+    const COOKIE_MAX_AGE_SECONDS = 31536000;
     const SYSTEM_DARK_MEDIA_QUERY = '(prefers-color-scheme: dark)';
     const ACCOUNT_THEME_MODE_KEY = (document.documentElement.dataset.accountThemeMode || '').trim().toLowerCase();
     const THEME_PREFERENCE_URL = (document.body.dataset.themePreferenceUrl || '').trim();
@@ -195,11 +199,31 @@ document.addEventListener('DOMContentLoaded', function () {
         return null;
     };
 
-    // .hanplanet.com 공유 쿠키에 테마 쓰기
-    const writeThemeCookie = function (value) {
+    const writePreferenceCookie = function (name, value) {
         try {
-            document.cookie = 'portfolio_theme_mode=' + value + '; domain=.hanplanet.com; path=/; max-age=31536000; SameSite=Lax';
+            const normalizedName = encodeURIComponent(String(name || ''));
+            const normalizedValue = encodeURIComponent(String(value || ''));
+            const maxAge = value ? COOKIE_MAX_AGE_SECONDS : 0;
+            const cookie = normalizedName + '=' + normalizedValue + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
+            document.cookie = cookie;
+
+            const hostname = String(window.location.hostname || '').toLowerCase();
+            if (hostname === 'hanplanet.com' || hostname.endsWith('.hanplanet.com')) {
+                document.cookie = cookie + '; domain=.hanplanet.com';
+            }
         } catch (error) {}
+    };
+
+    // .hanplanet.com 공유 쿠키와 현재 host 쿠키에 테마 쓰기
+    const writeThemeCookie = function (value) {
+        writePreferenceCookie(THEME_MODE_COOKIE_KEY, value);
+    };
+
+    const writeUiLangCookie = function (value) {
+        if (value !== 'ko' && value !== 'en') {
+            return;
+        }
+        writePreferenceCookie(UI_LANG_COOKIE_KEY, value);
     };
 
     // Read theme preference from the widest shared scope first, then local page storage.
@@ -374,6 +398,12 @@ document.addEventListener('DOMContentLoaded', function () {
             event.preventDefault();
             const useDarkTheme = button.dataset.themeMode === 'dark';
             setManualThemeMode(useDarkTheme);
+        });
+    });
+
+    languageToggleButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            writeUiLangCookie(String(button.dataset.uiLangMode || '').trim().toLowerCase());
         });
     });
 

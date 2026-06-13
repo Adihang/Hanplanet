@@ -271,6 +271,7 @@ INSTALLED_APPS = [
     'stratagem',
     'git',
     'ai',
+    'hpmail',
     'corsheaders',
     'django_celery_results',
     'oauth2_provider',
@@ -527,3 +528,28 @@ HANDRIVE_2FA_BYPASS_USERNAMES = {
     for item in load_optional_secret("HANDRIVE_2FA_BYPASS_USERNAMES", "").split(",")
     if item.strip()
 }
+
+# ── HPmail ────────────────────────────────────────────────────────────────────
+HPMAIL_DOMAIN = load_optional_secret("HPMAIL_DOMAIN", "hanplanet.com")
+HPMAIL_DEFAULT_ATTACHMENT_LIMIT_BYTES = load_optional_int_secret("HPMAIL_DEFAULT_ATTACHMENT_LIMIT_BYTES", 25 * 1024 * 1024)
+HPMAIL_DEFAULT_DAILY_SEND_LIMIT = load_optional_int_secret("HPMAIL_DEFAULT_DAILY_SEND_LIMIT", 100)
+HPMAIL_STORAGE_ROOT = load_optional_secret(
+    "HPMAIL_STORAGE_ROOT",
+    str(get_media_root(DISC).parent / "mail"),
+)
+HPMAIL_IMAP_HOST = load_optional_secret("HPMAIL_IMAP_HOST", "127.0.0.1")
+HPMAIL_IMAP_PORT = load_optional_int_secret("HPMAIL_IMAP_PORT", 143)
+HPMAIL_IMAP_USE_TLS = load_optional_bool_secret("HPMAIL_IMAP_USE_TLS", False)
+HPMAIL_IMAP_TIMEOUT = load_optional_int_secret("HPMAIL_IMAP_TIMEOUT", 10)
+HPMAIL_IMAP_MASTER_USER = load_optional_secret("HPMAIL_IMAP_MASTER_USER", "")
+HPMAIL_IMAP_MASTER_PASSWORD = load_optional_secret("HPMAIL_IMAP_MASTER_PASSWORD", "")
+HPMAIL_IMAP_MASTER_LOGIN_FORMAT = load_optional_secret(
+    "HPMAIL_IMAP_MASTER_LOGIN_FORMAT",
+    "{email}*{master_user}",
+)
+HPMAIL_SMTP_HOST = load_optional_secret("HPMAIL_SMTP_HOST", "127.0.0.1")
+HPMAIL_SMTP_PORT = load_optional_int_secret("HPMAIL_SMTP_PORT", 25)
+HPMAIL_SMTP_USE_TLS = load_optional_bool_secret("HPMAIL_SMTP_USE_TLS", False)
+HPMAIL_SMTP_TIMEOUT = load_optional_int_secret("HPMAIL_SMTP_TIMEOUT", 10)
+HPMAIL_SMTP_USERNAME = load_optional_secret("HPMAIL_SMTP_USERNAME", "")
+HPMAIL_SMTP_PASSWORD = load_optional_secret("HPMAIL_SMTP_PASSWORD", "")

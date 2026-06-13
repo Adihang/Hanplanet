@@ -41,6 +41,46 @@
             </div>
             {% endif %}
             <div class="handrive-toolbar-actions ui-toolbar-actions">
+                <button
+                    class="handrive-icon-btn"
+                    type="button"
+                    id="handrive-list-toolbar-current-dir-url-share-btn"
+                    aria-label="{{ handrive_text.url_share_button }}"
+                    title="{{ handrive_text.url_share_button }}"
+                    {% if current_dir_is_root or not current_dir or not current_dir_can_edit or current_dir_is_google_drive or current_dir_is_archive_virtual or current_dir_is_git_repo_root or current_dir_requires_commit_message or current_dir_git_branch_root %}hidden{% endif %}
+                ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="4" r="2"/><circle cx="15" cy="16" r="2"/><circle cx="5" cy="10" r="2"/><line x1="7" y1="9" x2="13" y2="5"/><line x1="7" y1="11" x2="13" y2="15"/></svg></button>
+                <button
+                    class="handrive-icon-btn"
+                    type="button"
+                    id="handrive-list-toolbar-current-dir-delete-btn"
+                    aria-label="{{ handrive_text.delete_button }}"
+                    title="{{ handrive_text.delete_button }}"
+                    {% if current_dir_is_root or not current_dir or not current_dir_can_edit or current_dir_is_google_drive or current_dir_is_archive_virtual or current_dir_is_git_repo_root or current_dir_requires_commit_message or current_dir_git_branch_root %}hidden{% endif %}
+                ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5h4v2.5H8z"/><line x1="3" y1="5.5" x2="17" y2="5.5"/><rect x="5" y="6.5" width="10" height="11" rx="1.5"/><line x1="8.5" y1="9" x2="8.5" y2="15"/><line x1="11.5" y1="9" x2="11.5" y2="15"/></svg></button>
+                <button
+                    class="handrive-icon-btn"
+                    type="button"
+                    id="handrive-list-toolbar-archive-url-share-btn"
+                    aria-label="{{ handrive_text.url_share_button }}"
+                    title="{{ handrive_text.url_share_button }}"
+                    {% if not current_dir_is_archive_virtual or not current_dir_archive_can_edit %}hidden{% endif %}
+                ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="4" r="2"/><circle cx="15" cy="16" r="2"/><circle cx="5" cy="10" r="2"/><line x1="7" y1="9" x2="13" y2="5"/><line x1="7" y1="11" x2="13" y2="15"/></svg></button>
+                <a
+                    class="handrive-icon-btn"
+                    id="handrive-list-toolbar-archive-download-btn"
+                    href="{{ handrive_api_download_url }}?path={{ current_dir_archive_path|default:''|urlencode }}{% if handrive_shared_owner_username and handrive_shared_slug %}&share_owner={{ handrive_shared_owner_username|urlencode }}&share_slug={{ handrive_shared_slug|urlencode }}{% endif %}"
+                    aria-label="{{ handrive_text.download_button }}"
+                    title="{{ handrive_text.download_button }}"
+                    {% if not current_dir_is_archive_virtual %}hidden{% endif %}
+                ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" y1="3" x2="10" y2="13"/><polyline points="6,9 10,13 14,9"/><line x1="4" y1="17" x2="16" y2="17"/></svg></a>
+                <button
+                    class="handrive-icon-btn"
+                    type="button"
+                    id="handrive-list-toolbar-archive-delete-btn"
+                    aria-label="{{ handrive_text.delete_button }}"
+                    title="{{ handrive_text.delete_button }}"
+                    {% if not current_dir_is_archive_virtual or not current_dir_archive_can_delete %}hidden{% endif %}
+                ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5h4v2.5H8z"/><line x1="3" y1="5.5" x2="17" y2="5.5"/><rect x="5" y="6.5" width="10" height="11" rx="1.5"/><line x1="8.5" y1="9" x2="8.5" y2="15"/><line x1="11.5" y1="9" x2="11.5" y2="15"/></svg></button>
                 {% include "handrive/_auth_button.html" %}
                 {% include "handrive/_superuser_ops_button.html" %}
             </div>
@@ -59,6 +99,11 @@
     data-current-dir-has-children="{% if current_dir_has_children %}1{% else %}0{% endif %}"
     data-current-dir-is-git-repo-root="{% if current_dir_is_git_repo_root %}1{% else %}0{% endif %}"
     data-current-dir-is-google-drive="{% if current_dir_is_google_drive %}1{% else %}0{% endif %}"
+    data-current-dir-is-archive-virtual="{% if current_dir_is_archive_virtual %}1{% else %}0{% endif %}"
+    data-current-dir-archive-path="{{ current_dir_archive_path|default:''|escape }}"
+    data-current-dir-archive-member-path="{{ current_dir_archive_member_path|default:''|escape }}"
+    data-current-dir-archive-can-edit="{% if current_dir_archive_can_edit %}1{% else %}0{% endif %}"
+    data-current-dir-archive-can-delete="{% if current_dir_archive_can_delete %}1{% else %}0{% endif %}"
     data-current-dir-requires-commit-message="{% if current_dir_requires_commit_message %}1{% else %}0{% endif %}"
     data-current-dir-git-branch-root="{% if current_dir_git_branch_root %}1{% else %}0{% endif %}"
     data-current-dir-git-commit-id="{{ current_dir_git_commit_id|default:''|escape }}"
@@ -68,6 +113,7 @@
     data-current-dir-size-display="{{ list_current_dir_size_display|default:''|escape }}"
     data-current-dir-is-url-only="{% if current_dir_is_url_only %}1{% else %}0{% endif %}"
     data-current-dir-share-url="{{ current_dir_share_url|default:''|escape }}"
+    data-current-dir-share-download-url="{{ current_dir_share_download_url|default:''|escape }}"
     data-current-dir-share-is-inherited="{% if current_dir_share_is_inherited %}1{% else %}0{% endif %}"
     data-account-profile-image-url="{{ account_profile_image_url|default:''|escape }}"
     data-scoped-home-dir="{{ scoped_home_dir|default:'' }}"
@@ -162,7 +208,10 @@
             <div class="handrive-list-loading" id="handrive-list-loading" hidden aria-hidden="true">
                 <div class="handrive-list-loading-spinner"></div>
             </div>
-            <ul id="handrive-list" class="handrive-list" aria-label="{{ handrive_text.list_aria_label }}"></ul>
+            <div id="handrive-list" class="handrive-list">
+                <ul id="handrive-current-dir-list" class="handrive-current-dir-list" aria-label="{{ handrive_text.list_aria_label }}"></ul>
+                <ul id="handrive-list-items" class="handrive-list-items" aria-label="{{ handrive_text.list_aria_label }}"></ul>
+            </div>
         </div>
         <aside class="handrive-list-preview" id="handrive-list-preview" aria-live="polite" aria-hidden="true" hidden>
             <header class="handrive-list-preview-head">
@@ -307,6 +356,7 @@
 {% include "popup/handrive/markdown_snippet_menu.html" %}
 
 {% include "popup/handrive/archive_extract_modal.html" %}
+{% include "popup/handrive/archive_create_modal.html" %}
 {% include "popup/handrive/rename_modal.html" %}
 {% include "popup/handrive/folder_create_modal.html" %}
 {% include "popup/handrive/commit_message_modal.html" %}

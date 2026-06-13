@@ -54,6 +54,9 @@
         var isEditableHandriveFileEntry = options && typeof options.isEditableHandriveFileEntry === "function"
             ? options.isEditableHandriveFileEntry
             : function () { return false; };
+        var canCreateArchiveFromEntries = options && typeof options.canCreateArchiveFromEntries === "function"
+            ? options.canCreateArchiveFromEntries
+            : function () { return false; };
 
         var IMAGE_EXTENSIONS_FOR_MAP = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff", ".tif", ".avif"];
         var VIDEO_EXTENSIONS_FOR_MP3 = [".mp4", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m4v", ".ogv"];
@@ -147,6 +150,7 @@
             });
             flags.open = true;
             flags.download = canDownloadAllEntries;
+            flags.createArchive = canCreateArchiveFromEntries(targets);
             flags.deleteEntry = canDeleteAll && !includesRepoDirectory;
             return flags;
         }

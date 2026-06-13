@@ -902,6 +902,12 @@ def _build_fenced_code_html(info: str, code_lines: list[str], base_indent: str) 
     if language:
         safe_language = re.sub(r"[^A-Za-z0-9_+.#-]", "", language)
         if safe_language:
+            if safe_language.lower() == "mermaid":
+                return (
+                    '<div class="handrive-mermaid" data-handrive-mermaid-diagram="1">'
+                    f'<pre class="handrive-mermaid-source"><code class="language-mermaid">{escaped_code}\n</code></pre>'
+                    "</div>"
+                )
             return f'<pre><code class="language-{safe_language}">{escaped_code}\n</code></pre>'
     return f"<pre><code>{escaped_code}\n</code></pre>"
 
@@ -1065,7 +1071,9 @@ def render_markdown_safely(text, *, preserve_blank_lines: bool = False):
 
 def render_markdown_with_raw_html(text):
     """Render markdown for trusted project detail content while preserving raw HTML."""
-    rendered_html = markdown.markdown(text or "", extensions=MARKDOWN_EXTENSIONS)
+    prepared_source, extracted_blocks = _extract_fenced_code_blocks(text or "")
+    rendered_html = markdown.markdown(prepared_source, extensions=MARKDOWN_EXTENSIONS)
+    rendered_html = _restore_fenced_code_blocks(rendered_html, extracted_blocks)
     return mark_safe(rendered_html)
 
 
@@ -1362,7 +1370,7 @@ def apply_ui_context(request, context, ui_lang):
             context["account_google_drive_selected_count"] = len(selected_items) if isinstance(selected_items, list) else 0
     try:
         nav_links = list(NavLink.objects.all())
-        removed_nav_names = {"github", "thingiverse", "portfolio", "wargame"}
+        removed_nav_names = {"github", "thingiverse", "portfolio", "wargame", "email", "hpmail", "mail"}
         for link in nav_links:
             name_value = str(getattr(link, "name", "") or "")
             url_value = str(getattr(link, "url", "") or "")
@@ -1386,13 +1394,15 @@ def apply_ui_context(request, context, ui_lang):
             name="CLI",
             url=f"/{ui_lang}/handrive/cli",
         )
-        hanharness_inserted = False
+        drive_index = None
         for index, link in enumerate(resolved_links):
             if str(getattr(link, "name", "") or "").strip().lower() == "drive":
-                resolved_links.insert(index + 1, hanharness_link)
-                hanharness_inserted = True
+                drive_index = index
                 break
-        if not hanharness_inserted:
+        if drive_index is not None:
+            insert_at = drive_index + 1
+            resolved_links.insert(insert_at, hanharness_link)
+        else:
             resolved_links.append(hanharness_link)
 
         context["nav_links"] = resolved_links

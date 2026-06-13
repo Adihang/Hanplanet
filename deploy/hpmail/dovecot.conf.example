@@ -1,0 +1,51 @@
+# HPmail Dovecot excerpt.
+# Adjust uid/gid and certificate paths for the production host.
+
+protocols = imap lmtp
+listen = 127.0.0.1, ::
+
+mail_location = maildir:/Volumes/HANPLANET_HDD/Hanplanet/mail/%d/%n/Maildir
+
+namespace inbox {
+  inbox = yes
+  mailbox Drafts {
+    special_use = \Drafts
+    auto = subscribe
+  }
+  mailbox Sent {
+    special_use = \Sent
+    auto = subscribe
+  }
+  mailbox Trash {
+    special_use = \Trash
+    auto = subscribe
+  }
+  mailbox Junk {
+    special_use = \Junk
+    auto = subscribe
+  }
+}
+
+service lmtp {
+  unix_listener /var/spool/postfix/private/dovecot-lmtp {
+    mode = 0600
+    user = _postfix
+    group = _postfix
+  }
+}
+
+ssl = required
+ssl_cert = </path/to/fullchain.pem
+ssl_key = </path/to/privkey.pem
+
+auth_master_user_separator = *
+passdb {
+  driver = passwd-file
+  master = yes
+  args = /opt/homebrew/etc/dovecot/hpmail-master-users
+}
+
+userdb {
+  driver = static
+  args = uid=imhanbyeol gid=staff home=/Volumes/HANPLANET_HDD/Hanplanet/mail/%d/%n allow_all_users=yes
+}

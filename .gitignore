@@ -68,3 +68,6 @@ forgejo/log/
 
 # Celery / application logs
 log/
+
+# Generated HPmail Postfix maps
+deploy/hpmail/generated/

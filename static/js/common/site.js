@@ -316,6 +316,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const applyPageSurfaceMode = function (useDarkTheme) {
         currentSurfaceMode = useDarkTheme;
         document.body.classList.toggle('theme-dark', useDarkTheme);
+        window.dispatchEvent(new CustomEvent('hanplanet:themechange', {
+            detail: { dark: useDarkTheme }
+        }));
 
         if (useDarkTheme) {
             document.documentElement.classList.remove('preload-light-bg');

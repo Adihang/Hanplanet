@@ -755,13 +755,20 @@ DOCS_TEXT = {
         "menu_change_icon": "아이콘 변경",
         "menu_convert_mp3": "mp3변환",
         "menu_extract_archive": "압축해제",
-        "menu_create_archive": "압축하기",
+        "menu_create_archive": "압축",
         "menu_new_folder": "새 폴더",
         "menu_new_document": "새 파일",
         "archive_extract_title": "압축해제",
         "archive_extract_message": "압축을 어디에 풀까요?",
         "archive_extract_current_folder": "이 폴더에",
         "archive_extract_named_folder": "압축파일명 폴더에",
+        "archive_create_title": "압축",
+        "archive_create_name_label": "압축파일명",
+        "archive_create_name_placeholder": "압축파일명을 입력해주세요.",
+        "archive_create_target_prefix": "압축 대상",
+        "archive_create_target_count_suffix": "개 파일",
+        "archive_create_name_required": "압축파일명을 입력해주세요.",
+        "archive_create_invalid_selection": "같은 폴더의 파일을 두 개 이상 선택해주세요.",
         "rename_title": "이름 바꾸기",
         "commit_message_title": "커밋",
         "commit_message_label": "메시지",
@@ -926,9 +933,6 @@ DOCS_TEXT = {
         "content_label": "내용",
         "save_location_title": "저장 위치 선택",
         "close_label": "닫기",
-        "up_button": "상위",
-        "quick_paths_title": "빠른 경로",
-        "folder_title": "폴더",
         "selected_path_label": "선택 경로",
         "selected_path_placeholder": "경로 선택",
         "create_folder_button": "폴더 생성",
@@ -1004,8 +1008,13 @@ DOCS_TEXT = {
         "url_share_title": "공유",
         "url_share_enabled_label": "URL Sharing",
         "url_share_label": "URL",
+        "url_share_read_label": "읽기 URL",
+        "url_share_download_label": "다운로드 URL",
         "url_share_copy_button": "복사",
+        "url_share_copy_download_button": "다운로드 URL 복사",
         "url_share_copied": "복사됨",
+        "url_share_indicator": "URL 공유됨",
+        "url_share_inherited_indicator": "상위 공유에서 상속됨",
         "job_queue_title": "작업 내역",
         "job_queue_empty": "작업 대기 없음",
         "job_status_queued": "대기 중",
@@ -1173,6 +1182,13 @@ DOCS_TEXT = {
         "archive_extract_message": "Where should this archive be extracted?",
         "archive_extract_current_folder": "Here",
         "archive_extract_named_folder": "Into archive-name folder",
+        "archive_create_title": "Compress",
+        "archive_create_name_label": "Archive file name",
+        "archive_create_name_placeholder": "Enter an archive file name.",
+        "archive_create_target_prefix": "Compress",
+        "archive_create_target_count_suffix": " files",
+        "archive_create_name_required": "Enter an archive file name.",
+        "archive_create_invalid_selection": "Select at least two files in the same folder.",
         "rename_title": "Rename",
         "commit_message_title": "Commit Message",
         "commit_message_label": "Message",
@@ -1318,9 +1334,6 @@ DOCS_TEXT = {
         "content_label": "Content",
         "save_location_title": "Choose Save Location",
         "close_label": "Close",
-        "up_button": "Up",
-        "quick_paths_title": "Quick Paths",
-        "folder_title": "Folders",
         "selected_path_label": "Selected Path",
         "selected_path_placeholder": "Select a path",
         "create_folder_button": "Create Folder",
@@ -1396,8 +1409,13 @@ DOCS_TEXT = {
         "url_share_title": "Share",
         "url_share_enabled_label": "URL Sharing",
         "url_share_label": "URL",
+        "url_share_read_label": "Read URL",
+        "url_share_download_label": "Download URL",
         "url_share_copy_button": "Copy",
+        "url_share_copy_download_button": "Copy Download URL",
         "url_share_copied": "Copied",
+        "url_share_indicator": "URL shared",
+        "url_share_inherited_indicator": "Inherited URL share",
         "job_queue_title": "Jobs",
         "job_queue_empty": "No pending jobs",
         "job_status_queued": "Queued",
@@ -2102,12 +2120,17 @@ def build_archive_directory_meta(request, archive_relative: str, inner_path: str
         modified_display = format_handrive_modified_display_from_timestamp(archive_path.stat().st_mtime)
     except OSError:
         pass
+    share_info = build_handrive_existing_share_info(request, archive_relative)
+    archive_can_edit = has_handrive_write_access(request, archive_relative)
+    archive_can_delete = archive_can_edit and not is_handrive_public_write_enabled(request, archive_relative)
     return {
         "path": virtual_path,
         "is_root": False,
         "can_edit": False,
         "can_write_children": False,
         "has_children": bool(entries),
+        "can_delete": False,
+        "is_public_write": False,
         "is_git_repo_root": False,
         "requires_commit_message": False,
         "git_branch_root": False,
@@ -2116,11 +2139,91 @@ def build_archive_directory_meta(request, archive_relative: str, inner_path: str
         "git_commit_author_username": "",
         "modified_display": modified_display,
         "size_display": "",
+        "write_acl_labels": get_write_acl_display_labels(request, archive_relative),
         "git_repo": None,
+        "is_url_only": is_handrive_url_only_enabled(request, archive_relative),
+        "share_url": share_info["share_url"],
+        "share_download_url": share_info["share_download_url"],
+        "share_is_inherited": share_info["share_is_inherited"],
+        "is_google_drive": False,
+        "google_drive": None,
         "is_archive_virtual": True,
         "archive_path": archive_relative,
         "archive_member_path": normalized_inner,
+        "archive_can_edit": archive_can_edit,
+        "archive_can_delete": archive_can_delete,
     }
+
+
+def build_archive_virtual_breadcrumbs(
+    request,
+    base_url: str,
+    archive_relative: str,
+    inner_path: str = "",
+    *,
+    scoped_home_dir: str = "",
+    root_url: str | None = None,
+    shared_context: dict | None = None,
+    ui_lang: str | None = None,
+) -> list[dict]:
+    normalized_archive = normalize_relative_path(archive_relative, allow_empty=False)
+    normalized_inner = normalize_archive_member_name(inner_path)
+    archive_virtual_root = build_archive_virtual_path(normalized_archive)
+
+    if shared_context:
+        breadcrumbs = build_handrive_shared_breadcrumbs(request, ui_lang, shared_context, normalized_archive)
+    elif request is None:
+        breadcrumbs = build_handrive_breadcrumbs(
+            base_url,
+            normalized_archive,
+            scoped_home_dir=scoped_home_dir,
+            root_label="HanDrive",
+            root_url=root_url,
+            request=request,
+        )
+    else:
+        breadcrumbs = _build_git_virtual_breadcrumbs(
+            request,
+            base_url,
+            normalized_archive,
+            scoped_home_dir=scoped_home_dir,
+            root_url=root_url,
+        )
+
+    archive_label = _decode_breadcrumb_label(Path(normalized_archive).name or normalized_archive)
+    if breadcrumbs:
+        breadcrumbs[-1] = {
+            **breadcrumbs[-1],
+            "label": archive_label,
+            "url": build_handrive_list_url(base_url, archive_virtual_root, request=request),
+            "is_current": not normalized_inner,
+            "path": archive_virtual_root,
+        }
+    else:
+        breadcrumbs = [
+            {
+                "label": archive_label,
+                "url": build_handrive_list_url(base_url, archive_virtual_root, request=request),
+                "is_current": not normalized_inner,
+                "path": archive_virtual_root,
+            }
+        ]
+
+    accumulated_parts = []
+    inner_parts = [part for part in normalized_inner.split("/") if part]
+    for index, part in enumerate(inner_parts):
+        accumulated_parts.append(part)
+        member_path = "/".join(accumulated_parts)
+        virtual_path = build_archive_virtual_path(normalized_archive, member_path)
+        breadcrumbs.append(
+            {
+                "label": _decode_breadcrumb_label(part),
+                "url": build_handrive_list_url(base_url, virtual_path, request=request),
+                "is_current": index == len(inner_parts) - 1,
+                "path": virtual_path,
+            }
+        )
+    return breadcrumbs
 
 
 def list_archive_entries(archive_path: Path, archive_relative: str, inner_path: str, request=None) -> list[dict]:
@@ -2185,7 +2288,7 @@ def build_available_archive_directory_path(parent_dir: Path, raw_name: str) -> P
 
 
 def build_available_archive_file_path(parent_dir: Path, raw_stem: str) -> Path:
-    base_name = validate_name(raw_stem or "archive", for_file=False)
+    base_name = validate_name(raw_stem or "archive", for_file=True, file_extension=".zip")
     candidate = parent_dir / f"{base_name}.zip"
     if not candidate.exists():
         return candidate
@@ -3783,9 +3886,15 @@ def _build_google_drive_directory_meta(request, context, entries: list | None = 
         "git_repo": None,
         "is_url_only": False,
         "share_url": "",
+        "share_download_url": "",
         "share_is_inherited": False,
         "is_google_drive": True,
         "google_drive": google_meta,
+        "is_archive_virtual": False,
+        "archive_path": "",
+        "archive_member_path": "",
+        "archive_can_edit": False,
+        "archive_can_delete": False,
     }
 
 
@@ -4010,6 +4119,7 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                 entry["write_acl_labels"] = get_write_acl_display_labels(request, entry["path"])
                 share_info = build_handrive_existing_share_info(request, entry["path"])
                 entry["share_url"] = share_info["share_url"]
+                entry["share_download_url"] = share_info["share_download_url"]
                 entry["share_is_inherited"] = share_info["share_is_inherited"]
                 # 커스텀 폴더 아이콘 URL 주입
                 if folder_icon_owner_key and folder_icon_owner_key != "anon":
@@ -4042,6 +4152,7 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                 entry["write_acl_labels"] = get_write_acl_display_labels(request, entry["path"])
                 share_info = build_handrive_existing_share_info(request, entry["path"])
                 entry["share_url"] = share_info["share_url"]
+                entry["share_download_url"] = share_info["share_download_url"]
                 entry["share_is_inherited"] = share_info["share_is_inherited"]
                 if is_handrive_supported_archive_path(child):
                     entry["is_archive"] = True
@@ -4232,7 +4343,7 @@ def _build_handrive_directory_meta(
             )
 
     effective_entries = entries if entries is not None else []
-    current_share_info = {"share_url": "", "share_is_inherited": False}
+    current_share_info = {"share_url": "", "share_download_url": "", "share_is_inherited": False}
     current_is_url_only = False
     if normalized_dir:
         current_is_url_only = is_handrive_url_only_enabled(request, normalized_dir)
@@ -4262,7 +4373,15 @@ def _build_handrive_directory_meta(
         "git_repo": _get_current_dir_git_repo(request, normalized_dir),
         "is_url_only": current_is_url_only,
         "share_url": current_share_info["share_url"],
+        "share_download_url": current_share_info["share_download_url"],
         "share_is_inherited": current_share_info["share_is_inherited"],
+        "is_google_drive": False,
+        "google_drive": None,
+        "is_archive_virtual": False,
+        "archive_path": "",
+        "archive_member_path": "",
+        "archive_can_edit": False,
+        "archive_can_delete": False,
     }
 
 
@@ -4806,6 +4925,8 @@ def _git_repo_latest_commit_meta_map(repo, branch_name: str, repo_relative_paths
 
     result = _run_git_repo_command(
         repo,
+        "-c",
+        "core.quotePath=false",
         "log",
         "--format=%x1e%h%x1f%s%x1f%an%x1f%ct",
         "--name-only",
@@ -5538,7 +5659,8 @@ def enforce_handrive_scoped_quota(
 
     current_bytes, current_entries = calculate_handrive_tree_usage(scoped_root)
     repo_bytes, _ = calculate_handrive_repo_usage(request.user)
-    projected_bytes = current_bytes + repo_bytes + max(0, extra_bytes)
+    mail_bytes, _ = calculate_handrive_mail_usage(request.user)
+    projected_bytes = current_bytes + repo_bytes + mail_bytes + max(0, extra_bytes)
     projected_entries = current_entries + max(0, extra_entries)
 
     user_quota_bytes = get_user_handrive_quota_bytes(request.user)
@@ -5662,6 +5784,15 @@ def calculate_handrive_repo_usage(user) -> tuple[int, int]:
                 except OSError:
                     continue
     return total_bytes, total_repos
+
+
+def calculate_handrive_mail_usage(user) -> tuple[int, int]:
+    """HPmail 저장소 사용량(bytes)과 파일/폴더 개수를 반환한다."""
+    try:
+        from hpmail.services import calculate_user_mail_usage
+        return calculate_user_mail_usage(user)
+    except Exception:
+        return 0, 0
 
 
 def build_handrive_breadcrumbs(
@@ -6039,6 +6170,23 @@ def append_handrive_share_query(url: str, owner_username: str = "", share_slug: 
     return f"{url}{separator}share_owner={quote(owner_username)}&share_slug={quote(share_slug)}"
 
 
+def build_handrive_shared_download_url(request, path_value: str, owner_username: str = "", share_slug: str = "") -> str:
+    if not request or not owner_username or not share_slug:
+        return ""
+    try:
+        normalized_path = normalize_relative_path(path_value, allow_empty=False)
+    except ValueError:
+        return ""
+    query = urlencode(
+        {
+            "path": normalized_path,
+            "share_owner": owner_username,
+            "share_slug": share_slug,
+        }
+    )
+    return request.build_absolute_uri(f"{reverse('main:handrive_api_download')}?{query}")
+
+
 def build_handrive_share_slug(relative_path: str) -> str:
     base_name = Path(markdown_slug_from_relative(relative_path)).name.strip()
     return base_name or "document"
@@ -6068,7 +6216,7 @@ def ensure_handrive_shared_link(path_value: str, owner) -> HandriveSharedLink:
 
 def build_handrive_existing_share_info(request, path_value: str) -> dict:
     """Return share URL details for direct or inherited URL-only links."""
-    empty = {"share_url": "", "share_is_inherited": False}
+    empty = {"share_url": "", "share_download_url": "", "share_is_inherited": False}
     if not request or not path_value or not is_handrive_url_only_enabled(request, path_value):
         return empty
     try:
@@ -6090,6 +6238,12 @@ def build_handrive_existing_share_info(request, path_value: str) -> dict:
                         shared_context["share_slug"],
                         child_path,
                     )
+                ),
+                "share_download_url": build_handrive_shared_download_url(
+                    request,
+                    normalized_path,
+                    shared_context["owner_username"],
+                    shared_context["share_slug"],
                 ),
                 "share_is_inherited": bool(child_path),
             }
@@ -6121,6 +6275,12 @@ def build_handrive_existing_share_info(request, path_value: str) -> dict:
     return {
         "share_url": request.build_absolute_uri(
             build_handrive_shared_view_child_url(ui_lang, shared_link.owner.username, shared_link.share_slug, child_path)
+        ),
+        "share_download_url": build_handrive_shared_download_url(
+            request,
+            normalized_path,
+            shared_link.owner.username,
+            shared_link.share_slug,
         ),
         "share_is_inherited": bool(child_path),
     }
@@ -6193,7 +6353,8 @@ def handrive_common_context(request, ui_lang):
             _quota_root, _ = resolve_path(_quota_home, must_exist=False)
             _quota_used, _, _breakdown = calculate_handrive_quota_breakdown(_quota_root)
             _repo_bytes, _repo_count = calculate_handrive_repo_usage(request.user)
-            _total_used = _quota_used + _repo_bytes
+            _mail_bytes, _mail_count = calculate_handrive_mail_usage(request.user)
+            _total_used = _quota_used + _repo_bytes + _mail_bytes
             _user_quota = get_user_handrive_quota_bytes(request.user)
             handrive_quota_used_bytes = _total_used
             handrive_quota_total_bytes = _user_quota
@@ -6225,6 +6386,16 @@ def handrive_common_context(request, ui_lang):
                     "count": _repo_count,
                     "display": format_handrive_bytes_display(_repo_bytes),
                     "percent": round(_repo_bytes / _user_quota * 100, 2),
+                })
+            if _mail_count > 0:
+                handrive_quota_breakdown.append({
+                    "key": "mail",
+                    "label": "메일",
+                    "color": "#0f7b6c",
+                    "bytes": _mail_bytes,
+                    "count": _mail_count,
+                    "display": format_handrive_bytes_display(_mail_bytes),
+                    "percent": round(_mail_bytes / _user_quota * 100, 2),
                 })
         else:
             handrive_quota_used_bytes = None
@@ -9656,7 +9827,12 @@ def handrive_list(request, folder_path="", ui_lang=None):
     is_superuser = bool(getattr(request.user, "is_superuser", False))
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     route_folder_path = resolve_handrive_route_path(request, folder_path)
-    requested_dir = normalize_relative_path(route_folder_path, allow_empty=True)
+    try:
+        requested_dir = normalize_relative_path(route_folder_path, allow_empty=True)
+        requested_archive_virtual = parse_archive_virtual_path(requested_dir)
+    except ValueError:
+        raise Http404("폴더를 찾을 수 없습니다.")
+    requested_scope_dir = requested_archive_virtual[0] if requested_archive_virtual is not None else requested_dir
     if scoped_home_dir and not shared_context:
         ensure_scoped_home_dir(scoped_home_dir)
         if not requested_dir:
@@ -9665,7 +9841,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
                     reverse("main:handrive_list_lang", kwargs={"ui_lang": resolved_lang, "folder_path": scoped_home_dir})
                 )
             return redirect(reverse("main:handrive_list", kwargs={"folder_path": scoped_home_dir}))
-        if not is_superuser and not is_path_in_handrive_scope(requested_dir, scoped_home_dir):
+        if not is_superuser and not is_path_in_handrive_scope(requested_scope_dir, scoped_home_dir):
             if not request.user.is_authenticated:
                 from urllib.parse import urlencode
                 if resolved_lang in SUPPORTED_UI_LANGS:
@@ -9675,21 +9851,40 @@ def handrive_list(request, folder_path="", ui_lang=None):
                 return redirect(login_url + "?" + urlencode({"next": request.get_full_path()}))
             raise PermissionDenied("파일을 볼 권한이 없습니다.")
 
-    try:
-        current_dir = normalize_relative_path(route_folder_path, allow_empty=True)
-    except ValueError:
-        raise Http404("폴더를 찾을 수 없습니다.")
+    current_dir = requested_dir
+    archive_virtual = requested_archive_virtual
+    directory_meta = None
 
-    google_drive = _parse_google_drive_virtual_path(request, current_dir)
-    git_virtual = None if google_drive is not None else _get_git_virtual_context(request, current_dir)
-    if google_drive is not None:
+    if archive_virtual is not None:
+        archive_relative, archive_inner_path = archive_virtual
+        try:
+            archive_path, archive_relative = resolve_path(archive_relative, must_exist=True)
+        except (ValueError, FileNotFoundError):
+            raise Http404("폴더를 찾을 수 없습니다.")
+        if not archive_path.is_file() or not is_handrive_supported_archive_path(archive_path):
+            raise Http404("지원하지 않는 압축파일입니다.")
+        if not has_handrive_read_access(request, archive_relative):
+            raise PermissionDenied("파일을 볼 권한이 없습니다.")
+        try:
+            initial_entries = list_archive_entries(archive_path, archive_relative, archive_inner_path, request=request)
+        except zipfile.BadZipFile:
+            raise Http404("압축파일을 읽을 수 없습니다.")
+        current_dir = build_archive_virtual_path(archive_relative, archive_inner_path)
+        directory_meta = build_archive_directory_meta(request, archive_relative, archive_inner_path, initial_entries)
+        google_drive = None
+        git_virtual = None
+    else:
+        google_drive = _parse_google_drive_virtual_path(request, current_dir)
+        git_virtual = None if google_drive is not None else _get_git_virtual_context(request, current_dir)
+
+    if archive_virtual is None and google_drive is not None:
         _refresh_google_profile_once_per_day(google_drive["mapping"])
         google_drive["display_name"] = _google_drive_display_name(google_drive["mapping"])
         try:
             initial_entries = _build_google_drive_entries(request, google_drive)
         except GoogleDriveError as exc:
             raise Http404(str(exc))
-    elif git_virtual is None:
+    elif archive_virtual is None and git_virtual is None:
         try:
             directory, current_dir = resolve_path(current_dir, must_exist=True)
         except (ValueError, FileNotFoundError):
@@ -9697,7 +9892,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
         if not directory.is_dir():
             raise Http404("폴더를 찾을 수 없습니다.")
         initial_entries = list_directory_entries(directory, request=request)
-    else:
+    elif archive_virtual is None:
         if git_virtual["kind"] == "branch_file":
             raise Http404("폴더를 찾을 수 없습니다.")
         try:
@@ -9707,7 +9902,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
 
     apply_handrive_entry_url_paths(request, initial_entries)
 
-    if not has_handrive_read_access(request, current_dir):
+    if archive_virtual is None and not has_handrive_read_access(request, current_dir):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
 
     canonical_redirect = redirect_internal_virtual_handrive_url_if_needed(
@@ -9718,7 +9913,8 @@ def handrive_list(request, folder_path="", ui_lang=None):
     if canonical_redirect is not None:
         return canonical_redirect
 
-    directory_meta = _build_handrive_directory_meta(request, current_dir, initial_entries)
+    if directory_meta is None:
+        directory_meta = _build_handrive_directory_meta(request, current_dir, initial_entries)
 
     shared_root_url = context["handrive_root_url"]
     if shared_context:
@@ -9728,7 +9924,18 @@ def handrive_list(request, folder_path="", ui_lang=None):
             shared_context["share_slug"],
         )
 
-    if shared_context:
+    if archive_virtual is not None:
+        breadcrumbs = build_archive_virtual_breadcrumbs(
+            request,
+            context["handrive_base_url"],
+            archive_relative,
+            archive_inner_path,
+            scoped_home_dir=scoped_home_dir,
+            root_url=shared_root_url,
+            shared_context=shared_context,
+            ui_lang=resolved_lang,
+        )
+    elif shared_context:
         breadcrumbs = build_handrive_shared_breadcrumbs(request, resolved_lang, shared_context, current_dir)
     else:
         breadcrumbs = _build_git_virtual_breadcrumbs(
@@ -9764,9 +9971,15 @@ def handrive_list(request, folder_path="", ui_lang=None):
             "current_dir_write_acl_labels": directory_meta.get("write_acl_labels", []),
             "current_dir_is_url_only": directory_meta["is_url_only"],
             "current_dir_share_url": directory_meta["share_url"],
+            "current_dir_share_download_url": directory_meta.get("share_download_url", ""),
             "current_dir_share_is_inherited": directory_meta["share_is_inherited"],
             "current_dir_is_google_drive": directory_meta.get("is_google_drive", False),
             "current_dir_google_drive": directory_meta.get("google_drive"),
+            "current_dir_is_archive_virtual": directory_meta.get("is_archive_virtual", False),
+            "current_dir_archive_path": directory_meta.get("archive_path", ""),
+            "current_dir_archive_member_path": directory_meta.get("archive_member_path", ""),
+            "current_dir_archive_can_edit": directory_meta.get("archive_can_edit", False),
+            "current_dir_archive_can_delete": directory_meta.get("archive_can_delete", False),
             "breadcrumbs": breadcrumbs,
             "initial_entries": initial_entries,
             "current_dir_git_repo": directory_meta["git_repo"],
@@ -9975,11 +10188,13 @@ def handrive_view(request, doc_path, ui_lang=None):
     if google_drive is not None:
         doc_is_url_only = False
         doc_share_url = ""
+        doc_share_download_url = ""
         doc_share_is_inherited = False
     else:
         doc_is_url_only = is_handrive_url_only_enabled(request, relative_file_path)
         doc_share_info = build_handrive_existing_share_info(request, relative_file_path)
         doc_share_url = doc_share_info["share_url"]
+        doc_share_download_url = doc_share_info["share_download_url"]
         doc_share_is_inherited = doc_share_info["share_is_inherited"]
 
     shared_root_url = context["handrive_root_url"]
@@ -10052,6 +10267,7 @@ def handrive_view(request, doc_path, ui_lang=None):
             "doc_edit_url": doc_edit_url,
             "doc_is_url_only": doc_is_url_only,
             "doc_share_url": doc_share_url,
+            "doc_share_download_url": doc_share_download_url,
             "doc_share_is_inherited": doc_share_is_inherited,
             "doc_content_html": rendered_content_html,
             "doc_content_mode": render_profile["mode"],
@@ -10142,7 +10358,7 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
     context.update(
         {
             "doc_title": target_path.name,
-            "doc_relative_path": "",
+            "doc_relative_path": relative_path,
             "doc_slug_path": share_slug,
             "doc_parent_dir": "",
             "doc_can_read": True,
@@ -10153,6 +10369,7 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
             "doc_can_edit": False,
             "doc_is_url_only": True,
             "doc_share_url": request.build_absolute_uri(build_handrive_shared_view_url(resolved_lang, owner_username, share_slug)),
+            "doc_share_download_url": build_handrive_shared_download_url(request, relative_path, owner_username, share_slug),
             "doc_share_is_inherited": False,
             "hide_global_nav": not request.user.is_authenticated,
             "is_handrive_shared_view": True,
@@ -10168,6 +10385,10 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
             "view_current_file_name": target_path.name,
             "view_current_file_size_display": format_handrive_bytes_display(target_path.stat().st_size) if target_path.exists() else "",
             "page_help_html": build_page_help_html(resolved_lang, "view", handrive_text),
+            "handrive_shared_owner_username": owner_username,
+            "handrive_shared_slug": share_slug,
+            "handrive_shared_root_path": relative_path,
+            "handrive_root_url": build_handrive_shared_view_url(resolved_lang, owner_username, share_slug),
         }
     )
     return render(request, "handrive/view.html", context)
@@ -10732,11 +10953,18 @@ def handrive_api_url_share(request):
     ui_lang = resolve_ui_lang(request, getattr(getattr(request, "resolver_match", None), "kwargs", {}).get("ui_lang"))
     slug_path = markdown_slug_from_relative(rel_path)
     share_url = ""
+    share_download_url = ""
     owner_username = ""
     if shared_link is not None:
         owner_username = shared_link.owner.username
         share_url = request.build_absolute_uri(
             build_handrive_shared_view_url(ui_lang, owner_username, shared_link.share_slug)
+        )
+        share_download_url = build_handrive_shared_download_url(
+            request,
+            rel_path,
+            owner_username,
+            shared_link.share_slug,
         )
 
     return JsonResponse(
@@ -10746,6 +10974,7 @@ def handrive_api_url_share(request):
             "slug_path": slug_path,
             "is_url_only": enabled,
             "share_url": share_url,
+            "share_download_url": share_download_url,
             "owner_username": owner_username,
             "share_slug": shared_link.share_slug if shared_link is not None else "",
         }
@@ -10816,12 +11045,14 @@ def handrive_api_list(request):
         except zipfile.BadZipFile:
             return json_error("압축파일을 읽을 수 없습니다.", status=400)
         normalized = build_archive_virtual_path(archive_relative, archive_inner_path)
+        directory_meta = build_archive_directory_meta(request, archive_relative, archive_inner_path, entries)
         return JsonResponse(
             {
                 "ok": True,
                 "path": normalized,
                 "entries": entries,
-                "directory": build_archive_directory_meta(request, archive_relative, archive_inner_path, entries),
+                "directory": directory_meta,
+                "directory_meta": directory_meta,
             }
         )
 
@@ -10941,6 +11172,7 @@ def handrive_api_search(request):
                         "is_url_only": is_handrive_url_only_enabled(request, rel_dir),
                         "write_acl_labels": get_write_acl_display_labels(request, rel_dir),
                         "share_url": share_info["share_url"],
+                        "share_download_url": share_info["share_download_url"],
                         "share_is_inherited": share_info["share_is_inherited"],
                     }
                     matches.append(entry)
@@ -10971,6 +11203,7 @@ def handrive_api_search(request):
                         "is_url_only": is_handrive_url_only_enabled(request, rel_file),
                         "write_acl_labels": get_write_acl_display_labels(request, rel_file),
                         "share_url": share_info["share_url"],
+                        "share_download_url": share_info["share_download_url"],
                         "share_is_inherited": share_info["share_is_inherited"],
                     }
                     matches.append(entry)
@@ -11425,11 +11658,17 @@ def handrive_api_archive_extract(request):
         return json_error("파일을 볼 권한이 없습니다.", status=403)
 
     try:
-        if target_dir_value:
+        target_archive_virtual = parse_archive_virtual_path(target_dir_value) if target_dir_value else None
+        if target_archive_virtual is not None:
+            target_archive_relative, _target_member_path = target_archive_virtual
+            target_archive_path, _target_archive_relative = resolve_path(target_archive_relative, must_exist=True)
+            target_dir_path = target_archive_path.parent
+            target_dir_relative = normalize_relative_path(relative_from_root(target_dir_path), allow_empty=True)
+        elif target_dir_value:
             target_dir_path, target_dir_relative = resolve_path(target_dir_value, must_exist=True)
         else:
             target_dir_path = archive_path.parent
-            target_dir_relative = relative_from_root(target_dir_path)
+            target_dir_relative = normalize_relative_path(relative_from_root(target_dir_path), allow_empty=True)
     except (ValueError, FileNotFoundError) as exc:
         return json_error(str(exc), status=400)
     if not target_dir_path.is_dir():
@@ -11534,9 +11773,91 @@ def handrive_api_archive_extract(request):
 @csrf_protect
 @with_request_handrive_root
 def handrive_api_archive_create(request):
-    """폴더를 같은 상위 폴더에 ZIP 파일로 압축한다."""
+    """폴더 또는 같은 상위 폴더의 여러 파일을 ZIP 파일로 압축한다."""
     try:
         payload = parse_json_body(request)
+    except (ValueError, FileNotFoundError) as exc:
+        return json_error(str(exc), status=400)
+
+    source_paths_payload = payload.get("source_paths")
+    if isinstance(source_paths_payload, list) and source_paths_payload:
+        source_items = []
+        source_parent_relative = None
+        seen_source_paths = set()
+        try:
+            for raw_source_path in source_paths_payload:
+                source_path_value = normalize_relative_path(raw_source_path, allow_empty=False)
+                if source_path_value in seen_source_paths:
+                    continue
+                seen_source_paths.add(source_path_value)
+                source_path, source_relative = resolve_path(source_path_value, must_exist=True)
+                if not source_path.is_file():
+                    return json_error("파일만 압축할 수 있습니다.", status=400)
+                if not has_handrive_read_access(request, source_relative):
+                    return json_error("파일을 볼 권한이 없습니다.", status=403)
+                parent_relative = source_relative.rsplit("/", 1)[0] if "/" in source_relative else ""
+                if source_parent_relative is None:
+                    source_parent_relative = parent_relative
+                elif parent_relative != source_parent_relative:
+                    return json_error("같은 폴더의 파일만 함께 압축할 수 있습니다.", status=400)
+                source_items.append((source_path, source_relative))
+        except (ValueError, FileNotFoundError) as exc:
+            return json_error(str(exc), status=400)
+
+        if len(source_items) < 2:
+            return json_error("압축할 파일을 두 개 이상 선택해주세요.", status=400)
+
+        try:
+            parent_dir, parent_relative = resolve_path(source_parent_relative or "", must_exist=True)
+        except (ValueError, FileNotFoundError) as exc:
+            return json_error(str(exc), status=400)
+        if not parent_dir.is_dir():
+            return json_error("압축파일 생성 위치가 폴더가 아닙니다.", status=400)
+        if not has_handrive_directory_write_access(request, parent_relative):
+            return json_error("폴더에 쓸 권한이 없습니다.", status=403)
+
+        archive_name = str(payload.get("archive_name") or parent_dir.name or "archive").strip()
+        try:
+            destination_path = build_available_archive_file_path(parent_dir, archive_name)
+            destination_resolved = destination_path.resolve()
+            root_resolved = handrive_root_dir().resolve()
+            if destination_resolved != root_resolved and root_resolved not in destination_resolved.parents:
+                return json_error("압축파일 생성 위치가 올바르지 않습니다.", status=400)
+
+            file_count = 0
+            with zipfile.ZipFile(destination_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for source_path, _source_relative in sorted(source_items, key=lambda item: item[1].lower()):
+                    if source_path == destination_path or not source_path.is_file():
+                        continue
+                    archive.write(source_path, source_path.name)
+                    file_count += 1
+        except ValueError as exc:
+            return json_error(str(exc), status=400)
+        except OSError as exc:
+            return json_error(f"압축파일 생성에 실패했습니다: {exc}", status=500)
+        except zipfile.BadZipFile:
+            return json_error("압축파일 생성에 실패했습니다.", status=500)
+
+        if file_count == 0:
+            try:
+                destination_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return json_error("압축할 파일이 없습니다.", status=400)
+
+        destination_relative = relative_from_root(destination_path)
+        return JsonResponse(
+            {
+                "ok": True,
+                "path": destination_relative,
+                "paths": [destination_relative],
+                "file_count": file_count,
+                "type": "file",
+                "slug_path": destination_relative,
+            }
+        )
+
+    try:
         source_path_value = normalize_relative_path(payload.get("source_path"), allow_empty=False)
         source_path, source_relative = resolve_path(source_path_value, must_exist=True)
     except (ValueError, FileNotFoundError) as exc:

@@ -78,6 +78,19 @@
         return baseUrl + separator + encodeURIComponent(key) + "=" + encodeURIComponent(value || "");
     }
 
+    function syncEditorMirrorScroll(textarea, mirror, mirrorCode) {
+        if (!textarea || !mirror) {
+            return;
+        }
+        const scrollTop = Number(textarea.scrollTop) || 0;
+        const scrollLeft = Number(textarea.scrollLeft) || 0;
+        if (mirrorCode && mirrorCode.style) {
+            mirrorCode.style.transform = "translate(" + (-scrollLeft) + "px, " + (-scrollTop) + "px)";
+        }
+        mirror.scrollTop = 0;
+        mirror.scrollLeft = 0;
+    }
+
     const lazyScriptLoadPromises = Object.create(null);
 
     function loadLazyScriptOnce(scriptUrl, globalName) {
@@ -112,6 +125,16 @@
             document.head.appendChild(script);
         });
         return lazyScriptLoadPromises[url];
+    }
+
+    function renderHandriveMermaidDiagrams(container) {
+        if (
+            !window.HanplanetMarkdownMermaid ||
+            typeof window.HanplanetMarkdownMermaid.render !== "function"
+        ) {
+            return Promise.resolve([]);
+        }
+        return window.HanplanetMarkdownMermaid.render(container);
     }
 
     function clampMarkdownIndex(value, index) {
@@ -1216,6 +1239,48 @@
 
     function textByLang(koValue, enValue) {
         return uiLang === "en" ? enValue : koValue;
+    }
+
+    function toAbsoluteUrl(url) {
+        const rawUrl = String(url || "").trim();
+        if (!rawUrl) {
+            return "";
+        }
+        try {
+            return new URL(rawUrl, window.location.origin).href;
+        } catch (error) {
+            return rawUrl;
+        }
+    }
+
+    function handrivePathUsesInternalVirtualUrl(pathValue) {
+        const normalized = normalizePath(pathValue || "", true);
+        if (!normalized) {
+            return false;
+        }
+        return normalized.split("/").some(function (part) {
+            return part.startsWith(".github-repo-")
+                || part.startsWith(".google-drive-")
+                || part === ".handrive-archive";
+        });
+    }
+
+    function isSimpleUrlShareFileEntry(entry) {
+        return Boolean(
+            entry &&
+            entry.type === "file" &&
+            !entry.is_archive_member &&
+            !entry.google_drive &&
+            !entry.is_git_virtual &&
+            !entry.git_provider &&
+            !entry.git_repo_branch &&
+            !entry.requires_commit_message &&
+            !handrivePathUsesInternalVirtualUrl(entry.path)
+        );
+    }
+
+    function isSimpleUrlShareFilePath(pathValue) {
+        return Boolean(pathValue && !handrivePathUsesInternalVirtualUrl(pathValue));
     }
 
     // 분리된 helper 모듈은 모두 window 네임스페이스로 주입된다.
@@ -2806,11 +2871,25 @@
         const shareCheckbox = document.getElementById("handrive-url-share-enabled-checkbox");
         const shareToggleLabel = shareCheckbox ? shareCheckbox.closest(".handrive-url-share-toggle-label") : null;
         const shareUrlRow = document.getElementById("handrive-url-share-url-row");
+        const shareReadLabel = document.getElementById("handrive-url-share-read-label");
         const shareInput = document.getElementById("handrive-url-share-input");
+        const shareDownloadRow = document.getElementById("handrive-url-share-download-row");
+        const shareDownloadInput = document.getElementById("handrive-url-share-download-input");
         const shareCloseButton = document.getElementById("handrive-url-share-close-btn");
-        const shareCopyButton = document.getElementById("handrive-url-share-copy-btn");
+        const shareCopyButton = document.getElementById("handrive-url-share-copy-url-icon-btn");
+        const shareCopyDownloadButton = document.getElementById("handrive-url-share-copy-download-icon-btn");
 
-        if (!shareModal || !shareBackdrop || !shareCheckbox || !shareInput || !shareCloseButton || !shareCopyButton) {
+        if (
+            !shareModal ||
+            !shareBackdrop ||
+            !shareCheckbox ||
+            !shareInput ||
+            !shareDownloadRow ||
+            !shareDownloadInput ||
+            !shareCloseButton ||
+            !shareCopyButton ||
+            !shareCopyDownloadButton
+        ) {
             return {
                 open: function () {},
                 close: function () {},
@@ -2821,6 +2900,7 @@
         let currentOnToggle = null;
         let isToggling = false;
         let currentShareUrl = "";
+        let currentShareDownloadUrl = "";
 
         function decodeUrlForDisplay(url) {
             const rawUrl = String(url || "");
@@ -2834,16 +2914,38 @@
             }
         }
 
-        function setUrlRowVisible(visible, url) {
+        function setCopyButtonLabel(button, key, fallbackLabel) {
+            const label = t(key, fallbackLabel);
+            button.setAttribute("aria-label", label);
+            button.setAttribute("title", label);
+        }
+
+        function resetCopyButton(button, key, fallbackLabel) {
+            button.classList.remove("is-copied");
+            setCopyButtonLabel(button, key, fallbackLabel);
+        }
+
+        function setUrlRowVisible(visible, url, downloadUrl) {
             currentShareUrl = visible ? String(url || "") : "";
+            currentShareDownloadUrl = visible ? String(downloadUrl || "") : "";
             shareUrlRow.hidden = !visible;
-            shareCopyButton.hidden = !visible;
+            shareDownloadRow.hidden = !(visible && currentShareDownloadUrl);
+            shareCopyButton.disabled = !(visible && currentShareUrl);
+            shareCopyDownloadButton.disabled = !(visible && currentShareDownloadUrl);
+            if (shareReadLabel) {
+                shareReadLabel.textContent = currentShareDownloadUrl
+                    ? t("url_share_read_label", "읽기 URL")
+                    : t("url_share_label", "URL");
+            }
             if (visible) {
                 shareInput.value = decodeUrlForDisplay(currentShareUrl);
+                shareDownloadInput.value = decodeUrlForDisplay(currentShareDownloadUrl);
             } else {
                 shareInput.value = "";
-                shareCopyButton.textContent = t("url_share_copy_button", "복사");
+                shareDownloadInput.value = "";
             }
+            resetCopyButton(shareCopyButton, "url_share_copy_button", "복사");
+            resetCopyButton(shareCopyDownloadButton, "url_share_copy_download_button", "다운로드 URL 복사");
         }
 
         function close() {
@@ -2857,7 +2959,8 @@
             if (shareToggleLabel) {
                 shareToggleLabel.hidden = false;
             }
-            shareCopyButton.textContent = t("url_share_copy_button", "복사");
+            resetCopyButton(shareCopyButton, "url_share_copy_button", "복사");
+            resetCopyButton(shareCopyDownloadButton, "url_share_copy_download_button", "다운로드 URL 복사");
             if (lastFocusedElement && typeof lastFocusedElement.focus === "function") {
                 lastFocusedElement.focus();
             }
@@ -2865,8 +2968,7 @@
             syncHandriveModalBodyState();
         }
 
-        async function copyCurrentUrl() {
-            const value = currentShareUrl || shareInput.value || "";
+        async function copyUrlToClipboard(value, input, button, labelKey, fallbackLabel) {
             if (!value) {
                 return;
             }
@@ -2874,21 +2976,46 @@
                 if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
                     await navigator.clipboard.writeText(value);
                 } else {
-                    shareInput.focus();
-                    shareInput.select();
+                    input.focus();
+                    input.select();
                     document.execCommand("copy");
                 }
-                shareCopyButton.textContent = t("url_share_copied", "복사됨");
+                button.classList.add("is-copied");
+                setCopyButtonLabel(button, "url_share_copied", "복사됨");
+                window.setTimeout(function () {
+                    resetCopyButton(button, labelKey, fallbackLabel);
+                }, 1400);
             } catch (error) {
-                shareInput.focus();
-                shareInput.select();
+                input.focus();
+                input.select();
             }
         }
 
-        // options: { isUrlOnly: bool, shareUrl: string, readOnly: bool, onToggle: async (enabled) => { shareUrl, isUrlOnly } }
+        async function copyCurrentUrl() {
+            await copyUrlToClipboard(
+                currentShareUrl || shareInput.value || "",
+                shareInput,
+                shareCopyButton,
+                "url_share_copy_button",
+                "복사"
+            );
+        }
+
+        async function copyCurrentDownloadUrl() {
+            await copyUrlToClipboard(
+                currentShareDownloadUrl || shareDownloadInput.value || "",
+                shareDownloadInput,
+                shareCopyDownloadButton,
+                "url_share_copy_download_button",
+                "다운로드 URL 복사"
+            );
+        }
+
+        // options: { isUrlOnly: bool, shareUrl: string, downloadUrl: string, readOnly: bool, onToggle: async (enabled) => { shareUrl, downloadUrl, isUrlOnly } }
         function open(options) {
             const isUrlOnly = Boolean(options && options.isUrlOnly);
             const shareUrl = (options && options.shareUrl) || "";
+            const downloadUrl = (options && options.downloadUrl) || "";
             const readOnly = Boolean(options && options.readOnly);
             currentOnToggle = (!readOnly && options && typeof options.onToggle === "function") ? options.onToggle : null;
 
@@ -2897,8 +3024,7 @@
             if (shareToggleLabel) {
                 shareToggleLabel.hidden = readOnly;
             }
-            setUrlRowVisible(isUrlOnly || readOnly, shareUrl);
-            shareCopyButton.textContent = t("url_share_copy_button", "복사");
+            setUrlRowVisible(isUrlOnly || readOnly, shareUrl, downloadUrl);
             shareModal.hidden = false;
             lastFocusedElement = document.activeElement;
             syncHandriveModalBodyState();
@@ -2921,7 +3047,11 @@
             shareCheckbox.disabled = true;
             currentOnToggle(enabled).then(function (result) {
                 shareCheckbox.checked = Boolean(result && result.isUrlOnly);
-                setUrlRowVisible(shareCheckbox.checked, (result && result.shareUrl) || "");
+                setUrlRowVisible(
+                    shareCheckbox.checked,
+                    (result && result.shareUrl) || "",
+                    (result && result.downloadUrl) || ""
+                );
             }).catch(function (error) {
                 shareCheckbox.checked = !enabled;
                 alertError(error);
@@ -2935,6 +3065,9 @@
         shareCloseButton.addEventListener("click", close);
         shareCopyButton.addEventListener("click", function () {
             copyCurrentUrl().catch(function () {});
+        });
+        shareCopyDownloadButton.addEventListener("click", function () {
+            copyCurrentDownloadUrl().catch(function () {});
         });
         document.addEventListener("keydown", function (event) {
             if (event.key !== "Escape" || shareModal.hidden) {
@@ -3320,6 +3453,13 @@
         const listLayout = document.getElementById("handrive-list-layout");
         const listPane = root.querySelector(".handrive-list-pane");
         const listContainer = document.getElementById("handrive-list");
+        const currentDirListContainer = document.getElementById("handrive-current-dir-list");
+        const listItemsContainer = document.getElementById("handrive-list-items");
+        const HANDRIVE_LIST_ITEM_SCALE_STORAGE_KEY = "hanplanet.handrive.list.itemScale";
+        const HANDRIVE_LIST_ITEM_SCALE_MIN = 0.72;
+        const HANDRIVE_LIST_ITEM_SCALE_MAX = 1.6;
+        const HANDRIVE_LIST_ITEM_SCALE_STEP = 0.05;
+        let handriveListItemScale = 1;
         let listSearchForm = document.getElementById("handrive-list-search-form");
         let listSearchInput = document.getElementById("handriveListSearchInput");
         let listSearchSubmitButton = document.getElementById("handrive-list-search-submit");
@@ -3345,6 +3485,11 @@
         const previewSpreadsheetSaveButton = document.getElementById("handrive-list-preview-spreadsheet-save-btn");
         const previewDeleteButton = document.getElementById("handrive-list-preview-delete-btn");
         const previewUrlShareButton = document.getElementById("handrive-list-preview-url-share-btn");
+        const currentDirToolbarUrlShareButton = document.getElementById("handrive-list-toolbar-current-dir-url-share-btn");
+        const currentDirToolbarDeleteButton = document.getElementById("handrive-list-toolbar-current-dir-delete-btn");
+        const archiveToolbarUrlShareButton = document.getElementById("handrive-list-toolbar-archive-url-share-btn");
+        const archiveToolbarDownloadButton = document.getElementById("handrive-list-toolbar-archive-download-btn");
+        const archiveToolbarDeleteButton = document.getElementById("handrive-list-toolbar-archive-delete-btn");
         
         // 편집기 관련 요소들
         const editorPanel = document.getElementById("handrive-list-editor");
@@ -3432,6 +3577,12 @@
         const archiveExtractCancelButton = document.getElementById("handrive-archive-extract-cancel-btn");
         const archiveExtractCurrentButton = document.getElementById("handrive-archive-extract-current-btn");
         const archiveExtractFolderButton = document.getElementById("handrive-archive-extract-folder-btn");
+        const archiveCreateModal = document.getElementById("handrive-archive-create-modal");
+        const archiveCreateModalBackdrop = document.getElementById("handrive-archive-create-modal-backdrop");
+        const archiveCreateTarget = document.getElementById("handrive-archive-create-target");
+        const archiveCreateInput = document.getElementById("handrive-archive-create-input");
+        const archiveCreateCancelButton = document.getElementById("handrive-archive-create-cancel-btn");
+        const archiveCreateConfirmButton = document.getElementById("handrive-archive-create-confirm-btn");
         const folderCreateModal = document.getElementById("handrive-folder-create-modal");
         const folderCreateModalBackdrop = document.getElementById("handrive-folder-create-modal-backdrop");
         const folderCreateTarget = document.getElementById("handrive-folder-create-target");
@@ -3591,6 +3742,11 @@
         const currentDirHasChildren = root.dataset.currentDirHasChildren === "1";
         const currentDirIsGitRepoRoot = root.dataset.currentDirIsGitRepoRoot === "1";
         const currentDirIsGoogleDrive = root.dataset.currentDirIsGoogleDrive === "1";
+        const currentDirIsArchiveVirtual = root.dataset.currentDirIsArchiveVirtual === "1";
+        const currentDirArchivePath = String(root.dataset.currentDirArchivePath || "").trim();
+        const currentDirArchiveMemberPath = String(root.dataset.currentDirArchiveMemberPath || "").trim();
+        const currentDirArchiveCanEdit = root.dataset.currentDirArchiveCanEdit === "1";
+        const currentDirArchiveCanDelete = root.dataset.currentDirArchiveCanDelete === "1";
         const currentDirRequiresCommitMessage = root.dataset.currentDirRequiresCommitMessage === "1";
         const currentDirGitBranchRoot = root.dataset.currentDirGitBranchRoot === "1";
         const currentDirGitCommitId = String(root.dataset.currentDirGitCommitId || "").trim();
@@ -3600,6 +3756,7 @@
         const currentDirSizeDisplay = String(root.dataset.currentDirSizeDisplay || "").trim();
         const currentDirIsUrlOnly = root.dataset.currentDirIsUrlOnly === "1";
         const currentDirShareUrl = String(root.dataset.currentDirShareUrl || "").trim();
+        const currentDirShareDownloadUrl = String(root.dataset.currentDirShareDownloadUrl || "").trim();
         const currentDirShareIsInherited = root.dataset.currentDirShareIsInherited === "1";
         const accountProfileImageUrl = String(root.dataset.accountProfileImageUrl || "").trim();
         const handriveRootLabel = (root.dataset.handriveRootLabel || breadcrumbRootLabel || "HanDrive").trim() || "HanDrive";
@@ -3654,11 +3811,17 @@
                 size_display: currentDirSizeDisplay,
                 is_url_only: currentDirIsUrlOnly,
                 share_url: currentDirShareUrl,
+                share_download_url: currentDirShareDownloadUrl,
                 share_is_inherited: currentDirShareIsInherited,
                 write_acl_labels: Array.isArray(currentDirWriteAclLabels) ? currentDirWriteAclLabels : [],
                 git_repo: currentDirGitRepo,
                 is_google_drive: currentDirIsGoogleDrive,
                 google_drive: currentDirGoogleDrive,
+                is_archive_virtual: currentDirIsArchiveVirtual,
+                archive_path: currentDirArchivePath,
+                archive_member_path: currentDirArchiveMemberPath,
+                archive_can_edit: currentDirArchiveCanEdit,
+                archive_can_delete: currentDirArchiveCanDelete,
             },
             selectedPath: "",
             selectedPaths: new Set(),
@@ -3667,6 +3830,7 @@
             contextEntries: [],
             renameTargetEntry: null,
             archiveExtractTargetEntry: null,
+            archiveCreateTargetEntries: [],
             folderIconTargetEntry: null,
             folderCreateParentEntry: null,
             permissionTargetEntry: null,
@@ -4044,6 +4208,146 @@
 
         function applyVirtualBreadcrumbLabels(crumbs) {
             return applyGoogleDriveBreadcrumbLabels(applyGithubBreadcrumbLabels(crumbs));
+        }
+
+        function getPathLeafLabel(pathValue, fallbackValue) {
+            const normalizedPath = normalizePath(pathValue || "", true);
+            if (!normalizedPath) {
+                return String(fallbackValue || effectiveRootLabel || "").trim();
+            }
+            const parts = normalizedPath.split("/").filter(Boolean);
+            return decodeBreadcrumbLabel(parts[parts.length - 1] || fallbackValue || normalizedPath);
+        }
+
+        function buildSharedBreadcrumbItemsForPath(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            const normalizedSharedRootPath = normalizePath(sharedRootPath, true);
+            if (!hasSharedContext() || !normalizedSharedRootPath) {
+                return null;
+            }
+            const effectivePath = normalizedPath && (
+                normalizedPath === normalizedSharedRootPath ||
+                normalizedPath.startsWith(normalizedSharedRootPath + "/")
+            )
+                ? normalizedPath
+                : normalizedSharedRootPath;
+            const rootParts = normalizedSharedRootPath.split("/").filter(Boolean);
+            const rootLabel = rootParts.length ? rootParts[rootParts.length - 1] : normalizedSharedRootPath;
+            const sharedBaseUrl = handriveRootUrl || "";
+            const crumbs = [
+                {
+                    label: sharedOwnerUsername,
+                    path: normalizedSharedRootPath,
+                    url: sharedBaseUrl,
+                    isCurrent: false,
+                },
+                {
+                    label: rootLabel,
+                    path: normalizedSharedRootPath,
+                    url: sharedBaseUrl,
+                    isCurrent: effectivePath === normalizedSharedRootPath,
+                },
+            ];
+            if (effectivePath === normalizedSharedRootPath) {
+                return crumbs;
+            }
+            const childPath = effectivePath.slice(normalizedSharedRootPath.length + 1);
+            const childParts = childPath.split("/").filter(Boolean);
+            childParts.forEach(function (part, index) {
+                const relativeChildPath = childParts.slice(0, index + 1).join("/");
+                crumbs.push({
+                    label: decodeBreadcrumbLabel(part),
+                    path: normalizedSharedRootPath + "/" + relativeChildPath,
+                    url: sharedBaseUrl.replace(/\/$/, "") + "/" + encodePathSegments(relativeChildPath),
+                    isCurrent: index === childParts.length - 1,
+                });
+            });
+            return crumbs;
+        }
+
+        function getArchiveVirtualRootPath(meta) {
+            const safeMeta = meta || {};
+            const metaPath = normalizePath(safeMeta.path || state.currentDir, true);
+            const memberPath = normalizePath(safeMeta.archive_member_path || "", true);
+            if (metaPath && memberPath && metaPath.endsWith("/" + memberPath)) {
+                return metaPath.slice(0, metaPath.length - memberPath.length - 1);
+            }
+            return metaPath;
+        }
+
+        function resolveArchiveMemberPathForDisplayPath(pathValue, meta) {
+            const safeMeta = meta || {};
+            const normalizedPath = normalizePath(pathValue, true);
+            const metaPath = normalizePath(safeMeta.path || state.currentDir, true);
+            const rootPath = getArchiveVirtualRootPath(safeMeta);
+            const metaMemberPath = normalizePath(safeMeta.archive_member_path || "", true);
+            if (normalizedPath === rootPath) {
+                return "";
+            }
+            if (rootPath && normalizedPath.startsWith(rootPath + "/")) {
+                return normalizePath(normalizedPath.slice(rootPath.length + 1), true);
+            }
+            if (normalizedPath === metaPath) {
+                return metaMemberPath;
+            }
+            if (metaPath && normalizedPath.startsWith(metaPath + "/")) {
+                const childPath = normalizedPath.slice(metaPath.length + 1);
+                return normalizePath(metaMemberPath ? metaMemberPath + "/" + childPath : childPath, true);
+            }
+            return metaMemberPath;
+        }
+
+        function buildArchiveBreadcrumbItems(pathValue) {
+            const currentMeta = getCurrentDirMeta();
+            if (!currentMeta || !currentMeta.is_archive_virtual || !currentMeta.archive_path) {
+                return null;
+            }
+            const archivePath = normalizePath(currentMeta.archive_path, true);
+            const archiveRootPath = getArchiveVirtualRootPath(currentMeta);
+            if (!archivePath || !archiveRootPath) {
+                return null;
+            }
+            const memberPath = resolveArchiveMemberPathForDisplayPath(pathValue, currentMeta);
+            const baseCrumbs = buildSharedBreadcrumbItemsForPath(archivePath) || buildNavigationBreadcrumbItems(archivePath, {
+                effectiveRootLabel: effectiveRootLabel,
+                isSuperuser: isSuperuser,
+                normalizePath: normalizePath,
+                scopedHomeDir: scopedHomeDir,
+            });
+            const crumbs = (Array.isArray(baseCrumbs) ? baseCrumbs : []).map(function (crumb) {
+                return Object.assign({}, crumb, { isCurrent: false });
+            });
+            const archiveLabel = getPathLeafLabel(archivePath, "archive.zip");
+            if (crumbs.length) {
+                crumbs[crumbs.length - 1] = Object.assign({}, crumbs[crumbs.length - 1], {
+                    label: archiveLabel,
+                    path: archiveRootPath,
+                    url: buildListUrl(handriveBaseUrl, archiveRootPath, handriveRootUrl),
+                    isCurrent: !memberPath,
+                });
+            } else {
+                crumbs.push({
+                    label: archiveLabel,
+                    path: archiveRootPath,
+                    url: buildListUrl(handriveBaseUrl, archiveRootPath, handriveRootUrl),
+                    isCurrent: !memberPath,
+                });
+            }
+            if (!memberPath) {
+                return crumbs;
+            }
+            const memberParts = memberPath.split("/").filter(Boolean);
+            memberParts.forEach(function (part, index) {
+                const accumulated = memberParts.slice(0, index + 1).join("/");
+                const crumbPath = archiveRootPath + "/" + accumulated;
+                crumbs.push({
+                    label: decodeBreadcrumbLabel(part),
+                    path: crumbPath,
+                    url: buildListUrl(handriveBaseUrl, crumbPath, handriveRootUrl),
+                    isCurrent: index === memberParts.length - 1,
+                });
+            });
+            return crumbs;
         }
 
         function makeReadableUrlSegment(value, fallback) {
@@ -4554,8 +4858,7 @@
             if (!editorContentInput || !editorHighlight) {
                 return;
             }
-            editorHighlight.scrollTop = editorContentInput.scrollTop;
-            editorHighlight.scrollLeft = editorContentInput.scrollLeft;
+            syncEditorMirrorScroll(editorContentInput, editorHighlight, editorHighlightCode);
         }
 
         function resetListEditorHorizontalScroll() {
@@ -4590,7 +4893,7 @@
                     });
             }
             if (editorContentInput && editorHighlight) {
-                editorHighlight.scrollLeft = editorContentInput.scrollLeft;
+                syncEditorMirrorScroll(editorContentInput, editorHighlight, editorHighlightCode);
             }
         }
 
@@ -4776,6 +5079,81 @@
                 return false;
             }
             return !(entry.type === "file" && entry.is_public_write);
+        }
+
+        function clampHandriveListItemScale(value) {
+            const numericValue = Number(value);
+            if (!Number.isFinite(numericValue)) {
+                return 1;
+            }
+            return Math.max(
+                HANDRIVE_LIST_ITEM_SCALE_MIN,
+                Math.min(HANDRIVE_LIST_ITEM_SCALE_MAX, numericValue)
+            );
+        }
+
+        function readStoredHandriveListItemScale() {
+            try {
+                if (!window.localStorage) {
+                    return 1;
+                }
+                const rawValue = window.localStorage.getItem(HANDRIVE_LIST_ITEM_SCALE_STORAGE_KEY);
+                if (rawValue === null || rawValue === "") {
+                    return 1;
+                }
+                return clampHandriveListItemScale(rawValue);
+            } catch (error) {
+                return 1;
+            }
+        }
+
+        function writeStoredHandriveListItemScale(value) {
+            try {
+                if (!window.localStorage) {
+                    return;
+                }
+                const normalizedValue = clampHandriveListItemScale(value);
+                if (Math.abs(normalizedValue - 1) < 0.001) {
+                    window.localStorage.removeItem(HANDRIVE_LIST_ITEM_SCALE_STORAGE_KEY);
+                    return;
+                }
+                window.localStorage.setItem(HANDRIVE_LIST_ITEM_SCALE_STORAGE_KEY, normalizedValue.toFixed(3));
+            } catch (error) {}
+        }
+
+        function applyHandriveListItemScale(value, options) {
+            const settings = options || {};
+            const normalizedValue = clampHandriveListItemScale(value);
+            handriveListItemScale = normalizedValue;
+            if (listItemsContainer) {
+                listItemsContainer.style.setProperty("--handrive-list-item-scale", normalizedValue.toFixed(3));
+                listItemsContainer.setAttribute("data-list-item-scale", normalizedValue.toFixed(2));
+            }
+            if (!settings.skipPersist) {
+                writeStoredHandriveListItemScale(normalizedValue);
+            }
+            if (!settings.skipLayout) {
+                scheduleListColumnVisibilityUpdate({ afterLayout: true, delayMs: 80 });
+                scheduleListBodyHeight();
+            }
+        }
+
+        function handleHandriveListItemsScaleWheel(event) {
+            if (!listItemsContainer || !(event.ctrlKey || event.metaKey) || event.altKey) {
+                return;
+            }
+            if (!(event.target instanceof Element) || !listItemsContainer.contains(event.target)) {
+                return;
+            }
+            if (event.deltaY === 0) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            const direction = event.deltaY < 0 ? 1 : -1;
+            applyHandriveListItemScale(
+                handriveListItemScale + (direction * HANDRIVE_LIST_ITEM_SCALE_STEP)
+            );
         }
 
         function getSelectedEntries() {
@@ -6418,12 +6796,24 @@
             
             function handleMediaEditorSaved(result, options) {
                 const settings = options || {};
+                const sourcePath = normalizePath(entry.path || "", true);
                 const savedPath = result && typeof result.path === "string" && result.path.trim()
                     ? normalizePath(result.path, true)
                     : "";
-                const targetPath = savedPath || normalizePath(entry.path || "", true);
+                const targetPath = savedPath || sourcePath;
+                const previousActivePreviewPath = state.activePreviewPath || "";
+                if (settings.openPreview || previousActivePreviewPath === sourcePath) {
+                    state.activePreviewPath = targetPath;
+                    state.activeRenderedPreviewPath = "";
+                }
+                applySelection([targetPath], {
+                    primaryPath: targetPath,
+                    anchorPath: targetPath,
+                    render: false,
+                });
+                syncEntryRowSelectedStates([sourcePath, previousActivePreviewPath, targetPath]);
                 if (state.previewCache) {
-                    state.previewCache.delete(entry.path);
+                    state.previewCache.delete(sourcePath);
                     if (savedPath) {
                         state.previewCache.delete(savedPath);
                     }
@@ -6937,6 +7327,10 @@
                     path: savedPath,
                     name: savedPath.split("/").pop() || (entry && entry.name) || "",
                 };
+                const previousActivePreviewPath = state.activePreviewPath || "";
+                state.activePreviewPath = savedPath;
+                state.activeRenderedPreviewPath = "";
+                syncEntryRowSelectedStates([sourcePath, previousActivePreviewPath, savedPath]);
 
                 if (savedEntryFromList) {
                     applySelection([savedPath], {
@@ -7204,6 +7598,9 @@
             if (window.HandriveSpreadsheetEditor && typeof window.HandriveSpreadsheetEditor.hydratePreviews === "function") {
                 window.HandriveSpreadsheetEditor.hydratePreviews(previewContent);
             }
+            renderHandriveMermaidDiagrams(previewContent)
+                .then(scheduleSyncCurrentDirRowHeightWithSideHead)
+                .catch(alertError);
             bindHandrivePdfFrameLoading(previewContent);
             initializePreviewVideoPlayers(previewContent).catch(alertError);
             releasePreviewBodyHeightWhenRendered(renderMode);
@@ -7268,6 +7665,7 @@
 
         function syncContextMenuByEntries(entries) {
             const visibility = computeContextMenuVisibility(entries, {
+                canCreateArchiveFromEntries: canCreateArchiveFromEntries,
                 isEntryDeletable: isEntryDeletable,
                 isEditableHandriveFileEntry: isEditableHandriveFileEntry,
             });
@@ -7508,46 +7906,13 @@
 
         function buildBreadcrumbItems(pathValue) {
             const normalizedPath = normalizePath(pathValue, true);
-            const normalizedSharedRootPath = normalizePath(sharedRootPath, true);
-            if (hasSharedContext() && normalizedSharedRootPath) {
-                const effectivePath = normalizedPath && (
-                    normalizedPath === normalizedSharedRootPath ||
-                    normalizedPath.startsWith(normalizedSharedRootPath + "/")
-                )
-                    ? normalizedPath
-                    : normalizedSharedRootPath;
-                const rootParts = normalizedSharedRootPath.split("/").filter(Boolean);
-                const rootLabel = rootParts.length ? rootParts[rootParts.length - 1] : normalizedSharedRootPath;
-                const sharedBaseUrl = handriveRootUrl || "";
-                const crumbs = [
-                    {
-                        label: sharedOwnerUsername,
-                        path: normalizedSharedRootPath,
-                        url: sharedBaseUrl,
-                        isCurrent: false,
-                    },
-                    {
-                        label: rootLabel,
-                        path: normalizedSharedRootPath,
-                        url: sharedBaseUrl,
-                        isCurrent: effectivePath === normalizedSharedRootPath,
-                    },
-                ];
-                if (effectivePath === normalizedSharedRootPath) {
-                    return applyVirtualBreadcrumbLabels(crumbs);
-                }
-                const childPath = effectivePath.slice(normalizedSharedRootPath.length + 1);
-                const childParts = childPath.split("/").filter(Boolean);
-                childParts.forEach(function (part, index) {
-                    const relativeChildPath = childParts.slice(0, index + 1).join("/");
-                    crumbs.push({
-                        label: decodeBreadcrumbLabel(part),
-                        path: normalizedSharedRootPath + "/" + relativeChildPath,
-                        url: sharedBaseUrl.replace(/\/$/, "") + "/" + encodePathSegments(relativeChildPath),
-                        isCurrent: index === childParts.length - 1,
-                    });
-                });
-                return applyVirtualBreadcrumbLabels(crumbs);
+            const archiveCrumbs = buildArchiveBreadcrumbItems(normalizedPath);
+            if (archiveCrumbs) {
+                return applyVirtualBreadcrumbLabels(archiveCrumbs);
+            }
+            const sharedCrumbs = buildSharedBreadcrumbItemsForPath(normalizedPath);
+            if (sharedCrumbs) {
+                return applyVirtualBreadcrumbLabels(sharedCrumbs);
             }
             return applyVirtualBreadcrumbLabels(buildNavigationBreadcrumbItems(pathValue, {
                 effectiveRootLabel: effectiveRootLabel,
@@ -8196,7 +8561,7 @@
                         archive_member_path: entry.archive_member_path || "",
                     };
                 }),
-                fileName: buildQueueItemLabel(normalizedEntries, operationType, {
+                fileName: settings.archiveName || buildQueueItemLabel(normalizedEntries, operationType, {
                     formatTemplate: formatTemplate,
                     getCurrentFolderName: getCurrentFolderName,
                     getEntryEditableName: getEntryEditableName,
@@ -8211,6 +8576,7 @@
                 savedPath: "",
                 savedSlugPath: "",
                 commitMessage: String(commitMessage || ""),
+                archiveName: String(settings.archiveName || ""),
                 isRepoDelete: Boolean(settings.repoDelete),
                 abortRequested: false,
                 abortController: null,
@@ -8623,6 +8989,7 @@
                 queueNeedsRefresh: queueNeedsRefresh,
                 renderUploadQueue: renderUploadQueue,
                 requestJson: requestJson,
+                resolveArchiveExtractTargetDir: resolveArchiveExtractTargetDir,
                 t: t,
             });
         }
@@ -9008,12 +9375,92 @@
             processOperationQueue().catch(alertError);
         }
 
+        function isVirtualArchiveCreateEntry(entry) {
+            return Boolean(
+                entry &&
+                (
+                    entry.is_archive_member ||
+                    entry.google_drive ||
+                    entry.is_google_drive ||
+                    entry.git_repo ||
+                    entry.github_repo ||
+                    entry.git_branch_root ||
+                    entry.git_repo_branch ||
+                    entry.is_git_virtual
+                )
+            );
+        }
+
+        function resolveArchiveCreateSelection(entries) {
+            const normalizedEntries = Array.isArray(entries) ? entries.filter(Boolean) : [];
+            if (normalizedEntries.length < 2 || !archiveCreateApiUrl) {
+                return null;
+            }
+            let parentPath = null;
+            for (let index = 0; index < normalizedEntries.length; index += 1) {
+                const entry = normalizedEntries[index];
+                if (
+                    !entry ||
+                    entry.type !== "file" ||
+                    entry.isCurrentFolder ||
+                    entry.can_read === false ||
+                    isVirtualArchiveCreateEntry(entry)
+                ) {
+                    return null;
+                }
+                const entryPath = normalizePath(entry.path || "", true);
+                if (!entryPath) {
+                    return null;
+                }
+                const nextParentPath = getParentDirectory(entryPath);
+                if (parentPath === null) {
+                    parentPath = nextParentPath;
+                } else if (parentPath !== nextParentPath) {
+                    return null;
+                }
+            }
+
+            const parentMeta = parentPath === state.currentDir
+                ? getCurrentDirMeta()
+                : (state.entryByPath.get(parentPath) || state.directoryMetaCache.get(parentPath) || null);
+            const canWriteParent = parentMeta
+                ? Boolean(parentMeta.can_write_children || parentMeta.can_edit)
+                : normalizedEntries.every(function (entry) {
+                    return entry.can_edit !== false;
+                });
+            if (!canWriteParent) {
+                return null;
+            }
+            return {
+                entries: normalizedEntries,
+                parentPath: parentPath || "",
+                defaultName: getCurrentFolderName(parentPath || ""),
+            };
+        }
+
+        function canCreateArchiveFromEntries(entries) {
+            return Boolean(resolveArchiveCreateSelection(entries));
+        }
+
         function createArchiveFromFolder(entry) {
             if (!entry || entry.type !== "dir" || !archiveCreateApiUrl) {
                 return;
             }
             createOperationQueueItem("create-archive", [entry], getParentDirectory(entry.path), "");
             processOperationQueue().catch(alertError);
+        }
+
+        function createArchiveFromSelectedFiles(entries, archiveName) {
+            const selection = resolveArchiveCreateSelection(entries);
+            const normalizedArchiveName = String(archiveName || "").trim();
+            if (!selection || !normalizedArchiveName) {
+                return false;
+            }
+            createOperationQueueItem("create-archive", selection.entries, selection.parentPath, "", {
+                archiveName: normalizedArchiveName,
+            });
+            processOperationQueue().catch(alertError);
+            return true;
         }
 
         async function moveEntriesToDirectory(sourceEntries, targetDirPath) {
@@ -9249,6 +9696,22 @@
 
         function getCurrentFolderName(pathValue) {
             const currentMeta = getCurrentDirMeta();
+            const normalized = normalizePath(pathValue, true);
+            if (currentMeta && currentMeta.is_archive_virtual && currentMeta.archive_path) {
+                const archiveRootPath = getArchiveVirtualRootPath(currentMeta);
+                const metaPath = normalizePath(currentMeta.path || state.currentDir, true);
+                const isArchiveDisplayPath = normalized === archiveRootPath ||
+                    normalized === metaPath ||
+                    (archiveRootPath && normalized.startsWith(archiveRootPath + "/")) ||
+                    (metaPath && normalized.startsWith(metaPath + "/"));
+                if (isArchiveDisplayPath) {
+                    const memberPath = resolveArchiveMemberPathForDisplayPath(normalized || metaPath, currentMeta);
+                    if (memberPath) {
+                        return getPathLeafLabel(memberPath, memberPath);
+                    }
+                    return getPathLeafLabel(currentMeta.archive_path, "archive.zip");
+                }
+            }
             if (
                 currentMeta &&
                 currentMeta.is_git_repo_root &&
@@ -9261,7 +9724,6 @@
             if (currentMeta && currentMeta.is_google_drive && currentMeta.google_drive && currentMeta.google_drive.name) {
                 return String(currentMeta.google_drive.name || "").trim();
             }
-            const normalized = normalizePath(pathValue, true);
             if (!normalized) {
                 return effectiveRootLabel;
             }
@@ -9269,19 +9731,57 @@
             return parts[parts.length - 1] || effectiveRootLabel;
         }
 
+        function normalizeDirectoryMetaForPath(baseMeta, incomingMeta, fallbackPath) {
+            const rawMeta = incomingMeta || {};
+            const normalizedPath = normalizePath(rawMeta.path !== undefined ? rawMeta.path : fallbackPath, true);
+            const nextMeta = Object.assign({}, baseMeta || {}, rawMeta, { path: normalizedPath });
+            if (rawMeta.is_archive_virtual === undefined && rawMeta.archive_path === undefined && rawMeta.archive_member_path === undefined) {
+                nextMeta.is_archive_virtual = false;
+                nextMeta.archive_path = "";
+                nextMeta.archive_member_path = "";
+                nextMeta.archive_can_edit = false;
+                nextMeta.archive_can_delete = false;
+            }
+            if (!nextMeta.is_archive_virtual) {
+                nextMeta.archive_path = "";
+                nextMeta.archive_member_path = "";
+                nextMeta.archive_can_edit = false;
+                nextMeta.archive_can_delete = false;
+            }
+            if (rawMeta.is_google_drive === undefined && rawMeta.google_drive === undefined) {
+                nextMeta.is_google_drive = false;
+                nextMeta.google_drive = null;
+            }
+            return nextMeta;
+        }
+
         function getCurrentDirMeta() {
             const cachedMeta = state.directoryMetaCache.get(state.currentDir);
             if (cachedMeta && typeof cachedMeta === "object") {
-                state.currentDirMeta = Object.assign({}, state.currentDirMeta || {}, cachedMeta, {
-                    path: normalizePath(cachedMeta.path || state.currentDir, true),
-                });
+                state.currentDirMeta = normalizeDirectoryMetaForPath(state.currentDirMeta || {}, cachedMeta, state.currentDir);
             }
             return state.currentDirMeta || {};
         }
 
+        function canDeleteCurrentDirectoryMeta(currentDirMeta) {
+            const meta = currentDirMeta || {};
+            const currentPath = normalizePath(state.currentDir || meta.path || "", true);
+            return Boolean(
+                currentPath &&
+                !meta.is_root &&
+                !meta.is_archive_virtual &&
+                !meta.is_google_drive &&
+                !meta.is_git_repo_root &&
+                !meta.requires_commit_message &&
+                !meta.git_branch_root &&
+                !meta.git_repo &&
+                meta.can_edit
+            );
+        }
+
         function applyCurrentDirectoryMeta(meta) {
-            const normalizedPath = normalizePath(meta && meta.path !== undefined ? meta.path : state.currentDir, true);
-            const nextMeta = Object.assign({}, state.currentDirMeta || {}, meta || {}, { path: normalizedPath });
+            const nextMeta = normalizeDirectoryMetaForPath(state.currentDirMeta || {}, meta || {}, state.currentDir);
+            const normalizedPath = normalizePath(nextMeta.path, true);
             state.currentDir = normalizedPath;
             state.currentDirMeta = nextMeta;
             state.directoryMetaCache.set(normalizedPath, nextMeta);
@@ -9302,10 +9802,17 @@
             root.dataset.currentDirSizeDisplay = nextMeta.size_display || "";
             root.dataset.currentDirIsUrlOnly = nextMeta.is_url_only ? "1" : "0";
             root.dataset.currentDirShareUrl = nextMeta.share_url || "";
+            root.dataset.currentDirShareDownloadUrl = nextMeta.share_download_url || "";
             root.dataset.currentDirShareIsInherited = nextMeta.share_is_inherited ? "1" : "0";
+            root.dataset.currentDirIsArchiveVirtual = nextMeta.is_archive_virtual ? "1" : "0";
+            root.dataset.currentDirArchivePath = nextMeta.archive_path || "";
+            root.dataset.currentDirArchiveMemberPath = nextMeta.archive_member_path || "";
+            root.dataset.currentDirArchiveCanEdit = nextMeta.archive_can_edit ? "1" : "0";
+            root.dataset.currentDirArchiveCanDelete = nextMeta.archive_can_delete ? "1" : "0";
             currentDirGitRepo = nextMeta.git_repo || null;
             currentDirGoogleDrive = nextMeta.google_drive || null;
             registerGoogleDriveLabelFromMeta(nextMeta);
+            syncArchiveToolbarActions();
         }
 
         function buildCurrentDirectoryEntry() {
@@ -9318,6 +9825,7 @@
                 can_edit: Boolean(currentDirMeta.can_edit),
                 can_write_children: Boolean(currentDirMeta.can_write_children),
                 can_delete: Boolean(
+                    canDeleteCurrentDirectoryMeta(currentDirMeta) ||
                     (currentDirMeta.git_repo && currentDirMeta.is_git_repo_root) ||
                     (currentDirMeta.is_google_drive && currentDirMeta.can_delete)
                 ),
@@ -9326,6 +9834,11 @@
                 git_repo_meta: currentDirMeta.git_repo || null,
                 google_drive: currentDirMeta.google_drive || null,
                 is_google_drive: Boolean(currentDirMeta.is_google_drive),
+                is_archive_virtual: Boolean(currentDirMeta.is_archive_virtual),
+                archive_path: currentDirMeta.archive_path || "",
+                archive_member_path: currentDirMeta.archive_member_path || "",
+                archive_can_edit: Boolean(currentDirMeta.archive_can_edit),
+                archive_can_delete: Boolean(currentDirMeta.archive_can_delete),
                 git_branch_root: Boolean(currentDirMeta.git_branch_root),
                 is_git_virtual: Boolean(currentDirMeta.git_repo || currentDirMeta.git_branch_root || currentDirMeta.requires_commit_message),
                 git_commit_id: currentDirMeta.git_commit_id || "",
@@ -9335,10 +9848,154 @@
                 is_public_write: false,
                 is_url_only: Boolean(currentDirMeta.is_url_only),
                 share_url: currentDirMeta.share_url || "",
+                share_download_url: currentDirMeta.share_download_url || "",
                 share_is_inherited: Boolean(currentDirMeta.share_is_inherited),
                 modified_display: currentDirMeta.modified_display || "",
                 size_display: currentDirMeta.size_display || "",
             };
+        }
+
+        function buildCurrentDirectoryToolbarEntry() {
+            const currentDirMeta = getCurrentDirMeta();
+            const currentPath = normalizePath(state.currentDir || currentDirMeta.path || "", true);
+            if (
+                !currentDirMeta ||
+                !currentPath ||
+                currentDirMeta.is_root ||
+                currentDirMeta.is_archive_virtual ||
+                currentDirMeta.is_google_drive ||
+                currentDirMeta.is_git_repo_root ||
+                currentDirMeta.requires_commit_message ||
+                currentDirMeta.git_branch_root ||
+                currentDirMeta.git_repo
+            ) {
+                return null;
+            }
+            const canDeleteCurrentDir = canDeleteCurrentDirectoryMeta(currentDirMeta);
+            if (!canDeleteCurrentDir) {
+                return null;
+            }
+            return {
+                path: currentPath,
+                name: getCurrentFolderName(currentPath),
+                type: "dir",
+                isCurrentFolder: true,
+                can_read: true,
+                can_edit: true,
+                can_delete: true,
+                can_write_children: Boolean(currentDirMeta.can_write_children),
+                is_public_write: false,
+                is_url_only: Boolean(currentDirMeta.is_url_only),
+                share_url: currentDirMeta.share_url || "",
+                share_download_url: currentDirMeta.share_download_url || "",
+                share_is_inherited: Boolean(currentDirMeta.share_is_inherited),
+                modified_display: currentDirMeta.modified_display || "",
+                size_display: currentDirMeta.size_display || "",
+            };
+        }
+
+        function buildCurrentArchiveFileEntry() {
+            const currentDirMeta = getCurrentDirMeta();
+            if (!currentDirMeta || !currentDirMeta.is_archive_virtual || !currentDirMeta.archive_path) {
+                return null;
+            }
+            const archivePath = normalizePath(currentDirMeta.archive_path, true);
+            if (!archivePath) {
+                return null;
+            }
+            return {
+                path: archivePath,
+                name: getPathLeafLabel(archivePath, archivePath),
+                type: "file",
+                can_read: true,
+                can_edit: Boolean(currentDirMeta.archive_can_edit),
+                can_delete: Boolean(currentDirMeta.archive_can_delete),
+                is_public_write: false,
+                is_url_only: Boolean(currentDirMeta.is_url_only),
+                share_url: currentDirMeta.share_url || "",
+                share_download_url: currentDirMeta.share_download_url || "",
+                share_is_inherited: Boolean(currentDirMeta.share_is_inherited),
+                modified_display: currentDirMeta.modified_display || "",
+                size_display: currentDirMeta.size_display || "",
+            };
+        }
+
+        function syncArchiveToolbarActions() {
+            const currentDirEntry = buildCurrentDirectoryToolbarEntry();
+            const canShowCurrentDirActions = Boolean(currentDirEntry);
+            if (currentDirToolbarUrlShareButton) {
+                currentDirToolbarUrlShareButton.hidden = !(canShowCurrentDirActions && urlShareApiUrl);
+            }
+            if (currentDirToolbarDeleteButton) {
+                currentDirToolbarDeleteButton.hidden = !(canShowCurrentDirActions && deleteApiUrl);
+            }
+
+            const archiveEntry = buildCurrentArchiveFileEntry();
+            const canShowArchiveActions = Boolean(archiveEntry);
+            const canEditArchive = Boolean(archiveEntry && archiveEntry.can_edit);
+            const canDeleteArchive = Boolean(archiveEntry && archiveEntry.can_delete);
+
+            if (archiveToolbarUrlShareButton) {
+                archiveToolbarUrlShareButton.hidden = !(canShowArchiveActions && canEditArchive && urlShareApiUrl);
+            }
+            if (archiveToolbarDownloadButton) {
+                const downloadUrl = archiveEntry ? buildDownloadUrl(archiveEntry.path) : "";
+                archiveToolbarDownloadButton.hidden = !downloadUrl;
+                if (downloadUrl) {
+                    archiveToolbarDownloadButton.href = downloadUrl;
+                } else {
+                    archiveToolbarDownloadButton.removeAttribute("href");
+                }
+            }
+            if (archiveToolbarDeleteButton) {
+                archiveToolbarDeleteButton.hidden = !(canShowArchiveActions && canDeleteArchive);
+            }
+        }
+
+        async function deleteCurrentDirectory() {
+            const currentDirEntry = buildCurrentDirectoryToolbarEntry();
+            if (!currentDirEntry || !currentDirEntry.can_delete || !deleteApiUrl) {
+                return;
+            }
+            const confirmed = await requestConfirmDialog({
+                title: t("delete_button", "삭제"),
+                message: formatTemplate(
+                    t("js_confirm_delete_entry", "정말 삭제할까요?\n{path}"),
+                    { path: getHandrivePathLabel(currentDirEntry.path) }
+                ),
+                cancelText: t("cancel", "취소"),
+                confirmText: t("delete_button", "삭제")
+            });
+            if (!confirmed) {
+                return;
+            }
+            await requestJson(deleteApiUrl, buildPostOptions({ path: currentDirEntry.path }));
+            state.directoryCache.delete(state.currentDir);
+            state.directoryMetaCache.delete(state.currentDir);
+            await navigateToDirectory(getParentDirectory(currentDirEntry.path), { historyMode: "replace" });
+        }
+
+        async function deleteCurrentArchiveFile() {
+            const archiveEntry = buildCurrentArchiveFileEntry();
+            if (!archiveEntry || !archiveEntry.can_delete || !deleteApiUrl) {
+                return;
+            }
+            const confirmed = await requestConfirmDialog({
+                title: t("delete_button", "삭제"),
+                message: formatTemplate(
+                    t("js_confirm_delete_entry", "정말 삭제할까요?\n{path}"),
+                    { path: getHandrivePathLabel(archiveEntry.path) }
+                ),
+                cancelText: t("cancel", "취소"),
+                confirmText: t("delete_button", "삭제")
+            });
+            if (!confirmed) {
+                return;
+            }
+            await requestJson(deleteApiUrl, buildPostOptions({ path: archiveEntry.path }));
+            state.directoryCache.delete(state.currentDir);
+            state.directoryMetaCache.delete(state.currentDir);
+            await navigateToDirectory(getParentDirectory(archiveEntry.path), { historyMode: "replace" });
         }
 
         let commitTooltipEl = null;
@@ -9433,6 +10090,72 @@
             metaTrail.appendChild(permissionField);
             metaTrail.appendChild(commitField);
             metaTrail.appendChild(idField);
+        }
+
+        function openUrlShareDialogForEntry(entry) {
+            if (!entry || !entry.path) {
+                return;
+            }
+            const canToggleShare = Boolean(entry.can_edit && urlShareApiUrl && !entry.share_is_inherited);
+            const shouldShowDownloadUrl = isSimpleUrlShareFileEntry(entry);
+            urlShareModal.open({
+                isUrlOnly: Boolean(entry.is_url_only || entry.share_url || entry.share_is_inherited),
+                shareUrl: entry.share_url || "",
+                downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(entry.share_download_url || "") : "",
+                readOnly: !canToggleShare,
+                onToggle: canToggleShare ? async function (enabled) {
+                    const data = await requestJson(
+                        appendSharedQuery(urlShareApiUrl),
+                        buildPostOptions({ path: entry.path, enabled: enabled })
+                    );
+                    await refreshCurrentDirectory();
+                    return {
+                        isUrlOnly: Boolean(data.is_url_only),
+                        shareUrl: data.share_url || "",
+                        downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(data.share_download_url || "") : "",
+                    };
+                } : null,
+            });
+        }
+
+        function appendUrlShareIndicator(nameWrap, entry) {
+            if (!nameWrap || !entry) {
+                return;
+            }
+            const isDirectlyShared = Boolean(!entry.share_is_inherited && (entry.is_url_only || entry.share_url));
+            if (!isDirectlyShared) {
+                return;
+            }
+            const label = t("url_share_indicator", "URL 공유됨");
+            nameWrap.classList.add("has-url-share-indicator");
+            const indicator = document.createElement("span");
+            indicator.className = "handrive-item-url-share-indicator handrive-item-meta-label";
+            indicator.setAttribute("role", "button");
+            indicator.setAttribute("aria-label", label);
+            indicator.tabIndex = 0;
+            indicator.title = label;
+            indicator.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true"><path fill="currentColor" d="M10.59 13.41c.41.39.41 1.03 0 1.42-.39.39-1.03.39-1.42 0a5.003 5.003 0 0 1 0-7.07l3.54-3.54a5.003 5.003 0 0 1 7.07 0 5.003 5.003 0 0 1 0 7.07l-1.49 1.49c.01-.82-.12-1.64-.4-2.42l.47-.48a3.001 3.001 0 0 0 0-4.24 3.001 3.001 0 0 0-4.24 0l-3.53 3.53a3.001 3.001 0 0 0 0 4.24zm2.82-2.82c-.39-.39-.39-1.03 0-1.42.39-.39 1.03-.39 1.42 0a5.003 5.003 0 0 1 0 7.07l-3.54 3.54a5.003 5.003 0 0 1-7.07 0 5.003 5.003 0 0 1 0-7.07l1.49-1.49c-.01.82.12 1.64.4 2.42l-.47.48a3.001 3.001 0 0 0 0 4.24 3.001 3.001 0 0 0 4.24 0l3.53-3.53a3.001 3.001 0 0 0 0-4.24z"/></svg>';
+            indicator.addEventListener("pointerdown", function (event) {
+                event.stopPropagation();
+            });
+            indicator.addEventListener("click", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                openUrlShareDialogForEntry(entry);
+            });
+            indicator.addEventListener("dblclick", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            });
+            indicator.addEventListener("keydown", function (event) {
+                if (event.key !== "Enter" && event.key !== " ") {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                openUrlShareDialogForEntry(entry);
+            });
+            nameWrap.appendChild(indicator);
         }
 
         function appendCurrentDirMetaColumns(row) {
@@ -9821,6 +10544,7 @@
             row.appendChild(typeMarker);
             row.appendChild(nameWrap);
             nameWrap.appendChild(name);
+            appendUrlShareIndicator(nameWrap, currentFolderEntry);
 
             appendCurrentDirRepoName(nameWrap, currentDirMeta.git_repo || null, {
                 showForBranchOrRepoInner: Boolean(currentDirMeta.git_branch_root || currentDirMeta.requires_commit_message),
@@ -10145,6 +10869,7 @@
             row.appendChild(typeMarker);
             row.appendChild(nameWrap);
             nameWrap.appendChild(name);
+            appendUrlShareIndicator(nameWrap, currentFolderEntry);
 
             appendCurrentDirRepoName(nameWrap, currentDirMeta.git_repo || null, {
                 showForBranchOrRepoInner: Boolean(currentDirMeta.git_branch_root || currentDirMeta.requires_commit_message),
@@ -10196,6 +10921,7 @@
             name.className = "handrive-item-name";
             name.textContent = entry.name;
             nameWrap.appendChild(name);
+            appendUrlShareIndicator(nameWrap, entry);
             row.appendChild(nameWrap);
             row.appendChild(createSyncCheckbox(entry.path, entry.type));
 
@@ -10334,15 +11060,62 @@
             }
         }
 
+        function resolveArchiveExtractTargetDir(entry, targetDirValue) {
+            const normalizedTargetDir = normalizePath(targetDirValue || "", true);
+            if (!isArchiveVirtualPath(normalizedTargetDir)) {
+                return normalizedTargetDir;
+            }
+            const archivePath = entry && entry.archive_path ? normalizePath(entry.archive_path, true) : "";
+            if (archivePath) {
+                return getParentDirectory(archivePath);
+            }
+            const sourcePath = entry && entry.path ? normalizePath(entry.path, true) : "";
+            if (sourcePath && !isArchiveVirtualPath(sourcePath)) {
+                return getParentDirectory(sourcePath);
+            }
+            return "";
+        }
+
+        function setArchiveCreateModalOpen(opened, entries) {
+            if (!archiveCreateModal) {
+                return;
+            }
+            archiveCreateModal.hidden = !opened;
+            syncModalBodyState();
+            if (!opened) {
+                state.archiveCreateTargetEntries = [];
+                return;
+            }
+            const selection = resolveArchiveCreateSelection(entries);
+            if (!selection) {
+                state.archiveCreateTargetEntries = [];
+                archiveCreateModal.hidden = true;
+                syncModalBodyState();
+                return;
+            }
+            state.archiveCreateTargetEntries = selection.entries.slice();
+            if (archiveCreateTarget) {
+                archiveCreateTarget.textContent = t("archive_create_target_prefix", "압축 대상") + ": "
+                    + getHandrivePathLabel(selection.parentPath) + " · "
+                    + String(selection.entries.length) + t("archive_create_target_count_suffix", "개 파일");
+            }
+            if (archiveCreateInput) {
+                archiveCreateInput.value = selection.defaultName || "archive";
+                archiveCreateInput.focus();
+                archiveCreateInput.select();
+            }
+        }
+
         async function submitArchiveExtract(destinationMode, entryOverride, targetDirOverride) {
             const entry = entryOverride || state.archiveExtractTargetEntry;
             if (!entry || !archiveExtractApiUrl) {
                 return;
             }
             const sourcePath = entry.path || "";
-            const targetDir = targetDirOverride !== undefined
+            const rawTargetDir = targetDirOverride !== undefined
                 ? targetDirOverride
                 : getParentDirectory(sourcePath);
+            const targetDir = resolveArchiveExtractTargetDir(entry, rawTargetDir);
             const data = await requestJson(
                 archiveExtractApiUrl,
                 buildPostOptions({
@@ -10361,6 +11134,19 @@
                     anchorPath: selectedPath,
                 });
             }
+        }
+
+        function submitArchiveCreate() {
+            const archiveName = String(archiveCreateInput ? archiveCreateInput.value : "").trim();
+            if (!archiveName) {
+                window.alert(t("archive_create_name_required", "압축파일명을 입력해주세요."));
+                return;
+            }
+            if (!createArchiveFromSelectedFiles(state.archiveCreateTargetEntries, archiveName)) {
+                window.alert(t("archive_create_invalid_selection", "같은 폴더의 파일을 두 개 이상 선택해주세요."));
+                return;
+            }
+            setArchiveCreateModalOpen(false);
         }
 
         function setFolderCreateModalOpen(opened, entry) {
@@ -10798,12 +11584,12 @@
                 return;
             }
             if (isArchiveEntry(entry)) {
-                setArchiveExtractModalOpen(true, entry);
+                navigateToDirectory(entry.archive_virtual_path, { sourceEntry: entry }).catch(alertError);
                 return;
             }
             if (isArchiveMemberEntry(entry)) {
                 if (entry.type === "dir") {
-                    toggleFolderExpansion(entry).catch(alertError);
+                    navigateToDirectory(entry.path, { sourceEntry: entry }).catch(alertError);
                 }
                 return;
             }
@@ -10829,9 +11615,13 @@
                 return;
             }
             entries.forEach(function (entry) {
-                const targetUrl = entry.type === "dir"
-                    ? buildListUrl(handriveBaseUrl, entry.path, handriveRootUrl)
-                    : (getGoogleDriveDocsEditorUrl(entry) || buildViewUrl(handriveBaseUrl, entry.slug_path || entry.path));
+                const targetUrl = isArchiveEntry(entry)
+                    ? buildListUrl(handriveBaseUrl, entry.archive_virtual_path, handriveRootUrl)
+                    : (
+                        entry.type === "dir"
+                            ? buildListUrl(handriveBaseUrl, entry.path, handriveRootUrl)
+                            : (getGoogleDriveDocsEditorUrl(entry) || buildViewUrl(handriveBaseUrl, entry.slug_path || entry.path))
+                    );
                 window.open(targetUrl, "_blank", "noopener");
             });
         }
@@ -11020,6 +11810,7 @@
             name.className = "handrive-item-name";
             name.textContent = entry.name;
             nameWrap.appendChild(name);
+            appendUrlShareIndicator(nameWrap, entry);
             row.appendChild(nameWrap);
             appendEntryMetaColumns(row, entry);
 
@@ -11148,13 +11939,39 @@
             });
         }
 
+        function getCurrentDirRenderContainer() {
+            return currentDirListContainer || listContainer;
+        }
+
+        function getListItemsRenderContainer() {
+            return listItemsContainer || listContainer;
+        }
+
+        function clearListRenderContainers() {
+            const currentDirContainer = getCurrentDirRenderContainer();
+            const itemContainer = getListItemsRenderContainer();
+            if (!currentDirContainer || !itemContainer) {
+                return;
+            }
+            if (currentDirContainer === itemContainer) {
+                currentDirContainer.innerHTML = "";
+                return;
+            }
+            currentDirContainer.innerHTML = "";
+            itemContainer.innerHTML = "";
+        }
+
         function renderList(options) {
             const renderListOptions = options || {};
             if (!listContainer) {
                 return;
             }
             hideCommitTooltip();
-            const existingCurrentDirItem = listContainer.querySelector(".handrive-current-dir-item");
+            const currentDirRenderContainer = getCurrentDirRenderContainer();
+            const listItemsRenderContainer = getListItemsRenderContainer();
+            const existingCurrentDirItem = currentDirRenderContainer
+                ? currentDirRenderContainer.querySelector(".handrive-current-dir-item")
+                : listContainer.querySelector(".handrive-current-dir-item");
             const existingCurrentDirRow = existingCurrentDirItem
                 ? existingCurrentDirItem.querySelector(".handrive-current-dir-row")
                 : null;
@@ -11164,12 +11981,13 @@
             if (existingCurrentDirItem) {
                 existingCurrentDirItem.remove();
             }
-            listContainer.innerHTML = "";
+            clearListRenderContainers();
             state.openingAnimationOrder = 0;
             state.entryByPath = new Map();
             state.entryRowByPath = new Map();
             state.visibleEntryPaths = [];
-            const fragment = document.createDocumentFragment();
+            const currentDirFragment = document.createDocumentFragment();
+            const itemFragment = document.createDocumentFragment();
             const entries = state.searchQuery && Array.isArray(state.searchResults)
                 ? state.searchResults
                 : getCachedEntries(state.currentDir);
@@ -11194,9 +12012,12 @@
                 }
                 state.entryByPath.set(currentFolderEntryForReuse.path, currentFolderEntryForReuse);
                 state.visibleEntryPaths.push(currentFolderEntryForReuse.path);
-                fragment.appendChild(existingCurrentDirItem);
+                currentDirFragment.appendChild(existingCurrentDirItem);
             } else {
-                addCurrentDirectoryNode(fragment);
+                addCurrentDirectoryNode(currentDirFragment);
+            }
+            if (currentDirRenderContainer) {
+                currentDirRenderContainer.appendChild(currentDirFragment);
             }
 
             if (renderEntries.length === 0) {
@@ -11208,7 +12029,7 @@
                     ? t("js_search_no_results", "검색 결과가 없습니다.")
                     : t("js_empty_documents", "문서가 없습니다.");
                 emptyItem.appendChild(emptyRow);
-                fragment.appendChild(emptyItem);
+                itemFragment.appendChild(emptyItem);
                 const filteredSelection = Array.from(state.selectedPaths).filter(function (pathValue) {
                     return state.entryByPath.has(pathValue);
                 });
@@ -11217,7 +12038,9 @@
                 state.selectionAnchorPath = state.selectedPaths.has(state.selectionAnchorPath)
                     ? state.selectionAnchorPath
                     : (state.selectedPath || "");
-                listContainer.appendChild(fragment);
+                if (listItemsRenderContainer) {
+                    listItemsRenderContainer.appendChild(itemFragment);
+                }
                 restoreActiveDropPreviewAfterRender();
                 syncSearchFormVisibility();
                 updateListColumnVisibility();
@@ -11228,11 +12051,11 @@
                 return;
             }
             if (state.searchQuery) {
-                renderSearchResultItems(fragment, renderEntries);
+                renderSearchResultItems(itemFragment, renderEntries);
             } else {
                 renderEntries.forEach(function (entry, index) {
                     const isLastRootEntry = index === renderEntries.length - 1;
-                    addEntryNode(entry, fragment, [], isLastRootEntry);
+                    addEntryNode(entry, itemFragment, [], isLastRootEntry);
                 });
             }
             const filteredSelection = Array.from(state.selectedPaths).filter(function (pathValue) {
@@ -11243,7 +12066,9 @@
             state.selectionAnchorPath = state.selectedPaths.has(state.selectionAnchorPath)
                 ? state.selectionAnchorPath
                 : (state.selectedPath || "");
-            listContainer.appendChild(fragment);
+            if (listItemsRenderContainer) {
+                listItemsRenderContainer.appendChild(itemFragment);
+            }
             restoreActiveDropPreviewAfterRender();
             syncSearchFormVisibility();
             updateListColumnVisibility();
@@ -11353,22 +12178,7 @@
                     if (!entry || !entry.can_edit || !entry.path || !urlShareApiUrl) {
                         return;
                     }
-                    function resolveShareUrl(rawUrl) {
-                        return rawUrl || "";
-                    }
-                    urlShareModal.open({
-                        isUrlOnly: Boolean(entry.is_url_only),
-                        shareUrl: resolveShareUrl(entry.share_url),
-                        readOnly: Boolean(entry.share_is_inherited),
-                        onToggle: async function (enabled) {
-                            const data = await requestJson(
-                                appendSharedQuery(urlShareApiUrl),
-                                buildPostOptions({ path: entry.path, enabled: enabled })
-                            );
-                            await refreshCurrentDirectory();
-                            return { isUrlOnly: Boolean(data.is_url_only), shareUrl: resolveShareUrl(data.share_url) };
-                        },
-                    });
+                    openUrlShareDialogForEntry(entry);
                     return;
                 }
                 if (action === "upload") {
@@ -11380,6 +12190,10 @@
                     return;
                 }
                 if (action === "create-archive") {
+                    if (entries.length > 1) {
+                        setArchiveCreateModalOpen(true, entries);
+                        return;
+                    }
                     createArchiveFromFolder(entry);
                     return;
                 }
@@ -11404,6 +12218,10 @@
                     return;
                 }
                 if (action === "delete") {
+                    if (entries.length === 1 && entry && entry.isCurrentFolder) {
+                        deleteCurrentDirectory().catch(alertError);
+                        return;
+                    }
                     deleteEntries(entries.length > 1 ? entries : entry).catch(alertError);
                 }
                 if (action === "create-map") {
@@ -11545,6 +12363,33 @@
         if (archiveExtractFolderButton) {
             archiveExtractFolderButton.addEventListener("click", function () {
                 submitArchiveExtract("folder").catch(alertError);
+            });
+        }
+
+        if (archiveCreateModalBackdrop) {
+            archiveCreateModalBackdrop.addEventListener("click", function () {
+                setArchiveCreateModalOpen(false);
+            });
+        }
+
+        if (archiveCreateCancelButton) {
+            archiveCreateCancelButton.addEventListener("click", function () {
+                setArchiveCreateModalOpen(false);
+            });
+        }
+
+        if (archiveCreateConfirmButton) {
+            archiveCreateConfirmButton.addEventListener("click", function () {
+                submitArchiveCreate();
+            });
+        }
+
+        if (archiveCreateInput) {
+            archiveCreateInput.addEventListener("keydown", function (event) {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    submitArchiveCreate();
+                }
             });
         }
 
@@ -12061,9 +12906,11 @@
                 if (!isPreviewableFileEntry(selectedEntry) || !selectedEntry.can_edit) {
                     return;
                 }
+                const shouldShowDownloadUrl = isSimpleUrlShareFileEntry(selectedEntry);
                 urlShareModal.open({
                     isUrlOnly: Boolean(selectedEntry.is_url_only),
                     shareUrl: selectedEntry.share_url || "",
+                    downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(selectedEntry.share_download_url || "") : "",
                     readOnly: Boolean(selectedEntry.share_is_inherited),
                     onToggle: async function (enabled) {
                         const data = await requestJson(
@@ -12078,9 +12925,45 @@
                         } else {
                             clearPreviewPane();
                         }
-                        return { isUrlOnly: Boolean(data.is_url_only), shareUrl: data.share_url || "" };
+                        return {
+                            isUrlOnly: Boolean(data.is_url_only),
+                            shareUrl: data.share_url || "",
+                            downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(data.share_download_url || "") : "",
+                        };
                     },
                 });
+            });
+        }
+
+        if (currentDirToolbarUrlShareButton) {
+            currentDirToolbarUrlShareButton.addEventListener("click", function () {
+                const currentDirEntry = buildCurrentDirectoryToolbarEntry();
+                if (!currentDirEntry || !currentDirEntry.can_edit) {
+                    return;
+                }
+                openUrlShareDialogForEntry(currentDirEntry);
+            });
+        }
+
+        if (currentDirToolbarDeleteButton) {
+            currentDirToolbarDeleteButton.addEventListener("click", function () {
+                deleteCurrentDirectory().catch(alertError);
+            });
+        }
+
+        if (archiveToolbarUrlShareButton) {
+            archiveToolbarUrlShareButton.addEventListener("click", function () {
+                const archiveEntry = buildCurrentArchiveFileEntry();
+                if (!archiveEntry || !archiveEntry.can_edit) {
+                    return;
+                }
+                openUrlShareDialogForEntry(archiveEntry);
+            });
+        }
+
+        if (archiveToolbarDeleteButton) {
+            archiveToolbarDeleteButton.addEventListener("click", function () {
+                deleteCurrentArchiveFile().catch(alertError);
             });
         }
 
@@ -12181,6 +13064,10 @@
                 }
                 if (archiveExtractModal && !archiveExtractModal.hidden) {
                     setArchiveExtractModalOpen(false);
+                    return;
+                }
+                if (archiveCreateModal && !archiveCreateModal.hidden) {
+                    setArchiveCreateModalOpen(false);
                     return;
                 }
                 if (renameModal && !renameModal.hidden) {
@@ -12600,6 +13487,15 @@
             }
         }
 
+        handriveListItemScale = readStoredHandriveListItemScale();
+        applyHandriveListItemScale(handriveListItemScale, {
+            skipLayout: true,
+            skipPersist: true,
+        });
+        if (listItemsContainer) {
+            listItemsContainer.addEventListener("wheel", handleHandriveListItemsScaleWheel, { passive: false });
+        }
+
         schedulePreviewBodyHeight();
         scheduleEditorBodyHeight();
         scheduleListBodyHeight();
@@ -12702,6 +13598,7 @@
         }, 100);
         
         clearPreviewPane();
+        syncArchiveToolbarActions();
         renderList();
         openInitialEditTargetFromQuery();
         enqueuePendingYoutubeDownloaderSave();
@@ -12920,6 +13817,7 @@
                 contentArticle.className = newClass;
                 contentArticle.innerHTML = newHtml;
 
+                renderHandriveMermaidDiagrams(contentArticle).catch(alertError);
                 hydrateMediaAudioElements(contentArticle);
                 bindHandrivePdfFrameLoading(contentArticle);
                 await initializePreviewVideoPlayers(contentArticle);
@@ -12975,6 +13873,7 @@
         if (window.HandriveSpreadsheetEditor && typeof window.HandriveSpreadsheetEditor.hydratePreviews === "function") {
             window.HandriveSpreadsheetEditor.hydratePreviews(contentArticle);
         }
+        renderHandriveMermaidDiagrams(contentArticle).catch(alertError);
         bindHandrivePdfFrameLoading(contentArticle);
         initializePreviewVideoPlayers(contentArticle).catch(alertError);
 
@@ -13021,9 +13920,11 @@
         if (urlShareButton && urlShareApiUrl && currentDocPath) {
             urlShareButton.addEventListener("click", function () {
                 const initialShareUrl = root.dataset.docShareUrl || "";
+                const shouldShowDownloadUrl = isSimpleUrlShareFilePath(currentDocPath);
                 urlShareModal.open({
                     isUrlOnly: docIsUrlOnly,
                     shareUrl: initialShareUrl,
+                    downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(root.dataset.docShareDownloadUrl || "") : "",
                     readOnly: root.dataset.docShareIsInherited === "1",
                     onToggle: async function (enabled) {
                         const data = await requestJson(
@@ -13033,7 +13934,11 @@
                         if (!enabled) {
                             window.location.reload();
                         }
-                        return { isUrlOnly: Boolean(data.is_url_only), shareUrl: data.share_url || "" };
+                        return {
+                            isUrlOnly: Boolean(data.is_url_only),
+                            shareUrl: data.share_url || "",
+                            downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(data.share_download_url || "") : "",
+                        };
                     },
                 });
             });
@@ -13137,9 +14042,7 @@
         const saveCloseButton = document.getElementById("handrive-save-close-btn");
         const saveCancelButton = document.getElementById("handrive-save-cancel-btn");
         const saveConfirmButton = document.getElementById("handrive-save-confirm-btn");
-        const saveUpButton = document.getElementById("handrive-save-up-btn");
         const saveBreadcrumb = document.getElementById("handrive-save-breadcrumb");
-        const saveQuickList = document.getElementById("handrive-save-quick-list");
         const saveFolderList = document.getElementById("handrive-save-folder-list");
         const folderModal = document.getElementById("handrive-folder-modal");
         const folderModalBackdrop = document.getElementById("handrive-folder-modal-backdrop");
@@ -13194,6 +14097,7 @@
             directoryMetaCache: new Map(),
             directoryLoadPromises: new Map(),
             entryByPath: new Map(),
+            expandedSaveDirs: new Set(),
             browserRenderToken: 0,
             isSaving: false,
         };
@@ -14343,7 +15247,6 @@
                 saveCloseButton,
                 saveCancelButton,
                 saveConfirmButton,
-                saveUpButton,
                 createFolderButton,
                 saveFilenameInput,
                 saveExtensionSelect,
@@ -14393,8 +15296,7 @@
             if (!contentInput || !editorHighlight) {
                 return;
             }
-            editorHighlight.scrollTop = contentInput.scrollTop;
-            editorHighlight.scrollLeft = contentInput.scrollLeft;
+            syncEditorMirrorScroll(contentInput, editorHighlight, editorHighlightCode);
         }
 
         function resetWriteEditorHorizontalScroll() {
@@ -14427,7 +15329,7 @@
                     });
             }
             if (contentInput && editorHighlight) {
-                editorHighlight.scrollLeft = contentInput.scrollLeft;
+                syncEditorMirrorScroll(contentInput, editorHighlight, editorHighlightCode);
             }
         }
 
@@ -14836,20 +15738,6 @@
             }
         }
 
-        function shouldNavigateSaveDirOnClick(entry) {
-            return Boolean(
-                entry
-                && entry.type === "dir"
-                && entry.has_children !== false
-                && (
-                    (entry.google_drive && entry.google_drive.is_root) ||
-                    entry.github_repo ||
-                    entry.git_repo ||
-                    entry.can_write_children === false
-                )
-            );
-        }
-
         function renderDirectoryOptions() {
             if (!directoryOptions) {
                 return;
@@ -14908,40 +15796,6 @@
                 return false;
             }
             return normalized === scopedHomeDir || normalized.startsWith(scopedHomeDir + "/");
-        }
-
-        function getSaveQuickPaths() {
-            const rootDir = getSaveBrowserRootDir();
-            const quickPathSet = new Set();
-            const quickPaths = [];
-            const activePath = normalizePath(state.selectedDir || state.browserDir || initialDir, true);
-
-            function pushQuickPath(pathValue) {
-                const normalized = normalizePath(pathValue, true);
-                if (!isSuperuser && normalized === "users") {
-                    return;
-                }
-                if (quickPathSet.has(normalized)) {
-                    return;
-                }
-                quickPathSet.add(normalized);
-                quickPaths.push(normalized);
-            }
-
-            if (rootDir && hasDirectory(rootDir)) {
-                pushQuickPath(rootDir);
-            } else if (isSuperuser && hasDirectory("")) {
-                pushQuickPath("");
-            }
-            getWritableAncestorPaths(activePath).forEach(function (ancestorPath) {
-                if (ancestorPath && ancestorPath !== rootDir) {
-                    pushQuickPath(ancestorPath);
-                }
-            });
-            getChildDirectories(rootDir).forEach(function (dirPath) {
-                pushQuickPath(dirPath);
-            });
-            return quickPaths;
         }
 
         function getWritableAncestorPaths(pathValue) {
@@ -15005,23 +15859,123 @@
             return isSuperuser && hasDirectory("") ? "" : "";
         }
 
-        function getSaveUpTarget(pathValue) {
-            const normalized = normalizePath(pathValue, true);
-            if (!normalized) {
-                return null;
+        function getOriginalSaveFilename() {
+            const normalizedOriginal = normalizePath(originalPath || "", true);
+            if (!normalizedOriginal) {
+                return "";
             }
+            return normalizedOriginal.split("/").pop() || "";
+        }
+
+        function getSaveInputFullFilename() {
+            return String(saveFilenameInput ? saveFilenameInput.value || "" : "").trim();
+        }
+
+        function getSaveTreeRootForPath(pathValue) {
             const rootDir = getSaveBrowserRootDir();
-            if (rootDir && normalized === rootDir) {
-                return null;
-            }
-            const parentPath = getParentPath(normalized);
-            if (!parentPath) {
-                return isSuperuser ? "" : null;
-            }
-            if (rootDir && !isPathInsideScopedHome(parentPath)) {
+            const normalized = normalizePath(pathValue, true);
+            if (rootDir && (!normalized || normalized === rootDir || normalized.startsWith(rootDir + "/"))) {
                 return rootDir;
             }
-            return parentPath;
+            return isSuperuser ? "" : rootDir;
+        }
+
+        function getSaveTreeRootLabel() {
+            const rootDir = normalizePath(state.browserDir || getSaveBrowserRootDir(), true);
+            if (!rootDir) {
+                return effectiveRootLabel;
+            }
+            if (rootDir === getSaveBrowserRootDir()) {
+                return getSaveBrowserRootLabel();
+            }
+            return getHandrivePathTailLabel(rootDir);
+        }
+
+        function getSaveDirectoryPathChain(pathValue) {
+            const normalized = normalizePath(pathValue, true);
+            const rootDir = normalizePath(state.browserDir || getSaveBrowserRootDir(), true);
+            const chain = [];
+            const parts = normalized ? normalized.split("/").filter(Boolean) : [];
+            const accumulated = [];
+
+            if (!rootDir || normalized === rootDir || (rootDir && normalized.startsWith(rootDir + "/"))) {
+                chain.push(rootDir);
+            }
+
+            parts.forEach(function (part) {
+                accumulated.push(part);
+                const candidate = accumulated.join("/");
+                if (candidate === rootDir) {
+                    return;
+                }
+                if (rootDir && !(candidate === rootDir || candidate.startsWith(rootDir + "/"))) {
+                    return;
+                }
+                chain.push(candidate);
+            });
+
+            return chain.filter(function (pathValue, index, list) {
+                return list.indexOf(pathValue) === index;
+            });
+        }
+
+        function expandSaveTreeToPath(pathValue) {
+            getSaveDirectoryPathChain(pathValue).forEach(function (directoryPath) {
+                state.expandedSaveDirs.add(normalizePath(directoryPath, true));
+            });
+        }
+
+        function isSaveDirectoryExpanded(pathValue) {
+            const normalized = normalizePath(pathValue, true);
+            return normalized === normalizePath(state.browserDir || "", true) || state.expandedSaveDirs.has(normalized);
+        }
+
+        async function ensureSaveTreePathLoaded(pathValue) {
+            const chain = getSaveDirectoryPathChain(pathValue);
+            for (let index = 0; index < chain.length; index += 1) {
+                await ensureSaveDirectoryLoaded(chain[index]);
+            }
+        }
+
+        async function ensureExpandedSaveDirectoriesLoaded() {
+            const rootDir = normalizePath(state.browserDir || getSaveBrowserRootDir(), true);
+            const paths = new Set([rootDir]);
+            state.expandedSaveDirs.forEach(function (pathValue) {
+                const normalized = normalizePath(pathValue, true);
+                if (!rootDir || normalized === rootDir || normalized.startsWith(rootDir + "/")) {
+                    paths.add(normalized);
+                }
+            });
+            await Promise.all(Array.from(paths).map(function (pathValue) {
+                return ensureSaveDirectoryLoaded(pathValue);
+            }));
+        }
+
+        function syncOriginalSaveSelectionFromFilename(options) {
+            const settings = options || {};
+            const normalizedOriginal = normalizePath(originalPath || "", true);
+            if (!normalizedOriginal) {
+                return false;
+            }
+            const originalParent = getParentPath(normalizedOriginal);
+            const shouldAdjust = settings.force
+                || state.selectedOverwritePath === normalizedOriginal
+                || normalizePath(state.selectedDir || "", true) === originalParent
+                || !state.selectedDir;
+            if (!shouldAdjust) {
+                return false;
+            }
+
+            const originalFilename = getOriginalSaveFilename();
+            const currentFilename = getSaveInputFullFilename();
+            const currentExtension = getCurrentSaveTargetExtension();
+            const originalExtension = getPathFileExtension(originalFilename);
+            updateSelectedDir(originalParent);
+            if (originalFilename && currentFilename === originalFilename && currentExtension === originalExtension) {
+                state.selectedOverwritePath = normalizedOriginal;
+            }
+            expandSaveTreeToPath(originalParent);
+            return true;
         }
 
         function getRenderedToolbarBreadcrumbItems() {
@@ -15139,9 +16093,7 @@
                 }
                 crumbButton.textContent = label;
                 crumbButton.addEventListener("click", function () {
-                    state.browserDir = pathValue;
-                    updateSelectedDir(pathValue);
-                    renderBrowser();
+                    navigateSaveBrowserTo(pathValue);
                 });
                 fragment.appendChild(crumbButton);
             }
@@ -15183,42 +16135,198 @@
             saveBreadcrumb.appendChild(fragment);
         }
 
-        function renderQuickList() {
-            if (!saveQuickList) {
-                return;
-            }
-            saveQuickList.innerHTML = "";
-
-            const quickPaths = getSaveQuickPaths();
-            quickPaths.forEach(function (pathValue) {
-                const item = document.createElement("li");
-                const button = document.createElement("button");
-                button.type = "button";
-                button.className = "handrive-save-shandrive-row";
-                if (pathValue === state.browserDir) {
-                    button.classList.add("is-active");
-                }
-                button.textContent = pathValue ? getHandrivePathTailLabel(pathValue) : "HanDrive";
-                if (pathValue === scopedHomeDir) {
-                    button.textContent = getSaveBrowserRootLabel();
-                } else if (!pathValue) {
-                    button.textContent = effectiveRootLabel;
-                }
-                button.addEventListener("click", function () {
-                    state.browserDir = pathValue;
-                    updateSelectedDir(pathValue);
-                    renderBrowser();
-                });
-                item.appendChild(button);
-                saveQuickList.appendChild(item);
-            });
-        }
-
         function navigateSaveBrowserTo(pathValue) {
             const normalized = normalizePath(pathValue, true);
-            state.browserDir = normalized;
+            state.browserDir = getSaveTreeRootForPath(normalized);
+            state.expandedSaveDirs = new Set();
+            expandSaveTreeToPath(normalized);
             updateSelectedDir(normalized);
             renderBrowser();
+        }
+
+        function buildSaveTreeRootEntry() {
+            const rootPath = normalizePath(state.browserDir || getSaveBrowserRootDir(), true);
+            const cachedMeta = state.directoryMetaCache.get(rootPath) || null;
+            return {
+                name: getSaveTreeRootLabel(),
+                path: rootPath,
+                type: "dir",
+                has_children: cachedMeta ? Boolean(cachedMeta.has_children) : true,
+                can_write_children: cachedMeta && Object.prototype.hasOwnProperty.call(cachedMeta, "can_write_children")
+                    ? Boolean(cachedMeta.can_write_children)
+                    : true,
+                google_drive: cachedMeta && cachedMeta.google_drive ? cachedMeta.google_drive : null,
+                git_repo: cachedMeta && cachedMeta.git_repo ? cachedMeta.git_repo : null,
+                git_branch_root: cachedMeta ? Boolean(cachedMeta.git_branch_root) : false,
+            };
+        }
+
+        function canSelectSaveDirectory(entry) {
+            return !entry || entry.can_write_children !== false;
+        }
+
+        function appendSaveSelectedClass(row, entryPath, isFile) {
+            if (
+                (!isFile && entryPath === state.selectedDir && !state.selectedOverwritePath) ||
+                (isFile && entryPath === state.selectedOverwritePath)
+            ) {
+                row.classList.add("is-selected");
+            }
+        }
+
+        function renderSaveEntryContents(row, entry, isOverwriteFile) {
+            const entryPath = normalizePath(entry && entry.path || "", true);
+            const icon = createSaveEntryIcon(entry);
+            const name = document.createElement("span");
+            name.className = "handrive-save-folder-name";
+            name.textContent = resolveSaveEntryLabel(entry) || getHandrivePathTailLabel(entryPath);
+
+            row.appendChild(icon);
+            row.appendChild(name);
+            if (isOverwriteFile) {
+                const badge = document.createElement("span");
+                badge.className = "handrive-save-overwrite-badge";
+                badge.textContent = t("save_overwrite_badge", "덮어쓰기");
+                row.appendChild(badge);
+            }
+        }
+
+        function addSaveCurrentDirectoryNode(fragment) {
+            const entry = buildSaveTreeRootEntry();
+            const entryPath = normalizePath(entry.path || "", true);
+            const item = document.createElement("li");
+            item.className = "handrive-item handrive-save-tree-item handrive-save-current-dir-item";
+
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "handrive-save-folder-row handrive-save-current-dir-row";
+            row.setAttribute("data-entry-path", entryPath);
+            appendSaveSelectedClass(row, entryPath, false);
+            renderSaveEntryContents(row, entry, false);
+
+            row.addEventListener("click", function (event) {
+                if (event.button !== 0) {
+                    return;
+                }
+                event.preventDefault();
+                if (canSelectSaveDirectory(entry)) {
+                    updateSelectedDir(entryPath);
+                }
+                renderBreadcrumb();
+                renderFolderList();
+            });
+
+            item.appendChild(row);
+            fragment.appendChild(item);
+        }
+
+        async function toggleSaveFolderExpansion(entry, options) {
+            const settings = options || {};
+            const entryPath = normalizePath(entry && entry.path || "", true);
+            if (!entryPath || entry.type !== "dir" || entry.has_children === false) {
+                return;
+            }
+            if (state.expandedSaveDirs.has(entryPath) && !settings.expandOnly) {
+                state.expandedSaveDirs.delete(entryPath);
+                renderFolderList();
+                return;
+            }
+            state.expandedSaveDirs.add(entryPath);
+            renderFolderList({ loading: true });
+            await ensureSaveDirectoryLoaded(entryPath);
+            renderFolderList();
+        }
+
+        function addSaveEntryNode(entry, fragment, ancestorHasNextSiblings, isLastSibling) {
+            if (!entry || !entry.path) {
+                return 0;
+            }
+            const entryPath = normalizePath(entry.path, true);
+            const isOverwriteFile = entry.type === "file";
+            const item = document.createElement("li");
+            item.className = "handrive-item handrive-save-tree-item";
+
+            const treePrefix = buildTreePrefixElement(ancestorHasNextSiblings, Boolean(isLastSibling));
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "handrive-save-folder-row has-tree-prefix";
+            row.setAttribute("data-entry-path", entryPath);
+            if (isOverwriteFile) {
+                row.classList.add("is-overwrite-file");
+            } else if (entry.type === "dir" && entry.has_children !== false) {
+                row.setAttribute("aria-expanded", isSaveDirectoryExpanded(entryPath) ? "true" : "false");
+            }
+            appendSaveSelectedClass(row, entryPath, isOverwriteFile);
+            renderSaveEntryContents(row, entry, isOverwriteFile);
+
+            row.addEventListener("click", function (event) {
+                if (event.button !== 0 || event.detail > 1) {
+                    return;
+                }
+                event.preventDefault();
+                if (isOverwriteFile) {
+                    selectOverwriteEntry(entry);
+                    renderBreadcrumb();
+                    renderFolderList();
+                    return;
+                }
+                if (entry.type !== "dir") {
+                    return;
+                }
+                if (canSelectSaveDirectory(entry)) {
+                    updateSelectedDir(entryPath);
+                }
+                renderBreadcrumb();
+                if (entry.has_children !== false) {
+                    toggleSaveFolderExpansion(entry).catch(alertError);
+                    return;
+                }
+                renderFolderList();
+            });
+
+            row.addEventListener("dblclick", function (event) {
+                if (event.button !== 0) {
+                    return;
+                }
+                event.preventDefault();
+                if (isOverwriteFile) {
+                    selectOverwriteEntry(entry);
+                    renderBreadcrumb();
+                    renderFolderList();
+                    return;
+                }
+                if (entry.type === "dir" && entry.has_children !== false) {
+                    toggleSaveFolderExpansion(entry, { expandOnly: true }).catch(alertError);
+                }
+            });
+
+            item.appendChild(treePrefix);
+            item.appendChild(row);
+            fragment.appendChild(item);
+            state.entryByPath.set(entryPath, entry);
+
+            if (entry.type === "dir" && isSaveDirectoryExpanded(entryPath)) {
+                const childEntries = getSaveBrowserEntries(entryPath);
+                const children = childEntries.dirs.concat(childEntries.overwriteFiles);
+                const nextAncestorHasNextSiblings = (ancestorHasNextSiblings || []).slice();
+                nextAncestorHasNextSiblings.push(!isLastSibling);
+                children.forEach(function (child, index) {
+                    addSaveEntryNode(child, fragment, nextAncestorHasNextSiblings, index === children.length - 1);
+                });
+            }
+            return 1;
+        }
+
+        function appendSaveTreeChildren(parentPath, fragment, ancestorHasNextSiblings) {
+            const browserEntries = getSaveBrowserEntries(parentPath);
+            const rows = browserEntries.dirs.concat(browserEntries.overwriteFiles);
+            rows.forEach(function (entry, index) {
+                addSaveEntryNode(entry, fragment, ancestorHasNextSiblings, index === rows.length - 1);
+            });
+            return {
+                count: rows.length,
+                fromCache: browserEntries.fromCache,
+            };
         }
 
         function renderFolderList(options) {
@@ -15227,82 +16335,30 @@
             }
             const settings = options || {};
             saveFolderList.innerHTML = "";
+            const fragment = document.createDocumentFragment();
+            const treeRoot = normalizePath(state.browserDir || getSaveBrowserRootDir(), true);
+            const rootHasCache = Boolean(getCachedSaveEntries(treeRoot));
 
-            const browserEntries = getSaveBrowserEntries(state.browserDir);
-            const rows = browserEntries.dirs.concat(browserEntries.overwriteFiles);
-            if (settings.loading && !browserEntries.fromCache && rows.length === 0) {
+            addSaveCurrentDirectoryNode(fragment);
+            const rootResult = appendSaveTreeChildren(treeRoot, fragment, []);
+            if (settings.loading && !rootHasCache && rootResult.count === 0) {
                 const loadingItem = document.createElement("li");
                 loadingItem.className = "handrive-save-folder-empty";
                 loadingItem.textContent = t("js_loading_folders", "폴더를 불러오는 중...");
-                saveFolderList.appendChild(loadingItem);
+                fragment.appendChild(loadingItem);
+                saveFolderList.appendChild(fragment);
                 return;
             }
-            if (rows.length === 0) {
+            if (rootResult.count === 0) {
                 const emptyItem = document.createElement("li");
                 emptyItem.className = "handrive-save-folder-empty";
                 emptyItem.textContent = t("js_no_save_targets", "하위 폴더나 덮어쓸 파일이 없습니다.");
-                saveFolderList.appendChild(emptyItem);
+                fragment.appendChild(emptyItem);
+                saveFolderList.appendChild(fragment);
                 return;
             }
 
-            rows.forEach(function (entry) {
-                const entryPath = normalizePath(entry && entry.path || "", true);
-                const isOverwriteFile = entry && entry.type === "file";
-                const item = document.createElement("li");
-                const row = document.createElement("button");
-                row.type = "button";
-                row.className = "handrive-save-folder-row";
-                if (isOverwriteFile) {
-                    row.classList.add("is-overwrite-file");
-                }
-                if (
-                    (!isOverwriteFile && entryPath === state.selectedDir && !state.selectedOverwritePath) ||
-                    (isOverwriteFile && entryPath === state.selectedOverwritePath)
-                ) {
-                    row.classList.add("is-selected");
-                }
-
-                const icon = createSaveEntryIcon(entry);
-
-                const name = document.createElement("span");
-                name.className = "handrive-save-folder-name";
-                name.textContent = resolveSaveEntryLabel(entry) || getHandrivePathTailLabel(entryPath);
-
-                row.appendChild(icon);
-                row.appendChild(name);
-                if (isOverwriteFile) {
-                    const badge = document.createElement("span");
-                    badge.className = "handrive-save-overwrite-badge";
-                    badge.textContent = t("save_overwrite_badge", "덮어쓰기");
-                    row.appendChild(badge);
-                }
-
-                row.addEventListener("click", function () {
-                    if (isOverwriteFile) {
-                        selectOverwriteEntry(entry);
-                    } else if (shouldNavigateSaveDirOnClick(entry)) {
-                        navigateSaveBrowserTo(entryPath);
-                        return;
-                    } else {
-                        updateSelectedDir(entryPath);
-                    }
-                    renderBreadcrumb();
-                    renderFolderList();
-                });
-
-                row.addEventListener("dblclick", function () {
-                    if (isOverwriteFile) {
-                        selectOverwriteEntry(entry);
-                        renderBreadcrumb();
-                        renderFolderList();
-                        return;
-                    }
-                    navigateSaveBrowserTo(entryPath);
-                });
-
-                item.appendChild(row);
-                saveFolderList.appendChild(item);
-            });
+            saveFolderList.appendChild(fragment);
         }
 
         function renderBrowser() {
@@ -15310,24 +16366,16 @@
                 return;
             }
             renderBreadcrumb();
-            renderQuickList();
             const renderToken = state.browserRenderToken + 1;
             state.browserRenderToken = renderToken;
             renderFolderList({ loading: !getCachedSaveEntries(state.browserDir) && Boolean(listApiUrl) });
-            if (saveUpButton) {
-                saveUpButton.disabled = !getSaveUpTarget(state.browserDir);
-            }
-            ensureSaveDirectoryLoaded(state.browserDir)
+            ensureExpandedSaveDirectoriesLoaded()
                 .then(function () {
                     if (state.browserRenderToken !== renderToken || !saveModal || saveModal.hidden) {
                         return;
                     }
                     renderBreadcrumb();
-                    renderQuickList();
                     renderFolderList();
-                    if (saveUpButton) {
-                        saveUpButton.disabled = !getSaveUpTarget(state.browserDir);
-                    }
                 })
                 .catch(function (error) {
                     if (state.browserRenderToken !== renderToken || !saveFolderList) {
@@ -15436,6 +16484,7 @@
                 applyHandriveRenderedContentModeClass(markdownPreviewContent, renderMode, renderClass);
                 markdownPreviewContent.innerHTML = data && typeof data.html === "string" ? data.html : "";
                 applyHandriveCodeHighlighting(markdownPreviewContent, renderClass || "ui-markdown");
+                renderHandriveMermaidDiagrams(markdownPreviewContent).catch(alertError);
             } catch (error) {
                 applyHandriveRenderedContentModeClass(markdownPreviewContent, "plain_text", "handrive-plain-text");
                 markdownPreviewContent.innerHTML =
@@ -15470,11 +16519,6 @@
             if (!hasDirectory(modalInitialDir)) {
                 modalInitialDir = getNearestWritableDirectory(modalInitialDir || initialDir);
             }
-            state.selectedOverwritePath = "";
-            state.browserDir = modalInitialDir;
-            updateSelectedDir(modalInitialDir);
-            renderBrowser();
-
             const parsedMainFilename = parseFileNameWithExtension(filenameInput ? filenameInput.value : "");
             const extensionCandidate = parsedMainFilename.extension || getPathFileExtension(originalPath) || DOCS_DEFAULT_EXTENSION;
             syncExtensionSelectFromValue(extensionCandidate);
@@ -15483,6 +16527,22 @@
             if (saveFilenameInput) {
                 saveFilenameInput.value = buildFilenameWithExtension(filenameCandidate, extensionCandidate);
             }
+
+            state.selectedOverwritePath = "";
+            state.browserDir = getSaveTreeRootForPath(modalInitialDir);
+            state.expandedSaveDirs = new Set();
+            updateSelectedDir(modalInitialDir);
+            expandSaveTreeToPath(modalInitialDir);
+            syncOriginalSaveSelectionFromFilename({ force: true });
+            renderBrowser();
+            ensureSaveTreePathLoaded(state.selectedDir || modalInitialDir)
+                .then(function () {
+                    if (!saveModal || saveModal.hidden) {
+                        return;
+                    }
+                    renderBrowser();
+                })
+                .catch(alertError);
 
             if (saveFilenameInput) {
                 saveFilenameInput.focus();
@@ -15769,7 +16829,7 @@
                 invalidateSaveDirectory(parentDir);
                 renderDirectoryOptions();
                 updateSelectedDir(createdPath);
-                state.browserDir = parentDir;
+                expandSaveTreeToPath(parentDir);
                 renderBrowser();
                 setFolderModalOpen(false);
             } catch (error) {
@@ -15845,7 +16905,8 @@
                 saveFilenameInput.focus();
                 syncMarkdownHelpButtonVisibility();
                 if (saveModal && !saveModal.hidden) {
-                    renderFolderList();
+                    syncOriginalSaveSelectionFromFilename();
+                    renderBrowser();
                 }
             });
 
@@ -15856,7 +16917,8 @@
                     if (parsed.extension && extensionPresetSet.has(parsed.extension)) {
                         saveExtensionSelect.value = parsed.extension;
                         if (saveModal && !saveModal.hidden) {
-                            renderFolderList();
+                            syncOriginalSaveSelectionFromFilename();
+                            renderBrowser();
                         }
                         return;
                     }
@@ -15870,7 +16932,8 @@
                     // Ignore extension auto-sync errors while typing.
                 }
                 if (saveModal && !saveModal.hidden) {
-                    renderFolderList();
+                    syncOriginalSaveSelectionFromFilename();
+                    renderBrowser();
                 }
             });
         }
@@ -16155,18 +17218,6 @@
         if (folderCreateButton) {
             folderCreateButton.addEventListener("click", function () {
                 createFolderFromModal();
-            });
-        }
-
-        if (saveUpButton) {
-            saveUpButton.addEventListener("click", function () {
-                const nextPath = getSaveUpTarget(state.browserDir);
-                if (!nextPath && nextPath !== "") {
-                    return;
-                }
-                state.browserDir = nextPath;
-                updateSelectedDir(nextPath);
-                renderBrowser();
             });
         }
 

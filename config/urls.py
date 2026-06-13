@@ -31,6 +31,7 @@ urlpatterns = [
     path("o/", include("main.oauth_urls", namespace="oauth2_provider")),
     path("oauth/", include((oauth_compat_urlpatterns, "oauth2_provider_compat"))),
     path('ai/', include('ai.urls')),
+    path('', include('hpmail.urls')),
     path('', include('main.urls')),
 ]
 

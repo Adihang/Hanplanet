@@ -33,6 +33,12 @@
                 type="text"
                 inputmode="search"
                 autocomplete="off"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                aria-controls="rootSearchSuggestions"
+                aria-activedescendant=""
                 placeholder="{% include_trimmed 'partials/ui_i18n.html' key='search_keyword_or_url' %}"
                 data-root-search-input
             >
@@ -51,6 +57,14 @@
                     <span class="root-search-engine-caret" aria-hidden="true"></span>
                 </button>
             </div>
+            <div
+                id="rootSearchSuggestions"
+                class="root-search-suggestions"
+                data-root-search-suggestions
+                role="listbox"
+                aria-label="{% include_trimmed 'partials/ui_i18n.html' key='search_suggestions' %}"
+                hidden
+            ></div>
         </form>
         <section
             class="root-translate-panel"

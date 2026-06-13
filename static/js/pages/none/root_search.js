@@ -3,6 +3,7 @@
 
     // Root search page entry. This one file owns:
     // - search engine picker behavior
+    // - root search suggestions dropdown
     // - root-page theme toggle
     // - root account/logout widget hooks
     // - profile image upload trigger
@@ -10,6 +11,7 @@
 
     const form = document.querySelector('[data-root-search-form]');
     const input = document.querySelector('[data-root-search-input]');
+    const suggestionsPopup = document.querySelector('[data-root-search-suggestions]');
     const engineSelect = document.querySelector('[data-root-search-engine]');
     const enginePicker = document.querySelector('[data-root-engine-picker]');
     const engineToggle = document.querySelector('[data-root-engine-toggle]');
@@ -26,30 +28,17 @@
         : [];
     const THEME_MODE_STORAGE_KEY = 'portfolio_theme_mode';
     const THEME_MODE_COOKIE_KEY = 'portfolio_theme_mode';
+    const ROOT_SEARCH_HISTORY_STORAGE_KEY = 'hanplanet_root_search_history';
+    const ROOT_SEARCH_HISTORY_LIMIT = 8;
+    const ROOT_SEARCH_SUGGESTION_LIMIT = 7;
     const COOKIE_MAX_AGE_SECONDS = 31536000;
     const accountThemeMode = (document.documentElement.getAttribute('data-account-theme-mode') || '').trim().toLowerCase();
+    let currentShortcutItems = [];
+    let renderedSearchSuggestions = [];
+    let activeSearchSuggestionIndex = -1;
 
     if (!form || !input || !engineSelect || !enginePicker || !engineToggle || !enginePopup || !engineLabel || !engineIcon || !engineOptions.length) {
         return;
-    }
-
-    const focusRootSearchInput = function () {
-        // Autofocus only on the dedicated root page and only when the user has not focused something else.
-        if (!document.body.classList.contains('root-page')) {
-            return;
-        }
-        if (document.activeElement && document.activeElement !== document.body) {
-            return;
-        }
-        window.requestAnimationFrame(function () {
-            input.focus({ preventScroll: true });
-        });
-    };
-
-    if (document.readyState === 'complete') {
-        focusRootSearchInput();
-    } else {
-        window.addEventListener('load', focusRootSearchInput, { once: true });
     }
 
     const relocateRootNavigationBlocks = function () {
@@ -242,6 +231,15 @@
         // Root page PATCH helpers reuse the global csrf meta token instead of duplicating cookie parsing.
         const meta = document.querySelector('meta[name="csrf-token"]');
         return meta ? meta.getAttribute('content') : '';
+    };
+
+    const escapeHtml = function (value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     };
 
     const readThemeCookie = function () {
@@ -505,6 +503,284 @@
         return null;
     };
 
+    const normalizeSuggestionText = function (value) {
+        return String(value || '').trim().toLowerCase();
+    };
+
+    const readRootSearchHistory = function () {
+        try {
+            const parsed = JSON.parse(window.localStorage.getItem(ROOT_SEARCH_HISTORY_STORAGE_KEY) || '[]');
+            if (!Array.isArray(parsed)) {
+                return [];
+            }
+            return parsed
+                .map(function (item) { return String(item || '').trim(); })
+                .filter(Boolean)
+                .slice(0, ROOT_SEARCH_HISTORY_LIMIT);
+        } catch (error) {
+            return [];
+        }
+    };
+
+    const writeRootSearchHistory = function (items) {
+        try {
+            window.localStorage.setItem(
+                ROOT_SEARCH_HISTORY_STORAGE_KEY,
+                JSON.stringify(items.slice(0, ROOT_SEARCH_HISTORY_LIMIT))
+            );
+        } catch (error) {}
+    };
+
+    const rememberRootSearchQuery = function (query) {
+        const value = String(query || '').trim();
+        if (!value || value.length > 160 || hasScheme(value) || looksLikeDomainOrIp(value)) {
+            return;
+        }
+
+        const valueKey = normalizeSuggestionText(value);
+        const nextHistory = readRootSearchHistory().filter(function (item) {
+            return normalizeSuggestionText(item) !== valueKey;
+        });
+        nextHistory.unshift(value);
+        writeRootSearchHistory(nextHistory);
+    };
+
+    const getSuggestionMetaFromUrl = function (rawUrl) {
+        try {
+            const parsed = new URL(rawUrl, window.location.origin);
+            if (parsed.origin === window.location.origin) {
+                return parsed.pathname;
+            }
+            return parsed.hostname;
+        } catch (error) {
+            return '';
+        }
+    };
+
+    const collectRootNavSuggestions = function () {
+        return Array.from(document.querySelectorAll('[data-root-nav-links-host] a[href]'))
+            .map(function (link) {
+                const label = String(link.textContent || '').replace(/\s+/g, ' ').trim();
+                const href = link.href || link.getAttribute('href') || '';
+                if (!label || !href) {
+                    return null;
+                }
+                return {
+                    type: 'link',
+                    label: label,
+                    value: label,
+                    url: href,
+                    meta: getSuggestionMetaFromUrl(href)
+                };
+            })
+            .filter(Boolean);
+    };
+
+    const buildRootSearchSuggestionCandidates = function () {
+        const historyItems = readRootSearchHistory().map(function (query) {
+            return {
+                type: 'history',
+                label: query,
+                value: query,
+                url: '',
+                meta: ''
+            };
+        });
+
+        const shortcutItems = currentShortcutItems.map(function (item) {
+            return {
+                type: 'shortcut',
+                label: item.name || item.url,
+                value: item.name || item.url,
+                url: item.url || '',
+                meta: getSuggestionMetaFromUrl(item.url || ''),
+                iconUrl: item.icon_url || ''
+            };
+        });
+
+        return historyItems.concat(shortcutItems, collectRootNavSuggestions());
+    };
+
+    const suggestionMatchesQuery = function (item, query) {
+        if (!query) {
+            return true;
+        }
+        const haystack = normalizeSuggestionText([item.label, item.value, item.url, item.meta].join(' '));
+        return haystack.indexOf(query) !== -1;
+    };
+
+    const getRootSearchSuggestions = function () {
+        const query = normalizeSuggestionText(input.value);
+        const suggestions = [];
+        const seen = new Set();
+
+        buildRootSearchSuggestionCandidates().forEach(function (item) {
+            if (!suggestionMatchesQuery(item, query)) {
+                return;
+            }
+            const key = item.url ? 'url:' + item.url : 'query:' + normalizeSuggestionText(item.value || item.label);
+            if (seen.has(key)) {
+                return;
+            }
+            seen.add(key);
+            suggestions.push(item);
+        });
+
+        return suggestions.slice(0, ROOT_SEARCH_SUGGESTION_LIMIT);
+    };
+
+    const closeSearchSuggestions = function () {
+        if (!suggestionsPopup) {
+            return;
+        }
+        renderedSearchSuggestions = [];
+        activeSearchSuggestionIndex = -1;
+        suggestionsPopup.hidden = true;
+        suggestionsPopup.classList.remove('is-open');
+        suggestionsPopup.innerHTML = '';
+        input.setAttribute('aria-expanded', 'false');
+        input.setAttribute('aria-activedescendant', '');
+    };
+
+    const setActiveSearchSuggestion = function (index) {
+        if (!suggestionsPopup || !renderedSearchSuggestions.length) {
+            return;
+        }
+        const maxIndex = renderedSearchSuggestions.length - 1;
+        if (index < 0) {
+            activeSearchSuggestionIndex = maxIndex;
+        } else if (index > maxIndex) {
+            activeSearchSuggestionIndex = 0;
+        } else {
+            activeSearchSuggestionIndex = index;
+        }
+
+        suggestionsPopup.querySelectorAll('[data-root-search-suggestion-index]').forEach(function (option) {
+            const optionIndex = Number(option.getAttribute('data-root-search-suggestion-index'));
+            const isActive = optionIndex === activeSearchSuggestionIndex;
+            option.classList.toggle('is-active', isActive);
+            option.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            if (isActive) {
+                input.setAttribute('aria-activedescendant', option.id || '');
+            }
+        });
+    };
+
+    const renderSearchSuggestions = function (items) {
+        if (!suggestionsPopup) {
+            return;
+        }
+        renderedSearchSuggestions = items.slice(0, ROOT_SEARCH_SUGGESTION_LIMIT);
+        activeSearchSuggestionIndex = -1;
+        if (!renderedSearchSuggestions.length) {
+            closeSearchSuggestions();
+            return;
+        }
+
+        suggestionsPopup.innerHTML = renderedSearchSuggestions.map(function (item, index) {
+            const optionId = 'rootSearchSuggestionOption' + String(index);
+            const safeLabel = escapeHtml(item.label || item.value || '');
+            const safeMeta = escapeHtml(item.meta || '');
+            const safeType = escapeHtml(item.type || 'history');
+            const iconMarkup = item.iconUrl
+                ? '<img class="root-search-suggestion-icon-img" src="' + escapeHtml(item.iconUrl) + '" alt="" loading="lazy">'
+                : '';
+            const metaMarkup = safeMeta
+                ? '<span class="root-search-suggestion-meta">' + safeMeta + '</span>'
+                : '';
+            return '' +
+                '<button type="button" id="' + optionId + '" class="root-search-suggestion" role="option" aria-selected="false" data-root-search-suggestion-index="' + String(index) + '">' +
+                    '<span class="root-search-suggestion-icon" data-suggestion-type="' + safeType + '" aria-hidden="true">' + iconMarkup + '</span>' +
+                    '<span class="root-search-suggestion-copy">' +
+                        '<span class="root-search-suggestion-label">' + safeLabel + '</span>' +
+                        metaMarkup +
+                    '</span>' +
+                '</button>';
+        }).join('');
+        suggestionsPopup.hidden = false;
+        suggestionsPopup.classList.add('is-open');
+        input.setAttribute('aria-expanded', 'true');
+        input.setAttribute('aria-activedescendant', '');
+    };
+
+    const updateSearchSuggestions = function () {
+        if (!suggestionsPopup || document.activeElement !== input) {
+            return;
+        }
+        renderSearchSuggestions(getRootSearchSuggestions());
+    };
+
+    const submitSearchForm = function () {
+        if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+            return;
+        }
+        form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    };
+
+    const applySearchSuggestion = function (index) {
+        const item = renderedSearchSuggestions[index];
+        if (!item) {
+            return;
+        }
+        if (item.url) {
+            window.location.href = item.url;
+            return;
+        }
+        input.value = item.value || item.label || '';
+        closeSearchSuggestions();
+        submitSearchForm();
+    };
+
+    const refreshSearchSuggestions = function () {
+        if (document.activeElement === input) {
+            updateSearchSuggestions();
+        }
+    };
+
+    if (suggestionsPopup) {
+        input.addEventListener('input', updateSearchSuggestions);
+        input.addEventListener('focus', updateSearchSuggestions);
+        input.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                closeSearchSuggestions();
+                return;
+            }
+            if (suggestionsPopup.hidden || !renderedSearchSuggestions.length) {
+                return;
+            }
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setActiveSearchSuggestion(activeSearchSuggestionIndex + 1);
+                return;
+            }
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setActiveSearchSuggestion(activeSearchSuggestionIndex - 1);
+                return;
+            }
+            if (event.key === 'Enter' && activeSearchSuggestionIndex >= 0) {
+                event.preventDefault();
+                applySearchSuggestion(activeSearchSuggestionIndex);
+            }
+        });
+
+        suggestionsPopup.addEventListener('mousedown', function (event) {
+            if (event.target.closest('[data-root-search-suggestion-index]')) {
+                event.preventDefault();
+            }
+        });
+
+        suggestionsPopup.addEventListener('click', function (event) {
+            const option = event.target.closest('[data-root-search-suggestion-index]');
+            if (!option) {
+                return;
+            }
+            event.preventDefault();
+            applySearchSuggestion(Number(option.getAttribute('data-root-search-suggestion-index')));
+        });
+    }
+
     const closeEngineMenu = function () {
         // Engine popup state is tracked only through DOM classes/aria, so teardown stays stateless.
         enginePicker.classList.remove('is-open');
@@ -558,6 +834,7 @@
 
     engineToggle.addEventListener('click', function (event) {
         event.preventDefault();
+        closeSearchSuggestions();
         if (enginePopup.classList.contains('is-open')) {
             closeEngineMenu();
             return;
@@ -575,6 +852,9 @@
     });
 
     document.addEventListener('click', function (event) {
+        if (suggestionsPopup && !form.contains(event.target)) {
+            closeSearchSuggestions();
+        }
         if (!enginePicker.contains(event.target) && !enginePopup.contains(event.target)) {
             closeEngineMenu();
         }
@@ -611,6 +891,7 @@
     form.addEventListener('submit', function (event) {
         event.preventDefault();
         const raw = input.value.trim();
+        closeSearchSuggestions();
         if (!raw) {
             input.focus();
             return;
@@ -625,6 +906,7 @@
         }
 
         const engine = engineSelect.value in ENGINE_URLS ? engineSelect.value : 'google';
+        rememberRootSearchQuery(raw);
         window.location.href = ENGINE_URLS[engine](raw);
     });
 
@@ -658,7 +940,6 @@
     let dragChanged = false;
     let editingShortcutId = null;
     let contextTargetShortcutId = null;
-    let currentShortcutItems = [];
 
     const selectServerMessage = function (payload, fallback) {
         if (!payload || typeof payload !== 'object') {
@@ -680,15 +961,6 @@
             throw new Error(selectServerMessage(payload, fallback));
         }
         return payload;
-    };
-
-    const escapeHtml = function (value) {
-        return String(value || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
     };
 
     const buildAddCardMarkup = function () {
@@ -873,6 +1145,7 @@
         } else if (!items.length) {
             shortcutsGrid.innerHTML = '<p class="root-shortcuts-empty">' + escapeHtml(emptyMessage) + '</p>';
         }
+        refreshSearchSuggestions();
     };
 
     const fetchShortcuts = async function () {

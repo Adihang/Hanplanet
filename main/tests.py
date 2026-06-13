@@ -62,6 +62,7 @@ from .handrive_views import (
     _forgejo_server_logout,
     _resolve_handrive_post_login_url,
     _send_or_reuse_login_2fa_email,
+    build_archive_virtual_path,
     build_google_drive_docs_editor_url,
     build_google_drive_docs_preview_url,
     build_page_help_html,
@@ -411,6 +412,21 @@ class MarkdownSafetyTests(TestCase):
         self.assertIn("print('hi')", rendered)
         self.assertNotIn("&amp;#x27;", rendered)
 
+    def test_render_markdown_marks_mermaid_fenced_blocks_for_client_rendering(self):
+        rendered = render_markdown_safely("```mermaid\ngraph TD\nA-->B\n```")
+
+        self.assertIn('class="handrive-mermaid"', rendered)
+        self.assertIn('data-handrive-mermaid-diagram="1"', rendered)
+        self.assertIn('class="handrive-mermaid-source"', rendered)
+        self.assertIn("graph TD", rendered)
+        self.assertIn("A--&gt;B", rendered)
+
+    def test_render_markdown_with_raw_html_marks_mermaid_fenced_blocks(self):
+        rendered = render_markdown_with_raw_html('<div class="embed">ok</div>\n\n```mermaid\ngraph TD\nA-->B\n```')
+
+        self.assertIn('<div class="embed">ok</div>', rendered)
+        self.assertIn('data-handrive-mermaid-diagram="1"', rendered)
+
     def test_render_markdown_supports_blockquotes(self):
         rendered = render_markdown_safely("> quoted")
         self.assertIn("<blockquote>", rendered)
@@ -466,6 +482,23 @@ class HandriveMarkdownRenderingTests(TestCase):
         self.assertIn("<p>본문</p>", rendered)
         self.assertIn('<pre><code class="language-text">', rendered)
         self.assertIn("\ninside\n", rendered)
+
+
+class HandriveGitMetaTests(TestCase):
+    def test_git_repo_latest_commit_meta_map_uses_unquoted_paths_for_unicode_names(self):
+        from .handrive_views import _git_repo_latest_commit_meta_map
+
+        unicode_name = "스크린샷 2026-03-31 오전 1.55.02.png"
+        git_output = f"\x1eabc1234\x1fAdd asset\x1fhanplanet\x1f1775358401\n\n{unicode_name}\n"
+        with mock.patch(
+            "main.handrive_views._run_git_repo_command",
+            return_value=mock.Mock(stdout=git_output),
+        ) as run_git_repo_command:
+            metas = _git_repo_latest_commit_meta_map(object(), "asset", [unicode_name])
+
+        self.assertEqual(metas[unicode_name]["commit_id"], "abc1234")
+        git_args = run_git_repo_command.call_args.args[1:]
+        self.assertEqual(git_args[:3], ("-c", "core.quotePath=false", "log"))
 
 
 class AddScoreViewTests(TestCase):
@@ -1301,6 +1334,19 @@ class SitePreferenceSourceTests(TestCase):
         self.assertIn("if (shouldPersistInitialThemeMode) {", root_search_js)
         self.assertIn("writeThemeCookie(mode);", root_search_js)
         self.assertIn("domain=.hanplanet.com", root_search_js)
+
+    def test_root_search_suggestions_use_local_history_and_shortcuts(self):
+        root_template = (Path(settings.BASE_DIR) / "templates/none.html").read_text(encoding="utf-8")
+        root_search_js = (Path(settings.BASE_DIR) / "static/js/pages/none/root_search.js").read_text(encoding="utf-8")
+        common_css = (Path(settings.BASE_DIR) / "static/css/common/style.css").read_text(encoding="utf-8")
+
+        self.assertIn('data-root-search-suggestions', root_template)
+        self.assertIn('aria-autocomplete="list"', root_template)
+        self.assertIn("const ROOT_SEARCH_HISTORY_STORAGE_KEY = 'hanplanet_root_search_history';", root_search_js)
+        self.assertIn("rememberRootSearchQuery(raw);", root_search_js)
+        self.assertIn("currentShortcutItems.map", root_search_js)
+        self.assertIn("collectRootNavSuggestions", root_search_js)
+        self.assertIn(".root-search-suggestions", common_css)
 
 
 class HandriveStyleSourceTests(TestCase):
@@ -5606,6 +5652,10 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(payload["owner_username"], "url_share_api_editor")
         self.assertEqual(payload["share_slug"], "public")
         self.assertTrue(payload["share_url"].endswith("/ko/handrive/share/url_share_api_editor/public"))
+        self.assertIn("/handrive/api/download?", payload["share_download_url"])
+        self.assertIn("path=public.md", payload["share_download_url"])
+        self.assertIn("share_owner=url_share_api_editor", payload["share_download_url"])
+        self.assertIn("share_slug=public", payload["share_download_url"])
 
     def test_folder_url_share_link_renders_shared_list_and_allows_descendant_download(self):
         editor = self.create_handrive_editor("folder_share_editor")
@@ -5670,6 +5720,114 @@ class HandriveAccessRuleTests(TestCase):
             data={"path": "shared_folder/child.md"},
         )
         self.assertEqual(blocked_download.status_code, 403)
+
+    def test_file_url_share_download_link_uses_shared_file_path(self):
+        editor = self.create_handrive_editor("file_share_download_editor")
+        self.client.force_login(editor)
+
+        response = self.client.post(
+            reverse("main:handrive_api_url_share"),
+            data=json.dumps({"path": "public.md", "enabled": True}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("path=public.md", payload["share_download_url"])
+        self.assertIn(f"share_owner={payload['owner_username']}", payload["share_download_url"])
+        self.assertIn(f"share_slug={payload['share_slug']}", payload["share_download_url"])
+
+        rule = HandriveAccessRule.objects.get(path="public.md")
+        rule.write_groups.add(self.handrive_editor_group)
+        api_list = self.client.get(reverse("main:handrive_api_list"), data={"path": ""})
+        public_entry = next(entry for entry in api_list.json()["entries"] if entry["path"] == "public.md")
+        self.assertIn("path=public.md", public_entry["share_download_url"])
+        self.assertIn(f"share_owner={payload['owner_username']}", public_entry["share_download_url"])
+        self.assertIn(f"share_slug={payload['share_slug']}", public_entry["share_download_url"])
+
+        self.client.logout()
+
+        shared_view = self.client.get(payload["share_url"])
+        self.assertEqual(shared_view.status_code, 200)
+        self.assertTrue(any(template.name == "handrive/view.html" for template in shared_view.templates))
+        html = shared_view.content.decode("utf-8")
+        self.assertIn("path=public.md", html)
+        self.assertIn(f"share_owner={payload['owner_username']}", html)
+        self.assertIn(f"share_slug={payload['share_slug']}", html)
+        self.assertIn('data-doc-share-download-url="http://testserver/handrive/api/download?path=public.md', html)
+        self.assertIn('data-handrive-shared-root-path="public.md"', html)
+        self.assertNotIn("path=&", html)
+
+        download_response = self.client.get(
+            reverse("main:handrive_api_download"),
+            data={
+                "path": "public.md",
+                "share_owner": payload["owner_username"],
+                "share_slug": payload["share_slug"],
+            },
+        )
+        self.assertEqual(download_response.status_code, 200)
+        self.assertEqual(b"".join(download_response.streaming_content), b"# public")
+
+    def test_archive_url_share_download_link_and_virtual_list_use_shared_context(self):
+        editor = self.create_handrive_editor("archive_share_editor")
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        archive_path = handrive_root / "Update.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("folder/inside.txt", "inside")
+            archive.writestr("root.txt", "root")
+
+        self.client.force_login(editor)
+        response = self.client.post(
+            reverse("main:handrive_api_url_share"),
+            data=json.dumps({"path": "Update.zip", "enabled": True}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("path=Update.zip", payload["share_download_url"])
+        self.assertIn(f"share_owner={payload['owner_username']}", payload["share_download_url"])
+        self.assertIn(f"share_slug={payload['share_slug']}", payload["share_download_url"])
+
+        self.client.logout()
+
+        shared_view = self.client.get(payload["share_url"])
+        self.assertEqual(shared_view.status_code, 200)
+        self.assertTrue(any(template.name == "handrive/view.html" for template in shared_view.templates))
+        html = shared_view.content.decode("utf-8")
+        self.assertIn("path=Update.zip", html)
+        self.assertIn(f"share_owner={payload['owner_username']}", html)
+        self.assertIn(f"share_slug={payload['share_slug']}", html)
+        self.assertIn('data-doc-share-download-url="http://testserver/handrive/api/download?path=Update.zip', html)
+        self.assertIn('data-handrive-shared-root-path="Update.zip"', html)
+        self.assertNotIn("path=&", html)
+
+        archive_list = self.client.get(
+            reverse("main:handrive_api_list"),
+            data={
+                "path": build_archive_virtual_path("Update.zip"),
+                "share_owner": payload["owner_username"],
+                "share_slug": payload["share_slug"],
+            },
+        )
+        self.assertEqual(archive_list.status_code, 200)
+        entries = {entry["name"]: entry for entry in archive_list.json()["entries"]}
+        self.assertEqual(entries["folder"]["type"], "dir")
+        self.assertTrue(entries["folder"]["is_archive_member"])
+        self.assertEqual(entries["root.txt"]["type"], "file")
+        self.assertTrue(entries["root.txt"]["is_archive_member"])
+
+        download_response = self.client.get(
+            reverse("main:handrive_api_download"),
+            data={
+                "path": "Update.zip",
+                "share_owner": payload["owner_username"],
+                "share_slug": payload["share_slug"],
+            },
+        )
+        self.assertEqual(download_response.status_code, 200)
+        archive_body = b"".join(download_response.streaming_content)
+        with zipfile.ZipFile(io.BytesIO(archive_body)) as downloaded_archive:
+            self.assertEqual(downloaded_archive.read("root.txt").decode("utf-8"), "root")
 
     def test_handrive_root_for_superuser_defaults_to_user_folder(self):
         admin_user = self.user_model.objects.create_user(
@@ -5975,6 +6133,19 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(partial_response.status_code, 200)
         self.assertEqual((migrated_root / "target" / "root.txt").read_text(encoding="utf-8"), "R")
 
+        virtual_target_response = self.client.post(
+            reverse("main:handrive_api_archive_extract"),
+            data=json.dumps({
+                "source_path": root_file_entry["path"],
+                "target_dir": archive_entry["archive_virtual_path"],
+                "destination_mode": "current",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(virtual_target_response.status_code, 200, virtual_target_response.content)
+        self.assertEqual(virtual_target_response.json()["target_dir"], "")
+        self.assertEqual((migrated_root / "root.txt").read_text(encoding="utf-8"), "R")
+
     def test_docs_api_archive_create_zips_folder_next_to_source(self):
         editor = self.create_handrive_editor("zip_create_editor")
         self.client.force_login(editor)
@@ -5998,6 +6169,134 @@ class HandriveAccessRuleTests(TestCase):
         with zipfile.ZipFile(archive_path) as archive:
             self.assertEqual(archive.read("restricted/secret.md").decode("utf-8"), "# secret")
             self.assertEqual(archive.read("restricted/child/nested.txt").decode("utf-8"), "nested")
+
+    def test_archive_virtual_list_uses_readable_breadcrumbs_and_directory_meta(self):
+        editor = self.create_handrive_editor("zip_breadcrumb_editor")
+        self.client.force_login(editor)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        archive_path = handrive_root / "sample.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("folder/inside.txt", "inside")
+
+        virtual_path = build_archive_virtual_path("sample.zip", "folder")
+        response = self.client.get(
+            reverse("main:handrive_list_lang", kwargs={"ui_lang": "ko", "folder_path": virtual_path})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        breadcrumb_labels = [crumb["label"] for crumb in response.context["breadcrumbs"]]
+        self.assertIn("sample.zip", breadcrumb_labels)
+        self.assertEqual(breadcrumb_labels[-1], "folder")
+        breadcrumb_label_text = "/".join(breadcrumb_labels)
+        self.assertNotIn(".handrive-archive", breadcrumb_label_text)
+        self.assertNotIn(virtual_path.split("/")[1], breadcrumb_label_text)
+        self.assertTrue(response.context["current_dir_is_archive_virtual"])
+        self.assertEqual(response.context["current_dir_archive_path"], "sample.zip")
+        self.assertEqual(response.context["current_dir_archive_member_path"], "folder")
+        self.assertTrue(response.context["current_dir_archive_can_edit"])
+        self.assertTrue(response.context["current_dir_archive_can_delete"])
+
+        html = response.content.decode("utf-8")
+        for button_id in (
+            "handrive-list-toolbar-archive-url-share-btn",
+            "handrive-list-toolbar-archive-download-btn",
+            "handrive-list-toolbar-archive-delete-btn",
+        ):
+            id_index = html.index(f'id="{button_id}"')
+            tag_start = html.rfind("<", 0, id_index)
+            tag_end = html.find(">", id_index)
+            self.assertNotIn("hidden", html[tag_start:tag_end])
+        self.assertIn("path=sample.zip", html)
+
+        api_response = self.client.get(reverse("main:handrive_api_list"), data={"path": virtual_path})
+        self.assertEqual(api_response.status_code, 200)
+        payload = api_response.json()
+        directory_meta = payload["directory_meta"]
+        self.assertEqual(payload["directory"], directory_meta)
+        self.assertTrue(directory_meta["is_archive_virtual"])
+        self.assertEqual(directory_meta["archive_path"], "sample.zip")
+        self.assertEqual(directory_meta["archive_member_path"], "folder")
+        self.assertTrue(directory_meta["archive_can_edit"])
+        self.assertTrue(directory_meta["archive_can_delete"])
+
+    def test_open_editable_folder_shows_current_folder_toolbar_actions(self):
+        editor = self.create_handrive_editor("folder_toolbar_editor")
+        self.client.force_login(editor)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        folder_path = handrive_root / "toolbar-folder"
+        folder_path.mkdir(parents=True, exist_ok=True)
+        (folder_path / "child.txt").write_text("child", encoding="utf-8")
+
+        response = self.client.get(
+            reverse("main:handrive_list_lang", kwargs={"ui_lang": "ko", "folder_path": "toolbar-folder"})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["current_dir"], "toolbar-folder")
+        self.assertTrue(response.context["current_dir_can_edit"])
+        html = response.content.decode("utf-8")
+        for button_id in (
+            "handrive-list-toolbar-current-dir-url-share-btn",
+            "handrive-list-toolbar-current-dir-delete-btn",
+        ):
+            id_index = html.index(f'id="{button_id}"')
+            tag_start = html.rfind("<", 0, id_index)
+            tag_end = html.find(">", id_index)
+            self.assertNotIn("hidden", html[tag_start:tag_end])
+
+    def test_docs_api_archive_create_zips_selected_files_in_same_parent(self):
+        editor = self.create_handrive_editor("zip_create_selected_editor")
+        self.client.force_login(editor)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        parent_dir = handrive_root / "selected"
+        parent_dir.mkdir(parents=True, exist_ok=True)
+        (parent_dir / "a.txt").write_text("A", encoding="utf-8")
+        (parent_dir / "b.txt").write_text("B", encoding="utf-8")
+        (parent_dir / "child").mkdir()
+
+        response = self.client.post(
+            reverse("main:handrive_api_archive_create"),
+            data=json.dumps({
+                "source_paths": ["selected/a.txt", "selected/b.txt"],
+                "archive_name": "selected.zip",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("path"), "selected/selected.zip")
+        archive_path = Path(settings.MEDIA_ROOT) / "HanDrive" / "selected" / "selected.zip"
+        self.assertTrue(archive_path.exists())
+        with zipfile.ZipFile(archive_path) as archive:
+            self.assertEqual(sorted(archive.namelist()), ["a.txt", "b.txt"])
+            self.assertEqual(archive.read("a.txt").decode("utf-8"), "A")
+            self.assertEqual(archive.read("b.txt").decode("utf-8"), "B")
+
+    def test_docs_api_archive_create_rejects_selected_files_from_different_parents(self):
+        editor = self.create_handrive_editor("zip_create_mixed_parent_editor")
+        self.client.force_login(editor)
+
+        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        (handrive_root / "selected").mkdir(parents=True, exist_ok=True)
+        (handrive_root / "other").mkdir(parents=True, exist_ok=True)
+        (handrive_root / "selected" / "a.txt").write_text("A", encoding="utf-8")
+        (handrive_root / "other" / "b.txt").write_text("B", encoding="utf-8")
+
+        response = self.client.post(
+            reverse("main:handrive_api_archive_create"),
+            data=json.dumps({
+                "source_paths": ["selected/a.txt", "other/b.txt"],
+                "archive_name": "mixed",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse((Path(settings.MEDIA_ROOT) / "HanDrive" / "selected" / "mixed.zip").exists())
 
     def test_docs_api_move_updates_sync_excluded_paths(self):
         editor = self.create_handrive_editor("move_sync_editor")

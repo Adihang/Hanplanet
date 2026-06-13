@@ -1,18 +1,43 @@
 <div id="handrive-url-share-modal" class="handrive-popup-modal" hidden>
     <div class="handrive-popup-modal-backdrop" id="handrive-url-share-modal-backdrop"></div>
     <div class="handrive-popup-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-url-share-title">
-        <h3 id="handrive-url-share-title" class="handrive-popup-title">{{ handrive_text.url_share_title }}</h3>
+        <button
+            type="button"
+            class="handrive-popup-close-btn"
+            id="handrive-url-share-close-btn"
+            aria-label="{{ handrive_text.close_label }}"
+            title="{{ handrive_text.close_label }}"
+        ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
+        <h2 id="handrive-url-share-title" class="handrive-popup-title">{{ handrive_text.url_share_title }}</h2>
         <label class="handrive-url-share-toggle-label">
             <input type="checkbox" id="handrive-url-share-enabled-checkbox">
             <span>{{ handrive_text.url_share_enabled_label }}</span>
         </label>
         <div id="handrive-url-share-url-row" class="handrive-field handrive-field-full" hidden>
-            <span>{{ handrive_text.url_share_label }}</span>
-            <input type="text" id="handrive-url-share-input" readonly>
+            <span id="handrive-url-share-read-label">{{ handrive_text.url_share_label }}</span>
+            <div class="handrive-url-share-input-wrap">
+                <input type="text" id="handrive-url-share-input" readonly>
+                <button
+                    type="button"
+                    class="handrive-url-share-inline-copy-btn"
+                    id="handrive-url-share-copy-url-icon-btn"
+                    aria-label="{{ handrive_text.url_share_copy_button }}"
+                    title="{{ handrive_text.url_share_copy_button }}"
+                ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"/></svg></button>
+            </div>
         </div>
-        <div class="handrive-popup-actions">
-            <button type="button" class="ui-btn" id="handrive-url-share-close-btn">{{ handrive_text.cancel }}</button>
-            <button type="button" class="ui-btn ui-btn-primary" id="handrive-url-share-copy-btn" hidden>{{ handrive_text.url_share_copy_button }}</button>
+        <div id="handrive-url-share-download-row" class="handrive-field handrive-field-full" hidden>
+            <span>{{ handrive_text.url_share_download_label }}</span>
+            <div class="handrive-url-share-input-wrap">
+                <input type="text" id="handrive-url-share-download-input" readonly>
+                <button
+                    type="button"
+                    class="handrive-url-share-inline-copy-btn"
+                    id="handrive-url-share-copy-download-icon-btn"
+                    aria-label="{{ handrive_text.url_share_copy_download_button }}"
+                    title="{{ handrive_text.url_share_copy_download_button }}"
+                ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"/></svg></button>
+            </div>
         </div>
     </div>
 </div>

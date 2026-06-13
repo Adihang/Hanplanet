@@ -1,0 +1,541 @@
+.hpmail-page {
+    background: var(--handrive-bg, #ffffff);
+    color: var(--handrive-text, #222222);
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+}
+
+.hpmail-page .site-footer-links {
+    display: none;
+}
+
+.hpmail-toolbar-right {
+    gap: 10px;
+}
+
+.hpmail-toolbar-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.hpmail-address,
+.hpmail-meter {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    max-width: 260px;
+    padding: 0 10px;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: var(--handrive-radius, 6px);
+    background: var(--handrive-elevated-bg, #ffffff);
+    color: var(--handrive-muted, #666666);
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.hpmail-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    max-width: 1300px;
+    min-height: 0;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 0 12px;
+    overflow: hidden;
+}
+
+.hpmail-app {
+    position: relative;
+    display: grid;
+    grid-template-columns: 220px minmax(280px, 360px) minmax(0, 1fr);
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+    margin: 0;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: var(--handrive-radius-lg, 8px);
+    overflow: hidden;
+    background: var(--handrive-surface, #ffffff);
+}
+
+.hpmail-sidebar,
+.hpmail-list-pane,
+.hpmail-reader-pane {
+    min-width: 0;
+    min-height: 0;
+}
+
+.hpmail-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    border-right: 1px solid var(--handrive-border, #d0d0d0);
+    background: var(--handrive-sidebar-bg, var(--handrive-bg, #f8f8f8));
+}
+
+.hpmail-compose-btn,
+.hpmail-primary-btn,
+.hpmail-secondary-btn,
+.hpmail-icon-btn,
+.hpmail-mailbox,
+.hpmail-mailbox-add {
+    border: 1px solid var(--ui-btn-border, var(--handrive-border, #d0d0d0));
+    border-radius: var(--handrive-radius, 6px);
+    background: var(--ui-btn-bg, var(--handrive-surface, #ffffff));
+    color: var(--ui-btn-color, var(--handrive-text, #222222));
+    cursor: pointer;
+    font: inherit;
+}
+
+.hpmail-compose-btn,
+.hpmail-primary-btn {
+    background: var(--ui-btn-primary-bg, #222222);
+    border-color: var(--ui-btn-primary-border, #222222);
+    color: var(--ui-btn-primary-color, #ffffff);
+    font-weight: 700;
+}
+
+.hpmail-compose-btn {
+    min-height: 38px;
+}
+
+.hpmail-mailboxes {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.hpmail-mailbox {
+    min-height: 34px;
+    padding: 0 10px;
+    text-align: left;
+    cursor: grab;
+    touch-action: manipulation;
+    transition: var(--handrive-transition-fast, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease);
+}
+
+.hpmail-mailbox:active {
+    cursor: grabbing;
+}
+
+.hpmail-mailbox:hover,
+.hpmail-mailbox:focus-visible {
+    border-color: var(--ui-btn-hover-border, var(--handrive-border-mid, var(--handrive-border, #d0d0d0)));
+    background: var(--ui-btn-hover-bg, var(--handrive-hover-soft, rgba(0, 0, 0, 0.06)));
+    color: var(--ui-btn-hover-color, var(--handrive-text-stronger, var(--handrive-text, #222222)));
+}
+
+.hpmail-mailbox.is-active {
+    border-color: var(--handrive-border-strong, var(--handrive-border, #d0d0d0));
+    background:
+        linear-gradient(90deg, var(--handrive-text-stronger, #222222) 0 3px, transparent 3px),
+        var(--handrive-selected-bg, rgba(0, 0, 0, 0.1));
+    color: var(--handrive-text-stronger, var(--handrive-text, #222222));
+    font-weight: 700;
+}
+
+.hpmail-mailbox.is-dragging {
+    opacity: 0.62;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
+}
+
+.hpmail-mailbox.is-message-drop-target {
+    border-color: var(--handrive-accent, var(--handrive-border-strong, #222222));
+    background: var(--handrive-selected-bg, rgba(0, 0, 0, 0.1));
+    box-shadow: inset 0 0 0 1px var(--handrive-accent, var(--handrive-border-strong, #222222));
+}
+
+.hpmail-mailbox.is-message-drop-denied {
+    border-color: var(--handrive-danger, #c62828);
+    background: rgba(198, 40, 40, 0.08);
+    color: var(--handrive-danger, #c62828);
+    cursor: not-allowed;
+}
+
+.hpmail-mailbox-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 34px;
+    border-style: dashed;
+    color: var(--handrive-muted, #666666);
+    font-size: 18px;
+    line-height: 1;
+}
+
+.hpmail-mailbox-add:hover,
+.hpmail-mailbox-add:focus-visible {
+    border-color: var(--ui-btn-hover-border, var(--handrive-border-mid, var(--handrive-border, #d0d0d0)));
+    background: var(--ui-btn-hover-bg, var(--handrive-hover-soft, rgba(0, 0, 0, 0.06)));
+    color: var(--handrive-text-stronger, var(--handrive-text, #222222));
+}
+
+.hpmail-status {
+    margin-top: auto;
+    color: var(--handrive-muted, #666666);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.hpmail-list-pane {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--handrive-border, #d0d0d0);
+}
+
+.hpmail-list-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 48px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--handrive-border, #d0d0d0);
+    background: var(--handrive-elevated-bg, #ffffff);
+}
+
+.hpmail-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 18px;
+}
+
+.hpmail-message-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: auto;
+    list-style: none;
+}
+
+.hpmail-message-item {
+    width: 100%;
+    min-height: 76px;
+    padding: 10px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--handrive-border-soft, var(--handrive-border, #d0d0d0));
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: grab;
+}
+
+.hpmail-message-item:active {
+    cursor: grabbing;
+}
+
+.hpmail-message-item:hover,
+.hpmail-message-item.is-active {
+    background: var(--handrive-row-hover-bg, rgba(0, 0, 0, 0.05));
+}
+
+.hpmail-message-item.is-dragging {
+    opacity: 0.58;
+}
+
+.hpmail-message-from,
+.hpmail-message-subject,
+.hpmail-reader-subject {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hpmail-message-from {
+    font-weight: 700;
+}
+
+.hpmail-message-subject {
+    margin-top: 4px;
+    color: var(--handrive-text, #222222);
+}
+
+.hpmail-message-meta {
+    margin-top: 4px;
+    color: var(--handrive-muted, #666666);
+    font-size: 12px;
+}
+
+.hpmail-reader-pane {
+    overflow: auto;
+}
+
+.hpmail-reader {
+    padding: 20px;
+}
+
+.hpmail-empty-state {
+    display: grid;
+    place-items: center;
+    min-height: 320px;
+    color: var(--handrive-muted, #666666);
+    text-align: center;
+}
+
+.hpmail-reader-subject {
+    margin: 0 0 8px;
+    font-size: 22px;
+    line-height: 1.25;
+}
+
+.hpmail-reader-meta {
+    color: var(--handrive-muted, #666666);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.hpmail-reader-body {
+    margin-top: 18px;
+    white-space: pre-wrap;
+    line-height: 1.65;
+}
+
+.hpmail-reader-frame {
+    width: 100%;
+    min-height: 520px;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: var(--handrive-radius-lg, 8px);
+    background: #ffffff;
+}
+
+.hpmail-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.hpmail-attachment {
+    padding: 6px 9px;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: var(--handrive-radius, 6px);
+    background: var(--handrive-elevated-bg, #ffffff);
+    color: var(--handrive-muted, #666666);
+    font-size: 12px;
+}
+
+.hpmail-compose-panel {
+    position: absolute;
+    right: 18px;
+    bottom: 18px;
+    width: min(560px, calc(100% - 36px));
+    max-height: calc(100% - 36px);
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: var(--handrive-radius-lg, 8px);
+    background: var(--handrive-elevated-bg, #ffffff);
+    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2));
+    overflow: auto;
+    z-index: var(--site-z-popup, 3400);
+}
+
+.hpmail-compose-form {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+}
+
+.hpmail-compose-head,
+.hpmail-compose-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.hpmail-compose-form label {
+    display: grid;
+    gap: 5px;
+    color: var(--handrive-muted, #666666);
+    font-size: 12px;
+}
+
+.hpmail-compose-form input,
+.hpmail-compose-form textarea {
+    width: 100%;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: var(--handrive-radius, 6px);
+    padding: 9px 10px;
+    font: inherit;
+    color: var(--handrive-text, #222222);
+    background: var(--handrive-surface, #ffffff);
+}
+
+.hpmail-compose-form textarea {
+    resize: vertical;
+}
+
+.hpmail-primary-btn,
+.hpmail-secondary-btn {
+    min-height: 36px;
+    padding: 0 14px;
+}
+
+.hpmail-mailbox-modal {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    z-index: var(--site-z-modal, 3600);
+}
+
+.hpmail-mailbox-modal[hidden],
+.hpmail-mailbox-context-menu[hidden] {
+    display: none;
+}
+
+.hpmail-mailbox-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.36);
+}
+
+.hpmail-mailbox-modal-dialog {
+    position: relative;
+    display: grid;
+    gap: 12px;
+    width: min(360px, 100%);
+    padding: 14px;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: var(--handrive-radius-lg, 8px);
+    background: var(--handrive-elevated-bg, #ffffff);
+    color: var(--handrive-text, #222222);
+    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2));
+}
+
+.hpmail-mailbox-modal-head,
+.hpmail-mailbox-modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.hpmail-mailbox-modal-field {
+    display: grid;
+    gap: 5px;
+    color: var(--handrive-muted, #666666);
+    font-size: 12px;
+}
+
+.hpmail-mailbox-modal-field input {
+    width: 100%;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: var(--handrive-radius, 6px);
+    padding: 9px 10px;
+    font: inherit;
+    color: var(--handrive-text, #222222);
+    background: var(--handrive-surface, #ffffff);
+}
+
+.hpmail-mailbox-modal-status {
+    min-height: 18px;
+    color: var(--handrive-muted, #666666);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.hpmail-mailbox-modal-status.is-error {
+    color: var(--handrive-danger, #c62828);
+}
+
+.hpmail-mailbox-context-menu {
+    position: fixed;
+    min-width: 132px;
+    padding: 4px;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: var(--handrive-radius, 6px);
+    background: var(--handrive-elevated-bg, #ffffff);
+    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2));
+    z-index: var(--site-z-popup, 3400);
+}
+
+.hpmail-mailbox-context-menu button {
+    display: block;
+    width: 100%;
+    min-height: 30px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: calc(var(--handrive-radius, 6px) - 2px);
+    background: transparent;
+    color: var(--handrive-text, #222222);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.hpmail-mailbox-context-menu button:hover,
+.hpmail-mailbox-context-menu button:focus-visible {
+    background: var(--handrive-hover-soft, rgba(0, 0, 0, 0.06));
+}
+
+.hpmail-mailbox-context-menu [data-hpmail-mailbox-delete] {
+    color: var(--handrive-danger, #c62828);
+}
+
+@media (max-width: 920px) {
+    .hpmail-page {
+        height: auto;
+        min-height: 100dvh;
+        overflow: auto;
+    }
+
+    .hpmail-toolbar-right {
+        align-items: stretch;
+    }
+
+    .hpmail-toolbar-meta {
+        justify-content: flex-start;
+    }
+
+    .hpmail-address,
+    .hpmail-meter {
+        max-width: 100%;
+    }
+
+    .hpmail-content {
+        flex: 0 0 auto;
+        padding: 0 10px;
+        overflow: visible;
+    }
+
+    .hpmail-app {
+        grid-template-columns: 1fr;
+        min-height: auto;
+    }
+
+    .hpmail-sidebar {
+        border-right: 0;
+        border-bottom: 1px solid var(--handrive-border, #d0d0d0);
+    }
+
+    .hpmail-mailboxes {
+        flex-direction: row;
+        overflow: auto;
+    }
+
+    .hpmail-list-pane {
+        border-right: 0;
+        border-bottom: 1px solid var(--handrive-border, #d0d0d0);
+    }
+
+    .hpmail-message-list {
+        height: 260px;
+        min-height: 260px;
+    }
+}

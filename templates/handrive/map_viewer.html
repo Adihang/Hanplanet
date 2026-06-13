@@ -1016,8 +1016,8 @@ body.map-viewer-page.eraser-mode .leaflet-container {
     <!-- 공유 팝업 -->
     <div id="map-viewer-share-modal" class="handrive-popup-modal" hidden>
         <div class="handrive-popup-modal-backdrop" id="map-viewer-share-modal-backdrop"></div>
-        <div class="handrive-popup-modal-dialog" role="dialog" aria-modal="true">
-            <h3 class="handrive-popup-title">공유</h3>
+        <div class="handrive-popup-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="map-viewer-share-title">
+            <h2 id="map-viewer-share-title" class="handrive-popup-title">공유</h2>
             {% if url_share_api_url %}
             <label class="handrive-url-share-toggle-label">
                 <input type="checkbox" id="map-viewer-share-toggle" {% if map_is_url_only %}checked{% endif %}>

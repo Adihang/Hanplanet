@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+{% load static static_versioned %}
+{% block body_class %}ui-page hpmail-page{% endblock %}
+{% block extra_head %}
+{% include 'handrive/_assets_head.html' %}
+<link rel="stylesheet" type="text/css" href="{% static_v 'css/pages/hpmail/email.css' %}">
+<script src="{% static_v 'js/pages/hpmail/email.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
+{% endblock %}
+{% block content %}
+<div class="ui-toolbar-wrap">
+    <div class="ui-shell ui-toolbar">
+        <div class="ui-toolbar-left">
+            <div class="ui-title-row">
+                <h1 class="ui-title">HPmail</h1>
+            </div>
+            <div class="ui-subtitle ui-path-breadcrumbs">
+                <a class="ui-path-link" href="/{% if ui_lang == 'en' %}en/{% elif ui_lang == 'ko' %}ko/{% endif %}">Hanplanet</a>
+                <span class="ui-path-sep">/</span>
+                <span class="ui-path-current">Mail</span>
+            </div>
+        </div>
+        <div class="ui-toolbar-right hpmail-toolbar-right">
+            <div class="hpmail-toolbar-meta" aria-label="HPmail account status">
+                <span class="hpmail-address">{{ hpmail_email_address }}</span>
+                <span class="hpmail-meter">첨부 {{ hpmail_attachment_limit_display }}</span>
+                <span class="hpmail-meter">오늘 {{ hpmail_today_send_count }} / {{ hpmail_daily_send_limit }}</span>
+                <span class="hpmail-meter">메일 {{ hpmail_mail_used_display }}</span>
+            </div>
+            {% include "partials/account_widget.html" %}
+        </div>
+    </div>
+</div>
+
+<main class="ui-shell ui-content hpmail-content">
+    <section
+        class="hpmail-app"
+        data-api-mailboxes-url="{{ hpmail_api_mailboxes_url }}"
+        data-api-messages-url="{{ hpmail_api_messages_url }}"
+        data-api-message-detail-url="{{ hpmail_api_message_detail_url }}"
+        data-api-send-url="{{ hpmail_api_send_url }}"
+        data-api-flags-url="{{ hpmail_api_flags_url }}"
+        data-api-move-url="{{ hpmail_api_move_url }}"
+        data-api-delete-url="{{ hpmail_api_delete_url }}"
+        data-api-quota-url="{{ hpmail_api_quota_url }}"
+        data-account-error="{{ hpmail_account_error }}"
+        data-imap-configured="{% if hpmail_imap_configured %}1{% else %}0{% endif %}"
+        data-current-mailbox="INBOX"
+        data-api-mailbox-create-url="{{ hpmail_api_mailbox_create_url }}"
+        data-api-mailbox-rename-url="{{ hpmail_api_mailbox_rename_url }}"
+        data-api-mailbox-delete-url="{{ hpmail_api_mailbox_delete_url }}"
+    >
+        <aside class="hpmail-sidebar">
+            <button class="hpmail-compose-btn" type="button" data-hpmail-compose>작성</button>
+            <nav class="hpmail-mailboxes" aria-label="메일함">
+                <button class="hpmail-mailbox is-active" type="button" data-mailbox="INBOX">받은 메일함</button>
+            </nav>
+            <button class="hpmail-mailbox-add" type="button" data-hpmail-mailbox-add aria-label="메일함 추가" title="메일함 추가">
+                <span aria-hidden="true">+</span>
+            </button>
+            <div class="hpmail-status" data-hpmail-status role="status" aria-live="polite">{{ hpmail_account_error }}</div>
+        </aside>
+
+        <section class="hpmail-list-pane" aria-label="메일 목록">
+            <div class="hpmail-list-head">
+                <strong data-hpmail-current-mailbox>받은 메일함</strong>
+                <button class="hpmail-icon-btn" type="button" data-hpmail-refresh aria-label="새로고침" title="새로고침">
+                    <span aria-hidden="true">↻</span>
+                </button>
+            </div>
+            <ul class="hpmail-message-list" data-hpmail-message-list></ul>
+        </section>
+
+        <section class="hpmail-reader-pane" aria-label="메일 내용">
+            <article class="hpmail-reader" data-hpmail-reader>
+                <div class="hpmail-empty-state">메일을 선택하세요.</div>
+            </article>
+        </section>
+
+        <section class="hpmail-compose-panel" data-hpmail-compose-panel hidden aria-label="메일 작성">
+            <form class="hpmail-compose-form" data-hpmail-compose-form enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="hpmail-compose-head">
+                    <strong>새 메일</strong>
+                    <button class="hpmail-icon-btn" type="button" data-hpmail-compose-close aria-label="닫기" title="닫기">×</button>
+                </div>
+                <label>
+                    <span>받는 사람</span>
+                    <input type="text" name="to" autocomplete="email" required>
+                </label>
+                <label>
+                    <span>참조</span>
+                    <input type="text" name="cc" autocomplete="email">
+                </label>
+                <label>
+                    <span>제목</span>
+                    <input type="text" name="subject" autocomplete="off">
+                </label>
+                <label class="hpmail-compose-body-field">
+                    <span>내용</span>
+                    <textarea name="body_text" rows="12"></textarea>
+                </label>
+                <label>
+                    <span>첨부</span>
+                    <input type="file" name="attachments" multiple>
+                </label>
+                <div class="hpmail-compose-actions">
+                    <button class="hpmail-secondary-btn" type="button" data-hpmail-compose-close>취소</button>
+                    <button class="hpmail-primary-btn" type="submit">보내기</button>
+                </div>
+            </form>
+        </section>
+    </section>
+</main>
+{% include "popup/hpmail/mailbox_modal.html" %}
+{% include "popup/hpmail/mailbox_context_menu.html" %}
+{% include "partials/site_footer_links.html" %}
+{% endblock %}

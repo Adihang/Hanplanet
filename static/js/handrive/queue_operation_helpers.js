@@ -166,12 +166,49 @@
         var renderUploadQueue = settings.renderUploadQueue || function () {};
         var applySelection = settings.applySelection || function () {};
         var queueNeedsRefresh = settings.queueNeedsRefresh || function () {};
+        var resolveArchiveExtractTargetDir = settings.resolveArchiveExtractTargetDir || function (_entry, targetDirPath) {
+            return targetDirPath || "";
+        };
         var t = settings.t || function (_, fallbackValue) { return fallbackValue || ""; };
         var entries = Array.isArray(item.entries) ? item.entries.slice() : [];
         var archivedPaths = [];
 
         if (!archiveCreateApiUrl) {
             throw new Error(t("job_status_failed", "실패"));
+        }
+
+        if (item.archiveName && entries.length > 1) {
+            if (item.abortRequested) {
+                throw new Error(t("queue_cancel", "취소"));
+            }
+            var multiController = new AbortController();
+            item.abortController = multiController;
+            var multiData = await requestJson(archiveCreateApiUrl, Object.assign(
+                buildPostOptions({
+                    source_paths: entries.map(function (entry) {
+                        return entry.path;
+                    }),
+                    archive_name: item.archiveName,
+                }),
+                { signal: multiController.signal }
+            ));
+            var multiPaths = multiData && Array.isArray(multiData.paths) ? multiData.paths : [];
+            if (multiPaths.length === 0 && multiData && multiData.path) {
+                multiPaths = [multiData.path];
+            }
+            archivedPaths = archivedPaths.concat(multiPaths);
+            item.progress = 100;
+            item.savedPath = multiPaths[0] || (multiData && multiData.path) || item.targetDirPath || "";
+            item.savedSlugPath = multiData && multiData.slug_path ? multiData.slug_path : "";
+            item.abortController = null;
+            renderUploadQueue();
+            applySelection(archivedPaths, {
+                primaryPath: archivedPaths[0] || "",
+                anchorPath: archivedPaths[0] || "",
+                render: false,
+            });
+            queueNeedsRefresh();
+            return;
         }
 
         for (var index = 0; index < entries.length; index += 1) {
@@ -235,7 +272,7 @@
             var data = await requestJson(archiveExtractApiUrl, Object.assign(
                 buildPostOptions({
                     source_path: entry.path,
-                    target_dir: item.targetDirPath,
+                    target_dir: resolveArchiveExtractTargetDir(entry, item.targetDirPath),
                     destination_mode: item.destinationMode || "current",
                 }),
                 { signal: controller.signal }

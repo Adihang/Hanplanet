@@ -1062,7 +1062,7 @@ body.theme-dark .root-auth-modal-dialog {
     background: rgba(46, 46, 46, 0.94);
 }
 
-.root-auth-modal-dialog h3 {
+.root-auth-modal-dialog h2 {
     margin: 0;
     font-size: 16px;
     font-weight: var(--site-weight-title);
@@ -1187,6 +1187,7 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
 
 .root-auth-modal-dialog,
 .root-search-engine-popup,
+.root-search-suggestions,
 .root-shortcuts-context-menu {
     border: 0;
 }
@@ -1208,6 +1209,7 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
+    position: relative;
     margin: 0;
     background: var(--site-surface-toolbar);
     border: 1px solid var(--handrive-border, var(--site-border));
@@ -1245,6 +1247,116 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
 
 .root-search-input::placeholder {
     color: var(--site-placeholder);
+}
+
+.root-search-suggestions {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: var(--site-z-popup);
+    display: block;
+    max-height: min(318px, calc(100vh - 190px));
+    padding: 6px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 16px 38px rgba(15, 23, 42, 0.16);
+}
+
+.root-search-suggestions[hidden] {
+    display: none;
+}
+
+.root-search-suggestion {
+    width: 100%;
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--site-text-strong);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.root-search-suggestion:hover,
+.root-search-suggestion:focus-visible,
+.root-search-suggestion.is-active {
+    background: var(--site-hover-soft);
+    outline: 0;
+}
+
+.root-search-suggestion-icon {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--site-hover-soft) 72%, transparent);
+}
+
+.root-search-suggestion-icon:empty::before {
+    content: "";
+    width: 16px;
+    height: 16px;
+    background: var(--site-text-muted);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='9' r='5.5'/%3E%3Cpath d='m13.5 13.5 3 3'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='9' r='5.5'/%3E%3Cpath d='m13.5 13.5 3 3'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+
+.root-search-suggestion-icon[data-suggestion-type='history']:empty::before {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 10a6.5 6.5 0 1 0 2-4.7'/%3E%3Cpath d='M3.5 4.2v3.6h3.6'/%3E%3Cpath d='M10 6.8v3.6l2.5 1.5'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 10a6.5 6.5 0 1 0 2-4.7'/%3E%3Cpath d='M3.5 4.2v3.6h3.6'/%3E%3Cpath d='M10 6.8v3.6l2.5 1.5'/%3E%3C/svg%3E");
+}
+
+.root-search-suggestion-icon[data-suggestion-type='shortcut']:empty::before,
+.root-search-suggestion-icon[data-suggestion-type='link']:empty::before {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8.5 5.5H5.8A2.8 2.8 0 0 0 3 8.3v5.9A2.8 2.8 0 0 0 5.8 17h5.9a2.8 2.8 0 0 0 2.8-2.8v-2.7'/%3E%3Cpath d='M10.5 3H17v6.5'/%3E%3Cpath d='M9.5 10.5 16.5 3.5'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8.5 5.5H5.8A2.8 2.8 0 0 0 3 8.3v5.9A2.8 2.8 0 0 0 5.8 17h5.9a2.8 2.8 0 0 0 2.8-2.8v-2.7'/%3E%3Cpath d='M10.5 3H17v6.5'/%3E%3Cpath d='M9.5 10.5 16.5 3.5'/%3E%3C/svg%3E");
+}
+
+.root-search-suggestion-icon-img {
+    width: 20px;
+    height: 20px;
+    display: block;
+    object-fit: contain;
+    border-radius: 5px;
+}
+
+.root-search-suggestion-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.root-search-suggestion-label,
+.root-search-suggestion-meta {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.root-search-suggestion-label {
+    font-size: 15px;
+    line-height: 1.25;
+    font-weight: var(--site-weight-button);
+}
+
+.root-search-suggestion-meta {
+    color: var(--site-text-muted);
+    font-size: 12px;
+    line-height: 1.25;
+    font-weight: 500;
 }
 
 .root-input-clear {
@@ -1941,6 +2053,33 @@ body.theme-dark .root-search-engine-option.is-active {
     background: rgba(255, 255, 255, 0.12);
 }
 
+body.theme-dark .root-search-suggestions {
+    background: #1f1f1f;
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.34);
+}
+
+body.theme-dark .root-search-suggestion {
+    color: #efefef;
+}
+
+body.theme-dark .root-search-suggestion:hover,
+body.theme-dark .root-search-suggestion:focus-visible,
+body.theme-dark .root-search-suggestion.is-active {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+body.theme-dark .root-search-suggestion-icon {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+body.theme-dark .root-search-suggestion-icon:empty::before {
+    background: #d8d8d8;
+}
+
+body.theme-dark .root-search-suggestion-meta {
+    color: rgba(255, 255, 255, 0.68);
+}
+
 .root-search-submit {
     width: 52px;
     padding: 0;
@@ -2364,6 +2503,17 @@ body.theme-dark .root-shortcuts-auth-btn:focus-visible {
 }
 
 @media (max-width: 720px) {
+    .root-search-suggestions {
+        top: calc(100% + 6px);
+        max-height: min(300px, calc(100vh - 170px));
+        border-radius: 16px;
+    }
+
+    .root-search-suggestion {
+        min-height: 44px;
+        padding: 8px 10px;
+    }
+
     .root-shortcuts-form {
         grid-template-columns: 1fr;
         padding: 7px;
@@ -3531,6 +3681,72 @@ body.portfolio-page .projects .project_card:focus-within {
 .project_card_contents_title {
     margin: 0;
     line-height: 1.35;
+}
+
+.handrive-mermaid {
+    --handrive-mermaid-line: var(--handrive-text-stronger, #111111);
+    --handrive-mermaid-node-bg: var(--handrive-surface-subtle, #f5f5f5);
+    --handrive-mermaid-node-text: var(--handrive-text, #222222);
+    margin: 12px 0;
+    border: 1px solid var(--handrive-border, #d0d0d0);
+    border-radius: 0;
+    background: var(--handrive-markdown-code-block-bg, var(--handrive-surface-muted, #f5f5f5));
+    color: var(--handrive-text, #222222);
+    padding: 12px;
+    overflow: auto;
+}
+
+body.theme-dark .handrive-mermaid {
+    --handrive-mermaid-line: var(--handrive-text-stronger, #fafafa);
+    --handrive-mermaid-node-bg: var(--handrive-surface-subtle, #363636);
+    --handrive-mermaid-node-text: var(--handrive-text, #f2f2f2);
+}
+
+.handrive-mermaid-output {
+    display: flex;
+    justify-content: center;
+    min-width: max-content;
+}
+
+.handrive-mermaid svg {
+    max-width: 100%;
+    height: auto;
+}
+
+.handrive-mermaid-output .edgePath .path,
+.handrive-mermaid-output .flowchart-link {
+    stroke: var(--handrive-mermaid-line);
+}
+
+.handrive-mermaid-output .marker {
+    fill: var(--handrive-mermaid-line);
+    stroke: var(--handrive-mermaid-line);
+}
+
+.handrive-mermaid-output .node rect,
+.handrive-mermaid-output .node circle,
+.handrive-mermaid-output .node ellipse,
+.handrive-mermaid-output .node polygon,
+.handrive-mermaid-output .node path {
+    fill: var(--handrive-mermaid-node-bg);
+    stroke: var(--handrive-border, #d0d0d0);
+}
+
+.handrive-mermaid-output .nodeLabel,
+.handrive-mermaid-output .edgeLabel,
+.handrive-mermaid-output .label {
+    color: var(--handrive-mermaid-node-text);
+}
+
+.handrive-mermaid-source {
+    margin: 0;
+}
+
+.handrive-mermaid-error {
+    margin: 8px 0 0;
+    color: var(--handrive-danger, #b00020);
+    font-size: 0.95em;
+    line-height: 1.45;
 }
 
 .foot{

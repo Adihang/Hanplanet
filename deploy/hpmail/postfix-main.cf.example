@@ -1,0 +1,37 @@
+# HPmail Postfix main.cf excerpt.
+# Copy the relevant values into the production Postfix config and adjust paths.
+
+myhostname = mail.hanplanet.com
+mydomain = hanplanet.com
+myorigin = $mydomain
+inet_interfaces = all
+inet_protocols = ipv4
+
+# Never become an open relay.
+smtpd_relay_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
+mynetworks = 127.0.0.0/8, [::1]/128
+
+# HPmail virtual mailbox delivery.
+virtual_mailbox_domains = hanplanet.com
+virtual_mailbox_base = /Volumes/HANPLANET_HDD/Hanplanet/mail
+virtual_mailbox_maps = hash:/Users/imhanbyeol/Development/Hanplanet/deploy/hpmail/generated/virtual_mailbox_maps
+virtual_alias_maps = hash:/Users/imhanbyeol/Development/Hanplanet/deploy/hpmail/generated/virtual_alias_maps
+relay_recipient_maps = hash:/Users/imhanbyeol/Development/Hanplanet/deploy/hpmail/generated/relay_recipient_maps
+virtual_transport = lmtp:unix:private/dovecot-lmtp
+
+# TLS.
+smtpd_tls_security_level = may
+smtpd_tls_cert_file = /path/to/fullchain.pem
+smtpd_tls_key_file = /path/to/privkey.pem
+smtpd_tls_auth_only = yes
+smtp_tls_security_level = may
+
+# Rspamd milter.
+smtpd_milters = inet:127.0.0.1:11332
+non_smtpd_milters = inet:127.0.0.1:11332
+milter_protocol = 6
+milter_default_action = accept
+
+# Message size should be larger than the 25 MB attachment policy because MIME
+# base64 expands attachment bytes.
+message_size_limit = 36700160

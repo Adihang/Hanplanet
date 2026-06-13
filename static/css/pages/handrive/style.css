@@ -33,6 +33,7 @@ body.ui-page {
     --handrive-surface-muted-strong: var(--site-surface-muted-strong);
     --handrive-markdown-inline-code-bg: color-mix(in srgb, var(--handrive-bg) 94%, var(--handrive-text-stronger));
     --handrive-markdown-inline-code-color: var(--handrive-text-stronger);
+    --handrive-markdown-inline-code-radius: 5px;
     --handrive-markdown-code-block-bg: color-mix(in srgb, var(--handrive-bg) 94%, var(--handrive-text-stronger));
     --handrive-backdrop: var(--site-backdrop);
     --handrive-backdrop-strong: var(--site-backdrop-strong);
@@ -61,8 +62,6 @@ body.ui-page {
     --handrive-crumb-color: var(--site-crumb-color);
     --handrive-crumb-current-color: var(--site-crumb-current-color);
     --handrive-crumb-sep-color: var(--site-crumb-sep-color);
-    --handrive-save-row-color: var(--site-save-row-color);
-    --handrive-save-row-hover: var(--site-save-row-hover);
     --handrive-save-folder-color: var(--site-save-folder-color);
     --handrive-close-color: var(--site-close-color);
     --handrive-overlay-soft: var(--site-overlay-soft);
@@ -1910,7 +1909,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     padding: 10px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 16px;
-    line-height: 1.45;
+    line-height: var(--handrive-editor-line-height);
     tab-size: 4;
     font-variant-ligatures: none;
     resize: none;
@@ -2336,11 +2335,59 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     border-radius: 0;
     overflow: hidden;
     position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.handrive-current-dir-list,
+.handrive-list-items {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 0;
+    min-width: 0;
+}
+
+.handrive-current-dir-list {
+    flex: 0 0 auto;
+}
+
+.handrive-list-items {
+    --handrive-list-item-scale: 1;
+    --handrive-list-item-font-size: calc(16px * var(--handrive-list-item-scale));
+    --handrive-list-item-meta-font-size: calc(14px * var(--handrive-list-item-scale));
+    --handrive-list-item-pad-y: calc(10px * var(--handrive-list-item-scale));
+    --handrive-list-item-pad-x: calc(10px * var(--handrive-list-item-scale));
+    --handrive-list-item-pad-left: calc(14px * var(--handrive-list-item-scale));
+    --handrive-list-item-tree-pad-left: calc(6px * var(--handrive-list-item-scale));
+    --handrive-list-item-name-gap: calc(6px * var(--handrive-list-item-scale));
+    --handrive-list-item-share-offset: calc(36px * var(--handrive-list-item-scale));
+    --handrive-list-item-share-button-size: calc(30px * var(--handrive-list-item-scale));
+    --handrive-list-item-share-icon-size: calc(21px * var(--handrive-list-item-scale));
+    --handrive-list-item-meta-gap: calc(10px * var(--handrive-list-item-scale));
+    --handrive-list-item-tree-segment: calc(14px * var(--handrive-list-item-scale));
+    --handrive-list-item-tree-branch-overhang: calc(-2px * var(--handrive-list-item-scale));
+    --handrive-list-item-spinner-size: calc(22px * var(--handrive-list-item-scale));
+    --handrive-list-item-spinner-half: calc(-11px * var(--handrive-list-item-scale));
+    --handrive-list-item-spinner-border: calc(2px * var(--handrive-list-item-scale));
+    --handrive-list-item-icon-size: calc(16px * var(--handrive-list-item-scale));
+    --handrive-list-item-icon-18: calc(18px * var(--handrive-list-item-scale));
+    --handrive-list-item-icon-20: calc(20px * var(--handrive-list-item-scale));
+    --handrive-list-item-icon-22: calc(22px * var(--handrive-list-item-scale));
+    --handrive-list-item-icon-neg-3: calc(-3px * var(--handrive-list-item-scale));
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: visible;
 }
 
 .handrive-list-layout.is-landscape .handrive-list {
     min-height: 0;
+    overflow: hidden;
+}
+
+.handrive-list-layout.is-landscape .handrive-list-items {
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: contain;
@@ -2690,9 +2737,23 @@ body.theme-dark .handrive-list-pane.is-local-file-drop-target .handrive-list.is-
     grid-column: 2;
     display: inline-flex;
     align-items: baseline;
-    gap: 8px;
     min-width: 0;
     margin-left: 6px;
+}
+
+.handrive-item-name-wrap.has-url-share-indicator {
+    position: relative;
+    justify-self: start;
+    width: fit-content;
+    max-width: 100%;
+    padding-right: 36px;
+    box-sizing: border-box;
+    gap: 0;
+}
+
+.handrive-item-name-wrap.has-url-share-indicator .handrive-item-name {
+    flex: 0 1 auto;
+    max-width: 100%;
 }
 
 .handrive-current-dir-row.has-list-search .handrive-item-name-wrap {
@@ -2712,8 +2773,48 @@ body.theme-dark .handrive-list-pane.is-local-file-drop-target .handrive-list.is-
 }
 
 body.handrive-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-label,
-body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-label {
+body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-label,
+body.handrive-page:not(.theme-dark) .handrive-item-url-share-indicator.handrive-item-meta-label,
+body.ui-page:not(.theme-dark) .handrive-item-url-share-indicator.handrive-item-meta-label {
     color: color-mix(in srgb, var(--handrive-text-subtle) 88%, transparent);
+}
+
+.handrive-item-url-share-indicator {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    flex: 0 0 30px;
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: var(--handrive-radius-sm, 6px);
+    background: transparent;
+    padding: 0;
+    box-sizing: border-box;
+    cursor: pointer;
+    opacity: 0.92;
+    overflow: visible;
+    transform: translateY(-50%);
+    transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.handrive-item-url-share-indicator:hover,
+.handrive-item-url-share-indicator:focus-visible {
+    background: var(--handrive-hover-soft);
+    opacity: 1;
+    outline: 0;
+}
+
+.handrive-item-url-share-indicator svg {
+    display: block;
+    flex: 0 0 auto;
+    width: 21px;
+    height: 21px;
 }
 
 .handrive-item-row.is-empty {
@@ -3671,6 +3772,123 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     background-image: url("/static/media/icons/handrive/exe.svg");
 }
 
+.handrive-list-items .handrive-item-row {
+    --handrive-meta-gap-type: var(--handrive-list-item-meta-gap);
+    --handrive-meta-gap-size: var(--handrive-list-item-meta-gap);
+    --handrive-meta-gap-permission: var(--handrive-list-item-meta-gap);
+    --handrive-meta-gap-commit: var(--handrive-list-item-meta-gap);
+    --handrive-meta-gap-id: var(--handrive-list-item-meta-gap);
+    padding:
+        var(--handrive-list-item-pad-y)
+        var(--handrive-list-item-pad-x)
+        var(--handrive-list-item-pad-y)
+        var(--handrive-list-item-pad-left);
+}
+
+.handrive-list-items .handrive-item-row.has-tree-prefix {
+    padding-left: var(--handrive-list-item-tree-pad-left);
+}
+
+.handrive-list-items .handrive-item-row.is-row-loading::after {
+    width: var(--handrive-list-item-spinner-size);
+    height: var(--handrive-list-item-spinner-size);
+    margin: var(--handrive-list-item-spinner-half) 0 0 var(--handrive-list-item-spinner-half);
+    border-width: var(--handrive-list-item-spinner-border);
+}
+
+.handrive-list-items .handrive-item-name-wrap {
+    margin-left: var(--handrive-list-item-name-gap);
+}
+
+.handrive-list-items .handrive-item-name-wrap.has-url-share-indicator {
+    padding-right: var(--handrive-list-item-share-offset);
+}
+
+.handrive-list-items .handrive-item-name {
+    font-size: var(--handrive-list-item-font-size);
+}
+
+.handrive-list-items .handrive-item-meta-label {
+    font-size: var(--handrive-list-item-meta-font-size);
+}
+
+.handrive-list-items .handrive-item-url-share-indicator {
+    flex-basis: var(--handrive-list-item-share-button-size);
+    width: var(--handrive-list-item-share-button-size);
+    height: var(--handrive-list-item-share-button-size);
+}
+
+.handrive-list-items .handrive-item-url-share-indicator svg {
+    width: var(--handrive-list-item-share-icon-size);
+    height: var(--handrive-list-item-share-icon-size);
+}
+
+.handrive-list-items .handrive-item-tree-prefix {
+    padding-left: var(--handrive-list-item-pad-left);
+}
+
+.handrive-list-items .handrive-tree-segment {
+    width: var(--handrive-list-item-tree-segment);
+    flex-basis: var(--handrive-list-item-tree-segment);
+}
+
+.handrive-list-items .handrive-tree-branch::after {
+    right: var(--handrive-list-item-tree-branch-overhang);
+}
+
+.handrive-list-items .handrive-item-type-icon {
+    width: var(--handrive-list-item-icon-size);
+    height: var(--handrive-list-item-icon-size);
+}
+
+.handrive-list-items .handrive-item-type-icon::before,
+.handrive-list-items .handrive-item-type-icon.is-dir::before,
+.handrive-list-items .handrive-item-type-icon.is-dir.is-google-drive::before,
+.handrive-list-items .handrive-item-type-icon.is-dir.is-github-repo::before,
+.handrive-list-items .handrive-item-type-icon.is-dir.is-repo::before,
+.handrive-list-items .handrive-item-type-icon.is-dir.is-branch::before,
+.handrive-list-items .handrive-item-type-icon.is-dir.is-map::before {
+    width: var(--handrive-list-item-icon-18);
+    height: var(--handrive-list-item-icon-18);
+    min-width: var(--handrive-list-item-icon-18);
+}
+
+.handrive-list-items .handrive-item-type-icon.is-dir.is-root-avatar {
+    flex-basis: var(--handrive-list-item-icon-22);
+    width: var(--handrive-list-item-icon-22);
+    min-width: var(--handrive-list-item-icon-22);
+    max-width: var(--handrive-list-item-icon-22);
+    height: var(--handrive-list-item-icon-22);
+    min-height: var(--handrive-list-item-icon-22);
+    max-height: var(--handrive-list-item-icon-22);
+}
+
+.handrive-list-items .handrive-item-type-icon.is-dir.is-root-avatar::before,
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic::before {
+    width: var(--handrive-list-item-icon-22);
+    height: var(--handrive-list-item-icon-22);
+    min-width: var(--handrive-list-item-icon-22);
+}
+
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic::before {
+    margin: var(--handrive-list-item-icon-neg-3);
+}
+
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="file"]::before,
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="image"]::before,
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="video"]::before,
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="audio"]::before,
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="archive"]::before,
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="pdf"]::before,
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="text"]::before,
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="word"]::before,
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="excel"]::before,
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="powerpoint"]::before {
+    width: var(--handrive-list-item-icon-20);
+    height: var(--handrive-list-item-icon-20);
+    margin: 0;
+}
+
 .handrive-context-menu {
     position: fixed;
     z-index: var(--site-z-popup);
@@ -3779,6 +3997,43 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     font-weight: var(--site-weight-title);
 }
 
+.handrive-popup-modal-dialog:has(.handrive-popup-close-btn) .handrive-popup-title {
+    padding-right: 38px;
+}
+
+.handrive-popup-close-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--handrive-radius-sm);
+    background: transparent;
+    color: var(--handrive-text-secondary);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.handrive-popup-close-btn:hover,
+.handrive-popup-close-btn:focus-visible {
+    background: var(--handrive-hover-soft);
+    color: var(--handrive-text-stronger);
+    outline: 0;
+}
+
+.handrive-popup-close-btn svg {
+    display: block;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+}
+
 .handrive-popup-target {
     font-size: 16px;
     color: var(--handrive-text-secondary);
@@ -3818,6 +4073,68 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     cursor: pointer;
     font-size: 15px;
     user-select: none;
+}
+
+.handrive-url-share-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.handrive-url-share-input-wrap input {
+    padding-right: 40px;
+}
+
+#handrive-url-share-input,
+#handrive-url-share-download-input {
+    padding-right: 40px;
+}
+
+.handrive-url-share-inline-copy-btn {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--handrive-radius-sm);
+    background: transparent;
+    color: var(--handrive-text-secondary);
+    cursor: pointer;
+    transform: translateY(-50%);
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.handrive-url-share-inline-copy-btn svg {
+    width: 26px;
+    height: 26px;
+}
+
+.handrive-url-share-inline-copy-btn:hover,
+.handrive-url-share-inline-copy-btn:focus-visible {
+    border-color: var(--handrive-border-heavy);
+    background: var(--handrive-surface-muted);
+    color: var(--handrive-text-stronger);
+}
+
+.handrive-url-share-inline-copy-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--handrive-search-border-focus) 22%, transparent);
+}
+
+.handrive-url-share-inline-copy-btn.is-copied {
+    border-color: color-mix(in srgb, var(--handrive-success, #0f7b6c) 42%, var(--handrive-border-heavy));
+    color: var(--handrive-success, #0f7b6c);
+}
+
+.handrive-url-share-inline-copy-btn:disabled {
+    cursor: default;
+    opacity: 0.45;
 }
 
 .handrive-icon-btn {
@@ -4065,7 +4382,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 1em;
     border: 0;
-    border-radius: 0;
+    border-radius: var(--handrive-markdown-inline-code-radius);
     background: var(--handrive-markdown-inline-code-bg);
     color: var(--handrive-markdown-inline-code-color);
     padding: 2px 6px;
@@ -6121,6 +6438,10 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 }
 
 .handrive-editor-surface {
+    --handrive-editor-pad-x: 10px;
+    --handrive-editor-pad-y: 10px;
+    --handrive-editor-line-height: 1.5;
+    --handrive-editor-scroll-bottom-space: 32px;
     position: relative;
     height: 100%;
     border: 1px solid var(--handrive-border-heavy);
@@ -6140,11 +6461,11 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     height: 100%;
     padding: 10px;
     box-sizing: border-box;
-    overflow: auto;
+    overflow: hidden;
     pointer-events: none;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 16px;
-    line-height: 1.45;
+    line-height: var(--handrive-editor-line-height);
     white-space: pre;
     tab-size: 4;
     font-variant-ligatures: none;
@@ -6157,6 +6478,8 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     font: inherit;
     line-height: inherit;
     white-space: inherit;
+    transform-origin: 0 0;
+    will-change: transform;
 }
 
 .handrive-editor-surface > #handrive-content-input {
@@ -6171,7 +6494,7 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     padding: 10px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 16px;
-    line-height: 1.45;
+    line-height: var(--handrive-editor-line-height);
     resize: none;
     overflow: auto;
     z-index: 1;
@@ -6199,6 +6522,34 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 .handrive-content[data-handrive-page="write"] .handrive-editor-surface:focus-within {
     border-color: var(--theme-accent-strong, #3b82f6);
     box-shadow: inset 0 0 0 1px var(--theme-accent-strong, #3b82f6);
+}
+
+.handrive-editor-highlight {
+    padding:
+        var(--handrive-editor-pad-y)
+        var(--handrive-editor-pad-x)
+        calc(var(--handrive-editor-pad-y) + var(--handrive-editor-scroll-bottom-space));
+}
+
+.handrive-editor-surface > #handrive-list-content-input,
+.handrive-editor-surface > #handrive-content-input {
+    box-sizing: border-box;
+    padding:
+        var(--handrive-editor-pad-y)
+        var(--handrive-editor-pad-x)
+        calc(var(--handrive-editor-pad-y) + var(--handrive-editor-scroll-bottom-space));
+    line-height: var(--handrive-editor-line-height);
+    scroll-padding-bottom: var(--handrive-editor-scroll-bottom-space);
+}
+
+.handrive-editor-surface:has(.handrive-editor-highlight.handrive-editor-md) .handrive-editor-highlight {
+    visibility: hidden;
+}
+
+.handrive-editor-surface:has(.handrive-editor-highlight.handrive-editor-md) > #handrive-list-content-input,
+.handrive-editor-surface:has(.handrive-editor-highlight.handrive-editor-md) > #handrive-content-input {
+    color: var(--handrive-text);
+    -webkit-text-fill-color: var(--handrive-text);
 }
 
 .handrive-editor-suggest {
@@ -6737,10 +7088,7 @@ body.handrive-modal-open {
 }
 
 .handrive-save-location-bar {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 8px;
-    align-items: center;
+    display: block;
 }
 
 .handrive-save-breadcrumb {
@@ -6788,62 +7136,11 @@ body.handrive-modal-open {
     border: 1px solid var(--handrive-panel-border);
     border-radius: var(--handrive-radius-md);
     display: grid;
-    grid-template-columns: 210px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     height: clamp(180px, 40vh, 540px);
     min-height: 0;
     flex: 1 1 auto;
     overflow: hidden;
-}
-
-.handrive-save-sidebar {
-    border-right: 1px solid var(--handrive-border);
-    background: var(--handrive-surface-muted);
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    overflow: hidden;
-}
-
-.handrive-save-sidebar-title {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--handrive-text-subtle);
-    margin-bottom: 8px;
-}
-
-.handrive-save-sidebar-list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-}
-
-.handrive-save-shandrive-row {
-    width: 100%;
-    border: 1px solid transparent;
-    border-radius: var(--handrive-radius-sm);
-    background: transparent;
-    color: var(--handrive-save-row-color);
-    text-align: left;
-    padding: 7px 9px;
-    font-size: 16px;
-    cursor: pointer;
-}
-
-.handrive-save-shandrive-row:hover,
-.handrive-save-shandrive-row:focus-visible {
-    background: var(--handrive-save-row-hover);
-}
-
-.handrive-save-shandrive-row.is-active {
-    border-color: var(--handrive-border-heavy);
-    background: var(--handrive-hover-strong);
 }
 
 .handrive-save-folder-pane {
@@ -6856,39 +7153,48 @@ body.handrive-modal-open {
     overflow: hidden;
 }
 
-.handrive-save-folder-head {
-    border-bottom: 0;
-    margin-top: 0;
-    padding: 10px 6px;
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--handrive-text-subtle);
-}
-
 .handrive-save-folder-list {
     margin: 0;
-    padding: 0 4px 8px;
+    padding: 0 0 8px;
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 0;
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
 }
 
+.handrive-save-tree-item {
+    min-height: 37px;
+}
+
+.handrive-save-tree-item .handrive-item-tree-prefix {
+    padding-left: 8px;
+}
+
 .handrive-save-folder-row {
     width: 100%;
-    border: 1px solid transparent;
-    border-radius: var(--handrive-radius-sm);
+    border: 0;
+    border-radius: 0;
     background: transparent;
     color: var(--handrive-save-folder-color);
     text-align: left;
-    padding: 8px 10px;
+    padding: 9px 12px;
     display: flex;
     align-items: center;
     gap: 8px;
     cursor: pointer;
+    min-width: 0;
+}
+
+.handrive-save-folder-row.has-tree-prefix {
+    padding-left: 6px;
+}
+
+.handrive-save-current-dir-row {
+    background: var(--handrive-bg);
+    color: var(--handrive-text-strong);
 }
 
 .handrive-save-folder-row:hover,
@@ -6897,29 +7203,11 @@ body.handrive-modal-open {
 }
 
 .handrive-save-folder-row.is-selected {
-    border-color: var(--handrive-border-heavy);
     background: var(--handrive-hover-strong);
 }
 
 .handrive-save-folder-row.is-overwrite-file {
     color: var(--handrive-text);
-}
-
-.handrive-save-folder-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    font-size: 14px;
-    line-height: 1;
-    flex-shrink: 0;
-    border: 0;
-    background: transparent;
-}
-
-.handrive-save-folder-icon::before {
-    content: "📁";
 }
 
 .handrive-save-entry-icon {
@@ -7192,7 +7480,7 @@ body.handrive-modal-open {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 1em;
     border: 0;
-    border-radius: 0;
+    border-radius: var(--handrive-markdown-inline-code-radius);
     background: var(--handrive-markdown-inline-code-bg);
     color: var(--handrive-markdown-inline-code-color);
     padding: 2px 6px;
@@ -7235,12 +7523,6 @@ body.handrive-modal-open {
     .handrive-save-browser {
         grid-template-columns: minmax(0, 1fr);
         height: clamp(170px, 34vh, 420px);
-    }
-
-    .handrive-save-sidebar {
-        border-right: 0;
-        border-bottom: 1px solid var(--handrive-border);
-        padding: 8px;
     }
 
     .handrive-save-file-meta-grid {

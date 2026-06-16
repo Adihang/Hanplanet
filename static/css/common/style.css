@@ -370,6 +370,7 @@ body.theme-dark {
     --site-hover: rgba(255, 255, 255, 0.13);
     --site-hover-strong: rgba(255, 255, 255, 0.19);
     --site-hover-button: rgba(255, 255, 255, 0.13);
+    --color-hover-bg: rgba(255, 255, 255, 0.13);
     --site-surface-toolbar: rgba(34, 34, 34, 0.9);
     --site-surface-muted: rgba(40, 40, 40, 0.94);
     --site-surface-muted-strong: rgba(46, 46, 46, 0.96);
@@ -2362,7 +2363,7 @@ body.theme-dark .root-search-submit-icon {
 
 .root-shortcuts-item:hover,
 .root-shortcuts-item:focus-visible {
-    background: var(--site-hover-soft);
+    background: var(--root-shortcuts-card-hover-bg, var(--site-hover-soft));
     transform: translateY(-2px);
     box-shadow: none;
 }
@@ -2651,6 +2652,7 @@ body.portfolio-page section {
     --site-overlay-soft: rgba(0, 0, 0, 0.28);
     --site-overlay-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
     --shared-card-bg: rgb(238, 238, 238);
+    --root-shortcuts-card-hover-bg: rgb(224, 224, 224);
     --theme-ink: #111111;
     --theme-subtle: #2f2f2f;
     --theme-accent: #000000;
@@ -2663,7 +2665,7 @@ body.portfolio-page section {
     --color-muted: #535353;
     --color-muted-soft: #3f3f3f;
     --color-section-border: #b6b6b6;
-    --color-hover-bg: rgba(0, 0, 0, 0.06);
+    --color-hover-bg: rgba(0, 0, 0, 0.12);
     --color-hover-border: rgba(0, 0, 0, 0.24);
     --color-nav-bg-start: rgba(255, 255, 255, 0.8);
     --color-nav-bg-end: rgba(243, 243, 243, 0.8);
@@ -3003,7 +3005,7 @@ body.theme-dark .ui-nav::after {
 .ui-nav-link:active {
     color: var(--theme-accent-strong);
     background-color: var(--color-hover-bg);
-    border-color: var(--color-hover-border);
+    border-color: transparent;
     transform: translateY(-1px);
 }
 

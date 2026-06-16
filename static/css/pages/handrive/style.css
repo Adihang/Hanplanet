@@ -31,10 +31,10 @@ body.ui-page {
     --handrive-surface-toolbar: transparent;
     --handrive-surface-muted: var(--site-surface-muted);
     --handrive-surface-muted-strong: var(--site-surface-muted-strong);
-    --handrive-markdown-inline-code-bg: color-mix(in srgb, var(--handrive-bg) 94%, var(--handrive-text-stronger));
+    --handrive-markdown-inline-code-bg: var(--color-hover-bg);
     --handrive-markdown-inline-code-color: var(--handrive-text-stronger);
     --handrive-markdown-inline-code-radius: 5px;
-    --handrive-markdown-code-block-bg: color-mix(in srgb, var(--handrive-bg) 94%, var(--handrive-text-stronger));
+    --handrive-markdown-code-block-bg: var(--color-hover-bg);
     --handrive-backdrop: var(--site-backdrop);
     --handrive-backdrop-strong: var(--site-backdrop-strong);
     --handrive-shadow-md: var(--site-shadow-md);
@@ -81,6 +81,7 @@ body.ui-page {
     --handrive-icon-action-radius: var(--handrive-radius-sm);
     --handrive-icon-action-hover-bg: var(--handrive-hover-soft);
     --handrive-icon-action-active-bg: var(--handrive-hover);
+    --handrive-menu-font-weight: 450;
     --handrive-popup-close-size: 34px;
     --handrive-popup-close-icon-size: 18px;
     --handrive-popup-close-radius: 50%;
@@ -195,9 +196,7 @@ body.ui-page.theme-dark {
     --handrive-surface-toolbar: transparent;
     --handrive-surface-muted: rgba(40, 40, 40, 0.94);
     --handrive-surface-muted-strong: rgba(46, 46, 46, 0.96);
-    --handrive-markdown-inline-code-bg: color-mix(in srgb, var(--handrive-bg) 84%, var(--handrive-text-stronger));
     --handrive-markdown-inline-code-color: var(--handrive-text-stronger);
-    --handrive-markdown-code-block-bg: var(--handrive-surface-muted);
     --handrive-link: #d2d2d2;
     --handrive-elevated-bg: rgba(46, 46, 46, 0.97);
     --handrive-drop-target-bg: rgba(96, 165, 250, 0.16);
@@ -1876,6 +1875,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     display: block;
     min-width: 0;
     max-width: 100%;
+    font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2883,9 +2883,13 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     white-space: nowrap;
 }
 
+.handrive-item:not(.handrive-current-dir-item) .handrive-item-name {
+    font-weight: 450;
+}
+
 .handrive-current-dir-row .handrive-item-name {
     flex: 0 1 auto;
-    font-weight: 700;
+    font-weight: 600;
     font-size: 18px;
 }
 
@@ -3930,6 +3934,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     border: 0;
     border-radius: var(--handrive-radius-md);
     background: var(--handrive-bg);
+    font-weight: var(--handrive-menu-font-weight);
     padding: 6px;
     display: flex;
     flex-direction: column;
@@ -3973,6 +3978,8 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     border-radius: 8px;
     background: transparent;
     color: var(--handrive-text);
+    font: inherit;
+    font-weight: inherit;
     text-align: left;
     padding: 8px 10px;
     cursor: pointer;
@@ -4560,13 +4567,14 @@ body.handrive-popup-dragging {
 
 .ui-markdown code,
 .handrive-markdown code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-    font-size: 1em;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
     border: 0;
     border-radius: var(--handrive-markdown-inline-code-radius);
     background: var(--handrive-markdown-inline-code-bg);
     color: var(--handrive-markdown-inline-code-color);
-    padding: 2px 6px;
+    padding: 0 4px;
     overflow-wrap: anywhere;
 }
 
@@ -4582,6 +4590,7 @@ body.handrive-popup-dragging {
 
 .ui-markdown pre code,
 .handrive-markdown pre code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     border: 0;
     border-radius: 0;
     background: transparent;
@@ -6798,6 +6807,7 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 .handrive-editor-suggest-item-label {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 16px;
+    font-weight: var(--handrive-menu-font-weight);
     color: var(--handrive-text-strong);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -8627,15 +8637,6 @@ body.theme-dark .handrive-spreadsheet-preview-hot .ht-root-wrapper {
     padding: 18px;
     color: var(--handrive-muted);
     font-size: 13px;
-}
-
-.ae-title {
-    font-size: 16px;
-    font-weight: 650;
-    color: var(--handrive-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 #ae-audio {

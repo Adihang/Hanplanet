@@ -6269,6 +6269,8 @@ class HandriveAccessRuleTests(TestCase):
             is_superuser=True,
         )
         target_user = self.create_scoped_handrive_user("handrive_admin_target")
+        PortfolioProfile.objects.create(user=admin_user, profile_img="profile_images/admin-root.png")
+        PortfolioProfile.objects.create(user=target_user, profile_img="profile_images/target-root.png")
         handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
         (handrive_root / "users" / target_user.username / "target.md").write_text("# target", encoding="utf-8")
 
@@ -6282,8 +6284,23 @@ class HandriveAccessRuleTests(TestCase):
         self.assertContains(response, f'data-current-dir="users/{target_user.username}"')
         self.assertContains(response, 'data-handrive-admin-user-switch-enabled="1"')
         self.assertContains(response, f'data-handrive-admin-user="{target_user.username}"')
+        self.assertContains(response, 'data-account-profile-image-url="/media/profile_images/admin-root.png"')
+        self.assertContains(response, 'data-handrive-root-profile-image-url="/media/profile_images/target-root.png"')
         self.assertContains(response, 'data-admin-user-check-api-url="/handrive/api/admin-user-check"')
         self.assertContains(response, "target.md")
+
+        PortfolioProfile.objects.filter(user=target_user).delete()
+        response_without_target_profile = self.client.get(
+            f"/ko/handrive/users/{target_user.username}/list",
+            data={"handrive_user": target_user.username},
+        )
+
+        self.assertEqual(response_without_target_profile.status_code, 200)
+        self.assertContains(
+            response_without_target_profile,
+            'data-account-profile-image-url="/media/profile_images/admin-root.png"',
+        )
+        self.assertContains(response_without_target_profile, 'data-handrive-root-profile-image-url=""')
 
         api_response = self.client.get(
             reverse("main:handrive_api_list"),

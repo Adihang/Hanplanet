@@ -28,7 +28,7 @@
     var volumeButton, volumePopover, volumeDisplay, appendButton, appendPopover, appendPcButton, appendDriveButton;
     var appendInput, appendName, drivePicker, driveCloseButton, driveUpButton, drivePathEl, driveList;
     var startRange, endRange, rangeSelection;
-    var currentTimeEl, durationEl, titleEl;
+    var currentTimeEl, durationEl;
 
     function init(options) {
         var opts = options || {};
@@ -78,14 +78,12 @@
         rangeSelection = document.getElementById("ae-range-selection");
         currentTimeEl = document.getElementById("ae-current-time");
         durationEl = document.getElementById("ae-duration");
-        titleEl = document.getElementById("ae-title");
 
         if (!audioEl) return;
         unbindEvents();
         resetControls();
         bindEvents();
 
-        if (titleEl) titleEl.textContent = state.entry && state.entry.name ? state.entry.name : "Audio";
         audioEl.src = state.audioServeUrl;
         audioEl.load();
     }

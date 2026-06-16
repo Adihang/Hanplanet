@@ -908,7 +908,7 @@ DOCS_TEXT = {
         "markdown_placeholder_table_col1": "항목",
         "markdown_placeholder_table_col2": "설명",
         "save_button": "저장",
-        "unsaved_changes_title": "수정 사항이 있습니다",
+        "unsaved_changes_title": "저장",
         "unsaved_changes_message": "저장되지 않은 변경 사항이 있습니다. 이동 전에 저장할까요?",
         "unsaved_changes_leave_button": "확인",
         "unsaved_changes_save_button": "저장",
@@ -6360,6 +6360,13 @@ def handrive_common_context(request, ui_lang):
             account_profile_upload_url = reverse("main:account_profile_image_upload")
         _quota_home = get_scoped_handrive_home_dir(request)
         _quota_user = get_handrive_effective_owner_user(request)
+        if _quota_user is not None and _quota_user.pk == request.user.pk:
+            handrive_root_profile_image_url = account_profile_image_url
+        elif _quota_user is not None:
+            root_profile = PortfolioProfile.objects.filter(user=_quota_user).only("profile_img").first()
+            handrive_root_profile_image_url = root_profile.profile_img.url if root_profile and root_profile.profile_img else ""
+        else:
+            handrive_root_profile_image_url = ""
         if _quota_home and _quota_user is not None:
             _quota_root, _ = resolve_path(_quota_home, must_exist=False)
             _quota_used, _, _breakdown = calculate_handrive_quota_breakdown(_quota_root)
@@ -6421,6 +6428,7 @@ def handrive_common_context(request, ui_lang):
     else:
         handrive_my_portfolio_url = reverse("main:main_lang", kwargs={"ui_lang": ui_lang})
         account_profile_image_url = ""
+        handrive_root_profile_image_url = ""
         account_display_name = ""
         account_email = ""
         account_profile_upload_url = ""
@@ -6459,6 +6467,7 @@ def handrive_common_context(request, ui_lang):
             "account_logout_next": handrive_base_url,
             "account_logout_url": handrive_logout_url,
             "account_profile_image_url": account_profile_image_url,
+            "handrive_root_profile_image_url": handrive_root_profile_image_url,
             "account_display_name": account_display_name,
             "account_email": account_email,
             "account_profile_upload_url": account_profile_upload_url,

@@ -4405,6 +4405,7 @@
         const currentDirShareDownloadUrl = String(root.dataset.currentDirShareDownloadUrl || "").trim();
         const currentDirShareIsInherited = root.dataset.currentDirShareIsInherited === "1";
         const accountProfileImageUrl = String(root.dataset.accountProfileImageUrl || "").trim();
+        const handriveRootProfileImageUrl = String(root.dataset.handriveRootProfileImageUrl || accountProfileImageUrl).trim();
         const canSwitchAdminHandriveUser = root.dataset.handriveAdminUserSwitchEnabled === "1";
         const handriveRootLabel = (root.dataset.handriveRootLabel || breadcrumbRootLabel || "HanDrive").trim() || "HanDrive";
         const effectiveRootLabel = handriveRootLabel;
@@ -7418,6 +7419,22 @@
             activeListEditorEntry = null;
         }
 
+        function closeEditorAndRestorePreviewState() {
+            const previewPath = state.activePreviewPath || "";
+            const previewEntry = previewPath
+                ? state.entryByPath.get(previewPath) || null
+                : null;
+            switchToPreview();
+            if (!previewPath || !isPreviewableFileEntry(previewEntry)) {
+                clearPreviewPane();
+                return;
+            }
+            state.activeRenderedPreviewPath = "";
+            loadPreviewForEntry(previewEntry)
+                .then(function () { return updatePreviewNavButtons(previewEntry); })
+                .catch(alertError);
+        }
+
         function setupEditorEvents(entry) {
             if (!editorSaveButton || !editorCancelButton) {
                 return;
@@ -7693,7 +7710,7 @@
                             ? window.HandriveSpreadsheetEditor.getIsDirty()
                             : true;
                         if (!isDirty && spreadsheetFilename === String(entry.name || "")) {
-                            switchToPreview();
+                            closeEditorAndRestorePreviewState();
                             return null;
                         }
                         const overwriteConfirmed = await confirmListEditorOverwriteIfNeeded(sourcePath, saveTarget.targetPath);
@@ -7746,7 +7763,7 @@
                             !window.HandrivePdfEditor.getIsDirty() &&
                             pdfFilename === String(entry.name || "")
                         ) {
-                            switchToPreview();
+                            closeEditorAndRestorePreviewState();
                             return;
                         }
                         const sourcePath = normalizePath(entry.path, false);
@@ -7793,7 +7810,7 @@
                             !window.HandriveImageEditor.getIsDirty() &&
                             imageFilename === String(entry.name || "")
                         ) {
-                            switchToPreview();
+                            closeEditorAndRestorePreviewState();
                             return;
                         }
                         const sourcePath = normalizePath(entry.path, false);
@@ -7839,7 +7856,7 @@
                             !window.HandriveVideoEditor.getIsDirty() &&
                             videoFilename === String(entry.name || "")
                         ) {
-                            switchToPreview();
+                            closeEditorAndRestorePreviewState();
                             return;
                         }
                         const sourcePath = normalizePath(entry.path, false);
@@ -7885,7 +7902,7 @@
                             !window.HandriveAudioEditor.getIsDirty() &&
                             audioFilename === String(entry.name || "")
                         ) {
-                            switchToPreview();
+                            closeEditorAndRestorePreviewState();
                             return;
                         }
                         const sourcePath = normalizePath(entry.path, false);
@@ -7958,7 +7975,7 @@
                 cleanupListMarkdownUploadedImages(entry)
                     .catch(alertError)
                     .finally(function () {
-                        switchToPreview();
+                        closeEditorAndRestorePreviewState();
                     });
             };
         }
@@ -11266,7 +11283,7 @@
             const typeMarker = createTypeMarker({
                 isDir: true,
                 isRootAvatar: Boolean(currentDirMeta.is_root),
-                accountProfileImageUrl: accountProfileImageUrl,
+                accountProfileImageUrl: handriveRootProfileImageUrl,
                 isGoogleDrive: isGoogleDriveRootMeta(currentDirMeta),
                 isGithubRepo: Boolean(currentDirMeta.is_git_repo_root && currentDirMeta.git_repo && currentDirMeta.git_repo.provider === "github"),
                 isRepo: Boolean(currentDirMeta.is_git_repo_root),
@@ -11592,7 +11609,7 @@
             const typeMarker = createTypeMarker({
                 isDir: true,
                 isRootAvatar: Boolean(currentDirMeta.is_root),
-                accountProfileImageUrl: accountProfileImageUrl,
+                accountProfileImageUrl: handriveRootProfileImageUrl,
                 isGoogleDrive: isGoogleDriveRootMeta(currentDirMeta),
                 isGithubRepo: Boolean(currentDirMeta.is_git_repo_root && currentDirMeta.git_repo && currentDirMeta.git_repo.provider === "github"),
                 isRepo: Boolean(currentDirMeta.is_git_repo_root),
@@ -15057,7 +15074,7 @@
                 !unsavedSaveButton
             ) {
                 return requestConfirmDialog({
-                    title: t("unsaved_changes_title", "수정 사항이 있습니다"),
+                    title: t("unsaved_changes_title", "저장"),
                     message: t("unsaved_changes_message", "저장되지 않은 변경 사항이 있습니다. 이동 전에 저장할까요?"),
                     cancelText: t("cancel", "취소"),
                     confirmText: t("unsaved_changes_leave_button", "확인")

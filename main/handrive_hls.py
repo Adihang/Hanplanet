@@ -2,10 +2,10 @@
 
 흐름:
 1. render_handrive_media_safely 가 data-hls-* 속성을 HTML에 심음
-2. video_player.js 가 /handrive/api/hls/status 를 먼저 확인
-3. "ready" → /handrive/api/hls/manifest 로 Video.js 소스 설정
-4. 아직 안 된 경우 → fallback MP4로 즉시 재생 + 백그라운드 트랜스코딩 폴링
-5. 완료 시 "HD 화질 사용 가능" 배지 표시 (재생 중단 없음)
+2. video_player.js 는 재생 전에는 fallback/faststart 소스를 우선 사용
+3. 사용자가 재생을 시작하면 지연 후 /handrive/api/hls/status 를 확인
+4. 아직 안 된 경우 → fallback MP4 재생을 유지하며 백그라운드 트랜스코딩 폴링
+5. 완료 시 화질 선택 가능 배지를 표시하고, 사용자가 선택하면 HLS로 전환
 
 각 캐시 항목(cache_key 디렉터리)에는 다음 파일들이 생성된다:
   status.json        — 트랜스코딩 상태/진행률 + 완성된 기능 플래그

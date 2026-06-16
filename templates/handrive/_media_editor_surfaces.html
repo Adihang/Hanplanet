@@ -100,8 +100,11 @@
                         </div>
                         <div class="pe-ribbon-sep pe-ribbon-sep--vertical"></div>
                         <div class="pe-ribbon-section pe-ribbon-section--line">
-                            <input type="range" id="pe-line-width" min="1" max="12" step="0.5" value="2.5" class="pe-line-width-slider" title="선 두께">
-                            <span id="pe-line-width-display" class="pe-size-value">2.5px</span>
+                            <label class="pe-icon-field pe-line-field" aria-label="선 두께" title="선 두께">
+                                <span class="pe-style-icon pe-style-icon--line" aria-hidden="true">―</span>
+                                <input type="range" id="pe-line-width" min="1" max="12" step="0.5" value="2.5" class="pe-line-width-slider">
+                                <span id="pe-line-width-display" class="pe-size-value">2.5px</span>
+                            </label>
                         </div>
                         <div class="pe-ribbon-sep pe-ribbon-sep--vertical"></div>
                         <div class="pe-ribbon-section pe-ribbon-section--text">
@@ -109,16 +112,32 @@
                                 <span class="pe-style-icon" aria-hidden="true">F</span>
                                 <select id="pe-font-family" class="pe-font-family-select">
                                     <option value="system">기본</option>
+                                    <option value="Apple SD Gothic Neo">Apple SD Gothic Neo</option>
+                                    <option value="Malgun Gothic">Malgun Gothic</option>
+                                    <option value="Noto Sans KR">Noto Sans KR</option>
+                                    <option value="Nanum Gothic">Nanum Gothic</option>
                                     <option value="sans-serif">Sans Serif</option>
                                     <option value="serif">Serif</option>
                                     <option value="monospace">Monospace</option>
                                     <option value="Arial">Arial</option>
                                     <option value="Helvetica">Helvetica</option>
+                                    <option value="Inter">Inter</option>
+                                    <option value="Segoe UI">Segoe UI</option>
+                                    <option value="Roboto">Roboto</option>
+                                    <option value="Noto Sans">Noto Sans</option>
+                                    <option value="Open Sans">Open Sans</option>
+                                    <option value="Calibri">Calibri</option>
                                     <option value="Georgia">Georgia</option>
                                     <option value="Times New Roman">Times New Roman</option>
+                                    <option value="Cambria">Cambria</option>
+                                    <option value="Garamond">Garamond</option>
+                                    <option value="Palatino Linotype">Palatino Linotype</option>
                                     <option value="Verdana">Verdana</option>
                                     <option value="Trebuchet MS">Trebuchet MS</option>
                                     <option value="Courier New">Courier New</option>
+                                    <option value="Consolas">Consolas</option>
+                                    <option value="Menlo">Menlo</option>
+                                    <option value="SF Mono">SF Mono</option>
                                 </select>
                             </label>
                             <label class="pe-icon-field" aria-label="폰트 크기" title="폰트 크기">

@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load static_versioned %}
 
-{% block body_class %}ui-page image-color-picker-page video-to-gif-page{% endblock %}
+{% block body_class %}ui-page media-tool-page{% endblock %}
 
 {% block extra_head %}
 {% include 'handrive/_assets_head.html' %}
@@ -30,9 +30,9 @@
     </div>
 </div>
 
-<main class="ui-shell ui-content image-color-picker-content video-to-gif-content">
+<main class="ui-shell ui-content media-tool-content">
     <section
-        class="image-color-picker-panel video-to-gif-panel"
+        class="media-tool-panel video-to-gif-panel"
         data-video-to-gif
         data-metadata-url="{{ metadata_api_url }}"
         data-convert-url="{{ convert_api_url }}"
@@ -62,21 +62,21 @@
         data-frame-max-label="{{ frame_max_label }}"
         aria-label="{{ page_title }}"
     >
-        <div class="image-color-picker-workspace video-to-gif-workspace">
-            <section class="image-color-picker-source video-to-gif-source" aria-label="{{ upload_label }}">
+        <div class="media-tool-workspace">
+            <section class="media-tool-source" aria-label="{{ upload_label }}">
                 <form class="video-to-gif-form" data-video-to-gif-form>
                     {% csrf_token %}
-                    <div class="image-color-picker-url-form video-to-gif-url-form" data-video-to-gif-url-form>
-                        <label class="image-color-picker-url-field video-to-gif-url-field">
+                    <div class="media-tool-url-form" data-video-to-gif-url-form>
+                        <label class="media-tool-url-field">
                             <span>{{ video_url_label }}</span>
                             <input type="url" name="url" placeholder="{{ video_url_placeholder }}" autocomplete="url" data-video-to-gif-url>
                         </label>
                         <button class="ui-btn ui-btn-primary" type="button" data-video-to-gif-url-submit>{{ url_load_label }}</button>
                     </div>
-                    <div class="media-upload-stage video-to-gif-dropzone" data-video-to-gif-dropzone>
-                        <div class="image-color-picker-empty" data-video-to-gif-empty>
+                    <div class="media-upload-stage" data-video-to-gif-dropzone>
+                        <div class="media-upload-empty" data-video-to-gif-empty>
                             <button
-                                class="image-color-picker-upload-mark"
+                                class="media-upload-mark"
                                 type="button"
                                 data-video-to-gif-file-open
                                 aria-label="{{ upload_label }}"
@@ -142,9 +142,9 @@
                         </dl>
                     </div>
 
-                    <div class="image-color-picker-actions video-to-gif-actions">
+                    <div class="media-tool-actions">
                         <input
-                            class="image-color-picker-file-input"
+                            class="media-tool-file-input"
                             type="file"
                             accept="video/*,.3g2,.3gp,.asf,.avi,.divx,.dv,.f4v,.flv,.m2ts,.m4v,.mkv,.mod,.mov,.mp4,.mpeg,.mpg,.mts,.mxf,.ogv,.rm,.rmvb,.tod,.ts,.vob,.webm,.wmv"
                             data-video-to-gif-file
@@ -156,8 +156,8 @@
                 </form>
             </section>
 
-            <aside class="image-color-picker-result video-to-gif-result" aria-labelledby="videoToGifResultTitle">
-                <h2 class="image-color-picker-section-title" id="videoToGifResultTitle">{{ result_label }}</h2>
+            <aside class="media-tool-result" aria-labelledby="videoToGifResultTitle">
+                <h2 class="media-tool-section-title" id="videoToGifResultTitle">{{ result_label }}</h2>
                 <div class="video-to-gif-result-stack">
                     <div class="video-to-gif-result-stage">
                         <p class="video-to-gif-result-empty" data-video-to-gif-result-empty>{{ empty_result_label }}</p>

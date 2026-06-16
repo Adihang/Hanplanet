@@ -165,6 +165,17 @@ class HandriveSharedLink(models.Model):
         related_name="handrive_shared_links",
         verbose_name="공유 생성 사용자",
     )
+    allowed_users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="handrive_allowed_shared_links",
+        verbose_name="공유 허용 사용자",
+    )
+    allowed_usernames = models.JSONField(
+        "공유 허용 사용자명",
+        default=list,
+        blank=True,
+    )
     share_slug = models.CharField("공유 슬러그", max_length=255)
     created_at = models.DateTimeField("생성일", auto_now_add=True)
     updated_at = models.DateTimeField("수정일", auto_now=True)
@@ -263,6 +274,26 @@ class TrustedDevice(models.Model):
 
     def __str__(self):
         return f"{self.user.username} — {self.device_token[:8]}… (last={self.last_seen_at})"
+
+
+class EmailTwoFactorBypassUser(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="email_2fa_bypass",
+        verbose_name="사용자",
+    )
+    created_at = models.DateTimeField("등록일", auto_now_add=True)
+    updated_at = models.DateTimeField("수정일", auto_now=True)
+
+    class Meta:
+        db_table = "main_emailtwofactorbypassuser"
+        ordering = ["user__username"]
+        verbose_name = "이메일 2차 인증 생략 사용자"
+        verbose_name_plural = "이메일 2차 인증 생략 사용자"
+
+    def __str__(self):
+        return str(self.user.get_username())
 
 
 class HandriveUserQuota(models.Model):

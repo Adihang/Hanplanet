@@ -19,7 +19,14 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 
 from .access_log_summary import BOT_UA_PATTERN, resolve_summary_dir, summary_markdown
-from .models import HandriveAccessRule, HandriveUserQuota, NavLink, QuickLink, UserProfile
+from .models import (
+    EmailTwoFactorBypassUser,
+    HandriveAccessRule,
+    HandriveUserQuota,
+    NavLink,
+    QuickLink,
+    UserProfile,
+)
 
 
 ADMIN_LOGIN_CAPTCHA_QUESTION_SESSION_KEY = "admin_login_captcha_question"
@@ -133,6 +140,18 @@ class UserProfileAdmin(admin.ModelAdmin):
     list_filter = ["theme_mode", "preferred_ui_lang", "preferred_root_search_engine"]
     search_fields = ["user__username"]
     ordering = ["user__username"]
+
+
+@admin.register(EmailTwoFactorBypassUser)
+class EmailTwoFactorBypassUserAdmin(admin.ModelAdmin):
+    list_display = ["user", "user_email", "created_at", "updated_at"]
+    search_fields = ["user__username", "user__email"]
+    autocomplete_fields = ["user"]
+    ordering = ["user__username"]
+
+    @admin.display(description="이메일")
+    def user_email(self, obj):
+        return obj.user.email
 
 
 @admin.register(HandriveAccessRule)

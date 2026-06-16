@@ -73,7 +73,6 @@
             deleteEntry: false,
             newFolder: false,
             newDoc: false,
-            permissions: false,
             gitCreateRepo: false,
             gitManageRepo: false,
             gitDeleteRepo: false,
@@ -167,7 +166,6 @@
         flags.deleteEntry = isEntryDeletable(targetEntry);
         flags.newFolder = isDirectory && canWriteChildren && !hasGitRepo;
         flags.newDoc = isDirectory && canWriteChildren && !hasGitRepo;
-        flags.permissions = !isGitVirtualEntry && !isGoogleDriveEntry;
         flags.gitCreateRepo = isDirectory && canWriteChildren && isEntryDeletable(targetEntry) && !hasGitRepo && !isGitVirtualEntry && !isGoogleDriveEntry;
         flags.gitManageRepo = isDirectory && hasGitRepo && canManageRepo;
         flags.gitDeleteRepo = isSingleRepoDirectory && canDeleteRepo;

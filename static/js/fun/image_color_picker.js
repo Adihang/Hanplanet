@@ -6,6 +6,7 @@
 
     var stage = root.querySelector("[data-image-color-picker-dropzone]");
     var image = root.querySelector("[data-image-color-picker-image]");
+    var clearButton = root.querySelector("[data-image-color-picker-clear]");
     var emptyState = root.querySelector("[data-image-color-picker-empty]");
     var crosshair = root.querySelector("[data-image-color-picker-crosshair]");
     var canvas = root.querySelector("[data-image-color-picker-canvas]");
@@ -26,15 +27,15 @@
     var sourceLocalButton = sourceModal ? sourceModal.querySelector("[data-upload-source-local]") : null;
     var sourceHandriveButton = sourceModal ? sourceModal.querySelector("[data-upload-source-handrive]") : null;
     var sourceCloseButton = sourceModal ? sourceModal.querySelector("[data-upload-source-close]") : null;
-    var modal = document.querySelector("[data-image-color-picker-handrive-modal]");
-    var handriveCloseButton = modal ? modal.querySelector("[data-image-color-picker-handrive-close]") : null;
-    var handriveList = modal ? modal.querySelector("[data-image-color-picker-handrive-list]") : null;
-    var handriveStatus = modal ? modal.querySelector("[data-image-color-picker-handrive-status]") : null;
+    var modal = document.querySelector("[data-media-handrive-picker-modal]");
+    var handriveCloseButton = modal ? modal.querySelector("[data-media-handrive-picker-close]") : null;
+    var handriveList = modal ? modal.querySelector("[data-media-handrive-picker-list]") : null;
+    var handriveStatus = modal ? modal.querySelector("[data-media-handrive-picker-status]") : null;
     var context = canvas ? canvas.getContext("2d", { willReadFrequently: true }) : null;
     var handrivePageHelpers = window.HandrivePageHelpers || {};
     var handriveListRenderHelpers = window.HandriveListRenderHelpers || {};
-    var buildTreePrefixElement = handriveListRenderHelpers.buildTreePrefixElement || buildFallbackTreePrefixElement;
-    var createTypeMarker = handriveListRenderHelpers.createTypeMarker || createFallbackTypeMarker;
+    var buildBaseTreePrefixElement = handriveListRenderHelpers.buildTreePrefixElement || buildFallbackTreePrefixElement;
+    var createBaseTypeMarker = handriveListRenderHelpers.createTypeMarker || createFallbackTypeMarker;
     var getFileIconKey = handrivePageHelpers.getFileIconKey || function () { return "image"; };
     var isGenericFileIconKey = handrivePageHelpers.isGenericFileIconKey || function () { return true; };
 
@@ -165,6 +166,7 @@
 
     function setImageVisible(visible) {
         if (image) image.hidden = !visible;
+        if (clearButton) clearButton.hidden = !visible;
         if (emptyState) emptyState.hidden = visible;
         if (stage) stage.classList.toggle("has-image", Boolean(visible));
     }
@@ -192,6 +194,12 @@
         }
         setImageVisible(false);
         setBusy(false);
+    }
+
+    function clearLoadedImage() {
+        resetImageToEmptyState();
+        setMainStatus(message("statusReady", "Ready"), false);
+        if (fileOpenButton) fileOpenButton.focus();
     }
 
     function componentToHex(value) {
@@ -478,15 +486,15 @@
 
     function buildFallbackTreePrefixElement(ancestorHasNextSiblings, isLastSibling) {
         var prefix = document.createElement("span");
-        prefix.className = "handrive-item-tree-prefix";
+        prefix.className = "media-handrive-picker-tree-prefix";
         prefix.setAttribute("aria-hidden", "true");
         (ancestorHasNextSiblings || []).forEach(function (hasNextSibling) {
             var segment = document.createElement("span");
-            segment.className = "handrive-tree-segment" + (hasNextSibling ? " has-next" : "");
+            segment.className = "media-handrive-picker-tree-segment" + (hasNextSibling ? " has-next" : "");
             prefix.appendChild(segment);
         });
         var branch = document.createElement("span");
-        branch.className = "handrive-tree-segment handrive-tree-branch " + (isLastSibling ? "is-last" : "is-middle");
+        branch.className = "media-handrive-picker-tree-segment media-handrive-picker-tree-branch " + (isLastSibling ? "is-last" : "is-middle");
         prefix.appendChild(branch);
         if (!(ancestorHasNextSiblings || []).length) {
             prefix.classList.add("is-root-depth");
@@ -494,10 +502,26 @@
         return prefix;
     }
 
+    function createPickerTreePrefixElement(ancestorHasNextSiblings, isLastSibling) {
+        var prefix = buildBaseTreePrefixElement(ancestorHasNextSiblings || [], Boolean(isLastSibling));
+        if (!prefix) return buildFallbackTreePrefixElement(ancestorHasNextSiblings, isLastSibling);
+        prefix.classList.remove("handrive-item-tree-prefix");
+        prefix.classList.add("media-handrive-picker-tree-prefix");
+        Array.prototype.forEach.call(prefix.querySelectorAll(".handrive-tree-segment"), function (segment) {
+            segment.classList.remove("handrive-tree-segment");
+            segment.classList.add("media-handrive-picker-tree-segment");
+            if (segment.classList.contains("handrive-tree-branch")) {
+                segment.classList.remove("handrive-tree-branch");
+                segment.classList.add("media-handrive-picker-tree-branch");
+            }
+        });
+        return prefix;
+    }
+
     function createFallbackTypeMarker(options) {
         var settings = options || {};
         var marker = document.createElement("span");
-        marker.className = "handrive-item-type-icon " + (settings.isDir ? "is-dir" : "is-file");
+        marker.className = "media-handrive-picker-icon " + (settings.isDir ? "is-dir" : "is-file");
         if (settings.isGoogleDrive) marker.classList.add("is-google-drive");
         else if (settings.isGithubRepo) marker.classList.add("is-github-repo");
         else if (settings.isRepo) marker.classList.add("is-repo");
@@ -510,10 +534,22 @@
         return marker;
     }
 
+    function createPickerTypeMarker(options) {
+        var marker = createBaseTypeMarker(options || {});
+        if (!marker) return createFallbackTypeMarker(options);
+        marker.classList.remove("handrive-item-type-icon");
+        marker.classList.add("media-handrive-picker-icon");
+        Array.prototype.forEach.call(marker.querySelectorAll(".handrive-folder-custom-icon"), function (customIcon) {
+            customIcon.classList.remove("handrive-folder-custom-icon");
+            customIcon.classList.add("media-handrive-picker-folder-custom-icon");
+        });
+        return marker;
+    }
+
     function createHandriveTypeIcon(entry) {
         var isDir = entry && entry.type === "dir";
         var fileIconKey = isDir ? "" : getFileIconKey(entry.path || entry.name || "");
-        return createTypeMarker({
+        return createPickerTypeMarker({
             isDir: isDir,
             isGoogleDrive: isDir && entry && (entry.is_google_drive || entry.google_drive),
             isGithubRepo: isDir && entry && entry.github_repo,
@@ -529,10 +565,10 @@
 
     function createHandriveRow(entry, ancestorHasNextSiblings, isLastSibling) {
         var item = document.createElement("li");
-        item.className = "handrive-item";
+        item.className = "media-handrive-picker-item";
         var row = document.createElement("button");
         row.type = "button";
-        row.className = "handrive-item-row has-tree-prefix";
+        row.className = "media-handrive-picker-row has-tree-prefix";
         row.setAttribute("data-entry-path", entry && entry.path ? entry.path : "");
         var isDir = entry && entry.type === "dir";
         if (isDir) {
@@ -540,13 +576,13 @@
         }
         var icon = createHandriveTypeIcon(entry);
         var nameWrap = document.createElement("span");
-        nameWrap.className = "handrive-item-name-wrap";
+        nameWrap.className = "media-handrive-picker-name-wrap";
         var name = document.createElement("span");
-        name.className = "handrive-item-name";
+        name.className = "media-handrive-picker-name";
         name.textContent = String(entry.name || entry.path || "");
         nameWrap.appendChild(name);
         var action = document.createElement("span");
-        action.className = "handrive-item-meta-label image-color-picker-handrive-action";
+        action.className = "media-handrive-picker-meta-label media-handrive-picker-action";
         action.textContent = isDir
             ? message("handriveOpenFolderLabel", "Open folder")
             : message("handriveSelectFileLabel", "Select image");
@@ -561,20 +597,23 @@
             }
             loadHandriveImage(entry);
         });
-        item.appendChild(buildTreePrefixElement(ancestorHasNextSiblings || [], Boolean(isLastSibling)));
+        item.appendChild(createPickerTreePrefixElement(ancestorHasNextSiblings || [], Boolean(isLastSibling)));
         item.appendChild(row);
         return item;
     }
 
     function appendHandriveEmptyRow(fragment, ancestorHasNextSiblings, isLastSibling, text) {
         var item = document.createElement("li");
-        item.className = "handrive-item";
+        item.className = "media-handrive-picker-item";
         var empty = document.createElement("div");
-        empty.className = "handrive-item-row is-empty image-color-picker-handrive-empty" + (ancestorHasNextSiblings ? " has-tree-prefix" : "");
-        empty.textContent = text || message("handriveEmptyLabel", "No images in this folder.");
+        empty.className = "media-handrive-picker-row is-empty" + (ancestorHasNextSiblings ? " has-tree-prefix" : "");
         if (ancestorHasNextSiblings) {
-            item.appendChild(buildTreePrefixElement(ancestorHasNextSiblings, Boolean(isLastSibling)));
+            item.appendChild(createPickerTreePrefixElement(ancestorHasNextSiblings, Boolean(isLastSibling)));
         }
+        var label = document.createElement("span");
+        label.className = "media-handrive-picker-empty-label";
+        label.textContent = text || message("handriveEmptyLabel", "No images in this folder.");
+        empty.appendChild(label);
         item.appendChild(empty);
         fragment.appendChild(item);
     }
@@ -781,6 +820,13 @@
             if (crosshair) crosshair.hidden = true;
         });
         image.addEventListener("click", pickColor);
+    }
+    if (clearButton) {
+        clearButton.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            clearLoadedImage();
+        });
     }
     copyButtons.forEach(function (button) {
         button.addEventListener("click", handleCopy);

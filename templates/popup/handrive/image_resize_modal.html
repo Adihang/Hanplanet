@@ -1,7 +1,10 @@
 <div id="ie-resize-modal" class="handrive-popup-modal" hidden>
     <div class="handrive-popup-modal-backdrop" id="ie-resize-modal-backdrop"></div>
     <div class="handrive-popup-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="ie-resize-modal-title">
-        <h2 id="ie-resize-modal-title" class="handrive-popup-title">{{ handrive_text.image_editor_resize_title|default:"크기 조정" }}</h2>
+        <header class="handrive-popup-head">
+            <h2 id="ie-resize-modal-title" class="handrive-popup-title">{{ handrive_text.image_editor_resize_title|default:"크기 조정" }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with click_target_id="ie-resize-cancel-btn" %}
+        </header>
         <div class="ie-resize-modal-body">
             <div class="ie-resize-field-row">
                 <label for="ie-resize-width" class="ie-resize-label">{{ handrive_text.image_editor_resize_width|default:"너비" }}</label>

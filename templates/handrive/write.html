@@ -27,8 +27,18 @@
             <div class="handrive-toolbar-actions ui-toolbar-actions">
                 {% include "handrive/_auth_button.html" %}
                 {% include "handrive/_superuser_ops_button.html" %}
-                <button class="ui-btn" type="button" id="handrive-cancel-btn">{{ handrive_text.cancel }}</button>
-                <button class="ui-btn ui-btn-primary" type="button" id="handrive-save-btn">{{ handrive_text.save_button }}</button>
+                <button class="handrive-icon-btn handrive-write-cancel-btn" type="button" id="handrive-cancel-btn" aria-label="{{ handrive_text.cancel }}" title="{{ handrive_text.cancel }}">
+                    <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="12,5 7,10 12,15"/>
+                    </svg>
+                </button>
+                <button class="handrive-icon-btn handrive-write-save-btn" type="button" id="handrive-save-btn" aria-label="{{ handrive_text.save_button }}" title="{{ handrive_text.save_button }}">
+                    <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M4 3h10l2 2v12H4z"/>
+                        <path d="M7 3v5h6V3"/>
+                        <path d="M7 13h6v4H7z"/>
+                    </svg>
+                </button>
             </div>
         </div>
     </div>
@@ -72,6 +82,8 @@
     data-initial-dir="{{ initial_dir }}"
     data-scoped-home-dir="{{ scoped_home_dir|default:'' }}"
     data-handrive-root-label="{{ handrive_root_label|default:'HanDrive' }}"
+    data-handrive-admin-user="{{ handrive_admin_user|default:''|escape }}"
+    data-handrive-admin-user-param="{{ handrive_admin_user_param|default:'handrive_user'|escape }}"
     data-public-write-direct-save="{% if write_public_direct_save %}1{% else %}0{% endif %}"
     data-write-requires-commit-message="{% if write_requires_commit_message %}1{% else %}0{% endif %}"
     data-is-superuser="{% if user.is_superuser %}1{% else %}0{% endif %}"

@@ -47,6 +47,43 @@
     return 'https://www.hanplanet.com/' + lang + '/login/?next=' + encodeURIComponent(target);
   }
 
+  function getCookie(name) {
+    try {
+      var m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+      if (!m) return null;
+      var raw = m[1].trim();
+      if (raw.charAt(0) === '"' && raw.charAt(raw.length - 1) === '"') {
+        raw = raw.slice(1, -1);
+      }
+      return decodeURIComponent(raw);
+    } catch (e) { return null; }
+  }
+
+  /* ── Django 자동 로그인 세션 → Forgejo 세션 재수화 ───────────── */
+  (function rehydrateFromHanplanetSession() {
+    var isSigned = document.body.dataset.authenticated === '1';
+    if (isSigned) {
+      return;
+    }
+    var hasActiveMarker = Boolean(getCookie('hp_account_active'));
+    if (!hasActiveMarker && getCookie('hp_sso_probe_failed')) {
+      return;
+    }
+    var path = window.location.pathname;
+    if (
+      path === '/user/login' || path === '/user/login/' ||
+      path.indexOf('/user/oauth2/') === 0 ||
+      path.indexOf('/user/link_account') === 0 ||
+      path.indexOf('/user/logout') === 0
+    ) {
+      return;
+    }
+
+    window.location.replace(
+      'https://www.hanplanet.com/sso/gitea?probe=1&next=' + encodeURIComponent(window.location.href)
+    );
+  })();
+
   /* ── 로그인 페이지 → Hanplanet 직접 로그인 자동 리다이렉트 ─────── */
   (function redirectLoginToHanplanet() {
     var path = window.location.pathname;
@@ -138,19 +175,6 @@
   /* ── 레거시 복귀 쿠키 정리 ── */
   (function () {
     var sharedExpired = 'expires=Thu, 01 Jan 1970 00:00:00 UTC; domain=.hanplanet.com; path=/';
-
-    function getCookie(name) {
-      try {
-        var m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
-        if (!m) return null;
-        var raw = m[1].trim();
-        // Django set_cookie may wrap URL values in RFC 6265 quoted-string
-        if (raw.charAt(0) === '"' && raw.charAt(raw.length - 1) === '"') {
-          raw = raw.slice(1, -1);
-        }
-        return decodeURIComponent(raw);
-      } catch (e) { return null; }
-    }
 
     function safeRedirect(url) {
       if (url && (/^https?:\/\/(www\.)?hanplanet\.com(\/|$)/.test(url) || /^\//.test(url))) {

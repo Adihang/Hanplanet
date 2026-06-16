@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load static_versioned %}
-{% block body_class %}handrive-page{% endblock %}
+{% block body_class %}handrive-page handrive-list-page{% endblock %}
 {% block content %}
 {% include 'handrive/_assets_head.html' %}
 
@@ -40,7 +40,7 @@
                 {% include "partials/ui_controls_stack.html" %}
             </div>
             {% endif %}
-            <div class="handrive-toolbar-actions ui-toolbar-actions">
+            <div class="handrive-toolbar-actions ui-toolbar-actions handrive-icon-actions">
                 <button
                     class="handrive-icon-btn"
                     type="button"
@@ -68,7 +68,7 @@
                 <a
                     class="handrive-icon-btn"
                     id="handrive-list-toolbar-archive-download-btn"
-                    href="{{ handrive_api_download_url }}?path={{ current_dir_archive_path|default:''|urlencode }}{% if handrive_shared_owner_username and handrive_shared_slug %}&share_owner={{ handrive_shared_owner_username|urlencode }}&share_slug={{ handrive_shared_slug|urlencode }}{% endif %}"
+                    href="{{ handrive_api_download_url }}?path={{ current_dir_archive_path|default:''|urlencode }}{% if handrive_shared_owner_username and handrive_shared_slug %}&share_owner={{ handrive_shared_owner_username|urlencode }}&share_slug={{ handrive_shared_slug|urlencode }}{% endif %}{% if handrive_admin_user %}&{{ handrive_admin_user_param|default:'handrive_user'|urlencode }}={{ handrive_admin_user|urlencode }}{% endif %}"
                     aria-label="{{ handrive_text.download_button }}"
                     title="{{ handrive_text.download_button }}"
                     {% if not current_dir_is_archive_virtual %}hidden{% endif %}
@@ -138,15 +138,17 @@
     data-preview-api-url="{{ handrive_api_preview_url }}"
     data-pdf-preview-api-url="{{ handrive_api_pdf_preview_url }}"
     data-handrive-root-label="{{ handrive_root_label }}"
-    data-acl-api-url="{{ handrive_api_acl_url }}"
-    data-acl-options-api-url="{{ handrive_api_acl_options_url }}"
     data-url-share-api-url="{{ handrive_api_url_share_url }}"
     data-sync-settings-api-url="{{ handrive_api_sync_settings_url }}"
+    data-admin-user-check-api-url="{{ handrive_api_admin_user_check_url }}"
     data-write-url="{{ handrive_write_url }}"
     data-ui-lang="{{ ui_lang|default:'ko' }}"
     data-handrive-shared-owner-username="{{ handrive_shared_owner_username|default:'' }}"
     data-handrive-shared-slug="{{ handrive_shared_slug|default:'' }}"
     data-handrive-shared-root-path="{{ handrive_shared_root_path|default:'' }}"
+    data-handrive-admin-user-switch-enabled="{% if handrive_admin_user_switch_enabled %}1{% else %}0{% endif %}"
+    data-handrive-admin-user="{{ handrive_admin_user|default:''|escape }}"
+    data-handrive-admin-user-param="{{ handrive_admin_user_param|default:'handrive_user'|escape }}"
     data-map-create-api-url="{{ handrive_api_map_create_url }}"
     data-map-editor-base-url="{{ handrive_map_editor_base_url }}"
     data-map-viewer-base-url="{{ handrive_map_viewer_base_url }}"
@@ -216,7 +218,7 @@
         <aside class="handrive-list-preview" id="handrive-list-preview" aria-live="polite" aria-hidden="true" hidden>
             <header class="handrive-list-preview-head">
                 <h2 class="handrive-list-preview-title" id="handrive-list-preview-title"><span class="handrive-list-preview-title-text">{{ handrive_text.list_preview_title }}</span></h2>
-                <div class="handrive-list-preview-actions">
+                <div class="handrive-list-preview-actions handrive-icon-actions">
                     <button
                         id="handrive-list-preview-url-share-btn"
                         class="handrive-icon-btn"
@@ -361,10 +363,6 @@
 {% include "popup/handrive/folder_create_modal.html" %}
 {% include "popup/handrive/commit_message_modal.html" %}
 
-{% if handrive_can_manage_acl %}
-    {% include "popup/handrive/permission_modal.html" %}
-{% endif %}
-
 {% include "popup/handrive/git_repo_modal.html" %}
 {% include "popup/handrive/branch_create_modal.html" %}
 {% include "popup/handrive/map_create_modal.html" %}
@@ -373,6 +371,7 @@
 {% include "popup/handrive/image_resize_modal.html" %}
 {% include "popup/handrive/image_save_as_modal.html" %}
 {% include "popup/handrive/confirm_modal.html" %}
+{% include "popup/handrive/admin_user_modal.html" %}
 {% include "popup/handrive/url_share_modal.html" %}
 {% include "popup/handrive/auth_logout_modal.html" %}
 {% include "popup/handrive/page_help_modal.html" %}
@@ -384,6 +383,7 @@
 {{ initial_entries|json_script:"handrive-initial-entries" }}
 {{ current_dir_git_repo|json_script:"handrive-current-dir-git-repo" }}
 {{ current_dir_google_drive|json_script:"handrive-current-dir-google-drive" }}
+{{ current_dir_share_allowed_users|json_script:"handrive-current-dir-share-allowed-users" }}
 {{ current_dir_write_acl_labels|json_script:"handrive-current-dir-write-acl-labels" }}
 {{ sync_excluded_paths|json_script:"handrive-sync-excluded-paths" }}
 {% include 'handrive/_assets_script.html' %}

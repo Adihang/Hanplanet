@@ -77,15 +77,30 @@
 {% endif %}
 
 <style>
+    body.sub-page {
+        height: 100vh;
+        height: 100dvh;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    body.sub-page .site-footer-links {
+        margin-top: 0;
+    }
+
     .sub-ui-content {
+        flex: 1 1 auto;
+        min-height: 0;
         display: flex;
         align-items: flex-start;
         justify-content: center;
         padding-top: 14px;
+        overflow: hidden;
     }
 
     .sub-ui-panel {
         width: min(980px, 100%);
+        max-height: 100%;
         border: 1px solid var(--handrive-border-soft);
         border-radius: var(--handrive-radius-lg);
         background: var(--handrive-surface-muted);
@@ -93,6 +108,10 @@
         box-sizing: border-box;
         display: grid;
         gap: 18px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
     }
 
     .sub-group {

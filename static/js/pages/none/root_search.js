@@ -33,6 +33,9 @@
     const ROOT_SEARCH_SUGGESTION_LIMIT = 7;
     const COOKIE_MAX_AGE_SECONDS = 31536000;
     const accountThemeMode = (document.documentElement.getAttribute('data-account-theme-mode') || '').trim().toLowerCase();
+    const searchHistoryDeleteLabel = suggestionsPopup
+        ? (String(suggestionsPopup.dataset.historyDeleteLabel || '').trim() || 'Delete search history')
+        : 'Delete search history';
     let currentShortcutItems = [];
     let renderedSearchSuggestions = [];
     let activeSearchSuggestionIndex = -1;
@@ -545,6 +548,24 @@
         writeRootSearchHistory(nextHistory);
     };
 
+    const removeRootSearchHistorySuggestion = function (index) {
+        const item = renderedSearchSuggestions[index];
+        if (!item || item.type !== 'history') {
+            return;
+        }
+        const valueKey = normalizeSuggestionText(item.value || item.label);
+        if (!valueKey) {
+            return;
+        }
+        writeRootSearchHistory(readRootSearchHistory().filter(function (query) {
+            return normalizeSuggestionText(query) !== valueKey;
+        }));
+        if (document.activeElement !== input && typeof input.focus === 'function') {
+            input.focus();
+        }
+        renderSearchSuggestions(getRootSearchSuggestions());
+    };
+
     const getSuggestionMetaFromUrl = function (rawUrl) {
         try {
             const parsed = new URL(rawUrl, window.location.origin);
@@ -587,18 +608,7 @@
             };
         });
 
-        const shortcutItems = currentShortcutItems.map(function (item) {
-            return {
-                type: 'shortcut',
-                label: item.name || item.url,
-                value: item.name || item.url,
-                url: item.url || '',
-                meta: getSuggestionMetaFromUrl(item.url || ''),
-                iconUrl: item.icon_url || ''
-            };
-        });
-
-        return historyItems.concat(shortcutItems, collectRootNavSuggestions());
+        return historyItems.concat(collectRootNavSuggestions());
     };
 
     const suggestionMatchesQuery = function (item, query) {
@@ -627,6 +637,20 @@
         });
 
         return suggestions.slice(0, ROOT_SEARCH_SUGGESTION_LIMIT);
+    };
+
+    const syncSearchSuggestionsGeometry = function () {
+        if (!suggestionsPopup || suggestionsPopup.hidden) {
+            return;
+        }
+        const rect = suggestionsPopup.getBoundingClientRect();
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        if (!viewportHeight) {
+            return;
+        }
+        const bottomGap = window.matchMedia && window.matchMedia('(max-width: 720px)').matches ? 8 : 12;
+        const maxHeight = Math.max(1, Math.floor(viewportHeight - rect.top - bottomGap));
+        suggestionsPopup.style.setProperty('--root-search-suggestions-max-height', maxHeight + 'px');
     };
 
     const closeSearchSuggestions = function () {
@@ -688,17 +712,22 @@
             const metaMarkup = safeMeta
                 ? '<span class="root-search-suggestion-meta">' + safeMeta + '</span>'
                 : '';
+            const removeMarkup = item.type === 'history'
+                ? '<button type="button" class="root-search-suggestion-remove" aria-label="' + escapeHtml(searchHistoryDeleteLabel) + '" title="' + escapeHtml(searchHistoryDeleteLabel) + '" data-root-search-history-remove="' + String(index) + '"></button>'
+                : '';
             return '' +
-                '<button type="button" id="' + optionId + '" class="root-search-suggestion" role="option" aria-selected="false" data-root-search-suggestion-index="' + String(index) + '">' +
+                '<div id="' + optionId + '" class="root-search-suggestion" role="option" aria-selected="false" data-root-search-suggestion-index="' + String(index) + '">' +
                     '<span class="root-search-suggestion-icon" data-suggestion-type="' + safeType + '" aria-hidden="true">' + iconMarkup + '</span>' +
                     '<span class="root-search-suggestion-copy">' +
                         '<span class="root-search-suggestion-label">' + safeLabel + '</span>' +
                         metaMarkup +
                     '</span>' +
-                '</button>';
+                    removeMarkup +
+                '</div>';
         }).join('');
         suggestionsPopup.hidden = false;
         suggestionsPopup.classList.add('is-open');
+        syncSearchSuggestionsGeometry();
         input.setAttribute('aria-expanded', 'true');
         input.setAttribute('aria-activedescendant', '');
     };
@@ -772,6 +801,13 @@
         });
 
         suggestionsPopup.addEventListener('click', function (event) {
+            const removeButton = event.target.closest('[data-root-search-history-remove]');
+            if (removeButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                removeRootSearchHistorySuggestion(Number(removeButton.getAttribute('data-root-search-history-remove')));
+                return;
+            }
             const option = event.target.closest('[data-root-search-suggestion-index]');
             if (!option) {
                 return;
@@ -868,12 +904,14 @@
 
     window.addEventListener('resize', function () {
         updateAdaptivePlaceholder();
+        syncSearchSuggestionsGeometry();
         if (enginePopup.classList.contains('is-open')) {
             positionPopup();
         }
     });
 
     window.addEventListener('scroll', function () {
+        syncSearchSuggestionsGeometry();
         if (enginePopup.classList.contains('is-open')) {
             positionPopup();
         }

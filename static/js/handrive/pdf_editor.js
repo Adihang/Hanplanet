@@ -210,13 +210,41 @@
         return fallback || "#111827";
     }
 
+    var PDF_FONT_CSS_FALLBACKS = {
+        system: "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+        "sans-serif": "Arial, Helvetica, sans-serif",
+        serif: "Georgia, \"Times New Roman\", serif",
+        monospace: "\"Courier New\", Menlo, Monaco, monospace",
+        "Apple SD Gothic Neo": "\"Apple SD Gothic Neo\", \"Malgun Gothic\", \"Noto Sans KR\", sans-serif",
+        "Malgun Gothic": "\"Malgun Gothic\", \"Apple SD Gothic Neo\", \"Noto Sans KR\", sans-serif",
+        "Noto Sans KR": "\"Noto Sans KR\", \"Apple SD Gothic Neo\", \"Malgun Gothic\", sans-serif",
+        "Nanum Gothic": "\"Nanum Gothic\", \"Noto Sans KR\", \"Apple SD Gothic Neo\", sans-serif",
+        Inter: "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+        "Segoe UI": "\"Segoe UI\", system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+        Roboto: "Roboto, Arial, Helvetica, sans-serif",
+        "Noto Sans": "\"Noto Sans\", Arial, Helvetica, sans-serif",
+        "Open Sans": "\"Open Sans\", Arial, Helvetica, sans-serif",
+        Calibri: "Calibri, Arial, Helvetica, sans-serif",
+        Cambria: "Cambria, Georgia, \"Times New Roman\", serif",
+        Garamond: "Garamond, Georgia, \"Times New Roman\", serif",
+        "Palatino Linotype": "\"Palatino Linotype\", Palatino, Georgia, serif",
+        Consolas: "Consolas, \"Courier New\", Menlo, Monaco, monospace",
+        Menlo: "Menlo, Monaco, \"Courier New\", monospace",
+        "SF Mono": "\"SF Mono\", Menlo, Monaco, \"Courier New\", monospace",
+    };
+
     function cssFontFamily(value) {
-        var family = String(value || "system");
-        if (family === "system") return "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif";
-        if (family === "sans-serif") return "Arial, Helvetica, sans-serif";
-        if (family === "serif") return "Georgia, \"Times New Roman\", serif";
-        if (family === "monospace") return "\"Courier New\", Menlo, Monaco, monospace";
-        return "\"" + family.replace(/"/g, "") + "\", " + (family === "Courier New" ? "monospace" : "sans-serif");
+        var family = String(value || "system").trim();
+        if (PDF_FONT_CSS_FALLBACKS[family]) return PDF_FONT_CSS_FALLBACKS[family];
+        return "\"" + family.replace(/"/g, "") + "\", sans-serif";
+    }
+
+    function syncFontFamilySelectPreview(select) {
+        if (!select) return;
+        select.style.fontFamily = cssFontFamily(select.value || "system");
+        Array.prototype.slice.call(select.options || []).forEach(function (option) {
+            option.style.fontFamily = cssFontFamily(option.value || "system");
+        });
     }
 
     function getTextBoxDefaultHeight(fontSize) {
@@ -635,7 +663,10 @@
             state.fontColor = normalizeColor(selected.color, state.fontColor);
             state.drawColor = state.fontColor;
         }
-        if (fontFamilySelect) fontFamilySelect.value = state.fontFamily;
+        if (fontFamilySelect) {
+            fontFamilySelect.value = state.fontFamily;
+            syncFontFamilySelectPreview(fontFamilySelect);
+        }
         if (fontSizeInput) fontSizeInput.value = String(Math.round(state.fontSize));
         if (fontColorInput) fontColorInput.value = state.fontColor;
         if (lineWidthInput) lineWidthInput.value = String(state.lineWidth);
@@ -644,6 +675,7 @@
 
     function applyTextStyleChange() {
         state.fontFamily = fontFamilySelect ? fontFamilySelect.value : state.fontFamily;
+        syncFontFamilySelectPreview(fontFamilySelect);
         state.fontSize = clamp(fontSizeInput ? fontSizeInput.value : state.fontSize, 8, 96);
         state.fontColor = normalizeColor(fontColorInput ? fontColorInput.value : state.fontColor, "#111827");
         state.drawColor = state.fontColor;
@@ -955,7 +987,10 @@
         state.fontColor = "#111827";
         if (pageList) pageList.innerHTML = "";
         if (lineWidthInput) lineWidthInput.value = "2.5";
-        if (fontFamilySelect) fontFamilySelect.value = "system";
+        if (fontFamilySelect) {
+            fontFamilySelect.value = "system";
+            syncFontFamilySelectPreview(fontFamilySelect);
+        }
         if (fontSizeInput) fontSizeInput.value = "18";
         if (fontColorInput) fontColorInput.value = "#111827";
         Array.prototype.slice.call(surface.querySelectorAll("[data-pdf-tool]")).forEach(function (button) {

@@ -22,11 +22,6 @@
         <button type="button" data-action="git-create-branch">{{ handrive_text.menu_git_create_branch }}</button>
         <button type="button" data-action="git-delete-branch">{{ handrive_text.menu_git_delete_branch }}</button>
     </div>
-    {% if handrive_can_manage_acl %}
-    <div class="handrive-context-menu-group" data-menu-group>
-        <button type="button" data-action="permissions">{{ handrive_text.menu_permissions }}</button>
-    </div>
-    {% endif %}
     <div class="handrive-context-menu-group" data-menu-group>
         <button type="button" data-action="share">{{ handrive_text.url_share_button }}</button>
         <button type="button" data-action="edit">{{ handrive_text.menu_edit }}</button>

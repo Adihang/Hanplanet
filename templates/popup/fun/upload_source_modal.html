@@ -1,18 +1,18 @@
-<div class="image-color-picker-modal-backdrop image-color-picker-source-modal-backdrop" data-upload-source-modal hidden>
-    <section class="image-color-picker-modal image-color-picker-source-modal" role="dialog" aria-modal="true" aria-labelledby="uploadSourceModalTitle">
-        <header class="image-color-picker-modal-head">
-            <h2 class="image-color-picker-modal-title" id="uploadSourceModalTitle">{{ upload_source_modal_title }}</h2>
-            <button class="image-color-picker-modal-close" type="button" data-upload-source-close aria-label="{{ handrive_close_label }}">×</button>
+<div class="media-tool-modal-backdrop" data-upload-source-modal hidden>
+    <section class="media-tool-modal media-upload-source-modal" role="dialog" aria-modal="true" aria-labelledby="uploadSourceModalTitle">
+        <header class="media-tool-modal-head">
+            <h2 class="media-tool-modal-title" id="uploadSourceModalTitle">{{ upload_source_modal_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with close_label=handrive_close_label upload_source_close=True %}
         </header>
-        <div class="image-color-picker-source-options">
-            <button class="image-color-picker-source-option" type="button" data-upload-source-local>
-                <span class="image-color-picker-source-option-icon">L</span>
-                <span class="image-color-picker-source-option-label">{{ upload_source_local_label }}</span>
+        <div class="media-upload-source-options">
+            <button class="media-upload-source-option" type="button" data-upload-source-local>
+                <span class="media-upload-source-option-icon">L</span>
+                <span class="media-upload-source-option-label">{{ upload_source_local_label }}</span>
             </button>
             {% if handrive_picker_enabled %}
-                <button class="image-color-picker-source-option" type="button" data-upload-source-handrive>
-                    <span class="image-color-picker-source-option-icon">H</span>
-                    <span class="image-color-picker-source-option-label">{{ upload_source_handrive_label }}</span>
+                <button class="media-upload-source-option" type="button" data-upload-source-handrive>
+                    <span class="media-upload-source-option-icon">H</span>
+                    <span class="media-upload-source-option-label">{{ upload_source_handrive_label }}</span>
                 </button>
             {% endif %}
         </div>

@@ -1,0 +1,11 @@
+{% firstof close_label handrive_text.close_label "닫기" as handrive_popup_close_label %}
+<button
+    type="button"
+    class="handrive-popup-close-btn"
+    {% if button_id %}id="{{ button_id }}"{% endif %}
+    {% if click_target_id %}data-handrive-click-target="{{ click_target_id }}"{% endif %}
+    {% if upload_source_close %}data-upload-source-close{% endif %}
+    {% if media_handrive_picker_close %}data-media-handrive-picker-close{% endif %}
+    aria-label="{{ handrive_popup_close_label }}"
+    title="{{ handrive_popup_close_label }}"
+><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg></button>

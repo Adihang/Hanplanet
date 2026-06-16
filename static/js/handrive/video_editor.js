@@ -34,6 +34,7 @@
     var videoStageSizeFrame = 0;
     var videoStageResizeObserver = null;
     var OVERLAY_BASE_WIDTH = 860;
+    var RANGE_EPSILON_SECONDS = 0.05;
 
     function init(options) {
         var opts = options || {};
@@ -204,6 +205,9 @@
     function bindEvents() {
         videoEl.addEventListener("loadedmetadata", onLoadedMetadata);
         videoEl.addEventListener("timeupdate", onTimeUpdate);
+        videoEl.addEventListener("play", onMediaPlay);
+        videoEl.addEventListener("seeking", onMediaSeek);
+        videoEl.addEventListener("seeked", onMediaSeek);
         if (resetBtn) resetBtn.addEventListener("click", onResetClick);
         if (startInput) startInput.addEventListener("input", onTimeInput);
         if (endInput) endInput.addEventListener("input", onTimeInput);
@@ -264,6 +268,9 @@
         if (videoEl) {
             videoEl.removeEventListener("loadedmetadata", onLoadedMetadata);
             videoEl.removeEventListener("timeupdate", onTimeUpdate);
+            videoEl.removeEventListener("play", onMediaPlay);
+            videoEl.removeEventListener("seeking", onMediaSeek);
+            videoEl.removeEventListener("seeked", onMediaSeek);
         }
         if (resetBtn) resetBtn.removeEventListener("click", onResetClick);
         if (startInput) startInput.removeEventListener("input", onTimeInput);
@@ -332,11 +339,19 @@
     }
 
     function onTimeUpdate() {
-        var end = getEndTime();
-        if (end && getMediaCurrentTime() >= end) {
-            pauseMedia();
-            setMediaCurrentTime(getStartTime());
-        }
+        enforceSelectedPlaybackRange({ pauseAtEnd: !isMediaPaused() });
+        syncTimeDisplays();
+        renderSubtitleOverlays();
+    }
+
+    function onMediaPlay() {
+        enforceSelectedPlaybackRange({ restartAtEnd: true });
+        syncTimeDisplays();
+        renderSubtitleOverlays();
+    }
+
+    function onMediaSeek() {
+        enforceSelectedPlaybackRange({ clampOnly: true });
         syncTimeDisplays();
         renderSubtitleOverlays();
     }
@@ -451,6 +466,7 @@
     }
 
     function onSubtitleStyleInput() {
+        syncSubtitleFontSelectPreview();
         updateSelectedSubtitle({
             fontFamily: subtitleFontFamilySelect ? subtitleFontFamilySelect.value : "system",
             fontSize: clamp(Number(subtitleFontSizeInput && subtitleFontSizeInput.value) || 28, 8, 160),
@@ -979,7 +995,10 @@
             subtitleSelect.value = selected ? selected.id : currentValue;
         }
         if (subtitleInput && document.activeElement !== subtitleInput) subtitleInput.value = selected ? selected.text || "" : "";
-        if (subtitleFontFamilySelect) subtitleFontFamilySelect.value = selected ? selected.fontFamily || "system" : "system";
+        if (subtitleFontFamilySelect) {
+            subtitleFontFamilySelect.value = selected ? selected.fontFamily || "system" : "system";
+            syncSubtitleFontSelectPreview();
+        }
         if (subtitleFontSizeInput && document.activeElement !== subtitleFontSizeInput) subtitleFontSizeInput.value = selected ? String(selected.fontSize || 28) : "28";
         if (subtitleBoldButton) subtitleBoldButton.setAttribute("aria-pressed", selected && selected.fontBold ? "true" : "false");
         if (subtitleItalicButton) subtitleItalicButton.setAttribute("aria-pressed", selected && selected.fontItalic ? "true" : "false");
@@ -1161,11 +1180,51 @@
         return '"' + value.replace(/"/g, "") + '", sans-serif';
     }
 
+    function syncSubtitleFontSelectPreview() {
+        if (!subtitleFontFamilySelect) return;
+        subtitleFontFamilySelect.style.fontFamily = getSubtitleFontFamilyCss(subtitleFontFamilySelect.value || "system");
+        Array.prototype.slice.call(subtitleFontFamilySelect.options || []).forEach(function (option) {
+            option.style.fontFamily = getSubtitleFontFamilyCss(option.value || "system");
+        });
+    }
+
     function playFromStart() {
         setMediaCurrentTime(getStartTime());
         renderSubtitleOverlays();
         playMedia();
         syncTimeDisplays();
+    }
+
+    function enforceSelectedPlaybackRange(options) {
+        if (!state.duration) return false;
+        var settings = options || {};
+        var start = getStartTime();
+        var end = getEndTime();
+        if (end && end < start) end = start;
+        var current = getMediaCurrentTime();
+        if (!Number.isFinite(current)) current = 0;
+
+        if (current < start - RANGE_EPSILON_SECONDS) {
+            setMediaCurrentTime(start);
+            return true;
+        }
+        if (!end) {
+            return false;
+        }
+        if (settings.restartAtEnd && current >= end - RANGE_EPSILON_SECONDS) {
+            setMediaCurrentTime(start);
+            return true;
+        }
+        if (settings.pauseAtEnd && current >= end - RANGE_EPSILON_SECONDS) {
+            pauseMedia();
+            setMediaCurrentTime(start);
+            return true;
+        }
+        if (current > end + RANGE_EPSILON_SECONDS) {
+            setMediaCurrentTime(settings.clampOnly ? end : start);
+            return true;
+        }
+        return false;
     }
 
     function clampTimeInputs() {
@@ -1328,8 +1387,16 @@
         if (!player) return;
         player.off("loadedmetadata", onLoadedMetadata);
         player.off("durationchange", onLoadedMetadata);
+        player.off("timeupdate", onTimeUpdate);
+        player.off("play", onMediaPlay);
+        player.off("seeking", onMediaSeek);
+        player.off("seeked", onMediaSeek);
         player.on("loadedmetadata", onLoadedMetadata);
         player.on("durationchange", onLoadedMetadata);
+        player.on("timeupdate", onTimeUpdate);
+        player.on("play", onMediaPlay);
+        player.on("seeking", onMediaSeek);
+        player.on("seeked", onMediaSeek);
     }
 
     function unbindVideoPlayerMetadataEvents() {
@@ -1337,6 +1404,10 @@
         if (!player) return;
         player.off("loadedmetadata", onLoadedMetadata);
         player.off("durationchange", onLoadedMetadata);
+        player.off("timeupdate", onTimeUpdate);
+        player.off("play", onMediaPlay);
+        player.off("seeking", onMediaSeek);
+        player.off("seeked", onMediaSeek);
     }
 
     function getVideoPlayer() {
@@ -1356,6 +1427,14 @@
         var player = getVideoPlayer();
         var duration = player ? Number(player.duration()) : Number(videoEl && videoEl.duration);
         return Number.isFinite(duration) && duration > 0 ? duration : 0;
+    }
+
+    function isMediaPaused() {
+        var player = getVideoPlayer();
+        if (player) {
+            return Boolean(player.paused());
+        }
+        return !videoEl || Boolean(videoEl.paused);
     }
 
     function syncDurationFromMedia() {

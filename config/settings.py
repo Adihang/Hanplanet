@@ -287,6 +287,7 @@ MIDDLEWARE = [
     "main.middleware.GlobalRateLimitMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "main.middleware.HanplanetAccountActiveCookieMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -523,11 +524,6 @@ DEFAULT_FROM_EMAIL = load_optional_secret("DEFAULT_FROM_EMAIL", "noreply@hanplan
 TWO_FA_CODE_EXPIRY_MINUTES = 10
 TWO_FA_DEVICE_COOKIE_NAME = "hp_device_id"
 TWO_FA_DEVICE_TRUSTED_DAYS = 3
-HANDRIVE_2FA_BYPASS_USERNAMES = {
-    item.strip().casefold()
-    for item in load_optional_secret("HANDRIVE_2FA_BYPASS_USERNAMES", "").split(",")
-    if item.strip()
-}
 
 # ── HPmail ────────────────────────────────────────────────────────────────────
 HPMAIL_DOMAIN = load_optional_secret("HPMAIL_DOMAIN", "hanplanet.com")

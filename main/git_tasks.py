@@ -24,7 +24,6 @@ from .forgejo_client import ForgejoClient
 from git.models import GitRepository, GitUserMapping
 
 logger = logging.getLogger(__name__)
-DOCS_PUBLIC_WRITE_GROUP_NAME = "__DOCS_PUBLIC_ALL__"
 
 
 def _make_placeholder_png() -> bytes:
@@ -117,11 +116,7 @@ def _get_owner_visible_root_relative(owner) -> str:
     username = str(getattr(owner, "username", "") or "").strip()
     if not username:
         return ""
-    if owner.is_superuser:
-        return f"media/HanDrive/users/{username}"
-    if owner.groups.filter(name=DOCS_PUBLIC_WRITE_GROUP_NAME).exists():
-        return f"users/{username}"
-    return ""
+    return f"users/{username}"
 
 
 def _get_repo_mount_relative_path(owner, repo_name: str) -> str:

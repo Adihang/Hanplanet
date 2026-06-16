@@ -1,13 +1,16 @@
 <div id="handrive-folder-modal" class="handrive-folder-modal" hidden>
     <div class="handrive-folder-modal-backdrop" id="handrive-folder-modal-backdrop"></div>
     <div class="handrive-folder-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-folder-modal-title">
-        <h2 id="handrive-folder-modal-title" class="handrive-folder-modal-title">{{ handrive_text.folder_modal_title }}</h2>
+        <header class="handrive-popup-head">
+            <h2 id="handrive-folder-modal-title" class="handrive-popup-title">{{ handrive_text.folder_modal_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with click_target_id="handrive-folder-cancel-btn" %}
+        </header>
         <div class="handrive-folder-modal-path" id="handrive-folder-target-path">/handrive</div>
         <label class="handrive-field handrive-field-full">
             <span>{{ handrive_text.folder_name_label }}</span>
             <input type="text" id="handrive-folder-name-input" placeholder="{{ handrive_text.folder_name_placeholder }}">
         </label>
-        <div class="handrive-folder-modal-actions">
+        <div class="handrive-popup-actions">
             <button type="button" class="ui-btn" id="handrive-folder-cancel-btn">{{ handrive_text.cancel }}</button>
             <button type="button" class="ui-btn ui-btn-primary" id="handrive-folder-create-btn">{{ handrive_text.create_button }}</button>
         </div>

@@ -1,12 +1,12 @@
-<div class="image-color-picker-modal-backdrop" data-image-color-picker-handrive-modal hidden>
-    <section class="image-color-picker-modal image-color-picker-handrive-modal" role="dialog" aria-modal="true" aria-labelledby="imageColorPickerHandriveTitle">
-        <header class="image-color-picker-modal-head">
-            <h2 class="image-color-picker-modal-title" id="imageColorPickerHandriveTitle">{{ handrive_modal_title }}</h2>
-            <button class="image-color-picker-modal-close" type="button" data-image-color-picker-handrive-close aria-label="{{ handrive_close_label }}">×</button>
+<div class="media-tool-modal-backdrop" data-media-handrive-picker-modal hidden>
+    <section class="media-tool-modal media-handrive-picker-modal" role="dialog" aria-modal="true" aria-labelledby="imageColorPickerHandriveTitle">
+        <header class="media-tool-modal-head">
+            <h2 class="media-tool-modal-title" id="imageColorPickerHandriveTitle">{{ handrive_modal_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with close_label=handrive_close_label media_handrive_picker_close=True %}
         </header>
-        <div class="image-color-picker-handrive-list handrive-list-pane handrive-sync-modal-list-pane">
-            <ul class="handrive-list" data-image-color-picker-handrive-list role="list" aria-label="{{ handrive_modal_title }}"></ul>
+        <div class="media-handrive-picker-list-wrap">
+            <ul class="media-handrive-picker-list" data-media-handrive-picker-list role="list" aria-label="{{ handrive_modal_title }}"></ul>
         </div>
-        <p class="image-color-picker-handrive-status" data-image-color-picker-handrive-status role="status" aria-live="polite"></p>
+        <p class="media-handrive-picker-status" data-media-handrive-picker-status role="status" aria-live="polite"></p>
     </section>
 </div>

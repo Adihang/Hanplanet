@@ -48,7 +48,7 @@
                 {% include "partials/ui_controls_stack.html" %}
             </div>
             {% endif %}
-            <div class="handrive-toolbar-actions ui-toolbar-actions">
+            <div class="handrive-toolbar-actions ui-toolbar-actions handrive-icon-actions">
                 {% if doc_can_edit %}
                     <button class="handrive-icon-btn" type="button" id="handrive-url-share-btn" aria-label="{{ handrive_text.url_share_button }}" title="{{ handrive_text.url_share_button }}">
                         <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="4" r="2"/><circle cx="15" cy="16" r="2"/><circle cx="5" cy="10" r="2"/><line x1="7" y1="9" x2="13" y2="5"/><line x1="7" y1="11" x2="13" y2="15"/></svg>
@@ -59,7 +59,7 @@
                         <svg class="portfolio-print-btn-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V4h10v5"/><rect x="4" y="9" width="16" height="8" rx="2"/><rect x="8" y="15" width="8" height="5"/><line x1="9" y1="18" x2="15" y2="18"/></svg>
                     </button>
                 {% endif %}
-                <a class="handrive-icon-btn" href="{{ handrive_api_download_url }}?path={{ doc_relative_path|urlencode }}{% if handrive_shared_owner_username and handrive_shared_slug %}&share_owner={{ handrive_shared_owner_username|urlencode }}&share_slug={{ handrive_shared_slug|urlencode }}{% endif %}" aria-label="{{ handrive_text.download_button }}" title="{{ handrive_text.download_button }}">
+                <a class="handrive-icon-btn" href="{{ handrive_api_download_url }}?path={{ doc_relative_path|urlencode }}{% if handrive_shared_owner_username and handrive_shared_slug %}&share_owner={{ handrive_shared_owner_username|urlencode }}&share_slug={{ handrive_shared_slug|urlencode }}{% endif %}{% if handrive_admin_user %}&{{ handrive_admin_user_param|default:'handrive_user'|urlencode }}={{ handrive_admin_user|urlencode }}{% endif %}" aria-label="{{ handrive_text.download_button }}" title="{{ handrive_text.download_button }}">
                     <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" y1="3" x2="10" y2="13"/><polyline points="6,9 10,13 14,9"/><line x1="4" y1="17" x2="16" y2="17"/></svg>
                 </a>
                 {% if doc_is_spreadsheet_file and doc_can_edit %}
@@ -104,6 +104,8 @@
     data-handrive-shared-owner-username="{{ handrive_shared_owner_username|default:'' }}"
     data-handrive-shared-slug="{{ handrive_shared_slug|default:'' }}"
     data-handrive-shared-root-path="{{ handrive_shared_root_path|default:'' }}"
+    data-handrive-admin-user="{{ handrive_admin_user|default:''|escape }}"
+    data-handrive-admin-user-param="{{ handrive_admin_user_param|default:'handrive_user'|escape }}"
     data-list-api-url="{{ handrive_api_list_url }}"
     data-download-api-url="{{ handrive_api_download_url }}"
     data-spreadsheet-save-api-url="{{ handrive_api_spreadsheet_save_url }}"
@@ -152,5 +154,6 @@
 {% include "popup/handrive/page_help_modal.html" %}
 
 {{ handrive_text|json_script:"handrive-i18n" }}
+{{ doc_share_allowed_users|json_script:"handrive-doc-share-allowed-users" }}
 {% include 'handrive/_assets_script.html' %}
 {% endblock %}

@@ -186,7 +186,7 @@
             var entry = normalizedEntries[0];
             return entry.name || getEntryEditableName(entry) || getCurrentFolderName(entry.path || "") || fallbackLabel || "";
         }
-        return formatTemplate(t("js_permission_target_multiple", "{count}개 항목"), {
+        return formatTemplate(t("js_selected_items_count", "{count}개 항목"), {
             count: normalizedEntries.length,
         });
     }
@@ -399,7 +399,6 @@
         var contextDeleteButton = buttons.deleteButton || null;
         var contextNewFolderButton = buttons.newFolder || null;
         var contextNewDocButton = buttons.newDoc || null;
-        var contextPermissionsButton = buttons.permissions || null;
         var contextGitCreateRepoButton = buttons.gitCreateRepo || null;
         var contextGitManageRepoButton = buttons.gitManageRepo || null;
         var contextGitDeleteRepoButton = buttons.gitDeleteRepo || null;
@@ -421,7 +420,6 @@
         setContextButtonVisible(contextDeleteButton, false);
         setContextButtonVisible(contextNewFolderButton, false);
         setContextButtonVisible(contextNewDocButton, false);
-        setContextButtonVisible(contextPermissionsButton, false);
         setContextButtonVisible(contextGitCreateRepoButton, false);
         setContextButtonVisible(contextGitManageRepoButton, false);
         setContextButtonVisible(contextGitDeleteRepoButton, false);

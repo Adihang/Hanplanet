@@ -23,7 +23,7 @@
         return;
     }
 
-    // ── localStorage 유틸 ──────────────────────────────────────────────
+    // ── 저장 유틸 ─────────────────────────────────────────────────────
     const ls = {
         get:    (k)    => { try { return localStorage.getItem(k); }    catch { return null; } },
         set:    (k, v) => { try { localStorage.setItem(k, v); }        catch {} },
@@ -31,6 +31,11 @@
     };
     const timeKey = (src) => `vjs-time-${encodeURIComponent(src)}`;
     const MEDIA_LOOP_STORAGE_KEY = 'handrive-media-loop-enabled';
+    const MEDIA_VOLUME_COOKIE_NAME = 'handrive-media-volume';
+    const MEDIA_MUTED_COOKIE_NAME = 'handrive-media-muted';
+    const LEGACY_MEDIA_AUDIO_VOLUME_STORAGE_KEY = 'handrive-media-audio-volume';
+    const MEDIA_VOLUME_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+    let mediaVolumeSourceId = 0;
 
     // ── Player registry ────────────────────────────────────────────────
     const players = new Map(); // videoEl → { player, cleanups[] }
@@ -62,6 +67,93 @@
 
     function textByLang(ko, en) {
         return getUiLang() === 'en' ? en : ko;
+    }
+
+    function parseStoredVolume(value) {
+        if (value === null || value === undefined || String(value).trim() === '') {
+            return null;
+        }
+        const parsedValue = Number(value);
+        if (!Number.isFinite(parsedValue)) {
+            return null;
+        }
+        return Math.max(0, Math.min(1, parsedValue));
+    }
+
+    function getCookieValue(name) {
+        const prefix = encodeURIComponent(name) + '=';
+        try {
+            const parts = String(document.cookie || '').split(';');
+            for (let index = 0; index < parts.length; index += 1) {
+                const part = parts[index].trim();
+                if (part.indexOf(prefix) === 0) {
+                    return decodeURIComponent(part.slice(prefix.length));
+                }
+            }
+        } catch (_) {}
+        return '';
+    }
+
+    function setCookieValue(name, value) {
+        try {
+            let cookie = encodeURIComponent(name) + '=' + encodeURIComponent(String(value))
+                + '; Max-Age=' + MEDIA_VOLUME_COOKIE_MAX_AGE
+                + '; Path=/; SameSite=Lax';
+            if (window.location && window.location.protocol === 'https:') {
+                cookie += '; Secure';
+            }
+            document.cookie = cookie;
+        } catch (_) {}
+    }
+
+    function getStoredMediaVolume() {
+        const cookieVolume = parseStoredVolume(getCookieValue(MEDIA_VOLUME_COOKIE_NAME));
+        if (cookieVolume !== null) {
+            return cookieVolume;
+        }
+        const legacyVolume = parseStoredVolume(ls.get(LEGACY_MEDIA_AUDIO_VOLUME_STORAGE_KEY));
+        if (legacyVolume !== null) {
+            setCookieValue(MEDIA_VOLUME_COOKIE_NAME, legacyVolume);
+            return legacyVolume;
+        }
+        return 1;
+    }
+
+    function storeMediaVolume(volume) {
+        const normalizedVolume = parseStoredVolume(volume);
+        if (normalizedVolume === null) {
+            return;
+        }
+        setCookieValue(MEDIA_VOLUME_COOKIE_NAME, normalizedVolume);
+    }
+
+    function getStoredMediaMuted() {
+        return getCookieValue(MEDIA_MUTED_COOKIE_NAME) === '1';
+    }
+
+    function storeMediaMuted(muted) {
+        setCookieValue(MEDIA_MUTED_COOKIE_NAME, muted ? '1' : '0');
+    }
+
+    function dispatchMediaVolumeChange(volume, muted, sourceId) {
+        window.dispatchEvent(new CustomEvent('handrive:media-volume-change', {
+            detail: {
+                volume: Math.max(0, Math.min(1, Number(volume) || 0)),
+                muted: Boolean(muted),
+                sourceId: sourceId || '',
+            },
+        }));
+    }
+
+    function shouldPersistMediaVolume(el) {
+        if (!el || typeof el.closest !== 'function') {
+            return true;
+        }
+        return !(
+            el.id === 've-video' ||
+            el.closest('#handrive-video-editor-surface') ||
+            el.closest('.handrive-video-editor-surface')
+        );
     }
 
     function getHandriveI18nText(key, fallback) {
@@ -211,6 +303,7 @@
         setupDelayedMenuPopups(player, cleanups);
         setupResponsiveControlBar(player, cleanups);
         setupLoop(player, cleanups);
+        setupVolumePreference(player, el, cleanups);
         setupPip(player, cleanups);
         setupCast(player);
         setupThumbnailPreview(player, el, cleanups);
@@ -232,7 +325,7 @@
         });
         const startupSrc = startupSource.src;
         const startupType = startupSource.type;
-        const preloadMode = isPreview ? 'metadata' : 'auto';
+        const preloadMode = (isPreview || hasHlsFallback) ? 'metadata' : 'auto';
         el.preload = preloadMode;
 
         const player = videojs(el, {
@@ -269,7 +362,7 @@
         }
 
         // 상세 재생 화면은 idle 시점에 미리 로드를 걸어 첫 클릭 지연을 줄인다.
-        if (!isPreview && startupSrc) {
+        if (!isPreview && startupSrc && !hasHlsFallback) {
             player.ready(() => {
                 const hasStartedPlayback = () => {
                     return Number(player.currentTime() || 0) > 0.05 || !player.paused();
@@ -326,6 +419,54 @@
             players.forEach(({ player: other }) => {
                 if (other !== player && !other.paused()) other.pause();
             });
+        });
+    }
+
+    function setupVolumePreference(player, el, cleanups) {
+        if (!shouldPersistMediaVolume(el)) {
+            return;
+        }
+        const sourceId = 'video-' + (++mediaVolumeSourceId);
+        let applyingPreference = false;
+        const applyPreference = (volume, muted) => {
+            const normalizedVolume = parseStoredVolume(volume);
+            applyingPreference = true;
+            try {
+                if (normalizedVolume !== null) {
+                    player.volume(normalizedVolume);
+                }
+                player.muted(Boolean(muted));
+            } catch (_) {
+            } finally {
+                window.setTimeout(() => {
+                    applyingPreference = false;
+                }, 0);
+            }
+        };
+        const onVolumeChange = () => {
+            if (applyingPreference) {
+                return;
+            }
+            const volume = Math.max(0, Math.min(1, Number(player.volume()) || 0));
+            const muted = Boolean(player.muted());
+            storeMediaVolume(volume);
+            storeMediaMuted(muted);
+            dispatchMediaVolumeChange(volume, muted, sourceId);
+        };
+        const onGlobalVolumeChange = (event) => {
+            const detail = event && event.detail ? event.detail : {};
+            if (detail.sourceId === sourceId) {
+                return;
+            }
+            applyPreference(detail.volume, detail.muted);
+        };
+
+        player.ready(() => applyPreference(getStoredMediaVolume(), getStoredMediaMuted()));
+        player.on('volumechange', onVolumeChange);
+        window.addEventListener('handrive:media-volume-change', onGlobalVolumeChange);
+        cleanups.push(() => {
+            try { player.off('volumechange', onVolumeChange); } catch (_) {}
+            window.removeEventListener('handrive:media-volume-change', onGlobalVolumeChange);
         });
     }
 
@@ -1395,10 +1536,17 @@
         let hlsSwitching = false;
         let hlsActive = false;
         let hlsSwitchTimer = null;
+        let hlsPreparationTimer = null;
+        let hlsReadyProbeTimer = null;
+        let hlsReadyProbeIdleId = null;
+        let hlsReadyControlButton = null;
+        let hlsStatusInFlight = false;
+        let pendingHlsPreparationOptions = null;
         let hlsPlaybackPending = false;
         let resumeAfterHlsSwitch = false;
         let userWantsPlayback = false;
         let latestHlsStatus = '';
+        let hlsPollingOptions = {};
         let disposed = false;
         const hlsAbortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
 
@@ -1434,16 +1582,37 @@
                 hlsSwitchTimer = null;
             }
         }
+        function clearHlsReadyProbe() {
+            if (hlsReadyProbeTimer) {
+                clearTimeout(hlsReadyProbeTimer);
+                hlsReadyProbeTimer = null;
+            }
+            if (hlsReadyProbeIdleId && 'cancelIdleCallback' in window) {
+                window.cancelIdleCallback(hlsReadyProbeIdleId);
+            }
+            hlsReadyProbeIdleId = null;
+        }
         cleanups.push(stopPoll);
         cleanups.push(stopHlsSwitchTimer);
         cleanups.push(() => {
             disposed = true;
+            if (hlsPreparationTimer) {
+                clearTimeout(hlsPreparationTimer);
+                hlsPreparationTimer = null;
+            }
             if (hlsAbortController) {
                 try { hlsAbortController.abort(); } catch (_) {}
             }
             if (qualitySelectorRetryTimer) {
                 clearTimeout(qualitySelectorRetryTimer);
                 qualitySelectorRetryTimer = null;
+            }
+            pendingHlsPreparationOptions = null;
+            clearHlsReadyProbe();
+            if (hlsReadyControlButton) {
+                hlsReadyControlButton.removeEventListener('click', onHlsReadyControlClick);
+                hlsReadyControlButton.remove();
+                hlsReadyControlButton = null;
             }
             player.handriveHlsSwitching_ = false;
             player.handriveHlsSourceActive_ = false;
@@ -1461,6 +1630,7 @@
         player.on('playing', () => {
             userWantsPlayback = true;
             markHlsPlaybackReady();
+            scheduleNativeHlsPreparation();
         });
         player.on('loadeddata', markHlsPlaybackReady);
         player.on('canplay', markHlsPlaybackReady);
@@ -1526,6 +1696,16 @@
             );
         }
 
+        function handleOptionalVideoScriptsReady() {
+            if (sourceIsHls()) {
+                enableQualitySelector();
+            }
+        }
+        window.addEventListener('handrive:video-optional-scripts-ready', handleOptionalVideoScriptsReady);
+        cleanups.push(() => {
+            window.removeEventListener('handrive:video-optional-scripts-ready', handleOptionalVideoScriptsReady);
+        });
+
         function hasCurrentSource() {
             const currentSource = typeof player.currentSource === 'function' ? player.currentSource() : null;
             return Boolean(player.currentSrc() || (currentSource && currentSource.src));
@@ -1576,6 +1756,7 @@
 
         // HLS 소스로 전환 (재생 중이면 위치 보존)
         function switchToHls(options = {}) {
+            hideHlsReadyControl();
             if (sourceIsHls()) {
                 enableQualitySelector();
                 if (options.resume || userWantsPlayback) {
@@ -1611,6 +1792,65 @@
             }, 12000);
         }
 
+        function getOrCreateHlsReadyControlButton() {
+            const barComponent = player.getChild('controlBar');
+            const bar = barComponent && typeof barComponent.el === 'function' ? barComponent.el() : null;
+            if (!bar) return null;
+            if (hlsReadyControlButton && hlsReadyControlButton.isConnected) {
+                return hlsReadyControlButton;
+            }
+
+            const button = document.createElement('button');
+            const icon = document.createElement('span');
+            button.type = 'button';
+            button.className = 'vjs-control vjs-button vjs-handrive-hls-ready-button vjs-hidden';
+            button.hidden = true;
+            button.disabled = true;
+            button.setAttribute('aria-label', textByLang('화질 선택', 'Select quality'));
+            button.setAttribute('title', textByLang('화질 선택', 'Select quality'));
+            icon.className = 'vjs-icon-placeholder';
+            icon.setAttribute('aria-hidden', 'true');
+            icon.textContent = 'HD';
+            button.appendChild(icon);
+            button.addEventListener('click', onHlsReadyControlClick);
+            hlsReadyControlButton = button;
+
+            const insertBefore = bar.querySelector('.vjs-pip-button, .vjs-fullscreen-control');
+            bar.insertBefore(button, insertBefore || null);
+            return button;
+        }
+
+        function setHlsReadyControlVisible(visible) {
+            const button = visible ? getOrCreateHlsReadyControlButton() : hlsReadyControlButton;
+            if (!button) return;
+            const shouldShow = Boolean(visible);
+            button.hidden = !shouldShow;
+            button.disabled = !shouldShow;
+            button.classList.toggle('vjs-hidden', !shouldShow);
+            button.classList.toggle('is-hls-ready', shouldShow);
+        }
+
+        function showHlsReadyControl() {
+            if (!startupSrc) {
+                useHlsWhenReady({ resume: userWantsPlayback });
+                return;
+            }
+            setHlsLoading(false);
+            hideBadge();
+            setHlsReadyControlVisible(true);
+        }
+
+        function hideHlsReadyControl() {
+            setHlsReadyControlVisible(false);
+        }
+
+        function onHlsReadyControlClick(event) {
+            if (latestHlsStatus !== 'ready' || sourceIsHls()) return;
+            event.preventDefault();
+            event.stopPropagation();
+            useHlsWhenReady({ resume: userWantsPlayback || !player.paused() });
+        }
+
         // 트랜스코딩 진행 배지
         function getOrCreateBadge() {
             let b = player.el().querySelector('.vjs-hls-badge');
@@ -1628,10 +1868,13 @@
         }
         function hideBadge() {
             const b = player.el().querySelector('.vjs-hls-badge');
-            if (b) b.hidden = true;
+            if (b) {
+                b.hidden = true;
+            }
         }
         function showHlsUnavailableBadge() {
             setHlsLoading(false);
+            hideHlsReadyControl();
             if (startupSrc) {
                 hideBadge();
                 return;
@@ -1640,6 +1883,7 @@
         }
         function useHlsWhenReady(options = {}) {
             hideBadge();
+            hideHlsReadyControl();
             switchToHls(options);
         }
 
@@ -1655,7 +1899,13 @@
                 return;
             }
             if (!startupSrc) {
-                kickoffHlsTranscoding();
+                requestHlsPreparation({
+                    allowPolling: true,
+                    allowTranscode: true,
+                    forceSwitch: true,
+                    resume: true,
+                    showPreparing: options.showPreparing !== false,
+                });
             }
             if (options.showPreparing !== false && !hasCurrentSource()) {
                 setHlsLoading(true);
@@ -1697,6 +1947,58 @@
             });
         }
 
+        function handleHlsStatus(data, options = {}) {
+            if (shouldIgnoreHlsAsync()) return;
+            const status = String(data && data.status || '');
+            latestHlsStatus = status;
+            if (status === 'ready') {
+                stopPoll();
+                if (options.forceSwitch || !startupSrc) {
+                    useHlsWhenReady({ resume: Boolean(options.resume || userWantsPlayback) });
+                } else {
+                    showHlsReadyControl();
+                }
+            } else if (status === 'error') {
+                stopPoll();
+                showHlsUnavailableBadge();
+            } else if (status === 'not_started') {
+                if (options.allowTranscode) {
+                    kickoffHlsTranscoding(options);
+                } else if (!startupSrc) {
+                    showBadge('화질 선택 준비 중... 0%');
+                }
+            } else if (options.allowPolling) {
+                showBadge(`화질 선택 준비 중... ${data.progress || 0}%`);
+                startPolling(options);
+            }
+        }
+
+        function requestHlsPreparation(options = {}) {
+            if (sourceIsHls()) {
+                enableQualitySelector();
+                if (options.resume || userWantsPlayback) {
+                    player.play().catch(() => {});
+                }
+                return;
+            }
+            if (hlsStatusInFlight) {
+                pendingHlsPreparationOptions = Object.assign({}, pendingHlsPreparationOptions || {}, options);
+                return;
+            }
+            hlsStatusInFlight = true;
+            fetchHlsStatus()
+                .then(data => handleHlsStatus(data, options))
+                .catch(handleHlsFetchError)
+                .finally(() => {
+                    hlsStatusInFlight = false;
+                    const pendingOptions = pendingHlsPreparationOptions;
+                    pendingHlsPreparationOptions = null;
+                    if (pendingOptions && !shouldIgnoreHlsAsync()) {
+                        requestHlsPreparation(pendingOptions);
+                    }
+                });
+        }
+
         function fetchHlsStatus() {
             return hlsFetch(statusUrl).then(r => {
                 if (!r.ok) {
@@ -1706,34 +2008,27 @@
             });
         }
 
-        function startPolling() {
+        function startPolling(options = {}) {
+            hlsPollingOptions = Object.assign({}, hlsPollingOptions, options);
             if (pollTimer) return;
             pollTimer = setInterval(() => {
                 fetchHlsStatus()
                     .then(d => {
-                        if (shouldIgnoreHlsAsync()) return;
-                        latestHlsStatus = String(d.status || '');
-                        if (d.status === 'ready') {
-                            stopPoll();
-                            useHlsWhenReady();
-                        } else if (d.status === 'error') {
-                            stopPoll();
-                            showHlsUnavailableBadge();
-                        } else {
-                            showBadge(`화질 선택 준비 중... ${d.progress || 0}%`);
-                        }
+                        handleHlsStatus(d, hlsPollingOptions);
                     })
                     .catch(handleHlsFetchError);
             }, POLL_MS);
         }
 
-        function kickoffHlsTranscoding() {
+        function kickoffHlsTranscoding(options = {}) {
             if (hlsKickoffStarted) return;
             hlsKickoffStarted = true;
             if (userWantsPlayback) {
                 setHlsLoading(true);
             }
-            showBadge('화질 선택 준비 중... 0%');
+            if (options.showPreparing !== false) {
+                showBadge('화질 선택 준비 중... 0%');
+            }
             hlsFetch(manifestUrl).then(r => {
                 if (!r.ok && r.status !== 202) {
                     throw new Error('HLS manifest failed');
@@ -1741,19 +2036,43 @@
                 return r;
             }).then(() => {
                 if (!shouldIgnoreHlsAsync()) {
-                    startPolling();
+                    startPolling(options);
                 }
             }).catch(handleHlsFetchError);
         }
 
-        function deferHlsKickoffUntilStartupBuffered() {
-            const kickoffAfterStartup = () => {
-                if (player.isDisposed && player.isDisposed()) return;
-                kickoffHlsTranscoding();
+        function scheduleNativeHlsPreparation() {
+            if (!canUseNativeStartupSource || hlsPreparationTimer || hlsKickoffStarted || sourceIsHls()) return;
+            if (latestHlsStatus === 'ready') return;
+            hlsPreparationTimer = setTimeout(() => {
+                hlsPreparationTimer = null;
+                if (shouldIgnoreHlsAsync() || player.paused()) return;
+                requestHlsPreparation({
+                    allowPolling: true,
+                    allowTranscode: true,
+                    showPreparing: false,
+                });
+            }, 6000);
+        }
+
+        function scheduleHlsReadyProbe() {
+            if (!startupSrc || latestHlsStatus === 'ready' || sourceIsHls()) return;
+            if (hlsReadyProbeTimer || hlsReadyProbeIdleId) return;
+            const runProbe = () => {
+                hlsReadyProbeTimer = null;
+                hlsReadyProbeIdleId = null;
+                if (shouldIgnoreHlsAsync() || sourceIsHls()) return;
+                requestHlsPreparation({
+                    allowPolling: false,
+                    allowTranscode: false,
+                    showPreparing: false,
+                });
             };
-            player.one('canplay', kickoffAfterStartup);
-            player.one('loadeddata', kickoffAfterStartup);
-            player.one('error', kickoffHlsTranscoding);
+            if ('requestIdleCallback' in window) {
+                hlsReadyProbeIdleId = window.requestIdleCallback(runProbe, { timeout: 1800 });
+            } else {
+                hlsReadyProbeTimer = setTimeout(runProbe, 900);
+            }
         }
 
         function stopHlsFallback() {
@@ -1778,32 +2097,7 @@
         });
 
         bindPlayIntentHandlers();
-
-        // 상태 조회 → 필요하면 트랜스코딩 시작
-        fetchHlsStatus()
-            .then(data => {
-                if (shouldIgnoreHlsAsync()) return;
-                latestHlsStatus = String(data.status || '');
-                if (data.status === 'ready') {
-                    // HLS가 준비되면 바로 전환해 control bar에 화질 선택기를 만든다.
-                    useHlsWhenReady();
-                } else if (data.status === 'error') {
-                    showHlsUnavailableBadge();
-                } else {
-                    // not_started 또는 transcoding → 첫 재생 버퍼링을 방해하지 않도록 가능하면 지연
-                    if (data.status === 'not_started') {
-                        if (canUseNativeStartupSource) {
-                            deferHlsKickoffUntilStartupBuffered();
-                            return;
-                        }
-                        kickoffHlsTranscoding();
-                        return;
-                    }
-                    showBadge(`화질 선택 준비 중... ${data.progress || 0}%`);
-                    startPolling();
-                }
-            })
-            .catch(handleHlsFetchError); // 상태 조회 실패 시 fallback MP4 그대로
+        scheduleHlsReadyProbe();
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────

@@ -1,10 +1,9 @@
 .ui-auth-account-menu,
 .handrive-context-menu,
 .handrive-popup-modal-dialog,
-.handrive-save-modal-dialog,
+.handrive-drive-modal-dialog,
 .handrive-folder-modal-dialog,
 .handrive-help-modal-dialog,
-.handrive-permission-modal-dialog,
 .root-auth-modal-dialog,
 .root-search-engine-popup,
 .root-shortcuts-context-menu,
@@ -14,9 +13,19 @@
 }
 
 [data-popup-fit-bottom] {
-    transform: translateY(calc(-1 * var(--popup-fit-bottom-shift, 0px)));
+    transform: translate(
+        var(--popup-drag-x, 0px),
+        calc(-1 * var(--popup-fit-bottom-shift, 0px) + var(--popup-drag-y, 0px))
+    );
 }
 
 [data-popup-fit-top] {
-    transform: translateY(var(--popup-fit-top-shift, 0px));
+    transform: translate(
+        var(--popup-drag-x, 0px),
+        calc(var(--popup-fit-top-shift, 0px) + var(--popup-drag-y, 0px))
+    );
+}
+
+[data-popup-draggable-dialog]:not([data-popup-fit-bottom]):not([data-popup-fit-top]) {
+    transform: translate(var(--popup-drag-x, 0px), var(--popup-drag-y, 0px));
 }

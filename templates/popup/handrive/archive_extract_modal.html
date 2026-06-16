@@ -1,7 +1,10 @@
 <div id="handrive-archive-extract-modal" class="handrive-popup-modal" hidden>
     <div class="handrive-popup-modal-backdrop" id="handrive-archive-extract-modal-backdrop"></div>
     <div class="handrive-popup-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-archive-extract-title">
-        <h2 id="handrive-archive-extract-title" class="handrive-popup-title">{{ handrive_text.archive_extract_title }}</h2>
+        <header class="handrive-popup-head">
+            <h2 id="handrive-archive-extract-title" class="handrive-popup-title">{{ handrive_text.archive_extract_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with click_target_id="handrive-archive-extract-cancel-btn" %}
+        </header>
         <div class="handrive-popup-target" id="handrive-archive-extract-target"></div>
         <p class="handrive-popup-message">{{ handrive_text.archive_extract_message }}</p>
         <div class="handrive-popup-actions">

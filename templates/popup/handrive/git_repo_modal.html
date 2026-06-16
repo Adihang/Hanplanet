@@ -1,7 +1,10 @@
 <div id="handrive-git-repo-modal" class="handrive-popup-modal" hidden>
     <div class="handrive-popup-modal-backdrop" id="handrive-git-repo-modal-backdrop"></div>
     <div class="handrive-popup-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-git-repo-title">
-        <h2 id="handrive-git-repo-title" class="handrive-popup-title">{{ handrive_text.git_repo_create_title }}</h2>
+        <header class="handrive-popup-head">
+            <h2 id="handrive-git-repo-title" class="handrive-popup-title">{{ handrive_text.git_repo_create_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with click_target_id="handrive-git-repo-cancel-btn" %}
+        </header>
         <div class="handrive-popup-target" id="handrive-git-repo-target"></div>
 
         {# 생성 폼 #}

@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load static_versioned %}
 
-{% block body_class %}ui-page image-color-picker-page{% endblock %}
+{% block body_class %}ui-page media-tool-page{% endblock %}
 
 {% block extra_head %}
 {% include 'handrive/_assets_head.html' %}
@@ -29,9 +29,9 @@
     </div>
 </div>
 
-<main class="ui-shell ui-content image-color-picker-content">
+<main class="ui-shell ui-content media-tool-content">
     <section
-        class="image-color-picker-panel"
+        class="media-tool-panel"
         data-image-color-picker
         data-fetch-url="{{ fetch_url }}"
         data-handrive-enabled="{{ handrive_picker_enabled|yesno:'1,0' }}"
@@ -53,11 +53,11 @@
         data-handrive-select-file-label="{{ handrive_select_file_label }}"
         aria-label="{{ page_title }}"
     >
-        <div class="image-color-picker-workspace">
-            <section class="image-color-picker-source" aria-label="{{ upload_label }}">
-                <form class="image-color-picker-url-form" data-image-color-picker-url-form>
+        <div class="media-tool-workspace">
+            <section class="media-tool-source" aria-label="{{ upload_label }}">
+                <form class="media-tool-url-form" data-image-color-picker-url-form>
                     {% csrf_token %}
-                    <label class="image-color-picker-url-field">
+                    <label class="media-tool-url-field">
                         <span>{{ url_label }}</span>
                         <input type="url" name="url" placeholder="{{ url_placeholder }}" autocomplete="url" data-image-color-picker-url>
                     </label>
@@ -65,9 +65,9 @@
                 </form>
 
                 <div class="media-upload-stage" data-image-color-picker-dropzone>
-                    <div class="image-color-picker-empty" data-image-color-picker-empty>
+                    <div class="media-upload-empty" data-image-color-picker-empty>
                         <button
-                            class="image-color-picker-upload-mark"
+                            class="media-upload-mark"
                             type="button"
                             data-image-color-picker-file-open
                             aria-label="{{ upload_label }}"
@@ -82,12 +82,13 @@
                         <span>{{ drop_label }}</span>
                     </div>
                     <img class="image-color-picker-image" data-image-color-picker-image alt="{{ page_title }}" draggable="false" hidden>
+                    <button class="image-color-picker-clear" type="button" data-image-color-picker-clear aria-label="{{ clear_image_label }}" title="{{ clear_image_label }}" hidden>×</button>
                     <div class="image-color-picker-crosshair" data-image-color-picker-crosshair hidden aria-hidden="true"></div>
                 </div>
 
-                <div class="image-color-picker-actions">
+                <div class="media-tool-actions">
                     <input
-                        class="image-color-picker-file-input"
+                        class="media-tool-file-input"
                         type="file"
                         accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,image/x-icon,image/vnd.microsoft.icon"
                         data-image-color-picker-file
@@ -97,8 +98,8 @@
                 <p class="image-color-picker-status" data-image-color-picker-status role="status" aria-live="polite" hidden>{{ status_ready }}</p>
             </section>
 
-            <aside class="image-color-picker-result" aria-labelledby="imageColorPickerResultTitle">
-                <h2 class="image-color-picker-section-title" id="imageColorPickerResultTitle">{{ result_label }}</h2>
+            <aside class="media-tool-result" aria-labelledby="imageColorPickerResultTitle">
+                <h2 class="media-tool-section-title" id="imageColorPickerResultTitle">{{ result_label }}</h2>
                 <div class="image-color-picker-swatch" data-image-color-picker-swatch></div>
                 <dl class="image-color-picker-values">
                     <div class="image-color-picker-value-row">

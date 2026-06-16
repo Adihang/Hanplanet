@@ -1,9 +1,9 @@
-<div id="handrive-save-modal" class="handrive-save-modal" hidden>
-    <div class="handrive-save-modal-backdrop" id="handrive-save-modal-backdrop"></div>
-    <div class="handrive-save-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-save-modal-title">
-        <div class="handrive-save-modal-head">
-            <h2 id="handrive-save-modal-title" class="handrive-save-modal-title">{{ handrive_text.save_location_title }}</h2>
-            <button type="button" class="handrive-save-close-btn" id="handrive-save-close-btn" aria-label="{{ handrive_text.close_label }}">x</button>
+<div id="handrive-save-modal" class="handrive-drive-modal" hidden>
+    <div class="handrive-drive-modal-backdrop" id="handrive-save-modal-backdrop"></div>
+    <div class="handrive-drive-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-save-modal-title">
+        <div class="handrive-drive-modal-head">
+            <h2 id="handrive-save-modal-title" class="handrive-drive-modal-title">{{ handrive_text.save_location_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with button_id="handrive-save-close-btn" %}
         </div>
         <div class="handrive-save-location-bar">
             <div class="handrive-save-breadcrumb" id="handrive-save-breadcrumb"></div>
@@ -33,9 +33,9 @@
                 </div>
             </label>
         </div>
-        <div class="handrive-save-modal-actions">
+        <div class="handrive-drive-modal-actions">
             <button type="button" class="ui-btn" id="handrive-create-folder-btn">{{ handrive_text.create_folder_button }}</button>
-            <div class="handrive-save-modal-actions-right">
+            <div class="handrive-drive-modal-actions-right">
                 <button type="button" class="ui-btn" id="handrive-save-cancel-btn">{{ handrive_text.cancel }}</button>
                 <button type="button" class="ui-btn ui-btn-primary" id="handrive-save-confirm-btn">{{ handrive_text.save_confirm_button }}</button>
             </div>

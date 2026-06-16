@@ -2803,6 +2803,7 @@ def image_color_picker_page(request, ui_lang=None):
         "upload_source_local_label": "Local file" if is_english else "로컬 파일",
         "upload_source_handrive_label": "HanDrive" if is_english else "HanDrive",
         "drop_label": "Drop image here" if is_english else "이미지를 여기에 드롭",
+        "clear_image_label": "Clear image" if is_english else "이미지 지우기",
         "empty_stage_label": "No image loaded" if is_english else "이미지 없음",
         "result_label": "Picked color" if is_english else "선택한 색상",
         "hex_label": "HEX",

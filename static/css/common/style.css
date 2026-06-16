@@ -1256,7 +1256,8 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
     right: 0;
     z-index: var(--site-z-popup);
     display: block;
-    max-height: min(318px, calc(100vh - 190px));
+    box-sizing: border-box;
+    max-height: min(318px, var(--root-search-suggestions-max-height, calc(100vh - 190px)));
     padding: 6px;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -1271,15 +1272,16 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
 
 .root-search-suggestion {
     width: 100%;
-    min-height: 46px;
+    min-height: 38px;
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 9px 12px;
+    padding: 5px 3px 5px 6px;
     border: 0;
     border-radius: 12px;
     background: transparent;
     color: var(--site-text-strong);
+    font: inherit;
     text-align: left;
     cursor: pointer;
     transition: background-color var(--motion-fast), color var(--motion-fast);
@@ -1332,6 +1334,7 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
 }
 
 .root-search-suggestion-copy {
+    flex: 1 1 auto;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -1357,6 +1360,48 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
     font-size: 12px;
     line-height: 1.25;
     font-weight: 500;
+}
+
+.root-search-suggestion-remove {
+    position: relative;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    margin: 0 0 0 auto;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--site-text-muted);
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.root-search-suggestion-remove::before,
+.root-search-suggestion-remove::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 12px;
+    height: 1.5px;
+    border-radius: 999px;
+    background: currentColor;
+}
+
+.root-search-suggestion-remove::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.root-search-suggestion-remove::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.root-search-suggestion-remove:hover,
+.root-search-suggestion-remove:focus-visible {
+    background: var(--site-hover-soft);
+    color: var(--site-text-strong);
+    outline: 0;
 }
 
 .root-input-clear {
@@ -2080,6 +2125,16 @@ body.theme-dark .root-search-suggestion-meta {
     color: rgba(255, 255, 255, 0.68);
 }
 
+body.theme-dark .root-search-suggestion-remove {
+    color: rgba(255, 255, 255, 0.64);
+}
+
+body.theme-dark .root-search-suggestion-remove:hover,
+body.theme-dark .root-search-suggestion-remove:focus-visible {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+}
+
 .root-search-submit {
     width: 52px;
     padding: 0;
@@ -2505,13 +2560,13 @@ body.theme-dark .root-shortcuts-auth-btn:focus-visible {
 @media (max-width: 720px) {
     .root-search-suggestions {
         top: calc(100% + 6px);
-        max-height: min(300px, calc(100vh - 170px));
+        max-height: min(300px, var(--root-search-suggestions-max-height, calc(100vh - 170px)));
         border-radius: 16px;
     }
 
     .root-search-suggestion {
-        min-height: 44px;
-        padding: 8px 10px;
+        min-height: 38px;
+        padding: 5px 3px 5px 6px;
     }
 
     .root-shortcuts-form {

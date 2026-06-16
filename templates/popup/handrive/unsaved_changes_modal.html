@@ -1,11 +1,13 @@
 <div id="handrive-unsaved-modal" class="handrive-popup-modal" hidden>
     <div class="handrive-popup-modal-backdrop" id="handrive-unsaved-modal-backdrop"></div>
     <div class="handrive-popup-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-unsaved-title" aria-describedby="handrive-unsaved-message">
-        <h2 id="handrive-unsaved-title" class="handrive-popup-title">{{ handrive_text.unsaved_changes_title }}</h2>
+        <header class="handrive-popup-head">
+            <h2 id="handrive-unsaved-title" class="handrive-popup-title">{{ handrive_text.unsaved_changes_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with button_id="handrive-unsaved-close-btn" %}
+        </header>
         <p id="handrive-unsaved-message" class="handrive-popup-message">{{ handrive_text.unsaved_changes_message }}</p>
         <div class="handrive-popup-actions">
             <button type="button" class="ui-btn" id="handrive-unsaved-cancel-btn">{{ handrive_text.cancel }}</button>
-            <button type="button" class="ui-btn" id="handrive-unsaved-leave-btn">{{ handrive_text.unsaved_changes_leave_button }}</button>
             <button type="button" class="ui-btn ui-btn-primary" id="handrive-unsaved-save-btn">{{ handrive_text.unsaved_changes_save_button }}</button>
         </div>
     </div>

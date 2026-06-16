@@ -1,3 +1,4 @@
+import secrets
 import time
 from urllib.parse import urlparse
 
@@ -9,6 +10,10 @@ from django.http import HttpResponse, HttpResponsePermanentRedirect, JsonRespons
 SUPPORTED_UI_LANG_COOKIE_VALUES = {"ko", "en"}
 UI_LANG_COOKIE_NAME = "portfolio_ui_lang"
 UI_LANG_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+HANPLANET_ACCOUNT_ACTIVE_COOKIE_NAME = "hp_account_active"
+HANPLANET_ACCOUNT_ACTIVE_COOKIE_MAX_AGE = 60 * 60 * 24 * 3
+HANPLANET_SSO_PROBE_FAILED_COOKIE_NAME = "hp_sso_probe_failed"
+HANPLANET_SHARED_COOKIE_DOMAIN = ".hanplanet.com"
 
 
 class CanonicalPublicHostMiddleware:
@@ -78,6 +83,72 @@ class UiLanguagePreferenceCookieMiddleware:
             if path_lang in SUPPORTED_UI_LANG_COOKIE_VALUES:
                 return path_lang
         return ""
+
+
+class HanplanetAccountActiveCookieMiddleware:
+    """Expose a non-secret same-site marker for subdomain login handoff.
+
+    The cookie only says "this browser has an active Hanplanet account session";
+    it does not contain identity or authorization material. Forgejo uses it to
+    decide whether to try the Django-backed SSO relay before showing an
+    anonymous Git page.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if self._has_active_hanplanet_session(request):
+            response.set_cookie(
+                HANPLANET_ACCOUNT_ACTIVE_COOKIE_NAME,
+                "1",
+                max_age=HANPLANET_ACCOUNT_ACTIVE_COOKIE_MAX_AGE,
+                domain=HANPLANET_SHARED_COOKIE_DOMAIN,
+                path="/",
+                secure=request.is_secure(),
+                samesite="Lax",
+            )
+        else:
+            response.delete_cookie(
+                HANPLANET_ACCOUNT_ACTIVE_COOKIE_NAME,
+                domain=HANPLANET_SHARED_COOKIE_DOMAIN,
+                path="/",
+            )
+        return response
+
+    def _has_active_hanplanet_session(self, request):
+        user = getattr(request, "user", None)
+        if not (user and user.is_authenticated):
+            return False
+
+        try:
+            db_token = self._ensure_user_session_token(user)
+        except Exception:
+            return False
+        if not db_token:
+            return False
+
+        session_token = str(request.session.get("_hp_session_token", "") or "").strip()
+        if session_token and session_token != db_token:
+            return False
+        if not session_token:
+            request.session["_hp_session_token"] = db_token
+            request.session.modified = True
+        return True
+
+    def _ensure_user_session_token(self, user):
+        from main.models import UserProfile
+
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        db_token = str(profile.session_token or "").strip()
+        if db_token:
+            return db_token
+
+        db_token = secrets.token_hex(32)
+        profile.session_token = db_token
+        profile.save(update_fields=["session_token", "updated_at"])
+        return db_token
 
 
 class GlobalRateLimitMiddleware:

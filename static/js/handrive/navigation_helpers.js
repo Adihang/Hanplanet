@@ -228,6 +228,24 @@
         return results;
     }
 
+    function buildDirectoryListApiUrl(listApiUrl, dirPath) {
+        var baseUrl = String(listApiUrl || "");
+        var separator = baseUrl.indexOf("?") === -1 ? "?" : "&";
+        return baseUrl + separator + "path=" + encodeURIComponent(dirPath || "");
+    }
+
+    function getDirectoryCacheGeneration(state) {
+        return Number(state && state.directoryCacheGeneration) || 0;
+    }
+
+    function bumpDirectoryCacheGeneration(state) {
+        if (!state) {
+            return 0;
+        }
+        state.directoryCacheGeneration = getDirectoryCacheGeneration(state) + 1;
+        return state.directoryCacheGeneration;
+    }
+
     async function loadDirectory(dirPath, options) {
         var settings = options || {};
         var state = settings.state || {};
@@ -247,10 +265,14 @@
             return state.directoryLoadPromises.get(normalizedDirPath);
         }
 
+        var cacheGeneration = getDirectoryCacheGeneration(state);
         var loadPromise = requestJson(
-            listApiUrl + "?path=" + encodeURIComponent(normalizedDirPath)
+            buildDirectoryListApiUrl(listApiUrl, normalizedDirPath)
         ).then(function (data) {
             var entries = Array.isArray(data.entries) ? data.entries : [];
+            if (getDirectoryCacheGeneration(state) !== cacheGeneration) {
+                return loadDirectory(normalizedDirPath, settings);
+            }
             state.directoryCache.set(normalizedDirPath, entries);
             if (state.directoryMetaCache && data && data.directory_meta) {
                 state.directoryMetaCache.set(normalizedDirPath, data.directory_meta);
@@ -258,7 +280,9 @@
             trimDirectoryCache(state, [normalizedDirPath]);
             return entries;
         }).finally(function () {
-            state.directoryLoadPromises.delete(normalizedDirPath);
+            if (state.directoryLoadPromises && state.directoryLoadPromises.get(normalizedDirPath) === loadPromise) {
+                state.directoryLoadPromises.delete(normalizedDirPath);
+            }
         });
         state.directoryLoadPromises.set(normalizedDirPath, loadPromise);
         return loadPromise;
@@ -275,19 +299,35 @@
         var renderList = settings.renderList || function () {};
 
         var expandedBeforeRefresh = Array.from(state.expandedFolders || []);
+        var previousCurrentEntries = state.directoryCache && state.directoryCache.has(currentDir)
+            ? state.directoryCache.get(currentDir)
+            : null;
+        var previousCurrentMeta = state.directoryMetaCache && state.directoryMetaCache.has(currentDir)
+            ? state.directoryMetaCache.get(currentDir)
+            : null;
+        var refreshGeneration = bumpDirectoryCacheGeneration(state);
+        state.directoryLoadPromises = new Map();
+        state.directoryCache = new Map();
+        if (previousCurrentEntries) {
+            state.directoryCache.set(currentDir, previousCurrentEntries);
+        }
+        if (state.directoryMetaCache) {
+            state.directoryMetaCache = new Map();
+            if (previousCurrentMeta) {
+                state.directoryMetaCache.set(currentDir, previousCurrentMeta);
+            }
+        }
         var data = await requestJson(
-            listApiUrl + "?path=" + encodeURIComponent(currentDir)
+            buildDirectoryListApiUrl(listApiUrl, currentDir)
         );
+        if (getDirectoryCacheGeneration(state) !== refreshGeneration) {
+            return;
+        }
         state.directoryCache.set(currentDir, Array.isArray(data.entries) ? data.entries : []);
         if (state.directoryMetaCache && data && data.directory_meta) {
             state.directoryMetaCache.set(currentDir, data.directory_meta);
         }
         trimDirectoryCache(state, [currentDir]);
-
-        var preserved = new Map();
-        preserved.set(currentDir, state.directoryCache.get(currentDir));
-        state.directoryCache = preserved;
-        state.directoryLoadPromises = new Map();
 
         var expandedPathsToRestore = [];
         for (var index = 0; index < expandedBeforeRefresh.length; index += 1) {
@@ -305,7 +345,18 @@
                 return "";
             }
         });
+        if (getDirectoryCacheGeneration(state) !== refreshGeneration) {
+            return;
+        }
         var restoredExpandedFolders = new Set(restoredPaths.filter(Boolean));
+        if (state.expandedFolders) {
+            state.expandedFolders.forEach(function (pathValue) {
+                var normalizedPath = normalizePath(pathValue, true);
+                if (normalizedPath && normalizedPath !== currentDir && state.directoryCache.has(normalizedPath)) {
+                    restoredExpandedFolders.add(normalizedPath);
+                }
+            });
+        }
         state.expandedFolders = restoredExpandedFolders;
         renderList();
     }

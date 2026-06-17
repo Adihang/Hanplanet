@@ -3,22 +3,22 @@
 {% block content %}
 {% include 'handrive/_assets_head.html' %}
 
-<div class="handrive-toolbar-wrap ui-toolbar-wrap">
-    <div class="handrive-shell ui-shell handrive-toolbar ui-toolbar">
-        <div class="handrive-toolbar-left ui-toolbar-left">
-            <h1 class="handrive-title ui-title">{{ handrive_text.auth_signup_button }}</h1>
+<div class="site-auth-toolbar-wrap ui-toolbar-wrap">
+    <div class="ui-shell ui-toolbar">
+        <div class="site-auth-toolbar-left ui-toolbar-left">
+            <h1 class="ui-title">{{ handrive_text.auth_signup_button }}</h1>
             <div class="ui-subtitle ui-path-breadcrumbs">
                 <a class="ui-path-link" href="{{ handrive_auth_breadcrumb_url|default:handrive_base_url }}">{{ handrive_auth_breadcrumb_label }}</a>
-                <span class="handrive-path-sep ui-path-sep">/</span>
+                <span class="ui-path-sep">/</span>
                 <span class="ui-path-current">{{ handrive_text.auth_signup_button }}</span>
             </div>
         </div>
     </div>
 </div>
 
-<main class="handrive-shell ui-shell handrive-content ui-content">
+<main class="site-auth-content ui-shell ui-content">
 
-    <form method="post" class="handrive-login-form" id="handrive-signup-form">
+    <form method="post" class="site-auth-form" id="handrive-signup-form">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ handrive_signup_next }}">
 
@@ -27,55 +27,55 @@
 
         {% if handrive_signup_form.non_field_errors %}
             {% for err in handrive_signup_form.non_field_errors %}
-                <div class="handrive-login-error">{{ err }}</div>
+                <div class="site-auth-error">{{ err }}</div>
             {% endfor %}
         {% elif handrive_signup_error_message %}
-            <div class="handrive-login-error">{{ handrive_signup_error_message }}</div>
+            <div class="site-auth-error">{{ handrive_signup_error_message }}</div>
         {% endif %}
 
-        <label class="handrive-field handrive-field-full">
+        <label class="site-auth-field site-auth-field-full">
             <span>{{ handrive_text.auth_username_label }}</span>
             {{ handrive_signup_form.username }}
         </label>
         {% if handrive_signup_form.username.errors %}
-            <div class="handrive-login-error">{{ handrive_signup_form.username.errors|join:", " }}</div>
+            <div class="site-auth-error">{{ handrive_signup_form.username.errors|join:", " }}</div>
         {% endif %}
 
-        <label class="handrive-field handrive-field-full">
+        <label class="site-auth-field site-auth-field-full">
             <span>{{ handrive_text.auth_password_label }}</span>
             {{ handrive_signup_form.password1 }}
         </label>
         {% if handrive_signup_form.password1.errors %}
-            <div class="handrive-login-error">{{ handrive_signup_form.password1.errors|join:", " }}</div>
+            <div class="site-auth-error">{{ handrive_signup_form.password1.errors|join:", " }}</div>
         {% endif %}
 
-        <label class="handrive-field handrive-field-full">
+        <label class="site-auth-field site-auth-field-full">
             <span>{{ handrive_text.auth_password_confirm_label }}</span>
             {{ handrive_signup_form.password2 }}
         </label>
         {% if handrive_signup_form.password2.errors %}
-            <div class="handrive-login-error">{{ handrive_signup_form.password2.errors|join:", " }}</div>
+            <div class="site-auth-error">{{ handrive_signup_form.password2.errors|join:", " }}</div>
         {% endif %}
 
-        <label class="handrive-field handrive-field-full{% if handrive_signup_github_pending or handrive_signup_google_pending %} handrive-field-readonly{% endif %}">
+        <label class="site-auth-field site-auth-field-full{% if handrive_signup_github_pending or handrive_signup_google_pending %} site-auth-field-readonly{% endif %}">
             <span>{{ handrive_text.auth_name_label }}</span>
             {{ handrive_signup_form.first_name }}
         </label>
         {% if handrive_signup_form.first_name.errors %}
-            <div class="handrive-login-error">{{ handrive_signup_form.first_name.errors|join:", " }}</div>
+            <div class="site-auth-error">{{ handrive_signup_form.first_name.errors|join:", " }}</div>
         {% endif %}
 
         {# ── 이메일 + 인증번호 요청 버튼 (가로 배치) ─────────────────── #}
-        <div class="handrive-field handrive-field-full{% if handrive_signup_github_pending or handrive_signup_google_pending %} handrive-field-readonly{% endif %}">
+        <div class="site-auth-field site-auth-field-full{% if handrive_signup_github_pending or handrive_signup_google_pending %} site-auth-field-readonly{% endif %}">
             <span>{{ handrive_text.auth_email_label }}</span>
-            <div class="handrive-signup-email-row" id="handrive-signup-email-row">
+            <div class="site-auth-email-row" id="handrive-signup-email-row">
                 {{ handrive_signup_form.email }}
                 {% if not handrive_signup_github_pending and not handrive_signup_google_pending %}
                 <button type="button" class="ui-btn" id="handrive-signup-send-code-btn">{{ handrive_text.auth_2fa_send_code_button }}</button>
                 {% endif %}
             </div>
             {% if handrive_signup_form.email.errors %}
-                <div class="handrive-login-error">{{ handrive_signup_form.email.errors|join:", " }}</div>
+                <div class="site-auth-error">{{ handrive_signup_form.email.errors|join:", " }}</div>
             {% endif %}
             {% if handrive_signup_github_pending and handrive_signup_github_login %}
                 <span class="ui-subtitle">GitHub: {{ handrive_signup_github_login }}</span>
@@ -83,14 +83,14 @@
             {% if handrive_signup_google_pending and handrive_signup_google_email %}
                 <span class="ui-subtitle">Google: {{ handrive_signup_google_email }}</span>
             {% endif %}
-            <div id="handrive-signup-send-code-error" class="handrive-login-error" style="display:none;"></div>
+            <div id="handrive-signup-send-code-error" class="site-auth-error" style="display:none;"></div>
         </div>
 
         {% if not handrive_signup_github_pending and not handrive_signup_google_pending %}
         {# ── 인증번호 입력 + 확인 버튼 (발송 후 표시) ────────────────── #}
-        <div class="handrive-field handrive-field-full" id="handrive-signup-code-block" hidden>
+        <div class="site-auth-field site-auth-field-full" id="handrive-signup-code-block" hidden>
             <span>{{ handrive_text.auth_2fa_code_label }}</span>
-            <div class="handrive-signup-email-row">
+            <div class="site-auth-email-row">
                 <input
                     type="text"
                     id="handrive-signup-code-input"
@@ -101,25 +101,25 @@
                 >
                 <button type="button" class="ui-btn ui-btn-primary" id="handrive-signup-verify-code-btn">{{ handrive_text.auth_2fa_verify_code_button }}</button>
             </div>
-            <div id="handrive-signup-verify-code-error" class="handrive-login-error" style="display:none;"></div>
+            <div id="handrive-signup-verify-code-error" class="site-auth-error" style="display:none;"></div>
             <div id="handrive-signup-verified-msg" style="display:none; color: var(--ui-color-success, green); font-size: 0.875rem; margin-top: 4px;">
                 ✓ {{ handrive_text.auth_2fa_verified_label }}
             </div>
-            <div id="handrive-signup-resend-wrap" class="handrive-2fa-resend-row">
+            <div id="handrive-signup-resend-wrap" class="site-auth-2fa-resend-row">
                 <button type="button" class="ui-btn" id="handrive-signup-resend-btn">
                     {{ handrive_text.auth_2fa_resend_button }}
                 </button>
-                <span id="handrive-signup-resend-msg" class="handrive-2fa-resend-msg" hidden></span>
+                <span id="handrive-signup-resend-msg" class="site-auth-2fa-resend-msg" hidden></span>
             </div>
         </div>
 
-        <div class="handrive-field handrive-field-full handrive-field-checkbox">
-            <div class="handrive-field-checkbox-text">
-                <label class="handrive-field-checkbox-consent" for="id_privacy_consent">
+        <div class="site-auth-field site-auth-field-full site-auth-field-checkbox">
+            <div class="site-auth-field-checkbox-text">
+                <label class="site-auth-field-checkbox-consent" for="id_privacy_consent">
                     {{ handrive_signup_form.privacy_consent }}
                     <span>{{ handrive_text.auth_privacy_consent_label }}</span>
                 </label>
-                <div class="handrive-field-checkbox-links">
+                <div class="site-auth-field-checkbox-links">
                     <button type="button" class="ui-path-link site-footer-link-btn" data-legal-popup-url="{{ privacy_url }}">Privacy Policy</button>
                     ·
                     <button type="button" class="ui-path-link site-footer-link-btn" data-legal-popup-url="{{ terms_url }}">Terms of Service</button>
@@ -127,11 +127,11 @@
             </div>
         </div>
         {% if handrive_signup_form.privacy_consent.errors %}
-            <div class="handrive-login-error">{{ handrive_signup_form.privacy_consent.errors|join:", " }}</div>
+            <div class="site-auth-error">{{ handrive_signup_form.privacy_consent.errors|join:", " }}</div>
         {% endif %}
         {% endif %}
 
-        <div class="handrive-login-actions">
+        <div class="site-auth-actions">
             <a class="ui-btn" href="{{ handrive_login_url }}">{{ handrive_text.auth_login_button }}</a>
             <button class="ui-btn ui-btn-primary" type="submit">{{ handrive_text.auth_signup_submit }}</button>
         </div>
@@ -377,16 +377,16 @@
     })();
 </script>
 <style>
-    .handrive-signup-email-row {
+    .site-auth-email-row {
         display: flex;
         gap: 8px;
         align-items: stretch;
     }
-    .handrive-signup-email-row input {
+    .site-auth-email-row input {
         flex: 1;
         min-width: 0;
     }
-    .handrive-signup-email-row .ui-btn {
+    .site-auth-email-row .ui-btn {
         flex-shrink: 0;
         white-space: nowrap;
     }
@@ -396,7 +396,7 @@
         opacity: 0.6;
         cursor: not-allowed;
     }
-    #handrive-signup-form .handrive-field-readonly input:disabled {
+    #handrive-signup-form .site-auth-field-readonly input:disabled {
         background: color-mix(in srgb, var(--handrive-surface-muted-strong) 78%, #000 22%);
         border-color: var(--handrive-border-soft);
     }

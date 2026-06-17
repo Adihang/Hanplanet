@@ -2073,6 +2073,20 @@ class HandriveAuthFlowTests(TestCase):
         self.assertContains(response, "이전 페이지")
         self.assertNotContains(response, ">ide<", html=False)
 
+    def test_common_auth_templates_do_not_use_handrive_prefixed_classes(self):
+        template_names = [
+            "login.html",
+            "signup.html",
+            "register_email.html",
+            "2fa_verify.html",
+        ]
+
+        for template_name in template_names:
+            with self.subTest(template=template_name):
+                source = (Path(settings.BASE_DIR) / "templates/handrive" / template_name).read_text(encoding="utf-8")
+                self.assertIn("site-auth-form", source)
+                self.assertNotRegex(source, r'class="[^"]*\bhandrive-')
+
     def test_docs_login_page_uses_native_enter_submit_with_submit_guard(self):
         response = self.client.get("/ko/login/")
 
@@ -2081,7 +2095,7 @@ class HandriveAuthFlowTests(TestCase):
         self.assertNotContains(response, 'input.addEventListener("keydown"', html=False)
         self.assertContains(response, 'loginForm.dataset.submitting = submitting ? "1" : "0"', html=False)
         self.assertContains(response, 'id="handrive-login-loading"', html=False)
-        self.assertContains(response, 'class="handrive-login-loading-spinner"', html=False)
+        self.assertContains(response, 'class="site-auth-loading-spinner"', html=False)
         self.assertContains(response, 'loginForm.classList.toggle("is-submitting", submitting)', html=False)
         self.assertContains(response, 'loginForm.setAttribute("aria-busy"', html=False)
 
@@ -2103,11 +2117,11 @@ class HandriveAuthFlowTests(TestCase):
             self.assertIn('box.classList.toggle("is-masked", isMasked)', source)
             self.assertNotIn(': "•"', source)
 
-        self.assertIn(".handrive-otp-box.is-masked::before", handrive_css)
+        self.assertIn(".site-auth-otp-box.is-masked::before", handrive_css)
         self.assertIn("mask-image: url(\"data:image/svg+xml", handrive_css)
         otp_mask_rule = handrive_css[
-            handrive_css.index(".handrive-otp-box.is-masked::before"):
-            handrive_css.index(".handrive-otp-input-wrap.is-focused")
+            handrive_css.index(".site-auth-otp-box.is-masked::before"):
+            handrive_css.index(".site-auth-otp-input-wrap.is-focused")
         ]
         self.assertIn("fill='black'", otp_mask_rule)
         self.assertNotIn("stroke-linecap", otp_mask_rule)
@@ -2148,19 +2162,19 @@ class HandriveAuthFlowTests(TestCase):
         response = self.client.get("/ko/login/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'class="handrive-login-actions"', html=False)
-        self.assertContains(response, 'class="handrive-login-auth-options"', html=False)
-        self.assertContains(response, 'class="handrive-login-auth-methods"', html=False)
-        self.assertContains(response, 'class="handrive-login-github-icon-btn"', html=False)
+        self.assertContains(response, 'class="site-auth-actions"', html=False)
+        self.assertContains(response, 'class="site-auth-provider-options"', html=False)
+        self.assertContains(response, 'class="site-auth-provider-methods"', html=False)
+        self.assertContains(response, 'class="site-auth-github-icon-btn"', html=False)
         self.assertContains(response, 'aria-label="GitHub로 로그인"', html=False)
         content = response.content.decode()
         self.assertLess(
-            content.index('class="handrive-login-actions"'),
-            content.index('class="handrive-login-auth-options"'),
+            content.index('class="site-auth-actions"'),
+            content.index('class="site-auth-provider-options"'),
         )
         self.assertLess(
-            content.index('class="handrive-login-auth-options"'),
-            content.index('class="handrive-login-github-icon-btn"'),
+            content.index('class="site-auth-provider-options"'),
+            content.index('class="site-auth-github-icon-btn"'),
         )
 
     @override_settings(GOOGLE_AUTH_CLIENT_ID="google-client-id", GOOGLE_AUTH_CLIENT_SECRET="google-client-secret")
@@ -2168,8 +2182,8 @@ class HandriveAuthFlowTests(TestCase):
         response = self.client.get("/ko/login/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'class="handrive-login-auth-options"', html=False)
-        self.assertContains(response, 'class="handrive-login-google-icon-btn"', html=False)
+        self.assertContains(response, 'class="site-auth-provider-options"', html=False)
+        self.assertContains(response, 'class="site-auth-google-icon-btn"', html=False)
         self.assertContains(response, 'aria-label="Google로 로그인"', html=False)
 
     @override_settings(
@@ -6203,6 +6217,15 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(redirected_response.status_code, 200)
         self.assertContains(redirected_response, 'data-current-dir="users/handrive_superuser_root"')
         self.assertContains(redirected_response, ">handrive_superuser_root<")
+
+    def test_authenticated_all_list_redirects_to_scoped_home_dir(self):
+        user = self.create_scoped_handrive_user("handrive_all_redirect_user")
+        self.client.force_login(user)
+
+        response = self.client.get("/ko/handrive/all/list")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/ko/handrive/users/{user.username}/list")
 
     def test_docs_superuser_can_still_open_unscoped_root_directly(self):
         admin_user = self.user_model.objects.create_user(

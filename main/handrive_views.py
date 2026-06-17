@@ -9905,6 +9905,15 @@ def handrive_list(request, folder_path="", ui_lang=None):
     except ValueError:
         raise Http404("폴더를 찾을 수 없습니다.")
     requested_scope_dir = requested_archive_virtual[0] if requested_archive_virtual is not None else requested_dir
+    if (
+        not shared_context
+        and requested_scope_dir == "all"
+        and request.user.is_authenticated
+        and scoped_home_dir
+        and scoped_home_dir != "all"
+    ):
+        ensure_scoped_home_dir(scoped_home_dir)
+        return redirect(build_handrive_list_url(context["handrive_base_url"], scoped_home_dir, request=request))
     if scoped_home_dir and not shared_context:
         ensure_scoped_home_dir(scoped_home_dir)
         if not requested_dir:

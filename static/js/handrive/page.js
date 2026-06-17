@@ -2489,8 +2489,8 @@
     }
 
     function findEditorCompletionItems(completionItems, tokenText, limit) {
-        // Rank candidates by exactness, explicit priority, and shorter trigger length
-        // so the most likely snippet stays first in keyboard-only workflows.
+        // Rank candidates by exactness, visible label, snippet preview, and explicit
+        // priority so short prefixes still find useful completions like querySelector.
         const normalizedToken = String(tokenText || "").toLowerCase();
         if (!normalizedToken || !Array.isArray(completionItems) || completionItems.length === 0) {
             return [];
@@ -2500,12 +2500,50 @@
         for (let i = 0; i < completionItems.length; i += 1) {
             const item = completionItems[i] || {};
             const trigger = String(item.trigger || "").toLowerCase();
-            if (!trigger || !trigger.startsWith(normalizedToken)) {
+            const label = String(item.label || "").toLowerCase();
+            const insertText = String(item.insertText || "").toLowerCase();
+            let matchRank = -1;
+            let matchIndex = -1;
+
+            if (trigger && trigger === normalizedToken) {
+                matchRank = 0;
+                matchIndex = 0;
+            } else if (trigger && trigger.startsWith(normalizedToken)) {
+                matchRank = 1;
+                matchIndex = 0;
+            } else if (label && label.startsWith(normalizedToken)) {
+                matchRank = 2;
+                matchIndex = 0;
+            } else if (insertText && insertText.startsWith(normalizedToken)) {
+                matchRank = 3;
+                matchIndex = 0;
+            } else if (trigger) {
+                matchIndex = trigger.indexOf(normalizedToken);
+                if (matchIndex >= 0) {
+                    matchRank = 4;
+                }
+            }
+            if (matchRank < 0 && label) {
+                matchIndex = label.indexOf(normalizedToken);
+                if (matchIndex >= 0) {
+                    matchRank = 5;
+                }
+            }
+            if (matchRank < 0 && insertText) {
+                matchIndex = insertText.indexOf(normalizedToken);
+                if (matchIndex >= 0) {
+                    matchRank = 6;
+                }
+            }
+
+            if (matchRank < 0) {
                 continue;
             }
             candidates.push({
                 item: item,
                 trigger: trigger,
+                matchRank: matchRank,
+                matchIndex: matchIndex,
             });
         }
 
@@ -2514,10 +2552,11 @@
         }
 
         candidates.sort(function (a, b) {
-            const aExact = a.trigger === normalizedToken ? 1 : 0;
-            const bExact = b.trigger === normalizedToken ? 1 : 0;
-            if (aExact !== bExact) {
-                return bExact - aExact;
+            if (a.matchRank !== b.matchRank) {
+                return a.matchRank - b.matchRank;
+            }
+            if (a.matchIndex !== b.matchIndex) {
+                return a.matchIndex - b.matchIndex;
             }
             const aPriority = Number((a.item && a.item.priority) || 0);
             const bPriority = Number((b.item && b.item.priority) || 0);
@@ -2536,270 +2575,1020 @@
         });
     }
 
-    // JavaScript 코드를 하이라이팅하는 함수
-    function highlightJavaScriptCode(source) {
-        const placeholders = [];
-
-        const putPlaceholder = function (tokenHtml) {
-            const token = "@@DOCS_JS_TOKEN_" + String(placeholders.length) + "@@";
-            placeholders.push(tokenHtml);
-            return token;
-        };
-
-        const restorePlaceholders = function (text) {
-            return text.replace(/@@DOCS_JS_TOKEN_(\d+)@@/g, function (_, indexText) {
-                const index = Number(indexText);
-                if (Number.isNaN(index) || index < 0 || index >= placeholders.length) {
-                    return "";
-                }
-                return placeholders[index];
-            });
-        };
-
-        let text = escapeHtml(source);
-
-        text = text.replace(/\/\*[\s\S]*?\*\//g, function (match) {
-            return putPlaceholder('<span class="handrive-js-token-comment">' + match + "</span>");
-        });
-        text = text.replace(/(^|[^\S\r\n])\/\/[^\r\n]*/g, function (match) {
-            return putPlaceholder('<span class="handrive-js-token-comment">' + match + "</span>");
-        });
-        text = text.replace(/(["'`])(?:\\[\s\S]|(?!\1)[^\\])*\1/g, function (match) {
-            return putPlaceholder('<span class="handrive-js-token-string">' + match + "</span>");
-        });
-
-        text = text.replace(/\b(\d+(?:\.\d+)?(?:e[+-]?\d+)?)\b/gi, '<span class="handrive-js-token-number">$1</span>');
-        text = text.replace(
-            /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|new|class|extends|import|from|export|default|try|catch|finally|throw|async|await|typeof|instanceof|in|of|void|delete)\b/g,
-            '<span class="handrive-js-token-keyword">$1</span>'
-        );
-        text = text.replace(/\b(true|false|null|undefined|this|super)\b/g, '<span class="handrive-js-token-literal">$1</span>');
-        text = text.replace(
-            /\b(Array|Object|String|Number|Boolean|Date|Math|JSON|Promise|Map|Set|RegExp|Error|console|window|document)\b/g,
-            '<span class="handrive-js-token-builtin">$1</span>'
-        );
-        text = text.replace(/(\b[a-zA-Z_$][\w$]*)(\s*\()/g, '<span class="handrive-js-token-function">$1</span>$2');
-
-        return restorePlaceholders(text);
+    function truncateEditorSuggestionText(value, maxLength) {
+        const text = String(value || "").replace(/\s+/g, " ").trim();
+        const limit = Number.isFinite(maxLength) && maxLength > 0 ? Math.floor(maxLength) : 72;
+        if (text.length <= limit) {
+            return text;
+        }
+        return text.slice(0, Math.max(1, limit - 1)).trimEnd() + "…";
     }
 
-    // CSS 코드를 하이라이팅하는 함수
-    function highlightCssCode(source) {
-        const placeholders = [];
-
-        const putPlaceholder = function (tokenHtml) {
-            const token = "@@DOCS_CSS_TOKEN_" + String(placeholders.length) + "@@";
-            placeholders.push(tokenHtml);
-            return token;
-        };
-
-        const restorePlaceholders = function (text) {
-            return text.replace(/@@DOCS_CSS_TOKEN_(\d+)@@/g, function (_, indexText) {
-                const index = Number(indexText);
-                if (Number.isNaN(index) || index < 0 || index >= placeholders.length) {
-                    return "";
-                }
-                return placeholders[index];
-            });
-        };
-
-        let text = escapeHtml(source);
-
-        text = text.replace(/\/\*[\s\S]*?\*\//g, function (match) {
-            return putPlaceholder('<span class="handrive-css-token-comment">' + match + "</span>");
-        });
-        text = text.replace(/(["'])(?:\\[\s\S]|(?!\1)[^\\])*\1/g, function (match) {
-            return putPlaceholder('<span class="handrive-css-token-string">' + match + "</span>");
-        });
-
-        text = text.replace(/(^|[}\s])([#.:\w\-\[\]=\*>\+\~,]+)(\s*\{)/g, function (_, p1, selectorText, p3) {
-            return p1 + '<span class="handrive-css-token-selector">' + selectorText + "</span>" + p3;
-        });
-        text = text.replace(/(--[\w-]+)(\s*:)/g, '<span class="handrive-css-token-variable">$1</span>$2');
-        text = text.replace(/([a-z-]+)(\s*:)/gi, '<span class="handrive-css-token-property">$1</span>$2');
-        text = text.replace(/(:\s*)(#[0-9a-fA-F]{3,8}\b|rgba?\([^)]+\)|hsla?\([^)]+\)|\b[a-zA-Z]+\b)/g, '$1<span class="handrive-css-token-value">$2</span>');
-        text = text.replace(/(-?\d+(?:\.\d+)?)(px|em|rem|vh|vw|%|deg|s|ms)?\b/g, '<span class="handrive-css-token-number">$1$2</span>');
-
-        return restorePlaceholders(text);
+    function getEditorSuggestionPreview(item) {
+        const explicit = item && item.description ? item.description : "";
+        if (explicit) {
+            return truncateEditorSuggestionText(explicit, 82);
+        }
+        const insertText = String((item && item.insertText) || "");
+        const firstLine = insertText.split(/\r?\n/).find(function (line) {
+            return String(line || "").trim();
+        }) || insertText;
+        return truncateEditorSuggestionText(firstLine, 82);
     }
 
-    // JSON 코드를 하이라이팅하는 함수
-    function highlightJsonCode(source) {
-        const placeholders = [];
-
-        const putPlaceholder = function (tokenHtml) {
-            const token = "@@DOCS_JSON_TOKEN_" + String(placeholders.length) + "@@";
-            placeholders.push(tokenHtml);
-            return token;
-        };
-
-        const restorePlaceholders = function (text) {
-            return text.replace(/@@DOCS_JSON_TOKEN_(\d+)@@/g, function (_, indexText) {
-                const index = Number(indexText);
-                if (Number.isNaN(index) || index < 0 || index >= placeholders.length) {
-                    return "";
-                }
-                return placeholders[index];
-            });
-        };
-
-        let text = escapeHtml(source);
-
-        text = text.replace(/"(?:\\.|[^"\\])*"(?=\s*:)/g, function (match) {
-            return putPlaceholder('<span class="handrive-json-token-key">' + match + "</span>");
-        });
-        text = text.replace(/"(?:\\.|[^"\\])*"/g, function (match) {
-            return putPlaceholder('<span class="handrive-json-token-string">' + match + "</span>");
-        });
-        text = text.replace(/\b(-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)\b/gi, '<span class="handrive-json-token-number">$1</span>');
-        text = text.replace(/\b(true|false|null)\b/g, '<span class="handrive-json-token-literal">$1</span>');
-        text = text.replace(/([{}\[\],:])/g, '<span class="handrive-json-token-punctuation">$1</span>');
-
-        return restorePlaceholders(text);
+    function getEditorSuggestionKind(item) {
+        if (item && item.kind) {
+            return String(item.kind);
+        }
+        const trigger = String((item && item.trigger) || "").toLowerCase();
+        const insertText = String((item && item.insertText) || "");
+        const label = String((item && item.label) || "");
+        if (/^(if|else|elif|for|while|switch|try|with|return|break|continue|pass|import|from|export|await|async|const|let|class|def)$/.test(trigger)) {
+            return "keyword";
+        }
+        if (/^<[/!a-z]/i.test(insertText) || /^<[/!a-z]/i.test(label)) {
+            return "tag";
+        }
+        if (/^@/.test(insertText) || /^@/.test(label)) {
+            return "rule";
+        }
+        if (/\(\)/.test(label) || /\([^\n]*\)/.test(insertText.split(/\r?\n/)[0] || "")) {
+            return "function";
+        }
+        if (insertText.indexOf("\n") >= 0) {
+            return "snippet";
+        }
+        return "text";
     }
 
-    // Python 코드를 하이라이팅하는 함수
-    function highlightPythonCode(source) {
-        const placeholders = [];
-
-        const putPlaceholder = function (tokenHtml) {
-            const token = "@@DOCS_PY_TOKEN_" + String(placeholders.length) + "@@";
-            placeholders.push(tokenHtml);
-            return token;
+    function buildEditorSuggestionPayload(suggestion, tokenInfo) {
+        const item = suggestion || {};
+        return {
+            start: tokenInfo.start,
+            end: tokenInfo.end,
+            insertText: item.insertText || "",
+            cursorBack: Number(item.cursorBack || 0),
+            label: item.label || item.insertText || "",
+            trigger: item.trigger || "",
+            kind: getEditorSuggestionKind(item),
+            preview: getEditorSuggestionPreview(item),
         };
-
-        const restorePlaceholders = function (text) {
-            return text.replace(/@@DOCS_PY_TOKEN_(\d+)@@/g, function (_, indexText) {
-                const index = Number(indexText);
-                if (Number.isNaN(index) || index < 0 || index >= placeholders.length) {
-                    return "";
-                }
-                return placeholders[index];
-            });
-        };
-
-        let text = escapeHtml(source);
-
-        text = text.replace(/("""[\s\S]*?"""|'''[\s\S]*?''')/g, function (match) {
-            return putPlaceholder('<span class="handrive-py-token-string">' + match + "</span>");
-        });
-        text = text.replace(/#[^\r\n]*/g, function (match) {
-            return putPlaceholder('<span class="handrive-py-token-comment">' + match + "</span>");
-        });
-        text = text.replace(/(["'])(?:\\[\s\S]|(?!\1)[^\\])*\1/g, function (match) {
-            return putPlaceholder('<span class="handrive-py-token-string">' + match + "</span>");
-        });
-
-        text = text.replace(/(^|\s)(@[a-zA-Z_][\w.]*)/g, '$1<span class="handrive-py-token-decorator">$2</span>');
-        text = text.replace(/\b(-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)\b/gi, '<span class="handrive-py-token-number">$1</span>');
-        text = text.replace(
-            /\b(def|class|return|if|elif|else|for|while|break|continue|try|except|finally|raise|import|from|as|with|pass|yield|lambda|global|nonlocal|assert|del|in|is|and|or|not|async|await|match|case)\b/g,
-            '<span class="handrive-py-token-keyword">$1</span>'
-        );
-        text = text.replace(/\b(True|False|None)\b/g, '<span class="handrive-py-token-literal">$1</span>');
-        text = text.replace(
-            /\b(len|range|str|int|float|dict|list|set|tuple|print|open|type|isinstance|enumerate|zip|map|filter|sum|min|max|abs|sorted|reversed|any|all)\b/g,
-            '<span class="handrive-py-token-builtin">$1</span>'
-        );
-        text = text.replace(/\b(def)\s+([a-zA-Z_][\w]*)/g, '$1 <span class="handrive-py-token-function">$2</span>');
-        text = text.replace(/\b(class)\s+([a-zA-Z_][\w]*)/g, '$1 <span class="handrive-py-token-class">$2</span>');
-
-        return restorePlaceholders(text);
     }
 
-    // HTML 코드를 하이라이팅하는 함수
-    function highlightHtmlCode(source) {
-        const placeholders = [];
+    function renderEditorSuggestDropdown(container, suggestions, activeIndex) {
+        if (!container) {
+            return;
+        }
+        container.innerHTML = "";
+        container.setAttribute("role", "listbox");
+        container.setAttribute("aria-label", "Editor suggestions");
 
-        const putPlaceholder = function (tokenHtml) {
-            const token = "@@DOCS_HTML_TOKEN_" + String(placeholders.length) + "@@";
-            placeholders.push(tokenHtml);
-            return token;
-        };
+        const list = document.createElement("div");
+        list.className = "handrive-editor-suggest-list";
 
-        const restorePlaceholders = function (text) {
-            return text.replace(/@@DOCS_HTML_TOKEN_(\d+)@@/g, function (_, indexText) {
-                const index = Number(indexText);
-                if (Number.isNaN(index) || index < 0 || index >= placeholders.length) {
-                    return "";
-                }
-                return placeholders[index];
-            });
-        };
+        for (let i = 0; i < suggestions.length; i += 1) {
+            const item = suggestions[i] || {};
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "handrive-editor-suggest-item" + (i === activeIndex ? " is-active" : "");
+            option.setAttribute("data-suggest-index", String(i));
+            option.setAttribute("role", "option");
+            option.setAttribute("aria-selected", i === activeIndex ? "true" : "false");
 
-        let text = escapeHtml(source);
+            const contentNode = document.createElement("span");
+            contentNode.className = "handrive-editor-suggest-item-main";
 
-        text = text.replace(/&lt;!--[\s\S]*?--&gt;/g, function (match) {
-            return putPlaceholder('<span class="handrive-html-token-comment">' + match + "</span>");
-        });
-        text = text.replace(/(["'])(?:\\[\s\S]|(?!\1)[^\\])*\1/g, function (match) {
-            return putPlaceholder('<span class="handrive-html-token-string">' + match + "</span>");
-        });
-        text = text.replace(
-            /(&lt;\/?)([a-zA-Z][\w:-]*)([\s\S]*?)(&gt;)/g,
-            function (_, open, tagName, attributes, close) {
-                let highlightedAttributes = attributes;
-                highlightedAttributes = highlightedAttributes.replace(
-                    /(\s)([a-zA-Z_:][\w:.-]*)(\s*=\s*)/g,
-                    '$1<span class="handrive-html-token-attr">$2</span>$3'
-                );
-                return (
-                    '<span class="handrive-html-token-punctuation">' + open + "</span>" +
-                    '<span class="handrive-html-token-tag">' + tagName + "</span>" +
-                    highlightedAttributes +
-                    '<span class="handrive-html-token-punctuation">' + close + "</span>"
-                );
+            const headNode = document.createElement("span");
+            headNode.className = "handrive-editor-suggest-item-head";
+
+            const kindNode = document.createElement("span");
+            kindNode.className = "handrive-editor-suggest-item-kind";
+            kindNode.textContent = item.kind || "text";
+
+            const labelNode = document.createElement("span");
+            labelNode.className = "handrive-editor-suggest-item-label";
+            labelNode.textContent = item.label || item.insertText || "";
+
+            const previewNode = document.createElement("span");
+            previewNode.className = "handrive-editor-suggest-item-preview";
+            previewNode.textContent = item.preview || "";
+
+            const triggerNode = document.createElement("span");
+            triggerNode.className = "handrive-editor-suggest-item-trigger";
+            triggerNode.textContent = item.trigger || "";
+
+            headNode.appendChild(kindNode);
+            headNode.appendChild(labelNode);
+            contentNode.appendChild(headNode);
+            if (previewNode.textContent) {
+                contentNode.appendChild(previewNode);
             }
-        );
+            option.appendChild(contentNode);
+            option.appendChild(triggerNode);
+            list.appendChild(option);
+        }
 
-        return restorePlaceholders(text);
+        const footer = document.createElement("div");
+        footer.className = "handrive-editor-suggest-footer";
+        footer.textContent = suggestions.length
+            ? String(activeIndex + 1) + "/" + String(suggestions.length) + " · ↑↓ 이동 · Enter/Tab 적용 · Esc 닫기"
+            : "";
+
+        container.appendChild(list);
+        container.appendChild(footer);
+    }
+
+    function positionEditorSuggestDropdown(container, textarea, surfaceElement, cursorIndex) {
+        if (!container || !textarea) {
+            return;
+        }
+        const calc = window.__handriveCalculateCursorPosition || calculateCursorPosition;
+        const cursorPosition = typeof calc === "function" ? calc(textarea, cursorIndex) : null;
+        if (!cursorPosition) {
+            container.hidden = false;
+            return;
+        }
+
+        const surfaceRect = surfaceElement ? surfaceElement.getBoundingClientRect() : null;
+        let left = cursorPosition.left + 12;
+        let top = cursorPosition.top + (cursorPosition.lineHeight || 20) + 6;
+
+        if (surfaceRect) {
+            left -= surfaceRect.left;
+            top -= surfaceRect.top;
+        }
+
+        container.hidden = false;
+        const suggestRect = container.getBoundingClientRect();
+        if (surfaceRect) {
+            const minLeft = 8;
+            const minTop = 8;
+            const maxLeft = Math.max(minLeft, surfaceRect.width - suggestRect.width - 8);
+            const maxTop = Math.max(minTop, surfaceRect.height - suggestRect.height - 8);
+            left = Math.min(Math.max(minLeft, left), maxLeft);
+            top = Math.min(Math.max(minTop, top), maxTop);
+        }
+
+        container.style.left = String(left) + "px";
+        container.style.top = String(top) + "px";
+    }
+
+    function makeSyntaxSpan(className, value) {
+        return '<span class="' + className + '">' + escapeHtml(value) + "</span>";
+    }
+
+    function isIdentifierStart(char, allowDollar) {
+        return /[A-Za-z_]/.test(char || "") || (allowDollar && char === "$");
+    }
+
+    function isIdentifierPart(char, allowDollar) {
+        return /[A-Za-z0-9_]/.test(char || "") || (allowDollar && char === "$");
+    }
+
+    function readIdentifier(source, startIndex, allowDollar) {
+        let index = startIndex + 1;
+        while (index < source.length && isIdentifierPart(source[index], allowDollar)) {
+            index += 1;
+        }
+        return source.slice(startIndex, index);
+    }
+
+    function findNextNonWhitespaceIndex(source, startIndex) {
+        for (let index = startIndex; index < source.length; index += 1) {
+            if (!/\s/.test(source[index])) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    function readLineComment(source, startIndex) {
+        const endIndex = source.indexOf("\n", startIndex);
+        return endIndex >= 0 ? source.slice(startIndex, endIndex) : source.slice(startIndex);
+    }
+
+    function readBlockComment(source, startIndex) {
+        const endIndex = source.indexOf("*/", startIndex + 2);
+        return endIndex >= 0 ? source.slice(startIndex, endIndex + 2) : source.slice(startIndex);
+    }
+
+    function readQuotedString(source, startIndex, quote) {
+        let index = startIndex + 1;
+        while (index < source.length) {
+            const char = source[index];
+            if (char === "\\") {
+                index += 2;
+                continue;
+            }
+            if (char === quote) {
+                return source.slice(startIndex, index + 1);
+            }
+            if (quote !== "`" && (char === "\n" || char === "\r")) {
+                return source.slice(startIndex, index);
+            }
+            index += 1;
+        }
+        return source.slice(startIndex);
+    }
+
+    const handriveJsKeywords = new Set([
+        "as", "async", "await", "break", "case", "catch", "class", "const", "continue", "debugger",
+        "default", "delete", "do", "else", "export", "extends", "finally", "for", "from", "function",
+        "get", "if", "import", "in", "instanceof", "let", "new", "of", "return", "set", "static",
+        "super", "switch", "throw", "try", "typeof", "var", "void", "while", "with", "yield",
+    ]);
+    const handriveJsLiterals = new Set(["false", "null", "true", "undefined", "this", "super", "NaN", "Infinity"]);
+    const handriveJsBuiltins = new Set([
+        "Array", "ArrayBuffer", "BigInt", "Boolean", "Date", "Error", "Intl", "JSON", "Map", "Math",
+        "Number", "Object", "Promise", "Proxy", "Reflect", "RegExp", "Set", "String", "Symbol",
+        "URL", "WeakMap", "WeakSet", "console", "document", "fetch", "localStorage", "navigator",
+        "setInterval", "setTimeout", "window",
+    ]);
+
+    function readJavaScriptRegex(source, startIndex) {
+        let index = startIndex + 1;
+        let inClass = false;
+        while (index < source.length) {
+            const char = source[index];
+            if (char === "\\") {
+                index += 2;
+                continue;
+            }
+            if (char === "[") {
+                inClass = true;
+            } else if (char === "]") {
+                inClass = false;
+            } else if (char === "/" && !inClass) {
+                index += 1;
+                while (/[a-z]/i.test(source[index] || "")) {
+                    index += 1;
+                }
+                return source.slice(startIndex, index);
+            } else if (char === "\n" || char === "\r") {
+                break;
+            }
+            index += 1;
+        }
+        return "";
+    }
+
+    function isLikelyJavaScriptRegexStart(lastToken) {
+        if (!lastToken) {
+            return true;
+        }
+        if (lastToken.type === "keyword") {
+            return /^(case|delete|do|else|in|instanceof|new|of|return|throw|typeof|void|yield|await)$/.test(lastToken.value);
+        }
+        if (lastToken.type === "operator") {
+            return true;
+        }
+        if (lastToken.type === "punctuation") {
+            return /^(\(|\[|\{|,|:|;|\?)$/.test(lastToken.value);
+        }
+        return false;
+    }
+
+    function highlightJavaScriptCode(source) {
+        const text = String(source || "");
+        const numberPattern = /^(?:0[xX][0-9a-fA-F_]+n?|0[bB][01_]+n?|0[oO][0-7_]+n?|(?:\d[\d_]*\.?\d*|\.\d[\d_]*)(?:[eE][+-]?\d[\d_]*)?n?)/;
+        let result = "";
+        let index = 0;
+        let lastToken = null;
+
+        while (index < text.length) {
+            const char = text[index];
+            const next = text[index + 1] || "";
+
+            if (char === "/" && next === "/") {
+                const token = readLineComment(text, index);
+                result += makeSyntaxSpan("handrive-js-token-comment", token);
+                index += token.length;
+                continue;
+            }
+            if (char === "/" && next === "*") {
+                const token = readBlockComment(text, index);
+                result += makeSyntaxSpan("handrive-js-token-comment", token);
+                index += token.length;
+                continue;
+            }
+            if (char === "\"" || char === "'" || char === "`") {
+                const token = readQuotedString(text, index, char);
+                result += makeSyntaxSpan("handrive-js-token-string", token);
+                index += token.length;
+                lastToken = { type: "string", value: token };
+                continue;
+            }
+            if (char === "/" && isLikelyJavaScriptRegexStart(lastToken)) {
+                const token = readJavaScriptRegex(text, index);
+                if (token) {
+                    result += makeSyntaxSpan("handrive-js-token-regex", token);
+                    index += token.length;
+                    lastToken = { type: "regex", value: token };
+                    continue;
+                }
+            }
+
+            const numberMatch = text.slice(index).match(numberPattern);
+            if (numberMatch) {
+                result += makeSyntaxSpan("handrive-js-token-number", numberMatch[0]);
+                index += numberMatch[0].length;
+                lastToken = { type: "number", value: numberMatch[0] };
+                continue;
+            }
+
+            if (isIdentifierStart(char, true)) {
+                const token = readIdentifier(text, index, true);
+                const nextIndex = findNextNonWhitespaceIndex(text, index + token.length);
+                let className = "";
+                let tokenType = "identifier";
+                if (handriveJsKeywords.has(token)) {
+                    className = "handrive-js-token-keyword";
+                    tokenType = "keyword";
+                } else if (handriveJsLiterals.has(token)) {
+                    className = "handrive-js-token-literal";
+                    tokenType = "literal";
+                } else if (handriveJsBuiltins.has(token)) {
+                    className = "handrive-js-token-builtin";
+                    tokenType = "builtin";
+                } else if (lastToken && lastToken.type === "punctuation" && lastToken.value === ".") {
+                    className = "handrive-js-token-property";
+                    tokenType = "property";
+                } else if (
+                    nextIndex >= 0 &&
+                    text[nextIndex] === "(" &&
+                    !(lastToken && lastToken.type === "keyword" && /^(if|for|switch|while|catch|with)$/.test(lastToken.value))
+                ) {
+                    className = "handrive-js-token-function";
+                    tokenType = "function";
+                } else if (lastToken && lastToken.type === "keyword" && /^(class|extends|new)$/.test(lastToken.value)) {
+                    className = "handrive-js-token-class";
+                    tokenType = "class";
+                }
+                result += className ? makeSyntaxSpan(className, token) : escapeHtml(token);
+                index += token.length;
+                lastToken = { type: tokenType, value: token };
+                continue;
+            }
+
+            if (/[+\-*%=&|!<>?:~^/]/.test(char)) {
+                let token = char;
+                while (index + token.length < text.length && /[+\-*%=&|!<>?:~^/]/.test(text[index + token.length])) {
+                    token += text[index + token.length];
+                }
+                result += makeSyntaxSpan("handrive-js-token-operator", token);
+                index += token.length;
+                lastToken = { type: "operator", value: token };
+                continue;
+            }
+
+            if ("{}[]().,;".includes(char)) {
+                result += makeSyntaxSpan("handrive-js-token-punctuation", char);
+                index += 1;
+                lastToken = { type: "punctuation", value: char };
+                continue;
+            }
+
+            result += escapeHtml(char);
+            if (!/\s/.test(char)) {
+                lastToken = { type: "text", value: char };
+            }
+            index += 1;
+        }
+
+        return result;
+    }
+
+    function highlightCssCode(source) {
+        const text = String(source || "");
+        const numberPattern = /^-?(?:\d*\.)?\d+(?:[a-z%]+)?/i;
+        let result = "";
+        let index = 0;
+        let inValue = false;
+
+        while (index < text.length) {
+            const char = text[index];
+            const next = text[index + 1] || "";
+
+            if (char === "/" && next === "*") {
+                const token = readBlockComment(text, index);
+                result += makeSyntaxSpan("handrive-css-token-comment", token);
+                index += token.length;
+                continue;
+            }
+            if (char === "\"" || char === "'") {
+                const token = readQuotedString(text, index, char);
+                result += makeSyntaxSpan("handrive-css-token-string", token);
+                index += token.length;
+                continue;
+            }
+            if (char === "@") {
+                const match = text.slice(index).match(/^@[a-z-]+/i);
+                if (match) {
+                    result += makeSyntaxSpan("handrive-css-token-at-rule", match[0]);
+                    index += match[0].length;
+                    continue;
+                }
+            }
+            if (char === "#" && /[0-9a-f]/i.test(next)) {
+                const match = text.slice(index).match(/^#[0-9a-f]{3,8}\b/i);
+                if (match) {
+                    result += makeSyntaxSpan(inValue ? "handrive-css-token-value" : "handrive-css-token-selector", match[0]);
+                    index += match[0].length;
+                    continue;
+                }
+            }
+            if ((char === "." || char === "#") && isIdentifierStart(next, false)) {
+                const token = char + readIdentifier(text, index + 1, false);
+                result += makeSyntaxSpan("handrive-css-token-selector", token);
+                index += token.length;
+                continue;
+            }
+            if (char === "-" && next === "-") {
+                const match = text.slice(index).match(/^--[A-Za-z0-9_-]+/);
+                if (match) {
+                    result += makeSyntaxSpan("handrive-css-token-variable", match[0]);
+                    index += match[0].length;
+                    continue;
+                }
+            }
+
+            const numberMatch = text.slice(index).match(numberPattern);
+            if (numberMatch) {
+                result += makeSyntaxSpan("handrive-css-token-number", numberMatch[0]);
+                index += numberMatch[0].length;
+                continue;
+            }
+
+            if (isIdentifierStart(char, false) || char === "-") {
+                const match = text.slice(index).match(/^-?[A-Za-z_][A-Za-z0-9_-]*/);
+                if (match) {
+                    const token = match[0];
+                    const nextIndex = findNextNonWhitespaceIndex(text, index + token.length);
+                    const className = nextIndex >= 0 && text[nextIndex] === ":" && text[nextIndex + 1] !== ":"
+                        ? "handrive-css-token-property"
+                        : (inValue ? "handrive-css-token-value" : "handrive-css-token-selector");
+                    result += makeSyntaxSpan(className, token);
+                    index += token.length;
+                    continue;
+                }
+            }
+
+            if (char === ":") {
+                result += makeSyntaxSpan("handrive-css-token-punctuation", char);
+                inValue = true;
+                index += 1;
+                continue;
+            }
+            if (char === ";" || char === "}") {
+                result += makeSyntaxSpan("handrive-css-token-punctuation", char);
+                inValue = false;
+                index += 1;
+                continue;
+            }
+            if ("{}(),[]".includes(char)) {
+                result += makeSyntaxSpan("handrive-css-token-punctuation", char);
+                index += 1;
+                continue;
+            }
+
+            result += escapeHtml(char);
+            index += 1;
+        }
+
+        return result;
+    }
+
+    function findJsonStringEnd(source, startIndex) {
+        for (let index = startIndex + 1; index < source.length; index += 1) {
+            const char = source[index];
+            if (char === "\\") {
+                index += 1;
+                continue;
+            }
+            if (char === "\"") {
+                return index + 1;
+            }
+        }
+        return source.length;
+    }
+
+    function isJsonKeyString(source, endIndex) {
+        for (let index = endIndex; index < source.length; index += 1) {
+            const char = source[index];
+            if (char === " " || char === "\t" || char === "\r" || char === "\n") {
+                continue;
+            }
+            return char === ":";
+        }
+        return false;
+    }
+
+    function highlightJsonCode(source) {
+        const text = String(source || "");
+        let result = "";
+        let index = 0;
+
+        while (index < text.length) {
+            const char = text[index];
+
+            if (char === "\"") {
+                const endIndex = findJsonStringEnd(text, index);
+                const token = text.slice(index, endIndex);
+                const tokenClass = isJsonKeyString(text, endIndex)
+                    ? "handrive-json-token-key"
+                    : "handrive-json-token-string";
+                result += '<span class="' + tokenClass + '">' + escapeHtml(token) + "</span>";
+                index = endIndex;
+                continue;
+            }
+
+            const numberMatch = text.slice(index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+            if (numberMatch) {
+                result += '<span class="handrive-json-token-number">' + escapeHtml(numberMatch[0]) + "</span>";
+                index += numberMatch[0].length;
+                continue;
+            }
+
+            const literalMatch = text.slice(index).match(/^(?:true|false|null)\b/);
+            if (literalMatch) {
+                result += '<span class="handrive-json-token-literal">' + literalMatch[0] + "</span>";
+                index += literalMatch[0].length;
+                continue;
+            }
+
+            if ("{}[],:".includes(char)) {
+                result += '<span class="handrive-json-token-punctuation">' + escapeHtml(char) + "</span>";
+                index += 1;
+                continue;
+            }
+
+            result += escapeHtml(char);
+            index += 1;
+        }
+
+        return result;
+    }
+
+    const handrivePyKeywords = new Set([
+        "and", "as", "assert", "async", "await", "break", "case", "class", "continue", "def", "del",
+        "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is",
+        "lambda", "match", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while",
+        "with", "yield",
+    ]);
+    const handrivePyLiterals = new Set(["True", "False", "None", "Ellipsis", "NotImplemented"]);
+    const handrivePyBuiltins = new Set([
+        "abs", "all", "any", "bool", "bytes", "dict", "enumerate", "filter", "float", "int", "isinstance",
+        "len", "list", "map", "max", "min", "open", "print", "range", "repr", "reversed", "round",
+        "set", "sorted", "str", "sum", "super", "tuple", "type", "zip",
+    ]);
+
+    function readPythonString(source, startIndex) {
+        const prefixMatch = source.slice(startIndex).match(/^(?:[rRuUbBfF]{1,3})?(?=["'])/);
+        const prefix = prefixMatch ? prefixMatch[0] : "";
+        const quoteIndex = startIndex + prefix.length;
+        const quote = source[quoteIndex];
+        if (quote !== "\"" && quote !== "'") {
+            return "";
+        }
+        const triple = source.slice(quoteIndex, quoteIndex + 3) === quote + quote + quote;
+        let index = quoteIndex + (triple ? 3 : 1);
+        while (index < source.length) {
+            const char = source[index];
+            if (char === "\\") {
+                index += 2;
+                continue;
+            }
+            if (triple && source.slice(index, index + 3) === quote + quote + quote) {
+                return source.slice(startIndex, index + 3);
+            }
+            if (!triple && char === quote) {
+                return source.slice(startIndex, index + 1);
+            }
+            if (!triple && (char === "\n" || char === "\r")) {
+                return source.slice(startIndex, index);
+            }
+            index += 1;
+        }
+        return source.slice(startIndex);
+    }
+
+    function highlightPythonCode(source) {
+        const text = String(source || "");
+        const numberPattern = /^(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|(?:\d[\d_]*\.?\d*|\.\d[\d_]*)(?:[eE][+-]?\d[\d_]*)?j?)/;
+        let result = "";
+        let index = 0;
+        let lastToken = null;
+        let lineOnlyWhitespace = true;
+
+        while (index < text.length) {
+            const char = text[index];
+
+            if (char === "\n" || char === "\r") {
+                result += escapeHtml(char);
+                index += 1;
+                lineOnlyWhitespace = true;
+                continue;
+            }
+            if (lineOnlyWhitespace && (char === " " || char === "\t")) {
+                result += escapeHtml(char);
+                index += 1;
+                continue;
+            }
+            if (char === "#") {
+                const token = readLineComment(text, index);
+                result += makeSyntaxSpan("handrive-py-token-comment", token);
+                index += token.length;
+                lineOnlyWhitespace = false;
+                continue;
+            }
+            if (lineOnlyWhitespace && char === "@") {
+                const match = text.slice(index).match(/^@[A-Za-z_][A-Za-z0-9_.]*/);
+                if (match) {
+                    result += makeSyntaxSpan("handrive-py-token-decorator", match[0]);
+                    index += match[0].length;
+                    lineOnlyWhitespace = false;
+                    lastToken = { type: "decorator", value: match[0] };
+                    continue;
+                }
+            }
+
+            const stringToken = readPythonString(text, index);
+            if (stringToken) {
+                result += makeSyntaxSpan("handrive-py-token-string", stringToken);
+                index += stringToken.length;
+                lineOnlyWhitespace = false;
+                lastToken = { type: "string", value: stringToken };
+                continue;
+            }
+
+            const numberMatch = text.slice(index).match(numberPattern);
+            if (numberMatch) {
+                result += makeSyntaxSpan("handrive-py-token-number", numberMatch[0]);
+                index += numberMatch[0].length;
+                lineOnlyWhitespace = false;
+                lastToken = { type: "number", value: numberMatch[0] };
+                continue;
+            }
+
+            if (isIdentifierStart(char, false)) {
+                const token = readIdentifier(text, index, false);
+                let className = "";
+                let tokenType = "identifier";
+                if (lastToken && lastToken.type === "keyword" && lastToken.value === "def") {
+                    className = "handrive-py-token-function";
+                    tokenType = "function";
+                } else if (lastToken && lastToken.type === "keyword" && lastToken.value === "class") {
+                    className = "handrive-py-token-class";
+                    tokenType = "class";
+                } else if (handrivePyKeywords.has(token)) {
+                    className = "handrive-py-token-keyword";
+                    tokenType = "keyword";
+                } else if (handrivePyLiterals.has(token)) {
+                    className = "handrive-py-token-literal";
+                    tokenType = "literal";
+                } else if (token === "self" || token === "cls") {
+                    className = "handrive-py-token-self";
+                    tokenType = "self";
+                } else if (handrivePyBuiltins.has(token)) {
+                    className = "handrive-py-token-builtin";
+                    tokenType = "builtin";
+                } else if (lastToken && lastToken.type === "punctuation" && lastToken.value === ".") {
+                    className = "handrive-py-token-attribute";
+                    tokenType = "attribute";
+                }
+                result += className ? makeSyntaxSpan(className, token) : escapeHtml(token);
+                index += token.length;
+                lineOnlyWhitespace = false;
+                lastToken = { type: tokenType, value: token };
+                continue;
+            }
+
+            if (/[+\-*%=&|!<>:/~^]/.test(char)) {
+                let token = char;
+                while (index + token.length < text.length && /[+\-*%=&|!<>:/~^]/.test(text[index + token.length])) {
+                    token += text[index + token.length];
+                }
+                result += makeSyntaxSpan("handrive-py-token-operator", token);
+                index += token.length;
+                lineOnlyWhitespace = false;
+                lastToken = { type: "operator", value: token };
+                continue;
+            }
+            if ("{}[]().,;".includes(char)) {
+                result += makeSyntaxSpan("handrive-py-token-punctuation", char);
+                index += 1;
+                lineOnlyWhitespace = false;
+                lastToken = { type: "punctuation", value: char };
+                continue;
+            }
+
+            result += escapeHtml(char);
+            if (!/\s/.test(char)) {
+                lineOnlyWhitespace = false;
+                lastToken = { type: "text", value: char };
+            }
+            index += 1;
+        }
+
+        return result;
+    }
+
+    function readHtmlTag(source, startIndex) {
+        let index = startIndex + 1;
+        let result = makeSyntaxSpan("handrive-html-token-punctuation", "<");
+        let closing = false;
+        let selfClosing = false;
+        let tagName = "";
+
+        if (source[index] === "/") {
+            closing = true;
+            result += makeSyntaxSpan("handrive-html-token-punctuation", "/");
+            index += 1;
+        }
+        if (source[index] === "!") {
+            result += makeSyntaxSpan("handrive-html-token-punctuation", "!");
+            index += 1;
+        }
+
+        const nameMatch = source.slice(index).match(/^[A-Za-z][A-Za-z0-9:-]*/);
+        if (nameMatch) {
+            tagName = nameMatch[0].toLowerCase();
+            const className = tagName === "doctype" ? "handrive-html-token-doctype" : "handrive-html-token-tag";
+            result += makeSyntaxSpan(className, nameMatch[0]);
+            index += nameMatch[0].length;
+        }
+
+        while (index < source.length) {
+            const char = source[index];
+            if (char === ">") {
+                result += makeSyntaxSpan("handrive-html-token-punctuation", ">");
+                index += 1;
+                break;
+            }
+            if (char === "/" && source[index + 1] === ">") {
+                result += makeSyntaxSpan("handrive-html-token-punctuation", "/>");
+                index += 2;
+                selfClosing = true;
+                break;
+            }
+            if (/\s/.test(char)) {
+                result += escapeHtml(char);
+                index += 1;
+                continue;
+            }
+
+            const attrMatch = source.slice(index).match(/^[^\s=/>]+/);
+            if (!attrMatch) {
+                result += escapeHtml(char);
+                index += 1;
+                continue;
+            }
+            result += makeSyntaxSpan("handrive-html-token-attr", attrMatch[0]);
+            index += attrMatch[0].length;
+
+            while (index < source.length && /\s/.test(source[index])) {
+                result += escapeHtml(source[index]);
+                index += 1;
+            }
+            if (source[index] === "=") {
+                result += makeSyntaxSpan("handrive-html-token-punctuation", "=");
+                index += 1;
+                while (index < source.length && /\s/.test(source[index])) {
+                    result += escapeHtml(source[index]);
+                    index += 1;
+                }
+                if (source[index] === "\"" || source[index] === "'") {
+                    const token = readQuotedString(source, index, source[index]);
+                    result += makeSyntaxSpan("handrive-html-token-string", token);
+                    index += token.length;
+                } else {
+                    const valueMatch = source.slice(index).match(/^[^\s>]+/);
+                    if (valueMatch) {
+                        result += makeSyntaxSpan("handrive-html-token-string", valueMatch[0]);
+                        index += valueMatch[0].length;
+                    }
+                }
+            }
+        }
+
+        return {
+            html: result,
+            index: index,
+            tagName: tagName,
+            closing: closing,
+            selfClosing: selfClosing,
+        };
+    }
+
+    function highlightHtmlCode(source) {
+        const text = String(source || "");
+        let result = "";
+        let index = 0;
+
+        while (index < text.length) {
+            if (text.slice(index, index + 4) === "<!--") {
+                const endIndex = text.indexOf("-->", index + 4);
+                const token = endIndex >= 0 ? text.slice(index, endIndex + 3) : text.slice(index);
+                result += makeSyntaxSpan("handrive-html-token-comment", token);
+                index += token.length;
+                continue;
+            }
+
+            if (text[index] === "<") {
+                const tag = readHtmlTag(text, index);
+                result += tag.html;
+                index = tag.index;
+
+                if ((tag.tagName === "script" || tag.tagName === "style") && !tag.closing && !tag.selfClosing) {
+                    const closePattern = new RegExp("</" + tag.tagName + "\\s*>", "i");
+                    const contentRest = text.slice(index);
+                    const closeMatch = contentRest.match(closePattern);
+                    if (closeMatch && typeof closeMatch.index === "number") {
+                        const innerSource = contentRest.slice(0, closeMatch.index);
+                        result += tag.tagName === "script"
+                            ? highlightJavaScriptCode(innerSource)
+                            : highlightCssCode(innerSource);
+                        index += innerSource.length;
+                        continue;
+                    }
+                }
+                continue;
+            }
+
+            result += escapeHtml(text[index]);
+            index += 1;
+        }
+
+        return result;
+    }
+
+    function splitMarkdownSourceLines(source) {
+        const text = String(source || "");
+        if (!text) {
+            return [""];
+        }
+        const lines = [];
+        let index = 0;
+        while (index < text.length) {
+            const newlineIndex = text.indexOf("\n", index);
+            if (newlineIndex < 0) {
+                lines.push(text.slice(index));
+                break;
+            }
+            lines.push(text.slice(index, newlineIndex + 1));
+            index = newlineIndex + 1;
+        }
+        return lines;
+    }
+
+    function getMarkdownLineParts(line) {
+        const match = String(line || "").match(/(\r?\n|\r)$/);
+        if (!match) {
+            return {
+                body: String(line || ""),
+                lineBreak: "",
+            };
+        }
+        return {
+            body: String(line || "").slice(0, -match[0].length),
+            lineBreak: match[0],
+        };
+    }
+
+    function readMarkdownLinkToken(source, startIndex) {
+        const imagePrefix = source[startIndex] === "!" && source[startIndex + 1] === "[";
+        const labelStart = imagePrefix ? startIndex + 1 : startIndex;
+        if (source[labelStart] !== "[") {
+            return "";
+        }
+        const labelEnd = source.indexOf("]", labelStart + 1);
+        if (labelEnd < 0 || source[labelEnd + 1] !== "(") {
+            return "";
+        }
+        const urlEnd = source.indexOf(")", labelEnd + 2);
+        if (urlEnd < 0) {
+            return "";
+        }
+        return source.slice(startIndex, urlEnd + 1);
+    }
+
+    function highlightMarkdownInlineSource(source) {
+        const text = String(source || "");
+        let result = "";
+        let index = 0;
+
+        while (index < text.length) {
+            const char = text[index];
+            const next = text[index + 1] || "";
+
+            if (char === "`") {
+                const endIndex = text.indexOf("`", index + 1);
+                if (endIndex > index) {
+                    const token = text.slice(index, endIndex + 1);
+                    result += makeSyntaxSpan("handrive-md-src-token-code", token);
+                    index = endIndex + 1;
+                    continue;
+                }
+            }
+
+            if (char === "[" || (char === "!" && next === "[")) {
+                const token = readMarkdownLinkToken(text, index);
+                if (token) {
+                    result += makeSyntaxSpan("handrive-md-src-token-link", token);
+                    index += token.length;
+                    continue;
+                }
+            }
+
+            if ((char === "*" && next === "*") || (char === "_" && next === "_")) {
+                const delimiter = char + next;
+                const endIndex = text.indexOf(delimiter, index + 2);
+                if (endIndex > index + 2) {
+                    const token = text.slice(index, endIndex + 2);
+                    result += makeSyntaxSpan("handrive-md-src-token-strong", token);
+                    index = endIndex + 2;
+                    continue;
+                }
+            }
+
+            if ((char === "*" || char === "_") && next !== char) {
+                const endIndex = text.indexOf(char, index + 1);
+                if (endIndex > index + 1) {
+                    const token = text.slice(index, endIndex + 1);
+                    result += makeSyntaxSpan("handrive-md-src-token-em", token);
+                    index = endIndex + 1;
+                    continue;
+                }
+            }
+
+            result += escapeHtml(char);
+            index += 1;
+        }
+
+        return result;
     }
 
     // 마크다운 소스 코드를 하이라이팅하는 함수
     function highlightMarkdownSourceCode(source) {
-        const placeholders = [];
+        const lines = splitMarkdownSourceLines(source);
+        let result = "";
+        let inCodeFence = false;
+        let codeFenceMarker = "";
 
-        const putPlaceholder = function (tokenHtml) {
-            const token = "@@DOCS_MD_SRC_TOKEN_" + String(placeholders.length) + "@@";
-            placeholders.push(tokenHtml);
-            return token;
-        };
+        for (let i = 0; i < lines.length; i += 1) {
+            const parts = getMarkdownLineParts(lines[i]);
+            const body = parts.body;
+            const lineBreak = parts.lineBreak;
+            const fenceMatch = body.match(/^(\s{0,3})(`{3,}|~{3,})/);
 
-        const restorePlaceholders = function (text) {
-            return text.replace(/@@DOCS_MD_SRC_TOKEN_(\d+)@@/g, function (_, indexText) {
-                const index = Number(indexText);
-                if (Number.isNaN(index) || index < 0 || index >= placeholders.length) {
-                    return "";
+            if (fenceMatch) {
+                const marker = fenceMatch[2];
+                result += makeSyntaxSpan("handrive-md-src-token-codeblock", body) + escapeHtml(lineBreak);
+                if (!inCodeFence) {
+                    inCodeFence = true;
+                    codeFenceMarker = marker[0];
+                } else if (marker[0] === codeFenceMarker) {
+                    inCodeFence = false;
+                    codeFenceMarker = "";
                 }
-                return placeholders[index];
-            });
-        };
+                continue;
+            }
 
-        let text = escapeHtml(source);
+            if (inCodeFence) {
+                result += makeSyntaxSpan("handrive-md-src-token-codeblock", body) + escapeHtml(lineBreak);
+                continue;
+            }
 
-        text = text.replace(/```[\s\S]*?```/g, function (match) {
-            return putPlaceholder('<span class="handrive-md-src-token-codeblock">' + match + "</span>");
-        });
-        text = text.replace(/`[^`\r\n]+`/g, function (match) {
-            return putPlaceholder('<span class="handrive-md-src-token-code">' + match + "</span>");
-        });
-        text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_, label, url) {
-            return (
-                '<span class="handrive-md-src-token-link">[' +
-                label +
-                "](" +
-                url +
-                ")</span>"
-            );
-        });
-        text = text.replace(/^(\s{0,3}#{1,6}\s+)/gm, '<span class="handrive-md-src-token-heading">$1</span>');
-        text = text.replace(/^(\s{0,3}(?:[-*+]|\d+\.)\s+)/gm, '<span class="handrive-md-src-token-list">$1</span>');
-        text = text.replace(/^(\s{0,3}&gt;\s?)/gm, '<span class="handrive-md-src-token-quote">$1</span>');
-        text = text.replace(/^(\s{0,3}(?:[-*_])(?:\s*[-*_]){2,}\s*)$/gm, '<span class="handrive-md-src-token-hr">$1</span>');
-        text = text.replace(/(\*\*|__)(.+?)\1/g, '<span class="handrive-md-src-token-strong">$1$2$1</span>');
-        text = text.replace(/(\*|_)([^*_][^]*?)\1/g, '<span class="handrive-md-src-token-em">$1$2$1</span>');
+            const headingMatch = body.match(/^(\s{0,3}#{1,6}\s+)/);
+            if (headingMatch) {
+                result += makeSyntaxSpan("handrive-md-src-token-heading", headingMatch[1]);
+                result += highlightMarkdownInlineSource(body.slice(headingMatch[1].length)) + escapeHtml(lineBreak);
+                continue;
+            }
 
-        return restorePlaceholders(text);
+            const quoteMatch = body.match(/^(\s{0,3}>\s?)/);
+            if (quoteMatch) {
+                result += makeSyntaxSpan("handrive-md-src-token-quote", quoteMatch[1]);
+                result += highlightMarkdownInlineSource(body.slice(quoteMatch[1].length)) + escapeHtml(lineBreak);
+                continue;
+            }
+
+            const listMatch = body.match(/^(\s{0,3}(?:[-*+]|\d+\.)\s+)/);
+            if (listMatch) {
+                result += makeSyntaxSpan("handrive-md-src-token-list", listMatch[1]);
+                result += highlightMarkdownInlineSource(body.slice(listMatch[1].length)) + escapeHtml(lineBreak);
+                continue;
+            }
+
+            if (/^\s{0,3}(?:[-*_])(?:\s*[-*_]){2,}\s*$/.test(body)) {
+                result += makeSyntaxSpan("handrive-md-src-token-hr", body) + escapeHtml(lineBreak);
+                continue;
+            }
+
+            result += highlightMarkdownInlineSource(body) + escapeHtml(lineBreak);
+        }
+
+        return result;
     }
 
     // 코드 언어 클래스를 감지하는 함수
@@ -2825,6 +3614,9 @@
         if (normalized === "py" || normalized === "python" || normalized === "py3" || normalized === "pyi") {
             return "handrive-py";
         }
+        if (normalized === "html" || normalized === "htm" || normalized === "xml" || normalized === "svg") {
+            return "handrive-html";
+        }
         return "";
     }
 
@@ -2833,13 +3625,24 @@
         if (!targetElement || !(targetElement instanceof Element)) {
             return;
         }
-        if (
-            renderClass !== "handrive-js" &&
-            renderClass !== "handrive-css" &&
-            renderClass !== "handrive-json" &&
-            renderClass !== "handrive-py" &&
-            renderClass !== "ui-markdown"
-        ) {
+        const renderClasses = String(renderClass || "")
+            .split(/\s+/)
+            .filter(Boolean);
+        let requestedRenderClass = "";
+        if (renderClasses.includes("handrive-js")) {
+            requestedRenderClass = "handrive-js";
+        } else if (renderClasses.includes("handrive-css")) {
+            requestedRenderClass = "handrive-css";
+        } else if (renderClasses.includes("handrive-json")) {
+            requestedRenderClass = "handrive-json";
+        } else if (renderClasses.includes("handrive-py")) {
+            requestedRenderClass = "handrive-py";
+        } else if (renderClasses.includes("handrive-html") || renderClasses.includes("handrive-editor-html")) {
+            requestedRenderClass = "handrive-html";
+        } else if (renderClasses.includes("ui-markdown")) {
+            requestedRenderClass = "ui-markdown";
+        }
+        if (!requestedRenderClass) {
             return;
         }
 
@@ -2851,9 +3654,9 @@
             if (codeNode.dataset.handriveCodeHighlighted === "1") {
                 return;
             }
-            const effectiveRenderClass = renderClass === "ui-markdown"
+            const effectiveRenderClass = requestedRenderClass === "ui-markdown"
                 ? detectCodeLanguageClass(codeNode)
-                : renderClass;
+                : requestedRenderClass;
             if (!effectiveRenderClass) {
                 return;
             }
@@ -2864,6 +3667,8 @@
                 codeNode.innerHTML = highlightCssCode(source);
             } else if (effectiveRenderClass === "handrive-py") {
                 codeNode.innerHTML = highlightPythonCode(source);
+            } else if (effectiveRenderClass === "handrive-html") {
+                codeNode.innerHTML = highlightHtmlCode(source);
             } else {
                 codeNode.innerHTML = highlightJsonCode(source);
             }
@@ -3997,15 +4802,15 @@
 
     // 문서 툴바는 한 줄을 유지한다.
     function initializeHandriveToolbarAutoCollapse() {
-        const toolbar = document.querySelector(".handrive-toolbar-wrap .handrive-toolbar");
+        const toolbar = document.querySelector(".handrive-toolbar-wrap .handrive-toolbar, .site-auth-toolbar-wrap .ui-toolbar");
         if (!toolbar) {
             return;
         }
-        toolbar.classList.remove("handrive-toolbar-auto-collapsed");
+        toolbar.classList.remove("handrive-toolbar-auto-collapsed", "ui-toolbar-auto-collapsed");
     }
 
     function initializeHandriveBreadcrumbOverflow() {
-        const breadcrumbsList = Array.from(document.querySelectorAll(".handrive-subtitle-wrap .ui-path-breadcrumbs, .handrive-toolbar-left > .ui-path-breadcrumbs"));
+        const breadcrumbsList = Array.from(document.querySelectorAll(".handrive-subtitle-wrap .ui-path-breadcrumbs, .handrive-toolbar-left > .ui-path-breadcrumbs, .site-auth-toolbar-left > .ui-path-breadcrumbs"));
         if (!breadcrumbsList.length) {
             return;
         }
@@ -5649,37 +6454,11 @@
             if (!editorSuggest) {
                 return;
             }
-            editorSuggest.innerHTML = "";
-
-            const list = document.createElement("div");
-            list.className = "handrive-editor-suggest-list";
-
-            for (let i = 0; i < activeListEditorSuggestions.length; i += 1) {
-                const item = activeListEditorSuggestions[i] || {};
-                const option = document.createElement("button");
-                option.type = "button";
-                option.className = "handrive-editor-suggest-item" + (i === activeListEditorSuggestionIndex ? " is-active" : "");
-                option.setAttribute("data-suggest-index", String(i));
-
-                const labelNode = document.createElement("span");
-                labelNode.className = "handrive-editor-suggest-item-label";
-                labelNode.textContent = item.label || item.insertText || "";
-
-                const triggerNode = document.createElement("span");
-                triggerNode.className = "handrive-editor-suggest-item-trigger";
-                triggerNode.textContent = item.trigger || "";
-
-                option.appendChild(labelNode);
-                option.appendChild(triggerNode);
-                list.appendChild(option);
-            }
-
-            const footer = document.createElement("div");
-            footer.className = "handrive-editor-suggest-footer";
-            footer.textContent = "↑↓ 이동 · Enter/Tab 적용";
-
-            editorSuggest.appendChild(list);
-            editorSuggest.appendChild(footer);
+            renderEditorSuggestDropdown(
+                editorSuggest,
+                activeListEditorSuggestions,
+                activeListEditorSuggestionIndex
+            );
         }
 
         function moveListEditorSuggestion(step) {
@@ -5759,7 +6538,7 @@
                 highlightedHtml = highlightJavaScriptCode(source);
             } else if (extension === ".md") {
                 renderClass = "handrive-editor-md";
-                highlightedHtml = escapeHtml(source);
+                highlightedHtml = highlightMarkdownSourceCode(source);
             } else if (extension === ".css") {
                 renderClass = "handrive-css";
                 highlightedHtml = highlightCssCode(source);
@@ -5814,45 +6593,11 @@
             }
 
             activeListEditorSuggestions = suggestions.map(function (suggestion) {
-                return {
-                    start: tokenInfo.start,
-                    end: tokenInfo.end,
-                    insertText: suggestion.insertText,
-                    cursorBack: Number(suggestion.cursorBack || 0),
-                    label: suggestion.label || suggestion.insertText,
-                    trigger: suggestion.trigger || "",
-                };
+                return buildEditorSuggestionPayload(suggestion, tokenInfo);
             });
             activeListEditorSuggestionIndex = 0;
             renderListEditorSuggestDropdown();
-            editorSuggest.hidden = false;
-
-            const calc = window.__handriveCalculateCursorPosition;
-            const cursorPosition = typeof calc === "function" ? calc(editorContentInput, start) : null;
-            if (cursorPosition) {
-                const surfaceRect = editorSurface ? editorSurface.getBoundingClientRect() : null;
-
-                let left = cursorPosition.left + 12;
-                let top = cursorPosition.top + (cursorPosition.lineHeight || 20) + 6;
-
-                if (surfaceRect) {
-                    left = (cursorPosition.left + 12) - surfaceRect.left;
-                    top = (cursorPosition.top + (cursorPosition.lineHeight || 20) + 6) - surfaceRect.top;
-                }
-
-                const suggestRect = editorSuggest.getBoundingClientRect();
-                if (surfaceRect) {
-                    const minLeft = 8;
-                    const minTop = 8;
-                    const maxLeft = Math.max(minLeft, surfaceRect.width - suggestRect.width - 8);
-                    const maxTop = Math.max(minTop, surfaceRect.height - suggestRect.height - 8);
-                    left = Math.min(Math.max(minLeft, left), maxLeft);
-                    top = Math.min(Math.max(minTop, top), maxTop);
-                }
-
-                editorSuggest.style.left = String(left) + "px";
-                editorSuggest.style.top = String(top) + "px";
-            }
+            positionEditorSuggestDropdown(editorSuggest, editorContentInput, editorSurface, start);
         }
 
         function acceptListEditorSuggestion(index) {
@@ -14461,6 +15206,7 @@
                 renderHandriveMermaidDiagrams(contentArticle).catch(alertError);
                 hydrateMediaAudioElements(contentArticle);
                 bindHandrivePdfFrameLoading(contentArticle);
+                applyHandriveCodeHighlighting(contentArticle, newClass);
                 await initializePreviewVideoPlayers(contentArticle);
 
                 viewImageZoom = 1;
@@ -14506,6 +15252,8 @@
             applyHandriveCodeHighlighting(contentArticle, "handrive-json");
         } else if (contentArticle && contentArticle.classList.contains("handrive-py")) {
             applyHandriveCodeHighlighting(contentArticle, "handrive-py");
+        } else if (contentArticle && contentArticle.classList.contains("handrive-html")) {
+            applyHandriveCodeHighlighting(contentArticle, "handrive-html");
         } else if (contentArticle && contentArticle.classList.contains("ui-markdown")) {
             applyHandriveCodeHighlighting(contentArticle, "ui-markdown");
         }
@@ -16050,33 +16798,11 @@
             if (!editorSuggest) {
                 return;
             }
-            editorSuggest.innerHTML = "";
-            const list = document.createElement("div");
-            list.className = "handrive-editor-suggest-list";
-            for (let i = 0; i < activeEditorSuggestions.length; i += 1) {
-                const item = activeEditorSuggestions[i] || {};
-                const option = document.createElement("button");
-                option.type = "button";
-                option.className = "handrive-editor-suggest-item" + (i === activeEditorSuggestionIndex ? " is-active" : "");
-                option.setAttribute("data-suggest-index", String(i));
-
-                const labelNode = document.createElement("span");
-                labelNode.className = "handrive-editor-suggest-item-label";
-                labelNode.textContent = item.label || item.insertText || "";
-
-                const triggerNode = document.createElement("span");
-                triggerNode.className = "handrive-editor-suggest-item-trigger";
-                triggerNode.textContent = item.trigger || "";
-
-                option.appendChild(labelNode);
-                option.appendChild(triggerNode);
-                list.appendChild(option);
-            }
-            const footer = document.createElement("div");
-            footer.className = "handrive-editor-suggest-footer";
-            footer.textContent = "↑↓ 이동 · Enter/Tab 적용";
-            editorSuggest.appendChild(list);
-            editorSuggest.appendChild(footer);
+            renderEditorSuggestDropdown(
+                editorSuggest,
+                activeEditorSuggestions,
+                activeEditorSuggestionIndex
+            );
         }
 
         function moveWriteEditorSuggestion(step) {
@@ -16112,49 +16838,11 @@
             }
 
             activeEditorSuggestions = suggestions.map(function (suggestion) {
-                return {
-                    start: tokenInfo.start,
-                    end: tokenInfo.end,
-                    insertText: suggestion.insertText,
-                    cursorBack: Number(suggestion.cursorBack || 0),
-                    label: suggestion.label || suggestion.insertText,
-                    trigger: suggestion.trigger || "",
-                };
+                return buildEditorSuggestionPayload(suggestion, tokenInfo);
             });
             activeEditorSuggestionIndex = 0;
             renderWriteEditorSuggestDropdown();
-            
-            // 커서 위치 계산
-            const cursorPosition = calculateCursorPosition(contentInput, start);
-            if (cursorPosition) {
-                // 에디터 서페이스 내에서의 상대 위치 계산
-                const editorRect = contentInput.getBoundingClientRect();
-                const surfaceRect = editorSurface ? editorSurface.getBoundingClientRect() : null;
-                
-                // 커서 기준으로 오른쪽 12픽셀, 아래 6픽셀
-                let left = cursorPosition.left + 12;
-                let top = cursorPosition.top + (cursorPosition.lineHeight || 20) + 6;
-                
-                // 에디터 서페이스가 있으면 상대 위치 조정
-                if (surfaceRect) {
-                    left = (cursorPosition.left + 12) - surfaceRect.left;
-                    top = (cursorPosition.top + (cursorPosition.lineHeight || 20) + 6) - surfaceRect.top;
-                }
-
-                const suggestRect = editorSuggest.getBoundingClientRect();
-                if (surfaceRect) {
-                    const minLeft = 8;
-                    const minTop = 8;
-                    const maxLeft = Math.max(minLeft, surfaceRect.width - suggestRect.width - 8);
-                    const maxTop = Math.max(minTop, surfaceRect.height - suggestRect.height - 8);
-                    left = Math.min(Math.max(minLeft, left), maxLeft);
-                    top = Math.min(Math.max(minTop, top), maxTop);
-                }
-                
-                editorSuggest.style.left = left + 'px';
-                editorSuggest.style.top = top + 'px';
-            }
-            editorSuggest.hidden = false;
+            positionEditorSuggestDropdown(editorSuggest, contentInput, editorSurface, start);
         }
 
         function calculateCursorPosition(textarea, position) {
@@ -16229,12 +16917,10 @@
             const source = contentInput.value || "";
             let highlightedHtml = escapeHtml(source);
             
-            // .md 파일일 때는 마크다운 렌더링을 하지 않음
             if (renderClass === "handrive-js") {
                 highlightedHtml = highlightJavaScriptCode(source);
             } else if (renderClass === "handrive-editor-md") {
-                // .md 파일은 plain text로 표시
-                highlightedHtml = escapeHtml(source);
+                highlightedHtml = highlightMarkdownSourceCode(source);
             } else if (renderClass === "handrive-css") {
                 highlightedHtml = highlightCssCode(source);
             } else if (renderClass === "handrive-json") {
@@ -17127,10 +17813,28 @@
             syncModalBodyState();
         }
 
+        function getMarkdownPreviewSourceContent() {
+            if (!contentInput) {
+                return "";
+            }
+            const content = contentInput.value || "";
+            const selectionStart = Number(contentInput.selectionStart);
+            const selectionEnd = Number(contentInput.selectionEnd);
+            if (
+                Number.isFinite(selectionStart) &&
+                Number.isFinite(selectionEnd) &&
+                selectionEnd > selectionStart
+            ) {
+                return content.slice(selectionStart, selectionEnd);
+            }
+            return content;
+        }
+
         async function openMarkdownPreviewModal() {
             if (!markdownPreviewModal || !markdownPreviewContent) {
                 return;
             }
+            const previewContentSource = getMarkdownPreviewSourceContent();
 
             applyHandriveRenderedContentModeClass(markdownPreviewContent, "plain_text", "handrive-plain-text");
             markdownPreviewContent.innerHTML = "<p>" + t("markdown_preview_loading", "Loading preview...") + "</p>";
@@ -17157,7 +17861,7 @@
                         original_path: originalPath,
                         target_dir: normalizePath(initialDir, true),
                         extension: previewExtension,
-                        content: contentInput ? contentInput.value : "",
+                        content: previewContentSource,
                     })
                 );
                 const renderMode = data && (data.render_mode === "markdown" || data.render_mode === "office")
@@ -17775,6 +18479,9 @@
         }
 
         if (markdownPreviewButton) {
+            markdownPreviewButton.addEventListener("mousedown", function (event) {
+                event.preventDefault();
+            });
             markdownPreviewButton.addEventListener("click", function () {
                 openMarkdownPreviewModal();
             });

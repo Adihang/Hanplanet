@@ -54,8 +54,8 @@
         MAX_UNDO: 50,
         isDirty: false,
         textOverlayActive: false,
-        textFont: "16px sans-serif",
-        textSize: 16,
+        textFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif',
+        textSize: 18,
         textBold: false,
         textItalic: false,
         entry: null,
@@ -68,6 +68,7 @@
         panStartClientY: 0,
         panStartScrollLeft: 0,
         panStartScrollTop: 0,
+        selectionPreviewCanvas: null,
     };
 
     var imageEditorSurface;
@@ -75,6 +76,7 @@
     var canvasArea, canvasWrap;
     var coordsDisplay, sizeDisplay, zoomDisplay;
     var brushSizeInput, brushSizeDisplay;
+    var fontFamilySelect, fontSizeInput;
     var primarySwatch, secondarySwatch;
     var paletteEl, customColorInput;
     var resizeModal, saveAsModal;
@@ -113,6 +115,8 @@
         zoomDisplay   = document.getElementById("ie-zoom-display");
         brushSizeInput   = document.getElementById("ie-brush-size");
         brushSizeDisplay = document.getElementById("ie-brush-size-display");
+        fontFamilySelect = document.getElementById("ie-font-family");
+        fontSizeInput = document.getElementById("ie-font-size");
         primarySwatch   = document.getElementById("ie-primary-swatch");
         secondarySwatch = document.getElementById("ie-secondary-swatch");
         paletteEl       = document.getElementById("ie-palette");
@@ -137,8 +141,13 @@
         state.selectionMask = null;
         state.isDrawing = false;
         state.textOverlayActive = false;
+        state.textFamily = normalizeTextFamily("system");
+        state.textSize = 18;
+        state.textBold = false;
+        state.textItalic = false;
         state.zoom = 1.0;
         state.MAX_UNDO = 50;
+        state.selectionPreviewCanvas = null;
 
         // 기존 리사이즈 핸들 제거 후 재생성
         if (canvasWrap) {
@@ -147,6 +156,7 @@
 
         buildPalette();
         syncSwatches();
+        syncTextControls();
         bindRibbonEvents();
         bindCanvasEvents();
         bindKeyboard();
@@ -182,7 +192,7 @@
             textOverlay.value = "";
         }
         if (overlayCtx && overlayCanvas) {
-            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            clearOverlayCanvas();
         }
 
         state.entry = null;
@@ -203,12 +213,7 @@
         img.onload = function () {
             var w = img.naturalWidth;
             var h = img.naturalHeight;
-            state.canvasWidth  = w;
-            state.canvasHeight = h;
-            mainCanvas.width   = w;
-            mainCanvas.height  = h;
-            overlayCanvas.width  = w;
-            overlayCanvas.height = h;
+            resizeCanvasTo(w, h);
             mainCtx.drawImage(img, 0, 0);
             state.MAX_UNDO = (w > 2048 || h > 2048) ? 20 : 50;
             commitHistoryState();
@@ -220,6 +225,63 @@
             console.error("이미지 로드 실패:", url);
         };
         img.src = url;
+    }
+
+    function syncOverlayCanvasResolution() {
+        if (!overlayCanvas || !overlayCtx) return;
+        var w = Math.max(1, state.canvasWidth || 1);
+        var h = Math.max(1, state.canvasHeight || 1);
+        var dpr = Math.max(1, window.devicePixelRatio || 1);
+        var zoom = Math.max(0.125, state.zoom || 1);
+        var scale = Math.max(1, dpr * zoom);
+        var maxBackingDim = 32767;
+        var maxScaleByDim = Math.min(maxBackingDim / w, maxBackingDim / h);
+        if (Number.isFinite(maxScaleByDim) && maxScaleByDim > 0) {
+            scale = Math.min(scale, Math.max(1, maxScaleByDim));
+        }
+        var targetW = Math.max(1, Math.round(w * scale));
+        var targetH = Math.max(1, Math.round(h * scale));
+        overlayCanvas.style.width = w + "px";
+        overlayCanvas.style.height = h + "px";
+        if (overlayCanvas.width !== targetW || overlayCanvas.height !== targetH) {
+            overlayCanvas.width = targetW;
+            overlayCanvas.height = targetH;
+        }
+        overlayCtx.setTransform(scale, 0, 0, scale, 0, 0);
+    }
+
+    function clearOverlayCanvas() {
+        if (!overlayCanvas || !overlayCtx) return;
+        syncOverlayCanvasResolution();
+        overlayCtx.save();
+        overlayCtx.setTransform(1, 0, 0, 1, 0, 0);
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        overlayCtx.restore();
+    }
+
+    function invalidateSelectionPreview() {
+        state.selectionPreviewCanvas = null;
+    }
+
+    function getSelectionPreviewCanvas() {
+        if (!state.selectionImageData) return null;
+        var imageData = state.selectionImageData;
+        var canvas = state.selectionPreviewCanvas;
+        if (!canvas || canvas.width !== imageData.width || canvas.height !== imageData.height) {
+            canvas = document.createElement("canvas");
+            canvas.width = imageData.width;
+            canvas.height = imageData.height;
+            canvas.getContext("2d").putImageData(imageData, 0, 0);
+            state.selectionPreviewCanvas = canvas;
+        }
+        return canvas;
+    }
+
+    function drawFloatingSelectionPreview(ctx) {
+        if (!state.selectionFloating || !state.selectionImageData || !state.selection) return;
+        var previewCanvas = getSelectionPreviewCanvas();
+        if (!previewCanvas) return;
+        ctx.drawImage(previewCanvas, state.selection.x, state.selection.y);
     }
 
     // ── 팔레트 ───────────────────────────────────────────────────────────
@@ -293,6 +355,25 @@
                 state.brushSize = parseInt(brushSizeInput.value, 10);
                 state.eraserSize = state.brushSize * 2;
                 if (brushSizeDisplay) brushSizeDisplay.textContent = state.brushSize + "px";
+            });
+        }
+
+        if (fontFamilySelect) {
+            fontFamilySelect.addEventListener("change", function () {
+                state.textFamily = normalizeTextFamily(fontFamilySelect.value);
+                applyTextOverlayStyle();
+            });
+        }
+
+        if (fontSizeInput) {
+            fontSizeInput.addEventListener("input", function () {
+                var value = parseInt(fontSizeInput.value, 10);
+                if (!Number.isFinite(value)) return;
+                state.textSize = Math.max(8, Math.min(160, value));
+                applyTextOverlayStyle();
+            });
+            fontSizeInput.addEventListener("change", function () {
+                syncTextControls();
             });
         }
 
@@ -454,6 +535,16 @@
 
         var tool = state.activeTool;
 
+        if (state.selectionFloating && state.selection && isInsideSelection(pos.x, pos.y)) {
+            beginSelectionDrag(pos.x, pos.y);
+            return;
+        }
+
+        if (state.selectionFloating && tool !== "select-rect" && tool !== "select-free") {
+            flattenFloatingSelection();
+            clearSelection();
+        }
+
         if (tool === "pencil" || tool === "brush") {
             beginStroke(pos.x, pos.y, useSecondary);
         } else if (tool === "eraser") {
@@ -475,9 +566,7 @@
             // 기존 선택 영역 안쪽 클릭 → 드래그 이동
             if (state.selection && state.selection.w > 0 && isInsideSelection(pos.x, pos.y)) {
                 if (!state.selectionFloating) liftSelection();
-                state.selectionDragging = true;
-                state.selectionDragOffsetX = pos.x - state.selection.x;
-                state.selectionDragOffsetY = pos.y - state.selection.y;
+                beginSelectionDrag(pos.x, pos.y);
             } else {
                 if (state.selectionFloating) flattenFloatingSelection();
                 clearSelection();
@@ -500,9 +589,7 @@
         state.lastY = pos.y;
         if (state.selection && state.selection.w > 0 && isInsideSelection(pos.x, pos.y)) {
             if (!state.selectionFloating) liftSelection();
-            state.selectionDragging = true;
-            state.selectionDragOffsetX = pos.x - state.selection.x;
-            state.selectionDragOffsetY = pos.y - state.selection.y;
+            beginSelectionDrag(pos.x, pos.y);
             return;
         }
         if (state.selectionFloating) flattenFloatingSelection();
@@ -615,6 +702,15 @@
         return ["line","rect","rounded-rect","ellipse","triangle","diamond","arrow","star"].indexOf(tool) >= 0;
     }
 
+    function beginSelectionDrag(x, y) {
+        state.isDrawing = true;
+        state.selectionDragging = true;
+        state.selectionDragOffsetX = x - state.selection.x;
+        state.selectionDragOffsetY = y - state.selection.y;
+        state.lastX = x;
+        state.lastY = y;
+    }
+
     // ── 연필 / 브러시 ─────────────────────────────────────────────────────
     function beginStroke(x, y, useSecondary) {
         mainCtx.save();
@@ -718,6 +814,61 @@
     }
 
     // ── 텍스트 ────────────────────────────────────────────────────────────
+    function normalizeTextFamily(value) {
+        var family = String(value || "").trim();
+        if (!family || family === "system") {
+            return '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif';
+        }
+        return family;
+    }
+
+    function fontFamilyForCanvas(family) {
+        var value = normalizeTextFamily(family);
+        if (value.indexOf(",") !== -1 || /^(serif|sans-serif|monospace|cursive|fantasy|system-ui)$/i.test(value)) {
+            return value;
+        }
+        return '"' + value.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+    }
+
+    function buildTextFont() {
+        return (state.textItalic ? "italic " : "") +
+            (state.textBold ? "bold " : "") +
+            state.textSize + "px " +
+            fontFamilyForCanvas(state.textFamily);
+    }
+
+    function applyTextOverlayStyle() {
+        if (!textOverlay) return;
+        textOverlay.style.fontFamily = normalizeTextFamily(state.textFamily);
+        textOverlay.style.fontSize = state.textSize + "px";
+        textOverlay.style.fontStyle = state.textItalic ? "italic" : "normal";
+        textOverlay.style.fontWeight = state.textBold ? "700" : "400";
+        textOverlay.style.lineHeight = "1.3";
+        if (state.textOverlayActive) {
+            textOverlay.style.left = state.textX + "px";
+            textOverlay.style.top = (state.textY - state.textSize) + "px";
+        }
+    }
+
+    function syncTextControls() {
+        if (fontFamilySelect) {
+            var normalized = normalizeTextFamily(state.textFamily);
+            var matched = false;
+            Array.prototype.forEach.call(fontFamilySelect.options || [], function (option) {
+                var optionValue = normalizeTextFamily(option.value);
+                if (!matched && optionValue === normalized) {
+                    fontFamilySelect.value = option.value;
+                    matched = true;
+                }
+            });
+            if (!matched) fontFamilySelect.value = "system";
+        }
+        if (fontSizeInput) {
+            fontSizeInput.value = String(Math.max(8, Math.min(160, Math.round(state.textSize || 18))));
+        }
+        applyTextOverlayStyle();
+    }
+
     function activateTextOverlay(canvasX, canvasY) {
         if (!textOverlay || !canvasWrap) return;
         state.textOverlayActive = true;
@@ -725,8 +876,8 @@
         state.textY = canvasY;
         textOverlay.style.left     = canvasX + "px";
         textOverlay.style.top      = (canvasY - state.textSize) + "px";
-        textOverlay.style.fontSize = state.textSize + "px";
         textOverlay.style.color    = state.primaryColor;
+        applyTextOverlayStyle();
         textOverlay.hidden = false;
         textOverlay.value  = "";
         textOverlay.focus();
@@ -736,7 +887,7 @@
         if (!state.textOverlayActive || !textOverlay) return;
         var lines = textOverlay.value.split("\n");
         mainCtx.save();
-        mainCtx.font      = (state.textItalic ? "italic " : "") + (state.textBold ? "bold " : "") + state.textSize + "px sans-serif";
+        mainCtx.font      = buildTextFont();
         mainCtx.fillStyle = state.primaryColor;
         mainCtx.textBaseline = "top";
         var lineH = state.textSize * 1.3;
@@ -802,6 +953,7 @@
         if (hasPoly) applyPolygonMaskToCanvas(tmpCtx, s.w, s.h, state.freeSelectPath, s.x, s.y);
         if (state.selectionMask) applySelectionMaskToCanvas(tmpCtx, s.w, s.h);
         state.selectionImageData = tmpCtx.getImageData(0, 0, s.w, s.h);
+        invalidateSelectionPreview();
 
         clearSelectionAreaToTransparent(s, hasPoly ? state.freeSelectPath : null, state.selectionMask);
 
@@ -820,7 +972,7 @@
             x: Math.min(x0, x), y: Math.min(y0, y),
             w: Math.abs(x - x0), h: Math.abs(y - y0),
         };
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        clearOverlayCanvas();
         drawSelectionBorder(overlayCtx, state.selection, null, state.marchingAntsOffset);
     }
 
@@ -864,7 +1016,7 @@
         state.selectionMask = null;
         state.freeSelectPoints = [[x, y]];
         state.freeSelectBuilding = true;
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        clearOverlayCanvas();
         drawFreeSelectPreview(x, y);
     }
 
@@ -879,7 +1031,7 @@
     }
 
     function drawFreeSelectPreview(x, y) {
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        clearOverlayCanvas();
         if (!state.freeSelectPoints.length) return;
         var lineWidth = screenPxToCanvasPx(1);
         var dashSize = screenPxToCanvasPx(4);
@@ -944,13 +1096,14 @@
     function cancelFreeSelectBuild() {
         state.freeSelectPoints = [];
         state.freeSelectBuilding = false;
-        if (overlayCtx) overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (overlayCtx) clearOverlayCanvas();
     }
 
     function clearSelection() {
         state.selection = null;
         state.selectionMask = null;
         state.selectionImageData = null;
+        invalidateSelectionPreview();
         state.selectionFloating  = false;
         state.selectionDragging  = false;
         state.freeSelectPoints   = [];
@@ -960,7 +1113,7 @@
             cancelAnimationFrame(state.marchingRafId);
             state.marchingRafId = null;
         }
-        if (overlayCtx) overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (overlayCtx) clearOverlayCanvas();
     }
 
     function flattenFloatingSelection() {
@@ -968,6 +1121,7 @@
         drawImageDataSkippingTransparent(mainCtx, state.selectionImageData, state.selection.x, state.selection.y);
         state.selectionFloating  = false;
         state.selectionImageData = null;
+        invalidateSelectionPreview();
         state.selectionMask = null;
         commitHistoryState();
     }
@@ -1221,6 +1375,7 @@
         if (state.selectionMask) applySelectionMaskToCanvas(tmpCtx, s.w, s.h);
 
         state.selectionImageData = tmpCtx.getImageData(0, 0, s.w, s.h);
+        invalidateSelectionPreview();
 
         // 시스템 클립보드에 복사
         if (navigator.clipboard && navigator.clipboard.write) {
@@ -1285,6 +1440,7 @@
         flattenFloatingSelection();
         state.freeSelectPath = null;
         state.selectionImageData = pastedImageData;
+        invalidateSelectionPreview();
         var iw = pastedImageData.width;
         var ih = pastedImageData.height;
         state.selection = {
@@ -1309,10 +1465,8 @@
         if (state.marchingRafId) cancelAnimationFrame(state.marchingRafId);
         function tick() {
             if (!state.selection) return;
-            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-            if (state.selectionFloating && state.selectionImageData) {
-                overlayCtx.putImageData(state.selectionImageData, state.selection.x, state.selection.y);
-            }
+            clearOverlayCanvas();
+            drawFloatingSelectionPreview(overlayCtx);
             drawSelectionBorder(overlayCtx, state.selection, state.freeSelectPath, state.marchingAntsOffset);
             state.marchingAntsOffset = (state.marchingAntsOffset + 1) % 16;
             state.marchingRafId = requestAnimationFrame(tick);
@@ -1323,9 +1477,25 @@
     function drawSelectionBorder(ctx, sel, polyPath, offset) {
         if (!sel || sel.w <= 0 || sel.h <= 0) return;
         var lineWidth = screenPxToCanvasPx(1);
+        var outlineWidth = screenPxToCanvasPx(1.5);
         var dashSize = screenPxToCanvasPx(6);
         var dashOffset = screenPxToCanvasPx(offset);
         ctx.save();
+        ctx.setLineDash([]);
+        ctx.lineWidth = outlineWidth;
+        ctx.strokeStyle = "rgba(79, 142, 247, 0.9)";
+        if (polyPath && polyPath.length > 2) {
+            ctx.beginPath();
+            polyPath.forEach(function (p, i) {
+                if (i === 0) ctx.moveTo(p[0], p[1]);
+                else ctx.lineTo(p[0], p[1]);
+            });
+            ctx.closePath();
+            ctx.stroke();
+        } else {
+            ctx.strokeRect(sel.x + 0.5, sel.y + 0.5, sel.w, sel.h);
+        }
+
         ctx.lineWidth = lineWidth;
         ctx.setLineDash([dashSize, dashSize]);
 
@@ -1366,7 +1536,7 @@
     function beginShape(x, y, useSecondary) { state.shapeUseSecondary = useSecondary; }
 
     function previewShape(x, y) {
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        clearOverlayCanvas();
         renderShape(overlayCtx, state.activeTool,
             state.drawStartX, state.drawStartY, x, y,
             state.shapeUseSecondary ? state.secondaryColor : state.primaryColor,
@@ -1374,7 +1544,7 @@
     }
 
     function commitShape(x, y, useSecondary) {
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        clearOverlayCanvas();
         renderShape(mainCtx, state.activeTool,
             state.drawStartX, state.drawStartY, x, y,
             (useSecondary || state.shapeUseSecondary) ? state.secondaryColor : state.primaryColor,
@@ -1530,7 +1700,8 @@
     function resizeCanvasTo(w, h) {
         state.canvasWidth  = w; state.canvasHeight = h;
         mainCanvas.width   = w; mainCanvas.height  = h;
-        overlayCanvas.width = w; overlayCanvas.height = h;
+        syncOverlayCanvasResolution();
+        clearOverlayCanvas();
     }
 
     function resizeCanvasContent(newW, newH) {
@@ -1630,7 +1801,8 @@
 
         state.canvasWidth  = newW; state.canvasHeight = newH;
         mainCanvas.width   = newW; mainCanvas.height  = newH;
-        overlayCanvas.width = newW; overlayCanvas.height = newH;
+        syncOverlayCanvasResolution();
+        clearOverlayCanvas();
 
         // 새 영역을 배경색으로 채우기
         mainCtx.fillStyle = state.secondaryColor;
@@ -1652,6 +1824,7 @@
             canvasWrap.style.transform = "scale(" + state.zoom + ")";
             canvasWrap.style.setProperty("--ie-inverse-zoom", String(1 / state.zoom));
         }
+        syncOverlayCanvasResolution();
         if (zoomDisplay) zoomDisplay.textContent = Math.round(state.zoom * 100) + "%";
         if (canvasArea) canvasArea.classList.toggle("show-pixel-grid", state.zoom > 4);
     }

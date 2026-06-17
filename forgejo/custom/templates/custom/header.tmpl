@@ -36,6 +36,60 @@
   }
 })();
 </script>
+<script>
+(function () {
+  var isSigned = {{if .IsSigned}}true{{else}}false{{end}};
+
+  function getCookie(name) {
+    try {
+      var m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+      if (!m) return null;
+      var raw = m[1].trim();
+      if (raw.charAt(0) === '"' && raw.charAt(raw.length - 1) === '"') {
+        raw = raw.slice(1, -1);
+      }
+      return decodeURIComponent(raw);
+    } catch (e) { return null; }
+  }
+
+  function redirectToHanplanetLogin() {
+    var htmlLang = (document.documentElement && document.documentElement.lang) || '';
+    var lang = /^en(?:-|$)/i.test(htmlLang) ? 'en' : 'ko';
+    var target = 'https://git.hanplanet.com/';
+    try {
+      var url = new URL(window.location.href);
+      var redirectTo = url.searchParams.get('redirect_to') || '/';
+      target = new URL(redirectTo, 'https://git.hanplanet.com').toString();
+    } catch (e) {}
+    window.location.replace('https://www.hanplanet.com/' + lang + '/login/?next=' + encodeURIComponent(target));
+  }
+
+  var path = window.location.pathname;
+  if ((path === '/user/login' || path === '/user/login/') && !getCookie('hp_logout_return')) {
+    redirectToHanplanetLogin();
+    return;
+  }
+
+  if (isSigned) {
+    return;
+  }
+  if (!getCookie('hp_account_active') && getCookie('hp_sso_probe_failed')) {
+    return;
+  }
+  if (
+    path === '/user/login' || path === '/user/login/' ||
+    path.indexOf('/user/oauth2/') === 0 ||
+    path.indexOf('/user/link_account') === 0 ||
+    path.indexOf('/user/logout') === 0
+  ) {
+    return;
+  }
+
+  window.location.replace(
+    'https://www.hanplanet.com/sso/gitea?probe=1&next=' + encodeURIComponent(window.location.href)
+  );
+})();
+</script>
 {{/* 공통 CSS — www.hanplanet.com과 동일한 순서 */}}
 <link rel="stylesheet" href="/assets/css/index.css?v={{AppVer}}-orig1">
 <link rel="stylesheet" href="/assets/css/theme-gitea-auto.css?v={{AppVer}}-orig1">

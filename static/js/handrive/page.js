@@ -17,6 +17,8 @@
     const sharedRootPath = String(root.dataset.handriveSharedRootPath || "").trim();
     const handriveAdminUser = String(root.dataset.handriveAdminUser || "").trim();
     const handriveAdminUserParam = String(root.dataset.handriveAdminUserParam || "handrive_user").trim() || "handrive_user";
+    const isAuthenticated = root.dataset.isAuthenticated === "1";
+    const isDemoSaveMode = root.dataset.demoSaveMode === "1" && !isAuthenticated;
 
     document.addEventListener("click", function (event) {
         const proxyButton = event.target && event.target.closest
@@ -2883,6 +2885,69 @@
         document.body.classList.toggle("handrive-modal-open", hasOpenHandriveModal());
     }
 
+    let demoSaveLastFocusedElement = null;
+
+    function setDemoSaveModalOpen(opened) {
+        const modal = document.getElementById("handrive-demo-save-modal");
+        if (!modal) {
+            return;
+        }
+        if (opened) {
+            demoSaveLastFocusedElement = document.activeElement;
+        }
+        modal.hidden = !opened;
+        syncHandriveModalBodyState();
+        if (opened) {
+            const loginButton = document.getElementById("handrive-demo-save-login-btn");
+            const signupButton = document.getElementById("handrive-demo-save-signup-btn");
+            const focusTarget = loginButton || signupButton || modal;
+            if (focusTarget && typeof focusTarget.focus === "function") {
+                focusTarget.focus();
+            }
+            return;
+        }
+        if (demoSaveLastFocusedElement && typeof demoSaveLastFocusedElement.focus === "function") {
+            demoSaveLastFocusedElement.focus();
+        }
+        demoSaveLastFocusedElement = null;
+    }
+
+    function openDemoSaveModal() {
+        setDemoSaveModalOpen(true);
+    }
+
+    function bindDemoSaveModal() {
+        const modal = document.getElementById("handrive-demo-save-modal");
+        if (!modal) {
+            return;
+        }
+        const backdrop = document.getElementById("handrive-demo-save-modal-backdrop");
+        const closeButton = document.getElementById("handrive-demo-save-close-btn");
+        if (backdrop) {
+            backdrop.addEventListener("click", function () {
+                setDemoSaveModalOpen(false);
+            });
+        }
+        if (closeButton) {
+            closeButton.addEventListener("click", function () {
+                setDemoSaveModalOpen(false);
+            });
+        }
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape" && !modal.hidden) {
+                setDemoSaveModalOpen(false);
+            }
+        });
+    }
+
+    window.HandriveDemoSaveModal = {
+        open: openDemoSaveModal,
+        close: function () {
+            setDemoSaveModalOpen(false);
+        },
+    };
+    bindDemoSaveModal();
+
     // 문서 확인 다이얼로그를 생성하는 함수
     function createHandriveConfirmDialog() {
         const confirmModal = document.getElementById("handrive-confirm-modal");
@@ -4331,6 +4396,9 @@
         const spreadsheetEditorExtensions = new Set([
             ".csv", ".xls", ".xlsx",
         ]);
+        function canEditOrDemoEntry(entry) {
+            return Boolean(entry && (entry.can_edit || entry.can_demo_edit));
+        }
         function isImageEditorEntry(entry) {
             return imageEditorExtensions.has(getEntryFileExtension(entry));
         }
@@ -4343,7 +4411,7 @@
         function isPdfEditorEntry(entry) {
             return Boolean(
                 entry &&
-                entry.can_edit &&
+                canEditOrDemoEntry(entry) &&
                 !entry.google_drive &&
                 !entry.is_git_virtual &&
                 !entry.is_archive_member &&
@@ -4351,7 +4419,7 @@
             );
         }
         function isSpreadsheetEditorEntry(entry) {
-            return Boolean(entry && entry.can_edit && spreadsheetEditorExtensions.has(getEntryFileExtension(entry)));
+            return Boolean(entry && canEditOrDemoEntry(entry) && spreadsheetEditorExtensions.has(getEntryFileExtension(entry)));
         }
 
         const mediaNavExtensions = new Set([
@@ -7686,6 +7754,10 @@
             // 저장/취소 버튼 이벤트를 현재 편집 대상(entry)에 바인딩
             editorSaveButton.onclick = function (event) {
                 event.preventDefault();
+                if (entry && entry.can_demo_edit) {
+                    openDemoSaveModal();
+                    return;
+                }
                 if (spreadsheetEditorSurface && !spreadsheetEditorSurface.hidden && window.HandriveSpreadsheetEditor) {
                     const csrfToken = getCsrfToken();
                     const savingText = t("spreadsheet_editor_saving", "저장 중...");
@@ -10482,6 +10554,32 @@
             return parts[parts.length - 1] || effectiveRootLabel;
         }
 
+        function shouldUseArchiveFileIconForCurrentDirectory(currentDirMeta) {
+            const meta = currentDirMeta || {};
+            if (!meta.is_archive_virtual || !meta.archive_path) {
+                return false;
+            }
+            const currentPath = normalizePath(state.currentDir || meta.path || "", true);
+            return resolveArchiveMemberPathForDisplayPath(currentPath, meta) === "";
+        }
+
+        function buildCurrentDirectoryTypeMarkerOptions(currentDirMeta) {
+            const meta = currentDirMeta || {};
+            const useArchiveFileIcon = shouldUseArchiveFileIconForCurrentDirectory(meta);
+            return {
+                isDir: !useArchiveFileIcon,
+                isRootAvatar: !useArchiveFileIcon && Boolean(meta.is_root),
+                accountProfileImageUrl: handriveRootProfileImageUrl,
+                isGoogleDrive: !useArchiveFileIcon && isGoogleDriveRootMeta(meta),
+                isGithubRepo: !useArchiveFileIcon && Boolean(meta.is_git_repo_root && meta.git_repo && meta.git_repo.provider === "github"),
+                isRepo: !useArchiveFileIcon && Boolean(meta.is_git_repo_root),
+                isBranch: !useArchiveFileIcon && Boolean(meta.git_branch_root),
+                isEmpty: !useArchiveFileIcon && !meta.has_children,
+                fileIconKey: useArchiveFileIcon ? "archive" : "",
+                isGenericFileIcon: useArchiveFileIcon,
+            };
+        }
+
         function normalizeDirectoryMetaForPath(baseMeta, incomingMeta, fallbackPath) {
             const rawMeta = incomingMeta || {};
             const normalizedPath = normalizePath(rawMeta.path !== undefined ? rawMeta.path : fallbackPath, true);
@@ -11280,16 +11378,7 @@
                 row.classList.add("is-selected");
             }
 
-            const typeMarker = createTypeMarker({
-                isDir: true,
-                isRootAvatar: Boolean(currentDirMeta.is_root),
-                accountProfileImageUrl: handriveRootProfileImageUrl,
-                isGoogleDrive: isGoogleDriveRootMeta(currentDirMeta),
-                isGithubRepo: Boolean(currentDirMeta.is_git_repo_root && currentDirMeta.git_repo && currentDirMeta.git_repo.provider === "github"),
-                isRepo: Boolean(currentDirMeta.is_git_repo_root),
-                isBranch: Boolean(currentDirMeta.git_branch_root),
-                isEmpty: !currentDirMeta.has_children,
-            });
+            const typeMarker = createTypeMarker(buildCurrentDirectoryTypeMarkerOptions(currentDirMeta));
             bindAdminUserSwitchAvatar(typeMarker, currentDirMeta);
 
             const name = document.createElement("span");
@@ -11606,16 +11695,7 @@
             row.className = "handrive-item-row handrive-current-dir-row";
             row.setAttribute("data-entry-path", currentFolderEntry.path);
 
-            const typeMarker = createTypeMarker({
-                isDir: true,
-                isRootAvatar: Boolean(currentDirMeta.is_root),
-                accountProfileImageUrl: handriveRootProfileImageUrl,
-                isGoogleDrive: isGoogleDriveRootMeta(currentDirMeta),
-                isGithubRepo: Boolean(currentDirMeta.is_git_repo_root && currentDirMeta.git_repo && currentDirMeta.git_repo.provider === "github"),
-                isRepo: Boolean(currentDirMeta.is_git_repo_root),
-                isBranch: Boolean(currentDirMeta.git_branch_root),
-                isEmpty: !currentDirMeta.has_children,
-            });
+            const typeMarker = createTypeMarker(buildCurrentDirectoryTypeMarkerOptions(currentDirMeta));
 
             const nameWrap = document.createElement("span");
             nameWrap.className = "handrive-item-name-wrap";
@@ -14140,7 +14220,7 @@
                 return;
             }
             var entry = state.entryByPath.get(editPath) || null;
-            if (!entry || entry.type !== "file" || !entry.can_edit) {
+            if (!entry || entry.type !== "file" || !canEditOrDemoEntry(entry)) {
                 return;
             }
             applySelection([entry.path], {
@@ -15108,6 +15188,11 @@
             if (!pendingSaveThenLeaveAction) {
                 return;
             }
+            if (isDemoSaveMode) {
+                pendingSaveThenLeaveAction = null;
+                openDemoSaveModal();
+                return;
+            }
             if (isMediaWriteEditor) {
                 submitMediaEditorSave({
                     redirectOnSuccess: false,
@@ -15149,6 +15234,11 @@
                     return;
                 }
                 if (choice === "save") {
+                    if (isDemoSaveMode) {
+                        pendingSaveThenLeaveAction = null;
+                        openDemoSaveModal();
+                        return;
+                    }
                     pendingSaveThenLeaveAction = action;
                     if (isMediaWriteEditor) {
                         submitSaveThenLeave();
@@ -17145,6 +17235,10 @@
 
         function submitMediaEditorSave(options) {
             const settings = options || {};
+            if (isDemoSaveMode) {
+                openDemoSaveModal();
+                return;
+            }
             const redirectOnSuccess = settings.redirectOnSuccess !== false;
             const onSuccess = typeof settings.onSuccess === "function" ? settings.onSuccess : null;
             const editor = getActiveWriteMediaEditor();
@@ -17256,6 +17350,10 @@
 
         async function submitSave(options) {
             const settings = options || {};
+            if (isDemoSaveMode) {
+                openDemoSaveModal();
+                return null;
+            }
             const redirectOnSuccess = settings.redirectOnSuccess !== false;
             const onSuccess = typeof settings.onSuccess === "function" ? settings.onSuccess : null;
 
@@ -17438,6 +17536,10 @@
 
         if (saveButton) {
             saveButton.addEventListener("click", function () {
+                if (isDemoSaveMode) {
+                    openDemoSaveModal();
+                    return;
+                }
                 if (isMediaWriteEditor) {
                     submitMediaEditorSave();
                     return;
@@ -17782,6 +17884,11 @@
         if (saveConfirmButton) {
             saveConfirmButton.addEventListener("click", function () {
                 if (state.isSaving) {
+                    return;
+                }
+                if (isDemoSaveMode) {
+                    pendingSaveThenLeaveAction = null;
+                    openDemoSaveModal();
                     return;
                 }
                 if (pendingSaveThenLeaveAction) {

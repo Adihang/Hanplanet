@@ -3,7 +3,17 @@
   <path d="M112 18V44C112 51.732 118.268 58 126 58H146" fill="#C7DAFF"/>
   <path d="M112 18V44C112 51.732 118.268 58 126 58H146" stroke="#9CB9F8" stroke-width="8" stroke-linejoin="round"/>
   <path d="M40 18H112L146 52V150C146 161.046 137.046 170 126 170H40C28.954 170 20 161.046 20 150V38C20 26.954 28.954 18 40 18Z" stroke="#4B83F5" stroke-width="8" stroke-linejoin="round"/>
-  <rect x="40" y="112" width="86" height="28" rx="14" fill="#2E5FD0"/>
-  <path d="M52 83C52 74.716 58.716 68 67 68H99C107.284 68 114 74.716 114 83V99H52V83Z" fill="#D7E5FF" stroke="#2E5FD0" stroke-width="8"/>
-  <text x="83" y="132" text-anchor="middle" font-size="24" font-family="Inter, Arial, sans-serif" font-weight="800" fill="#ffffff">PDF</text>
+  <g fill="#1748B8" shape-rendering="geometricPrecision" transform="translate(27 70)">
+    <rect x="0" y="0" width="9" height="62" rx="1.5"/>
+    <rect x="0" y="0" width="30" height="9" rx="1.5"/>
+    <rect x="21" y="0" width="9" height="35" rx="1.5"/>
+    <rect x="0" y="26" width="30" height="9" rx="1.5"/>
+    <rect x="40" y="0" width="9" height="62" rx="1.5"/>
+    <rect x="40" y="0" width="30" height="9" rx="1.5"/>
+    <rect x="40" y="53" width="30" height="9" rx="1.5"/>
+    <rect x="64" y="8" width="9" height="46" rx="1.5"/>
+    <rect x="82" y="0" width="9" height="62" rx="1.5"/>
+    <rect x="82" y="0" width="30" height="9" rx="1.5"/>
+    <rect x="82" y="26" width="26" height="9" rx="1.5"/>
+  </g>
 </svg>

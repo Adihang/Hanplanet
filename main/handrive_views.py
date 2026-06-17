@@ -1075,6 +1075,8 @@ DOCS_TEXT = {
         "js_invalid_selected_path": "선택 경로가 유효하지 않습니다. 목록에서 폴더를 선택해주세요.",
         "js_folder_create_requires_folder": "폴더에서만 새 폴더를 만들 수 있습니다.",
         "auth_login_button": "로그인",
+        "demo_save_title": "데모 모드",
+        "demo_save_message": "데모 모드, 저장 기능은 로그인 후 이용 가능합니다.",
         "auth_my_portfolio_button": "내 포트폴리오",
         "auth_logout_button": "로그아웃",
         "admin_button": "Admin",
@@ -1491,6 +1493,8 @@ DOCS_TEXT = {
         "js_invalid_selected_path": "Selected path is invalid. Please choose a folder from the list.",
         "js_folder_create_requires_folder": "New folders can only be created inside a folder.",
         "auth_login_button": "Login",
+        "demo_save_title": "Demo Mode",
+        "demo_save_message": "Demo mode. Saving is available after login.",
         "auth_my_portfolio_button": "My Portfolio",
         "auth_logout_button": "Logout",
         "admin_button": "Admin",
@@ -3229,6 +3233,26 @@ def has_handrive_write_access(request, path_value: str | None) -> bool:
     return bool(user and user.is_authenticated and scoped_home_dir and in_scoped_home)
 
 
+def has_handrive_demo_edit_access(request, path_value: str | None) -> bool:
+    """비로그인 all 파일의 읽기/에디터 데모 접근 여부를 판정한다."""
+    user = getattr(request, "user", None)
+    if user and user.is_authenticated:
+        return False
+    if has_handrive_shared_access_hint(request) or getattr(request, "_handrive_shared_owner_username", ""):
+        return False
+
+    scoped_home_dir = get_scoped_handrive_home_dir(request)
+    if scoped_home_dir != "all":
+        return False
+    try:
+        normalized_path = normalize_relative_path(path_value, allow_empty=False)
+    except ValueError:
+        return False
+    if not is_path_in_handrive_scope(normalized_path, scoped_home_dir):
+        return False
+    return has_handrive_read_access(request, normalized_path)
+
+
 def has_handrive_directory_write_access(request, path_value: str | None) -> bool:
     """폴더 하위 생성/업로드 가능 여부를 판정한다."""
     user = getattr(request, "user", None)
@@ -4074,6 +4098,7 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                 is_git_repo_root = is_handrive_git_repo_root_path(request, entry["path"])
                 entry["can_edit"] = can_edit
                 entry["can_read"] = can_read
+                entry["can_demo_edit"] = False
                 entry["can_write_children"] = has_handrive_directory_write_access(request, entry["path"])
                 entry["can_delete"] = can_edit or is_git_repo_root
                 entry["is_public_write"] = False
@@ -4108,6 +4133,7 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
             if request is not None:
                 entry["can_edit"] = can_edit
                 entry["can_read"] = can_read
+                entry["can_demo_edit"] = has_handrive_demo_edit_access(request, entry["path"])
                 entry["can_write_children"] = False
                 entry["can_delete"] = can_edit
                 entry["is_public_write"] = is_handrive_public_write_enabled(request, entry["path"])
@@ -9996,6 +10022,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
     if request.user.is_authenticated:
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
         sync_excluded_paths = _sanitize_sync_excluded_paths(profile.sync_excluded_paths, scoped_home_dir)
+    handrive_demo_save_mode = has_handrive_demo_edit_access(request, current_dir)
 
     context.update(
         {
@@ -10035,6 +10062,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
             "page_help_html": build_page_help_html(resolved_lang, "list", handrive_text),
             "hide_global_nav": bool(shared_context) and not request.user.is_authenticated,
             "is_handrive_shared_view": bool(shared_context),
+            "handrive_demo_save_mode": handrive_demo_save_mode,
             "handrive_shared_owner_username": shared_context["owner_username"] if shared_context else "",
             "handrive_shared_slug": shared_context["share_slug"] if shared_context else "",
             "handrive_shared_root_path": shared_context["root_path"] if shared_context else "",
@@ -10058,6 +10086,7 @@ def handrive_view(request, doc_path, ui_lang=None):
     if has_handrive_shared_access_hint(request) and not shared_context:
         raise Http404("파일을 찾을 수 없습니다.")
     scoped_home_dir = get_scoped_handrive_home_dir(request)
+    doc_can_demo_edit = False
 
     route_doc_path = resolve_handrive_route_path(request, doc_path)
     try:
@@ -10135,6 +10164,9 @@ def handrive_view(request, doc_path, ui_lang=None):
         file_extension = file_path.suffix.lower()
         file_size_display = format_handrive_bytes_display(file_path.stat().st_size) if file_path.exists() else ""
         file_can_edit = has_handrive_write_access(request, relative_file_path)
+        file_can_demo_edit = has_handrive_demo_edit_access(request, relative_file_path)
+        doc_can_demo_edit = file_can_demo_edit
+        file_can_render_edit = file_can_edit or file_can_demo_edit
         if resolve_handrive_render_profile(file_extension).get("mode") == DOCS_RENDER_MODE_OFFICE:
             content = ""
             rendered_content_html, render_profile = render_handrive_content(
@@ -10143,7 +10175,7 @@ def handrive_view(request, doc_path, ui_lang=None):
                 source_path=file_path,
                 relative_path=relative_file_path,
                 request=request,
-                can_edit=file_can_edit,
+                can_edit=file_can_render_edit,
             )
         else:
             try:
@@ -10154,7 +10186,7 @@ def handrive_view(request, doc_path, ui_lang=None):
                     source_path=file_path,
                     relative_path=relative_file_path,
                     request=request,
-                    can_edit=file_can_edit,
+                    can_edit=file_can_render_edit,
                 )
             except Http404:
                 rendered_content_html = render_handrive_unsupported_safely(
@@ -10270,6 +10302,7 @@ def handrive_view(request, doc_path, ui_lang=None):
         )
 
     doc_can_edit = has_handrive_write_access(request, relative_file_path)
+    doc_can_open_editor = doc_can_edit or doc_can_demo_edit
     doc_is_media_editor_file = git_virtual is None and google_drive is None and is_handrive_media_editor_extension(file_extension)
     doc_is_spreadsheet_editor_file = (
         git_virtual is None
@@ -10279,7 +10312,7 @@ def handrive_view(request, doc_path, ui_lang=None):
     doc_is_spreadsheet_file = file_extension in HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS
     doc_is_excel_file = file_extension in {".xls", ".xlsx"}
     doc_can_show_edit = (
-        doc_can_edit
+        doc_can_open_editor
         and render_profile["mode"] != DOCS_RENDER_MODE_UNSUPPORTED
         and (
             file_extension not in HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS
@@ -10314,6 +10347,8 @@ def handrive_view(request, doc_path, ui_lang=None):
             "doc_can_read": True,
             "doc_can_print": doc_can_print,
             "doc_can_edit": doc_can_edit,
+            "doc_can_demo_edit": doc_can_demo_edit,
+            "doc_can_save_spreadsheet": doc_can_edit or doc_can_demo_edit,
             "doc_can_show_edit": doc_can_show_edit,
             "doc_edit_url": doc_edit_url,
             "doc_is_url_only": doc_is_url_only,
@@ -10333,6 +10368,7 @@ def handrive_view(request, doc_path, ui_lang=None):
             "page_help_html": build_page_help_html(resolved_lang, "view", handrive_text),
             "hide_global_nav": bool(shared_context) and not request.user.is_authenticated,
             "is_handrive_shared_view": bool(shared_context),
+            "handrive_demo_save_mode": doc_can_demo_edit,
             "handrive_shared_owner_username": shared_context["owner_username"] if shared_context else "",
             "handrive_shared_slug": shared_context["share_slug"] if shared_context else "",
             "handrive_shared_root_path": shared_context["root_path"] if shared_context else "",
@@ -10421,6 +10457,8 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
                 DOCS_RENDER_MODE_UNSUPPORTED,
             },
             "doc_can_edit": False,
+            "doc_can_demo_edit": False,
+            "doc_can_save_spreadsheet": False,
             "doc_is_url_only": True,
             "doc_share_url": request.build_absolute_uri(build_handrive_shared_view_url(resolved_lang, owner_username, share_slug)),
             "doc_share_download_url": build_handrive_shared_download_url(request, relative_path, owner_username, share_slug),
@@ -10428,6 +10466,7 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
             "doc_share_allowed_users": get_handrive_share_allowed_users_for_request(request, shared_link),
             "hide_global_nav": not request.user.is_authenticated,
             "is_handrive_shared_view": True,
+            "handrive_demo_save_mode": False,
             "doc_content_html": rendered_content_html,
             "doc_content_mode": render_profile["mode"],
             "doc_content_class": render_profile["css_class"],
@@ -10476,6 +10515,7 @@ def handrive_write(request, ui_lang=None):
     write_current_file_name = ""
     write_public_direct_save = False
     write_requires_commit_message = False
+    write_demo_edit = False
     write_editor_kind = "text"
 
     if requested_path:
@@ -10558,7 +10598,8 @@ def handrive_write(request, ui_lang=None):
             write_public_direct_save = True
         if not is_path_in_handrive_scope(original_relative_path, scoped_home_dir):
             raise PermissionDenied("파일을 수정할 권한이 없습니다.")
-        if not has_handrive_write_access(request, original_relative_path):
+        write_demo_edit = has_handrive_demo_edit_access(request, original_relative_path)
+        if not has_handrive_write_access(request, original_relative_path) and not write_demo_edit:
             raise PermissionDenied("파일을 수정할 권한이 없습니다.")
         write_public_direct_save = write_public_direct_save or is_handrive_public_write_enabled(request, original_relative_path)
         mode = "edit"
@@ -10637,6 +10678,8 @@ def handrive_write(request, ui_lang=None):
             "write_current_file_name": write_current_file_name,
             "write_public_direct_save": write_public_direct_save,
             "write_requires_commit_message": write_requires_commit_message,
+            "write_demo_edit": write_demo_edit,
+            "handrive_demo_save_mode": write_demo_edit,
         }
     )
     return render(request, "handrive/write.html", context)
@@ -12905,6 +12948,7 @@ def handrive_api_preview(request):
             elif git_virtual is None:
                 file_extension = file_path.suffix.lower()
                 file_can_edit = has_handrive_write_access(request, relative_file_path)
+                file_can_render_edit = file_can_edit or has_handrive_demo_edit_access(request, relative_file_path)
                 render_mode = resolve_handrive_render_profile(file_extension).get("mode")
                 if render_mode in (DOCS_RENDER_MODE_OFFICE, DOCS_RENDER_MODE_PDF):
                     content = ""
@@ -12916,7 +12960,7 @@ def handrive_api_preview(request):
                         request=request,
                         share_owner=shared_context["owner_username"] if shared_context else "",
                         share_slug=shared_context["share_slug"] if shared_context else "",
-                        can_edit=file_can_edit,
+                        can_edit=file_can_render_edit,
                     )
                 else:
                     try:
@@ -12929,7 +12973,7 @@ def handrive_api_preview(request):
                             request=request,
                             share_owner=shared_context["owner_username"] if shared_context else "",
                             share_slug=shared_context["share_slug"] if shared_context else "",
-                            can_edit=file_can_edit,
+                            can_edit=file_can_render_edit,
                         )
                     except Http404:
                         rendered_html = render_handrive_unsupported_safely(

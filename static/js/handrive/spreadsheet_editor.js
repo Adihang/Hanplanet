@@ -1275,6 +1275,10 @@
         if (!activeState) {
             return Promise.reject(new Error("열린 스프레드시트가 없습니다."));
         }
+        if (isDemoSaveMode()) {
+            openDemoSaveModal();
+            return Promise.resolve(null);
+        }
         if (!settings.saveUrl) {
             return Promise.reject(new Error("저장 API URL이 없습니다."));
         }
@@ -1400,6 +1404,17 @@
     function getPreviewSaveUrl() {
         var pageRoot = getPageRoot();
         return pageRoot ? String(pageRoot.dataset.spreadsheetSaveApiUrl || "").trim() : "";
+    }
+
+    function isDemoSaveMode() {
+        var pageRoot = getPageRoot();
+        return Boolean(pageRoot && pageRoot.dataset.demoSaveMode === "1" && pageRoot.dataset.isAuthenticated !== "1");
+    }
+
+    function openDemoSaveModal() {
+        if (window.HandriveDemoSaveModal && typeof window.HandriveDemoSaveModal.open === "function") {
+            window.HandriveDemoSaveModal.open();
+        }
     }
 
     function getPreviewSaveButton(shell) {
@@ -1636,6 +1651,11 @@
             return Promise.resolve(null);
         }
         if (!state.dirty) {
+            updatePreviewSaveButton(state);
+            return Promise.resolve(null);
+        }
+        if (isDemoSaveMode()) {
+            openDemoSaveModal();
             updatePreviewSaveButton(state);
             return Promise.resolve(null);
         }

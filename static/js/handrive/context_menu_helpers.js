@@ -93,7 +93,8 @@
         var isDirectory = Boolean(targetEntry.type === "dir");
         var isCurrentFolder = Boolean(targetEntry.isCurrentFolder);
         var canEditEntry = Boolean(targetEntry.can_edit);
-        var canShowEditEntry = Boolean(canEditEntry && isEditableHandriveFileEntry(targetEntry));
+        var canDemoEditEntry = Boolean(targetEntry.can_demo_edit);
+        var canShowEditEntry = Boolean((canEditEntry || canDemoEditEntry) && isEditableHandriveFileEntry(targetEntry));
         var canWriteChildren = Boolean(targetEntry.type === "dir" && targetEntry.can_write_children);
         function isGitVirtualDirectoryEntry(entry) {
             return Boolean(

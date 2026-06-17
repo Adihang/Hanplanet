@@ -188,6 +188,7 @@
         var isFileEntry = Boolean(isPreviewableFileEntry(entry));
         var canRead = Boolean(entry && entry.can_read !== false);
         var canEdit = Boolean(entry && entry.can_edit);
+        var canOpenEditor = Boolean(entry && (entry.can_edit || entry.can_demo_edit));
         var canEditPreview = previewRenderMode !== "unsupported";
         var canPrintPreview = previewRenderMode !== "unsupported" && previewRenderMode !== "media_video";
         var isSpreadsheetPreview = Boolean(isSpreadsheetPreviewEntry(entry));
@@ -214,7 +215,7 @@
         if (previewEditButton) {
             previewEditButton.hidden = !(
                 isFileEntry &&
-                canEdit &&
+                canOpenEditor &&
                 canEditPreview &&
                 !isSpreadsheetPreview &&
                 isEditableHandriveFileEntry(entry)
@@ -231,7 +232,7 @@
         }
 
         if (previewSpreadsheetSaveButton) {
-            previewSpreadsheetSaveButton.hidden = !(isFileEntry && canEdit && isSpreadsheetPreview);
+            previewSpreadsheetSaveButton.hidden = !(isFileEntry && canOpenEditor && isSpreadsheetPreview);
             previewSpreadsheetSaveButton.disabled = true;
             if (previewSpreadsheetSaveButton.hidden) {
                 previewSpreadsheetSaveButton.onclick = null;

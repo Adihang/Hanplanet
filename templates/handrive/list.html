@@ -91,6 +91,8 @@
 <main
     class="handrive-shell ui-shell handrive-content ui-content"
     data-handrive-page="list"
+    data-is-authenticated="{% if user.is_authenticated %}1{% else %}0{% endif %}"
+    data-demo-save-mode="{% if handrive_demo_save_mode %}1{% else %}0{% endif %}"
     data-is-superuser="{% if user.is_superuser %}1{% else %}0{% endif %}"
     data-current-dir="{{ current_dir }}"
     data-current-dir-is-root="{% if current_dir_is_root %}1{% else %}0{% endif %}"
@@ -372,6 +374,7 @@
 {% include "popup/handrive/image_resize_modal.html" %}
 {% include "popup/handrive/image_save_as_modal.html" %}
 {% include "popup/handrive/confirm_modal.html" %}
+{% include "popup/handrive/demo_save_modal.html" %}
 {% include "popup/handrive/admin_user_modal.html" %}
 {% include "popup/handrive/url_share_modal.html" %}
 {% include "popup/handrive/auth_logout_modal.html" %}

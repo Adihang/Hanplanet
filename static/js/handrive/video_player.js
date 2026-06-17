@@ -1539,10 +1539,11 @@
         let hlsPreparationTimer = null;
         let hlsReadyProbeTimer = null;
         let hlsReadyProbeIdleId = null;
-        let hlsReadyControlButton = null;
+        let hlsQualityGateButton = null;
         let hlsStatusInFlight = false;
         let pendingHlsPreparationOptions = null;
         let hlsPlaybackPending = false;
+        let hlsQualityGateLoading = false;
         let resumeAfterHlsSwitch = false;
         let userWantsPlayback = false;
         let latestHlsStatus = '';
@@ -1609,10 +1610,10 @@
             }
             pendingHlsPreparationOptions = null;
             clearHlsReadyProbe();
-            if (hlsReadyControlButton) {
-                hlsReadyControlButton.removeEventListener('click', onHlsReadyControlClick);
-                hlsReadyControlButton.remove();
-                hlsReadyControlButton = null;
+            if (hlsQualityGateButton) {
+                hlsQualityGateButton.removeEventListener('click', onHlsQualityGateClick);
+                hlsQualityGateButton.remove();
+                hlsQualityGateButton = null;
             }
             player.handriveHlsSwitching_ = false;
             player.handriveHlsSourceActive_ = false;
@@ -1657,9 +1658,24 @@
             root.classList.toggle('is-handrive-hls-loading', Boolean(loading));
         }
 
+        function getQualitySelectorControl() {
+            const root = player.el();
+            return root
+                ? root.querySelector('.vjs-quality-selector:not(.vjs-handrive-hls-quality-gate)')
+                : null;
+        }
+
+        function hasQualitySelectorControl() {
+            const selector = getQualitySelectorControl();
+            return Boolean(selector && !selector.classList.contains('vjs-hidden'));
+        }
+
         // 화질 선택기 활성화
         function enableQualitySelector() {
-            if (qualitySelectorEnabled) return;
+            if (qualitySelectorEnabled) {
+                syncHlsQualityGateVisibility();
+                return;
+            }
             if (typeof player.hlsQualitySelector !== 'function') {
                 if (!qualitySelectorRetryTimer && qualitySelectorRetryCount < 40) {
                     qualitySelectorRetryCount += 1;
@@ -1670,7 +1686,6 @@
                 }
                 return;
             }
-            qualitySelectorEnabled = true;
             try {
                 const bar = player.getChild('controlBar');
                 const children = bar ? bar.children() : [];
@@ -1683,6 +1698,8 @@
                     displayCurrentQuality: false,
                     placementIndex: rateIdx >= 0 ? rateIdx + 1 : undefined,
                 });
+                qualitySelectorEnabled = true;
+                window.setTimeout(syncHlsQualityGateVisibility, 0);
             } catch (_) {}
         }
 
@@ -1756,7 +1773,7 @@
 
         // HLS 소스로 전환 (재생 중이면 위치 보존)
         function switchToHls(options = {}) {
-            hideHlsReadyControl();
+            hideHlsQualityGate();
             if (sourceIsHls()) {
                 enableQualitySelector();
                 if (options.resume || userWantsPlayback) {
@@ -1792,63 +1809,106 @@
             }, 12000);
         }
 
-        function getOrCreateHlsReadyControlButton() {
+        function getOrCreateHlsQualityGateButton() {
             const barComponent = player.getChild('controlBar');
             const bar = barComponent && typeof barComponent.el === 'function' ? barComponent.el() : null;
             if (!bar) return null;
-            if (hlsReadyControlButton && hlsReadyControlButton.isConnected) {
-                return hlsReadyControlButton;
+            if (hlsQualityGateButton && hlsQualityGateButton.isConnected) {
+                return hlsQualityGateButton;
             }
 
             const button = document.createElement('button');
             const icon = document.createElement('span');
             button.type = 'button';
-            button.className = 'vjs-control vjs-button vjs-handrive-hls-ready-button vjs-hidden';
+            button.className = 'vjs-control vjs-button vjs-quality-selector vjs-handrive-hls-quality-gate vjs-hidden';
             button.hidden = true;
-            button.disabled = true;
             button.setAttribute('aria-label', textByLang('화질 선택', 'Select quality'));
             button.setAttribute('title', textByLang('화질 선택', 'Select quality'));
             icon.className = 'vjs-icon-placeholder';
             icon.setAttribute('aria-hidden', 'true');
             icon.textContent = 'HD';
             button.appendChild(icon);
-            button.addEventListener('click', onHlsReadyControlClick);
-            hlsReadyControlButton = button;
+            button.addEventListener('click', onHlsQualityGateClick);
+            hlsQualityGateButton = button;
 
-            const insertBefore = bar.querySelector('.vjs-pip-button, .vjs-fullscreen-control');
-            bar.insertBefore(button, insertBefore || null);
+            placeHlsQualityGateButton();
+            syncHlsQualityGateLoading();
             return button;
         }
 
-        function setHlsReadyControlVisible(visible) {
-            const button = visible ? getOrCreateHlsReadyControlButton() : hlsReadyControlButton;
-            if (!button) return;
-            const shouldShow = Boolean(visible);
-            button.hidden = !shouldShow;
-            button.disabled = !shouldShow;
-            button.classList.toggle('vjs-hidden', !shouldShow);
-            button.classList.toggle('is-hls-ready', shouldShow);
-        }
-
-        function showHlsReadyControl() {
-            if (!startupSrc) {
-                useHlsWhenReady({ resume: userWantsPlayback });
+        function placeHlsQualityGateButton() {
+            const barComponent = player.getChild('controlBar');
+            const bar = barComponent && typeof barComponent.el === 'function' ? barComponent.el() : null;
+            const button = hlsQualityGateButton;
+            if (!bar || !button) return;
+            const rate = bar.querySelector('.vjs-playback-rate');
+            if (rate && rate.nextSibling !== button) {
+                bar.insertBefore(button, rate.nextSibling || null);
                 return;
             }
+            if (!rate && !button.parentNode) {
+                const insertBefore = bar.querySelector('.vjs-pip-button, .vjs-fullscreen-control');
+                bar.insertBefore(button, insertBefore || null);
+            }
+        }
+
+        function syncHlsQualityGateLoading() {
+            const button = hlsQualityGateButton;
+            if (!button) return;
+            button.classList.toggle('is-hls-loading', hlsQualityGateLoading);
+            button.setAttribute('aria-busy', hlsQualityGateLoading ? 'true' : 'false');
+        }
+
+        function setHlsQualityGateLoading(loading) {
+            hlsQualityGateLoading = Boolean(loading);
+            syncHlsQualityGateLoading();
+        }
+
+        function setHlsQualityGateVisible(visible) {
+            const button = visible ? getOrCreateHlsQualityGateButton() : hlsQualityGateButton;
+            if (!button) return;
+            const shouldShow = Boolean(visible) && !hasQualitySelectorControl();
+            button.hidden = !shouldShow;
+            button.classList.toggle('vjs-hidden', !shouldShow);
+            button.classList.toggle('is-hls-ready', latestHlsStatus === 'ready' && shouldShow);
+            placeHlsQualityGateButton();
+        }
+
+        function syncHlsQualityGateVisibility() {
+            setHlsQualityGateVisible(!hasQualitySelectorControl());
+        }
+
+        function showHlsQualityGate() {
             setHlsLoading(false);
             hideBadge();
-            setHlsReadyControlVisible(true);
+            setHlsQualityGateLoading(false);
+            setHlsQualityGateVisible(true);
         }
 
-        function hideHlsReadyControl() {
-            setHlsReadyControlVisible(false);
+        function hideHlsQualityGate() {
+            setHlsQualityGateVisible(false);
         }
 
-        function onHlsReadyControlClick(event) {
-            if (latestHlsStatus !== 'ready' || sourceIsHls()) return;
+        function onHlsQualityGateClick(event) {
             event.preventDefault();
             event.stopPropagation();
-            useHlsWhenReady({ resume: userWantsPlayback || !player.paused() });
+            if (sourceIsHls()) {
+                enableQualitySelector();
+                syncHlsQualityGateVisibility();
+                return;
+            }
+            setHlsQualityGateLoading(true);
+            if (latestHlsStatus === 'ready') {
+                useHlsWhenReady({ resume: userWantsPlayback || !player.paused() });
+                return;
+            }
+            requestHlsPreparation({
+                allowPolling: true,
+                allowTranscode: true,
+                forceSwitch: true,
+                resume: userWantsPlayback || !player.paused(),
+                showPreparing: true,
+            });
         }
 
         // 트랜스코딩 진행 배지
@@ -1874,7 +1934,7 @@
         }
         function showHlsUnavailableBadge() {
             setHlsLoading(false);
-            hideHlsReadyControl();
+            hideHlsQualityGate();
             if (startupSrc) {
                 hideBadge();
                 return;
@@ -1883,7 +1943,7 @@
         }
         function useHlsWhenReady(options = {}) {
             hideBadge();
-            hideHlsReadyControl();
+            hideHlsQualityGate();
             switchToHls(options);
         }
 
@@ -1956,10 +2016,11 @@
                 if (options.forceSwitch || !startupSrc) {
                     useHlsWhenReady({ resume: Boolean(options.resume || userWantsPlayback) });
                 } else {
-                    showHlsReadyControl();
+                    showHlsQualityGate();
                 }
             } else if (status === 'error') {
                 stopPoll();
+                setHlsQualityGateLoading(false);
                 showHlsUnavailableBadge();
             } else if (status === 'not_started') {
                 if (options.allowTranscode) {
@@ -2023,6 +2084,7 @@
         function kickoffHlsTranscoding(options = {}) {
             if (hlsKickoffStarted) return;
             hlsKickoffStarted = true;
+            setHlsQualityGateLoading(true);
             if (userWantsPlayback) {
                 setHlsLoading(true);
             }
@@ -2097,6 +2159,7 @@
         });
 
         bindPlayIntentHandlers();
+        player.ready(syncHlsQualityGateVisibility);
         scheduleHlsReadyProbe();
     }
 

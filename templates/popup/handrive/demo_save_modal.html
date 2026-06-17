@@ -1,0 +1,14 @@
+<div id="handrive-demo-save-modal" class="handrive-popup-modal" hidden>
+    <div class="handrive-popup-modal-backdrop" id="handrive-demo-save-modal-backdrop"></div>
+    <div class="handrive-popup-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-demo-save-title" aria-describedby="handrive-demo-save-message">
+        <header class="handrive-popup-head">
+            <h2 id="handrive-demo-save-title" class="handrive-popup-title">{{ handrive_text.demo_save_title|default:"데모 모드" }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with button_id="handrive-demo-save-close-btn" %}
+        </header>
+        <p id="handrive-demo-save-message" class="handrive-popup-message">{{ handrive_text.demo_save_message|default:"데모 모드, 저장 기능은 로그인 후 이용 가능합니다." }}</p>
+        <div class="handrive-popup-actions">
+            <a class="ui-btn" id="handrive-demo-save-login-btn" href="{{ handrive_login_url }}?next={{ handrive_auth_next|urlencode }}">{{ handrive_text.auth_login_button|default:"로그인" }}</a>
+            <a class="ui-btn ui-btn-primary" id="handrive-demo-save-signup-btn" href="{{ handrive_signup_url }}?next={{ handrive_auth_next|urlencode }}">{{ handrive_text.auth_signup_button|default:"회원가입" }}</a>
+        </div>
+    </div>
+</div>

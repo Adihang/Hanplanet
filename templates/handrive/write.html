@@ -25,7 +25,6 @@
         <div class="handrive-toolbar-right ui-toolbar-right">
             {% include "handrive/_auth_account.html" %}
             <div class="handrive-toolbar-actions ui-toolbar-actions">
-                {% include "handrive/_auth_button.html" %}
                 {% include "handrive/_superuser_ops_button.html" %}
                 <button class="handrive-icon-btn handrive-write-cancel-btn" type="button" id="handrive-cancel-btn" aria-label="{{ handrive_text.cancel }}" title="{{ handrive_text.cancel }}">
                     <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -47,6 +46,8 @@
 <main
     class="handrive-shell ui-shell handrive-content ui-content"
     data-handrive-page="write"
+    data-is-authenticated="{% if user.is_authenticated %}1{% else %}0{% endif %}"
+    data-demo-save-mode="{% if handrive_demo_save_mode %}1{% else %}0{% endif %}"
     data-handrive-base-url="{{ handrive_base_url }}"
     data-handrive-root-url="{{ handrive_root_url }}"
     data-save-api-url="{{ handrive_api_save_url }}"
@@ -129,6 +130,7 @@
 {% include "popup/handrive/image_resize_modal.html" %}
 {% include "popup/handrive/image_save_as_modal.html" %}
 {% include "popup/handrive/confirm_modal.html" %}
+{% include "popup/handrive/demo_save_modal.html" %}
 {% include "popup/handrive/auth_logout_modal.html" %}
 
 <datalist id="handrive-directory-options"></datalist>

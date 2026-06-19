@@ -42,7 +42,7 @@
                         <div class="ie-ribbon-section ie-ribbon-section--text-options">
                             <label class="ie-icon-field" aria-label="폰트" title="폰트">
                                 <span class="ie-style-icon" aria-hidden="true">F</span>
-                                <select id="ie-font-family" class="ie-font-family-select">
+                                <select id="ie-font-family" class="ie-font-family-select" data-site-custom-select="1">
                                     <option value="system">기본</option>
                                     <option value="Apple SD Gothic Neo">Apple SD Gothic Neo</option>
                                     <option value="Malgun Gothic">Malgun Gothic</option>
@@ -134,7 +134,7 @@
                         <div class="pe-ribbon-section pe-ribbon-section--text">
                             <label class="pe-icon-field" aria-label="폰트" title="폰트">
                                 <span class="pe-style-icon" aria-hidden="true">F</span>
-                                <select id="pe-font-family" class="pe-font-family-select">
+                                <select id="pe-font-family" class="pe-font-family-select" data-site-custom-select="1">
                                     <option value="system">기본</option>
                                     <option value="Apple SD Gothic Neo">Apple SD Gothic Neo</option>
                                     <option value="Malgun Gothic">Malgun Gothic</option>
@@ -242,7 +242,7 @@
                                         <path d="M12 5v14"></path>
                                         <path d="M9 19h6"></path>
                                     </svg>
-                                    <select id="ve-subtitle-select"></select>
+                                    <select id="ve-subtitle-select" class="ve-subtitle-select" data-site-custom-select="1"></select>
                                 </label>
                                 <button class="ae-btn" type="button" id="ve-subtitle-add-btn">추가</button>
                                 <button class="ae-btn" type="button" id="ve-subtitle-delete-btn">삭제</button>
@@ -253,7 +253,7 @@
                             <div class="ve-subtitle-style-grid">
                                 <label class="ve-subtitle-icon-field" aria-label="폰트" title="폰트">
                                     <span class="ve-style-icon" aria-hidden="true">F</span>
-                                    <select id="ve-subtitle-font-family" class="ve-subtitle-font-family-select">
+                                    <select id="ve-subtitle-font-family" class="ve-subtitle-font-family-select" data-site-custom-select="1">
                                         <option value="system">기본</option>
                                         <option value="sans-serif">Sans Serif</option>
                                         <option value="serif">Serif</option>
@@ -318,7 +318,7 @@
                                         <circle cx="8" cy="10" r="1.4"></circle>
                                         <path d="M21 16l-5.2-5.2a1.4 1.4 0 0 0-2 0L7 17"></path>
                                     </svg>
-                                    <select id="ve-image-select"></select>
+                                    <select id="ve-image-select" class="ve-image-select" data-site-custom-select="1"></select>
                                 </label>
                                 <button class="ae-btn" type="button" id="ve-image-add-btn">추가</button>
                                 <button class="ae-btn" type="button" id="ve-image-delete-btn">삭제</button>
@@ -339,11 +339,11 @@
                             </div>
                         </div>
                     </div>
-                    <div class="ve-image-upload-dialog" id="ve-image-upload-dialog" hidden>
-                        <div class="ve-image-upload-panel">
-                            <div class="ve-image-upload-head">
+                    <div class="ve-image-upload-dialog site-modal-backdrop" id="ve-image-upload-dialog" hidden>
+                        <div class="ve-image-upload-panel site-modal-dialog">
+                            <div class="ve-image-upload-head site-modal-head">
                                 <strong>이미지 업로드</strong>
-                                <button class="ae-btn" type="button" id="ve-image-upload-close-btn">닫기</button>
+                                <button class="handrive-popup-close-btn site-modal-close" type="button" id="ve-image-upload-close-btn" aria-label="닫기" title="닫기"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
                             </div>
                             <div class="ve-image-drop-zone" id="ve-image-drop-zone">이미지 파일을 드래그앤드롭</div>
                             <div class="ve-image-upload-actions">
@@ -408,11 +408,11 @@
                             </div>
                         </div>
                     </div>
-                    <div class="ae-drive-picker" id="ae-drive-picker" hidden>
-                        <div class="ae-drive-dialog">
-                            <div class="ae-drive-head">
+                    <div class="ae-drive-picker site-modal-backdrop" id="ae-drive-picker" hidden>
+                        <div class="ae-drive-dialog site-modal-dialog">
+                            <div class="ae-drive-head site-modal-head">
                                 <strong>{{ handrive_text.audio_editor_drive_title }}</strong>
-                                <button type="button" class="ae-btn" id="ae-drive-close-btn">{{ handrive_text.audio_editor_drive_cancel }}</button>
+                                <button type="button" class="handrive-popup-close-btn site-modal-close" id="ae-drive-close-btn" aria-label="{{ handrive_text.audio_editor_drive_cancel }}" title="{{ handrive_text.audio_editor_drive_cancel }}"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
                             </div>
                             <div class="ae-drive-path" id="ae-drive-path"></div>
                             <button type="button" class="ae-btn" id="ae-drive-up-btn">{{ handrive_text.audio_editor_drive_up }}</button>

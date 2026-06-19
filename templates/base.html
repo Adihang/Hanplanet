@@ -108,9 +108,12 @@
     <link rel="stylesheet" type="text/css" href="{% static_v 'css/common/account_widget.css' %}">
     <link rel="stylesheet" type="text/css" href="{% static_v 'css/common/style.css' %}">
     <link rel="stylesheet" type="text/css" href="{% static_v 'css/common/popup_common.css' %}">
+    <link rel="stylesheet" type="text/css" href="{% static_v 'css/common/site_auth_modal.css' %}">
     <script src="{% static_v 'js/common/popup_common.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
+    <script src="{% static_v 'js/common/site_legal_popup.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/site_nav_responsive_manager.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/site.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
+    <script src="{% static_v 'js/common/site_auth_modal.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/markdown_mermaid.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/account_github_widget.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/account_google_widget.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
@@ -181,6 +184,7 @@
     {% endif %}
     {% block content %}
     {% endblock %}
+    {% include "partials/site_auth_modal_host.html" %}
     <!-- 채팅 위젯 -->
     {% if show_chat_widget %}
     <script src="{% static_v 'js/common/chat_widget.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>

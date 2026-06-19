@@ -203,7 +203,7 @@ body.theme-dark .youtube-downloader-progress-bar {
 
 .youtube-downloader-quality-menu {
     position: fixed;
-    z-index: 4200;
+    z-index: var(--site-z-popup);
     min-width: 152px;
     max-height: 280px;
     overflow: auto;

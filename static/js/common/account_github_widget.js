@@ -130,7 +130,10 @@
         const account = modal.querySelector("[data-auth-github-account]");
         const status = modal.querySelector("[data-auth-github-status]");
         const repoList = modal.querySelector("[data-auth-github-repo-list]");
-        const cancelButton = modal.querySelector("[data-auth-github-cancel]");
+        const cancelButtons = Array.from(modal.querySelectorAll("[data-auth-github-cancel]"));
+        const cancelButton = cancelButtons.find(function (button) {
+            return !button.classList.contains("site-modal-close");
+        }) || cancelButtons[0] || null;
         const confirmButton = modal.querySelector("[data-auth-github-confirm]");
         const unlinkButton = modal.querySelector("[data-auth-github-unlink]");
         let lastFocusedElement = null;
@@ -356,11 +359,11 @@
             });
         }
 
-        if (cancelButton) {
-            cancelButton.addEventListener("click", function () {
+        cancelButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
                 setModalOpen(false);
             });
-        }
+        });
 
         if (unlinkButton) {
             unlinkButton.addEventListener("click", function () {

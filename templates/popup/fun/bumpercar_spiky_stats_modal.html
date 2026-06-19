@@ -1,11 +1,11 @@
 {% load template_utils %}
-<div class="bumpercar-stats-modal-backdrop" data-bumpercar-stats-modal hidden>
-    <div class="bumpercar-stats-modal" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="bumpercar-stats-modal-title">
-        <div class="bumpercar-stats-modal-header">
+<div class="bumpercar-stats-modal-backdrop site-modal-backdrop" data-bumpercar-stats-modal hidden>
+    <div class="bumpercar-stats-modal site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="bumpercar-stats-modal-title">
+        <div class="bumpercar-stats-modal-header site-modal-head">
             <h2 class="bumpercar-stats-modal-title" id="bumpercar-stats-modal-title">
                 {% include 'partials/ui_i18n.html' with key='account_bumpercar_stats_title' %}
             </h2>
-            <button class="bumpercar-stats-modal-close" type="button" data-bumpercar-stats-modal-close aria-label="{% include_trimmed 'partials/ui_i18n.html' key='close' %}">
+            <button class="bumpercar-stats-modal-close site-modal-close" type="button" data-bumpercar-stats-modal-close aria-label="{% include_trimmed 'partials/ui_i18n.html' key='close' %}">
                 ×
             </button>
         </div>

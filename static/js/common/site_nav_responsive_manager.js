@@ -11,7 +11,35 @@
             return;
         }
 
+        const getCollapsedNavLinksScroller = function (target) {
+            if (!target || !target.closest || !nav.classList.contains('nav-auto-collapsed')) {
+                return null;
+            }
+            const scroller = target.closest('.ui-nav-links');
+            if (!scroller || !nav.contains(scroller)) {
+                return null;
+            }
+            return scroller;
+        };
+
+        const shouldAllowNavLinksHorizontalScroll = function (event) {
+            const scroller = getCollapsedNavLinksScroller(event.target);
+            if (!scroller || scroller.scrollWidth <= scroller.clientWidth) {
+                return false;
+            }
+            if (event.type === 'touchmove') {
+                return true;
+            }
+            if (event.type === 'wheel') {
+                return Math.abs(event.deltaX || 0) > Math.abs(event.deltaY || 0);
+            }
+            return false;
+        };
+
         const blockNavInternalScroll = function (event) {
+            if (shouldAllowNavLinksHorizontalScroll(event)) {
+                return;
+            }
             if (event.cancelable) {
                 event.preventDefault();
             }
@@ -20,6 +48,11 @@
         const resetNavInternalScroll = function (event) {
             const target = event.target;
             if (!(target instanceof HTMLElement) || target === nav) {
+                return;
+            }
+
+            if (getCollapsedNavLinksScroller(target)) {
+                target.scrollTop = 0;
                 return;
             }
 

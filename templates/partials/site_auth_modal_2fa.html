@@ -1,0 +1,8 @@
+<section
+    class="auth-modal-panel"
+    data-auth-panel
+    data-auth-panel-mode="2fa"
+    data-auth-panel-title="{{ site_auth_modal_title }}"
+>
+    {% include "partials/site_auth_2fa_form.html" with site_auth_is_modal=True %}
+</section>

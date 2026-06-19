@@ -2,6 +2,7 @@ import base64
 import io
 import json
 import hashlib
+import re
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -73,6 +74,7 @@ from .handrive_views import (
     build_google_drive_docs_editor_url,
     build_google_drive_docs_preview_url,
     build_page_help_html,
+    get_handrive_save_extension_options,
     get_handrive_text,
     get_handrive_upload_tmp_dir,
     get_handrive_public_write_group,
@@ -1250,7 +1252,7 @@ class LanguageUrlRoutingTests(TestCase):
         response = self.client.get(reverse("main:Salvations_Edge_4_lang", kwargs={"ui_lang": "ko"}))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, '<footer class="site-footer-links"', html=False)
+        self.assertContains(response, '<footer class="footer-links"', html=False)
         self.assertContains(response, 'href="/ko/privacy"', html=False)
         self.assertContains(response, 'href="/ko/terms"', html=False)
         self.assertNotContains(response, "made by Adihang")
@@ -1281,7 +1283,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, '<meta name="twitter:title" content="Handrive">', html=False)
         self.assertEqual(response.context["meta_robots"], "noindex,follow")
         self.assertContains(response, '<meta name="robots" content="noindex,follow">', html=False)
-        self.assertContains(response, "site-footer-purpose", html=False)
+        self.assertContains(response, "footer-purpose", html=False)
         self.assertContains(response, "HanDrive의 파일 업로드, 정리, 미리보기, 편집, 공유", html=False)
         self.assertContains(response, "Google Drive 파일은 사용자 허용 시에만 표시하고 관리", html=False)
 
@@ -1356,6 +1358,74 @@ class HandriveMarkdownSnippetSourceTests(TestCase):
         )
 
 
+class HandriveListSortSourceTests(TestCase):
+    def test_all_demo_list_preserves_initial_order_until_user_sorts(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+
+        self.assertIn("function shouldPreserveDemoAllListOrder(dirPath)", page_js)
+        self.assertIn('normalizePath(dirPath, true) === "all"', page_js)
+        self.assertIn('listSortKey: shouldPreserveDemoAllListOrder(currentDir) ? "" : "type"', page_js)
+        self.assertIn("listSortWasUserApplied: false", page_js)
+        self.assertIn("state.listSortWasUserApplied = true;", page_js)
+        self.assertIn("shouldPreserveDemoAllListOrder(normalizedPath) && !state.listSortWasUserApplied", page_js)
+
+    def test_preview_edit_uses_inline_list_editor_for_existing_files(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        edit_entry_block = page_js[
+            page_js.index("function editEntry(entry)"):
+            page_js.index("async function convertEntryToMp3", page_js.index("function editEntry(entry)"))
+        ]
+
+        self.assertIn("onEdit: editEntry", page_js)
+        self.assertIn("switchToEditor(entry);", edit_entry_block)
+        self.assertIn("window.location.href = buildWriteUrl(writeUrl, { dir: entry.path });", edit_entry_block)
+        self.assertIn("window.location.href = docsEditorUrl;", edit_entry_block)
+        self.assertNotIn("window.location.href = buildWriteUrl(writeUrl, { path: entry.path });", edit_entry_block)
+
+
+class RootShortcutNameTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="shortcut_name_user", password="pw123456")
+        self.client.force_login(self.user)
+
+    def post_shortcut(self, name, url):
+        return self.client.post(
+            reverse("main:root_shortcuts"),
+            data=json.dumps({"name": name, "url": url}),
+            content_type="application/json",
+        )
+
+    def test_create_uses_shorter_url_when_title_is_longer(self):
+        response = self.post_shortcut("아주아주아주아주아주긴즐겨찾기제목", "a.co")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["item"]["name"], "https://a.co")
+
+    def test_create_counts_percent_encoded_korean_url_as_decoded_text(self):
+        response = self.post_shortcut(
+            "가나다라마바사아자차카타파하가나다라마바사아자차카",
+            "https://example.com/%ED%95%9C%EA%B8%80",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["item"]["name"], "https://example.com/한글")
+
+    def test_create_counts_punycode_domain_as_decoded_text(self):
+        response = self.post_shortcut(
+            "가나다라마바사아자차카타파하가나다",
+            "https://xn--bj0bj06e.com",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["item"]["name"], "https://한글.com")
+
+    def test_create_repairs_mojibake_title_before_counting(self):
+        response = self.post_shortcut("í•œê¸€", "https://example.com/very/long/path")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["item"]["name"], "한글")
+
+
 class SitePreferenceSourceTests(TestCase):
     def test_common_site_script_persists_theme_and_language_to_cookies(self):
         site_js = (Path(settings.BASE_DIR) / "static/js/common/site.js").read_text(encoding="utf-8")
@@ -1394,8 +1464,382 @@ class SitePreferenceSourceTests(TestCase):
         self.assertIn(".root-search-suggestion-remove", common_css)
         self.assertIn("padding: 5px 3px 5px 6px;", common_css)
 
+    def test_root_shortcut_create_normalizes_shorter_name_candidate(self):
+        root_search_js = (Path(settings.BASE_DIR) / "static/js/pages/none/root_search.js").read_text(encoding="utf-8")
+
+        self.assertIn("const chooseShortcutCreateName = function (title, url)", root_search_js)
+        self.assertIn("const decodeShortcutPercentText = function (value)", root_search_js)
+        self.assertIn("const repairShortcutMojibake = function (value)", root_search_js)
+        self.assertIn("await createShortcut(chooseShortcutCreateName(name, url), url);", root_search_js)
+
+    def test_root_shortcut_contextmenu_enters_edit_mode_directly(self):
+        root_template = (Path(settings.BASE_DIR) / "templates/none.html").read_text(encoding="utf-8")
+        root_search_js = (Path(settings.BASE_DIR) / "static/js/pages/none/root_search.js").read_text(encoding="utf-8")
+        contextmenu_block = root_search_js[
+            root_search_js.index("shortcutsGrid.addEventListener('contextmenu'"):
+            root_search_js.index("shortcutsGrid.addEventListener('dragstart'", root_search_js.index("shortcutsGrid.addEventListener('contextmenu'"))
+        ]
+
+        self.assertIn("event.preventDefault();", contextmenu_block)
+        self.assertIn("enterEditMode(shortcutId);", contextmenu_block)
+        self.assertNotIn("openShortcutMenu", root_search_js)
+        self.assertNotIn("data-root-shortcut-menu", root_template)
+
+
+class SiteNavResponsiveSourceTests(TestCase):
+    def test_auto_collapsed_nav_links_use_horizontal_touch_scroll(self):
+        common_css = (Path(settings.BASE_DIR) / "static/css/common/style.css").read_text(encoding="utf-8")
+        nav_js = (Path(settings.BASE_DIR) / "static/js/common/site_nav_responsive_manager.js").read_text(encoding="utf-8")
+
+        nav_links_rule_start = common_css.index(".ui-nav.nav-auto-collapsed .ui-nav-links {\n    margin-top:")
+        nav_links_rule = common_css[
+            nav_links_rule_start:
+            common_css.index("@media (forced-colors: active)", nav_links_rule_start)
+        ]
+        nav_item_rule = common_css[
+            common_css.index(".ui-nav.nav-auto-collapsed .ui-nav-links .nav-item {"):
+            common_css.index(".ui-nav.nav-auto-collapsed .ui-nav-links .nav-item + .nav-item")
+        ]
+
+        self.assertIn("flex-direction: row;", nav_links_rule)
+        self.assertIn("flex-wrap: nowrap;", nav_links_rule)
+        self.assertIn("margin-left: auto;", nav_links_rule)
+        self.assertIn("margin-right: auto;", nav_links_rule)
+        self.assertIn("width: max-content;", nav_links_rule)
+        self.assertIn("max-width: 100%;", nav_links_rule)
+        self.assertIn("overflow-x: auto;", nav_links_rule)
+        self.assertIn("-webkit-overflow-scrolling: touch;", nav_links_rule)
+        self.assertIn("touch-action: pan-x;", nav_links_rule)
+        self.assertIn(".ui-nav.nav-auto-collapsed .ui-nav-links *", common_css)
+        self.assertIn("width: auto;", nav_item_rule)
+        self.assertIn("flex: 0 0 auto;", nav_item_rule)
+        self.assertNotIn("flex-direction: column;", nav_links_rule)
+
+        self.assertIn("const getCollapsedNavLinksScroller = function (target)", nav_js)
+        self.assertIn("const shouldAllowNavLinksHorizontalScroll = function (event)", nav_js)
+        self.assertIn("if (shouldAllowNavLinksHorizontalScroll(event))", nav_js)
+        self.assertIn("if (getCollapsedNavLinksScroller(target))", nav_js)
+
+
+class SiteDropdownMenuSourceTests(TestCase):
+    def test_dropdown_menus_share_common_surface_and_scrollbar_template(self):
+        base_dir = Path(settings.BASE_DIR)
+        layout_css = (base_dir / "static/css/common/layout.css").read_text(encoding="utf-8")
+        popup_common_css = (base_dir / "static/css/common/popup_common.css").read_text(encoding="utf-8")
+        popup_common_js = (base_dir / "static/js/common/popup_common.js").read_text(encoding="utf-8")
+        common_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        hpmail_css = (base_dir / "static/css/pages/hpmail/email.css").read_text(encoding="utf-8")
+
+        for token in (
+            "--site-dropdown-menu-radius",
+            "--site-dropdown-menu-border",
+            "--site-dropdown-menu-shadow",
+            "--site-dropdown-scrollbar-size",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, layout_css)
+
+        for selector in (
+            ".site-dropdown-menu",
+            ".ui-auth-account-menu",
+            ".root-search-engine-popup",
+            ".root-search-suggestions",
+            ".root-shortcuts-context-menu",
+            ".handrive-context-menu",
+            ".handrive-editor-suggest",
+            ".site-custom-select-menu",
+            ".site-custom-select-option",
+            ".hpmail-mailbox-context-menu",
+        ):
+            with self.subTest(selector=selector):
+                self.assertIn(selector, popup_common_css)
+
+        self.assertIn("select:not([multiple])", popup_common_js)
+        self.assertIn('select.dataset.siteCustomSelect !== "0"', popup_common_js)
+        self.assertIn("window.SiteCustomSelect", popup_common_js)
+        self.assertIn("site-custom-select-menu site-dropdown-menu", popup_common_js)
+        self.assertIn("scrollbar-width: thin;", popup_common_css)
+        self.assertIn("width: var(--site-dropdown-scrollbar-size, 3px);", popup_common_css)
+        self.assertIn("height: var(--site-dropdown-scrollbar-size, 3px);", popup_common_css)
+        self.assertIn("border: 1px solid var(--site-dropdown-menu-border", popup_common_css)
+        self.assertIn("box-shadow: var(--site-dropdown-menu-shadow", popup_common_css)
+        self.assertIn("border-radius: var(--site-dropdown-menu-radius", popup_common_css)
+        self.assertIn("--site-custom-select-button-color: var(--handrive-text, var(--site-text, CanvasText));", popup_common_css)
+        self.assertIn("--site-custom-select-caret-color: var(--handrive-text-secondary, var(--site-text-secondary, currentColor));", popup_common_css)
+        self.assertIn("body.theme-dark .site-custom-select", popup_common_css)
+        self.assertIn("--site-custom-select-button-color: var(--handrive-text, var(--site-text, #f2f2f2));", popup_common_css)
+        self.assertIn("--site-custom-select-caret-color: var(--handrive-text-secondary, var(--site-text-secondary, #c2c2c2));", popup_common_css)
+        self.assertIn("color: var(--site-custom-select-button-color);", popup_common_css)
+        self.assertIn("text-align: right;", popup_common_css)
+        self.assertIn("border-top: 5px solid var(--site-custom-select-caret-color);", popup_common_css)
+        self.assertNotIn("--site-dropdown-menu-bg", popup_common_css)
+        self.assertNotIn("--site-dropdown-menu-filter", popup_common_css)
+
+        self.assertIn("border-radius: var(--site-dropdown-menu-radius", common_css)
+        self.assertIn("border-radius: var(--site-dropdown-menu-radius", handrive_css)
+        self.assertIn("border-radius: var(--site-dropdown-menu-radius", hpmail_css)
+
+    def test_dropdown_menu_templates_opt_into_common_class(self):
+        base_dir = Path(settings.BASE_DIR)
+        template_paths = [
+            "templates/partials/account_widget.html",
+            "templates/partials/account_widget_menu.html",
+            "templates/none.html",
+            "templates/popup/root/search_engine_popup.html",
+            "templates/popup/root/shortcuts_context_menu.html",
+            "templates/popup/handrive/context_menu.html",
+            "templates/popup/handrive/markdown_snippet_menu.html",
+            "templates/popup/hpmail/mailbox_context_menu.html",
+            "templates/handrive/write.html",
+            "templates/handrive/list.html",
+        ]
+
+        for relative_path in template_paths:
+            with self.subTest(template=relative_path):
+                source = (base_dir / relative_path).read_text(encoding="utf-8")
+                self.assertIn("site-dropdown-menu", source)
+
+    def test_account_storage_popup_matches_account_menu_background(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        popup_rule = handrive_css[
+            handrive_css.index(".account-storage-popup {"):
+            handrive_css.index(".account-storage-popup[hidden] {")
+        ]
+
+        self.assertIn(".account-storage-popup {", popup_rule)
+        self.assertIn("background: var(--site-popup-glass-bg, rgba(238, 238, 238, 0.5));", popup_rule)
+        self.assertIn("background-color: var(--site-popup-glass-bg, rgba(238, 238, 238, 0.5));", popup_rule)
+        self.assertIn("background-image: none;", popup_rule)
+        self.assertIn("-webkit-backdrop-filter: var(--site-popup-glass-filter, saturate(120%) blur(4px));", popup_rule)
+        self.assertIn("backdrop-filter: var(--site-popup-glass-filter, saturate(120%) blur(4px));", popup_rule)
+        self.assertNotIn("rgba(238, 238, 238, 0.97)", popup_rule)
+        self.assertNotIn("rgba(46, 46, 46, 0.97)", popup_rule)
+
+    def test_handrive_select_dropdowns_use_common_custom_select(self):
+        base_dir = Path(settings.BASE_DIR)
+        template_sources = {
+            "templates/handrive/write.html": [
+                'id="handrive-filename-extension-select"',
+            ],
+            "templates/popup/handrive/save_modal.html": [
+                'id="handrive-save-extension-select"',
+            ],
+            "templates/handrive/_media_editor_surfaces.html": [
+                'id="ie-font-family"',
+                'id="pe-font-family"',
+                'id="ve-subtitle-select"',
+                'id="ve-subtitle-font-family"',
+                'id="ve-image-select"',
+            ],
+            "templates/handrive/list.html": [
+                'data-handrive-spreadsheet-sheet',
+            ],
+        }
+
+        for relative_path, markers in template_sources.items():
+            source = (base_dir / relative_path).read_text(encoding="utf-8")
+            for marker in markers:
+                with self.subTest(template=relative_path, marker=marker):
+                    select_start = source.index(marker)
+                    select_end = source.index(">", select_start)
+                    self.assertIn('data-site-custom-select="1"', source[select_start:select_end])
+
+
+class HandriveWriteFilenameExtensionSourceTests(TestCase):
+    def test_write_filename_input_has_text_code_extension_select(self):
+        base_dir = Path(settings.BASE_DIR)
+        write_template = (base_dir / "templates/handrive/write.html").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+
+        self.assertIn("handrive-write-filename-control", write_template)
+        self.assertIn('id="handrive-filename-extension-select"', write_template)
+        self.assertIn('data-site-custom-select="1"', write_template)
+        self.assertIn("{% for ext in handrive_file_extension_options %}", write_template)
+        self.assertIn(".handrive-write-filename-control", handrive_css)
+        self.assertIn("grid-template-columns: minmax(0, 1fr) minmax(76px, auto);", handrive_css)
+        self.assertIn('const filenameExtensionSelect = document.getElementById("handrive-filename-extension-select");', page_js)
+        self.assertIn("function getWriteFilenameAndExtension()", page_js)
+        self.assertIn("function initializeWriteFilenameExtensionControl()", page_js)
+        self.assertIn("function syncWriteFilenameInputExtension(extensionValue)", page_js)
+        self.assertIn('filenameExtensionSelect.addEventListener("change"', page_js)
+        self.assertIn("syncWriteFilenameInputExtension(selectedExtension);", page_js)
+        self.assertIn("filenameInput.value = buildFilenameWithExtension(finalFilename, targetExtension);", page_js)
+        self.assertIn("customOption.textContent = normalized;", page_js)
+        self.assertIn("targetExtension = writeTarget.extension;", page_js)
+
+    def test_write_extension_options_are_text_and_code_focused(self):
+        options = get_handrive_save_extension_options()
+
+        for extension in [".md", ".txt", ".css", ".html", ".js", ".json", ".py", ".sql"]:
+            with self.subTest(extension=extension):
+                self.assertIn(extension, options)
+
+        for media_extension in [".png", ".jpg", ".mp4", ".mp3", ".pdf", ".xlsx"]:
+            with self.subTest(media_extension=media_extension):
+                self.assertNotIn(media_extension, options)
+
 
 class HandriveStyleSourceTests(TestCase):
+    def test_sql_syntax_highlighting_is_registered(self):
+        base_dir = Path(settings.BASE_DIR)
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        completion_js = (base_dir / "static/js/handrive/editor_completion_map.js").read_text(encoding="utf-8")
+
+        self.assertIn("function highlightSqlCode(source)", page_js)
+        self.assertIn('return "handrive-sql";', page_js)
+        self.assertIn('extension === ".sql"', page_js)
+        self.assertIn('renderClasses.includes("handrive-sql")', page_js)
+        self.assertIn("highlightSqlCode(source)", page_js)
+        self.assertIn('normalized === "postgresql"', page_js)
+        self.assertIn('normalized === "sqlite"', page_js)
+        self.assertIn(".handrive-sql pre code", handrive_css)
+        self.assertIn(".handrive-sql-token-keyword", handrive_css)
+        self.assertIn("body.handrive-page.theme-dark .handrive-sql-token-keyword", handrive_css)
+        self.assertIn('".sql": [', completion_js)
+        self.assertIn("SELECT *\\nFROM table_name", completion_js)
+        self.assertIn("CREATE TABLE table_name", completion_js)
+
+    def test_layout_wrappers_do_not_duplicate_page_namespace_roles(self):
+        base_dir = Path(settings.BASE_DIR)
+        sources = {
+            relative_path: (base_dir / relative_path).read_text(encoding="utf-8")
+            for relative_path in (
+                "templates/handrive/list.html",
+                "templates/handrive/write.html",
+                "templates/handrive/view.html",
+                "templates/handrive/login.html",
+                "templates/handrive/signup.html",
+                "templates/handrive/register_email.html",
+                "templates/handrive/2fa_verify.html",
+                "templates/main/portfolio_write.html",
+                "templates/fun/sub.html",
+                "templates/fun/Hanplanet_Multiplayer.html",
+                "static/css/pages/handrive/style.css",
+                "static/css/fun/bumpercar_spiky/multiplayer.css",
+                "static/js/handrive/page.js",
+            )
+        }
+        combined = "\n".join(sources.values())
+
+        self.assertNotIn("handrive-shell", combined)
+        self.assertNotIn("handrive-content ui-content", combined)
+        self.assertNotIn("auth-content ui-shell", combined)
+        self.assertNotIn("sub-ui-content", combined)
+        self.assertNotIn("sub-content", combined)
+        self.assertNotIn("multiplayer-shell", combined)
+        self.assertNotIn(".handrive-content[data-handrive-page", sources["static/css/pages/handrive/style.css"])
+        self.assertNotIn(".handrive-content > article", sources["static/js/handrive/page.js"])
+
+        self.assertIn('class="ui-shell ui-content"', sources["templates/handrive/list.html"])
+        self.assertIn('data-handrive-page="list"', sources["templates/handrive/list.html"])
+        self.assertIn('.ui-content[data-handrive-page="view"]', sources["static/css/pages/handrive/style.css"])
+        self.assertIn('.ui-content[data-handrive-page] > article', sources["static/js/handrive/page.js"])
+        self.assertIn('class="ui-shell ui-content"', sources["templates/fun/sub.html"])
+        self.assertIn("body.sub-page .ui-content {", sources["templates/fun/sub.html"])
+        self.assertNotIn("padding-top: 14px;", sources["templates/fun/sub.html"])
+        self.assertIn('class="ui-shell ui-content multiplayer-content"', sources["templates/fun/Hanplanet_Multiplayer.html"])
+        self.assertIn(".hanplanet-multiplayer-page .multiplayer-content", sources["static/css/fun/bumpercar_spiky/multiplayer.css"])
+
+    def test_sync_list_tree_prefix_uses_row_background_states(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        sync_prefix_block = handrive_css[
+            handrive_css.index("#handrive-sync-list .handrive-item {"):
+            handrive_css.index(".handrive-item-row.has-tree-prefix {")
+        ]
+
+        self.assertIn("--handrive-sync-tree-prefix-bg: var(--handrive-bg);", sync_prefix_block)
+        self.assertIn("#handrive-sync-list .handrive-item:has(> .handrive-item-row:hover)", sync_prefix_block)
+        self.assertIn("#handrive-sync-list .handrive-item:has(> .handrive-item-row:focus-visible)", sync_prefix_block)
+        self.assertIn("--handrive-sync-tree-prefix-bg: var(--handrive-row-hover-bg);", sync_prefix_block)
+        self.assertIn("#handrive-sync-list .handrive-item:has(> .handrive-item-row.is-selected)", sync_prefix_block)
+        self.assertIn("--handrive-sync-tree-prefix-bg: var(--handrive-selected-bg);", sync_prefix_block)
+        self.assertIn("#handrive-sync-list .handrive-item:has(> .handrive-item-row.is-drop-target)", sync_prefix_block)
+        self.assertIn("#handrive-sync-list .handrive-item:has(> .handrive-item-row.is-drop-hover)", sync_prefix_block)
+        self.assertIn("--handrive-sync-tree-prefix-bg: var(--handrive-drop-target-row-bg);", sync_prefix_block)
+        self.assertIn("background: var(--handrive-sync-tree-prefix-bg);", sync_prefix_block)
+
+    def test_handrive_item_rows_square_joined_selected_edges_at_same_depth(self):
+        base_dir = Path(settings.BASE_DIR)
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+
+        self.assertIn("border-radius: calc(var(--handrive-radius-sm) - 2px);", handrive_css)
+        self.assertIn(".handrive-item-row.is-selected-joined-above", handrive_css)
+        self.assertIn("border-top-left-radius: 0;", handrive_css)
+        self.assertIn(".handrive-item-row.is-selected-joined-below", handrive_css)
+        self.assertIn("border-bottom-right-radius: 0;", handrive_css)
+
+        self.assertIn("function setHandriveItemRowDepth", page_js)
+        self.assertIn("function updateAdjacentSelectedRowCorners", page_js)
+        self.assertIn("getHandriveItemRowDepth(row) !== getHandriveItemRowDepth(nextRow)", page_js)
+        self.assertIn("row.classList.contains(\"is-selected\")", page_js)
+        self.assertIn("is-selected-joined-below", page_js)
+        self.assertIn("is-selected-joined-above", page_js)
+        self.assertNotIn("row.matches(\":hover, :focus-visible\")", page_js)
+        self.assertNotIn("bindAdjacentActiveRowCornerUpdates", page_js)
+
+    def test_media_editor_style_icons_use_twenty_pixel_size(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        style_icon_blocks = {
+            ".ve-style-icon": handrive_css[
+                handrive_css.index(".ve-style-icon {"):
+                handrive_css.index(".ve-style-icon--stroke {")
+            ],
+            ".ie-style-icon": handrive_css[
+                handrive_css.index(".ie-style-icon {"):
+                handrive_css.index(".ie-font-family-select {")
+            ],
+            ".pe-style-icon": handrive_css[
+                handrive_css.index(".pe-style-icon {"):
+                handrive_css.index(".pe-style-icon--line {")
+            ],
+            ".pe-style-icon--line": handrive_css[
+                handrive_css.index(".pe-style-icon--line {"):
+                handrive_css.index(".pe-font-family-select {")
+            ],
+        }
+
+        for selector, style_icon_block in style_icon_blocks.items():
+            with self.subTest(selector=selector):
+                self.assertIn("font-size: 20px;", style_icon_block)
+                if selector != ".pe-style-icon--line":
+                    self.assertIn("width: 20px;", style_icon_block)
+                    self.assertIn("height: 20px;", style_icon_block)
+                    self.assertIn("min-width: 20px;", style_icon_block)
+
+    def test_font_family_selects_preserve_text_line_height(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        video_shared_rule = handrive_css[
+            handrive_css.index(".ve-subtitle-font-size-input,\n.ve-subtitle-font-family-select {"):
+            handrive_css.index(".ve-subtitle-font-family-select {\n    width: 128px;")
+        ]
+        video_select_rule = handrive_css[
+            handrive_css.index(".ve-subtitle-font-family-select {\n    width: 128px;"):
+            handrive_css.index("#ve-subtitle-input {")
+        ]
+        image_select_rule = handrive_css[
+            handrive_css.index(".ie-font-family-select {"):
+            handrive_css.index(".ie-font-family-select option {")
+        ]
+        pdf_select_rule = handrive_css[
+            handrive_css.index(".pe-font-family-select {"):
+            handrive_css.index(".pe-font-family-select option {")
+        ]
+
+        self.assertIn("box-sizing: border-box;", video_shared_rule)
+        self.assertIn("line-height: 26px;", video_select_rule)
+        self.assertIn("padding: 0 6px 1px;", video_select_rule)
+        self.assertIn("line-height: 28px;", image_select_rule)
+        self.assertIn("padding: 0 18px 1px 0;", image_select_rule)
+        self.assertIn("line-height: calc(var(--pe-control-height) - 2px);", pdf_select_rule)
+        self.assertIn("padding: 0 20px 1px 0;", pdf_select_rule)
+        for select_rule in (video_select_rule, image_select_rule, pdf_select_rule):
+            self.assertIn("vertical-align: middle;", select_rule)
+            self.assertNotIn("line-height: 1;", select_rule)
+
     def test_handrive_markdown_uses_square_corners(self):
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
 
@@ -1536,6 +1980,38 @@ class HandriveSignupAutoLoginTests(TestCase):
         )
         mock_prepare_session.assert_called_once()
         self.assertIn("i_like_gitea", response.cookies)
+
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    @mock.patch("django.core.mail.send_mail")
+    def test_signup_modal_success_returns_reload_json(self, mock_send_mail, mock_prepare_session):
+        response = self.client.post(
+            reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
+            data={
+                "username": "modal_signup_user",
+                "password1": "pw123456!!AA",
+                "password2": "pw123456!!AA",
+                "first_name": "Modal",
+                "email": "modal-signup@example.com",
+                "email_2fa_token": self.build_signup_email_token("modal-signup@example.com"),
+                "privacy_consent": "on",
+                "next": "/ko/sub/bumpercar-spiky/",
+            },
+            HTTP_X_SITE_AUTH_MODAL="1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Content-Type"], "application/json")
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["reload"])
+        self.assertEqual(payload["redirect_url"], "/ko/sub/bumpercar-spiky/")
+        self.assertTrue("_auth_user_id" in self.client.session)
+        self.assertEqual(
+            self.client.session["_auth_user_id"],
+            str(get_user_model().objects.get(username="modal_signup_user").pk),
+        )
+        self.assertIn("i_like_gitea", response.cookies)
+        mock_prepare_session.assert_called_once()
 
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=(None, "FORGEJO"))
     @mock.patch("django.core.mail.send_mail")
@@ -2047,6 +2523,397 @@ class UserPreferenceApiTests(TestCase):
         self.assertEqual(profile.preferred_root_search_engine, "gpt")
 
 
+class SiteZIndexLayerTests(TestCase):
+    def test_common_z_index_tokens_define_bounded_ranges(self):
+        layout_css = (Path(settings.BASE_DIR) / "static/css/common/layout.css").read_text(encoding="utf-8")
+        expected_tokens = {
+            "--site-z-map-pane-background": "200",
+            "--site-z-map-pane-overlay": "550",
+            "--site-z-page-overlay": "900",
+            "--site-z-toolbar": "1010",
+            "--site-z-nav": "1020",
+            "--site-z-popup": "1120",
+            "--site-z-popup-raised": "1125",
+            "--site-z-floating": "1220",
+            "--site-z-floating-raised": "1225",
+            "--site-z-media-overlay": "1320",
+            "--site-z-modal": "1400",
+            "--site-z-modal-top": "1500",
+            "--site-z-modal-stack-step": "5",
+        }
+
+        self.assertIn("z-index ranges:", layout_css)
+        for token, value in expected_tokens.items():
+            with self.subTest(token=token):
+                self.assertIn(f"{token}: {value};", layout_css)
+
+    def test_common_modal_stack_uses_shared_open_order_tokens(self):
+        popup_js = (Path(settings.BASE_DIR) / "static/js/common/popup_common.js").read_text(encoding="utf-8")
+        site_auth_js = (Path(settings.BASE_DIR) / "static/js/common/site_auth_modal.js").read_text(encoding="utf-8")
+
+        self.assertIn("const modalRootSelector", popup_js)
+        self.assertIn("--site-z-modal-stack-step", popup_js)
+        self.assertIn("data-site-modal-stack-index", popup_js)
+        self.assertIn("window.SiteModalStack", popup_js)
+        self.assertIn("bringModalToFront", popup_js)
+        self.assertIn("SiteModalStack.bringToFront", site_auth_js)
+        self.assertNotIn("12000", popup_js)
+        self.assertNotIn("12000", site_auth_js)
+
+    def test_handrive_job_queue_uses_popup_raised_layer(self):
+        base_dir = Path(settings.BASE_DIR)
+        common_account_css = (base_dir / "static/css/common/account_widget.css").read_text(encoding="utf-8")
+        common_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        job_queue_rule = handrive_css[
+            handrive_css.index(".handrive-job-queue-panel {"):
+            handrive_css.index(".handrive-job-queue-head {", handrive_css.index(".handrive-job-queue-panel {"))
+        ]
+
+        self.assertIn("--handrive-job-queue-z: var(--site-z-popup-raised, 1125);", handrive_css)
+        self.assertIn("z-index: var(--handrive-job-queue-z);", job_queue_rule)
+        self.assertIn("z-index: var(--site-z-popup);", common_account_css)
+        self.assertIn("z-index: var(--site-z-popup);", common_css)
+        self.assertIn(".ui-auth-account-floating:has(.ui-auth-account-menu:not([hidden]))", common_account_css)
+        self.assertIn(".root-shell-controls-fixed:has(.ui-auth-account-menu:not([hidden]))", common_css)
+        self.assertNotIn("--handrive-job-queue-z: 3500;", handrive_css)
+
+    def test_common_modal_rules_cover_headers_drag_and_close_buttons(self):
+        base_dir = Path(settings.BASE_DIR)
+        popup_js = (base_dir / "static/js/common/popup_common.js").read_text(encoding="utf-8")
+        handrive_modal_js = (base_dir / "static/js/handrive/modal_helpers.js").read_text(encoding="utf-8")
+        site_auth_js = (base_dir / "static/js/common/site_auth_modal.js").read_text(encoding="utf-8")
+        popup_common_css = (base_dir / "static/css/common/popup_common.css").read_text(encoding="utf-8")
+
+        for selector in (
+            "const draggableHeaderSelector",
+            ".site-modal-head",
+            ".site-modal-dialog",
+            ".media-tool-modal-head",
+            ".hpmail-mailbox-modal-head",
+            ".ve-image-upload-head",
+            ".ae-drive-head",
+            "data-popup-draggable-dialog",
+            "onModalHeaderPointerDown",
+        ):
+            with self.subTest(selector=selector):
+                self.assertIn(selector, popup_js)
+
+        self.assertIn("event.defaultPrevented", handrive_modal_js)
+        self.assertIn("event.defaultPrevented", site_auth_js)
+
+        for selector in (
+            ".site-modal-backdrop.site-modal-backdrop",
+            ".site-modal-dialog.site-modal-dialog",
+            ".site-modal-head.site-modal-head",
+            ".site-modal-dialog.site-modal-dialog > .site-modal-head:first-child",
+            ".site-modal-dialog.site-modal-dialog > .site-modal-head:first-child + *",
+            ".site-modal-close.site-modal-close",
+            ".map-media-viewer-modal-close.site-modal-close",
+        ):
+            with self.subTest(common_css_selector=selector):
+                self.assertIn(selector, popup_common_css)
+
+        for token in (
+            "--site-modal-dialog-padding-x",
+            "--site-modal-dialog-padding-y",
+            "--site-modal-head-padding",
+            "--site-modal-head-margin-bottom",
+            "--site-modal-head-follow-gap",
+        ):
+            with self.subTest(common_modal_spacing_token=token):
+                self.assertIn(token, popup_common_css)
+
+        common_class_templates = {
+            "handrive_close": "templates/popup/handrive/_popup_close_button.html",
+            "root_logout": "templates/popup/root/auth_logout_modal.html",
+            "account_github": "templates/partials/account_github_modal.html",
+            "account_google": "templates/partials/account_google_modal.html",
+            "handrive_help": "templates/popup/handrive/_help_modal.html",
+            "site_auth": "templates/partials/site_auth_modal_host.html",
+            "hpmail": "templates/popup/hpmail/mailbox_modal.html",
+            "image_demo": "templates/popup/fun/image_demo_code_modal.html",
+            "multiplayer_idle": "templates/popup/fun/multiplayer_idle_timeout_modal.html",
+            "multiplayer_death": "templates/popup/fun/multiplayer_death_modal.html",
+            "multiplayer_skin": "templates/popup/fun/multiplayer_skin_modal.html",
+            "media_editor": "templates/handrive/_media_editor_surfaces.html",
+            "handrive_login_choices": "templates/handrive/login.html",
+            "map_editor": "templates/handrive/map_editor.html",
+            "map_marker": "templates/popup/handrive/map_marker_popup.html",
+            "map_zone": "templates/popup/handrive/map_zone_popup.html",
+            "portfolio_print": "templates/popup/portfolio/print_selector_template.html",
+        }
+        for name, relative_path in common_class_templates.items():
+            source = (base_dir / relative_path).read_text(encoding="utf-8")
+            with self.subTest(template=name):
+                self.assertIn("site-modal-", source)
+
+    def test_logout_and_confirm_modals_reuse_shared_partials(self):
+        base_dir = Path(settings.BASE_DIR)
+        confirm_template = (base_dir / "templates/popup/handrive/_confirm_modal.html").read_text(encoding="utf-8")
+        root_logout_template = (base_dir / "templates/popup/root/auth_logout_modal.html").read_text(encoding="utf-8")
+        handrive_logout_template = (base_dir / "templates/popup/handrive/auth_logout_modal.html").read_text(encoding="utf-8")
+
+        self.assertIn('{% firstof modal_class "handrive-popup-modal"', confirm_template)
+        self.assertIn("button_class=confirm_close_button_class", confirm_template)
+        self.assertIn('include "popup/handrive/_confirm_modal.html"', root_logout_template)
+        self.assertIn('modal_class="root-auth-modal"', root_logout_template)
+        self.assertIn('head_class="root-auth-modal-head site-modal-head"', root_logout_template)
+        self.assertIn('close_button_class="root-auth-modal-close site-modal-close"', root_logout_template)
+        self.assertNotIn('<div class="root-auth-modal"', root_logout_template)
+        self.assertIn('include "popup/handrive/_confirm_modal.html"', handrive_logout_template)
+
+    def test_remaining_shared_modals_use_common_header_and_close_rules(self):
+        base_dir = Path(settings.BASE_DIR)
+        expectations = {
+            "github": (
+                "templates/partials/account_github_modal.html",
+                ("root-auth-modal-head site-modal-head", "site-modal-close", 'aria-labelledby="auth-github-modal-title"'),
+            ),
+            "google": (
+                "templates/partials/account_google_modal.html",
+                ("root-auth-modal-head site-modal-head", "site-modal-close", 'aria-labelledby="auth-google-modal-title"'),
+            ),
+            "help": (
+                "templates/popup/handrive/_help_modal.html",
+                ("handrive-help-modal-head site-modal-head", "_popup_close_button.html", "close_click_target_id"),
+            ),
+            "portfolio_print": (
+                "templates/popup/portfolio/print_selector_template.html",
+                ("portfolio-print-selector-head site-modal-head", 'data-popup-action="close"', "site-modal-close"),
+            ),
+            "multiplayer_idle": (
+                "templates/popup/fun/multiplayer_idle_timeout_modal.html",
+                ("multiplayer-idle-modal-header site-modal-head", "multiplayer-idle-modal-close site-modal-close"),
+            ),
+            "multiplayer_death": (
+                "templates/popup/fun/multiplayer_death_modal.html",
+                ("multiplayer-death-modal-header site-modal-head",),
+            ),
+            "map_marker": (
+                "templates/popup/handrive/map_marker_popup.html",
+                ("site-modal-head", "_popup_close_button.html", 'role="dialog"'),
+            ),
+            "map_zone": (
+                "templates/popup/handrive/map_zone_popup.html",
+                ("site-modal-head", "_popup_close_button.html", 'role="dialog"'),
+            ),
+            "handrive_login_choices": (
+                "templates/handrive/login.html",
+                ("root-auth-modal-head site-modal-head", "root-auth-modal-close site-modal-close", "data-auth-choice-close"),
+            ),
+            "map_bind_picker": (
+                "templates/handrive/map_editor.html",
+                ("map-bind-picker-title", "site-modal-head", "_popup_close_button.html", 'role="dialog"'),
+            ),
+        }
+
+        for name, (relative_path, snippets) in expectations.items():
+            source = (base_dir / relative_path).read_text(encoding="utf-8")
+            for snippet in snippets:
+                with self.subTest(template=name, snippet=snippet):
+                    self.assertIn(snippet, source)
+
+        popup_js = (base_dir / "static/js/common/popup_common.js").read_text(encoding="utf-8")
+        handrive_page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        self.assertIn("function onProxyClickTarget", popup_js)
+        self.assertIn('document.addEventListener("click", onProxyClickTarget)', popup_js)
+        self.assertIn("event.defaultPrevented", handrive_page_js)
+
+    def test_padded_modal_headers_use_full_bleed_spacing_tokens(self):
+        base_dir = Path(settings.BASE_DIR)
+        sources = {
+            "common_style": "static/css/common/style.css",
+            "site_auth": "static/css/common/site_auth_modal.css",
+            "handrive": "static/css/pages/handrive/style.css",
+            "hpmail": "static/css/pages/hpmail/email.css",
+            "multiplayer": "static/css/fun/bumpercar_spiky/multiplayer.css",
+            "fun_sub": "templates/fun/sub.html",
+            "map_editor": "templates/handrive/map_editor.html",
+        }
+
+        for name, relative_path in sources.items():
+            source = (base_dir / relative_path).read_text(encoding="utf-8")
+            with self.subTest(source=name, token="padding-x"):
+                self.assertIn("--site-modal-dialog-padding-x", source)
+            with self.subTest(source=name, token="padding-y"):
+                self.assertIn("--site-modal-dialog-padding-y", source)
+
+        popup_common_css = (base_dir / "static/css/common/popup_common.css").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        image_demo_css = (base_dir / "static/css/fun/image_pip_demo.css").read_text(encoding="utf-8")
+        image_color_css = (base_dir / "static/css/fun/image_color_picker.css").read_text(encoding="utf-8")
+        self.assertIn("calc(-1 * var(--site-modal-dialog-padding-y", popup_common_css)
+        self.assertIn("calc(-1 * var(--site-modal-dialog-padding-x", popup_common_css)
+        self.assertIn("var(--site-modal-head-margin-bottom, 0)", popup_common_css)
+
+        for name, (source, start_marker, end_marker) in {
+            "video_image_upload": (handrive_css, ".ve-image-upload-panel {", ".ve-image-upload-head,"),
+            "audio_drive_picker": (handrive_css, ".ae-drive-dialog {", ".ae-drive-head {"),
+        }.items():
+            start = source.index(start_marker)
+            block = source[start:source.index(end_marker, start)]
+            with self.subTest(padded_dialog=name):
+                self.assertIn("--site-modal-dialog-padding-x", block)
+                self.assertIn("--site-modal-dialog-padding-y", block)
+
+        self.assertIn("--site-modal-head-padding: 12px 14px;", image_demo_css)
+        self.assertIn("--site-modal-head-padding: 12px 14px;", image_color_css)
+
+    def test_common_modals_use_glass_background_tokens(self):
+        base_dir = Path(settings.BASE_DIR)
+        layout_css = (base_dir / "static/css/common/layout.css").read_text(encoding="utf-8")
+        common_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
+        popup_common_css = (base_dir / "static/css/common/popup_common.css").read_text(encoding="utf-8")
+        site_auth_css = (base_dir / "static/css/common/site_auth_modal.css").read_text(encoding="utf-8")
+        site_auth_js = (base_dir / "static/js/common/site_auth_modal.js").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        hpmail_css = (base_dir / "static/css/pages/hpmail/email.css").read_text(encoding="utf-8")
+        image_demo_css = (base_dir / "static/css/fun/image_pip_demo.css").read_text(encoding="utf-8")
+        image_color_css = (base_dir / "static/css/fun/image_color_picker.css").read_text(encoding="utf-8")
+        multiplayer_css = (base_dir / "static/css/fun/bumpercar_spiky/multiplayer.css").read_text(encoding="utf-8")
+        fun_sub_template = (base_dir / "templates/fun/sub.html").read_text(encoding="utf-8")
+        map_editor_template = (base_dir / "templates/handrive/map_editor.html").read_text(encoding="utf-8")
+        map_viewer_template = (base_dir / "templates/handrive/map_viewer.html").read_text(encoding="utf-8")
+        print_js = (base_dir / "static/js/common/portfolio_print_selector_dialog.js").read_text(encoding="utf-8")
+
+        for token in (
+            "--site-popup-glass-bg",
+            "--site-popup-glass-filter",
+            "--site-modal-backdrop-bg",
+            "--site-modal-backdrop-filter",
+            "--site-modal-backdrop-surface-bg",
+            "--site-modal-exterior-dim-shadow",
+            "--site-modal-surface-bg",
+            "--site-modal-surface-filter",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, layout_css)
+
+        self.assertIn(".root-auth-modal-backdrop", common_css)
+        self.assertIn("--site-modal-backdrop-filter: none;", layout_css)
+        self.assertIn("--site-modal-backdrop-surface-bg: transparent;", layout_css)
+        self.assertIn("--site-modal-exterior-dim-shadow: 0 0 0 100vmax var(--site-modal-backdrop-bg);", layout_css)
+        self.assertIn("--site-modal-surface-bg: rgba(248, 248, 248, 0.72);", layout_css)
+        self.assertIn("--site-modal-surface-bg: rgba(46, 46, 46, 0.72);", common_css)
+        self.assertNotIn("--site-modal-header-bg", layout_css)
+        self.assertNotIn("--site-modal-header-bg", common_css)
+        self.assertNotIn("--site-modal-surface-bg: var(--site-popup-glass-bg);", layout_css)
+        self.assertIn("backdrop-filter: var(--site-modal-backdrop-filter", common_css)
+        self.assertIn("background: var(--site-modal-surface-bg", common_css)
+        self.assertIn(".map-bind-picker-overlay", popup_common_css)
+        self.assertIn(".media-tool-modal-head", popup_common_css)
+        self.assertIn("background: var(--site-modal-backdrop-surface-bg, transparent);", common_css)
+        self.assertIn(".auth-modal .handrive-popup-modal-backdrop", site_auth_css)
+        self.assertIn("--site-auth-dialog-bg: var(--site-modal-surface-bg", site_auth_css)
+        self.assertIn("box-shadow: var(--site-auth-dialog-shadow), var(--site-modal-exterior-dim-shadow", site_auth_css)
+        self.assertIn('const backdropFilter = "var(--site-modal-backdrop-filter, none)"', site_auth_js)
+        self.assertIn('const surfaceFilter = "var(--site-modal-surface-filter, saturate(120%) blur(4px))"', site_auth_js)
+        self.assertIn('background: "var(--site-modal-backdrop-surface-bg, transparent)"', site_auth_js)
+        self.assertIn("--handrive-modal-surface-bg: var(--site-modal-surface-bg", handrive_css)
+        self.assertIn("backdrop-filter: var(--handrive-modal-surface-filter)", handrive_css)
+        job_queue_rule = handrive_css[
+            handrive_css.index(".handrive-job-queue-panel {"):
+            handrive_css.index(".handrive-job-queue-head {", handrive_css.index(".handrive-job-queue-panel {"))
+        ]
+        self.assertIn("background: var(--handrive-modal-surface-bg);", job_queue_rule)
+        self.assertIn("backdrop-filter: var(--handrive-modal-surface-filter);", job_queue_rule)
+        job_queue_head_rule = handrive_css[
+            handrive_css.index(".handrive-job-queue-head {"):
+            handrive_css.index(".handrive-job-queue-head-main", handrive_css.index(".handrive-job-queue-head {"))
+        ]
+        self.assertNotIn("background:", job_queue_head_rule)
+        self.assertIn("panelBackground: readThemeToken('--site-modal-surface-bg', 'rgba(248, 248, 248, 0.72)')", print_js)
+        self.assertIn("panelBackdropFilter: readThemeToken('--site-modal-surface-filter'", print_js)
+        self.assertIn("overlayBackdropFilter: readThemeToken('--site-modal-backdrop-filter', 'none')", print_js)
+        self.assertIn("overlayOpenColor: readThemeToken('--site-modal-backdrop-surface-bg'", print_js)
+        self.assertNotIn("overlayOpenColor: readThemeToken('--site-modal-backdrop-bg'", print_js)
+
+        for name, source in {
+            "common": common_css,
+            "site_auth": site_auth_css,
+            "handrive": handrive_css,
+            "hpmail": hpmail_css,
+            "image_demo": image_demo_css,
+            "image_color": image_color_css,
+            "multiplayer": multiplayer_css,
+            "fun_sub": fun_sub_template,
+            "map_editor": map_editor_template,
+            "map_viewer": map_viewer_template,
+        }.items():
+            with self.subTest(modal_source=name):
+                self.assertNotIn("background: var(--site-modal-backdrop-bg", source)
+                self.assertIn("site-modal-exterior-dim-shadow", source)
+
+    def test_modal_headers_do_not_draw_bottom_borders(self):
+        base_dir = Path(settings.BASE_DIR)
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        popup_common_css = (base_dir / "static/css/common/popup_common.css").read_text(encoding="utf-8")
+        site_auth_css = (base_dir / "static/css/common/site_auth_modal.css").read_text(encoding="utf-8")
+        site_auth_js = (base_dir / "static/js/common/site_auth_modal.js").read_text(encoding="utf-8")
+        image_demo_css = (base_dir / "static/css/fun/image_pip_demo.css").read_text(encoding="utf-8")
+        image_color_css = (base_dir / "static/css/fun/image_color_picker.css").read_text(encoding="utf-8")
+        hpmail_css = (base_dir / "static/css/pages/hpmail/email.css").read_text(encoding="utf-8")
+        multiplayer_css = (base_dir / "static/css/fun/bumpercar_spiky/multiplayer.css").read_text(encoding="utf-8")
+        fun_sub_template = (base_dir / "templates/fun/sub.html").read_text(encoding="utf-8")
+
+        def css_block(source, start_marker, end_marker):
+            start = source.index(start_marker)
+            return source[start:source.index(end_marker, start)]
+
+        header_blocks = {
+            "handrive_popup": css_block(handrive_css, ".handrive-popup-head,", ".handrive-popup-head {"),
+            "site_modal_full_bleed": css_block(popup_common_css, ".site-modal-dialog.site-modal-dialog > .site-modal-head:first-child {", ".portfolio-print-selector-head.site-modal-head"),
+            "portfolio_help": css_block(popup_common_css, ".portfolio-print-selector-head.site-modal-head,", ".root-auth-modal-title"),
+            "handrive_job_queue": css_block(handrive_css, ".handrive-job-queue-head {", ".handrive-job-queue-head-main"),
+            "site_auth": css_block(site_auth_css, ".auth-modal .handrive-popup-head.auth-modal-head {", ".auth-modal .handrive-popup-head.auth-modal-head.is-popup-dragging"),
+            "image_demo": css_block(image_demo_css, ".image-demo-modal-head {", ".image-demo-modal-title"),
+            "media_tool": css_block(image_color_css, ".media-tool-modal-head {", ".media-tool-modal-title"),
+            "hpmail_mailbox": css_block(hpmail_css, ".hpmail-mailbox-modal-head,", ".hpmail-mailbox-modal-field"),
+            "multiplayer_idle": css_block(multiplayer_css, ".multiplayer-idle-modal-header.site-modal-head {", ".multiplayer-idle-modal-title"),
+            "multiplayer_death": css_block(multiplayer_css, ".multiplayer-death-modal-header.site-modal-head {", ".multiplayer-death-modal-title"),
+            "multiplayer_skin": css_block(multiplayer_css, ".multiplayer-skin-modal-header {", ".multiplayer-skin-modal-title"),
+            "bumpercar_stats": css_block(fun_sub_template, ".bumpercar-stats-modal-header {", ".bumpercar-stats-modal-title"),
+        }
+
+        for name, block in header_blocks.items():
+            with self.subTest(header=name):
+                self.assertNotIn("border-bottom", block)
+                self.assertNotIn("background:", block)
+                self.assertNotIn("--site-modal-head-margin-bottom:", block)
+                self.assertNotIn("margin-bottom:", block)
+
+        self.assertNotIn("borderBottom:", site_auth_js)
+
+    def test_global_z_index_literals_do_not_bypass_layer_tokens(self):
+        base_dir = Path(settings.BASE_DIR)
+        roots = [base_dir / "static/css", base_dir / "static/js", base_dir / "templates"]
+        patterns = [
+            re.compile(r"z-index\s*:\s*([0-9]+)"),
+            re.compile(r"zIndex\s*:\s*['\"]([0-9]+)['\"]"),
+            re.compile(r"style\.zIndex\s*=\s*['\"]([0-9]+)['\"]"),
+        ]
+        offenders = []
+
+        for root in roots:
+            for path in root.rglob("*"):
+                if not path.is_file():
+                    continue
+                relative = path.relative_to(base_dir)
+                if relative.parts[0] == "staticfiles" or "vendor" in relative.parts:
+                    continue
+                if path.suffix not in {".css", ".js", ".html"}:
+                    continue
+                source = path.read_text(encoding="utf-8")
+                for pattern in patterns:
+                    for match in pattern.finditer(source):
+                        value = int(match.group(1))
+                        if value >= 1000:
+                            offenders.append(f"{relative}:{source.count(chr(10), 0, match.start()) + 1}:{value}")
+
+        self.assertEqual(offenders, [])
+
+
 class HandriveAuthFlowTests(TestCase):
     def setUp(self):
         self.user_model = get_user_model()
@@ -2073,19 +2940,156 @@ class HandriveAuthFlowTests(TestCase):
         self.assertContains(response, "이전 페이지")
         self.assertNotContains(response, ">ide<", html=False)
 
-    def test_common_auth_templates_do_not_use_handrive_prefixed_classes(self):
-        template_names = [
-            "login.html",
-            "signup.html",
-            "register_email.html",
-            "2fa_verify.html",
-        ]
+    def test_site_auth_modal_host_selector_is_separate_from_trigger_links(self):
+        host_template = (Path(settings.BASE_DIR) / "templates/partials/site_auth_modal_host.html").read_text(encoding="utf-8")
+        modal_js = (Path(settings.BASE_DIR) / "static/js/common/site_auth_modal.js").read_text(encoding="utf-8")
+        modal_css = (Path(settings.BASE_DIR) / "static/css/common/site_auth_modal.css").read_text(encoding="utf-8")
 
-        for template_name in template_names:
+        self.assertIn("handrive-popup-modal", host_template)
+        self.assertIn("handrive-popup-modal-dialog", host_template)
+        self.assertIn("handrive-popup-head", host_template)
+        self.assertIn("handrive-popup-title", host_template)
+        self.assertIn("data-auth-title", host_template)
+        self.assertIn("data-popup-fit-bottom", host_template)
+        self.assertIn('tabindex="-1"', host_template)
+        self.assertIn("data-auth-modal-host", host_template)
+        self.assertNotIn("root-auth-modal", host_template)
+        self.assertIn('document.querySelector("[data-auth-modal-host]")', modal_js)
+        self.assertIn('a[data-auth-modal]', modal_js)
+        self.assertIn('setDialogDragOffset', modal_js)
+        self.assertIn('setModalTitle', modal_js)
+        self.assertIn('data-popup-draggable-dialog', modal_js)
+        self.assertIn('handrive-popup-dragging', modal_js)
+        self.assertIn("body.theme-dark .auth-modal", modal_css)
+        self.assertIn("--site-auth-dialog-bg", modal_css)
+        self.assertIn(".auth-modal .auth-form", modal_css)
+        self.assertIn("#handrive-login-credential-block", modal_css)
+        self.assertIn(".auth-field-checkbox-consent input[type=\"checkbox\"]", modal_css)
+        self.assertIn(".auth-field-readonly input:disabled", modal_css)
+        self.assertIn(".auth-provider-row .auth-provider-btn", modal_css)
+        self.assertIn(".auth-modal .ui-btn", modal_css)
+        self.assertIn(".auth-modal .ui-btn.ui-btn-primary", modal_css)
+        self.assertIn("--site-auth-button-primary-bg", modal_css)
+        self.assertIn(".auth-verified-msg", modal_css)
+        modal_form_rule = modal_css[
+            modal_css.index(".auth-modal .auth-form"):
+            modal_css.index(".auth-form.is-submitting")
+        ]
+        self.assertIn("border: 0;", modal_form_rule)
+        self.assertIn("background: transparent;", modal_form_rule)
+        self.assertIn("padding: 0;", modal_form_rule)
+        modal_content_rule = modal_css[
+            modal_css.index(".auth-modal-content {"):
+            modal_css.index(".auth-modal-content.is-loading")
+        ]
+        modal_loading_rule = modal_css[
+            modal_css.index(".auth-modal-loading {"):
+            modal_css.index(".auth-modal-loading[hidden]")
+        ]
+        self.assertIn("position: relative;", modal_content_rule)
+        self.assertIn("display: flex;", modal_content_rule)
+        self.assertIn("isolation: isolate;", modal_content_rule)
+        self.assertIn("position: absolute;", modal_loading_rule)
+        self.assertIn("top: var(--site-modal-head-follow-gap, 0px);", modal_loading_rule)
+        self.assertIn("right: calc(-1 * var(--site-modal-dialog-padding-x, 0px));", modal_loading_rule)
+        self.assertIn("bottom: calc(-1 * var(--site-modal-dialog-padding-y, 0px));", modal_loading_rule)
+        self.assertIn("left: calc(-1 * var(--site-modal-dialog-padding-x, 0px));", modal_loading_rule)
+        self.assertIn("backdrop-filter: blur(3px);", modal_loading_rule)
+        self.assertIn('content.classList.add("is-loading")', modal_js)
+        self.assertIn('content.classList.remove("is-loading", "is-submitting")', modal_js)
+        self.assertIn('form.closest(".auth-modal-content")', modal_js)
+        self.assertIn("data-auth-submit-loading", modal_js)
+        self.assertIn("if (loading) loading.hidden = modalLoading ? true : !submitting;", modal_js)
+
+    def test_site_auth_modal_panels_reuse_page_form_partials(self):
+        modal_to_form_partial = {
+            "site_auth_modal_login.html": "site_auth_login_form.html",
+            "site_auth_modal_signup.html": "site_auth_signup_form.html",
+            "site_auth_modal_register_email.html": "site_auth_register_email_form.html",
+            "site_auth_modal_2fa.html": "site_auth_2fa_form.html",
+        }
+
+        for modal_template, form_partial in modal_to_form_partial.items():
+            with self.subTest(template=modal_template):
+                source = (Path(settings.BASE_DIR) / "templates/partials" / modal_template).read_text(encoding="utf-8")
+                self.assertIn(f'partials/{form_partial}', source)
+                self.assertIn("site_auth_is_modal=True", source)
+
+    def test_login_modal_get_renders_partial_without_full_page(self):
+        response = self.client.get("/ko/login/", {"auth_modal": "1"}, HTTP_X_SITE_AUTH_MODAL="1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-auth-panel-mode="login"', html=False)
+        self.assertContains(response, "data-auth-form", html=False)
+        self.assertContains(response, 'action="/ko/login"', html=False)
+        self.assertNotContains(response, "<!doctype html>", html=False)
+        self.assertNotContains(response, 'class="ui-shell ui-content"', html=False)
+
+    def test_signup_modal_get_renders_partial_without_full_page(self):
+        response = self.client.get("/ko/signup/", {"auth_modal": "1", "next": "/ko/"}, HTTP_X_SITE_AUTH_MODAL="1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-auth-panel-mode="signup"', html=False)
+        self.assertContains(response, "data-auth-form", html=False)
+        self.assertContains(response, 'action="/ko/signup"', html=False)
+        self.assertNotContains(response, "<!doctype html>", html=False)
+        self.assertNotContains(response, 'class="ui-shell ui-content"', html=False)
+
+    def test_login_page_keeps_regular_page_fallback(self):
+        response = self.client.get("/ko/login/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="ui-shell ui-content"', html=False)
+        self.assertContains(response, "data-auth-modal-host", html=False)
+
+    def test_common_auth_templates_do_not_use_handrive_prefixed_classes(self):
+        page_templates = {
+            "login.html": "site_auth_login_form.html",
+            "signup.html": "site_auth_signup_form.html",
+            "register_email.html": "site_auth_register_email_form.html",
+            "2fa_verify.html": "site_auth_2fa_form.html",
+        }
+
+        for template_name, form_partial in page_templates.items():
             with self.subTest(template=template_name):
                 source = (Path(settings.BASE_DIR) / "templates/handrive" / template_name).read_text(encoding="utf-8")
-                self.assertIn("site-auth-form", source)
+                self.assertIn(f'partials/{form_partial}', source)
                 self.assertNotRegex(source, r'class="[^"]*\bhandrive-')
+
+        form_partials = [
+            "site_auth_login_form.html",
+            "site_auth_signup_form.html",
+            "site_auth_register_email_form.html",
+            "site_auth_2fa_form.html",
+        ]
+        for template_name in form_partials:
+            with self.subTest(template=template_name):
+                source = (Path(settings.BASE_DIR) / "templates/partials" / template_name).read_text(encoding="utf-8")
+                self.assertIn("auth-form", source)
+                self.assertNotRegex(source, r'class="[^"]*\bhandrive-')
+
+    def test_signup_consent_links_reuse_site_footer_nav_partial(self):
+        base_dir = Path(settings.BASE_DIR)
+        signup_form = (base_dir / "templates/partials/site_auth_signup_form.html").read_text(encoding="utf-8")
+        footer_links = (base_dir / "templates/partials/site_footer_links.html").read_text(encoding="utf-8")
+        footer_nav = (base_dir / "templates/partials/site_footer_nav.html").read_text(encoding="utf-8")
+        base_template = (base_dir / "templates/base.html").read_text(encoding="utf-8")
+        legal_popup_js = (base_dir / "static/js/common/site_legal_popup.js").read_text(encoding="utf-8")
+        site_auth_css = (base_dir / "static/css/common/site_auth_modal.css").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        self.assertIn('include "partials/site_footer_nav.html" with site_footer_nav_popup=True', signup_form)
+        self.assertIn('include "partials/site_footer_nav.html"', footer_links)
+        self.assertIn('class="footer-nav"', footer_nav)
+        self.assertIn('class="footer-link"', footer_nav)
+        self.assertIn("data-legal-popup-url", footer_nav)
+        self.assertNotIn("auth-field-checkbox-links", signup_form)
+        self.assertNotIn("footer-link-btn", signup_form)
+        self.assertNotIn("auth-field-checkbox-links", site_auth_css)
+        self.assertNotIn("auth-field-checkbox-links", handrive_css)
+        self.assertIn("js/common/site_legal_popup.js", base_template)
+        self.assertIn('document.addEventListener("click"', legal_popup_js)
+        self.assertIn("[data-legal-popup-url], .footer-links .footer-link", legal_popup_js)
 
     def test_docs_login_page_uses_native_enter_submit_with_submit_guard(self):
         response = self.client.get("/ko/login/")
@@ -2095,7 +3099,7 @@ class HandriveAuthFlowTests(TestCase):
         self.assertNotContains(response, 'input.addEventListener("keydown"', html=False)
         self.assertContains(response, 'loginForm.dataset.submitting = submitting ? "1" : "0"', html=False)
         self.assertContains(response, 'id="handrive-login-loading"', html=False)
-        self.assertContains(response, 'class="site-auth-loading-spinner"', html=False)
+        self.assertContains(response, 'class="auth-loading-spinner"', html=False)
         self.assertContains(response, 'loginForm.classList.toggle("is-submitting", submitting)', html=False)
         self.assertContains(response, 'loginForm.setAttribute("aria-busy"', html=False)
 
@@ -2111,20 +3115,26 @@ class HandriveAuthFlowTests(TestCase):
     def test_otp_boxes_mask_previous_digits_with_icon(self):
         login_template = (Path(settings.BASE_DIR) / "templates/handrive/login.html").read_text(encoding="utf-8")
         verify_template = (Path(settings.BASE_DIR) / "templates/handrive/2fa_verify.html").read_text(encoding="utf-8")
+        site_auth_modal_js = (Path(settings.BASE_DIR) / "static/js/common/site_auth_modal.js").read_text(encoding="utf-8")
+        common_auth_css = (Path(settings.BASE_DIR) / "static/css/common/site_auth_modal.css").read_text(encoding="utf-8")
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
 
-        for source in (login_template, verify_template):
+        for source in (login_template, verify_template, site_auth_modal_js):
             self.assertIn('box.classList.toggle("is-masked", isMasked)', source)
             self.assertNotIn(': "•"', source)
 
-        self.assertIn(".site-auth-otp-box.is-masked::before", handrive_css)
-        self.assertIn("mask-image: url(\"data:image/svg+xml", handrive_css)
-        otp_mask_rule = handrive_css[
-            handrive_css.index(".site-auth-otp-box.is-masked::before"):
-            handrive_css.index(".site-auth-otp-input-wrap.is-focused")
-        ]
-        self.assertIn("fill='black'", otp_mask_rule)
-        self.assertNotIn("stroke-linecap", otp_mask_rule)
+        for css_source in (common_auth_css, handrive_css):
+            self.assertIn(".auth-otp-box.is-masked::before", css_source)
+            self.assertIn("mask-image: url(\"data:image/svg+xml", css_source)
+            otp_mask_rule = css_source[
+                css_source.index(".auth-otp-box.is-masked::before"):
+                css_source.index(".auth-otp-input-wrap.is-focused")
+            ]
+            self.assertIn("fill='black'", otp_mask_rule)
+            self.assertIn("M9.8 2h4.4", otp_mask_rule)
+            self.assertIn("2.2 3.8", otp_mask_rule)
+            self.assertNotIn("<circle", otp_mask_rule)
+            self.assertNotIn("stroke-linecap", otp_mask_rule)
 
     def test_docs_login_rejects_unsafe_username_chars_server_side(self):
         response = self.client.post(
@@ -2146,6 +3156,19 @@ class HandriveAuthFlowTests(TestCase):
         self.assertContains(response, "비밀번호에는 공백, 따옴표, 슬래시 등 보안상 위험한 문자를 사용할 수 없습니다.")
         self.assertNotIn("_auth_user_id", self.client.session)
 
+    def test_login_modal_invalid_post_returns_login_partial(self):
+        response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive/login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+            HTTP_X_SITE_AUTH_MODAL="1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-auth-panel-mode="login"', html=False)
+        self.assertContains(response, "아이디에는 공백, 따옴표, 슬래시 등 보안상 위험한 문자를 사용할 수 없습니다.")
+        self.assertNotContains(response, "<!doctype html>", html=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
     def test_login_2fa_resend_error_returns_display_messages(self):
         response = self.client.post(reverse("main:handrive_api_login_2fa_resend_code"))
 
@@ -2162,19 +3185,19 @@ class HandriveAuthFlowTests(TestCase):
         response = self.client.get("/ko/login/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'class="site-auth-actions"', html=False)
-        self.assertContains(response, 'class="site-auth-provider-options"', html=False)
-        self.assertContains(response, 'class="site-auth-provider-methods"', html=False)
-        self.assertContains(response, 'class="site-auth-github-icon-btn"', html=False)
+        self.assertContains(response, 'class="auth-actions"', html=False)
+        self.assertContains(response, 'class="auth-provider-options"', html=False)
+        self.assertContains(response, 'class="auth-provider-methods"', html=False)
+        self.assertContains(response, 'class="auth-github-icon-btn"', html=False)
         self.assertContains(response, 'aria-label="GitHub로 로그인"', html=False)
         content = response.content.decode()
         self.assertLess(
-            content.index('class="site-auth-actions"'),
-            content.index('class="site-auth-provider-options"'),
+            content.index('class="auth-actions"'),
+            content.index('class="auth-provider-options"'),
         )
         self.assertLess(
-            content.index('class="site-auth-provider-options"'),
-            content.index('class="site-auth-github-icon-btn"'),
+            content.index('class="auth-provider-options"'),
+            content.index('class="auth-github-icon-btn"'),
         )
 
     @override_settings(GOOGLE_AUTH_CLIENT_ID="google-client-id", GOOGLE_AUTH_CLIENT_SECRET="google-client-secret")
@@ -2182,8 +3205,8 @@ class HandriveAuthFlowTests(TestCase):
         response = self.client.get("/ko/login/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'class="site-auth-provider-options"', html=False)
-        self.assertContains(response, 'class="site-auth-google-icon-btn"', html=False)
+        self.assertContains(response, 'class="auth-provider-options"', html=False)
+        self.assertContains(response, 'class="auth-google-icon-btn"', html=False)
         self.assertContains(response, 'aria-label="Google로 로그인"', html=False)
 
     @override_settings(
@@ -3050,6 +4073,10 @@ class HandriveAuthFlowTests(TestCase):
 
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
     def test_docs_login_authenticates_non_staff_user(self, mock_prepare_session):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+        EmailTwoFactorBypassUser.objects.create(user=self.user)
+
         response = self.client.post(
             "/ko/login/",
             data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
@@ -3060,6 +4087,32 @@ class HandriveAuthFlowTests(TestCase):
         self.assertTrue("_auth_user_id" in self.client.session)
         self.assertIn("i_like_gitea", response.cookies)
         mock_prepare_session.assert_called_once()
+
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_login_modal_success_returns_reload_json_and_preserves_cookie(self, mock_prepare_session, mock_send_2fa):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+        EmailTwoFactorBypassUser.objects.create(user=self.user)
+
+        response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+            HTTP_X_SITE_AUTH_MODAL="1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Content-Type"], "application/json")
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["reload"])
+        self.assertEqual(payload["redirect_url"], "/ko/handrive")
+        self.assertEqual(self.client.session.get("_auth_user_id"), str(self.user.pk))
+        self.assertIn("i_like_gitea", response.cookies)
+        self.assertEqual(response.cookies["i_like_gitea"].value, "forgejo-session-key")
+        self.assertNotIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
+        mock_prepare_session.assert_called_once()
+        mock_send_2fa.assert_not_called()
 
     @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
@@ -3080,6 +4133,77 @@ class HandriveAuthFlowTests(TestCase):
         self.assertIn("i_like_gitea", response.cookies)
         mock_prepare_session.assert_called_once()
         mock_send_2fa.assert_not_called()
+
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_login_modal_new_device_keeps_inline_2fa_partial(self, mock_prepare_session, mock_send_2fa):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+
+        response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+            HTTP_X_SITE_AUTH_MODAL="1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-auth-panel-mode="login"', html=False)
+        self.assertContains(response, 'name="handrive_2fa_phase"', html=False)
+        self.assertContains(response, "on**@example.com")
+        self.assertNotContains(response, "<!doctype html>", html=False)
+        self.assertEqual(self.client.session[HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY], self.user.pk)
+        mock_prepare_session.assert_called_once()
+        mock_send_2fa.assert_called_once()
+
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_login_modal_missing_email_returns_register_email_panel_url(self, mock_prepare_session):
+        response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+            HTTP_X_SITE_AUTH_MODAL="1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("/ko/register-email", payload["panel_url"])
+        self.assertIn("auth_modal=1", payload["panel_url"])
+        self.assertEqual(self.client.session[HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY], self.user.pk)
+        panel_response = self.client.get(payload["panel_url"], HTTP_X_SITE_AUTH_MODAL="1")
+        self.assertContains(panel_response, 'data-auth-panel-mode="register-email"', html=False)
+        self.assertNotContains(panel_response, "<!doctype html>", html=False)
+        mock_prepare_session.assert_called_once()
+
+    @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
+    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
+    def test_login_modal_register_email_advances_to_2fa_panel(self, mock_prepare_session, mock_send_2fa):
+        login_response = self.client.post(
+            "/ko/login/",
+            data={"username": "handrive_login_user", "password": "pw123456", "next": "/ko/handrive/all/list/"},
+            HTTP_X_SITE_AUTH_MODAL="1",
+        )
+        self.assertIn("/ko/register-email", login_response.json()["panel_url"])
+
+        register_response = self.client.post(
+            "/ko/register-email",
+            data={"email": "one@example.com"},
+            HTTP_X_SITE_AUTH_MODAL="1",
+        )
+
+        self.assertEqual(register_response.status_code, 200)
+        payload = register_response.json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("/ko/2fa-verify", payload["panel_url"])
+        self.assertIn("auth_modal=1", payload["panel_url"])
+
+        panel_response = self.client.get(payload["panel_url"], HTTP_X_SITE_AUTH_MODAL="1")
+        self.assertContains(panel_response, 'data-auth-panel-mode="2fa"', html=False)
+        self.assertContains(panel_response, "on**@example.com")
+        self.assertNotContains(panel_response, "<!doctype html>", html=False)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "one@example.com")
+        mock_prepare_session.assert_called_once()
+        mock_send_2fa.assert_called_once()
 
     @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
@@ -3105,11 +4229,16 @@ class HandriveAuthFlowTests(TestCase):
         side_effect=[("forgejo-session-a", None), ("forgejo-session-b", None)],
     )
     def test_docs_login_after_logout_switches_authenticated_user(self, mock_prepare_session):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+        EmailTwoFactorBypassUser.objects.create(user=self.user)
         other_user = self.user_model.objects.create_user(
             username="handrive_login_user_two",
             password="pw123456",
+            email="two@example.com",
             is_staff=False,
         )
+        EmailTwoFactorBypassUser.objects.create(user=other_user)
 
         first_login = self.client.post(
             "/ko/login/",
@@ -3370,6 +4499,9 @@ class HandriveAuthFlowTests(TestCase):
 
     @mock.patch("main.handrive_views._prepare_forgejo_login_session")
     def test_docs_login_oauth_handoff_keeps_existing_gitea_session_cookie(self, mock_prepare_session):
+        self.user.email = "one@example.com"
+        self.user.save(update_fields=["email"])
+        EmailTwoFactorBypassUser.objects.create(user=self.user)
         next_url = (
             "/o/authorize/?client_id=gitea-hanplanet-sso"
             "&redirect_uri=https%3A%2F%2Fgit.hanplanet.com%2Fuser%2Foauth2%2Fhanplanet%2Fcallback"
@@ -3594,7 +4726,7 @@ class HandriveAuthFlowTests(TestCase):
         response = self.client.get("/ko/logout/bridge/?next=https://git.hanplanet.com/hanplanet/repo")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'action="/ko/logout/"', html=False)
+        self.assertContains(response, 'action="/ko/logout"', html=False)
         self.assertContains(
             response,
             'value="https://git.hanplanet.com/hanplanet/repo"',
@@ -3750,7 +4882,7 @@ class NetworkEnvironmentPageTests(TestCase):
         self.assertNotContains(response, "/api/download", html=False)
         self.assertNotContains(response, "/api/upload", html=False)
         self.assertContains(response, "공인 IP와 측정 결과가 M-Lab에 전송", html=False)
-        self.assertContains(response, "site-footer-purpose", html=False)
+        self.assertContains(response, "footer-purpose", html=False)
         self.assertContains(response, "network-environment-page", html=False)
         self.assertContains(response, "/ko/sub/network-info/api/environment", html=False)
         network_css = (Path(settings.BASE_DIR) / "static/css/fun/network_environment.css").read_text()
@@ -4486,6 +5618,22 @@ class HandriveAccessRuleTests(TestCase):
             token_type="Bearer",
             google_drive_enabled=True,
             google_profile_synced_at=timezone.now(),
+        )
+
+    def test_all_list_initial_entries_use_demo_number_order(self):
+        handrive_all_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "all"
+        handrive_all_root.mkdir(parents=True, exist_ok=True)
+        (handrive_all_root / "02-folder").mkdir()
+        (handrive_all_root / "01-note.md").write_text("# note", encoding="utf-8")
+        (handrive_all_root / "00-manifest.json").write_text("{}", encoding="utf-8")
+        (handrive_all_root / "09-last.md").write_text("# last", encoding="utf-8")
+
+        response = self.client.get(reverse("main:handrive_list_lang", kwargs={"ui_lang": "ko", "folder_path": "all"}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [entry["name"] for entry in response.context["initial_entries"]],
+            ["00-manifest.json", "01-note.md", "02-folder", "09-last.md"],
         )
 
     def build_minimal_ico_bytes(self):

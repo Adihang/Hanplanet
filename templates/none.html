@@ -59,7 +59,7 @@
             </div>
             <div
                 id="rootSearchSuggestions"
-                class="root-search-suggestions"
+                class="root-search-suggestions site-dropdown-menu"
                 data-root-search-suggestions
                 data-history-delete-label="{% include_trimmed 'partials/ui_i18n.html' key='search_history_delete' %}"
                 role="listbox"
@@ -155,10 +155,10 @@
             <p class="root-shortcuts-hint" data-root-shortcuts-hint></p>
             {% if not request.user.is_authenticated %}
             <div class="root-shortcuts-auth-actions">
-                <a class="root-shortcuts-auth-btn" href="{{ handrive_login_url }}">
+                <a class="root-shortcuts-auth-btn" href="{{ handrive_login_url }}" data-auth-modal="login">
                     {% include 'partials/ui_i18n.html' with key='login' %}
                 </a>
-                <a class="root-shortcuts-auth-btn root-shortcuts-auth-btn-primary" href="{{ handrive_signup_url }}">
+                <a class="root-shortcuts-auth-btn root-shortcuts-auth-btn-primary" href="{{ handrive_signup_url }}" data-auth-modal="signup">
                     {% include 'partials/ui_i18n.html' with key='signup' %}
                 </a>
             </div>
@@ -173,7 +173,6 @@
     </section>
 </main>
 {% include "partials/site_footer_links.html" %}
-{% include "popup/root/shortcuts_context_menu.html" %}
 {% include "popup/root/auth_logout_modal.html" %}
 {% include "popup/root/search_engine_popup.html" %}
 <script src="{% static_v 'js/pages/none/root_search.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>

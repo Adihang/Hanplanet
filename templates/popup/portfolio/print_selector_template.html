@@ -1,7 +1,7 @@
 <template id="portfolio-print-selector-template">
-    <div class="portfolio-print-selector-overlay" data-popup-role="overlay">
+    <div class="portfolio-print-selector-overlay site-modal-backdrop" data-popup-role="overlay">
         <div
-            class="portfolio-print-selector-panel"
+            class="portfolio-print-selector-panel site-modal-dialog"
             data-popup-fit-bottom
             data-popup-role="panel"
             role="dialog"
@@ -9,7 +9,12 @@
             aria-labelledby="portfolio-print-selector-title"
             aria-describedby="portfolio-print-selector-description"
         >
-            <h4 id="portfolio-print-selector-title" class="portfolio-print-selector-title" data-popup-role="title"></h4>
+            <header class="portfolio-print-selector-head site-modal-head">
+                <h4 id="portfolio-print-selector-title" class="portfolio-print-selector-title" data-popup-role="title"></h4>
+                <button type="button" class="portfolio-print-selector-close site-modal-close" data-popup-action="close" aria-label="{% include 'partials/ui_i18n.html' with key='close' %}" title="{% include 'partials/ui_i18n.html' with key='close' %}">
+                    <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg>
+                </button>
+            </header>
             <p id="portfolio-print-selector-description" class="portfolio-print-selector-description" data-popup-role="description"></p>
             <div class="portfolio-print-selector-list" data-popup-role="list"></div>
             <div class="portfolio-print-selector-footer" data-popup-role="footer">

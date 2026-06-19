@@ -171,7 +171,7 @@ body {
 
 /* ── Score overlay ──────────────────────────────────────────────────────── */
 .stratagem_score {
-    z-index: 9999;
+    z-index: var(--site-z-page-overlay);
     position: absolute;
     display: none;
     flex-direction: column;

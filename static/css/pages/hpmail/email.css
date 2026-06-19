@@ -6,7 +6,7 @@
     overflow: hidden;
 }
 
-.hpmail-page .site-footer-links {
+.hpmail-page .footer-links {
     display: none;
 }
 
@@ -340,7 +340,7 @@
     background: var(--handrive-elevated-bg, #ffffff);
     box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2));
     overflow: auto;
-    z-index: var(--site-z-popup, 3400);
+    z-index: var(--site-z-popup, 1120);
 }
 
 .hpmail-compose-form {
@@ -391,7 +391,8 @@
     display: grid;
     place-items: center;
     padding: 16px;
-    z-index: var(--site-z-modal, 3600);
+    z-index: var(--site-modal-stack-z, var(--site-z-modal, 1400));
+    isolation: isolate;
 }
 
 .hpmail-mailbox-modal[hidden],
@@ -402,20 +403,29 @@
 .hpmail-mailbox-modal-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.36);
+    z-index: 0;
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
 }
 
 .hpmail-mailbox-modal-dialog {
+    --site-modal-dialog-padding-x: 14px;
+    --site-modal-dialog-padding-y: 14px;
+    --site-modal-head-follow-gap: 12px;
     position: relative;
+    z-index: 1;
     display: grid;
     gap: 12px;
     width: min(360px, 100%);
     padding: 14px;
     border: 1px solid var(--handrive-border, #d0d0d0);
     border-radius: var(--handrive-radius-lg, 8px);
-    background: var(--handrive-elevated-bg, #ffffff);
+    background: var(--site-modal-surface-bg, var(--handrive-elevated-bg, #ffffff));
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     color: var(--handrive-text, #222222);
-    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2));
+    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
 }
 
 .hpmail-mailbox-modal-head,
@@ -458,11 +468,11 @@
     position: fixed;
     min-width: 132px;
     padding: 4px;
-    border: 1px solid var(--handrive-border, #d0d0d0);
-    border-radius: var(--handrive-radius, 6px);
+    border: 1px solid var(--site-dropdown-menu-border, var(--handrive-border, #d0d0d0));
+    border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
     background: var(--handrive-elevated-bg, #ffffff);
-    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2));
-    z-index: var(--site-z-popup, 3400);
+    box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)));
+    z-index: var(--site-z-popup, 1120);
 }
 
 .hpmail-mailbox-context-menu button {

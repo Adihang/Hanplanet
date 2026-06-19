@@ -79,7 +79,7 @@ ul{
     font-weight: 800;
 }
 
-body.salvations-page .site-footer-links {
+body.salvations-page .footer-links {
     min-height: var(--salvation-footer-height);
     box-sizing: border-box;
     padding: 8px 16px calc(8px + env(safe-area-inset-bottom));

@@ -1,14 +1,24 @@
-<div id="{{ modal_id }}" class="handrive-popup-modal" hidden>
-    <div class="handrive-popup-modal-backdrop" id="{{ backdrop_id }}"></div>
-    <div class="handrive-popup-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="{{ title_id }}" aria-describedby="{{ message_id }}">
-        <header class="handrive-popup-head">
-            <h2 id="{{ title_id }}" class="handrive-popup-title">{{ title_text }}</h2>
-            {% include "popup/handrive/_popup_close_button.html" with click_target_id=cancel_button_id %}
+{% firstof modal_class "handrive-popup-modal" as confirm_modal_class %}
+{% firstof backdrop_class "handrive-popup-modal-backdrop site-modal-backdrop" as confirm_backdrop_class %}
+{% firstof dialog_class "handrive-popup-modal-dialog site-modal-dialog" as confirm_dialog_class %}
+{% firstof head_class "handrive-popup-head site-modal-head" as confirm_head_class %}
+{% firstof title_class "handrive-popup-title" as confirm_title_class %}
+{% firstof close_button_class "handrive-popup-close-btn site-modal-close" as confirm_close_button_class %}
+{% firstof message_class "handrive-popup-message" as confirm_message_class %}
+{% firstof actions_class "handrive-popup-actions" as confirm_actions_class %}
+{% firstof cancel_button_class "ui-btn" as confirm_cancel_button_class %}
+{% firstof confirm_button_class "ui-btn ui-btn-primary" as confirm_confirm_button_class %}
+<div id="{{ modal_id }}" class="{{ confirm_modal_class }}" hidden>
+    <div class="{{ confirm_backdrop_class }}" id="{{ backdrop_id }}"></div>
+    <div class="{{ confirm_dialog_class }}" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="{{ title_id }}" aria-describedby="{{ message_id }}">
+        <header class="{{ confirm_head_class }}">
+            <h2 id="{{ title_id }}" class="{{ confirm_title_class }}">{{ title_text }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with click_target_id=cancel_button_id button_class=confirm_close_button_class %}
         </header>
-        <p id="{{ message_id }}" class="handrive-popup-message">{{ message_text|default:"" }}</p>
-        <div class="handrive-popup-actions">
-            <button type="button" class="ui-btn" id="{{ cancel_button_id }}">{{ cancel_text }}</button>
-            <button type="button" class="ui-btn ui-btn-primary" id="{{ confirm_button_id }}">{{ confirm_text }}</button>
+        <p id="{{ message_id }}" class="{{ confirm_message_class }}">{{ message_text|default:"" }}</p>
+        <div class="{{ confirm_actions_class }}">
+            <button type="button" class="{{ confirm_cancel_button_class }}" id="{{ cancel_button_id }}">{{ cancel_text }}</button>
+            <button type="button" class="{{ confirm_confirm_button_class }}" id="{{ confirm_button_id }}">{{ confirm_text }}</button>
         </div>
     </div>
 </div>

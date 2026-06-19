@@ -1,15 +1,5 @@
-<div class="root-auth-modal" id="root-auth-logout-modal" hidden>
-    <div class="root-auth-modal-backdrop" id="root-auth-logout-modal-backdrop"></div>
-    <div class="root-auth-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="root-auth-logout-title">
-        <h2 id="root-auth-logout-title">{% include 'partials/ui_i18n.html' with key='logout' %}</h2>
-        <p id="root-auth-logout-message" class="root-auth-modal-message">{% include 'partials/ui_i18n.html' with key='logout_confirm' %}</p>
-        <div class="root-auth-modal-actions">
-            <button type="button" class="root-auth-modal-btn" id="root-auth-logout-cancel-btn">
-                {% include 'partials/ui_i18n.html' with key='cancel' %}
-            </button>
-            <button type="button" class="root-auth-modal-btn root-auth-modal-btn-primary" id="root-auth-logout-confirm-btn">
-                {% include 'partials/ui_i18n.html' with key='logout' %}
-            </button>
-        </div>
-    </div>
-</div>
+{% load template_utils %}
+{% include_trimmed 'partials/ui_i18n.html' key='logout' as root_logout_title %}
+{% include_trimmed 'partials/ui_i18n.html' key='logout_confirm' as root_logout_message %}
+{% include_trimmed 'partials/ui_i18n.html' key='cancel' as root_logout_cancel %}
+{% include "popup/handrive/_confirm_modal.html" with modal_id="root-auth-logout-modal" backdrop_id="root-auth-logout-modal-backdrop" title_id="root-auth-logout-title" message_id="root-auth-logout-message" cancel_button_id="root-auth-logout-cancel-btn" confirm_button_id="root-auth-logout-confirm-btn" title_text=root_logout_title message_text=root_logout_message cancel_text=root_logout_cancel confirm_text=root_logout_title modal_class="root-auth-modal" backdrop_class="root-auth-modal-backdrop site-modal-backdrop" dialog_class="root-auth-modal-dialog site-modal-dialog" head_class="root-auth-modal-head site-modal-head" title_class="root-auth-modal-title" close_button_class="root-auth-modal-close site-modal-close" message_class="root-auth-modal-message" actions_class="root-auth-modal-actions" cancel_button_class="root-auth-modal-btn" confirm_button_class="root-auth-modal-btn root-auth-modal-btn-primary" %}

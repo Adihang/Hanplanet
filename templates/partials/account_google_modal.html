@@ -22,9 +22,14 @@
     data-unconfigured="{% include_trimmed 'partials/ui_i18n.html' key='google_unconfigured' %}"
     hidden
 >
-    <div class="root-auth-modal-backdrop" data-auth-google-modal-backdrop></div>
-    <div class="root-auth-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true">
-        <h2 data-auth-google-modal-title></h2>
+    <div class="root-auth-modal-backdrop site-modal-backdrop" data-auth-google-modal-backdrop></div>
+    <div class="root-auth-modal-dialog site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="auth-google-modal-title">
+        <header class="root-auth-modal-head site-modal-head">
+            <h2 id="auth-google-modal-title" class="root-auth-modal-title" data-auth-google-modal-title></h2>
+            <button type="button" class="root-auth-modal-close site-modal-close" data-auth-google-cancel aria-label="{% include_trimmed 'partials/ui_i18n.html' key='close' %}" title="{% include_trimmed 'partials/ui_i18n.html' key='close' %}">
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg>
+            </button>
+        </header>
         <p class="root-auth-modal-message" data-auth-google-modal-message></p>
         <label class="ui-auth-google-drive-toggle" data-auth-google-drive-toggle-wrap hidden>
             <input type="checkbox" class="ui-auth-google-drive-checkbox" data-auth-google-drive-toggle>

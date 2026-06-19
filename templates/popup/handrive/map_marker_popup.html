@@ -1,7 +1,7 @@
-<div class="map-name-popup-overlay" id="map-marker-popup-overlay" hidden>
-    <div class="map-name-popup">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
-            <h4 style="margin:0;">{{ handrive_text.map_marker_title }}</h4>
+<div class="map-name-popup-overlay site-modal-backdrop" id="map-marker-popup-overlay" hidden>
+    <div class="map-name-popup site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="map-marker-popup-title">
+        <div class="site-modal-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
+            <h4 id="map-marker-popup-title" style="margin:0;">{{ handrive_text.map_marker_title }}</h4>
             <div style="display:inline-flex;align-items:center;gap:6px;">
                 <label title="{{ handrive_text.map_clickable_title }}" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;user-select:none;">
                     <input type="checkbox" id="map-marker-popup-clickable" checked style="margin:0;width:22px;height:22px;">
@@ -11,6 +11,7 @@
                     <input type="checkbox" id="map-marker-popup-icon-visible" checked style="margin:0;width:22px;height:22px;">
                     <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="10" cy="10" rx="8" ry="5"/><circle cx="10" cy="10" r="2.5"/></svg>
                 </label>
+                {% include "popup/handrive/_popup_close_button.html" with click_target_id="map-marker-popup-cancel" %}
             </div>
         </div>
         <div style="font-size:15px;margin-bottom:4px;">{{ handrive_text.map_icon_label }}</div>

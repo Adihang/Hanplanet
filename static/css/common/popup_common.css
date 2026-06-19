@@ -1,15 +1,507 @@
+.site-dropdown-menu,
 .ui-auth-account-menu,
+.root-shell-controls-fixed .ui-auth-account-menu,
 .handrive-context-menu,
+.root-search-engine-popup,
+.root-search-suggestions,
+.root-shortcuts-context-menu,
+.handrive-editor-suggest,
+.hpmail-mailbox-context-menu {
+    box-sizing: border-box;
+    border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
+    border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
+    box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)));
+}
+
+.site-dropdown-menu,
+.site-dropdown-menu *,
+.ui-auth-account-menu,
+.ui-auth-account-menu *,
+.handrive-context-menu,
+.handrive-context-menu *,
+.root-search-engine-popup,
+.root-search-engine-popup *,
+.root-search-suggestions,
+.root-search-suggestions *,
+.root-shortcuts-context-menu,
+.root-shortcuts-context-menu *,
+.handrive-editor-suggest,
+.handrive-editor-suggest *,
+.hpmail-mailbox-context-menu,
+.hpmail-mailbox-context-menu * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--site-dropdown-scrollbar-thumb, var(--site-scrollbar-thumb, rgba(120, 120, 128, 0.45))) transparent;
+}
+
+.site-dropdown-menu::-webkit-scrollbar,
+.site-dropdown-menu *::-webkit-scrollbar,
+.ui-auth-account-menu::-webkit-scrollbar,
+.ui-auth-account-menu *::-webkit-scrollbar,
+.handrive-context-menu::-webkit-scrollbar,
+.handrive-context-menu *::-webkit-scrollbar,
+.root-search-engine-popup::-webkit-scrollbar,
+.root-search-engine-popup *::-webkit-scrollbar,
+.root-search-suggestions::-webkit-scrollbar,
+.root-search-suggestions *::-webkit-scrollbar,
+.root-shortcuts-context-menu::-webkit-scrollbar,
+.root-shortcuts-context-menu *::-webkit-scrollbar,
+.handrive-editor-suggest::-webkit-scrollbar,
+.handrive-editor-suggest *::-webkit-scrollbar,
+.hpmail-mailbox-context-menu::-webkit-scrollbar,
+.hpmail-mailbox-context-menu *::-webkit-scrollbar {
+    width: var(--site-dropdown-scrollbar-size, 3px);
+    height: var(--site-dropdown-scrollbar-size, 3px);
+    background: transparent;
+}
+
+.site-dropdown-menu::-webkit-scrollbar-track,
+.site-dropdown-menu *::-webkit-scrollbar-track,
+.ui-auth-account-menu::-webkit-scrollbar-track,
+.ui-auth-account-menu *::-webkit-scrollbar-track,
+.handrive-context-menu::-webkit-scrollbar-track,
+.handrive-context-menu *::-webkit-scrollbar-track,
+.root-search-engine-popup::-webkit-scrollbar-track,
+.root-search-engine-popup *::-webkit-scrollbar-track,
+.root-search-suggestions::-webkit-scrollbar-track,
+.root-search-suggestions *::-webkit-scrollbar-track,
+.root-shortcuts-context-menu::-webkit-scrollbar-track,
+.root-shortcuts-context-menu *::-webkit-scrollbar-track,
+.handrive-editor-suggest::-webkit-scrollbar-track,
+.handrive-editor-suggest *::-webkit-scrollbar-track,
+.hpmail-mailbox-context-menu::-webkit-scrollbar-track,
+.hpmail-mailbox-context-menu *::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.site-dropdown-menu::-webkit-scrollbar-thumb,
+.site-dropdown-menu *::-webkit-scrollbar-thumb,
+.ui-auth-account-menu::-webkit-scrollbar-thumb,
+.ui-auth-account-menu *::-webkit-scrollbar-thumb,
+.handrive-context-menu::-webkit-scrollbar-thumb,
+.handrive-context-menu *::-webkit-scrollbar-thumb,
+.root-search-engine-popup::-webkit-scrollbar-thumb,
+.root-search-engine-popup *::-webkit-scrollbar-thumb,
+.root-search-suggestions::-webkit-scrollbar-thumb,
+.root-search-suggestions *::-webkit-scrollbar-thumb,
+.root-shortcuts-context-menu::-webkit-scrollbar-thumb,
+.root-shortcuts-context-menu *::-webkit-scrollbar-thumb,
+.handrive-editor-suggest::-webkit-scrollbar-thumb,
+.handrive-editor-suggest *::-webkit-scrollbar-thumb,
+.hpmail-mailbox-context-menu::-webkit-scrollbar-thumb,
+.hpmail-mailbox-context-menu *::-webkit-scrollbar-thumb {
+    min-height: 14px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--site-dropdown-scrollbar-thumb, var(--site-scrollbar-thumb, rgba(120, 120, 128, 0.45)));
+    background-clip: padding-box;
+}
+
+.site-dropdown-menu::-webkit-scrollbar-thumb:hover,
+.site-dropdown-menu *::-webkit-scrollbar-thumb:hover,
+.ui-auth-account-menu::-webkit-scrollbar-thumb:hover,
+.ui-auth-account-menu *::-webkit-scrollbar-thumb:hover,
+.handrive-context-menu::-webkit-scrollbar-thumb:hover,
+.handrive-context-menu *::-webkit-scrollbar-thumb:hover,
+.root-search-engine-popup::-webkit-scrollbar-thumb:hover,
+.root-search-engine-popup *::-webkit-scrollbar-thumb:hover,
+.root-search-suggestions::-webkit-scrollbar-thumb:hover,
+.root-search-suggestions *::-webkit-scrollbar-thumb:hover,
+.root-shortcuts-context-menu::-webkit-scrollbar-thumb:hover,
+.root-shortcuts-context-menu *::-webkit-scrollbar-thumb:hover,
+.handrive-editor-suggest::-webkit-scrollbar-thumb:hover,
+.handrive-editor-suggest *::-webkit-scrollbar-thumb:hover,
+.hpmail-mailbox-context-menu::-webkit-scrollbar-thumb:hover,
+.hpmail-mailbox-context-menu *::-webkit-scrollbar-thumb:hover {
+    background: var(--site-dropdown-scrollbar-thumb-hover, var(--site-scrollbar-thumb-hover, rgba(95, 95, 103, 0.58)));
+    background-clip: padding-box;
+}
+
+.site-custom-select {
+    --site-custom-select-button-color: var(--handrive-text, var(--site-text, CanvasText));
+    --site-custom-select-caret-color: var(--handrive-text-secondary, var(--site-text-secondary, currentColor));
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+    min-width: 72px;
+    min-height: 30px;
+    box-sizing: border-box;
+    vertical-align: middle;
+}
+
+body.theme-dark .site-custom-select {
+    --site-custom-select-button-color: var(--handrive-text, var(--site-text, #f2f2f2));
+    --site-custom-select-caret-color: var(--handrive-text-secondary, var(--site-text-secondary, #c2c2c2));
+}
+
+.site-custom-select[hidden] {
+    display: none;
+}
+
+.site-custom-select-native {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.site-custom-select-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: var(--site-custom-select-button-color);
+    font: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    padding: inherit;
+    text-align: right;
+    cursor: inherit;
+}
+
+.site-custom-select-button:focus {
+    outline: none;
+}
+
+.site-custom-select-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.site-custom-select-caret {
+    flex: 0 0 auto;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--site-custom-select-caret-color);
+    opacity: 0.68;
+}
+
+.site-custom-select-menu {
+    position: fixed;
+    z-index: var(--site-z-popup-raised, 1125);
+    max-height: var(--site-custom-select-menu-max-height, 260px);
+    overflow: auto;
+    padding: 4px;
+    background: var(--handrive-bg, Canvas);
+    color: var(--handrive-text, CanvasText);
+}
+
+.site-custom-select-option {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: 1.25;
+    padding: 6px 8px;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.site-custom-select-option:hover,
+.site-custom-select-option:focus,
+.site-custom-select-option.is-active {
+    outline: none;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.site-custom-select-option:disabled {
+    cursor: default;
+    opacity: 0.48;
+}
+
 .handrive-popup-modal-dialog,
 .handrive-drive-modal-dialog,
 .handrive-folder-modal-dialog,
 .handrive-help-modal-dialog,
 .root-auth-modal-dialog,
-.root-search-engine-popup,
-.root-shortcuts-context-menu,
+.site-modal-dialog,
 .portfolio-print-selector-panel {
     border-radius: var(--site-popup-radius-common);
-    box-shadow: var(--site-popup-shadow-common);
+}
+
+:where(
+    .root-auth-modal,
+    .site-legal-modal,
+    .auth-modal,
+    .handrive-popup-modal,
+    .handrive-drive-modal,
+    .handrive-folder-modal,
+    .handrive-help-modal,
+    .hpmail-mailbox-modal,
+    .image-demo-modal-backdrop,
+    .media-tool-modal-backdrop,
+    .bumpercar-stats-modal-backdrop,
+    .multiplayer-skin-modal-backdrop,
+    .multiplayer-idle-modal-backdrop,
+    .multiplayer-death-modal-backdrop,
+    .map-image-viewer-modal,
+    .map-media-viewer-modal,
+    .map-video-viewer-modal,
+    .map-name-popup-overlay,
+    .map-bind-picker-overlay,
+    .ve-image-upload-dialog,
+    .ae-drive-picker
+) {
+    isolation: isolate;
+}
+
+:where(
+    .root-auth-modal-backdrop,
+    .site-legal-modal-backdrop,
+    .handrive-popup-modal-backdrop,
+    .handrive-drive-modal-backdrop,
+    .handrive-folder-modal-backdrop,
+    .handrive-help-modal-backdrop,
+    .hpmail-mailbox-modal-backdrop,
+    .map-image-viewer-modal-backdrop,
+    .map-media-viewer-modal-backdrop,
+    .map-video-viewer-modal-backdrop
+) {
+    z-index: 0;
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+}
+
+.site-modal-backdrop.site-modal-backdrop {
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
+}
+
+:where(
+    .site-modal-dialog,
+    .root-auth-modal-dialog,
+    .site-legal-modal-dialog,
+    .auth-modal-dialog,
+    .handrive-popup-modal-dialog,
+    .handrive-drive-modal-dialog,
+    .handrive-folder-modal-dialog,
+    .handrive-help-modal-dialog,
+    .hpmail-mailbox-modal-dialog,
+    .image-demo-modal,
+    .media-tool-modal,
+    .bumpercar-stats-modal,
+    .multiplayer-skin-modal,
+    .multiplayer-idle-modal,
+    .multiplayer-death-modal,
+    .map-name-popup,
+    .map-bind-picker,
+    .map-image-viewer-modal-image,
+    .map-media-viewer-modal-frame,
+    .map-video-viewer-modal-frame,
+    .map-video-viewer-modal-video,
+    .ve-image-upload-panel,
+    .ae-drive-dialog,
+    .portfolio-print-selector-panel
+) {
+    position: relative;
+    z-index: 1;
+    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
+}
+
+:where(.site-modal-dialog) {
+    --site-modal-dialog-padding-x: 0px;
+    --site-modal-dialog-padding-y: 0px;
+    --site-modal-head-padding: 10px 14px 8px;
+}
+
+.site-modal-dialog.site-modal-dialog {
+    position: relative;
+    z-index: 1;
+    border-radius: var(--site-popup-radius-common);
+    background: var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72));
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
+}
+
+:where(
+    .site-modal-head,
+    .handrive-popup-head,
+    .handrive-drive-modal-head,
+    .auth-modal-head,
+    .image-demo-modal-head,
+    .media-tool-modal-head,
+    .hpmail-mailbox-modal-head,
+    .bumpercar-stats-modal-header,
+    .multiplayer-skin-modal-header,
+    .ve-image-upload-head,
+    .ae-drive-head
+) {
+    border-bottom: 0;
+}
+
+.site-modal-head.site-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 0;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+}
+
+.site-modal-dialog.site-modal-dialog > .site-modal-head:first-child {
+    margin:
+        calc(-1 * var(--site-modal-dialog-padding-y, 0px))
+        calc(-1 * var(--site-modal-dialog-padding-x, 0px))
+        var(--site-modal-head-margin-bottom, 0);
+    padding: var(--site-modal-head-padding, 10px 14px 8px);
+    border-top-left-radius: inherit;
+    border-top-right-radius: inherit;
+}
+
+.site-modal-dialog.site-modal-dialog > .site-modal-head:first-child + *,
+.site-modal-dialog.site-modal-dialog > .site-modal-head:first-child + [hidden] + *,
+.site-modal-dialog.site-modal-dialog > .site-modal-head:first-child + [style*="display:none"] + *,
+.site-modal-dialog.site-modal-dialog > .site-modal-head:first-child + [style*="display: none"] + * {
+    margin-top: calc(-1 * var(--site-modal-head-follow-gap, 0px));
+}
+
+.site-modal-dialog.site-modal-dialog > .site-modal-head:first-child + :where(
+    .auth-modal-content,
+    .handrive-help-modal-body,
+    .ie-resize-modal-body,
+    .ie-save-as-modal-body,
+    .image-pip-demo-code-block,
+    .media-upload-source-options,
+    .media-handrive-picker-list-wrap
+) {
+    padding-top: 0;
+}
+
+.portfolio-print-selector-head.site-modal-head,
+.handrive-help-modal-head.site-modal-head {
+    border-top-left-radius: inherit;
+    border-top-right-radius: inherit;
+}
+
+.root-auth-modal-title,
+.portfolio-print-selector-title,
+.handrive-help-modal-title {
+    min-width: 0;
+    margin: 0;
+}
+
+.site-modal-head.site-modal-head.is-popup-dragging {
+    cursor: grabbing;
+}
+
+.site-modal-dialog.site-modal-dialog.is-popup-dragging {
+    transition: none;
+}
+
+.site-modal-close.site-modal-close,
+.handrive-popup-close-btn,
+.site-legal-modal-close,
+.image-demo-modal-close,
+.hpmail-mailbox-modal-head .hpmail-icon-btn[data-hpmail-mailbox-modal-close],
+.bumpercar-stats-modal-close,
+.multiplayer-skin-modal-close,
+.map-media-viewer-modal-close {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: var(--handrive-popup-close-size, 34px);
+    height: var(--handrive-popup-close-size, 34px);
+    min-width: var(--handrive-popup-close-size, 34px);
+    min-height: var(--handrive-popup-close-size, 34px);
+    padding: 0;
+    border: 0;
+    border-radius: var(--handrive-popup-close-radius, 50%);
+    background: var(--site-modal-close-bg, transparent);
+    color: var(--site-modal-close-color, var(--handrive-text-secondary, currentColor));
+    font-size: 0;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.site-modal-head .site-modal-close.site-modal-close {
+    position: static;
+    top: auto;
+    right: auto;
+}
+
+.site-modal-close.site-modal-close:hover,
+.site-modal-close.site-modal-close:focus-visible,
+.handrive-popup-close-btn:hover,
+.handrive-popup-close-btn:focus-visible,
+.site-legal-modal-close:hover,
+.site-legal-modal-close:focus-visible,
+.image-demo-modal-close:hover,
+.image-demo-modal-close:focus-visible,
+.hpmail-mailbox-modal-head .hpmail-icon-btn[data-hpmail-mailbox-modal-close]:hover,
+.hpmail-mailbox-modal-head .hpmail-icon-btn[data-hpmail-mailbox-modal-close]:focus-visible,
+.bumpercar-stats-modal-close:hover,
+.bumpercar-stats-modal-close:focus-visible,
+.multiplayer-skin-modal-close:hover,
+.multiplayer-skin-modal-close:focus-visible,
+.map-media-viewer-modal-close:hover,
+.map-media-viewer-modal-close:focus-visible {
+    background: var(--site-modal-close-hover-bg, var(--handrive-hover-soft, rgba(0, 0, 0, 0.06)));
+    color: var(--site-modal-close-hover-color, var(--handrive-text-stronger, currentColor));
+    outline: 0;
+}
+
+.site-modal-close.site-modal-close svg,
+.handrive-popup-close-btn svg,
+.site-legal-modal-close svg,
+.image-demo-modal-close svg,
+.hpmail-mailbox-modal-head .hpmail-icon-btn[data-hpmail-mailbox-modal-close] svg,
+.bumpercar-stats-modal-close svg,
+.multiplayer-skin-modal-close svg,
+.map-media-viewer-modal-close svg {
+    display: block;
+    flex: 0 0 auto;
+    width: var(--handrive-popup-close-icon-size, 18px);
+    height: var(--handrive-popup-close-icon-size, 18px);
+}
+
+.image-demo-modal-close span {
+    font-size: 22px;
+}
+
+.site-modal-close.site-legal-modal-close,
+.site-modal-close.bumpercar-stats-modal-close,
+.site-modal-close.multiplayer-skin-modal-close,
+.site-modal-close.map-media-viewer-modal-close {
+    font-size: 22px;
+}
+
+.site-legal-modal-close.site-legal-modal-close,
+.bumpercar-stats-modal-close.bumpercar-stats-modal-close,
+.multiplayer-skin-modal-close.multiplayer-skin-modal-close,
+.map-media-viewer-modal-close.map-media-viewer-modal-close {
+    font-size: 22px;
+}
+
+.map-media-viewer-modal-close.site-modal-close {
+    --site-modal-close-bg: rgba(0, 0, 0, 0.45);
+    --site-modal-close-color: #ffffff;
+    --site-modal-close-hover-bg: rgba(0, 0, 0, 0.62);
+    --site-modal-close-hover-color: #ffffff;
 }
 
 [data-popup-fit-bottom] {

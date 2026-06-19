@@ -83,7 +83,7 @@
 .map-loading-overlay {
     position: absolute;
     inset: 0;
-    z-index: 2000;
+    z-index: var(--site-z-page-overlay);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -95,12 +95,13 @@
 .map-image-viewer-modal {
     position: fixed;
     inset: 0;
-    z-index: 5000;
+    z-index: var(--site-modal-stack-z, var(--site-z-media-overlay));
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent;
     touch-action: none;
+    isolation: isolate;
 }
 .map-image-viewer-modal[hidden] {
     display: none;
@@ -108,7 +109,9 @@
 .map-image-viewer-modal-backdrop {
     position: absolute;
     inset: 0;
-    background: transparent;
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
     touch-action: none;
 }
 .map-image-viewer-modal-image {
@@ -119,7 +122,7 @@
     width: auto;
     height: auto;
     display: block;
-    box-shadow: none;
+    box-shadow: var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
     border: none;
     background: transparent;
     cursor: zoom-out;
@@ -128,11 +131,12 @@
 .map-video-viewer-modal {
     position: fixed;
     inset: 0;
-    z-index: 5000;
+    z-index: var(--site-modal-stack-z, var(--site-z-media-overlay));
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent;
+    isolation: isolate;
 }
 .map-video-viewer-modal[hidden] {
     display: none;
@@ -140,7 +144,9 @@
 .map-video-viewer-modal-backdrop {
     position: absolute;
     inset: 0;
-    background: transparent;
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
 }
 .map-video-viewer-modal-video {
     position: relative;
@@ -149,7 +155,7 @@
     max-height: 95vh;
     height: auto;
     display: block;
-    box-shadow: none;
+    box-shadow: var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
     border: none;
     background: #000;
     cursor: zoom-out;
@@ -276,7 +282,7 @@
     position: absolute;
     top: 12px;
     right: 220px;
-    z-index: 1002;
+    z-index: var(--site-z-toolbar);
     width: 25px;
     height: 40px;
     display: flex;
@@ -476,22 +482,32 @@
 .map-name-popup-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.3);
-    z-index: 10000;
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
+    z-index: var(--site-modal-stack-z, var(--site-z-modal));
     display: flex;
     align-items: center;
     justify-content: center;
+    isolation: isolate;
 }
 .map-name-popup-overlay[hidden] { display: none; }
 .map-name-popup {
-    background: var(--handrive-bg);
+    --site-modal-dialog-padding-x: 12px;
+    --site-modal-dialog-padding-y: 12px;
+    --site-modal-head-follow-gap: 10px;
+    position: relative;
+    z-index: 1;
+    background: var(--site-modal-surface-bg, var(--handrive-bg));
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     border-radius: var(--handrive-radius-lg);
     padding: 12px;
     width: min(500px, calc(100vw - 32px));
     min-width: 300px;
     max-height: calc(100vh - 32px);
     overflow-y: auto;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.18), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -522,15 +538,25 @@
 .map-bind-picker-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.3);
-    z-index: 10001;
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
+    z-index: var(--site-modal-stack-z, var(--site-z-modal));
     display: flex;
     align-items: center;
     justify-content: center;
+    isolation: isolate;
 }
 .map-bind-picker-overlay[hidden] { display: none; }
 .map-bind-picker {
-    background: var(--handrive-bg);
+    --site-modal-dialog-padding-x: 12px;
+    --site-modal-dialog-padding-y: 12px;
+    --site-modal-head-follow-gap: 8px;
+    position: relative;
+    z-index: 1;
+    background: var(--site-modal-surface-bg, var(--handrive-bg));
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     border-radius: var(--handrive-radius-lg);
     padding: 12px;
     width: min(400px, calc(100vw - 32px));
@@ -538,7 +564,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.18), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
 }
 .map-bind-picker h4 { margin: 0; font-size: 15px; font-weight: 700; }
 .map-bind-picker-list {
@@ -683,7 +709,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
 /* 아이콘 삭제 확인 팝업 */
 .map-icon-delete-popup {
     position: fixed;
-    z-index: 9999;
+    z-index: var(--site-z-popup);
     background: var(--handrive-surface, #fff);
     border: 1px solid var(--handrive-border, #e0e0e0);
     border-radius: 8px;
@@ -968,9 +994,12 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
 {% include 'popup/handrive/map_zone_popup.html' %}
 {% include 'popup/handrive/map_marker_popup.html' %}
 
-<div class="map-bind-picker-overlay" id="map-bind-picker-overlay" hidden>
-    <div class="map-bind-picker">
-        <h4>바인딩할 레이어 선택</h4>
+<div class="map-bind-picker-overlay site-modal-backdrop" id="map-bind-picker-overlay" hidden>
+    <div class="map-bind-picker site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="map-bind-picker-title">
+        <header class="site-modal-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
+            <h4 id="map-bind-picker-title">바인딩할 레이어 선택</h4>
+            {% include "popup/handrive/_popup_close_button.html" with click_target_id="map-bind-picker-cancel" %}
+        </header>
         <div class="map-bind-picker-list" id="map-bind-picker-list"></div>
         <div class="map-bind-picker-actions">
             <button type="button" class="ui-btn ui-btn-danger" id="map-bind-picker-clear" style="margin-right:auto;color:#e53935;">바인딩 해제</button>
@@ -981,12 +1010,12 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
 </div>
 
 <div class="map-image-viewer-modal" id="map-image-viewer-modal" hidden>
-    <div class="map-image-viewer-modal-backdrop" id="map-image-viewer-modal-backdrop"></div>
-    <img class="map-image-viewer-modal-image" id="map-image-viewer-modal-image" alt="">
+    <div class="map-image-viewer-modal-backdrop site-modal-backdrop" id="map-image-viewer-modal-backdrop"></div>
+    <img class="map-image-viewer-modal-image site-modal-dialog" id="map-image-viewer-modal-image" alt="">
 </div>
 <div class="map-video-viewer-modal" id="map-video-viewer-modal" hidden>
-    <div class="map-video-viewer-modal-backdrop" id="map-video-viewer-modal-backdrop"></div>
-    <video class="map-video-viewer-modal-video" id="map-video-viewer-modal-video" controls playsinline></video>
+    <div class="map-video-viewer-modal-backdrop site-modal-backdrop" id="map-video-viewer-modal-backdrop"></div>
+    <video class="map-video-viewer-modal-video site-modal-dialog" id="map-video-viewer-modal-video" controls playsinline></video>
 </div>
 
 {% include "popup/handrive/job_queue_panel.html" %}
@@ -2519,7 +2548,7 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
         enableMapGestureZoom(map, document.getElementById("map-editor-container"));
 
         var backgroundPane = map.createPane("imageBackgroundPane");
-        backgroundPane.style.zIndex = "200";
+        backgroundPane.style.zIndex = "var(--site-z-map-pane-background, 200)";
         mapImages = normalizeMapImages(mapImages);
         activeMapImageId = activeMapImageId || (mapImages[0] && mapImages[0].id) || "";
         var initialImage = getActiveMapImage();

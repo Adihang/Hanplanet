@@ -1,0 +1,31 @@
+<form
+    method="post"
+    {% if handrive_register_email_action_url %}action="{{ handrive_register_email_action_url }}"{% endif %}
+    class="auth-form"
+    id="handrive-register-email-form"
+    {% if site_auth_is_modal %}data-auth-form{% endif %}
+>
+    {% csrf_token %}
+
+    {% if handrive_register_email_error_message %}
+        <div class="auth-error">{{ handrive_register_email_error_message }}</div>
+    {% endif %}
+
+    <p class="ui-subtitle">{{ handrive_text.auth_register_email_hint }}</p>
+
+    <label class="auth-field auth-field-full">
+        <span>{{ handrive_text.auth_register_email_label }}</span>
+        <input
+            type="email"
+            name="email"
+            autocomplete="email"
+            required
+            autofocus
+            placeholder="example@email.com"
+        >
+    </label>
+
+    <div class="auth-actions">
+        <button class="ui-btn ui-btn-primary" type="submit">{{ handrive_text.auth_register_email_submit }}</button>
+    </div>
+</form>

@@ -35,7 +35,7 @@
     right: 20px;
     width: var(--chat-widget-width);
     min-width: var(--chat-widget-min-width);
-    z-index: 1000;
+    z-index: var(--site-z-floating);
     font-family: var(--site-font-body);
     box-shadow: var(--chat-widget-shadow);
     border-radius: var(--chat-widget-radius);

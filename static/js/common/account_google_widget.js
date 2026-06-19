@@ -232,7 +232,10 @@
         const driveToggleWrap = modal.querySelector("[data-auth-google-drive-toggle-wrap]");
         const driveToggle = modal.querySelector("[data-auth-google-drive-toggle]");
         const driveHint = modal.querySelector("[data-auth-google-drive-hint]");
-        const cancelButton = modal.querySelector("[data-auth-google-cancel]");
+        const cancelButtons = Array.from(modal.querySelectorAll("[data-auth-google-cancel]"));
+        const cancelButton = cancelButtons.find(function (button) {
+            return !button.classList.contains("site-modal-close");
+        }) || cancelButtons[0] || null;
         const confirmButton = modal.querySelector("[data-auth-google-confirm]");
         const unlinkButton = modal.querySelector("[data-auth-google-unlink]");
         let lastFocusedElement = null;
@@ -565,11 +568,11 @@
             });
         }
 
-        if (cancelButton) {
-            cancelButton.addEventListener("click", function () {
+        cancelButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
                 setModalOpen(false);
             });
-        }
+        });
 
         if (unlinkButton) {
             unlinkButton.addEventListener("click", function () {

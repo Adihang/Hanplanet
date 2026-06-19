@@ -2,7 +2,7 @@ body.network-environment-page {
     min-height: 100dvh;
 }
 
-body.network-environment-page .site-footer-links {
+body.network-environment-page .footer-links {
     flex-direction: column;
     gap: 4px;
 }

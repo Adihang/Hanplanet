@@ -5,7 +5,7 @@
 {% include 'handrive/_assets_head.html' %}
 
 <div class="handrive-toolbar-wrap ui-toolbar-wrap">
-    <div class="handrive-shell ui-shell handrive-toolbar ui-toolbar">
+    <div class="ui-shell handrive-toolbar ui-toolbar">
         <div class="handrive-toolbar-left ui-toolbar-left">
             <div class="handrive-title-row ui-title-row">
                 <h1 class="handrive-title ui-title">{% if write_mode == 'edit' %}{{ handrive_text.write_title_edit }}{% else %}{{ handrive_text.write_title_create }}{% endif %}</h1>
@@ -44,7 +44,7 @@
 </div>
 
 <main
-    class="handrive-shell ui-shell handrive-content ui-content"
+    class="ui-shell ui-content"
     data-handrive-page="write"
     data-is-authenticated="{% if user.is_authenticated %}1{% else %}0{% endif %}"
     data-demo-save-mode="{% if handrive_demo_save_mode %}1{% else %}0{% endif %}"
@@ -91,9 +91,21 @@
     data-ui-lang="{{ ui_lang|default:'ko' }}"
 >
     <div class="handrive-form-grid">
-        <label class="handrive-field handrive-field-full">
+        <label class="handrive-field handrive-field-full handrive-write-filename-field">
             <span>{{ handrive_text.filename_label }}</span>
+            {% if write_editor_kind == "text" %}
+            <div class="handrive-write-filename-control" data-write-filename-control>
+                <input type="text" id="handrive-filename-input" value="{{ initial_filename_input }}" placeholder="{{ handrive_text.filename_placeholder }}">
+                <select id="handrive-filename-extension-select" class="handrive-filename-extension-select" aria-label="{{ handrive_text.file_extension_quick_label }}" data-site-custom-select="1">
+                    {% for ext in handrive_file_extension_options %}
+                        <option value="{{ ext }}"{% if ext == initial_extension %} selected{% endif %}>{{ ext }}</option>
+                    {% endfor %}
+                    <option value="__custom__">{{ handrive_text.file_extension_custom_option }}</option>
+                </select>
+            </div>
+            {% else %}
             <input type="text" id="handrive-filename-input" value="{{ initial_filename_input }}" placeholder="{{ handrive_text.filename_placeholder }}">
+            {% endif %}
         </label>
 
         <div class="handrive-field handrive-field-full">
@@ -108,7 +120,7 @@
             {% include "handrive/_media_editor_surfaces.html" %}
             <div class="handrive-editor-surface" id="handrive-editor-surface">
                 <pre class="handrive-editor-highlight handrive-plain-text" id="handrive-editor-highlight" aria-hidden="true"><code id="handrive-editor-highlight-code"></code></pre>
-                <div class="handrive-editor-suggest" id="handrive-editor-suggest" hidden>
+                <div class="handrive-editor-suggest site-dropdown-menu" id="handrive-editor-suggest" hidden>
                     <span class="handrive-editor-suggest-label" id="handrive-editor-suggest-label"></span>
                     <span class="handrive-editor-suggest-hint"><kbd>Tab</kbd> 적용</span>
                 </div>

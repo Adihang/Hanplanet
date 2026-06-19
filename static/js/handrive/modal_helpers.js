@@ -232,7 +232,7 @@
     }
 
     function onPopupHeaderPointerDown(event) {
-        if (event.button !== 0 || event.isPrimary === false) {
+        if (event.defaultPrevented || event.button !== 0 || event.isPrimary === false) {
             return;
         }
         var target = event.target && event.target.closest ? event.target : null;

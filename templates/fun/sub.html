@@ -21,10 +21,10 @@
                 {% include "partials/account_widget.html" %}
             {% else %}
                 <div class="ui-toolbar-actions">
-                    <a class="ui-btn" href="{{ handrive_login_url }}?next={{ request.get_full_path|urlencode }}">
+                    <a class="ui-btn" href="{{ handrive_login_url }}?next={{ request.get_full_path|urlencode }}" data-auth-modal="login">
                         {% include 'partials/ui_i18n.html' with key='login' %}
                     </a>
-                    <a class="ui-btn ui-btn-primary" href="{{ handrive_signup_url }}?next={{ request.get_full_path|urlencode }}">
+                    <a class="ui-btn ui-btn-primary" href="{{ handrive_signup_url }}?next={{ request.get_full_path|urlencode }}" data-auth-modal="signup">
                         {% include 'partials/ui_i18n.html' with key='signup' %}
                     </a>
                 </div>
@@ -33,7 +33,7 @@
     </div>
 </div>
 
-<main class="ui-shell ui-content sub-ui-content">
+<main class="ui-shell ui-content">
     <section class="sub-ui-panel" aria-label="{{ page_title }}">
         {% for group in sub_link_groups %}
             <section class="sub-group" aria-labelledby="sub-group-{{ group.slug }}" data-sub-category-group="{{ group.slug }}" hidden>
@@ -84,17 +84,16 @@
         overflow: hidden;
     }
 
-    body.sub-page .site-footer-links {
+    body.sub-page .footer-links {
         margin-top: 0;
     }
 
-    .sub-ui-content {
+    body.sub-page .ui-content {
         flex: 1 1 auto;
         min-height: 0;
         display: flex;
         align-items: flex-start;
         justify-content: center;
-        padding-top: 14px;
         overflow: hidden;
     }
 
@@ -256,21 +255,30 @@
     .bumpercar-stats-modal-backdrop {
         position: fixed;
         inset: 0;
-        z-index: 3600;
+        z-index: var(--site-modal-stack-z, var(--site-z-modal, 1400));
         display: flex;
         align-items: center;
         justify-content: center;
         padding: 20px;
-        background: rgba(15, 23, 42, 0.54);
+        background: var(--site-modal-backdrop-surface-bg, transparent);
+        -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+        backdrop-filter: var(--site-modal-backdrop-filter, none);
+        isolation: isolate;
     }
 
     .bumpercar-stats-modal {
+        --site-modal-dialog-padding-x: 18px;
+        --site-modal-dialog-padding-y: 18px;
+        position: relative;
+        z-index: 1;
         width: min(440px, 100%);
         border: 1px solid var(--handrive-border-soft);
         border-radius: 16px;
-        background: var(--shared-card-bg);
+        background: var(--site-modal-surface-bg, var(--shared-card-bg));
+        -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+        backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
         padding: 18px;
-        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(15, 23, 42, 0.24));
     }
 
     .bumpercar-stats-modal-header {
@@ -278,7 +286,6 @@
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        margin-bottom: 12px;
     }
 
     .bumpercar-stats-modal-title {

@@ -1,7 +1,7 @@
 <div id="handrive-save-modal" class="handrive-drive-modal" hidden>
-    <div class="handrive-drive-modal-backdrop" id="handrive-save-modal-backdrop"></div>
-    <div class="handrive-drive-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-save-modal-title">
-        <div class="handrive-drive-modal-head">
+    <div class="handrive-drive-modal-backdrop site-modal-backdrop" id="handrive-save-modal-backdrop"></div>
+    <div class="handrive-drive-modal-dialog site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-save-modal-title">
+        <div class="handrive-drive-modal-head site-modal-head">
             <h2 id="handrive-save-modal-title" class="handrive-drive-modal-title">{{ handrive_text.save_location_title }}</h2>
             {% include "popup/handrive/_popup_close_button.html" with button_id="handrive-save-close-btn" %}
         </div>
@@ -24,7 +24,7 @@
             <label id="handrive-save-extension-field">
                 <span>{{ handrive_text.file_extension_label }}</span>
                 <div class="handrive-save-extension-controls">
-                    <select id="handrive-save-extension-select" aria-label="{{ handrive_text.file_extension_quick_label }}">
+                    <select id="handrive-save-extension-select" class="handrive-save-extension-select" aria-label="{{ handrive_text.file_extension_quick_label }}" data-site-custom-select="1">
                         {% for ext in handrive_file_extension_options %}
                             <option value="{{ ext }}"{% if ext == initial_extension %} selected{% endif %}>{{ ext }}</option>
                         {% endfor %}

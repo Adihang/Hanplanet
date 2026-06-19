@@ -1,7 +1,7 @@
 <div id="{{ modal_id }}" class="handrive-popup-modal" hidden>
-    <div class="handrive-popup-modal-backdrop" id="{{ backdrop_id }}"></div>
-    <div class="handrive-popup-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="{{ title_id }}">
-        <header class="handrive-popup-head">
+    <div class="handrive-popup-modal-backdrop site-modal-backdrop" id="{{ backdrop_id }}"></div>
+    <div class="handrive-popup-modal-dialog site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="{{ title_id }}">
+        <header class="handrive-popup-head site-modal-head">
             <h2 id="{{ title_id }}" class="handrive-popup-title">{{ title_text }}</h2>
             {% include "popup/handrive/_popup_close_button.html" with click_target_id=cancel_button_id %}
         </header>

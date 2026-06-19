@@ -26,7 +26,7 @@
         top: 0;
         left: 0;
         right: 0;
-        z-index: 1200;
+        z-index: var(--site-z-toolbar);
 	    display: flex;
 	    align-items: center;
 	    gap: 2px;
@@ -66,7 +66,7 @@
     position: absolute;
     top: calc(var(--map-viewer-toolbar-offset) + 10px);
     left: 10px;
-    z-index: 1000;
+    z-index: var(--site-z-page-overlay);
     width: min(240px, calc(100vw - 20px));
     box-sizing: border-box;
     min-width: 160px;
@@ -88,7 +88,7 @@
 .map-loading-overlay {
     position: absolute;
     inset: 0;
-    z-index: 1000;
+    z-index: var(--site-z-page-overlay);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -242,12 +242,13 @@
 .map-image-viewer-modal {
     position: fixed;
     inset: 0;
-    z-index: 5000;
+    z-index: var(--site-modal-stack-z, var(--site-z-media-overlay));
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent;
     touch-action: none;
+    isolation: isolate;
 }
 .map-image-viewer-modal[hidden] {
     display: none;
@@ -255,7 +256,9 @@
 .map-image-viewer-modal-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.72);
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
     touch-action: none;
 }
 .map-image-viewer-modal-image {
@@ -266,7 +269,7 @@
     width: auto;
     height: auto;
     display: block;
-    box-shadow: none;
+    box-shadow: var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
     border: none;
     background: transparent;
     cursor: zoom-out;
@@ -275,11 +278,12 @@
 .map-media-viewer-modal {
     position: fixed;
     inset: 0;
-    z-index: 5000;
+    z-index: var(--site-modal-stack-z, var(--site-z-media-overlay));
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent;
+    isolation: isolate;
 }
 .map-media-viewer-modal[hidden] {
     display: none;
@@ -287,7 +291,9 @@
 .map-media-viewer-modal-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.72);
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
 }
 .map-media-viewer-modal-close,
 .map-media-viewer-modal-nav {
@@ -354,6 +360,7 @@
     max-width: 100%;
     max-height: 100%;
     pointer-events: auto;
+    box-shadow: var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
 }
 .map-media-viewer-modal-frame.is-youtube {
     width: min(95vw, 1280px);
@@ -518,11 +525,12 @@
 .map-video-viewer-modal {
     position: fixed;
     inset: 0;
-    z-index: 5000;
+    z-index: var(--site-modal-stack-z, var(--site-z-media-overlay));
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent;
+    isolation: isolate;
 }
 .map-video-viewer-modal[hidden] {
     display: none;
@@ -530,7 +538,9 @@
 .map-video-viewer-modal-backdrop {
     position: absolute;
     inset: 0;
-    background: transparent;
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
 }
 .map-video-viewer-modal-frame {
     position: relative;
@@ -540,7 +550,7 @@
     max-height: 95vh;
     border: 0;
     background: #000;
-    box-shadow: none;
+    box-shadow: var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
 }
 .map-video-viewer-modal-video {
     position: relative;
@@ -549,7 +559,7 @@
     max-height: 95vh;
     height: auto;
     display: block;
-    box-shadow: none;
+    box-shadow: var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
     border: none;
     background: #000;
 }
@@ -850,7 +860,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 }
 .map-collab-ping-edge {
     position: absolute;
-    z-index: 1200;
+    z-index: var(--site-z-toolbar);
     pointer-events: none;
     transform: translate(-50%, -50%);
 }
@@ -881,7 +891,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
     position: absolute;
     top: calc(var(--map-viewer-toolbar-offset) + 10px);
     left: 10px;
-    z-index: 999;
+    z-index: var(--site-z-page-overlay);
     pointer-events: auto;
     background: var(--handrive-surface, #fff);
     border: 1px solid var(--handrive-border, #e0e0e0);
@@ -1006,7 +1016,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 	                    <span id="map-collab-dot" style="width:8px;height:8px;border-radius:50%;background:#bbb;display:block;flex-shrink:0"></span>
 	                    <span id="map-collab-label">{% if ui_lang == 'en' %}Offline{% else %}오프라인{% endif %}</span>
 	                </button>
-	                <div id="map-collab-popup" style="display:none;position:absolute;top:calc(100% + 6px);right:0;min-width:160px;background:var(--handrive-surface,#fff);border:1px solid var(--handrive-border,#e0e0e0);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.14);padding:6px 0;z-index:9999"></div>
+	                <div id="map-collab-popup" style="display:none;position:absolute;top:calc(100% + 6px);right:0;min-width:160px;background:var(--handrive-surface,#fff);border:1px solid var(--handrive-border,#e0e0e0);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.14);padding:6px 0;z-index:var(--site-z-popup)"></div>
 	                </div>
 {% endif %}
 	            </div>
@@ -1015,9 +1025,9 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 	    </div>
     <!-- 공유 팝업 -->
     <div id="map-viewer-share-modal" class="handrive-popup-modal" hidden>
-        <div class="handrive-popup-modal-backdrop" id="map-viewer-share-modal-backdrop"></div>
-        <div class="handrive-popup-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="map-viewer-share-title">
-            <header class="handrive-popup-head">
+        <div class="handrive-popup-modal-backdrop site-modal-backdrop" id="map-viewer-share-modal-backdrop"></div>
+        <div class="handrive-popup-modal-dialog site-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="map-viewer-share-title">
+            <header class="handrive-popup-head site-modal-head">
                 <h2 id="map-viewer-share-title" class="handrive-popup-title">공유</h2>
                 {% include "popup/handrive/_popup_close_button.html" with button_id="map-viewer-share-head-close" %}
             </header>
@@ -1060,16 +1070,16 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             <div class="map-viewer-layers-panel" id="map-viewer-layers-panel"></div>
         </div>
         <div class="map-image-viewer-modal" id="map-image-viewer-modal" hidden>
-            <div class="map-image-viewer-modal-backdrop" id="map-image-viewer-modal-backdrop"></div>
-            <img class="map-image-viewer-modal-image" id="map-image-viewer-modal-image" alt="">
+            <div class="map-image-viewer-modal-backdrop site-modal-backdrop" id="map-image-viewer-modal-backdrop"></div>
+            <img class="map-image-viewer-modal-image site-modal-dialog" id="map-image-viewer-modal-image" alt="">
         </div>
         <div class="map-video-viewer-modal" id="map-video-viewer-modal" hidden>
-            <div class="map-video-viewer-modal-backdrop" id="map-video-viewer-modal-backdrop"></div>
-            <iframe class="map-video-viewer-modal-frame" id="map-video-viewer-modal-frame" title="YouTube player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-            <video class="map-video-viewer-modal-video" id="map-video-viewer-modal-video" controls playsinline hidden></video>
+            <div class="map-video-viewer-modal-backdrop site-modal-backdrop" id="map-video-viewer-modal-backdrop"></div>
+            <iframe class="map-video-viewer-modal-frame site-modal-dialog" id="map-video-viewer-modal-frame" title="YouTube player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+            <video class="map-video-viewer-modal-video site-modal-dialog" id="map-video-viewer-modal-video" controls playsinline hidden></video>
         </div>
         <div class="map-media-viewer-modal" id="map-media-viewer-modal" hidden>
-            <div class="map-media-viewer-modal-backdrop" id="map-media-viewer-modal-backdrop"></div>
+            <div class="map-media-viewer-modal-backdrop site-modal-backdrop" id="map-media-viewer-modal-backdrop"></div>
             <div class="map-media-viewer-modal-stage" id="map-media-viewer-modal-stage">
                 <div class="map-media-viewer-modal-slide is-active" id="map-media-viewer-modal-slide-a"></div>
                 <div class="map-media-viewer-modal-slide" id="map-media-viewer-modal-slide-b"></div>
@@ -1227,7 +1237,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 
     function appendMediaViewerControls(frame) {
         if (!frame) return;
-        var closeBtn = createMediaViewerButton("map-media-viewer-modal-close", "map-media-viewer-modal-close", "닫기");
+        var closeBtn = createMediaViewerButton("map-media-viewer-modal-close site-modal-close", "map-media-viewer-modal-close", "닫기");
         var prevBtn = createMediaViewerButton("map-media-viewer-modal-nav map-media-viewer-modal-nav-prev", "map-media-viewer-modal-prev", "이전");
         var nextBtn = createMediaViewerButton("map-media-viewer-modal-nav map-media-viewer-modal-nav-next", "map-media-viewer-modal-next", "다음");
         [closeBtn, prevBtn, nextBtn].forEach(function(button) {
@@ -1286,7 +1296,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         if (!slide || !entry) return;
         clearMediaViewerSlide(slide);
         var frame = document.createElement("div");
-        frame.className = "map-media-viewer-modal-frame";
+        frame.className = "map-media-viewer-modal-frame site-modal-dialog";
         var title = entry.label || "";
         if (entry.kind === "image") {
             var img = document.createElement("img");
@@ -3042,7 +3052,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         {% endif %}
         enableMapGestureZoom(map, document.getElementById("map-viewer-container"));
         var backgroundPane = map.createPane("imageBackgroundPane");
-        backgroundPane.style.zIndex = "200";
+        backgroundPane.style.zIndex = "var(--site-z-map-pane-background, 200)";
 
         mapImages = normalizeMapImages(mapImages);
         activeMapImageId = activeMapImageId || (mapImages[0] && mapImages[0].id) || "";
@@ -3915,7 +3925,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             var pane = map.getPane && map.getPane("mapPingPane");
             if (!pane && map.createPane) {
                 pane = map.createPane("mapPingPane");
-                pane.style.zIndex = "550";
+                pane.style.zIndex = "var(--site-z-map-pane-overlay, 550)";
                 pane.style.pointerEvents = "none";
                 pane.style.overflow = "visible";
             }

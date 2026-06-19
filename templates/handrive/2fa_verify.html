@@ -3,56 +3,16 @@
 {% block content %}
 {% include 'handrive/_assets_head.html' %}
 
-<div class="site-auth-toolbar-wrap ui-toolbar-wrap">
+<div class="auth-toolbar-wrap ui-toolbar-wrap">
     <div class="ui-shell ui-toolbar">
-        <div class="site-auth-toolbar-left ui-toolbar-left">
+        <div class="auth-toolbar-left ui-toolbar-left">
             <h1 class="ui-title">{{ handrive_text.auth_2fa_title }}</h1>
         </div>
     </div>
 </div>
 
-<main class="site-auth-content ui-shell ui-content">
-    <form method="post" class="site-auth-form" id="handrive-2fa-form">
-        {% csrf_token %}
-
-        {% if handrive_2fa_error_message %}
-            <div class="site-auth-error">{{ handrive_2fa_error_message }}</div>
-        {% endif %}
-
-        <p class="ui-subtitle">{{ handrive_text.auth_2fa_hint }} <strong>{{ handrive_2fa_user_email_masked }}</strong></p>
-
-        <div class="site-auth-field site-auth-field-full">
-            <div class="site-auth-otp-input-wrap" data-handrive-otp-wrap>
-                <input
-                    class="site-auth-otp-hidden-input"
-                    type="text"
-                    name="code"
-                    id="handrive-2fa-code-input"
-                    inputmode="numeric"
-                    autocomplete="one-time-code"
-                    maxlength="6"
-                    pattern="[0-9]*"
-                    required
-                    autofocus
-                    aria-label="{{ handrive_text.auth_2fa_code_label }}"
-                    placeholder="{{ handrive_text.auth_2fa_code_placeholder }}"
-                    data-handrive-otp-input
-                >
-                <div class="site-auth-otp-boxes" data-handrive-otp-boxes aria-hidden="true">
-                    <span class="site-auth-otp-box" data-index="0"></span>
-                    <span class="site-auth-otp-box" data-index="1"></span>
-                    <span class="site-auth-otp-box" data-index="2"></span>
-                    <span class="site-auth-otp-box" data-index="3"></span>
-                    <span class="site-auth-otp-box" data-index="4"></span>
-                    <span class="site-auth-otp-box" data-index="5"></span>
-                </div>
-            </div>
-        </div>
-
-        <div class="site-auth-actions">
-            <button class="ui-btn ui-btn-primary" type="submit">{{ handrive_text.auth_2fa_submit }}</button>
-        </div>
-    </form>
+<main class="ui-shell ui-content">
+    {% include "partials/site_auth_2fa_form.html" %}
 </main>
 {% include "partials/site_footer_links.html" %}
 <script>
@@ -65,7 +25,7 @@
             const wrap = input.closest("[data-handrive-otp-wrap]");
             if (!wrap || input.dataset.otpReady === "1") return;
             input.dataset.otpReady = "1";
-            const boxes = Array.from(wrap.querySelectorAll(".site-auth-otp-box"));
+            const boxes = Array.from(wrap.querySelectorAll(".auth-otp-box"));
             const maxLength = Number(input.getAttribute("maxlength")) || boxes.length || 6;
             let autoSubmitted = false;
 

@@ -6171,10 +6171,24 @@ def _build_shortcut_icon_url(shortcut_url):
     return f"https://www.google.com/s2/favicons?domain={host}&sz=64"
 
 
+def _decode_shortcut_hostname(hostname):
+    """Decode IDN punycode labels so non-English domains are counted as visible text."""
+    labels = []
+    for label in str(hostname or "").split("."):
+        if not label.startswith("xn--"):
+            labels.append(label)
+            continue
+        try:
+            labels.append(label.encode("ascii").decode("idna"))
+        except UnicodeError:
+            labels.append(label)
+    return ".".join(labels)
+
+
 def _build_shortcut_display_name(shortcut_url):
     """Generate a short human-readable label from a shortcut URL when the user omits one."""
     parsed = urlparse(shortcut_url)
-    host = (parsed.netloc or "").strip().lower()
+    host = _decode_shortcut_hostname(parsed.hostname or parsed.netloc).strip().lower()
     if not host:
         return "Shortcut"
     if host.startswith("www."):
@@ -6188,6 +6202,72 @@ def _build_shortcut_display_name(shortcut_url):
     if not host:
         return "Shortcut"
     return host[:1].upper() + host[1:]
+
+
+def _repair_shortcut_mojibake(text):
+    """Repair common UTF-8 text that was decoded as Latin-1/CP1252 before length checks."""
+    value = str(text or "")
+    if not value:
+        return ""
+
+    for encoding in ("latin1", "cp1252"):
+        try:
+            repaired = value.encode(encoding).decode("utf-8")
+        except UnicodeError:
+            continue
+        if repaired and repaired != value and "\ufffd" not in repaired and len(repaired) < len(value):
+            return repaired
+    return value
+
+
+def _normalize_shortcut_display_text(value):
+    """Normalize a shortcut label candidate before comparing visible character counts."""
+    text = html.unescape(str(value or "")).strip()
+    if "%" in text:
+        text = unquote(text)
+    text = _repair_shortcut_mojibake(text)
+    return unicodedata.normalize("NFC", text).strip()
+
+
+def _shortcut_display_length(value):
+    return len(_normalize_shortcut_display_text(value))
+
+
+def _truncate_shortcut_display_name(value, max_length=80):
+    return _normalize_shortcut_display_text(value)[:max_length]
+
+
+def _build_shortcut_url_name_candidate(shortcut_url):
+    """Return the URL as a readable label candidate without changing the stored link URL."""
+    parsed = urlparse(shortcut_url)
+    if parsed.hostname:
+        decoded_host = _decode_shortcut_hostname(parsed.hostname)
+        if decoded_host != parsed.hostname:
+            userinfo = ""
+            if parsed.username:
+                userinfo = parsed.username
+                if parsed.password:
+                    userinfo = f"{userinfo}:{parsed.password}"
+                userinfo = f"{userinfo}@"
+            host_for_netloc = f"[{decoded_host}]" if ":" in decoded_host and not decoded_host.startswith("[") else decoded_host
+            port = f":{parsed.port}" if parsed.port else ""
+            shortcut_url = parsed._replace(netloc=f"{userinfo}{host_for_netloc}{port}").geturl()
+    return _normalize_shortcut_display_text(shortcut_url)
+
+
+def _select_shortcut_create_name(raw_title, shortcut_url):
+    """Choose the shorter visible label between the submitted title and the URL."""
+    url_candidate = _build_shortcut_url_name_candidate(shortcut_url)
+    title_candidate = _normalize_shortcut_display_text(raw_title)
+    if not title_candidate:
+        title_candidate = _build_shortcut_display_name(shortcut_url)
+
+    if not url_candidate:
+        return _truncate_shortcut_display_name(title_candidate or "Shortcut")
+
+    if title_candidate and _shortcut_display_length(title_candidate) <= _shortcut_display_length(url_candidate):
+        return _truncate_shortcut_display_name(title_candidate)
+    return _truncate_shortcut_display_name(url_candidate)
 
 
 def _serialize_quick_link(quick_link):
@@ -6218,15 +6298,11 @@ def root_shortcuts(request, ui_lang=None):
     except (TypeError, ValueError):
         return _json_error_response(request, "요청 데이터 형식이 올바르지 않습니다.", "The request body is invalid.", status=400, ui_lang=resolved_lang)
 
-    name = str(data.get("name", "")).strip()
-    if len(name) > 80:
-        return _json_error_response(request, "이름이 너무 깁니다.", "Name is too long.", status=400, ui_lang=resolved_lang)
-
     normalized_url = _normalize_shortcut_url(data.get("url", ""))
     if not normalized_url:
         return _json_error_response(request, "URL이 올바르지 않습니다.", "Invalid URL.", status=400, ui_lang=resolved_lang)
-    if not name:
-        name = _build_shortcut_display_name(normalized_url)[:80]
+
+    name = _select_shortcut_create_name(data.get("name", ""), normalized_url)
 
     max_order = QuickLink.objects.filter(user=request.user).aggregate(max_value=Max("display_order"))["max_value"] or 0
     new_item = QuickLink.objects.create(

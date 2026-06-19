@@ -3,9 +3,9 @@
 {% block content %}
 {% include 'handrive/_assets_head.html' %}
 
-<div class="site-auth-toolbar-wrap ui-toolbar-wrap">
+<div class="auth-toolbar-wrap ui-toolbar-wrap">
     <div class="ui-shell ui-toolbar">
-        <div class="site-auth-toolbar-left ui-toolbar-left">
+        <div class="auth-toolbar-left ui-toolbar-left">
             <h1 class="ui-title">{{ handrive_text.auth_login_button }}</h1>
             <div class="ui-subtitle ui-path-breadcrumbs">
                 <a class="ui-path-link" href="{{ handrive_auth_breadcrumb_url|default:handrive_base_url }}">{{ handrive_auth_breadcrumb_label }}</a>
@@ -16,181 +16,19 @@
     </div>
 </div>
 
-<main class="site-auth-content ui-shell ui-content">
-
-    <form method="post" class="site-auth-form" id="handrive-login-form">
-        {% csrf_token %}
-        <input type="hidden" name="next" value="{{ handrive_login_next }}">
-        <div
-            class="site-auth-loading"
-            id="handrive-login-loading"
-            role="status"
-            aria-live="polite"
-            aria-label="{% if handrive_login_show_2fa %}{{ handrive_text.auth_2fa_submit }}{% else %}{{ handrive_text.auth_login_submit }}{% endif %}"
-            hidden
-        >
-            <span class="site-auth-loading-spinner" aria-hidden="true"></span>
-        </div>
-
-        {% if handrive_login_error_message or handrive_login_form.non_field_errors %}
-            <div class="site-auth-error">{{ handrive_login_error_message|default:handrive_text.auth_login_error }}</div>
-        {% endif %}
-        {% if handrive_github_link_pending and not handrive_login_show_2fa %}
-            <div class="site-auth-error site-auth-info">{{ handrive_text.auth_github_link_pending }}</div>
-        {% endif %}
-        {% if handrive_google_link_pending and not handrive_login_show_2fa %}
-            <div class="site-auth-error site-auth-info">{{ handrive_text.auth_google_link_pending }}</div>
-        {% endif %}
-
-        {# ── 로그인 필드 (2FA 모드에서는 숨김) ───────────────────────── #}
-        <div id="handrive-login-credential-block"{% if handrive_login_show_2fa %} hidden{% endif %}>
-            <label class="site-auth-field site-auth-field-full">
-                <span>{{ handrive_text.auth_username_label }}</span>
-                <input
-                    type="text"
-                    name="username"
-                    value="{{ handrive_login_form.username.value|default:'' }}"
-                    autocomplete="username"
-                    data-handrive-auth-safe-input="username"
-                    pattern="{{ handrive_auth_safe_input_pattern }}"
-                    title="{{ handrive_text.auth_username_forbidden_chars }}"
-                    {% if not handrive_login_show_2fa %}required{% endif %}
-                    {% if handrive_login_show_2fa %}disabled{% endif %}
-                    {% if not handrive_login_show_2fa %}autofocus{% endif %}
-                >
-            </label>
-
-            <label class="site-auth-field site-auth-field-full">
-                <span>{{ handrive_text.auth_password_label }}</span>
-                <input
-                    type="password"
-                    name="password"
-                    autocomplete="current-password"
-                    data-handrive-auth-safe-input="password"
-                    pattern="{{ handrive_auth_safe_input_pattern }}"
-                    title="{{ handrive_text.auth_password_forbidden_chars }}"
-                    {% if not handrive_login_show_2fa %}required{% endif %}
-                    {% if handrive_login_show_2fa %}disabled{% endif %}
-                >
-            </label>
-        </div>
-
-        {# ── 캡챠 블록 ──────────────────────────────────────────────── #}
-        <label class="site-auth-field site-auth-field-full" id="handrive-login-captcha-block"{% if not handrive_login_show_captcha %} hidden{% endif %}>
-            <span>{{ handrive_text.auth_login_captcha_label }}</span>
-            <span class="ui-subtitle">{{ handrive_text.auth_login_captcha_hint }}</span>
-            <span id="handrive-login-captcha-question">{{ handrive_login_captcha_question }}</span>
-            <input
-                type="text"
-                name="handrive-captcha-answer"
-                inputmode="numeric"
-                autocomplete="off"
-                placeholder="{{ handrive_text.auth_login_captcha_placeholder }}"
-                {% if handrive_login_show_captcha and not handrive_login_show_2fa %}required{% endif %}
-                {% if handrive_login_show_2fa %}disabled{% endif %}
-            >
-            {% if handrive_turnstile_site_key %}
-                <div id="handrive-turnstile-widget"></div>
-            {% endif %}
-        </label>
-
-        {# ── 이메일 2FA 블록 (새 기기 감지 시 표시) ─────────────────── #}
-        <div id="handrive-login-2fa-block"{% if not handrive_login_show_2fa %} hidden{% endif %}>
-            <input
-                type="hidden"
-                name="handrive_2fa_phase"
-                value="verify"
-                {% if not handrive_login_show_2fa %}disabled{% endif %}
-            >
-            <p class="ui-subtitle">{{ handrive_text.auth_2fa_hint }} <strong>{{ handrive_login_2fa_masked_email }}</strong></p>
-            {% if handrive_login_2fa_error_message %}
-                <div class="site-auth-error" id="handrive-login-2fa-error">{{ handrive_login_2fa_error_message }}</div>
-            {% else %}
-                <div class="site-auth-error" id="handrive-login-2fa-error" style="display:none;"></div>
-            {% endif %}
-            <div id="handrive-login-2fa-resend-msg" class="site-auth-2fa-resend-msg" hidden></div>
-            <div class="site-auth-field site-auth-field-full">
-                <div class="site-auth-otp-input-wrap" data-handrive-otp-wrap>
-                    <input
-                        class="site-auth-otp-hidden-input"
-                        type="text"
-                        name="code"
-                        id="handrive-login-2fa-code-input"
-                        inputmode="numeric"
-                        autocomplete="one-time-code"
-                        maxlength="6"
-                        pattern="[0-9]*"
-                        {% if handrive_login_show_2fa %}required autofocus{% endif %}
-                        aria-label="{{ handrive_text.auth_2fa_code_label }}"
-                        placeholder="{{ handrive_text.auth_2fa_code_placeholder }}"
-                        data-handrive-otp-input
-                    >
-                    <div class="site-auth-otp-boxes" data-handrive-otp-boxes aria-hidden="true">
-                        <span class="site-auth-otp-box" data-index="0"></span>
-                        <span class="site-auth-otp-box" data-index="1"></span>
-                        <span class="site-auth-otp-box" data-index="2"></span>
-                        <span class="site-auth-otp-box" data-index="3"></span>
-                        <span class="site-auth-otp-box" data-index="4"></span>
-                        <span class="site-auth-otp-box" data-index="5"></span>
-                    </div>
-                </div>
-            </div>
-            <div class="site-auth-2fa-resend-row">
-                <button type="button" class="ui-btn" id="handrive-login-2fa-resend-btn">
-                    {{ handrive_text.auth_2fa_resend_button }}
-                </button>
-            </div>
-        </div>
-
-        <div class="site-auth-actions">
-            <a class="ui-btn" href="{{ handrive_base_url }}">{{ handrive_text.cancel }}</a>
-            <button class="ui-btn ui-btn-primary" type="submit" id="handrive-login-submit-btn">
-                {% if handrive_login_show_2fa %}{{ handrive_text.auth_2fa_submit }}{% else %}{{ handrive_text.auth_login_submit }}{% endif %}
-            </button>
-        </div>
-        {% if handrive_github_auth_enabled or handrive_google_auth_enabled %}
-        {% if not handrive_login_show_2fa %}
-            <div class="site-auth-provider-options">
-                <div class="site-auth-provider-methods">
-                    {% if handrive_google_auth_enabled %}
-                    <a
-                        class="site-auth-google-icon-btn"
-                        href="{{ handrive_google_login_url }}"
-                        title="{{ handrive_text.auth_google_login_button }}"
-                        aria-label="{{ handrive_text.auth_google_login_button }}"
-                    >
-                        <svg class="site-auth-google-icon" viewBox="0 0 18 18" aria-hidden="true" focusable="false">
-                            <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
-                            <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.33-1.58-5.04-3.72H.94v2.34A9 9 0 0 0 9 18z"/>
-                            <path fill="#FBBC05" d="M3.96 10.7A5.4 5.4 0 0 1 3.68 9c0-.59.1-1.16.28-1.7V4.96H.94A9 9 0 0 0 0 9c0 1.45.34 2.82.94 4.04l3.02-2.34z"/>
-                            <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .94 4.96L3.96 7.3C4.67 5.16 6.66 3.58 9 3.58z"/>
-                        </svg>
-                    </a>
-                    {% endif %}
-                    {% if handrive_github_auth_enabled %}
-                    <a
-                        class="site-auth-github-icon-btn"
-                        href="{{ handrive_github_login_url }}"
-                        title="{{ handrive_text.auth_github_login_button }}"
-                        aria-label="{{ handrive_text.auth_github_login_button }}"
-                    >
-                        <svg class="site-auth-github-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="currentColor">
-                            <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.01.08-2.11 0 0 .67-.21 2.2.82a7.53 7.53 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.91.08 2.11.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
-                        </svg>
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
-        {% endif %}
-        {% endif %}
-    </form>
-
+<main class="ui-shell ui-content">
+    {% include "partials/site_auth_login_form.html" %}
 </main>
 {% if handrive_github_choice_required %}
 <div class="root-auth-modal ui-auth-github-choice-modal">
-    <div class="root-auth-modal-backdrop"></div>
-    <div class="root-auth-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-github-choice-title">
-        <h2 id="handrive-github-choice-title">{{ handrive_text.auth_github_choice_title }}</h2>
+    <div class="root-auth-modal-backdrop site-modal-backdrop" data-auth-choice-close></div>
+    <div class="root-auth-modal-dialog site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-github-choice-title">
+        <header class="root-auth-modal-head site-modal-head">
+            <h2 id="handrive-github-choice-title" class="root-auth-modal-title">{{ handrive_text.auth_github_choice_title }}</h2>
+            <button type="button" class="root-auth-modal-close site-modal-close" data-auth-choice-close aria-label="{% include 'partials/ui_i18n.html' with key='close' %}" title="{% include 'partials/ui_i18n.html' with key='close' %}">
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg>
+            </button>
+        </header>
         <p class="root-auth-modal-message">{{ handrive_text.auth_github_choice_message }}</p>
         {% if handrive_github_pending_login %}
             <p class="root-auth-modal-message">GitHub: {{ handrive_github_pending_login }}</p>
@@ -204,9 +42,14 @@
 {% endif %}
 {% if handrive_google_choice_required %}
 <div class="root-auth-modal ui-auth-google-choice-modal">
-    <div class="root-auth-modal-backdrop"></div>
-    <div class="root-auth-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-google-choice-title">
-        <h2 id="handrive-google-choice-title">{{ handrive_text.auth_google_choice_title }}</h2>
+    <div class="root-auth-modal-backdrop site-modal-backdrop" data-auth-choice-close></div>
+    <div class="root-auth-modal-dialog site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-google-choice-title">
+        <header class="root-auth-modal-head site-modal-head">
+            <h2 id="handrive-google-choice-title" class="root-auth-modal-title">{{ handrive_text.auth_google_choice_title }}</h2>
+            <button type="button" class="root-auth-modal-close site-modal-close" data-auth-choice-close aria-label="{% include 'partials/ui_i18n.html' with key='close' %}" title="{% include 'partials/ui_i18n.html' with key='close' %}">
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg>
+            </button>
+        </header>
         <p class="root-auth-modal-message">{{ handrive_text.auth_google_choice_message }}</p>
         {% if handrive_google_pending_email %}
             <p class="root-auth-modal-message">Google: {{ handrive_google_pending_email }}</p>
@@ -227,6 +70,15 @@
         if (errorPopupMessage) {
             window.alert(errorPopupMessage);
         }
+
+        document.querySelectorAll("[data-auth-choice-close]").forEach(function (button) {
+            button.addEventListener("click", function () {
+                const modal = button.closest(".root-auth-modal");
+                if (modal) {
+                    modal.hidden = true;
+                }
+            });
+        });
 
         const loginForm = document.getElementById("handrive-login-form");
         const submitButton = document.getElementById("handrive-login-submit-btn");
@@ -263,7 +115,7 @@
             const wrap = input.closest("[data-handrive-otp-wrap]");
             if (!wrap || input.dataset.otpReady === "1") return;
             input.dataset.otpReady = "1";
-            const boxes = Array.from(wrap.querySelectorAll(".site-auth-otp-box"));
+            const boxes = Array.from(wrap.querySelectorAll(".auth-otp-box"));
             const maxLength = Number(input.getAttribute("maxlength")) || boxes.length || 6;
             let autoSubmitted = false;
 

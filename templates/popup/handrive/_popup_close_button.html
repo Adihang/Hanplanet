@@ -1,7 +1,8 @@
 {% firstof close_label handrive_text.close_label "닫기" as handrive_popup_close_label %}
+{% firstof button_class "handrive-popup-close-btn site-modal-close" as handrive_popup_close_button_class %}
 <button
     type="button"
-    class="handrive-popup-close-btn"
+    class="{{ handrive_popup_close_button_class }}"
     {% if button_id %}id="{{ button_id }}"{% endif %}
     {% if click_target_id %}data-handrive-click-target="{{ click_target_id }}"{% endif %}
     {% if upload_source_close %}data-upload-source-close{% endif %}

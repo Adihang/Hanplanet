@@ -959,8 +959,6 @@
     const shortcutUrlInput = shortcutsRoot.querySelector('[data-root-shortcut-url]');
     const shortcutSubmitButton = shortcutForm ? shortcutForm.querySelector('.root-shortcuts-submit') : null;
     const shortcutsHint = shortcutsRoot.querySelector('[data-root-shortcuts-hint]');
-    const shortcutMenu = document.querySelector('[data-root-shortcut-menu]');
-    const shortcutMenuEdit = shortcutMenu ? shortcutMenu.querySelector('[data-shortcut-menu-edit]') : null;
 
     if (!shortcutsGrid || !shortcutsHint) {
         return;
@@ -977,7 +975,6 @@
     let draggingCard = null;
     let dragChanged = false;
     let editingShortcutId = null;
-    let contextTargetShortcutId = null;
 
     const selectServerMessage = function (payload, fallback) {
         if (!payload || typeof payload !== 'object') {
@@ -1010,46 +1007,6 @@
             '<button type="button" class="root-shortcuts-item root-shortcuts-item-add" data-shortcut-add-card aria-label="' + escapeHtml(addLabel) + '">' +
                 '<span class="root-shortcuts-plus-icon" aria-hidden="true">+</span>' +
             '</button>';
-    };
-
-    const hideShortcutMenu = function () {
-        // Context menu is pure DOM state; hiding also clears the current shortcut target id.
-        if (!shortcutMenu) {
-            return;
-        }
-        shortcutMenu.hidden = true;
-        shortcutMenu.style.left = '';
-        shortcutMenu.style.top = '';
-        contextTargetShortcutId = null;
-    };
-
-    const openShortcutMenu = function (x, y, shortcutId) {
-        // Open the shortcut context menu at pointer coordinates while keeping it inside the viewport.
-        if (!shortcutMenu) {
-            return;
-        }
-        contextTargetShortcutId = shortcutId;
-        shortcutMenu.hidden = false;
-
-        const rect = shortcutMenu.getBoundingClientRect();
-        let left = x;
-        let top = y;
-        const maxLeft = window.innerWidth - rect.width - 8;
-        const maxTop = window.innerHeight - rect.height - 8;
-        if (left > maxLeft) {
-            left = maxLeft;
-        }
-        if (top > maxTop) {
-            top = maxTop;
-        }
-        if (left < 8) {
-            left = 8;
-        }
-        if (top < 8) {
-            top = 8;
-        }
-        shortcutMenu.style.left = left + 'px';
-        shortcutMenu.style.top = top + 'px';
     };
 
     const enterEditMode = function (shortcutId) {
@@ -1207,6 +1164,151 @@
         }
     };
 
+    const decodeShortcutHtmlEntities = function (value) {
+        const text = String(value || '');
+        if (text.indexOf('&') === -1) {
+            return text;
+        }
+        const textarea = document.createElement('textarea');
+        textarea.innerHTML = text;
+        return textarea.value;
+    };
+
+    const decodeShortcutPercentText = function (value) {
+        const text = String(value || '');
+        if (!/%[0-9a-fA-F]{2}/.test(text)) {
+            return text;
+        }
+        try {
+            return decodeURIComponent(text);
+        } catch (error) {
+            return text.replace(/(?:%[0-9a-fA-F]{2})+/g, function (match) {
+                try {
+                    return decodeURIComponent(match);
+                } catch (innerError) {
+                    return match;
+                }
+            });
+        }
+    };
+
+    const cp1252ShortcutByteMap = {
+        0x20AC: 0x80,
+        0x201A: 0x82,
+        0x0192: 0x83,
+        0x201E: 0x84,
+        0x2026: 0x85,
+        0x2020: 0x86,
+        0x2021: 0x87,
+        0x02C6: 0x88,
+        0x2030: 0x89,
+        0x0160: 0x8A,
+        0x2039: 0x8B,
+        0x0152: 0x8C,
+        0x017D: 0x8E,
+        0x2018: 0x91,
+        0x2019: 0x92,
+        0x201C: 0x93,
+        0x201D: 0x94,
+        0x2022: 0x95,
+        0x2013: 0x96,
+        0x2014: 0x97,
+        0x02DC: 0x98,
+        0x2122: 0x99,
+        0x0161: 0x9A,
+        0x203A: 0x9B,
+        0x0153: 0x9C,
+        0x017E: 0x9E,
+        0x0178: 0x9F
+    };
+
+    const buildShortcutBytes = function (value, useCp1252Map) {
+        const bytes = [];
+        const characters = Array.from(String(value || ''));
+        for (let index = 0; index < characters.length; index += 1) {
+            const codePoint = characters[index].codePointAt(0);
+            if (codePoint <= 0xFF) {
+                bytes.push(codePoint);
+                continue;
+            }
+            if (useCp1252Map && Object.prototype.hasOwnProperty.call(cp1252ShortcutByteMap, codePoint)) {
+                bytes.push(cp1252ShortcutByteMap[codePoint]);
+                continue;
+            }
+            return null;
+        }
+        return bytes;
+    };
+
+    const repairShortcutMojibake = function (value) {
+        const text = String(value || '');
+        if (!text || typeof TextDecoder !== 'function') {
+            return text;
+        }
+        const decoder = new TextDecoder('utf-8', { fatal: true });
+        const candidates = [
+            buildShortcutBytes(text, false),
+            buildShortcutBytes(text, true)
+        ];
+        for (let index = 0; index < candidates.length; index += 1) {
+            const bytes = candidates[index];
+            if (!bytes || !bytes.length) {
+                continue;
+            }
+            try {
+                const repaired = decoder.decode(new Uint8Array(bytes));
+                if (repaired && repaired !== text && Array.from(repaired).length < Array.from(text).length) {
+                    return repaired;
+                }
+            } catch (error) {
+                // Try the next encoding candidate.
+            }
+        }
+        return text;
+    };
+
+    const normalizeShortcutDisplayText = function (value) {
+        const decodedEntities = decodeShortcutHtmlEntities(value);
+        const decodedPercent = decodeShortcutPercentText(decodedEntities);
+        const repaired = repairShortcutMojibake(decodedPercent);
+        return String(repaired || '').normalize('NFC').trim();
+    };
+
+    const getShortcutDisplayLength = function (value) {
+        return Array.from(normalizeShortcutDisplayText(value)).length;
+    };
+
+    const truncateShortcutDisplayName = function (value) {
+        return Array.from(normalizeShortcutDisplayText(value)).slice(0, 80).join('');
+    };
+
+    const buildShortcutUrlNameCandidate = function (url) {
+        let value = String(url || '').trim();
+        if (!value) {
+            return '';
+        }
+        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(value)) {
+            value = 'https://' + value;
+        }
+        return normalizeShortcutDisplayText(value);
+    };
+
+    const chooseShortcutCreateName = function (title, url) {
+        const titleCandidate = normalizeShortcutDisplayText(title);
+        if (!titleCandidate) {
+            return '';
+        }
+        const urlCandidate = buildShortcutUrlNameCandidate(url);
+        if (!urlCandidate) {
+            return truncateShortcutDisplayName(titleCandidate);
+        }
+        return truncateShortcutDisplayName(
+            getShortcutDisplayLength(titleCandidate) <= getShortcutDisplayLength(urlCandidate)
+                ? titleCandidate
+                : urlCandidate
+        );
+    };
+
     const createShortcut = async function (name, url) {
         const response = await fetch(apiBase, {
             method: 'POST',
@@ -1269,7 +1371,7 @@
                 if (editingShortcutId) {
                     await updateShortcut(editingShortcutId, name, url);
                 } else {
-                    await createShortcut(name, url);
+                    await createShortcut(chooseShortcutCreateName(name, url), url);
                 }
                 shortcutForm.reset();
                 shortcutForm.hidden = true;
@@ -1282,7 +1384,6 @@
     }
 
     shortcutsGrid.addEventListener('click', async function (event) {
-        hideShortcutMenu();
         const addCardTarget = event.target.closest('[data-shortcut-add-card]');
         if (addCardTarget && shortcutForm) {
             event.preventDefault();
@@ -1344,32 +1445,7 @@
         if (!shortcutId) {
             return;
         }
-        openShortcutMenu(event.clientX, event.clientY, shortcutId);
-    });
-
-    if (shortcutMenuEdit) {
-        shortcutMenuEdit.addEventListener('click', function (event) {
-            event.preventDefault();
-            if (contextTargetShortcutId) {
-                enterEditMode(contextTargetShortcutId);
-            }
-            hideShortcutMenu();
-        });
-    }
-
-    document.addEventListener('click', function (event) {
-        if (!shortcutMenu || shortcutMenu.hidden) {
-            return;
-        }
-        if (!shortcutMenu.contains(event.target)) {
-            hideShortcutMenu();
-        }
-    });
-
-    document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape') {
-            hideShortcutMenu();
-        }
+        enterEditMode(shortcutId);
     });
 
     shortcutsGrid.addEventListener('dragstart', function (event) {
@@ -1451,9 +1527,6 @@
             droppedCard.classList.remove('is-dragging');
         }
     });
-
-    window.addEventListener('scroll', hideShortcutMenu, { passive: true });
-    window.addEventListener('resize', hideShortcutMenu, { passive: true });
 
     fetchShortcuts();
 })();

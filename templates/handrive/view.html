@@ -5,7 +5,7 @@
 {% include 'handrive/_assets_head.html' %}
 
 <div class="handrive-toolbar-wrap ui-toolbar-wrap">
-    <div class="handrive-shell ui-shell handrive-toolbar ui-toolbar">
+    <div class="ui-shell handrive-toolbar ui-toolbar">
         <div class="handrive-toolbar-left ui-toolbar-left">
             {% if is_handrive_shared_view %}
             <div class="ui-shared-head">
@@ -83,7 +83,7 @@
 </div>
 
 <main
-    class="handrive-shell ui-shell handrive-content ui-content"
+    class="ui-shell ui-content"
     data-scroll-y-priority
     data-handrive-page="view"
     data-is-authenticated="{% if user.is_authenticated %}1{% else %}0{% endif %}"

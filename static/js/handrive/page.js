@@ -21,6 +21,9 @@
     const isDemoSaveMode = root.dataset.demoSaveMode === "1" && !isAuthenticated;
 
     document.addEventListener("click", function (event) {
+        if (event.defaultPrevented) {
+            return;
+        }
         const proxyButton = event.target && event.target.closest
             ? event.target.closest("[data-handrive-click-target]")
             : null;
@@ -2236,6 +2239,7 @@
             "handrive-css",
             "handrive-js",
             "handrive-py",
+            "handrive-sql",
             "handrive-office",
             "handrive-office-word",
             "handrive-office-sheet",
@@ -2284,7 +2288,8 @@
             renderClasses.includes("handrive-html") ||
             renderClasses.includes("handrive-css") ||
             renderClasses.includes("handrive-js") ||
-            renderClasses.includes("handrive-py")
+            renderClasses.includes("handrive-py") ||
+            renderClasses.includes("handrive-sql")
         ) {
             renderClasses.forEach(function (className) {
                 if (
@@ -2292,7 +2297,8 @@
                     className === "handrive-html" ||
                     className === "handrive-css" ||
                     className === "handrive-js" ||
-                    className === "handrive-py"
+                    className === "handrive-py" ||
+                    className === "handrive-sql"
                 ) {
                     targetElement.classList.add(className);
                 }
@@ -3129,6 +3135,192 @@
         return result;
     }
 
+    const handriveSqlKeywords = new Set([
+        "ADD", "ALL", "ALTER", "AND", "ANY", "AS", "ASC", "BEGIN", "BETWEEN", "BY", "CASCADE",
+        "CASE", "CHECK", "COLLATE", "COLUMN", "COMMIT", "CONSTRAINT", "CREATE", "CROSS", "DATABASE",
+        "DEFAULT", "DELETE", "DESC", "DISTINCT", "DROP", "ELSE", "END", "EXCEPT", "EXISTS", "FALSE",
+        "FOREIGN", "FROM", "FULL", "GROUP", "HAVING", "IF", "IN", "INDEX", "INNER", "INSERT",
+        "INTERSECT", "INTO", "IS", "JOIN", "KEY", "LEFT", "LIKE", "LIMIT", "NOT", "NULL", "ON",
+        "OR", "ORDER", "OUTER", "PRIMARY", "REFERENCES", "RETURNING", "RIGHT", "ROLLBACK", "SCHEMA",
+        "SELECT", "SET", "TABLE", "THEN", "TO", "TRANSACTION", "TRUE", "UNION", "UNIQUE", "UPDATE",
+        "VALUES", "VIEW", "WHEN", "WHERE", "WITH",
+    ]);
+    const handriveSqlTypes = new Set([
+        "ARRAY", "BIGINT", "BINARY", "BIT", "BLOB", "BOOL", "BOOLEAN", "CHAR", "CLOB", "DATE",
+        "DATETIME", "DEC", "DECIMAL", "DOUBLE", "ENUM", "FLOAT", "INET", "INT", "INT2", "INT4",
+        "INT8", "INTEGER", "INTERVAL", "JSON", "JSONB", "MONEY", "NCHAR", "NUMERIC", "NVARCHAR",
+        "REAL", "SERIAL", "SERIAL2", "SERIAL4", "SERIAL8", "SMALLINT", "TEXT", "TIME", "TIMESTAMP",
+        "TIMESTAMPTZ", "TINYINT", "UUID", "VARBINARY", "VARCHAR", "XML",
+    ]);
+    const handriveSqlFunctions = new Set([
+        "ABS", "AVG", "CAST", "CEIL", "CEILING", "COALESCE", "CONCAT", "COUNT", "CURRENT_DATE",
+        "CURRENT_TIME", "CURRENT_TIMESTAMP", "DATE_TRUNC", "EXTRACT", "FLOOR", "GREATEST", "IFNULL",
+        "JSON_ARRAY", "JSON_OBJECT", "LEAST", "LENGTH", "LOWER", "LTRIM", "MAX", "MIN", "NOW",
+        "NULLIF", "RANDOM", "ROUND", "RTRIM", "SUBSTR", "SUBSTRING", "SUM", "TRIM", "UPPER",
+    ]);
+
+    function readSqlQuotedString(source, startIndex, quote) {
+        let index = startIndex + 1;
+        while (index < source.length) {
+            const char = source[index];
+            if (char === quote) {
+                if (source[index + 1] === quote) {
+                    index += 2;
+                    continue;
+                }
+                return source.slice(startIndex, index + 1);
+            }
+            if (char === "\\") {
+                index += 2;
+                continue;
+            }
+            index += 1;
+        }
+        return source.slice(startIndex);
+    }
+
+    function readSqlBracketIdentifier(source, startIndex) {
+        let index = startIndex + 1;
+        while (index < source.length) {
+            if (source[index] === "]") {
+                if (source[index + 1] === "]") {
+                    index += 2;
+                    continue;
+                }
+                return source.slice(startIndex, index + 1);
+            }
+            index += 1;
+        }
+        return source.slice(startIndex);
+    }
+
+    function readSqlDollarString(source, startIndex) {
+        const tagMatch = source.slice(startIndex).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/);
+        if (!tagMatch) {
+            return "";
+        }
+        const tag = tagMatch[0];
+        const endIndex = source.indexOf(tag, startIndex + tag.length);
+        return endIndex >= 0 ? source.slice(startIndex, endIndex + tag.length) : source.slice(startIndex);
+    }
+
+    function highlightSqlCode(source) {
+        const text = String(source || "");
+        const numberPattern = /^(?:0[xX][0-9a-fA-F]+|(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?)/;
+        let result = "";
+        let index = 0;
+
+        while (index < text.length) {
+            const char = text[index];
+            const next = text[index + 1] || "";
+
+            if (char === "-" && next === "-") {
+                const token = readLineComment(text, index);
+                result += makeSyntaxSpan("handrive-sql-token-comment", token);
+                index += token.length;
+                continue;
+            }
+            if (char === "/" && next === "*") {
+                const token = readBlockComment(text, index);
+                result += makeSyntaxSpan("handrive-sql-token-comment", token);
+                index += token.length;
+                continue;
+            }
+            if ((char === "N" || char === "n" || char === "E" || char === "e" || char === "X" || char === "x" || char === "B" || char === "b") && (next === "'" || next === "\"")) {
+                const token = char + readSqlQuotedString(text, index + 1, next);
+                result += makeSyntaxSpan("handrive-sql-token-string", token);
+                index += token.length;
+                continue;
+            }
+            if (char === "'" || char === "\"") {
+                const token = readSqlQuotedString(text, index, char);
+                result += makeSyntaxSpan("handrive-sql-token-string", token);
+                index += token.length;
+                continue;
+            }
+            if (char === "`") {
+                const token = readQuotedString(text, index, "`");
+                result += makeSyntaxSpan("handrive-sql-token-identifier", token);
+                index += token.length;
+                continue;
+            }
+            if (char === "[") {
+                const token = readSqlBracketIdentifier(text, index);
+                result += makeSyntaxSpan("handrive-sql-token-identifier", token);
+                index += token.length;
+                continue;
+            }
+            if (char === "$") {
+                const dollarString = readSqlDollarString(text, index);
+                if (dollarString) {
+                    result += makeSyntaxSpan("handrive-sql-token-string", dollarString);
+                    index += dollarString.length;
+                    continue;
+                }
+                const variableMatch = text.slice(index).match(/^\$\d+/);
+                if (variableMatch) {
+                    result += makeSyntaxSpan("handrive-sql-token-variable", variableMatch[0]);
+                    index += variableMatch[0].length;
+                    continue;
+                }
+            }
+            if (char === "@" || (char === ":" && next !== ":")) {
+                const variableMatch = text.slice(index).match(/^@{1,2}[A-Za-z_][A-Za-z0-9_]*|^:[A-Za-z_][A-Za-z0-9_]*/);
+                if (variableMatch) {
+                    result += makeSyntaxSpan("handrive-sql-token-variable", variableMatch[0]);
+                    index += variableMatch[0].length;
+                    continue;
+                }
+            }
+            if (char === "?") {
+                result += makeSyntaxSpan("handrive-sql-token-variable", char);
+                index += 1;
+                continue;
+            }
+
+            const numberMatch = text.slice(index).match(numberPattern);
+            if (numberMatch) {
+                result += makeSyntaxSpan("handrive-sql-token-number", numberMatch[0]);
+                index += numberMatch[0].length;
+                continue;
+            }
+
+            if (isIdentifierStart(char, false)) {
+                const token = readIdentifier(text, index, false);
+                const normalized = token.toUpperCase();
+                const nextIndex = findNextNonWhitespaceIndex(text, index + token.length);
+                let className = "";
+                if (handriveSqlKeywords.has(normalized)) {
+                    className = "handrive-sql-token-keyword";
+                } else if (handriveSqlTypes.has(normalized)) {
+                    className = "handrive-sql-token-type";
+                } else if (handriveSqlFunctions.has(normalized) && nextIndex >= 0 && text[nextIndex] === "(") {
+                    className = "handrive-sql-token-function";
+                }
+                result += className ? makeSyntaxSpan(className, token) : escapeHtml(token);
+                index += token.length;
+                continue;
+            }
+
+            const operatorMatch = text.slice(index).match(/^(?:<>|!=|<=|>=|=>|:=|::|\|\||&&|[-+*/%<>=~!^|&]+)/);
+            if (operatorMatch) {
+                result += makeSyntaxSpan("handrive-sql-token-operator", operatorMatch[0]);
+                index += operatorMatch[0].length;
+                continue;
+            }
+            if ("()[],.;".includes(char)) {
+                result += makeSyntaxSpan("handrive-sql-token-punctuation", char);
+                index += 1;
+                continue;
+            }
+
+            result += escapeHtml(char);
+            index += 1;
+        }
+
+        return result;
+    }
+
     const handrivePyKeywords = new Set([
         "and", "as", "assert", "async", "await", "break", "case", "class", "continue", "def", "del",
         "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is",
@@ -3614,6 +3806,19 @@
         if (normalized === "py" || normalized === "python" || normalized === "py3" || normalized === "pyi") {
             return "handrive-py";
         }
+        if (
+            normalized === "sql" ||
+            normalized === "mysql" ||
+            normalized === "pgsql" ||
+            normalized === "postgres" ||
+            normalized === "postgresql" ||
+            normalized === "sqlite" ||
+            normalized === "mssql" ||
+            normalized === "tsql" ||
+            normalized === "plsql"
+        ) {
+            return "handrive-sql";
+        }
         if (normalized === "html" || normalized === "htm" || normalized === "xml" || normalized === "svg") {
             return "handrive-html";
         }
@@ -3637,6 +3842,8 @@
             requestedRenderClass = "handrive-json";
         } else if (renderClasses.includes("handrive-py")) {
             requestedRenderClass = "handrive-py";
+        } else if (renderClasses.includes("handrive-sql")) {
+            requestedRenderClass = "handrive-sql";
         } else if (renderClasses.includes("handrive-html") || renderClasses.includes("handrive-editor-html")) {
             requestedRenderClass = "handrive-html";
         } else if (renderClasses.includes("ui-markdown")) {
@@ -3667,6 +3874,8 @@
                 codeNode.innerHTML = highlightCssCode(source);
             } else if (effectiveRenderClass === "handrive-py") {
                 codeNode.innerHTML = highlightPythonCode(source);
+            } else if (effectiveRenderClass === "handrive-sql") {
+                codeNode.innerHTML = highlightSqlCode(source);
             } else if (effectiveRenderClass === "handrive-html") {
                 codeNode.innerHTML = highlightHtmlCode(source);
             } else {
@@ -4802,7 +5011,7 @@
 
     // 문서 툴바는 한 줄을 유지한다.
     function initializeHandriveToolbarAutoCollapse() {
-        const toolbar = document.querySelector(".handrive-toolbar-wrap .handrive-toolbar, .site-auth-toolbar-wrap .ui-toolbar");
+        const toolbar = document.querySelector(".handrive-toolbar-wrap .handrive-toolbar, .auth-toolbar-wrap .ui-toolbar");
         if (!toolbar) {
             return;
         }
@@ -4810,7 +5019,7 @@
     }
 
     function initializeHandriveBreadcrumbOverflow() {
-        const breadcrumbsList = Array.from(document.querySelectorAll(".handrive-subtitle-wrap .ui-path-breadcrumbs, .handrive-toolbar-left > .ui-path-breadcrumbs, .site-auth-toolbar-left > .ui-path-breadcrumbs"));
+        const breadcrumbsList = Array.from(document.querySelectorAll(".handrive-subtitle-wrap .ui-path-breadcrumbs, .handrive-toolbar-left > .ui-path-breadcrumbs, .auth-toolbar-left > .ui-path-breadcrumbs"));
         if (!breadcrumbsList.length) {
             return;
         }
@@ -5292,6 +5501,10 @@
         let currentDirGoogleDrive = getJsonScriptData("handrive-current-dir-google-drive", null);
         const adminUserCheckApiUrl = String(root.dataset.adminUserCheckApiUrl || "").trim();
 
+        function shouldPreserveDemoAllListOrder(dirPath) {
+            return !hasSharedContext() && normalizePath(dirPath, true) === "all";
+        }
+
         async function promptCommitMessage(targetPath) {
             return requestCommitMessageDialog({
                 targetPath: targetPath || "",
@@ -5510,8 +5723,9 @@
             pendingContextUploadDir: "",
             searchQuery: "",
             searchResults: null,
-            listSortKey: "type",
+            listSortKey: shouldPreserveDemoAllListOrder(currentDir) ? "" : "type",
             listSortDirection: "asc",
+            listSortWasUserApplied: false,
             searchGeneration: 0,
             navigationGeneration: 0,
             syncSavedUncheckedPaths: new Set(Array.isArray(initialSyncExcludedPaths) ? initialSyncExcludedPaths : []),
@@ -5523,6 +5737,66 @@
         const githubRepoLabelByPath = new Map();
         const githubRepoLabelById = new Map();
         const googleDriveLabelByPath = new Map();
+        let adjacentSelectedRowCornerFrame = 0;
+
+        function setHandriveItemRowDepth(item, row, depthValue) {
+            const depth = Math.max(0, Number(depthValue) || 0);
+            if (item) {
+                item.dataset.itemDepth = String(depth);
+            }
+            if (row) {
+                row.dataset.itemDepth = String(depth);
+            }
+        }
+
+        function isAdjacentCornerSelectedRow(row) {
+            return Boolean(row && !row.classList.contains("is-empty") && row.classList.contains("is-selected"));
+        }
+
+        function getHandriveItemRowDepth(row) {
+            const depth = Number(row && row.dataset ? row.dataset.itemDepth : 0);
+            return Number.isFinite(depth) ? depth : 0;
+        }
+
+        function updateAdjacentSelectedRowCorners(rootElement) {
+            if (!rootElement) {
+                return;
+            }
+            const rows = Array.from(rootElement.querySelectorAll(".handrive-item-row"));
+            rows.forEach(function (row) {
+                row.classList.remove("is-selected-joined-above", "is-selected-joined-below");
+            });
+            rows.forEach(function (row, index) {
+                const nextRow = rows[index + 1];
+                if (!nextRow) {
+                    return;
+                }
+                if (
+                    getHandriveItemRowDepth(row) !== getHandriveItemRowDepth(nextRow) ||
+                    !isAdjacentCornerSelectedRow(row) ||
+                    !isAdjacentCornerSelectedRow(nextRow)
+                ) {
+                    return;
+                }
+                row.classList.add("is-selected-joined-below");
+                nextRow.classList.add("is-selected-joined-above");
+            });
+        }
+
+        function syncAdjacentSelectedRowCorners() {
+            updateAdjacentSelectedRowCorners(listContainer);
+            updateAdjacentSelectedRowCorners(syncList);
+        }
+
+        function scheduleAdjacentSelectedRowCornerSync() {
+            if (adjacentSelectedRowCornerFrame) {
+                return;
+            }
+            adjacentSelectedRowCornerFrame = window.requestAnimationFrame(function () {
+                adjacentSelectedRowCornerFrame = 0;
+                syncAdjacentSelectedRowCorners();
+            });
+        }
 
         function normalizeGithubRepoId(repoId) {
             const idText = String(repoId || "").trim();
@@ -6548,6 +6822,9 @@
             } else if (extension === ".py") {
                 renderClass = "handrive-py";
                 highlightedHtml = highlightPythonCode(source);
+            } else if (extension === ".sql") {
+                renderClass = "handrive-sql";
+                highlightedHtml = highlightSqlCode(source);
             } else if (extension === ".html") {
                 renderClass = "handrive-editor-html";
                 highlightedHtml = highlightHtmlCode(source);
@@ -6560,6 +6837,7 @@
                 "handrive-css",
                 "handrive-json",
                 "handrive-py",
+                "handrive-sql",
                 "handrive-editor-html"
             );
             editorHighlight.classList.add(renderClass);
@@ -6973,7 +7251,7 @@
         }
 
         function getFooterReservedHeight() {
-            const footerLinks = document.querySelector(".site-footer-links");
+            const footerLinks = document.querySelector(".footer-links");
             if (!footerLinks || footerLinks.offsetParent === null) {
                 return 0;
             }
@@ -7651,6 +7929,7 @@
             if (!isSortableListMetaKey(sortKey)) {
                 return;
             }
+            state.listSortWasUserApplied = true;
             if (state.listSortKey === sortKey) {
                 state.listSortDirection = state.listSortDirection === "desc" ? "asc" : "desc";
             } else {
@@ -9294,6 +9573,7 @@
                     state.selectedPaths.has(pathValue) || pathValue === state.activePreviewPath
                 );
             });
+            scheduleAdjacentSelectedRowCornerSync();
         }
 
         function applySelection(pathValues, options) {
@@ -11381,6 +11661,10 @@
             const normalizedPath = normalizePath(nextMeta.path, true);
             state.currentDir = normalizedPath;
             state.currentDirMeta = nextMeta;
+            if (shouldPreserveDemoAllListOrder(normalizedPath) && !state.listSortWasUserApplied) {
+                state.listSortKey = "";
+                state.listSortDirection = "asc";
+            }
             state.directoryMetaCache.set(normalizedPath, nextMeta);
             registerGithubRepoLabelFromMeta(nextMeta);
             root.dataset.currentDir = normalizedPath;
@@ -12117,6 +12401,7 @@
             row.setAttribute("role", "button");
             row.tabIndex = 0;
             row.setAttribute("data-entry-path", currentFolderEntry.path);
+            setHandriveItemRowDepth(item, row, 0);
             state.entryRowByPath.set(currentFolderEntry.path, row);
             row.draggable = false;
             if (state.selectedPaths.has(currentFolderEntry.path) || normalizePath(currentFolderEntry.path, true) === state.activePreviewPath) {
@@ -12439,6 +12724,7 @@
             row.type = "button";
             row.className = "handrive-item-row handrive-current-dir-row";
             row.setAttribute("data-entry-path", currentFolderEntry.path);
+            setHandriveItemRowDepth(item, row, 0);
 
             const typeMarker = createTypeMarker(buildCurrentDirectoryTypeMarkerOptions(currentDirMeta));
 
@@ -12481,6 +12767,7 @@
             row.type = "button";
             row.className = "handrive-item-row has-tree-prefix";
             row.setAttribute("data-entry-path", entry.path);
+            setHandriveItemRowDepth(item, row, (ancestorHasNextSiblings || []).length);
 
             const treePrefix = buildTreePrefixElement(ancestorHasNextSiblings, Boolean(isLastSibling));
             const fileIconKey = entry.type === "file" ? getFileIconKey(entry.path) : "";
@@ -12566,15 +12853,18 @@
                 const emptyRow = document.createElement("div");
                 emptyRow.className = "handrive-item-row is-empty";
                 emptyRow.textContent = t("js_empty_documents", "문서가 없습니다.");
+                setHandriveItemRowDepth(emptyItem, emptyRow, 0);
                 emptyItem.appendChild(emptyRow);
                 fragment.appendChild(emptyItem);
                 syncList.appendChild(fragment);
+                scheduleAdjacentSelectedRowCornerSync();
                 return;
             }
             entries.forEach(function (entry, index) {
                 addSyncEntryNode(entry, fragment, [], index === entries.length - 1);
             });
             syncList.appendChild(fragment);
+            scheduleAdjacentSelectedRowCornerSync();
         }
 
         function setSyncModalOpen(opened) {
@@ -13101,11 +13391,7 @@
             if (!isEditableHandriveFileEntry(entry)) {
                 return;
             }
-            if (isPdfEditorEntry(entry) || isImageEditorEntry(entry) || isVideoEditorEntry(entry) || isAudioEditorEntry(entry)) {
-                switchToEditor(entry);
-                return;
-            }
-            window.location.href = buildWriteUrl(writeUrl, { path: entry.path });
+            switchToEditor(entry);
         }
 
         async function convertEntryToMp3(entry) {
@@ -13185,6 +13471,7 @@
             row.type = "button";
             row.className = "handrive-item-row has-tree-prefix";
             row.setAttribute("data-entry-path", entry.path);
+            setHandriveItemRowDepth(item, row, (ancestorHasNextSiblings || []).length);
             state.entryRowByPath.set(entry.path, row);
             const isPublicWriteFile = Boolean(entry.type === "file" && entry.is_public_write);
             row.draggable = Boolean((moveApiUrl || archiveExtractApiUrl) && (entry.can_edit || entry.can_delete || (entry.is_archive_member && entry.can_extract)) && !isPublicWriteFile);
@@ -13407,6 +13694,7 @@
             const currentFolderEntryForReuse = buildCurrentDirectoryEntry();
             if (existingCurrentDirItem && savedCurrentDirPath === currentFolderEntryForReuse.path) {
                 if (existingCurrentDirRow) {
+                    setHandriveItemRowDepth(existingCurrentDirItem, existingCurrentDirRow, 0);
                     existingCurrentDirRow.classList.toggle("is-selected",
                         state.selectedPaths.has(currentFolderEntryForReuse.path) ||
                         normalizePath(currentFolderEntryForReuse.path, true) === state.activePreviewPath
@@ -13433,6 +13721,7 @@
                 emptyRow.textContent = state.searchQuery
                     ? t("js_search_no_results", "검색 결과가 없습니다.")
                     : t("js_empty_documents", "문서가 없습니다.");
+                setHandriveItemRowDepth(emptyItem, emptyRow, 0);
                 emptyItem.appendChild(emptyRow);
                 itemFragment.appendChild(emptyItem);
                 const filteredSelection = Array.from(state.selectedPaths).filter(function (pathValue) {
@@ -13450,6 +13739,7 @@
                 syncSearchFormVisibility();
                 updateListColumnVisibility();
                 scheduleListBodyHeight();
+                scheduleAdjacentSelectedRowCornerSync();
                 if (!renderListOptions.skipPreview) { syncPreviewFromSelection(); }
                 state.openingFolderPath = "";
                 state.suppressOpeningAnimation = false;
@@ -13478,6 +13768,7 @@
             syncSearchFormVisibility();
             updateListColumnVisibility();
             scheduleListBodyHeight();
+            scheduleAdjacentSelectedRowCornerSync();
             if (!renderListOptions.skipPreview) { syncPreviewFromSelection(); }
             scheduleSyncCurrentDirRowHeightWithSideHead();
             state.openingFolderPath = "";
@@ -14822,7 +15113,7 @@
                 });
                 listToolbarResizeObserver.observe(toolbarWrap);
             }
-            const footerLinks = document.querySelector(".site-footer-links");
+            const footerLinks = document.querySelector(".footer-links");
             if (footerLinks) {
                 const listFooterResizeObserver = new ResizeObserver(function () {
                     scheduleListBodyHeight();
@@ -15013,7 +15304,7 @@
         const deleteButton = document.getElementById("handrive-delete-btn");
         const printButton = document.getElementById("handrive-print-btn");
         const urlShareButton = document.getElementById("handrive-url-share-btn");
-        const contentArticle = document.querySelector(".handrive-content > article");
+        const contentArticle = document.querySelector(".ui-content[data-handrive-page] > article");
         const viewZoomWrap = document.getElementById("handrive-view-zoom");
         const viewZoomOutButton = document.getElementById("handrive-view-zoom-out");
         const viewZoomInButton = document.getElementById("handrive-view-zoom-in");
@@ -15252,6 +15543,8 @@
             applyHandriveCodeHighlighting(contentArticle, "handrive-json");
         } else if (contentArticle && contentArticle.classList.contains("handrive-py")) {
             applyHandriveCodeHighlighting(contentArticle, "handrive-py");
+        } else if (contentArticle && contentArticle.classList.contains("handrive-sql")) {
+            applyHandriveCodeHighlighting(contentArticle, "handrive-sql");
         } else if (contentArticle && contentArticle.classList.contains("handrive-html")) {
             applyHandriveCodeHighlighting(contentArticle, "handrive-html");
         } else if (contentArticle && contentArticle.classList.contains("ui-markdown")) {
@@ -15408,6 +15701,7 @@
         const writeRequiresCommitMessage = root.dataset.writeRequiresCommitMessage === "1";
 
         const filenameInput = document.getElementById("handrive-filename-input");
+        const filenameExtensionSelect = document.getElementById("handrive-filename-extension-select");
         const saveFilenameInput = document.getElementById("handrive-save-filename-input");
         const saveExtensionSelect = document.getElementById("handrive-save-extension-select");
         const contentInput = document.getElementById("handrive-content-input");
@@ -15478,8 +15772,9 @@
                 targetText: getHandrivePathLabel(targetPath || ""),
             });
         }
-        const extensionPresetValues = saveExtensionSelect
-            ? Array.from(saveExtensionSelect.options)
+        const extensionPresetSourceSelect = saveExtensionSelect || filenameExtensionSelect;
+        const extensionPresetValues = extensionPresetSourceSelect
+            ? Array.from(extensionPresetSourceSelect.options)
                 .map(function (option) {
                     return String(option.value || "").trim().toLowerCase();
                 })
@@ -15537,15 +15832,13 @@
                 if (originalExtension) {
                     return originalExtension === DOCS_DEFAULT_EXTENSION;
                 }
-                const rawName = filenameInput ? String(filenameInput.value || "").trim() : "";
-                const match = rawName.match(/\.[A-Za-z0-9]+$/);
-                return !match || match[0].toLowerCase() === DOCS_DEFAULT_EXTENSION;
+                return resolveWriteFilenameExtension() === DOCS_DEFAULT_EXTENSION;
             },
             getMarkdownPath: function () {
                 return originalPath || "";
             },
             getMarkdownName: function () {
-                return filenameInput ? filenameInput.value : "";
+                return getWriteFilenameSnapshotValue();
             },
             getTargetDir: function () {
                 return normalizePath(initialDir, true);
@@ -15656,7 +15949,7 @@
         }
 
         function markCurrentAsSaved() {
-            savedFilenameValue = filenameInput ? filenameInput.value : "";
+            savedFilenameValue = getWriteFilenameSnapshotValue();
             savedContentValue = contentInput ? contentInput.value : "";
         }
 
@@ -15710,12 +16003,10 @@
 
         function hasUnsavedWriteChanges() {
             if (isMediaWriteEditor) {
-                const filenameChanged = filenameInput
-                    ? filenameInput.value !== savedFilenameValue
-                    : false;
+                const filenameChanged = getWriteFilenameSnapshotValue() !== savedFilenameValue;
                 return hasUnsavedMediaWriteChanges() || filenameChanged;
             }
-            const currentFilename = filenameInput ? filenameInput.value : "";
+            const currentFilename = getWriteFilenameSnapshotValue();
             const currentContent = contentInput ? contentInput.value : "";
             return currentFilename !== savedFilenameValue || currentContent !== savedContentValue;
         }
@@ -16318,6 +16609,14 @@
                 } else if (snippetType === "json_object") {
                     snippet = { text: "{\n  \"key\": \"value\"\n}", selectStart: 5, selectEnd: 8 };
                 }
+            } else if (extension === ".sql") {
+                if (snippetType === "sql_select") {
+                    snippet = { text: "SELECT *\nFROM table_name\nWHERE condition;", selectStart: 14, selectEnd: 24 };
+                } else if (snippetType === "sql_insert") {
+                    snippet = { text: "INSERT INTO table_name (column_name)\nVALUES (value);", selectStart: 12, selectEnd: 22 };
+                } else if (snippetType === "sql_create") {
+                    snippet = { text: "CREATE TABLE table_name (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL\n);", selectStart: 13, selectEnd: 23 };
+                }
             } else if (extension === ".html") {
                 if (snippetType === "html_basic") {
                     snippet = {
@@ -16576,10 +16875,19 @@
             return { filename: trimmed, extension: "" };
         }
 
-        function syncExtensionSelectFromValue(extensionValue) {
-            if (!saveExtensionSelect) {
+        function syncExtensionSelectElementFromValue(selectElement, extensionValue) {
+            if (!selectElement) {
                 return;
             }
+            const customOption = selectElement.querySelector('option[value="' + DOCS_CUSTOM_EXTENSION_OPTION_VALUE + '"]');
+            if (customOption && !customOption.dataset.defaultLabel) {
+                customOption.dataset.defaultLabel = customOption.textContent || DOCS_CUSTOM_EXTENSION_OPTION_VALUE;
+            }
+            const resetCustomOptionLabel = function () {
+                if (customOption) {
+                    customOption.textContent = customOption.dataset.defaultLabel || DOCS_CUSTOM_EXTENSION_OPTION_VALUE;
+                }
+            };
             let normalized = "";
             try {
                 normalized = normalizeFileExtensionValue(extensionValue, true);
@@ -16590,23 +16898,34 @@
                 normalized = DOCS_DEFAULT_EXTENSION;
             }
             if (extensionPresetSet.has(normalized)) {
-                saveExtensionSelect.value = normalized;
+                selectElement.value = normalized;
                 customExtensionValue = DOCS_DEFAULT_EXTENSION;
+                resetCustomOptionLabel();
                 return;
             }
             customExtensionValue = normalized;
-            if (saveExtensionSelect.querySelector('option[value="' + DOCS_CUSTOM_EXTENSION_OPTION_VALUE + '"]')) {
-                saveExtensionSelect.value = DOCS_CUSTOM_EXTENSION_OPTION_VALUE;
+            if (customOption) {
+                customOption.textContent = normalized;
+                selectElement.value = DOCS_CUSTOM_EXTENSION_OPTION_VALUE;
                 return;
             }
-            saveExtensionSelect.value = DOCS_DEFAULT_EXTENSION;
+            selectElement.value = DOCS_DEFAULT_EXTENSION;
+            resetCustomOptionLabel();
         }
 
-        function getSelectedExtensionOrDefault() {
-            if (!saveExtensionSelect) {
+        function syncExtensionSelectFromValue(extensionValue) {
+            syncExtensionSelectElementFromValue(saveExtensionSelect, extensionValue);
+        }
+
+        function syncWriteFilenameExtensionSelectFromValue(extensionValue) {
+            syncExtensionSelectElementFromValue(filenameExtensionSelect, extensionValue);
+        }
+
+        function getSelectedExtensionFromSelect(selectElement) {
+            if (!selectElement) {
                 return DOCS_DEFAULT_EXTENSION;
             }
-            const selected = String(saveExtensionSelect.value || "").trim();
+            const selected = String(selectElement.value || "").trim();
             if (!selected) {
                 return DOCS_DEFAULT_EXTENSION;
             }
@@ -16618,6 +16937,14 @@
                 }
             }
             return normalizeFileExtensionValue(selected, false);
+        }
+
+        function getSelectedExtensionOrDefault() {
+            return getSelectedExtensionFromSelect(saveExtensionSelect || filenameExtensionSelect);
+        }
+
+        function getWriteFilenameSelectedExtensionOrDefault() {
+            return getSelectedExtensionFromSelect(filenameExtensionSelect || saveExtensionSelect);
         }
 
         function getSaveModalFilenameAndExtension() {
@@ -16632,6 +16959,23 @@
                 extensionCandidate = getSelectedExtensionOrDefault();
             }
             const targetExtension = normalizeFileExtensionValue(extensionCandidate, false);
+            return {
+                filename: finalFilename,
+                extension: targetExtension,
+            };
+        }
+
+        function getWriteFilenameAndExtension() {
+            const parsed = parseFileNameWithExtension(filenameInput ? filenameInput.value : "");
+            const finalFilename = String(parsed.filename || "").trim();
+            if (!finalFilename) {
+                throw new Error(t("js_filename_required", "파일명을 입력해주세요."));
+            }
+
+            const targetExtension = normalizeFileExtensionValue(
+                parsed.extension || getWriteFilenameSelectedExtensionOrDefault(),
+                false
+            );
             return {
                 filename: finalFilename,
                 extension: targetExtension,
@@ -16690,11 +17034,9 @@
 
         function resolveWriteFilenameExtension() {
             const parsed = parseFileNameWithExtension(filenameInput ? filenameInput.value : "");
-            if (!parsed.extension) {
-                return "";
-            }
+            const extensionCandidate = parsed.extension || getWriteFilenameSelectedExtensionOrDefault();
             try {
-                return normalizeFileExtensionValue(parsed.extension, false);
+                return normalizeFileExtensionValue(extensionCandidate, false);
             } catch (error) {
                 return "";
             }
@@ -16716,6 +17058,9 @@
             }
             if (extension === ".py") {
                 return "handrive-py";
+            }
+            if (extension === ".sql") {
+                return "handrive-sql";
             }
             if (extension === ".html") {
                 return "handrive-editor-html";
@@ -16927,11 +17272,13 @@
                 highlightedHtml = highlightJsonCode(source);
             } else if (renderClass === "handrive-py") {
                 highlightedHtml = highlightPythonCode(source);
+            } else if (renderClass === "handrive-sql") {
+                highlightedHtml = highlightSqlCode(source);
             } else if (renderClass === "handrive-editor-html") {
                 highlightedHtml = highlightHtmlCode(source);
             }
 
-            editorHighlight.classList.remove("handrive-plain-text", "handrive-editor-md", "handrive-js", "handrive-css", "handrive-json", "handrive-py", "handrive-editor-html");
+            editorHighlight.classList.remove("handrive-plain-text", "handrive-editor-md", "handrive-js", "handrive-css", "handrive-json", "handrive-py", "handrive-sql", "handrive-editor-html");
             editorHighlight.classList.add(renderClass);
             editorHighlightCode.innerHTML = highlightedHtml + (source.endsWith("\n") ? "\u200b" : "");
             syncEditorHighlightScroll();
@@ -16962,6 +17309,76 @@
             }
             const normalizedExtension = normalizeFileExtensionValue(extensionValue, false);
             return baseName + normalizedExtension;
+        }
+
+        function syncWriteFilenameInputExtension(extensionValue) {
+            if (!filenameInput || !filenameExtensionSelect || isMediaWriteEditor) {
+                return "";
+            }
+            const parsed = parseFileNameWithExtension(filenameInput.value);
+            const baseName = String(parsed.filename || filenameInput.value || "")
+                .trim()
+                .replace(/\.+$/, "");
+            if (!baseName) {
+                return "";
+            }
+            const normalizedExtension = normalizeFileExtensionValue(
+                extensionValue || getWriteFilenameSelectedExtensionOrDefault(),
+                false
+            );
+            const nextValue = buildFilenameWithExtension(baseName, normalizedExtension);
+            if (filenameInput.value !== nextValue) {
+                filenameInput.value = nextValue;
+            }
+            return normalizedExtension;
+        }
+
+        function getWriteFilenameSnapshotValue() {
+            if (!filenameInput) {
+                return "";
+            }
+            if (isMediaWriteEditor || !filenameExtensionSelect) {
+                return filenameInput.value || "";
+            }
+            try {
+                const target = getWriteFilenameAndExtension();
+                return buildFilenameWithExtension(target.filename, target.extension);
+            } catch (error) {
+                return filenameInput.value || "";
+            }
+        }
+
+        function syncWriteExtensionControlsFromValue(extensionValue) {
+            syncWriteFilenameExtensionSelectFromValue(extensionValue);
+            syncExtensionSelectFromValue(extensionValue);
+        }
+
+        function syncWriteFilenameExtensionFromInput() {
+            if (!filenameInput || !filenameExtensionSelect) {
+                return "";
+            }
+            const parsed = parseFileNameWithExtension(filenameInput.value);
+            if (!parsed.extension) {
+                return "";
+            }
+            let normalized = "";
+            try {
+                normalized = normalizeFileExtensionValue(parsed.extension, false);
+            } catch (error) {
+                return "";
+            }
+            syncWriteExtensionControlsFromValue(normalized);
+            return normalized;
+        }
+
+        function initializeWriteFilenameExtensionControl() {
+            if (!filenameInput || !filenameExtensionSelect) {
+                return;
+            }
+            const parsed = parseFileNameWithExtension(filenameInput.value);
+            const initialExtension = parsed.extension || getPathFileExtension(originalPath) || DOCS_DEFAULT_EXTENSION;
+            syncWriteExtensionControlsFromValue(initialExtension);
+            syncWriteFilenameInputExtension(initialExtension);
         }
 
         function getCurrentSaveTargetExtension() {
@@ -17907,7 +18324,7 @@
                 modalInitialDir = getNearestWritableDirectory(modalInitialDir || initialDir);
             }
             const parsedMainFilename = parseFileNameWithExtension(filenameInput ? filenameInput.value : "");
-            const extensionCandidate = parsedMainFilename.extension || getPathFileExtension(originalPath) || DOCS_DEFAULT_EXTENSION;
+            const extensionCandidate = parsedMainFilename.extension || getWriteFilenameSelectedExtensionOrDefault() || getPathFileExtension(originalPath) || DOCS_DEFAULT_EXTENSION;
             syncExtensionSelectFromValue(extensionCandidate);
             const filenameCandidate = String(parsedMainFilename.filename || "").trim();
 
@@ -18076,10 +18493,9 @@
                         finalFilename = saveTarget.filename;
                         targetExtension = saveTarget.extension;
                     } else {
-                        if (!finalFilename) {
-                            throw new Error(t("js_filename_required", "파일명을 입력해주세요."));
-                        }
-                        targetExtension = getSelectedExtensionOrDefault();
+                        const writeTarget = getWriteFilenameAndExtension();
+                        finalFilename = writeTarget.filename;
+                        targetExtension = writeTarget.extension;
                     }
                 } catch (error) {
                     alertError(error);
@@ -18096,8 +18512,13 @@
 
             upsertDirectory(targetDir);
             if (filenameInput) {
-                filenameInput.value = finalFilename;
+                if (isMediaWriteEditor || !filenameExtensionSelect) {
+                    filenameInput.value = finalFilename;
+                } else {
+                    filenameInput.value = buildFilenameWithExtension(finalFilename, targetExtension);
+                }
             }
+            syncWriteExtensionControlsFromValue(targetExtension);
             if (saveFilenameInput) {
                 saveFilenameInput.value = buildFilenameWithExtension(finalFilename, targetExtension);
             }
@@ -18180,10 +18601,14 @@
         }
         upsertDirectory(initialDir || "");
         renderDirectoryOptions();
+        initializeWriteFilenameExtensionControl();
         if (saveExtensionSelect) {
-            const initialExtension = getPathFileExtension(originalPath) || DOCS_DEFAULT_EXTENSION;
+            const initialExtension = filenameExtensionSelect
+                ? getWriteFilenameSelectedExtensionOrDefault()
+                : getPathFileExtension(originalPath) || DOCS_DEFAULT_EXTENSION;
             syncExtensionSelectFromValue(initialExtension);
         }
+        markCurrentAsSaved();
         syncMarkdownHelpButtonVisibility();
         showWriteMediaSurface().catch(alertError);
         scheduleWriteEditorHorizontalScrollReset();
@@ -18300,6 +18725,8 @@
                 const parsed = parseFileNameWithExtension(saveFilenameInput.value);
                 const baseName = parsed.filename || String(filenameInput ? filenameInput.value : "").trim();
                 saveFilenameInput.value = buildFilenameWithExtension(baseName, selectedExtension);
+                syncWriteFilenameExtensionSelectFromValue(selectedExtension);
+                syncWriteFilenameInputExtension(selectedExtension);
                 state.selectedOverwritePath = "";
                 saveFilenameInput.focus();
                 syncMarkdownHelpButtonVisibility();
@@ -18315,6 +18742,8 @@
                     const parsed = parseFileNameWithExtension(saveFilenameInput.value);
                     if (parsed.extension && extensionPresetSet.has(parsed.extension)) {
                         saveExtensionSelect.value = parsed.extension;
+                        syncWriteFilenameExtensionSelectFromValue(parsed.extension);
+                        syncWriteFilenameInputExtension(parsed.extension);
                         if (saveModal && !saveModal.hidden) {
                             syncOriginalSaveSelectionFromFilename();
                             renderBrowser();
@@ -18326,6 +18755,8 @@
                         if (saveExtensionSelect.querySelector('option[value="' + DOCS_CUSTOM_EXTENSION_OPTION_VALUE + '"]')) {
                             saveExtensionSelect.value = DOCS_CUSTOM_EXTENSION_OPTION_VALUE;
                         }
+                        syncWriteFilenameExtensionSelectFromValue(parsed.extension);
+                        syncWriteFilenameInputExtension(parsed.extension);
                     }
                 } catch (error) {
                     // Ignore extension auto-sync errors while typing.
@@ -18339,10 +18770,32 @@
 
         if (filenameInput) {
             const refreshMarkdownButtonVisibility = function () {
+                syncWriteFilenameExtensionFromInput();
                 syncMarkdownHelpButtonVisibility();
+                updateEditorSuggestion();
             };
             filenameInput.addEventListener("input", refreshMarkdownButtonVisibility);
-            filenameInput.addEventListener("change", refreshMarkdownButtonVisibility);
+            filenameInput.addEventListener("change", function () {
+                syncWriteFilenameExtensionFromInput();
+                syncMarkdownHelpButtonVisibility();
+                updateEditorSuggestion();
+            });
+        }
+
+        if (filenameExtensionSelect) {
+            filenameExtensionSelect.addEventListener("change", function () {
+                let selectedExtension = DOCS_DEFAULT_EXTENSION;
+                try {
+                    selectedExtension = getWriteFilenameSelectedExtensionOrDefault();
+                } catch (error) {
+                    alertError(error);
+                    return;
+                }
+                syncWriteFilenameInputExtension(selectedExtension);
+                syncExtensionSelectFromValue(selectedExtension);
+                syncMarkdownHelpButtonVisibility();
+                updateEditorSuggestion();
+            });
         }
 
         if (contentInput) {

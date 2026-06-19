@@ -7,7 +7,7 @@
 {% block content %}
 {% include 'handrive/_assets_head.html' %}
 
-<main class="ui-shell ui-content multiplayer-shell">
+<main class="ui-shell ui-content multiplayer-content">
     <section class="multiplayer-stage" aria-label="{{ multiplayer_title }}">
         <div
             class="multiplayer-app"
@@ -104,10 +104,10 @@
                                 </button>
                                 {% if not request.user.is_authenticated %}
                                 <div class="multiplayer-start-auth-actions">
-                                    <a class="ui-btn ui-btn-primary multiplayer-primary-btn" href="{{ handrive_login_url }}?next={{ request.get_full_path|urlencode }}">
+                                    <a class="ui-btn ui-btn-primary multiplayer-primary-btn" href="{{ handrive_login_url }}?next={{ request.get_full_path|urlencode }}" data-auth-modal="login">
                                         {% include 'partials/ui_i18n.html' with key='login' %}
                                     </a>
-                                    <a class="ui-btn" href="{{ handrive_signup_url }}?next={{ request.get_full_path|urlencode }}">
+                                    <a class="ui-btn" href="{{ handrive_signup_url }}?next={{ request.get_full_path|urlencode }}" data-auth-modal="signup">
                                         {% include 'partials/ui_i18n.html' with key='signup' %}
                                     </a>
                                 </div>

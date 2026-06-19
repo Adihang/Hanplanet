@@ -52,6 +52,7 @@ from django.db.models import Q
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import escape
@@ -164,6 +165,17 @@ DOCS_ALLOWED_FILE_EXTENSIONS = (
     ".txt",
     ".json",
     ".py",
+    ".sql",
+)
+DOCS_TEXT_CODE_FILE_EXTENSION_OPTIONS = (
+    ".md",
+    ".txt",
+    ".css",
+    ".html",
+    ".js",
+    ".json",
+    ".py",
+    ".sql",
 )
 INVALID_NAME_PATTERN = re.compile(r"[\\/]")
 DOCS_LOGOUT_PATH_PATTERN = re.compile(r"^/(?:(ko|en)/)?(?:docs|ide|handrive)/logout/?$")
@@ -606,6 +618,10 @@ DOCS_RENDER_PROFILES_BY_EXTENSION = {
     ".json": {
         "mode": DOCS_RENDER_MODE_PLAIN_TEXT,
         "css_class": "handrive-json",
+    },
+    ".sql": {
+        "mode": DOCS_RENDER_MODE_PLAIN_TEXT,
+        "css_class": "handrive-sql",
     },
     ".csv": {
         "mode": DOCS_RENDER_MODE_OFFICE,
@@ -2740,19 +2756,14 @@ def resolve_handrive_render_profile(file_extension: str | None) -> dict[str, str
 
 def get_handrive_save_extension_options() -> list[str]:
     """쓰기 화면의 빠른 확장자 선택 목록을 만든다."""
-    options = []
+    options = list(DOCS_TEXT_CODE_FILE_EXTENSION_OPTIONS)
     for extension, profile in DOCS_RENDER_PROFILES_BY_EXTENSION.items():
-        if (
-            profile.get("mode") == DOCS_RENDER_MODE_MARKDOWN
-            or profile.get("css_class") != "handrive-plain-text"
-        ):
+        if profile.get("mode") in {DOCS_RENDER_MODE_MARKDOWN, DOCS_RENDER_MODE_PLAIN_TEXT} and extension not in options:
             options.append(extension)
 
     if DOCS_FILE_EXTENSION in options:
-        ordered = [DOCS_FILE_EXTENSION]
-        ordered.extend(sorted(ext for ext in options if ext != DOCS_FILE_EXTENSION))
-        return ordered
-    return sorted(options)
+        return [DOCS_FILE_EXTENSION] + [ext for ext in options if ext != DOCS_FILE_EXTENSION]
+    return options
 
 
 def render_handrive_markdown_safely(content: str):
@@ -4253,6 +4264,14 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
             entries.sort(key=lambda item: (0 if item.get("type") == "dir" else 1, item.get("name", "").lower()))
 
     return entries
+
+
+def sort_demo_all_list_entries(entries: list[dict]) -> list[dict]:
+    """데모 루트는 파일/폴더 유형보다 번호가 붙은 이름 순서를 우선한다."""
+    return sorted(
+        entries,
+        key=lambda item: str(item.get("name") or item.get("path") or "").casefold(),
+    )
 
 
 def _get_current_dir_git_repo(request, current_dir: str):
@@ -5984,6 +6003,88 @@ def is_handrive_share_auth_entry(request, fallback_url: str) -> bool:
     return False
 
 
+def _is_site_auth_modal_request(request) -> bool:
+    return (
+        str(request.GET.get("auth_modal") or request.POST.get("auth_modal") or "").strip() == "1"
+        or str(request.headers.get("X-Site-Auth-Modal") or "").strip() == "1"
+    )
+
+
+def _with_site_auth_modal_param(url: str) -> str:
+    parsed = urlparse(str(url or ""))
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    query["auth_modal"] = ["1"]
+    next_query = urlencode(query, doseq=True)
+    prefix = parsed.path or "/"
+    if parsed.netloc:
+        prefix = f"{parsed.scheme}://{parsed.netloc}{prefix}"
+    result = f"{prefix}?{next_query}" if next_query else prefix
+    if parsed.fragment:
+        result = f"{result}#{parsed.fragment}"
+    return result
+
+
+def _is_site_auth_panel_redirect(request, url: str) -> bool:
+    candidate = str(url or "").strip()
+    if not candidate:
+        return False
+    if not url_has_allowed_host_and_scheme(
+        url=candidate,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return False
+    path = urlparse(candidate).path or ""
+    return bool(re.match(r"^/(?:(?:ko|en)/)?(?:login|signup|register-email|2fa-verify)/?$", path))
+
+
+def _copy_response_cookies(source_response, target_response):
+    for name, morsel in source_response.cookies.items():
+        target_response.cookies[name] = morsel.value
+        for attr in morsel.keys():
+            value = morsel[attr]
+            if value:
+                target_response.cookies[name][attr] = value
+    return target_response
+
+
+def _site_auth_modal_json(data: dict, *, source_response=None, status: int = 200):
+    response = JsonResponse(data, status=status)
+    if source_response is not None:
+        _copy_response_cookies(source_response, response)
+    return response
+
+
+def _site_auth_modalize_response(request, response):
+    if not _is_site_auth_modal_request(request):
+        return response
+    if response.status_code not in {301, 302, 303, 307, 308}:
+        return response
+
+    location = response.headers.get("Location", "")
+    if _is_site_auth_panel_redirect(request, location):
+        return _site_auth_modal_json(
+            {
+                "ok": True,
+                "panel_url": _with_site_auth_modal_param(location),
+            },
+            source_response=response,
+        )
+    return _site_auth_modal_json(
+        {
+            "ok": True,
+            "reload": True,
+            "redirect_url": location,
+        },
+        source_response=response,
+    )
+
+
+def _render_site_auth_modal_panel(request, template_name: str, context: dict, *, status: int = 200):
+    html = render_to_string(template_name, context, request=request)
+    return HttpResponse(html, status=status)
+
+
 def get_global_help_root() -> Path:
     """헬프 파일은 사용자별이 아닌 전역 콘텐츠 — 슈퍼유저 여부와 무관하게 고정 경로 사용."""
     return Path(settings.MEDIA_ROOT) / "HanDrive" / MARKDOWN_HELP_DIRECTORY
@@ -7177,16 +7278,16 @@ def _complete_login_or_require_2fa(
             requires_direct_attach,
         )
         register_url = reverse("main:handrive_register_email_lang", kwargs={"ui_lang": resolved_ui_lang})
-        return redirect(register_url)
+        return _site_auth_modalize_response(request, redirect(register_url))
 
     if _is_handrive_2fa_bypass_user(user):
         _finalize_handrive_login_session(request, user)
         if not requires_direct_attach:
-            return _build_post_hanplanet_login_response(target_url, user)
+            return _site_auth_modalize_response(request, _build_post_hanplanet_login_response(target_url, user))
         response = _build_forgejo_redirect_base(target_url)
         if forgejo_session_key:
             response = _apply_forgejo_session_cookie(response, forgejo_session_key)
-        return response
+        return _site_auth_modalize_response(request, response)
 
     # 2) 신뢰된 기기인지 확인
     device_token = _read_device_token(request)
@@ -7199,7 +7300,7 @@ def _complete_login_or_require_2fa(
             if forgejo_session_key:
                 response = _apply_forgejo_session_cookie(response, forgejo_session_key)
         _set_device_cookie(response, device_token)
-        return response
+        return _site_auth_modalize_response(request, response)
 
     # 3) 새 기기 → 2FA 필요
     pending_user_id = request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)
@@ -7222,7 +7323,7 @@ def _complete_login_or_require_2fa(
             # 인라인 표시: 발송 실패 에러를 caller가 처리
             return on_2fa_needed(_mask_email(user_email), send_failed=True)
         login_url = reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_ui_lang})
-        return redirect(f"{login_url}?2fa_error=send_failed")
+        return _site_auth_modalize_response(request, redirect(f"{login_url}?2fa_error=send_failed"))
 
     _set_2fa_pending_session(
         request,
@@ -7238,7 +7339,7 @@ def _complete_login_or_require_2fa(
         return on_2fa_needed(_mask_email(user_email))
 
     verify_url = reverse("main:handrive_2fa_verify_lang", kwargs={"ui_lang": resolved_ui_lang})
-    return redirect(verify_url)
+    return _site_auth_modalize_response(request, redirect(verify_url))
 
 
 def _verify_handrive_turnstile_token(token: str | None, remote_ip: str | None) -> bool:
@@ -8181,41 +8282,48 @@ def _render_handrive_login_page(
     github_link_pending = bool(pending_github and pending_github["action"] == "link")
     google_choice_required = bool(pending_google and pending_google["action"] == "choice")
     google_link_pending = bool(pending_google and pending_google["action"] == "link")
-    return render(
-        request,
-        "handrive/login.html",
-        {
-            **context,
-            "handrive_login_form": form,
-            "handrive_login_next": next_url,
-            "handrive_login_error_message": login_error_message,
-            "handrive_login_error_popup_message": login_error_popup_message,
-            "handrive_login_show_captcha": show_captcha,
-            "handrive_turnstile_site_key": turnstile_site_key,
-            "handrive_login_captcha_question": captcha_question,
-            "handrive_api_login_captcha_status_url": reverse("main:handrive_api_login_captcha_status"),
-            "handrive_auth_breadcrumb_url": auth_breadcrumb_url,
-            "handrive_auth_breadcrumb_label": handrive_text.get("auth_previous_page", "Previous Page"),
-            "hide_global_nav": hide_global_nav,
-            "handrive_login_show_2fa": show_2fa,
-            "handrive_login_2fa_masked_email": twofa_masked_email,
-            "handrive_login_2fa_error_message": twofa_error_message,
-            "handrive_api_login_2fa_resend_code_url": reverse("main:handrive_api_login_2fa_resend_code"),
-            "handrive_auth_safe_input_pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
-            "handrive_github_choice_required": github_choice_required,
-            "handrive_github_choice_link_url": _github_auth_action_url(context["handrive_login_url"], next_url, "link"),
-            "handrive_github_choice_signup_url": _github_auth_action_url(context["handrive_signup_url"], next_url, "signup"),
-            "handrive_github_link_pending": github_link_pending,
-            "handrive_github_pending_login": pending_github["identity"].login if pending_github else "",
-            "handrive_google_choice_required": google_choice_required,
-            "handrive_google_choice_link_url": _google_auth_action_url(context["handrive_login_url"], next_url, "link"),
-            "handrive_google_choice_signup_url": _google_auth_action_url(context["handrive_signup_url"], next_url, "signup"),
-            "handrive_google_link_pending": google_link_pending,
-            "handrive_google_pending_email": pending_google["identity"].email if pending_google else "",
-            **_github_auth_context(request, context.get("ui_lang"), next_url),
-            **_google_auth_context(request, context.get("ui_lang"), next_url),
-        },
-    )
+    render_context = {
+        **context,
+        "handrive_login_form": form,
+        "handrive_login_next": next_url,
+        "handrive_login_error_message": login_error_message,
+        "handrive_login_error_popup_message": login_error_popup_message,
+        "handrive_login_show_captcha": show_captcha,
+        "handrive_turnstile_site_key": turnstile_site_key,
+        "handrive_login_captcha_question": captcha_question,
+        "handrive_api_login_captcha_status_url": reverse("main:handrive_api_login_captcha_status"),
+        "handrive_auth_breadcrumb_url": auth_breadcrumb_url,
+        "handrive_auth_breadcrumb_label": handrive_text.get("auth_previous_page", "Previous Page"),
+        "hide_global_nav": hide_global_nav,
+        "handrive_login_show_2fa": show_2fa,
+        "handrive_login_2fa_masked_email": twofa_masked_email,
+        "handrive_login_2fa_error_message": twofa_error_message,
+        "handrive_api_login_2fa_resend_code_url": reverse("main:handrive_api_login_2fa_resend_code"),
+        "handrive_auth_safe_input_pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
+        "handrive_github_choice_required": github_choice_required,
+        "handrive_github_choice_link_url": _github_auth_action_url(context["handrive_login_url"], next_url, "link"),
+        "handrive_github_choice_signup_url": _github_auth_action_url(context["handrive_signup_url"], next_url, "signup"),
+        "handrive_github_link_pending": github_link_pending,
+        "handrive_github_pending_login": pending_github["identity"].login if pending_github else "",
+        "handrive_google_choice_required": google_choice_required,
+        "handrive_google_choice_link_url": _google_auth_action_url(context["handrive_login_url"], next_url, "link"),
+        "handrive_google_choice_signup_url": _google_auth_action_url(context["handrive_signup_url"], next_url, "signup"),
+        "handrive_google_link_pending": google_link_pending,
+        "handrive_google_pending_email": pending_google["identity"].email if pending_google else "",
+        **_github_auth_context(request, context.get("ui_lang"), next_url),
+        **_google_auth_context(request, context.get("ui_lang"), next_url),
+    }
+    if _is_site_auth_modal_request(request):
+        render_context.update({
+            "site_auth_modal_mode": "login",
+            "site_auth_modal_title": handrive_text.get("auth_login_button", "Login"),
+            "handrive_login_action_url": context["handrive_login_url"],
+            "handrive_signup_modal_url": _with_site_auth_modal_param(
+                f"{context['handrive_signup_url']}?{urlencode({'next': next_url or ''})}"
+            ),
+        })
+        return _render_site_auth_modal_panel(request, "partials/site_auth_modal_login.html", render_context)
+    return render(request, "handrive/login.html", render_context)
 
 
 def _render_handrive_signup_page(
@@ -8235,29 +8343,36 @@ def _render_handrive_signup_page(
     google_signup_pending = bool(pending_google and pending_google["action"] == "signup")
     github_identity = pending_github["identity"] if github_signup_pending else None
     google_identity = pending_google["identity"] if google_signup_pending else None
-    return render(
-        request,
-        "handrive/signup.html",
-        {
-            **context,
-            "handrive_signup_form": form,
-            "handrive_signup_next": next_url,
-            "handrive_signup_error_message": signup_error_message,
-            "handrive_signup_error_popup_message": signup_error_popup_message,
-            "handrive_auth_breadcrumb_url": auth_breadcrumb_url,
-            "handrive_auth_breadcrumb_label": handrive_text.get("auth_previous_page", "Previous Page"),
-            "hide_global_nav": hide_global_nav,
-            "handrive_api_signup_2fa_send_code_url": reverse("main:handrive_api_signup_2fa_send_code"),
-            "handrive_api_signup_2fa_verify_code_url": reverse("main:handrive_api_signup_2fa_verify_code"),
-            "handrive_auth_safe_input_pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
-            "handrive_signup_github_pending": github_signup_pending,
-            "handrive_signup_github_login": github_identity.login if github_identity else "",
-            "handrive_signup_google_pending": google_signup_pending,
-            "handrive_signup_google_email": google_identity.email if google_identity else "",
-            **_github_auth_context(request, context.get("ui_lang"), next_url),
-            **_google_auth_context(request, context.get("ui_lang"), next_url),
-        },
-    )
+    render_context = {
+        **context,
+        "handrive_signup_form": form,
+        "handrive_signup_next": next_url,
+        "handrive_signup_error_message": signup_error_message,
+        "handrive_signup_error_popup_message": signup_error_popup_message,
+        "handrive_auth_breadcrumb_url": auth_breadcrumb_url,
+        "handrive_auth_breadcrumb_label": handrive_text.get("auth_previous_page", "Previous Page"),
+        "hide_global_nav": hide_global_nav,
+        "handrive_api_signup_2fa_send_code_url": reverse("main:handrive_api_signup_2fa_send_code"),
+        "handrive_api_signup_2fa_verify_code_url": reverse("main:handrive_api_signup_2fa_verify_code"),
+        "handrive_auth_safe_input_pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
+        "handrive_signup_github_pending": github_signup_pending,
+        "handrive_signup_github_login": github_identity.login if github_identity else "",
+        "handrive_signup_google_pending": google_signup_pending,
+        "handrive_signup_google_email": google_identity.email if google_identity else "",
+        **_github_auth_context(request, context.get("ui_lang"), next_url),
+        **_google_auth_context(request, context.get("ui_lang"), next_url),
+    }
+    if _is_site_auth_modal_request(request):
+        render_context.update({
+            "site_auth_modal_mode": "signup",
+            "site_auth_modal_title": handrive_text.get("auth_signup_button", "Sign Up"),
+            "handrive_signup_action_url": context["handrive_signup_url"],
+            "handrive_login_modal_url": _with_site_auth_modal_param(
+                f"{context['handrive_login_url']}?{urlencode({'next': next_url or ''})}"
+            ),
+        })
+        return _render_site_auth_modal_panel(request, "partials/site_auth_modal_signup.html", render_context)
+    return render(request, "handrive/signup.html", render_context)
 
 
 @require_http_methods(["GET", "POST"])
@@ -9189,9 +9304,12 @@ def handrive_login(request, ui_lang=None):
             _link_pending_google_auth_for_user(request, request.user)
         if _get_valid_hanplanet_session_token(request, request.user):
             # 정상 로그인 상태 → next로 이동
-            return _build_post_hanplanet_login_response(
-                _resolve_handrive_post_login_url(request, resolved_lang, next_url, request.user),
-                request.user,
+            return _site_auth_modalize_response(
+                request,
+                _build_post_hanplanet_login_response(
+                    _resolve_handrive_post_login_url(request, resolved_lang, next_url, request.user),
+                    request.user,
+                ),
             )
         # db_token 없음 = 앱 레벨 로그아웃 상태 (다른 도메인/기기에서 로그아웃)
         # → Django 세션 클리어, 리다이렉트 없이 즉시 로그인 폼 표시 (루프 방지)
@@ -9238,7 +9356,10 @@ def handrive_login(request, ui_lang=None):
             pending_user = UserModel.objects.get(pk=pending_user_id)
         except UserModel.DoesNotExist:
             _clear_2fa_pending_session(request)
-            return redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}))
+            return _site_auth_modalize_response(
+                request,
+                redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang})),
+            )
 
         submitted_code = str(request.POST.get("code", "") or "").strip()
         if _verify_2fa_code(pending_user, submitted_code):
@@ -9257,7 +9378,7 @@ def handrive_login(request, ui_lang=None):
                 if _p_forgejo_key:
                     response = _apply_forgejo_session_cookie(response, _p_forgejo_key)
             _set_device_cookie(response, device_token)
-            return response
+            return _site_auth_modalize_response(request, response)
         else:
             # 코드 오류 → 2FA 화면 유지
             _masked = _mask_email(str(getattr(pending_user, "email", "") or ""))
@@ -9610,9 +9731,12 @@ def handrive_signup(request, ui_lang=None):
     google_identity = pending_google["identity"] if pending_google and pending_google["action"] == "signup" else None
 
     if request.user.is_authenticated:
-        return _build_post_hanplanet_login_response(
-            _resolve_handrive_post_login_url(request, resolved_lang, next_url, request.user),
-            request.user,
+        return _site_auth_modalize_response(
+            request,
+            _build_post_hanplanet_login_response(
+                _resolve_handrive_post_login_url(request, resolved_lang, next_url, request.user),
+                request.user,
+            ),
         )
 
     form = HandriveSignupForm(
@@ -9721,7 +9845,7 @@ def handrive_signup(request, ui_lang=None):
                     response = _apply_forgejo_session_cookie(response, forgejo_session_key)
             _send_signup_welcome_email(authed_user, resolved_lang)
             _set_device_cookie(response, device_token)
-            return response
+            return _site_auth_modalize_response(request, response)
         signup_error_message = handrive_text.get("auth_signup_error", "회원가입 정보를 확인해주세요.")
     return _render_handrive_signup_page(
         request,
@@ -9746,14 +9870,20 @@ def handrive_2fa_verify(request, ui_lang=None):
 
     pending_user_id = request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)
     if not pending_user_id:
-        return redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}))
+        return _site_auth_modalize_response(
+            request,
+            redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang})),
+        )
 
     UserModel = get_user_model()
     try:
         pending_user = UserModel.objects.get(pk=pending_user_id)
     except UserModel.DoesNotExist:
         _clear_2fa_pending_session(request)
-        return redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}))
+        return _site_auth_modalize_response(
+            request,
+            redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang})),
+        )
 
     target_url = request.session.get(HANDRIVE_2FA_PENDING_NEXT_URL_SESSION_KEY, "")
     forgejo_session_key = request.session.get(HANDRIVE_2FA_PENDING_FORGEJO_KEY_SESSION_KEY, "") or None
@@ -9779,16 +9909,24 @@ def handrive_2fa_verify(request, ui_lang=None):
                 if forgejo_session_key:
                     response = _apply_forgejo_session_cookie(response, forgejo_session_key)
             _set_device_cookie(response, device_token)
-            return response
+            return _site_auth_modalize_response(request, response)
         else:
             error_message = handrive_text.get("auth_2fa_code_error", "인증 코드가 올바르지 않거나 만료되었습니다.")
 
-    return render(request, "handrive/2fa_verify.html", {
+    render_context = {
         **context,
         "handrive_2fa_error_message": error_message,
         "handrive_2fa_user_email_masked": _mask_email(str(getattr(pending_user, "email", "") or "")),
         "hide_global_nav": True,
-    })
+    }
+    if _is_site_auth_modal_request(request):
+        render_context.update({
+            "site_auth_modal_mode": "2fa",
+            "site_auth_modal_title": handrive_text.get("auth_2fa_title", "Two-factor verification"),
+            "handrive_2fa_action_url": reverse("main:handrive_2fa_verify_lang", kwargs={"ui_lang": resolved_lang}),
+        })
+        return _render_site_auth_modal_panel(request, "partials/site_auth_modal_2fa.html", render_context)
+    return render(request, "handrive/2fa_verify.html", render_context)
 
 
 @require_http_methods(["GET", "POST"])
@@ -9802,14 +9940,20 @@ def handrive_register_email(request, ui_lang=None):
 
     pending_user_id = request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY)
     if not pending_user_id:
-        return redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}))
+        return _site_auth_modalize_response(
+            request,
+            redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang})),
+        )
 
     UserModel = get_user_model()
     try:
         pending_user = UserModel.objects.get(pk=pending_user_id)
     except UserModel.DoesNotExist:
         _clear_2fa_pending_session(request)
-        return redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}))
+        return _site_auth_modalize_response(
+            request,
+            redirect(reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang})),
+        )
 
     error_message = ""
 
@@ -9828,13 +9972,21 @@ def handrive_register_email(request, ui_lang=None):
                 error_message = handrive_text.get("auth_2fa_email_send_error", "인증 코드 발송에 실패했습니다.")
             else:
                 verify_url = reverse("main:handrive_2fa_verify_lang", kwargs={"ui_lang": resolved_lang})
-                return redirect(verify_url)
+                return _site_auth_modalize_response(request, redirect(verify_url))
 
-    return render(request, "handrive/register_email.html", {
+    render_context = {
         **context,
         "handrive_register_email_error_message": error_message,
         "hide_global_nav": True,
-    })
+    }
+    if _is_site_auth_modal_request(request):
+        render_context.update({
+            "site_auth_modal_mode": "register-email",
+            "site_auth_modal_title": handrive_text.get("auth_register_email_title", "Register Email"),
+            "handrive_register_email_action_url": reverse("main:handrive_register_email_lang", kwargs={"ui_lang": resolved_lang}),
+        })
+        return _render_site_auth_modal_panel(request, "partials/site_auth_modal_register_email.html", render_context)
+    return render(request, "handrive/register_email.html", render_context)
 
 
 @require_http_methods(["POST"])
@@ -9973,6 +10125,8 @@ def handrive_list(request, folder_path="", ui_lang=None):
         if not directory.is_dir():
             raise Http404("폴더를 찾을 수 없습니다.")
         initial_entries = list_directory_entries(directory, request=request)
+        if not shared_context and normalize_relative_path(current_dir, allow_empty=True) == "all":
+            initial_entries = sort_demo_all_list_entries(initial_entries)
     elif archive_virtual is None:
         if git_virtual["kind"] == "branch_file":
             raise Http404("폴더를 찾을 수 없습니다.")

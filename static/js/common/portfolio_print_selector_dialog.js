@@ -44,10 +44,12 @@
             };
 
             const dialogTheme = isDarkDialog ? {
-                overlayOpenColor: 'rgba(0, 0, 0, 0.56)',
-                panelBackground: '#1e2026',
+                overlayOpenColor: readThemeToken('--site-modal-backdrop-surface-bg', 'rgba(0, 0, 0, 0)'),
+                overlayBackdropFilter: readThemeToken('--site-modal-backdrop-filter', 'none'),
+                panelBackground: readThemeToken('--site-modal-surface-bg', 'rgba(46, 46, 46, 0.72)'),
+                panelBackdropFilter: readThemeToken('--site-modal-surface-filter', 'saturate(120%) blur(4px)'),
                 panelBorderColor: 'transparent',
-                panelShadow: 'var(--site-popup-shadow-common, var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28)))',
+                panelShadow: 'var(--site-popup-shadow-common, var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28))), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24))',
                 titleColor: '#f1f3f7',
                 descriptionColor: '#c1c7d0',
                 listBorderColor: 'transparent',
@@ -72,10 +74,12 @@
                 buttonHoverLift: buttonTemplate.hoverLift,
                 buttonRadius: buttonTemplate.borderRadius
             } : {
-                overlayOpenColor: 'rgba(0, 0, 0, 0.34)',
-                panelBackground: '#ffffff',
+                overlayOpenColor: readThemeToken('--site-modal-backdrop-surface-bg', 'rgba(0, 0, 0, 0)'),
+                overlayBackdropFilter: readThemeToken('--site-modal-backdrop-filter', 'none'),
+                panelBackground: readThemeToken('--site-modal-surface-bg', 'rgba(248, 248, 248, 0.72)'),
+                panelBackdropFilter: readThemeToken('--site-modal-surface-filter', 'saturate(120%) blur(4px)'),
                 panelBorderColor: 'transparent',
-                panelShadow: 'var(--site-popup-shadow-common, var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28)))',
+                panelShadow: 'var(--site-popup-shadow-common, var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28))), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24))',
                 titleColor: '#161616',
                 descriptionColor: '#535353',
                 listBorderColor: 'transparent',
@@ -206,6 +210,7 @@
             const selectAllButton = templateFragment.querySelector('button[data-popup-action="select-all"]');
             const clearButton = templateFragment.querySelector('button[data-popup-action="clear-all"]');
             const cancelButton = templateFragment.querySelector('button[data-popup-action="cancel"]');
+            const closeButton = templateFragment.querySelector('button[data-popup-action="close"]');
             const printButtonInDialog = templateFragment.querySelector('button[data-popup-action="print"]');
 
             if (
@@ -220,6 +225,7 @@
                 !selectAllButton ||
                 !clearButton ||
                 !cancelButton ||
+                !closeButton ||
                 !printButtonInDialog
             ) {
                 resolve(null);
@@ -229,14 +235,16 @@
             Object.assign(overlay.style, {
                 position: 'fixed',
                 inset: '0',
-                zIndex: '2100',
+                zIndex: 'var(--site-modal-stack-z, var(--site-z-modal, 1400))',
                 background: 'rgba(0, 0, 0, 0)',
+                backdropFilter: dialogTheme.overlayBackdropFilter,
                 opacity: '0',
                 transition: 'background-color ' + overlayFadeMs + 'ms ease, opacity ' + overlayFadeMs + 'ms ease',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: '20px'
+                padding: '20px',
+                isolation: 'isolate'
             });
 
             Object.assign(panel.style, {
@@ -245,22 +253,28 @@
                 maxWidth: 'calc(100vw - 28px)',
                 maxHeight: '82vh',
                 overflow: 'hidden',
+                position: 'relative',
+                zIndex: '1',
                 background: dialogTheme.panelBackground,
+                backdropFilter: dialogTheme.panelBackdropFilter,
                 border: '0',
                 borderRadius: '14px',
                 boxShadow: dialogTheme.panelShadow,
                 display: 'flex',
                 flexDirection: 'column'
             });
+            overlay.style.setProperty('-webkit-backdrop-filter', dialogTheme.overlayBackdropFilter);
+            panel.style.setProperty('-webkit-backdrop-filter', dialogTheme.panelBackdropFilter);
 
             title.textContent = printText.dialogTitle;
             Object.assign(title.style, {
                 margin: '0',
-                padding: '16px 18px 4px 18px',
+                padding: '0',
+                flex: '1 1 auto',
                 fontSize: '1.12rem',
                 fontWeight: '700',
                 color: dialogTheme.titleColor,
-                textAlign: 'center'
+                textAlign: 'left'
             });
 
             description.textContent = printText.dialogDescription;
@@ -435,6 +449,10 @@
             });
 
             cancelButton.addEventListener('click', function () {
+                close(null);
+            });
+
+            closeButton.addEventListener('click', function () {
                 close(null);
             });
 

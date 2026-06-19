@@ -96,34 +96,40 @@
 .image-demo-modal-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 3600;
+    z-index: var(--site-modal-stack-z, var(--site-z-media-overlay, 1320));
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--handrive-backdrop-strong, var(--site-backdrop-strong, rgba(0, 0, 0, 0.54)));
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
+    isolation: isolate;
 }
 
 .image-demo-modal {
+    position: relative;
+    z-index: 1;
     width: min(980px, 100%);
     max-height: min(82vh, 780px);
     border: 1px solid var(--handrive-border-soft);
     border-radius: var(--handrive-radius-lg);
-    background: var(--handrive-elevated-bg, var(--shared-card-bg));
+    background: var(--site-modal-surface-bg, var(--handrive-elevated-bg, var(--shared-card-bg)));
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     color: var(--handrive-text);
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: var(--handrive-shadow-md, var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28)));
+    box-shadow: var(--handrive-shadow-md, var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28))), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
 }
 
 .image-demo-modal-head {
+    --site-modal-head-padding: 12px 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     padding: 12px 14px;
-    border-bottom: 1px solid var(--handrive-border-soft);
-    background: var(--handrive-surface-muted);
 }
 
 .image-demo-modal-title {

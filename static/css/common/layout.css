@@ -3,11 +3,46 @@
     --site-nav-padding-y: 8px;
     --site-toolbar-padding-top: 12px;
     --site-toolbar-padding-bottom: 10px;
-    --site-z-nav: 3200;
-    --site-z-toolbar: 3100;
-    --site-z-popup: 3400;
-    --site-z-modal: 3600;
-    --site-z-modal-top: 3900;
+
+    /*
+     * z-index ranges:
+     * 0-99: component-local layers
+     * 100-699: map/canvas panes
+     * 900-999: page-local overlays
+     * 1000-1099: persistent nav/toolbars
+     * 1100-1199: popups, dropdowns, context menus
+     * 1200-1299: floating widgets
+     * 1300-1399: media/fullscreen overlays
+     * 1400-1499: modals, stacked by open order
+     * 1500-1599: top/system modals
+     */
+    --site-z-map-pane-background: 200;
+    --site-z-map-pane-overlay: 550;
+    --site-z-page-overlay: 900;
+    --site-z-toolbar: 1010;
+    --site-z-nav: 1020;
+    --site-z-popup: 1120;
+    --site-z-popup-raised: 1125;
+    --site-z-floating: 1220;
+    --site-z-floating-raised: 1225;
+    --site-z-media-overlay: 1320;
+    --site-z-modal: 1400;
+    --site-z-modal-top: 1500;
+    --site-z-modal-stack-step: 5;
     --site-popup-radius-common: 12px;
     --site-popup-shadow-common: 0 8px 18px rgba(0, 0, 0, 0.2);
+    --site-popup-glass-bg: rgba(238, 238, 238, 0.5);
+    --site-popup-glass-filter: saturate(120%) blur(4px);
+    --site-dropdown-menu-radius: var(--site-popup-radius-common);
+    --site-dropdown-menu-border: var(--site-border-context, rgba(0, 0, 0, 0.14));
+    --site-dropdown-menu-shadow: var(--site-popup-shadow-common);
+    --site-dropdown-scrollbar-size: 3px;
+    --site-dropdown-scrollbar-thumb: var(--site-scrollbar-thumb, rgba(120, 120, 128, 0.45));
+    --site-dropdown-scrollbar-thumb-hover: var(--site-scrollbar-thumb-hover, rgba(95, 95, 103, 0.58));
+    --site-modal-backdrop-bg: rgba(0, 0, 0, 0.24);
+    --site-modal-backdrop-filter: none;
+    --site-modal-backdrop-surface-bg: transparent;
+    --site-modal-exterior-dim-shadow: 0 0 0 100vmax var(--site-modal-backdrop-bg);
+    --site-modal-surface-bg: rgba(248, 248, 248, 0.72);
+    --site-modal-surface-filter: var(--site-popup-glass-filter);
 }

@@ -1,4 +1,4 @@
 {% if not user.is_authenticated %}
-<a class="ui-btn" href="{{ handrive_login_url }}?next={{ handrive_auth_next|urlencode }}">{{ handrive_text.auth_login_button }}</a>
-<a class="ui-btn ui-btn-primary" href="{{ handrive_signup_url }}?next={{ handrive_auth_next|urlencode }}">{{ handrive_text.auth_signup_button }}</a>
+<a class="ui-btn" href="{{ handrive_login_url }}?next={{ handrive_auth_next|urlencode }}" data-auth-modal="login">{{ handrive_text.auth_login_button }}</a>
+<a class="ui-btn ui-btn-primary" href="{{ handrive_signup_url }}?next={{ handrive_auth_next|urlencode }}" data-auth-modal="signup">{{ handrive_text.auth_signup_button }}</a>
 {% endif %}

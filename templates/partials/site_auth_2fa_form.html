@@ -1,0 +1,47 @@
+<form
+    method="post"
+    {% if handrive_2fa_action_url %}action="{{ handrive_2fa_action_url }}"{% endif %}
+    class="auth-form"
+    id="handrive-2fa-form"
+    {% if site_auth_is_modal %}data-auth-form{% endif %}
+>
+    {% csrf_token %}
+
+    {% if handrive_2fa_error_message %}
+        <div class="auth-error">{{ handrive_2fa_error_message }}</div>
+    {% endif %}
+
+    <p class="ui-subtitle">{{ handrive_text.auth_2fa_hint }} <strong>{{ handrive_2fa_user_email_masked }}</strong></p>
+
+    <div class="auth-field auth-field-full">
+        <div class="auth-otp-input-wrap" data-handrive-otp-wrap>
+            <input
+                class="auth-otp-hidden-input"
+                type="text"
+                name="code"
+                id="handrive-2fa-code-input"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                maxlength="6"
+                pattern="[0-9]*"
+                required
+                autofocus
+                aria-label="{{ handrive_text.auth_2fa_code_label }}"
+                placeholder="{{ handrive_text.auth_2fa_code_placeholder }}"
+                data-handrive-otp-input
+            >
+            <div class="auth-otp-boxes" data-handrive-otp-boxes aria-hidden="true">
+                <span class="auth-otp-box" data-index="0"></span>
+                <span class="auth-otp-box" data-index="1"></span>
+                <span class="auth-otp-box" data-index="2"></span>
+                <span class="auth-otp-box" data-index="3"></span>
+                <span class="auth-otp-box" data-index="4"></span>
+                <span class="auth-otp-box" data-index="5"></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="auth-actions">
+        <button class="ui-btn ui-btn-primary" type="submit">{{ handrive_text.auth_2fa_submit }}</button>
+    </div>
+</form>

@@ -12,8 +12,12 @@
     align-items: center;
     justify-content: flex-end;
     position: relative;
-    z-index: 100;
+    z-index: var(--site-z-nav);
     margin: 0;
+}
+
+.ui-auth-account-floating:has(.ui-auth-account-menu:not([hidden])) {
+    z-index: var(--site-z-popup);
 }
 
 .ui-auth-account-trigger {
@@ -79,22 +83,22 @@ body.hanplanet-multiplayer-page .ui-auth-account-name {
     min-width: 260px;
     border: 0;
     border-radius: 12px;
-    background: rgba(238, 238, 238, 0.72);
-    background-color: rgba(238, 238, 238, 0.72);
+    background: var(--site-popup-glass-bg, rgba(238, 238, 238, 0.5));
+    background-color: var(--site-popup-glass-bg, rgba(238, 238, 238, 0.5));
     background-image: none;
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: var(--site-popup-glass-filter, saturate(120%) blur(4px));
+    backdrop-filter: var(--site-popup-glass-filter, saturate(120%) blur(4px));
     opacity: 1;
     padding: 0;
     display: flex;
     flex-direction: column;
     gap: 0;
-    z-index: 2;
+    z-index: var(--site-z-popup);
 }
 
 body.theme-dark .ui-auth-account-menu {
-    background: rgba(46, 46, 46, 0.72);
-    background-color: rgba(46, 46, 46, 0.72);
+    background: var(--site-popup-glass-bg, rgba(46, 46, 46, 0.5));
+    background-color: var(--site-popup-glass-bg, rgba(46, 46, 46, 0.5));
     background-image: none;
     opacity: 1;
 }
@@ -491,9 +495,12 @@ body.theme-dark .ui-auth-account-stats-row {
     border-bottom-left-radius: 10px;
 }
 
+.ui-auth-account-menu-actions .ui-auth-account-menu-item + .ui-auth-account-menu-item {
+    border-left: 1px solid var(--site-border-soft);
+}
+
 .ui-auth-account-menu-actions .ui-auth-account-menu-item:last-child {
     border-bottom-right-radius: 10px;
-    border-left: 1px solid var(--site-border-soft);
 }
 
 .ui-auth-github-modal-status.is-error,

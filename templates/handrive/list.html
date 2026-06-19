@@ -5,7 +5,7 @@
 {% include 'handrive/_assets_head.html' %}
 
 <div class="handrive-toolbar-wrap ui-toolbar-wrap">
-    <div class="handrive-shell ui-shell handrive-toolbar ui-toolbar">
+    <div class="ui-shell handrive-toolbar ui-toolbar">
         <div class="handrive-toolbar-left ui-toolbar-left">
             {% if is_handrive_shared_view %}
             <div class="ui-shared-head">
@@ -89,7 +89,7 @@
 </div>
 
 <main
-    class="handrive-shell ui-shell handrive-content ui-content"
+    class="ui-shell ui-content"
     data-handrive-page="list"
     data-is-authenticated="{% if user.is_authenticated %}1{% else %}0{% endif %}"
     data-demo-save-mode="{% if handrive_demo_save_mode %}1{% else %}0{% endif %}"
@@ -326,7 +326,7 @@
                 {% include "handrive/_media_editor_surfaces.html" %}
                 <div class="handrive-spreadsheet-editor-surface" id="handrive-spreadsheet-editor-surface" hidden>
                     <div class="handrive-spreadsheet-toolbar">
-                        <select class="handrive-spreadsheet-sheet-select" data-handrive-spreadsheet-sheet aria-label="시트"></select>
+                        <select class="handrive-spreadsheet-sheet-select" data-handrive-spreadsheet-sheet aria-label="시트" data-site-custom-select="1"></select>
                         <button class="ui-btn handrive-spreadsheet-icon-btn" type="button" data-handrive-spreadsheet-add-row aria-label="행 추가" title="행 추가">
                             <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h12"/><path d="M10 4v12"/></svg>
                         </button>
@@ -342,7 +342,7 @@
                 </div>
                 <div class="handrive-editor-surface" id="handrive-list-editor-surface">
                     <pre class="handrive-editor-highlight handrive-plain-text" id="handrive-list-editor-highlight" aria-hidden="true"><code id="handrive-list-editor-highlight-code"></code></pre>
-                    <div class="handrive-editor-suggest" id="handrive-list-editor-suggest" hidden>
+                    <div class="handrive-editor-suggest site-dropdown-menu" id="handrive-list-editor-suggest" hidden>
                         <span class="handrive-editor-suggest-label" id="handrive-list-editor-suggest-label"></span>
                         <span class="handrive-editor-suggest-hint"><kbd>Tab</kbd> 적용</span>
                     </div>

@@ -422,12 +422,15 @@ body.media-tool-page {
 .media-tool-modal-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 3600;
+    z-index: var(--site-modal-stack-z, var(--site-z-modal, 1400));
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 20px;
-    background: var(--handrive-backdrop-strong);
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
+    isolation: isolate;
 }
 
 .media-tool-modal-backdrop[hidden] {
@@ -435,26 +438,29 @@ body.media-tool-page {
 }
 
 .media-tool-modal {
+    position: relative;
+    z-index: 1;
     width: min(720px, 100%);
     max-height: min(82vh, 760px);
     border: 1px solid var(--handrive-border-soft);
     border-radius: 12px;
-    background: var(--handrive-elevated-bg);
+    background: var(--site-modal-surface-bg, var(--handrive-elevated-bg));
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     color: var(--handrive-text);
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr) auto;
     overflow: hidden;
-    box-shadow: var(--handrive-shadow-md);
+    box-shadow: var(--handrive-shadow-md), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
 }
 
 .media-tool-modal-head {
+    --site-modal-head-padding: 12px 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     padding: 12px 14px;
-    border-bottom: 1px solid var(--handrive-border-soft);
-    background: var(--handrive-surface-muted);
 }
 
 .media-tool-modal-title {
@@ -475,7 +481,7 @@ body.media-tool-page {
 }
 
 .media-upload-source-options {
-    padding: 14px;
+    padding: 0 14px 14px;
     display: grid;
     gap: 8px;
 }
@@ -533,7 +539,7 @@ body.media-tool-page {
 }
 
 .media-handrive-picker-list-wrap {
-    margin: 12px 12px 0;
+    margin: 0 12px 0;
     min-height: 220px;
     border: 1px solid var(--handrive-border-soft);
     border-radius: 8px;
@@ -575,13 +581,11 @@ body.media-tool-page {
     cursor: pointer;
     box-sizing: border-box;
     appearance: none;
-    transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.media-handrive-picker-row:hover,
-.media-handrive-picker-row:focus-visible,
 .media-handrive-picker-item:hover,
-.media-handrive-picker-item:focus-within {
+.media-handrive-picker-item:focus-within,
+.media-handrive-picker-item:has(> .media-handrive-picker-row:focus-visible) {
     background: var(--handrive-row-hover-bg);
 }
 
@@ -622,12 +626,7 @@ body.media-tool-page {
     padding: 0 0 0 14px;
     color: var(--handrive-text-strong);
     line-height: 1;
-    background: var(--handrive-bg);
-}
-
-.media-handrive-picker-item:hover > .media-handrive-picker-tree-prefix,
-.media-handrive-picker-item:focus-within > .media-handrive-picker-tree-prefix {
-    background: var(--handrive-row-hover-bg);
+    background: inherit;
 }
 
 .media-handrive-picker-tree-segment {

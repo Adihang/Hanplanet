@@ -1,8 +1,13 @@
-<div class="multiplayer-idle-modal-backdrop" data-game-idle-modal hidden>
-    <div class="multiplayer-idle-modal" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="multiplayer-idle-modal-title" aria-describedby="multiplayer-idle-modal-description">
-        <h2 class="multiplayer-idle-modal-title" id="multiplayer-idle-modal-title">
-            {% include 'partials/ui_i18n.html' with key='multiplayer_idle_modal_title' %}
-        </h2>
+<div class="multiplayer-idle-modal-backdrop site-modal-backdrop" data-game-idle-modal hidden>
+    <div class="multiplayer-idle-modal site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="multiplayer-idle-modal-title" aria-describedby="multiplayer-idle-modal-description">
+        <header class="multiplayer-idle-modal-header site-modal-head">
+            <h2 class="multiplayer-idle-modal-title" id="multiplayer-idle-modal-title">
+                {% include 'partials/ui_i18n.html' with key='multiplayer_idle_modal_title' %}
+            </h2>
+            <button class="multiplayer-idle-modal-close site-modal-close" type="button" data-game-idle-modal-close aria-label="{% include 'partials/ui_i18n.html' with key='close' %}">
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg>
+            </button>
+        </header>
         <p class="multiplayer-idle-modal-description" id="multiplayer-idle-modal-description">
             {% include 'partials/ui_i18n.html' with key='multiplayer_idle_modal_description' %}
         </p>

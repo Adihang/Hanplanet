@@ -1,5 +1,4 @@
-.hanplanet-multiplayer-page .ui-shell.multiplayer-shell,
-.hanplanet-multiplayer-page .ui-content.multiplayer-shell {
+.hanplanet-multiplayer-page .multiplayer-content {
     width: 100%;
     max-width: none;
     margin: 0;
@@ -20,7 +19,7 @@
     display: none;
 }
 
-.multiplayer-shell {
+.multiplayer-content {
     width: 100%;
     max-width: none;
     margin: 0;
@@ -67,8 +66,8 @@
     --multiplayer-z-mobile-fullscreen: 20;
     --multiplayer-z-fullscreen-exit: 21;
     --multiplayer-z-idle-modal: 22;
-    --multiplayer-z-root-modal: 30;
-    --multiplayer-z-root-modal-dialog: 31;
+    --multiplayer-z-root-modal: var(--site-z-modal, 1400);
+    --multiplayer-z-root-modal-dialog: var(--site-z-modal, 1400);
 }
 
 .multiplayer-hero {
@@ -161,11 +160,11 @@
 }
 
 body.hanplanet-multiplayer-page .root-auth-modal {
-    z-index: var(--multiplayer-z-root-modal);
+    z-index: var(--site-modal-stack-z, var(--multiplayer-z-root-modal));
 }
 
 body.hanplanet-multiplayer-page .root-auth-modal-dialog {
-    z-index: var(--multiplayer-z-root-modal-dialog);
+    z-index: auto;
 }
 
 .multiplayer-start-overlay[hidden] {
@@ -404,8 +403,8 @@ body.hanplanet-multiplayer-page .multiplayer-start-account .ui-auth-account-avat
 }
 
 body.hanplanet-multiplayer-page .ui-auth-account-menu {
-    background: rgba(46, 46, 46, 0.72);
-    background-color: rgba(46, 46, 46, 0.72);
+    background: rgba(46, 46, 46, 0.5);
+    background-color: rgba(46, 46, 46, 0.5);
     color: #f5f5f5;
 }
 
@@ -528,13 +527,15 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
 .multiplayer-skin-modal-backdrop {
     position: absolute;
     inset: 0;
-    z-index: 3;
+    z-index: var(--site-modal-stack-z, 3);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 18px;
-    background: rgba(248, 242, 232, 0.72);
-    backdrop-filter: blur(4px);
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
+    isolation: isolate;
 }
 
 .multiplayer-skin-modal-backdrop[hidden] {
@@ -542,12 +543,17 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
 }
 
 .multiplayer-skin-modal {
+    --site-modal-dialog-padding-x: 18px;
+    --site-modal-dialog-padding-y: 18px;
     position: relative;
+    z-index: 1;
     width: min(100%, 420px);
     padding: 18px;
     border-radius: 20px;
-    background: rgba(255, 252, 246, 0.96);
-    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+    background: rgba(255, 252, 246, 0.64);
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(15, 23, 42, 0.24));
     transform: translateY(var(--popup-fit-child-top-shift, 0px));
     overflow: visible;
 }
@@ -557,7 +563,6 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 14px;
 }
 
 .multiplayer-skin-modal-title {
@@ -1228,23 +1233,39 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
     align-items: center;
     justify-content: center;
     padding: 20px;
-    background: rgba(15, 23, 42, 0.24);
-    z-index: var(--multiplayer-z-idle-modal);
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
+    z-index: var(--site-modal-stack-z, var(--multiplayer-z-idle-modal));
+    isolation: isolate;
 }
 
 .multiplayer-idle-modal {
+    --site-modal-dialog-padding-x: 24px;
+    --site-modal-dialog-padding-y: 24px;
+    position: relative;
+    z-index: 1;
     width: min(420px, 100%);
     border: 1px solid rgba(15, 23, 42, 0.12);
     border-radius: var(--ide-radius-lg);
-    background: rgba(255, 252, 247, 0.98);
-    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18);
+    background: rgba(255, 252, 247, 0.64);
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(15, 23, 42, 0.24));
     padding: 24px;
     text-align: center;
     color: #1f2937;
 }
 
+.multiplayer-idle-modal-header.site-modal-head {
+    --site-modal-head-padding: 12px 14px 8px;
+    border-top-left-radius: inherit;
+    border-top-right-radius: inherit;
+    text-align: left;
+}
+
 .multiplayer-idle-modal-title {
-    margin: 0 0 10px;
+    margin: 0;
     font-size: 22px;
     font-weight: 800;
     color: #111827;
@@ -1272,12 +1293,15 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
 .multiplayer-death-modal-backdrop {
     position: absolute;
     inset: 0;
-    z-index: var(--multiplayer-z-start);
+    z-index: var(--site-modal-stack-z, var(--multiplayer-z-start));
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 24px;
-    background: rgba(15, 23, 42, 0.14);
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
+    isolation: isolate;
 }
 
 .multiplayer-encounter-overlay {
@@ -1336,11 +1360,19 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
 }
 
 .multiplayer-death-modal {
+    --site-modal-head-follow-gap: 22px;
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 22px;
     text-align: center;
+    box-shadow: var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(15, 23, 42, 0.24));
+}
+
+.multiplayer-death-modal-header.site-modal-head {
+    justify-content: center;
 }
 
 .multiplayer-death-modal-title {

@@ -1,0 +1,127 @@
+<form
+    method="post"
+    {% if handrive_signup_action_url %}action="{{ handrive_signup_action_url }}"{% endif %}
+    class="auth-form"
+    id="handrive-signup-form"
+    {% if site_auth_is_modal %}
+    data-auth-form
+    data-signup-send-code-url="{{ handrive_api_signup_2fa_send_code_url }}"
+    data-signup-verify-code-url="{{ handrive_api_signup_2fa_verify_code_url }}"
+    data-signup-resend-success="{{ handrive_text.auth_2fa_resend_success }}"
+    data-auth-generic-error="오류가 발생했습니다. 다시 시도해주세요."
+    {% endif %}
+>
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ handrive_signup_next }}">
+    {{ handrive_signup_form.email_2fa_token }}
+
+    {% if handrive_signup_form.non_field_errors %}
+        {% for err in handrive_signup_form.non_field_errors %}
+            <div class="auth-error">{{ err }}</div>
+        {% endfor %}
+    {% elif handrive_signup_error_message %}
+        <div class="auth-error">{{ handrive_signup_error_message }}</div>
+    {% endif %}
+
+    <label class="auth-field auth-field-full">
+        <span>{{ handrive_text.auth_username_label }}</span>
+        {{ handrive_signup_form.username }}
+    </label>
+    {% if handrive_signup_form.username.errors %}
+        <div class="auth-error">{{ handrive_signup_form.username.errors|join:", " }}</div>
+    {% endif %}
+
+    <label class="auth-field auth-field-full">
+        <span>{{ handrive_text.auth_password_label }}</span>
+        {{ handrive_signup_form.password1 }}
+    </label>
+    {% if handrive_signup_form.password1.errors %}
+        <div class="auth-error">{{ handrive_signup_form.password1.errors|join:", " }}</div>
+    {% endif %}
+
+    <label class="auth-field auth-field-full">
+        <span>{{ handrive_text.auth_password_confirm_label }}</span>
+        {{ handrive_signup_form.password2 }}
+    </label>
+    {% if handrive_signup_form.password2.errors %}
+        <div class="auth-error">{{ handrive_signup_form.password2.errors|join:", " }}</div>
+    {% endif %}
+
+    <label class="auth-field auth-field-full{% if handrive_signup_github_pending or handrive_signup_google_pending %} auth-field-readonly{% endif %}">
+        <span>{{ handrive_text.auth_name_label }}</span>
+        {{ handrive_signup_form.first_name }}
+    </label>
+    {% if handrive_signup_form.first_name.errors %}
+        <div class="auth-error">{{ handrive_signup_form.first_name.errors|join:", " }}</div>
+    {% endif %}
+
+    <div class="auth-field auth-field-full{% if handrive_signup_github_pending or handrive_signup_google_pending %} auth-field-readonly{% endif %}">
+        <span>{{ handrive_text.auth_email_label }}</span>
+        <div class="auth-email-row" id="handrive-signup-email-row">
+            {{ handrive_signup_form.email }}
+            {% if not handrive_signup_github_pending and not handrive_signup_google_pending %}
+            <button type="button" class="ui-btn" id="handrive-signup-send-code-btn">{{ handrive_text.auth_2fa_send_code_button }}</button>
+            {% endif %}
+        </div>
+        {% if handrive_signup_form.email.errors %}
+            <div class="auth-error">{{ handrive_signup_form.email.errors|join:", " }}</div>
+        {% endif %}
+        {% if handrive_signup_github_pending and handrive_signup_github_login %}
+            <span class="ui-subtitle">GitHub: {{ handrive_signup_github_login }}</span>
+        {% endif %}
+        {% if handrive_signup_google_pending and handrive_signup_google_email %}
+            <span class="ui-subtitle">Google: {{ handrive_signup_google_email }}</span>
+        {% endif %}
+        <div id="handrive-signup-send-code-error" class="auth-error" style="display:none;"></div>
+    </div>
+
+    {% if not handrive_signup_github_pending and not handrive_signup_google_pending %}
+    <div class="auth-field auth-field-full" id="handrive-signup-code-block" hidden>
+        <span>{{ handrive_text.auth_2fa_code_label }}</span>
+        <div class="auth-email-row">
+            <input
+                type="text"
+                id="handrive-signup-code-input"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                maxlength="6"
+                placeholder="{{ handrive_text.auth_2fa_code_placeholder }}"
+            >
+            <button type="button" class="ui-btn ui-btn-primary" id="handrive-signup-verify-code-btn">{{ handrive_text.auth_2fa_verify_code_button }}</button>
+        </div>
+        <div id="handrive-signup-verify-code-error" class="auth-error" style="display:none;"></div>
+        <div id="handrive-signup-verified-msg" class="auth-verified-msg"{% if site_auth_is_modal %} hidden{% else %} style="display:none;"{% endif %}>
+            {% if not site_auth_is_modal %}&#10003; {% endif %}{{ handrive_text.auth_2fa_verified_label }}
+        </div>
+        <div id="handrive-signup-resend-wrap" class="auth-2fa-resend-row">
+            <button type="button" class="ui-btn" id="handrive-signup-resend-btn">
+                {{ handrive_text.auth_2fa_resend_button }}
+            </button>
+            <span id="handrive-signup-resend-msg" class="auth-2fa-resend-msg" hidden></span>
+        </div>
+    </div>
+
+    <div class="auth-field auth-field-full auth-field-checkbox">
+        <div class="auth-field-checkbox-text">
+            <label class="auth-field-checkbox-consent" for="id_privacy_consent">
+                {{ handrive_signup_form.privacy_consent }}
+                <span>{{ handrive_text.auth_privacy_consent_label }}</span>
+            </label>
+            {% include "partials/site_footer_nav.html" with site_footer_nav_popup=True %}
+        </div>
+    </div>
+    {% if handrive_signup_form.privacy_consent.errors %}
+        <div class="auth-error">{{ handrive_signup_form.privacy_consent.errors|join:", " }}</div>
+    {% endif %}
+    {% endif %}
+
+    <div class="auth-actions">
+        {% if site_auth_is_modal %}
+            <a class="ui-btn" href="{{ handrive_login_modal_url }}" data-auth-modal="login">{{ handrive_text.auth_login_button }}</a>
+            <button class="ui-btn ui-btn-primary" type="submit">{{ handrive_text.auth_signup_submit }}</button>
+        {% else %}
+            <a class="ui-btn" href="{{ handrive_login_url }}">{{ handrive_text.auth_login_button }}</a>
+            <button class="ui-btn ui-btn-primary" type="submit">{{ handrive_text.auth_signup_submit }}</button>
+        {% endif %}
+    </div>
+</form>

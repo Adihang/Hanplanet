@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 
 
 HANDRIVE_AUTH_FORBIDDEN_CHAR_PATTERN = re.compile(r"[\s\x00-\x1f\x7f'\"`/\\<>;|&“”‘’]")
-HANDRIVE_AUTH_SAFE_INPUT_PATTERN = "^[^\\s'\\\"`/\\\\<>;|&“”‘’]+$"
+HANDRIVE_AUTH_SAFE_INPUT_PATTERN = "^(?!.*(?:\\s|'|\"|`|/|\\\\|<|>|;|\\||&|“|”|‘|’)).+$"
 HANDRIVE_AUTH_VALIDATION_ERROR_CODE = "forbidden_auth_char"
 
 

@@ -1,8 +1,10 @@
-<div class="multiplayer-death-modal-backdrop" data-game-death-modal hidden>
-    <div class="multiplayer-death-modal" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="multiplayer-death-modal-title">
-        <h2 class="multiplayer-death-modal-title" id="multiplayer-death-modal-title" data-game-death-modal-title>
-            {% include 'partials/ui_i18n.html' with key='multiplayer_death_modal_title' %}
-        </h2>
+<div class="multiplayer-death-modal-backdrop site-modal-backdrop" data-game-death-modal hidden>
+    <div class="multiplayer-death-modal site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="multiplayer-death-modal-title">
+        <header class="multiplayer-death-modal-header site-modal-head">
+            <h2 class="multiplayer-death-modal-title" id="multiplayer-death-modal-title" data-game-death-modal-title>
+                {% include 'partials/ui_i18n.html' with key='multiplayer_death_modal_title' %}
+            </h2>
+        </header>
         <div class="multiplayer-death-modal-spectate" data-game-death-modal-spectate hidden>
             <button class="ui-btn multiplayer-death-modal-arrow" type="button" data-game-death-modal-spectate-prev>
                 {% include 'partials/ui_i18n.html' with key='multiplayer_death_modal_spectate_prev' %}

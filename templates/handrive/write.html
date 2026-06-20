@@ -91,29 +91,34 @@
     data-ui-lang="{{ ui_lang|default:'ko' }}"
 >
     <div class="handrive-form-grid">
-        <label class="handrive-field handrive-field-full handrive-write-filename-field">
-            <span>{{ handrive_text.filename_label }}</span>
-            {% if write_editor_kind == "text" %}
-            <div class="handrive-write-filename-control" data-write-filename-control>
+        <div class="handrive-field handrive-field-full handrive-file-meta-grid">
+            <label class="handrive-file-name-field" for="handrive-filename-input">
+                <span class="handrive-file-meta-label handrive-file-name-label">
+                    <span class="handrive-file-name-label-main">{{ handrive_text.filename_label }}</span>
+                </span>
                 <input type="text" id="handrive-filename-input" value="{{ initial_filename_input }}" placeholder="{{ handrive_text.filename_placeholder }}">
-                <select id="handrive-filename-extension-select" class="handrive-filename-extension-select" aria-label="{{ handrive_text.file_extension_quick_label }}" data-site-custom-select="1">
-                    {% for ext in handrive_file_extension_options %}
-                        <option value="{{ ext }}"{% if ext == initial_extension %} selected{% endif %}>{{ ext }}</option>
-                    {% endfor %}
-                    <option value="__custom__">{{ handrive_text.file_extension_custom_option }}</option>
-                </select>
-            </div>
-            {% else %}
-            <input type="text" id="handrive-filename-input" value="{{ initial_filename_input }}" placeholder="{{ handrive_text.filename_placeholder }}">
+            </label>
+            {% if write_editor_kind == "text" %}
+            <label class="handrive-file-extension-field" for="handrive-filename-extension-select">
+                <span class="handrive-file-meta-label">{{ handrive_text.file_extension_label }}</span>
+                <div class="handrive-file-extension-controls" data-write-filename-control>
+                    <select id="handrive-filename-extension-select" class="handrive-file-extension-select" aria-label="{{ handrive_text.file_extension_quick_label }}" data-site-custom-select="1">
+                        <option value="__custom__" data-site-custom-select-option-label="{{ handrive_text.file_extension_custom_option }}" data-site-custom-select-selected-label=""></option>
+                        {% for ext in handrive_file_extension_options %}
+                            <option value="{{ ext }}"{% if initial_filename_input and ext == initial_extension %} selected{% endif %}>{{ ext }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </label>
             {% endif %}
-        </label>
+        </div>
 
         <div class="handrive-field handrive-field-full">
             <div class="handrive-field-head">
                 <div class="handrive-content-snippet-tools">
-                    {% if write_is_markdown %}
-                    <button class="ui-btn" type="button" id="ui-markdown-help-btn">{{ handrive_text.markdown_guide_button }}</button>
-                    <button class="ui-btn" type="button" id="ui-markdown-preview-btn">{{ handrive_text.markdown_preview_button }}</button>
+                    {% if write_editor_kind == "text" %}
+                    <button class="ui-btn" type="button" id="ui-markdown-help-btn"{% if not write_is_markdown %} hidden disabled{% endif %}>{{ handrive_text.markdown_guide_button }}</button>
+                    <button class="ui-btn" type="button" id="ui-preview-btn"{% if not write_has_preview %} hidden disabled{% endif %}>{{ handrive_text.preview_button }}</button>
                     {% endif %}
                 </div>
             </div>
@@ -124,7 +129,7 @@
                     <span class="handrive-editor-suggest-label" id="handrive-editor-suggest-label"></span>
                     <span class="handrive-editor-suggest-hint"><kbd>Tab</kbd> 적용</span>
                 </div>
-                <textarea id="handrive-content-input" spellcheck="false" wrap="off">{{ initial_content }}</textarea>
+                <textarea id="handrive-content-input" spellcheck="false" wrap="off" placeholder="내용을 입력하세요.">{{ initial_content }}</textarea>
             </div>
         </div>
     </div>
@@ -137,7 +142,7 @@
 {% include "popup/handrive/commit_message_modal.html" %}
 {% include "popup/handrive/page_help_modal.html" %}
 {% include "popup/handrive/markdown_help_modal.html" %}
-{% include "popup/handrive/markdown_preview_modal.html" %}
+{% include "popup/handrive/preview_modal.html" %}
 {% include "popup/handrive/unsaved_changes_modal.html" %}
 {% include "popup/handrive/image_resize_modal.html" %}
 {% include "popup/handrive/image_save_as_modal.html" %}

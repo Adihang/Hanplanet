@@ -838,8 +838,8 @@ body.theme-dark .root-shell-controls-fixed .ui-auth-account-avatar {
     min-width: 260px;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: rgba(238, 238, 238, 0.5);
-    background-color: rgba(238, 238, 238, 0.5);
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
     background-image: none;
     opacity: 1;
     padding: 0;
@@ -851,8 +851,8 @@ body.theme-dark .root-shell-controls-fixed .ui-auth-account-avatar {
 }
 
 body.theme-dark .root-shell-controls-fixed .ui-auth-account-menu {
-    background: rgba(46, 46, 46, 0.5);
-    background-color: rgba(46, 46, 46, 0.5);
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
     background-image: none;
     opacity: 1;
 }
@@ -1291,7 +1291,9 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
     overscroll-behavior: contain;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: #ffffff;
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
+    backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     box-shadow: var(--site-dropdown-menu-shadow, 0 16px 38px rgba(15, 23, 42, 0.16));
 }
 
@@ -2031,7 +2033,9 @@ body.theme-dark .root-translate-token-decorator {
     padding: 6px;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: #ffffff;
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
+    backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     display: none;
     z-index: var(--site-z-popup);
 }
@@ -2115,7 +2119,7 @@ body.theme-dark .root-search-engine-caret {
 }
 
 body.theme-dark .root-search-engine-popup {
-    background: #1f1f1f;
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
 }
 
 body.theme-dark .root-search-engine-option {
@@ -2128,7 +2132,7 @@ body.theme-dark .root-search-engine-option.is-active {
 }
 
 body.theme-dark .root-search-suggestions {
-    background: #1f1f1f;
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
     box-shadow: var(--site-dropdown-menu-shadow, 0 16px 38px rgba(0, 0, 0, 0.34));
 }
 
@@ -2295,9 +2299,9 @@ body.theme-dark .root-search-submit-icon {
     padding: 6px;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: var(--site-popup-glass-bg, var(--site-bg));
-    -webkit-backdrop-filter: var(--site-popup-glass-filter, saturate(120%) blur(4px));
-    backdrop-filter: var(--site-popup-glass-filter, saturate(120%) blur(4px));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
+    backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     z-index: var(--site-z-popup);
     display: flex;
     flex-direction: column;
@@ -2562,7 +2566,7 @@ body.theme-dark .root-shortcuts-remove:focus-visible {
 
 body.theme-dark .root-shortcuts-context-menu {
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(255, 255, 255, 0.24)));
-    background: #1f1f1f;
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
 }
 
 body.theme-dark .root-shortcuts-context-item {

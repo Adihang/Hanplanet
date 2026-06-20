@@ -45,4 +45,6 @@
     --site-modal-exterior-dim-shadow: 0 0 0 100vmax var(--site-modal-backdrop-bg);
     --site-modal-surface-bg: rgba(248, 248, 248, 0.72);
     --site-modal-surface-filter: var(--site-popup-glass-filter);
+    --site-dropdown-surface-bg: var(--site-modal-surface-bg);
+    --site-dropdown-surface-filter: var(--site-modal-surface-filter);
 }

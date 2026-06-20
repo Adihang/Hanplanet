@@ -237,11 +237,6 @@ body.ui-page .portfolio-print-btn {
     background: var(--handrive-surface-toolbar);
 }
 
-body.handrive-view-page .handrive-toolbar-wrap,
-body.handrive-write-page .handrive-toolbar-wrap {
-    border-bottom: 1px solid var(--handrive-border);
-}
-
 .handrive-toolbar,
 .ui-toolbar {
     position: relative;
@@ -354,6 +349,15 @@ body.handrive-write-page .handrive-toolbar {
     height: var(--handrive-icon-action-icon-size);
 }
 
+.ui-toolbar-actions > [data-auth-modal="login"] {
+    order: 900;
+    margin-left: auto;
+}
+
+.ui-toolbar-actions > [data-auth-modal="signup"] {
+    order: 901;
+}
+
 .handrive-content-snippet-tools {
     display: flex;
     align-items: center;
@@ -364,6 +368,8 @@ body.handrive-write-page .handrive-toolbar {
 }
 
 .handrive-field-head:has(.handrive-content-snippet-tools:empty),
+.handrive-field-head:has(.handrive-content-snippet-tools:not(:has(> .ui-btn:not([hidden])))),
+.handrive-content-snippet-tools:not(:has(> .ui-btn:not([hidden]))),
 .handrive-content-snippet-tools:empty {
     display: none;
 }
@@ -593,11 +599,11 @@ body.theme-dark .account-storage-bar:focus-visible .account-storage-bar-track {
     top: calc(100% + 8px);
     right: 0;
     min-width: 300px;
-    background: var(--site-popup-glass-bg, rgba(238, 238, 238, 0.5));
-    background-color: var(--site-popup-glass-bg, rgba(238, 238, 238, 0.5));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
     background-image: none;
-    -webkit-backdrop-filter: var(--site-popup-glass-filter, saturate(120%) blur(4px));
-    backdrop-filter: var(--site-popup-glass-filter, saturate(120%) blur(4px));
+    -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
+    backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     border-radius: 12px;
     box-shadow: var(--handrive-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.22));
     padding: 16px;
@@ -826,8 +832,8 @@ body.theme-dark .ui-auth-account-avatar {
     min-width: 260px;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: rgba(238, 238, 238, 0.5);
-    background-color: rgba(238, 238, 238, 0.5);
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
     background-image: none;
     opacity: 1;
     padding: 0;
@@ -839,8 +845,8 @@ body.theme-dark .ui-auth-account-avatar {
 }
 
 body.theme-dark .ui-auth-account-menu {
-    background: rgba(46, 46, 46, 0.5);
-    background-color: rgba(46, 46, 46, 0.5);
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
     background-image: none;
     opacity: 1;
 }
@@ -1458,9 +1464,10 @@ body.theme-dark .handrive-help-icon-symbol {
     gap: 0;
     border: 1px solid var(--handrive-border);
     border-radius: var(--handrive-radius-lg);
-    background: var(--handrive-modal-surface-bg);
-    -webkit-backdrop-filter: var(--handrive-modal-surface-filter);
-    backdrop-filter: var(--handrive-modal-surface-filter);
+    background: var(--site-modal-surface-bg, var(--handrive-modal-surface-bg));
+    background-color: var(--site-modal-surface-bg, var(--handrive-modal-surface-bg));
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, var(--handrive-modal-surface-filter));
+    backdrop-filter: var(--site-modal-surface-filter, var(--handrive-modal-surface-filter));
     box-shadow: var(--handrive-shadow-lg);
     z-index: var(--handrive-job-queue-z);
     overflow: hidden;
@@ -2021,13 +2028,6 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 .handrive-list-editor-body .handrive-editor-surface {
     flex: 1 1 auto;
     min-height: 0;
-    border: 1px solid var(--handrive-border-heavy);
-    background: var(--handrive-bg);
-}
-
-.handrive-list-editor-body .handrive-editor-surface:focus-within {
-    border-color: var(--theme-accent-strong, #3b82f6);
-    box-shadow: inset 0 0 0 1px var(--theme-accent-strong, #3b82f6);
 }
 
 .handrive-list-editor-body {
@@ -2039,7 +2039,6 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
-    padding: 10px 12px; /* 상하 10px, 좌우 12px */
 }
 
 .handrive-list-layout.is-landscape.has-preview .handrive-list-preview-body {
@@ -2794,7 +2793,7 @@ body.theme-dark .handrive-list-pane.is-local-file-drop-target .handrive-list.is-
 
 .handrive-current-dir-row {
     --handrive-current-dir-row-height: 47px;
-    --handrive-current-dir-search-height: 37px;
+    --handrive-current-dir-search-height: 38px;
     background: var(--handrive-hover-soft);
     height: var(--handrive-current-dir-row-height);
     min-height: var(--handrive-current-dir-row-height);
@@ -3109,33 +3108,33 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     width: auto;
     min-width: 0;
     max-width: none;
-    height: var(--handrive-current-dir-search-height, 37px);
-    min-height: var(--handrive-current-dir-search-height, 37px);
-    max-height: var(--handrive-current-dir-search-height, 37px);
+    height: var(--handrive-current-dir-search-height, 38px);
+    min-height: var(--handrive-current-dir-search-height, 38px);
+    max-height: var(--handrive-current-dir-search-height, 38px);
     box-sizing: border-box;
     margin: 0 0 0 4px;
     opacity: 1;
     transform: none;
     visibility: visible;
-    background: var(--handrive-surface);
+    background: transparent;
 }
 
 .handrive-current-dir-row .handrive-list-search-input {
-    height: var(--handrive-current-dir-search-height, 37px);
+    height: var(--handrive-current-dir-search-height, 38px);
     font-size: 14px;
     line-height: 1;
 }
 
 .handrive-current-dir-row .handrive-list-search-clear {
-    width: var(--handrive-current-dir-search-height, 37px);
-    height: var(--handrive-current-dir-search-height, 37px);
-    flex-basis: var(--handrive-current-dir-search-height, 37px);
+    width: var(--handrive-current-dir-search-height, 38px);
+    height: var(--handrive-current-dir-search-height, 38px);
+    flex-basis: var(--handrive-current-dir-search-height, 38px);
 }
 
 .handrive-current-dir-row .handrive-list-search-form .root-search-submit,
 .handrive-current-dir-row .handrive-list-search-form .handrive-list-search-submit {
-    width: var(--handrive-current-dir-search-height, 37px);
-    height: var(--handrive-current-dir-search-height, 37px);
+    width: var(--handrive-current-dir-search-height, 38px);
+    height: var(--handrive-current-dir-search-height, 38px);
 }
 
 .handrive-current-dir-row .handrive-list-search-form .root-search-submit-icon {
@@ -4021,7 +4020,9 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     min-width: 156px;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: var(--handrive-bg);
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
+    backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     font-weight: var(--handrive-menu-font-weight);
     padding: 6px;
     display: flex;
@@ -4257,6 +4258,18 @@ body.handrive-popup-dragging {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.handrive-popup-target-current {
+    color: var(--handrive-text-stronger);
+    font-weight: 700;
+}
+
+.handrive-popup-target-prefix,
+.handrive-popup-target-segment,
+.handrive-popup-target-separator,
+.handrive-popup-target-suffix {
+    color: var(--handrive-text-secondary);
 }
 
 .handrive-admin-user-error {
@@ -5425,7 +5438,6 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     max-width: 1300px;
     margin-left: auto;
     margin-right: auto;
-    padding-top: 10px;
 }
 
 .ui-content[data-handrive-page="view"][data-doc-is-spreadsheet="1"],
@@ -5442,7 +5454,6 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     max-width: 1300px;
     margin-left: auto;
     margin-right: auto;
-    padding-top: 10px;
 }
 
 .ui-content[data-handrive-page="write"] .handrive-form-grid {
@@ -6873,50 +6884,118 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     opacity: 1;
 }
 
-#handrive-filename-input {
-    background: var(--handrive-bg);
-}
-
-.handrive-write-filename-control {
+.handrive-file-meta-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(76px, auto);
-    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: end;
     width: 100%;
     min-width: 0;
 }
 
-.handrive-write-filename-control #handrive-filename-input {
+.handrive-file-meta-grid:not(:has(.handrive-file-extension-field)) {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.handrive-file-name-field,
+.handrive-file-extension-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
     min-width: 0;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    border-right: 0;
-}
-
-.handrive-write-filename-control .handrive-filename-extension-select {
-    width: auto;
-    min-width: 76px;
-    max-width: 116px;
-    border: 1px solid var(--handrive-border-heavy);
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    background: var(--handrive-surface-muted-strong);
-    color: var(--handrive-text-stronger);
-    cursor: pointer;
     font-size: 16px;
-    padding: 10px;
-    text-align: left;
-    text-align-last: left;
+}
+
+.handrive-file-name-field {
+    justify-self: stretch;
+}
+
+.handrive-file-extension-field {
+    width: 80px;
+    max-width: 80px;
+}
+
+.handrive-file-meta-label {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--handrive-text-muted);
+}
+
+.handrive-file-name-label {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 4px;
+    row-gap: 0;
+}
+
+.handrive-file-name-label-main,
+.handrive-file-name-label-sub {
+    white-space: nowrap;
+}
+
+.handrive-file-name-field input,
+.handrive-file-name-field select,
+.handrive-file-extension-field input,
+.handrive-file-extension-field select,
+.handrive-file-extension-field .handrive-file-extension-select {
+    width: 100%;
     box-sizing: border-box;
+    border: 1px solid var(--handrive-border-heavy);
+    border-radius: var(--handrive-radius-sm);
+    background: var(--handrive-bg);
+    color: var(--handrive-text);
+    caret-color: var(--handrive-text-stronger);
+    padding: 10px;
+    font-size: 16px;
 }
 
-.handrive-write-filename-control .handrive-filename-extension-select option {
+.handrive-file-name-field input::placeholder,
+.handrive-file-extension-field input::placeholder {
+    color: var(--site-placeholder);
+    opacity: 1;
+}
+
+.handrive-file-name-field select,
+.handrive-file-extension-field select,
+.handrive-file-extension-field .handrive-file-extension-select {
+    appearance: none;
+}
+
+.handrive-file-extension-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+}
+
+.handrive-file-extension-controls .handrive-file-extension-select {
+    width: 100%;
+    min-width: 0;
+}
+
+.handrive-file-extension-controls .site-custom-select.handrive-file-extension-select {
+    display: inline-flex;
+    align-items: center;
+}
+
+.handrive-file-extension-controls .site-custom-select.handrive-file-extension-select .site-custom-select-button {
+    height: auto;
+    min-height: 1.35em;
+    padding: 0;
+    padding-right: 10px;
+    line-height: 1.25;
     text-align: left;
 }
 
-.handrive-write-filename-control:focus-within #handrive-filename-input,
-.handrive-write-filename-control:focus-within .handrive-filename-extension-select {
-    border-color: var(--handrive-search-border-focus);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--handrive-search-border-focus) 22%, transparent);
+.handrive-file-extension-controls .site-custom-select.handrive-file-extension-select .site-custom-select-label {
+    align-self: auto;
+    justify-content: flex-start;
+    line-height: 1.25;
+    text-align: left;
+}
+
+.handrive-file-extension-select option {
+    text-align: left;
 }
 
 .handrive-field select,
@@ -6997,6 +7076,14 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     box-shadow: none;
 }
 
+.handrive-editor-surface > #handrive-content-input::placeholder {
+    color: var(--site-placeholder);
+    font-family: var(--site-font-default);
+    font-size: 16px;
+    font-weight: var(--site-weight-body);
+    opacity: 1;
+}
+
 .handrive-editor-surface > #handrive-content-input::selection {
     background: var(--handrive-selected-bg);
 }
@@ -7046,7 +7133,9 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     max-width: min(520px, calc(100% - 20px));
     border: 1px solid var(--site-dropdown-menu-border, var(--handrive-border-mid));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: var(--handrive-surface-muted-strong);
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
+    backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     color: var(--handrive-text);
     padding: 7px;
     pointer-events: auto;
@@ -7225,6 +7314,18 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     margin: 0;
 }
 
+.auth-form .auth-2fa-hint {
+    margin-bottom: 0;
+    text-align: center;
+}
+
+.auth-form .auth-2fa-hint strong {
+    display: block;
+    margin-top: 4px;
+    color: var(--handrive-text-stronger);
+    font-weight: 650;
+}
+
 #handrive-login-credential-block {
     display: grid;
     gap: 6px;
@@ -7273,6 +7374,72 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     text-align: center;
 }
 
+.auth-actions.auth-2fa-actions {
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.auth-actions.auth-2fa-actions .ui-btn {
+    flex: 0 0 auto;
+}
+
+.auth-actions.auth-2fa-actions .auth-2fa-resend-msg,
+.auth-actions.auth-2fa-actions .auth-2fa-inline-error {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: left;
+}
+
+.auth-actions.auth-2fa-actions .auth-2fa-inline-error {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    color: #dc2626;
+    font-size: 14px;
+    line-height: 1.35;
+}
+
+.auth-2fa-submit-btn {
+    min-width: 96px;
+    padding-left: 18px;
+    padding-right: 18px;
+}
+
+.auth-2fa-resend-link {
+    flex: 0 0 auto;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: color-mix(in srgb, var(--handrive-text-secondary) 72%, transparent);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.35;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    cursor: pointer;
+    transition: color 0.15s ease, font-weight 0.15s ease;
+}
+
+.auth-2fa-resend-link:hover,
+.auth-2fa-resend-link:focus-visible {
+    color: var(--handrive-text-stronger);
+    font-weight: 600;
+}
+
+.auth-2fa-resend-link:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--theme-accent-strong, #3b82f6) 38%, transparent);
+    outline-offset: 3px;
+}
+
+.auth-2fa-resend-link:disabled {
+    color: color-mix(in srgb, var(--handrive-text-secondary) 48%, transparent);
+    cursor: default;
+    font-weight: 400;
+}
+
 .auth-provider-options {
     display: flex;
     justify-content: center;
@@ -7296,7 +7463,7 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     height: 48px;
     border: 0;
     border-radius: var(--handrive-radius-sm);
-    background: var(--handrive-surface);
+    background: transparent;
     color: var(--handrive-text-secondary);
     text-decoration: none;
     transition: background 0.15s, color 0.15s;
@@ -7375,7 +7542,7 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     gap: 10px;
     width: 100%;
     justify-content: center;
-    padding: 20px 0;
+    padding: 20px 0 4px;
     cursor: default;
     user-select: none;
 }
@@ -7634,6 +7801,10 @@ body.handrive-modal-open {
     font-size: 16px;
 }
 
+.handrive-save-crumb-btn:not(.is-current) {
+    font-weight: var(--site-weight-subtitle);
+}
+
 .handrive-save-crumb-btn:hover,
 .handrive-save-crumb-btn:focus-visible {
     background: var(--handrive-hover);
@@ -7642,7 +7813,11 @@ body.handrive-modal-open {
 .handrive-save-crumb-btn.is-current {
     color: var(--handrive-crumb-current-color);
     font-weight: 700;
-    background: var(--handrive-hover);
+}
+
+.handrive-save-crumb-btn.is-current:hover,
+.handrive-save-crumb-btn.is-current:focus-visible {
+    background: transparent;
 }
 
 .handrive-save-crumb-sep {
@@ -7673,6 +7848,7 @@ body.handrive-modal-open {
 }
 
 .handrive-save-folder-list {
+    --handrive-save-folder-list-bg: var(--handrive-bg);
     margin: 0;
     padding: 0 0 8px;
     list-style: none;
@@ -7682,10 +7858,28 @@ body.handrive-modal-open {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    background: var(--handrive-save-folder-list-bg);
 }
 
 .handrive-save-tree-item {
     min-height: 37px;
+}
+
+.handrive-save-folder-list .handrive-item {
+    --handrive-save-tree-prefix-bg: var(--handrive-save-folder-list-bg);
+}
+
+.handrive-save-folder-list .handrive-item:has(> .handrive-save-folder-row:hover),
+.handrive-save-folder-list .handrive-item:has(> .handrive-save-folder-row:focus-visible) {
+    --handrive-save-tree-prefix-bg: var(--handrive-hover-button);
+}
+
+.handrive-save-folder-list .handrive-item:has(> .handrive-save-folder-row.is-selected) {
+    --handrive-save-tree-prefix-bg: var(--handrive-hover-strong);
+}
+
+.handrive-save-folder-list .handrive-item > .handrive-item-tree-prefix {
+    background: var(--handrive-save-tree-prefix-bg);
 }
 
 .handrive-save-tree-item .handrive-item-tree-prefix {
@@ -7712,7 +7906,6 @@ body.handrive-modal-open {
 }
 
 .handrive-save-current-dir-row {
-    background: var(--handrive-bg);
     color: var(--handrive-text-strong);
 }
 
@@ -7760,91 +7953,6 @@ body.handrive-modal-open {
     padding: 10px;
     color: var(--handrive-text-subtle);
     font-size: 16px;
-}
-
-#handrive-save-name-field,
-#handrive-save-extension-field {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    width: 100%;
-    min-width: 0;
-    font-size: 16px;
-}
-
-#handrive-save-name-field {
-    justify-self: stretch;
-}
-
-#handrive-save-name-field > span,
-#handrive-save-extension-field > span {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--handrive-text-muted);
-}
-
-#handrive-save-name-field > span {
-    display: flex;
-    flex-wrap: wrap;
-    column-gap: 4px;
-    row-gap: 0;
-}
-
-#handrive-save-name-field .handrive-save-name-label-main,
-#handrive-save-name-field .handrive-save-name-label-sub {
-    white-space: nowrap;
-}
-
-#handrive-save-name-field input,
-#handrive-save-name-field select,
-#handrive-save-extension-field input,
-#handrive-save-extension-field select,
-#handrive-save-extension-field .handrive-save-extension-select {
-    border: 1px solid var(--handrive-border-heavy);
-    border-radius: var(--handrive-radius-sm);
-    background: var(--handrive-bg);
-    color: var(--handrive-text);
-    caret-color: var(--handrive-text-stronger);
-    padding: 10px;
-    font-size: 16px;
-    width: 100%;
-    box-sizing: border-box;
-}
-
-#handrive-save-name-field input::placeholder,
-#handrive-save-extension-field input::placeholder {
-    color: var(--site-placeholder);
-    opacity: 1;
-}
-
-#handrive-save-name-field select,
-#handrive-save-extension-field select,
-#handrive-save-extension-field .handrive-save-extension-select {
-    appearance: none;
-}
-
-.handrive-save-file-meta-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
-    align-items: end;
-}
-
-#handrive-save-extension-field {
-    width: 80px;
-    max-width: 80px;
-}
-
-.handrive-save-extension-controls {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-}
-
-.handrive-save-extension-controls #handrive-save-extension-select,
-.handrive-save-extension-controls .handrive-save-extension-select {
-    width: 100%;
-    min-width: 0;
 }
 
 .handrive-drive-modal-actions {
@@ -7922,7 +8030,7 @@ body.handrive-modal-open {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 16px;
+    padding: 10px;
     box-sizing: border-box;
 }
 
@@ -7941,8 +8049,10 @@ body.handrive-modal-open {
 
 .handrive-help-modal-dialog {
     position: relative;
-    width: min(860px, 100%);
-    max-height: min(84vh, 760px);
+    width: fit-content;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    max-height: calc(100dvh - 20px);
     border: 0;
     border-radius: var(--handrive-radius-xl);
     background: var(--handrive-modal-surface-bg);
@@ -7954,8 +8064,142 @@ body.handrive-modal-open {
 }
 
 .handrive-help-modal-body {
-    padding: 12px;
+    flex: 1 1 auto;
+    max-width: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+    padding: 12px 20px 20px;
     overflow: auto;
+}
+
+.handrive-help-modal-body .ui-markdown,
+.handrive-help-modal-body .handrive-markdown {
+    background: transparent;
+}
+
+#ui-preview-content:empty {
+    background: transparent;
+}
+
+#ui-preview-modal .handrive-help-modal-dialog {
+    min-width: min(320px, calc(100vw - 20px));
+    min-height: min(220px, calc(100vh - 20px));
+}
+
+.handrive-preview-resize-handle {
+    position: absolute;
+    z-index: 4;
+    display: block;
+    background: transparent;
+    touch-action: none;
+    user-select: none;
+}
+
+.handrive-preview-resize-handle-n,
+.handrive-preview-resize-handle-s {
+    left: 12px;
+    right: 12px;
+    height: 10px;
+    cursor: ns-resize;
+}
+
+.handrive-preview-resize-handle-n {
+    top: -5px;
+}
+
+.handrive-preview-resize-handle-s {
+    bottom: -5px;
+}
+
+.handrive-preview-resize-handle-e,
+.handrive-preview-resize-handle-w {
+    top: 12px;
+    bottom: 12px;
+    width: 10px;
+    cursor: ew-resize;
+}
+
+.handrive-preview-resize-handle-e {
+    right: -5px;
+}
+
+.handrive-preview-resize-handle-w {
+    left: -5px;
+}
+
+.handrive-preview-resize-handle-ne,
+.handrive-preview-resize-handle-se,
+.handrive-preview-resize-handle-sw,
+.handrive-preview-resize-handle-nw {
+    width: 18px;
+    height: 18px;
+}
+
+.handrive-preview-resize-handle-ne {
+    top: -7px;
+    right: -7px;
+    cursor: nesw-resize;
+}
+
+.handrive-preview-resize-handle-se {
+    right: -7px;
+    bottom: -7px;
+    cursor: nwse-resize;
+}
+
+.handrive-preview-resize-handle-sw {
+    bottom: -7px;
+    left: -7px;
+    cursor: nesw-resize;
+}
+
+.handrive-preview-resize-handle-nw {
+    top: -7px;
+    left: -7px;
+    cursor: nwse-resize;
+}
+
+#ui-preview-modal .handrive-help-modal-dialog.is-preview-resizing {
+    transition: none;
+}
+
+body.handrive-preview-resizing {
+    user-select: none;
+}
+
+#ui-preview-modal:has(#ui-preview-content.handrive-html .handrive-html-live-frame) .handrive-help-modal-dialog {
+    height: calc(100vh - 20px);
+    height: calc(100dvh - 20px);
+}
+
+#ui-preview-modal .handrive-help-modal-body:has(> #ui-preview-content.handrive-html .handrive-html-live-frame) {
+    display: flex;
+    width: calc(100vw - 20px);
+    max-width: 100%;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+#ui-preview-modal .handrive-help-modal-body > #ui-preview-content.handrive-html {
+    display: flex;
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    overflow: hidden;
+}
+
+#ui-preview-modal #ui-preview-content.handrive-html .handrive-html-live-wrap,
+#ui-preview-modal #ui-preview-content.handrive-html .handrive-html-live-frame {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border-radius: 0;
 }
 
 .handrive-help-title {
@@ -7966,7 +8210,7 @@ body.handrive-modal-open {
 
 .handrive-help-markdown {
     margin: 0;
-    padding: 14px;
+    padding: 0;
 }
 
 .handrive-help-markdown table {
@@ -8047,11 +8291,11 @@ body.handrive-modal-open {
         height: clamp(170px, 34vh, 420px);
     }
 
-    .handrive-save-file-meta-grid {
+    .handrive-file-meta-grid {
         grid-template-columns: minmax(0, 1fr) auto;
     }
 
-    .handrive-save-extension-controls {
+    .handrive-file-extension-controls {
         grid-template-columns: minmax(0, 1fr);
     }
 
@@ -8061,7 +8305,7 @@ body.handrive-modal-open {
         padding: 7px 8px;
     }
 
-    #handrive-save-extension-field {
+    .handrive-file-extension-field {
         width: 80px;
         max-width: 80px;
     }
@@ -9885,6 +10129,178 @@ body.handrive-page.theme-dark .pe-page-wrap {
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.42);
 }
 
+/* ── 이미지/비디오/PDF 공통 텍스트 스타일 컨트롤 ── */
+.handrive-editor-text-style-field {
+    --handrive-editor-text-style-height: 30px;
+    --handrive-editor-text-style-radius: var(--handrive-radius-sm, 4px);
+    --handrive-editor-text-style-border: var(--handrive-border);
+    --handrive-editor-text-style-bg: var(--handrive-input-bg, var(--handrive-surface));
+    --handrive-editor-text-style-hover-bg: var(--handrive-hover-soft, var(--handrive-hover));
+    --handrive-editor-text-style-icon-color: var(--handrive-text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--handrive-editor-text-style-height);
+    min-height: var(--handrive-editor-text-style-height);
+    min-width: 0;
+    border: 1px solid var(--handrive-editor-text-style-border);
+    border-radius: var(--handrive-editor-text-style-radius);
+    background: var(--handrive-editor-text-style-bg);
+    color: var(--handrive-text);
+    padding: 0 6px;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    transition: border-color 0.1s ease, box-shadow 0.1s ease, background-color 0.1s ease;
+}
+
+.handrive-editor-text-style-field:focus-within {
+    border-color: color-mix(in srgb, var(--handrive-accent, #4f8ef7) 48%, var(--handrive-editor-text-style-border));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--handrive-accent, #4f8ef7) 14%, transparent);
+}
+
+.handrive-editor-text-style-icon {
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--handrive-editor-text-style-icon-color);
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.handrive-editor-text-style-icon.ve-style-icon--stroke {
+    color: transparent;
+    -webkit-text-stroke: 1px var(--handrive-text);
+}
+
+.handrive-editor-text-style-icon.ve-style-icon--bg {
+    border-radius: 4px;
+    background: currentColor;
+    opacity: 0.75;
+}
+
+.handrive-editor-text-style-icon.ve-style-icon--box {
+    border: 2px solid currentColor;
+    border-radius: 4px;
+}
+
+.handrive-editor-text-style-field input[type="checkbox"] {
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+.handrive-editor-text-style-field > .handrive-editor-text-style-font-family,
+.handrive-editor-text-style-field > .site-custom-select.handrive-editor-text-style-font-family {
+    width: var(--handrive-editor-text-style-font-family-width, 128px);
+    height: calc(var(--handrive-editor-text-style-height) - 2px);
+    min-width: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--handrive-text);
+    font-size: 12px;
+    line-height: 1;
+    outline: none;
+    padding: 0;
+    color-scheme: inherit;
+    box-sizing: border-box;
+    box-shadow: none;
+    vertical-align: middle;
+}
+
+.handrive-editor-text-style-field > .handrive-editor-text-style-font-size {
+    width: var(--handrive-editor-text-style-font-size-width, 48px);
+    height: calc(var(--handrive-editor-text-style-height) - 2px);
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--handrive-text);
+    font-size: 12px;
+    line-height: 1;
+    outline: none;
+    padding: 0;
+    text-align: left;
+    box-sizing: border-box;
+    box-shadow: none;
+    font-variant-numeric: tabular-nums;
+}
+
+.handrive-editor-text-style-color,
+.handrive-editor-text-style-field > input.handrive-editor-text-style-color {
+    width: var(--handrive-editor-text-style-color-width, 28px);
+    height: var(--handrive-editor-text-style-color-height, 28px);
+    border: 1px solid var(--handrive-editor-text-style-border, var(--handrive-border));
+    border-radius: var(--handrive-editor-text-style-color-radius, 6px);
+    padding: 2px;
+    background: var(--handrive-editor-text-style-bg, var(--handrive-surface));
+    cursor: pointer;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+}
+
+.handrive-editor-text-style-color::-webkit-color-swatch-wrapper,
+.handrive-editor-text-style-field > input.handrive-editor-text-style-color::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+.handrive-editor-text-style-color::-webkit-color-swatch,
+.handrive-editor-text-style-field > input.handrive-editor-text-style-color::-webkit-color-swatch {
+    border: 0;
+    border-radius: calc(var(--handrive-editor-text-style-color-radius, 6px) - 2px);
+}
+
+.ie-font-family-select.handrive-editor-text-style-font-family {
+    --handrive-editor-text-style-font-family-width: 126px;
+}
+
+.ie-font-size-input.handrive-editor-text-style-font-size {
+    --handrive-editor-text-style-font-size-width: 48px;
+}
+
+.ie-custom-color-input.handrive-editor-text-style-color {
+    --handrive-editor-text-style-color-width: 26px;
+    --handrive-editor-text-style-color-height: 26px;
+    --handrive-editor-text-style-color-radius: 3px;
+}
+
+.pe-ribbon .handrive-editor-text-style-field {
+    --handrive-editor-text-style-height: var(--pe-control-height);
+    --handrive-editor-text-style-radius: var(--pe-control-radius);
+    --handrive-editor-text-style-border: var(--pe-control-border);
+    --handrive-editor-text-style-bg: var(--pe-control-bg);
+    --handrive-editor-text-style-hover-bg: var(--pe-control-hover-bg);
+    padding: 0 8px;
+}
+
+.pe-font-family-select.handrive-editor-text-style-font-family {
+    --handrive-editor-text-style-font-family-width: 168px;
+}
+
+.pe-font-size-input.handrive-editor-text-style-font-size {
+    --handrive-editor-text-style-font-size-width: 44px;
+}
+
+.pe-color-field .handrive-editor-text-style-color {
+    --handrive-editor-text-style-color-width: 22px;
+    --handrive-editor-text-style-color-height: 22px;
+}
+
+.ve-subtitle-font-family-select.handrive-editor-text-style-font-family {
+    --handrive-editor-text-style-font-family-width: 128px;
+}
+
+.ve-subtitle-font-size-input.handrive-editor-text-style-font-size {
+    --handrive-editor-text-style-font-size-width: 62px;
+}
+
+.ve-subtitle-style-grid .handrive-editor-text-style-color {
+    --handrive-editor-text-style-color-width: 34px;
+    --handrive-editor-text-style-color-height: 28px;
+}
+
 /* ── 크기 조정 모달 ── */
 .ie-resize-modal-body {
     display: flex;
@@ -9968,15 +10384,6 @@ body.handrive-page.theme-dark .pe-page-wrap {
 .ie-save-as-format-option small {
     font-size: 11px;
     color: var(--handrive-text-muted);
-}
-
-/* ── 이미지 에디터: body padding 제거 (패딩이 canvasArea 높이 계산 방해 방지) ── */
-.handrive-list-editor-body:has(.handrive-image-editor-surface:not([hidden])),
-.handrive-list-editor-body:has(.handrive-video-editor-surface:not([hidden])),
-.handrive-list-editor-body:has(.handrive-audio-editor-surface:not([hidden])),
-.handrive-list-editor-body:has(.handrive-pdf-editor-surface:not([hidden])),
-.handrive-list-editor-body:has(.handrive-spreadsheet-editor-surface:not([hidden])) {
-    padding: 0;
 }
 
 /* ── 캔버스 테두리 리사이즈 핸들 ── */

@@ -1,6 +1,6 @@
 # Hanplanet 이용약관
 
-시행일: 2026-06-04
+시행일: 2026-06-19
 
 Hanplanet 및 HanDrive, 계정 인증, GitHub 연동, Google 연동, Google Drive 연동, Git 저장소, 검색/번역/챗, 게임, 포트폴리오 기능을 이용하는 사용자는 본 약관에 동의한 것으로 봅니다.
 
@@ -11,7 +11,7 @@ Hanplanet 및 HanDrive, 계정 인증, GitHub 연동, Google 연동, Google Driv
 - HanDrive 파일 업로드, 폴더 정리, 미리보기, 편집, 다운로드, 이동, 삭제, 공유, 동기화
 - HanDrive 폴더의 Git 저장소 변환, 브랜치/커밋/협업자 관리, Forgejo/Gitea 연동
 - GitHub 계정 로그인/회원가입/연동, 사용자가 선택한 GitHub 저장소 표시, 파일 읽기/수정/추가/삭제, 커밋, 브랜치 생성/삭제
-- Google 계정 로그인/회원가입/연동, 사용자가 허용한 Google Drive 파일 표시, 읽기/수정/생성/삭제/이동, Google Drive 파일의 HanDrive 업로드
+- Google 계정 로그인/회원가입/연동, Google Picker로 선택한 Google Drive 파일/폴더 표시, 선택 범위 안의 파일 읽기/수정/생성/삭제/이동, Google Drive 파일의 HanDrive 업로드
 - 루트 검색, 바로가기, 번역, 챗봇, 게임, 포트폴리오, 공개 공유 기능
 
 서비스의 세부 기능, 화면, 제공 방식은 운영상 필요에 따라 변경될 수 있습니다.
@@ -49,11 +49,12 @@ Hanplanet 및 HanDrive, 계정 인증, GitHub 연동, Google 연동, Google Driv
 
 ## 6. Google Drive 연동
 
-- Google Drive 파일은 사용자가 Google 계정을 연동하고 Google Drive 표시 옵션을 켠 경우에만 HanDrive 루트에 표시됩니다.
-- Google Drive 안에서 파일을 읽기, 업로드, 생성, 수정, 이름 변경, 이동, 삭제하면 사용자의 Google Drive에 실제 변경이 반영됩니다.
+- Google Drive 루트에는 사용자가 Google 계정을 연동하고 Google Drive 표시 옵션을 켠 뒤 Google Picker에서 선택한 파일/폴더만 표시됩니다. 선택한 폴더 안으로 들어가면 해당 폴더의 하위 항목이 표시될 수 있습니다.
+- 서비스는 사용자가 선택하지 않은 Google Drive 전체 파일 목록을 HanDrive에 임의로 가져오거나 표시하지 않습니다.
+- 선택한 파일/폴더 또는 선택한 폴더 안의 항목에서 파일을 읽기, 업로드, 생성, 수정, 이름 변경, 이동, 삭제하면 사용자의 Google Drive에 실제 변경이 반영됩니다.
 - Google Drive 파일을 HanDrive로 드래그 앤 드롭하여 업로드하면 HanDrive에 파일 사본이 저장될 수 있습니다.
 - Google Workspace 문서 등 일부 파일은 Google Drive API의 내보내기 형식, 권한, 제한에 따라 표시 또는 편집 방식이 달라질 수 있습니다.
-- Google Drive 표시 옵션을 끄면 서비스는 Google Drive 관련 HanDrive API 접근을 차단합니다.
+- Google Drive 표시 옵션을 끄면 서비스는 Google Drive 관련 HanDrive API 접근을 차단합니다. Google 연동을 해제하면 서비스에 저장된 Google Picker 선택 항목 목록도 삭제됩니다.
 
 ## 7. 외부 서비스 및 제3자 약관
 
@@ -120,7 +121,7 @@ Hanplanet 및 HanDrive, 계정 인증, GitHub 연동, Google 연동, Google Driv
 
 # Hanplanet Terms of Service
 
-Effective Date: 2026-06-04
+Effective Date: 2026-06-19
 
 By using Hanplanet, HanDrive, account authentication, GitHub integration, Google integration, Google Drive integration, Git repositories, search, translation, chat, games, or portfolio features, users agree to these Terms.
 
@@ -131,7 +132,7 @@ The Service may include:
 - HanDrive file upload, organization, preview, editing, download, move, delete, sharing, and sync
 - Git repository conversion for HanDrive folders, branch/commit/collaborator management, and Forgejo/Gitea integration
 - GitHub login/sign-up/linking, display of user-selected GitHub repositories, file read/edit/add/delete, commits, and branch creation/deletion
-- Google login/sign-up/linking, display of user-authorized Google Drive files, file read/edit/create/delete/move, and uploading Google Drive files into HanDrive
+- Google login/sign-up/linking, display of Google Drive files/folders selected with Google Picker, file read/edit/create/delete/move within the selected scope, and uploading Google Drive files into HanDrive
 - Root search, quick links, translation, chatbot, games, portfolio, and public sharing features
 
 Specific features, screens, and delivery methods may change for operational reasons.
@@ -169,11 +170,12 @@ Specific features, screens, and delivery methods may change for operational reas
 
 ## 6. Google Drive Integration
 
-- Google Drive files are displayed in the HanDrive root only when the user links a Google account and enables Google Drive display.
-- Reading, uploading, creating, editing, renaming, moving, or deleting Google Drive files applies real changes to the user's Google Drive.
+- The Google Drive root displays only files/folders the user selected with Google Picker after linking a Google account and enabling Google Drive display. Entering a selected folder may display items inside that folder.
+- The Service does not arbitrarily import or display the user's entire Google Drive file list in HanDrive.
+- Reading, uploading, creating, editing, renaming, moving, or deleting selected files/folders or items inside selected folders applies real changes to the user's Google Drive.
 - Dragging and dropping a Google Drive file into HanDrive may store a copy of that file in HanDrive.
 - Google Workspace files may be displayed or edited differently depending on Google Drive API export formats, permissions, and limitations.
-- When Google Drive display is disabled, the Service blocks Google Drive-related HanDrive API access.
+- When Google Drive display is disabled, the Service blocks Google Drive-related HanDrive API access. When Google is unlinked, the Google Picker selected item list stored by the Service is also deleted.
 
 ## 7. External Services and Third-Party Terms
 

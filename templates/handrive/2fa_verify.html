@@ -82,7 +82,106 @@
             }
         }
 
+        function selectServerMessage(data, fallback) {
+            const lang = (document.documentElement.getAttribute("lang") || "").toLowerCase().indexOf("en") === 0 ? "en" : "ko";
+            const messages = data && (data.error_messages || data.messages);
+            if (messages && typeof messages === "object") {
+                return messages[lang] || messages.ko || messages.en || fallback || "";
+            }
+            return (data && (data.error_message || data.message || data.error)) || fallback || "";
+        }
+
+        function showInlineError(errorEl, message) {
+            if (!errorEl) return;
+            errorEl.textContent = message || "";
+            errorEl.style.display = message ? "block" : "none";
+            errorEl.hidden = !message;
+        }
+
+        function bindResendButton(form) {
+            const resendBtn = form.querySelector(".auth-2fa-resend-link[data-resend-url]");
+            if (!resendBtn) return;
+            const resendUrl = resendBtn.dataset.resendUrl || "";
+            if (!resendUrl) return;
+            const resendMsgEl = form.querySelector("[data-auth-2fa-resend-msg]");
+            const errorEl = form.querySelector("#handrive-2fa-error");
+            const codeInput = form.querySelector("[data-handrive-otp-input]");
+            const originalText = resendBtn.textContent.trim();
+            const cooldownMs = 30000;
+            let cooldownUntil = 0;
+            let timer = null;
+
+            function remainingSeconds() {
+                return Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+            }
+
+            function updateCooldown() {
+                const remaining = remainingSeconds();
+                resendBtn.disabled = remaining > 0;
+                resendBtn.textContent = originalText;
+                if (resendMsgEl) {
+                    if (remaining > 0) {
+                        resendMsgEl.textContent = "재전송 가능까지 " + remaining + "초";
+                        resendMsgEl.hidden = false;
+                        resendMsgEl.dataset.cooldownMessage = "1";
+                    } else if (resendMsgEl.dataset.cooldownMessage === "1") {
+                        resendMsgEl.textContent = "";
+                        resendMsgEl.hidden = true;
+                        delete resendMsgEl.dataset.cooldownMessage;
+                    }
+                }
+                if (timer) window.clearTimeout(timer);
+                timer = remaining > 0 ? window.setTimeout(updateCooldown, 1000) : null;
+            }
+
+            resendBtn.addEventListener("click", function () {
+                if (remainingSeconds() > 0) {
+                    updateCooldown();
+                    return;
+                }
+                resendBtn.disabled = true;
+                showInlineError(errorEl, "");
+                if (resendMsgEl) {
+                    resendMsgEl.textContent = "";
+                    resendMsgEl.hidden = true;
+                }
+                fetch(resendUrl, {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "X-CSRFToken": (form.querySelector("[name=csrfmiddlewaretoken]") || {}).value || "",
+                        "Accept": "application/json"
+                    }
+                })
+                    .then(function (response) { return response.json(); })
+                    .then(function (data) {
+                        if (data.ok) {
+                            if (resendMsgEl) {
+                                resendMsgEl.textContent = form.dataset.login2faResendSuccess || "";
+                                resendMsgEl.hidden = false;
+                            }
+                            if (codeInput) {
+                                codeInput.value = "";
+                                codeInput.dispatchEvent(new Event("input", { bubbles: true }));
+                                codeInput.focus({ preventScroll: true });
+                            }
+                            cooldownUntil = Date.now() + cooldownMs;
+                            updateCooldown();
+                        } else {
+                            resendBtn.disabled = false;
+                            showInlineError(errorEl, selectServerMessage(data, form.dataset.login2faResendFallback || "재전송에 실패했습니다."));
+                        }
+                    })
+                    .catch(function () {
+                        resendBtn.disabled = false;
+                        showInlineError(errorEl, form.dataset.siteAuthGenericError || "오류가 발생했습니다. 다시 시도해주세요.");
+                    });
+            });
+        }
+
         document.querySelectorAll("[data-handrive-otp-input]").forEach(initOtpInput);
+        const form = document.getElementById("handrive-2fa-form");
+        if (form) bindResendButton(form);
     })();
 </script>
 {% endblock %}

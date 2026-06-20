@@ -410,7 +410,19 @@
     }
 
     function getCustomSelectLabel(option) {
-        return String(option ? option.textContent || option.label || option.value || "" : "").trim();
+        const visibleText = String(option ? option.textContent || "" : "").trim();
+        if (option && option.hasAttribute && option.hasAttribute("data-site-custom-select-option-label")) {
+            const optionLabel = String(option.getAttribute("data-site-custom-select-option-label") || "").trim();
+            return visibleText && visibleText !== optionLabel ? visibleText : optionLabel;
+        }
+        return visibleText || String(option ? option.label || option.value || "" : "").trim();
+    }
+
+    function getCustomSelectSelectedLabel(option) {
+        if (option && option.hasAttribute && option.hasAttribute("data-site-custom-select-selected-label")) {
+            return String(option.getAttribute("data-site-custom-select-selected-label") || "").trim();
+        }
+        return getCustomSelectLabel(option);
     }
 
     function shouldEnhanceCustomSelect(select) {
@@ -473,7 +485,7 @@
         const label = button ? button.querySelector(".site-custom-select-label") : null;
         const menu = getCustomSelectMenu(select);
         const selectedOption = getCustomSelectSelectedOption(select);
-        const selectedLabel = getCustomSelectLabel(selectedOption);
+        const selectedLabel = getCustomSelectSelectedLabel(selectedOption);
 
         if (wrapper) {
             wrapper.hidden = select.hidden;
@@ -594,6 +606,7 @@
                 wrapper.style.setProperty(property, value);
             }
         });
+        wrapper.style.setProperty("padding-right", "0px");
     }
 
     function getCustomSelectViewport() {

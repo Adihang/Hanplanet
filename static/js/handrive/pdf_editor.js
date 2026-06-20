@@ -211,7 +211,7 @@
     }
 
     var PDF_FONT_CSS_FALLBACKS = {
-        system: "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+        system: "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans KR\", sans-serif",
         "sans-serif": "Arial, Helvetica, sans-serif",
         serif: "Georgia, \"Times New Roman\", serif",
         monospace: "\"Courier New\", Menlo, Monaco, monospace",

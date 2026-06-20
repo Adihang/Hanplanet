@@ -54,7 +54,7 @@
         MAX_UNDO: 50,
         isDirty: false,
         textOverlayActive: false,
-        textFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif',
+        textFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif',
         textSize: 18,
         textBold: false,
         textItalic: false,
@@ -817,7 +817,7 @@
     function normalizeTextFamily(value) {
         var family = String(value || "").trim();
         if (!family || family === "system") {
-            return '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif';
+            return 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif';
         }
         return family;
     }

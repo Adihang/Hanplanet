@@ -10,12 +10,15 @@
         var target = settings.target;
         var entry = settings.entry;
         var syncModalBodyState = settings.syncModalBodyState || function () {};
+        var renderPopupTargetPath = window.HandriveModalHelpers && window.HandriveModalHelpers.renderPopupTargetPath
+            ? window.HandriveModalHelpers.renderPopupTargetPath
+            : function (targetElement, value) { if (targetElement) { targetElement.textContent = value || ""; } };
 
         if (!modal || !input) {
             return;
         }
         if (target) {
-            target.textContent = entry ? entry.name : "";
+            renderPopupTargetPath(target, entry ? entry.name : "");
         }
         input.value = entry ? entry.name.replace(/\.[^.]+$/, "") : "";
         modal.hidden = false;

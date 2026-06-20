@@ -48,6 +48,68 @@
         dialog.style.setProperty("--popup-drag-y", Math.round(y) + "px");
     }
 
+    function appendPopupTargetPathPart(target, text, className) {
+        if (!target || !text) {
+            return;
+        }
+        var span = document.createElement("span");
+        span.className = className;
+        span.textContent = text;
+        target.appendChild(span);
+    }
+
+    function renderPopupTargetPath(target, value) {
+        if (!target) {
+            return;
+        }
+        var raw = String(value || "").trim();
+        target.textContent = "";
+        target.setAttribute("title", raw);
+        if (!raw) {
+            return;
+        }
+
+        var prefix = "";
+        var suffix = "";
+        var pathText = raw;
+        var suffixMatch = pathText.match(/(\s+·\s+.*)$/);
+        if (suffixMatch) {
+            suffix = suffixMatch[1];
+            pathText = pathText.slice(0, -suffix.length);
+        }
+        var prefixMatch = pathText.match(/^([^/]*?:\s+)(.+)$/);
+        if (prefixMatch) {
+            prefix = prefixMatch[1];
+            pathText = prefixMatch[2];
+        }
+
+        var parts = pathText.split(/(\s*\/\s*)/).filter(function (part) {
+            return part !== "";
+        });
+        var lastSegmentIndex = -1;
+        parts.forEach(function (part, index) {
+            if (part.indexOf("/") === -1 && part.trim()) {
+                lastSegmentIndex = index;
+            }
+        });
+
+        appendPopupTargetPathPart(target, prefix, "handrive-popup-target-prefix");
+        if (lastSegmentIndex === -1) {
+            appendPopupTargetPathPart(target, pathText, "handrive-popup-target-current");
+        } else {
+            parts.forEach(function (part, index) {
+                appendPopupTargetPathPart(
+                    target,
+                    part,
+                    part.indexOf("/") !== -1
+                        ? "handrive-popup-target-separator"
+                        : (index === lastSegmentIndex ? "handrive-popup-target-current" : "handrive-popup-target-segment")
+                );
+            });
+        }
+        appendPopupTargetPathPart(target, suffix, "handrive-popup-target-suffix");
+    }
+
     function resetModalDragOffset(dialog) {
         if (!dialog) {
             return;
@@ -285,7 +347,7 @@
             return;
         }
         if (renameTarget) {
-            renameTarget.textContent = targetLabel || (entry ? entry.path : "");
+            renderPopupTargetPath(renameTarget, targetLabel || (entry ? entry.path : ""));
         }
         if (renameInput) {
             renameInput.value = typeof getEntryEditableName === "function" ? getEntryEditableName(entry) : "";
@@ -306,7 +368,7 @@
             return;
         }
         if (folderCreateTarget) {
-            folderCreateTarget.textContent = targetLabel || "";
+            renderPopupTargetPath(folderCreateTarget, targetLabel || "");
         }
         if (folderCreateInput) {
             folderCreateInput.value = "";
@@ -330,7 +392,7 @@
             return;
         }
         if (folderIconTarget) {
-            folderIconTarget.textContent = targetLabel || "";
+            renderPopupTargetPath(folderIconTarget, targetLabel || "");
         }
         if (folderIconFileInput) {
             folderIconFileInput.focus();
@@ -341,6 +403,7 @@
         setFolderCreateModalOpen: setFolderCreateModalOpen,
         setFolderIconModalOpen: setFolderIconModalOpen,
         enablePopupDragging: enablePopupDragging,
+        renderPopupTargetPath: renderPopupTargetPath,
         setRenameModalOpen: setRenameModalOpen,
     };
 

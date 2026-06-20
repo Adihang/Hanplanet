@@ -12,5 +12,15 @@
             <article class="ui-markdown handrive-help-markdown">{{ article_html|default:'' }}</article>
             {% endif %}
         </div>
+        {% if resizable_modal %}
+        <div class="handrive-preview-resize-handle handrive-preview-resize-handle-n" data-preview-modal-resize-handle="n" aria-hidden="true"></div>
+        <div class="handrive-preview-resize-handle handrive-preview-resize-handle-ne" data-preview-modal-resize-handle="ne" aria-hidden="true"></div>
+        <div class="handrive-preview-resize-handle handrive-preview-resize-handle-e" data-preview-modal-resize-handle="e" aria-hidden="true"></div>
+        <div class="handrive-preview-resize-handle handrive-preview-resize-handle-se" data-preview-modal-resize-handle="se" aria-hidden="true"></div>
+        <div class="handrive-preview-resize-handle handrive-preview-resize-handle-s" data-preview-modal-resize-handle="s" aria-hidden="true"></div>
+        <div class="handrive-preview-resize-handle handrive-preview-resize-handle-sw" data-preview-modal-resize-handle="sw" aria-hidden="true"></div>
+        <div class="handrive-preview-resize-handle handrive-preview-resize-handle-w" data-preview-modal-resize-handle="w" aria-hidden="true"></div>
+        <div class="handrive-preview-resize-handle handrive-preview-resize-handle-nw" data-preview-modal-resize-handle="nw" aria-hidden="true"></div>
+        {% endif %}
     </div>
 </div>

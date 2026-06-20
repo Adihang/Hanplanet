@@ -181,6 +181,8 @@ Do not commit API keys or secrets. Production uses `DEBUG = False`.
 - Do not break responsive mode-switch timing or breakpoint behavior when viewport size changes.
 - Keep existing transition/animation behavior intact unless explicitly requested.
 - Korean/English UI strings must go in `templates/partials/ui_i18n.html` — no per-view duplicates.
+- Repeated or similar UI designs must be implemented with shared markup, CSS, and JS behavior wherever practical. Do not create page-specific duplicate controls or styles when a common component/class can express the same role.
+- Class and ID names for shared UI must describe the common role or component (`*-file-meta-*`, `*-modal-*`, `*-toolbar-*`, etc.), not the first page or feature where they happened to be introduced. Keep feature-specific names only for genuinely unique behavior or API hooks.
 - Account popup UI (`ide-auth-account-menu`) must be maintained as a separate shared partial template — do not duplicate popup markup across page templates.
 - Popup/modal markup must live in `templates/popup/` or `templates/partials/` — never inline in page templates.
 - Popups with similar structure should be merged into a shared base partial and parameterized includes instead of duplicated HTML blocks.

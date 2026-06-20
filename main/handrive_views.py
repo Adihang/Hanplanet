@@ -881,7 +881,7 @@ DOCS_TEXT = {
         "write_title_edit": "수정",
         "write_title_create": "새 파일",
         "markdown_guide_button": "마크다운 가이드",
-        "markdown_preview_button": "미리보기",
+        "preview_button": "미리보기",
         "markdown_snippet_aria": "마크다운 문법 빠른 입력",
         "markdown_snippet_heading2": "제목 2",
         "markdown_snippet_heading3": "제목 3",
@@ -1065,8 +1065,8 @@ DOCS_TEXT = {
         "markdown_help_fallback_title": "마크다운 문법",
         "markdown_help_fallback_missing": "안내 파일을 찾을 수 없습니다.",
         "markdown_help_fallback_read_error": "문법 안내 파일을 읽을 수 없습니다.",
-        "markdown_preview_aria": "마크다운 미리보기",
-        "markdown_preview_loading": "미리보기를 불러오는 중...",
+        "preview_aria": "미리보기",
+        "preview_loading": "미리보기를 불러오는 중...",
         "js_error_path_required": "경로를 입력해주세요.",
         "js_error_parent_path_not_allowed": "상위 경로(..)는 사용할 수 없습니다.",
         "js_error_request_failed": "요청 처리 중 오류가 발생했습니다.",
@@ -1151,7 +1151,7 @@ DOCS_TEXT = {
         "auth_logout_confirm": "로그아웃 하시겠습니까?",
         "auth_profile_label": "프로필",
         "auth_2fa_title": "이메일 인증",
-        "auth_2fa_hint": "인증 코드가 아래 이메일로 발송되었습니다:",
+        "auth_2fa_hint": "인증 코드가 아래 이메일로 발송되었습니다",
         "auth_2fa_code_label": "인증 코드",
         "auth_2fa_code_placeholder": "6자리 코드 입력",
         "auth_2fa_submit": "확인",
@@ -1280,7 +1280,7 @@ DOCS_TEXT = {
         "write_title_edit": "Edit File",
         "write_title_create": "New File",
         "markdown_guide_button": "Markdown Guide",
-        "markdown_preview_button": "Preview",
+        "preview_button": "Preview",
         "markdown_snippet_aria": "Markdown quick insert",
         "markdown_snippet_heading2": "Heading 2",
         "markdown_snippet_heading3": "Heading 3",
@@ -1483,8 +1483,8 @@ DOCS_TEXT = {
         "markdown_help_fallback_title": "Markdown Guide",
         "markdown_help_fallback_missing": "Guide file not found.",
         "markdown_help_fallback_read_error": "Failed to read the guide file.",
-        "markdown_preview_aria": "Markdown preview",
-        "markdown_preview_loading": "Loading preview...",
+        "preview_aria": "Preview",
+        "preview_loading": "Loading preview...",
         "js_error_path_required": "Please enter a path.",
         "js_error_parent_path_not_allowed": "Parent path (..) is not allowed.",
         "js_error_request_failed": "Request failed while processing the request.",
@@ -1569,7 +1569,7 @@ DOCS_TEXT = {
         "auth_logout_confirm": "Do you want to log out?",
         "auth_profile_label": "Profile",
         "auth_2fa_title": "Email Verification",
-        "auth_2fa_hint": "A verification code was sent to:",
+        "auth_2fa_hint": "A verification code was sent to",
         "auth_2fa_code_label": "Verification Code",
         "auth_2fa_code_placeholder": "Enter 6-digit code",
         "auth_2fa_submit": "Verify",
@@ -9917,6 +9917,7 @@ def handrive_2fa_verify(request, ui_lang=None):
         **context,
         "handrive_2fa_error_message": error_message,
         "handrive_2fa_user_email_masked": _mask_email(str(getattr(pending_user, "email", "") or "")),
+        "handrive_api_login_2fa_resend_code_url": reverse("main:handrive_api_login_2fa_resend_code"),
         "hide_global_nav": True,
     }
     if _is_site_auth_modal_request(request):
@@ -10671,7 +10672,7 @@ def handrive_write(request, ui_lang=None):
     mode = "create"
     original_relative_path = ""
     initial_filename = ""
-    initial_extension = DOCS_FILE_EXTENSION
+    initial_extension = ""
     initial_filename_input = ""
     initial_dir = ""
     initial_content = ""
@@ -10822,6 +10823,7 @@ def handrive_write(request, ui_lang=None):
             "initial_filename": initial_filename,
             "initial_extension": initial_extension,
             "write_is_markdown": write_editor_kind == "text" and initial_extension == DOCS_FILE_EXTENSION,
+            "write_has_preview": write_editor_kind == "text" and initial_extension in {DOCS_FILE_EXTENSION, ".html"},
             "write_editor_kind": write_editor_kind,
             "initial_filename_input": initial_filename_input,
             "initial_dir": initial_dir,
@@ -13234,7 +13236,7 @@ def handrive_api_preview(request):
             except GoogleDriveError as exc:
                 return json_error(str(exc), status=exc.status_code)
             source_relative = original_relative_path
-            source_extension = Path(str(metadata.get("name") or "")).suffix.lower() or source_extension
+            source_extension = preview_extension or Path(str(metadata.get("name") or "")).suffix.lower() or source_extension
             source_path = Path(str(metadata.get("name") or "google-drive-file"))
         elif git_virtual is None:
             try:
@@ -13243,10 +13245,10 @@ def handrive_api_preview(request):
                 )
             except (ValueError, FileNotFoundError) as exc:
                 return json_error(str(exc), status=400)
-            source_extension = source_path.suffix.lower() if source_path.suffix else DOCS_FILE_EXTENSION
+            source_extension = preview_extension or (source_path.suffix.lower() if source_path.suffix else DOCS_FILE_EXTENSION)
         else:
             source_relative = original_relative_path
-            source_extension = Path(git_virtual["repo_relative_path"]).suffix.lower() or DOCS_FILE_EXTENSION
+            source_extension = preview_extension or Path(git_virtual["repo_relative_path"]).suffix.lower() or DOCS_FILE_EXTENSION
         if not has_handrive_write_access(request, source_relative):
             return json_error("파일을 수정할 권한이 없습니다.", status=403)
     else:

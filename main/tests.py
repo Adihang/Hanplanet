@@ -1130,6 +1130,8 @@ class HandriveI18nPlaceholderTests(TestCase):
         self.assertEqual(handrive_text["menu_manage_repo"], "Repo 관리")
         self.assertEqual(handrive_text["menu_change_icon"], "아이콘 변경")
         self.assertEqual(handrive_text["delete_repo_button"], "Repo 삭제")
+        self.assertEqual(handrive_text["preview_button"], "미리보기")
+        self.assertEqual(handrive_text["preview_aria"], "미리보기")
 
     def test_english_handrive_text_includes_placeholder_keys(self):
         handrive_text = get_handrive_text("en")
@@ -1146,6 +1148,8 @@ class HandriveI18nPlaceholderTests(TestCase):
         self.assertEqual(handrive_text["menu_delete_repo"], "Delete Repo")
         self.assertEqual(handrive_text["menu_create_repo"], "Create Repo")
         self.assertEqual(handrive_text["menu_manage_repo"], "Manage Repo")
+        self.assertEqual(handrive_text["preview_button"], "Preview")
+        self.assertEqual(handrive_text["preview_aria"], "Preview")
         self.assertEqual(handrive_text["menu_change_icon"], "Change Icon")
         self.assertEqual(handrive_text["delete_repo_button"], "Delete Repo")
         self.assertEqual(handrive_text["folder_icon_title"], "Change Icon")
@@ -1267,7 +1271,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, '<meta name="twitter:title" content="Hanplanet">', html=False)
         self.assertContains(response, "Hanplanet은 스마트 검색, 번역, 바로가기, HanDrive 파일 관리", html=False)
         self.assertContains(response, "HanDrive의 파일 업로드, 정리, 미리보기, 편집, 공유", html=False)
-        self.assertContains(response, "Google Drive 파일은 사용자 허용 시에만 표시하고 관리", html=False)
+        self.assertContains(response, "Google Picker로 선택한 Drive 항목만 사용자 허용 시 표시하고 관리", html=False)
         self.assertContains(response, '"description": "Hanplanet은 스마트 검색, 번역, 바로가기', html=False)
         self.assertContains(response, '"Smart search and translation"', html=False)
 
@@ -1285,7 +1289,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, '<meta name="robots" content="noindex,follow">', html=False)
         self.assertContains(response, "footer-purpose", html=False)
         self.assertContains(response, "HanDrive의 파일 업로드, 정리, 미리보기, 편집, 공유", html=False)
-        self.assertContains(response, "Google Drive 파일은 사용자 허용 시에만 표시하고 관리", html=False)
+        self.assertContains(response, "Google Picker로 선택한 Drive 항목만 사용자 허용 시 표시하고 관리", html=False)
 
     def test_low_value_public_html_pages_use_noindex(self):
         for url in ("/ko/login", "/ko/sub/", "/ko/sub/image-pip-demo/", "/ko/project/sample/1/"):
@@ -1527,14 +1531,33 @@ class SiteDropdownMenuSourceTests(TestCase):
         layout_css = (base_dir / "static/css/common/layout.css").read_text(encoding="utf-8")
         popup_common_css = (base_dir / "static/css/common/popup_common.css").read_text(encoding="utf-8")
         popup_common_js = (base_dir / "static/js/common/popup_common.js").read_text(encoding="utf-8")
+        account_widget_css = (base_dir / "static/css/common/account_widget.css").read_text(encoding="utf-8")
         common_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
         handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
         hpmail_css = (base_dir / "static/css/pages/hpmail/email.css").read_text(encoding="utf-8")
+        custom_select_block = popup_common_css[
+            popup_common_css.index(".site-custom-select {"):
+            popup_common_css.index("body.theme-dark .site-custom-select")
+        ]
+        custom_select_button_block = popup_common_css[
+            popup_common_css.index(".site-custom-select-button {"):
+            popup_common_css.index(".site-custom-select-button:focus")
+        ]
+        custom_select_label_block = popup_common_css[
+            popup_common_css.index(".site-custom-select-label {"):
+            popup_common_css.index(".site-custom-select-caret")
+        ]
+        custom_select_caret_block = popup_common_css[
+            popup_common_css.index(".site-custom-select-caret {"):
+            popup_common_css.index(".site-custom-select-menu")
+        ]
 
         for token in (
             "--site-dropdown-menu-radius",
             "--site-dropdown-menu-border",
             "--site-dropdown-menu-shadow",
+            "--site-dropdown-surface-bg",
+            "--site-dropdown-surface-filter",
             "--site-dropdown-scrollbar-size",
         ):
             with self.subTest(token=token):
@@ -1563,6 +1586,8 @@ class SiteDropdownMenuSourceTests(TestCase):
         self.assertIn("width: var(--site-dropdown-scrollbar-size, 3px);", popup_common_css)
         self.assertIn("height: var(--site-dropdown-scrollbar-size, 3px);", popup_common_css)
         self.assertIn("border: 1px solid var(--site-dropdown-menu-border", popup_common_css)
+        self.assertIn("background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg", popup_common_css)
+        self.assertIn("backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter", popup_common_css)
         self.assertIn("box-shadow: var(--site-dropdown-menu-shadow", popup_common_css)
         self.assertIn("border-radius: var(--site-dropdown-menu-radius", popup_common_css)
         self.assertIn("--site-custom-select-button-color: var(--handrive-text, var(--site-text, CanvasText));", popup_common_css)
@@ -1571,10 +1596,30 @@ class SiteDropdownMenuSourceTests(TestCase):
         self.assertIn("--site-custom-select-button-color: var(--handrive-text, var(--site-text, #f2f2f2));", popup_common_css)
         self.assertIn("--site-custom-select-caret-color: var(--handrive-text-secondary, var(--site-text-secondary, #c2c2c2));", popup_common_css)
         self.assertIn("color: var(--site-custom-select-button-color);", popup_common_css)
+        self.assertIn("padding-right: 0;", custom_select_block)
+        self.assertIn("padding-right: 0;", custom_select_button_block)
+        self.assertIn("align-items: center;", custom_select_button_block)
+        self.assertIn("line-height: 1;", custom_select_button_block)
+        self.assertIn("display: flex;", custom_select_label_block)
+        self.assertIn("align-items: center;", custom_select_label_block)
+        self.assertIn("align-self: stretch;", custom_select_label_block)
+        self.assertIn("line-height: 1;", custom_select_label_block)
+        self.assertIn("align-self: center;", custom_select_caret_block)
         self.assertIn("text-align: right;", popup_common_css)
         self.assertIn("border-top: 5px solid var(--site-custom-select-caret-color);", popup_common_css)
+        self.assertIn('wrapper.style.setProperty("padding-right", "0px");', popup_common_js)
         self.assertNotIn("--site-dropdown-menu-bg", popup_common_css)
         self.assertNotIn("--site-dropdown-menu-filter", popup_common_css)
+        for source_name, source in (
+            ("account_widget_css", account_widget_css),
+            ("common_css", common_css),
+            ("handrive_css", handrive_css),
+            ("hpmail_css", hpmail_css),
+        ):
+            with self.subTest(source=source_name):
+                self.assertIn("background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg", source)
+                self.assertNotIn("background: rgba(238, 238, 238, 0.5);", source)
+                self.assertNotIn("background: rgba(46, 46, 46, 0.5);", source)
 
         self.assertIn("border-radius: var(--site-dropdown-menu-radius", common_css)
         self.assertIn("border-radius: var(--site-dropdown-menu-radius", handrive_css)
@@ -1608,11 +1653,13 @@ class SiteDropdownMenuSourceTests(TestCase):
         ]
 
         self.assertIn(".account-storage-popup {", popup_rule)
-        self.assertIn("background: var(--site-popup-glass-bg, rgba(238, 238, 238, 0.5));", popup_rule)
-        self.assertIn("background-color: var(--site-popup-glass-bg, rgba(238, 238, 238, 0.5));", popup_rule)
+        self.assertIn("background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg", popup_rule)
+        self.assertIn("background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg", popup_rule)
         self.assertIn("background-image: none;", popup_rule)
-        self.assertIn("-webkit-backdrop-filter: var(--site-popup-glass-filter, saturate(120%) blur(4px));", popup_rule)
-        self.assertIn("backdrop-filter: var(--site-popup-glass-filter, saturate(120%) blur(4px));", popup_rule)
+        self.assertIn("-webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter", popup_rule)
+        self.assertIn("backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter", popup_rule)
+        self.assertNotIn("--site-popup-glass-bg", popup_rule)
+        self.assertNotIn("--site-popup-glass-filter", popup_rule)
         self.assertNotIn("rgba(238, 238, 238, 0.97)", popup_rule)
         self.assertNotIn("rgba(46, 46, 46, 0.97)", popup_rule)
 
@@ -1645,29 +1692,121 @@ class SiteDropdownMenuSourceTests(TestCase):
                     select_end = source.index(">", select_start)
                     self.assertIn('data-site-custom-select="1"', source[select_start:select_end])
 
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        save_extension_select_start = handrive_css.index(".handrive-file-extension-controls .site-custom-select.handrive-file-extension-select {")
+        save_extension_select_block = handrive_css[
+            save_extension_select_start:
+            handrive_css.index(".handrive-drive-modal-actions {", save_extension_select_start)
+        ]
+        self.assertIn(".handrive-file-extension-controls .site-custom-select.handrive-file-extension-select .site-custom-select-button", save_extension_select_block)
+        self.assertIn("padding: 0;", save_extension_select_block)
+        self.assertIn("padding-right: 10px;", save_extension_select_block)
+        self.assertIn("min-height: 1.35em;", save_extension_select_block)
+        self.assertIn("line-height: 1.25;", save_extension_select_block)
+        self.assertIn("justify-content: flex-start;", save_extension_select_block)
+        self.assertIn("text-align: left;", save_extension_select_block)
+
 
 class HandriveWriteFilenameExtensionSourceTests(TestCase):
     def test_write_filename_input_has_text_code_extension_select(self):
         base_dir = Path(settings.BASE_DIR)
         write_template = (base_dir / "templates/handrive/write.html").read_text(encoding="utf-8")
+        preview_template = (base_dir / "templates/popup/handrive/preview_modal.html").read_text(encoding="utf-8")
+        help_modal_template = (base_dir / "templates/popup/handrive/_help_modal.html").read_text(encoding="utf-8")
         handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
         page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        popup_common_js = (base_dir / "static/js/common/popup_common.js").read_text(encoding="utf-8")
 
-        self.assertIn("handrive-write-filename-control", write_template)
+        save_template = (base_dir / "templates/popup/handrive/save_modal.html").read_text(encoding="utf-8")
+
+        self.assertIn("handrive-file-meta-grid", write_template)
+        self.assertIn("handrive-file-meta-grid", save_template)
+        self.assertIn("handrive-file-name-field", write_template)
+        self.assertIn("handrive-file-name-field", save_template)
+        self.assertIn("handrive-file-extension-field", write_template)
+        self.assertIn("handrive-file-extension-field", save_template)
+        self.assertIn("handrive-file-extension-controls", write_template)
+        self.assertIn("handrive-file-extension-controls", save_template)
+        self.assertIn('id="handrive-content-input" spellcheck="false" wrap="off" placeholder="내용을 입력하세요."', write_template)
+        self.assertIn('id="ui-markdown-help-btn"{% if not write_is_markdown %} hidden disabled{% endif %}', write_template)
+        self.assertIn('id="ui-preview-btn"{% if not write_has_preview %} hidden disabled{% endif %}', write_template)
+        self.assertIn('{% include "popup/handrive/preview_modal.html" %}', write_template)
+        self.assertNotIn("markdown_preview_modal", write_template)
+        self.assertIn('modal_id="ui-preview-modal"', preview_template)
+        self.assertIn('article_id="ui-preview-content"', preview_template)
+        self.assertIn("resizable_modal=1", preview_template)
+        self.assertIn("{% if resizable_modal %}", help_modal_template)
+        for resize_direction in ("n", "ne", "e", "se", "s", "sw", "w", "nw"):
+            self.assertIn(f'data-preview-modal-resize-handle="{resize_direction}"', help_modal_template)
+        self.assertNotIn("ui-markdown-preview", preview_template)
+        self.assertNotIn("handrive-write-file-meta-grid", write_template)
+        self.assertNotIn("handrive-write-filename-field", write_template)
+        self.assertNotIn("handrive-write-filename-control", write_template)
+        self.assertNotIn("handrive-save-file-meta-grid", save_template)
+        self.assertNotIn("handrive-save-extension-controls", save_template)
         self.assertIn('id="handrive-filename-extension-select"', write_template)
         self.assertIn('data-site-custom-select="1"', write_template)
+        self.assertIn('data-site-custom-select-option-label="{{ handrive_text.file_extension_custom_option }}" data-site-custom-select-selected-label=""></option>', write_template)
+        self.assertIn('data-site-custom-select-option-label="{{ handrive_text.file_extension_custom_option }}" data-site-custom-select-selected-label=""></option>', save_template)
         self.assertIn("{% for ext in handrive_file_extension_options %}", write_template)
-        self.assertIn(".handrive-write-filename-control", handrive_css)
-        self.assertIn("grid-template-columns: minmax(0, 1fr) minmax(76px, auto);", handrive_css)
+        self.assertIn(".handrive-file-meta-grid", handrive_css)
+        self.assertIn("grid-template-columns: minmax(0, 1fr) auto;", handrive_css)
+        self.assertIn(".handrive-file-extension-controls .site-custom-select.handrive-file-extension-select", handrive_css)
+        self.assertNotIn(".handrive-write-filename-control", handrive_css)
+        self.assertNotIn(".handrive-save-file-meta-grid", handrive_css)
+        self.assertNotIn(".handrive-save-extension-controls", handrive_css)
+        self.assertIn("min-height: 1.35em;", handrive_css)
+        self.assertIn("padding-right: 10px;", handrive_css)
+        self.assertIn("line-height: 1.25;", handrive_css)
+        self.assertIn("justify-content: flex-start;", handrive_css)
+        self.assertIn(".handrive-content-snippet-tools:not(:has(> .ui-btn:not([hidden])))", handrive_css)
+        content_placeholder_start = handrive_css.index(".handrive-editor-surface > #handrive-content-input::placeholder")
+        content_placeholder_end = handrive_css.index(".handrive-editor-surface > #handrive-content-input::selection", content_placeholder_start)
+        content_placeholder_block = handrive_css[content_placeholder_start:content_placeholder_end]
+        self.assertIn("color: var(--site-placeholder);", content_placeholder_block)
+        self.assertIn("font-family: var(--site-font-default);", content_placeholder_block)
+        self.assertIn("font-size: 16px;", content_placeholder_block)
+        self.assertIn("font-weight: var(--site-weight-body);", content_placeholder_block)
+        self.assertIn("opacity: 1;", content_placeholder_block)
         self.assertIn('const filenameExtensionSelect = document.getElementById("handrive-filename-extension-select");', page_js)
+        self.assertIn('option.hasAttribute("data-site-custom-select-option-label")', popup_common_js)
+        self.assertIn('option.getAttribute("data-site-custom-select-option-label")', popup_common_js)
         self.assertIn("function getWriteFilenameAndExtension()", page_js)
         self.assertIn("function initializeWriteFilenameExtensionControl()", page_js)
         self.assertIn("function syncWriteFilenameInputExtension(extensionValue)", page_js)
+        self.assertIn('const DOCS_HTML_PREVIEW_EXTENSION = ".html";', page_js)
+        self.assertIn("function isWritePreviewExtension(extension)", page_js)
+        self.assertIn("currentExtension === DOCS_DEFAULT_EXTENSION || currentExtension === DOCS_HTML_PREVIEW_EXTENSION", page_js)
+        self.assertIn("const isPreviewTarget = isWritePreviewExtension(resolvedExtension);", page_js)
+        self.assertIn("previewButton.hidden = !isPreviewTarget;", page_js)
+        self.assertIn('const previewResizeHandles = previewDialog', page_js)
+        self.assertIn('data-preview-modal-resize-handle', page_js)
+        self.assertIn("function startPreviewModalResize(event)", page_js)
+        self.assertIn("function onPreviewModalResizeMove(event)", page_js)
+        self.assertIn("const maxHeight = Math.max(minHeight, state.viewportHeight - (margin * 2));", page_js)
+        self.assertNotIn("Math.min(state.viewportHeight - (margin * 2), 760)", page_js)
+        self.assertIn("function endPreviewModalResize(event)", page_js)
+        self.assertIn("previewResizeHandles.forEach(function (handle)", page_js)
+        preview_modal_start = page_js.index("async function openPreviewModal()")
+        preview_modal_end = page_js.index("function setSaveModalOpen(opened)", preview_modal_start)
+        preview_modal_block = page_js[preview_modal_start:preview_modal_end]
+        self.assertIn("let previewExtension = resolveWriteFilenameExtension();", preview_modal_block)
+        self.assertNotIn("saveFilenameInput.value", preview_modal_block)
         self.assertIn('filenameExtensionSelect.addEventListener("change"', page_js)
         self.assertIn("syncWriteFilenameInputExtension(selectedExtension);", page_js)
         self.assertIn("filenameInput.value = buildFilenameWithExtension(finalFilename, targetExtension);", page_js)
         self.assertIn("customOption.textContent = normalized;", page_js)
+        self.assertIn('customOption.getAttribute("data-site-custom-select-option-label")', page_js)
+        self.assertIn('customOption.hasAttribute("data-site-custom-select-selected-label")', page_js)
         self.assertIn("targetExtension = writeTarget.extension;", page_js)
+
+        resolve_start = page_js.index("function resolveWriteFilenameExtension()")
+        resolve_end = page_js.index("function resolveWriteEditorRenderClass()", resolve_start)
+        resolve_block = page_js[resolve_start:resolve_end]
+        self.assertIn('parseFileNameWithExtension(filenameInput ? filenameInput.value : "")', resolve_block)
+        self.assertIn('const extensionCandidate = parsed.extension || "";', resolve_block)
+        self.assertNotIn("getWriteFilenameSelectedExtensionOrDefault", resolve_block)
+        self.assertNotIn("getSelectedExtension", resolve_block)
 
     def test_write_extension_options_are_text_and_code_focused(self):
         options = get_handrive_save_extension_options()
@@ -1679,6 +1818,39 @@ class HandriveWriteFilenameExtensionSourceTests(TestCase):
         for media_extension in [".png", ".jpg", ".mp4", ".mp3", ".pdf", ".xlsx"]:
             with self.subTest(media_extension=media_extension):
                 self.assertNotIn(media_extension, options)
+
+    def test_list_editor_reuses_preview_modal_for_markdown_and_html(self):
+        base_dir = Path(settings.BASE_DIR)
+        list_template = (base_dir / "templates/handrive/list.html").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+
+        self.assertIn(
+            'id="handrive-list-preview-btn" hidden disabled>{{ handrive_text.preview_button }}</button>',
+            list_template,
+        )
+        self.assertLess(
+            list_template.index('id="handrive-list-preview-btn"'),
+            list_template.index('id="handrive-list-cancel-btn"'),
+        )
+        self.assertIn('{% include "popup/handrive/preview_modal.html" %}', list_template)
+        self.assertIn('const editorPreviewButton = document.getElementById("handrive-list-preview-btn");', page_js)
+        self.assertIn('const LIST_EDITOR_PREVIEW_EXTENSIONS = new Set([".md", ".html"]);', page_js)
+        self.assertIn("function syncListEditorPreviewButtonVisibility()", page_js)
+        self.assertIn("editorPreviewButton.hidden = !isAvailable;", page_js)
+        self.assertIn("editorPreviewButton.disabled = !isAvailable;", page_js)
+        self.assertIn("syncListEditorPreviewButtonVisibility();", page_js)
+        self.assertIn("editorPreviewResizeHandles.forEach(function (handle)", page_js)
+
+        preview_start = page_js.index("async function openListEditorPreviewModal()")
+        preview_end = page_js.index("function clearListEditorSuggestion()", preview_start)
+        preview_block = page_js[preview_start:preview_end]
+        self.assertIn("appendSharedQuery(previewApiUrl)", preview_block)
+        self.assertIn("original_path: sourcePath", preview_block)
+        self.assertIn("target_dir: normalizePath(getParentPath(sourcePath) || state.currentDir || \"\", true)", preview_block)
+        self.assertIn("extension: previewExtension", preview_block)
+        self.assertIn("content: getListEditorPreviewSourceContent()", preview_block)
+        self.assertIn("applyHandriveRenderedContentModeClass(editorPreviewModalContent, renderMode, renderClass);", preview_block)
+        self.assertIn("renderHandriveMermaidDiagrams(editorPreviewModalContent).catch(alertError);", preview_block)
 
 
 class HandriveStyleSourceTests(TestCase):
@@ -1702,6 +1874,68 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("SELECT *\\nFROM table_name", completion_js)
         self.assertIn("CREATE TABLE table_name", completion_js)
 
+    def test_folder_create_modal_uses_short_title_and_path_only_target(self):
+        base_dir = Path(settings.BASE_DIR)
+        folder_create_template = (base_dir / "templates/popup/handrive/folder_create_modal.html").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        folder_create_open_block = page_js[
+            page_js.index("function setFolderCreateModalOpen(opened, entry) {"):
+            page_js.index("function setFolderIconModalOpen(opened, entry) {")
+        ]
+
+        self.assertIn('modal_id="handrive-folder-create-modal"', folder_create_template)
+        self.assertIn("title_text=handrive_text.menu_new_folder", folder_create_template)
+        self.assertNotIn("title_text=handrive_text.folder_modal_title", folder_create_template)
+        self.assertIn("const targetLabel = getHandrivePathLabel(parentPath);", folder_create_open_block)
+        self.assertNotIn('t("create_folder_in_label"', folder_create_open_block)
+        self.assertNotIn('": " + getHandrivePathLabel(parentPath)', folder_create_open_block)
+
+    def test_popup_target_highlights_last_path_segment(self):
+        base_dir = Path(settings.BASE_DIR)
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        modal_helpers_js = (base_dir / "static/js/handrive/modal_helpers.js").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        git_repo_helpers_js = (base_dir / "static/js/handrive/git_repo_helpers.js").read_text(encoding="utf-8")
+        map_flow_helpers_js = (base_dir / "static/js/handrive/map_flow_helpers.js").read_text(encoding="utf-8")
+        target_current_block = handrive_css[
+            handrive_css.index(".handrive-popup-target-current {"):
+            handrive_css.index(".handrive-popup-target-prefix,")
+        ]
+
+        self.assertIn("function renderPopupTargetPath(target, value)", modal_helpers_js)
+        self.assertIn("handrive-popup-target-current", modal_helpers_js)
+        self.assertIn("renderPopupTargetPath(renameTarget", modal_helpers_js)
+        self.assertIn("renderPopupTargetPath(folderCreateTarget", modal_helpers_js)
+        self.assertIn("renderPopupTargetPath(folderIconTarget", modal_helpers_js)
+        self.assertIn("renderPopupTargetPath: renderPopupTargetPath", modal_helpers_js)
+        self.assertIn("modalRenderPopupTargetPath(archiveExtractTarget", page_js)
+        self.assertIn("modalRenderPopupTargetPath(archiveCreateTarget", page_js)
+        self.assertIn("renderPopupTargetPath(gitRepoTarget", git_repo_helpers_js)
+        self.assertIn("renderPopupTargetPath(target, entry ? entry.name : \"\")", map_flow_helpers_js)
+        self.assertIn("color: var(--handrive-text-stronger);", target_current_block)
+        self.assertIn("font-weight: 700;", target_current_block)
+
+    def test_save_modal_folder_modal_is_not_clipped_by_save_dialog(self):
+        base_dir = Path(settings.BASE_DIR)
+        save_template = (base_dir / "templates/popup/handrive/save_modal.html").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        folder_modal_include = '{% include "popup/handrive/folder_modal.html" %}'
+        dialog_close_before_folder_modal = "</div>\n\n    " + folder_modal_include
+        folder_modal_block_start = page_js.index("function setFolderModalOpen(opened) {")
+        folder_modal_block = page_js[
+            folder_modal_block_start:
+            page_js.index("function syncModalBodyState() {", folder_modal_block_start)
+        ]
+
+        self.assertIn(folder_modal_include, save_template)
+        self.assertIn(dialog_close_before_folder_modal, save_template)
+        self.assertLess(
+            save_template.index('class="handrive-drive-modal-dialog site-modal-dialog"'),
+            save_template.index(dialog_close_before_folder_modal),
+        )
+        self.assertIn("folderModal.hidden = !opened;", folder_modal_block)
+        self.assertIn("syncModalBodyState();", folder_modal_block)
+
     def test_layout_wrappers_do_not_duplicate_page_namespace_roles(self):
         base_dir = Path(settings.BASE_DIR)
         sources = {
@@ -1723,6 +1957,15 @@ class HandriveStyleSourceTests(TestCase):
             )
         }
         combined = "\n".join(sources.values())
+        handrive_css = sources["static/css/pages/handrive/style.css"]
+        handrive_view_content_block = handrive_css[
+            handrive_css.index('.ui-content[data-handrive-page="view"] {'):
+            handrive_css.index('.ui-content[data-handrive-page="view"][data-doc-is-spreadsheet="1"]')
+        ]
+        handrive_write_content_block = handrive_css[
+            handrive_css.index('.ui-content[data-handrive-page="write"] {'):
+            handrive_css.index('.ui-content[data-handrive-page="write"] .handrive-form-grid')
+        ]
 
         self.assertNotIn("handrive-shell", combined)
         self.assertNotIn("handrive-content ui-content", combined)
@@ -1735,7 +1978,9 @@ class HandriveStyleSourceTests(TestCase):
 
         self.assertIn('class="ui-shell ui-content"', sources["templates/handrive/list.html"])
         self.assertIn('data-handrive-page="list"', sources["templates/handrive/list.html"])
-        self.assertIn('.ui-content[data-handrive-page="view"]', sources["static/css/pages/handrive/style.css"])
+        self.assertIn('.ui-content[data-handrive-page="view"]', handrive_css)
+        self.assertNotIn("padding-top", handrive_view_content_block)
+        self.assertNotIn("padding-top", handrive_write_content_block)
         self.assertIn('.ui-content[data-handrive-page] > article', sources["static/js/handrive/page.js"])
         self.assertIn('class="ui-shell ui-content"', sources["templates/fun/sub.html"])
         self.assertIn("body.sub-page .ui-content {", sources["templates/fun/sub.html"])
@@ -1760,6 +2005,96 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("#handrive-sync-list .handrive-item:has(> .handrive-item-row.is-drop-hover)", sync_prefix_block)
         self.assertIn("--handrive-sync-tree-prefix-bg: var(--handrive-drop-target-row-bg);", sync_prefix_block)
         self.assertIn("background: var(--handrive-sync-tree-prefix-bg);", sync_prefix_block)
+
+    def test_handrive_view_and_write_toolbar_wraps_do_not_force_bottom_border(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        toolbar_wrap_block = handrive_css[
+            handrive_css.index(".handrive-toolbar-wrap,\n.ui-toolbar-wrap {"):
+            handrive_css.index(".handrive-toolbar,\n.ui-toolbar {")
+        ]
+
+        self.assertNotIn("body.handrive-view-page .handrive-toolbar-wrap", handrive_css)
+        self.assertNotIn("body.handrive-write-page .handrive-toolbar-wrap", handrive_css)
+        self.assertNotIn("border-bottom", toolbar_wrap_block)
+
+    def test_save_breadcrumb_current_state_only_changes_text_style(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        current_block = handrive_css[
+            handrive_css.index(".handrive-save-crumb-btn.is-current {"):
+            handrive_css.index(".handrive-save-crumb-sep {")
+        ]
+
+        self.assertIn("color: var(--handrive-crumb-current-color);", current_block)
+        self.assertIn("font-weight: 700;", current_block)
+        self.assertIn(".handrive-save-crumb-btn.is-current:hover", current_block)
+        self.assertIn(".handrive-save-crumb-btn.is-current:focus-visible", current_block)
+        self.assertIn("background: transparent;", current_block)
+        self.assertNotIn("background: var(--handrive-hover);", current_block)
+
+    def test_save_folder_list_owns_base_background_override(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        folder_list_block = handrive_css[
+            handrive_css.index(".handrive-save-folder-list {"):
+            handrive_css.index(".handrive-save-folder-row {")
+        ]
+        current_dir_start = handrive_css.index(".handrive-save-current-dir-row {")
+        current_dir_block = handrive_css[
+            current_dir_start:
+            handrive_css.index(".handrive-save-folder-row:hover", current_dir_start)
+        ]
+
+        self.assertIn("--handrive-save-folder-list-bg: var(--handrive-bg);", folder_list_block)
+        self.assertIn("background: var(--handrive-save-folder-list-bg);", folder_list_block)
+        self.assertIn("--handrive-save-tree-prefix-bg: var(--handrive-save-folder-list-bg);", folder_list_block)
+        self.assertIn(".handrive-save-folder-list .handrive-item:has(> .handrive-save-folder-row:hover)", folder_list_block)
+        self.assertIn("--handrive-save-tree-prefix-bg: var(--handrive-hover-button);", folder_list_block)
+        self.assertIn(".handrive-save-folder-list .handrive-item:has(> .handrive-save-folder-row.is-selected)", folder_list_block)
+        self.assertIn("--handrive-save-tree-prefix-bg: var(--handrive-hover-strong);", folder_list_block)
+        self.assertIn("background: var(--handrive-save-tree-prefix-bg);", folder_list_block)
+        self.assertIn("color: var(--handrive-text-strong);", current_dir_block)
+        self.assertNotIn("background:", current_dir_block)
+
+    def test_list_editor_body_has_no_frame_spacing_or_background(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        editor_surface_block = handrive_css[
+            handrive_css.index(".handrive-list-editor-body .handrive-editor-surface {"):
+            handrive_css.index("\n.handrive-list-editor-body {\n")
+        ]
+        editor_body_start = handrive_css.index("\n.handrive-list-editor-body {\n")
+        editor_body_block = handrive_css[
+            editor_body_start:
+            handrive_css.index(".handrive-list-layout.is-landscape.has-preview", editor_body_start)
+        ]
+
+        self.assertIn("flex: 1 1 auto;", editor_surface_block)
+        self.assertIn("min-height: 0;", editor_surface_block)
+        self.assertNotIn("border:", editor_surface_block)
+        self.assertNotIn("background:", editor_surface_block)
+        self.assertNotIn(".handrive-list-editor-body .handrive-editor-surface:focus-within", handrive_css)
+        self.assertNotIn("border:", editor_body_block)
+        self.assertNotIn("padding:", editor_body_block)
+        self.assertNotIn("background:", editor_body_block)
+        self.assertNotIn(".handrive-list-editor-body:has(.handrive-image-editor-surface", handrive_css)
+
+    def test_current_dir_list_search_form_uses_thirty_eight_pixel_height(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        current_dir_block = handrive_css[
+            handrive_css.index(".handrive-current-dir-row {"):
+            handrive_css.index(".handrive-current-dir-row.is-selected")
+        ]
+        search_controls_block = handrive_css[
+            handrive_css.index(".handrive-current-dir-row .handrive-list-search-form {"):
+            handrive_css.index(".handrive-current-dir-row .handrive-list-search-form .root-search-submit-icon")
+        ]
+
+        self.assertIn("--handrive-current-dir-search-height: 38px;", current_dir_block)
+        self.assertIn("height: var(--handrive-current-dir-search-height, 38px);", search_controls_block)
+        self.assertIn("min-height: var(--handrive-current-dir-search-height, 38px);", search_controls_block)
+        self.assertIn("max-height: var(--handrive-current-dir-search-height, 38px);", search_controls_block)
+        self.assertIn("width: var(--handrive-current-dir-search-height, 38px);", search_controls_block)
+        self.assertIn("flex-basis: var(--handrive-current-dir-search-height, 38px);", search_controls_block)
+        self.assertNotIn("--handrive-current-dir-search-height: 37px;", handrive_css)
+        self.assertNotIn("var(--handrive-current-dir-search-height, 37px)", handrive_css)
 
     def test_handrive_item_rows_square_joined_selected_edges_at_same_depth(self):
         base_dir = Path(settings.BASE_DIR)
@@ -1810,35 +2145,42 @@ class HandriveStyleSourceTests(TestCase):
                     self.assertIn("height: 20px;", style_icon_block)
                     self.assertIn("min-width: 20px;", style_icon_block)
 
-    def test_font_family_selects_preserve_text_line_height(self):
-        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
-        video_shared_rule = handrive_css[
-            handrive_css.index(".ve-subtitle-font-size-input,\n.ve-subtitle-font-family-select {"):
-            handrive_css.index(".ve-subtitle-font-family-select {\n    width: 128px;")
+    def test_media_editor_text_style_controls_share_common_template(self):
+        base_dir = Path(settings.BASE_DIR)
+        media_template = (base_dir / "templates/handrive/_media_editor_surfaces.html").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        image_editor_js = (base_dir / "static/js/handrive/image_editor.js").read_text(encoding="utf-8")
+        pdf_editor_js = (base_dir / "static/js/handrive/pdf_editor.js").read_text(encoding="utf-8")
+        video_editor_js = (base_dir / "static/js/handrive/video_editor.js").read_text(encoding="utf-8")
+        common_text_style_block = handrive_css[
+            handrive_css.index(".handrive-editor-text-style-field {"):
+            handrive_css.index("/* ── 크기 조정 모달 ── */")
         ]
-        video_select_rule = handrive_css[
-            handrive_css.index(".ve-subtitle-font-family-select {\n    width: 128px;"):
-            handrive_css.index("#ve-subtitle-input {")
-        ]
-        image_select_rule = handrive_css[
-            handrive_css.index(".ie-font-family-select {"):
-            handrive_css.index(".ie-font-family-select option {")
-        ]
-        pdf_select_rule = handrive_css[
-            handrive_css.index(".pe-font-family-select {"):
-            handrive_css.index(".pe-font-family-select option {")
-        ]
+        system_font_label = '<option value="system">system-ui</option>'
+        system_font_css = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif'
 
-        self.assertIn("box-sizing: border-box;", video_shared_rule)
-        self.assertIn("line-height: 26px;", video_select_rule)
-        self.assertIn("padding: 0 6px 1px;", video_select_rule)
-        self.assertIn("line-height: 28px;", image_select_rule)
-        self.assertIn("padding: 0 18px 1px 0;", image_select_rule)
-        self.assertIn("line-height: calc(var(--pe-control-height) - 2px);", pdf_select_rule)
-        self.assertIn("padding: 0 20px 1px 0;", pdf_select_rule)
-        for select_rule in (video_select_rule, image_select_rule, pdf_select_rule):
-            self.assertIn("vertical-align: middle;", select_rule)
-            self.assertNotIn("line-height: 1;", select_rule)
+        self.assertGreaterEqual(media_template.count("handrive-editor-text-style-field"), 11)
+        self.assertEqual(media_template.count("handrive-editor-text-style-font-family"), 3)
+        self.assertEqual(media_template.count("handrive-editor-text-style-font-size"), 3)
+        self.assertEqual(media_template.count("handrive-editor-text-style-color"), 6)
+        self.assertIn("handrive-editor-text-style-icon", media_template)
+        self.assertEqual(media_template.count(system_font_label), 3)
+        self.assertNotIn('<option value="system">기본</option>', media_template)
+        self.assertIn(system_font_css, image_editor_js)
+        self.assertIn(system_font_css.replace('"', '\\"'), pdf_editor_js)
+        self.assertIn(system_font_css, video_editor_js)
+
+        self.assertIn("--handrive-editor-text-style-height: 30px;", common_text_style_block)
+        self.assertIn("border: 1px solid var(--handrive-editor-text-style-border);", common_text_style_block)
+        self.assertIn("background: var(--handrive-editor-text-style-bg);", common_text_style_block)
+        self.assertIn(".handrive-editor-text-style-field:focus-within", common_text_style_block)
+        self.assertIn(".handrive-editor-text-style-icon {", common_text_style_block)
+        self.assertIn(".handrive-editor-text-style-field > .handrive-editor-text-style-font-family", common_text_style_block)
+        self.assertIn(".handrive-editor-text-style-field > .handrive-editor-text-style-font-size", common_text_style_block)
+        self.assertIn(".handrive-editor-text-style-field > input.handrive-editor-text-style-color", common_text_style_block)
+        self.assertIn(".ie-font-family-select.handrive-editor-text-style-font-family", common_text_style_block)
+        self.assertIn(".pe-font-family-select.handrive-editor-text-style-font-family", common_text_style_block)
+        self.assertIn(".ve-subtitle-font-family-select.handrive-editor-text-style-font-family", common_text_style_block)
 
     def test_handrive_markdown_uses_square_corners(self):
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
@@ -1853,6 +2195,105 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("border-radius: 0;", handrive_css[markdown_start:markdown_end])
         self.assertIn("border-radius: 0;", handrive_css[inline_code_start:inline_code_end])
         self.assertIn("border-radius: 0;", handrive_css[pre_start:pre_end])
+
+    def test_help_modal_markdown_uses_transparent_base_background(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        help_markdown_start = handrive_css.index(".handrive-help-modal-body .ui-markdown")
+        help_markdown_end = handrive_css.index(".handrive-help-title", help_markdown_start)
+        help_markdown_block = handrive_css[help_markdown_start:help_markdown_end]
+
+        self.assertIn(".handrive-help-modal-body .ui-markdown", help_markdown_block)
+        self.assertIn(".handrive-help-modal-body .handrive-markdown", help_markdown_block)
+        self.assertIn("background: transparent;", help_markdown_block)
+
+    def test_help_modal_dialog_sizes_from_body_with_viewport_limit(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        modal_start = handrive_css.index(".handrive-help-modal {")
+        modal_end = handrive_css.index(".handrive-help-modal[hidden]", modal_start)
+        modal_block = handrive_css[modal_start:modal_end]
+        dialog_start = handrive_css.index(".handrive-help-modal-dialog {", modal_start)
+        dialog_end = handrive_css.index(".handrive-help-modal-body {", dialog_start)
+        dialog_block = handrive_css[dialog_start:dialog_end]
+        body_start = handrive_css.index(".handrive-help-modal-body {")
+        body_end = handrive_css.index(".handrive-help-modal-body .ui-markdown", body_start)
+        body_block = handrive_css[body_start:body_end]
+
+        self.assertIn("padding: 10px;", modal_block)
+        self.assertIn("width: fit-content;", dialog_block)
+        self.assertIn("max-width: calc(100vw - 20px);", dialog_block)
+        self.assertIn("max-height: calc(100vh - 20px);", dialog_block)
+        self.assertIn("max-height: calc(100dvh - 20px);", dialog_block)
+        self.assertNotIn("760px", dialog_block)
+        self.assertNotIn("width: min(860px, 100%);", dialog_block)
+        self.assertIn("flex: 1 1 auto;", body_block)
+        self.assertIn("max-width: 100%;", body_block)
+        self.assertIn("min-height: 0;", body_block)
+        self.assertIn("box-sizing: border-box;", body_block)
+        self.assertIn("padding: 12px 20px 20px;", body_block)
+
+    def test_help_markdown_has_no_article_padding(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        help_markdown_start = handrive_css.index(".handrive-help-markdown {")
+        help_markdown_end = handrive_css.index(".handrive-help-markdown table", help_markdown_start)
+        help_markdown_block = handrive_css[help_markdown_start:help_markdown_end]
+
+        self.assertIn("padding: 0;", help_markdown_block)
+        self.assertNotIn("padding: 14px;", help_markdown_block)
+
+    def test_empty_preview_content_has_transparent_background(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        empty_preview_start = handrive_css.index("#ui-preview-content:empty {")
+        empty_preview_end = handrive_css.index("#ui-preview-modal .handrive-help-modal-dialog", empty_preview_start)
+        empty_preview_block = handrive_css[empty_preview_start:empty_preview_end]
+
+        self.assertIn("background: transparent;", empty_preview_block)
+
+    def test_preview_modal_has_border_and_corner_resize_handles(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        resize_start = handrive_css.index(".handrive-preview-resize-handle {")
+        resize_end = handrive_css.index("#ui-preview-modal:has", resize_start)
+        resize_block = handrive_css[resize_start:resize_end]
+
+        self.assertIn("position: absolute;", resize_block)
+        self.assertIn("touch-action: none;", resize_block)
+        self.assertIn(".handrive-preview-resize-handle-n,", resize_block)
+        self.assertIn(".handrive-preview-resize-handle-s {", resize_block)
+        self.assertIn("cursor: ns-resize;", resize_block)
+        self.assertIn(".handrive-preview-resize-handle-e,", resize_block)
+        self.assertIn(".handrive-preview-resize-handle-w {", resize_block)
+        self.assertIn("cursor: ew-resize;", resize_block)
+        self.assertIn(".handrive-preview-resize-handle-ne", resize_block)
+        self.assertIn(".handrive-preview-resize-handle-se", resize_block)
+        self.assertIn(".handrive-preview-resize-handle-sw", resize_block)
+        self.assertIn(".handrive-preview-resize-handle-nw", resize_block)
+        self.assertIn("cursor: nesw-resize;", resize_block)
+        self.assertIn("cursor: nwse-resize;", resize_block)
+        self.assertIn("body.handrive-preview-resizing", resize_block)
+
+    def test_preview_modal_html_render_fills_body_without_padding(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        preview_html_start = handrive_css.index("#ui-preview-modal:has(#ui-preview-content.handrive-html .handrive-html-live-frame)")
+        preview_html_end = handrive_css.index(".handrive-help-title", preview_html_start)
+        preview_html_block = handrive_css[preview_html_start:preview_html_end]
+
+        self.assertIn("height: calc(100vh - 20px);", preview_html_block)
+        self.assertIn("height: calc(100dvh - 20px);", preview_html_block)
+        self.assertNotIn("760px", preview_html_block)
+        self.assertIn("#ui-preview-modal .handrive-help-modal-body:has(> #ui-preview-content.handrive-html .handrive-html-live-frame)", preview_html_block)
+        self.assertIn("width: calc(100vw - 20px);", preview_html_block)
+        self.assertIn("max-width: 100%;", preview_html_block)
+        self.assertIn("padding: 0;", preview_html_block)
+        self.assertIn("overflow: hidden;", preview_html_block)
+        self.assertIn("#ui-preview-modal .handrive-help-modal-body > #ui-preview-content.handrive-html", preview_html_block)
+        self.assertIn("flex: 1 1 auto;", preview_html_block)
+        self.assertIn("height: 100%;", preview_html_block)
+        self.assertIn("min-height: 0;", preview_html_block)
 
     def test_handrive_markdown_code_blocks_use_distinct_light_background(self):
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
@@ -2122,7 +2563,7 @@ class LegalPageTests(TestCase):
         self.assertNotIn("Location", response.headers)
         self.assertContains(response, 'lang="en"', html=False)
         self.assertContains(response, "Privacy Policy")
-        self.assertContains(response, "Google Drive display")
+        self.assertContains(response, "Google Picker selected item list")
         self.assertContains(response, "Google API Services User Data Policy")
         self.assertEqual(self.client.session[UI_LANG_SESSION_KEY], "ko")
 
@@ -2147,7 +2588,7 @@ class LegalPageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "개인정보 처리방침")
         self.assertContains(response, "Privacy Policy")
-        self.assertContains(response, "Google Drive 표시 옵션")
+        self.assertContains(response, "Google Picker 선택 항목 목록")
         self.assertContains(response, "GitHub 저장소")
         self.assertContains(response, "Google API Services User Data Policy")
         self.assertContains(response, "Limited Use")
@@ -2572,6 +3013,9 @@ class SiteZIndexLayerTests(TestCase):
 
         self.assertIn("--handrive-job-queue-z: var(--site-z-popup-raised, 1125);", handrive_css)
         self.assertIn("z-index: var(--handrive-job-queue-z);", job_queue_rule)
+        self.assertIn("background: var(--site-modal-surface-bg, var(--handrive-modal-surface-bg));", job_queue_rule)
+        self.assertIn("background-color: var(--site-modal-surface-bg, var(--handrive-modal-surface-bg));", job_queue_rule)
+        self.assertIn("backdrop-filter: var(--site-modal-surface-filter, var(--handrive-modal-surface-filter));", job_queue_rule)
         self.assertIn("z-index: var(--site-z-popup);", common_account_css)
         self.assertIn("z-index: var(--site-z-popup);", common_css)
         self.assertIn(".ui-auth-account-floating:has(.ui-auth-account-menu:not([hidden]))", common_account_css)
@@ -2786,6 +3230,8 @@ class SiteZIndexLayerTests(TestCase):
             "--site-modal-exterior-dim-shadow",
             "--site-modal-surface-bg",
             "--site-modal-surface-filter",
+            "--site-dropdown-surface-bg",
+            "--site-dropdown-surface-filter",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, layout_css)
@@ -2796,6 +3242,8 @@ class SiteZIndexLayerTests(TestCase):
         self.assertIn("--site-modal-exterior-dim-shadow: 0 0 0 100vmax var(--site-modal-backdrop-bg);", layout_css)
         self.assertIn("--site-modal-surface-bg: rgba(248, 248, 248, 0.72);", layout_css)
         self.assertIn("--site-modal-surface-bg: rgba(46, 46, 46, 0.72);", common_css)
+        self.assertIn("--site-dropdown-surface-bg: var(--site-modal-surface-bg);", layout_css)
+        self.assertIn("--site-dropdown-surface-filter: var(--site-modal-surface-filter);", layout_css)
         self.assertNotIn("--site-modal-header-bg", layout_css)
         self.assertNotIn("--site-modal-header-bg", common_css)
         self.assertNotIn("--site-modal-surface-bg: var(--site-popup-glass-bg);", layout_css)
@@ -2816,8 +3264,9 @@ class SiteZIndexLayerTests(TestCase):
             handrive_css.index(".handrive-job-queue-panel {"):
             handrive_css.index(".handrive-job-queue-head {", handrive_css.index(".handrive-job-queue-panel {"))
         ]
-        self.assertIn("background: var(--handrive-modal-surface-bg);", job_queue_rule)
-        self.assertIn("backdrop-filter: var(--handrive-modal-surface-filter);", job_queue_rule)
+        self.assertIn("background: var(--site-modal-surface-bg, var(--handrive-modal-surface-bg));", job_queue_rule)
+        self.assertIn("background-color: var(--site-modal-surface-bg, var(--handrive-modal-surface-bg));", job_queue_rule)
+        self.assertIn("backdrop-filter: var(--site-modal-surface-filter, var(--handrive-modal-surface-filter));", job_queue_rule)
         job_queue_head_rule = handrive_css[
             handrive_css.index(".handrive-job-queue-head {"):
             handrive_css.index(".handrive-job-queue-head-main", handrive_css.index(".handrive-job-queue-head {"))
@@ -5619,6 +6068,46 @@ class HandriveAccessRuleTests(TestCase):
             google_drive_enabled=True,
             google_profile_synced_at=timezone.now(),
         )
+
+    def test_new_write_page_initially_uses_custom_extension_without_markdown_flash(self):
+        user = self.create_scoped_handrive_user("new_write_no_md_flash")
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("main:handrive_write_lang", kwargs={"ui_lang": "ko"}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["write_mode"], "create")
+        self.assertEqual(response.context["initial_extension"], "")
+        self.assertFalse(response.context["write_is_markdown"])
+        self.assertFalse(response.context["write_has_preview"])
+        html = response.content.decode("utf-8")
+        self.assertIn(
+            '<option value="__custom__" data-site-custom-select-option-label="직접 입력" data-site-custom-select-selected-label=""></option>',
+            html,
+        )
+        self.assertIn('<option value=".md">.md</option>', html)
+        self.assertNotIn('<option value=".md" selected>.md</option>', html)
+        self.assertIn('id="ui-markdown-help-btn" hidden disabled', html)
+        self.assertIn('id="ui-preview-btn" hidden disabled', html)
+
+    def test_html_write_page_initially_shows_preview_without_markdown_guide(self):
+        user = self.create_scoped_handrive_user("html_write_preview_user")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
+        html_path = handrive_root / "users" / user.username / "index.html"
+        html_path.write_text("<main>hello</main>", encoding="utf-8")
+        self.client.force_login(user)
+
+        response = self.client.get(
+            reverse("main:handrive_write_lang", kwargs={"ui_lang": "ko"}),
+            {"path": f"users/{user.username}/index.html"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["write_is_markdown"])
+        self.assertTrue(response.context["write_has_preview"])
+        html = response.content.decode("utf-8")
+        self.assertIn('id="ui-markdown-help-btn" hidden disabled', html)
+        self.assertIn('id="ui-preview-btn">미리보기</button>', html)
 
     def test_all_list_initial_entries_use_demo_number_order(self):
         handrive_all_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "all"
@@ -8666,6 +9155,31 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(payload.get("render_mode"), "markdown")
         self.assertIn("<h1>", payload.get("html", ""))
 
+    def test_docs_api_preview_renders_new_html_write_content(self):
+        user = self.create_scoped_handrive_user("preview_new_html_editor")
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("main:handrive_api_preview"),
+            data=json.dumps(
+                {
+                    "original_path": "",
+                    "target_dir": f"users/{user.username}",
+                    "extension": ".html",
+                    "content": "<main id='app'>hello</main>",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("render_class"), "handrive-html")
+        self.assertIn("handrive-html-live-frame", payload.get("html", ""))
+        self.assertIn('sandbox="allow-scripts"', payload.get("html", ""))
+        self.assertIn("hello", payload.get("html", ""))
+
     def test_docs_api_preview_rejects_anonymous_legacy_public_writable_file(self):
         public_group = get_handrive_public_write_group()
         handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
@@ -8704,6 +9218,31 @@ class HandriveAccessRuleTests(TestCase):
         self.assertTrue(payload.get("ok"))
         self.assertEqual(payload.get("render_mode"), "markdown")
         self.assertEqual(payload.get("html", "").count("handrive-markdown-blank-line"), 2)
+
+    def test_docs_api_preview_uses_payload_extension_for_existing_editor_content(self):
+        user = self.create_scoped_handrive_user("preview_payload_extension_editor")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
+        (handrive_root / "users" / user.username / "draft.txt").write_text("plain", encoding="utf-8")
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("main:handrive_api_preview"),
+            data=json.dumps(
+                {
+                    "original_path": f"users/{user.username}/draft.txt",
+                    "extension": ".md",
+                    "content": "# 제목\n\n**bold**",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("render_mode"), "markdown")
+        self.assertIn("<strong>bold</strong>", payload.get("html", ""))
+        self.assertNotIn("<pre><code>", payload.get("html", ""))
 
     def test_docs_view_preserves_markdown_blank_lines(self):
         admin_user = self.user_model.objects.create_user(

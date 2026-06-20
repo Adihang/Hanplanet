@@ -204,15 +204,11 @@ body.theme-dark .auth-modal {
 
 .auth-modal-loading {
     position: absolute;
-    top: var(--site-modal-head-follow-gap, 0px);
-    right: calc(-1 * var(--site-modal-dialog-padding-x, 0px));
-    bottom: calc(-1 * var(--site-modal-dialog-padding-y, 0px));
-    left: calc(-1 * var(--site-modal-dialog-padding-x, 0px));
+    inset: 0;
     z-index: 6;
     display: grid;
     place-items: center;
-    border-bottom-left-radius: inherit;
-    border-bottom-right-radius: inherit;
+    border-radius: inherit;
     background: color-mix(in srgb, var(--site-auth-dialog-bg) 76%, transparent);
     -webkit-backdrop-filter: blur(3px);
     backdrop-filter: blur(3px);
@@ -478,6 +474,84 @@ body.theme-dark .auth-field textarea {
     text-align: center;
 }
 
+.auth-form .auth-2fa-hint {
+    margin-bottom: 0;
+    text-align: center;
+}
+
+.auth-form .auth-2fa-hint strong {
+    display: block;
+    margin-top: 4px;
+    color: var(--site-auth-dialog-text-strong);
+    font-weight: 650;
+}
+
+.auth-actions.auth-2fa-actions {
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.auth-actions.auth-2fa-actions .ui-btn {
+    flex: 0 0 auto;
+}
+
+.auth-actions.auth-2fa-actions .auth-2fa-resend-msg,
+.auth-actions.auth-2fa-actions .auth-2fa-inline-error {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: left;
+}
+
+.auth-actions.auth-2fa-actions .auth-2fa-inline-error {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    color: var(--site-auth-error-text);
+    font-size: 14px;
+    line-height: 1.35;
+}
+
+.auth-2fa-submit-btn {
+    min-width: 96px;
+    padding-left: 18px;
+    padding-right: 18px;
+}
+
+.auth-2fa-resend-link {
+    flex: 0 0 auto;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: color-mix(in srgb, var(--site-auth-dialog-text-muted) 72%, transparent);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.35;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    cursor: pointer;
+    transition: color 0.15s ease, font-weight 0.15s ease;
+}
+
+.auth-2fa-resend-link:hover,
+.auth-2fa-resend-link:focus-visible {
+    color: var(--site-auth-dialog-text-strong);
+    font-weight: 600;
+}
+
+.auth-2fa-resend-link:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--site-auth-input-focus) 38%, transparent);
+    outline-offset: 3px;
+}
+
+.auth-2fa-resend-link:disabled {
+    color: color-mix(in srgb, var(--site-auth-dialog-text-muted) 48%, transparent);
+    cursor: default;
+    font-weight: 400;
+}
+
 .auth-provider-options,
 .auth-provider-methods {
     justify-content: center;
@@ -505,7 +579,7 @@ body.theme-dark .auth-field textarea {
     height: 48px;
     border: 0;
     border-radius: var(--handrive-radius-sm, 8px);
-    background: var(--site-auth-provider-bg);
+    background: transparent;
     color: var(--site-auth-dialog-text-muted);
     text-decoration: none;
     transition: background-color 0.15s ease, color 0.15s ease;
@@ -660,7 +734,7 @@ body.theme-dark .auth-field textarea {
     gap: 10px;
     justify-content: center;
     width: 100%;
-    padding: 14px 0;
+    padding: 14px 0 4px;
 }
 
 .auth-otp-box {

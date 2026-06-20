@@ -318,6 +318,7 @@
                     <div class="handrive-filename-field">
                         <input type="text" id="handrive-list-filename-input" placeholder="{{ handrive_text.filename_placeholder }}">
                     </div>
+                    <button class="ui-btn" type="button" id="handrive-list-preview-btn" hidden disabled>{{ handrive_text.preview_button }}</button>
                     <button class="ui-btn" type="button" id="handrive-list-cancel-btn">{{ handrive_text.cancel }}</button>
                     <button class="ui-btn ui-btn-primary" type="button" id="handrive-list-save-btn">{{ handrive_text.save_button }}</button>
                 </div>
@@ -379,6 +380,7 @@
 {% include "popup/handrive/url_share_modal.html" %}
 {% include "popup/handrive/auth_logout_modal.html" %}
 {% include "popup/handrive/page_help_modal.html" %}
+{% include "popup/handrive/preview_modal.html" %}
 {% include "popup/handrive/job_queue_panel.html" %}
 {% include "popup/handrive/sync_modal.html" %}
 <input id="handrive-context-upload-input" type="file" multiple hidden>

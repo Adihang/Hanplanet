@@ -49,6 +49,7 @@
             modal.setAttribute("aria-hidden", "false");
         } else {
             modal.setAttribute("aria-hidden", "true");
+            hideDialogLoading();
             content.innerHTML = "";
             content.classList.remove("is-loading", "is-submitting");
             if (window.SiteModalStack && typeof window.SiteModalStack.sync === "function") {
@@ -145,10 +146,36 @@
         if (titleNode) titleNode.textContent = value;
     }
 
+    function hideDialogLoading() {
+        if (!dialog) return;
+        Array.from(dialog.querySelectorAll(":scope > .auth-modal-loading")).forEach(function (loading) {
+            loading.hidden = true;
+        });
+    }
+
+    function ensureDialogLoading(className) {
+        const parent = dialog || content;
+        let loading = parent.querySelector(":scope > ." + className);
+        if (loading) return loading;
+        loading = document.createElement("div");
+        loading.className = "auth-modal-loading " + className;
+        loading.setAttribute("role", "status");
+        loading.setAttribute("aria-live", "polite");
+        loading.hidden = true;
+        const spinner = document.createElement("span");
+        spinner.className = "auth-loading-spinner";
+        spinner.setAttribute("aria-hidden", "true");
+        loading.appendChild(spinner);
+        parent.appendChild(loading);
+        return loading;
+    }
+
     function showLoading() {
+        hideDialogLoading();
         content.classList.add("is-loading");
         content.classList.remove("is-submitting");
-        content.innerHTML = '<div class="auth-modal-loading" role="status" aria-live="polite"><span class="auth-loading-spinner" aria-hidden="true"></span></div>';
+        content.innerHTML = "";
+        ensureDialogLoading("auth-modal-panel-loading").hidden = false;
     }
 
     function focusFirstControl() {
@@ -172,6 +199,7 @@
     }
 
     function replacePanel(html) {
+        hideDialogLoading();
         content.classList.remove("is-loading", "is-submitting");
         content.innerHTML = html || "";
         preparePanel();
@@ -185,19 +213,8 @@
     }
 
     function ensureModalContentLoading(modalContent) {
-        let loading = modalContent.querySelector(":scope > .auth-modal-submit-loading");
-        if (loading) return loading;
-        loading = document.createElement("div");
-        loading.className = "auth-modal-loading auth-modal-submit-loading";
-        loading.setAttribute("role", "status");
-        loading.setAttribute("aria-live", "polite");
+        const loading = ensureDialogLoading("auth-modal-submit-loading");
         loading.setAttribute("data-auth-submit-loading", "1");
-        loading.hidden = true;
-        const spinner = document.createElement("span");
-        spinner.className = "auth-loading-spinner";
-        spinner.setAttribute("aria-hidden", "true");
-        loading.appendChild(spinner);
-        modalContent.appendChild(loading);
         return loading;
     }
 
@@ -584,18 +601,42 @@
     }
 
     function bindLoginResend(form) {
-        const resendBtn = form.querySelector("#handrive-login-2fa-resend-btn");
+        const resendBtn = form.querySelector(".auth-2fa-resend-link[data-resend-url], #handrive-login-2fa-resend-btn");
         if (!resendBtn || resendBtn.dataset.siteAuthResendReady === "1") return;
         resendBtn.dataset.siteAuthResendReady = "1";
         const resendUrl = resendBtn.dataset.resendUrl || "";
         if (!resendUrl) return;
-        const resendMsgEl = form.querySelector("#handrive-login-2fa-resend-msg");
-        const errorEl = form.querySelector("#handrive-login-2fa-error");
-        const codeInput = form.querySelector("#handrive-login-2fa-code-input");
-        const originalText = resendBtn.textContent;
+        const resendMsgEl = form.querySelector("[data-auth-2fa-resend-msg], #handrive-login-2fa-resend-msg, #handrive-2fa-resend-msg");
+        const errorEl = form.querySelector("#handrive-login-2fa-error, #handrive-2fa-error, .auth-error");
+        const codeInput = form.querySelector("#handrive-login-2fa-code-input, #handrive-2fa-code-input, [data-handrive-otp-input]");
+        const originalText = resendBtn.textContent.trim();
         const cooldownMs = 30000;
         let cooldownUntil = 0;
         let timer = null;
+
+        function hideResendMessage() {
+            if (!resendMsgEl) return;
+            resendMsgEl.textContent = "";
+            resendMsgEl.hidden = true;
+            delete resendMsgEl.dataset.cooldownMessage;
+        }
+
+        function showResendMessage(message, isCooldown) {
+            showInlineError(errorEl, "");
+            if (!resendMsgEl) return;
+            resendMsgEl.textContent = message || "";
+            resendMsgEl.hidden = !message;
+            if (isCooldown) {
+                resendMsgEl.dataset.cooldownMessage = "1";
+            } else {
+                delete resendMsgEl.dataset.cooldownMessage;
+            }
+        }
+
+        function showResendError(message) {
+            hideResendMessage();
+            showInlineError(errorEl, message || "");
+        }
 
         function remainingSeconds() {
             return Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
@@ -607,12 +648,9 @@
             resendBtn.textContent = originalText;
             if (resendMsgEl) {
                 if (remaining > 0) {
-                    resendMsgEl.textContent = "재전송 가능까지 " + remaining + "초";
-                    resendMsgEl.hidden = false;
+                    showResendMessage("재전송 가능까지 " + remaining + "초", true);
                 } else if (resendMsgEl.dataset.cooldownMessage === "1") {
-                    resendMsgEl.textContent = "";
-                    resendMsgEl.hidden = true;
-                    delete resendMsgEl.dataset.cooldownMessage;
+                    hideResendMessage();
                 }
             }
             if (timer) window.clearTimeout(timer);
@@ -626,10 +664,7 @@
             }
             resendBtn.disabled = true;
             showInlineError(errorEl, "");
-            if (resendMsgEl) {
-                resendMsgEl.textContent = "";
-                resendMsgEl.hidden = true;
-            }
+            hideResendMessage();
             fetch(resendUrl, {
                 method: "POST",
                 credentials: "same-origin",
@@ -641,10 +676,7 @@
                 .then(function (response) { return response.json(); })
                 .then(function (data) {
                     if (data.ok) {
-                        if (resendMsgEl) {
-                            resendMsgEl.textContent = form.dataset.login2faResendSuccess || "";
-                            resendMsgEl.hidden = false;
-                        }
+                        showResendMessage(form.dataset.login2faResendSuccess || "", false);
                         if (codeInput) {
                             codeInput.value = "";
                             codeInput.dispatchEvent(new Event("input", { bubbles: true }));
@@ -654,12 +686,12 @@
                         updateCooldown();
                     } else {
                         resendBtn.disabled = false;
-                        showInlineError(errorEl, selectServerMessage(data, form.dataset.login2faResendFallback || ""));
+                        showResendError(selectServerMessage(data, form.dataset.login2faResendFallback || ""));
                     }
                 })
                 .catch(function () {
                     resendBtn.disabled = false;
-                    showInlineError(errorEl, form.dataset.siteAuthGenericError || "");
+                    showResendError(form.dataset.siteAuthGenericError || "");
                 });
         });
     }

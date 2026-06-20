@@ -13,22 +13,22 @@
                 <ul class="handrive-save-folder-list" id="handrive-save-folder-list"></ul>
             </section>
         </div>
-        <div class="handrive-save-file-meta-grid">
-            <label id="handrive-save-name-field">
-                <span>
-                    <span class="handrive-save-name-label-main">{{ handrive_text.save_filename_label_main|default:"파일명" }}</span>
-                    <span class="handrive-save-name-label-sub">{{ handrive_text.save_filename_label_sub|default:"(확장자 포함)" }}</span>
+        <div class="handrive-file-meta-grid">
+            <label class="handrive-file-name-field" id="handrive-save-name-field" for="handrive-save-filename-input">
+                <span class="handrive-file-meta-label handrive-file-name-label">
+                    <span class="handrive-file-name-label-main">{{ handrive_text.save_filename_label_main|default:"파일명" }}</span>
+                    <span class="handrive-file-name-label-sub">{{ handrive_text.save_filename_label_sub|default:"(확장자 포함)" }}</span>
                 </span>
                 <input type="text" id="handrive-save-filename-input" value="{{ initial_filename }}" placeholder="{{ handrive_text.save_filename_placeholder }}">
             </label>
-            <label id="handrive-save-extension-field">
-                <span>{{ handrive_text.file_extension_label }}</span>
-                <div class="handrive-save-extension-controls">
-                    <select id="handrive-save-extension-select" class="handrive-save-extension-select" aria-label="{{ handrive_text.file_extension_quick_label }}" data-site-custom-select="1">
+            <label class="handrive-file-extension-field" id="handrive-save-extension-field" for="handrive-save-extension-select">
+                <span class="handrive-file-meta-label">{{ handrive_text.file_extension_label }}</span>
+                <div class="handrive-file-extension-controls">
+                    <select id="handrive-save-extension-select" class="handrive-file-extension-select" aria-label="{{ handrive_text.file_extension_quick_label }}" data-site-custom-select="1">
+                        <option value="__custom__" data-site-custom-select-option-label="{{ handrive_text.file_extension_custom_option }}" data-site-custom-select-selected-label=""></option>
                         {% for ext in handrive_file_extension_options %}
-                            <option value="{{ ext }}"{% if ext == initial_extension %} selected{% endif %}>{{ ext }}</option>
+                            <option value="{{ ext }}"{% if initial_filename and ext == initial_extension %} selected{% endif %}>{{ ext }}</option>
                         {% endfor %}
-                        <option value="__custom__">{{ handrive_text.file_extension_custom_option }}</option>
                     </select>
                 </div>
             </label>
@@ -45,6 +45,7 @@
             <span class="handrive-save-loading-text">{{ handrive_text.save_loading }}</span>
         </div>
 
-        {% include "popup/handrive/folder_modal.html" %}
     </div>
+
+    {% include "popup/handrive/folder_modal.html" %}
 </div>

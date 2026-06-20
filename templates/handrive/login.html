@@ -386,6 +386,40 @@
         let login2faCooldownUntil = 0;
         let login2faCooldownTimer = null;
 
+        function hideLogin2faError() {
+            if (!twoFaErrorEl) return;
+            twoFaErrorEl.textContent = "";
+            twoFaErrorEl.style.display = "none";
+            twoFaErrorEl.hidden = true;
+        }
+
+        function hideLogin2faResendMessage() {
+            if (!resendMsgEl) return;
+            resendMsgEl.textContent = "";
+            resendMsgEl.hidden = true;
+            delete resendMsgEl.dataset.cooldownMessage;
+        }
+
+        function showLogin2faResendMessage(message, isCooldown) {
+            hideLogin2faError();
+            if (!resendMsgEl) return;
+            resendMsgEl.textContent = message || "";
+            resendMsgEl.hidden = !message;
+            if (isCooldown) {
+                resendMsgEl.dataset.cooldownMessage = "1";
+            } else {
+                delete resendMsgEl.dataset.cooldownMessage;
+            }
+        }
+
+        function showLogin2faError(message) {
+            hideLogin2faResendMessage();
+            if (!twoFaErrorEl) return;
+            twoFaErrorEl.textContent = message || "";
+            twoFaErrorEl.style.display = message ? "block" : "none";
+            twoFaErrorEl.hidden = !message;
+        }
+
         function getLogin2faCooldownRemainingSeconds() {
             const remainingMs = login2faCooldownUntil - Date.now();
             return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0;
@@ -400,13 +434,9 @@
             }
             if (resendMsgEl) {
                 if (isCoolingDown) {
-                    resendMsgEl.textContent = "재전송 가능까지 " + remainingSeconds + "초";
-                    resendMsgEl.hidden = false;
-                    resendMsgEl.dataset.cooldownMessage = "1";
+                    showLogin2faResendMessage("재전송 가능까지 " + remainingSeconds + "초", true);
                 } else if (resendMsgEl.dataset.cooldownMessage === "1") {
-                    resendMsgEl.textContent = "";
-                    resendMsgEl.hidden = true;
-                    delete resendMsgEl.dataset.cooldownMessage;
+                    hideLogin2faResendMessage();
                 }
             }
             if (login2faCooldownTimer) {
@@ -430,8 +460,8 @@
                     return;
                 }
                 resendBtn.disabled = true;
-                if (resendMsgEl) { resendMsgEl.hidden = true; resendMsgEl.textContent = ""; }
-                if (twoFaErrorEl) { twoFaErrorEl.style.display = "none"; twoFaErrorEl.textContent = ""; }
+                hideLogin2faResendMessage();
+                hideLogin2faError();
 
                 fetch(resendUrl, {
                     method: "POST",
@@ -444,10 +474,7 @@
                     .then(function (res) { return res.json(); })
                     .then(function (data) {
                         if (data.ok) {
-                            if (resendMsgEl) {
-                                resendMsgEl.textContent = "{{ handrive_text.auth_2fa_resend_success|escapejs }}";
-                                resendMsgEl.hidden = false;
-                            }
+                            showLogin2faResendMessage("{{ handrive_text.auth_2fa_resend_success|escapejs }}", false);
                             if (twoFaCodeInput) {
                                 twoFaCodeInput.value = "";
                                 twoFaCodeInput.dispatchEvent(new Event("input", { bubbles: true }));
@@ -456,18 +483,12 @@
                             startLogin2faCooldown();
                         } else {
                             resendBtn.disabled = false;
-                            if (twoFaErrorEl) {
-                                twoFaErrorEl.textContent = selectServerMessage(data, "재전송에 실패했습니다.");
-                                twoFaErrorEl.style.display = "block";
-                            }
+                            showLogin2faError(selectServerMessage(data, "재전송에 실패했습니다."));
                         }
                     })
                     .catch(function () {
                         resendBtn.disabled = false;
-                        if (twoFaErrorEl) {
-                            twoFaErrorEl.textContent = "오류가 발생했습니다. 다시 시도해주세요.";
-                            twoFaErrorEl.style.display = "block";
-                        }
+                        showLogin2faError("오류가 발생했습니다. 다시 시도해주세요.");
                     });
             });
         }

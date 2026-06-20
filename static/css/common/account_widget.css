@@ -83,11 +83,11 @@ body.hanplanet-multiplayer-page .ui-auth-account-name {
     min-width: 260px;
     border: 0;
     border-radius: 12px;
-    background: var(--site-popup-glass-bg, rgba(238, 238, 238, 0.5));
-    background-color: var(--site-popup-glass-bg, rgba(238, 238, 238, 0.5));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
     background-image: none;
-    -webkit-backdrop-filter: var(--site-popup-glass-filter, saturate(120%) blur(4px));
-    backdrop-filter: var(--site-popup-glass-filter, saturate(120%) blur(4px));
+    -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
+    backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     opacity: 1;
     padding: 0;
     display: flex;
@@ -97,8 +97,8 @@ body.hanplanet-multiplayer-page .ui-auth-account-name {
 }
 
 body.theme-dark .ui-auth-account-menu {
-    background: var(--site-popup-glass-bg, rgba(46, 46, 46, 0.5));
-    background-color: var(--site-popup-glass-bg, rgba(46, 46, 46, 0.5));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
     background-image: none;
     opacity: 1;
 }

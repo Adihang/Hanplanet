@@ -1537,6 +1537,9 @@
     const modalSetFolderCreateModalOpen = handriveModalHelpers.setFolderCreateModalOpen || function () {};
     const modalSetFolderIconModalOpen = handriveModalHelpers.setFolderIconModalOpen || function () {};
     const modalSetRenameModalOpen = handriveModalHelpers.setRenameModalOpen || function () {};
+    const modalRenderPopupTargetPath = handriveModalHelpers.renderPopupTargetPath || function (target, value) {
+        if (target) target.textContent = value || "";
+    };
     const handriveEditorHelpers = window.HandriveEditorHelpers || {};
     const editorResolveFilenameAndExtension = handriveEditorHelpers.resolveEditorFilenameAndExtension || function () { return { filename: "", extension: ".md" }; };
     const editorSwitchToEditorUI = handriveEditorHelpers.switchToEditorUI || function () { return Promise.resolve(); };
@@ -5232,11 +5235,19 @@
         const editorFilenameInput = document.getElementById("handrive-list-filename-input");
         const editorContentInput = document.getElementById("handrive-list-content-input");
         const editorCancelButton = document.getElementById("handrive-list-cancel-btn");
+        const editorPreviewButton = document.getElementById("handrive-list-preview-btn");
         const editorSaveButton = document.getElementById("handrive-list-save-btn");
         const editorSavingOverlay = document.getElementById("handrive-list-editor-saving");
         const editorHighlightCode = document.getElementById("handrive-list-editor-highlight-code");
         const editorSurface = document.getElementById("handrive-list-editor-surface");
         const editorHighlight = document.getElementById("handrive-list-editor-highlight");
+        const editorPreviewModal = document.getElementById("ui-preview-modal");
+        const editorPreviewBackdrop = document.getElementById("ui-preview-backdrop");
+        const editorPreviewModalContent = document.getElementById("ui-preview-content");
+        const editorPreviewDialog = editorPreviewModal ? editorPreviewModal.querySelector(".handrive-help-modal-dialog") : null;
+        const editorPreviewResizeHandles = editorPreviewDialog
+            ? Array.from(editorPreviewDialog.querySelectorAll("[data-preview-modal-resize-handle]"))
+            : [];
         const imageEditorSurface = document.getElementById("handrive-image-editor-surface");
         const videoEditorSurface = document.getElementById("handrive-video-editor-surface");
         const audioEditorSurface = document.getElementById("handrive-audio-editor-surface");
@@ -6400,10 +6411,12 @@
         let activeListEditorSuggestions = [];
         let activeListEditorSuggestionIndex = -1;
         let activeListEditorEntry = null;
+        let activeListEditorPreviewResize = null;
         let listSuggestEventsBound = false;
         let listMarkdownSnippetEventsBound = false;
         let listMarkdownImageEventsBound = false;
         let listMarkdownUploadedImagePaths = [];
+        const LIST_EDITOR_PREVIEW_EXTENSIONS = new Set([".md", ".html"]);
         const listMarkdownImageInput = createMarkdownImageInputHandler({
             textarea: editorContentInput,
             uploadApiUrl: markdownImageUploadApiUrl,
@@ -6440,6 +6453,225 @@
             const raw = (editorFilenameInput && editorFilenameInput.value ? editorFilenameInput.value : "").trim();
             const match = raw.match(/\.[A-Za-z0-9]+$/);
             return match ? match[0].toLowerCase() : "";
+        }
+
+        function resolveListEditorPreviewExtension() {
+            const rawFilename = editorFilenameInput && editorFilenameInput.value
+                ? String(editorFilenameInput.value).trim()
+                : "";
+            const filenameExtension = getPathFileExtension(rawFilename);
+            if (filenameExtension) {
+                return filenameExtension.toLowerCase();
+            }
+            const entryPath = activeListEditorEntry && activeListEditorEntry.path
+                ? String(activeListEditorEntry.path)
+                : "";
+            const entryExtension = getPathFileExtension(entryPath);
+            return entryExtension ? entryExtension.toLowerCase() : "";
+        }
+
+        function isListEditorPreviewExtension(extension) {
+            return LIST_EDITOR_PREVIEW_EXTENSIONS.has(String(extension || "").trim().toLowerCase());
+        }
+
+        function syncListEditorPreviewButtonVisibility() {
+            if (!editorPreviewButton) {
+                return;
+            }
+            const previewExtension = resolveListEditorPreviewExtension();
+            const isTextEditorOpen = Boolean(editorSurface && !editorSurface.hidden);
+            const isAvailable = Boolean(activeListEditorEntry && isTextEditorOpen && isListEditorPreviewExtension(previewExtension));
+            editorPreviewButton.hidden = !isAvailable;
+            editorPreviewButton.disabled = !isAvailable;
+        }
+
+        function clampListEditorPreviewModalValue(value, min, max) {
+            if (min > max) {
+                return (min + max) / 2;
+            }
+            return Math.max(min, Math.min(max, value));
+        }
+
+        function getListEditorPreviewDialogOffset(propertyName) {
+            if (!editorPreviewDialog) {
+                return 0;
+            }
+            const computedValue = window.getComputedStyle(editorPreviewDialog).getPropertyValue(propertyName);
+            const parsedValue = Number.parseFloat(editorPreviewDialog.style.getPropertyValue(propertyName) || computedValue || "0");
+            return Number.isFinite(parsedValue) ? parsedValue : 0;
+        }
+
+        function setListEditorPreviewDialogOffset(x, y) {
+            if (!editorPreviewDialog) {
+                return;
+            }
+            editorPreviewDialog.setAttribute("data-popup-draggable-dialog", "true");
+            editorPreviewDialog.style.setProperty("--popup-drag-x", String(Math.round(x)) + "px");
+            editorPreviewDialog.style.setProperty("--popup-drag-y", String(Math.round(y)) + "px");
+        }
+
+        function endListEditorPreviewModalResize(event) {
+            if (!activeListEditorPreviewResize || (event && event.pointerId !== activeListEditorPreviewResize.pointerId)) {
+                return;
+            }
+            if (editorPreviewDialog) {
+                editorPreviewDialog.classList.remove("is-preview-resizing");
+            }
+            document.body.classList.remove("handrive-preview-resizing");
+            document.body.style.removeProperty("cursor");
+            activeListEditorPreviewResize = null;
+        }
+
+        function onListEditorPreviewModalResizeMove(event) {
+            if (!activeListEditorPreviewResize || event.pointerId !== activeListEditorPreviewResize.pointerId) {
+                return;
+            }
+            event.preventDefault();
+            const state = activeListEditorPreviewResize;
+            const margin = 10;
+            const minWidth = Math.min(320, Math.max(0, state.viewportWidth - (margin * 2)));
+            const minHeight = Math.min(220, Math.max(0, state.viewportHeight - (margin * 2)));
+            const maxWidth = Math.max(minWidth, state.viewportWidth - (margin * 2));
+            const maxHeight = Math.max(minHeight, state.viewportHeight - (margin * 2));
+            const maxRight = state.viewportWidth - margin;
+            const maxBottom = state.viewportHeight - margin;
+            let left = state.startRect.left;
+            let right = state.startRect.right;
+            let top = state.startRect.top;
+            let bottom = state.startRect.bottom;
+            const dx = event.clientX - state.startClientX;
+            const dy = event.clientY - state.startClientY;
+
+            if (state.direction.indexOf("e") !== -1) {
+                right = clampListEditorPreviewModalValue(state.startRect.right + dx, left + minWidth, Math.min(maxRight, left + maxWidth));
+            }
+            if (state.direction.indexOf("w") !== -1) {
+                left = clampListEditorPreviewModalValue(state.startRect.left + dx, Math.max(margin, right - maxWidth), right - minWidth);
+            }
+            if (state.direction.indexOf("s") !== -1) {
+                bottom = clampListEditorPreviewModalValue(state.startRect.bottom + dy, top + minHeight, Math.min(maxBottom, top + maxHeight));
+            }
+            if (state.direction.indexOf("n") !== -1) {
+                top = clampListEditorPreviewModalValue(state.startRect.top + dy, Math.max(margin, bottom - maxHeight), bottom - minHeight);
+            }
+
+            const nextWidth = Math.max(minWidth, right - left);
+            const nextHeight = Math.max(minHeight, bottom - top);
+            const startCenterX = state.startRect.left + (state.startRect.width / 2);
+            const startCenterY = state.startRect.top + (state.startRect.height / 2);
+            const nextCenterX = left + (nextWidth / 2);
+            const nextCenterY = top + (nextHeight / 2);
+
+            editorPreviewDialog.style.width = String(Math.round(nextWidth)) + "px";
+            editorPreviewDialog.style.height = String(Math.round(nextHeight)) + "px";
+            setListEditorPreviewDialogOffset(
+                state.startOffsetX + nextCenterX - startCenterX,
+                state.startOffsetY + nextCenterY - startCenterY
+            );
+        }
+
+        function startListEditorPreviewModalResize(event) {
+            if (!editorPreviewDialog || event.defaultPrevented || event.button !== 0 || event.isPrimary === false) {
+                return;
+            }
+            const handle = event.currentTarget;
+            const direction = String(handle.getAttribute("data-preview-modal-resize-handle") || "").trim();
+            if (!direction) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            activeListEditorPreviewResize = {
+                pointerId: event.pointerId,
+                direction: direction,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                startRect: editorPreviewDialog.getBoundingClientRect(),
+                startOffsetX: getListEditorPreviewDialogOffset("--popup-drag-x"),
+                startOffsetY: getListEditorPreviewDialogOffset("--popup-drag-y"),
+                viewportWidth: Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0),
+                viewportHeight: Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0),
+            };
+            editorPreviewDialog.classList.add("is-preview-resizing");
+            document.body.classList.add("handrive-preview-resizing");
+            document.body.style.cursor = window.getComputedStyle(handle).cursor || "nwse-resize";
+            try {
+                handle.setPointerCapture(event.pointerId);
+            } catch (error) {}
+        }
+
+        function setListEditorPreviewModalOpen(opened) {
+            if (!editorPreviewModal) {
+                return;
+            }
+            if (!opened) {
+                endListEditorPreviewModalResize();
+            }
+            editorPreviewModal.hidden = !opened;
+            syncModalBodyState();
+        }
+
+        function getListEditorPreviewSourceContent() {
+            if (!editorContentInput) {
+                return "";
+            }
+            const content = editorContentInput.value || "";
+            const selectionStart = Number(editorContentInput.selectionStart);
+            const selectionEnd = Number(editorContentInput.selectionEnd);
+            if (
+                Number.isFinite(selectionStart) &&
+                Number.isFinite(selectionEnd) &&
+                selectionEnd > selectionStart
+            ) {
+                return content.slice(selectionStart, selectionEnd);
+            }
+            return content;
+        }
+
+        async function openListEditorPreviewModal() {
+            if (!editorPreviewModal || !editorPreviewModalContent || !activeListEditorEntry) {
+                return;
+            }
+            const previewExtension = resolveListEditorPreviewExtension();
+            if (!isListEditorPreviewExtension(previewExtension)) {
+                return;
+            }
+
+            applyHandriveRenderedContentModeClass(editorPreviewModalContent, "plain_text", "handrive-plain-text");
+            editorPreviewModalContent.innerHTML = "<p>" + t("preview_loading", "Loading preview...") + "</p>";
+            setListEditorPreviewModalOpen(true);
+
+            if (!previewApiUrl) {
+                editorPreviewModalContent.innerHTML = "<p>" + t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다.") + "</p>";
+                return;
+            }
+
+            try {
+                const sourcePath = normalizePath(activeListEditorEntry.path || "", false);
+                const data = await requestJson(
+                    appendSharedQuery(previewApiUrl),
+                    buildPostOptions({
+                        original_path: sourcePath,
+                        target_dir: normalizePath(getParentPath(sourcePath) || state.currentDir || "", true),
+                        extension: previewExtension,
+                        content: getListEditorPreviewSourceContent(),
+                    })
+                );
+                const renderMode = data && (data.render_mode === "markdown" || data.render_mode === "office")
+                    ? data.render_mode
+                    : "plain_text";
+                const renderClass = data && typeof data.render_class === "string" ? data.render_class : "";
+                applyHandriveRenderedContentModeClass(editorPreviewModalContent, renderMode, renderClass);
+                editorPreviewModalContent.innerHTML = data && typeof data.html === "string" ? data.html : "";
+                applyHandriveCodeHighlighting(editorPreviewModalContent, renderClass || "ui-markdown");
+                renderHandriveMermaidDiagrams(editorPreviewModalContent).catch(alertError);
+            } catch (error) {
+                applyHandriveRenderedContentModeClass(editorPreviewModalContent, "plain_text", "handrive-plain-text");
+                editorPreviewModalContent.innerHTML =
+                    "<p>" +
+                    (error && error.message ? error.message : t("js_error_processing_failed", "처리 중 오류가 발생했습니다.")) +
+                    "</p>";
+            }
         }
 
         function clearListEditorSuggestion() {
@@ -8122,6 +8354,7 @@
                     scheduleSyncCurrentDirRowHeightWithSideHead();
                     scheduleEditorBodyHeight();
                     syncSearchFormVisibility();
+                    syncListEditorPreviewButtonVisibility();
                 },
                 loadContent: function (targetEntry) {
                     const targetUrl = buildDownloadUrl(targetEntry.path);
@@ -8138,6 +8371,7 @@
                         });
                 },
             });
+            syncListEditorPreviewButtonVisibility();
             setupEditorEvents(entry);
         }
 
@@ -8169,6 +8403,7 @@
             }
             scheduleSyncCurrentDirRowHeightWithSideHead();
             syncSearchFormVisibility();
+            syncListEditorPreviewButtonVisibility();
 
             if (editorSaveButton) editorSaveButton.disabled = true;
             setListEditorSaving(true);
@@ -8247,6 +8482,7 @@
             }
             scheduleSyncCurrentDirRowHeightWithSideHead();
             syncSearchFormVisibility();
+            syncListEditorPreviewButtonVisibility();
 
             // ImageEditor 초기화
             const imageServeUrl = buildDownloadUrl(entry.path);
@@ -8310,6 +8546,7 @@
             }
             scheduleSyncCurrentDirRowHeightWithSideHead();
             syncSearchFormVisibility();
+            syncListEditorPreviewButtonVisibility();
 
             const videoServeUrl = buildDownloadUrl(entry.path);
             if (editorSaveButton) editorSaveButton.disabled = true;
@@ -8374,6 +8611,7 @@
             }
             scheduleSyncCurrentDirRowHeightWithSideHead();
             syncSearchFormVisibility();
+            syncListEditorPreviewButtonVisibility();
 
             const audioServeUrl = buildDownloadUrl(entry.path);
             if (editorSaveButton) editorSaveButton.disabled = true;
@@ -8437,6 +8675,7 @@
             }
             scheduleSyncCurrentDirRowHeightWithSideHead();
             syncSearchFormVisibility();
+            syncListEditorPreviewButtonVisibility();
 
             if (editorSaveButton) editorSaveButton.disabled = true;
             setListEditorSaving(true);
@@ -8509,6 +8748,8 @@
             });
             cleanupEditorEvents();
             activeListEditorEntry = null;
+            syncListEditorPreviewButtonVisibility();
+            setListEditorPreviewModalOpen(false);
         }
 
         function closeEditorAndRestorePreviewState() {
@@ -8618,6 +8859,7 @@
             if (editorFilenameInput) {
                 editorFilenameInput.addEventListener("input", function () {
                     renderListEditorHighlight();
+                    syncListEditorPreviewButtonVisibility();
                 });
             }
             if (editorSuggest && !listSuggestEventsBound) {
@@ -8639,6 +8881,21 @@
                 });
             }
             
+            if (editorPreviewButton) {
+                editorPreviewButton.onmousedown = function (event) {
+                    event.preventDefault();
+                };
+                editorPreviewButton.onclick = function (event) {
+                    event.preventDefault();
+                    openListEditorPreviewModal().catch(alertError);
+                };
+                editorPreviewButton.onmouseup = function (event) {
+                    if (event.currentTarget && typeof event.currentTarget.blur === "function") {
+                        event.currentTarget.blur();
+                    }
+                };
+            }
+
             function handleMediaEditorSaved(result, options) {
                 const settings = options || {};
                 const sourcePath = normalizePath(entry.path || "", true);
@@ -9083,6 +9340,11 @@
             }
             if (editorCancelButton) {
                 editorCancelButton.onclick = null;
+            }
+            if (editorPreviewButton) {
+                editorPreviewButton.onclick = null;
+                editorPreviewButton.onmousedown = null;
+                editorPreviewButton.onmouseup = null;
             }
         }
 
@@ -12929,7 +13191,7 @@
             }
             state.archiveExtractTargetEntry = entry || null;
             if (archiveExtractTarget) {
-                archiveExtractTarget.textContent = getHandrivePathLabel(entry && entry.path ? entry.path : "");
+                modalRenderPopupTargetPath(archiveExtractTarget, getHandrivePathLabel(entry && entry.path ? entry.path : ""));
             }
         }
 
@@ -12968,9 +13230,9 @@
             }
             state.archiveCreateTargetEntries = selection.entries.slice();
             if (archiveCreateTarget) {
-                archiveCreateTarget.textContent = t("archive_create_target_prefix", "압축 대상") + ": "
+                modalRenderPopupTargetPath(archiveCreateTarget, t("archive_create_target_prefix", "압축 대상") + ": "
                     + getHandrivePathLabel(selection.parentPath) + " · "
-                    + String(selection.entries.length) + t("archive_create_target_count_suffix", "개 파일");
+                    + String(selection.entries.length) + t("archive_create_target_count_suffix", "개 파일"));
             }
             if (archiveCreateInput) {
                 archiveCreateInput.value = selection.defaultName || "archive";
@@ -13033,7 +13295,7 @@
             }
             state.folderCreateParentEntry = entry || null;
             const parentPath = entry && entry.path ? entry.path : "";
-            const targetLabel = t("create_folder_in_label", "생성 위치") + ": " + getHandrivePathLabel(parentPath);
+            const targetLabel = getHandrivePathLabel(parentPath);
             modalSetFolderCreateModalOpen(folderCreateModal, folderCreateTarget, folderCreateInput, syncModalBodyState, true, state.folderCreateParentEntry, targetLabel);
         }
 
@@ -14534,6 +14796,20 @@
             }
         }, true);
 
+        if (editorPreviewBackdrop) {
+            editorPreviewBackdrop.addEventListener("click", function () {
+                setListEditorPreviewModalOpen(false);
+            });
+        }
+
+        editorPreviewResizeHandles.forEach(function (handle) {
+            handle.addEventListener("pointerdown", startListEditorPreviewModalResize);
+            handle.addEventListener("pointermove", onListEditorPreviewModalResizeMove);
+            handle.addEventListener("pointerup", endListEditorPreviewModalResize);
+            handle.addEventListener("pointercancel", endListEditorPreviewModalResize);
+            handle.addEventListener("lostpointercapture", endListEditorPreviewModalResize);
+        });
+
         if (previewZoomOutButton) {
             previewZoomOutButton.addEventListener("click", function () {
                 setPreviewImageZoom(state.previewImageZoom - 0.25);
@@ -15717,10 +15993,14 @@
         const markdownHelpButton = document.getElementById("ui-markdown-help-btn");
         const markdownHelpModal = document.getElementById("ui-markdown-help-modal");
         const markdownHelpBackdrop = document.getElementById("ui-markdown-help-backdrop");
-        const markdownPreviewButton = document.getElementById("ui-markdown-preview-btn");
-        const markdownPreviewModal = document.getElementById("ui-markdown-preview-modal");
-        const markdownPreviewBackdrop = document.getElementById("ui-markdown-preview-backdrop");
-        const markdownPreviewContent = document.getElementById("ui-markdown-preview-content");
+        const previewButton = document.getElementById("ui-preview-btn");
+        const previewModal = document.getElementById("ui-preview-modal");
+        const previewBackdrop = document.getElementById("ui-preview-backdrop");
+        const previewContent = document.getElementById("ui-preview-content");
+        const previewDialog = previewModal ? previewModal.querySelector(".handrive-help-modal-dialog") : null;
+        const previewResizeHandles = previewDialog
+            ? Array.from(previewDialog.querySelectorAll("[data-preview-modal-resize-handle]"))
+            : [];
         const cancelButton = document.getElementById("handrive-cancel-btn");
         const saveButton = document.getElementById("handrive-save-btn");
         const createFolderButton = document.getElementById("handrive-create-folder-btn");
@@ -15792,6 +16072,8 @@
         const directories = [];
         const directorySet = new Set();
         const DOCS_DEFAULT_EXTENSION = ".md";
+        const DOCS_HTML_PREVIEW_EXTENSION = ".html";
+        const DOCS_UNTITLED_FILENAME = "untitled";
         let customExtensionValue = DOCS_DEFAULT_EXTENSION;
         // write 페이지 상태는 파일명/디렉터리 선택과 미저장 변경 추적에 집중한다.
         const state = {
@@ -15816,6 +16098,7 @@
         let lastUnsavedFocusedElement = null;
         let activeEditorSuggestions = [];
         let activeEditorSuggestionIndex = -1;
+        let activePreviewResize = null;
         let writeSuggestEventsBound = false;
         let writeMarkdownUploadedImagePaths = [];
         let writeUndoStack = [];
@@ -16321,7 +16604,12 @@
 
         function getCurrentEditorExtension() {
             const extension = resolveWriteFilenameExtension();
-            return extension || DOCS_DEFAULT_EXTENSION;
+            return extension || "";
+        }
+
+        function isWritePreviewExtension(extension) {
+            const currentExtension = String(extension || "").trim().toLowerCase();
+            return currentExtension === DOCS_DEFAULT_EXTENSION || currentExtension === DOCS_HTML_PREVIEW_EXTENSION;
         }
 
         function syncSnippetMenuItemsByExtension(extension) {
@@ -16881,11 +17169,16 @@
             }
             const customOption = selectElement.querySelector('option[value="' + DOCS_CUSTOM_EXTENSION_OPTION_VALUE + '"]');
             if (customOption && !customOption.dataset.defaultLabel) {
-                customOption.dataset.defaultLabel = customOption.textContent || DOCS_CUSTOM_EXTENSION_OPTION_VALUE;
+                customOption.dataset.defaultLabel =
+                    customOption.getAttribute("data-site-custom-select-option-label") ||
+                    customOption.textContent ||
+                    DOCS_CUSTOM_EXTENSION_OPTION_VALUE;
             }
             const resetCustomOptionLabel = function () {
                 if (customOption) {
-                    customOption.textContent = customOption.dataset.defaultLabel || DOCS_CUSTOM_EXTENSION_OPTION_VALUE;
+                    customOption.textContent = customOption.hasAttribute("data-site-custom-select-selected-label")
+                        ? String(customOption.getAttribute("data-site-custom-select-selected-label") || "")
+                        : customOption.dataset.defaultLabel || DOCS_CUSTOM_EXTENSION_OPTION_VALUE;
                 }
             };
             let normalized = "";
@@ -16921,6 +17214,33 @@
             syncExtensionSelectElementFromValue(filenameExtensionSelect, extensionValue);
         }
 
+        function syncExtensionSelectElementToCustomDefault(selectElement) {
+            if (!selectElement) {
+                return;
+            }
+            const customOption = selectElement.querySelector('option[value="' + DOCS_CUSTOM_EXTENSION_OPTION_VALUE + '"]');
+            if (!customOption) {
+                syncExtensionSelectElementFromValue(selectElement, DOCS_DEFAULT_EXTENSION);
+                return;
+            }
+            if (!customOption.dataset.defaultLabel) {
+                customOption.dataset.defaultLabel =
+                    customOption.getAttribute("data-site-custom-select-option-label") ||
+                    customOption.textContent ||
+                    DOCS_CUSTOM_EXTENSION_OPTION_VALUE;
+            }
+            customOption.textContent = customOption.hasAttribute("data-site-custom-select-selected-label")
+                ? String(customOption.getAttribute("data-site-custom-select-selected-label") || "")
+                : customOption.dataset.defaultLabel || DOCS_CUSTOM_EXTENSION_OPTION_VALUE;
+            selectElement.value = DOCS_CUSTOM_EXTENSION_OPTION_VALUE;
+        }
+
+        function syncWriteExtensionControlsToCustomDefault() {
+            customExtensionValue = "";
+            syncExtensionSelectElementToCustomDefault(filenameExtensionSelect);
+            syncExtensionSelectElementToCustomDefault(saveExtensionSelect);
+        }
+
         function getSelectedExtensionFromSelect(selectElement) {
             if (!selectElement) {
                 return DOCS_DEFAULT_EXTENSION;
@@ -16930,11 +17250,7 @@
                 return DOCS_DEFAULT_EXTENSION;
             }
             if (selected === DOCS_CUSTOM_EXTENSION_OPTION_VALUE) {
-                try {
-                    return normalizeFileExtensionValue(customExtensionValue, false);
-                } catch (error) {
-                    return DOCS_DEFAULT_EXTENSION;
-                }
+                return normalizeFileExtensionValue(customExtensionValue, false);
             }
             return normalizeFileExtensionValue(selected, false);
         }
@@ -16945,6 +17261,24 @@
 
         function getWriteFilenameSelectedExtensionOrDefault() {
             return getSelectedExtensionFromSelect(filenameExtensionSelect || saveExtensionSelect);
+        }
+
+        function getSelectedExtensionForUserChange(selectElement, filenameElement) {
+            if (!selectElement) {
+                return "";
+            }
+            const selectedValue = String(selectElement.value || "").trim().toLowerCase();
+            if (selectedValue === DOCS_CUSTOM_EXTENSION_OPTION_VALUE) {
+                const parsedCurrent = parseFileNameWithExtension(filenameElement ? filenameElement.value : "");
+                if (parsedCurrent.extension) {
+                    const normalizedCustom = normalizeFileExtensionValue(parsedCurrent.extension, false);
+                    customExtensionValue = normalizedCustom;
+                    return normalizedCustom;
+                }
+                customExtensionValue = "";
+                return "";
+            }
+            return normalizeFileExtensionValue(selectedValue, false);
         }
 
         function getSaveModalFilenameAndExtension() {
@@ -17034,7 +17368,7 @@
 
         function resolveWriteFilenameExtension() {
             const parsed = parseFileNameWithExtension(filenameInput ? filenameInput.value : "");
-            const extensionCandidate = parsed.extension || getWriteFilenameSelectedExtensionOrDefault();
+            const extensionCandidate = parsed.extension || "";
             try {
                 return normalizeFileExtensionValue(extensionCandidate, false);
             } catch (error) {
@@ -17258,24 +17592,30 @@
                 return;
             }
 
-            const renderClass = resolveWriteEditorRenderClass();
             const source = contentInput.value || "";
+            let renderClass = "handrive-plain-text";
             let highlightedHtml = escapeHtml(source);
-            
-            if (renderClass === "handrive-js") {
-                highlightedHtml = highlightJavaScriptCode(source);
-            } else if (renderClass === "handrive-editor-md") {
-                highlightedHtml = highlightMarkdownSourceCode(source);
-            } else if (renderClass === "handrive-css") {
-                highlightedHtml = highlightCssCode(source);
-            } else if (renderClass === "handrive-json") {
-                highlightedHtml = highlightJsonCode(source);
-            } else if (renderClass === "handrive-py") {
-                highlightedHtml = highlightPythonCode(source);
-            } else if (renderClass === "handrive-sql") {
-                highlightedHtml = highlightSqlCode(source);
-            } else if (renderClass === "handrive-editor-html") {
-                highlightedHtml = highlightHtmlCode(source);
+
+            try {
+                renderClass = resolveWriteEditorRenderClass();
+                if (renderClass === "handrive-js") {
+                    highlightedHtml = highlightJavaScriptCode(source);
+                } else if (renderClass === "handrive-editor-md") {
+                    highlightedHtml = highlightMarkdownSourceCode(source);
+                } else if (renderClass === "handrive-css") {
+                    highlightedHtml = highlightCssCode(source);
+                } else if (renderClass === "handrive-json") {
+                    highlightedHtml = highlightJsonCode(source);
+                } else if (renderClass === "handrive-py") {
+                    highlightedHtml = highlightPythonCode(source);
+                } else if (renderClass === "handrive-sql") {
+                    highlightedHtml = highlightSqlCode(source);
+                } else if (renderClass === "handrive-editor-html") {
+                    highlightedHtml = highlightHtmlCode(source);
+                }
+            } catch (error) {
+                renderClass = "handrive-plain-text";
+                highlightedHtml = escapeHtml(source);
             }
 
             editorHighlight.classList.remove("handrive-plain-text", "handrive-editor-md", "handrive-js", "handrive-css", "handrive-json", "handrive-py", "handrive-sql", "handrive-editor-html");
@@ -17285,19 +17625,20 @@
         }
 
         function syncMarkdownHelpButtonVisibility() {
-            if (!markdownHelpButton && !markdownPreviewButton) {
+            if (!markdownHelpButton && !previewButton) {
                 renderWriteEditorHighlight();
                 return;
             }
             const resolvedExtension = resolveWriteFilenameExtension();
             const isMarkdownTarget = resolvedExtension === DOCS_DEFAULT_EXTENSION;
+            const isPreviewTarget = isWritePreviewExtension(resolvedExtension);
             if (markdownHelpButton) {
                 markdownHelpButton.hidden = !isMarkdownTarget;
                 markdownHelpButton.disabled = !isMarkdownTarget;
             }
-            if (markdownPreviewButton) {
-                markdownPreviewButton.hidden = !isMarkdownTarget;
-                markdownPreviewButton.disabled = !isMarkdownTarget;
+            if (previewButton) {
+                previewButton.hidden = !isPreviewTarget;
+                previewButton.disabled = !isPreviewTarget;
             }
             renderWriteEditorHighlight();
         }
@@ -17331,6 +17672,21 @@
                 filenameInput.value = nextValue;
             }
             return normalizedExtension;
+        }
+
+        function ensureUntitledBaseName(inputElement) {
+            if (!inputElement) {
+                return "";
+            }
+            const parsed = parseFileNameWithExtension(inputElement.value);
+            const baseName = String(parsed.filename || inputElement.value || "")
+                .trim()
+                .replace(/\.+$/, "");
+            if (baseName) {
+                return baseName;
+            }
+            inputElement.value = DOCS_UNTITLED_FILENAME;
+            return DOCS_UNTITLED_FILENAME;
         }
 
         function getWriteFilenameSnapshotValue() {
@@ -17376,7 +17732,11 @@
                 return;
             }
             const parsed = parseFileNameWithExtension(filenameInput.value);
-            const initialExtension = parsed.extension || getPathFileExtension(originalPath) || DOCS_DEFAULT_EXTENSION;
+            const initialExtension = parsed.extension || getPathFileExtension(originalPath);
+            if (!initialExtension) {
+                syncWriteExtensionControlsToCustomDefault();
+                return;
+            }
             syncWriteExtensionControlsFromValue(initialExtension);
             syncWriteFilenameInputExtension(initialExtension);
         }
@@ -18197,6 +18557,7 @@
                 return;
             }
             folderModal.hidden = !opened;
+            syncModalBodyState();
             if (opened) {
                 const basePath = getFolderCreateBasePath();
                 if (folderTargetPath) {
@@ -18214,6 +18575,121 @@
             syncHandriveModalBodyState();
         }
 
+        function clampPreviewModalValue(value, min, max) {
+            if (min > max) {
+                return (min + max) / 2;
+            }
+            return Math.max(min, Math.min(max, value));
+        }
+
+        function getPreviewDialogOffset(propertyName) {
+            if (!previewDialog) {
+                return 0;
+            }
+            const computedValue = window.getComputedStyle(previewDialog).getPropertyValue(propertyName);
+            const parsedValue = Number.parseFloat(previewDialog.style.getPropertyValue(propertyName) || computedValue || "0");
+            return Number.isFinite(parsedValue) ? parsedValue : 0;
+        }
+
+        function setPreviewDialogOffset(x, y) {
+            if (!previewDialog) {
+                return;
+            }
+            previewDialog.setAttribute("data-popup-draggable-dialog", "true");
+            previewDialog.style.setProperty("--popup-drag-x", String(Math.round(x)) + "px");
+            previewDialog.style.setProperty("--popup-drag-y", String(Math.round(y)) + "px");
+        }
+
+        function endPreviewModalResize(event) {
+            if (!activePreviewResize || (event && event.pointerId !== activePreviewResize.pointerId)) {
+                return;
+            }
+            if (previewDialog) {
+                previewDialog.classList.remove("is-preview-resizing");
+            }
+            document.body.classList.remove("handrive-preview-resizing");
+            document.body.style.removeProperty("cursor");
+            activePreviewResize = null;
+        }
+
+        function onPreviewModalResizeMove(event) {
+            if (!activePreviewResize || event.pointerId !== activePreviewResize.pointerId) {
+                return;
+            }
+            event.preventDefault();
+            const state = activePreviewResize;
+            const margin = 10;
+            const minWidth = Math.min(320, Math.max(0, state.viewportWidth - (margin * 2)));
+            const minHeight = Math.min(220, Math.max(0, state.viewportHeight - (margin * 2)));
+            const maxWidth = Math.max(minWidth, state.viewportWidth - (margin * 2));
+            const maxHeight = Math.max(minHeight, state.viewportHeight - (margin * 2));
+            const maxRight = state.viewportWidth - margin;
+            const maxBottom = state.viewportHeight - margin;
+            let left = state.startRect.left;
+            let right = state.startRect.right;
+            let top = state.startRect.top;
+            let bottom = state.startRect.bottom;
+            const dx = event.clientX - state.startClientX;
+            const dy = event.clientY - state.startClientY;
+
+            if (state.direction.indexOf("e") !== -1) {
+                right = clampPreviewModalValue(state.startRect.right + dx, left + minWidth, Math.min(maxRight, left + maxWidth));
+            }
+            if (state.direction.indexOf("w") !== -1) {
+                left = clampPreviewModalValue(state.startRect.left + dx, Math.max(margin, right - maxWidth), right - minWidth);
+            }
+            if (state.direction.indexOf("s") !== -1) {
+                bottom = clampPreviewModalValue(state.startRect.bottom + dy, top + minHeight, Math.min(maxBottom, top + maxHeight));
+            }
+            if (state.direction.indexOf("n") !== -1) {
+                top = clampPreviewModalValue(state.startRect.top + dy, Math.max(margin, bottom - maxHeight), bottom - minHeight);
+            }
+
+            const nextWidth = Math.max(minWidth, right - left);
+            const nextHeight = Math.max(minHeight, bottom - top);
+            const startCenterX = state.startRect.left + (state.startRect.width / 2);
+            const startCenterY = state.startRect.top + (state.startRect.height / 2);
+            const nextCenterX = left + (nextWidth / 2);
+            const nextCenterY = top + (nextHeight / 2);
+
+            previewDialog.style.width = String(Math.round(nextWidth)) + "px";
+            previewDialog.style.height = String(Math.round(nextHeight)) + "px";
+            setPreviewDialogOffset(
+                state.startOffsetX + nextCenterX - startCenterX,
+                state.startOffsetY + nextCenterY - startCenterY
+            );
+        }
+
+        function startPreviewModalResize(event) {
+            if (!previewDialog || event.defaultPrevented || event.button !== 0 || event.isPrimary === false) {
+                return;
+            }
+            const handle = event.currentTarget;
+            const direction = String(handle.getAttribute("data-preview-modal-resize-handle") || "").trim();
+            if (!direction) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            activePreviewResize = {
+                pointerId: event.pointerId,
+                direction: direction,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                startRect: previewDialog.getBoundingClientRect(),
+                startOffsetX: getPreviewDialogOffset("--popup-drag-x"),
+                startOffsetY: getPreviewDialogOffset("--popup-drag-y"),
+                viewportWidth: Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0),
+                viewportHeight: Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0),
+            };
+            previewDialog.classList.add("is-preview-resizing");
+            document.body.classList.add("handrive-preview-resizing");
+            document.body.style.cursor = window.getComputedStyle(handle).cursor || "nwse-resize";
+            try {
+                handle.setPointerCapture(event.pointerId);
+            } catch (error) {}
+        }
+
         function setMarkdownHelpModalOpen(opened) {
             if (!markdownHelpModal) {
                 return;
@@ -18222,15 +18698,18 @@
             syncModalBodyState();
         }
 
-        function setMarkdownPreviewModalOpen(opened) {
-            if (!markdownPreviewModal) {
+        function setPreviewModalOpen(opened) {
+            if (!previewModal) {
                 return;
             }
-            markdownPreviewModal.hidden = !opened;
+            if (!opened) {
+                endPreviewModalResize();
+            }
+            previewModal.hidden = !opened;
             syncModalBodyState();
         }
 
-        function getMarkdownPreviewSourceContent() {
+        function getPreviewSourceContent() {
             if (!contentInput) {
                 return "";
             }
@@ -18247,30 +18726,28 @@
             return content;
         }
 
-        async function openMarkdownPreviewModal() {
-            if (!markdownPreviewModal || !markdownPreviewContent) {
+        async function openPreviewModal() {
+            if (!previewModal || !previewContent) {
                 return;
             }
-            const previewContentSource = getMarkdownPreviewSourceContent();
+            const previewContentSource = getPreviewSourceContent();
 
-            applyHandriveRenderedContentModeClass(markdownPreviewContent, "plain_text", "handrive-plain-text");
-            markdownPreviewContent.innerHTML = "<p>" + t("markdown_preview_loading", "Loading preview...") + "</p>";
-            setMarkdownPreviewModalOpen(true);
+            applyHandriveRenderedContentModeClass(previewContent, "plain_text", "handrive-plain-text");
+            previewContent.innerHTML = "<p>" + t("preview_loading", "Loading preview...") + "</p>";
+            setPreviewModalOpen(true);
 
             if (!previewApiUrl) {
-                markdownPreviewContent.innerHTML = "<p>" + t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다.") + "</p>";
+                previewContent.innerHTML = "<p>" + t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다.") + "</p>";
                 return;
             }
 
             try {
-                let previewExtension = getPathFileExtension(originalPath) || DOCS_DEFAULT_EXTENSION;
-                if (!originalPath && saveFilenameInput) {
-                    const parsed = parseFileNameWithExtension(saveFilenameInput.value);
-                    if (parsed.extension) {
-                        previewExtension = parsed.extension;
-                    } else if (saveExtensionSelect) {
-                        previewExtension = getSelectedExtensionOrDefault();
-                    }
+                let previewExtension = resolveWriteFilenameExtension();
+                if (!previewExtension && originalPath) {
+                    previewExtension = getPathFileExtension(originalPath);
+                }
+                if (!previewExtension) {
+                    previewExtension = DOCS_DEFAULT_EXTENSION;
                 }
                 const data = await requestJson(
                     previewApiUrl,
@@ -18285,13 +18762,13 @@
                     ? data.render_mode
                     : "plain_text";
                 const renderClass = data && typeof data.render_class === "string" ? data.render_class : "";
-                applyHandriveRenderedContentModeClass(markdownPreviewContent, renderMode, renderClass);
-                markdownPreviewContent.innerHTML = data && typeof data.html === "string" ? data.html : "";
-                applyHandriveCodeHighlighting(markdownPreviewContent, renderClass || "ui-markdown");
-                renderHandriveMermaidDiagrams(markdownPreviewContent).catch(alertError);
+                applyHandriveRenderedContentModeClass(previewContent, renderMode, renderClass);
+                previewContent.innerHTML = data && typeof data.html === "string" ? data.html : "";
+                applyHandriveCodeHighlighting(previewContent, renderClass || "ui-markdown");
+                renderHandriveMermaidDiagrams(previewContent).catch(alertError);
             } catch (error) {
-                applyHandriveRenderedContentModeClass(markdownPreviewContent, "plain_text", "handrive-plain-text");
-                markdownPreviewContent.innerHTML =
+                applyHandriveRenderedContentModeClass(previewContent, "plain_text", "handrive-plain-text");
+                previewContent.innerHTML =
                     "<p>" +
                     (error && error.message ? error.message : t("js_error_processing_failed", "처리 중 오류가 발생했습니다.")) +
                     "</p>";
@@ -18324,12 +18801,18 @@
                 modalInitialDir = getNearestWritableDirectory(modalInitialDir || initialDir);
             }
             const parsedMainFilename = parseFileNameWithExtension(filenameInput ? filenameInput.value : "");
-            const extensionCandidate = parsedMainFilename.extension || getWriteFilenameSelectedExtensionOrDefault() || getPathFileExtension(originalPath) || DOCS_DEFAULT_EXTENSION;
-            syncExtensionSelectFromValue(extensionCandidate);
+            const extensionCandidate = parsedMainFilename.extension || getPathFileExtension(originalPath);
+            if (extensionCandidate) {
+                syncExtensionSelectFromValue(extensionCandidate);
+            } else {
+                syncExtensionSelectElementToCustomDefault(saveExtensionSelect);
+            }
             const filenameCandidate = String(parsedMainFilename.filename || "").trim();
 
             if (saveFilenameInput) {
-                saveFilenameInput.value = buildFilenameWithExtension(filenameCandidate, extensionCandidate);
+                saveFilenameInput.value = extensionCandidate
+                    ? buildFilenameWithExtension(filenameCandidate, extensionCandidate)
+                    : filenameCandidate;
             }
 
             state.selectedOverwritePath = "";
@@ -18604,9 +19087,13 @@
         initializeWriteFilenameExtensionControl();
         if (saveExtensionSelect) {
             const initialExtension = filenameExtensionSelect
-                ? getWriteFilenameSelectedExtensionOrDefault()
-                : getPathFileExtension(originalPath) || DOCS_DEFAULT_EXTENSION;
-            syncExtensionSelectFromValue(initialExtension);
+                ? resolveWriteFilenameExtension()
+                : getPathFileExtension(originalPath);
+            if (initialExtension) {
+                syncExtensionSelectFromValue(initialExtension);
+            } else {
+                syncExtensionSelectElementToCustomDefault(saveExtensionSelect);
+            }
         }
         markCurrentAsSaved();
         syncMarkdownHelpButtonVisibility();
@@ -18701,32 +19188,24 @@
 
         if (saveExtensionSelect && saveFilenameInput) {
             saveExtensionSelect.addEventListener("change", function () {
-                const selectedValue = String(saveExtensionSelect.value || "").trim().toLowerCase();
-                let selectedExtension = DOCS_DEFAULT_EXTENSION;
-                if (selectedValue === DOCS_CUSTOM_EXTENSION_OPTION_VALUE) {
-                    const parsedCurrent = parseFileNameWithExtension(saveFilenameInput.value);
-                    if (parsedCurrent.extension) {
-                        customExtensionValue = parsedCurrent.extension;
-                    }
-                    try {
-                        selectedExtension = getSelectedExtensionOrDefault();
-                    } catch (error) {
-                        selectedExtension = DOCS_DEFAULT_EXTENSION;
-                    }
-                } else {
-                    try {
-                        selectedExtension = getSelectedExtensionOrDefault();
-                    } catch (error) {
-                        alertError(error);
-                        return;
-                    }
+                let selectedExtension = "";
+                try {
+                    selectedExtension = getSelectedExtensionForUserChange(saveExtensionSelect, saveFilenameInput);
+                } catch (error) {
+                    alertError(error);
+                    return;
                 }
 
                 const parsed = parseFileNameWithExtension(saveFilenameInput.value);
-                const baseName = parsed.filename || String(filenameInput ? filenameInput.value : "").trim();
-                saveFilenameInput.value = buildFilenameWithExtension(baseName, selectedExtension);
-                syncWriteFilenameExtensionSelectFromValue(selectedExtension);
-                syncWriteFilenameInputExtension(selectedExtension);
+                if (selectedExtension) {
+                    const baseName = parsed.filename ||
+                        (filenameInput ? ensureUntitledBaseName(filenameInput) : DOCS_UNTITLED_FILENAME);
+                    saveFilenameInput.value = buildFilenameWithExtension(baseName, selectedExtension);
+                    syncWriteFilenameExtensionSelectFromValue(selectedExtension);
+                    syncWriteFilenameInputExtension(selectedExtension);
+                } else {
+                    syncWriteFilenameExtensionSelectFromValue("");
+                }
                 state.selectedOverwritePath = "";
                 saveFilenameInput.focus();
                 syncMarkdownHelpButtonVisibility();
@@ -18784,15 +19263,20 @@
 
         if (filenameExtensionSelect) {
             filenameExtensionSelect.addEventListener("change", function () {
-                let selectedExtension = DOCS_DEFAULT_EXTENSION;
+                let selectedExtension = "";
                 try {
-                    selectedExtension = getWriteFilenameSelectedExtensionOrDefault();
+                    selectedExtension = getSelectedExtensionForUserChange(filenameExtensionSelect, filenameInput);
                 } catch (error) {
                     alertError(error);
                     return;
                 }
-                syncWriteFilenameInputExtension(selectedExtension);
-                syncExtensionSelectFromValue(selectedExtension);
+                if (selectedExtension) {
+                    ensureUntitledBaseName(filenameInput);
+                    syncWriteFilenameInputExtension(selectedExtension);
+                    syncExtensionSelectFromValue(selectedExtension);
+                } else {
+                    syncExtensionSelectElementToCustomDefault(saveExtensionSelect);
+                }
                 syncMarkdownHelpButtonVisibility();
                 updateEditorSuggestion();
             });
@@ -18931,14 +19415,14 @@
             });
         }
 
-        if (markdownPreviewButton) {
-            markdownPreviewButton.addEventListener("mousedown", function (event) {
+        if (previewButton) {
+            previewButton.addEventListener("mousedown", function (event) {
                 event.preventDefault();
             });
-            markdownPreviewButton.addEventListener("click", function () {
-                openMarkdownPreviewModal();
+            previewButton.addEventListener("click", function () {
+                openPreviewModal();
             });
-            markdownPreviewButton.addEventListener("mouseup", function (event) {
+            previewButton.addEventListener("mouseup", function (event) {
                 if (event.currentTarget && typeof event.currentTarget.blur === "function") {
                     event.currentTarget.blur();
                 }
@@ -18981,11 +19465,19 @@
             });
         }
 
-        if (markdownPreviewBackdrop) {
-            markdownPreviewBackdrop.addEventListener("click", function () {
-                setMarkdownPreviewModalOpen(false);
+        if (previewBackdrop) {
+            previewBackdrop.addEventListener("click", function () {
+                setPreviewModalOpen(false);
             });
         }
+
+        previewResizeHandles.forEach(function (handle) {
+            handle.addEventListener("pointerdown", startPreviewModalResize);
+            handle.addEventListener("pointermove", onPreviewModalResizeMove);
+            handle.addEventListener("pointerup", endPreviewModalResize);
+            handle.addEventListener("pointercancel", endPreviewModalResize);
+            handle.addEventListener("lostpointercapture", endPreviewModalResize);
+        });
 
         if (unsavedModalBackdrop) {
             unsavedModalBackdrop.addEventListener("click", function () {
@@ -19102,8 +19594,8 @@
                 closeMarkdownSnippetMenu();
                 return;
             }
-            if (markdownPreviewModal && !markdownPreviewModal.hidden) {
-                setMarkdownPreviewModalOpen(false);
+            if (previewModal && !previewModal.hidden) {
+                setPreviewModalOpen(false);
                 return;
             }
             if (markdownHelpModal && !markdownHelpModal.hidden) {

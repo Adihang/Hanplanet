@@ -1172,7 +1172,7 @@
     function getSubtitleFontFamilyCss(fontFamily) {
         var value = String(fontFamily || "system");
         if (value === "system") {
-            return '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+            return 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif';
         }
         if (["sans-serif", "serif", "monospace", "cursive", "fantasy"].indexOf(value) >= 0) {
             return value;

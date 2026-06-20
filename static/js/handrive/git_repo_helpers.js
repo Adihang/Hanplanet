@@ -21,6 +21,9 @@
         var formatPathLabel = typeof settings.formatPathLabel === "function"
             ? settings.formatPathLabel
             : function (pathValue) { return pathValue || ""; };
+        var renderPopupTargetPath = window.HandriveModalHelpers && window.HandriveModalHelpers.renderPopupTargetPath
+            ? window.HandriveModalHelpers.renderPopupTargetPath
+            : function (target, value) { if (target) { target.textContent = value || ""; } };
 
         if (gitRepoForm) {
             gitRepoForm.hidden = isManageMode;
@@ -32,7 +35,7 @@
             gitRepoNameInput.value = "";
         }
         if (gitRepoTarget) {
-            gitRepoTarget.textContent = entry ? formatPathLabel(entry.path) : "";
+            renderPopupTargetPath(gitRepoTarget, entry ? formatPathLabel(entry.path) : "");
         }
         if (gitRepoTitle) {
             gitRepoTitle.textContent = isManageMode

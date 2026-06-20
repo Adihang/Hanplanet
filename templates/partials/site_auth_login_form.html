@@ -92,13 +92,7 @@
             value="verify"
             {% if not handrive_login_show_2fa %}disabled{% endif %}
         >
-        <p class="ui-subtitle">{{ handrive_text.auth_2fa_hint }} <strong>{{ handrive_login_2fa_masked_email }}</strong></p>
-        {% if handrive_login_2fa_error_message %}
-            <div class="auth-error" id="handrive-login-2fa-error">{{ handrive_login_2fa_error_message }}</div>
-        {% else %}
-            <div class="auth-error" id="handrive-login-2fa-error" style="display:none;"></div>
-        {% endif %}
-        <div id="handrive-login-2fa-resend-msg" class="auth-2fa-resend-msg" hidden></div>
+        <p class="ui-subtitle auth-2fa-hint">{{ handrive_text.auth_2fa_hint }} <strong>{{ handrive_login_2fa_masked_email }}</strong></p>
         <div class="auth-field auth-field-full">
             <div class="auth-otp-input-wrap" data-handrive-otp-wrap>
                 <input
@@ -125,29 +119,33 @@
                 </div>
             </div>
         </div>
-        <div class="auth-2fa-resend-row">
+    </div>
+
+    <div class="auth-actions{% if handrive_login_show_2fa %} auth-2fa-actions{% endif %}">
+        {% if handrive_login_show_2fa %}
+            {% if handrive_login_2fa_error_message %}
+                <div class="auth-error auth-2fa-inline-error" id="handrive-login-2fa-error">{{ handrive_login_2fa_error_message }}</div>
+            {% else %}
+                <div class="auth-error auth-2fa-inline-error" id="handrive-login-2fa-error" hidden></div>
+            {% endif %}
+            <div id="handrive-login-2fa-resend-msg" class="auth-2fa-resend-msg" data-auth-2fa-resend-msg hidden></div>
             <button
                 type="button"
-                class="ui-btn"
+                class="auth-2fa-resend-link"
                 id="handrive-login-2fa-resend-btn"
-                {% if site_auth_is_modal %}data-resend-url="{{ handrive_api_login_2fa_resend_code_url }}"{% endif %}
+                data-resend-url="{{ handrive_api_login_2fa_resend_code_url }}"
             >
                 {{ handrive_text.auth_2fa_resend_button }}
             </button>
-        </div>
-    </div>
-
-    <div class="auth-actions">
-        {% if site_auth_is_modal %}
+            <button class="ui-btn ui-btn-primary auth-2fa-submit-btn" type="submit" id="handrive-login-submit-btn">{{ handrive_text.auth_2fa_submit }}</button>
+        {% elif site_auth_is_modal %}
             <a class="ui-btn" href="{{ handrive_signup_modal_url }}" data-auth-modal="signup">{{ handrive_text.auth_signup_button }}</a>
             <button class="ui-btn ui-btn-primary" type="submit" id="handrive-login-submit-btn">
-                {% if handrive_login_show_2fa %}{{ handrive_text.auth_2fa_submit }}{% else %}{{ handrive_text.auth_login_submit }}{% endif %}
+                {{ handrive_text.auth_login_submit }}
             </button>
         {% else %}
             <a class="ui-btn" href="{{ handrive_base_url }}">{{ handrive_text.cancel }}</a>
-            <button class="ui-btn ui-btn-primary" type="submit" id="handrive-login-submit-btn">
-                {% if handrive_login_show_2fa %}{{ handrive_text.auth_2fa_submit }}{% else %}{{ handrive_text.auth_login_submit }}{% endif %}
-            </button>
+            <button class="ui-btn ui-btn-primary" type="submit" id="handrive-login-submit-btn">{{ handrive_text.auth_login_submit }}</button>
         {% endif %}
     </div>
 

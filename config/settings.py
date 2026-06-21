@@ -37,6 +37,14 @@ def env_list(name, default_csv):
     raw = os.environ.get(name, default_csv)
     return [item.strip() for item in raw.split(",") if item.strip()]
 
+
+def env_cookie_domain(name, default=None):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    normalized = raw.strip()
+    return normalized or None
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
@@ -176,7 +184,7 @@ DATA_BACKUP_RETENTION_DAYS = max(1, load_optional_int_secret("DATA_BACKUP_RETENT
 
 ALLOWED_HOSTS = env_list(
     "DJANGO_ALLOWED_HOSTS",
-    "hanplanet.com,www.hanplanet.com,localhost,127.0.0.1,52.79.71.20,112.187.212.49,112.187.212.140",
+    "hanplanet.com,www.hanplanet.com,mc.hanplanet.com,localhost,127.0.0.1,52.79.71.20,112.187.212.49,112.187.212.140",
 )
 
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://www.hanplanet.com").rstrip("/")
@@ -459,10 +467,16 @@ SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", default=False) if n
 SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", default=DEFAULT_SECURE_TRANSPORT) if not DEBUG else False
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
+SHARED_COOKIE_DOMAIN = env_cookie_domain(
+    "DJANGO_COOKIE_DOMAIN",
+    ".hanplanet.com" if DEFAULT_SECURE_TRANSPORT else None,
+)
+SESSION_COOKIE_DOMAIN = env_cookie_domain("DJANGO_SESSION_COOKIE_DOMAIN", SHARED_COOKIE_DOMAIN)
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 3  # 3일
 SESSION_ENGINE = "django.contrib.sessions.backends.db"  # LocMemCache 세션 방지
 CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", default=DEFAULT_SECURE_TRANSPORT) if not DEBUG else False
 CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_DOMAIN = env_cookie_domain("DJANGO_CSRF_COOKIE_DOMAIN", SHARED_COOKIE_DOMAIN)
 SECURE_HSTS_SECONDS = int(
     os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "31536000" if DEFAULT_SECURE_TRANSPORT else "0")
 )
@@ -484,8 +498,10 @@ BUMPERCAR_SPIKY_INTERNAL_SECRET = os.environ.get("BUMPERCAR_SPIKY_INTERNAL_SECRE
 # 1) HTTPS에서 CSRF 신뢰 도메인 지정 (Django 4+는 스킴 포함해야 함)
 CSRF_TRUSTED_ORIGINS = env_list(
     "DJANGO_CSRF_TRUSTED_ORIGINS",
-    "https://hanplanet.com,https://www.hanplanet.com",
+    "https://hanplanet.com,https://www.hanplanet.com,https://mc.hanplanet.com",
 )
+if "https://mc.hanplanet.com" not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append("https://mc.hanplanet.com")
 
 # ── OAuth2 Provider (Gitea SSO) ──────────────────────────────
 OAUTH2_PROVIDER = {

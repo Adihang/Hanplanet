@@ -1,7 +1,7 @@
 <form
     method="post"
     {% if handrive_login_action_url %}action="{{ handrive_login_action_url }}"{% endif %}
-    class="auth-form"
+    class="auth-form site-loading-host"
     id="handrive-login-form"
     {% if site_auth_is_modal %}
     data-auth-form
@@ -15,14 +15,14 @@
     {% csrf_token %}
     <input type="hidden" name="next" value="{{ handrive_login_next }}">
     <div
-        class="auth-loading"
+        class="auth-loading site-loading-overlay"
         id="handrive-login-loading"
         role="status"
         aria-live="polite"
         aria-label="{% if handrive_login_show_2fa %}{{ handrive_text.auth_2fa_submit }}{% else %}{{ handrive_text.auth_login_submit }}{% endif %}"
         hidden
     >
-        <span class="auth-loading-spinner" aria-hidden="true"></span>
+        <span class="auth-loading-spinner site-loading-spinner" aria-hidden="true"></span>
     </div>
 
     {% if handrive_login_error_message or handrive_login_form.non_field_errors %}

@@ -5,14 +5,19 @@
             <h2 id="{{ title_id }}" class="handrive-popup-title">{{ title_text }}</h2>
             {% include "popup/handrive/_popup_close_button.html" with click_target_id=cancel_button_id %}
         </header>
-        <div class="handrive-popup-target" id="{{ target_id }}"></div>
-        <label class="handrive-field handrive-field-full">
-            <span>{{ field_label_text }}</span>
-            <input type="text" id="{{ input_id }}" placeholder="{{ input_placeholder_text }}">
-        </label>
-        <div class="handrive-popup-actions">
-            <button type="button" class="ui-btn" id="{{ cancel_button_id }}">{{ cancel_text }}</button>
-            <button type="button" class="ui-btn ui-btn-primary" id="{{ confirm_button_id }}">{{ confirm_text }}</button>
+        <div class="handrive-popup-body site-modal-body site-loading-host">
+            <div class="handrive-popup-target" id="{{ target_id }}"></div>
+            <label class="handrive-field handrive-field-full">
+                <span>{{ field_label_text }}</span>
+                <input type="text" id="{{ input_id }}" placeholder="{{ input_placeholder_text }}">
+            </label>
+            <div class="handrive-popup-actions">
+                <button type="button" class="ui-btn" id="{{ cancel_button_id }}">{{ cancel_text }}</button>
+                <button type="button" class="ui-btn ui-btn-primary" id="{{ confirm_button_id }}">{{ confirm_text }}</button>
+            </div>
+            <div class="site-modal-loading site-loading-overlay" role="status" aria-live="polite" hidden>
+                <span class="site-modal-loading-spinner site-loading-spinner" aria-hidden="true"></span>
+            </div>
         </div>
     </div>
 </div>

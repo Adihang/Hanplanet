@@ -16,20 +16,7 @@
                 <span class="ui-path-current">{{ page_title }}</span>
             </div>
         </div>
-        <div class="ui-toolbar-right sub-auth-host">
-            {% if request.user.is_authenticated %}
-                {% include "partials/account_widget.html" %}
-            {% else %}
-                <div class="ui-toolbar-actions">
-                    <a class="ui-btn" href="{{ handrive_login_url }}?next={{ request.get_full_path|urlencode }}" data-auth-modal="login">
-                        {% include 'partials/ui_i18n.html' with key='login' %}
-                    </a>
-                    <a class="ui-btn ui-btn-primary" href="{{ handrive_signup_url }}?next={{ request.get_full_path|urlencode }}" data-auth-modal="signup">
-                        {% include 'partials/ui_i18n.html' with key='signup' %}
-                    </a>
-                </div>
-            {% endif %}
-        </div>
+        {% include "partials/toolbar_auth_right.html" with toolbar_auth_class="sub-auth-host" %}
     </div>
 </div>
 
@@ -56,7 +43,16 @@
                             <span class="sub-link-image-wrap is-empty">
                                 <img class="sub-link-image" alt="" loading="lazy" hidden>
                             </span>
-                            <span class="sub-link-content" data-sub-card data-meta-url="{{ item.url }}">
+                            <span
+                                class="sub-link-content"
+                                data-sub-card
+                                data-meta-url="{{ item.url }}"
+                                data-meta-title="{{ item.title|default_if_none:'' }}"
+                                data-meta-site-name="{{ item.site_name|default_if_none:'' }}"
+                                data-meta-description="{{ item.description|default_if_none:'' }}"
+                                data-meta-image="{{ item.image|default_if_none:'' }}"
+                                data-meta-category="{{ item.category|default_if_none:'' }}"
+                            >
                                 <span class="sub-link-site-name" hidden></span>
                                 <span class="sub-link-head">
                                     <span class="sub-link-title" hidden></span>
@@ -98,7 +94,7 @@
     }
 
     .sub-ui-panel {
-        width: min(980px, 100%);
+        width: min(1300px, 100%);
         max-height: 100%;
         border: 1px solid var(--handrive-border-soft);
         border-radius: var(--handrive-radius-lg);
@@ -332,7 +328,7 @@
 
     @media (min-width: 841px) {
         .sub-ui-panel {
-            width: min(1180px, 100%);
+            width: min(1300px, 100%);
             grid-template-columns: repeat(2, minmax(0, 1fr));
             align-items: stretch;
         }
@@ -443,6 +439,20 @@
             };
         };
 
+        const readPresetMetadata = function (card) {
+            return {
+                title: (card.getAttribute('data-meta-title') || '').trim(),
+                siteName: (card.getAttribute('data-meta-site-name') || '').trim(),
+                description: (card.getAttribute('data-meta-description') || '').trim(),
+                image: (card.getAttribute('data-meta-image') || '').trim(),
+                category: (card.getAttribute('data-meta-category') || '').trim(),
+            };
+        };
+
+        const hasPresetMetadata = function (metadata) {
+            return Boolean(metadata.title || metadata.siteName || metadata.description || metadata.image || metadata.category);
+        };
+
         const normalizeSubCategory = function (rawCategory) {
             const category = (rawCategory || '').trim().toLowerCase();
             return category === 'game' ? 'game' : 'tool';
@@ -491,6 +501,58 @@
 
             if (imageWrap) imageWrap.classList.add('is-empty');
 
+            const applyMetadata = function (metadata, sourceUrl) {
+                const parsedTitle = metadata.title || '';
+                const parsedSiteName = metadata.siteName || '';
+                const parsedDescription = metadata.description || '';
+                const parsedImage = metadata.image || '';
+                const parsedCategory = metadata.category || '';
+
+                if (titleNode && parsedTitle) {
+                    titleNode.textContent = parsedTitle;
+                    titleNode.hidden = false;
+                }
+
+                if (cardLink && parsedTitle) {
+                    cardLink.setAttribute('aria-label', parsedTitle);
+                }
+
+                if (siteNameNode) {
+                    if (parsedSiteName) {
+                        siteNameNode.textContent = parsedSiteName;
+                        siteNameNode.hidden = false;
+                    } else {
+                        siteNameNode.hidden = true;
+                    }
+                }
+
+                if (descriptionNode) {
+                    if (parsedDescription) {
+                        descriptionNode.textContent = parsedDescription;
+                        descriptionNode.hidden = false;
+                    } else {
+                        descriptionNode.hidden = true;
+                    }
+                }
+
+                if (imageWrap && imageNode) {
+                    const absoluteImageUrl = toAbsoluteUrl(parsedImage, sourceUrl);
+                    if (absoluteImageUrl) {
+                        imageNode.src = absoluteImageUrl;
+                        imageNode.alt = parsedTitle || (titleNode ? (titleNode.textContent || '').trim() : '');
+                        imageNode.hidden = false;
+                        imageWrap.classList.remove('is-empty');
+                    }
+                }
+                placeCard(card, parsedCategory);
+            };
+
+            const presetMetadata = readPresetMetadata(card);
+            if (hasPresetMetadata(presetMetadata)) {
+                applyMetadata(presetMetadata, requestUrl);
+                return;
+            }
+
             fetch(requestUrl, { credentials: 'same-origin' })
                 .then(function (response) {
                     if (!response.ok) {
@@ -500,49 +562,7 @@
                 })
                 .then(readMetadataFromHtml)
                 .then(function (metadata) {
-                    const parsedTitle = metadata.title || '';
-                    const parsedSiteName = metadata.siteName || '';
-                    const parsedDescription = metadata.description || '';
-                    const parsedImage = metadata.image || '';
-                    const parsedCategory = metadata.category || '';
-
-                    if (titleNode && parsedTitle) {
-                        titleNode.textContent = parsedTitle;
-                        titleNode.hidden = false;
-                    }
-
-                    if (cardLink && parsedTitle) {
-                        cardLink.setAttribute('aria-label', parsedTitle);
-                    }
-
-                    if (siteNameNode) {
-                        if (parsedSiteName) {
-                            siteNameNode.textContent = parsedSiteName;
-                            siteNameNode.hidden = false;
-                        } else {
-                            siteNameNode.hidden = true;
-                        }
-                    }
-
-                    if (descriptionNode) {
-                        if (parsedDescription) {
-                            descriptionNode.textContent = parsedDescription;
-                            descriptionNode.hidden = false;
-                        } else {
-                            descriptionNode.hidden = true;
-                        }
-                    }
-
-                    if (imageWrap && imageNode) {
-                        const absoluteImageUrl = toAbsoluteUrl(parsedImage, requestUrl);
-                        if (absoluteImageUrl) {
-                            imageNode.src = absoluteImageUrl;
-                            imageNode.alt = parsedTitle || (titleNode ? (titleNode.textContent || '').trim() : '');
-                            imageNode.hidden = false;
-                            imageWrap.classList.remove('is-empty');
-                        }
-                    }
-                    placeCard(card, parsedCategory);
+                    applyMetadata(metadata, requestUrl);
                 })
                 .catch(function () {
                     placeCard(card, 'tool');
@@ -589,8 +609,4 @@
         });
     })();
 </script>
-{% if request.user.is_authenticated %}
-{% include "popup/root/auth_logout_modal.html" %}
-<script src="{% static_v 'js/common/sub_account_widget.js' %}" defer onerror="window.__reloadStaticScript(this)"></script>
-{% endif %}
 {% endblock %}

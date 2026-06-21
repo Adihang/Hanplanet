@@ -90,10 +90,16 @@
     <meta property="og:description" content="{{ meta_og_description|default:'Django로 작성한 포트폴리오 입니다.' }}">
     <meta property="og:url" content="{{ meta_og_url|default:meta_canonical_url|default:request.build_absolute_uri }}">
     <meta property="og:image" content="{{ meta_og_image|default:'https://www.hanplanet.com/static/media/icons/hanplanet-og-1200.png' }}">
+    {% if meta_image_alt %}
+    <meta property="og:image:alt" content="{{ meta_image_alt }}">
+    {% endif %}
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ meta_og_title|default:'Hanplanet' }}">
     <meta name="twitter:description" content="{{ meta_og_description|default:'Django로 작성한 포트폴리오 입니다.' }}">
     <meta name="twitter:image" content="{{ meta_twitter_image|default:meta_og_image|default:'https://www.hanplanet.com/static/media/icons/hanplanet-og-1200.png' }}">
+    {% if meta_image_alt %}
+    <meta name="twitter:image:alt" content="{{ meta_image_alt }}">
+    {% endif %}
     <link rel="canonical" href="{{ meta_canonical_url|default:request.build_absolute_uri }}">
     {% if meta_json_ld %}
     <script type="application/ld+json">{{ meta_json_ld|safe }}</script>
@@ -117,6 +123,7 @@
     <script src="{% static_v 'js/common/markdown_mermaid.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/account_github_widget.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/account_google_widget.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
+    <script src="{% static_v 'js/common/account_widget.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     {% if not is_root_entry %}
     <script src="{% static_v 'js/vendor/bootstrap.min.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/portfolio_print_content_helpers.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
@@ -184,6 +191,9 @@
     {% endif %}
     {% block content %}
     {% endblock %}
+    {% if request.user.is_authenticated and not is_root_entry %}
+    {% include "popup/root/auth_logout_modal.html" %}
+    {% endif %}
     {% include "partials/site_auth_modal_host.html" %}
     <!-- 채팅 위젯 -->
     {% if show_chat_widget %}

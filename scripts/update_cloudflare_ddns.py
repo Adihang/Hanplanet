@@ -134,7 +134,7 @@ def upsert_a_record(
         "content": public_ip,
         "ttl": ttl,
         "proxied": False,
-        "comment": "Hanplanet HPmail DDNS",
+        "comment": "Hanplanet DDNS",
     }
     if record:
         current_ip = str(record.get("content", "")).strip()
@@ -153,7 +153,7 @@ def upsert_a_record(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Update Cloudflare DNS A record for HPmail DDNS.")
+    parser = argparse.ArgumentParser(description="Update a Cloudflare DNS A record for Hanplanet DDNS.")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH))
     parser.add_argument("--zone-name", default="")
     parser.add_argument("--record-name", default="")

@@ -31,6 +31,15 @@
     };
     const timeKey = (src) => `vjs-time-${encodeURIComponent(src)}`;
     const MEDIA_LOOP_STORAGE_KEY = 'handrive-media-loop-enabled';
+    const MEDIA_PLAYBACK_MODE_STORAGE_KEY = 'handrive-media-playback-mode';
+    const MEDIA_PLAYBACK_MODE_NORMAL = 'normal';
+    const MEDIA_PLAYBACK_MODE_REPEAT = 'repeat';
+    const MEDIA_PLAYBACK_MODE_NEXT = 'next';
+    const MEDIA_PLAYBACK_MODES = [
+        MEDIA_PLAYBACK_MODE_NORMAL,
+        MEDIA_PLAYBACK_MODE_REPEAT,
+        MEDIA_PLAYBACK_MODE_NEXT,
+    ];
     const MEDIA_VOLUME_COOKIE_NAME = 'handrive-media-volume';
     const MEDIA_MUTED_COOKIE_NAME = 'handrive-media-muted';
     const LEGACY_MEDIA_AUDIO_VOLUME_STORAGE_KEY = 'handrive-media-audio-volume';
@@ -264,20 +273,48 @@
         };
     }
 
-    function isMediaLoopEnabled() {
-        return ls.get(MEDIA_LOOP_STORAGE_KEY) === '1';
+    function normalizeMediaPlaybackMode(mode) {
+        const normalizedMode = String(mode || '').trim().toLowerCase();
+        return MEDIA_PLAYBACK_MODES.includes(normalizedMode)
+            ? normalizedMode
+            : MEDIA_PLAYBACK_MODE_NORMAL;
     }
 
-    function storeMediaLoopEnabled(enabled) {
-        ls.set(MEDIA_LOOP_STORAGE_KEY, enabled ? '1' : '0');
+    function getStoredMediaPlaybackMode() {
+        const storedMode = normalizeMediaPlaybackMode(ls.get(MEDIA_PLAYBACK_MODE_STORAGE_KEY));
+        if (storedMode !== MEDIA_PLAYBACK_MODE_NORMAL || ls.get(MEDIA_PLAYBACK_MODE_STORAGE_KEY)) {
+            return storedMode;
+        }
+        return ls.get(MEDIA_LOOP_STORAGE_KEY) === '1'
+            ? MEDIA_PLAYBACK_MODE_REPEAT
+            : MEDIA_PLAYBACK_MODE_NORMAL;
+    }
+
+    function getNextMediaPlaybackMode(mode) {
+        const currentIndex = MEDIA_PLAYBACK_MODES.indexOf(normalizeMediaPlaybackMode(mode));
+        return MEDIA_PLAYBACK_MODES[(currentIndex + 1) % MEDIA_PLAYBACK_MODES.length];
+    }
+
+    function storeMediaPlaybackMode(mode) {
+        const nextMode = normalizeMediaPlaybackMode(mode);
+        ls.set(MEDIA_PLAYBACK_MODE_STORAGE_KEY, nextMode);
+        ls.set(MEDIA_LOOP_STORAGE_KEY, nextMode === MEDIA_PLAYBACK_MODE_REPEAT ? '1' : '0');
         window.dispatchEvent(new CustomEvent('handrive:media-loop-change', {
-            detail: { enabled: Boolean(enabled) },
+            detail: {
+                mode: nextMode,
+                enabled: nextMode === MEDIA_PLAYBACK_MODE_REPEAT,
+                next: nextMode === MEDIA_PLAYBACK_MODE_NEXT,
+            },
         }));
     }
 
-    function buildLoopIconSvg(enabled) {
-        const checkPath = enabled
+    function buildLoopIconSvg(mode) {
+        const normalizedMode = normalizeMediaPlaybackMode(mode);
+        const checkPath = normalizedMode === MEDIA_PLAYBACK_MODE_REPEAT
             ? '<path class="handrive-loop-check-path" d="M8.4 12.8l2.4 2.4 5.2-5.7"/>'
+            : '';
+        const nextPath = normalizedMode === MEDIA_PLAYBACK_MODE_NEXT
+            ? '<path class="handrive-loop-next-path" d="M10 8l5 4-5 4V8z"/><path class="handrive-loop-next-path" d="M17 8v8"/>'
             : '';
         return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
             + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="1.35em" height="1.35em">'
@@ -286,6 +323,7 @@
             + '<path d="M7 22l-4-4 4-4"/>'
             + '<path d="M21 13v2a4 4 0 0 1-4 4H3"/>'
             + checkPath
+            + nextPath
             + '</svg>';
     }
 
@@ -756,9 +794,29 @@
 
     // ── 반복 재생 ────────────────────────────────────────────────────
     function setupLoop(player, cleanups) {
-        const buttonLabel = () => getHandriveI18nText('media_loop_toggle', textByLang('연속재생 켜기/끄기', 'Toggle loop playback'));
-        const enabledLabel = () => getHandriveI18nText('media_loop_on', textByLang('연속재생 켜짐', 'Loop playback on'));
-        const disabledLabel = () => getHandriveI18nText('media_loop_off', textByLang('연속재생 꺼짐', 'Loop playback off'));
+        const buttonLabel = () => getHandriveI18nText('media_loop_toggle', textByLang('재생 모드 변경', 'Change playback mode'));
+        const repeatLabel = () => getHandriveI18nText('media_loop_on', textByLang('반복재생', 'Repeat playback'));
+        const normalLabel = () => getHandriveI18nText('media_loop_off', textByLang('일반 재생', 'Normal playback'));
+        const nextLabel = () => getHandriveI18nText('media_loop_next', textByLang('끝나면 다음 파일 재생', 'Play next file when ended'));
+
+        function labelForMode(mode) {
+            const normalizedMode = normalizeMediaPlaybackMode(mode);
+            if (normalizedMode === MEDIA_PLAYBACK_MODE_REPEAT) return repeatLabel();
+            if (normalizedMode === MEDIA_PLAYBACK_MODE_NEXT) return nextLabel();
+            return normalLabel();
+        }
+
+        function requestNextMediaPlayback() {
+            if (getStoredMediaPlaybackMode() !== MEDIA_PLAYBACK_MODE_NEXT) return;
+            const root = player.el();
+            const mediaElement = root ? root.querySelector('video, audio') : null;
+            window.dispatchEvent(new CustomEvent('handrive:media-play-next-request', {
+                detail: {
+                    mediaElement,
+                    player,
+                },
+            }));
+        }
 
         class HandriveLoopButton extends videojs.getComponent('Button') {
             constructor(p, opts) {
@@ -768,12 +826,13 @@
                 this.el().setAttribute('title', buttonLabel());
                 const icon = this.el().querySelector('.vjs-icon-placeholder');
                 if (icon) {
-                    icon.innerHTML = buildLoopIconSvg(false);
+                    icon.innerHTML = buildLoopIconSvg(MEDIA_PLAYBACK_MODE_NORMAL);
                 }
-                this.syncLoopState(isMediaLoopEnabled());
+                this.syncLoopState(getStoredMediaPlaybackMode());
                 this._syncFromEvent = (event) => {
-                    const enabled = Boolean(event && event.detail && event.detail.enabled);
-                    this.syncLoopState(enabled);
+                    const detail = event && event.detail ? event.detail : {};
+                    const mode = detail.mode || (detail.enabled ? MEDIA_PLAYBACK_MODE_REPEAT : MEDIA_PLAYBACK_MODE_NORMAL);
+                    this.syncLoopState(mode);
                 };
                 window.addEventListener('handrive:media-loop-change', this._syncFromEvent);
                 p.on('dispose', () => {
@@ -781,21 +840,25 @@
                 });
             }
 
-            syncLoopState(enabled) {
-                const nextEnabled = Boolean(enabled);
-                this.player().loop(nextEnabled);
-                this.el().setAttribute('aria-pressed', nextEnabled ? 'true' : 'false');
-                this.el().setAttribute('aria-label', nextEnabled ? enabledLabel() : disabledLabel());
-                this.el().setAttribute('title', nextEnabled ? enabledLabel() : disabledLabel());
-                this.el().classList.toggle('is-loop-enabled', nextEnabled);
+            syncLoopState(mode) {
+                const nextMode = normalizeMediaPlaybackMode(mode);
+                const isRepeat = nextMode === MEDIA_PLAYBACK_MODE_REPEAT;
+                const isNext = nextMode === MEDIA_PLAYBACK_MODE_NEXT;
+                this.player().loop(isRepeat);
+                this.el().setAttribute('aria-pressed', isRepeat ? 'true' : (isNext ? 'mixed' : 'false'));
+                this.el().setAttribute('aria-label', labelForMode(nextMode));
+                this.el().setAttribute('title', labelForMode(nextMode));
+                this.el().dataset.mediaPlaybackMode = nextMode;
+                this.el().classList.toggle('is-loop-enabled', isRepeat);
+                this.el().classList.toggle('is-next-enabled', isNext);
                 const icon = this.el().querySelector('.vjs-icon-placeholder');
                 if (icon) {
-                    icon.innerHTML = buildLoopIconSvg(nextEnabled);
+                    icon.innerHTML = buildLoopIconSvg(nextMode);
                 }
             }
 
             handleClick() {
-                storeMediaLoopEnabled(!this.player().loop());
+                storeMediaPlaybackMode(getNextMediaPlaybackMode(getStoredMediaPlaybackMode()));
             }
 
             buildCSSClass() {
@@ -821,6 +884,8 @@
             const idx = rateIdx >= 0 ? rateIdx + 1 : (fsIdx >= 0 ? fsIdx : undefined);
             bar.addChild('HandriveLoopButton', {}, idx);
         });
+
+        player.on('ended', requestNextMediaPlayback);
     }
 
     // ── 미니 플레이어 (PiP) ───────────────────────────────────────────
@@ -1536,7 +1601,6 @@
         let hlsSwitching = false;
         let hlsActive = false;
         let hlsSwitchTimer = null;
-        let hlsPreparationTimer = null;
         let hlsReadyProbeTimer = null;
         let hlsReadyProbeIdleId = null;
         let hlsQualityGateButton = null;
@@ -1598,10 +1662,6 @@
         cleanups.push(stopHlsSwitchTimer);
         cleanups.push(() => {
             disposed = true;
-            if (hlsPreparationTimer) {
-                clearTimeout(hlsPreparationTimer);
-                hlsPreparationTimer = null;
-            }
             if (hlsAbortController) {
                 try { hlsAbortController.abort(); } catch (_) {}
             }
@@ -1632,7 +1692,6 @@
         player.on('playing', () => {
             userWantsPlayback = true;
             markHlsPlaybackReady();
-            scheduleNativeHlsPreparation();
         });
         player.on('loadeddata', markHlsPlaybackReady);
         player.on('canplay', markHlsPlaybackReady);
@@ -2124,20 +2183,6 @@
                     startPolling(options);
                 }
             }).catch(handleHlsFetchError);
-        }
-
-        function scheduleNativeHlsPreparation() {
-            if (!canUseNativeStartupSource || hlsPreparationTimer || hlsKickoffStarted || sourceIsHls()) return;
-            if (latestHlsStatus === 'ready') return;
-            hlsPreparationTimer = setTimeout(() => {
-                hlsPreparationTimer = null;
-                if (shouldIgnoreHlsAsync() || player.paused()) return;
-                requestHlsPreparation({
-                    allowPolling: true,
-                    allowTranscode: true,
-                    showPreparing: false,
-                });
-            }, 6000);
         }
 
         function scheduleHlsReadyProbe() {

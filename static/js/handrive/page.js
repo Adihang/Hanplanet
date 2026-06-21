@@ -1581,6 +1581,15 @@
     const HANDRIVE_LEGACY_MEDIA_AUDIO_VOLUME_STORAGE_KEY = "handrive-media-audio-volume";
     const HANDRIVE_MEDIA_VOLUME_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
     const HANDRIVE_MEDIA_LOOP_STORAGE_KEY = "handrive-media-loop-enabled";
+    const HANDRIVE_MEDIA_PLAYBACK_MODE_STORAGE_KEY = "handrive-media-playback-mode";
+    const HANDRIVE_MEDIA_PLAYBACK_MODE_NORMAL = "normal";
+    const HANDRIVE_MEDIA_PLAYBACK_MODE_REPEAT = "repeat";
+    const HANDRIVE_MEDIA_PLAYBACK_MODE_NEXT = "next";
+    const HANDRIVE_MEDIA_PLAYBACK_MODES = [
+        HANDRIVE_MEDIA_PLAYBACK_MODE_NORMAL,
+        HANDRIVE_MEDIA_PLAYBACK_MODE_REPEAT,
+        HANDRIVE_MEDIA_PLAYBACK_MODE_NEXT,
+    ];
 
     function parseStoredMediaVolume(value) {
         if (value === null || value === undefined || String(value).trim() === "") {
@@ -1671,51 +1680,112 @@
         }));
     }
 
-    function getStoredMediaLoopEnabled() {
+    function normalizeMediaPlaybackMode(mode) {
+        const normalizedMode = String(mode || "").trim().toLowerCase();
+        return HANDRIVE_MEDIA_PLAYBACK_MODES.indexOf(normalizedMode) >= 0
+            ? normalizedMode
+            : HANDRIVE_MEDIA_PLAYBACK_MODE_NORMAL;
+    }
+
+    function getStoredMediaPlaybackMode() {
         try {
-            return Boolean(window.localStorage && window.localStorage.getItem(HANDRIVE_MEDIA_LOOP_STORAGE_KEY) === "1");
+            if (!window.localStorage) {
+                return HANDRIVE_MEDIA_PLAYBACK_MODE_NORMAL;
+            }
+            const storedModeValue = window.localStorage.getItem(HANDRIVE_MEDIA_PLAYBACK_MODE_STORAGE_KEY);
+            if (storedModeValue !== null) {
+                return normalizeMediaPlaybackMode(storedModeValue);
+            }
+            return window.localStorage.getItem(HANDRIVE_MEDIA_LOOP_STORAGE_KEY) === "1"
+                ? HANDRIVE_MEDIA_PLAYBACK_MODE_REPEAT
+                : HANDRIVE_MEDIA_PLAYBACK_MODE_NORMAL;
         } catch (error) {
-            return false;
+            return HANDRIVE_MEDIA_PLAYBACK_MODE_NORMAL;
         }
     }
 
-    function storeMediaLoopEnabled(enabled) {
+    function getNextMediaPlaybackMode(mode) {
+        const currentIndex = HANDRIVE_MEDIA_PLAYBACK_MODES.indexOf(normalizeMediaPlaybackMode(mode));
+        return HANDRIVE_MEDIA_PLAYBACK_MODES[(currentIndex + 1) % HANDRIVE_MEDIA_PLAYBACK_MODES.length];
+    }
+
+    function storeMediaPlaybackMode(mode) {
+        const nextMode = normalizeMediaPlaybackMode(mode);
         try {
             if (window.localStorage) {
-                window.localStorage.setItem(HANDRIVE_MEDIA_LOOP_STORAGE_KEY, enabled ? "1" : "0");
+                window.localStorage.setItem(HANDRIVE_MEDIA_PLAYBACK_MODE_STORAGE_KEY, nextMode);
+                window.localStorage.setItem(
+                    HANDRIVE_MEDIA_LOOP_STORAGE_KEY,
+                    nextMode === HANDRIVE_MEDIA_PLAYBACK_MODE_REPEAT ? "1" : "0"
+                );
             }
         } catch (error) {
             // ignore storage failures
         }
         window.dispatchEvent(new CustomEvent("handrive:media-loop-change", {
-            detail: { enabled: Boolean(enabled) },
+            detail: {
+                mode: nextMode,
+                enabled: nextMode === HANDRIVE_MEDIA_PLAYBACK_MODE_REPEAT,
+                next: nextMode === HANDRIVE_MEDIA_PLAYBACK_MODE_NEXT,
+            },
         }));
     }
 
-    function syncMediaLoopButton(button, enabled) {
+    function getMediaPlaybackModeLabel(mode) {
+        const normalizedMode = normalizeMediaPlaybackMode(mode);
+        if (normalizedMode === HANDRIVE_MEDIA_PLAYBACK_MODE_REPEAT) {
+            return t("media_loop_on", textByLang("반복재생", "Repeat playback"));
+        }
+        if (normalizedMode === HANDRIVE_MEDIA_PLAYBACK_MODE_NEXT) {
+            return t("media_loop_next", textByLang("끝나면 다음 파일 재생", "Play next file when ended"));
+        }
+        return t("media_loop_off", textByLang("일반 재생", "Normal playback"));
+    }
+
+    function syncMediaLoopButton(button, mode) {
         if (!button) {
             return;
         }
-        const isEnabled = Boolean(enabled);
-        button.classList.toggle("is-loop-enabled", isEnabled);
-        button.setAttribute("aria-pressed", isEnabled ? "true" : "false");
-        button.setAttribute("aria-label", isEnabled
-            ? t("media_loop_on", textByLang("연속재생 켜짐", "Loop playback on"))
-            : t("media_loop_off", textByLang("연속재생 꺼짐", "Loop playback off")));
-        button.setAttribute("title", isEnabled
-            ? t("media_loop_on", textByLang("연속재생 켜짐", "Loop playback on"))
-            : t("media_loop_off", textByLang("연속재생 꺼짐", "Loop playback off")));
+        const normalizedMode = normalizeMediaPlaybackMode(mode);
+        const isRepeat = normalizedMode === HANDRIVE_MEDIA_PLAYBACK_MODE_REPEAT;
+        const isNext = normalizedMode === HANDRIVE_MEDIA_PLAYBACK_MODE_NEXT;
+        const label = getMediaPlaybackModeLabel(normalizedMode);
+        button.classList.toggle("is-loop-enabled", isRepeat);
+        button.classList.toggle("is-next-enabled", isNext);
+        button.dataset.mediaPlaybackMode = normalizedMode;
+        button.setAttribute("aria-pressed", isRepeat ? "true" : (isNext ? "mixed" : "false"));
+        button.setAttribute("aria-label", label);
+        button.setAttribute("title", label);
         const checkPath = button.querySelector(".handrive-loop-check-path");
         if (checkPath) {
-            checkPath.hidden = !isEnabled;
+            checkPath.hidden = !isRepeat;
         }
+        button.querySelectorAll(".handrive-loop-next-path").forEach(function (nextPath) {
+            nextPath.hidden = !isNext;
+        });
+    }
+
+    function dispatchMediaPlayNextRequest(mediaElement) {
+        window.dispatchEvent(new CustomEvent("handrive:media-play-next-request", {
+            detail: {
+                mediaElement: mediaElement || null,
+            },
+        }));
+    }
+
+    function handleMediaPlaybackEnded(mediaElement) {
+        if (getStoredMediaPlaybackMode() !== HANDRIVE_MEDIA_PLAYBACK_MODE_NEXT) {
+            return;
+        }
+        dispatchMediaPlayNextRequest(mediaElement);
     }
 
     let mediaLoopGlobalListenerBound = false;
     let mediaVolumeGlobalListenerBound = false;
     let mediaVolumeSourceSeq = 0;
 
-    function syncAudioLoopElements(enabled) {
+    function syncAudioLoopElements(mode) {
+        const normalizedMode = normalizeMediaPlaybackMode(mode);
         document.querySelectorAll(".handrive-media-audio-element").forEach(function (audioElement) {
             if (!(audioElement instanceof HTMLMediaElement)) {
                 return;
@@ -1723,8 +1793,8 @@
             const button = audioElement
                 .closest(".handrive-media-audio-wrap")
                 ?.querySelector(".handrive-media-loop-button");
-            audioElement.loop = Boolean(enabled);
-            syncMediaLoopButton(button, enabled);
+            audioElement.loop = normalizedMode === HANDRIVE_MEDIA_PLAYBACK_MODE_REPEAT;
+            syncMediaLoopButton(button, normalizedMode);
         });
     }
 
@@ -1734,8 +1804,9 @@
         }
         mediaLoopGlobalListenerBound = true;
         window.addEventListener("handrive:media-loop-change", function (event) {
-            const enabled = Boolean(event && event.detail && event.detail.enabled);
-            syncAudioLoopElements(enabled);
+            const detail = event && event.detail ? event.detail : {};
+            const mode = detail.mode || (detail.enabled ? HANDRIVE_MEDIA_PLAYBACK_MODE_REPEAT : HANDRIVE_MEDIA_PLAYBACK_MODE_NORMAL);
+            syncAudioLoopElements(mode);
         });
     }
 
@@ -1782,16 +1853,17 @@
         if (!(mediaElement instanceof HTMLMediaElement) || !button) {
             return;
         }
-        const applyLoopState = function (enabled) {
-            mediaElement.loop = Boolean(enabled);
-            syncMediaLoopButton(button, enabled);
+        const applyLoopState = function (mode) {
+            const normalizedMode = normalizeMediaPlaybackMode(mode);
+            mediaElement.loop = normalizedMode === HANDRIVE_MEDIA_PLAYBACK_MODE_REPEAT;
+            syncMediaLoopButton(button, normalizedMode);
         };
         ensureMediaLoopGlobalListener();
-        applyLoopState(getStoredMediaLoopEnabled());
+        applyLoopState(getStoredMediaPlaybackMode());
         if (button.dataset.handriveLoopBound !== "1") {
             button.dataset.handriveLoopBound = "1";
             button.addEventListener("click", function () {
-                storeMediaLoopEnabled(!mediaElement.loop);
+                storeMediaPlaybackMode(getNextMediaPlaybackMode(getStoredMediaPlaybackMode()));
             });
         }
     }
@@ -1809,10 +1881,12 @@
             '<path d="M7 22l-4-4 4-4"></path>',
             '<path d="M21 13v2a4 4 0 0 1-4 4H3"></path>',
             '<path class="handrive-loop-check-path" d="M8.4 12.8l2.4 2.4 5.2-5.7" hidden></path>',
+            '<path class="handrive-loop-next-path" d="M10 8l5 4-5 4V8z" hidden></path>',
+            '<path class="handrive-loop-next-path" d="M17 8v8" hidden></path>',
             "</svg>",
             "</span>",
         ].join("");
-        syncMediaLoopButton(button, false);
+        syncMediaLoopButton(button, HANDRIVE_MEDIA_PLAYBACK_MODE_NORMAL);
         return button;
     }
 
@@ -1861,6 +1935,12 @@
                     audioElement.insertAdjacentElement("afterend", loopButton);
                 }
                 bindMediaLoopElement(audioElement, loopButton);
+            }
+            if (audioElement.dataset.handrivePlaybackModeBound !== "1") {
+                audioElement.dataset.handrivePlaybackModeBound = "1";
+                audioElement.addEventListener("ended", function () {
+                    handleMediaPlaybackEnded(audioElement);
+                });
             }
             if (audioElement.dataset.handriveVolumeBound === "1") {
                 return;
@@ -1943,6 +2023,39 @@
             }
             releasePreviewMediaElement(mediaElement);
         });
+    }
+
+    function playFirstPreviewMediaElement(container, attempt) {
+        if (!container || !(container instanceof Element)) {
+            return;
+        }
+        const mediaElement = container.querySelector("video, audio");
+        if (!(mediaElement instanceof HTMLMediaElement)) {
+            return;
+        }
+        const retryCount = Number(attempt) || 0;
+        const videoPlayer = (
+            window.videojs &&
+            typeof window.videojs.getPlayer === "function" &&
+            mediaElement.matches("video.video-js")
+        )
+            ? window.videojs.getPlayer(mediaElement)
+            : null;
+        try {
+            const playResult = videoPlayer && typeof videoPlayer.play === "function"
+                ? videoPlayer.play()
+                : mediaElement.play();
+            if (playResult && typeof playResult.catch === "function") {
+                playResult.catch(function () {});
+            }
+        } catch (error) {
+            // Autoplay after a completed playback can still be blocked by the browser.
+        }
+        if (!videoPlayer && mediaElement.matches("video.video-js") && mediaElement.paused && retryCount < 20) {
+            window.setTimeout(function () {
+                playFirstPreviewMediaElement(container, retryCount + 1);
+            }, 100);
+        }
     }
 
     function releasePreviewVideoPlayers(container) {
@@ -4162,6 +4275,9 @@
         const input = document.getElementById("handrive-admin-user-input");
         const cancelButton = document.getElementById("handrive-admin-user-cancel-btn");
         const confirmButton = document.getElementById("handrive-admin-user-confirm-btn");
+        const dialog = modal ? modal.querySelector(".site-modal-dialog") : null;
+        const loadingHost = modal ? modal.querySelector(".site-loading-host") : null;
+        const loading = modal ? modal.querySelector(".site-modal-loading") : null;
 
         if (!modal || !backdrop || !target || !input || !cancelButton || !confirmButton) {
             return async function () {
@@ -4176,7 +4292,6 @@
         let isSubmitting = false;
         let submitSequence = 0;
         let errorMessage = modal.querySelector(".handrive-admin-user-error");
-        const defaultConfirmText = confirmButton.textContent;
 
         if (!errorMessage) {
             errorMessage = document.createElement("p");
@@ -4209,10 +4324,16 @@
             isSubmitting = Boolean(submitting);
             confirmButton.disabled = isSubmitting;
             input.readOnly = isSubmitting;
-            input.setAttribute("aria-busy", isSubmitting ? "true" : "false");
-            confirmButton.textContent = isSubmitting
-                ? t("admin_user_switch_loading", "확인 중...")
-                : defaultConfirmText;
+            if (dialog) {
+                dialog.classList.toggle("is-loading", isSubmitting);
+                dialog.setAttribute("aria-busy", isSubmitting ? "true" : "false");
+            }
+            if (loadingHost) {
+                loadingHost.classList.toggle("is-loading", isSubmitting);
+            }
+            if (loading) {
+                loading.hidden = !isSubmitting;
+            }
         };
 
         const close = function (value) {
@@ -5237,6 +5358,7 @@
         const editorCancelButton = document.getElementById("handrive-list-cancel-btn");
         const editorPreviewButton = document.getElementById("handrive-list-preview-btn");
         const editorSaveButton = document.getElementById("handrive-list-save-btn");
+        const editorBodyLoadingOverlay = document.getElementById("handrive-list-editor-body-loading");
         const editorSavingOverlay = document.getElementById("handrive-list-editor-saving");
         const editorHighlightCode = document.getElementById("handrive-list-editor-highlight-code");
         const editorSurface = document.getElementById("handrive-list-editor-surface");
@@ -5244,10 +5366,6 @@
         const editorPreviewModal = document.getElementById("ui-preview-modal");
         const editorPreviewBackdrop = document.getElementById("ui-preview-backdrop");
         const editorPreviewModalContent = document.getElementById("ui-preview-content");
-        const editorPreviewDialog = editorPreviewModal ? editorPreviewModal.querySelector(".handrive-help-modal-dialog") : null;
-        const editorPreviewResizeHandles = editorPreviewDialog
-            ? Array.from(editorPreviewDialog.querySelectorAll("[data-preview-modal-resize-handle]"))
-            : [];
         const imageEditorSurface = document.getElementById("handrive-image-editor-surface");
         const videoEditorSurface = document.getElementById("handrive-video-editor-surface");
         const audioEditorSurface = document.getElementById("handrive-audio-editor-surface");
@@ -5450,12 +5568,20 @@
         const mediaNavExtensions = new Set([
             ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif", ".ico",
             ".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv",
+            ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".weba",
+        ]);
+        const playableMediaNavExtensions = new Set([
+            ".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv",
+            ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".weba",
         ]);
         function isMediaNavEntry(entry) {
             return Boolean(entry && entry.type === "file" && mediaNavExtensions.has(getEntryFileExtension(entry)));
         }
+        function isPlayableMediaNavEntry(entry) {
+            return Boolean(entry && entry.type === "file" && playableMediaNavExtensions.has(getEntryFileExtension(entry)));
+        }
 
-        function getVisibleSiblingMediaEntries(parentPath) {
+        function getVisibleSiblingEntriesByPredicate(parentPath, predicate) {
             const normalizedParentPath = normalizePath(parentPath, true);
             const visiblePaths = Array.isArray(state.visibleEntryPaths) ? state.visibleEntryPaths : [];
             const visibleEntries = visiblePaths
@@ -5463,14 +5589,22 @@
                     return state.entryByPath.get(pathValue) || null;
                 })
                 .filter(function (entry) {
-                    return Boolean(entry && isMediaNavEntry(entry) && getParentPath(entry.path) === normalizedParentPath);
+                    return Boolean(entry && predicate(entry) && getParentPath(entry.path) === normalizedParentPath);
                 });
             if (visibleEntries.length) {
                 return visibleEntries;
             }
             return getCachedEntries(normalizedParentPath).filter(function (entry) {
-                return Boolean(entry && isMediaNavEntry(entry) && getParentPath(entry.path) === normalizedParentPath);
+                return Boolean(entry && predicate(entry) && getParentPath(entry.path) === normalizedParentPath);
             });
+        }
+
+        function getVisibleSiblingMediaEntries(parentPath) {
+            return getVisibleSiblingEntriesByPredicate(parentPath, isMediaNavEntry);
+        }
+
+        function getVisibleSiblingPlayableMediaEntries(parentPath) {
+            return getVisibleSiblingEntriesByPredicate(parentPath, isPlayableMediaNavEntry);
         }
 
         const currentDir = normalizePath(root.dataset.currentDir || "", true);
@@ -6411,7 +6545,6 @@
         let activeListEditorSuggestions = [];
         let activeListEditorSuggestionIndex = -1;
         let activeListEditorEntry = null;
-        let activeListEditorPreviewResize = null;
         let listSuggestEventsBound = false;
         let listMarkdownSnippetEventsBound = false;
         let listMarkdownImageEventsBound = false;
@@ -6485,127 +6618,9 @@
             editorPreviewButton.disabled = !isAvailable;
         }
 
-        function clampListEditorPreviewModalValue(value, min, max) {
-            if (min > max) {
-                return (min + max) / 2;
-            }
-            return Math.max(min, Math.min(max, value));
-        }
-
-        function getListEditorPreviewDialogOffset(propertyName) {
-            if (!editorPreviewDialog) {
-                return 0;
-            }
-            const computedValue = window.getComputedStyle(editorPreviewDialog).getPropertyValue(propertyName);
-            const parsedValue = Number.parseFloat(editorPreviewDialog.style.getPropertyValue(propertyName) || computedValue || "0");
-            return Number.isFinite(parsedValue) ? parsedValue : 0;
-        }
-
-        function setListEditorPreviewDialogOffset(x, y) {
-            if (!editorPreviewDialog) {
-                return;
-            }
-            editorPreviewDialog.setAttribute("data-popup-draggable-dialog", "true");
-            editorPreviewDialog.style.setProperty("--popup-drag-x", String(Math.round(x)) + "px");
-            editorPreviewDialog.style.setProperty("--popup-drag-y", String(Math.round(y)) + "px");
-        }
-
-        function endListEditorPreviewModalResize(event) {
-            if (!activeListEditorPreviewResize || (event && event.pointerId !== activeListEditorPreviewResize.pointerId)) {
-                return;
-            }
-            if (editorPreviewDialog) {
-                editorPreviewDialog.classList.remove("is-preview-resizing");
-            }
-            document.body.classList.remove("handrive-preview-resizing");
-            document.body.style.removeProperty("cursor");
-            activeListEditorPreviewResize = null;
-        }
-
-        function onListEditorPreviewModalResizeMove(event) {
-            if (!activeListEditorPreviewResize || event.pointerId !== activeListEditorPreviewResize.pointerId) {
-                return;
-            }
-            event.preventDefault();
-            const state = activeListEditorPreviewResize;
-            const margin = 10;
-            const minWidth = Math.min(320, Math.max(0, state.viewportWidth - (margin * 2)));
-            const minHeight = Math.min(220, Math.max(0, state.viewportHeight - (margin * 2)));
-            const maxWidth = Math.max(minWidth, state.viewportWidth - (margin * 2));
-            const maxHeight = Math.max(minHeight, state.viewportHeight - (margin * 2));
-            const maxRight = state.viewportWidth - margin;
-            const maxBottom = state.viewportHeight - margin;
-            let left = state.startRect.left;
-            let right = state.startRect.right;
-            let top = state.startRect.top;
-            let bottom = state.startRect.bottom;
-            const dx = event.clientX - state.startClientX;
-            const dy = event.clientY - state.startClientY;
-
-            if (state.direction.indexOf("e") !== -1) {
-                right = clampListEditorPreviewModalValue(state.startRect.right + dx, left + minWidth, Math.min(maxRight, left + maxWidth));
-            }
-            if (state.direction.indexOf("w") !== -1) {
-                left = clampListEditorPreviewModalValue(state.startRect.left + dx, Math.max(margin, right - maxWidth), right - minWidth);
-            }
-            if (state.direction.indexOf("s") !== -1) {
-                bottom = clampListEditorPreviewModalValue(state.startRect.bottom + dy, top + minHeight, Math.min(maxBottom, top + maxHeight));
-            }
-            if (state.direction.indexOf("n") !== -1) {
-                top = clampListEditorPreviewModalValue(state.startRect.top + dy, Math.max(margin, bottom - maxHeight), bottom - minHeight);
-            }
-
-            const nextWidth = Math.max(minWidth, right - left);
-            const nextHeight = Math.max(minHeight, bottom - top);
-            const startCenterX = state.startRect.left + (state.startRect.width / 2);
-            const startCenterY = state.startRect.top + (state.startRect.height / 2);
-            const nextCenterX = left + (nextWidth / 2);
-            const nextCenterY = top + (nextHeight / 2);
-
-            editorPreviewDialog.style.width = String(Math.round(nextWidth)) + "px";
-            editorPreviewDialog.style.height = String(Math.round(nextHeight)) + "px";
-            setListEditorPreviewDialogOffset(
-                state.startOffsetX + nextCenterX - startCenterX,
-                state.startOffsetY + nextCenterY - startCenterY
-            );
-        }
-
-        function startListEditorPreviewModalResize(event) {
-            if (!editorPreviewDialog || event.defaultPrevented || event.button !== 0 || event.isPrimary === false) {
-                return;
-            }
-            const handle = event.currentTarget;
-            const direction = String(handle.getAttribute("data-preview-modal-resize-handle") || "").trim();
-            if (!direction) {
-                return;
-            }
-            event.preventDefault();
-            event.stopPropagation();
-            activeListEditorPreviewResize = {
-                pointerId: event.pointerId,
-                direction: direction,
-                startClientX: event.clientX,
-                startClientY: event.clientY,
-                startRect: editorPreviewDialog.getBoundingClientRect(),
-                startOffsetX: getListEditorPreviewDialogOffset("--popup-drag-x"),
-                startOffsetY: getListEditorPreviewDialogOffset("--popup-drag-y"),
-                viewportWidth: Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0),
-                viewportHeight: Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0),
-            };
-            editorPreviewDialog.classList.add("is-preview-resizing");
-            document.body.classList.add("handrive-preview-resizing");
-            document.body.style.cursor = window.getComputedStyle(handle).cursor || "nwse-resize";
-            try {
-                handle.setPointerCapture(event.pointerId);
-            } catch (error) {}
-        }
-
         function setListEditorPreviewModalOpen(opened) {
             if (!editorPreviewModal) {
                 return;
-            }
-            if (!opened) {
-                endListEditorPreviewModalResize();
             }
             editorPreviewModal.hidden = !opened;
             syncModalBodyState();
@@ -8146,7 +8161,6 @@
                     marker.setAttribute("aria-hidden", "true");
                     label.appendChild(marker);
                 }
-                marker.textContent = sortDirection === "desc" ? "▾" : "▴";
             };
             const labels = row.querySelectorAll(".handrive-item-meta-label[data-sort-key]");
             labels.forEach(function (label) {
@@ -8266,6 +8280,20 @@
             setPreviewBodyLoading(true);
         }
 
+        function setListEditorBodyLoading(isLoading) {
+            if (!editorBody) {
+                return;
+            }
+            editorBody.classList.toggle("is-loading", Boolean(isLoading));
+            editorBody.setAttribute("aria-busy", isLoading ? "true" : "false");
+            if (isLoading) {
+                editorBody.scrollTop = 0;
+            }
+            if (editorBodyLoadingOverlay) {
+                editorBodyLoadingOverlay.hidden = !isLoading;
+            }
+        }
+
         function ensureListMediaEditorScript(kind) {
             const normalizedKind = String(kind || "").trim().toLowerCase();
             const scriptUrl = normalizedKind === "image"
@@ -8300,6 +8328,7 @@
                 return;
             }
             stopPreviewMediaElements(previewContent);
+            setListEditorBodyLoading(false);
 
             if (isPdfEditorEntry(entry)) {
                 switchToPdfEditor(entry);
@@ -8451,6 +8480,7 @@
         async function switchToImageEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
+            setListEditorBodyLoading(true);
             if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
                 window.HandrivePdfEditor.destroy();
             }
@@ -8487,32 +8517,50 @@
             // ImageEditor 초기화
             const imageServeUrl = buildDownloadUrl(entry.path);
             if (editorSaveButton) editorSaveButton.disabled = true;
-            setListEditorSaving(true);
             try {
                 await ensureListMediaEditorScript("image");
             } catch (error) {
-                setListEditorSaving(false);
+                setListEditorBodyLoading(false);
                 if (editorSaveButton) editorSaveButton.disabled = false;
                 alertError(error);
                 return;
             }
-            setListEditorSaving(false);
+            let imageEditorLoadFinished = false;
+            const finishImageEditorLoading = function (loaded) {
+                if (imageEditorLoadFinished) {
+                    return;
+                }
+                imageEditorLoadFinished = true;
+                setListEditorBodyLoading(false);
+                scheduleListEditorHorizontalScrollReset();
+                scheduleEditorBodyHeight();
+                if (editorSaveButton) {
+                    editorSaveButton.disabled = !loaded;
+                }
+            };
             if (window.HandriveImageEditor) {
                 window.HandriveImageEditor.init({
                     entry: entry,
                     imageServeUrl: imageServeUrl,
                     backgroundRemoveUrl: imageEditorRemoveBackgroundUrl,
+                    onImageLoad: function () {
+                        finishImageEditorLoading(true);
+                    },
+                    onImageLoadError: function (error) {
+                        finishImageEditorLoading(false);
+                        alertError(error || new Error(t("image_editor_load_error", "이미지 로드 실패")));
+                    },
                     onDirtyChange: function (dirty) {
                         if (editorSaveButton) {
                             editorSaveButton.classList.toggle("is-dirty", dirty);
                         }
                     },
                 });
+            } else {
+                finishImageEditorLoading(false);
             }
-            scheduleListEditorHorizontalScrollReset();
 
             setupEditorEvents(entry);
-            if (editorSaveButton) editorSaveButton.disabled = false;
         }
 
         async function switchToVideoEditor(entry) {
@@ -8708,6 +8756,7 @@
         }
 
         function switchToPreview() {
+            setListEditorBodyLoading(false);
             // 이미지 에디터 정리
             if (imageEditorSurface && !imageEditorSurface.hidden) {
                 if (window.HandriveImageEditor) window.HandriveImageEditor.destroy();
@@ -8757,6 +8806,7 @@
             const previewEntry = previewPath
                 ? state.entryByPath.get(previewPath) || null
                 : null;
+            setListEditorBodyLoading(false);
             switchToPreview();
             if (!previewPath || !isPreviewableFileEntry(previewEntry)) {
                 clearPreviewPane();
@@ -9544,8 +9594,9 @@
             }
         }
 
-        function navigateToPreviewEntry(entry) {
-            if (!entry) return;
+        function navigateToPreviewEntry(entry, options) {
+            if (!entry) return Promise.resolve();
+            const navOptions = options || {};
             const previousActivePreviewPath = state.activePreviewPath;
             applySelection([entry.path], {
                 primaryPath: entry.path,
@@ -9554,8 +9605,50 @@
             });
             state.activePreviewPath = normalizePath(entry.path, true);
             syncEntryRowSelectedStates([previousActivePreviewPath, entry.path]);
-            loadPreviewForEntry(entry)
+            return loadPreviewForEntry(entry)
                 .then(function () { return updatePreviewNavButtons(entry); })
+                .then(function () {
+                    if (navOptions.autoplay) {
+                        return initializePreviewVideoPlayers(previewContent)
+                            .catch(function () {})
+                            .then(function () {
+                                playFirstPreviewMediaElement(previewContent);
+                            });
+                    }
+                    return null;
+                })
+                .catch(alertError);
+        }
+
+        async function getNextPlayablePreviewEntry() {
+            const currentPath = normalizePath(state.activePreviewPath || "", true);
+            if (!currentPath) return null;
+            const currentEntry = state.entryByPath.get(currentPath) || { path: currentPath, type: "file" };
+            const siblingDir = getParentPath(currentEntry.path) || state.currentDir;
+            const normalizedSiblingDir = normalizePath(siblingDir, true);
+            let siblings = getVisibleSiblingPlayableMediaEntries(normalizedSiblingDir);
+            if (!siblings.length && normalizedSiblingDir && normalizedSiblingDir !== state.currentDir) {
+                try {
+                    await loadDirectory(normalizedSiblingDir);
+                    siblings = getVisibleSiblingPlayableMediaEntries(normalizedSiblingDir);
+                } catch (error) {}
+            }
+            const idx = siblings.findIndex(function (entry) {
+                return normalizePath(entry.path, true) === currentPath;
+            });
+            return idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
+        }
+
+        function handlePreviewMediaPlayNextRequest(event) {
+            const detail = event && event.detail ? event.detail : {};
+            const mediaElement = detail.mediaElement || null;
+            if (!previewContent || !mediaElement || !previewContent.contains(mediaElement)) {
+                return;
+            }
+            getNextPlayablePreviewEntry()
+                .then(function (entry) {
+                    if (entry) navigateToPreviewEntry(entry, { autoplay: true });
+                })
                 .catch(alertError);
         }
 
@@ -9575,6 +9668,7 @@
                 navigateToPreviewEntry(previewNavNextBtn._navTarget);
             });
         }
+        window.addEventListener("handrive:media-play-next-request", handlePreviewMediaPlayNextRequest);
 
         function clearPreviewPane() {
             const previousActivePreviewPath = state.activePreviewPath;
@@ -14802,14 +14896,6 @@
             });
         }
 
-        editorPreviewResizeHandles.forEach(function (handle) {
-            handle.addEventListener("pointerdown", startListEditorPreviewModalResize);
-            handle.addEventListener("pointermove", onListEditorPreviewModalResizeMove);
-            handle.addEventListener("pointerup", endListEditorPreviewModalResize);
-            handle.addEventListener("pointercancel", endListEditorPreviewModalResize);
-            handle.addEventListener("lostpointercapture", endListEditorPreviewModalResize);
-        });
-
         if (previewZoomOutButton) {
             previewZoomOutButton.addEventListener("click", function () {
                 setPreviewImageZoom(state.previewImageZoom - 0.25);
@@ -15594,10 +15680,19 @@
         const viewMediaNavExtensions = new Set([
             ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif", ".ico",
             ".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv",
+            ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".weba",
+        ]);
+        const viewPlayableMediaNavExtensions = new Set([
+            ".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv",
+            ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".weba",
         ]);
 
         function isViewMediaNavEntry(entry) {
             return Boolean(entry && entry.type === "file" && viewMediaNavExtensions.has(getPathFileExtension(entry.name)));
+        }
+
+        function isViewPlayableMediaNavEntry(entry) {
+            return Boolean(entry && entry.type === "file" && viewPlayableMediaNavExtensions.has(getPathFileExtension(entry.name)));
         }
 
         function getViewImageElement() {
@@ -15744,8 +15839,9 @@
             } catch (e) {}
         }
 
-        async function navigateViewToEntry(entry) {
+        async function navigateViewToEntry(entry, options) {
             if (!entry || !previewApiUrl || !contentArticle) return;
+            const navOptions = options || {};
             const requestToken = viewNavRequestToken + 1;
             viewNavRequestToken = requestToken;
             try {
@@ -15793,9 +15889,37 @@
                 window.history.pushState({ handriveViewPath: currentDocPath }, "", newUrl);
 
                 updateViewNavButtons(viewNavSiblings, currentDocPath);
+                if (navOptions.autoplay) {
+                    playFirstPreviewMediaElement(contentArticle);
+                }
             } catch (error) {
                 alertError(error);
             }
+        }
+
+        function getNextPlayableViewEntry() {
+            const normalizedCurrentPath = normalizePath(currentDocPath, true);
+            const playableSiblings = viewNavSiblings.filter(isViewPlayableMediaNavEntry);
+            const idx = playableSiblings.findIndex(function (entry) {
+                return normalizePath(entry.path, true) === normalizedCurrentPath;
+            });
+            return idx >= 0 && idx < playableSiblings.length - 1 ? playableSiblings[idx + 1] : null;
+        }
+
+        function handleViewMediaPlayNextRequest(event) {
+            const detail = event && event.detail ? event.detail : {};
+            const mediaElement = detail.mediaElement || null;
+            if (!contentArticle || !mediaElement || !contentArticle.contains(mediaElement)) {
+                return;
+            }
+            Promise.resolve(viewNavSiblings.length ? null : loadViewNavSiblings())
+                .then(function () {
+                    const nextEntry = getNextPlayableViewEntry();
+                    if (nextEntry) {
+                        navigateViewToEntry(nextEntry, { autoplay: true });
+                    }
+                })
+                .catch(alertError);
         }
 
         if (viewNavPrevBtn) {
@@ -15810,6 +15934,7 @@
                 navigateViewToEntry(viewNavNextBtn._navTarget);
             });
         }
+        window.addEventListener("handrive:media-play-next-request", handleViewMediaPlayNextRequest);
 
         if (contentArticle && contentArticle.classList.contains("handrive-js")) {
             applyHandriveCodeHighlighting(contentArticle, "handrive-js");
@@ -15997,10 +16122,6 @@
         const previewModal = document.getElementById("ui-preview-modal");
         const previewBackdrop = document.getElementById("ui-preview-backdrop");
         const previewContent = document.getElementById("ui-preview-content");
-        const previewDialog = previewModal ? previewModal.querySelector(".handrive-help-modal-dialog") : null;
-        const previewResizeHandles = previewDialog
-            ? Array.from(previewDialog.querySelectorAll("[data-preview-modal-resize-handle]"))
-            : [];
         const cancelButton = document.getElementById("handrive-cancel-btn");
         const saveButton = document.getElementById("handrive-save-btn");
         const createFolderButton = document.getElementById("handrive-create-folder-btn");
@@ -16098,7 +16219,6 @@
         let lastUnsavedFocusedElement = null;
         let activeEditorSuggestions = [];
         let activeEditorSuggestionIndex = -1;
-        let activePreviewResize = null;
         let writeSuggestEventsBound = false;
         let writeMarkdownUploadedImagePaths = [];
         let writeUndoStack = [];
@@ -18324,14 +18444,14 @@
             const entryPath = normalizePath(entry && entry.path || "", true);
             const icon = createSaveEntryIcon(entry);
             const name = document.createElement("span");
-            name.className = "handrive-save-folder-name";
+            name.className = "handrive-tree-browser-name handrive-save-folder-name";
             name.textContent = resolveSaveEntryLabel(entry) || getHandrivePathTailLabel(entryPath);
 
             row.appendChild(icon);
             row.appendChild(name);
             if (isOverwriteFile) {
                 const badge = document.createElement("span");
-                badge.className = "handrive-save-overwrite-badge";
+                badge.className = "handrive-tree-browser-badge handrive-save-overwrite-badge";
                 badge.textContent = t("save_overwrite_badge", "덮어쓰기");
                 row.appendChild(badge);
             }
@@ -18341,11 +18461,11 @@
             const entry = buildSaveTreeRootEntry();
             const entryPath = normalizePath(entry.path || "", true);
             const item = document.createElement("li");
-            item.className = "handrive-item handrive-save-tree-item handrive-save-current-dir-item";
+            item.className = "handrive-item handrive-tree-browser-item handrive-save-tree-item handrive-save-current-dir-item";
 
             const row = document.createElement("button");
             row.type = "button";
-            row.className = "handrive-save-folder-row handrive-save-current-dir-row";
+            row.className = "handrive-tree-browser-row handrive-save-folder-row handrive-save-current-dir-row";
             row.setAttribute("data-entry-path", entryPath);
             appendSaveSelectedClass(row, entryPath, false);
             renderSaveEntryContents(row, entry, false);
@@ -18390,12 +18510,12 @@
             const entryPath = normalizePath(entry.path, true);
             const isOverwriteFile = entry.type === "file";
             const item = document.createElement("li");
-            item.className = "handrive-item handrive-save-tree-item";
+            item.className = "handrive-item handrive-tree-browser-item handrive-save-tree-item";
 
             const treePrefix = buildTreePrefixElement(ancestorHasNextSiblings, Boolean(isLastSibling));
             const row = document.createElement("button");
             row.type = "button";
-            row.className = "handrive-save-folder-row has-tree-prefix";
+            row.className = "handrive-tree-browser-row handrive-save-folder-row has-tree-prefix";
             row.setAttribute("data-entry-path", entryPath);
             if (isOverwriteFile) {
                 row.classList.add("is-overwrite-file");
@@ -18489,7 +18609,7 @@
             const rootResult = appendSaveTreeChildren(treeRoot, fragment, []);
             if (settings.loading && !rootHasCache && rootResult.count === 0) {
                 const loadingItem = document.createElement("li");
-                loadingItem.className = "handrive-save-folder-empty";
+                loadingItem.className = "handrive-tree-browser-empty handrive-save-folder-empty";
                 loadingItem.textContent = t("js_loading_folders", "폴더를 불러오는 중...");
                 fragment.appendChild(loadingItem);
                 saveFolderList.appendChild(fragment);
@@ -18497,7 +18617,7 @@
             }
             if (rootResult.count === 0) {
                 const emptyItem = document.createElement("li");
-                emptyItem.className = "handrive-save-folder-empty";
+                emptyItem.className = "handrive-tree-browser-empty handrive-save-folder-empty";
                 emptyItem.textContent = t("js_no_save_targets", "하위 폴더나 덮어쓸 파일이 없습니다.");
                 fragment.appendChild(emptyItem);
                 saveFolderList.appendChild(fragment);
@@ -18529,7 +18649,7 @@
                     }
                     saveFolderList.innerHTML = "";
                     const errorItem = document.createElement("li");
-                    errorItem.className = "handrive-save-folder-empty";
+                    errorItem.className = "handrive-tree-browser-empty handrive-save-folder-empty";
                     errorItem.textContent = error && error.message
                         ? error.message
                         : t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다.");
@@ -18575,121 +18695,6 @@
             syncHandriveModalBodyState();
         }
 
-        function clampPreviewModalValue(value, min, max) {
-            if (min > max) {
-                return (min + max) / 2;
-            }
-            return Math.max(min, Math.min(max, value));
-        }
-
-        function getPreviewDialogOffset(propertyName) {
-            if (!previewDialog) {
-                return 0;
-            }
-            const computedValue = window.getComputedStyle(previewDialog).getPropertyValue(propertyName);
-            const parsedValue = Number.parseFloat(previewDialog.style.getPropertyValue(propertyName) || computedValue || "0");
-            return Number.isFinite(parsedValue) ? parsedValue : 0;
-        }
-
-        function setPreviewDialogOffset(x, y) {
-            if (!previewDialog) {
-                return;
-            }
-            previewDialog.setAttribute("data-popup-draggable-dialog", "true");
-            previewDialog.style.setProperty("--popup-drag-x", String(Math.round(x)) + "px");
-            previewDialog.style.setProperty("--popup-drag-y", String(Math.round(y)) + "px");
-        }
-
-        function endPreviewModalResize(event) {
-            if (!activePreviewResize || (event && event.pointerId !== activePreviewResize.pointerId)) {
-                return;
-            }
-            if (previewDialog) {
-                previewDialog.classList.remove("is-preview-resizing");
-            }
-            document.body.classList.remove("handrive-preview-resizing");
-            document.body.style.removeProperty("cursor");
-            activePreviewResize = null;
-        }
-
-        function onPreviewModalResizeMove(event) {
-            if (!activePreviewResize || event.pointerId !== activePreviewResize.pointerId) {
-                return;
-            }
-            event.preventDefault();
-            const state = activePreviewResize;
-            const margin = 10;
-            const minWidth = Math.min(320, Math.max(0, state.viewportWidth - (margin * 2)));
-            const minHeight = Math.min(220, Math.max(0, state.viewportHeight - (margin * 2)));
-            const maxWidth = Math.max(minWidth, state.viewportWidth - (margin * 2));
-            const maxHeight = Math.max(minHeight, state.viewportHeight - (margin * 2));
-            const maxRight = state.viewportWidth - margin;
-            const maxBottom = state.viewportHeight - margin;
-            let left = state.startRect.left;
-            let right = state.startRect.right;
-            let top = state.startRect.top;
-            let bottom = state.startRect.bottom;
-            const dx = event.clientX - state.startClientX;
-            const dy = event.clientY - state.startClientY;
-
-            if (state.direction.indexOf("e") !== -1) {
-                right = clampPreviewModalValue(state.startRect.right + dx, left + minWidth, Math.min(maxRight, left + maxWidth));
-            }
-            if (state.direction.indexOf("w") !== -1) {
-                left = clampPreviewModalValue(state.startRect.left + dx, Math.max(margin, right - maxWidth), right - minWidth);
-            }
-            if (state.direction.indexOf("s") !== -1) {
-                bottom = clampPreviewModalValue(state.startRect.bottom + dy, top + minHeight, Math.min(maxBottom, top + maxHeight));
-            }
-            if (state.direction.indexOf("n") !== -1) {
-                top = clampPreviewModalValue(state.startRect.top + dy, Math.max(margin, bottom - maxHeight), bottom - minHeight);
-            }
-
-            const nextWidth = Math.max(minWidth, right - left);
-            const nextHeight = Math.max(minHeight, bottom - top);
-            const startCenterX = state.startRect.left + (state.startRect.width / 2);
-            const startCenterY = state.startRect.top + (state.startRect.height / 2);
-            const nextCenterX = left + (nextWidth / 2);
-            const nextCenterY = top + (nextHeight / 2);
-
-            previewDialog.style.width = String(Math.round(nextWidth)) + "px";
-            previewDialog.style.height = String(Math.round(nextHeight)) + "px";
-            setPreviewDialogOffset(
-                state.startOffsetX + nextCenterX - startCenterX,
-                state.startOffsetY + nextCenterY - startCenterY
-            );
-        }
-
-        function startPreviewModalResize(event) {
-            if (!previewDialog || event.defaultPrevented || event.button !== 0 || event.isPrimary === false) {
-                return;
-            }
-            const handle = event.currentTarget;
-            const direction = String(handle.getAttribute("data-preview-modal-resize-handle") || "").trim();
-            if (!direction) {
-                return;
-            }
-            event.preventDefault();
-            event.stopPropagation();
-            activePreviewResize = {
-                pointerId: event.pointerId,
-                direction: direction,
-                startClientX: event.clientX,
-                startClientY: event.clientY,
-                startRect: previewDialog.getBoundingClientRect(),
-                startOffsetX: getPreviewDialogOffset("--popup-drag-x"),
-                startOffsetY: getPreviewDialogOffset("--popup-drag-y"),
-                viewportWidth: Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0),
-                viewportHeight: Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0),
-            };
-            previewDialog.classList.add("is-preview-resizing");
-            document.body.classList.add("handrive-preview-resizing");
-            document.body.style.cursor = window.getComputedStyle(handle).cursor || "nwse-resize";
-            try {
-                handle.setPointerCapture(event.pointerId);
-            } catch (error) {}
-        }
-
         function setMarkdownHelpModalOpen(opened) {
             if (!markdownHelpModal) {
                 return;
@@ -18701,9 +18706,6 @@
         function setPreviewModalOpen(opened) {
             if (!previewModal) {
                 return;
-            }
-            if (!opened) {
-                endPreviewModalResize();
             }
             previewModal.hidden = !opened;
             syncModalBodyState();
@@ -19470,14 +19472,6 @@
                 setPreviewModalOpen(false);
             });
         }
-
-        previewResizeHandles.forEach(function (handle) {
-            handle.addEventListener("pointerdown", startPreviewModalResize);
-            handle.addEventListener("pointermove", onPreviewModalResizeMove);
-            handle.addEventListener("pointerup", endPreviewModalResize);
-            handle.addEventListener("pointercancel", endPreviewModalResize);
-            handle.addEventListener("lostpointercapture", endPreviewModalResize);
-        });
 
         if (unsavedModalBackdrop) {
             unsavedModalBackdrop.addEventListener("click", function () {

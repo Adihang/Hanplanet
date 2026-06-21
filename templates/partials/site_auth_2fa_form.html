@@ -1,7 +1,7 @@
 <form
     method="post"
     {% if handrive_2fa_action_url %}action="{{ handrive_2fa_action_url }}"{% endif %}
-    class="auth-form"
+    class="auth-form site-loading-host"
     id="handrive-2fa-form"
     {% if site_auth_is_modal %}data-auth-form{% endif %}
     {% if handrive_api_login_2fa_resend_code_url %}

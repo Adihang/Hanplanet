@@ -33,6 +33,64 @@
     --site-weight-nav: 650;
     --site-weight-body: 400;
     --site-weight-subtitle: 400;
+    --site-loading-content-filter: blur(3px);
+    --site-loading-content-opacity: 0.46;
+    --site-loading-overlay-bg: color-mix(in srgb, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)) 76%, transparent);
+    --site-loading-overlay-filter: blur(3px);
+    --site-loading-overlay-z: 6;
+    --site-loading-spinner-size: 38px;
+    --site-loading-spinner-border-width: 3px;
+    --site-loading-spinner-track: var(--site-border-heavy, rgba(0, 0, 0, 0.2));
+    --site-loading-spinner-accent: var(--theme-accent-strong, #2563eb);
+}
+
+.site-loading-host {
+    position: relative;
+}
+
+.site-loading-host.is-loading,
+.site-loading-host.is-submitting {
+    cursor: progress;
+}
+
+.site-loading-host.is-loading > :not(.site-loading-overlay),
+.site-loading-host.is-submitting > :not(.site-loading-overlay) {
+    filter: var(--site-loading-content-filter);
+    opacity: var(--site-loading-content-opacity);
+    pointer-events: none;
+    user-select: none;
+}
+
+.site-loading-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: var(--site-loading-overlay-z);
+    display: grid;
+    place-items: center;
+    border-radius: inherit;
+    background: var(--site-loading-overlay-bg);
+    -webkit-backdrop-filter: var(--site-loading-overlay-filter);
+    backdrop-filter: var(--site-loading-overlay-filter);
+    cursor: progress;
+}
+
+.site-loading-overlay[hidden] {
+    display: none;
+}
+
+.site-loading-spinner {
+    width: var(--site-loading-spinner-size);
+    height: var(--site-loading-spinner-size);
+    border: var(--site-loading-spinner-border-width) solid var(--site-loading-spinner-track);
+    border-top-color: var(--site-loading-spinner-accent);
+    border-radius: 50%;
+    animation: site-loading-spin 0.8s linear infinite;
+}
+
+@keyframes site-loading-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 body {
@@ -136,6 +194,7 @@ textarea,
 
 .ui-nav-link,
 .ui-path-link,
+.ui-path-current,
 .root-search-engine-toggle,
 .root-search-engine-option,
 .root-search-submit,
@@ -382,6 +441,8 @@ body.theme-dark {
     --site-modal-exterior-dim-shadow: 0 0 0 100vmax var(--site-modal-backdrop-bg);
     --site-modal-surface-bg: rgba(46, 46, 46, 0.72);
     --site-modal-surface-filter: var(--site-popup-glass-filter);
+    --site-dropdown-surface-bg: var(--site-modal-surface-bg);
+    --site-dropdown-surface-filter: var(--site-modal-surface-filter);
     --site-shadow-md: 0 16px 34px rgba(0, 0, 0, 0.5);
     --site-shadow-lg: 0 16px 34px rgba(0, 0, 0, 0.55);
     --site-shadow-xl: 0 20px 44px rgba(0, 0, 0, 0.6);
@@ -2669,6 +2730,8 @@ body.portfolio-page section {
     --site-modal-exterior-dim-shadow: 0 0 0 100vmax var(--site-modal-backdrop-bg);
     --site-modal-surface-bg: rgba(248, 248, 248, 0.72);
     --site-modal-surface-filter: var(--site-popup-glass-filter);
+    --site-dropdown-surface-bg: var(--site-modal-surface-bg);
+    --site-dropdown-surface-filter: var(--site-modal-surface-filter);
     --site-shadow-md: 0 16px 34px rgba(0, 0, 0, 0.2);
     --site-shadow-lg: 0 16px 34px rgba(0, 0, 0, 0.24);
     --site-shadow-xl: 0 20px 44px rgba(0, 0, 0, 0.24);

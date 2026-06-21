@@ -44,6 +44,8 @@ import unicodedata
 import zipfile
 import ipaddress
 import socket
+import os
+import stat
 from django.utils import timezone
 from django.utils.safestring import mark_safe
 import markdown
@@ -95,6 +97,20 @@ YOUTUBE_DOWNLOAD_ALLOWED_HOSTS = {
     "youtu.be",
     "www.youtu.be",
 }
+MINECRAFT_PUBLIC_HOST = "mc.hanplanet.com"
+MINECRAFT_SERVER_ADDRESS = "mc.hanplanet.com"
+MINECRAFT_META_TITLE = "Minecraft Server | Hanplanet"
+MINECRAFT_SERVER_IMAGE_URL = "https://www.hanplanet.com/media/HanDrive/users/admin/mc_server.png"
+MINECRAFT_WEATHER_ICON_URL = "/media/HanDrive/users/admin/weather.svg"
+MINECRAFT_PLUGIN_DIR = Path("/Users/imhanbyeol/Development/minecraft/plugins")
+MINECRAFT_STATUS_PATH = Path("/Users/imhanbyeol/Development/minecraft/web/status.json")
+MINECRAFT_CONSOLE_OUTPUT_PATH = Path("/Users/imhanbyeol/Development/minecraft/run/console.out")
+MINECRAFT_CONSOLE_INPUT_PATH = Path("/Users/imhanbyeol/Development/minecraft/run/console.in")
+MINECRAFT_LOG_TAIL_BYTES = 64 * 1024
+MINECRAFT_LOG_TAIL_LINES = 220
+MINECRAFT_COMMAND_MAX_LENGTH = 1024
+MINECRAFT_VERSION_PATTERN = re.compile(r"(?<!\d)(\d+(?:\.\d+){1,2}(?:[-+][0-9A-Za-z.-]+)?)(?!\d)")
+ANSI_ESCAPE_PATTERN = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 UI_LANG_PATH_PREFIX_PATTERN = re.compile(r"^/(ko|en)(/|$)")
 SEO_NOINDEX_EXACT_PATHS = {
     "/2fa-verify",
@@ -865,7 +881,7 @@ def get_dummy_portfolio_projects(ui_lang):
             ),
         },
         {
-            "title": "기타 허브",
+            "title": "Sub Hub",
             "tags": ["Canvas", "JavaScript", "Animation"],
             "content": (
                 "작은 웹 게임들을 모아 보여주는 허브 페이지입니다.\n\n"
@@ -1124,6 +1140,39 @@ def build_public_absolute_url(path):
     return f"{get_public_base_url()}{normalized_path}"
 
 
+def build_public_site_nav_url(url):
+    """Convert local navigation paths to canonical www URLs, preserving external URLs."""
+    raw_url = str(url or "").strip()
+    if not raw_url:
+        return build_public_absolute_url("/")
+    if raw_url.startswith("#"):
+        return raw_url
+    parsed_url = urlparse(raw_url)
+    if parsed_url.scheme or parsed_url.netloc:
+        return raw_url
+    if raw_url.startswith("?"):
+        return f"{get_public_base_url()}/{raw_url}"
+    normalized_path = raw_url if raw_url.startswith("/") else f"/{raw_url}"
+    return build_public_absolute_url(normalized_path)
+
+
+def clone_nav_link_with_url(link, url):
+    """Return a lightweight nav link object with only the fields used by templates."""
+    return SimpleNamespace(
+        name=getattr(link, "name", ""),
+        url=url,
+    )
+
+
+def apply_public_site_nav_urls(context):
+    """Point shared navbar links at the canonical site when rendered on a subdomain."""
+    context["site_home_url"] = build_public_site_nav_url("/")
+    context["nav_links"] = [
+        clone_nav_link_with_url(link, build_public_site_nav_url(getattr(link, "url", "")))
+        for link in context.get("nav_links", [])
+    ]
+
+
 def strip_supported_ui_lang_prefix(path):
     """Return a path without a leading supported UI language prefix."""
     normalized_path = str(path or "/").strip() or "/"
@@ -1289,6 +1338,31 @@ def apply_ui_context(request, context, ui_lang):
     context["privacy_url"] = build_localized_url(request, "main:privacy_page_lang")
     context["terms_url"] = build_localized_url(request, "main:terms_page_lang")
     context["licenses_url"] = build_localized_url(request, "main:licenses_page_lang")
+    handrive_login_url = context.setdefault(
+        "handrive_login_url",
+        reverse("main:handrive_login_lang", kwargs={"ui_lang": ui_lang}),
+    )
+    handrive_signup_url = context.setdefault(
+        "handrive_signup_url",
+        reverse("main:handrive_signup_lang", kwargs={"ui_lang": ui_lang}),
+    )
+    toolbar_auth_next_url = request.get_full_path() or f"/{ui_lang}/"
+    if "toolbar_auth_login_url" not in context:
+        login_query = urlparse(handrive_login_url).query
+        login_separator = "&" if login_query else "?"
+        context["toolbar_auth_login_url"] = (
+            handrive_login_url
+            if "next=" in login_query
+            else f"{handrive_login_url}{login_separator}{urlencode({'next': toolbar_auth_next_url})}"
+        )
+    if "toolbar_auth_signup_url" not in context:
+        signup_query = urlparse(handrive_signup_url).query
+        signup_separator = "&" if signup_query else "?"
+        context["toolbar_auth_signup_url"] = (
+            handrive_signup_url
+            if "next=" in signup_query
+            else f"{handrive_signup_url}{signup_separator}{urlencode({'next': toolbar_auth_next_url})}"
+        )
     context["account_privacy_policy_agreed_at"] = ""
     context["account_terms_of_service_agreed_at"] = ""
     context["account_github_auth_enabled"] = is_github_auth_configured()
@@ -1314,6 +1388,44 @@ def apply_ui_context(request, context, ui_lang):
     context["account_google_drive_items_url"] = reverse("main:handrive_api_google_drive_items")
     context["account_google_unlink_url"] = reverse("main:handrive_api_google_unlink")
     if request.user.is_authenticated:
+        default_portfolio_profile = None
+        try:
+            default_portfolio_profile = (
+                PortfolioProfile.objects
+                .filter(user=request.user)
+                .only("profile_img")
+                .first()
+            )
+        except (OperationalError, ProgrammingError):
+            default_portfolio_profile = None
+        context.setdefault("account_display_name", get_account_display_name(request.user))
+        context.setdefault(
+            "account_profile_image_url",
+            default_portfolio_profile.profile_img.url
+            if default_portfolio_profile and default_portfolio_profile.profile_img
+            else "",
+        )
+        context.setdefault("account_email", str(request.user.email or "").strip())
+        context.setdefault(
+            "account_profile_upload_url",
+            reverse("main:account_profile_image_upload_lang", kwargs={"ui_lang": ui_lang}),
+        )
+        context.setdefault(
+            "account_my_portfolio_url",
+            reverse(
+                "main:portfolio_user_lang",
+                kwargs={"ui_lang": ui_lang, "user_id": request.user.username},
+            ),
+        )
+        context.setdefault("account_logout_form_id", "auth-logout-form-global")
+        context.setdefault(
+            "account_logout_next",
+            request.get_full_path() or reverse("main:none_lang", kwargs={"ui_lang": ui_lang}),
+        )
+        context.setdefault(
+            "account_logout_url",
+            reverse("main:handrive_logout_lang", kwargs={"ui_lang": ui_lang}),
+        )
         profile_preferences = (
             UserProfile.objects.filter(user=request.user)
             .values(
@@ -1412,6 +1524,10 @@ def apply_ui_context(request, context, ui_lang):
             {"name": "CLI", "url": f"/{ui_lang}/handrive/cli"},
             {"name": "Sub", "url": "/sub/"},
         ]
+
+    context["site_home_url"] = context.get("site_home_url", "/")
+    if is_minecraft_host(request):
+        apply_public_site_nav_urls(context)
 
 
 def build_localized_url(request, route_name, **kwargs):
@@ -2114,6 +2230,7 @@ def _build_sub_links(resolved_lang):
     """Return the actual public Sub child URLs from URLConf in resolver order."""
     links = []
     seen_urls = set()
+    is_english = resolved_lang == "en"
 
     for pattern in _iter_urlconf_patterns(get_resolver().url_patterns):
         route_name = getattr(pattern, "name", "") or ""
@@ -2140,6 +2257,22 @@ def _build_sub_links(resolved_lang):
             "slug": slug,
             "url": url,
         })
+
+    minecraft_version = get_minecraft_server_version()
+    minecraft_version_suffix = f" {minecraft_version}" if minecraft_version else ""
+    links.insert(0, {
+        "slug": "minecraft",
+        "url": "https://mc.hanplanet.com/",
+        "title": MINECRAFT_META_TITLE,
+        "site_name": "mc.hanplanet.com",
+        "description": (
+            f"Minecraft Java Edition{minecraft_version_suffix} server with live player status and a BlueMap world map."
+            if is_english
+            else "Minecraft 서버의 실시간 플레이어 상태와 월드 지도를 제공합니다."
+        ),
+        "image": MINECRAFT_SERVER_IMAGE_URL,
+        "category": "game",
+    })
 
     return links
 
@@ -2168,12 +2301,12 @@ def sub_page(request, ui_lang=None):
         "sub_home_label": "Hanplanet",
         "handrive_login_url": reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}),
         "handrive_signup_url": reverse("main:handrive_signup_lang", kwargs={"ui_lang": resolved_lang}),
-        "meta_title": "Hanplanet Sub" if is_english else "Hanplanet 기타",
-        "meta_og_title": "Hanplanet Sub" if is_english else "Hanplanet 기타",
+        "meta_title": "Hanplanet Sub",
+        "meta_og_title": "Hanplanet Sub",
         "meta_description": (
             "Browse Sub on Hanplanet, including Bubble, Text Bubble, Stratagem Hero, Bumper Car Spiky, and Raise Speaki."
             if is_english
-            else "Hanplanet에서 Bubble, Text Bubble, Stratagem Hero, 범퍼카 스핔이, 스핔이 키우기 같은 기타 페이지를 둘러보세요."
+            else "Hanplanet에서 Bubble, Text Bubble, Stratagem Hero, 범퍼카 스핔이, 스핔이 키우기 같은 Sub 페이지를 둘러보세요."
         ),
     }
     context["meta_og_description"] = context["meta_description"]
@@ -2449,7 +2582,7 @@ def network_environment_page(request, ui_lang=None):
         "ui_lang": resolved_lang,
         "page_title": "Network Environment" if is_english else "네트워크 환경",
         "home_label": "Hanplanet",
-        "sub_label": "Sub" if is_english else "기타",
+        "sub_label": "Sub",
         "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
         "environment_api_url": reverse("main:network_environment_api_lang", kwargs={"ui_lang": resolved_lang}),
         "reverse_geocode_api_url": reverse("main:network_reverse_geocode_api_lang", kwargs={"ui_lang": resolved_lang}),
@@ -2603,7 +2736,7 @@ def image_pip_demo_page(request, ui_lang=None):
     context = {
         "page_title": "Image PiP Demo" if is_english else "이미지 PiP 데모",
         "home_label": "Hanplanet",
-        "sub_label": "Sub" if is_english else "기타",
+        "sub_label": "Sub",
         "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
         "sub_category": "tool",
         "sample_image_url": reverse("main:image_pip_demo_sample_image"),
@@ -2788,7 +2921,7 @@ def image_color_picker_page(request, ui_lang=None):
         "ui_lang": resolved_lang,
         "page_title": "Image Color Picker" if is_english else "이미지 색상 피커",
         "home_label": "Hanplanet",
-        "sub_label": "Sub" if is_english else "기타",
+        "sub_label": "Sub",
         "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
         "fetch_url": reverse("main:image_color_picker_fetch_url_lang", kwargs={"ui_lang": resolved_lang}),
         "sub_category": "tool",
@@ -2830,6 +2963,7 @@ def image_color_picker_page(request, ui_lang=None):
         "handrive_root_label": "HanDrive",
         "handrive_open_folder_label": "Open folder" if is_english else "폴더 열기",
         "handrive_select_file_label": "Select image" if is_english else "이미지 선택",
+        "handrive_file_type_badge": "Image" if is_english else "이미지",
         "meta_title": "Image Color Picker | Hanplanet" if is_english else "이미지 색상 피커 | Hanplanet",
         "meta_og_title": "Image Color Picker | Hanplanet" if is_english else "이미지 색상 피커 | Hanplanet",
         "meta_description": (
@@ -3369,7 +3503,7 @@ def video_to_gif_page(request, ui_lang=None):
         "ui_lang": resolved_lang,
         "page_title": "Video to GIF" if is_english else "비디오 GIF 변환",
         "home_label": "Hanplanet",
-        "sub_label": "Sub" if is_english else "기타",
+        "sub_label": "Sub",
         "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
         "sub_category": "tool",
         "metadata_api_url": reverse("main:video_to_gif_metadata_lang", kwargs={"ui_lang": resolved_lang}),
@@ -3419,6 +3553,7 @@ def video_to_gif_page(request, ui_lang=None):
         "handrive_root_label": "HanDrive",
         "handrive_open_folder_label": "Open folder" if is_english else "폴더 열기",
         "handrive_select_file_label": "Select video" if is_english else "비디오 선택",
+        "handrive_file_type_badge": "Video" if is_english else "동영상",
         "meta_title": "Video to GIF | Hanplanet" if is_english else "비디오 GIF 변환 | Hanplanet",
         "meta_og_title": "Video to GIF | Hanplanet" if is_english else "비디오 GIF 변환 | Hanplanet",
         "meta_description": (
@@ -3570,7 +3705,7 @@ def bubble_page(request, ui_lang=None):
             else "버블을 전부 터뜨리면 배경색이 랜덤으로 바뀝니다."
         ),
         "sub_category": "game",
-        "back_to_sub_text": "Back to Sub" if is_english else "기타로 돌아가기",
+        "back_to_sub_text": "Back to Sub" if is_english else "Sub로 돌아가기",
     }
     return render(request, "fun/bubble.html", context)
 
@@ -3602,7 +3737,7 @@ def qrbarcode_page(request, ui_lang=None):
         "ui_lang": resolved_lang,
         "page_title": "QR/Barcode" if is_english else "QR/Barcode",
         "home_label": "Hanplanet",
-        "sub_label": "Sub" if is_english else "기타",
+        "sub_label": "Sub",
         "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
         "sub_category": "tool",
         "generate_api_url": reverse("main:qrbarcode_generate_lang", kwargs={"ui_lang": resolved_lang}),
@@ -3885,7 +4020,7 @@ def youtube_downloader_page(request, ui_lang=None):
         "ui_lang": resolved_lang,
         "page_title": "YouTube Downloader" if is_english else "유튜브 다운로더",
         "home_label": "Hanplanet",
-        "sub_label": "Sub" if is_english else "기타",
+        "sub_label": "Sub",
         "sub_url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang}),
         "sub_category": "tool",
         "download_api_url": reverse("main:youtube_download_lang", kwargs={"ui_lang": resolved_lang}),
@@ -4514,7 +4649,7 @@ def _build_multiplayer_page_context(
         "multiplayer_hud_counter_text": multiplayer_hud_counter_text,
         "game_slug": game_slug,
         "game_client_script_path": game_client_script_path,
-        "multiplayer_back_text": "Sub" if is_english else "기타",
+        "multiplayer_back_text": "Sub",
         "handrive_login_url": reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}),
         "handrive_signup_url": reverse("main:handrive_signup_lang", kwargs={"ui_lang": resolved_lang}),
         "bumpercar_restart_server_url": reverse(
@@ -5091,6 +5226,9 @@ def bumpercar_spiky_stats_record(request):
 
 def none(request, ui_lang=None):
     """Render the Hanplanet home page with root search, favorites, and install metadata."""
+    if is_minecraft_host(request):
+        return minecraft_home(request, ui_lang=ui_lang)
+
     context = dict()
     resolved_lang = resolve_ui_lang(request, ui_lang)
     apply_ui_context(request, context, resolved_lang)
@@ -5151,6 +5289,403 @@ def none(request, ui_lang=None):
         context["account_logout_next"] = reverse("main:none_lang", kwargs={"ui_lang": resolved_lang})
         context["account_logout_url"] = context["handrive_logout_url"]
     return render(request, 'none.html', context)
+
+
+def is_minecraft_host(request):
+    """Return true when the current request is for the Minecraft subdomain."""
+    host = str(request.get_host() or "").split(":", 1)[0].strip().lower()
+    return host == MINECRAFT_PUBLIC_HOST
+
+
+def is_minecraft_admin_user(user):
+    """Allow Minecraft server internals only to the Django superuser account."""
+    return bool(
+        user is not None
+        and getattr(user, "is_authenticated", False)
+        and getattr(user, "is_superuser", False)
+    )
+
+
+def normalize_minecraft_command(command):
+    """Validate a console command before sending it to the Minecraft console stdin."""
+    normalized = str(command or "").strip()
+    if normalized.startswith("/"):
+        normalized = normalized[1:].strip()
+    if (
+        not normalized
+        or len(normalized) > MINECRAFT_COMMAND_MAX_LENGTH
+        or "\n" in normalized
+        or "\r" in normalized
+        or "\x00" in normalized
+    ):
+        return ""
+    return normalized
+
+
+def write_minecraft_console_command(command):
+    """Write a validated command line to the Minecraft process stdin FIFO."""
+    try:
+        input_stat = MINECRAFT_CONSOLE_INPUT_PATH.stat()
+    except OSError as exc:
+        raise RuntimeError("console_unavailable") from exc
+
+    if not stat.S_ISFIFO(input_stat.st_mode):
+        raise RuntimeError("console_input_invalid")
+
+    try:
+        fd = os.open(MINECRAFT_CONSOLE_INPUT_PATH, os.O_WRONLY | os.O_NONBLOCK)
+    except OSError as exc:
+        raise RuntimeError("console_unavailable") from exc
+
+    try:
+        os.write(fd, f"{command}\n".encode("utf-8"))
+    except OSError as exc:
+        raise RuntimeError("console_write_failed") from exc
+    finally:
+        os.close(fd)
+
+
+def _read_plugin_yaml_scalar(text, key):
+    prefix = f"{key}:"
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not stripped.startswith(prefix):
+            continue
+        return stripped[len(prefix):].strip().strip('"\'')
+    return ""
+
+
+def get_minecraft_server_plugins():
+    """Read installed Minecraft Bukkit/Paper plugin metadata from plugin jars."""
+    plugins = []
+    try:
+        jar_paths = sorted(MINECRAFT_PLUGIN_DIR.glob("*.jar"), key=lambda path: path.name.lower())
+    except OSError:
+        return plugins
+
+    for jar_path in jar_paths:
+        plugin_name = jar_path.stem
+        plugin_version = ""
+        try:
+            with zipfile.ZipFile(jar_path) as jar_file:
+                for metadata_name in ("paper-plugin.yml", "plugin.yml"):
+                    try:
+                        metadata = jar_file.read(metadata_name).decode("utf-8", errors="replace")
+                    except KeyError:
+                        continue
+                    plugin_name = _read_plugin_yaml_scalar(metadata, "name") or plugin_name
+                    plugin_version = _read_plugin_yaml_scalar(metadata, "version")
+                    break
+        except (OSError, zipfile.BadZipFile):
+            pass
+
+        plugins.append({
+            "name": plugin_name,
+            "version": plugin_version,
+        })
+
+    return plugins
+
+
+def read_minecraft_server_status():
+    """Read the generated Minecraft status payload, if available."""
+    try:
+        with MINECRAFT_STATUS_PATH.open("r", encoding="utf-8") as status_file:
+            payload = json.load(status_file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def extract_minecraft_server_version(status_payload):
+    """Extract the Java Edition version from a Minecraft ping status payload."""
+    version = status_payload.get("version") if isinstance(status_payload, dict) else {}
+    if not isinstance(version, dict):
+        return ""
+    version_name = str(version.get("name") or "").strip()
+    if not version_name:
+        return ""
+    match = MINECRAFT_VERSION_PATTERN.search(version_name)
+    return match.group(1) if match else version_name
+
+
+def get_minecraft_server_version():
+    """Return the current Minecraft Java Edition version from generated status."""
+    return extract_minecraft_server_version(read_minecraft_server_status())
+
+
+def clean_minecraft_log_text(text):
+    """Strip terminal control characters before exposing fixed server logs."""
+    cleaned = ANSI_ESCAPE_PATTERN.sub("", str(text or ""))
+    return cleaned.replace("\r", "")
+
+
+def read_minecraft_server_log(cursor=None):
+    """Read a bounded chunk from the current Minecraft console output buffer."""
+    try:
+        size = MINECRAFT_CONSOLE_OUTPUT_PATH.stat().st_size
+    except OSError:
+        return {
+            "cursor": 0,
+            "text": "",
+            "truncated": False,
+            "error": "log_unavailable",
+        }
+
+    if cursor is not None and 0 <= cursor <= size:
+        start = cursor
+        truncated = False
+        drop_partial_first_line = False
+    else:
+        start = max(0, size - MINECRAFT_LOG_TAIL_BYTES)
+        truncated = start > 0
+        drop_partial_first_line = start > 0
+
+    if size - start > MINECRAFT_LOG_TAIL_BYTES:
+        start = max(0, size - MINECRAFT_LOG_TAIL_BYTES)
+        truncated = True
+        drop_partial_first_line = start > 0
+
+    try:
+        with MINECRAFT_CONSOLE_OUTPUT_PATH.open("rb") as log_file:
+            log_file.seek(start)
+            raw_text = log_file.read(size - start).decode("utf-8", errors="replace")
+    except OSError:
+        return {
+            "cursor": size,
+            "text": "",
+            "truncated": False,
+            "error": "log_unavailable",
+        }
+
+    lines = clean_minecraft_log_text(raw_text).splitlines()
+    if drop_partial_first_line and lines:
+        lines = lines[1:]
+    if cursor is None and len(lines) > MINECRAFT_LOG_TAIL_LINES:
+        lines = lines[-MINECRAFT_LOG_TAIL_LINES:]
+        truncated = True
+
+    return {
+        "cursor": size,
+        "text": "\n".join(lines),
+        "truncated": truncated,
+    }
+
+
+def minecraft_home(request, ui_lang=None):
+    """Render the Minecraft landing page through Django for mc.hanplanet.com."""
+    from .handrive_views import build_page_help_html, get_handrive_text
+
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+    handrive_text = get_handrive_text(resolved_lang)
+    minecraft_admin_log_enabled = is_minecraft_admin_user(getattr(request, "user", None))
+    canonical_url = "https://mc.hanplanet.com/"
+    server_version = get_minecraft_server_version()
+    server_version_prefix = "Minecraft Java Edition"
+    server_version_loading_label = "Checking" if is_english else "확인 중"
+    server_version_text = (
+        f"{server_version_prefix} {server_version}"
+        if server_version
+        else f"{server_version_prefix} {server_version_loading_label}"
+    )
+    server_version_description = (
+        f"{server_version_prefix} {server_version}"
+        if server_version
+        else server_version_prefix
+    )
+    meta_description = (
+        f"Hanplanet {server_version_description} server. Check live players and open the BlueMap world map."
+    )
+    context = {
+        "server_address": MINECRAFT_SERVER_ADDRESS,
+        "server_version": server_version,
+        "server_version_prefix": server_version_prefix,
+        "server_version_loading_label": server_version_loading_label,
+        "server_version_text": server_version_text,
+        "status_url": reverse("main:minecraft_status_json"),
+        "page_title": "Minecraft Server",
+        "home_label": "Hanplanet",
+        "home_url": build_public_site_nav_url("/"),
+        "sub_label": "Sub",
+        "sub_url": build_public_site_nav_url(reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang})),
+        "server_panel_title": "Map" if is_english else "지도",
+        "server_address_label": "Server address" if is_english else "서버 주소",
+        "server_address_copy_label": "Copy server address" if is_english else "서버 주소 복사",
+        "server_address_copied_label": "Copied" if is_english else "복사됨",
+        "server_version_label": "Version" if is_english else "버전",
+        "server_hint": "",
+        "links_panel_title": "Plugins" if is_english else "플러그인",
+        "server_log_title": "Server Console" if is_english else "서버 콘솔",
+        "minecraft_command_help_title": "Server command help" if is_english else "서버 명령어 도움말",
+        "minecraft_command_help_html": build_page_help_html(resolved_lang, "minecraft", handrive_text),
+        "minecraft_command_help_button_label": "Command help" if is_english else "명령어 도움말",
+        "server_log_loading_label": "Loading" if is_english else "불러오는 중",
+        "server_log_updated_label": "",
+        "server_log_failed_label": "Unavailable" if is_english else "확인 실패",
+        "server_log_url": reverse("main:minecraft_server_log_json") if minecraft_admin_log_enabled else "",
+        "server_command_url": reverse("main:minecraft_server_command_json") if minecraft_admin_log_enabled else "",
+        "server_command_placeholder": (
+            "Enter server command"
+            if is_english
+            else "서버 명령어 입력"
+        ),
+        "server_command_send_label": "Run" if is_english else "실행",
+        "server_command_sending_label": "Running" if is_english else "실행 중",
+        "server_command_failed_label": "Command failed" if is_english else "명령 실행 실패",
+        "server_command_empty_label": "Enter a command" if is_english else "명령어를 입력하세요",
+        "minecraft_admin_log_enabled": minecraft_admin_log_enabled,
+        "map_embed_url": "/map/",
+        "map_embed_title": "BlueMap world map" if is_english else "BlueMap 월드 지도",
+        "plugins_empty_label": "No plugins found." if is_english else "플러그인이 없습니다.",
+        "server_plugins": get_minecraft_server_plugins(),
+        "players_panel_title": "Players" if is_english else "플레이어",
+        "status_loading_label": "Loading" if is_english else "불러오는 중",
+        "status_failed_label": "Status unavailable" if is_english else "상태 확인 실패",
+        "server_offline_label": "Server offline" if is_english else "서버 오프라인",
+        "server_no_response_label": "The server is not responding." if is_english else "서버가 응답하지 않습니다.",
+        "players_empty_label": (
+            "No recorded players yet."
+            if is_english
+            else "아직 기록된 플레이어가 없습니다."
+        ),
+        "players_loading_label": (
+            "Loading player status."
+            if is_english
+            else "플레이어 상태를 불러오는 중입니다."
+        ),
+        "players_failed_label": (
+            "Could not load player status."
+            if is_english
+            else "플레이어 상태를 불러오지 못했습니다."
+        ),
+        "server_clock_loading_label": (
+            "Loading server time."
+            if is_english
+            else "서버 시간을 불러오는 중입니다."
+        ),
+        "weather_icon_url": MINECRAFT_WEATHER_ICON_URL,
+        "weather_clear_label": "Clear" if is_english else "맑음",
+        "weather_rain_label": "Rain" if is_english else "비",
+        "weather_thunder_label": "Thunder" if is_english else "천둥",
+        "weather_unknown_label": "Unknown weather" if is_english else "날씨 알 수 없음",
+        "online_label": "Online" if is_english else "온라인",
+        "offline_label": "Offline" if is_english else "오프라인",
+        "meta_title": MINECRAFT_META_TITLE,
+        "meta_og_title": MINECRAFT_META_TITLE,
+        "meta_description": meta_description,
+        "meta_og_description": meta_description,
+        "meta_canonical_url": canonical_url,
+        "meta_og_url": canonical_url,
+        "meta_site_name": "Hanplanet Minecraft",
+        "meta_og_image": MINECRAFT_SERVER_IMAGE_URL,
+        "meta_twitter_image": MINECRAFT_SERVER_IMAGE_URL,
+        "meta_image_alt": "Hanplanet Minecraft server preview image",
+        "meta_robots": "index,follow",
+        "sub_category": "game",
+        "handrive_text": handrive_text,
+    }
+    apply_ui_context(request, context, resolved_lang)
+    context["is_root_entry"] = False
+
+    current_path = request.get_full_path() or "/"
+    encoded_current_path = quote(current_path, safe="/")
+    context["handrive_login_url"] = f"{reverse('main:handrive_login_lang', kwargs={'ui_lang': resolved_lang})}?next={encoded_current_path}"
+    context["handrive_signup_url"] = f"{reverse('main:handrive_signup_lang', kwargs={'ui_lang': resolved_lang})}?next={encoded_current_path}"
+    context["handrive_logout_url"] = reverse("main:handrive_logout_lang", kwargs={"ui_lang": resolved_lang})
+    if request.user.is_authenticated:
+        portfolio_profile = PortfolioProfile.objects.filter(user=request.user).only("profile_img").first()
+        context["handrive_my_portfolio_url"] = reverse(
+            "main:portfolio_user_lang",
+            kwargs={"ui_lang": resolved_lang, "user_id": request.user.username},
+        )
+        context["account_display_name"] = get_account_display_name(request.user)
+        context["account_profile_image_url"] = (
+            portfolio_profile.profile_img.url if portfolio_profile and portfolio_profile.profile_img else ""
+        )
+        context["account_email"] = str(request.user.email or "").strip()
+        context["account_profile_upload_url"] = reverse(
+            "main:account_profile_image_upload_lang",
+            kwargs={"ui_lang": resolved_lang},
+        )
+        context["handrive_my_portfolio_url"] = build_public_site_nav_url(context["handrive_my_portfolio_url"])
+        context["account_my_portfolio_url"] = context["handrive_my_portfolio_url"]
+        context["account_logout_form_id"] = "auth-logout-form-minecraft"
+        context["account_logout_next"] = current_path
+        context["account_logout_url"] = context["handrive_logout_url"]
+
+    response = render(request, "main/minecraft_home.html", context)
+    response["Cache-Control"] = "no-cache"
+    response["X-Hanplanet-App"] = "django-minecraft"
+    return response
+
+
+@cache_control(no_store=True)
+def minecraft_status_json(request):
+    """Serve the generated Minecraft status JSON through Django."""
+    if not is_minecraft_host(request):
+        raise Http404
+    payload = read_minecraft_server_status()
+    if not payload:
+        payload = {
+            "serverOnline": False,
+            "onlineCount": 0,
+            "maxPlayers": 0,
+            "players": [],
+        }
+    response = JsonResponse(payload)
+    response["X-Hanplanet-App"] = "django-minecraft"
+    return response
+
+
+@cache_control(no_store=True)
+@require_http_methods(["GET"])
+def minecraft_server_log_json(request):
+    """Serve a bounded live tail of Minecraft console stdout to the superuser only."""
+    if not is_minecraft_host(request) or not is_minecraft_admin_user(getattr(request, "user", None)):
+        raise Http404
+
+    cursor = None
+    cursor_value = str(request.GET.get("cursor") or "").strip()
+    if cursor_value:
+        try:
+            cursor = max(0, int(cursor_value))
+        except ValueError:
+            cursor = None
+
+    payload = read_minecraft_server_log(cursor)
+    response = JsonResponse(payload)
+    response["X-Hanplanet-App"] = "django-minecraft"
+    return response
+
+
+@cache_control(no_store=True)
+@csrf_protect
+@require_http_methods(["POST"])
+def minecraft_server_command_json(request):
+    """Execute a Minecraft command through the actual server console stdin for the superuser only."""
+    if not is_minecraft_host(request) or not is_minecraft_admin_user(getattr(request, "user", None)):
+        raise Http404
+
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        payload = {}
+
+    command = normalize_minecraft_command(payload.get("command") or request.POST.get("command"))
+    if not command:
+        return JsonResponse({"ok": False, "error": "invalid_command"}, status=400)
+
+    try:
+        write_minecraft_console_command(command)
+    except RuntimeError:
+        return JsonResponse({"ok": False, "error": "console_unavailable"}, status=503)
+
+    response = JsonResponse({"ok": True, "response": ""})
+    response["X-Hanplanet-App"] = "django-minecraft"
+    return response
 
 
 def robots_txt(request):

@@ -50,6 +50,7 @@
         } else {
             modal.setAttribute("aria-hidden", "true");
             hideDialogLoading();
+            setDialogBusyState(false, false);
             content.innerHTML = "";
             content.classList.remove("is-loading", "is-submitting");
             if (window.SiteModalStack && typeof window.SiteModalStack.sync === "function") {
@@ -153,17 +154,26 @@
         });
     }
 
+    function setDialogBusyState(loading, submitting) {
+        if (!dialog) return;
+        const isLoading = Boolean(loading);
+        const isSubmitting = Boolean(submitting);
+        dialog.classList.toggle("is-loading", isLoading);
+        dialog.classList.toggle("is-submitting", isSubmitting);
+        dialog.setAttribute("aria-busy", (isLoading || isSubmitting) ? "true" : "false");
+    }
+
     function ensureDialogLoading(className) {
         const parent = dialog || content;
         let loading = parent.querySelector(":scope > ." + className);
         if (loading) return loading;
         loading = document.createElement("div");
-        loading.className = "auth-modal-loading " + className;
+        loading.className = "auth-modal-loading site-loading-overlay " + className;
         loading.setAttribute("role", "status");
         loading.setAttribute("aria-live", "polite");
         loading.hidden = true;
         const spinner = document.createElement("span");
-        spinner.className = "auth-loading-spinner";
+        spinner.className = "auth-loading-spinner site-loading-spinner";
         spinner.setAttribute("aria-hidden", "true");
         loading.appendChild(spinner);
         parent.appendChild(loading);
@@ -172,6 +182,7 @@
 
     function showLoading() {
         hideDialogLoading();
+        setDialogBusyState(true, false);
         content.classList.add("is-loading");
         content.classList.remove("is-submitting");
         content.innerHTML = "";
@@ -200,6 +211,7 @@
 
     function replacePanel(html) {
         hideDialogLoading();
+        setDialogBusyState(false, false);
         content.classList.remove("is-loading", "is-submitting");
         content.innerHTML = html || "";
         preparePanel();
@@ -885,6 +897,7 @@
         const modalContent = getModalContentForForm(form);
         const modalLoading = modalContent ? ensureModalContentLoading(modalContent) : null;
         if (modalContent) modalContent.classList.toggle("is-submitting", submitting);
+        if (modalContent) setDialogBusyState(false, submitting);
         if (modalLoading) modalLoading.hidden = !submitting;
         const loading = form.querySelector(".auth-loading");
         if (loading) loading.hidden = modalLoading ? true : !submitting;

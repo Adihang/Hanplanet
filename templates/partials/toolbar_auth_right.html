@@ -1,0 +1,14 @@
+<div class="ui-toolbar-right ui-toolbar-auth-right{% if toolbar_auth_class %} {{ toolbar_auth_class }}{% endif %}">
+    {% if request.user.is_authenticated %}
+        {% include "partials/account_widget.html" %}
+    {% else %}
+        <div class="ui-toolbar-actions">
+            <a class="ui-btn" href="{{ toolbar_auth_login_url }}" data-auth-modal="login">
+                {% include 'partials/ui_i18n.html' with key='login' %}
+            </a>
+            <a class="ui-btn ui-btn-primary" href="{{ toolbar_auth_signup_url }}" data-auth-modal="signup">
+                {% include 'partials/ui_i18n.html' with key='signup' %}
+            </a>
+        </div>
+    {% endif %}
+</div>

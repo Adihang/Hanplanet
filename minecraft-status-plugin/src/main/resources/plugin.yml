@@ -1,0 +1,6 @@
+name: HanplanetStatus
+version: 1.0.0
+main: com.hanplanet.minecraft.status.HanplanetStatusPlugin
+api-version: "26.1.1"
+description: Writes Hanplanet Minecraft server status from the live Paper server state.
+author: Hanplanet

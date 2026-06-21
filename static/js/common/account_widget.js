@@ -1,6 +1,11 @@
-// Shared account widget used by Sub section pages for menu, profile upload, and logout confirmation UI.
+// Shared site account widget for menu, profile upload, and logout confirmation UI.
 (function () {
     'use strict';
+
+    const body = document.body;
+    if (body && (body.classList.contains('root-page') || body.classList.contains('handrive-page'))) {
+        return;
+    }
 
     const hosts = Array.from(document.querySelectorAll('[data-auth-account]'));
     if (!hosts.length) {

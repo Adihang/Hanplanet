@@ -16,7 +16,7 @@ body.media-tool-page {
 }
 
 .media-tool-panel {
-    width: min(1120px, 100%);
+    width: min(1300px, 100%);
     min-width: 0;
     height: 100%;
     max-height: 100%;
@@ -541,73 +541,37 @@ body.media-tool-page {
 .media-handrive-picker-list-wrap {
     margin: 0 12px 0;
     min-height: 220px;
-    border: 1px solid var(--handrive-border-soft);
-    border-radius: 8px;
+    border: 1px solid var(--handrive-panel-border);
+    border-radius: var(--handrive-radius-md);
     background: var(--handrive-bg);
-    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .media-handrive-picker-list {
-    min-width: 0;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
+    --handrive-tree-browser-list-bg: var(--handrive-bg);
+    --handrive-tree-browser-row-color: var(--handrive-save-folder-color);
 }
 
 .media-handrive-picker-item {
-    display: flex;
-    align-items: stretch;
-    min-width: 0;
-    background: var(--handrive-bg);
-    transition: background-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.media-handrive-picker-row {
-    width: 100%;
-    min-width: 0;
-    min-height: 40px;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0;
-    padding: 10px 10px 10px 14px;
-    border: 0;
-    background: inherit;
-    color: var(--handrive-text-strong);
-    text-align: left;
-    font: inherit;
-    cursor: pointer;
-    box-sizing: border-box;
-    appearance: none;
-}
-
-.media-handrive-picker-item:hover,
-.media-handrive-picker-item:focus-within,
-.media-handrive-picker-item:has(> .media-handrive-picker-row:focus-visible) {
-    background: var(--handrive-row-hover-bg);
-}
-
-.media-handrive-picker-row:focus-visible {
-    outline: none;
-}
-
-.media-handrive-picker-row.has-tree-prefix {
-    padding-left: 6px;
+    min-height: 37px;
 }
 
 .media-handrive-picker-row.is-empty {
-    grid-template-columns: minmax(0, 1fr);
-    justify-items: center;
     padding: 10px 12px;
     cursor: default;
     color: var(--handrive-text-muted);
     text-align: center;
 }
 
+.media-handrive-picker-row.is-empty:hover,
+.media-handrive-picker-row.is-empty:focus-visible {
+    background: transparent;
+}
+
 .media-handrive-picker-row.is-empty.has-tree-prefix {
-    grid-template-columns: minmax(0, 1fr);
     padding-left: 6px;
 }
 
@@ -619,271 +583,15 @@ body.media-tool-page {
 }
 
 .media-handrive-picker-tree-prefix {
-    display: inline-flex;
-    align-items: stretch;
-    align-self: stretch;
-    flex: 0 0 auto;
-    padding: 0 0 0 14px;
-    color: var(--handrive-text-strong);
-    line-height: 1;
-    background: inherit;
-}
-
-.media-handrive-picker-tree-segment {
-    position: relative;
-    width: 14px;
-    flex: 0 0 14px;
-}
-
-.media-handrive-picker-tree-segment.has-next::before,
-.media-handrive-picker-tree-branch::before {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    transform: translateX(-0.5px);
-    background: var(--handrive-text-strong);
-    opacity: 0.9;
-}
-
-.media-handrive-picker-tree-branch.is-last::before {
-    bottom: 50%;
-}
-
-.media-handrive-picker-tree-branch::after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    right: -2px;
-    top: 50%;
-    height: 1px;
-    transform: translateY(-0.5px);
-    background: var(--handrive-text-strong);
-    opacity: 0.9;
-}
-
-.media-handrive-picker-tree-prefix.is-root-depth {
-    color: var(--handrive-text-stronger);
+    padding-left: 8px;
 }
 
 .media-handrive-picker-name-wrap {
     display: inline-flex;
     align-items: baseline;
+    flex: 1 1 auto;
     min-width: 0;
-    margin-left: 6px;
-}
-
-.media-handrive-picker-name {
-    flex: 1;
-    min-width: 0;
-    font-size: 16px;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.media-handrive-picker-meta-label {
-    flex: 0 1 auto;
-    min-width: 0;
-    color: color-mix(in srgb, var(--handrive-text-subtle) 78%, transparent);
-    font-size: 14px;
-    font-weight: 400;
-    line-height: 1.2;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.media-handrive-picker-action {
-    justify-self: end;
-    margin-left: 12px;
-}
-
-.media-handrive-picker-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    line-height: 1;
-    flex-shrink: 0;
-    overflow: visible;
-    text-align: center;
-}
-
-.media-handrive-picker-icon::before {
-    content: "";
-    display: block;
-    width: 18px;
-    height: 18px;
-    margin: 0 auto;
-    transform: scale(1.425);
-    transform-origin: center center;
-    box-sizing: border-box;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: 115% 115%;
-}
-
-.media-handrive-picker-icon.is-dir {
-    border: 0;
-    background: transparent;
-}
-
-.media-handrive-picker-icon.is-dir::before {
-    width: 18px;
-    min-width: 18px;
-    margin: 0;
-    transform: scale(1.331);
-    background-image: url("/static/media/icons/handrive/folder.png");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-}
-
-.media-handrive-picker-icon.is-dir.is-empty::before {
-    background-image: url("/static/media/icons/handrive/folder_empty.png");
-}
-
-.media-handrive-picker-icon.is-dir.has-custom-icon {
-    position: relative;
-    overflow: hidden;
-}
-
-.media-handrive-picker-icon.is-dir.has-custom-icon::before {
-    display: none;
-}
-
-.media-handrive-picker-folder-custom-icon {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    border-radius: 2px;
-}
-
-.media-handrive-picker-icon.is-dir.is-google-drive::before {
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    margin: 0;
-    transform: scale(1.18);
-    background-image: url("/static/media/icons/handrive/google-drive.svg?v=2026-05");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-}
-
-.media-handrive-picker-icon.is-dir.is-github-repo::before {
-    --media-handrive-picker-github-icon: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2016%2016%27%3E%3Cpath%20fill=%27%23000%27%20d=%27M8%200C3.58%200%200%203.58%200%208a8%208%200%200%200%205.47%207.59c.4.07.55-.17.55-.38%200-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01%201.08.58%201.23.82.72%201.21%201.87.87%202.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95%200-.87.31-1.59.82-2.15-.08-.2-.36-1.01.08-2.11%200%200%20.67-.21%202.2.82a7.53%207.53%200%200%201%204%200c1.53-1.04%202.2-.82%202.2-.82.44%201.1.16%201.91.08%202.11.51.56.82%201.27.82%202.15%200%203.07-1.87%203.75-3.65%203.95.29.25.54.73.54%201.48%200%201.07-.01%201.93-.01%202.2%200%20.21.15.46.55.38A8%208%200%200%200%2016%208c0-4.42-3.58-8-8-8z%27/%3E%3C/svg%3E");
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    margin: 0;
-    transform: scale(1.22);
-    background-color: currentColor;
-    background-image: none;
-    -webkit-mask-image: var(--media-handrive-picker-github-icon);
-    -webkit-mask-position: center;
-    -webkit-mask-repeat: no-repeat;
-    -webkit-mask-size: contain;
-    mask-image: var(--media-handrive-picker-github-icon);
-    mask-position: center;
-    mask-repeat: no-repeat;
-    mask-size: contain;
-}
-
-.media-handrive-picker-icon.is-dir.is-repo::before {
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    margin: 0;
-    transform: scale(1.24);
-    background-image: url("/static/media/icons/handrive/git.svg");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-}
-
-.media-handrive-picker-icon.is-dir.is-branch::before {
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    margin: 0;
-    transform: scale(1.32);
-    background-image: url("/static/media/icons/handrive/git-branch.svg");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-}
-
-.media-handrive-picker-icon.is-dir.is-map::before {
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    margin: 0;
-    transform: scale(1.18);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f8ef7' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21'/%3E%3Cline x1='9' y1='3' x2='9' y2='18'/%3E%3Cline x1='15' y1='6' x2='15' y2='21'/%3E%3C/svg%3E");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-}
-
-.media-handrive-picker-icon.is-file {
-    border: 0;
-    background: transparent;
-}
-
-.media-handrive-picker-icon.is-file::before {
-    background-image: url("/static/media/icons/handrive/file.svg?v=blue1");
-}
-
-.media-handrive-picker-icon.is-file.is-generic::before {
-    width: 22px;
-    height: 22px;
-    margin: -3px;
-    transform: none;
-    background-image: none;
-    background-color: var(--handrive-generic-icon-color);
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-    -webkit-mask-position: center;
-    mask-position: center;
-    -webkit-mask-size: 130% 130%;
-    mask-size: 130% 130%;
-}
-
-.media-handrive-picker-icon.is-file.is-generic[data-file-icon="file"]::before,
-.media-handrive-picker-icon.is-file.is-generic[data-file-icon="image"]::before,
-.media-handrive-picker-icon.is-file.is-generic[data-file-icon="video"]::before {
-    width: 20px;
-    height: 20px;
-    margin: 0;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    background-color: transparent;
-    -webkit-mask-image: none;
-    mask-image: none;
-}
-
-.media-handrive-picker-icon.is-file.is-generic[data-file-icon="file"]::before {
-    transform: scaleX(1.355) scaleY(1.66);
-    background-image: url("/static/media/icons/handrive/file.svg?v=blue2");
-}
-
-.media-handrive-picker-icon.is-file.is-generic[data-file-icon="image"]::before {
-    transform: scaleX(1.355) scaleY(1.549);
-    background-image: url("/static/media/icons/handrive/image.svg?v=blue2");
-}
-
-.media-handrive-picker-icon.is-file.is-generic[data-file-icon="video"]::before {
-    transform: scaleX(1.355) scaleY(1.549);
-    background-image: url("/static/media/icons/handrive/video.svg?v=blue2");
 }
 
 .media-handrive-picker-status {

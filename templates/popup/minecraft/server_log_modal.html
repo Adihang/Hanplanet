@@ -1,0 +1,70 @@
+<div id="minecraftServerLogModal" class="handrive-help-modal minecraft-server-log-modal" hidden>
+    <div class="handrive-help-modal-backdrop site-modal-backdrop" id="minecraft-server-log-backdrop"></div>
+    <div class="handrive-help-modal-dialog site-modal-dialog minecraft-server-log-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="minecraft-server-log-title">
+        <header class="handrive-help-modal-head site-modal-head minecraft-server-log-modal-head">
+            <div class="minecraft-server-log-title-row">
+                <h2 class="minecraft-panel-title" id="minecraft-server-log-title">{{ server_log_title }}</h2>
+                <button
+                    class="handrive-help-icon-link minecraft-server-log-help-button"
+                    type="button"
+                    id="minecraftServerHelpButton"
+                    aria-label="{{ minecraft_command_help_button_label }}"
+                    title="{{ minecraft_command_help_button_label }}"
+                    aria-controls="minecraft-server-help-modal"
+                    aria-expanded="false"
+                ><span class="handrive-help-icon-symbol" aria-hidden="true"></span></button>
+            </div>
+            {% include "popup/handrive/_popup_close_button.html" with button_id="minecraft-server-log-close-btn" click_target_id="minecraft-server-log-backdrop" %}
+        </header>
+        <section
+            class="minecraft-server-log-panel"
+            id="minecraftServerLogPanel"
+            aria-label="{{ server_log_title }}"
+            data-log-url="{{ server_log_url }}"
+        >
+            <p class="minecraft-status-summary" id="serverLogStatus">{{ server_log_loading_label }}</p>
+            <pre class="minecraft-server-log-output" id="serverLogOutput" aria-live="polite"></pre>
+            <form
+                class="minecraft-server-command-form"
+                id="serverCommandForm"
+                data-command-url="{{ server_command_url }}"
+            >
+                {% csrf_token %}
+                <div class="minecraft-server-command-control">
+                    <input
+                        class="minecraft-server-command-input"
+                        id="serverCommandInput"
+                        name="command"
+                        type="text"
+                        maxlength="1024"
+                        autocomplete="off"
+                        autocapitalize="off"
+                        spellcheck="false"
+                        placeholder="{{ server_command_placeholder }}"
+                        aria-label="{{ server_command_placeholder }}"
+                    >
+                    <button
+                        class="minecraft-server-command-button"
+                        id="serverCommandButton"
+                        type="submit"
+                        aria-label="{{ server_command_send_label }}"
+                        title="{{ server_command_send_label }}"
+                    >
+                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                            <path d="M16 4v5a4 4 0 0 1-4 4H4"></path>
+                            <path d="M8 9l-4 4 4 4"></path>
+                        </svg>
+                    </button>
+                </div>
+            </form>
+        </section>
+        <div class="handrive-help-modal-resize-handle handrive-help-modal-resize-handle-n" data-handrive-help-modal-resize-handle="n" aria-hidden="true"></div>
+        <div class="handrive-help-modal-resize-handle handrive-help-modal-resize-handle-ne" data-handrive-help-modal-resize-handle="ne" aria-hidden="true"></div>
+        <div class="handrive-help-modal-resize-handle handrive-help-modal-resize-handle-e" data-handrive-help-modal-resize-handle="e" aria-hidden="true"></div>
+        <div class="handrive-help-modal-resize-handle handrive-help-modal-resize-handle-se" data-handrive-help-modal-resize-handle="se" aria-hidden="true"></div>
+        <div class="handrive-help-modal-resize-handle handrive-help-modal-resize-handle-s" data-handrive-help-modal-resize-handle="s" aria-hidden="true"></div>
+        <div class="handrive-help-modal-resize-handle handrive-help-modal-resize-handle-sw" data-handrive-help-modal-resize-handle="sw" aria-hidden="true"></div>
+        <div class="handrive-help-modal-resize-handle handrive-help-modal-resize-handle-w" data-handrive-help-modal-resize-handle="w" aria-hidden="true"></div>
+        <div class="handrive-help-modal-resize-handle handrive-help-modal-resize-handle-nw" data-handrive-help-modal-resize-handle="nw" aria-hidden="true"></div>
+    </div>
+</div>

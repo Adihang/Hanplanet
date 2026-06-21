@@ -11,6 +11,9 @@ urlpatterns = [
     # PWA endpoints (manifest + service worker)
     path("manifest.webmanifest", views.pwa_manifest, name="pwa_manifest"),
     path("service-worker.js", views.service_worker, name="service_worker"),
+    path("status.json", views.minecraft_status_json, name="minecraft_status_json"),
+    path("server-log.json", views.minecraft_server_log_json, name="minecraft_server_log_json"),
+    path("server-command.json", views.minecraft_server_command_json, name="minecraft_server_command_json"),
     path('', views.none, name='none'),
 
     # ── Sync API (/api/sync/) ────────────────────────────────────────────────

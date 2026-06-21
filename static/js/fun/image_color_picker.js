@@ -486,15 +486,15 @@
 
     function buildFallbackTreePrefixElement(ancestorHasNextSiblings, isLastSibling) {
         var prefix = document.createElement("span");
-        prefix.className = "media-handrive-picker-tree-prefix";
+        prefix.className = "handrive-item-tree-prefix media-handrive-picker-tree-prefix";
         prefix.setAttribute("aria-hidden", "true");
         (ancestorHasNextSiblings || []).forEach(function (hasNextSibling) {
             var segment = document.createElement("span");
-            segment.className = "media-handrive-picker-tree-segment" + (hasNextSibling ? " has-next" : "");
+            segment.className = "handrive-tree-segment media-handrive-picker-tree-segment" + (hasNextSibling ? " has-next" : "");
             prefix.appendChild(segment);
         });
         var branch = document.createElement("span");
-        branch.className = "media-handrive-picker-tree-segment media-handrive-picker-tree-branch " + (isLastSibling ? "is-last" : "is-middle");
+        branch.className = "handrive-tree-segment handrive-tree-branch media-handrive-picker-tree-segment media-handrive-picker-tree-branch " + (isLastSibling ? "is-last" : "is-middle");
         prefix.appendChild(branch);
         if (!(ancestorHasNextSiblings || []).length) {
             prefix.classList.add("is-root-depth");
@@ -505,13 +505,10 @@
     function createPickerTreePrefixElement(ancestorHasNextSiblings, isLastSibling) {
         var prefix = buildBaseTreePrefixElement(ancestorHasNextSiblings || [], Boolean(isLastSibling));
         if (!prefix) return buildFallbackTreePrefixElement(ancestorHasNextSiblings, isLastSibling);
-        prefix.classList.remove("handrive-item-tree-prefix");
         prefix.classList.add("media-handrive-picker-tree-prefix");
         Array.prototype.forEach.call(prefix.querySelectorAll(".handrive-tree-segment"), function (segment) {
-            segment.classList.remove("handrive-tree-segment");
             segment.classList.add("media-handrive-picker-tree-segment");
             if (segment.classList.contains("handrive-tree-branch")) {
-                segment.classList.remove("handrive-tree-branch");
                 segment.classList.add("media-handrive-picker-tree-branch");
             }
         });
@@ -521,7 +518,8 @@
     function createFallbackTypeMarker(options) {
         var settings = options || {};
         var marker = document.createElement("span");
-        marker.className = "media-handrive-picker-icon " + (settings.isDir ? "is-dir" : "is-file");
+        marker.className = "handrive-item-type-icon media-handrive-picker-icon " + (settings.isDir ? "is-dir" : "is-file");
+        marker.setAttribute("aria-hidden", "true");
         if (settings.isGoogleDrive) marker.classList.add("is-google-drive");
         else if (settings.isGithubRepo) marker.classList.add("is-github-repo");
         else if (settings.isRepo) marker.classList.add("is-repo");
@@ -537,10 +535,8 @@
     function createPickerTypeMarker(options) {
         var marker = createBaseTypeMarker(options || {});
         if (!marker) return createFallbackTypeMarker(options);
-        marker.classList.remove("handrive-item-type-icon");
         marker.classList.add("media-handrive-picker-icon");
         Array.prototype.forEach.call(marker.querySelectorAll(".handrive-folder-custom-icon"), function (customIcon) {
-            customIcon.classList.remove("handrive-folder-custom-icon");
             customIcon.classList.add("media-handrive-picker-folder-custom-icon");
         });
         return marker;
@@ -565,10 +561,10 @@
 
     function createHandriveRow(entry, ancestorHasNextSiblings, isLastSibling) {
         var item = document.createElement("li");
-        item.className = "media-handrive-picker-item";
+        item.className = "handrive-item handrive-tree-browser-item media-handrive-picker-item";
         var row = document.createElement("button");
         row.type = "button";
-        row.className = "media-handrive-picker-row has-tree-prefix";
+        row.className = "handrive-tree-browser-row media-handrive-picker-row has-tree-prefix";
         row.setAttribute("data-entry-path", entry && entry.path ? entry.path : "");
         var isDir = entry && entry.type === "dir";
         if (isDir) {
@@ -578,17 +574,17 @@
         var nameWrap = document.createElement("span");
         nameWrap.className = "media-handrive-picker-name-wrap";
         var name = document.createElement("span");
-        name.className = "media-handrive-picker-name";
+        name.className = "handrive-tree-browser-name media-handrive-picker-name";
         name.textContent = String(entry.name || entry.path || "");
         nameWrap.appendChild(name);
-        var action = document.createElement("span");
-        action.className = "media-handrive-picker-meta-label media-handrive-picker-action";
-        action.textContent = isDir
-            ? message("handriveOpenFolderLabel", "Open folder")
-            : message("handriveSelectFileLabel", "Select image");
         row.appendChild(icon);
         row.appendChild(nameWrap);
-        row.appendChild(action);
+        if (!isDir) {
+            var badge = document.createElement("span");
+            badge.className = "handrive-tree-browser-badge handrive-save-overwrite-badge media-handrive-picker-file-badge";
+            badge.textContent = message("handriveFileTypeBadge", "이미지");
+            row.appendChild(badge);
+        }
         row.addEventListener("click", function (event) {
             event.preventDefault();
             if (isDir) {
@@ -604,9 +600,9 @@
 
     function appendHandriveEmptyRow(fragment, ancestorHasNextSiblings, isLastSibling, text) {
         var item = document.createElement("li");
-        item.className = "media-handrive-picker-item";
+        item.className = "handrive-item handrive-tree-browser-item media-handrive-picker-item";
         var empty = document.createElement("div");
-        empty.className = "media-handrive-picker-row is-empty" + (ancestorHasNextSiblings ? " has-tree-prefix" : "");
+        empty.className = "handrive-tree-browser-row handrive-tree-browser-empty media-handrive-picker-row is-empty" + (ancestorHasNextSiblings ? " has-tree-prefix" : "");
         if (ancestorHasNextSiblings) {
             item.appendChild(createPickerTreePrefixElement(ancestorHasNextSiblings, Boolean(isLastSibling)));
         }

@@ -26,6 +26,7 @@
                 <span class="ui-path-current">{{ page_title }}</span>
             </div>
         </div>
+        {% include "partials/toolbar_auth_right.html" %}
     </div>
 </div>
 
@@ -51,6 +52,7 @@
         data-handrive-root-label="{{ handrive_root_label }}"
         data-handrive-open-folder-label="{{ handrive_open_folder_label }}"
         data-handrive-select-file-label="{{ handrive_select_file_label }}"
+        data-handrive-file-type-badge="{{ handrive_file_type_badge }}"
         aria-label="{{ page_title }}"
     >
         <div class="media-tool-workspace">

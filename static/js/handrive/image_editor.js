@@ -60,6 +60,9 @@
         textItalic: false,
         entry: null,
         onDirtyChange: null,
+        onImageLoad: null,
+        onImageLoadError: null,
+        imageLoadToken: 0,
         backgroundRemoveUrl: "",
         backgroundRemoveRunning: false,
         forcePngOnSave: false,
@@ -99,6 +102,8 @@
         var opts = options || {};
         state.entry = opts.entry || null;
         state.onDirtyChange = opts.onDirtyChange || null;
+        state.onImageLoad = typeof opts.onImageLoad === "function" ? opts.onImageLoad : null;
+        state.onImageLoadError = typeof opts.onImageLoadError === "function" ? opts.onImageLoadError : null;
         state.backgroundRemoveUrl = opts.backgroundRemoveUrl || "";
         state.backgroundRemoveRunning = false;
         state.forcePngOnSave = false;
@@ -197,6 +202,9 @@
 
         state.entry = null;
         state.onDirtyChange = null;
+        state.onImageLoad = null;
+        state.onImageLoadError = null;
+        state.imageLoadToken += 1;
         state.backgroundRemoveUrl = "";
         state.backgroundRemoveRunning = false;
         state.forcePngOnSave = false;
@@ -208,9 +216,11 @@
 
     // ── 이미지 로드 ───────────────────────────────────────────────────────
     function loadImage(url) {
+        var loadToken = ++state.imageLoadToken;
         var img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = function () {
+            if (loadToken !== state.imageLoadToken) return;
             var w = img.naturalWidth;
             var h = img.naturalHeight;
             resizeCanvasTo(w, h);
@@ -219,10 +229,20 @@
             commitHistoryState();
             updateSizeDisplay();
             // 레이아웃 완료 후 zoomFit 실행
-            setTimeout(zoomFit, 0);
+            setTimeout(function () {
+                if (loadToken !== state.imageLoadToken) return;
+                zoomFit();
+                if (typeof state.onImageLoad === "function") {
+                    state.onImageLoad();
+                }
+            }, 0);
         };
         img.onerror = function () {
+            if (loadToken !== state.imageLoadToken) return;
             console.error("이미지 로드 실패:", url);
+            if (typeof state.onImageLoadError === "function") {
+                state.onImageLoadError(new Error("이미지 로드 실패"));
+            }
         };
         img.src = url;
     }

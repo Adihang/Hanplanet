@@ -30,6 +30,7 @@ from .models import (
     HandriveLoginAttemptGuard,
     HandriveSharedLink,
     HandriveUserQuota,
+    NavLink,
     SyncFile,
     UserProfile,
 )
@@ -83,7 +84,10 @@ from .handrive_views import (
 from .views import (
     build_game_auth_token,
     build_lang_switch_url,
+    extract_minecraft_server_version,
     has_excessive_korean_text,
+    MINECRAFT_SERVER_IMAGE_URL,
+    MINECRAFT_WEATHER_ICON_URL,
     render_markdown_safely,
     render_markdown_with_raw_html,
     resolve_ui_lang,
@@ -483,6 +487,17 @@ class HandriveMarkdownRenderingTests(TestCase):
         self.assertIn("<p>본문</p>", rendered)
         self.assertIn('<pre><code class="language-text">', rendered)
         self.assertIn("\ninside\n", rendered)
+
+    def test_minecraft_help_markdown_uses_page_help_renderer(self):
+        with TemporaryDirectory() as tmpdir, override_settings(MEDIA_ROOT=tmpdir):
+            help_dir = Path(tmpdir) / "HanDrive" / "help"
+            help_dir.mkdir(parents=True)
+            (help_dir / "minecraft_ko.md").write_text("명령어\n\n`weather clear`", encoding="utf-8")
+
+            rendered = build_page_help_html("ko", "minecraft", get_handrive_text("ko"))
+
+        self.assertIn("<p>명령어</p>", rendered)
+        self.assertIn("<code>weather clear</code>", rendered)
 
 
 class HandriveGitMetaTests(TestCase):
@@ -1311,6 +1326,452 @@ class LanguageUrlRoutingTests(TestCase):
         )
         self.assertEqual(response.context["meta_twitter_image"], response.context["meta_og_image"])
 
+    def test_minecraft_home_uses_server_image_metadata(self):
+        response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["page_title"], "Minecraft Server")
+        self.assertEqual(response.context["meta_title"], "Minecraft Server | Hanplanet")
+        self.assertEqual(response.context["meta_og_title"], "Minecraft Server | Hanplanet")
+        self.assertContains(response, "<title>Minecraft Server | Hanplanet</title>", html=False)
+        self.assertContains(response, '<meta property="og:title" content="Minecraft Server | Hanplanet">', html=False)
+        self.assertContains(response, '<meta name="twitter:title" content="Minecraft Server | Hanplanet">', html=False)
+        self.assertEqual(response.context["meta_og_image"], MINECRAFT_SERVER_IMAGE_URL)
+        self.assertEqual(response.context["meta_twitter_image"], MINECRAFT_SERVER_IMAGE_URL)
+        self.assertContains(
+            response,
+            f'<meta property="og:image" content="{MINECRAFT_SERVER_IMAGE_URL}">',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            '<meta property="og:image:alt" content="Hanplanet Minecraft server preview image">',
+            html=False,
+        )
+
+    def test_sub_minecraft_card_uses_server_image_metadata(self):
+        response = self.client.get(reverse("main:sub_lang", kwargs={"ui_lang": "ko"}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            'data-meta-title="Minecraft Server | Hanplanet"',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            f'data-meta-image="{MINECRAFT_SERVER_IMAGE_URL}"',
+            html=False,
+        )
+        self.assertContains(response, "titleNode.textContent = parsedTitle;", html=False)
+        self.assertContains(
+            response,
+            "Minecraft 서버의 실시간 플레이어 상태와 월드 지도를 제공합니다.",
+            html=False,
+        )
+        self.assertNotContains(
+            response,
+            "실시간 플레이어 상태와 BlueMap 월드 지도를 제공하는 Minecraft Java Edition",
+            html=False,
+        )
+        self.assertContains(response, 'width: min(1300px, 100%);', html=False)
+
+    def test_extract_minecraft_server_version_uses_ping_version_name(self):
+        self.assertEqual(
+            extract_minecraft_server_version({"version": {"name": "Paper 26.2", "protocol": 776}}),
+            "26.2",
+        )
+        self.assertEqual(
+            extract_minecraft_server_version({"version": {"name": "26.3"}}),
+            "26.3",
+        )
+
+    @mock.patch("main.views.read_minecraft_server_status", return_value={"version": {"name": "Paper 26.3", "protocol": 776}})
+    @mock.patch("main.views.get_minecraft_server_plugins", return_value=[{"name": "BlueMap", "version": "5.22"}])
+    def test_minecraft_home_shows_plugin_panel_without_sub_return_button(self, mocked_plugins, mocked_status):
+        response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["links_panel_title"], "플러그인")
+        self.assertEqual(response.context["server_panel_title"], "지도")
+        self.assertEqual(response.context["server_version"], "26.3")
+        content = response.content.decode("utf-8")
+        self.assertGreater(content.index('class="minecraft-panel minecraft-plugin-panel"'), content.index('class="minecraft-panel minecraft-player-panel"'))
+        self.assertLess(content.index('class="minecraft-map-embed-section"'), content.index('class="minecraft-detail-grid"'))
+        map_embed_style_block = content[
+            content.index(".minecraft-map-embed-section {"):
+            content.index(".minecraft-map-embed {")
+        ]
+        self.assertIn("border-radius: var(--handrive-radius-lg);", map_embed_style_block)
+        self.assertContains(response, 'class="minecraft-side-layout"', html=False)
+        self.assertContains(response, 'class="minecraft-panel-heading"', html=False)
+        self.assertContains(response, '<h2 class="minecraft-panel-title" id="minecraft-server-title">지도</h2>', html=False)
+        self.assertContains(response, '.minecraft-panel-title {\n        margin: 0;', html=False)
+        self.assertNotContains(response, 'margin: 0 0 10px;', html=False)
+        self.assertContains(response, '.minecraft-status-header {\n        display: flex;', html=False)
+        self.assertContains(response, 'margin-bottom: 10px;', html=False)
+        self.assertContains(response, 'height: 22px;', html=False)
+        self.assertContains(response, 'margin-bottom: 8px;', html=False)
+        self.assertContains(response, 'id="serverClock"', html=False)
+        self.assertContains(response, 'id="serverWeatherIcon"', html=False)
+        self.assertContains(response, 'id="serverTimeLabel"', html=False)
+        self.assertContains(response, 'id="serverVersion"', html=False)
+        self.assertContains(response, 'Minecraft Java Edition 26.3', html=False)
+        self.assertContains(response, "serverVersionEl", html=False)
+        self.assertContains(response, "extractServerVersion(status);", html=False)
+        self.assertContains(response, "font-size: 20px;", html=False)
+        self.assertContains(response, "line-height: 22px;", html=False)
+        self.assertEqual(response.context["weather_icon_url"], MINECRAFT_WEATHER_ICON_URL)
+        self.assertContains(response, f'<image href="{MINECRAFT_WEATHER_ICON_URL}" width="3318" height="3318">', html=False)
+        self.assertContains(response, "weatherIconViewBoxes", html=False)
+        self.assertContains(response, "flex: 0 0 28px;", html=False)
+        self.assertContains(response, "width: 28px;", html=False)
+        self.assertContains(response, "height: 28px;", html=False)
+        self.assertContains(response, "rain: '899 1476 450 450'", html=False)
+        self.assertContains(response, "thunder: '369 1476 450 450'", html=False)
+        self.assertContains(response, "unknown: '369 848 450 450'", html=False)
+        self.assertContains(response, "setWeatherIcon(weather);", html=False)
+        self.assertContains(response, 'worldState.paused ? 0', html=False)
+        self.assertContains(response, 'paused: Boolean(world.paused)', html=False)
+        self.assertContains(response, 'window.setInterval(loadStatus, 5000);', html=False)
+        self.assertContains(response, "return leftOnline ? -1 : 1;", html=False)
+        self.assertContains(response, "localeCompare(String(rightPlayer.name || '')", html=False)
+        self.assertContains(response, 'class="minecraft-address"', html=False)
+        self.assertContains(response, ".minecraft-label {\n        font-size: 14px;", html=False)
+        self.assertContains(response, 'id="minecraftServerAddress"', html=False)
+        self.assertContains(response, 'id="minecraftAddressCopy"', html=False)
+        self.assertContains(response, 'aria-label="서버 주소 복사"', html=False)
+        self.assertContains(response, 'width: min(1300px, 100%);', html=False)
+        self.assertContains(response, 'padding-top: 0;', html=False)
+        self.assertContains(response, 'padding-bottom: 0;', html=False)
+        self.assertContains(response, 'gap: 8px;', html=False)
+        self.assertContains(response, 'display: flex;\n        flex-direction: column;', html=False)
+        self.assertContains(response, '.minecraft-player-panel {\n        flex: 1 1 auto;', html=False)
+        self.assertContains(response, '.minecraft-plugin-panel {\n        flex: 0 1 auto;\n        max-height: 30%;', html=False)
+        self.assertContains(response, 'grid-auto-rows: 38px;', html=False)
+        self.assertContains(response, 'align-content: start;', html=False)
+        self.assertContains(response, 'height: 38px;', html=False)
+        self.assertContains(response, '.minecraft-player-list:empty', html=False)
+        self.assertContains(response, 'overflow: auto;', html=False)
+        self.assertContains(response, 'max-height: none;', html=False)
+        self.assertNotContains(response, 'max-height: 70%;', html=False)
+        self.assertContains(response, 'padding: 10px;', html=False)
+        self.assertContains(response, 'margin-bottom: 6px;', html=False)
+        self.assertContains(response, 'grid-template-rows: minmax(100%, auto) auto;', html=False)
+        self.assertNotContains(response, 'calc(100dvh - var(--site-common-header-min-height, 58px) - 118px)', html=False)
+        self.assertContains(response, 'class="minecraft-map-embed-section"', html=False)
+        self.assertContains(response, 'class="minecraft-map-embed"', html=False)
+        self.assertContains(response, 'id="minecraftMapFrame"', html=False)
+        self.assertContains(response, "setupBlueMapThemeSync();", html=False)
+        self.assertContains(response, "hanplanet:theme", html=False)
+        self.assertContains(response, "hanplanet:bluemap-ready", html=False)
+        self.assertContains(response, 'src="/map/"', html=False)
+        self.assertContains(response, '<div class="minecraft-status-header">\n                    <h2 class="minecraft-panel-title" id="minecraft-links-title">플러그인</h2>\n                </div>', html=False)
+        self.assertContains(response, '<h2 class="minecraft-panel-title" id="minecraft-links-title">플러그인</h2>', html=False)
+        self.assertContains(response, '<span class="minecraft-plugin-name">BlueMap</span>', html=False)
+        self.assertContains(response, '<span class="minecraft-plugin-version">5.22</span>', html=False)
+        self.assertNotContains(response, "Sub로 돌아가기", html=False)
+        self.assertNotContains(response, "기타로 돌아가기", html=False)
+        self.assertFalse(response.context["minecraft_admin_log_enabled"])
+        self.assertContains(response, '<h1 class="ui-title">Minecraft Server</h1>', html=False)
+        self.assertContains(response, '<span class="ui-path-current">Minecraft Server</span>', html=False)
+        self.assertNotContains(response, '<span class="ui-path-current">Minecraft</span>', html=False)
+        self.assertNotContains(response, 'id="minecraftConsoleTrigger"', html=False)
+        self.assertNotContains(response, 'class="ui-path-current minecraft-console-trigger"', html=False)
+        self.assertNotContains(response, '.minecraft-console-trigger.ui-path-current:hover', html=False)
+        self.assertNotContains(response, 'id="minecraftServerLogModal"', html=False)
+        self.assertNotContains(response, 'id="minecraftServerLogPanel"', html=False)
+        self.assertNotContains(response, 'server-log.json', html=False)
+        self.assertNotContains(response, 'server-command.json', html=False)
+        mocked_plugins.assert_called_once_with()
+        mocked_status.assert_called()
+
+    @mock.patch("main.views.read_minecraft_server_status", return_value={"version": {"name": "Paper 26.3", "protocol": 776}})
+    @mock.patch("main.views.get_minecraft_server_plugins", return_value=[{"name": "BlueMap", "version": "5.22"}])
+    def test_minecraft_home_shows_server_log_panel_for_superuser_only(self, mocked_plugins, mocked_status):
+        admin = get_user_model().objects.create_superuser(
+            username="minecraft_admin",
+            email="minecraft-admin@example.com",
+            password="pw123456",
+        )
+        self.client.force_login(admin)
+
+        response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["minecraft_admin_log_enabled"])
+        self.assertEqual(response.context["server_log_url"], reverse("main:minecraft_server_log_json"))
+        self.assertEqual(response.context["server_log_updated_label"], "")
+        content = response.content.decode("utf-8")
+        self.assertGreater(content.index('id="minecraftServerLogModal"'), content.index('class="footer-links"'))
+        server_log_modal_block = content[
+            content.index('class="handrive-help-modal-dialog site-modal-dialog minecraft-server-log-dialog"'):
+            content.index('id="minecraft-server-help-modal"')
+        ]
+        self.assertContains(response, 'class="ui-path-current minecraft-console-trigger"', html=False)
+        self.assertContains(response, '<h1 class="ui-title">Minecraft Server</h1>', html=False)
+        self.assertContains(response, '<button class="ui-path-current minecraft-console-trigger" type="button" id="minecraftConsoleTrigger" aria-controls="minecraftServerLogModal" aria-expanded="false">Minecraft Server</button>', html=False)
+        self.assertContains(response, 'id="minecraftConsoleTrigger"', html=False)
+        self.assertContains(response, 'aria-controls="minecraftServerLogModal"', html=False)
+        self.assertContains(response, 'id="minecraftServerLogModal"', html=False)
+        self.assertContains(response, 'class="handrive-help-modal minecraft-server-log-modal"', html=False)
+        self.assertContains(response, 'class="handrive-help-modal-dialog site-modal-dialog minecraft-server-log-dialog"', html=False)
+        self.assertContains(response, 'id="minecraft-server-log-backdrop"', html=False)
+        self.assertContains(response, 'id="minecraft-server-log-close-btn"', html=False)
+        for resize_direction in ("n", "ne", "e", "se", "s", "sw", "w", "nw"):
+            self.assertIn(
+                f'data-handrive-help-modal-resize-handle="{resize_direction}"',
+                server_log_modal_block,
+            )
+        self.assertContains(response, '<h2 class="minecraft-panel-title" id="minecraft-server-log-title">서버 콘솔</h2>', html=False)
+        self.assertContains(response, 'class="minecraft-server-log-title-row"', html=False)
+        self.assertContains(response, 'id="minecraftServerHelpButton"', html=False)
+        self.assertContains(response, 'aria-controls="minecraft-server-help-modal"', html=False)
+        self.assertContains(response, 'aria-expanded="false"', html=False)
+        self.assertContains(response, 'id="minecraft-server-help-modal"', html=False)
+        self.assertContains(response, 'id="minecraft-server-help-backdrop"', html=False)
+        self.assertContains(response, 'id="minecraft-server-help-close-btn"', html=False)
+        self.assertContains(response, '서버 명령어 도움말', html=False)
+        self.assertNotContains(response, '.minecraft-server-log-title-row .minecraft-panel-title', html=False)
+        self.assertContains(response, 'setupServerHelpModal();', html=False)
+        self.assertContains(response, 'body.minecraft-page {', html=False)
+        self.assertContains(response, 'height: 100dvh;', html=False)
+        self.assertContains(response, 'overflow: hidden;', html=False)
+        self.assertContains(response, 'body.minecraft-page .footer-links', html=False)
+        self.assertContains(response, 'class="minecraft-side-layout"', html=False)
+        self.assertNotContains(response, 'has-server-console', html=False)
+        self.assertContains(response, '.minecraft-console-trigger.ui-path-current:hover', html=False)
+        self.assertContains(response, 'background: var(--handrive-hover);', html=False)
+        self.assertContains(response, 'color: var(--handrive-text-strong);', html=False)
+        self.assertContains(response, '.minecraft-server-log-modal .minecraft-server-log-dialog', html=False)
+        self.assertContains(response, 'flex: 1 1 auto;', html=False)
+        self.assertContains(response, 'padding: 0 10px 10px;', html=False)
+        self.assertContains(response, '.minecraft-log-level.is-info', html=False)
+        self.assertContains(response, '.minecraft-log-level.is-warn', html=False)
+        self.assertContains(response, '.minecraft-log-level.is-error', html=False)
+        self.assertContains(response, '.minecraft-log-message.is-success', html=False)
+        self.assertContains(response, '.minecraft-log-marker', html=False)
+        self.assertContains(response, 'data-log-url="/server-log.json"', html=False)
+        self.assertContains(response, 'data-command-url="/server-command.json"', html=False)
+        self.assertContains(response, 'id="serverLogOutput"', html=False)
+        self.assertContains(response, 'id="serverLogStatus"', html=False)
+        self.assertContains(response, 'id="serverCommandForm"', html=False)
+        self.assertContains(response, 'class="minecraft-server-command-control"', html=False)
+        self.assertContains(response, 'id="serverCommandInput"', html=False)
+        self.assertContains(response, 'id="serverCommandButton"', html=False)
+        self.assertContains(response, 'aria-label="실행"', html=False)
+        self.assertContains(response, '<path d="M16 4v5a4 4 0 0 1-4 4H4"></path>', html=False)
+        self.assertContains(response, 'height: 38px;', html=False)
+        self.assertContains(response, 'padding: 0 48px 0 12px;', html=False)
+        self.assertContains(response, 'font-size: 16px;', html=False)
+        self.assertContains(response, 'width: 34px;', html=False)
+        self.assertContains(response, 'height: 32px;', html=False)
+        self.assertContains(response, 'width: 20px;', html=False)
+        self.assertContains(response, 'margin-top: 6px;', html=False)
+        self.assertContains(response, 'right: 4px;', html=False)
+        self.assertContains(response, 'loadServerLog();', html=False)
+        self.assertContains(response, "let serverLogText = '';", html=False)
+        self.assertContains(response, 'function renderServerLogLine(line)', html=False)
+        self.assertContains(response, 'function renderServerLogText(text)', html=False)
+        self.assertContains(response, 'serverLogOutputEl.innerHTML = renderServerLogText(serverLogText);', html=False)
+        self.assertContains(response, 'let serverLogRequestInFlight = false;', html=False)
+        self.assertContains(response, 'serverLogReloadQueued = true;', html=False)
+        self.assertContains(response, 'setupServerLogModal();', html=False)
+        self.assertContains(response, 'serverLogModalEl.hidden = !opened;', html=False)
+        self.assertContains(response, "minecraftConsoleTriggerEl.setAttribute('aria-expanded', opened ? 'true' : 'false');", html=False)
+        self.assertContains(response, 'setupServerCommandForm();', html=False)
+        self.assertContains(response, 'let serverCommandRequestInFlight = false;', html=False)
+        self.assertContains(response, 'if (serverCommandRequestInFlight) return;', html=False)
+        self.assertContains(response, "serverCommandButtonEl.setAttribute('aria-label', labels.serverCommandSending);", html=False)
+        self.assertContains(response, "'X-CSRFToken': getCsrfToken()", html=False)
+        self.assertContains(response, 'window.setInterval(loadServerLog, 3000);', html=False)
+        mocked_plugins.assert_called_once_with()
+        mocked_status.assert_called()
+
+    def test_minecraft_server_log_json_is_superuser_only(self):
+        url = reverse("main:minecraft_server_log_json")
+        with TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "console.out"
+            log_path.write_text(
+                "[03:00:00] [Server thread/INFO]: one\n"
+                "[03:00:01] [Server thread/INFO]: \x1b[31mtwo\x1b[0m\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch("main.views.MINECRAFT_CONSOLE_OUTPUT_PATH", log_path):
+                response = self.client.get(url, HTTP_HOST="mc.hanplanet.com")
+                self.assertEqual(response.status_code, 404)
+
+                regular = get_user_model().objects.create_user(username="minecraft_regular", password="pw123456")
+                self.client.force_login(regular)
+                response = self.client.get(url, HTTP_HOST="mc.hanplanet.com")
+                self.assertEqual(response.status_code, 404)
+
+                staff = get_user_model().objects.create_user(
+                    username="minecraft_staff",
+                    password="pw123456",
+                    is_staff=True,
+                )
+                self.client.force_login(staff)
+                response = self.client.get(url, HTTP_HOST="mc.hanplanet.com")
+                self.assertEqual(response.status_code, 404)
+
+                admin = get_user_model().objects.create_superuser(
+                    username="minecraft_log_admin",
+                    email="minecraft-log-admin@example.com",
+                    password="pw123456",
+                )
+                self.client.force_login(admin)
+                response = self.client.get(url, HTTP_HOST="www.hanplanet.com")
+                self.assertEqual(response.status_code, 404)
+
+                response = self.client.get(url, HTTP_HOST="mc.hanplanet.com")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertIn("one", payload["text"])
+                self.assertIn("two", payload["text"])
+                self.assertNotIn("\x1b", payload["text"])
+                cursor = payload["cursor"]
+
+                with log_path.open("a", encoding="utf-8") as log_file:
+                    log_file.write("[03:00:02] [Server thread/INFO]: three\n")
+
+                response = self.client.get(f"{url}?cursor={cursor}", HTTP_HOST="mc.hanplanet.com")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertIn("three", payload["text"])
+                self.assertNotIn("one", payload["text"])
+
+    def test_minecraft_server_command_json_is_superuser_only_and_csrf_protected(self):
+        url = reverse("main:minecraft_server_command_json")
+
+        response = self.client.post(url, {"command": "say hi"}, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
+        regular = get_user_model().objects.create_user(username="minecraft_command_regular", password="pw123456")
+        self.client.force_login(regular)
+        response = self.client.post(url, {"command": "say hi"}, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
+        staff = get_user_model().objects.create_user(
+            username="minecraft_command_staff",
+            password="pw123456",
+            is_staff=True,
+        )
+        self.client.force_login(staff)
+        response = self.client.post(url, {"command": "say hi"}, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
+        admin = get_user_model().objects.create_superuser(
+            username="minecraft_command_admin",
+            email="minecraft-command-admin@example.com",
+            password="pw123456",
+        )
+        self.client.force_login(admin)
+        response = self.client.post(url, {"command": "say hi"}, HTTP_HOST="www.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(admin)
+        response = csrf_client.post(
+            url,
+            data=json.dumps({"command": "say missing csrf"}),
+            content_type="application/json",
+            HTTP_HOST="mc.hanplanet.com",
+        )
+        self.assertEqual(response.status_code, 403)
+
+        page_response = csrf_client.get("/", HTTP_HOST="mc.hanplanet.com")
+        csrf_token = page_response.cookies["csrftoken"].value
+        with mock.patch("main.views.write_minecraft_console_command") as mocked_send:
+            response = csrf_client.post(
+                url,
+                data=json.dumps({"command": "/say hello"}),
+                content_type="application/json",
+                HTTP_X_CSRFTOKEN=csrf_token,
+                HTTP_HOST="mc.hanplanet.com",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"ok": True, "response": ""})
+        mocked_send.assert_called_once_with("say hello")
+
+        with mock.patch("main.views.write_minecraft_console_command") as mocked_send:
+            response = csrf_client.post(
+                url,
+                data=json.dumps({"command": "say hello\nop bad"}),
+                content_type="application/json",
+                HTTP_X_CSRFTOKEN=csrf_token,
+                HTTP_HOST="mc.hanplanet.com",
+            )
+
+        self.assertEqual(response.status_code, 400)
+        mocked_send.assert_not_called()
+
+    @override_settings(PUBLIC_BASE_URL="https://www.hanplanet.com")
+    def test_minecraft_navbar_links_point_to_public_site_origin(self):
+        NavLink.objects.all().delete()
+        NavLink.objects.create(order=1, name="HanDrive", url="/handrive/")
+        NavLink.objects.create(order=2, name="Sub", url="sub/")
+
+        response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["site_home_url"], "https://www.hanplanet.com/")
+        self.assertEqual(response.context["home_url"], "https://www.hanplanet.com/")
+        self.assertEqual(response.context["sub_url"], "https://www.hanplanet.com/ko/sub")
+        self.assertEqual(response.context["lang_switch_ko_url"], "/ko/")
+        self.assertEqual(response.context["lang_switch_en_url"], "/en/")
+        nav_urls = {link.name: link.url for link in response.context["nav_links"]}
+        self.assertEqual(nav_urls["Drive"], "https://www.hanplanet.com/handrive/")
+        self.assertEqual(nav_urls["CLI"], "https://www.hanplanet.com/ko/handrive/cli")
+        self.assertEqual(nav_urls["Sub"], "https://www.hanplanet.com/sub/")
+        self.assertContains(response, 'class="navbar-brand ui-brand" href="https://www.hanplanet.com/"', html=False)
+        self.assertContains(response, 'href="https://www.hanplanet.com/handrive/"', html=False)
+        self.assertContains(response, 'href="https://www.hanplanet.com/ko/handrive/cli"', html=False)
+        self.assertContains(response, 'href="https://www.hanplanet.com/sub/"', html=False)
+        self.assertContains(response, 'href="/ko/"', html=False)
+        self.assertContains(response, 'href="/en/"', html=False)
+        self.assertContains(response, 'class="ui-path-link" href="https://www.hanplanet.com/"', html=False)
+        self.assertContains(response, 'class="ui-path-link" href="https://www.hanplanet.com/ko/sub"', html=False)
+        self.assertNotContains(response, 'href="/handrive/"', html=False)
+        self.assertNotContains(response, 'href="sub/"', html=False)
+
+    def test_toolbar_auth_right_renders_login_actions_on_tool_pages(self):
+        response = self.client.get(reverse("main:image_color_picker_lang", kwargs={"ui_lang": "ko"}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="ui-toolbar-right ui-toolbar-auth-right"', html=False)
+        self.assertContains(response, 'href="/ko/login?next=%2Fko%2Fsub%2Fimage-color-picker"', html=False)
+        self.assertContains(response, 'href="/ko/signup?next=%2Fko%2Fsub%2Fimage-color-picker"', html=False)
+        self.assertContains(response, 'data-auth-modal="login"', html=False)
+        self.assertContains(response, 'data-auth-modal="signup"', html=False)
+
+    def test_toolbar_auth_right_renders_account_widget_on_tool_pages(self):
+        user = get_user_model().objects.create_user(
+            username="toolbar_auth_user",
+            email="toolbar-auth@example.com",
+            password="pw123456",
+        )
+        self.client.login(username=user.username, password="pw123456")
+
+        response = self.client.get(reverse("main:video_to_gif_lang", kwargs={"ui_lang": "ko"}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="ui-toolbar-right ui-toolbar-auth-right"', html=False)
+        self.assertContains(response, "data-auth-account", html=False)
+        self.assertContains(response, 'id="auth-logout-form-global"', html=False)
+        self.assertContains(response, 'action="/ko/logout"', html=False)
+        self.assertContains(response, 'action="/ko/account/profile-image"', html=False)
+        self.assertContains(response, 'id="root-auth-logout-modal"', html=False)
+
+    def test_existing_toolbar_right_pages_do_not_add_toolbar_auth_partial(self):
+        response = self.client.get(reverse("main:network_environment_lang", kwargs={"ui_lang": "ko"}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="ui-toolbar-right"', html=False)
+        self.assertNotContains(response, "ui-toolbar-auth-right", html=False)
+
 
 class CanvasPictureInPictureBehaviorTests(TestCase):
     def read_project_file(self, relative_path):
@@ -1372,6 +1833,29 @@ class HandriveListSortSourceTests(TestCase):
         self.assertIn("listSortWasUserApplied: false", page_js)
         self.assertIn("state.listSortWasUserApplied = true;", page_js)
         self.assertIn("shouldPreserveDemoAllListOrder(normalizedPath) && !state.listSortWasUserApplied", page_js)
+
+    def test_sort_direction_mark_uses_css_triangle_not_font_glyph(self):
+        base_dir = Path(settings.BASE_DIR)
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+
+        mark_start = handrive_css.index(".handrive-current-dir-row .handrive-sort-direction-mark {")
+        mark_end = handrive_css.index(".handrive-list-pane .handrive-current-dir-row", mark_start)
+        mark_block = handrive_css[mark_start:mark_end]
+        sort_marker_start = page_js.index('marker.className = "handrive-sort-direction-mark";')
+        sort_marker_end = page_js.index("};", sort_marker_start)
+        sort_marker_block = page_js[sort_marker_start:sort_marker_end]
+
+        self.assertIn("width: 0;", mark_block)
+        self.assertIn("height: 0;", mark_block)
+        self.assertIn("border-right: 4px solid transparent;", mark_block)
+        self.assertIn("border-left: 4px solid transparent;", mark_block)
+        self.assertIn('[data-sort-direction="asc"] .handrive-sort-direction-mark', mark_block)
+        self.assertIn("border-bottom: 6px solid currentColor;", mark_block)
+        self.assertIn('[data-sort-direction="desc"] .handrive-sort-direction-mark', mark_block)
+        self.assertIn("border-top: 6px solid currentColor;", mark_block)
+        self.assertNotIn("▾", sort_marker_block)
+        self.assertNotIn("▴", sort_marker_block)
 
     def test_preview_edit_uses_inline_list_editor_for_existing_files(self):
         page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
@@ -1523,6 +2007,41 @@ class SiteNavResponsiveSourceTests(TestCase):
         self.assertIn("const shouldAllowNavLinksHorizontalScroll = function (event)", nav_js)
         self.assertIn("if (shouldAllowNavLinksHorizontalScroll(event))", nav_js)
         self.assertIn("if (getCollapsedNavLinksScroller(target))", nav_js)
+
+
+class SiteToolbarAuthSourceTests(TestCase):
+    def test_toolbar_auth_right_is_shared_by_pages_without_toolbar_right(self):
+        base_dir = Path(settings.BASE_DIR)
+        partial = (base_dir / "templates/partials/toolbar_auth_right.html").read_text(encoding="utf-8")
+        base_template = (base_dir / "templates/base.html").read_text(encoding="utf-8")
+        account_widget_js = (base_dir / "static/js/common/account_widget.js").read_text(encoding="utf-8")
+        templates_with_toolbar_auth = [
+            "templates/fun/sub.html",
+            "templates/fun/image_color_picker.html",
+            "templates/fun/video_to_gif.html",
+            "templates/fun/image_pip_demo.html",
+            "templates/fun/qrbarcode.html",
+            "templates/fun/youtube_downloader.html",
+            "templates/main/legal_page.html",
+            "templates/main/minecraft_home.html",
+            "templates/main/portfolio_write.html",
+        ]
+
+        self.assertIn("ui-toolbar-auth-right", partial)
+        self.assertIn('include "partials/account_widget.html"', partial)
+        self.assertIn('data-auth-modal="login"', partial)
+        self.assertIn('data-auth-modal="signup"', partial)
+        self.assertIn("js/common/account_widget.js", base_template)
+        self.assertIn('include "popup/root/auth_logout_modal.html"', base_template)
+        self.assertIn("body.classList.contains('root-page')", account_widget_js)
+        self.assertIn("body.classList.contains('handrive-page')", account_widget_js)
+        self.assertNotIn("js/common/sub_account_widget.js", (base_dir / "templates/fun/sub.html").read_text(encoding="utf-8"))
+        self.assertNotIn("js/common/sub_account_widget.js", (base_dir / "templates/fun/Hanplanet_Multiplayer.html").read_text(encoding="utf-8"))
+
+        for relative_path in templates_with_toolbar_auth:
+            with self.subTest(template=relative_path):
+                source = (base_dir / relative_path).read_text(encoding="utf-8")
+                self.assertIn('include "partials/toolbar_auth_right.html"', source)
 
 
 class SiteDropdownMenuSourceTests(TestCase):
@@ -1734,10 +2253,10 @@ class HandriveWriteFilenameExtensionSourceTests(TestCase):
         self.assertNotIn("markdown_preview_modal", write_template)
         self.assertIn('modal_id="ui-preview-modal"', preview_template)
         self.assertIn('article_id="ui-preview-content"', preview_template)
-        self.assertIn("resizable_modal=1", preview_template)
-        self.assertIn("{% if resizable_modal %}", help_modal_template)
+        self.assertNotIn("resizable_modal", preview_template)
+        self.assertNotIn("{% if resizable_modal %}", help_modal_template)
         for resize_direction in ("n", "ne", "e", "se", "s", "sw", "w", "nw"):
-            self.assertIn(f'data-preview-modal-resize-handle="{resize_direction}"', help_modal_template)
+            self.assertIn(f'data-handrive-help-modal-resize-handle="{resize_direction}"', help_modal_template)
         self.assertNotIn("ui-markdown-preview", preview_template)
         self.assertNotIn("handrive-write-file-meta-grid", write_template)
         self.assertNotIn("handrive-write-filename-field", write_template)
@@ -1779,14 +2298,16 @@ class HandriveWriteFilenameExtensionSourceTests(TestCase):
         self.assertIn("currentExtension === DOCS_DEFAULT_EXTENSION || currentExtension === DOCS_HTML_PREVIEW_EXTENSION", page_js)
         self.assertIn("const isPreviewTarget = isWritePreviewExtension(resolvedExtension);", page_js)
         self.assertIn("previewButton.hidden = !isPreviewTarget;", page_js)
-        self.assertIn('const previewResizeHandles = previewDialog', page_js)
-        self.assertIn('data-preview-modal-resize-handle', page_js)
-        self.assertIn("function startPreviewModalResize(event)", page_js)
-        self.assertIn("function onPreviewModalResizeMove(event)", page_js)
-        self.assertIn("const maxHeight = Math.max(minHeight, state.viewportHeight - (margin * 2));", page_js)
-        self.assertNotIn("Math.min(state.viewportHeight - (margin * 2), 760)", page_js)
-        self.assertIn("function endPreviewModalResize(event)", page_js)
-        self.assertIn("previewResizeHandles.forEach(function (handle)", page_js)
+        self.assertNotIn('const previewResizeHandles = previewDialog', page_js)
+        self.assertNotIn('data-preview-modal-resize-handle', page_js)
+        self.assertNotIn("function startPreviewModalResize(event)", page_js)
+        self.assertIn('const helpModalResizeHandleSelector = "[data-handrive-help-modal-resize-handle]";', popup_common_js)
+        self.assertIn("function onHelpModalResizePointerDown(event)", popup_common_js)
+        self.assertIn("function onHelpModalResizeMove(event)", popup_common_js)
+        self.assertIn("const maxHeight = Math.max(minHeight, state.viewportHeight - (margin * 2));", popup_common_js)
+        self.assertNotIn("Math.min(state.viewportHeight - (margin * 2), 760)", popup_common_js)
+        self.assertIn("function endHelpModalResize(event)", popup_common_js)
+        self.assertIn('document.addEventListener("pointerdown", onHelpModalResizePointerDown);', popup_common_js)
         preview_modal_start = page_js.index("async function openPreviewModal()")
         preview_modal_end = page_js.index("function setSaveModalOpen(opened)", preview_modal_start)
         preview_modal_block = page_js[preview_modal_start:preview_modal_end]
@@ -1839,7 +2360,7 @@ class HandriveWriteFilenameExtensionSourceTests(TestCase):
         self.assertIn("editorPreviewButton.hidden = !isAvailable;", page_js)
         self.assertIn("editorPreviewButton.disabled = !isAvailable;", page_js)
         self.assertIn("syncListEditorPreviewButtonVisibility();", page_js)
-        self.assertIn("editorPreviewResizeHandles.forEach(function (handle)", page_js)
+        self.assertNotIn("editorPreviewResizeHandles.forEach(function (handle)", page_js)
 
         preview_start = page_js.index("async function openListEditorPreviewModal()")
         preview_end = page_js.index("function clearListEditorSuggestion()", preview_start)
@@ -1914,6 +2435,51 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("renderPopupTargetPath(target, entry ? entry.name : \"\")", map_flow_helpers_js)
         self.assertIn("color: var(--handrive-text-stronger);", target_current_block)
         self.assertIn("font-weight: 700;", target_current_block)
+
+    def test_admin_user_modal_uses_dialog_loading_overlay_without_button_text_swap(self):
+        base_dir = Path(settings.BASE_DIR)
+        text_input_template = (base_dir / "templates/popup/handrive/_text_input_modal.html").read_text(encoding="utf-8")
+        common_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
+        popup_common_css = (base_dir / "static/css/common/popup_common.css").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        admin_dialog_block = page_js[
+            page_js.index("function createHandriveAdminUserDialog()"):
+            page_js.index("const requestAdminUserDialog = createHandriveAdminUserDialog();")
+        ]
+        site_loading_block = common_css[
+            common_css.index(".site-loading-host {"):
+            common_css.index("body {")
+        ]
+        modal_loading_block = popup_common_css[
+            popup_common_css.index(".site-modal-dialog.site-modal-dialog.is-loading {"):
+            popup_common_css.index(":where(\n    .site-modal-head,")
+        ]
+        popup_body_block = handrive_css[
+            handrive_css.index(".handrive-popup-body {"):
+            handrive_css.index(".handrive-popup-target {")
+        ]
+
+        self.assertIn('class="handrive-popup-body site-modal-body site-loading-host"', text_input_template)
+        self.assertIn('class="site-modal-loading site-loading-overlay"', text_input_template)
+        self.assertIn('class="site-modal-loading-spinner site-loading-spinner"', text_input_template)
+        self.assertIn("display: flex;", popup_body_block)
+        self.assertIn("gap: 10px;", popup_body_block)
+        self.assertIn(".site-loading-host.is-loading > :not(.site-loading-overlay)", site_loading_block)
+        self.assertIn("filter: var(--site-loading-content-filter);", site_loading_block)
+        self.assertIn(".site-loading-overlay {", site_loading_block)
+        self.assertIn(".site-loading-spinner {", site_loading_block)
+        self.assertNotIn(".site-modal-loading {", modal_loading_block)
+        self.assertIn('const dialog = modal ? modal.querySelector(".site-modal-dialog") : null;', admin_dialog_block)
+        self.assertIn('const loadingHost = modal ? modal.querySelector(".site-loading-host") : null;', admin_dialog_block)
+        self.assertIn('const loading = modal ? modal.querySelector(".site-modal-loading") : null;', admin_dialog_block)
+        self.assertIn('dialog.classList.toggle("is-loading", isSubmitting);', admin_dialog_block)
+        self.assertIn('dialog.setAttribute("aria-busy", isSubmitting ? "true" : "false");', admin_dialog_block)
+        self.assertIn('loadingHost.classList.toggle("is-loading", isSubmitting);', admin_dialog_block)
+        self.assertIn("loading.hidden = !isSubmitting;", admin_dialog_block)
+        self.assertNotIn("defaultConfirmText", admin_dialog_block)
+        self.assertNotIn("confirmButton.textContent", admin_dialog_block)
+        self.assertNotIn("admin_user_switch_loading", admin_dialog_block)
 
     def test_save_modal_folder_modal_is_not_clipped_by_save_dialog(self):
         base_dir = Path(settings.BASE_DIR)
@@ -2033,6 +2599,10 @@ class HandriveStyleSourceTests(TestCase):
 
     def test_save_folder_list_owns_base_background_override(self):
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        tree_browser_block = handrive_css[
+            handrive_css.index(".handrive-tree-browser-list {"):
+            handrive_css.index(".handrive-save-current-dir-row {")
+        ]
         folder_list_block = handrive_css[
             handrive_css.index(".handrive-save-folder-list {"):
             handrive_css.index(".handrive-save-folder-row {")
@@ -2043,19 +2613,90 @@ class HandriveStyleSourceTests(TestCase):
             handrive_css.index(".handrive-save-folder-row:hover", current_dir_start)
         ]
 
+        self.assertIn("--handrive-tree-browser-list-bg: var(--handrive-bg);", tree_browser_block)
+        self.assertIn("--handrive-tree-browser-row-color: var(--handrive-text);", tree_browser_block)
+        self.assertIn("background: var(--handrive-tree-browser-list-bg);", tree_browser_block)
+        self.assertIn("--handrive-tree-browser-prefix-bg: var(--handrive-tree-browser-list-bg);", tree_browser_block)
+        self.assertIn(".handrive-tree-browser-list .handrive-item:has(> .handrive-tree-browser-row:not(.is-empty):hover)", tree_browser_block)
+        self.assertIn("--handrive-tree-browser-prefix-bg: var(--handrive-hover-button);", tree_browser_block)
+        self.assertIn(".handrive-tree-browser-list .handrive-item:has(> .handrive-tree-browser-row.is-selected)", tree_browser_block)
+        self.assertIn("--handrive-tree-browser-prefix-bg: var(--handrive-hover-strong);", tree_browser_block)
+        self.assertIn("background: var(--handrive-tree-browser-prefix-bg);", tree_browser_block)
         self.assertIn("--handrive-save-folder-list-bg: var(--handrive-bg);", folder_list_block)
-        self.assertIn("background: var(--handrive-save-folder-list-bg);", folder_list_block)
-        self.assertIn("--handrive-save-tree-prefix-bg: var(--handrive-save-folder-list-bg);", folder_list_block)
-        self.assertIn(".handrive-save-folder-list .handrive-item:has(> .handrive-save-folder-row:hover)", folder_list_block)
-        self.assertIn("--handrive-save-tree-prefix-bg: var(--handrive-hover-button);", folder_list_block)
-        self.assertIn(".handrive-save-folder-list .handrive-item:has(> .handrive-save-folder-row.is-selected)", folder_list_block)
-        self.assertIn("--handrive-save-tree-prefix-bg: var(--handrive-hover-strong);", folder_list_block)
-        self.assertIn("background: var(--handrive-save-tree-prefix-bg);", folder_list_block)
+        self.assertIn("--handrive-tree-browser-list-bg: var(--handrive-save-folder-list-bg);", folder_list_block)
+        self.assertIn("--handrive-tree-browser-row-color: var(--handrive-save-folder-color);", folder_list_block)
         self.assertIn("color: var(--handrive-text-strong);", current_dir_block)
         self.assertNotIn("background:", current_dir_block)
 
+    def test_media_handrive_picker_reuses_save_tree_browser_rows_and_file_badges(self):
+        base_dir = Path(settings.BASE_DIR)
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        image_color_css = (base_dir / "static/css/fun/image_color_picker.css").read_text(encoding="utf-8")
+        video_to_gif_css = (base_dir / "static/css/fun/video_to_gif.css").read_text(encoding="utf-8")
+        save_template = (base_dir / "templates/popup/handrive/save_modal.html").read_text(encoding="utf-8")
+        image_modal_template = (base_dir / "templates/popup/fun/image_color_picker_handrive_modal.html").read_text(encoding="utf-8")
+        video_modal_template = (base_dir / "templates/popup/fun/video_to_gif_handrive_modal.html").read_text(encoding="utf-8")
+        image_template = (base_dir / "templates/fun/image_color_picker.html").read_text(encoding="utf-8")
+        video_template = (base_dir / "templates/fun/video_to_gif.html").read_text(encoding="utf-8")
+        image_js = (base_dir / "static/js/fun/image_color_picker.js").read_text(encoding="utf-8")
+        video_js = (base_dir / "static/js/fun/video_to_gif.js").read_text(encoding="utf-8")
+        handrive_page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        views_py = (base_dir / "main/views.py").read_text(encoding="utf-8")
+        media_list_css_start = image_color_css.index(".media-handrive-picker-list-wrap {")
+        media_list_css_block = image_color_css[
+            media_list_css_start:
+            image_color_css.index(".media-handrive-picker-status {", media_list_css_start)
+        ]
+        media_tool_panel_block = image_color_css[
+            image_color_css.index(".media-tool-panel {"):
+            image_color_css.index(".media-tool-workspace {")
+        ]
+        video_tool_panel_block = video_to_gif_css[
+            video_to_gif_css.index(".video-to-gif-panel {"):
+            video_to_gif_css.index(".video-to-gif-panel .media-tool-workspace")
+        ]
+
+        self.assertIn('class="handrive-tree-browser-list handrive-save-folder-list"', save_template)
+        self.assertIn("width: min(1300px, 100%);", media_tool_panel_block)
+        self.assertIn("width: min(1300px, 100%);", video_tool_panel_block)
+        self.assertIn('class="handrive-tree-browser-list media-handrive-picker-list"', image_modal_template)
+        self.assertIn('class="handrive-tree-browser-list media-handrive-picker-list"', video_modal_template)
+        self.assertIn(".handrive-tree-browser-row,", handrive_css)
+        self.assertIn(".handrive-tree-browser-badge,", handrive_css)
+        self.assertIn("border: 1px solid var(--handrive-panel-border);", media_list_css_block)
+        self.assertIn("border-radius: var(--handrive-radius-md);", media_list_css_block)
+        self.assertIn("--handrive-tree-browser-list-bg: var(--handrive-bg);", media_list_css_block)
+        self.assertIn("--handrive-tree-browser-row-color: var(--handrive-save-folder-color);", media_list_css_block)
+        self.assertNotIn("display: grid;", media_list_css_block)
+        self.assertNotIn("margin-left: 6px;", media_list_css_block)
+        self.assertNotIn(".media-handrive-picker-icon::before", image_color_css)
+        self.assertNotIn(".media-handrive-picker-tree-segment", image_color_css)
+        self.assertIn('data-handrive-file-type-badge="{{ handrive_file_type_badge }}"', image_template)
+        self.assertIn('data-handrive-file-type-badge="{{ handrive_file_type_badge }}"', video_template)
+        self.assertIn('"handrive_file_type_badge": "Image" if is_english else "이미지"', views_py)
+        self.assertIn('"handrive_file_type_badge": "Video" if is_english else "동영상"', views_py)
+
+        for source, label in ((image_js, "이미지"), (video_js, "동영상")):
+            with self.subTest(label=label):
+                self.assertIn('item.className = "handrive-item handrive-tree-browser-item media-handrive-picker-item";', source)
+                self.assertIn('row.className = "handrive-tree-browser-row media-handrive-picker-row has-tree-prefix";', source)
+                self.assertIn('name.className = "handrive-tree-browser-name media-handrive-picker-name";', source)
+                self.assertIn('badge.className = "handrive-tree-browser-badge handrive-save-overwrite-badge media-handrive-picker-file-badge";', source)
+                self.assertIn(f'badge.textContent = message("handriveFileTypeBadge", "{label}");', source)
+                self.assertIn('prefix.className = "handrive-item-tree-prefix media-handrive-picker-tree-prefix";', source)
+                self.assertIn('marker.className = "handrive-item-type-icon media-handrive-picker-icon "', source)
+                self.assertNotIn('marker.classList.remove("handrive-item-type-icon")', source)
+                self.assertNotIn('prefix.classList.remove("handrive-item-tree-prefix")', source)
+                self.assertNotIn('media-handrive-picker-action";', source)
+
+        self.assertIn('row.className = "handrive-tree-browser-row handrive-save-folder-row has-tree-prefix";', handrive_page_js)
+        self.assertIn('badge.className = "handrive-tree-browser-badge handrive-save-overwrite-badge";', handrive_page_js)
+
     def test_list_editor_body_has_no_frame_spacing_or_background(self):
-        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        base_dir = Path(settings.BASE_DIR)
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        common_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
+        list_template = (base_dir / "templates/handrive/list.html").read_text(encoding="utf-8")
         editor_surface_block = handrive_css[
             handrive_css.index(".handrive-list-editor-body .handrive-editor-surface {"):
             handrive_css.index("\n.handrive-list-editor-body {\n")
@@ -2065,16 +2706,29 @@ class HandriveStyleSourceTests(TestCase):
             editor_body_start:
             handrive_css.index(".handrive-list-layout.is-landscape.has-preview", editor_body_start)
         ]
+        editor_head_block = handrive_css[
+            handrive_css.index(".handrive-list-editor-head {"):
+            handrive_css.index("body.handrive-page:not(.theme-dark) .handrive-list-editor-head")
+        ]
 
         self.assertIn("flex: 1 1 auto;", editor_surface_block)
         self.assertIn("min-height: 0;", editor_surface_block)
         self.assertNotIn("border:", editor_surface_block)
         self.assertNotIn("background:", editor_surface_block)
+        self.assertIn("--handrive-list-editor-head-pad-bottom: 10px;", handrive_css)
+        self.assertIn("var(--handrive-list-editor-head-pad-bottom)", editor_head_block)
         self.assertNotIn(".handrive-list-editor-body .handrive-editor-surface:focus-within", handrive_css)
         self.assertNotIn("border:", editor_body_block)
         self.assertNotIn("padding:", editor_body_block)
         self.assertNotIn("background:", editor_body_block)
         self.assertNotIn(".handrive-list-editor-body:has(.handrive-image-editor-surface", handrive_css)
+        self.assertIn('class="handrive-list-editor-body site-loading-host"', list_template)
+        self.assertIn('class="handrive-list-editor-body-loading site-loading-overlay"', list_template)
+        self.assertIn('class="handrive-list-editor-body-loading-spinner site-loading-spinner"', list_template)
+        self.assertIn("--site-loading-content-opacity: 0;", editor_body_block)
+        self.assertIn("--site-loading-overlay-bg: var(--handrive-bg);", editor_body_block)
+        self.assertIn(".site-loading-host.is-loading > :not(.site-loading-overlay)", common_css)
+        self.assertNotIn(".handrive-list-editor-body-loading-spinner {", handrive_css)
 
     def test_current_dir_list_search_form_uses_thirty_eight_pixel_height(self):
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
@@ -2222,6 +2876,9 @@ class HandriveStyleSourceTests(TestCase):
 
         self.assertIn("padding: 10px;", modal_block)
         self.assertIn("width: fit-content;", dialog_block)
+        self.assertIn("min-width: min(320px, calc(100vw - 20px));", dialog_block)
+        self.assertIn("min-height: min(220px, calc(100vh - 20px));", dialog_block)
+        self.assertIn("min-height: min(220px, calc(100dvh - 20px));", dialog_block)
         self.assertIn("max-width: calc(100vw - 20px);", dialog_block)
         self.assertIn("max-height: calc(100vh - 20px);", dialog_block)
         self.assertIn("max-height: calc(100dvh - 20px);", dialog_block)
@@ -2247,33 +2904,34 @@ class HandriveStyleSourceTests(TestCase):
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
 
         empty_preview_start = handrive_css.index("#ui-preview-content:empty {")
-        empty_preview_end = handrive_css.index("#ui-preview-modal .handrive-help-modal-dialog", empty_preview_start)
+        empty_preview_end = handrive_css.index(".handrive-help-modal-resize-handle", empty_preview_start)
         empty_preview_block = handrive_css[empty_preview_start:empty_preview_end]
 
         self.assertIn("background: transparent;", empty_preview_block)
 
-    def test_preview_modal_has_border_and_corner_resize_handles(self):
+    def test_help_modal_has_border_and_corner_resize_handles(self):
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
 
-        resize_start = handrive_css.index(".handrive-preview-resize-handle {")
+        resize_start = handrive_css.index(".handrive-help-modal-resize-handle {")
         resize_end = handrive_css.index("#ui-preview-modal:has", resize_start)
         resize_block = handrive_css[resize_start:resize_end]
 
         self.assertIn("position: absolute;", resize_block)
         self.assertIn("touch-action: none;", resize_block)
-        self.assertIn(".handrive-preview-resize-handle-n,", resize_block)
-        self.assertIn(".handrive-preview-resize-handle-s {", resize_block)
+        self.assertIn(".handrive-help-modal-resize-handle-n,", resize_block)
+        self.assertIn(".handrive-help-modal-resize-handle-s {", resize_block)
         self.assertIn("cursor: ns-resize;", resize_block)
-        self.assertIn(".handrive-preview-resize-handle-e,", resize_block)
-        self.assertIn(".handrive-preview-resize-handle-w {", resize_block)
+        self.assertIn(".handrive-help-modal-resize-handle-e,", resize_block)
+        self.assertIn(".handrive-help-modal-resize-handle-w {", resize_block)
         self.assertIn("cursor: ew-resize;", resize_block)
-        self.assertIn(".handrive-preview-resize-handle-ne", resize_block)
-        self.assertIn(".handrive-preview-resize-handle-se", resize_block)
-        self.assertIn(".handrive-preview-resize-handle-sw", resize_block)
-        self.assertIn(".handrive-preview-resize-handle-nw", resize_block)
+        self.assertIn(".handrive-help-modal-resize-handle-ne", resize_block)
+        self.assertIn(".handrive-help-modal-resize-handle-se", resize_block)
+        self.assertIn(".handrive-help-modal-resize-handle-sw", resize_block)
+        self.assertIn(".handrive-help-modal-resize-handle-nw", resize_block)
         self.assertIn("cursor: nesw-resize;", resize_block)
         self.assertIn("cursor: nwse-resize;", resize_block)
-        self.assertIn("body.handrive-preview-resizing", resize_block)
+        self.assertIn("body.handrive-help-modal-resizing", resize_block)
+        self.assertNotIn("handrive-preview-resize-handle", resize_block)
 
     def test_preview_modal_html_render_fills_body_without_padding(self):
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
@@ -3220,6 +3878,14 @@ class SiteZIndexLayerTests(TestCase):
         map_editor_template = (base_dir / "templates/handrive/map_editor.html").read_text(encoding="utf-8")
         map_viewer_template = (base_dir / "templates/handrive/map_viewer.html").read_text(encoding="utf-8")
         print_js = (base_dir / "static/js/common/portfolio_print_selector_dialog.js").read_text(encoding="utf-8")
+        dark_theme_block = common_css[
+            common_css.index("body.theme-dark {"):
+            common_css.index("body.portfolio-page.theme-dark {")
+        ]
+        common_root_block = common_css[
+            common_css.index(":root {"):
+            common_css.index("body.theme-dark .ui-nav::after")
+        ]
 
         for token in (
             "--site-popup-glass-bg",
@@ -3244,6 +3910,10 @@ class SiteZIndexLayerTests(TestCase):
         self.assertIn("--site-modal-surface-bg: rgba(46, 46, 46, 0.72);", common_css)
         self.assertIn("--site-dropdown-surface-bg: var(--site-modal-surface-bg);", layout_css)
         self.assertIn("--site-dropdown-surface-filter: var(--site-modal-surface-filter);", layout_css)
+        self.assertIn("--site-dropdown-surface-bg: var(--site-modal-surface-bg);", common_root_block)
+        self.assertIn("--site-dropdown-surface-filter: var(--site-modal-surface-filter);", common_root_block)
+        self.assertIn("--site-dropdown-surface-bg: var(--site-modal-surface-bg);", dark_theme_block)
+        self.assertIn("--site-dropdown-surface-filter: var(--site-modal-surface-filter);", dark_theme_block)
         self.assertNotIn("--site-modal-header-bg", layout_css)
         self.assertNotIn("--site-modal-header-bg", common_css)
         self.assertNotIn("--site-modal-surface-bg: var(--site-popup-glass-bg);", layout_css)
@@ -3393,9 +4063,11 @@ class HandriveAuthFlowTests(TestCase):
         host_template = (Path(settings.BASE_DIR) / "templates/partials/site_auth_modal_host.html").read_text(encoding="utf-8")
         modal_js = (Path(settings.BASE_DIR) / "static/js/common/site_auth_modal.js").read_text(encoding="utf-8")
         modal_css = (Path(settings.BASE_DIR) / "static/css/common/site_auth_modal.css").read_text(encoding="utf-8")
+        common_css = (Path(settings.BASE_DIR) / "static/css/common/style.css").read_text(encoding="utf-8")
 
         self.assertIn("handrive-popup-modal", host_template)
         self.assertIn("handrive-popup-modal-dialog", host_template)
+        self.assertIn("site-loading-host", host_template)
         self.assertIn("handrive-popup-head", host_template)
         self.assertIn("handrive-popup-title", host_template)
         self.assertIn("data-auth-title", host_template)
@@ -3422,7 +4094,7 @@ class HandriveAuthFlowTests(TestCase):
         self.assertIn(".auth-verified-msg", modal_css)
         modal_form_rule = modal_css[
             modal_css.index(".auth-modal .auth-form"):
-            modal_css.index(".auth-form.is-submitting")
+            modal_css.index(".auth-field {")
         ]
         self.assertIn("border: 0;", modal_form_rule)
         self.assertIn("background: transparent;", modal_form_rule)
@@ -3431,19 +4103,36 @@ class HandriveAuthFlowTests(TestCase):
             modal_css.index(".auth-modal-content {"):
             modal_css.index(".auth-modal-content.is-loading")
         ]
-        modal_loading_rule = modal_css[
-            modal_css.index(".auth-modal-loading {"):
-            modal_css.index(".auth-modal-loading[hidden]")
+        modal_dialog_loading_rule = modal_css[
+            modal_css.index(".auth-modal .auth-modal-dialog.is-loading {"):
+            modal_css.index(".auth-modal .handrive-popup-title.auth-modal-title")
+        ]
+        common_loading_rule = common_css[
+            common_css.index(".site-loading-host {"):
+            common_css.index("body {")
         ]
         self.assertIn("position: relative;", modal_content_rule)
         self.assertIn("display: flex;", modal_content_rule)
         self.assertIn("isolation: isolate;", modal_content_rule)
-        self.assertIn("position: absolute;", modal_loading_rule)
-        self.assertIn("top: var(--site-modal-head-follow-gap, 0px);", modal_loading_rule)
-        self.assertIn("right: calc(-1 * var(--site-modal-dialog-padding-x, 0px));", modal_loading_rule)
-        self.assertIn("bottom: calc(-1 * var(--site-modal-dialog-padding-y, 0px));", modal_loading_rule)
-        self.assertIn("left: calc(-1 * var(--site-modal-dialog-padding-x, 0px));", modal_loading_rule)
-        self.assertIn("backdrop-filter: blur(3px);", modal_loading_rule)
+        self.assertIn("min-height: 220px;", modal_dialog_loading_rule)
+        self.assertIn("--site-loading-overlay-bg", modal_css)
+        self.assertIn(".site-loading-host.is-loading > :not(.site-loading-overlay)", common_loading_rule)
+        self.assertIn(".site-loading-host.is-submitting > :not(.site-loading-overlay)", common_loading_rule)
+        self.assertIn("filter: var(--site-loading-content-filter);", common_loading_rule)
+        self.assertIn("pointer-events: none;", common_loading_rule)
+        self.assertIn(".site-loading-overlay {", common_loading_rule)
+        self.assertIn("backdrop-filter: var(--site-loading-overlay-filter);", common_loading_rule)
+        self.assertIn(".site-loading-spinner {", common_loading_rule)
+        self.assertNotIn(".auth-modal-loading {", modal_css)
+        self.assertNotIn(".auth-form.is-submitting", modal_css)
+        self.assertIn("function setDialogBusyState(loading, submitting)", modal_js)
+        self.assertIn('dialog.classList.toggle("is-loading", isLoading);', modal_js)
+        self.assertIn('dialog.classList.toggle("is-submitting", isSubmitting);', modal_js)
+        self.assertIn('loading.className = "auth-modal-loading site-loading-overlay " + className;', modal_js)
+        self.assertIn('spinner.className = "auth-loading-spinner site-loading-spinner";', modal_js)
+        self.assertIn("setDialogBusyState(true, false);", modal_js)
+        self.assertIn("setDialogBusyState(false, false);", modal_js)
+        self.assertIn("setDialogBusyState(false, submitting);", modal_js)
         self.assertIn('content.classList.add("is-loading")', modal_js)
         self.assertIn('content.classList.remove("is-loading", "is-submitting")', modal_js)
         self.assertIn('form.closest(".auth-modal-content")', modal_js)
@@ -3548,7 +4237,9 @@ class HandriveAuthFlowTests(TestCase):
         self.assertNotContains(response, 'input.addEventListener("keydown"', html=False)
         self.assertContains(response, 'loginForm.dataset.submitting = submitting ? "1" : "0"', html=False)
         self.assertContains(response, 'id="handrive-login-loading"', html=False)
-        self.assertContains(response, 'class="auth-loading-spinner"', html=False)
+        self.assertContains(response, 'class="auth-form site-loading-host"', html=False)
+        self.assertContains(response, 'class="auth-loading site-loading-overlay"', html=False)
+        self.assertContains(response, 'class="auth-loading-spinner site-loading-spinner"', html=False)
         self.assertContains(response, 'loginForm.classList.toggle("is-submitting", submitting)', html=False)
         self.assertContains(response, 'loginForm.setAttribute("aria-busy"', html=False)
 
@@ -5306,6 +5997,48 @@ class ForgejoAvatarSignalTests(TestCase):
         client.ensure_user_with_token.assert_called_once_with(user.username, "")
 
 
+class AccountMediaCleanupSignalTests(TestCase):
+    def test_user_delete_removes_account_media_directories_after_commit(self):
+        with TemporaryDirectory() as tmpdir, override_settings(MEDIA_ROOT=tmpdir):
+            user = get_user_model().objects.create_user(username="delete_media_user", password="pw12345")
+            media_root = Path(settings.MEDIA_ROOT)
+            handrive_home = media_root / "HanDrive" / "users" / user.username
+            upload_home = media_root / "uploads" / user.username
+            sync_blob_home = media_root / "_sync_blobs" / str(user.id)
+            kept_home = media_root / "HanDrive" / "users" / "kept_user"
+
+            for target in (handrive_home, upload_home, sync_blob_home, kept_home):
+                target.mkdir(parents=True, exist_ok=True)
+                (target / "keep.txt").write_text("data", encoding="utf-8")
+
+            with self.captureOnCommitCallbacks(execute=True):
+                user.delete()
+
+            self.assertFalse(handrive_home.exists())
+            self.assertFalse(upload_home.exists())
+            self.assertFalse(sync_blob_home.exists())
+            self.assertTrue(kept_home.exists())
+
+    def test_user_delete_keeps_upload_dir_when_sanitized_segment_is_shared(self):
+        with TemporaryDirectory() as tmpdir, override_settings(MEDIA_ROOT=tmpdir):
+            deleted_user = get_user_model().objects.create_user(username="media+owner", password="pw12345")
+            get_user_model().objects.create_user(username="media_owner", password="pw12345")
+            media_root = Path(settings.MEDIA_ROOT)
+            handrive_home = media_root / "HanDrive" / "users" / deleted_user.username
+            shared_upload_home = media_root / "uploads" / "media_owner"
+
+            handrive_home.mkdir(parents=True, exist_ok=True)
+            shared_upload_home.mkdir(parents=True, exist_ok=True)
+            (handrive_home / "note.md").write_text("# deleted", encoding="utf-8")
+            (shared_upload_home / "shared.txt").write_text("keep", encoding="utf-8")
+
+            with self.captureOnCommitCallbacks(execute=True):
+                deleted_user.delete()
+
+            self.assertFalse(handrive_home.exists())
+            self.assertTrue(shared_upload_home.exists())
+
+
 class NetworkEnvironmentPageTests(TestCase):
     def test_network_environment_page_renders_under_sub(self):
         response = self.client.get(reverse("main:network_environment_lang", kwargs={"ui_lang": "ko"}))
@@ -5333,8 +6066,15 @@ class NetworkEnvironmentPageTests(TestCase):
         self.assertContains(response, "공인 IP와 측정 결과가 M-Lab에 전송", html=False)
         self.assertContains(response, "footer-purpose", html=False)
         self.assertContains(response, "network-environment-page", html=False)
+        self.assertContains(response, 'class="ui-shell ui-content media-tool-content"', html=False)
+        self.assertContains(response, 'class="media-tool-panel network-environment-panel"', html=False)
+        removed_content_class = "network-environment-" + "content"
+        self.assertNotContains(response, removed_content_class, html=False)
         self.assertContains(response, "/ko/sub/network-info/api/environment", html=False)
         network_css = (Path(settings.BASE_DIR) / "static/css/fun/network_environment.css").read_text()
+        self.assertNotIn(removed_content_class, network_css)
+        self.assertIn(".network-environment-panel", network_css)
+        self.assertIn("width: min(1300px, 100%);", network_css)
         self.assertIn(".network-summary-action .network-summary-value", network_css)
         self.assertIn("overflow-y: auto", network_css)
         self.assertIn("-webkit-overflow-scrolling: touch", network_css)
@@ -5884,7 +6624,8 @@ class HanplanetMultiplayerPageTests(TestCase):
         response = self.client.get("/ko/sub/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "기타", html=False)
+        self.assertContains(response, "Sub", html=False)
+        self.assertNotContains(response, "기타", html=False)
         self.assertNotContains(response, "미니게임", html=False)
         self.assertContains(response, "sub-page", html=False)
         self.assertContains(response, "전적", html=False)

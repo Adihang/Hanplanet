@@ -53,6 +53,7 @@
         ".ve-image-upload-panel",
         ".ae-drive-dialog"
     ].join(", ");
+    const helpModalResizeHandleSelector = "[data-handrive-help-modal-resize-handle]";
     const interactiveDragSkipSelector = [
         "button",
         "a",
@@ -71,6 +72,7 @@
     let popupPositionFrame = 0;
     let modalStackFrame = 0;
     let activeModalDrag = null;
+    let activeHelpModalResize = null;
     let activeCustomSelect = null;
     const selectValueDescriptor = window.HTMLSelectElement
         ? Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")
@@ -147,6 +149,130 @@
         dialog.setAttribute("data-popup-draggable-dialog", "true");
         dialog.style.setProperty("--popup-drag-x", String(Math.round(x)) + "px");
         dialog.style.setProperty("--popup-drag-y", String(Math.round(y)) + "px");
+    }
+
+    function clampModalResizeValue(value, min, max) {
+        if (min > max) {
+            return (min + max) / 2;
+        }
+        return Math.max(min, Math.min(max, value));
+    }
+
+    function clearHelpModalResizeState() {
+        if (!activeHelpModalResize) {
+            return;
+        }
+        if (activeHelpModalResize.target) {
+            activeHelpModalResize.target.classList.remove("is-handrive-help-modal-resizing");
+        }
+        document.body.classList.remove("handrive-help-modal-resizing");
+        document.body.style.removeProperty("cursor");
+        activeHelpModalResize = null;
+    }
+
+    function clearHelpModalResizeInRoot(root) {
+        if (activeHelpModalResize && root && root.contains(activeHelpModalResize.target)) {
+            clearHelpModalResizeState();
+        }
+    }
+
+    function onHelpModalResizeMove(event) {
+        if (!activeHelpModalResize || event.pointerId !== activeHelpModalResize.pointerId) {
+            return;
+        }
+        event.preventDefault();
+        const state = activeHelpModalResize;
+        const margin = viewportPadding;
+        const minWidth = Math.min(320, Math.max(0, state.viewportWidth - (margin * 2)));
+        const minHeight = Math.min(220, Math.max(0, state.viewportHeight - (margin * 2)));
+        const maxWidth = Math.max(minWidth, state.viewportWidth - (margin * 2));
+        const maxHeight = Math.max(minHeight, state.viewportHeight - (margin * 2));
+        const maxRight = state.viewportWidth - margin;
+        const maxBottom = state.viewportHeight - margin;
+        let left = state.startRect.left;
+        let right = state.startRect.right;
+        let top = state.startRect.top;
+        let bottom = state.startRect.bottom;
+        const dx = event.clientX - state.startClientX;
+        const dy = event.clientY - state.startClientY;
+
+        if (state.direction.indexOf("e") !== -1) {
+            right = clampModalResizeValue(state.startRect.right + dx, left + minWidth, Math.min(maxRight, left + maxWidth));
+        }
+        if (state.direction.indexOf("w") !== -1) {
+            left = clampModalResizeValue(state.startRect.left + dx, Math.max(margin, right - maxWidth), right - minWidth);
+        }
+        if (state.direction.indexOf("s") !== -1) {
+            bottom = clampModalResizeValue(state.startRect.bottom + dy, top + minHeight, Math.min(maxBottom, top + maxHeight));
+        }
+        if (state.direction.indexOf("n") !== -1) {
+            top = clampModalResizeValue(state.startRect.top + dy, Math.max(margin, bottom - maxHeight), bottom - minHeight);
+        }
+
+        const nextWidth = Math.max(minWidth, right - left);
+        const nextHeight = Math.max(minHeight, bottom - top);
+        const startCenterX = state.startRect.left + (state.startRect.width / 2);
+        const startCenterY = state.startRect.top + (state.startRect.height / 2);
+        const nextCenterX = left + (nextWidth / 2);
+        const nextCenterY = top + (nextHeight / 2);
+
+        state.target.style.width = String(Math.round(nextWidth)) + "px";
+        state.target.style.height = String(Math.round(nextHeight)) + "px";
+        setDialogDragOffset(
+            state.target,
+            state.startOffsetX + nextCenterX - startCenterX,
+            state.startOffsetY + nextCenterY - startCenterY
+        );
+    }
+
+    function endHelpModalResize(event) {
+        if (!activeHelpModalResize || (event && event.pointerId !== activeHelpModalResize.pointerId)) {
+            return;
+        }
+        clearHelpModalResizeState();
+    }
+
+    function onHelpModalResizePointerDown(event) {
+        if (event.defaultPrevented || event.button !== 0 || event.isPrimary === false) {
+            return;
+        }
+        const target = event.target && event.target.closest ? event.target : null;
+        const handle = target ? target.closest(helpModalResizeHandleSelector) : null;
+        if (!handle || !isVisible(handle)) {
+            return;
+        }
+        const dialog = handle.closest(".handrive-help-modal-dialog");
+        if (!dialog || dialog.closest("[hidden]")) {
+            return;
+        }
+        const direction = String(handle.getAttribute("data-handrive-help-modal-resize-handle") || "").trim();
+        if (!direction) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        activeHelpModalResize = {
+            target: dialog,
+            pointerId: event.pointerId,
+            direction: direction,
+            startClientX: event.clientX,
+            startClientY: event.clientY,
+            startRect: dialog.getBoundingClientRect(),
+            startOffsetX: getDragOffset(dialog, "--popup-drag-x"),
+            startOffsetY: getDragOffset(dialog, "--popup-drag-y"),
+            viewportWidth: Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0),
+            viewportHeight: Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0)
+        };
+        setDialogDragOffset(dialog, activeHelpModalResize.startOffsetX, activeHelpModalResize.startOffsetY);
+        dialog.classList.add("is-handrive-help-modal-resizing");
+        document.body.classList.add("handrive-help-modal-resizing");
+        document.body.style.cursor = window.getComputedStyle(handle).cursor || "nwse-resize";
+        bringModalToFront(dialog);
+        try {
+            handle.setPointerCapture(event.pointerId);
+        } catch (error) {}
     }
 
     function resetDialogDragOffset(dialog) {
@@ -283,6 +409,7 @@
         for (let index = modalStack.length - 1; index >= 0; index -= 1) {
             const root = modalStack[index];
             if (openRoots.indexOf(root) === -1) {
+                clearHelpModalResizeInRoot(root);
                 clearModalStackStyle(root);
                 resetDraggedDialogsInRoot(root);
                 modalStack.splice(index, 1);
@@ -1023,6 +1150,10 @@
     document.addEventListener("click", onProxyClickTarget);
 
     if (window.PointerEvent) {
+        document.addEventListener("pointerdown", onHelpModalResizePointerDown);
+        document.addEventListener("pointermove", onHelpModalResizeMove, { passive: false });
+        document.addEventListener("pointerup", endHelpModalResize);
+        document.addEventListener("pointercancel", endHelpModalResize);
         document.addEventListener("pointerdown", onModalHeaderPointerDown);
         document.addEventListener("pointermove", onModalHeaderDragMove, { passive: false });
         document.addEventListener("pointerup", endModalHeaderDrag);

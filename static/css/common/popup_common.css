@@ -347,6 +347,15 @@ body.theme-dark .site-custom-select {
     box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
 }
 
+.site-modal-body {
+    position: relative;
+    min-width: 0;
+}
+
+.site-modal-dialog.site-modal-dialog.is-loading {
+    cursor: progress;
+}
+
 :where(
     .site-modal-head,
     .handrive-popup-head,

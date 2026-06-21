@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.hanplanet.minecraft-ddns</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/imhanbyeol/Development/Hanplanet/.venv/bin/python</string>
+    <string>/Users/imhanbyeol/Development/Hanplanet/scripts/update_cloudflare_ddns.py</string>
+    <string>--record-name</string>
+    <string>mc-origin.hanplanet.com</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/imhanbyeol/Development/Hanplanet</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>300</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/imhanbyeol/Development/Hanplanet/log/minecraft-ddns.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/imhanbyeol/Development/Hanplanet/log/minecraft-ddns.stderr.log</string>
+</dict>
+</plist>

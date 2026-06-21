@@ -42,14 +42,16 @@
     </div>
 </div>
 
-<main
-    class="ui-shell ui-content network-environment-content"
-    data-network-environment
-    data-environment-url="{{ environment_api_url }}"
-    data-reverse-geocode-url="{{ reverse_geocode_api_url }}"
-    data-mlab-download-worker-url="{% static_v 'vendor/mlab-ndt7/0.1.4/ndt7-download-worker.js' %}"
-    data-mlab-upload-worker-url="{% static_v 'vendor/mlab-ndt7/0.1.4/ndt7-upload-worker.js' %}"
->
+<main class="ui-shell ui-content media-tool-content">
+    <section
+        class="media-tool-panel network-environment-panel"
+        data-network-environment
+        data-environment-url="{{ environment_api_url }}"
+        data-reverse-geocode-url="{{ reverse_geocode_api_url }}"
+        data-mlab-download-worker-url="{% static_v 'vendor/mlab-ndt7/0.1.4/ndt7-download-worker.js' %}"
+        data-mlab-upload-worker-url="{% static_v 'vendor/mlab-ndt7/0.1.4/ndt7-upload-worker.js' %}"
+        aria-label="{{ page_title }}"
+    >
     <section class="network-summary" aria-labelledby="networkSummaryTitle">
         <h2 class="network-section-title" id="networkSummaryTitle">{{ summary_title }}</h2>
         <div class="network-summary-grid">
@@ -165,6 +167,7 @@
             </table>
         </div>
         <p class="network-inline-status" data-network-webrtc-status role="status" aria-live="polite"></p>
+    </section>
     </section>
 </main>
 {% include "partials/site_footer_links.html" %}

@@ -323,7 +323,7 @@
                     <button class="ui-btn ui-btn-primary" type="button" id="handrive-list-save-btn">{{ handrive_text.save_button }}</button>
                 </div>
             </header>
-            <div class="handrive-list-editor-body">
+            <div class="handrive-list-editor-body site-loading-host">
                 {% include "handrive/_media_editor_surfaces.html" %}
                 <div class="handrive-spreadsheet-editor-surface" id="handrive-spreadsheet-editor-surface" hidden>
                     <div class="handrive-spreadsheet-toolbar">
@@ -348,6 +348,9 @@
                         <span class="handrive-editor-suggest-hint"><kbd>Tab</kbd> 적용</span>
                     </div>
                     <textarea id="handrive-list-content-input" spellcheck="false" wrap="off"></textarea>
+                </div>
+                <div class="handrive-list-editor-body-loading site-loading-overlay" id="handrive-list-editor-body-loading" role="status" aria-live="polite" aria-label="{{ handrive_text.list_preview_loading }}" hidden>
+                    <span class="handrive-list-editor-body-loading-spinner site-loading-spinner" aria-hidden="true"></span>
                 </div>
             </div>
             <div class="handrive-list-editor-saving" id="handrive-list-editor-saving" role="status" aria-live="polite" aria-label="{{ handrive_text.save_loading }}" hidden>

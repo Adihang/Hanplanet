@@ -7,10 +7,18 @@ body.network-environment-page .footer-links {
     gap: 4px;
 }
 
-.network-environment-content {
+.network-environment-page .media-tool-content {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 14px;
+}
+
+.network-environment-panel {
+    width: min(1300px, 100%);
+    min-width: 0;
     display: grid;
     gap: 12px;
-    padding-top: 14px;
 }
 
 .network-refresh-button {

@@ -86,6 +86,8 @@ from .views import (
     build_lang_switch_url,
     extract_minecraft_server_version,
     has_excessive_korean_text,
+    MINECRAFT_META_DESCRIPTION_EN,
+    MINECRAFT_META_DESCRIPTION_KO,
     MINECRAFT_SERVER_IMAGE_URL,
     MINECRAFT_WEATHER_ICON_URL,
     render_markdown_safely,
@@ -1328,14 +1330,34 @@ class LanguageUrlRoutingTests(TestCase):
 
     def test_minecraft_home_uses_server_image_metadata(self):
         response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
+        english_response = self.client.get("/en/", HTTP_HOST="mc.hanplanet.com")
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(english_response.status_code, 200)
         self.assertEqual(response.context["page_title"], "Minecraft Server")
         self.assertEqual(response.context["meta_title"], "Minecraft Server | Hanplanet")
         self.assertEqual(response.context["meta_og_title"], "Minecraft Server | Hanplanet")
+        self.assertEqual(response.context["meta_description"], MINECRAFT_META_DESCRIPTION_KO)
+        self.assertEqual(response.context["meta_og_description"], MINECRAFT_META_DESCRIPTION_KO)
+        self.assertEqual(english_response.context["meta_description"], MINECRAFT_META_DESCRIPTION_EN)
+        self.assertEqual(english_response.context["meta_og_description"], MINECRAFT_META_DESCRIPTION_EN)
         self.assertContains(response, "<title>Minecraft Server | Hanplanet</title>", html=False)
+        self.assertContains(response, f'<meta name="description" content="{MINECRAFT_META_DESCRIPTION_KO}">', html=False)
+        self.assertContains(response, f'<meta property="og:description" content="{MINECRAFT_META_DESCRIPTION_KO}">', html=False)
+        self.assertContains(english_response, f'<meta name="description" content="{MINECRAFT_META_DESCRIPTION_EN}">', html=False)
+        self.assertContains(english_response, f'<meta property="og:description" content="{MINECRAFT_META_DESCRIPTION_EN}">', html=False)
         self.assertContains(response, '<meta property="og:title" content="Minecraft Server | Hanplanet">', html=False)
         self.assertContains(response, '<meta name="twitter:title" content="Minecraft Server | Hanplanet">', html=False)
+        self.assertNotContains(
+            english_response,
+            "Hanplanet Minecraft Java Edition",
+            html=False,
+        )
+        self.assertNotContains(
+            english_response,
+            "Check live players and open the BlueMap world map.",
+            html=False,
+        )
         self.assertEqual(response.context["meta_og_image"], MINECRAFT_SERVER_IMAGE_URL)
         self.assertEqual(response.context["meta_twitter_image"], MINECRAFT_SERVER_IMAGE_URL)
         self.assertContains(
@@ -1351,8 +1373,10 @@ class LanguageUrlRoutingTests(TestCase):
 
     def test_sub_minecraft_card_uses_server_image_metadata(self):
         response = self.client.get(reverse("main:sub_lang", kwargs={"ui_lang": "ko"}))
+        english_response = self.client.get(reverse("main:sub_lang", kwargs={"ui_lang": "en"}))
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(english_response.status_code, 200)
         self.assertContains(
             response,
             'data-meta-title="Minecraft Server | Hanplanet"',
@@ -1366,12 +1390,27 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, "titleNode.textContent = parsedTitle;", html=False)
         self.assertContains(
             response,
-            "Minecraft 서버의 실시간 플레이어 상태와 월드 지도를 제공합니다.",
+            MINECRAFT_META_DESCRIPTION_KO,
+            html=False,
+        )
+        self.assertContains(
+            english_response,
+            MINECRAFT_META_DESCRIPTION_EN,
             html=False,
         )
         self.assertNotContains(
             response,
             "실시간 플레이어 상태와 BlueMap 월드 지도를 제공하는 Minecraft Java Edition",
+            html=False,
+        )
+        self.assertNotContains(
+            english_response,
+            "Minecraft Java Edition server with live player status and a BlueMap world map.",
+            html=False,
+        )
+        self.assertNotContains(
+            english_response,
+            "server with live player status and a BlueMap world map.",
             html=False,
         )
         self.assertContains(response, 'width: min(1300px, 100%);', html=False)
@@ -1411,6 +1450,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, '.minecraft-status-header {\n        display: flex;', html=False)
         self.assertContains(response, 'margin-bottom: 10px;', html=False)
         self.assertContains(response, 'height: 22px;', html=False)
+        self.assertContains(response, 'padding: 0 10px;', html=False)
         self.assertContains(response, 'margin-bottom: 8px;', html=False)
         self.assertContains(response, 'id="serverClock"', html=False)
         self.assertContains(response, 'id="serverWeatherIcon"', html=False)
@@ -1436,36 +1476,190 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'window.setInterval(loadStatus, 5000);', html=False)
         self.assertContains(response, "return leftOnline ? -1 : 1;", html=False)
         self.assertContains(response, "localeCompare(String(rightPlayer.name || '')", html=False)
-        self.assertContains(response, 'class="minecraft-address"', html=False)
+        self.assertEqual(response.context["minecraft_account_username"], "")
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        common_popup_js = (Path(settings.BASE_DIR) / "static/js/common/popup_common.js").read_text(encoding="utf-8")
+        handrive_page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        url_share_template = (Path(settings.BASE_DIR) / "templates/popup/handrive/url_share_modal.html").read_text(encoding="utf-8")
+        minecraft_address_block = content[
+            content.index(".minecraft-address {"):
+            content.index(".minecraft-meta {")
+        ]
+        minecraft_content_block = content[
+            content.index(".minecraft-content {"):
+            content.index(".minecraft-page-layout {")
+        ]
+        minecraft_page_layout_block = content[
+            content.index(".minecraft-page-layout {"):
+            content.index(".minecraft-layout {")
+        ]
+        minecraft_panel_list_block = content[
+            content.index(".minecraft-panel-list {"):
+            content.index(".minecraft-panel-list:empty {")
+        ]
+        minecraft_panel_list_item_block = content[
+            content.index(".minecraft-panel-list-item {"):
+            content.index(".minecraft-plugin-name {")
+        ]
+        minecraft_responsive_start = content.index("@media (max-width: 840px), (orientation: portrait) {")
+        minecraft_responsive_page_layout_block = content[
+            content.index("        .minecraft-page-layout {", minecraft_responsive_start):
+            content.index("        .minecraft-layout {", minecraft_responsive_start)
+        ]
+        minecraft_responsive_layout_block = content[
+            content.index("        .minecraft-layout {", minecraft_responsive_start):
+            content.index("        .minecraft-server-panel {", minecraft_responsive_start)
+        ]
+        minecraft_responsive_server_panel_block = content[
+            content.index("        .minecraft-server-panel {", minecraft_responsive_start):
+            content.index("        .minecraft-server-panel .minecraft-map-embed-section {", minecraft_responsive_start)
+        ]
+        minecraft_responsive_map_block = content[
+            content.index("        .minecraft-server-panel .minecraft-map-embed-section {", minecraft_responsive_start):
+            content.index("        .minecraft-side-layout {", minecraft_responsive_start)
+        ]
+        self.assertIn(".handrive-inline-copy-field,", handrive_css)
+        self.assertIn(".handrive-inline-copy-action,", handrive_css)
+        self.assertIn(".handrive-inline-copy-action:active,", handrive_css)
+        self.assertIn(".handrive-inline-copy-feedback", handrive_css)
+        self.assertIn("display: inline-flex;", handrive_css)
+        self.assertIn("align-items: center;", handrive_css)
+        self.assertIn("min-height: 28px;", handrive_css)
+        self.assertIn("padding: 5px 8px 7px;", handrive_css)
+        self.assertIn("line-height: 1;", handrive_css)
+        self.assertIn(".handrive-inline-copy-feedback::before,", handrive_css)
+        self.assertIn(".handrive-inline-copy-feedback.is-placement-top::before", handrive_css)
+        self.assertIn(".handrive-inline-copy-feedback.is-placement-bottom::before", handrive_css)
+        self.assertIn(".handrive-inline-copy-feedback.is-placement-left::before", handrive_css)
+        self.assertIn(".handrive-inline-copy-feedback.is-placement-right::before", handrive_css)
+        self.assertIn("--handrive-inline-copy-arrow-x", handrive_css)
+        self.assertIn("--handrive-inline-copy-arrow-y", handrive_css)
+        self.assertNotIn(".handrive-inline-copy-action.is-copied", handrive_css)
+        self.assertIn("window.showHandriveInlineCopyFeedback = showInlineCopyFeedback;", common_popup_js)
+        self.assertIn("function getInlineCopyFeedbackBoundary(button)", common_popup_js)
+        self.assertIn("function chooseInlineCopyFeedbackPlacement(rect, boundary, feedbackWidth, feedbackHeight)", common_popup_js)
+        self.assertIn('element.classList.add("is-placement-" + placement);', common_popup_js)
+        self.assertIn('--handrive-inline-copy-arrow-x', common_popup_js)
+        self.assertIn('--handrive-inline-copy-arrow-y', common_popup_js)
+        self.assertIn('button.addEventListener("pointerleave", state.hide);', common_popup_js)
+        self.assertIn('window.showHandriveInlineCopyFeedback(button, "Copied!");', handrive_page_js)
+        self.assertNotIn('button.classList.add("is-copied");', handrive_page_js)
+        self.assertIn('handrive-url-share-input-wrap handrive-inline-copy-field', url_share_template)
+        self.assertIn('handrive-url-share-inline-copy-btn handrive-inline-copy-action', url_share_template)
+        self.assertContains(response, 'class="minecraft-address handrive-inline-copy-field"', html=False)
+        self.assertContains(response, 'class="minecraft-address-copy handrive-inline-copy-action"', html=False)
+        self.assertContains(response, "window.showHandriveInlineCopyFeedback(addressCopyEl, 'Copied!');", html=False)
+        self.assertContains(response, '<rect x="7" y="7" width="9" height="9" rx="1.5"></rect>', html=False)
+        self.assertContains(response, '<path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"></path>', html=False)
+        self.assertNotContains(response, '<path d="M4 13H3a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>', html=False)
         self.assertContains(response, ".minecraft-label {\n        font-size: 14px;", html=False)
         self.assertContains(response, 'id="minecraftServerAddress"', html=False)
         self.assertContains(response, 'id="minecraftAddressCopy"', html=False)
         self.assertContains(response, 'aria-label="서버 주소 복사"', html=False)
+        self.assertIn('padding: 8px 56px 8px 12px;', minecraft_address_block)
+        self.assertIn('width: 40px;', minecraft_address_block)
+        self.assertIn('height: 40px;', minecraft_address_block)
+        self.assertIn('width: 30px;', minecraft_address_block)
+        self.assertIn('height: 30px;', minecraft_address_block)
         self.assertContains(response, 'width: min(1300px, 100%);', html=False)
         self.assertContains(response, 'padding-top: 0;', html=False)
         self.assertContains(response, 'padding-bottom: 0;', html=False)
+        self.assertIn('overflow: hidden;', minecraft_content_block)
+        self.assertIn('container-type: size;', minecraft_content_block)
+        self.assertNotIn('overflow: auto;', minecraft_content_block)
+        self.assertIn('height: 100%;', minecraft_page_layout_block)
+        self.assertIn('min-height: 0;', minecraft_page_layout_block)
+        self.assertIn('overflow: auto;', minecraft_page_layout_block)
         self.assertContains(response, 'gap: 8px;', html=False)
         self.assertContains(response, 'display: flex;\n        flex-direction: column;', html=False)
         self.assertContains(response, '.minecraft-player-panel {\n        flex: 1 1 auto;', html=False)
         self.assertContains(response, '.minecraft-plugin-panel {\n        flex: 0 1 auto;\n        max-height: 30%;', html=False)
-        self.assertContains(response, 'grid-auto-rows: 38px;', html=False)
-        self.assertContains(response, 'align-content: start;', html=False)
-        self.assertContains(response, 'height: 38px;', html=False)
+        self.assertIn('grid-auto-rows: 38px;', minecraft_panel_list_block)
+        self.assertIn('align-content: start;', minecraft_panel_list_block)
+        self.assertIn('gap: 6px;', minecraft_panel_list_block)
+        self.assertIn('overflow: auto;', minecraft_panel_list_block)
+        self.assertIn('list-style: none;', minecraft_panel_list_block)
+        self.assertNotIn('border:', minecraft_panel_list_block)
+        self.assertNotIn('background:', minecraft_panel_list_block)
+        self.assertIn('height: 38px;', minecraft_panel_list_item_block)
+        self.assertIn('min-height: 38px;', minecraft_panel_list_item_block)
+        self.assertIn('padding: 0 12px;', minecraft_panel_list_item_block)
+        self.assertIn('border: 1px solid var(--handrive-border-soft);', minecraft_panel_list_item_block)
+        self.assertIn('border-radius: var(--handrive-radius-sm);', minecraft_panel_list_item_block)
+        self.assertIn('background: var(--handrive-surface-muted);', minecraft_panel_list_item_block)
+        self.assertContains(response, 'class="minecraft-panel-list minecraft-player-list"', html=False)
+        self.assertContains(response, 'class="minecraft-panel-list minecraft-plugin-list"', html=False)
+        self.assertContains(response, 'class="minecraft-panel-list-item minecraft-plugin-item"', html=False)
+        self.assertContains(response, "'minecraft-panel-list-item',", html=False)
+        self.assertContains(response, '.minecraft-player-item.is-current-account {', html=False)
+        self.assertContains(response, 'border-width: 2px;', html=False)
+        self.assertContains(response, 'border-color: var(--handrive-border-heavy);', html=False)
+        self.assertContains(response, "const currentAccountUsername = normalizeMinecraftPlayerName('');", html=False)
+        self.assertContains(response, 'function normalizeMinecraftPlayerName(name)', html=False)
+        self.assertContains(response, 'function isCurrentAccountPlayer(player)', html=False)
+        self.assertContains(response, "isCurrentAccount ? 'is-current-account' : ''", html=False)
         self.assertContains(response, '.minecraft-player-list:empty', html=False)
         self.assertContains(response, 'overflow: auto;', html=False)
         self.assertContains(response, 'max-height: none;', html=False)
         self.assertNotContains(response, 'max-height: 70%;', html=False)
         self.assertContains(response, 'padding: 10px;', html=False)
         self.assertContains(response, 'margin-bottom: 6px;', html=False)
-        self.assertContains(response, 'grid-template-rows: minmax(100%, auto) auto;', html=False)
+        self.assertContains(response, '@media (max-width: 840px), (orientation: portrait) {', html=False)
+        self.assertContains(response, 'grid-template-rows: max-content max-content;', html=False)
+        self.assertNotContains(response, 'grid-template-rows: auto auto;', html=False)
+        self.assertNotContains(response, 'grid-template-rows: minmax(100%, auto) auto;', html=False)
+        self.assertIn('align-content: start;', minecraft_responsive_page_layout_block)
+        self.assertIn('align-items: start;', minecraft_responsive_page_layout_block)
+        self.assertIn('height: 100%;', minecraft_responsive_page_layout_block)
+        self.assertIn('min-height: 0;', minecraft_responsive_page_layout_block)
+        self.assertIn('overflow: auto;', minecraft_responsive_page_layout_block)
+        self.assertNotIn('height: auto;', minecraft_responsive_page_layout_block)
+        self.assertNotIn('min-height: 100%;', minecraft_responsive_page_layout_block)
+        self.assertNotIn('overflow: visible;', minecraft_responsive_page_layout_block)
+        self.assertIn('height: auto;', minecraft_responsive_layout_block)
+        self.assertIn('min-height: 0;', minecraft_responsive_layout_block)
+        self.assertIn('align-content: start;', minecraft_responsive_layout_block)
+        self.assertIn('align-items: start;', minecraft_responsive_layout_block)
+        self.assertIn('align-self: start;', minecraft_responsive_server_panel_block)
+        self.assertIn('height: auto;', minecraft_responsive_server_panel_block)
+        self.assertIn('min-height: 0;', minecraft_responsive_server_panel_block)
+        self.assertNotIn('min-height: 100%;', minecraft_responsive_layout_block)
+        self.assertNotIn('min-height: 100%;', minecraft_responsive_server_panel_block)
+        self.assertNotContains(response, '.minecraft-layout,\n        .minecraft-server-panel', html=False)
+        self.assertIn('flex: 0 0 auto;', minecraft_responsive_map_block)
+        self.assertIn('aspect-ratio: auto;', minecraft_responsive_map_block)
+        self.assertNotIn('aspect-ratio: 1 / 1;', minecraft_responsive_map_block)
+        self.assertNotIn('aspect-ratio: 4 / 3;', minecraft_responsive_map_block)
+        self.assertIn('align-self: stretch;', minecraft_responsive_map_block)
+        self.assertIn('width: 100%;', minecraft_responsive_map_block)
+        self.assertIn('max-width: none;', minecraft_responsive_map_block)
+        self.assertNotIn('width: 80%;', minecraft_responsive_map_block)
+        self.assertNotIn('max-width: 80%;', minecraft_responsive_map_block)
+        self.assertNotIn('width: min(100%, 80cqw);', minecraft_responsive_map_block)
+        self.assertNotIn('max-width: min(100%, 80cqw);', minecraft_responsive_map_block)
+        self.assertIn('height: min(100cqw, 80cqh);', minecraft_responsive_map_block)
+        self.assertIn('max-height: 80cqh;', minecraft_responsive_map_block)
+        self.assertIn('min-height: 0;', minecraft_responsive_map_block)
+        self.assertNotIn('height: auto;', minecraft_responsive_map_block)
+        self.assertContains(response, 'height: max-content;', html=False)
+        self.assertContains(response, 'min-height: max-content;', html=False)
+        self.assertNotContains(response, '@media (orientation: portrait) {\n        .minecraft-page-layout,', html=False)
         self.assertNotContains(response, 'calc(100dvh - var(--site-common-header-min-height, 58px) - 118px)', html=False)
         self.assertContains(response, 'class="minecraft-map-embed-section"', html=False)
         self.assertContains(response, 'class="minecraft-map-embed"', html=False)
         self.assertContains(response, 'id="minecraftMapFrame"', html=False)
         self.assertContains(response, "setupBlueMapThemeSync();", html=False)
         self.assertContains(response, "hanplanet:theme", html=False)
+        self.assertContains(response, "hanplanet:language", html=False)
         self.assertContains(response, "hanplanet:bluemap-ready", html=False)
+        self.assertContains(response, "window.localStorage.setItem('bluemap-lang', JSON.stringify('ko'));", html=False)
+        self.assertContains(response, "const blueMapLanguage = normalizeBlueMapLanguage('ko');", html=False)
+        self.assertContains(response, "function syncBlueMapLanguage()", html=False)
+        self.assertContains(response, "mapFrameEl.contentWindow.hanplanetApplyBlueMapLanguage", html=False)
+        self.assertContains(response, "syncBlueMapEmbedSettings();", html=False)
         self.assertContains(response, 'src="/map/"', html=False)
+        self.assertContains(response, 'data-bluemap-language="ko"', html=False)
+        self.assertEqual(response.context["bluemap_language"], "ko")
         self.assertContains(response, '<div class="minecraft-status-header">\n                    <h2 class="minecraft-panel-title" id="minecraft-links-title">플러그인</h2>\n                </div>', html=False)
         self.assertContains(response, '<h2 class="minecraft-panel-title" id="minecraft-links-title">플러그인</h2>', html=False)
         self.assertContains(response, '<span class="minecraft-plugin-name">BlueMap</span>', html=False)
@@ -1483,6 +1677,28 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertNotContains(response, 'id="minecraftServerLogPanel"', html=False)
         self.assertNotContains(response, 'server-log.json', html=False)
         self.assertNotContains(response, 'server-command.json', html=False)
+        mocked_plugins.assert_called_once_with()
+        mocked_status.assert_called()
+
+    @mock.patch("main.views.read_minecraft_server_status", return_value={"version": {"name": "Paper 26.3", "protocol": 776}})
+    @mock.patch("main.views.get_minecraft_server_plugins", return_value=[{"name": "BlueMap", "version": "5.22"}])
+    def test_minecraft_home_exposes_login_username_for_player_highlight(self, mocked_plugins, mocked_status):
+        user = get_user_model().objects.create_user(
+            username="HanPlayer",
+            email="hanplayer@example.com",
+            password="password",
+        )
+        self.client.force_login(user)
+
+        response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["minecraft_account_username"], "HanPlayer")
+        self.assertContains(
+            response,
+            "const currentAccountUsername = normalizeMinecraftPlayerName('HanPlayer');",
+            html=False,
+        )
         mocked_plugins.assert_called_once_with()
         mocked_status.assert_called()
 
@@ -1551,6 +1767,12 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, '.minecraft-log-level.is-error', html=False)
         self.assertContains(response, '.minecraft-log-message.is-success', html=False)
         self.assertContains(response, '.minecraft-log-marker', html=False)
+        self.assertContains(response, '.minecraft-log-plugin', html=False)
+        self.assertContains(response, '.minecraft-log-player', html=False)
+        self.assertContains(response, '.minecraft-log-command', html=False)
+        self.assertContains(response, '.minecraft-log-location', html=False)
+        self.assertContains(response, '.minecraft-log-path', html=False)
+        self.assertContains(response, '.minecraft-log-message.is-stack', html=False)
         self.assertContains(response, 'data-log-url="/server-log.json"', html=False)
         self.assertContains(response, 'data-command-url="/server-command.json"', html=False)
         self.assertContains(response, 'id="serverLogOutput"', html=False)
@@ -1571,8 +1793,11 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'right: 4px;', html=False)
         self.assertContains(response, 'loadServerLog();', html=False)
         self.assertContains(response, "let serverLogText = '';", html=False)
+        self.assertContains(response, 'function renderServerLogInlineText(text)', html=False)
+        self.assertContains(response, 'function renderServerLogPlayerEvent(rawMessage)', html=False)
         self.assertContains(response, 'function renderServerLogLine(line)', html=False)
         self.assertContains(response, 'function renderServerLogText(text)', html=False)
+        self.assertContains(response, "renderServerLogPlayerEvent(rawMessage) || renderServerLogInlineText(rawMessage)", html=False)
         self.assertContains(response, 'serverLogOutputEl.innerHTML = renderServerLogText(serverLogText);', html=False)
         self.assertContains(response, 'let serverLogRequestInFlight = false;', html=False)
         self.assertContains(response, 'serverLogReloadQueued = true;', html=False)

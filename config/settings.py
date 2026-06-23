@@ -238,6 +238,11 @@ GITHUB_API_BASE_URL       = load_optional_secret("GITHUB_API_BASE_URL", "https:/
 GITHUB_API_VERSION        = load_optional_secret("GITHUB_API_VERSION", "2022-11-28")
 GITHUB_REPO_CACHE_ROOT    = str(get_github_repo_cache_root(DISC))
 
+# Bungie API settings for Destiny utility pages
+BUNGIE_API_KEY      = load_optional_secret("BUNGIE_API_KEY", "")
+BUNGIE_API_BASE_URL = load_optional_secret("BUNGIE_API_BASE_URL", "https://www.bungie.net/Platform")
+BUNGIE_MEDIA_BASE_URL = load_optional_secret("BUNGIE_MEDIA_BASE_URL", "https://www.bungie.net")
+
 # Google OAuth 설정
 GOOGLE_AUTH_CLIENT_ID     = load_optional_secret("GOOGLE_AUTH_CLIENT_ID", "")
 GOOGLE_AUTH_CLIENT_SECRET = load_optional_secret("GOOGLE_AUTH_CLIENT_SECRET", "")

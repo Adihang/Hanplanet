@@ -114,6 +114,13 @@ body.network-environment-page .footer-links {
     transform: translateY(var(--ui-btn-hover-lift, 0));
 }
 
+.network-summary-action:active {
+    border-color: var(--ui-btn-active-border, var(--btn-template-base-active-border, var(--ui-btn-hover-border, var(--btn-template-base-hover-border, var(--handrive-border-soft)))));
+    background: var(--ui-btn-active-bg, var(--btn-template-base-active-bg, var(--ui-btn-hover-bg, var(--btn-template-base-hover-bg, var(--color-hover-bg, rgba(0, 0, 0, 0.06)))));
+    color: var(--ui-btn-active-color, var(--btn-template-base-active-color, var(--ui-btn-hover-color, var(--btn-template-base-hover-color, inherit))));
+    translate: 0 var(--ui-btn-active-press-depth, var(--btn-template-active-press-depth, 1px));
+}
+
 .network-summary-action:focus-visible {
     outline: 2px solid var(--ui-btn-hover-border, var(--btn-template-base-hover-border, var(--handrive-border-soft)));
     outline-offset: 2px;

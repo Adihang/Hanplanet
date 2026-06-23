@@ -34,13 +34,20 @@ body.ui-page {
     --handrive-btn-hover-bg: var(--btn-template-base-hover-bg);
     --handrive-btn-hover-border: var(--btn-template-base-hover-border);
     --handrive-btn-hover-color: var(--btn-template-base-hover-color);
+    --handrive-btn-active-bg: var(--btn-template-base-active-bg, var(--btn-template-base-hover-bg));
+    --handrive-btn-active-border: var(--btn-template-base-active-border, var(--btn-template-base-hover-border));
+    --handrive-btn-active-color: var(--btn-template-base-active-color, var(--btn-template-base-hover-color));
     --handrive-btn-primary-bg: var(--btn-template-primary-bg);
     --handrive-btn-primary-border: var(--btn-template-primary-border);
     --handrive-btn-primary-text: var(--btn-template-primary-color);
     --handrive-btn-primary-hover-bg: var(--btn-template-primary-hover-bg);
     --handrive-btn-primary-hover-border: var(--btn-template-primary-hover-border);
     --handrive-btn-primary-hover-text: var(--btn-template-primary-hover-color);
+    --handrive-btn-primary-active-bg: var(--btn-template-primary-active-bg, var(--btn-template-primary-hover-bg));
+    --handrive-btn-primary-active-border: var(--btn-template-primary-active-border, var(--btn-template-primary-hover-border));
+    --handrive-btn-primary-active-text: var(--btn-template-primary-active-color, var(--btn-template-primary-hover-color));
     --handrive-btn-hover-lift: var(--btn-template-hover-lift);
+    --handrive-btn-active-press-depth: var(--btn-template-active-press-depth, 1px);
     --handrive-btn-transition: var(--btn-template-transition);
     --handrive-selected-bg: var(--site-selected-bg);
     --handrive-divider-weak: var(--color-section-border);
@@ -788,6 +795,13 @@ img.ui-auth-account-avatar {
     background: var(--handrive-btn-hover-bg);
     color: var(--handrive-btn-hover-color);
     transform: translateY(var(--handrive-btn-hover-lift));
+    text-decoration: none;
+}
+
+.handrive-help-icon-link:active {
+    background: var(--handrive-btn-active-bg, var(--handrive-btn-hover-bg));
+    color: var(--handrive-btn-active-color, var(--handrive-btn-hover-color));
+    translate: 0 var(--handrive-btn-active-press-depth, var(--btn-template-active-press-depth, 1px));
     text-decoration: none;
 }
 
@@ -1662,6 +1676,9 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     --handrive-btn-current-hover-bg: var(--handrive-btn-hover-bg);
     --handrive-btn-current-hover-border: var(--handrive-btn-hover-border);
     --handrive-btn-current-hover-color: var(--handrive-btn-hover-color);
+    --handrive-btn-current-active-bg: var(--handrive-btn-active-bg);
+    --handrive-btn-current-active-border: var(--handrive-btn-active-border);
+    --handrive-btn-current-active-color: var(--handrive-btn-active-color);
     appearance: none;
     border: 1px solid var(--handrive-btn-current-border);
     border-radius: var(--handrive-radius-sm);
@@ -1693,6 +1710,14 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     transform: translateY(var(--handrive-btn-hover-lift));
 }
 
+.handrive-btn:active {
+    background: var(--handrive-btn-current-active-bg, var(--handrive-btn-current-hover-bg));
+    border-color: var(--handrive-btn-current-active-border, var(--handrive-btn-current-hover-border));
+    color: var(--handrive-btn-current-active-color, var(--handrive-btn-current-hover-color));
+    box-shadow: none;
+    translate: 0 var(--handrive-btn-active-press-depth, var(--btn-template-active-press-depth, 1px));
+}
+
 .handrive-btn.handrive-btn-primary {
     --handrive-btn-current-bg: var(--handrive-btn-primary-bg);
     --handrive-btn-current-border: var(--handrive-btn-primary-border);
@@ -1700,13 +1725,20 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     --handrive-btn-current-hover-bg: var(--handrive-btn-primary-hover-bg);
     --handrive-btn-current-hover-border: var(--handrive-btn-primary-hover-border);
     --handrive-btn-current-hover-color: var(--handrive-btn-primary-hover-text);
+    --handrive-btn-current-active-bg: var(--handrive-btn-primary-active-bg);
+    --handrive-btn-current-active-border: var(--handrive-btn-primary-active-border);
+    --handrive-btn-current-active-color: var(--handrive-btn-primary-active-text);
 }
 
 .handrive-btn.handrive-btn-primary:visited,
 .handrive-btn.handrive-btn-primary:hover,
-.handrive-btn.handrive-btn-primary:focus-visible,
-.handrive-btn.handrive-btn-primary:active {
+.handrive-btn.handrive-btn-primary:focus-visible {
     color: var(--handrive-btn-current-hover-color);
+    text-decoration: none;
+}
+
+.handrive-btn.handrive-btn-primary:active {
+    color: var(--handrive-btn-current-active-color);
     text-decoration: none;
 }
 
@@ -1786,11 +1818,37 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     border: 0;
     text-align: left;
     cursor: pointer;
+    transform: translateY(0);
+    transition: background-color 0.15s ease, transform 0.15s ease;
 }
 
 .handrive-item-row:hover,
 .handrive-item-row:focus-visible {
     background: var(--handrive-hover-soft);
+}
+
+.handrive-item-row:active:not(:has(:is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    label,
+    [role="button"],
+    [tabindex],
+    [data-sort-key],
+    [contenteditable="true"],
+    .handrive-btn,
+    .handrive-icon-btn,
+    .ui-control-link,
+    .handrive-current-dir-search-wrap,
+    .handrive-list-search-form,
+    .root-search-input,
+    .root-input-clear,
+    .root-search-submit
+):active)) {
+    background: var(--handrive-hover-soft);
+    translate: 0 var(--handrive-btn-active-press-depth, var(--btn-template-active-press-depth, 1px));
 }
 
 .handrive-item-row.is-selected {
@@ -3695,11 +3753,30 @@ body.handrive-modal-open {
     align-items: center;
     gap: 8px;
     cursor: pointer;
+    transform: translateY(0);
+    transition: background-color 0.15s ease, transform 0.15s ease;
 }
 
 .handrive-save-folder-row:hover,
 .handrive-save-folder-row:focus-visible {
     background: var(--handrive-hover-button);
+}
+
+.handrive-save-folder-row:active:not(:has(:is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    label,
+    [role="button"],
+    [tabindex],
+    [contenteditable="true"],
+    .handrive-btn,
+    .handrive-icon-btn
+):active)) {
+    background: var(--handrive-hover-button);
+    translate: 0 var(--handrive-btn-active-press-depth, var(--btn-template-active-press-depth, 1px));
 }
 
 .handrive-save-folder-row.is-selected {

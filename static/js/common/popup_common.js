@@ -77,6 +77,7 @@
     const selectValueDescriptor = window.HTMLSelectElement
         ? Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")
         : null;
+    let activeInlineCopyFeedback = null;
 
     function isVisible(element) {
         // Popups are repositioned only when actually visible; hidden-but-mounted nodes
@@ -121,6 +122,215 @@
         const value = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
         const parsed = Number.parseInt(value, 10);
         return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function getInlineCopyFeedbackElement() {
+        let element = document.querySelector(".handrive-inline-copy-feedback");
+        if (element) {
+            return element;
+        }
+        element = document.createElement("div");
+        element.className = "handrive-inline-copy-feedback";
+        element.hidden = true;
+        element.setAttribute("role", "status");
+        element.setAttribute("aria-live", "polite");
+        document.body.appendChild(element);
+        return element;
+    }
+
+    function getInlineCopyFeedbackBoundary(button) {
+        const viewport = getViewportSize();
+        const viewportBoundary = {
+            left: viewportPadding,
+            top: viewportPadding,
+            right: viewport.width - viewportPadding,
+            bottom: viewport.height - viewportPadding
+        };
+        const modalRoot = getModalRoot(button);
+        const modalDialog = modalRoot && modalRoot.querySelector
+            ? modalRoot.querySelector(draggableDialogSelector)
+            : null;
+        const boundarySource = modalDialog && isVisible(modalDialog)
+            ? modalDialog
+            : (modalRoot && isVisible(modalRoot) ? modalRoot : null);
+
+        if (!boundarySource) {
+            return viewportBoundary;
+        }
+
+        const rect = boundarySource.getBoundingClientRect();
+        const modalPadding = 8;
+        const boundary = {
+            left: Math.max(viewportBoundary.left, rect.left + modalPadding),
+            top: Math.max(viewportBoundary.top, rect.top + modalPadding),
+            right: Math.min(viewportBoundary.right, rect.right - modalPadding),
+            bottom: Math.min(viewportBoundary.bottom, rect.bottom - modalPadding)
+        };
+
+        if (boundary.right - boundary.left < 80 || boundary.bottom - boundary.top < 32) {
+            return viewportBoundary;
+        }
+        return boundary;
+    }
+
+    function clearInlineCopyFeedbackState(state) {
+        if (!state) {
+            return;
+        }
+        if (state.button) {
+            state.button.removeEventListener("pointerleave", state.hide);
+            state.button.removeEventListener("blur", state.hide);
+        }
+        if (state.fallbackTimer) {
+            window.clearTimeout(state.fallbackTimer);
+        }
+    }
+
+    function hideInlineCopyFeedback() {
+        const state = activeInlineCopyFeedback;
+        const element = state && state.element
+            ? state.element
+            : document.querySelector(".handrive-inline-copy-feedback");
+        clearInlineCopyFeedbackState(state);
+        activeInlineCopyFeedback = null;
+        if (!element) {
+            return;
+        }
+        element.classList.remove("is-visible");
+        window.setTimeout(function () {
+            if (!activeInlineCopyFeedback && !element.classList.contains("is-visible")) {
+                element.hidden = true;
+                element.classList.remove(
+                    "is-placement-top",
+                    "is-placement-bottom",
+                    "is-placement-left",
+                    "is-placement-right"
+                );
+                element.style.removeProperty("z-index");
+            }
+        }, 140);
+    }
+
+    function chooseInlineCopyFeedbackPlacement(rect, boundary, feedbackWidth, feedbackHeight) {
+        const gap = 10;
+        const spaces = {
+            top: rect.top - boundary.top,
+            bottom: boundary.bottom - rect.bottom,
+            left: rect.left - boundary.left,
+            right: boundary.right - rect.right
+        };
+
+        if (spaces.top >= feedbackHeight + gap) return "top";
+        if (spaces.bottom >= feedbackHeight + gap) return "bottom";
+        if (spaces.right >= feedbackWidth + gap) return "right";
+        if (spaces.left >= feedbackWidth + gap) return "left";
+        return spaces.bottom > spaces.top ? "bottom" : "top";
+    }
+
+    function syncInlineCopyFeedbackZIndex(element, button) {
+        const modalRoot = getModalRoot(button);
+        const modalZIndex = modalRoot
+            ? Number.parseInt(window.getComputedStyle(modalRoot).zIndex || "", 10)
+            : NaN;
+        const fallbackZIndex = readRootZIndex("--site-modal-base-z-index", 4000) + 50;
+
+        element.style.zIndex = Number.isFinite(modalZIndex)
+            ? String(Math.max(fallbackZIndex, modalZIndex + 20))
+            : "";
+    }
+
+    function positionInlineCopyFeedback(element, button) {
+        const rect = button.getBoundingClientRect();
+        const boundary = getInlineCopyFeedbackBoundary(button);
+        const feedbackWidth = element.offsetWidth || 70;
+        const feedbackHeight = element.offsetHeight || 28;
+        const arrowInset = 12;
+        const gap = 10;
+        const centerX = rect.left + (rect.width / 2);
+        const centerY = rect.top + (rect.height / 2);
+        const placement = chooseInlineCopyFeedbackPlacement(rect, boundary, feedbackWidth, feedbackHeight);
+        let left = centerX - (feedbackWidth / 2);
+        let top = rect.top - feedbackHeight - gap;
+        let arrowOffset = feedbackWidth / 2;
+
+        element.classList.remove(
+            "is-placement-top",
+            "is-placement-bottom",
+            "is-placement-left",
+            "is-placement-right"
+        );
+        element.classList.add("is-placement-" + placement);
+
+        if (placement === "bottom") {
+            top = rect.bottom + gap;
+        } else if (placement === "right" || placement === "left") {
+            top = centerY - (feedbackHeight / 2);
+            left = placement === "right"
+                ? rect.right + gap
+                : rect.left - feedbackWidth - gap;
+        }
+
+        left = clamp(left, boundary.left, boundary.right - feedbackWidth);
+        top = clamp(top, boundary.top, boundary.bottom - feedbackHeight);
+
+        if (placement === "right" || placement === "left") {
+            arrowOffset = clamp(centerY - top, arrowInset, feedbackHeight - arrowInset);
+            element.style.setProperty("--handrive-inline-copy-arrow-y", Math.round(arrowOffset) + "px");
+            element.style.removeProperty("--handrive-inline-copy-arrow-x");
+        } else {
+            arrowOffset = clamp(centerX - left, arrowInset, feedbackWidth - arrowInset);
+            element.style.setProperty("--handrive-inline-copy-arrow-x", Math.round(arrowOffset) + "px");
+            element.style.removeProperty("--handrive-inline-copy-arrow-y");
+        }
+
+        element.style.left = Math.round(left) + "px";
+        element.style.top = Math.round(top) + "px";
+        syncInlineCopyFeedbackZIndex(element, button);
+    }
+
+    function showInlineCopyFeedback(button, label) {
+        if (!button || typeof button.getBoundingClientRect !== "function" || !document.body) {
+            return;
+        }
+
+        hideInlineCopyFeedback();
+
+        const element = getInlineCopyFeedbackElement();
+        const message = String(label || "Copied!");
+        const state = {
+            button: button,
+            element: element,
+            hide: null,
+            fallbackTimer: 0
+        };
+        state.hide = function () {
+            if (activeInlineCopyFeedback === state) {
+                hideInlineCopyFeedback();
+            }
+        };
+
+        activeInlineCopyFeedback = state;
+        element.textContent = message;
+        element.hidden = false;
+        element.classList.remove("is-visible");
+        element.style.left = "0px";
+        element.style.top = "0px";
+
+        button.addEventListener("pointerleave", state.hide);
+        button.addEventListener("blur", state.hide);
+        positionInlineCopyFeedback(element, button);
+
+        window.requestAnimationFrame(function () {
+            if (activeInlineCopyFeedback !== state) {
+                return;
+            }
+            positionInlineCopyFeedback(element, button);
+            element.classList.add("is-visible");
+        });
+
+        if (!(button.matches && button.matches(":hover"))) {
+            state.fallbackTimer = window.setTimeout(state.hide, 1400);
+        }
     }
 
     function getModalRoot(target) {
@@ -1116,10 +1326,12 @@
         refreshCommonPopupStateDeferred();
         clampDraggableDialogsToViewport();
         positionOpenCustomSelects();
+        hideInlineCopyFeedback();
     });
     window.addEventListener("scroll", function () {
         refreshPopupPositionsDeferred();
         positionOpenCustomSelects();
+        hideInlineCopyFeedback();
     }, true);
 
     if (window.visualViewport) {
@@ -1127,10 +1339,12 @@
             refreshCommonPopupStateDeferred();
             clampDraggableDialogsToViewport();
             positionOpenCustomSelects();
+            hideInlineCopyFeedback();
         });
         window.visualViewport.addEventListener("scroll", function () {
             refreshPopupPositionsDeferred();
             positionOpenCustomSelects();
+            hideInlineCopyFeedback();
         });
     }
 
@@ -1177,6 +1391,7 @@
         refresh: syncAllCustomSelects,
         closeAll: closeAllCustomSelects
     };
+    window.showHandriveInlineCopyFeedback = showInlineCopyFeedback;
 
     const observer = new MutationObserver(handleCommonDomMutation);
     // Watch for popup visibility/class changes so positioning also updates when menus open without resize/scroll.

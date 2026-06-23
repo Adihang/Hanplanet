@@ -457,7 +457,8 @@ body.theme-dark .site-custom-select {
     font-size: 0;
     line-height: 1;
     cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    translate: 0 0;
+    transition: background-color 0.15s ease, color 0.15s ease, translate 0.15s ease;
 }
 
 .site-modal-head .site-modal-close.site-modal-close {
@@ -485,6 +486,20 @@ body.theme-dark .site-custom-select {
     background: var(--site-modal-close-hover-bg, var(--handrive-hover-soft, rgba(0, 0, 0, 0.06)));
     color: var(--site-modal-close-hover-color, var(--handrive-text-stronger, currentColor));
     outline: 0;
+    translate: 0 var(--btn-template-hover-lift, -1px);
+}
+
+.site-modal-close.site-modal-close:active,
+.handrive-popup-close-btn:active,
+.site-legal-modal-close:active,
+.image-demo-modal-close:active,
+.hpmail-mailbox-modal-head .hpmail-icon-btn[data-hpmail-mailbox-modal-close]:active,
+.bumpercar-stats-modal-close:active,
+.multiplayer-skin-modal-close:active,
+.map-media-viewer-modal-close:active {
+    background: var(--site-modal-close-hover-bg, var(--handrive-hover-soft, rgba(0, 0, 0, 0.06)));
+    color: var(--site-modal-close-hover-color, var(--handrive-text-stronger, currentColor));
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .site-modal-close.site-modal-close svg,

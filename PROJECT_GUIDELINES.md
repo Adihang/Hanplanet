@@ -160,6 +160,8 @@ Secrets go in `config/secrets.json` (git-ignored). Key env vars:
 - `OLLAMA_PROXY_API_KEY` — OpenHarness 프록시 인증 키 (secrets.json에 저장, 비어있으면 인증 없음)
 - `GAME_JWT_SECRET`, `GAME_WS_PUBLIC_URL`
 - `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` (Cloudflare CAPTCHA)
+- `BUNGIE_API_KEY` — Destiny/Bungie API key for the Salvation's Edge fireteam viewer
+- `BUNGIE_API_BASE_URL`, `BUNGIE_MEDIA_BASE_URL` — optional Bungie endpoint overrides
 - `FORGEJO_BASE_URL` — Gitea 서버 주소 (기본: `http://localhost:3000`)
 - `FORGEJO_ADMIN_TOKEN` — Gitea 관리자 API 토큰 (repo 생성/collaborator 관리용)
 - `PUBLIC_GIT_BASE_URL` — 외부 노출 Git URL (운영: `https://hanplanet.com/git`)

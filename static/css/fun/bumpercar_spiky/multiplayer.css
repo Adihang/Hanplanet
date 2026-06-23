@@ -1220,10 +1220,11 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
     align-items: center;
     justify-content: center;
     box-shadow: 0 12px 26px rgba(22, 163, 74, 0.2);
+    translate: 0 0;
 }
 
 .multiplayer-boost-button:active {
-    transform: scale(0.97);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .multiplayer-idle-modal-backdrop {

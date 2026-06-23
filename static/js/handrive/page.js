@@ -4844,8 +4844,10 @@
                     input.select();
                     document.execCommand("copy");
                 }
-                button.classList.add("is-copied");
                 setCopyButtonLabel(button, "url_share_copied", "복사됨");
+                if (typeof window.showHandriveInlineCopyFeedback === "function") {
+                    window.showHandriveInlineCopyFeedback(button, "Copied!");
+                }
                 window.setTimeout(function () {
                     resetCopyButton(button, labelKey, fallbackLabel);
                 }, 1400);
@@ -7287,6 +7289,33 @@
             return Boolean(target.isContentEditable);
         }
 
+        function isNestedRowInteractiveTarget(target, row) {
+            if (!(target instanceof Element) || !(row instanceof Element)) {
+                return false;
+            }
+            const interactiveTarget = target.closest([
+                "button",
+                "a",
+                "input",
+                "textarea",
+                "select",
+                "label",
+                "[role='button']",
+                "[tabindex]",
+                "[data-sort-key]",
+                "[contenteditable='true']",
+                ".ui-btn",
+                ".handrive-icon-btn",
+                ".ui-control-link",
+                ".handrive-current-dir-search-wrap",
+                ".handrive-list-search-form",
+                ".root-search-input",
+                ".root-input-clear",
+                ".root-search-submit",
+            ].join(","));
+            return Boolean(interactiveTarget && interactiveTarget !== row && row.contains(interactiveTarget));
+        }
+
         function updateListLayoutMode() {
             if (!listLayout) {
                 return;
@@ -8195,6 +8224,41 @@
             }
             if (metaTrail.dataset.sortControlsBound !== "1") {
                 metaTrail.dataset.sortControlsBound = "1";
+                let pressedSortLabel = null;
+                const setPressedSortLabel = function (label) {
+                    if (pressedSortLabel && pressedSortLabel !== label) {
+                        pressedSortLabel.classList.remove("is-pressed");
+                    }
+                    pressedSortLabel = label || null;
+                    if (pressedSortLabel) {
+                        pressedSortLabel.classList.add("is-pressed");
+                    }
+                };
+                const clearPressedSortLabel = function () {
+                    setPressedSortLabel(null);
+                };
+                const clearPressedSortLabelWithListeners = function () {
+                    clearPressedSortLabel();
+                    document.removeEventListener("pointerup", clearPressedSortLabelWithListeners);
+                    document.removeEventListener("pointercancel", clearPressedSortLabelWithListeners);
+                };
+                metaTrail.addEventListener("pointerdown", function (event) {
+                    if (event.button !== 0) {
+                        return;
+                    }
+                    const target = event.target instanceof Element
+                        ? event.target.closest(".handrive-item-meta-label[data-sort-key]")
+                        : null;
+                    if (!target || !metaTrail.contains(target)) {
+                        return;
+                    }
+                    setPressedSortLabel(target);
+                    document.removeEventListener("pointerup", clearPressedSortLabelWithListeners);
+                    document.removeEventListener("pointercancel", clearPressedSortLabelWithListeners);
+                    document.addEventListener("pointerup", clearPressedSortLabelWithListeners);
+                    document.addEventListener("pointercancel", clearPressedSortLabelWithListeners);
+                });
+                metaTrail.addEventListener("pointerleave", clearPressedSortLabel);
                 metaTrail.addEventListener("mousedown", function (event) {
                     const target = event.target instanceof Element
                         ? event.target.closest(".handrive-item-meta-label[data-sort-key]")
@@ -8213,6 +8277,23 @@
                     }
                     event.preventDefault();
                     event.stopPropagation();
+                    clearPressedSortLabel();
+                    applyListSort(target.getAttribute("data-sort-key") || "");
+                });
+                metaTrail.addEventListener("keydown", function (event) {
+                    if (event.key !== "Enter" && event.key !== " ") {
+                        return;
+                    }
+                    const target = event.target instanceof Element
+                        ? event.target.closest(".handrive-item-meta-label[data-sort-key]")
+                        : null;
+                    if (!target || !metaTrail.contains(target)) {
+                        return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setPressedSortLabel(target);
+                    window.setTimeout(clearPressedSortLabel, 120);
                     applyListSort(target.getAttribute("data-sort-key") || "");
                 });
             }
@@ -11454,7 +11535,7 @@
             if (!element || state.dragOverElement === element) {
                 return;
             }
-            clearDragOverTarget();
+            clearDriveDragPreviewState();
             state.dragOverElement = element;
             state.dragOverElement.classList.add("is-drop-target");
         }
@@ -11466,12 +11547,12 @@
             const targetPath = normalizePath(state.fileDropGroupPath || "", true);
             const sourceKind = state.fileDropSourceKind;
             if (!targetPath) {
-                clearDragOverTarget();
+                clearDriveDragPreviewState();
                 return;
             }
             const highlightElement = state.entryRowByPath.get(targetPath);
             if (!highlightElement) {
-                clearDragOverTarget();
+                clearDriveDragPreviewState();
                 return;
             }
             if (state.dragOverElement && state.dragOverElement !== highlightElement) {
@@ -11493,6 +11574,26 @@
             state.hoverExpandPath = "";
         }
 
+        function clearDriveDragPreviewState() {
+            clearHoverExpandTimer();
+            clearDragOverTarget();
+        }
+
+        function isActiveHoverExpandTarget(targetDirPath) {
+            const normalizedPath = normalizePath(targetDirPath || "", true);
+            if (!normalizedPath || !state.dragOverElement) {
+                return false;
+            }
+            return normalizePath(state.fileDropGroupPath || "", true) === normalizedPath;
+        }
+
+        function canHoverExpandDropTarget(highlightElement) {
+            return !(
+                highlightElement instanceof Element &&
+                highlightElement.classList.contains("handrive-current-dir-row")
+            );
+        }
+
         function scheduleHoverExpand(targetDirPath) {
             const normalizedPath = normalizePath(targetDirPath, true);
             if (!normalizedPath || state.expandedFolders.has(normalizedPath)) {
@@ -11508,6 +11609,9 @@
             state.hoverExpandTimerId = window.setTimeout(function () {
                 state.hoverExpandTimerId = null;
                 state.hoverExpandPath = "";
+                if (!isActiveHoverExpandTarget(normalizedPath)) {
+                    return;
+                }
                 const targetEntry = state.entryByPath.get(normalizedPath);
                 if (!targetEntry || targetEntry.type !== "dir" || state.expandedFolders.has(normalizedPath)) {
                     return;
@@ -11710,7 +11814,11 @@
             setDragOverTarget(highlightElement);
             setFileDropTarget(true, sourceKind);
             setFileDropGroup(targetDirPath, highlightElement);
-            scheduleHoverExpand(targetDirPath);
+            if (canHoverExpandDropTarget(highlightElement)) {
+                scheduleHoverExpand(targetDirPath);
+                return;
+            }
+            clearHoverExpandTimer();
         }
 
         function activateFileDropTarget(event, targetDirPath, highlightElement) {
@@ -11737,6 +11845,7 @@
                     return;
                 }
                 if (deferredCurrentDirRow) {
+                    clearHoverExpandTimer();
                     return;
                 }
                 if (isFileTransfer(event)) {
@@ -11759,6 +11868,7 @@
                     return;
                 }
                 if (deferredCurrentDirRow) {
+                    clearHoverExpandTimer();
                     return;
                 }
                 if (isFileTransfer(event)) {
@@ -11786,6 +11896,7 @@
                 }
                 const deferredCurrentDirRow = getDeferredCurrentDirectoryDropRow(event, highlightElement);
                 if (deferredCurrentDirRow && isPointerInsideElement(event, deferredCurrentDirRow)) {
+                    clearHoverExpandTimer();
                     return;
                 }
                 const nextHighlightElement = resolveFileDropHighlightElement(event.relatedTarget);
@@ -11795,8 +11906,7 @@
                 if (event.relatedTarget && targetElement.contains(event.relatedTarget)) {
                     return;
                 }
-                clearHoverExpandTimer();
-                clearDragOverTarget();
+                clearDriveDragPreviewState();
             });
 
             targetElement.addEventListener("drop", function (event) {
@@ -11821,8 +11931,7 @@
                 }
                 event.preventDefault();
                 event.stopPropagation();
-                clearHoverExpandTimer();
-                clearDragOverTarget();
+                clearDriveDragPreviewState();
                 moveEntriesToDirectory(state.draggingEntries.slice(), targetDirPath).catch(alertError);
             });
         }
@@ -12409,16 +12518,21 @@
             if (!metaTrail) {
                 return;
             }
+            const configureSortField = function (field, sortKey) {
+                field.setAttribute("data-sort-key", sortKey);
+                field.setAttribute("role", "button");
+                field.tabIndex = 0;
+            };
             const modifiedField = createEntryMetaField("handrive-item-modified", t("list_sort_modified", textByLang("수정한 날짜", "Modified")));
-            modifiedField.setAttribute("data-sort-key", "modified");
+            configureSortField(modifiedField, "modified");
             const typeField = createEntryMetaField("handrive-item-type", t("list_sort_type", textByLang("유형", "Type")));
-            typeField.setAttribute("data-sort-key", "type");
+            configureSortField(typeField, "type");
             const sizeField = createEntryMetaField("handrive-item-size", t("list_sort_size", textByLang("크기", "Size")));
-            sizeField.setAttribute("data-sort-key", "size");
+            configureSortField(sizeField, "size");
             const commitField = createEntryMetaField("handrive-item-commit", t("list_sort_commit", textByLang("커밋", "Commit")));
-            commitField.setAttribute("data-sort-key", "commit");
+            configureSortField(commitField, "commit");
             const idField = createEntryMetaField("handrive-item-id", t("list_sort_id", "ID"));
-            idField.setAttribute("data-sort-key", "id");
+            configureSortField(idField, "id");
             metaTrail.appendChild(modifiedField);
             metaTrail.appendChild(typeField);
             metaTrail.appendChild(sizeField);
@@ -12787,7 +12901,7 @@
             bindCurrentDirSortControls(row);
 
             row.addEventListener("click", function (event) {
-                if (event.button !== 0) { return; }
+                if (event.button !== 0 || isNestedRowInteractiveTarget(event.target, row)) { return; }
                 event.preventDefault();
                 closeContextMenu();
                 closePreviewPaneIfOpen();
@@ -12798,6 +12912,9 @@
             });
 
             row.addEventListener("contextmenu", function (event) {
+                if (isNestedRowInteractiveTarget(event.target, row)) {
+                    return;
+                }
                 event.preventDefault();
                 openContextMenuForEntry(currentFolderEntry, event.clientX, event.clientY);
             });
@@ -13102,7 +13219,7 @@
             row.appendChild(createSyncCheckbox(currentFolderEntry.path, currentFolderEntry.type));
 
             row.addEventListener("click", function (event) {
-                if (event.button !== 0) {
+                if (event.button !== 0 || isNestedRowInteractiveTarget(event.target, row)) {
                     return;
                 }
                 event.preventDefault();
@@ -13152,7 +13269,7 @@
             row.appendChild(createSyncCheckbox(entry.path, entry.type));
 
             row.addEventListener("click", function (event) {
-                if (event.button !== 0) {
+                if (event.button !== 0 || isNestedRowInteractiveTarget(event.target, row)) {
                     return;
                 }
                 event.preventDefault();
@@ -13863,7 +13980,7 @@
             appendEntryMetaColumns(row, entry);
 
             row.addEventListener("click", function (event) {
-                if (event.button !== 0) { return; }
+                if (event.button !== 0 || isNestedRowInteractiveTarget(event.target, row)) { return; }
                 event.preventDefault();
                 closeContextMenu();
                 selectEntriesByRowClick(entry, event);
@@ -13894,13 +14011,16 @@
             });
 
             row.addEventListener("dblclick", function (event) {
-                if (event.button !== 0) { return; }
+                if (event.button !== 0 || isNestedRowInteractiveTarget(event.target, row)) { return; }
                 event.preventDefault();
                 event.stopPropagation();
                 openEntry(entry);
             });
 
             row.addEventListener("contextmenu", function (event) {
+                if (isNestedRowInteractiveTarget(event.target, row)) {
+                    return;
+                }
                 event.preventDefault();
                 if (isArchiveMemberEntry(entry)) {
                     return;
@@ -13925,7 +14045,7 @@
                         })
                     );
                     row.classList.add("is-dragging");
-                    clearDragOverTarget();
+                    clearDriveDragPreviewState();
                     closeContextMenu();
                     if (event.dataTransfer) {
                         event.dataTransfer.effectAllowed = draggingEntries.some(isGoogleDriveEntry) ? "copyMove" : "move";
@@ -13942,7 +14062,7 @@
                     row.classList.remove("is-dragging");
                     state.draggingEntries = [];
                     state.draggingRowPaths = new Set();
-                    clearDragOverTarget();
+                    clearDriveDragPreviewState();
                 });
             }
 
@@ -15016,6 +15136,9 @@
                 if (!row || !listContainer.contains(row)) {
                     return;
                 }
+                if (isNestedRowInteractiveTarget(targetElement, row)) {
+                    return;
+                }
                 const entryPath = normalizePath(row.getAttribute("data-entry-path") || "", true);
                 const entry = state.entryByPath.get(entryPath) || null;
                 if (!entry) {
@@ -15243,7 +15366,7 @@
                     activateDriveMoveDropTarget(event, state.currentDir, currentDirRow);
                     return;
                 }
-                clearDragOverTarget();
+                clearDriveDragPreviewState();
             });
 
             listPane.addEventListener("dragover", function (event) {
@@ -15274,7 +15397,20 @@
                     activateDriveMoveDropTarget(event, state.currentDir, currentDirRow);
                     return;
                 }
-                clearDragOverTarget();
+                clearDriveDragPreviewState();
+            });
+
+            listPane.addEventListener("dragleave", function (event) {
+                if (isFileTransfer(event) || !hasActiveDriveDrag()) {
+                    return;
+                }
+                if (event.relatedTarget && listPane.contains(event.relatedTarget)) {
+                    return;
+                }
+                if (isPointerInsideElement(event, listPane)) {
+                    return;
+                }
+                clearDriveDragPreviewState();
             });
 
             listPane.addEventListener("drop", function (event) {
@@ -15293,8 +15429,7 @@
                     return;
                 }
                 event.preventDefault();
-                clearHoverExpandTimer();
-                clearDragOverTarget();
+                clearDriveDragPreviewState();
                 moveEntriesToDirectory(state.draggingEntries.slice(), targetDirPath).catch(alertError);
             });
         }
@@ -15306,6 +15441,17 @@
         document.addEventListener("dragend", function () {
             clearFileDragUiState();
         });
+
+        document.addEventListener("dragover", function (event) {
+            if (isFileTransfer(event) || !hasActiveDriveDrag() || !listPane) {
+                return;
+            }
+            const targetNode = event.target instanceof Element ? event.target : null;
+            if ((targetNode && listPane.contains(targetNode)) || isPointerInsideElement(event, listPane)) {
+                return;
+            }
+            clearDriveDragPreviewState();
+        }, true);
 
         document.addEventListener("paste", function (event) {
             if (!uploadApiUrl || shouldIgnorePasteUploadTarget()) {
@@ -18471,7 +18617,7 @@
             renderSaveEntryContents(row, entry, false);
 
             row.addEventListener("click", function (event) {
-                if (event.button !== 0) {
+                if (event.button !== 0 || isNestedRowInteractiveTarget(event.target, row)) {
                     return;
                 }
                 event.preventDefault();
@@ -18526,7 +18672,7 @@
             renderSaveEntryContents(row, entry, isOverwriteFile);
 
             row.addEventListener("click", function (event) {
-                if (event.button !== 0 || event.detail > 1) {
+                if (event.button !== 0 || event.detail > 1 || isNestedRowInteractiveTarget(event.target, row)) {
                     return;
                 }
                 event.preventDefault();
@@ -18551,7 +18697,7 @@
             });
 
             row.addEventListener("dblclick", function (event) {
-                if (event.button !== 0) {
+                if (event.button !== 0 || isNestedRowInteractiveTarget(event.target, row)) {
                     return;
                 }
                 event.preventDefault();

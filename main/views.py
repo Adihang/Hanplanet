@@ -97,9 +97,23 @@ YOUTUBE_DOWNLOAD_ALLOWED_HOSTS = {
     "youtu.be",
     "www.youtu.be",
 }
+BUNGIE_ERROR_SUCCESS = 1
+BUNGIE_MEMBERSHIP_ALL = -1
+BUNGIE_COMPONENT_PROFILES = 100
+BUNGIE_COMPONENT_CHARACTERS = 200
+BUNGIE_COMPONENT_CHARACTER_EQUIPMENT = 205
+BUNGIE_COMPONENT_ITEM_SOCKETS = 305
+BUNGIE_COMPONENT_TRANSITORY = 1000
+BUNGIE_SOCKET_CATEGORY_ARMOR_COSMETICS = 1926152773
+BUNGIE_SOCKET_TYPE_REUSABLE_ARMOR_PERKS = 2321980680
+BUNGIE_EXCLUDED_ARMOR_PLUG_HASHES = {1959648454, 2931483505, 702981643}
+BUNGIE_FIRETEAM_CACHE_SECONDS = 30
+BUNGIE_DEFINITION_CACHE_SECONDS = 60 * 60 * 24
 MINECRAFT_PUBLIC_HOST = "mc.hanplanet.com"
 MINECRAFT_SERVER_ADDRESS = "mc.hanplanet.com"
 MINECRAFT_META_TITLE = "Minecraft Server | Hanplanet"
+MINECRAFT_META_DESCRIPTION_KO = "Minecraft 서버의 실시간 플레이어 상태와 월드 지도를 제공합니다."
+MINECRAFT_META_DESCRIPTION_EN = "Provides real-time player status and a world map for the Minecraft server."
 MINECRAFT_SERVER_IMAGE_URL = "https://www.hanplanet.com/media/HanDrive/users/admin/mc_server.png"
 MINECRAFT_WEATHER_ICON_URL = "/media/HanDrive/users/admin/weather.svg"
 MINECRAFT_PLUGIN_DIR = Path("/Users/imhanbyeol/Development/minecraft/plugins")
@@ -2258,17 +2272,15 @@ def _build_sub_links(resolved_lang):
             "url": url,
         })
 
-    minecraft_version = get_minecraft_server_version()
-    minecraft_version_suffix = f" {minecraft_version}" if minecraft_version else ""
     links.insert(0, {
         "slug": "minecraft",
         "url": "https://mc.hanplanet.com/",
         "title": MINECRAFT_META_TITLE,
         "site_name": "mc.hanplanet.com",
         "description": (
-            f"Minecraft Java Edition{minecraft_version_suffix} server with live player status and a BlueMap world map."
+            MINECRAFT_META_DESCRIPTION_EN
             if is_english
-            else "Minecraft 서버의 실시간 플레이어 상태와 월드 지도를 제공합니다."
+            else MINECRAFT_META_DESCRIPTION_KO
         ),
         "image": MINECRAFT_SERVER_IMAGE_URL,
         "category": "game",
@@ -5491,13 +5503,10 @@ def minecraft_home(request, ui_lang=None):
         if server_version
         else f"{server_version_prefix} {server_version_loading_label}"
     )
-    server_version_description = (
-        f"{server_version_prefix} {server_version}"
-        if server_version
-        else server_version_prefix
-    )
     meta_description = (
-        f"Hanplanet {server_version_description} server. Check live players and open the BlueMap world map."
+        MINECRAFT_META_DESCRIPTION_EN
+        if is_english
+        else MINECRAFT_META_DESCRIPTION_KO
     )
     context = {
         "server_address": MINECRAFT_SERVER_ADDRESS,
@@ -5539,6 +5548,7 @@ def minecraft_home(request, ui_lang=None):
         "minecraft_admin_log_enabled": minecraft_admin_log_enabled,
         "map_embed_url": "/map/",
         "map_embed_title": "BlueMap world map" if is_english else "BlueMap 월드 지도",
+        "bluemap_language": "en" if is_english else "ko",
         "plugins_empty_label": "No plugins found." if is_english else "플러그인이 없습니다.",
         "server_plugins": get_minecraft_server_plugins(),
         "players_panel_title": "Players" if is_english else "플레이어",
@@ -5573,6 +5583,11 @@ def minecraft_home(request, ui_lang=None):
         "weather_unknown_label": "Unknown weather" if is_english else "날씨 알 수 없음",
         "online_label": "Online" if is_english else "온라인",
         "offline_label": "Offline" if is_english else "오프라인",
+        "minecraft_account_username": (
+            str(request.user.username or "")
+            if getattr(request, "user", None) is not None and request.user.is_authenticated
+            else ""
+        ),
         "meta_title": MINECRAFT_META_TITLE,
         "meta_og_title": MINECRAFT_META_TITLE,
         "meta_description": meta_description,
@@ -6477,12 +6492,369 @@ def ProjectComment_create(request, project_id, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
     return redirect('main:ProjectDetail_lang', ui_lang=resolved_lang, project_id=project.id)
 
+
+class BungieAPIError(Exception):
+    """Normalized Bungie API failure for the Salvations fireteam endpoint."""
+
+    def __init__(self, code, message="", status=502):
+        super().__init__(message or code)
+        self.code = code
+        self.message = message or code
+        self.status = status
+
+
+def _bungie_url(path):
+    return f"{settings.BUNGIE_API_BASE_URL.rstrip('/')}/{path.lstrip('/')}"
+
+
+def _bungie_media_url(path):
+    if not path:
+        return ""
+    if path.startswith("http://") or path.startswith("https://"):
+        return path
+    return f"{settings.BUNGIE_MEDIA_BASE_URL.rstrip('/')}/{path.lstrip('/')}"
+
+
+def _bungie_language(ui_lang):
+    return "ko" if ui_lang == "ko" else "en"
+
+
+def _parse_bungie_profile_query(query):
+    raw = (query or "").strip()
+    if "#" not in raw:
+        raise BungieAPIError("invalid_profile_name", "Use BungieName#1234.", status=400)
+    display_name, display_code = raw.rsplit("#", 1)
+    display_name = display_name.strip()
+    display_code = display_code.strip()
+    if not display_name or not display_code.isdigit():
+        raise BungieAPIError("invalid_profile_name", "Use BungieName#1234.", status=400)
+    return display_name, int(display_code), f"{display_name}#{display_code}"
+
+
+def _bungie_request(client, method, path, *, params=None, json_payload=None):
+    try:
+        response = client.request(
+            method,
+            _bungie_url(path),
+            params=params,
+            json=json_payload,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except httpx.HTTPStatusError as exc:
+        raise BungieAPIError("upstream_http_error", str(exc), status=502) from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise BungieAPIError("upstream_unavailable", str(exc), status=502) from exc
+
+    if payload.get("ErrorCode") != BUNGIE_ERROR_SUCCESS:
+        error_code = payload.get("ErrorCode")
+        error_status = payload.get("ErrorStatus") or payload.get("Message") or "Bungie API error"
+        if error_code == 5:
+            raise BungieAPIError("bungie_disabled", error_status, status=503)
+        if error_code == 11:
+            raise BungieAPIError("profile_not_found", error_status, status=404)
+        raise BungieAPIError("bungie_api_error", error_status, status=502)
+    return payload
+
+
+def _bungie_get_entity_definition(client, entity_type, hash_value, language, local_cache):
+    if hash_value in (None, "", 0, "0"):
+        return None
+    hash_key = str(hash_value)
+    cache_key = f"bungie_entity_definition:{language}:{entity_type}:{hash_key}"
+    if cache_key in local_cache:
+        return local_cache[cache_key]
+
+    definition = cache.get(cache_key)
+    if definition is None:
+        payload = _bungie_request(
+            client,
+            "GET",
+            f"Destiny2/Manifest/{entity_type}/{hash_key}/",
+        )
+        definition = payload.get("Response") or {}
+        cache.set(cache_key, definition, BUNGIE_DEFINITION_CACHE_SECONDS)
+
+    local_cache[cache_key] = definition
+    return definition
+
+
+def _bungie_get_inventory_item(client, item_hash, language, local_cache):
+    return _bungie_get_entity_definition(
+        client,
+        "DestinyInventoryItemDefinition",
+        item_hash,
+        language,
+        local_cache,
+    )
+
+
+def _bungie_get_class_definition(client, class_hash, language, local_cache):
+    return _bungie_get_entity_definition(
+        client,
+        "DestinyClassDefinition",
+        class_hash,
+        language,
+        local_cache,
+    )
+
+
+def _bungie_find_membership(client, display_name, display_code):
+    payload = _bungie_request(
+        client,
+        "POST",
+        f"Destiny2/SearchDestinyPlayerByBungieName/{BUNGIE_MEMBERSHIP_ALL}/",
+        json_payload={
+            "displayName": display_name,
+            "displayNameCode": display_code,
+        },
+    )
+    profile = (payload.get("Response") or [None])[0]
+    if not profile:
+        raise BungieAPIError("profile_not_found", "Profile not found.", status=404)
+    return {
+        "membershipId": str(profile.get("membershipId") or ""),
+        "membershipType": profile.get("membershipType"),
+    }
+
+
+def _bungie_resolve_membership_type(client, membership_id):
+    payload = _bungie_request(
+        client,
+        "GET",
+        f"Destiny2/{BUNGIE_MEMBERSHIP_ALL}/Profile/{membership_id}/LinkedProfiles/",
+    )
+    profiles = (payload.get("Response") or {}).get("profiles") or []
+    for profile in profiles:
+        if str(profile.get("membershipId")) == str(membership_id):
+            return {
+                "membershipId": str(profile.get("membershipId") or membership_id),
+                "membershipType": profile.get("membershipType"),
+            }
+    raise BungieAPIError("profile_not_found", "Party profile not found.", status=404)
+
+
+def _bungie_get_profile(client, membership, components):
+    return _bungie_request(
+        client,
+        "GET",
+        f"Destiny2/{membership['membershipType']}/Profile/{membership['membershipId']}/",
+        params={"components": ",".join(str(component) for component in components)},
+    )
+
+
+def _bungie_item_socket_list(socket_data, item_instance_id):
+    if not item_instance_id:
+        return []
+    return ((socket_data or {}).get(str(item_instance_id)) or {}).get("sockets") or []
+
+
+def _bungie_ornament_item_hash(client, item, socket_data, language, local_cache):
+    item_hash = item.get("itemHash") if isinstance(item, dict) else None
+    item_instance_id = item.get("itemInstanceId") if isinstance(item, dict) else None
+    if not item_hash or not item_instance_id:
+        return item_hash
+
+    definition = _bungie_get_inventory_item(client, item_hash, language, local_cache)
+    sockets = (definition or {}).get("sockets") or {}
+    socket_entries = sockets.get("socketEntries") or []
+    socket_category = next(
+        (
+            category
+            for category in sockets.get("socketCategories") or []
+            if category.get("socketCategoryHash") == BUNGIE_SOCKET_CATEGORY_ARMOR_COSMETICS
+        ),
+        None,
+    )
+    if not socket_category:
+        return item_hash
+
+    ornament_socket_index = None
+    for socket_index in socket_category.get("socketIndexes") or []:
+        if socket_index >= len(socket_entries):
+            continue
+        socket_entry = socket_entries[socket_index] or {}
+        if socket_entry.get("socketTypeHash") == BUNGIE_SOCKET_TYPE_REUSABLE_ARMOR_PERKS:
+            continue
+        if socket_entry.get("singleInitialItemHash") == 0:
+            continue
+        ornament_socket_index = socket_index
+        break
+
+    if ornament_socket_index is None:
+        return item_hash
+
+    instance_sockets = _bungie_item_socket_list(socket_data, item_instance_id)
+    if ornament_socket_index >= len(instance_sockets):
+        return item_hash
+
+    plug_hash = (instance_sockets[ornament_socket_index] or {}).get("plugHash")
+    if plug_hash and plug_hash not in BUNGIE_EXCLUDED_ARMOR_PLUG_HASHES:
+        return plug_hash
+    return item_hash
+
+
+def _serialize_bungie_item(client, item_hash, language, local_cache, slot):
+    definition = _bungie_get_inventory_item(client, item_hash, language, local_cache)
+    display = (definition or {}).get("displayProperties") or {}
+    icon_path = display.get("icon") or ""
+    return {
+        "hash": str(item_hash or ""),
+        "slot": slot,
+        "name": display.get("name") or str(item_hash or ""),
+        "iconUrl": _bungie_media_url(icon_path) if icon_path else "",
+    }
+
+
+def _serialize_bungie_member(client, membership, language, local_cache):
+    payload = _bungie_get_profile(
+        client,
+        membership,
+        [
+            BUNGIE_COMPONENT_PROFILES,
+            BUNGIE_COMPONENT_CHARACTERS,
+            BUNGIE_COMPONENT_CHARACTER_EQUIPMENT,
+            BUNGIE_COMPONENT_ITEM_SOCKETS,
+        ],
+    )
+    response = payload.get("Response") or {}
+    profile_data = (response.get("profile") or {}).get("data") or {}
+    characters = (response.get("characters") or {}).get("data") or {}
+    if not profile_data:
+        raise BungieAPIError("profile_not_found", "Missing profile data.", status=404)
+    if not characters:
+        raise BungieAPIError("character_not_found", "No active character found.", status=404)
+
+    character = max(
+        characters.values(),
+        key=lambda value: value.get("dateLastPlayed") or "",
+    )
+    character_id = str(character.get("characterId") or "")
+    equipment_items = (
+        ((response.get("characterEquipment") or {}).get("data") or {}).get(character_id) or {}
+    ).get("items") or []
+    socket_data = ((response.get("itemComponents") or {}).get("sockets") or {}).get("data") or {}
+    if len(equipment_items) < 9:
+        raise BungieAPIError("equipment_not_found", "Character equipment not found.", status=404)
+
+    slot_names = ["helmet", "gauntlets", "chest", "legs", "class_item"]
+    armor_hashes = [
+        _bungie_ornament_item_hash(client, item, socket_data, language, local_cache)
+        for item in equipment_items[3:8]
+    ]
+    equipment = [
+        _serialize_bungie_item(client, item_hash, language, local_cache, slot)
+        for item_hash, slot in zip(armor_hashes, slot_names)
+        if item_hash
+    ]
+    ghost_hash = (equipment_items[8] or {}).get("itemHash") if len(equipment_items) > 8 else None
+    if ghost_hash:
+        equipment.append(_serialize_bungie_item(client, ghost_hash, language, local_cache, "ghost"))
+
+    class_hash = character.get("classHash")
+    class_definition = _bungie_get_class_definition(client, class_hash, language, local_cache)
+    class_display = (class_definition or {}).get("displayProperties") or {}
+
+    user_info = profile_data.get("userInfo") or {}
+    return {
+        "displayName": user_info.get("bungieGlobalDisplayName") or user_info.get("displayName") or "Unknown",
+        "membershipId": str(membership.get("membershipId") or ""),
+        "membershipType": membership.get("membershipType"),
+        "characterId": character_id,
+        "classHash": class_hash,
+        "className": class_display.get("name") or "",
+        "equipment": equipment,
+    }
+
+
+def _bungie_fireteam_members(client, membership, language):
+    payload = _bungie_get_profile(client, membership, [BUNGIE_COMPONENT_TRANSITORY])
+    transitory_data = (
+        ((payload.get("Response") or {}).get("profileTransitoryData") or {}).get("data") or {}
+    )
+    party_members = transitory_data.get("partyMembers") or [membership]
+    local_cache = {}
+    members = []
+
+    for party_member in party_members[:12]:
+        party_membership_id = str(party_member.get("membershipId") or "")
+        if not party_membership_id:
+            continue
+        resolved_membership = (
+            membership
+            if party_membership_id == str(membership.get("membershipId"))
+            else _bungie_resolve_membership_type(client, party_membership_id)
+        )
+        members.append(_serialize_bungie_member(client, resolved_membership, language, local_cache))
+
+    return members
+
+
+def _group_bungie_fireteam_members(members):
+    grouped = {}
+    for member in members:
+        class_key = str(member.get("classHash") or "unknown")
+        if class_key not in grouped:
+            grouped[class_key] = {
+                "classHash": member.get("classHash"),
+                "className": member.get("className") or "Unknown",
+                "members": [],
+            }
+        grouped[class_key]["members"].append(member)
+    return list(grouped.values())
+
+
 def Salvations_Edge_4(request, ui_lang=None):
     """Render the Salvation's Edge 4 helper page."""
     context = {"sub_category": "game"}
     resolved_lang = resolve_ui_lang(request, ui_lang)
     apply_ui_context(request, context, resolved_lang)
     return render(request, 'fun/Salvations_Edge_4.html', context)
+
+
+@require_http_methods(["GET"])
+def salvations_fireteam_api(request, ui_lang=None):
+    """Return Verity fireteam equipment through the local Bungie API proxy."""
+    if not getattr(settings, "BUNGIE_API_KEY", ""):
+        return JsonResponse(
+            {"ok": False, "error": "bungie_config_missing"},
+            status=503,
+        )
+
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    try:
+        display_name, display_code, normalized_query = _parse_bungie_profile_query(request.GET.get("q", ""))
+    except BungieAPIError as exc:
+        return JsonResponse({"ok": False, "error": exc.code, "message": exc.message}, status=exc.status)
+
+    language = _bungie_language(resolved_lang)
+    cache_key = f"salvations_fireteam:{language}:{normalized_query.lower()}"
+    cached_payload = cache.get(cache_key)
+    if cached_payload:
+        return JsonResponse(cached_payload, json_dumps_params={"ensure_ascii": False})
+
+    headers = {
+        "Accept": "application/json",
+        "Accept-Language": language,
+        "X-API-Key": settings.BUNGIE_API_KEY,
+    }
+    timeout = httpx.Timeout(12.0, connect=4.0, read=8.0)
+    try:
+        with httpx.Client(headers=headers, timeout=timeout) as client:
+            membership = _bungie_find_membership(client, display_name, display_code)
+            members = _bungie_fireteam_members(client, membership, language)
+    except BungieAPIError as exc:
+        logger.warning("Bungie fireteam API failed: %s", exc.message)
+        return JsonResponse({"ok": False, "error": exc.code, "message": exc.message}, status=exc.status)
+
+    payload = {
+        "ok": True,
+        "query": normalized_query,
+        "members": members,
+        "groups": _group_bungie_fireteam_members(members),
+    }
+    cache.set(cache_key, payload, BUNGIE_FIRETEAM_CACHE_SECONDS)
+    return JsonResponse(payload, json_dumps_params={"ensure_ascii": False})
 
 def Stratagem_Hero_page(request, ui_lang=None):
     """Render the Stratagem Hero game page with a randomized challenge set."""

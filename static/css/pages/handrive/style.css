@@ -50,13 +50,20 @@ body.ui-page {
     --ui-btn-hover-bg: var(--btn-template-base-hover-bg);
     --ui-btn-hover-border: var(--btn-template-base-hover-border);
     --ui-btn-hover-color: var(--btn-template-base-hover-color);
+    --ui-btn-active-bg: var(--btn-template-base-active-bg, var(--btn-template-base-hover-bg));
+    --ui-btn-active-border: var(--btn-template-base-active-border, var(--btn-template-base-hover-border));
+    --ui-btn-active-color: var(--btn-template-base-active-color, var(--btn-template-base-hover-color));
     --ui-btn-primary-bg: var(--btn-template-primary-bg);
     --ui-btn-primary-border: var(--btn-template-primary-border);
     --ui-btn-primary-text: var(--btn-template-primary-color);
     --ui-btn-primary-hover-bg: var(--btn-template-primary-hover-bg);
     --ui-btn-primary-hover-border: var(--btn-template-primary-hover-border);
     --ui-btn-primary-hover-text: var(--btn-template-primary-hover-color);
+    --ui-btn-primary-active-bg: var(--btn-template-primary-active-bg, var(--btn-template-primary-hover-bg));
+    --ui-btn-primary-active-border: var(--btn-template-primary-active-border, var(--btn-template-primary-hover-border));
+    --ui-btn-primary-active-text: var(--btn-template-primary-active-color, var(--btn-template-primary-hover-color));
     --ui-btn-hover-lift: var(--btn-template-hover-lift);
+    --ui-btn-active-press-depth: var(--btn-template-active-press-depth, 1px);
     --ui-btn-transition: var(--btn-template-transition);
     --handrive-selected-bg: var(--site-selected-bg);
     --handrive-divider-weak: var(--color-section-border);
@@ -788,7 +795,8 @@ body.theme-dark .account-storage-bar-fill {
     padding: 4px 10px 4px 8px;
     margin: 0;
     cursor: pointer;
-    transition: color var(--motion-fast), background-color var(--motion-fast), border-color var(--motion-fast), transform var(--motion-fast);
+    translate: 0 0;
+    transition: color var(--motion-fast), background-color var(--motion-fast), border-color var(--motion-fast), translate var(--motion-fast);
 }
 
 .ui-auth-account-trigger:hover,
@@ -796,7 +804,15 @@ body.theme-dark .account-storage-bar-fill {
     border-color: var(--color-hover-border);
     background-color: var(--color-hover-bg);
     color: var(--theme-accent-strong);
-    transform: translateY(-1px);
+    translate: 0 var(--btn-template-hover-lift, -1px);
+    text-decoration: none;
+}
+
+.ui-auth-account-trigger:active {
+    border-color: var(--color-hover-border);
+    background-color: var(--color-hover-bg);
+    color: var(--theme-accent-strong);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
     text-decoration: none;
 }
 
@@ -950,12 +966,18 @@ body.theme-dark .ui-auth-account-menu-actions .ui-auth-account-menu-item:focus-v
     padding: 0;
     line-height: 0;
     cursor: pointer;
-    transition: transform 0.16s ease;
+    translate: 0 0;
+    transition: translate 0.16s ease;
 }
 
 .ui-auth-account-profile-image-button:hover,
 .ui-auth-account-profile-image-button:focus-visible {
-    transform: translateY(-1px);
+    translate: 0 var(--btn-template-hover-lift, -1px);
+    outline: none;
+}
+
+.ui-auth-account-profile-image-button:active {
+    translate: 0 var(--btn-template-active-press-depth, 1px);
     outline: none;
 }
 
@@ -1127,7 +1149,14 @@ img.ui-auth-account-avatar {
 .handrive-help-icon-link:focus-visible {
     background: var(--ui-btn-hover-bg);
     color: var(--ui-btn-hover-color);
-    transform: translateY(var(--ui-btn-hover-lift));
+    translate: 0 var(--ui-btn-hover-lift, var(--btn-template-hover-lift, -1px));
+    text-decoration: none;
+}
+
+.handrive-help-icon-link:active {
+    background: var(--ui-btn-active-bg, var(--ui-btn-hover-bg));
+    color: var(--ui-btn-active-color, var(--ui-btn-hover-color));
+    translate: 0 var(--ui-btn-active-press-depth, var(--btn-template-active-press-depth, 1px));
     text-decoration: none;
 }
 
@@ -1163,11 +1192,14 @@ body.theme-dark .handrive-help-icon-symbol {
     text-decoration: none;
     border-radius: 4px;
     padding: 1px 3px;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, translate 0.2s ease;
 }
 
-.ui-path-link:visited,
-.ui-path-link:active {
+.ui-path-breadcrumbs button.ui-path-current {
+    transition: background-color 0.2s ease, color 0.2s ease, translate 0.2s ease;
+}
+
+.ui-path-link:visited {
     color: var(--handrive-link);
 }
 
@@ -1180,6 +1212,13 @@ body.theme-dark .handrive-help-icon-symbol {
 .ui-path-link:focus-visible {
     color: var(--handrive-text-strong);
     background: var(--handrive-hover);
+}
+
+.ui-path-link:active,
+.ui-path-breadcrumbs button.ui-path-current:active {
+    color: var(--handrive-text-strong);
+    background: var(--handrive-hover-strong, var(--handrive-hover));
+    translate: 0 var(--ui-btn-active-press-depth, var(--btn-template-active-press-depth, 1px));
 }
 
 .ui-path-link.is-drop-target,
@@ -2378,6 +2417,9 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     --ui-btn-current-hover-bg: var(--ui-btn-hover-bg);
     --ui-btn-current-hover-border: var(--ui-btn-hover-border);
     --ui-btn-current-hover-color: var(--ui-btn-hover-color);
+    --ui-btn-current-active-bg: var(--ui-btn-active-bg);
+    --ui-btn-current-active-border: var(--ui-btn-active-border);
+    --ui-btn-current-active-color: var(--ui-btn-active-color);
     appearance: none;
     border: 1px solid var(--ui-btn-current-border);
     border-radius: var(--handrive-radius-sm);
@@ -2391,7 +2433,7 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     text-decoration: none;
     cursor: pointer;
     box-shadow: none;
-    transform: translateY(0);
+    translate: 0 0;
     transition: var(--ui-btn-transition);
 }
 
@@ -2407,7 +2449,15 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     border-color: var(--ui-btn-current-hover-border);
     color: var(--ui-btn-current-hover-color);
     box-shadow: none;
-    transform: translateY(var(--ui-btn-hover-lift));
+    translate: 0 var(--ui-btn-hover-lift, var(--btn-template-hover-lift, -1px));
+}
+
+.ui-btn:active {
+    background: var(--ui-btn-current-active-bg, var(--ui-btn-current-hover-bg));
+    border-color: var(--ui-btn-current-active-border, var(--ui-btn-current-hover-border));
+    color: var(--ui-btn-current-active-color, var(--ui-btn-current-hover-color));
+    box-shadow: none;
+    translate: 0 var(--ui-btn-active-press-depth, var(--btn-template-active-press-depth, 1px));
 }
 
 .ui-btn.ui-btn-primary {
@@ -2417,13 +2467,20 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     --ui-btn-current-hover-bg: var(--ui-btn-primary-hover-bg);
     --ui-btn-current-hover-border: var(--ui-btn-primary-hover-border);
     --ui-btn-current-hover-color: var(--ui-btn-primary-hover-text);
+    --ui-btn-current-active-bg: var(--ui-btn-primary-active-bg);
+    --ui-btn-current-active-border: var(--ui-btn-primary-active-border);
+    --ui-btn-current-active-color: var(--ui-btn-primary-active-text);
 }
 
 .ui-btn.ui-btn-primary:visited,
 .ui-btn.ui-btn-primary:hover,
-.ui-btn.ui-btn-primary:focus-visible,
-.ui-btn.ui-btn-primary:active {
+.ui-btn.ui-btn-primary:focus-visible {
     color: var(--ui-btn-current-hover-color);
+    text-decoration: none;
+}
+
+.ui-btn.ui-btn-primary:active {
+    color: var(--ui-btn-current-active-color);
     text-decoration: none;
 }
 
@@ -2585,7 +2642,8 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     box-sizing: border-box;
     -webkit-appearance: none;
     appearance: none;
-    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+    translate: 0 0;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease, translate 0.15s ease;
     position: relative;
     overflow: hidden;
 }
@@ -2593,6 +2651,30 @@ body.handrive-page.theme-dark .handrive-frame-loading {
 .handrive-item-row:hover,
 .handrive-item-row:focus-visible {
     background: var(--handrive-row-hover-bg);
+}
+
+.handrive-item-row:active:not(:has(:is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    label,
+    [role="button"],
+    [tabindex],
+    [data-sort-key],
+    [contenteditable="true"],
+    .ui-btn,
+    .handrive-icon-btn,
+    .ui-control-link,
+    .handrive-current-dir-search-wrap,
+    .handrive-list-search-form,
+    .root-search-input,
+    .root-input-clear,
+    .root-search-submit
+):active)) {
+    background: var(--handrive-row-hover-bg);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .handrive-item-row.is-selected {
@@ -2822,6 +2904,17 @@ body.theme-dark .handrive-list-pane.is-local-file-drop-target .handrive-list.is-
     background: var(--handrive-hover-soft);
 }
 
+.handrive-current-dir-row:hover,
+.handrive-current-dir-row:focus-visible {
+    background: var(--handrive-hover-soft);
+    translate: 0 var(--btn-template-hover-lift, -1px);
+}
+
+.handrive-current-dir-row:active {
+    background: var(--handrive-hover-soft);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
+}
+
 .handrive-list-layout.is-landscape.has-preview .handrive-current-dir-row,
 .handrive-list-layout.is-landscape.has-editor .handrive-current-dir-row {
     border-radius: calc(var(--handrive-radius-lg) - 1px) 0 0 0;
@@ -2915,7 +3008,8 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     opacity: 0.92;
     overflow: visible;
     transform: translateY(-50%);
-    transition: background-color 0.1s ease, color 0.1s ease, opacity 0.1s ease;
+    translate: 0 0;
+    transition: background-color 0.1s ease, color 0.1s ease, opacity 0.1s ease, translate 0.1s ease;
 }
 
 .handrive-item-url-share-indicator:hover,
@@ -3091,7 +3185,8 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     font-size: 15px;
     -webkit-user-select: none;
     user-select: none;
-    transition: color 0.18s ease;
+    translate: 0 0;
+    transition: color 0.18s ease, translate 0.18s ease;
 }
 
 .handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key] {
@@ -3123,8 +3218,19 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
 .handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key]:hover,
 .handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key]:focus-visible,
 .handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key]:active,
+.handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key].is-pressed,
 .handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label.is-sort-active {
     color: var(--handrive-current-dir-meta-active-color, var(--handrive-text-stronger));
+}
+
+.handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key]:hover,
+.handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key]:focus-visible {
+    translate: 0 var(--btn-template-hover-lift, -1px);
+}
+
+.handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key]:active,
+.handrive-list-pane .handrive-current-dir-row .handrive-item-meta-label[data-sort-key].is-pressed {
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .handrive-current-dir-row .handrive-list-search-form {
@@ -4472,6 +4578,7 @@ body.handrive-popup-dragging {
     display: none;
 }
 
+.handrive-inline-copy-field,
 .handrive-url-share-input-wrap {
     position: relative;
     display: flex;
@@ -4479,6 +4586,7 @@ body.handrive-popup-dragging {
     width: 100%;
 }
 
+.handrive-inline-copy-field input,
 .handrive-url-share-input-wrap input {
     padding-right: 40px;
 }
@@ -4488,6 +4596,7 @@ body.handrive-popup-dragging {
     padding-right: 40px;
 }
 
+.handrive-inline-copy-action,
 .handrive-url-share-inline-copy-btn {
     position: absolute;
     right: 6px;
@@ -4504,34 +4613,183 @@ body.handrive-popup-dragging {
     color: var(--handrive-text-secondary);
     cursor: pointer;
     transform: translateY(-50%);
-    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    translate: 0 0;
+    transition: background 0.12s, border-color 0.12s, color 0.12s, translate 0.12s;
 }
 
+.handrive-inline-copy-action svg,
 .handrive-url-share-inline-copy-btn svg {
     width: 26px;
     height: 26px;
 }
 
+.handrive-inline-copy-action:hover,
+.handrive-inline-copy-action:focus-visible,
 .handrive-url-share-inline-copy-btn:hover,
 .handrive-url-share-inline-copy-btn:focus-visible {
     border-color: var(--handrive-border-heavy);
     background: var(--handrive-surface-muted);
     color: var(--handrive-text-stronger);
+    translate: 0 var(--btn-template-hover-lift, -1px);
 }
 
+.handrive-inline-copy-action:focus-visible,
 .handrive-url-share-inline-copy-btn:focus-visible {
     outline: none;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--handrive-search-border-focus) 22%, transparent);
 }
 
-.handrive-url-share-inline-copy-btn.is-copied {
+.handrive-inline-copy-action:active,
+.handrive-url-share-inline-copy-btn:active {
     border-color: color-mix(in srgb, var(--handrive-success, #0f7b6c) 42%, var(--handrive-border-heavy));
+    background: color-mix(in srgb, var(--handrive-success, #0f7b6c) 12%, transparent);
     color: var(--handrive-success, #0f7b6c);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
+.handrive-inline-copy-action:disabled,
 .handrive-url-share-inline-copy-btn:disabled {
     cursor: default;
     opacity: 0.45;
+}
+
+.handrive-inline-copy-feedback {
+    --handrive-inline-copy-arrow-size: 8px;
+    --handrive-inline-copy-arrow-x: 50%;
+    --handrive-inline-copy-arrow-y: 50%;
+    position: fixed;
+    z-index: calc(var(--site-modal-base-z-index, 4000) + 50);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 70px;
+    min-height: 28px;
+    padding: 5px 8px 7px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: var(--handrive-radius-sm);
+    background: var(--shared-card-bg);
+    color: var(--handrive-text-stronger);
+    box-shadow: var(--handrive-menu-shadow);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(2px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.handrive-inline-copy-feedback::before,
+.handrive-inline-copy-feedback::after {
+    content: "";
+    position: absolute;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+}
+
+.handrive-inline-copy-feedback.is-placement-top::before,
+.handrive-inline-copy-feedback.is-placement-top::after {
+    left: var(--handrive-inline-copy-arrow-x);
+    transform: translateX(-50%);
+}
+
+.handrive-inline-copy-feedback.is-placement-top::before {
+    bottom: calc(0px - var(--handrive-inline-copy-arrow-size));
+    border-top: var(--handrive-inline-copy-arrow-size) solid var(--handrive-border-soft);
+    border-right: var(--handrive-inline-copy-arrow-size) solid transparent;
+    border-left: var(--handrive-inline-copy-arrow-size) solid transparent;
+}
+
+.handrive-inline-copy-feedback.is-placement-top::after {
+    bottom: calc(1px - var(--handrive-inline-copy-arrow-size));
+    border-top: calc(var(--handrive-inline-copy-arrow-size) - 1px) solid var(--shared-card-bg);
+    border-right: calc(var(--handrive-inline-copy-arrow-size) - 1px) solid transparent;
+    border-left: calc(var(--handrive-inline-copy-arrow-size) - 1px) solid transparent;
+}
+
+.handrive-inline-copy-feedback.is-placement-bottom {
+    transform: translateY(-2px);
+}
+
+.handrive-inline-copy-feedback.is-placement-bottom::before,
+.handrive-inline-copy-feedback.is-placement-bottom::after {
+    left: var(--handrive-inline-copy-arrow-x);
+    transform: translateX(-50%);
+}
+
+.handrive-inline-copy-feedback.is-placement-bottom::before {
+    top: calc(0px - var(--handrive-inline-copy-arrow-size));
+    border-right: var(--handrive-inline-copy-arrow-size) solid transparent;
+    border-bottom: var(--handrive-inline-copy-arrow-size) solid var(--handrive-border-soft);
+    border-left: var(--handrive-inline-copy-arrow-size) solid transparent;
+}
+
+.handrive-inline-copy-feedback.is-placement-bottom::after {
+    top: calc(1px - var(--handrive-inline-copy-arrow-size));
+    border-right: calc(var(--handrive-inline-copy-arrow-size) - 1px) solid transparent;
+    border-bottom: calc(var(--handrive-inline-copy-arrow-size) - 1px) solid var(--shared-card-bg);
+    border-left: calc(var(--handrive-inline-copy-arrow-size) - 1px) solid transparent;
+}
+
+.handrive-inline-copy-feedback.is-placement-left {
+    transform: translateX(2px);
+}
+
+.handrive-inline-copy-feedback.is-placement-left::before,
+.handrive-inline-copy-feedback.is-placement-left::after {
+    top: var(--handrive-inline-copy-arrow-y);
+    transform: translateY(-50%);
+}
+
+.handrive-inline-copy-feedback.is-placement-left::before {
+    right: calc(0px - var(--handrive-inline-copy-arrow-size));
+    border-top: var(--handrive-inline-copy-arrow-size) solid transparent;
+    border-bottom: var(--handrive-inline-copy-arrow-size) solid transparent;
+    border-left: var(--handrive-inline-copy-arrow-size) solid var(--handrive-border-soft);
+}
+
+.handrive-inline-copy-feedback.is-placement-left::after {
+    right: calc(1px - var(--handrive-inline-copy-arrow-size));
+    border-top: calc(var(--handrive-inline-copy-arrow-size) - 1px) solid transparent;
+    border-bottom: calc(var(--handrive-inline-copy-arrow-size) - 1px) solid transparent;
+    border-left: calc(var(--handrive-inline-copy-arrow-size) - 1px) solid var(--shared-card-bg);
+}
+
+.handrive-inline-copy-feedback.is-placement-right {
+    transform: translateX(-2px);
+}
+
+.handrive-inline-copy-feedback.is-placement-right::before,
+.handrive-inline-copy-feedback.is-placement-right::after {
+    top: var(--handrive-inline-copy-arrow-y);
+    transform: translateY(-50%);
+}
+
+.handrive-inline-copy-feedback.is-placement-right::before {
+    left: calc(0px - var(--handrive-inline-copy-arrow-size));
+    border-top: var(--handrive-inline-copy-arrow-size) solid transparent;
+    border-right: var(--handrive-inline-copy-arrow-size) solid var(--handrive-border-soft);
+    border-bottom: var(--handrive-inline-copy-arrow-size) solid transparent;
+}
+
+.handrive-inline-copy-feedback.is-placement-right::after {
+    left: calc(1px - var(--handrive-inline-copy-arrow-size));
+    border-top: calc(var(--handrive-inline-copy-arrow-size) - 1px) solid transparent;
+    border-right: calc(var(--handrive-inline-copy-arrow-size) - 1px) solid var(--shared-card-bg);
+    border-bottom: calc(var(--handrive-inline-copy-arrow-size) - 1px) solid transparent;
+}
+
+.handrive-inline-copy-feedback.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.handrive-inline-copy-feedback.is-visible.is-placement-left,
+.handrive-inline-copy-feedback.is-visible.is-placement-right {
+    transform: translateX(0);
 }
 
 .handrive-icon-btn {
@@ -4549,7 +4807,8 @@ body.handrive-popup-dragging {
     cursor: pointer;
     text-decoration: none;
     box-sizing: border-box;
-    transition: background-color 0.1s ease, color 0.1s ease;
+    translate: 0 0;
+    transition: background-color 0.1s ease, color 0.1s ease, translate 0.1s ease;
 }
 .handrive-icon-btn:hover,
 .handrive-icon-btn:focus-visible {
@@ -7889,7 +8148,8 @@ body.handrive-modal-open {
 }
 
 .handrive-tree-browser-list .handrive-item:has(> .handrive-tree-browser-row:not(.is-empty):hover),
-.handrive-tree-browser-list .handrive-item:has(> .handrive-tree-browser-row:not(.is-empty):focus-visible) {
+.handrive-tree-browser-list .handrive-item:has(> .handrive-tree-browser-row:not(.is-empty):focus-visible),
+.handrive-tree-browser-list .handrive-item:has(> .handrive-tree-browser-row:not(.is-empty):active) {
     --handrive-tree-browser-prefix-bg: var(--handrive-hover-button);
 }
 
@@ -7923,6 +8183,8 @@ body.handrive-modal-open {
     font: inherit;
     box-sizing: border-box;
     appearance: none;
+    translate: 0 0;
+    transition: background-color 0.15s ease, translate 0.15s ease;
 }
 
 .handrive-tree-browser-row.has-tree-prefix,
@@ -7940,6 +8202,38 @@ body.handrive-modal-open {
 .handrive-save-folder-row:focus-visible {
     outline: none;
     background: var(--handrive-hover-button);
+    translate: 0 var(--btn-template-hover-lift, -1px);
+}
+
+.handrive-tree-browser-row:not(.is-empty):active:not(:has(:is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    label,
+    [role="button"],
+    [tabindex],
+    [contenteditable="true"],
+    .ui-btn,
+    .handrive-icon-btn
+):active)),
+.handrive-save-folder-row:not(.is-empty):active:not(:has(:is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    label,
+    [role="button"],
+    [tabindex],
+    [contenteditable="true"],
+    .ui-btn,
+    .handrive-icon-btn
+):active)) {
+    outline: none;
+    background: var(--handrive-hover-button);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .handrive-tree-browser-row.is-selected,

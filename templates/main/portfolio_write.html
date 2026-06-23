@@ -96,14 +96,42 @@
 }
 
 .portfolio-write-public-url {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
     padding: 0 12px 12px;
     color: var(--handrive-text-muted);
     font-size: 13px;
+}
+
+.portfolio-write-public-url-main {
+    min-width: 0;
+    flex: 1 1 auto;
     word-break: break-all;
 }
 
 .portfolio-write-public-url a {
     color: var(--handrive-link);
+}
+
+.portfolio-write-public-url-delete-form {
+    display: flex;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+    margin: 0 0 0 auto;
+    padding: 0;
+}
+
+.portfolio-write-cover-delete-btn {
+    --handrive-icon-btn-size: 34px;
+    --handrive-icon-btn-icon-size: 18px;
+    color: var(--handrive-danger);
+}
+
+.portfolio-write-cover-delete-btn:hover,
+.portfolio-write-cover-delete-btn:focus-visible {
+    color: var(--handrive-danger);
 }
 
 .portfolio-write-status {
@@ -338,19 +366,27 @@
             </form>
             {% if selected_cover_letter and cover_letter_mode != 'add' %}
             <div class="portfolio-write-public-url">
-                공개 URL:
-                <a href="{% url 'main:portfolio_user_cover_letter_lang' ui_lang=ui_lang user_id=request.user.username company_slug=selected_cover_letter.slug %}" target="_blank" rel="noopener noreferrer">
-                    {% url 'main:portfolio_user_cover_letter_lang' ui_lang=ui_lang user_id=request.user.username company_slug=selected_cover_letter.slug %}
-                </a>
-            </div>
-            <form method="post" class="portfolio-write-form" style="padding-top: 0;">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="delete_cover_letter" />
-                <input type="hidden" name="cover_letter_id" value="{{ selected_cover_letter.id }}" />
-                <div class="portfolio-write-actions">
-                    <button class="ui-btn" type="submit">선택 자기소개서 삭제</button>
+                <div class="portfolio-write-public-url-main">
+                    공개 URL:
+                    <a href="{% url 'main:portfolio_user_cover_letter_lang' ui_lang=ui_lang user_id=request.user.username company_slug=selected_cover_letter.slug %}" target="_blank" rel="noopener noreferrer">
+                        {% url 'main:portfolio_user_cover_letter_lang' ui_lang=ui_lang user_id=request.user.username company_slug=selected_cover_letter.slug %}
+                    </a>
                 </div>
-            </form>
+                <form method="post" class="portfolio-write-public-url-delete-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete_cover_letter" />
+                    <input type="hidden" name="cover_letter_id" value="{{ selected_cover_letter.id }}" />
+                    <button class="handrive-icon-btn portfolio-write-cover-delete-btn" type="submit" aria-label="선택 자기소개서 삭제" title="선택 자기소개서 삭제">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                            <path d="M3 6h18"></path>
+                            <path d="M8 6V4h8v2"></path>
+                            <path d="M19 6l-1 14H6L5 6"></path>
+                            <path d="M10 11v6"></path>
+                            <path d="M14 11v6"></path>
+                        </svg>
+                    </button>
+                </form>
+            </div>
             {% endif %}
         </div>
     </section>

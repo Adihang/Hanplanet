@@ -9,7 +9,35 @@
             return;
         }
 
+        const getCollapsedNavLinksScroller = function (target) {
+            if (!target || !target.closest || !nav.classList.contains('nav-auto-collapsed')) {
+                return null;
+            }
+            const scroller = target.closest('.ui-nav-links');
+            if (!scroller || !nav.contains(scroller)) {
+                return null;
+            }
+            return scroller;
+        };
+
+        const shouldAllowNavLinksHorizontalScroll = function (event) {
+            const scroller = getCollapsedNavLinksScroller(event.target);
+            if (!scroller || scroller.scrollWidth <= scroller.clientWidth) {
+                return false;
+            }
+            if (event.type === 'touchmove') {
+                return true;
+            }
+            if (event.type === 'wheel') {
+                return Math.abs(event.deltaX || 0) > Math.abs(event.deltaY || 0);
+            }
+            return false;
+        };
+
         const blockNavInternalScroll = function (event) {
+            if (shouldAllowNavLinksHorizontalScroll(event)) {
+                return;
+            }
             if (event.cancelable) {
                 event.preventDefault();
             }
@@ -18,6 +46,11 @@
         const resetNavInternalScroll = function (event) {
             const target = event.target;
             if (!(target instanceof HTMLElement) || target === nav) {
+                return;
+            }
+
+            if (getCollapsedNavLinksScroller(target)) {
+                target.scrollTop = 0;
                 return;
             }
 
@@ -35,6 +68,7 @@
         const navCollapse = nav.querySelector('.ui-nav-collapse');
         const navControls = navCollapse ? navCollapse.querySelector('.ui-controls-stack') : null;
         const navToggler = nav.querySelector('.ui-nav-toggler');
+        const installButton = nav.querySelector('[data-pwa-install]');
 
         if (!navContainer || !navBrandGroup || !navLinks || !navCollapse || !navToggler) {
             return;
@@ -43,6 +77,31 @@
         const throttledHandleNavbarScroll = options && typeof options.throttledHandleNavbarScroll === 'function'
             ? options.throttledHandleNavbarScroll
             : null;
+        const installButtonHomeParent = installButton ? installButton.parentNode : null;
+        const installButtonHomeNextSibling = installButton ? installButton.nextSibling : null;
+
+        const placeInstallButtonInline = function () {
+            if (!installButton || !installButtonHomeParent) {
+                return;
+            }
+            const referenceNode = installButtonHomeNextSibling && installButtonHomeNextSibling.parentNode === installButtonHomeParent
+                ? installButtonHomeNextSibling
+                : navControls;
+            if (installButton.parentNode === installButtonHomeParent && installButton.nextSibling === referenceNode) {
+                return;
+            }
+            installButtonHomeParent.insertBefore(installButton, referenceNode || null);
+        };
+
+        const placeInstallButtonBesideToggler = function () {
+            if (!installButton) {
+                return;
+            }
+            if (installButton.parentNode === navContainer && installButton.nextSibling === navToggler) {
+                return;
+            }
+            navContainer.insertBefore(installButton, navToggler);
+        };
 
         const forceClearNavContainerDecorations = function () {
             const resetTargets = [
@@ -112,6 +171,20 @@
             return width;
         };
 
+        const measureOuterWidth = function (element) {
+            if (!element) {
+                return 0;
+            }
+            const style = window.getComputedStyle(element);
+            if (!style || style.display === 'none' || style.visibility === 'hidden') {
+                return 0;
+            }
+            const rect = element.getBoundingClientRect();
+            const marginLeft = parseFloat(style.marginLeft || '0') || 0;
+            const marginRight = parseFloat(style.marginRight || '0') || 0;
+            return Math.ceil(rect.width + marginLeft + marginRight);
+        };
+
         const getMeasuredNavItemsWidth = function () {
             const linksWidth = measureInlineWidth(navLinks, {
                 display: 'inline-flex',
@@ -127,8 +200,9 @@
                 alignItems: 'flex-end',
                 gap: '0'
             }) : 0;
+            const installButtonWidth = measureOuterWidth(installButton);
 
-            return linksWidth + controlsWidth;
+            return linksWidth + controlsWidth + installButtonWidth;
         };
 
         const forceCloseNavMenu = function () {
@@ -150,6 +224,7 @@
         const updateNavMode = function () {
             rafId = null;
 
+            placeInstallButtonInline();
             nav.classList.remove('nav-auto-collapsed');
             forceCloseNavMenu();
 
@@ -161,7 +236,10 @@
 
             if (shouldCollapseByOverlap) {
                 nav.classList.add('nav-auto-collapsed');
+                placeInstallButtonBesideToggler();
                 forceCloseNavMenu();
+            } else {
+                placeInstallButtonInline();
             }
 
             forceClearNavContainerDecorations();
@@ -206,7 +284,6 @@
             document.fonts.ready.then(scheduleNavModeUpdate).catch(function () {});
         }
 
-        const installButton = nav.querySelector('[data-pwa-install]');
         if (installButton && window.MutationObserver) {
             const installButtonObserver = new MutationObserver(scheduleNavModeUpdate);
             installButtonObserver.observe(installButton, {

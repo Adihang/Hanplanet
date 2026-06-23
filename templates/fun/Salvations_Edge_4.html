@@ -88,7 +88,16 @@
                 "answer": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_answer' %}",
                 "create": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_create' %}",
                 "loopError": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_loop_error' %}",
-                "alreadyMatches": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_already_matches' %}"
+                "alreadyMatches": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_already_matches' %}",
+                "fireteamTitle": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_title' %}",
+                "fireteamSearchPlaceholder": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_search_placeholder' %}",
+                "fireteamSearchButton": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_search_button' %}",
+                "fireteamRequired": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_required' %}",
+                "fireteamNoMembers": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_no_members' %}",
+                "fireteamConfigMissing": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_config_missing' %}",
+                "fireteamProfileNotFound": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_profile_not_found' %}",
+                "fireteamUnavailable": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_unavailable' %}",
+                "fireteamNoEquipment": "{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_no_equipment' %}"
             }
         </script>
         <script src="{% static_v 'js/common/site_nav_responsive_manager.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
@@ -133,36 +142,85 @@
             })();
         </script>
         {% include "partials/navbar.html" %}
-        <div class="Salvations_Edge_4">
+        <div class="Salvations_Edge_4 site-loading-host">
             <div class="content">
-                <h1 class="main_title" id="main_title1">{% include_trimmed 'partials/ui_i18n.html' key='salvations_select_team' %}</h1>
-                <h1 class="main_title" id="main_title2"></h1>
-                <div class="select_team">
-                    <h2 class="main_text" id="team_out">{% include_trimmed 'partials/ui_i18n.html' key='salvations_outside_team' %}</h2>
-                    <h2 class="main_text" id="team_in">{% include_trimmed 'partials/ui_i18n.html' key='salvations_inside_team' %}</h2>
-                </div>
-                <div class="inside_calculator" id="inside_calculator" hidden>
-                    <div class="outside_calculator_actions">
-                        <button type="button" class="outside_action_button" id="inside_back">{% include_trimmed 'partials/ui_i18n.html' key='salvations_team_select' %}</button>
-                        <button type="button" class="outside_action_button" id="inside_reset">{% include_trimmed 'partials/ui_i18n.html' key='salvations_reset' %}</button>
+                <div class="salvations-primary">
+                    <h1 class="main_title" id="main_title1">{% include_trimmed 'partials/ui_i18n.html' key='salvations_select_team' %}</h1>
+                    <h1 class="main_title" id="main_title2"></h1>
+                    <div class="select_team">
+                        <h2 class="main_text" id="team_out">{% include_trimmed 'partials/ui_i18n.html' key='salvations_outside_team' %}</h2>
+                        <h2 class="main_text" id="team_in">{% include_trimmed 'partials/ui_i18n.html' key='salvations_inside_team' %}</h2>
                     </div>
-                    <p class="outside_help">
-                        {% include_trimmed 'partials/ui_i18n.html' key='salvations_inside_help' %}
-                    </p>
-                    <div class="inside_grid" id="inside_grid"></div>
-                    <div class="inside_result" id="inside_result"></div>
-                </div>
-                <div class="outside_calculator" id="outside_calculator" hidden>
-                    <div class="outside_calculator_actions">
-                        <button type="button" class="outside_action_button" id="outside_back">{% include_trimmed 'partials/ui_i18n.html' key='salvations_team_select' %}</button>
-                        <button type="button" class="outside_action_button" id="outside_reset">{% include_trimmed 'partials/ui_i18n.html' key='salvations_reset' %}</button>
+                    <div class="inside_calculator" id="inside_calculator" hidden>
+                        <div class="outside_calculator_actions">
+                            <button type="button" class="outside_action_button" id="inside_back">{% include_trimmed 'partials/ui_i18n.html' key='salvations_team_select' %}</button>
+                            <button type="button" class="outside_action_button" id="inside_reset">{% include_trimmed 'partials/ui_i18n.html' key='salvations_reset' %}</button>
+                        </div>
+                        <p class="outside_help">
+                            {% include_trimmed 'partials/ui_i18n.html' key='salvations_inside_help' %}
+                        </p>
+                        <div class="inside_grid" id="inside_grid"></div>
+                        <div class="inside_result" id="inside_result"></div>
                     </div>
-                    <p class="outside_help">
-                        {% include_trimmed 'partials/ui_i18n.html' key='salvations_outside_help' %}
-                    </p>
-                    <div class="outside_grid" id="outside_grid"></div>
-                    <div class="outside_result" id="outside_result"></div>
+                    <div class="outside_calculator" id="outside_calculator" hidden>
+                        <div class="outside_calculator_actions">
+                            <button type="button" class="outside_action_button" id="outside_back">{% include_trimmed 'partials/ui_i18n.html' key='salvations_team_select' %}</button>
+                            <button type="button" class="outside_action_button" id="outside_reset">{% include_trimmed 'partials/ui_i18n.html' key='salvations_reset' %}</button>
+                        </div>
+                        <p class="outside_help">
+                            {% include_trimmed 'partials/ui_i18n.html' key='salvations_outside_help' %}
+                        </p>
+                        <div class="outside_grid" id="outside_grid"></div>
+                        <div class="outside_result" id="outside_result"></div>
+                    </div>
                 </div>
+                <section
+                    class="salvations-fireteam"
+                    id="salvations_fireteam"
+                    data-fireteam-url="{% url 'main:salvations_fireteam_api_lang' ui_lang=ui_lang %}"
+                >
+                    <div class="salvations-fireteam-head">
+                        <div>
+                            <h2>{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_title' %}</h2>
+                        </div>
+                        <form class="salvations-fireteam-form" id="salvations_fireteam_form" action="#">
+                            <div class="salvations-fireteam-control">
+                                <input
+                                    type="text"
+                                    id="salvations_fireteam_query"
+                                    autocomplete="off"
+                                    inputmode="text"
+                                    placeholder="{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_search_placeholder' %}"
+                                    aria-label="{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_search_placeholder' %}"
+                                >
+                                <button
+                                    type="submit"
+                                    class="salvations-fireteam-submit-icon"
+                                    id="salvations_fireteam_submit"
+                                    aria-label="{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_search_button' %}"
+                                    title="{% include_trimmed 'partials/ui_i18n.html' key='salvations_fireteam_search_button' %}"
+                                >
+                                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                        <path d="M16 4v5a4 4 0 0 1-4 4H4"></path>
+                                        <path d="M8 9l-4 4 4 4"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="salvations-fireteam-results" id="salvations_fireteam_results" hidden></div>
+                </section>
+            </div>
+            <div class="salvations-fireteam-status" id="salvations_fireteam_status" role="status" aria-live="polite" hidden></div>
+            <div
+                class="salvations-fireteam-loading site-loading-overlay"
+                id="salvations_fireteam_loading"
+                role="status"
+                aria-live="polite"
+                aria-label="Loading"
+                hidden
+            >
+                <span class="salvations-fireteam-loading-spinner site-loading-spinner" aria-hidden="true"></span>
             </div>
         </div>
         {% include "partials/site_footer_links.html" %}

@@ -33,7 +33,8 @@
         min-height: 0;
         padding-top: 0;
         padding-bottom: 0;
-        overflow: auto;
+        container-type: size;
+        overflow: hidden;
     }
 
     .minecraft-page-layout {
@@ -45,7 +46,7 @@
         grid-template-columns: minmax(0, 1fr) max-content;
         gap: 8px;
         align-items: stretch;
-        overflow: hidden;
+        overflow: auto;
     }
 
     .minecraft-layout {
@@ -124,6 +125,7 @@
         justify-content: space-between;
         gap: 12px;
         height: 22px;
+        padding: 0 10px;
         margin-bottom: 8px;
     }
 
@@ -237,11 +239,8 @@
     }
 
     .minecraft-address {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        width: 100%;
-        padding: 8px 8px 8px 12px;
+        min-height: 52px;
+        padding: 8px 56px 8px 12px;
         border: 1px solid var(--handrive-border-soft);
         border-radius: var(--handrive-radius-sm);
         background: var(--handrive-surface-muted-strong);
@@ -251,7 +250,8 @@
     }
 
     .minecraft-address-text {
-        flex: 1 1 auto;
+        display: block;
+        width: 100%;
         min-width: 0;
         color: inherit;
         font-family: inherit;
@@ -262,32 +262,20 @@
     }
 
     .minecraft-address-copy {
-        flex: 0 0 auto;
-        display: inline-grid;
-        place-items: center;
-        width: 34px;
-        height: 34px;
-        padding: 0;
-        border: 1px solid var(--handrive-border-soft);
-        border-radius: var(--handrive-radius-sm);
-        background: var(--shared-card-bg);
-        color: var(--handrive-text-muted);
-        cursor: pointer;
-        transition: border-color 0.16s ease, color 0.16s ease, background-color 0.16s ease;
+        width: 40px;
+        height: 40px;
+        translate: 0 0;
+        transition: background 0.12s, border-color 0.12s, color 0.12s, translate 0.12s;
     }
 
-    .minecraft-address-copy:hover,
-    .minecraft-address-copy:focus-visible {
-        border-color: var(--handrive-border-strong);
-        color: var(--handrive-text-stronger);
-        background: var(--handrive-surface-muted);
-        outline: none;
+    .minecraft-address-copy:active {
+        translate: 0 var(--btn-template-active-press-depth, 1px);
     }
 
     .minecraft-address-copy svg {
         display: block;
-        width: 17px;
-        height: 17px;
+        width: 30px;
+        height: 30px;
     }
 
     .minecraft-meta {
@@ -307,32 +295,37 @@
         text-align: right;
     }
 
-    .minecraft-plugin-list {
+    .minecraft-panel-list {
         display: grid;
         flex: 1 1 auto;
-        gap: 0;
-        margin: 2px 0 0;
+        grid-auto-rows: 38px;
+        align-content: start;
+        gap: 6px;
+        margin: 0;
         padding: 0;
         min-height: 0;
+        width: 100%;
+        box-sizing: border-box;
         overflow: auto;
         list-style: none;
-        border: 1px solid var(--handrive-border-soft);
-        border-radius: var(--handrive-radius-sm);
-        background: var(--handrive-surface-muted);
     }
 
-    .minecraft-plugin-item {
+    .minecraft-panel-list:empty {
+        display: none;
+    }
+
+    .minecraft-panel-list-item {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 10px;
+        gap: 12px;
+        height: 38px;
         min-height: 38px;
-        padding: 0 10px;
-        border-top: 1px solid var(--handrive-border-soft);
-    }
-
-    .minecraft-plugin-item:first-child {
-        border-top: 0;
+        padding: 0 12px;
+        box-sizing: border-box;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted);
     }
 
     .minecraft-plugin-name {
@@ -382,37 +375,8 @@
         white-space: nowrap;
     }
 
-    .minecraft-player-list {
-        display: grid;
-        flex: 1 1 auto;
-        grid-auto-rows: 38px;
-        align-content: start;
-        gap: 6px;
-        margin: 0;
-        padding: 0;
-        min-height: 0;
-        width: 100%;
-        box-sizing: border-box;
-        overflow: auto;
-        list-style: none;
-    }
-
     .minecraft-player-list:empty {
         display: none;
-    }
-
-    .minecraft-player-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        height: 38px;
-        min-height: 38px;
-        padding: 0 12px;
-        box-sizing: border-box;
-        border: 1px solid var(--handrive-border-soft);
-        border-radius: var(--handrive-radius-sm);
-        background: var(--handrive-surface-muted);
     }
 
     .minecraft-player-name {
@@ -437,6 +401,11 @@
     .minecraft-player-item.is-online .minecraft-player-dot {
         background: #2f9d58;
         box-shadow: 0 0 0 3px color-mix(in srgb, #2f9d58 18%, transparent);
+    }
+
+    .minecraft-player-item.is-current-account {
+        border-width: 2px;
+        border-color: var(--handrive-border-heavy);
     }
 
     .minecraft-player-state {
@@ -532,6 +501,9 @@
 
     .minecraft-log-level,
     .minecraft-log-message.is-command,
+    .minecraft-log-plugin,
+    .minecraft-log-player,
+    .minecraft-log-command,
     .minecraft-log-marker {
         font-weight: 700;
     }
@@ -560,6 +532,37 @@
 
     .minecraft-log-message.is-command {
         color: #475569;
+    }
+
+    .minecraft-log-plugin {
+        color: #0f766e;
+    }
+
+    .minecraft-log-player {
+        color: #0369a1;
+    }
+
+    .minecraft-log-event {
+        color: #15803d;
+        font-weight: 700;
+    }
+
+    .minecraft-log-command {
+        color: #7c2d12;
+    }
+
+    .minecraft-log-location,
+    .minecraft-log-value {
+        color: #6d28d9;
+    }
+
+    .minecraft-log-path,
+    .minecraft-log-url {
+        color: #2563eb;
+    }
+
+    .minecraft-log-message.is-stack {
+        color: #b91c1c;
     }
 
     .minecraft-log-marker {
@@ -591,6 +594,36 @@
 
     body.theme-dark .minecraft-log-message.is-command {
         color: #cbd5e1;
+    }
+
+    body.theme-dark .minecraft-log-plugin {
+        color: #5eead4;
+    }
+
+    body.theme-dark .minecraft-log-player {
+        color: #7dd3fc;
+    }
+
+    body.theme-dark .minecraft-log-event {
+        color: #86efac;
+    }
+
+    body.theme-dark .minecraft-log-command {
+        color: #fdba74;
+    }
+
+    body.theme-dark .minecraft-log-location,
+    body.theme-dark .minecraft-log-value {
+        color: #c4b5fd;
+    }
+
+    body.theme-dark .minecraft-log-path,
+    body.theme-dark .minecraft-log-url {
+        color: #93c5fd;
+    }
+
+    body.theme-dark .minecraft-log-message.is-stack {
+        color: #fecaca;
     }
 
     .minecraft-server-command-form {
@@ -659,24 +692,45 @@
         height: 20px;
     }
 
-    @media (max-width: 840px) {
+    @media (max-width: 840px), (orientation: portrait) {
         .minecraft-page-layout {
             grid-template-columns: 1fr;
-            grid-template-rows: minmax(100%, auto) auto;
-            height: auto;
-            min-height: 100%;
-            overflow: visible;
+            grid-template-rows: max-content max-content;
+            align-content: start;
+            align-items: start;
+            height: 100%;
+            min-height: 0;
+            overflow: auto;
         }
 
-        .minecraft-layout,
-        .minecraft-server-panel {
+        .minecraft-layout {
             height: auto;
-            min-height: 100%;
+            min-height: 0;
+            align-content: start;
+            align-items: start;
+        }
+
+        .minecraft-server-panel {
+            align-self: start;
+            height: auto;
+            min-height: 0;
+        }
+
+        .minecraft-server-panel .minecraft-map-embed-section {
+            flex: 0 0 auto;
+            aspect-ratio: auto;
+            align-self: stretch;
+            width: 100%;
+            max-width: none;
+            height: min(100cqw, 80cqh);
+            max-height: 80cqh;
+            min-height: 0;
         }
 
         .minecraft-side-layout {
             justify-self: stretch;
-            height: auto;
+            height: max-content;
+            min-height: max-content;
             width: 100%;
             min-width: 0;
             max-width: none;
@@ -702,18 +756,6 @@
 
         .minecraft-status-summary {
             white-space: normal;
-        }
-    }
-
-    @media (orientation: portrait) {
-        .minecraft-page-layout,
-        .minecraft-layout,
-        .minecraft-server-panel {
-            min-height: 0;
-        }
-
-        .minecraft-server-panel .minecraft-map-embed-section {
-            min-height: 320px;
         }
     }
 </style>
@@ -755,12 +797,18 @@
                         <span class="minecraft-server-time" id="serverTimeLabel">--:--</span>
                     </p>
                 </div>
+                <script>
+                    try {
+                        window.localStorage.setItem('bluemap-lang', JSON.stringify('{{ bluemap_language|escapejs }}'));
+                    } catch (error) {}
+                </script>
                 <section class="minecraft-map-embed-section" aria-label="{{ map_embed_title }}">
                     <iframe
                         class="minecraft-map-embed"
                         id="minecraftMapFrame"
                         src="{{ map_embed_url }}"
                         title="{{ map_embed_title }}"
+                        data-bluemap-language="{{ bluemap_language }}"
                         allowfullscreen
                         referrerpolicy="same-origin"
                     ></iframe>
@@ -776,10 +824,10 @@
                                 data-version-loading-label="{{ server_version_loading_label }}"
                             >{{ server_version_text }}</p>
                         </div>
-                        <div class="minecraft-address" data-server-address="{{ server_address }}">
+                        <div class="minecraft-address handrive-inline-copy-field" data-server-address="{{ server_address }}">
                             <code class="minecraft-address-text" id="minecraftServerAddress">{{ server_address }}</code>
                             <button
-                                class="minecraft-address-copy"
+                                class="minecraft-address-copy handrive-inline-copy-action"
                                 type="button"
                                 id="minecraftAddressCopy"
                                 aria-label="{{ server_address_copy_label }}"
@@ -787,10 +835,7 @@
                                 data-copy-label="{{ server_address_copy_label }}"
                                 data-copied-label="{{ server_address_copied_label }}"
                             >
-                                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                                    <rect x="7" y="7" width="10" height="10" rx="2"></rect>
-                                    <path d="M4 13H3a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>
-                                </svg>
+                                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="7" width="9" height="9" rx="1.5"></rect><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"></path></svg>
                             </button>
                         </div>
                     </div>
@@ -808,7 +853,7 @@
                     <h2 class="minecraft-panel-title" id="minecraft-players-title">{{ players_panel_title }}</h2>
                     <p class="minecraft-status-summary" id="playerSummary">{{ status_loading_label }}</p>
                 </div>
-                <ul class="minecraft-player-list" id="playerList"></ul>
+                <ul class="minecraft-panel-list minecraft-player-list" id="playerList"></ul>
                 <div class="minecraft-player-loading" id="playerLoading" role="status" aria-live="polite" aria-label="{{ players_loading_label }}">
                     <span class="site-loading-spinner" aria-hidden="true"></span>
                 </div>
@@ -820,9 +865,9 @@
                     <h2 class="minecraft-panel-title" id="minecraft-links-title">{{ links_panel_title }}</h2>
                 </div>
                 {% if server_plugins %}
-                <ul class="minecraft-plugin-list">
+                <ul class="minecraft-panel-list minecraft-plugin-list">
                     {% for plugin in server_plugins %}
-                    <li class="minecraft-plugin-item">
+                    <li class="minecraft-panel-list-item minecraft-plugin-item">
                         <span class="minecraft-plugin-name">{{ plugin.name }}</span>
                         {% if plugin.version %}
                         <span class="minecraft-plugin-version">{{ plugin.version }}</span>
@@ -874,6 +919,8 @@
         const serverHelpBackdropEl = document.getElementById('minecraft-server-help-backdrop');
         const serverHelpCloseEl = document.getElementById('minecraft-server-help-close-btn');
         const statusUrl = '{{ status_url }}';
+        const blueMapLanguage = normalizeBlueMapLanguage('{{ bluemap_language|escapejs }}');
+        const currentAccountUsername = normalizeMinecraftPlayerName('{{ minecraft_account_username|escapejs }}');
         const serverLogUrl = serverLogPanelEl ? serverLogPanelEl.dataset.logUrl : '';
         const serverCommandUrl = serverCommandFormEl ? serverCommandFormEl.dataset.commandUrl : '';
         let hasRenderedStatus = false;
@@ -991,6 +1038,9 @@
             const copiedLabel = addressCopyEl.dataset.copiedLabel || '';
             addressCopyEl.setAttribute('aria-label', copiedLabel);
             addressCopyEl.title = copiedLabel;
+            if (typeof window.showHandriveInlineCopyFeedback === 'function') {
+                window.showHandriveInlineCopyFeedback(addressCopyEl, 'Copied!');
+            }
             window.clearTimeout(addressCopyResetTimer);
             addressCopyResetTimer = window.setTimeout(resetAddressCopyButton, 1500);
         }
@@ -1006,6 +1056,16 @@
 
         function getCurrentThemeMode() {
             return document.body.classList.contains('theme-dark') ? 'dark' : 'light';
+        }
+
+        function normalizeBlueMapLanguage(language) {
+            return String(language || '').trim().toLowerCase() === 'en' ? 'en' : 'ko';
+        }
+
+        function setBlueMapLanguagePreference() {
+            try {
+                window.localStorage.setItem('bluemap-lang', JSON.stringify(blueMapLanguage));
+            } catch (error) {}
         }
 
         function syncBlueMapTheme() {
@@ -1025,19 +1085,45 @@
             }, window.location.origin);
         }
 
+        function syncBlueMapLanguage() {
+            if (!mapFrameEl || !mapFrameEl.contentWindow) return;
+            setBlueMapLanguagePreference();
+            try {
+                if (
+                    mapFrameEl.contentWindow.hanplanetApplyBlueMapLanguage &&
+                    typeof mapFrameEl.contentWindow.hanplanetApplyBlueMapLanguage === 'function'
+                ) {
+                    mapFrameEl.contentWindow.hanplanetApplyBlueMapLanguage(blueMapLanguage);
+                    return;
+                }
+            } catch (error) {}
+            try {
+                mapFrameEl.contentWindow.postMessage({
+                    type: 'hanplanet:language',
+                    language: blueMapLanguage
+                }, window.location.origin);
+            } catch (error) {}
+        }
+
+        function syncBlueMapEmbedSettings() {
+            syncBlueMapTheme();
+            syncBlueMapLanguage();
+        }
+
         function setupBlueMapThemeSync() {
             if (!mapFrameEl) return;
+            setBlueMapLanguagePreference();
             mapFrameEl.addEventListener('load', function () {
-                syncBlueMapTheme();
-                window.setTimeout(syncBlueMapTheme, 500);
-                window.setTimeout(syncBlueMapTheme, 1500);
+                syncBlueMapEmbedSettings();
+                window.setTimeout(syncBlueMapEmbedSettings, 500);
+                window.setTimeout(syncBlueMapEmbedSettings, 1500);
             });
             window.addEventListener('hanplanet:themechange', syncBlueMapTheme);
             window.addEventListener('message', function (event) {
                 if (event.origin !== window.location.origin) return;
                 const data = event.data || {};
                 if (data.type !== 'hanplanet:bluemap-ready') return;
-                syncBlueMapTheme();
+                syncBlueMapEmbedSettings();
             });
             if (window.MutationObserver) {
                 new MutationObserver(syncBlueMapTheme).observe(document.body, {
@@ -1045,7 +1131,7 @@
                     attributeFilter: ['class']
                 });
             }
-            syncBlueMapTheme();
+            syncBlueMapEmbedSettings();
         }
 
         function renderServerClock() {
@@ -1110,6 +1196,14 @@
             });
         }
 
+        function normalizeMinecraftPlayerName(name) {
+            return String(name || '').trim().toLowerCase();
+        }
+
+        function isCurrentAccountPlayer(player) {
+            return Boolean(currentAccountUsername && normalizeMinecraftPlayerName(player && player.name) === currentAccountUsername);
+        }
+
         function escapeLogHtml(value) {
             return String(value || '').replace(/[&<>"']/g, function (char) {
                 return {
@@ -1130,26 +1224,76 @@
             return 'is-info';
         }
 
+        function getServerLogTokenClass(matchParts) {
+            if (matchParts.plugin) return 'minecraft-log-plugin';
+            if (matchParts.dimension || matchParts.location) return 'minecraft-log-location';
+            if (matchParts.command) return 'minecraft-log-command';
+            if (matchParts.url) return 'minecraft-log-url';
+            if (matchParts.path) return 'minecraft-log-path';
+            if (matchParts.uuid || matchParts.address || matchParts.value || matchParts.quoted) return 'minecraft-log-value';
+            return '';
+        }
+
+        function renderServerLogInlineText(text) {
+            const rawText = String(text || '');
+            const tokenPattern = /(?<plugin>\[[A-Za-z][A-Za-z0-9_. -]{0,40}\])|(?<dimension>\[minecraft:[^\]]+\])|(?<url>https?:\/\/[^\s)]+)|(?<path>\/(?:Users|Volumes|Library|tmp|var)\/[^\s)]+)|(?<command>\/[A-Za-z][A-Za-z0-9:_-]*(?:\s+(?:"[^"]*"|'[^']*'|[A-Za-z0-9:_./=-]+)){0,5})|(?<uuid>\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b)|(?<address>\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b)|(?<location>\(\[minecraft:[^\]]+\][^)]+\))|(?<value>\b\d+(?:\.\d+)?\s?(?:ms|s|seconds?|builds?|chunks?|%)\b|\bv?\d+(?:\.\d+){1,3}(?:[-+][0-9A-Za-z.-]+)?\b)|(?<quoted>"[^"]*"|'[^']*')/gi;
+            let rendered = '';
+            let cursor = 0;
+            rawText.replace(tokenPattern, function (match) {
+                const offset = arguments[arguments.length - 3];
+                const groups = arguments[arguments.length - 1] || {};
+                if (offset < cursor) return match;
+                rendered += escapeLogHtml(rawText.slice(cursor, offset));
+                const tokenClass = getServerLogTokenClass(groups);
+                rendered += tokenClass
+                    ? '<span class="' + tokenClass + '">' + escapeLogHtml(match) + '</span>'
+                    : escapeLogHtml(match);
+                cursor = offset + match.length;
+                return match;
+            });
+            rendered += escapeLogHtml(rawText.slice(cursor));
+            return rendered;
+        }
+
+        function renderServerLogPlayerEvent(rawMessage) {
+            const uuidMatch = rawMessage.match(/^(UUID of player )([A-Za-z0-9_]{1,16})( is )([0-9a-f-]{36})$/i);
+            if (uuidMatch) {
+                return escapeLogHtml(uuidMatch[1]) +
+                    '<span class="minecraft-log-player">' + escapeLogHtml(uuidMatch[2]) + '</span>' +
+                    escapeLogHtml(uuidMatch[3]) +
+                    '<span class="minecraft-log-value">' + escapeLogHtml(uuidMatch[4]) + '</span>';
+            }
+
+            const eventMatch = rawMessage.match(/^([A-Za-z0-9_]{1,16})(\[[^\]]+\])? (joined the game|left the game|lost connection:|issued server command:|logged in with entity id)(.*)$/i);
+            if (!eventMatch) return '';
+            return '<span class="minecraft-log-player">' + escapeLogHtml(eventMatch[1]) + '</span>' +
+                (eventMatch[2] ? renderServerLogInlineText(eventMatch[2]) : '') +
+                ' <span class="minecraft-log-event">' + escapeLogHtml(eventMatch[3]) + '</span>' +
+                renderServerLogInlineText(eventMatch[4] || '');
+        }
+
         function renderServerLogMessage(message) {
             const rawMessage = String(message || '');
             const trimmedMessage = rawMessage.trim();
             let messageClass = 'minecraft-log-message';
-            if (/^(Unknown|Incorrect|Expected|Invalid|No such|Could not|Can(?:not|'t)|Failed|Error)\b/i.test(trimmedMessage)) {
+            if (/^(Caused by:|Exception|java\.|org\.|com\.|at\s+|\.\.\.\s+\d+\s+more)/i.test(trimmedMessage)) {
+                messageClass += ' is-error is-stack';
+            } else if (/^(Unknown|Incorrect|Expected|Invalid|No such|Could not|Can(?:not|'t)|Failed|Error)\b/i.test(trimmedMessage)) {
                 messageClass += ' is-error';
-            } else if (/^(Usage:|Found the following|Did you mean)\b/i.test(trimmedMessage)) {
+            } else if (/^(WARNING:|WARN\b|Usage:|Found the following|Did you mean)\b/i.test(trimmedMessage)) {
                 messageClass += ' is-warning';
-            } else if (/^(Set |Saved|Reload complete|Whitelist|Teleported|Gave|Summoned|Successfully)\b/i.test(trimmedMessage)) {
+            } else if (/^(Set |Saved|Reload complete|Whitelist|Teleported|Gave|Summoned|Successfully|Done |Loaded!|WebServer started)\b/i.test(trimmedMessage)) {
                 messageClass += ' is-success';
             }
-            return '<span class="' + messageClass + '">' + escapeLogHtml(rawMessage) + '</span>';
+            return '<span class="' + messageClass + '">' + (renderServerLogPlayerEvent(rawMessage) || renderServerLogInlineText(rawMessage)) + '</span>';
         }
 
         function renderServerLogCommandLine(line) {
             const markerIndex = line.indexOf('<--[HERE]');
             if (markerIndex === -1) {
-                return '<span class="minecraft-log-message is-command">' + escapeLogHtml(line) + '</span>';
+                return '<span class="minecraft-log-message is-command">' + renderServerLogInlineText(line) + '</span>';
             }
-            return '<span class="minecraft-log-message is-command">' + escapeLogHtml(line.slice(0, markerIndex)) + '</span>' +
+            return '<span class="minecraft-log-message is-command">' + renderServerLogInlineText(line.slice(0, markerIndex)) + '</span>' +
                 '<span class="minecraft-log-marker">' + escapeLogHtml(line.slice(markerIndex)) + '</span>';
         }
 
@@ -1212,7 +1356,14 @@
             emptyEl.hidden = true;
             listEl.innerHTML = players.map((player) => {
                 const isOnline = Boolean(player.online);
-                return '<li class="minecraft-player-item ' + (isOnline ? 'is-online' : 'is-offline') + '">' +
+                const isCurrentAccount = isCurrentAccountPlayer(player);
+                const itemClass = [
+                    'minecraft-panel-list-item',
+                    'minecraft-player-item',
+                    isOnline ? 'is-online' : 'is-offline',
+                    isCurrentAccount ? 'is-current-account' : ''
+                ].filter(Boolean).join(' ');
+                return '<li class="' + itemClass + '">' +
                     '<span class="minecraft-player-name"><span class="minecraft-player-dot" aria-hidden="true"></span>' + escapeHtml(player.name) + '</span>' +
                     '<span class="minecraft-player-state">' + (isOnline ? labels.online : labels.offline) + '</span>' +
                     '</li>';

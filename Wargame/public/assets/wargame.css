@@ -1,6 +1,7 @@
 :root {
     color-scheme: light dark;
     --btn-template-radius: 8px;
+    --btn-template-active-press-depth: 1px;
     --btn-template-transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
@@ -422,6 +423,16 @@ body.wargame-page.page {
     font: inherit;
     font-weight: 800;
     cursor: pointer;
+    transform: translateY(0);
+    transition: var(--btn-template-transition);
+}
+
+.svc-panel button:active,
+.svc-login-card button:active {
+    border-color: var(--site-btn-primary-hover-border);
+    background: var(--site-btn-primary-hover-bg);
+    color: var(--site-btn-primary-hover-text);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .svc-sensitive {
@@ -1181,6 +1192,13 @@ h2 {
     transform: translateY(-1px);
 }
 
+.layout button:active {
+    border-color: var(--site-btn-primary-hover-border);
+    background: var(--site-btn-primary-hover-bg);
+    color: var(--site-btn-primary-hover-text);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
+}
+
 
 .board {
     display: grid;
@@ -1404,6 +1422,13 @@ body.wargame-page.theme-dark .tag-badge {
     background: var(--site-btn-primary-hover-bg);
     color: var(--site-btn-primary-hover-text);
     border-color: var(--site-btn-primary-hover-border);
+}
+
+.lab-link:active {
+    background: var(--site-btn-primary-hover-bg);
+    color: var(--site-btn-primary-hover-text);
+    border-color: var(--site-btn-primary-hover-border);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .artifact-card {

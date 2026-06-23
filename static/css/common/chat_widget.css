@@ -189,11 +189,18 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    transform: translateY(0);
+    transition: background-color 0.15s ease, transform 0.15s ease;
 }
 
 .chat-input button:hover,
 .chat-input button:focus-visible {
     background: var(--chat-send-hover-bg);
+}
+
+.chat-input button:active {
+    background: var(--chat-send-hover-bg);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 body.portfolio-page .chat-widget,
@@ -208,7 +215,8 @@ body.portfolio-page .chat-input button {
         background-color 0.62s cubic-bezier(0.22, 1, 0.36, 1),
         color 0.52s cubic-bezier(0.22, 1, 0.36, 1),
         border-color 0.52s cubic-bezier(0.22, 1, 0.36, 1),
-        box-shadow 0.62s cubic-bezier(0.22, 1, 0.36, 1);
+        box-shadow 0.62s cubic-bezier(0.22, 1, 0.36, 1),
+        transform 0.15s ease;
 }
 
 body.portfolio-page.theme-dark .chat-widget {

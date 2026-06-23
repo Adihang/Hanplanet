@@ -80,6 +80,16 @@
 {% elif key == "salvations_create" %}{% if ui_lang|default:'ko' == 'en' %}Create{% else %}생성{% endif %}
 {% elif key == "salvations_loop_error" %}{% if ui_lang|default:'ko' == 'en' %}A calculation loop occurred. Check the input combination.{% else %}계산 중 순환이 발생했습니다. 입력 조합을 다시 확인하세요.{% endif %}
 {% elif key == "salvations_already_matches" %}{% if ui_lang|default:'ko' == 'en' %}Already matches the final target.{% else %}이미 최종 목표와 일치합니다.{% endif %}
+{% elif key == "salvations_fireteam_title" %}{% if ui_lang|default:'ko' == 'en' %}Verity Fireteam Viewer{% else %}화력팀 장비 보기{% endif %}
+{% elif key == "salvations_fireteam_search_placeholder" %}Profile#1234
+{% elif key == "salvations_fireteam_search_button" %}{% if ui_lang|default:'ko' == 'en' %}Go{% else %}검색{% endif %}
+{% elif key == "salvations_fireteam_loading" %}{% if ui_lang|default:'ko' == 'en' %}Fetching loadouts...{% else %}장비를 불러오는 중...{% endif %}
+{% elif key == "salvations_fireteam_required" %}{% if ui_lang|default:'ko' == 'en' %}Enter a Bungie profile in the Profile#1234 format.{% else %}프로필#1234 형식의 Bungie 프로필을 입력하세요.{% endif %}
+{% elif key == "salvations_fireteam_no_members" %}{% if ui_lang|default:'ko' == 'en' %}No fireteam members were found.{% else %}화력팀 멤버를 찾지 못했습니다.{% endif %}
+{% elif key == "salvations_fireteam_config_missing" %}{% if ui_lang|default:'ko' == 'en' %}Bungie API key is not configured on the server.{% else %}서버에 Bungie API 키가 설정되어 있지 않습니다.{% endif %}
+{% elif key == "salvations_fireteam_profile_not_found" %}{% if ui_lang|default:'ko' == 'en' %}Profile not found.{% else %}프로필을 찾지 못했습니다.{% endif %}
+{% elif key == "salvations_fireteam_unavailable" %}{% if ui_lang|default:'ko' == 'en' %}Could not load fireteam data. Check the profile or try again later.{% else %}화력팀 데이터를 불러오지 못했습니다. 프로필을 확인하거나 잠시 후 다시 시도하세요.{% endif %}
+{% elif key == "salvations_fireteam_no_equipment" %}{% if ui_lang|default:'ko' == 'en' %}No equipment data is available.{% else %}표시할 장비 데이터가 없습니다.{% endif %}
 {% elif key == "root_footer_purpose" %}{% if ui_lang|default:'ko' == 'en' %}Hanplanet provides HanDrive for file upload, organization, preview, editing, and sharing; Google Picker-selected Drive items are shown and managed only with user permission.{% else %}Hanplanet은 HanDrive의 파일 업로드, 정리, 미리보기, 편집, 공유를 제공하며, Google Picker로 선택한 Drive 항목만 사용자 허용 시 표시하고 관리합니다.{% endif %}
 {% elif key == "network_mlab_footer_purpose" %}{% if ui_lang|default:'ko' == 'en' %}M-Lab NDT7 speed tests run only when you press the speed button. During a test, your public IP address and measurement results are sent to M-Lab and may be stored or published as public research data under M-Lab policy. GPS country/city lookup runs only after you press GPS and sends rounded coordinates to OpenStreetMap Nominatim.{% else %}M-Lab NDT7 인터넷 속도 측정은 사용자가 속도 측정 버튼을 누를 때만 실행됩니다. 측정 중 공인 IP와 측정 결과가 M-Lab에 전송되며, M-Lab 정책에 따라 공개 연구 데이터로 저장 또는 공개될 수 있습니다. GPS 국가/도시 조회는 GPS를 누른 뒤에만 실행되며 반올림된 좌표를 OpenStreetMap Nominatim에 조회합니다.{% endif %}
 {% elif key == "login_hint_shortcuts" %}{% if ui_lang|default:'ko' == 'en' %}Sign in to save personal shortcuts.{% else %}로그인하면 개인 바로가기를 저장할 수 있습니다.{% endif %}

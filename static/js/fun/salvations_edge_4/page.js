@@ -111,12 +111,23 @@ document.addEventListener('DOMContentLoaded', function() {
     const outsideResult = document.getElementById('outside_result');
     const outsideBack = document.getElementById('outside_back');
     const outsideReset = document.getElementById('outside_reset');
+    const salvationsRoot = document.querySelector('.Salvations_Edge_4');
+    const fireteamRoot = document.getElementById('salvations_fireteam');
+    const fireteamForm = document.getElementById('salvations_fireteam_form');
+    const fireteamQueryInput = document.getElementById('salvations_fireteam_query');
+    const fireteamSubmit = document.getElementById('salvations_fireteam_submit');
+    const fireteamLoading = document.getElementById('salvations_fireteam_loading');
+    const fireteamStatus = document.getElementById('salvations_fireteam_status');
+    const fireteamResults = document.getElementById('salvations_fireteam_results');
 
     let insideSelected = buildEmptySelection();
     let outsideSelected = buildEmptySelection();
     let insideGuideShape = '';
     let insideGuideJackpotCount = '';
     let insideGuideSelfJackpot = '';
+    let fireteamAbortController = null;
+    let fireteamPipSession = null;
+    const fireteamPipImageCache = new Map();
 
     function buildEmptySelection() {
         return { left: '', middle: '', right: '' };
@@ -142,8 +153,14 @@ document.addEventListener('DOMContentLoaded', function() {
         renderOutsideCalculator();
     }
 
+    function setFireteamVisible(isVisible) {
+        if (!fireteamRoot) return;
+        fireteamRoot.hidden = !isVisible;
+    }
+
     function showTeamSelection() {
         setCalculatorActive(false);
+        setFireteamVisible(true);
         resetInsideCalculatorState();
         resetOutsideState();
         insideCalculator.hidden = true;
@@ -155,6 +172,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function showOutsideCalculator() {
         setCalculatorActive(true);
+        setFireteamVisible(false);
         selectTeam.style.display = 'none';
         insideCalculator.hidden = true;
         outsideCalculator.hidden = false;
@@ -165,6 +183,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function showInsideCalculator() {
         setCalculatorActive(true);
+        setFireteamVisible(false);
         selectTeam.style.display = 'none';
         insideCalculator.hidden = false;
         outsideCalculator.hidden = true;
@@ -720,6 +739,444 @@ document.addEventListener('DOMContentLoaded', function() {
         renderSolution(endSolution, status);
     }
 
+    function setFireteamBusy(isBusy) {
+        if (fireteamRoot) {
+            fireteamRoot.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+        }
+        if (salvationsRoot) {
+            salvationsRoot.classList.toggle('is-loading', isBusy);
+            salvationsRoot.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+        }
+        if (fireteamLoading) {
+            fireteamLoading.hidden = !isBusy;
+        }
+        if (fireteamSubmit) {
+            fireteamSubmit.disabled = isBusy;
+        }
+    }
+
+    function setFireteamStatus(message, isError) {
+        if (!fireteamStatus) return;
+        const hasMessage = Boolean(message);
+        fireteamStatus.hidden = !hasMessage;
+        fireteamStatus.textContent = hasMessage ? message : '';
+        fireteamStatus.classList.toggle('is-error', Boolean(isError));
+    }
+
+    function clearFireteamResults() {
+        if (fireteamResults) {
+            fireteamResults.innerHTML = '';
+            fireteamResults.hidden = true;
+        }
+    }
+
+    function createManualFireteamCanvasStream(canvas, fallbackFrameRate) {
+        let stream = canvas.captureStream(0);
+        let track = stream.getVideoTracks()[0] || null;
+        if (track && typeof track.requestFrame === 'function') {
+            return { stream, track };
+        }
+        stream.getTracks().forEach(streamTrack => streamTrack.stop());
+        stream = canvas.captureStream(fallbackFrameRate || 1);
+        track = stream.getVideoTracks()[0] || null;
+        return { stream, track };
+    }
+
+    function requestFireteamPipFrame() {
+        const track = fireteamPipSession && fireteamPipSession.track;
+        if (!track || typeof track.requestFrame !== 'function') return;
+        try {
+            track.requestFrame();
+        } catch (error) {
+            // Some browsers throw while the PiP surface is transitioning.
+        }
+    }
+
+    function closeFireteamPictureInPicture() {
+        if (!fireteamPipSession) return;
+        const session = fireteamPipSession;
+        fireteamPipSession = null;
+        if (session.video) {
+            try {
+                session.video.srcObject = null;
+                session.video.removeAttribute('src');
+                session.video.load();
+            } catch (error) {
+                // Ignore cleanup failures on detached media elements.
+            }
+            session.video.remove();
+        }
+        if (session.stream) {
+            session.stream.getTracks().forEach(track => track.stop());
+        }
+    }
+
+    function configureFireteamPipCanvas(width, height) {
+        if (!fireteamPipSession) return null;
+        const canvas = fireteamPipSession.canvas;
+        const nextWidth = Math.max(1, Math.round(width));
+        const nextHeight = Math.max(1, Math.round(height));
+        if (canvas.width !== nextWidth) canvas.width = nextWidth;
+        if (canvas.height !== nextHeight) canvas.height = nextHeight;
+        fireteamPipSession.context = canvas.getContext('2d');
+        return fireteamPipSession.context;
+    }
+
+    function drawFireteamPipBackground(context, canvas) {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = '#101318';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function canUseFireteamPictureInPicture() {
+        return Boolean(
+            document.pictureInPictureEnabled &&
+            typeof HTMLCanvasElement !== 'undefined' &&
+            HTMLCanvasElement.prototype.captureStream &&
+            typeof HTMLVideoElement !== 'undefined'
+        );
+    }
+
+    function ensureFireteamPictureInPictureSession() {
+        if (!canUseFireteamPictureInPicture()) {
+            throw new Error(t('fireteamUnavailable'));
+        }
+        if (fireteamPipSession) {
+            return fireteamPipSession;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 560;
+        canvas.height = 320;
+        const context = canvas.getContext('2d');
+        if (!context) {
+            throw new Error(t('fireteamUnavailable'));
+        }
+        const capture = createManualFireteamCanvasStream(canvas, 1);
+        const video = document.createElement('video');
+        video.muted = true;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.srcObject = capture.stream;
+        video.style.cssText = 'position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0;pointer-events:none;';
+        document.body.appendChild(video);
+        const metadataPromise = video.readyState >= HTMLMediaElement.HAVE_METADATA
+            ? Promise.resolve()
+            : new Promise(resolve => {
+                video.addEventListener('loadedmetadata', resolve, { once: true });
+            });
+        fireteamPipSession = {
+            canvas,
+            context,
+            metadataPromise,
+            stream: capture.stream,
+            track: capture.track,
+            video,
+        };
+        metadataPromise.then(() => {
+            requestFireteamPipFrame();
+        });
+        video.play().catch(() => {});
+        video.addEventListener('leavepictureinpicture', closeFireteamPictureInPicture, { once: true });
+        drawFireteamPipBackground(context, canvas);
+        requestFireteamPipFrame();
+        return fireteamPipSession;
+    }
+
+    function prepareFireteamPictureInPictureSession() {
+        try {
+            ensureFireteamPictureInPictureSession();
+        } catch (error) {
+            return;
+        }
+    }
+
+    async function showFireteamPictureInPicture() {
+        if (!fireteamPipSession) {
+            throw new Error(t('fireteamUnavailable'));
+        }
+        if (
+            document.pictureInPictureElement === fireteamPipSession.video
+        ) {
+            requestFireteamPipFrame();
+            return;
+        }
+        if (document.pictureInPictureElement) {
+            document.exitPictureInPicture().catch(() => {});
+        }
+
+        try {
+            if (fireteamPipSession.video.readyState < HTMLMediaElement.HAVE_METADATA) {
+                throw new Error(t('fireteamUnavailable'));
+            }
+            const playPromise = fireteamPipSession.video.play();
+            requestFireteamPipFrame();
+            const pipPromise = fireteamPipSession.video.requestPictureInPicture();
+            await playPromise;
+            await pipPromise;
+            requestFireteamPipFrame();
+        } catch (error) {
+            closeFireteamPictureInPicture();
+            throw error;
+        }
+    }
+
+    async function openFireteamPictureInPicture(groups) {
+        const visibleGroups = buildFireteamPipGroups(groups);
+        if (visibleGroups.length === 0) {
+            throw { error: 'no_members' };
+        }
+        ensureFireteamPictureInPictureSession();
+        await renderFireteamGroups(visibleGroups);
+        requestFireteamPipFrame();
+    }
+
+    function loadFireteamPipImage(src) {
+        if (!src) return Promise.resolve(null);
+        if (fireteamPipImageCache.has(src)) return fireteamPipImageCache.get(src);
+        const promise = new Promise(resolve => {
+            const image = new Image();
+            image.crossOrigin = 'anonymous';
+            image.decoding = 'async';
+            image.onload = () => resolve(image);
+            image.onerror = () => resolve(null);
+            image.src = src;
+        });
+        fireteamPipImageCache.set(src, promise);
+        return promise;
+    }
+
+    function drawFireteamPipText(context, text, x, y, maxWidth, font, color) {
+        context.font = font;
+        context.fillStyle = color;
+        context.textAlign = 'center';
+        context.textBaseline = 'top';
+        const value = String(text || '');
+        if (context.measureText(value).width <= maxWidth) {
+            context.fillText(value, x, y);
+            return;
+        }
+        let output = value;
+        while (output.length > 1 && context.measureText(output + '...').width > maxWidth) {
+            output = output.slice(0, -1);
+        }
+        context.fillText(output + '...', x, y);
+    }
+
+    function drawFireteamPipItem(context, image, x, y, size) {
+        if (image) {
+            context.drawImage(image, x, y, size, size);
+        } else {
+            context.fillStyle = '#777f8d';
+            context.font = '700 18px Inter, sans-serif';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText('-', x + size / 2, y + size / 2);
+        }
+    }
+
+    function buildFireteamPipGroups(groups) {
+        let remainingMembers = 6;
+        return (Array.isArray(groups) ? groups : []).map(group => {
+            const sourceMembers = Array.isArray(group.members) ? group.members : [];
+            const members = remainingMembers > 0 ? sourceMembers.slice(0, remainingMembers) : [];
+            remainingMembers -= members.length;
+            return {
+                className: group.className || '',
+                members,
+            };
+        }).filter(group => group.members.length > 0);
+    }
+
+    async function drawFireteamPipMember(context, member, x, y, memberWidth, itemSize, itemGap) {
+        const nameHeight = 24;
+        const equipmentTop = y + nameHeight + 8;
+        drawFireteamPipText(
+            context,
+            member.displayName || '',
+            x + memberWidth / 2,
+            y,
+            memberWidth,
+            '400 18px "Noto Sans KR", Inter, sans-serif',
+            '#e8eaed'
+        );
+
+        const equipment = Array.isArray(member.equipment) ? member.equipment : [];
+        const itemX = x + (memberWidth - itemSize) / 2;
+        for (let itemIndex = 0; itemIndex < 6; itemIndex += 1) {
+            const item = equipment[itemIndex] || {};
+            const imagePromise = item.iconUrl ? fireteamPipImageCache.get(item.iconUrl) : null;
+            const image = imagePromise ? await imagePromise : null;
+            drawFireteamPipItem(
+                context,
+                image,
+                itemX,
+                equipmentTop + itemIndex * (itemSize + itemGap),
+                itemSize
+            );
+        }
+    }
+
+    async function renderFireteamGroups(visibleGroups) {
+        if (!fireteamPipSession) return;
+        const memberWidth = 96;
+        const memberGap = 16;
+        const groupGap = 44;
+        const itemSize = 72;
+        const itemGap = 8;
+        const top = 18;
+        const classTitleHeight = 34;
+        const memberTopGap = 18;
+        const nameHeight = 24;
+        const nameEquipmentGap = 8;
+        const bottomPadding = 28;
+        const memberHeight = nameHeight + nameEquipmentGap + itemSize * 6 + itemGap * 5;
+        const groupWidths = visibleGroups.map(group => (
+            Math.max(memberWidth, group.members.length * memberWidth + Math.max(0, group.members.length - 1) * memberGap)
+        ));
+        const layoutWidth = groupWidths.reduce((total, width) => total + width, 0) + Math.max(0, groupWidths.length - 1) * groupGap;
+        const canvasWidth = Math.max(360, layoutWidth + 56);
+        const canvasHeight = top + classTitleHeight + memberTopGap + memberHeight + bottomPadding;
+        const context = configureFireteamPipCanvas(canvasWidth, canvasHeight);
+        if (!context || !fireteamPipSession) return;
+        const { canvas } = fireteamPipSession;
+        drawFireteamPipBackground(context, canvas);
+        requestFireteamPipFrame();
+
+        const iconJobs = [];
+        visibleGroups.forEach(group => {
+            group.members.forEach(member => {
+                (Array.isArray(member.equipment) ? member.equipment : []).forEach(item => {
+                    iconJobs.push(loadFireteamPipImage(item.iconUrl));
+                });
+            });
+        });
+        await Promise.all(iconJobs);
+        if (!fireteamPipSession) return;
+        drawFireteamPipBackground(context, canvas);
+
+        let groupX = (canvas.width - layoutWidth) / 2;
+        for (let groupIndex = 0; groupIndex < visibleGroups.length; groupIndex += 1) {
+            const group = visibleGroups[groupIndex];
+            const groupWidth = groupWidths[groupIndex];
+            drawFireteamPipText(
+                context,
+                group.className,
+                groupX + groupWidth / 2,
+                top,
+                groupWidth,
+                '400 18px "Noto Sans KR", Inter, sans-serif',
+                '#d8d8d8'
+            );
+            context.strokeStyle = '#8b8f99';
+            context.lineWidth = 1;
+            context.beginPath();
+            context.moveTo(groupX, top + classTitleHeight - 1);
+            context.lineTo(groupX + groupWidth, top + classTitleHeight - 1);
+            context.stroke();
+
+            const membersWidth = group.members.length * memberWidth + Math.max(0, group.members.length - 1) * memberGap;
+            const firstMemberX = groupX + (groupWidth - membersWidth) / 2;
+            for (let memberIndex = 0; memberIndex < group.members.length; memberIndex += 1) {
+                await drawFireteamPipMember(
+                    context,
+                    group.members[memberIndex],
+                    firstMemberX + memberIndex * (memberWidth + memberGap),
+                    top + classTitleHeight + memberTopGap,
+                    memberWidth,
+                    itemSize,
+                    itemGap
+                );
+            }
+            groupX += groupWidth + groupGap;
+        }
+
+        requestFireteamPipFrame();
+    }
+
+    function getFireteamErrorMessage(errorCode, fallback) {
+        const errorMap = {
+            bungie_config_missing: t('fireteamConfigMissing'),
+            invalid_profile_name: t('fireteamRequired'),
+            no_members: t('fireteamNoMembers'),
+            profile_not_found: t('fireteamProfileNotFound'),
+            character_not_found: t('fireteamNoEquipment'),
+            equipment_not_found: t('fireteamNoEquipment'),
+            bungie_disabled: t('fireteamUnavailable'),
+            upstream_http_error: t('fireteamUnavailable'),
+            upstream_unavailable: t('fireteamUnavailable'),
+            bungie_api_error: t('fireteamUnavailable'),
+        };
+        return errorMap[errorCode] || fallback || t('fireteamUnavailable');
+    }
+
+    function buildFireteamApiUrl(query) {
+        const apiUrl = fireteamRoot ? fireteamRoot.dataset.fireteamUrl : '';
+        const url = new URL(apiUrl || window.location.href, window.location.origin);
+        url.searchParams.set('q', query);
+        return url.toString();
+    }
+
+    function updateFireteamQueryParam(query) {
+        try {
+            const url = new URL(window.location.href);
+            if (query) {
+                url.searchParams.set('q', query);
+            } else {
+                url.searchParams.delete('q');
+            }
+            window.history.replaceState(null, '', url.toString());
+        } catch (error) {
+            return;
+        }
+    }
+
+    async function loadFireteam(query, pipOpenPromise) {
+        const normalizedQuery = (query || '').trim();
+        if (!normalizedQuery) {
+            closeFireteamPictureInPicture();
+            setFireteamStatus(t('fireteamRequired'), true);
+            clearFireteamResults();
+            return;
+        }
+
+        if (fireteamAbortController) {
+            fireteamAbortController.abort();
+        }
+        const currentFireteamAbortController = new AbortController();
+        fireteamAbortController = currentFireteamAbortController;
+
+        setFireteamBusy(true);
+        setFireteamStatus('', false);
+        clearFireteamResults();
+
+        try {
+            if (pipOpenPromise) {
+                await pipOpenPromise;
+            }
+            const response = await fetch(buildFireteamApiUrl(normalizedQuery), {
+                headers: { Accept: 'application/json' },
+                signal: currentFireteamAbortController.signal,
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.ok) {
+                throw payload;
+            }
+            await openFireteamPictureInPicture(payload.groups);
+            setFireteamStatus('', false);
+        } catch (error) {
+            if (error && error.name === 'AbortError') return;
+            closeFireteamPictureInPicture();
+            const errorCode = error && error.error;
+            setFireteamStatus(getFireteamErrorMessage(errorCode, error && error.message), true);
+            clearFireteamResults();
+        } finally {
+            if (fireteamAbortController === currentFireteamAbortController) {
+                setFireteamBusy(false);
+            }
+        }
+    }
+
     function handleInsidePick(button) {
         const type = button.dataset.insidePickType;
         const value = button.dataset.value;
@@ -784,6 +1241,37 @@ document.addEventListener('DOMContentLoaded', function() {
     insideReset.addEventListener('click', resetInsideCalculatorState);
     outsideBack.addEventListener('click', showTeamSelection);
     outsideReset.addEventListener('click', resetOutsideState);
+    window.addEventListener('pagehide', closeFireteamPictureInPicture);
+    if (fireteamForm && fireteamQueryInput) {
+        prepareFireteamPictureInPictureSession();
+        fireteamQueryInput.addEventListener('focus', prepareFireteamPictureInPictureSession);
+        fireteamQueryInput.addEventListener('pointerdown', prepareFireteamPictureInPictureSession, { passive: true });
+        if (fireteamSubmit) {
+            fireteamSubmit.addEventListener('pointerdown', prepareFireteamPictureInPictureSession, { passive: true });
+        }
+        fireteamForm.addEventListener('submit', event => {
+            event.preventDefault();
+            const query = fireteamQueryInput.value.trim();
+            updateFireteamQueryParam(query);
+            let pipOpenPromise = null;
+            if (query) {
+                try {
+                    ensureFireteamPictureInPictureSession();
+                    pipOpenPromise = showFireteamPictureInPicture();
+                } catch (error) {
+                    closeFireteamPictureInPicture();
+                    setFireteamStatus(error && error.message ? error.message : t('fireteamUnavailable'), true);
+                    return;
+                }
+            }
+            loadFireteam(query, pipOpenPromise);
+        });
+
+        const initialFireteamQuery = new URLSearchParams(window.location.search).get('q') || '';
+        if (initialFireteamQuery) {
+            fireteamQueryInput.value = initialFireteamQuery;
+        }
+    }
     renderInsideCalculator();
     renderOutsideCalculator();
 });

@@ -95,6 +95,8 @@
     color: var(--ui-btn-color, var(--handrive-text, #222222));
     cursor: pointer;
     font: inherit;
+    translate: 0 0;
+    transition: var(--handrive-transition-fast, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease), translate 0.15s ease;
 }
 
 .hpmail-compose-btn,
@@ -121,11 +123,23 @@
     text-align: left;
     cursor: grab;
     touch-action: manipulation;
-    transition: var(--handrive-transition-fast, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease);
+    translate: 0 0;
+    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease, translate 0.15s ease;
 }
 
-.hpmail-mailbox:active {
+.hpmail-mailbox:active:not(:has(:is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    label,
+    [role="button"],
+    [tabindex],
+    [contenteditable="true"]
+):active)) {
     cursor: grabbing;
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .hpmail-mailbox:hover,
@@ -133,6 +147,7 @@
     border-color: var(--ui-btn-hover-border, var(--handrive-border-mid, var(--handrive-border, #d0d0d0)));
     background: var(--ui-btn-hover-bg, var(--handrive-hover-soft, rgba(0, 0, 0, 0.06)));
     color: var(--ui-btn-hover-color, var(--handrive-text-stronger, var(--handrive-text, #222222)));
+    translate: 0 var(--btn-template-hover-lift, -1px);
 }
 
 .hpmail-mailbox.is-active {
@@ -179,6 +194,15 @@
     border-color: var(--ui-btn-hover-border, var(--handrive-border-mid, var(--handrive-border, #d0d0d0)));
     background: var(--ui-btn-hover-bg, var(--handrive-hover-soft, rgba(0, 0, 0, 0.06)));
     color: var(--handrive-text-stronger, var(--handrive-text, #222222));
+    translate: 0 var(--btn-template-hover-lift, -1px);
+}
+
+.hpmail-compose-btn:active,
+.hpmail-primary-btn:active,
+.hpmail-secondary-btn:active,
+.hpmail-icon-btn:active,
+.hpmail-mailbox-add:active {
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .hpmail-status {
@@ -233,10 +257,25 @@
     color: inherit;
     text-align: left;
     cursor: grab;
+    translate: 0 0;
+    transition: background-color 0.15s ease, translate 0.15s ease;
 }
 
-.hpmail-message-item:active {
+.hpmail-message-item:active:not(:has(:is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    label,
+    [role="button"],
+    [tabindex],
+    [contenteditable="true"],
+    .hpmail-icon-btn
+):active)) {
+    background: var(--handrive-row-hover-bg, rgba(0, 0, 0, 0.05));
     cursor: grabbing;
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .hpmail-message-item:hover,
@@ -494,6 +533,11 @@
 .hpmail-mailbox-context-menu button:hover,
 .hpmail-mailbox-context-menu button:focus-visible {
     background: var(--handrive-hover-soft, rgba(0, 0, 0, 0.06));
+}
+
+.hpmail-mailbox-context-menu button:active {
+    background: var(--handrive-hover-soft, rgba(0, 0, 0, 0.06));
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .hpmail-mailbox-context-menu [data-hpmail-mailbox-delete] {

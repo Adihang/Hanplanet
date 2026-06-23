@@ -139,13 +139,19 @@ body {
     line-height: 1;
     white-space: nowrap;
     cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
+    transform: translateY(0);
+    transition: background 0.15s, border-color 0.15s, transform 0.15s;
 }
 .ui-btn:hover,
 .ui-btn:focus-visible {
     background: rgba(255, 255, 255, 0.18);
     border-color: rgba(255, 255, 255, 0.5);
 }
+
+.ui-btn:active {
+    translate: 0 var(--btn-template-active-press-depth, 1px);
+}
+
 .ui-btn.ui-btn-primary {
     background: #ffd700;
     border-color: #ffd700;

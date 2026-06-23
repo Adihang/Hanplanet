@@ -154,7 +154,8 @@ body.media-tool-page {
     justify-content: center;
     padding: 0;
     cursor: pointer;
-    transition: var(--handrive-transition-fast);
+    translate: 0 0;
+    transition: var(--handrive-transition-fast), translate 0.15s ease;
 }
 
 .media-upload-mark:hover,
@@ -163,7 +164,14 @@ body.media-tool-page {
     background: var(--handrive-hover-soft);
     color: var(--handrive-text-stronger);
     outline: none;
-    transform: translateY(var(--ui-btn-hover-lift, 0));
+    translate: 0 var(--ui-btn-hover-lift, var(--btn-template-hover-lift, -1px));
+}
+
+.media-upload-mark:active {
+    border-color: var(--ui-btn-active-border, var(--btn-template-base-active-border, var(--handrive-border-mid)));
+    background: var(--ui-btn-active-bg, var(--btn-template-base-active-bg, var(--handrive-hover-soft)));
+    color: var(--ui-btn-active-color, var(--btn-template-base-active-color, var(--handrive-text-stronger)));
+    translate: 0 var(--ui-btn-active-press-depth, var(--btn-template-active-press-depth, 1px));
 }
 
 .media-upload-mark:disabled {

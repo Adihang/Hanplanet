@@ -241,6 +241,11 @@ body.ui-page .portfolio-print-btn {
     color: var(--handrive-text);
 }
 
+.handrive-toolbar-wrap:has(.root-auth-modal:not([hidden])),
+.ui-toolbar-wrap:has(.root-auth-modal:not([hidden])) {
+    z-index: var(--site-z-modal, 1400);
+}
+
 .handrive-toolbar-wrap,
 .auth-toolbar-wrap {
     background: var(--handrive-surface-toolbar);
@@ -525,6 +530,10 @@ body.handrive-write-page .handrive-toolbar {
     z-index: var(--site-z-popup);
 }
 
+.ui-auth-account-floating:has(.root-auth-modal:not([hidden])) {
+    z-index: var(--site-z-modal, 1400);
+}
+
 .ui-toolbar-right:has(.account-storage-bar) .ui-auth-account-floating,
 .handrive-toolbar-right:has(.account-storage-bar) .ui-auth-account-floating {
     grid-area: account;
@@ -608,8 +617,8 @@ body.theme-dark .account-storage-bar:focus-visible .account-storage-bar-track {
     top: calc(100% + 8px);
     right: 0;
     min-width: 300px;
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
-    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
     background-image: none;
     -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
@@ -850,8 +859,8 @@ body.theme-dark .ui-auth-account-avatar {
     min-width: 260px;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
-    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
     background-image: none;
     opacity: 1;
     padding: 0;
@@ -863,8 +872,8 @@ body.theme-dark .ui-auth-account-avatar {
 }
 
 body.theme-dark .ui-auth-account-menu {
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
-    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 46 46 46) / var(--site-modal-surface-opacity, 0.72))));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 46 46 46) / var(--site-modal-surface-opacity, 0.72))));
     background-image: none;
     opacity: 1;
 }
@@ -932,7 +941,7 @@ body.theme-dark .ui-auth-account-menu-actions .ui-auth-account-menu-item:focus-v
 .handrive-folder-modal-dialog,
 .handrive-help-modal-dialog {
     z-index: 1;
-    box-shadow: var(--handrive-shadow-md, var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28))), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
+    box-shadow: var(--handrive-shadow-md, var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28))), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)));
 }
 
 .ui-auth-account-profile {
@@ -1465,7 +1474,7 @@ body.theme-dark .handrive-help-icon-symbol {
     border: 0;
     border-radius: 0;
     background: transparent;
-    color: var(--handrive-accent, #4f8ef7);
+    color: var(--handrive-border-strong);
     appearance: none;
     -webkit-appearance: none;
     touch-action: none;
@@ -1481,7 +1490,7 @@ body.theme-dark .handrive-help-icon-symbol {
     content: "";
     position: absolute;
     pointer-events: none;
-    transition: background-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+    transition: background-color 0.15s ease;
 }
 
 .handrive-list-splitter::before {
@@ -1489,15 +1498,13 @@ body.theme-dark .handrive-help-icon-symbol {
 }
 
 .handrive-list-splitter::after {
-    opacity: 0;
-    background: color-mix(in srgb, currentColor 40%, transparent);
-    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 10%, transparent);
+    display: none;
 }
 
-.handrive-list-splitter:hover::after,
-.handrive-list-splitter:focus-visible::after,
-.handrive-list-splitter.is-active::after {
-    opacity: 1;
+.handrive-list-splitter:hover::before,
+.handrive-list-splitter:focus-visible::before,
+.handrive-list-splitter.is-active::before {
+    background: color-mix(in srgb, var(--handrive-text-stronger) 68%, var(--handrive-border-soft));
 }
 
 .handrive-list-splitter:focus-visible {
@@ -1520,6 +1527,10 @@ body.theme-dark .handrive-help-icon-symbol {
     left: 50%;
     width: 1px;
     transform: translateX(-50%);
+}
+
+.handrive-list-layout.is-landscape > .handrive-list-splitter.is-active::before {
+    width: 3px;
 }
 
 .handrive-list-layout.is-landscape > .handrive-list-splitter::after {
@@ -1546,6 +1557,10 @@ body.theme-dark .handrive-help-icon-symbol {
     left: 0;
     height: 1px;
     transform: translateY(-50%);
+}
+
+.handrive-list-layout.is-portrait > .handrive-list-splitter.is-active::before {
+    height: 3px;
 }
 
 .handrive-list-layout.is-portrait > .handrive-list-splitter::after {
@@ -2768,12 +2783,38 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     overflow: hidden;
 }
 
-.handrive-item-row:hover,
-.handrive-item-row:focus-visible {
+.handrive-item-row:not(.handrive-current-dir-row):hover,
+.handrive-item-row:not(.handrive-current-dir-row):focus-visible,
+.handrive-current-dir-row.is-detail-close-target:hover,
+.handrive-current-dir-row.is-detail-close-target:focus-visible {
     background: var(--handrive-row-hover-bg);
 }
 
-.handrive-item-row:is(:active, .is-ui-pressing):not(:has(:is(
+.handrive-item-row:focus,
+.handrive-item-row:focus-visible {
+    outline: none;
+}
+
+.handrive-item-row:not(.handrive-current-dir-row):is(:active, .is-ui-pressing):not(:has(:is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    label,
+    [role="button"],
+    [tabindex],
+    [contenteditable="true"],
+    .ui-btn,
+    .handrive-icon-btn,
+    .ui-control-link,
+    .handrive-current-dir-search-wrap,
+    .handrive-list-search-form,
+    .root-search-input,
+    .root-input-clear,
+    .root-search-submit
+):is(:active, .is-ui-pressing))),
+.handrive-current-dir-row.is-detail-close-target:is(:active, .is-ui-pressing):not(:has(:is(
     button,
     a,
     input,
@@ -3004,6 +3045,16 @@ body.theme-dark .handrive-list-pane.is-local-file-drop-target .handrive-list.is-
     border-radius: calc(var(--handrive-radius-lg) + 3px) calc(var(--handrive-radius-lg) + 3px) 0 0;
 }
 
+.handrive-list.is-file-drop-root-target .handrive-current-dir-item,
+.handrive-list.is-file-drop-root-target .handrive-current-dir-row.is-file-drop-group,
+.handrive-list.is-file-drop-root-target .handrive-current-dir-row.is-drop-target {
+    background: var(--handrive-drop-target-row-bg);
+}
+
+.handrive-list.is-file-drop-root-target .handrive-current-dir-item::after {
+    opacity: 0;
+}
+
 .handrive-current-dir-row {
     --handrive-current-dir-row-height: 48px;
     --handrive-current-dir-search-height: 38px;
@@ -3170,9 +3221,21 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     font-size: 18px;
 }
 
+.handrive-current-dir-row:not(.is-detail-close-target) {
+    cursor: default;
+}
+
 .handrive-current-dir-row .handrive-item-name-wrap,
 .handrive-current-dir-row .handrive-item-name,
 .handrive-current-dir-row > .handrive-item-type-icon {
+    cursor: default;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.handrive-current-dir-row.is-detail-close-target .handrive-item-name-wrap,
+.handrive-current-dir-row.is-detail-close-target .handrive-item-name,
+.handrive-current-dir-row.is-detail-close-target > .handrive-item-type-icon {
     cursor: pointer;
     -webkit-user-select: none;
     user-select: none;
@@ -4300,7 +4363,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     min-width: 156px;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
     -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     font-weight: var(--handrive-menu-font-weight);
@@ -7692,7 +7755,7 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     max-width: min(520px, calc(100% - 20px));
     border: 1px solid var(--site-dropdown-menu-border, var(--handrive-border-mid));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
     -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     color: var(--handrive-text);
@@ -9538,7 +9601,7 @@ body.theme-dark .handrive-spreadsheet-preview-hot .ht-root-wrapper {
     -webkit-backdrop-filter: var(--handrive-modal-surface-filter);
     backdrop-filter: var(--handrive-modal-surface-filter);
     z-index: 1;
-    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)));
 }
 
 .ve-image-upload-head,
@@ -9784,7 +9847,7 @@ body.theme-dark .handrive-spreadsheet-preview-hot .ht-root-wrapper {
     -webkit-backdrop-filter: var(--handrive-modal-surface-filter);
     backdrop-filter: var(--handrive-modal-surface-filter);
     z-index: 1;
-    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)));
 }
 
 .ae-drive-head {

@@ -79,12 +79,12 @@
         const backdrop = modal.querySelector(".handrive-popup-modal-backdrop");
         const header = dialog ? dialog.querySelector(".handrive-popup-head") : null;
         const closeButton = dialog ? dialog.querySelector(".handrive-popup-close-btn") : null;
-        const surfaceBg = isDark ? "var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72))" : "var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72))";
+        const surfaceBg = isDark ? "var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 46 46 46) / var(--site-modal-surface-opacity, 0.72)))" : "var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72)))";
         const headerBg = isDark ? "var(--site-modal-header-bg, rgba(46, 46, 46, 0.64))" : "var(--site-modal-header-bg, rgba(248, 248, 248, 0.62))";
         const backdropFilter = "var(--site-modal-backdrop-filter, none)";
         const surfaceFilter = "var(--site-modal-surface-filter, saturate(120%) blur(4px))";
         const surfaceShadow = isDark ? "0 16px 34px rgba(0, 0, 0, 0.5)" : "0 12px 28px rgba(0, 0, 0, 0.28)";
-        const exteriorDimShadow = "var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24))";
+        const exteriorDimShadow = "var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)))";
 
         applyStyles(modal, {
             position: "fixed",

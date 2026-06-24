@@ -120,7 +120,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: var(--handrive-shadow-md, var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28))), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
+    box-shadow: var(--handrive-shadow-md, var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28))), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)));
 }
 
 .image-demo-modal-head {

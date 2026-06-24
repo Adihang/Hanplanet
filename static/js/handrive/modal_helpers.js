@@ -6,6 +6,7 @@
 
     var popupDragInitialized = false;
     var activePopupDrag = null;
+    var draggedElementClampFrame = 0;
     var DRAG_MARGIN = 8;
     var DRAGGABLE_HEADER_SELECTOR = ".handrive-popup-head, .handrive-job-queue-head";
     var MODAL_DIALOG_SELECTOR = ".handrive-popup-modal-dialog, .handrive-folder-modal-dialog";
@@ -21,6 +22,12 @@
         "[role='button']",
         "[contenteditable='true']",
     ].join(",");
+    var observedDraggedElements = typeof WeakSet !== "undefined" ? new WeakSet() : null;
+    var draggedElementResizeObserver = window.ResizeObserver
+        ? new window.ResizeObserver(function () {
+            scheduleClampDraggedElementsToViewport();
+        })
+        : null;
 
     function getViewportSize() {
         return {
@@ -42,10 +49,35 @@
         return isFinite(value) ? value : 0;
     }
 
+    function observeDraggedElement(element) {
+        if (!element || !draggedElementResizeObserver || !observedDraggedElements || observedDraggedElements.has(element)) {
+            return;
+        }
+        observedDraggedElements.add(element);
+        draggedElementResizeObserver.observe(element);
+    }
+
+    function unobserveDraggedElement(element) {
+        if (!element || !draggedElementResizeObserver || !observedDraggedElements || !observedDraggedElements.has(element)) {
+            return;
+        }
+        draggedElementResizeObserver.unobserve(element);
+        observedDraggedElements.delete(element);
+    }
+
     function setModalDragOffset(dialog, x, y) {
-        dialog.setAttribute("data-popup-draggable-dialog", "true");
-        dialog.style.setProperty("--popup-drag-x", Math.round(x) + "px");
-        dialog.style.setProperty("--popup-drag-y", Math.round(y) + "px");
+        var nextX = Math.round(x) + "px";
+        var nextY = Math.round(y) + "px";
+        if (dialog.getAttribute("data-popup-draggable-dialog") !== "true") {
+            dialog.setAttribute("data-popup-draggable-dialog", "true");
+        }
+        if (dialog.style.getPropertyValue("--popup-drag-x") !== nextX) {
+            dialog.style.setProperty("--popup-drag-x", nextX);
+        }
+        if (dialog.style.getPropertyValue("--popup-drag-y") !== nextY) {
+            dialog.style.setProperty("--popup-drag-y", nextY);
+        }
+        observeDraggedElement(dialog);
     }
 
     function appendPopupTargetPathPart(target, text, className) {
@@ -114,6 +146,7 @@
         if (!dialog) {
             return;
         }
+        unobserveDraggedElement(dialog);
         dialog.removeAttribute("data-popup-draggable-dialog");
         dialog.style.removeProperty("--popup-drag-x");
         dialog.style.removeProperty("--popup-drag-y");
@@ -165,6 +198,9 @@
     }
 
     function clampCurrentModalDialogToViewport(dialog) {
+        if (!dialog || dialog.closest("[hidden]")) {
+            return;
+        }
         var viewport = getViewportSize();
         var rect = dialog.getBoundingClientRect();
         var nextX = getDragOffset(dialog, "--popup-drag-x");
@@ -199,11 +235,24 @@
 
     function setFixedPanelPosition(panel, left, top) {
         var clamped = clampFixedPanelPosition(panel, left, top);
-        panel.setAttribute("data-popup-draggable-panel", "true");
-        panel.style.left = Math.round(clamped.left) + "px";
-        panel.style.top = Math.round(clamped.top) + "px";
-        panel.style.right = "auto";
-        panel.style.bottom = "auto";
+        var nextLeft = Math.round(clamped.left) + "px";
+        var nextTop = Math.round(clamped.top) + "px";
+        if (panel.getAttribute("data-popup-draggable-panel") !== "true") {
+            panel.setAttribute("data-popup-draggable-panel", "true");
+        }
+        if (panel.style.left !== nextLeft) {
+            panel.style.left = nextLeft;
+        }
+        if (panel.style.top !== nextTop) {
+            panel.style.top = nextTop;
+        }
+        if (panel.style.right !== "auto") {
+            panel.style.right = "auto";
+        }
+        if (panel.style.bottom !== "auto") {
+            panel.style.bottom = "auto";
+        }
+        observeDraggedElement(panel);
     }
 
     function startModalHeaderDrag(event, header) {
@@ -318,8 +367,21 @@
     function clampDraggedElementsToViewport() {
         Array.prototype.slice.call(document.querySelectorAll("[data-popup-draggable-dialog]")).forEach(clampCurrentModalDialogToViewport);
         Array.prototype.slice.call(document.querySelectorAll("[data-popup-draggable-panel]")).forEach(function (panel) {
+            if (!panel || panel.hidden || panel.closest("[hidden]")) {
+                return;
+            }
             var rect = panel.getBoundingClientRect();
             setFixedPanelPosition(panel, rect.left, rect.top);
+        });
+    }
+
+    function scheduleClampDraggedElementsToViewport() {
+        if (draggedElementClampFrame) {
+            return;
+        }
+        draggedElementClampFrame = window.requestAnimationFrame(function () {
+            draggedElementClampFrame = 0;
+            clampDraggedElementsToViewport();
         });
     }
 
@@ -332,7 +394,7 @@
         document.addEventListener("pointermove", onPopupDragMove, { passive: false });
         document.addEventListener("pointerup", onPopupDragEnd);
         document.addEventListener("pointercancel", onPopupDragEnd);
-        window.addEventListener("resize", clampDraggedElementsToViewport);
+        window.addEventListener("resize", scheduleClampDraggedElementsToViewport);
     }
 
     function setRenameModalOpen(modal, renameTarget, renameInput, syncModalBodyState, opened, entry, getEntryEditableName, targetLabel) {

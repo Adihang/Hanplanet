@@ -2160,6 +2160,27 @@ class SitePreferenceSourceTests(TestCase):
         self.assertIn("domain=.hanplanet.com", site_js)
         self.assertIn("writeUiLangCookie(String(button.dataset.uiLangMode || '').trim().toLowerCase());", site_js)
 
+    def test_common_ui_press_feedback_waits_for_pointer_release(self):
+        site_js = (Path(settings.BASE_DIR) / "static/js/common/site.js").read_text(encoding="utf-8")
+        common_css = (Path(settings.BASE_DIR) / "static/css/common/style.css").read_text(encoding="utf-8")
+        press_block = site_js[
+            site_js.index("const initUiPressFeedback = function () {"):
+            site_js.index("initUiPressFeedback();")
+        ]
+
+        self.assertIn("let pressedPointerId = null;", press_block)
+        self.assertIn("pressedPointerId = event ? event.pointerId : null;", press_block)
+        self.assertIn("element.getAttribute('data-ui-press-disabled') === 'true'", press_block)
+        self.assertIn("document.addEventListener('pointerdown', function (event)", press_block)
+        self.assertIn("}, { passive: true, capture: true });", press_block)
+        self.assertIn("document.addEventListener('pointerup', schedulePressedElementClear", press_block)
+        self.assertIn("document.addEventListener('pointercancel', cancelPressedElement", press_block)
+        self.assertIn("window.addEventListener('blur', clearPressedElement);", press_block)
+        self.assertNotIn("UI_PRESS_FEEDBACK_MAX_MS", site_js)
+        self.assertNotIn("window.setTimeout(clearPressedElement, UI_PRESS_FEEDBACK_MAX_MS)", press_block)
+        self.assertIn(':not([data-ui-press-disabled="true"]):not(.is-ui-pressing):is(:hover, :focus-visible)', common_css)
+        self.assertIn(':not([data-ui-press-disabled="true"]):is(:active, .is-ui-pressing)', common_css)
+
     def test_root_search_theme_prefers_cookie_over_local_storage(self):
         root_search_js = (Path(settings.BASE_DIR) / "static/js/pages/none/root_search.js").read_text(encoding="utf-8")
 
@@ -2646,6 +2667,8 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("function handleContextEntryAction(action, entry, entries, options)", page_js)
         self.assertIn("syncContextMenuByEntries([queueEntry]);", page_js)
         self.assertIn("handleContextEntryAction(action, uploadQueueContextEntry, [uploadQueueContextEntry]", page_js)
+        self.assertIn('if (action === "open-location") {\n                        openQueueItemLocation(uploadQueueItem, uploadQueueContextEntry).catch(alertError);', page_js)
+        self.assertIn("skipPreview: true,", page_js)
         self.assertIn("openLocation: contextOpenLocationButton", page_js)
         self.assertIn("var contextOpenLocationButton = buttons.openLocation || null;", queue_helpers_js)
         self.assertIn("setContextButtonVisible(contextOpenLocationButton, canOpenLocation);", queue_helpers_js)
@@ -2671,6 +2694,47 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("function handleListSplitPointerDown(event)", page_js)
         self.assertIn("listSplitter.addEventListener(\"pointerdown\", handleListSplitPointerDown);", page_js)
         self.assertIn("setCookieValue(getListSplitCookieName(finishedDrag.mode), finishedDrag.latestRatio.toFixed(4));", page_js)
+
+    def test_handrive_zoom_persistence_is_text_code_extension_scoped(self):
+        base_dir = Path(settings.BASE_DIR)
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        image_editor_js = (base_dir / "static/js/handrive/image_editor.js").read_text(encoding="utf-8")
+
+        zoom_extensions = page_js[
+            page_js.index("const HANDRIVE_TEXT_CODE_ZOOM_EXTENSIONS"):
+            page_js.index("const HANDRIVE_LEGACY_MEDIA_AUDIO_VOLUME_STORAGE_KEY")
+        ]
+
+        self.assertIn('const HANDRIVE_ZOOM_COOKIE_PREFIX = "handrive-zoom";', page_js)
+        self.assertIn('".md"', zoom_extensions)
+        self.assertIn('".txt"', zoom_extensions)
+        self.assertIn('".js"', zoom_extensions)
+        self.assertIn('".json"', zoom_extensions)
+        self.assertIn('".py"', zoom_extensions)
+        self.assertIn('".sql"', zoom_extensions)
+        self.assertNotIn('".png"', zoom_extensions)
+        self.assertNotIn('".jpg"', zoom_extensions)
+        self.assertNotIn('".svg"', zoom_extensions)
+        self.assertIn("function isHandriveTextCodeZoomExtension(extension)", page_js)
+        self.assertIn('writeStoredHandriveZoom("preview-text", extension, listPreviewFontSize, 8, 40);', page_js)
+        self.assertIn('writeStoredHandriveZoom("read-text", extension, viewTextFontSize, 8, 40);', page_js)
+        self.assertIn('writeStoredHandriveZoom("write-text", extension, writeEditorFontSize, 8, 40);', page_js)
+        self.assertNotIn('writeStoredHandriveZoom("preview-image"', page_js)
+        self.assertNotIn('writeStoredHandriveZoom("read-image"', page_js)
+        self.assertNotIn("HANDRIVE_IMAGE_EDITOR_ZOOM_COOKIE_PREFIX", image_editor_js)
+        self.assertNotIn("writeStoredZoom", image_editor_js)
+
+    def test_handrive_list_item_scale_persists_to_cookie(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+
+        self.assertIn('const HANDRIVE_LIST_ITEM_SCALE_COOKIE_NAME = "handrive-list-item-scale";', page_js)
+        self.assertIn("getCookieValue(HANDRIVE_LIST_ITEM_SCALE_COOKIE_NAME)", page_js)
+        self.assertIn("setCookieValue(HANDRIVE_LIST_ITEM_SCALE_COOKIE_NAME, normalizedValue.toFixed(3));", page_js)
+        self.assertIn("deleteCookieValue(HANDRIVE_LIST_ITEM_SCALE_COOKIE_NAME);", page_js)
+        self.assertIn('const HANDRIVE_LIST_ITEM_SCALE_LEGACY_STORAGE_KEY = "hanplanet.handrive.list.itemScale";', page_js)
+        self.assertIn("window.localStorage.removeItem(HANDRIVE_LIST_ITEM_SCALE_LEGACY_STORAGE_KEY);", page_js)
+        self.assertNotIn("window.localStorage.setItem(HANDRIVE_LIST_ITEM_SCALE", page_js)
+        self.assertNotIn("HANDRIVE_LIST_ITEM_SCALE_STORAGE_KEY", page_js)
 
     def test_archive_context_menu_does_not_show_edit_action(self):
         base_dir = Path(settings.BASE_DIR)
@@ -3050,6 +3114,38 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("flex-basis: var(--handrive-current-dir-search-height, 38px);", search_controls_block)
         self.assertNotIn("--handrive-current-dir-search-height: 37px;", handrive_css)
         self.assertNotIn("var(--handrive-current-dir-search-height, 37px)", handrive_css)
+
+    def test_current_dir_row_feedback_only_when_detail_panel_is_visible(self):
+        base_dir = Path(settings.BASE_DIR)
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+
+        self.assertIn("function hasVisibleListDetailPanel()", page_js)
+        self.assertIn("function syncCurrentDirRowDetailCloseTarget(row)", page_js)
+        self.assertIn('currentDirRow.classList.toggle("is-detail-close-target", isCloseTarget);', page_js)
+        self.assertIn('currentDirRow.removeAttribute("data-ui-press-disabled");', page_js)
+        self.assertIn('currentDirRow.setAttribute("data-ui-press-disabled", "true");', page_js)
+        self.assertIn("syncCurrentDirRowDetailCloseTarget(row);", page_js)
+        self.assertIn("syncCurrentDirRowDetailCloseTarget(existingCurrentDirRow);", page_js)
+        self.assertIn(".handrive-item-row:not(.handrive-current-dir-row):hover", handrive_css)
+        self.assertIn(".handrive-current-dir-row.is-detail-close-target:hover", handrive_css)
+        self.assertIn(".handrive-current-dir-row.is-detail-close-target:is(:active, .is-ui-pressing)", handrive_css)
+        self.assertIn(".handrive-current-dir-row:not(.is-detail-close-target)", handrive_css)
+        self.assertNotIn(".handrive-item-row:hover,\n.handrive-item-row:focus-visible", handrive_css)
+
+    def test_current_dir_root_drop_target_uses_list_drop_background(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        root_drop_block = handrive_css[
+            handrive_css.index(".handrive-list.is-file-drop-root-target .handrive-current-dir-item,"):
+            handrive_css.index(".handrive-current-dir-row {")
+        ]
+
+        self.assertIn(".handrive-list.is-file-drop-root-target .handrive-current-dir-item", root_drop_block)
+        self.assertIn(".handrive-list.is-file-drop-root-target .handrive-current-dir-row.is-file-drop-group", root_drop_block)
+        self.assertIn(".handrive-list.is-file-drop-root-target .handrive-current-dir-row.is-drop-target", root_drop_block)
+        self.assertIn("background: var(--handrive-drop-target-row-bg);", root_drop_block)
+        self.assertIn(".handrive-list.is-file-drop-root-target .handrive-current-dir-item::after", root_drop_block)
+        self.assertIn("opacity: 0;", root_drop_block)
 
     def test_handrive_item_rows_square_joined_selected_edges_at_same_depth(self):
         base_dir = Path(settings.BASE_DIR)
@@ -3960,11 +4056,59 @@ class SiteZIndexLayerTests(TestCase):
         self.assertNotIn("12000", popup_js)
         self.assertNotIn("12000", site_auth_js)
 
+    def test_root_auth_modal_uses_common_modal_z_layers(self):
+        common_css = (Path(settings.BASE_DIR) / "static/css/common/style.css").read_text(encoding="utf-8")
+        account_widget_css = (Path(settings.BASE_DIR) / "static/css/common/account_widget.css").read_text(encoding="utf-8")
+        popup_common_css = (Path(settings.BASE_DIR) / "static/css/common/popup_common.css").read_text(encoding="utf-8")
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        root_modal_block = common_css[
+            common_css.index(".root-auth-modal {"):
+            common_css.index(".root-auth-modal[hidden]")
+        ]
+        root_shell_modal_block = common_css[
+            common_css.index(".root-shell-controls-fixed:has(.root-auth-modal:not([hidden])) {"):
+            common_css.index(".root-shell-links .ui-nav-links")
+        ]
+        nav_modal_block = common_css[
+            common_css.index(".ui-nav:has(.root-auth-modal:not([hidden])) {"):
+            common_css.index(".root-auth-modal[hidden]")
+        ]
+        backdrop_block = common_css[
+            common_css.index(".root-auth-modal-backdrop {"):
+            common_css.index(".root-auth-modal-dialog {", common_css.index(".root-auth-modal-backdrop {"))
+        ]
+        dialog_block = common_css[
+            common_css.index(".root-auth-modal-dialog {", common_css.index(".root-auth-modal-backdrop {")):
+            common_css.index("body.theme-dark .root-auth-modal-dialog")
+        ]
+        shared_dialog_block = popup_common_css[
+            popup_common_css.index(".site-modal-dialog.site-modal-dialog {"):
+            popup_common_css.index(".site-modal-body")
+        ]
+
+        self.assertIn("z-index: var(--site-modal-stack-z, var(--site-z-modal, 1400));", root_modal_block)
+        self.assertIn("isolation: isolate;", root_modal_block)
+        self.assertIn("z-index: 0;", backdrop_block)
+        self.assertIn("z-index: 1;", dialog_block)
+        self.assertIn("z-index: 1;", shared_dialog_block)
+        self.assertIn("z-index: var(--site-z-modal, 1400);", root_shell_modal_block)
+        self.assertIn("z-index: var(--site-z-modal, 1400);", nav_modal_block)
+        self.assertIn("overflow: visible;", nav_modal_block)
+        self.assertIn(".ui-nav .ui-auth-account-floating", common_css)
+        self.assertIn(".ui-nav .root-auth-modal", common_css)
+        self.assertIn(".ui-nav .root-auth-modal-dialog", common_css)
+        self.assertIn(".ui-auth-account-floating:has(.root-auth-modal:not([hidden]))", account_widget_css)
+        self.assertIn("z-index: var(--site-z-modal, 1400);", account_widget_css)
+        self.assertIn(".ui-toolbar-wrap:has(.root-auth-modal:not([hidden]))", handrive_css)
+        self.assertIn(".ui-auth-account-floating:has(.root-auth-modal:not([hidden]))", handrive_css)
+
     def test_handrive_job_queue_uses_popup_raised_layer(self):
         base_dir = Path(settings.BASE_DIR)
         common_account_css = (base_dir / "static/css/common/account_widget.css").read_text(encoding="utf-8")
         common_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
         handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        handrive_modal_js = (base_dir / "static/js/handrive/modal_helpers.js").read_text(encoding="utf-8")
         job_queue_rule = handrive_css[
             handrive_css.index(".handrive-job-queue-panel {"):
             handrive_css.index(".handrive-job-queue-head {", handrive_css.index(".handrive-job-queue-panel {"))
@@ -3986,6 +4130,10 @@ class SiteZIndexLayerTests(TestCase):
         self.assertIn(".ui-auth-account-floating:has(.ui-auth-account-menu:not([hidden]))", common_account_css)
         self.assertIn(".root-shell-controls-fixed:has(.ui-auth-account-menu:not([hidden]))", common_css)
         self.assertNotIn("--handrive-job-queue-z: 3500;", handrive_css)
+        self.assertIn("new window.ResizeObserver(function ()", handrive_modal_js)
+        self.assertIn("scheduleClampDraggedElementsToViewport", handrive_modal_js)
+        self.assertIn('panel.setAttribute("data-popup-draggable-panel", "true");', handrive_modal_js)
+        self.assertIn('if (!panel || panel.hidden || panel.closest("[hidden]")) {', handrive_modal_js)
 
     def test_common_modal_rules_cover_headers_drag_and_close_buttons(self):
         base_dir = Path(settings.BASE_DIR)
@@ -4004,6 +4152,9 @@ class SiteZIndexLayerTests(TestCase):
             ".ae-drive-head",
             "data-popup-draggable-dialog",
             "onModalHeaderPointerDown",
+            "new window.ResizeObserver(function ()",
+            "scheduleClampDraggableDialogsToViewport",
+            "observeDraggableDialog(dialog);",
         ):
             with self.subTest(selector=selector):
                 self.assertIn(selector, popup_js)
@@ -4197,10 +4348,14 @@ class SiteZIndexLayerTests(TestCase):
         for token in (
             "--site-popup-glass-bg",
             "--site-popup-glass-filter",
+            "--site-modal-backdrop-rgb",
+            "--site-modal-backdrop-opacity",
             "--site-modal-backdrop-bg",
             "--site-modal-backdrop-filter",
             "--site-modal-backdrop-surface-bg",
             "--site-modal-exterior-dim-shadow",
+            "--site-modal-surface-rgb",
+            "--site-modal-surface-opacity",
             "--site-modal-surface-bg",
             "--site-modal-surface-filter",
             "--site-dropdown-surface-bg",
@@ -4213,8 +4368,16 @@ class SiteZIndexLayerTests(TestCase):
         self.assertIn("--site-modal-backdrop-filter: none;", layout_css)
         self.assertIn("--site-modal-backdrop-surface-bg: transparent;", layout_css)
         self.assertIn("--site-modal-exterior-dim-shadow: 0 0 0 100vmax var(--site-modal-backdrop-bg);", layout_css)
-        self.assertIn("--site-modal-surface-bg: rgba(248, 248, 248, 0.72);", layout_css)
-        self.assertIn("--site-modal-surface-bg: rgba(46, 46, 46, 0.72);", common_css)
+        self.assertIn("--site-modal-backdrop-opacity: 0.24;", layout_css)
+        self.assertIn("--site-modal-backdrop-bg: rgb(var(--site-modal-backdrop-rgb) / var(--site-modal-backdrop-opacity));", layout_css)
+        self.assertIn("--site-modal-surface-rgb: 248 248 248;", layout_css)
+        self.assertIn("--site-modal-surface-opacity: 0.72;", layout_css)
+        self.assertIn("--site-modal-surface-bg: rgb(var(--site-modal-surface-rgb) / var(--site-modal-surface-opacity));", layout_css)
+        self.assertIn("--site-modal-surface-rgb: 46 46 46;", common_css)
+        self.assertNotIn("--site-modal-backdrop-bg: rgba", layout_css)
+        self.assertNotIn("--site-modal-backdrop-bg: rgba", common_css)
+        self.assertNotIn("--site-modal-surface-bg: rgba", layout_css)
+        self.assertNotIn("--site-modal-surface-bg: rgba", common_css)
         self.assertIn("--site-dropdown-surface-bg: var(--site-modal-surface-bg);", layout_css)
         self.assertIn("--site-dropdown-surface-filter: var(--site-modal-surface-filter);", layout_css)
         self.assertIn("--site-dropdown-surface-bg: var(--site-modal-surface-bg);", common_root_block)
@@ -4249,11 +4412,32 @@ class SiteZIndexLayerTests(TestCase):
             handrive_css.index(".handrive-job-queue-head-main", handrive_css.index(".handrive-job-queue-head {"))
         ]
         self.assertNotIn("background:", job_queue_head_rule)
-        self.assertIn("panelBackground: readThemeToken('--site-modal-surface-bg', 'rgba(248, 248, 248, 0.72)')", print_js)
+        self.assertIn("panelBackground: readThemeToken('--site-modal-surface-bg', 'rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))')", print_js)
         self.assertIn("panelBackdropFilter: readThemeToken('--site-modal-surface-filter'", print_js)
         self.assertIn("overlayBackdropFilter: readThemeToken('--site-modal-backdrop-filter', 'none')", print_js)
         self.assertIn("overlayOpenColor: readThemeToken('--site-modal-backdrop-surface-bg'", print_js)
         self.assertNotIn("overlayOpenColor: readThemeToken('--site-modal-backdrop-bg'", print_js)
+
+        for name, source in {
+            "layout": layout_css,
+            "common": common_css,
+            "popup_common": popup_common_css,
+            "site_auth": site_auth_css,
+            "site_auth_js": site_auth_js,
+            "handrive": handrive_css,
+            "hpmail": hpmail_css,
+            "image_demo": image_demo_css,
+            "image_color": image_color_css,
+            "multiplayer": multiplayer_css,
+            "fun_sub": fun_sub_template,
+            "map_editor": map_editor_template,
+            "map_viewer": map_viewer_template,
+            "print_js": print_js,
+        }.items():
+            with self.subTest(modal_surface_alpha_source=name):
+                self.assertNotIn("rgba(248, 248, 248, 0.72)", source)
+                self.assertNotIn("rgba(46, 46, 46, 0.72)", source)
+                self.assertNotIn("site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba", source)
 
         for name, source in {
             "common": common_css,

@@ -71,9 +71,16 @@
     let customSelectIdCounter = 0;
     let popupPositionFrame = 0;
     let modalStackFrame = 0;
+    let draggableClampFrame = 0;
     let activeModalDrag = null;
     let activeHelpModalResize = null;
     let activeCustomSelect = null;
+    const observedDraggableDialogs = new WeakSet();
+    const draggableDialogResizeObserver = window.ResizeObserver
+        ? new window.ResizeObserver(function () {
+            scheduleClampDraggableDialogsToViewport();
+        })
+        : null;
     const selectValueDescriptor = window.HTMLSelectElement
         ? Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")
         : null;
@@ -355,10 +362,35 @@
         return Number.isFinite(value) ? value : 0;
     }
 
+    function observeDraggableDialog(dialog) {
+        if (!dialog || !draggableDialogResizeObserver || observedDraggableDialogs.has(dialog)) {
+            return;
+        }
+        observedDraggableDialogs.add(dialog);
+        draggableDialogResizeObserver.observe(dialog);
+    }
+
+    function unobserveDraggableDialog(dialog) {
+        if (!dialog || !draggableDialogResizeObserver || !observedDraggableDialogs.has(dialog)) {
+            return;
+        }
+        draggableDialogResizeObserver.unobserve(dialog);
+        observedDraggableDialogs.delete(dialog);
+    }
+
     function setDialogDragOffset(dialog, x, y) {
-        dialog.setAttribute("data-popup-draggable-dialog", "true");
-        dialog.style.setProperty("--popup-drag-x", String(Math.round(x)) + "px");
-        dialog.style.setProperty("--popup-drag-y", String(Math.round(y)) + "px");
+        const nextX = String(Math.round(x)) + "px";
+        const nextY = String(Math.round(y)) + "px";
+        if (dialog.getAttribute("data-popup-draggable-dialog") !== "true") {
+            dialog.setAttribute("data-popup-draggable-dialog", "true");
+        }
+        if (dialog.style.getPropertyValue("--popup-drag-x") !== nextX) {
+            dialog.style.setProperty("--popup-drag-x", nextX);
+        }
+        if (dialog.style.getPropertyValue("--popup-drag-y") !== nextY) {
+            dialog.style.setProperty("--popup-drag-y", nextY);
+        }
+        observeDraggableDialog(dialog);
     }
 
     function clampModalResizeValue(value, min, max) {
@@ -487,6 +519,7 @@
 
     function resetDialogDragOffset(dialog) {
         if (!dialog) return;
+        unobserveDraggableDialog(dialog);
         dialog.removeAttribute("data-popup-draggable-dialog");
         dialog.style.removeProperty("--popup-drag-x");
         dialog.style.removeProperty("--popup-drag-y");
@@ -522,6 +555,9 @@
     }
 
     function clampCurrentDraggableDialog(dialog) {
+        if (!dialog || !isVisible(dialog)) {
+            return;
+        }
         const viewport = getViewportSize();
         const rect = dialog.getBoundingClientRect();
         let nextX = getDragOffset(dialog, "--popup-drag-x");
@@ -545,6 +581,14 @@
 
     function clampDraggableDialogsToViewport() {
         document.querySelectorAll("[data-popup-draggable-dialog]").forEach(clampCurrentDraggableDialog);
+    }
+
+    function scheduleClampDraggableDialogsToViewport() {
+        if (draggableClampFrame) return;
+        draggableClampFrame = window.requestAnimationFrame(function () {
+            draggableClampFrame = 0;
+            clampDraggableDialogsToViewport();
+        });
     }
 
     function clearModalStackStyle(element) {
@@ -647,6 +691,7 @@
     function refreshCommonPopupStateDeferred() {
         refreshPopupPositionsDeferred();
         refreshModalZStackDeferred();
+        scheduleClampDraggableDialogsToViewport();
     }
 
     function bringModalToFront(target) {
@@ -1324,7 +1369,7 @@
 
     window.addEventListener("resize", function () {
         refreshCommonPopupStateDeferred();
-        clampDraggableDialogsToViewport();
+        scheduleClampDraggableDialogsToViewport();
         positionOpenCustomSelects();
         hideInlineCopyFeedback();
     });
@@ -1337,7 +1382,7 @@
     if (window.visualViewport) {
         window.visualViewport.addEventListener("resize", function () {
             refreshCommonPopupStateDeferred();
-            clampDraggableDialogsToViewport();
+            scheduleClampDraggableDialogsToViewport();
             positionOpenCustomSelects();
             hideInlineCopyFeedback();
         });

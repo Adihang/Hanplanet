@@ -553,7 +553,7 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
     background: rgba(255, 252, 246, 0.64);
     -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
-    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(15, 23, 42, 0.24));
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 15 23 42) / var(--site-modal-backdrop-opacity, 0.24)));
     transform: translateY(var(--popup-fit-child-top-shift, 0px));
     overflow: visible;
 }
@@ -1252,7 +1252,7 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
     background: rgba(255, 252, 247, 0.64);
     -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
-    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(15, 23, 42, 0.24));
+    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 15 23 42) / var(--site-modal-backdrop-opacity, 0.24)));
     padding: 24px;
     text-align: center;
     color: #1f2937;
@@ -1369,7 +1369,7 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
     align-items: center;
     gap: 22px;
     text-align: center;
-    box-shadow: var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(15, 23, 42, 0.24));
+    box-shadow: var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 15 23 42) / var(--site-modal-backdrop-opacity, 0.24)));
 }
 
 .multiplayer-death-modal-header.site-modal-head {

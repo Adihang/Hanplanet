@@ -459,7 +459,7 @@ body.media-tool-page {
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr) auto;
     overflow: hidden;
-    box-shadow: var(--handrive-shadow-md), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
+    box-shadow: var(--handrive-shadow-md), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)));
 }
 
 .media-tool-modal-head {

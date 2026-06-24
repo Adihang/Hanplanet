@@ -1578,6 +1578,19 @@
 
     const HANDRIVE_MEDIA_VOLUME_COOKIE_NAME = "handrive-media-volume";
     const HANDRIVE_MEDIA_MUTED_COOKIE_NAME = "handrive-media-muted";
+    const HANDRIVE_ZOOM_COOKIE_PREFIX = "handrive-zoom";
+    const HANDRIVE_TEXT_CODE_ZOOM_EXTENSIONS = new Set([
+        ".md", ".markdown", ".txt", ".text", ".log",
+        ".json", ".jsonl",
+        ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx",
+        ".css", ".scss", ".sass", ".less",
+        ".html", ".htm", ".xml",
+        ".py", ".sql",
+        ".sh", ".bash", ".zsh",
+        ".yml", ".yaml", ".toml", ".ini", ".cfg", ".conf", ".env",
+        ".java", ".c", ".h", ".cpp", ".hpp", ".cs", ".go", ".rs",
+        ".php", ".rb", ".swift", ".kt", ".kts", ".vue", ".svelte",
+    ]);
     const HANDRIVE_LEGACY_MEDIA_AUDIO_VOLUME_STORAGE_KEY = "handrive-media-audio-volume";
     const HANDRIVE_MEDIA_VOLUME_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
     const HANDRIVE_MEDIA_LOOP_STORAGE_KEY = "handrive-media-loop-enabled";
@@ -1630,6 +1643,77 @@
         } catch (error) {
             // ignore cookie failures
         }
+    }
+
+    function deleteCookieValue(name) {
+        try {
+            let cookie = encodeURIComponent(name) + "=; Max-Age=0; Path=/; SameSite=Lax";
+            if (window.location && window.location.protocol === "https:") {
+                cookie += "; Secure";
+            }
+            document.cookie = cookie;
+        } catch (error) {
+            // ignore cookie failures
+        }
+    }
+
+    function normalizeHandriveZoomExtension(extension) {
+        const rawExtension = String(extension || "").trim().toLowerCase();
+        if (!rawExtension) {
+            return "no-extension";
+        }
+        const normalizedExtension = rawExtension.charAt(0) === "." ? rawExtension : "." + rawExtension;
+        return normalizedExtension.replace(/[^a-z0-9._-]/g, "_");
+    }
+
+    function getComparableHandriveZoomExtension(extension) {
+        const normalizedExtension = normalizeHandriveZoomExtension(extension);
+        return normalizedExtension === "no-extension" ? "" : normalizedExtension;
+    }
+
+    function isHandriveTextCodeZoomExtension(extension) {
+        return HANDRIVE_TEXT_CODE_ZOOM_EXTENSIONS.has(getComparableHandriveZoomExtension(extension));
+    }
+
+    function getHandriveZoomCookieName(scope, extension) {
+        const normalizedScope = String(scope || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-") || "default";
+        const normalizedExtension = normalizeHandriveZoomExtension(extension)
+            .replace(/^\./, "")
+            .replace(/[^a-z0-9_-]/g, "_") || "no-extension";
+        return HANDRIVE_ZOOM_COOKIE_PREFIX + "-" + normalizedScope + "-" + normalizedExtension;
+    }
+
+    function parseStoredHandriveZoomValue(value, minValue, maxValue) {
+        if (value === null || value === undefined || String(value).trim() === "") {
+            return null;
+        }
+        const parsedValue = Number(value);
+        if (!Number.isFinite(parsedValue)) {
+            return null;
+        }
+        const minZoom = Number.isFinite(Number(minValue)) ? Number(minValue) : 0;
+        const maxZoom = Number.isFinite(Number(maxValue)) ? Number(maxValue) : parsedValue;
+        return Math.max(minZoom, Math.min(maxZoom, parsedValue));
+    }
+
+    function readStoredHandriveZoom(scope, extension, minValue, maxValue) {
+        return parseStoredHandriveZoomValue(
+            getCookieValue(getHandriveZoomCookieName(scope, extension)),
+            minValue,
+            maxValue
+        );
+    }
+
+    function writeStoredHandriveZoom(scope, extension, value, minValue, maxValue) {
+        const normalizedValue = parseStoredHandriveZoomValue(value, minValue, maxValue);
+        if (normalizedValue === null) {
+            return;
+        }
+        setCookieValue(getHandriveZoomCookieName(scope, extension), normalizedValue.toFixed(3));
+    }
+
+    function getPathZoomExtension(pathValue, fallbackExtension) {
+        return getPathFileExtension(pathValue || "") || normalizeHandriveZoomExtension(fallbackExtension || "");
     }
 
     function getStoredMediaVolume() {
@@ -5316,7 +5400,8 @@
         const listContainer = document.getElementById("handrive-list");
         const currentDirListContainer = document.getElementById("handrive-current-dir-list");
         const listItemsContainer = document.getElementById("handrive-list-items");
-        const HANDRIVE_LIST_ITEM_SCALE_STORAGE_KEY = "hanplanet.handrive.list.itemScale";
+        const HANDRIVE_LIST_ITEM_SCALE_COOKIE_NAME = "handrive-list-item-scale";
+        const HANDRIVE_LIST_ITEM_SCALE_LEGACY_STORAGE_KEY = "hanplanet.handrive.list.itemScale";
         const HANDRIVE_LIST_ITEM_SCALE_MIN = 0.72;
         const HANDRIVE_LIST_ITEM_SCALE_MAX = 1.6;
         const HANDRIVE_LIST_ITEM_SCALE_STEP = 0.05;
@@ -5894,6 +5979,7 @@
         const githubRepoLabelById = new Map();
         const googleDriveLabelByPath = new Map();
         let adjacentSelectedRowCornerFrame = 0;
+        let listPreviewFontSize = 16;
 
         function setHandriveItemRowDepth(item, row, depthValue) {
             const depth = Math.max(0, Number(depthValue) || 0);
@@ -7211,32 +7297,53 @@
             );
         }
 
+        function parseStoredHandriveListItemScale(value) {
+            if (value === null || value === undefined || String(value).trim() === "") {
+                return null;
+            }
+            const numericValue = Number(value);
+            if (!Number.isFinite(numericValue)) {
+                return null;
+            }
+            return clampHandriveListItemScale(numericValue);
+        }
+
         function readStoredHandriveListItemScale() {
+            const cookieValue = parseStoredHandriveListItemScale(
+                getCookieValue(HANDRIVE_LIST_ITEM_SCALE_COOKIE_NAME)
+            );
+            if (cookieValue !== null) {
+                return cookieValue;
+            }
             try {
                 if (!window.localStorage) {
                     return 1;
                 }
-                const rawValue = window.localStorage.getItem(HANDRIVE_LIST_ITEM_SCALE_STORAGE_KEY);
-                if (rawValue === null || rawValue === "") {
+                const legacyValue = parseStoredHandriveListItemScale(
+                    window.localStorage.getItem(HANDRIVE_LIST_ITEM_SCALE_LEGACY_STORAGE_KEY)
+                );
+                if (legacyValue === null) {
                     return 1;
                 }
-                return clampHandriveListItemScale(rawValue);
+                writeStoredHandriveListItemScale(legacyValue);
+                window.localStorage.removeItem(HANDRIVE_LIST_ITEM_SCALE_LEGACY_STORAGE_KEY);
+                return legacyValue;
             } catch (error) {
                 return 1;
             }
         }
 
         function writeStoredHandriveListItemScale(value) {
+            const normalizedValue = clampHandriveListItemScale(value);
+            if (Math.abs(normalizedValue - 1) < 0.001) {
+                deleteCookieValue(HANDRIVE_LIST_ITEM_SCALE_COOKIE_NAME);
+            } else {
+                setCookieValue(HANDRIVE_LIST_ITEM_SCALE_COOKIE_NAME, normalizedValue.toFixed(3));
+            }
             try {
-                if (!window.localStorage) {
-                    return;
+                if (window.localStorage) {
+                    window.localStorage.removeItem(HANDRIVE_LIST_ITEM_SCALE_LEGACY_STORAGE_KEY);
                 }
-                const normalizedValue = clampHandriveListItemScale(value);
-                if (Math.abs(normalizedValue - 1) < 0.001) {
-                    window.localStorage.removeItem(HANDRIVE_LIST_ITEM_SCALE_STORAGE_KEY);
-                    return;
-                }
-                window.localStorage.setItem(HANDRIVE_LIST_ITEM_SCALE_STORAGE_KEY, normalizedValue.toFixed(3));
             } catch (error) {}
         }
 
@@ -8062,6 +8169,37 @@
             });
         }
 
+        function hasVisibleListDetailPanel() {
+            return Boolean(
+                (
+                    listLayout &&
+                    listLayout.classList.contains("has-editor") &&
+                    editorPanel &&
+                    !editorPanel.hidden
+                ) ||
+                (
+                    listLayout &&
+                    listLayout.classList.contains("has-preview") &&
+                    previewPanel &&
+                    !previewPanel.hidden
+                )
+            );
+        }
+
+        function syncCurrentDirRowDetailCloseTarget(row) {
+            const currentDirRow = row || (listContainer ? listContainer.querySelector(".handrive-current-dir-row") : null);
+            if (!currentDirRow) {
+                return;
+            }
+            const isCloseTarget = hasVisibleListDetailPanel();
+            currentDirRow.classList.toggle("is-detail-close-target", isCloseTarget);
+            if (isCloseTarget) {
+                currentDirRow.removeAttribute("data-ui-press-disabled");
+            } else {
+                currentDirRow.setAttribute("data-ui-press-disabled", "true");
+            }
+        }
+
         function syncCurrentDirRowHeightWithSideHead() {
             if (!listContainer) {
                 return;
@@ -8070,6 +8208,7 @@
             if (!currentDirRow) {
                 return;
             }
+            syncCurrentDirRowDetailCloseTarget(currentDirRow);
             const clearSideHeadHeight = function (headElement) {
                 if (headElement) {
                     headElement.style.minHeight = "";
@@ -8173,6 +8312,7 @@
                 state.activePreviewRenderMode = "";
             }
             previewSetVisibility(previewPanel, listLayout, isVisible, scheduleSyncCurrentDirRowHeightWithSideHead);
+            syncCurrentDirRowDetailCloseTarget();
             if (isVisible) {
                 schedulePreviewBodyHeight();
             }
@@ -9207,6 +9347,7 @@
                 previewPanel: previewPanel,
                 listLayout: listLayout,
                 onAfterChange: function () {
+                    syncCurrentDirRowDetailCloseTarget();
                     scheduleSyncCurrentDirRowHeightWithSideHead();
                     schedulePreviewBodyHeight();
                     scheduleEditorBodyHeight();
@@ -9245,6 +9386,24 @@
             cleanupEditorEvents();
             
             if (editorContentInput) {
+                const listEditorZoomExtension = getEntryFileExtension(entry) || getPathZoomExtension(entry && (entry.path || entry.name));
+                const listEditorCanPersistZoom = isHandriveTextCodeZoomExtension(listEditorZoomExtension);
+                let listEditorFontSize = listEditorCanPersistZoom
+                    ? readStoredHandriveZoom("write-text", listEditorZoomExtension, 8, 40) || 16
+                    : 16;
+                const applyListEditorFontSize = function (fontSize, options) {
+                    const settings = options || {};
+                    listEditorFontSize = Math.max(8, Math.min(40, Number(fontSize) || 16));
+                    editorContentInput.style.fontSize = listEditorFontSize + "px";
+                    if (editorHighlight) {
+                        editorHighlight.style.fontSize = listEditorFontSize + "px";
+                    }
+                    syncListEditorHighlightScroll();
+                    if (!settings.skipPersist && listEditorCanPersistZoom) {
+                        writeStoredHandriveZoom("write-text", listEditorZoomExtension, listEditorFontSize, 8, 40);
+                    }
+                };
+                applyListEditorFontSize(listEditorFontSize, { skipPersist: true });
                 if (!listMarkdownImageEventsBound) {
                     listMarkdownImageEventsBound = true;
                     editorContentInput.addEventListener("paste", function (event) {
@@ -9262,17 +9421,11 @@
                     updateListEditorSuggestion();
                 });
                 editorContentInput.addEventListener("scroll", syncListEditorHighlightScroll, { passive: true });
-                let listEditorFontSize = 16;
                 editorContentInput.addEventListener("wheel", function (event) {
                     if (!event.ctrlKey && !event.metaKey) return;
                     event.preventDefault();
                     const delta = event.deltaY < 0 ? 2 : -2;
-                    listEditorFontSize = Math.max(8, Math.min(40, listEditorFontSize + delta));
-                    editorContentInput.style.fontSize = listEditorFontSize + "px";
-                    if (editorHighlight) {
-                        editorHighlight.style.fontSize = listEditorFontSize + "px";
-                    }
-                    syncListEditorHighlightScroll();
+                    applyListEditorFontSize(listEditorFontSize + delta);
                 }, { passive: false });
                 editorContentInput.addEventListener("click", function () {
                     clearListEditorSuggestion();
@@ -10124,6 +10277,7 @@
             setPreviewPlaceholder(
                 t("list_preview_empty", "파일을 선택하면 미리보기가 표시됩니다.")
             );
+            setListPreviewFontSize(16, { skipPersist: true });
             syncPreviewImageZoom();
             void updatePreviewNavButtons(null);
         }
@@ -10140,6 +10294,14 @@
             return previewGetImageMinZoom(previewContent);
         }
 
+        function getPreviewZoomExtension(entry) {
+            const targetEntry = entry || (state.activePreviewPath ? state.entryByPath.get(state.activePreviewPath) || null : null);
+            if (targetEntry) {
+                return getEntryFileExtension(targetEntry) || getPathZoomExtension(targetEntry.path || targetEntry.name || "");
+            }
+            return getPathZoomExtension(state.activePreviewPath || "");
+        }
+
         function syncPreviewImageZoom() {
             previewSyncImageZoom(previewContent, previewZoomWrap, state.previewImageZoom);
         }
@@ -10148,6 +10310,33 @@
             const minZoom = getPreviewImageMinZoom();
             state.previewImageZoom = Math.max(minZoom, Math.min(3, Number(nextZoom) || 1));
             syncPreviewImageZoom();
+        }
+
+        function setListPreviewFontSize(nextFontSize, options) {
+            const settings = options || {};
+            const extension = getPreviewZoomExtension();
+            listPreviewFontSize = Math.max(8, Math.min(40, Number(nextFontSize) || 16));
+            if (previewContent) {
+                previewContent.style.setProperty("--handrive-text-font-size", listPreviewFontSize + "px");
+            }
+            if (!settings.skipPersist && isHandriveTextCodeZoomExtension(extension)) {
+                writeStoredHandriveZoom("preview-text", extension, listPreviewFontSize, 8, 40);
+            }
+        }
+
+        function restorePreviewZoomForEntry(entry, renderMode) {
+            const extension = getPreviewZoomExtension(entry);
+            if (String(renderMode || "") === "media_image") {
+                state.previewImageZoom = 1;
+                syncPreviewImageZoom();
+                return;
+            }
+            if (!isHandriveTextCodeZoomExtension(extension)) {
+                setListPreviewFontSize(16, { skipPersist: true });
+                return;
+            }
+            const storedFontSize = readStoredHandriveZoom("preview-text", extension, 8, 40);
+            setListPreviewFontSize(storedFontSize !== null ? storedFontSize : 16, { skipPersist: true });
         }
 
         function releasePreviewBodyHeightAfterNextPaint() {
@@ -10218,6 +10407,7 @@
                 syncPreviewImageZoom: syncPreviewImageZoom,
                 t: t,
             });
+            restorePreviewZoomForEntry(entry, renderMode);
             if (window.HandriveSpreadsheetEditor && typeof window.HandriveSpreadsheetEditor.hydratePreviews === "function") {
                 window.HandriveSpreadsheetEditor.hydratePreviews(previewContent);
             }
@@ -11440,6 +11630,7 @@
                 applySelection([targetPath], {
                     primaryPath: targetPath,
                     anchorPath: targetPath,
+                    skipPreview: true,
                 });
                 const row = state.entryRowByPath.get(targetPath);
                 if (row && typeof row.scrollIntoView === "function") {
@@ -13300,6 +13491,7 @@
             setHandriveItemRowDepth(item, row, 0);
             state.entryRowByPath.set(currentFolderEntry.path, row);
             row.draggable = false;
+            syncCurrentDirRowDetailCloseTarget(row);
             if (state.selectedPaths.has(currentFolderEntry.path) || normalizePath(currentFolderEntry.path, true) === state.activePreviewPath) {
                 row.classList.add("is-selected");
             }
@@ -14617,6 +14809,7 @@
                         normalizePath(currentFolderEntryForReuse.path, true) === state.activePreviewPath
                     );
                     state.entryRowByPath.set(currentFolderEntryForReuse.path, existingCurrentDirRow);
+                    syncCurrentDirRowDetailCloseTarget(existingCurrentDirRow);
                     attachListSearchFormToCurrentDirRow(existingCurrentDirRow);
                     bindCurrentDirSortControls(existingCurrentDirRow);
                 }
@@ -14839,12 +15032,18 @@
                 if (!button) {
                     return;
                 }
+                event.preventDefault();
+                event.stopPropagation();
 
                 const action = button.dataset.action;
                 const uploadQueueItem = state.uploadQueueContextItem;
                 if (uploadQueueItem) {
                     const uploadQueueContextEntry = state.uploadQueueContextEntry || null;
                     closeContextMenu();
+                    if (action === "open-location") {
+                        openQueueItemLocation(uploadQueueItem, uploadQueueContextEntry).catch(alertError);
+                        return;
+                    }
                     if (uploadQueueContextEntry) {
                         handleContextEntryAction(action, uploadQueueContextEntry, [uploadQueueContextEntry], {
                             afterDelete: function () {
@@ -14875,10 +15074,6 @@
                                 uploadQueueItem.savedSlugPath || uploadQueueItem.savedPath
                             );
                         }
-                        return;
-                    }
-                    if (action === "open-location") {
-                        openQueueItemLocation(uploadQueueItem, null).catch(alertError);
                         return;
                     }
                     if (action === "delete") {
@@ -15511,7 +15706,6 @@
         if (previewContent) {
             previewContent.addEventListener("click", openClickedImagePictureInPicture);
 
-            let listPreviewFontSize = 16;
             previewContent.addEventListener("wheel", function (event) {
                 if (!event.ctrlKey && !event.metaKey) return;
                 if (previewContent.classList.contains("handrive-media")) {
@@ -15522,8 +15716,7 @@
                 }
                 event.preventDefault();
                 const delta = event.deltaY < 0 ? 2 : -2;
-                listPreviewFontSize = Math.max(8, Math.min(40, listPreviewFontSize + delta));
-                previewContent.style.setProperty("--handrive-text-font-size", listPreviewFontSize + "px");
+                setListPreviewFontSize(listPreviewFontSize + delta);
             }, { passive: false });
         }
 
@@ -16306,6 +16499,7 @@
         const viewNavBgPrev = viewNavBg ? viewNavBg.querySelector("span:first-child") : null;
         const viewNavBgNext = viewNavBg ? viewNavBg.querySelector("span:last-child") : null;
         let viewImageZoom = 1;
+        let viewTextFontSize = 16;
 
         const viewMediaNavExtensions = new Set([
             ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif", ".ico",
@@ -16329,6 +16523,10 @@
             return contentArticle
                 ? contentArticle.querySelector(".handrive-media-image-element")
                 : null;
+        }
+
+        function getViewZoomExtension(pathValue) {
+            return getPathZoomExtension(pathValue || currentDocPath, root.dataset.docExtension || "");
         }
 
         function syncViewImageZoom() {
@@ -16366,6 +16564,35 @@
             const minZoom = getViewImageMinZoom();
             viewImageZoom = Math.max(minZoom, Math.min(3, Number(nextZoom) || 1));
             syncViewImageZoom();
+        }
+
+        function setViewTextFontSize(nextFontSize, options) {
+            const settings = options || {};
+            const extension = getViewZoomExtension();
+            viewTextFontSize = Math.max(8, Math.min(40, Number(nextFontSize) || 16));
+            if (contentArticle) {
+                contentArticle.style.setProperty("--handrive-text-font-size", viewTextFontSize + "px");
+            }
+            if (!settings.skipPersist && isHandriveTextCodeZoomExtension(extension)) {
+                writeStoredHandriveZoom("read-text", extension, viewTextFontSize, 8, 40);
+            }
+        }
+
+        function restoreViewZoomForPath(pathValue) {
+            const extension = getViewZoomExtension(pathValue);
+            if (getViewImageElement()) {
+                viewImageZoom = 1;
+                syncViewImageZoom();
+                return;
+            }
+            if (contentArticle) {
+                if (!isHandriveTextCodeZoomExtension(extension)) {
+                    setViewTextFontSize(16, { skipPersist: true });
+                    return;
+                }
+                const storedFontSize = readStoredHandriveZoom("read-text", extension, 8, 40);
+                setViewTextFontSize(storedFontSize !== null ? storedFontSize : 16, { skipPersist: true });
+            }
         }
 
         function setViewNavBackgroundVisible(visible) {
@@ -16502,8 +16729,7 @@
                 applyHandriveCodeHighlighting(contentArticle, newClass);
                 await initializePreviewVideoPlayers(contentArticle);
 
-                viewImageZoom = 1;
-                syncViewImageZoom();
+                restoreViewZoomForPath(entry.path);
 
                 currentDocPath = entry.path;
                 currentDocSlugPath = entry.slug_path || entry.path;
@@ -16590,8 +16816,7 @@
         bindHandrivePdfFrameLoading(contentArticle);
         initializePreviewVideoPlayers(contentArticle).catch(alertError);
 
-        viewImageZoom = 1;
-        syncViewImageZoom();
+        restoreViewZoomForPath(currentDocPath);
 
         loadViewNavSiblings();
 
@@ -16613,15 +16838,13 @@
 
         const isTextArticle = contentArticle && !contentArticle.classList.contains("handrive-media");
         if (isTextArticle) {
-            let viewTextFontSize = 16;
             contentArticle.addEventListener("wheel", function (event) {
                 if (!event.ctrlKey && !event.metaKey) return;
                 event.preventDefault();
                 const delta = event.deltaY < 0 ? 2 : -2;
-                viewTextFontSize = Math.max(8, Math.min(40, viewTextFontSize + delta));
-                contentArticle.style.setProperty("--handrive-text-font-size", viewTextFontSize + "px");
+                setViewTextFontSize(viewTextFontSize + delta);
             }, { passive: false });
-        } else if (contentArticle && contentArticle.classList.contains("handrive-media")) {
+        } else if (contentArticle && contentArticle.classList.contains("handrive-media") && getViewImageElement()) {
             contentArticle.addEventListener("wheel", function (event) {
                 if (!event.ctrlKey && !event.metaKey) return;
                 event.preventDefault();
@@ -16854,6 +17077,7 @@
         let writeUndoStack = [];
         let writeRedoStack = [];
         let writeUndoApplying = false;
+        let writeEditorFontSize = 16;
         const WRITE_UNDO_STACK_LIMIT = 200;
         // 자동완성 단어 리스트는 전역 단일 맵(window.__handriveEditorCompletionMap)만 사용
         const editorCompletionMap = window.__handriveEditorCompletionMap || {};
@@ -18124,6 +18348,36 @@
             } catch (error) {
                 return "";
             }
+        }
+
+        function getWriteEditorZoomExtension() {
+            return resolveWriteFilenameExtension() || getPathZoomExtension(originalPath, DOCS_DEFAULT_EXTENSION);
+        }
+
+        function applyWriteEditorFontSize(fontSize, options) {
+            const settings = options || {};
+            const extension = getWriteEditorZoomExtension();
+            writeEditorFontSize = Math.max(8, Math.min(40, Number(fontSize) || 16));
+            if (contentInput) {
+                contentInput.style.fontSize = writeEditorFontSize + "px";
+            }
+            if (editorHighlight) {
+                editorHighlight.style.fontSize = writeEditorFontSize + "px";
+            }
+            syncEditorHighlightScroll();
+            if (!settings.skipPersist && isHandriveTextCodeZoomExtension(extension)) {
+                writeStoredHandriveZoom("write-text", extension, writeEditorFontSize, 8, 40);
+            }
+        }
+
+        function restoreWriteEditorFontSizeForExtension() {
+            const extension = getWriteEditorZoomExtension();
+            if (!isHandriveTextCodeZoomExtension(extension)) {
+                applyWriteEditorFontSize(16, { skipPersist: true });
+                return;
+            }
+            const storedFontSize = readStoredHandriveZoom("write-text", extension, 8, 40);
+            applyWriteEditorFontSize(storedFontSize !== null ? storedFontSize : 16, { skipPersist: true });
         }
 
         function resolveWriteEditorRenderClass() {
@@ -19731,6 +19985,9 @@
         }
         markCurrentAsSaved();
         syncMarkdownHelpButtonVisibility();
+        if (!isMediaWriteEditor) {
+            restoreWriteEditorFontSizeForExtension();
+        }
         showWriteMediaSurface().catch(alertError);
         scheduleWriteEditorHorizontalScrollReset();
 
@@ -19843,6 +20100,9 @@
                 state.selectedOverwritePath = "";
                 saveFilenameInput.focus();
                 syncMarkdownHelpButtonVisibility();
+                if (!isMediaWriteEditor) {
+                    restoreWriteEditorFontSizeForExtension();
+                }
                 if (saveModal && !saveModal.hidden) {
                     syncOriginalSaveSelectionFromFilename();
                     renderBrowser();
@@ -19857,6 +20117,9 @@
                         saveExtensionSelect.value = parsed.extension;
                         syncWriteFilenameExtensionSelectFromValue(parsed.extension);
                         syncWriteFilenameInputExtension(parsed.extension);
+                        if (!isMediaWriteEditor) {
+                            restoreWriteEditorFontSizeForExtension();
+                        }
                         if (saveModal && !saveModal.hidden) {
                             syncOriginalSaveSelectionFromFilename();
                             renderBrowser();
@@ -19870,6 +20133,9 @@
                         }
                         syncWriteFilenameExtensionSelectFromValue(parsed.extension);
                         syncWriteFilenameInputExtension(parsed.extension);
+                        if (!isMediaWriteEditor) {
+                            restoreWriteEditorFontSizeForExtension();
+                        }
                     }
                 } catch (error) {
                     // Ignore extension auto-sync errors while typing.
@@ -19885,6 +20151,9 @@
             const refreshMarkdownButtonVisibility = function () {
                 syncWriteFilenameExtensionFromInput();
                 syncMarkdownHelpButtonVisibility();
+                if (!isMediaWriteEditor) {
+                    restoreWriteEditorFontSizeForExtension();
+                }
                 updateEditorSuggestion();
             };
             filenameInput.addEventListener("input", refreshMarkdownButtonVisibility);
@@ -19912,6 +20181,9 @@
                     syncExtensionSelectElementToCustomDefault(saveExtensionSelect);
                 }
                 syncMarkdownHelpButtonVisibility();
+                if (!isMediaWriteEditor) {
+                    restoreWriteEditorFontSizeForExtension();
+                }
                 updateEditorSuggestion();
             });
         }
@@ -19932,17 +20204,11 @@
                 recordWriteEditorSnapshot();
             });
             contentInput.addEventListener("scroll", syncEditorHighlightScroll, { passive: true });
-            let editorFontSize = 16;
             contentInput.addEventListener("wheel", function (event) {
                 if (!event.ctrlKey && !event.metaKey) return;
                 event.preventDefault();
                 const delta = event.deltaY < 0 ? 2 : -2;
-                editorFontSize = Math.max(8, Math.min(40, editorFontSize + delta));
-                contentInput.style.fontSize = editorFontSize + "px";
-                if (editorHighlight) {
-                    editorHighlight.style.fontSize = editorFontSize + "px";
-                }
-                syncEditorHighlightScroll();
+                applyWriteEditorFontSize(writeEditorFontSize + delta);
             }, { passive: false });
             contentInput.addEventListener("click", function () {
                 clearEditorSuggestion();

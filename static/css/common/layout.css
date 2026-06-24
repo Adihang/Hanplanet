@@ -44,11 +44,15 @@
     --site-dropdown-scrollbar-size: 3px;
     --site-dropdown-scrollbar-thumb: var(--site-scrollbar-thumb, rgba(120, 120, 128, 0.45));
     --site-dropdown-scrollbar-thumb-hover: var(--site-scrollbar-thumb-hover, rgba(95, 95, 103, 0.58));
-    --site-modal-backdrop-bg: rgba(0, 0, 0, 0.24);
+    --site-modal-backdrop-rgb: 0 0 0;
+    --site-modal-backdrop-opacity: 0.24;
+    --site-modal-backdrop-bg: rgb(var(--site-modal-backdrop-rgb) / var(--site-modal-backdrop-opacity));
     --site-modal-backdrop-filter: none;
     --site-modal-backdrop-surface-bg: transparent;
     --site-modal-exterior-dim-shadow: 0 0 0 100vmax var(--site-modal-backdrop-bg);
-    --site-modal-surface-bg: rgba(248, 248, 248, 0.72);
+    --site-modal-surface-rgb: 248 248 248;
+    --site-modal-surface-opacity: 0.72;
+    --site-modal-surface-bg: rgb(var(--site-modal-surface-rgb) / var(--site-modal-surface-opacity));
     --site-modal-surface-filter: var(--site-popup-glass-filter);
     --site-dropdown-surface-bg: var(--site-modal-surface-bg);
     --site-dropdown-surface-filter: var(--site-modal-surface-filter);

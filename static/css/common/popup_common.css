@@ -10,8 +10,8 @@
     box-sizing: border-box;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
-    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
     background-image: none;
     -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
@@ -328,7 +328,7 @@ body.theme-dark .site-custom-select {
 ) {
     position: relative;
     z-index: 1;
-    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
+    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)));
 }
 
 :where(.site-modal-dialog) {
@@ -341,10 +341,10 @@ body.theme-dark .site-custom-select {
     position: relative;
     z-index: 1;
     border-radius: var(--site-popup-radius-common);
-    background: var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72));
+    background: var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72)));
     -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
-    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
+    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)));
 }
 
 .site-modal-body {

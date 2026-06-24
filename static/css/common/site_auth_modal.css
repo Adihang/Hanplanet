@@ -9,7 +9,7 @@ body.handrive-popup-dragging {
 }
 
 .auth-modal {
-    --site-auth-dialog-bg: var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72));
+    --site-auth-dialog-bg: var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72)));
     --site-auth-dialog-text: var(--handrive-text, var(--site-text, var(--theme-ink, #1f1f1f)));
     --site-auth-dialog-text-strong: var(--handrive-text-stronger, var(--site-text-stronger, var(--theme-ink, #1f1f1f)));
     --site-auth-dialog-text-muted: var(--handrive-text-secondary, var(--site-text-secondary, var(--theme-subtle, #555555)));
@@ -49,7 +49,7 @@ body.handrive-popup-dragging {
 }
 
 body.theme-dark .auth-modal {
-    --site-auth-dialog-bg: var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72));
+    --site-auth-dialog-bg: var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 46 46 46) / var(--site-modal-surface-opacity, 0.72)));
     --site-auth-dialog-text: var(--handrive-text, var(--site-text, #f2f2f2));
     --site-auth-dialog-text-strong: var(--handrive-text-stronger, var(--site-text-stronger, #fafafa));
     --site-auth-dialog-text-muted: var(--handrive-text-secondary, var(--site-text-secondary, #c2c2c2));
@@ -111,7 +111,7 @@ body.theme-dark .auth-modal {
     -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     color: var(--site-auth-dialog-text);
-    box-shadow: var(--site-auth-dialog-shadow), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
+    box-shadow: var(--site-auth-dialog-shadow), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)));
     padding: 12px;
     box-sizing: border-box;
     display: flex;

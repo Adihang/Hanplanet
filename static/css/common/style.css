@@ -37,9 +37,15 @@
     --site-ui-active-press-depth: 1px;
     --btn-template-hover-lift: var(--site-ui-hover-lift);
     --btn-template-active-press-depth: var(--site-ui-active-press-depth);
+    --site-modal-backdrop-rgb: 0 0 0;
+    --site-modal-backdrop-opacity: 0.24;
+    --site-modal-backdrop-bg: rgb(var(--site-modal-backdrop-rgb) / var(--site-modal-backdrop-opacity));
+    --site-modal-surface-rgb: 248 248 248;
+    --site-modal-surface-opacity: 0.72;
+    --site-modal-surface-bg: rgb(var(--site-modal-surface-rgb) / var(--site-modal-surface-opacity));
     --site-loading-content-filter: blur(3px);
     --site-loading-content-opacity: 0.46;
-    --site-loading-overlay-bg: color-mix(in srgb, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)) 76%, transparent);
+    --site-loading-overlay-bg: color-mix(in srgb, var(--site-modal-surface-bg) 76%, transparent);
     --site-loading-overlay-filter: blur(3px);
     --site-loading-overlay-z: 6;
     --site-loading-spinner-size: 38px;
@@ -382,7 +388,7 @@ textarea,
     .root-search-input,
     .root-input-clear,
     .root-search-submit
-):focus-visible)):not(:disabled):not([aria-disabled="true"]):not(.is-ui-pressing):is(:hover, :focus-visible) {
+):focus-visible)):not(:disabled):not([aria-disabled="true"]):not([data-ui-press-disabled="true"]):not(.is-ui-pressing):is(:hover, :focus-visible) {
     translate: 0 var(--btn-template-hover-lift, -1px);
 }
 
@@ -478,7 +484,7 @@ textarea,
     .root-search-input,
     .root-input-clear,
     .root-search-submit
-):is(:active, .is-ui-pressing))):not(:disabled):not([aria-disabled="true"]):is(:active, .is-ui-pressing) {
+):is(:active, .is-ui-pressing))):not(:disabled):not([aria-disabled="true"]):not([data-ui-press-disabled="true"]):is(:active, .is-ui-pressing) {
     translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
@@ -781,11 +787,13 @@ body.theme-dark {
     --site-backdrop-strong: rgba(0, 0, 0, 0.68);
     --site-popup-glass-bg: rgba(46, 46, 46, 0.5);
     --site-popup-glass-filter: saturate(120%) blur(4px);
-    --site-modal-backdrop-bg: rgba(0, 0, 0, 0.34);
+    --site-modal-backdrop-rgb: 0 0 0;
+    --site-modal-backdrop-bg: rgb(var(--site-modal-backdrop-rgb) / var(--site-modal-backdrop-opacity));
     --site-modal-backdrop-filter: none;
     --site-modal-backdrop-surface-bg: transparent;
     --site-modal-exterior-dim-shadow: 0 0 0 100vmax var(--site-modal-backdrop-bg);
-    --site-modal-surface-bg: rgba(46, 46, 46, 0.72);
+    --site-modal-surface-rgb: 46 46 46;
+    --site-modal-surface-bg: rgb(var(--site-modal-surface-rgb) / var(--site-modal-surface-opacity));
     --site-modal-surface-filter: var(--site-popup-glass-filter);
     --site-dropdown-surface-bg: var(--site-modal-surface-bg);
     --site-dropdown-surface-filter: var(--site-modal-surface-filter);
@@ -1167,6 +1175,10 @@ body.root-page {
     z-index: var(--site-z-popup);
 }
 
+.root-shell-controls-fixed:has(.root-auth-modal:not([hidden])) {
+    z-index: var(--site-z-modal, 1400);
+}
+
 .root-shell-links .ui-nav-links {
     width: 100%;
     margin: 0;
@@ -1261,8 +1273,8 @@ body.theme-dark .root-shell-controls-fixed .ui-auth-account-avatar {
     min-width: 260px;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
-    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
     background-image: none;
     opacity: 1;
     padding: 0;
@@ -1274,8 +1286,8 @@ body.theme-dark .root-shell-controls-fixed .ui-auth-account-avatar {
 }
 
 body.theme-dark .root-shell-controls-fixed .ui-auth-account-menu {
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
-    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 46 46 46) / var(--site-modal-surface-opacity, 0.72))));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 46 46 46) / var(--site-modal-surface-opacity, 0.72))));
     background-image: none;
     opacity: 1;
 }
@@ -1471,18 +1483,24 @@ body.theme-dark .root-shell-controls-fixed .ui-auth-account-menu-actions .ui-aut
 }
 
 .root-auth-modal-dialog {
-    box-shadow: var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28)), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
+    box-shadow: var(--site-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28)), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)));
 }
 
 .root-auth-modal {
     position: fixed;
     inset: 0;
-    z-index: var(--site-modal-stack-z, var(--site-z-modal));
+    z-index: var(--site-modal-stack-z, var(--site-z-modal, 1400));
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 16px;
     box-sizing: border-box;
+    isolation: isolate;
+}
+
+.ui-nav:has(.root-auth-modal:not([hidden])) {
+    z-index: var(--site-z-modal, 1400);
+    overflow: visible;
 }
 
 .root-auth-modal[hidden] {
@@ -1501,6 +1519,7 @@ body.theme-dark .root-shell-controls-fixed .ui-auth-account-menu-actions .ui-aut
 .root-auth-modal-backdrop {
     position: absolute;
     inset: 0;
+    z-index: 0;
     background: var(--site-modal-backdrop-surface-bg, transparent);
     -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
     backdrop-filter: var(--site-modal-backdrop-filter, none);
@@ -1511,10 +1530,11 @@ body.theme-dark .root-shell-controls-fixed .ui-auth-account-menu-actions .ui-aut
     --site-modal-dialog-padding-y: 12px;
     --site-modal-head-follow-gap: 10px;
     position: relative;
+    z-index: 1;
     width: min(430px, 100%);
     border: 0;
     border-radius: 12px;
-    background: var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72));
+    background: var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72)));
     -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     padding: 12px;
@@ -1525,7 +1545,7 @@ body.theme-dark .root-shell-controls-fixed .ui-auth-account-menu-actions .ui-aut
 }
 
 body.theme-dark .root-auth-modal-dialog {
-    background: var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72));
+    background: var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 46 46 46) / var(--site-modal-surface-opacity, 0.72)));
 }
 
 .root-auth-modal-dialog h2 {
@@ -1743,7 +1763,7 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
     overscroll-behavior: contain;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
     -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     box-shadow: var(--site-dropdown-menu-shadow, 0 16px 38px rgba(15, 23, 42, 0.16));
@@ -2485,7 +2505,7 @@ body.theme-dark .root-translate-token-decorator {
     padding: 6px;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
     -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     display: none;
@@ -2571,7 +2591,7 @@ body.theme-dark .root-search-engine-caret {
 }
 
 body.theme-dark .root-search-engine-popup {
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 46 46 46) / var(--site-modal-surface-opacity, 0.72))));
 }
 
 body.theme-dark .root-search-engine-option {
@@ -2584,7 +2604,7 @@ body.theme-dark .root-search-engine-option.is-active {
 }
 
 body.theme-dark .root-search-suggestions {
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 46 46 46) / var(--site-modal-surface-opacity, 0.72))));
     box-shadow: var(--site-dropdown-menu-shadow, 0 16px 38px rgba(0, 0, 0, 0.34));
 }
 
@@ -2751,7 +2771,7 @@ body.theme-dark .root-search-submit-icon {
     padding: 6px;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
     -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     z-index: var(--site-z-popup);
@@ -3060,7 +3080,7 @@ body.theme-dark .root-shortcuts-remove:focus-visible {
 
 body.theme-dark .root-shortcuts-context-menu {
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(255, 255, 255, 0.24)));
-    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72)));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 46 46 46) / var(--site-modal-surface-opacity, 0.72))));
 }
 
 body.theme-dark .root-shortcuts-context-item {
@@ -3157,11 +3177,13 @@ body.portfolio-page section {
     --site-backdrop-strong: rgba(0, 0, 0, 0.4);
     --site-popup-glass-bg: rgba(238, 238, 238, 0.5);
     --site-popup-glass-filter: saturate(120%) blur(4px);
-    --site-modal-backdrop-bg: rgba(0, 0, 0, 0.24);
+    --site-modal-backdrop-rgb: 0 0 0;
+    --site-modal-backdrop-bg: rgb(var(--site-modal-backdrop-rgb) / var(--site-modal-backdrop-opacity));
     --site-modal-backdrop-filter: none;
     --site-modal-backdrop-surface-bg: transparent;
     --site-modal-exterior-dim-shadow: 0 0 0 100vmax var(--site-modal-backdrop-bg);
-    --site-modal-surface-bg: rgba(248, 248, 248, 0.72);
+    --site-modal-surface-rgb: 248 248 248;
+    --site-modal-surface-bg: rgb(var(--site-modal-surface-rgb) / var(--site-modal-surface-opacity));
     --site-modal-surface-filter: var(--site-popup-glass-filter);
     --site-dropdown-surface-bg: var(--site-modal-surface-bg);
     --site-dropdown-surface-filter: var(--site-modal-surface-filter);
@@ -3409,7 +3431,12 @@ body.theme-dark .ui-nav::after {
 .ui-nav .ui-nav-collapse,
 .ui-nav .ui-nav-links,
 .ui-nav .nav-item,
-.ui-nav .ui-nav-link {
+.ui-nav .ui-nav-link,
+.ui-nav .ui-controls-stack,
+.ui-nav .ui-auth-account-floating,
+.ui-nav .root-auth-modal,
+.ui-nav .root-auth-modal-backdrop,
+.ui-nav .root-auth-modal-dialog {
     overflow: visible;
 }
 
@@ -4842,17 +4869,17 @@ body.theme-dark .footer-sep {
     width: min(760px, 100%);
     max-height: min(84vh, 820px);
     border-radius: 12px;
-    background: var(--site-modal-surface-bg, rgba(248, 248, 248, 0.72));
+    background: var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72)));
     -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgba(0, 0, 0, 0.24));
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)));
 }
 
 body.theme-dark .site-legal-modal-dialog {
-    background: var(--site-modal-surface-bg, rgba(46, 46, 46, 0.72));
+    background: var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 46 46 46) / var(--site-modal-surface-opacity, 0.72)));
     color: #e5e5e5;
 }
 

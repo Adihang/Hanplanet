@@ -4,7 +4,6 @@
 document.addEventListener('DOMContentLoaded', function () {
     const UI_PRESS_FEEDBACK_CLASS = 'is-ui-pressing';
     const UI_PRESS_FEEDBACK_MIN_MS = 120;
-    const UI_PRESS_FEEDBACK_MAX_MS = 240;
     const UI_PRESS_FEEDBACK_SELECTOR = [
         'button:not(:disabled)',
         'input[type="button"]:not(:disabled)',
@@ -57,6 +56,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const initUiPressFeedback = function () {
         let pressedElement = null;
         let pressedAt = 0;
+        let pressedPointerId = null;
         let clearTimer = null;
 
         const clearPressedElement = function () {
@@ -69,10 +69,14 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             pressedElement = null;
             pressedAt = 0;
+            pressedPointerId = null;
         };
 
-        const schedulePressedElementClear = function () {
+        const schedulePressedElementClear = function (event) {
             if (!pressedElement) {
+                return;
+            }
+            if (event && pressedPointerId !== null && event.pointerId !== pressedPointerId) {
                 return;
             }
             const elapsed = window.performance && typeof window.performance.now === 'function'
@@ -85,8 +89,19 @@ document.addEventListener('DOMContentLoaded', function () {
             clearTimer = window.setTimeout(clearPressedElement, delay);
         };
 
-        const setPressedElement = function (element) {
-            if (!element || element.getAttribute('aria-disabled') === 'true') {
+        const cancelPressedElement = function (event) {
+            if (event && pressedPointerId !== null && event.pointerId !== pressedPointerId) {
+                return;
+            }
+            clearPressedElement();
+        };
+
+        const setPressedElement = function (element, event) {
+            if (
+                !element ||
+                element.getAttribute('aria-disabled') === 'true' ||
+                element.getAttribute('data-ui-press-disabled') === 'true'
+            ) {
                 return;
             }
             if (pressedElement && pressedElement !== element) {
@@ -100,8 +115,8 @@ document.addEventListener('DOMContentLoaded', function () {
             pressedAt = window.performance && typeof window.performance.now === 'function'
                 ? window.performance.now()
                 : Date.now();
+            pressedPointerId = event ? event.pointerId : null;
             pressedElement.classList.add(UI_PRESS_FEEDBACK_CLASS);
-            clearTimer = window.setTimeout(clearPressedElement, UI_PRESS_FEEDBACK_MAX_MS);
         };
 
         document.addEventListener('pointerdown', function (event) {
@@ -112,11 +127,11 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!target) {
                 return;
             }
-            setPressedElement(target);
-        }, { passive: true });
+            setPressedElement(target, event);
+        }, { passive: true, capture: true });
 
-        document.addEventListener('pointerup', schedulePressedElementClear, { passive: true });
-        document.addEventListener('pointercancel', clearPressedElement, { passive: true });
+        document.addEventListener('pointerup', schedulePressedElementClear, { passive: true, capture: true });
+        document.addEventListener('pointercancel', cancelPressedElement, { passive: true, capture: true });
         window.addEventListener('blur', clearPressedElement);
     };
 

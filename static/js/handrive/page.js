@@ -6786,6 +6786,151 @@
             }
         }
 
+        function captureListEditorDraftPreview(entry) {
+            if (!entry || !editorContentInput || !editorFilenameInput) {
+                return null;
+            }
+            const pathValue = normalizePath(entry.path || "", true);
+            if (!pathValue) {
+                return null;
+            }
+            return {
+                entry: entry,
+                path: pathValue,
+                filename: String(editorFilenameInput.value || ""),
+                content: String(editorContentInput.value || ""),
+                selectionStart: Number(editorContentInput.selectionStart),
+                selectionEnd: Number(editorContentInput.selectionEnd),
+                scrollTop: Number(editorContentInput.scrollTop),
+                scrollLeft: Number(editorContentInput.scrollLeft),
+                extension: resolveListEditorPreviewExtension(),
+            };
+        }
+
+        function applyListEditorDraftPreview(draft) {
+            if (!draft || !editorContentInput || !editorFilenameInput) {
+                return;
+            }
+            editorFilenameInput.value = draft.filename || "";
+            editorContentInput.value = draft.content || "";
+            if (Number.isFinite(draft.selectionStart) && Number.isFinite(draft.selectionEnd)) {
+                try {
+                    editorContentInput.setSelectionRange(draft.selectionStart, draft.selectionEnd);
+                } catch (error) {}
+            }
+            if (Number.isFinite(draft.scrollTop)) {
+                editorContentInput.scrollTop = draft.scrollTop;
+            }
+            if (Number.isFinite(draft.scrollLeft)) {
+                editorContentInput.scrollLeft = draft.scrollLeft;
+            }
+            renderListEditorHighlight();
+            syncListEditorPreviewButtonVisibility();
+        }
+
+        function isFloatingListEditorDraftPreviewForEntry(entry) {
+            if (!floatingListEditorDraftPreview || !entry) {
+                return false;
+            }
+            return normalizePath(entry.path || "", true) === floatingListEditorDraftPreview.path;
+        }
+
+        function restoreFloatingListEditorDraftPreview(entry, frame) {
+            const draft = floatingListEditorDraftPreview;
+            if (!draft || !entry) {
+                return false;
+            }
+            const switchResult = switchToEditor(entry);
+            if (frame) {
+                floatListDetailPanelAtFrame(editorPanel, frame);
+            }
+            Promise.resolve(switchResult)
+                .then(function () {
+                    applyListEditorDraftPreview(draft);
+                    if (frame) {
+                        floatListDetailPanelAtFrame(editorPanel, frame);
+                    }
+                })
+                .catch(alertError);
+            floatingListEditorDraftPreview = null;
+            return true;
+        }
+
+        async function openListEditorPreviewInListPanel() {
+            if (!activeListEditorEntry || !previewPanel || !previewContent) {
+                return;
+            }
+            const draft = captureListEditorDraftPreview(activeListEditorEntry);
+            if (!draft || !isListEditorPreviewExtension(draft.extension)) {
+                return;
+            }
+            const floatingFrame = getFloatingListDetailFrame(editorPanel);
+            floatingListEditorDraftPreview = draft;
+            const entry = draft.entry;
+            const pathValue = draft.path;
+
+            switchToPreview();
+            state.activePreviewPath = pathValue;
+            state.activeRenderedPreviewPath = "";
+            state.activePreviewRenderMode = "plain_text";
+            if (previewTitle) {
+                const previewTitleText = previewTitle.querySelector(".handrive-list-preview-title-text") || previewTitle;
+                previewTitleText.textContent = draft.filename || entry.name || t("list_preview_title", "파일 미리보기");
+            }
+            setPreviewActionTargets(entry);
+            if (floatingFrame) {
+                floatListDetailPanelAtFrame(previewPanel, floatingFrame);
+            }
+            setPreviewLoading();
+            applyHandriveRenderedContentModeClass(previewContent, "plain_text", "handrive-plain-text");
+            previewContent.innerHTML = "<p>" + t("preview_loading", "Loading preview...") + "</p>";
+
+            if (!previewApiUrl) {
+                setPreviewBodyLoading(false);
+                previewContent.innerHTML = "<p>" + t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다.") + "</p>";
+                return;
+            }
+
+            try {
+                const data = await requestJson(
+                    appendSharedQuery(previewApiUrl),
+                    buildPostOptions({
+                        original_path: normalizePath(entry.path || "", false),
+                        target_dir: normalizePath(getParentPath(entry.path || "") || state.currentDir || "", true),
+                        extension: draft.extension,
+                        content: draft.content,
+                    })
+                );
+                if (state.activePreviewPath !== pathValue) {
+                    return;
+                }
+                const renderMode = data && (data.render_mode === "markdown" || data.render_mode === "office")
+                    ? data.render_mode
+                    : "plain_text";
+                const renderClass = data && typeof data.render_class === "string" ? data.render_class : "";
+                state.activePreviewRenderMode = renderMode;
+                state.activeRenderedPreviewPath = pathValue;
+                setPreviewActionTargets(entry);
+                applyHandriveRenderedContentModeClass(previewContent, renderMode, renderClass);
+                previewContent.innerHTML = data && typeof data.html === "string" ? data.html : "";
+                applyHandriveCodeHighlighting(previewContent, renderClass || "ui-markdown");
+                renderHandriveMermaidDiagrams(previewContent).catch(alertError);
+                restorePreviewZoomForEntry(entry, renderMode);
+            } catch (error) {
+                applyHandriveRenderedContentModeClass(previewContent, "plain_text", "handrive-plain-text");
+                previewContent.innerHTML =
+                    "<p>" +
+                    (error && error.message ? error.message : t("js_error_processing_failed", "처리 중 오류가 발생했습니다.")) +
+                    "</p>";
+            } finally {
+                setPreviewBodyLoading(false);
+                if (floatingFrame) {
+                    floatListDetailPanelAtFrame(previewPanel, floatingFrame);
+                }
+                schedulePreviewBodyHeight();
+            }
+        }
+
         function clearListEditorSuggestion() {
             activeListEditorSuggestions = [];
             activeListEditorSuggestionIndex = -1;
@@ -7668,6 +7813,834 @@
             return Math.max(0, Math.floor(availableForBody));
         }
 
+        const FLOATING_LIST_DETAIL_DRAG_THRESHOLD = 50;
+        const FLOATING_LIST_DETAIL_VIEWPORT_MARGIN = 0;
+        const FLOATING_LIST_DETAIL_PORTRAIT_WIDTH_RATIO = 0.8;
+        const FLOATING_LIST_DETAIL_RELEASE_EDGE_THRESHOLD = 50;
+        let floatingListDetailPanel = null;
+        let floatingListDetailPress = null;
+        let floatingListDetailDrag = null;
+        let floatingListDetailResize = null;
+        let floatingListDetailViewportRefreshRafId = null;
+        let suppressFloatingListDetailClickUntil = 0;
+        let floatingListEditorDraftPreview = null;
+
+        function clampFloatingListDetailValue(value, minValue, maxValue) {
+            if (maxValue < minValue) {
+                return maxValue;
+            }
+            return Math.max(minValue, Math.min(maxValue, value));
+        }
+
+        function getFloatingListDetailViewportRect() {
+            const visualViewport = window.visualViewport || null;
+            return {
+                left: visualViewport ? visualViewport.offsetLeft : 0,
+                top: visualViewport ? visualViewport.offsetTop : 0,
+                width: visualViewport ? visualViewport.width : window.innerWidth,
+                height: visualViewport ? visualViewport.height : window.innerHeight,
+            };
+        }
+
+        function isFloatingListDetailPanel(panel) {
+            return Boolean(panel && panel.classList && panel.classList.contains("is-floating-detail"));
+        }
+
+        function isAnyFloatingListDetailPanel() {
+            return isFloatingListDetailPanel(previewPanel) || isFloatingListDetailPanel(editorPanel);
+        }
+
+        function shouldUsePortraitFloatingListDetailWidth(sourceRect) {
+            return Boolean(
+                listLayout &&
+                listLayout.classList.contains("is-portrait") &&
+                sourceRect &&
+                sourceRect.width
+            );
+        }
+
+        function isPortraitFloatingListDetailPanel(panel) {
+            return Boolean(
+                panel &&
+                panel.classList &&
+                panel.classList.contains("is-floating-detail-portrait")
+            );
+        }
+
+        function syncFloatingListDetailLayoutState() {
+            const hasFloatingDetail = isAnyFloatingListDetailPanel();
+            if (listLayout) {
+                listLayout.classList.toggle("has-floating-detail", hasFloatingDetail);
+            }
+            document.body.classList.toggle("handrive-list-detail-modal-open", hasFloatingDetail);
+            if (!hasFloatingDetail) {
+                floatingListDetailPanel = null;
+            }
+            syncListSplitterState();
+            scheduleSyncCurrentDirRowHeightWithSideHead();
+            scheduleListBodyHeight();
+            schedulePreviewBodyHeight();
+            scheduleEditorBodyHeight();
+        }
+
+        function scheduleFloatingListDetailViewportRefresh() {
+            if (floatingListDetailViewportRefreshRafId !== null) {
+                return;
+            }
+            floatingListDetailViewportRefreshRafId = window.requestAnimationFrame(function () {
+                floatingListDetailViewportRefreshRafId = null;
+                clampFloatingListDetailPanelToViewport(previewPanel);
+                clampFloatingListDetailPanelToViewport(editorPanel);
+                try {
+                    window.dispatchEvent(new Event("resize"));
+                } catch (error) {}
+            });
+        }
+
+        function getFloatingListDetailHead(panel) {
+            if (!panel) {
+                return null;
+            }
+            return panel.querySelector(".handrive-list-preview-head, .handrive-list-editor-head");
+        }
+
+        function isFloatingListDetailReleaseEdge(event) {
+            if (!event) {
+                return false;
+            }
+            const clientX = Number(event.clientX);
+            const clientY = Number(event.clientY);
+            if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+                return false;
+            }
+            const viewportRect = getFloatingListDetailViewportRect();
+            if (listLayout && listLayout.classList.contains("is-portrait")) {
+                return clientY >= viewportRect.top + viewportRect.height - FLOATING_LIST_DETAIL_RELEASE_EDGE_THRESHOLD;
+            }
+            return clientX >= viewportRect.left + viewportRect.width - FLOATING_LIST_DETAIL_RELEASE_EDGE_THRESHOLD;
+        }
+
+        function applyFloatingListDetailFrameToLayoutSplit(panel, frame) {
+            if (
+                !panel ||
+                panel.hidden ||
+                !frame ||
+                !listLayout ||
+                !listPane
+            ) {
+                return;
+            }
+            const mode = listLayout.classList.contains("is-portrait")
+                ? "portrait"
+                : (listLayout.classList.contains("is-landscape") ? "landscape" : "");
+            if (!mode) {
+                return;
+            }
+            const targetDetailSize = mode === "portrait" ? frame.height : frame.width;
+            if (!Number.isFinite(targetDetailSize) || targetDetailSize <= 0) {
+                return;
+            }
+            const hasMatchingDetail = (
+                (panel === previewPanel && listLayout.classList.contains("has-preview")) ||
+                (panel === editorPanel && listLayout.classList.contains("has-editor"))
+            );
+            if (!hasMatchingDetail) {
+                return;
+            }
+            const layoutRect = listLayout.getBoundingClientRect();
+            const axisSize = getListSplitAxisSize(mode, layoutRect);
+            if (!axisSize || axisSize <= 0) {
+                return;
+            }
+            const clampedDetailSize = clampFloatingListDetailValue(targetDetailSize, 0, axisSize);
+            const nextRatio = clampListSplitRatioToLayout(
+                mode,
+                (axisSize - clampedDetailSize) / axisSize,
+                layoutRect
+            );
+            if (nextRatio === null) {
+                return;
+            }
+            applyListSplitRatio(mode, nextRatio, {
+                persist: false,
+                updateColumns: true,
+            });
+        }
+
+        function temporarilyRestoreFloatingListDetailPanel(dragState) {
+            if (!dragState || !isFloatingListDetailPanel(dragState.panel)) {
+                return;
+            }
+            const panel = dragState.panel;
+            const restore = panel.__handriveFloatingListDetailRestore || {};
+            const frame = getFloatingListDetailFrame(panel);
+            dragState.temporaryRestored = true;
+            dragState.temporaryFrame = frame;
+            panel.classList.remove(
+                "is-floating-detail",
+                "is-floating-detail-dragging",
+                "is-floating-detail-resizing",
+                "is-floating-detail-portrait"
+            );
+            removeFloatingListDetailResizeHandles(panel);
+            removeFloatingListDetailCloseButton(panel);
+            panel.style.width = restore.inlineWidth || "";
+            panel.style.height = restore.inlineHeight || "";
+            panel.style.left = restore.inlineLeft || "";
+            panel.style.top = restore.inlineTop || "";
+            if (restore.placeholder && restore.placeholder.parentNode) {
+                restore.placeholder.parentNode.insertBefore(panel, restore.placeholder);
+            } else if (restore.parent) {
+                restore.parent.appendChild(panel);
+            }
+            if (floatingListDetailPanel === panel) {
+                floatingListDetailPanel = null;
+            }
+            syncFloatingListDetailLayoutState();
+            applyFloatingListDetailFrameToLayoutSplit(panel, frame);
+            scheduleFloatingListDetailViewportRefresh();
+        }
+
+        function resumeTemporarilyRestoredFloatingListDetailPanel(dragState, event) {
+            if (!dragState || !dragState.temporaryRestored || !dragState.panel) {
+                return;
+            }
+            const panel = dragState.panel;
+            const frame = dragState.temporaryFrame || panel.getBoundingClientRect();
+            panel.classList.add("is-floating-detail");
+            panel.classList.toggle("is-floating-detail-portrait", Boolean(frame.portraitWidth));
+            panel.style.width = frame.width + "px";
+            panel.style.height = frame.height + "px";
+            panel.style.left = frame.left + "px";
+            panel.style.top = frame.top + "px";
+            document.body.appendChild(panel);
+            ensureFloatingListDetailResizeHandles(panel);
+            ensureFloatingListDetailCloseButton(panel);
+            panel.hidden = false;
+            panel.setAttribute("aria-hidden", "false");
+            floatingListDetailPanel = panel;
+            dragState.temporaryRestored = false;
+            dragState.temporaryFrame = null;
+            panel.classList.add("is-floating-detail-dragging");
+            if (dragState.head && dragState.pointerId !== null && dragState.pointerId !== undefined) {
+                try {
+                    dragState.head.setPointerCapture(dragState.pointerId);
+                } catch (error) {}
+            }
+            syncFloatingListDetailLayoutState();
+            if (event) {
+                positionFloatingListDetailPanel(panel, event.clientX, event.clientY, dragState);
+            }
+            scheduleFloatingListDetailViewportRefresh();
+        }
+
+        function finalizeTemporarilyRestoredFloatingListDetailPanel(dragState) {
+            if (!dragState || !dragState.temporaryRestored || !dragState.panel) {
+                return;
+            }
+            const panel = dragState.panel;
+            const restore = panel.__handriveFloatingListDetailRestore || {};
+            const frame = dragState.temporaryFrame || null;
+            if (restore.placeholder && restore.placeholder.parentNode) {
+                restore.placeholder.parentNode.removeChild(restore.placeholder);
+            }
+            delete panel.__handriveFloatingListDetailRestore;
+            dragState.temporaryRestored = false;
+            dragState.temporaryFrame = null;
+            if (floatingListDetailPanel === panel) {
+                floatingListDetailPanel = null;
+            }
+            syncFloatingListDetailLayoutState();
+            applyFloatingListDetailFrameToLayoutSplit(panel, frame);
+            scheduleFloatingListDetailViewportRefresh();
+        }
+
+        function syncFloatingListDetailTemporaryRestoreTarget(dragState, event) {
+            if (!dragState || !dragState.panel) {
+                return false;
+            }
+            const shouldTemporarilyRestore = isFloatingListDetailReleaseEdge(event);
+            if (shouldTemporarilyRestore) {
+                temporarilyRestoreFloatingListDetailPanel(dragState);
+                return true;
+            }
+            resumeTemporarilyRestoredFloatingListDetailPanel(dragState, event);
+            return false;
+        }
+
+        function getFloatingListDetailFrame(panel) {
+            if (!isFloatingListDetailPanel(panel)) {
+                return null;
+            }
+            const rect = panel.getBoundingClientRect();
+            return {
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+                portraitWidth: isPortraitFloatingListDetailPanel(panel),
+            };
+        }
+
+        function applyFloatingListDetailFrame(panel, frame) {
+            if (!isFloatingListDetailPanel(panel) || !frame) {
+                return;
+            }
+            panel.classList.toggle("is-floating-detail-portrait", Boolean(frame.portraitWidth));
+            const viewportRect = getFloatingListDetailViewportRect();
+            const limits = getFloatingListDetailSizeLimits(panel);
+            const width = clampFloatingListDetailValue(frame.width, limits.minWidth, limits.maxWidth);
+            const height = clampFloatingListDetailValue(frame.height, limits.minHeight, limits.maxHeight);
+            const minLeft = viewportRect.left + FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const minTop = viewportRect.top + FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const maxLeft = viewportRect.left + viewportRect.width - width - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const maxTop = viewportRect.top + viewportRect.height - height - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            panel.style.width = width + "px";
+            panel.style.height = height + "px";
+            panel.style.left = clampFloatingListDetailValue(frame.left, minLeft, maxLeft) + "px";
+            panel.style.top = clampFloatingListDetailValue(frame.top, minTop, maxTop) + "px";
+        }
+
+        function ensureFloatingListDetailCloseButton(panel) {
+            if (!panel || panel !== previewPanel) {
+                return;
+            }
+            const actions = panel.querySelector(".handrive-list-preview-actions");
+            if (!actions) {
+                return;
+            }
+            let closeButton = actions.querySelector("[data-handrive-floating-detail-close]");
+            if (closeButton) {
+                return;
+            }
+            closeButton = document.createElement("button");
+            closeButton.type = "button";
+            closeButton.className = "handrive-icon-btn handrive-list-detail-close-btn";
+            closeButton.dataset.handriveFloatingDetailClose = "1";
+            closeButton.setAttribute("data-handrive-no-drag", "true");
+            closeButton.setAttribute("aria-label", t("close", "닫기"));
+            closeButton.title = t("close", "닫기");
+            closeButton.innerHTML = '<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>';
+            closeButton.addEventListener("click", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                clearPreviewPane();
+            });
+            actions.appendChild(closeButton);
+        }
+
+        function removeFloatingListDetailCloseButton(panel) {
+            if (!panel) {
+                return;
+            }
+            const closeButton = panel.querySelector("[data-handrive-floating-detail-close]");
+            if (closeButton) {
+                closeButton.remove();
+            }
+        }
+
+        function isFloatingListDetailDragBlockedTarget(target, head) {
+            if (!(target instanceof Element) || !head || !head.contains(target)) {
+                return true;
+            }
+            return Boolean(target.closest([
+                "a",
+                "button",
+                "select",
+                "textarea",
+                "label",
+                "[contenteditable='true']",
+                "[contenteditable='']",
+                ".handrive-list-preview-title-text",
+                "[data-handrive-no-drag]",
+            ].join(",")));
+        }
+
+        function getFloatingListDetailPanelSize(panel, sourceRect) {
+            const viewportRect = getFloatingListDetailViewportRect();
+            const maxWidth = Math.max(240, viewportRect.width - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN * 2);
+            const maxHeight = Math.max(220, viewportRect.height - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN * 2);
+            const usePortraitWidth = shouldUsePortraitFloatingListDetailWidth(sourceRect);
+            const minWidth = Math.min(usePortraitWidth ? 240 : 360, maxWidth);
+            const minHeight = Math.min(260, maxHeight);
+            const fallbackWidth = Math.min(760, maxWidth);
+            const fallbackHeight = Math.min(620, maxHeight);
+            const sourceWidth = sourceRect && sourceRect.width ? sourceRect.width : fallbackWidth;
+            const sourceHeight = sourceRect && sourceRect.height ? sourceRect.height : fallbackHeight;
+            const targetWidth = usePortraitWidth
+                ? sourceWidth * FLOATING_LIST_DETAIL_PORTRAIT_WIDTH_RATIO
+                : sourceWidth;
+            return {
+                width: clampFloatingListDetailValue(targetWidth, minWidth, maxWidth),
+                height: clampFloatingListDetailValue(sourceHeight, minHeight, maxHeight),
+                portraitWidth: usePortraitWidth,
+            };
+        }
+
+        function positionFloatingListDetailPanel(panel, clientX, clientY, dragState) {
+            if (!isFloatingListDetailPanel(panel)) {
+                return;
+            }
+            const viewportRect = getFloatingListDetailViewportRect();
+            const panelRect = panel.getBoundingClientRect();
+            const head = getFloatingListDetailHead(panel);
+            const headRect = head ? head.getBoundingClientRect() : null;
+            const headHeight = headRect && headRect.height ? headRect.height : 48;
+            const centerOnPointerX = Boolean(dragState && dragState.centerOnPointerX);
+            const grabOffsetX = dragState && Number.isFinite(dragState.grabOffsetX)
+                ? dragState.grabOffsetX
+                : panelRect.width / 2;
+            const grabOffsetY = dragState && Number.isFinite(dragState.grabOffsetY)
+                ? dragState.grabOffsetY
+                : headHeight / 2;
+            const minLeft = viewportRect.left + FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const minTop = viewportRect.top + FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const maxLeft = viewportRect.left + viewportRect.width - panelRect.width - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const maxTop = viewportRect.top + viewportRect.height - panelRect.height - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const left = clampFloatingListDetailValue(clientX - (centerOnPointerX ? panelRect.width / 2 : grabOffsetX), minLeft, maxLeft);
+            const top = clampFloatingListDetailValue(clientY - grabOffsetY, minTop, maxTop);
+            panel.style.left = left + "px";
+            panel.style.top = top + "px";
+        }
+
+        function clampFloatingListDetailPanelToViewport(panel) {
+            if (!isFloatingListDetailPanel(panel)) {
+                return;
+            }
+            const viewportRect = getFloatingListDetailViewportRect();
+            const panelRect = panel.getBoundingClientRect();
+            const minLeft = viewportRect.left + FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const minTop = viewportRect.top + FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const maxLeft = viewportRect.left + viewportRect.width - panelRect.width - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const maxTop = viewportRect.top + viewportRect.height - panelRect.height - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            panel.style.left = clampFloatingListDetailValue(panelRect.left, minLeft, maxLeft) + "px";
+            panel.style.top = clampFloatingListDetailValue(panelRect.top, minTop, maxTop) + "px";
+        }
+
+        function getFloatingListDetailSizeLimits(panel) {
+            const viewportRect = getFloatingListDetailViewportRect();
+            const maxWidth = Math.max(240, viewportRect.width - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN * 2);
+            const maxHeight = Math.max(220, viewportRect.height - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN * 2);
+            return {
+                minWidth: Math.min(isPortraitFloatingListDetailPanel(panel) ? 240 : 360, maxWidth),
+                minHeight: Math.min(260, maxHeight),
+                maxWidth: maxWidth,
+                maxHeight: maxHeight,
+            };
+        }
+
+        function ensureFloatingListDetailResizeHandles(panel) {
+            if (!panel || panel.querySelector(".handrive-list-detail-resize-handle")) {
+                return;
+            }
+            ["n", "s", "e", "w", "ne", "se", "sw", "nw"].forEach(function (direction) {
+                const handle = document.createElement("span");
+                handle.className = "handrive-list-detail-resize-handle handrive-list-detail-resize-handle-" + direction;
+                handle.dataset.resizeDirection = direction;
+                handle.setAttribute("aria-hidden", "true");
+                handle.addEventListener("pointerdown", handleFloatingListDetailResizePointerDown);
+                panel.appendChild(handle);
+            });
+        }
+
+        function removeFloatingListDetailResizeHandles(panel) {
+            if (!panel) {
+                return;
+            }
+            panel.querySelectorAll(".handrive-list-detail-resize-handle").forEach(function (handle) {
+                handle.remove();
+            });
+        }
+
+        function clearFloatingListDetailResizeState() {
+            const resizeState = floatingListDetailResize;
+            if (resizeState && resizeState.panel) {
+                resizeState.panel.classList.remove("is-floating-detail-resizing");
+            }
+            if (resizeState && resizeState.handle && resizeState.pointerId !== null && resizeState.pointerId !== undefined) {
+                try {
+                    resizeState.handle.releasePointerCapture(resizeState.pointerId);
+                } catch (error) {}
+            }
+            document.body.classList.remove("handrive-list-detail-resizing");
+            document.removeEventListener("pointermove", handleFloatingListDetailResizePointerMove);
+            document.removeEventListener("pointerup", handleFloatingListDetailResizePointerUp);
+            document.removeEventListener("pointercancel", handleFloatingListDetailResizePointerUp);
+            floatingListDetailResize = null;
+        }
+
+        function handleFloatingListDetailResizePointerMove(event) {
+            const resizeState = floatingListDetailResize;
+            if (!resizeState || event.pointerId !== resizeState.pointerId) {
+                return;
+            }
+            event.preventDefault();
+            const direction = resizeState.direction || "";
+            const viewportRect = getFloatingListDetailViewportRect();
+            const limits = getFloatingListDetailSizeLimits(resizeState.panel);
+            const minLeft = viewportRect.left + FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const minTop = viewportRect.top + FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const maxRight = viewportRect.left + viewportRect.width - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const maxBottom = viewportRect.top + viewportRect.height - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const deltaX = event.clientX - resizeState.startClientX;
+            const deltaY = event.clientY - resizeState.startClientY;
+            const startRight = resizeState.startLeft + resizeState.startWidth;
+            const startBottom = resizeState.startTop + resizeState.startHeight;
+            let nextLeft = resizeState.startLeft;
+            let nextTop = resizeState.startTop;
+            let nextWidth = resizeState.startWidth;
+            let nextHeight = resizeState.startHeight;
+
+            if (direction.indexOf("e") !== -1) {
+                nextWidth = clampFloatingListDetailValue(
+                    resizeState.startWidth + deltaX,
+                    limits.minWidth,
+                    Math.min(limits.maxWidth, maxRight - resizeState.startLeft)
+                );
+            }
+            if (direction.indexOf("s") !== -1) {
+                nextHeight = clampFloatingListDetailValue(
+                    resizeState.startHeight + deltaY,
+                    limits.minHeight,
+                    Math.min(limits.maxHeight, maxBottom - resizeState.startTop)
+                );
+            }
+            if (direction.indexOf("w") !== -1) {
+                const maxLeft = Math.min(startRight - limits.minWidth, maxRight - limits.minWidth);
+                nextLeft = clampFloatingListDetailValue(resizeState.startLeft + deltaX, minLeft, maxLeft);
+                nextWidth = clampFloatingListDetailValue(startRight - nextLeft, limits.minWidth, limits.maxWidth);
+            }
+            if (direction.indexOf("n") !== -1) {
+                const maxTop = Math.min(startBottom - limits.minHeight, maxBottom - limits.minHeight);
+                nextTop = clampFloatingListDetailValue(resizeState.startTop + deltaY, minTop, maxTop);
+                nextHeight = clampFloatingListDetailValue(startBottom - nextTop, limits.minHeight, limits.maxHeight);
+            }
+
+            resizeState.panel.style.left = nextLeft + "px";
+            resizeState.panel.style.top = nextTop + "px";
+            resizeState.panel.style.width = nextWidth + "px";
+            resizeState.panel.style.height = nextHeight + "px";
+            scheduleFloatingListDetailViewportRefresh();
+        }
+
+        function handleFloatingListDetailResizePointerUp(event) {
+            const resizeState = floatingListDetailResize;
+            if (!resizeState || event.pointerId !== resizeState.pointerId) {
+                return;
+            }
+            event.preventDefault();
+            suppressFloatingListDetailClickUntil = Date.now() + 250;
+            clearFloatingListDetailResizeState();
+            scheduleFloatingListDetailViewportRefresh();
+        }
+
+        function handleFloatingListDetailResizePointerDown(event) {
+            if (event.button !== undefined && event.button !== 0) {
+                return;
+            }
+            const handle = event.currentTarget instanceof Element ? event.currentTarget : null;
+            const panel = handle ? handle.closest(".handrive-list-preview, .handrive-list-editor") : null;
+            if (!handle || !isFloatingListDetailPanel(panel)) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            clearFloatingListDetailPointerState();
+            clearFloatingListDetailResizeState();
+            const rect = panel.getBoundingClientRect();
+            floatingListDetailResize = {
+                direction: handle.dataset.resizeDirection || "se",
+                handle: handle,
+                panel: panel,
+                pointerId: event.pointerId,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                startLeft: rect.left,
+                startTop: rect.top,
+                startWidth: rect.width,
+                startHeight: rect.height,
+            };
+            panel.classList.add("is-floating-detail-resizing");
+            document.body.classList.add("handrive-list-detail-resizing");
+            try {
+                handle.setPointerCapture(event.pointerId);
+            } catch (error) {}
+            document.addEventListener("pointermove", handleFloatingListDetailResizePointerMove, { passive: false });
+            document.addEventListener("pointerup", handleFloatingListDetailResizePointerUp);
+            document.addEventListener("pointercancel", handleFloatingListDetailResizePointerUp);
+        }
+
+        function clearFloatingListDetailPointerState() {
+            const dragPanel = floatingListDetailDrag ? floatingListDetailDrag.panel : null;
+            const pressHead = floatingListDetailPress ? floatingListDetailPress.head : null;
+            const pressPointerId = floatingListDetailPress ? floatingListDetailPress.pointerId : null;
+            if (floatingListDetailDrag && floatingListDetailDrag.temporaryRestored) {
+                finalizeTemporarilyRestoredFloatingListDetailPanel(floatingListDetailDrag);
+            }
+            if (dragPanel) {
+                dragPanel.classList.remove("is-floating-detail-dragging");
+            }
+            if (pressHead && pressPointerId !== null && pressPointerId !== undefined) {
+                try {
+                    pressHead.releasePointerCapture(pressPointerId);
+                } catch (error) {}
+            }
+            document.body.classList.remove("handrive-list-detail-dragging");
+            document.removeEventListener("pointermove", handleFloatingListDetailPointerMove);
+            document.removeEventListener("pointerup", handleFloatingListDetailPointerUp);
+            document.removeEventListener("pointercancel", handleFloatingListDetailPointerUp);
+            floatingListDetailPress = null;
+            floatingListDetailDrag = null;
+        }
+
+        function ensureFloatingListDetailPanel(panel, sourceRect) {
+            if (!panel || panel.hidden) {
+                return false;
+            }
+            if (floatingListDetailPanel && floatingListDetailPanel !== panel) {
+                restoreFloatingListDetailPanel(floatingListDetailPanel);
+            }
+            if (!isFloatingListDetailPanel(panel)) {
+                const originalParent = panel.parentNode;
+                if (!originalParent) {
+                    return false;
+                }
+                const placeholder = document.createComment("handrive-floating-list-detail");
+                originalParent.insertBefore(placeholder, panel.nextSibling);
+                const size = getFloatingListDetailPanelSize(panel, sourceRect);
+                panel.__handriveFloatingListDetailRestore = {
+                    parent: originalParent,
+                    placeholder: placeholder,
+                    inlineWidth: panel.style.width,
+                    inlineHeight: panel.style.height,
+                    inlineLeft: panel.style.left,
+                    inlineTop: panel.style.top,
+                };
+                panel.classList.add("is-floating-detail");
+                panel.classList.toggle("is-floating-detail-portrait", Boolean(size.portraitWidth));
+                panel.style.width = size.width + "px";
+                panel.style.height = size.height + "px";
+                document.body.appendChild(panel);
+            }
+            ensureFloatingListDetailResizeHandles(panel);
+            ensureFloatingListDetailCloseButton(panel);
+            panel.hidden = false;
+            panel.setAttribute("aria-hidden", "false");
+            floatingListDetailPanel = panel;
+            syncFloatingListDetailLayoutState();
+            return true;
+        }
+
+        function floatListDetailPanelAtFrame(panel, frame) {
+            if (!panel || !frame) {
+                return false;
+            }
+            panel.hidden = false;
+            panel.setAttribute("aria-hidden", "false");
+            if (!ensureFloatingListDetailPanel(panel, frame)) {
+                return false;
+            }
+            applyFloatingListDetailFrame(panel, frame);
+            scheduleFloatingListDetailViewportRefresh();
+            return true;
+        }
+
+        function activateFloatingListDetailPanel(panel, event, pressState) {
+            if (!panel || panel.hidden) {
+                return false;
+            }
+            const sourceRect = panel.getBoundingClientRect();
+            const wasFloating = isFloatingListDetailPanel(panel);
+            if (!ensureFloatingListDetailPanel(panel, sourceRect)) {
+                return false;
+            }
+            positionFloatingListDetailPanel(panel, event.clientX, event.clientY, {
+                centerOnPointerX: !wasFloating,
+                grabOffsetX: pressState && Number.isFinite(pressState.grabOffsetX)
+                    ? pressState.grabOffsetX
+                    : null,
+                grabOffsetY: pressState && Number.isFinite(pressState.grabOffsetY)
+                    ? pressState.grabOffsetY
+                    : null,
+            });
+            scheduleFloatingListDetailViewportRefresh();
+            return true;
+        }
+
+        function restoreFloatingListDetailPanel(panel) {
+            if (!isFloatingListDetailPanel(panel)) {
+                if (panel && panel.__handriveFloatingListDetailRestore) {
+                    finalizeTemporarilyRestoredFloatingListDetailPanel({
+                        panel: panel,
+                        temporaryRestored: true,
+                    });
+                }
+                return;
+            }
+            if (floatingListDetailDrag && floatingListDetailDrag.panel === panel) {
+                clearFloatingListDetailPointerState();
+            }
+            if (floatingListDetailResize && floatingListDetailResize.panel === panel) {
+                clearFloatingListDetailResizeState();
+            }
+            const frame = getFloatingListDetailFrame(panel);
+            const restore = panel.__handriveFloatingListDetailRestore || {};
+            panel.classList.remove(
+                "is-floating-detail",
+                "is-floating-detail-dragging",
+                "is-floating-detail-resizing",
+                "is-floating-detail-portrait"
+            );
+            removeFloatingListDetailResizeHandles(panel);
+            removeFloatingListDetailCloseButton(panel);
+            panel.style.width = restore.inlineWidth || "";
+            panel.style.height = restore.inlineHeight || "";
+            panel.style.left = restore.inlineLeft || "";
+            panel.style.top = restore.inlineTop || "";
+            if (restore.placeholder && restore.placeholder.parentNode) {
+                restore.placeholder.parentNode.insertBefore(panel, restore.placeholder);
+                restore.placeholder.parentNode.removeChild(restore.placeholder);
+            } else if (restore.parent) {
+                restore.parent.appendChild(panel);
+            }
+            delete panel.__handriveFloatingListDetailRestore;
+            if (floatingListDetailPanel === panel) {
+                floatingListDetailPanel = null;
+            }
+            syncFloatingListDetailLayoutState();
+            applyFloatingListDetailFrameToLayoutSplit(panel, frame);
+            scheduleFloatingListDetailViewportRefresh();
+        }
+
+        function handleFloatingListDetailPointerMove(event) {
+            const pressState = floatingListDetailPress;
+            if (!pressState || event.pointerId !== pressState.pointerId) {
+                return;
+            }
+            if (floatingListDetailDrag) {
+                event.preventDefault();
+                const temporaryRestored = syncFloatingListDetailTemporaryRestoreTarget(floatingListDetailDrag, event);
+                if (!temporaryRestored) {
+                    positionFloatingListDetailPanel(floatingListDetailDrag.panel, event.clientX, event.clientY, floatingListDetailDrag);
+                }
+                return;
+            }
+            const deltaX = event.clientX - pressState.startClientX;
+            const deltaY = event.clientY - pressState.startClientY;
+            const threshold = isFloatingListDetailPanel(pressState.panel) ? 1 : FLOATING_LIST_DETAIL_DRAG_THRESHOLD;
+            if (Math.hypot(deltaX, deltaY) < threshold) {
+                return;
+            }
+            event.preventDefault();
+            const centerOnPointerX = !isFloatingListDetailPanel(pressState.panel);
+            if (!activateFloatingListDetailPanel(pressState.panel, event, pressState)) {
+                clearFloatingListDetailPointerState();
+                return;
+            }
+            floatingListDetailDrag = {
+                head: pressState.head,
+                panel: pressState.panel,
+                pointerId: pressState.pointerId,
+                centerOnPointerX: centerOnPointerX,
+                grabOffsetX: pressState.grabOffsetX,
+                grabOffsetY: pressState.grabOffsetY,
+            };
+            pressState.panel.classList.add("is-floating-detail-dragging");
+            document.body.classList.add("handrive-list-detail-dragging");
+            positionFloatingListDetailPanel(pressState.panel, event.clientX, event.clientY, floatingListDetailDrag);
+            syncFloatingListDetailTemporaryRestoreTarget(floatingListDetailDrag, event);
+        }
+
+        function handleFloatingListDetailPointerUp(event) {
+            const pressState = floatingListDetailPress;
+            if (!pressState || event.pointerId !== pressState.pointerId) {
+                return;
+            }
+            if (floatingListDetailDrag) {
+                event.preventDefault();
+                suppressFloatingListDetailClickUntil = Date.now() + 350;
+                const dragState = floatingListDetailDrag;
+                syncFloatingListDetailTemporaryRestoreTarget(dragState, event);
+            }
+            clearFloatingListDetailPointerState();
+        }
+
+        function handleFloatingListDetailPointerDown(event) {
+            if (event.button !== undefined && event.button !== 0) {
+                return;
+            }
+            const head = event.currentTarget instanceof Element ? event.currentTarget : null;
+            const panel = head ? head.closest(".handrive-list-preview, .handrive-list-editor") : null;
+            if (!head || !panel || panel.hidden || isFloatingListDetailDragBlockedTarget(event.target, head)) {
+                return;
+            }
+            clearFloatingListDetailPointerState();
+            const headRect = head.getBoundingClientRect();
+            const panelRect = panel.getBoundingClientRect();
+            floatingListDetailPress = {
+                head: head,
+                panel: panel,
+                pointerId: event.pointerId,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                grabOffsetX: clampFloatingListDetailValue(event.clientX - panelRect.left, 0, panelRect.width || 1),
+                grabOffsetY: clampFloatingListDetailValue(event.clientY - headRect.top, 0, headRect.height || 48),
+            };
+            try {
+                head.setPointerCapture(event.pointerId);
+            } catch (error) {}
+            document.addEventListener("pointermove", handleFloatingListDetailPointerMove, { passive: false });
+            document.addEventListener("pointerup", handleFloatingListDetailPointerUp);
+            document.addEventListener("pointercancel", handleFloatingListDetailPointerUp);
+        }
+
+        function handleFloatingListDetailClickCapture(event) {
+            if (Date.now() > suppressFloatingListDetailClickUntil) {
+                return;
+            }
+            const target = event.target instanceof Element
+                ? event.target.closest(".handrive-list-preview-head, .handrive-list-editor-head")
+                : null;
+            if (!target) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        function observeFloatingListDetailPanelVisibility(panel) {
+            if (!panel || !window.MutationObserver) {
+                return;
+            }
+            const observer = new MutationObserver(function () {
+                if (panel.hidden && isFloatingListDetailPanel(panel)) {
+                    restoreFloatingListDetailPanel(panel);
+                }
+            });
+            observer.observe(panel, {
+                attributes: true,
+                attributeFilter: ["hidden"],
+            });
+        }
+
+        function setupFloatingListDetailPanels() {
+            [previewHead, editorHead].forEach(function (head) {
+                if (head) {
+                    head.addEventListener("pointerdown", handleFloatingListDetailPointerDown);
+                }
+            });
+            [previewPanel, editorPanel].forEach(observeFloatingListDetailPanelVisibility);
+            document.addEventListener("click", handleFloatingListDetailClickCapture, true);
+            window.addEventListener("resize", function () {
+                clampFloatingListDetailPanelToViewport(previewPanel);
+                clampFloatingListDetailPanelToViewport(editorPanel);
+            }, { passive: true });
+            window.addEventListener("orientationchange", function () {
+                clampFloatingListDetailPanelToViewport(previewPanel);
+                clampFloatingListDetailPanelToViewport(editorPanel);
+            }, { passive: true });
+        }
+
         // preview/editor body 높이를 실제 화면 배치 기준으로 맞춘다.
         // 가로모드에서는 footer가 viewport 안에 남을 공간을 먼저 예약한 뒤 본문 높이를 정한다.
         let previewBodyHeightRafId = null;
@@ -7744,6 +8717,11 @@
             if (!previewBody) {
                 return;
             }
+            if (isFloatingListDetailPanel(previewPanel)) {
+                previewPortraitLoadingHeightLocked = false;
+                clearPreviewBodyHeightStyles(previewBody);
+                return;
+            }
             const isLandscape = listLayout.classList.contains("is-landscape");
             const hasPreview = listLayout.classList.contains("has-preview");
             if (!isLandscape || !hasPreview) {
@@ -7769,6 +8747,12 @@
         let editorBodyHeightRafId = null;
         function syncEditorBodyHeight() {
             if (!editorPanel || !editorBody || !listLayout) {
+                return;
+            }
+            if (isFloatingListDetailPanel(editorPanel)) {
+                editorBody.style.height = "";
+                editorBody.style.minHeight = "";
+                editorBody.style.maxHeight = "";
                 return;
             }
             const isLandscape = listLayout.classList.contains("is-landscape");
@@ -7858,6 +8842,9 @@
 
         function getListSplitMode() {
             if (!listLayout || !listSplitter) {
+                return "";
+            }
+            if (isAnyFloatingListDetailPanel()) {
                 return "";
             }
             const hasDetailPanel = listLayout.classList.contains("has-preview") || listLayout.classList.contains("has-editor");
@@ -8227,6 +9214,13 @@
                 scheduleSideBodyHeights();
                 return;
             }
+            if (isAnyFloatingListDetailPanel()) {
+                currentDirRow.style.minHeight = "";
+                clearSideHeadHeight(previewHead);
+                clearSideHeadHeight(editorHead);
+                scheduleSideBodyHeights();
+                return;
+            }
 
             const hasVisibleEditor = Boolean(
                 listLayout &&
@@ -8321,6 +9315,9 @@
         }
 
         function scrollPreviewIntoViewIfPortrait() {
+            if (isFloatingListDetailPanel(previewPanel)) {
+                return;
+            }
             previewScrollIntoViewIfPortrait(previewPanel, previewHead);
         }
 
@@ -8803,7 +9800,7 @@
                 isEditableHandriveFileEntry: isEditableHandriveFileEntry,
                 isSpreadsheetPreviewEntry: isSpreadsheetEditorEntry,
                 buildDownloadUrl: buildDownloadUrl,
-                onEdit: editEntry,
+                onEdit: handlePreviewEditAction,
             });
         }
 
@@ -8883,33 +9880,28 @@
 
         function switchToEditor(entry) {
             if (!editorPanel || !editorFilenameInput) {
-                return;
+                return Promise.resolve();
             }
             stopPreviewMediaElements(previewContent);
             setListEditorBodyLoading(false);
 
             if (isPdfEditorEntry(entry)) {
-                switchToPdfEditor(entry);
-                return;
+                return switchToPdfEditor(entry);
             }
             if (isImageEditorEntry(entry)) {
-                switchToImageEditor(entry);
-                return;
+                return switchToImageEditor(entry);
             }
             if (isVideoEditorEntry(entry)) {
-                switchToVideoEditor(entry);
-                return;
+                return switchToVideoEditor(entry);
             }
             if (isAudioEditorEntry(entry)) {
-                switchToAudioEditor(entry);
-                return;
+                return switchToAudioEditor(entry);
             }
             if (isSpreadsheetEditorEntry(entry)) {
-                switchToSpreadsheetEditor(entry);
-                return;
+                return switchToSpreadsheetEditor(entry);
             }
 
-            if (!editorContentInput) return;
+            if (!editorContentInput) return Promise.resolve();
 
             activeListEditorEntry = entry || null;
             listMarkdownUploadedImagePaths = [];
@@ -8927,7 +9919,7 @@
             if (videoEditorSurface) videoEditorSurface.hidden = true;
             if (audioEditorSurface) audioEditorSurface.hidden = true;
             if (pdfEditorSurface) pdfEditorSurface.hidden = true;
-            editorSwitchToEditorUI({
+            const switchPromise = editorSwitchToEditorUI({
                 entry: entry,
                 editorPanel: editorPanel,
                 editorFilenameInput: editorFilenameInput,
@@ -8960,6 +9952,7 @@
             });
             syncListEditorPreviewButtonVisibility();
             setupEditorEvents(entry);
+            return switchPromise;
         }
 
         async function switchToPdfEditor(entry) {
@@ -9360,20 +10353,103 @@
             setListEditorPreviewModalOpen(false);
         }
 
+        function buildListEditorTargetPath(targetDir, filenameValue, extensionValue) {
+            const filename = String(filenameValue || "").trim();
+            if (!filename) {
+                return "";
+            }
+            const extension = String(extensionValue || "").trim();
+            const leafName = filename + extension;
+            const normalizedDir = normalizePath(targetDir || "", true);
+            return normalizePath(normalizedDir ? normalizedDir + "/" + leafName : leafName, true);
+        }
+
+        async function getListEditorSaveTargetEntry(targetPath) {
+            const normalizedTarget = normalizePath(targetPath || "", true);
+            if (!normalizedTarget) {
+                return null;
+            }
+            const knownEntry = state.entryByPath.get(normalizedTarget);
+            if (knownEntry) {
+                return knownEntry;
+            }
+            const parentPath = getParentDirectory(normalizedTarget);
+            try {
+                await loadDirectory(parentPath);
+            } catch (error) {
+                return state.entryByPath.get(normalizedTarget) || null;
+            }
+            return state.entryByPath.get(normalizedTarget) || null;
+        }
+
+        async function confirmListEditorOverwriteIfNeeded(sourcePath, targetPath) {
+            const normalizedSource = normalizePath(sourcePath || "", true);
+            const normalizedTarget = normalizePath(targetPath || "", true);
+            if (!normalizedTarget) {
+                return false;
+            }
+            const targetEntry = await getListEditorSaveTargetEntry(normalizedTarget);
+            if (targetEntry && targetEntry.type === "dir") {
+                throw new Error(t("save_overwrite_folder_error", "같은 이름의 폴더가 이미 있어 파일로 덮어쓸 수 없습니다."));
+            }
+            const willOverwrite = normalizedTarget === normalizedSource || Boolean(targetEntry && targetEntry.type === "file");
+            if (!willOverwrite) {
+                return true;
+            }
+            return requestConfirmDialog({
+                title: t("save_overwrite_confirm_title", "파일 덮어쓰기"),
+                message: t("save_overwrite_confirm_message", "이미 있는 파일을 덮어씁니다. 계속할까요?") + " " + getHandrivePathLabel(normalizedTarget),
+                cancelText: t("cancel", "취소"),
+                confirmText: t("save_overwrite_confirm_button", "덮어쓰기"),
+            });
+        }
+
+        function resolveListEditorSaveTarget(rawFilename, sourcePath, extensionOverride) {
+            const resolved = resolveListEditorFilenameAndExtension(rawFilename, sourcePath);
+            const targetDir = getParentDirectory(sourcePath);
+            const targetExtension = extensionOverride || resolved.extension;
+            return {
+                filename: resolved.filename,
+                extension: targetExtension,
+                targetDir: targetDir,
+                targetPath: buildListEditorTargetPath(targetDir, resolved.filename, targetExtension),
+            };
+        }
+
+        function getListEditorFloatingFrame() {
+            return isFloatingListDetailPanel(editorPanel)
+                ? getFloatingListDetailFrame(editorPanel)
+                : null;
+        }
+
+        function applyPreviewFloatingFrame(frame) {
+            if (frame) {
+                floatListDetailPanelAtFrame(previewPanel, frame);
+            }
+        }
+
         function closeEditorAndRestorePreviewState() {
+            const editorFloatingFrame = getListEditorFloatingFrame();
             const previewPath = state.activePreviewPath || "";
             const previewEntry = previewPath
                 ? state.entryByPath.get(previewPath) || null
                 : null;
             setListEditorBodyLoading(false);
             switchToPreview();
+            applyPreviewFloatingFrame(editorFloatingFrame);
             if (!previewPath || !isPreviewableFileEntry(previewEntry)) {
                 clearPreviewPane();
                 return;
             }
             state.activeRenderedPreviewPath = "";
             loadPreviewForEntry(previewEntry)
-                .then(function () { return updatePreviewNavButtons(previewEntry); })
+                .then(function () {
+                    applyPreviewFloatingFrame(editorFloatingFrame);
+                    return updatePreviewNavButtons(previewEntry);
+                })
+                .then(function () {
+                    applyPreviewFloatingFrame(editorFloatingFrame);
+                })
                 .catch(alertError);
         }
 
@@ -9508,7 +10584,11 @@
                 };
                 editorPreviewButton.onclick = function (event) {
                     event.preventDefault();
-                    openListEditorPreviewModal().catch(alertError);
+                    if (isFloatingListDetailPanel(editorPanel)) {
+                        openListEditorPreviewInListPanel().catch(alertError);
+                    } else {
+                        openListEditorPreviewModal().catch(alertError);
+                    }
                 };
                 editorPreviewButton.onmouseup = function (event) {
                     if (event.currentTarget && typeof event.currentTarget.blur === "function") {
@@ -9519,6 +10599,7 @@
 
             function handleMediaEditorSaved(result, options) {
                 const settings = options || {};
+                const editorFloatingFrame = getListEditorFloatingFrame();
                 const sourcePath = normalizePath(entry.path || "", true);
                 const savedPath = result && typeof result.path === "string" && result.path.trim()
                     ? normalizePath(result.path, true)
@@ -9555,6 +10636,7 @@
 
                         if (settings.openPreview) {
                             switchToPreview();
+                            applyPreviewFloatingFrame(editorFloatingFrame);
                             if (savedEntryFromList) {
                                 applySelection([targetPath], {
                                     primaryPath: targetPath,
@@ -9565,7 +10647,9 @@
                                 setPreviewVisibility(true);
                             }
                             await loadPreviewForEntry(savedEntry);
+                            applyPreviewFloatingFrame(editorFloatingFrame);
                             await updatePreviewNavButtons(savedEntry);
+                            applyPreviewFloatingFrame(editorFloatingFrame);
                             return;
                         }
 
@@ -9578,69 +10662,6 @@
                         }
                     })
                     .catch(alertError);
-            }
-
-            function buildListEditorTargetPath(targetDir, filenameValue, extensionValue) {
-                const filename = String(filenameValue || "").trim();
-                if (!filename) {
-                    return "";
-                }
-                const extension = String(extensionValue || "").trim();
-                const leafName = filename + extension;
-                const normalizedDir = normalizePath(targetDir || "", true);
-                return normalizePath(normalizedDir ? normalizedDir + "/" + leafName : leafName, true);
-            }
-
-            async function getListEditorSaveTargetEntry(targetPath) {
-                const normalizedTarget = normalizePath(targetPath || "", true);
-                if (!normalizedTarget) {
-                    return null;
-                }
-                const knownEntry = state.entryByPath.get(normalizedTarget);
-                if (knownEntry) {
-                    return knownEntry;
-                }
-                const parentPath = getParentDirectory(normalizedTarget);
-                try {
-                    await loadDirectory(parentPath);
-                } catch (error) {
-                    return state.entryByPath.get(normalizedTarget) || null;
-                }
-                return state.entryByPath.get(normalizedTarget) || null;
-            }
-
-            async function confirmListEditorOverwriteIfNeeded(sourcePath, targetPath) {
-                const normalizedSource = normalizePath(sourcePath || "", true);
-                const normalizedTarget = normalizePath(targetPath || "", true);
-                if (!normalizedTarget) {
-                    return false;
-                }
-                const targetEntry = await getListEditorSaveTargetEntry(normalizedTarget);
-                if (targetEntry && targetEntry.type === "dir") {
-                    throw new Error(t("save_overwrite_folder_error", "같은 이름의 폴더가 이미 있어 파일로 덮어쓸 수 없습니다."));
-                }
-                const willOverwrite = normalizedTarget === normalizedSource || Boolean(targetEntry && targetEntry.type === "file");
-                if (!willOverwrite) {
-                    return true;
-                }
-                return requestConfirmDialog({
-                    title: t("save_overwrite_confirm_title", "파일 덮어쓰기"),
-                    message: t("save_overwrite_confirm_message", "이미 있는 파일을 덮어씁니다. 계속할까요?") + " " + getHandrivePathLabel(normalizedTarget),
-                    cancelText: t("cancel", "취소"),
-                    confirmText: t("save_overwrite_confirm_button", "덮어쓰기"),
-                });
-            }
-
-            function resolveListEditorSaveTarget(rawFilename, sourcePath, extensionOverride) {
-                const resolved = resolveListEditorFilenameAndExtension(rawFilename, sourcePath);
-                const targetDir = getParentDirectory(sourcePath);
-                const targetExtension = extensionOverride || resolved.extension;
-                return {
-                    filename: resolved.filename,
-                    extension: targetExtension,
-                    targetDir: targetDir,
-                    targetPath: buildListEditorTargetPath(targetDir, resolved.filename, targetExtension),
-                };
             }
 
             function getListImageSaveExtensionOverride() {
@@ -10010,6 +11031,7 @@
             const sourcePath = normalizePath(entry.path, false);
             const targetDir = getParentDirectory(sourcePath);
             const targetPath = buildListEditorTargetPath(targetDir, resolved.filename, resolved.extension);
+            const editorFloatingFrame = getListEditorFloatingFrame();
             let editorSavingShown = false;
 
             // 중복 저장 방지를 위해 저장 중 버튼 비활성화
@@ -10050,6 +11072,7 @@
                 state.previewCache.delete(savedPath);
                 await refreshCurrentDirectory({ skipPreview: true });
                 switchToPreview();
+                applyPreviewFloatingFrame(editorFloatingFrame);
 
                 const savedEntryFromList = state.entryByPath.get(savedPath) || null;
                 const savedEntry = savedEntryFromList || {
@@ -10074,7 +11097,9 @@
                 }
 
                 await loadPreviewForEntry(savedEntry);
+                applyPreviewFloatingFrame(editorFloatingFrame);
                 await updatePreviewNavButtons(savedEntry);
+                applyPreviewFloatingFrame(editorFloatingFrame);
             } finally {
                 if (editorSavingShown) {
                     setListEditorSaving(false);
@@ -10243,6 +11268,7 @@
 
         function clearPreviewPane() {
             const previousActivePreviewPath = state.activePreviewPath;
+            floatingListEditorDraftPreview = null;
             setPreviewBodyLoading(false);
             state.activePreviewPath = "";
             state.activeRenderedPreviewPath = "";
@@ -10420,6 +11446,7 @@
         }
 
         async function loadPreviewForEntry(entry) {
+            floatingListEditorDraftPreview = null;
             await loadPreviewEntryFlow({
                 buildPostOptions: buildPostOptions,
                 beforePreviewContentReplace: function () {
@@ -14498,7 +15525,27 @@
             if (!isEditableHandriveFileEntry(entry)) {
                 return;
             }
-            switchToEditor(entry);
+            const floatingPreviewFrame = getFloatingListDetailFrame(previewPanel);
+            if (
+                floatingPreviewFrame &&
+                isFloatingListEditorDraftPreviewForEntry(entry) &&
+                restoreFloatingListEditorDraftPreview(entry, floatingPreviewFrame)
+            ) {
+                return;
+            }
+            const switchResult = switchToEditor(entry);
+            if (floatingPreviewFrame) {
+                floatListDetailPanelAtFrame(editorPanel, floatingPreviewFrame);
+                Promise.resolve(switchResult)
+                    .then(function () {
+                        floatListDetailPanelAtFrame(editorPanel, floatingPreviewFrame);
+                    })
+                    .catch(alertError);
+            }
+        }
+
+        function handlePreviewEditAction(entry) {
+            editEntry(entry);
         }
 
         async function convertEntryToMp3(entry) {
@@ -16268,7 +17315,10 @@
         if (previewTitle) {
             const previewTitleText = previewTitle.querySelector(".handrive-list-preview-title-text");
             if (previewTitleText) {
-                previewTitleText.addEventListener("dblclick", function () {
+                previewTitleText.addEventListener("dblclick", function (event) {
+                    if (!isPointerInsideElement(event, previewTitleText)) {
+                        return;
+                    }
                     const entry = state.activePreviewPath
                         ? state.entryByPath.get(state.activePreviewPath) || null
                         : null;
@@ -16355,6 +17405,7 @@
             listItemsContainer.addEventListener("wheel", handleHandriveListItemsScaleWheel, { passive: false });
         }
 
+        setupFloatingListDetailPanels();
         setupListSplitter();
 
         schedulePreviewBodyHeight();

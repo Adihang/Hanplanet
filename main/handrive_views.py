@@ -7964,6 +7964,74 @@ def _persist_forgejo_session(session_key: str, session_blob: bytes, expiry: int)
         conn.commit()
 
 
+def _persist_forgejo_external_login_link(user, mapping) -> None:
+    """Forgejo OAuth 로그인 소스와 기존 Forgejo 계정의 연결을 보장한다."""
+    user_id = int(getattr(user, "id", 0) or 0)
+    forgejo_user_id = int(getattr(mapping, "forgejo_user_id", 0) or 0)
+    if not user_id or not forgejo_user_id:
+        return
+
+    email = str(getattr(user, "email", "") or "").strip()
+    full_name = str(getattr(user, "get_full_name", lambda: "")() or "").strip()
+    username = str(getattr(user, "username", "") or getattr(mapping, "forgejo_username", "") or "").strip()
+    if not username:
+        return
+
+    with sqlite3.connect(_forgejo_db_path()) as conn:
+        source_row = conn.execute(
+            "SELECT id FROM login_source WHERE name = ? AND is_active = 1",
+            ("hanplanet",),
+        ).fetchone()
+        if not source_row:
+            return
+
+        conn.execute(
+            """
+            INSERT INTO external_login_user (
+                external_id, user_id, login_source_id, raw_data, provider, email,
+                name, first_name, last_name, nick_name, description, avatar_url,
+                location, access_token, access_token_secret, refresh_token, expires_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(external_id, login_source_id) DO UPDATE SET
+                user_id = excluded.user_id,
+                provider = excluded.provider,
+                email = excluded.email,
+                name = excluded.name,
+                nick_name = excluded.nick_name
+            """,
+            (
+                str(user_id),
+                forgejo_user_id,
+                int(source_row[0]),
+                "",
+                "hanplanet",
+                email,
+                full_name or username,
+                "",
+                "",
+                username,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                None,
+            ),
+        )
+        conn.commit()
+
+
+def _ensure_forgejo_oauth_link_for_user(user):
+    """Django User, Forgejo User, Hanplanet OAuth login source 연결을 보장한다."""
+    mapping = _ensure_forgejo_mapping_for_user(user)
+    if not mapping or not mapping.forgejo_user_id or not mapping.forgejo_username:
+        return None
+    _persist_forgejo_external_login_link(user, mapping)
+    return mapping
+
+
 def _delete_forgejo_session_artifacts(forgejo_user_id: int, forgejo_session_key: str = "") -> None:
     """Forgejo 웹 로그인 흔적만 삭제한다. PAT/auth_token 은 유지한다."""
     with sqlite3.connect(_forgejo_db_path(), timeout=1) as conn:
@@ -7981,7 +8049,13 @@ def _build_forgejo_auth_error_message(ui_lang: str | None, error_code: str) -> s
 
 def _prepare_forgejo_login_session(user) -> tuple[str | None, str | None]:
     """Forgejo 세션 생성에 필요한 서버 상태를 미리 준비한다."""
-    mapping = _ensure_forgejo_mapping_for_user(user)
+    mapping = None
+    try:
+        mapping = _ensure_forgejo_oauth_link_for_user(user)
+    except Exception:
+        logger.exception("Failed to persist Forgejo OAuth link for %s", getattr(user, "username", "unknown"))
+        return None, FORGEJO_AUTH_ERROR_CODE
+
     if not mapping or not mapping.forgejo_user_id or not mapping.forgejo_username:
         logger.error("Forgejo mapping missing for %s", getattr(user, "username", "unknown"))
         return None, FORGEJO_AUTH_ERROR_CODE

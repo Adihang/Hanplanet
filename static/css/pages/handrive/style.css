@@ -1361,8 +1361,8 @@ body.theme-dark .handrive-help-icon-symbol {
     transition: none;
 }
 
-.handrive-list-layout.is-landscape.has-preview,
-.handrive-list-layout.is-landscape.has-editor {
+.handrive-list-layout.is-landscape.has-preview:not(.has-floating-detail),
+.handrive-list-layout.is-landscape.has-editor:not(.has-floating-detail) {
     max-width: 100vw;
 }
 
@@ -1392,6 +1392,10 @@ body.theme-dark .handrive-help-icon-symbol {
 .handrive-list-layout.is-landscape.has-editor {
     grid-template-columns: minmax(0, var(--handrive-list-pane-size-landscape)) minmax(0, 1fr);
     align-items: stretch;
+}
+
+.handrive-list-layout.is-landscape.has-floating-detail {
+    grid-template-columns: minmax(0, 1fr) 0fr;
 }
 
 .handrive-list-layout.is-landscape.has-preview > .handrive-list-pane,
@@ -1454,6 +1458,11 @@ body.theme-dark .handrive-help-icon-symbol {
     border-bottom: 1px solid var(--handrive-border-soft);
 }
 
+.handrive-list-layout.is-portrait.has-floating-detail > .handrive-list-pane {
+    flex: 1 1 auto;
+    border-bottom: 0;
+}
+
 .handrive-list-layout.is-portrait.has-preview > .handrive-list-preview {
     flex: 1 1 calc(100% - var(--handrive-list-pane-size-portrait));
     min-height: 0;
@@ -1478,11 +1487,20 @@ body.theme-dark .handrive-help-icon-symbol {
     appearance: none;
     -webkit-appearance: none;
     touch-action: none;
+    translate: 0 0;
+}
+
+.handrive-list-splitter:is(:hover, :focus-visible, :active, .is-ui-pressing) {
+    translate: 0 0;
 }
 
 .handrive-list-layout.has-preview > .handrive-list-splitter:not([hidden]),
 .handrive-list-layout.has-editor > .handrive-list-splitter:not([hidden]) {
     display: block;
+}
+
+.handrive-list-layout.has-floating-detail > .handrive-list-splitter:not([hidden]) {
+    display: none;
 }
 
 .handrive-list-splitter::before,
@@ -1975,6 +1993,160 @@ body.theme-dark .handrive-job-queue-item-reason {
     margin-top: 0;
 }
 
+body.handrive-list-detail-dragging {
+    user-select: none;
+}
+
+body.handrive-list-detail-resizing {
+    user-select: none;
+}
+
+.handrive-list-preview.is-floating-detail,
+.handrive-list-editor.is-floating-detail {
+    position: fixed;
+    z-index: 1031;
+    min-width: min(360px, 100vw);
+    min-height: min(260px, 100vh);
+    max-width: 100vw;
+    max-height: 100vh;
+    margin: 0;
+    border: 1px solid var(--handrive-border);
+    border-radius: var(--handrive-radius-lg);
+    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2));
+    overflow: hidden;
+}
+
+.handrive-list-preview.is-floating-detail.is-floating-detail-portrait,
+.handrive-list-editor.is-floating-detail.is-floating-detail-portrait {
+    min-width: min(240px, 100vw);
+}
+
+.handrive-list-preview.is-floating-detail .handrive-list-preview-head,
+.handrive-list-editor.is-floating-detail .handrive-list-editor-head {
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+.handrive-list-preview.is-floating-detail.is-floating-detail-dragging .handrive-list-preview-head,
+.handrive-list-editor.is-floating-detail.is-floating-detail-dragging .handrive-list-editor-head {
+    cursor: grabbing;
+}
+
+.handrive-list-preview.is-floating-detail.is-floating-detail-resizing,
+.handrive-list-editor.is-floating-detail.is-floating-detail-resizing {
+    transition: none;
+}
+
+.handrive-list-detail-resize-handle {
+    position: absolute;
+    z-index: 12;
+    display: block;
+    background: transparent;
+    touch-action: none;
+    user-select: none;
+}
+
+.handrive-list-detail-resize-handle-n,
+.handrive-list-detail-resize-handle-s {
+    left: 14px;
+    right: 14px;
+    height: 12px;
+    cursor: ns-resize;
+}
+
+.handrive-list-detail-resize-handle-n {
+    top: -6px;
+}
+
+.handrive-list-detail-resize-handle-s {
+    bottom: -6px;
+}
+
+.handrive-list-detail-resize-handle-e,
+.handrive-list-detail-resize-handle-w {
+    top: 14px;
+    bottom: 14px;
+    width: 12px;
+    cursor: ew-resize;
+}
+
+.handrive-list-detail-resize-handle-e {
+    right: -6px;
+}
+
+.handrive-list-detail-resize-handle-w {
+    left: -6px;
+}
+
+.handrive-list-detail-resize-handle-ne,
+.handrive-list-detail-resize-handle-se,
+.handrive-list-detail-resize-handle-sw,
+.handrive-list-detail-resize-handle-nw {
+    width: 20px;
+    height: 20px;
+}
+
+.handrive-list-detail-resize-handle-ne {
+    top: -7px;
+    right: -7px;
+    cursor: nesw-resize;
+}
+
+.handrive-list-detail-resize-handle-se {
+    right: -7px;
+    bottom: -7px;
+    cursor: nwse-resize;
+}
+
+.handrive-list-detail-resize-handle-sw {
+    bottom: -7px;
+    left: -7px;
+    cursor: nesw-resize;
+}
+
+.handrive-list-detail-resize-handle-nw {
+    top: -7px;
+    left: -7px;
+    cursor: nwse-resize;
+}
+
+.handrive-list-detail-resize-handle-se::after {
+    content: "";
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 12px;
+    height: 12px;
+    border-right: 2px solid color-mix(in srgb, var(--handrive-text-muted) 70%, transparent);
+    border-bottom: 2px solid color-mix(in srgb, var(--handrive-text-muted) 70%, transparent);
+    border-radius: 0 0 3px 0;
+}
+
+.handrive-list-preview.is-floating-detail .handrive-list-preview-body {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+}
+
+.handrive-list-editor.is-floating-detail .handrive-list-editor-body {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+}
+
+.handrive-list-editor.is-floating-detail .handrive-list-editor-actions {
+    width: 100%;
+    flex-wrap: nowrap;
+    align-items: center;
+}
+
+.handrive-list-editor.is-floating-detail .handrive-list-editor-actions .handrive-filename-field {
+    flex: 1 1 80%;
+    max-width: 80%;
+    min-width: 0;
+}
+
 .handrive-list-editor.is-saving {
     cursor: progress;
 }
@@ -2026,6 +2198,7 @@ body.theme-dark .handrive-job-queue-item-reason {
 
 .handrive-list-editor-head {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: flex-start;
     gap: 8px;
@@ -2086,7 +2259,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-list-preview-title-text {
-    display: block;
+    display: inline-block;
     min-width: 0;
     max-width: 100%;
     font-weight: 600;
@@ -5280,9 +5453,9 @@ body.handrive-popup-dragging {
 .handrive-sql pre {
     margin: 0;
     border: 0;
-    border-radius: 8px;
-    background: var(--handrive-surface-muted);
-    padding: 10px;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
     overflow: auto;
 }
 
@@ -5910,6 +6083,8 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
+    background: transparent;
+    padding: 0;
     overflow-x: auto;
     overflow-y: visible;
 }
@@ -6342,6 +6517,27 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
 }
 
 .handrive-list-layout.is-landscape.has-preview .handrive-media-pdf-element {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
+.handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-media,
+.handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-media-pdf,
+.handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-office {
+    position: relative;
+    overflow: auto;
+}
+
+.handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-media .handrive-media-pdf-wrap,
+.handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-media-pdf .handrive-media-pdf-wrap,
+.handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-office .handrive-media-pdf-wrap {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+}
+
+.handrive-list-preview.is-floating-detail .handrive-media-pdf-element {
     width: 100%;
     height: 100%;
     min-height: 0;

@@ -1,3 +1,5 @@
+import logging
+
 from django.contrib.auth.views import redirect_to_login
 from django.urls import path, re_path, reverse
 
@@ -7,6 +9,9 @@ from oauth2_provider.urls import management_urlpatterns, oidc_urlpatterns
 from .views import resolve_ui_lang
 
 
+logger = logging.getLogger(__name__)
+
+
 class HanplanetAuthorizationView(oauth2_views.AuthorizationView):
     """Force anonymous OAuth authorize requests through Hanplanet's login page."""
 
@@ -14,6 +19,7 @@ class HanplanetAuthorizationView(oauth2_views.AuthorizationView):
         if not request.user.is_authenticated:
             return self._redirect_to_hanplanet_login(request)
         self._authenticated_user = request.user
+        self._ensure_forgejo_oauth_link_if_needed(request)
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
@@ -43,6 +49,19 @@ class HanplanetAuthorizationView(oauth2_views.AuthorizationView):
             login_url,
             self.get_redirect_field_name(),
         )
+
+    def _ensure_forgejo_oauth_link_if_needed(self, request):
+        if str(request.GET.get("client_id") or "").strip() != "gitea-hanplanet-sso":
+            return
+        try:
+            from .handrive_views import _ensure_forgejo_oauth_link_for_user
+
+            _ensure_forgejo_oauth_link_for_user(request.user)
+        except Exception:
+            logger.exception(
+                "Failed to ensure Forgejo OAuth link for %s",
+                getattr(request.user, "username", "unknown"),
+            )
 
 
 base_urlpatterns = [

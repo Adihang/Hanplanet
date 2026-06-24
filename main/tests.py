@@ -3,6 +3,7 @@ import io
 import json
 import hashlib
 import re
+import sqlite3
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -69,6 +70,7 @@ from .handrive_views import (
     _delete_forgejo_session_artifacts,
     _forgejo_db_path,
     _forgejo_server_logout,
+    _persist_forgejo_external_login_link,
     _resolve_handrive_post_login_url,
     _send_or_reuse_login_2fa_email,
     build_archive_virtual_path,
@@ -303,6 +305,29 @@ class OAuthAuthorizeTemplateTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response["Location"].startswith("/en/login?next="))
+
+    @mock.patch("main.handrive_views._ensure_forgejo_oauth_link_for_user")
+    def test_authorize_authenticated_gitea_client_ensures_forgejo_oauth_link(self, mock_ensure_link):
+        user = get_user_model().objects.create_user(username="oauthuser", password="pw123456")
+        get_application_model().objects.create(
+            name="Gitea SSO",
+            user=user,
+            client_id="gitea-hanplanet-sso",
+            client_type="confidential",
+            authorization_grant_type="authorization-code",
+            redirect_uris="https://git.hanplanet.com/user/oauth2/hanplanet/callback",
+        )
+
+        client = Client(HTTP_HOST="hanplanet.com")
+        client.force_login(user)
+        response = client.get(
+            "/o/authorize/?response_type=code&client_id=gitea-hanplanet-sso&redirect_uri="
+            "https%3A%2F%2Fgit.hanplanet.com%2Fuser%2Foauth2%2Fhanplanet%2Fcallback&scope=openid+profile+email",
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_ensure_link.assert_called_once_with(user)
 
     def test_oauth_authorize_compat_path_redirects_anonymous_users_to_login(self):
         response = self.client.get(
@@ -2682,12 +2707,15 @@ class HandriveStyleSourceTests(TestCase):
 
         self.assertIn('id="handrive-list-splitter"', list_template)
         self.assertIn('role="separator"', list_template)
+        self.assertIn('data-ui-press-disabled="true"', list_template)
         self.assertIn('"list_splitter_label": "목록과 상세 영역 크기 조절"', handrive_views)
         self.assertIn('"list_splitter_label": "Resize list and detail panes"', handrive_views)
         self.assertIn("--handrive-list-pane-size-landscape: min(25%, 400px);", handrive_css)
         self.assertIn("--handrive-list-pane-size-portrait: 30%;", handrive_css)
         self.assertIn("left: var(--handrive-list-pane-size-landscape);", handrive_css)
         self.assertIn("top: var(--handrive-list-pane-size-portrait);", handrive_css)
+        self.assertIn(".handrive-list-splitter:is(:hover, :focus-visible, :active, .is-ui-pressing)", handrive_css)
+        self.assertIn("translate: 0 0;", handrive_css)
         self.assertIn('const HANDRIVE_LIST_SPLIT_LANDSCAPE_COOKIE_NAME = "handrive-list-split-landscape";', page_js)
         self.assertIn('const HANDRIVE_LIST_SPLIT_PORTRAIT_COOKIE_NAME = "handrive-list-split-portrait";', page_js)
         self.assertIn("function applyStoredListSplitRatios()", page_js)
@@ -3376,6 +3404,23 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("margin: 8px 0;", handrive_css[help_pre_start:help_pre_end])
         self.assertIn("border-radius: 0;", handrive_css[help_pre_start:help_pre_end])
         self.assertIn("background: var(--handrive-markdown-code-block-bg);", handrive_css[help_pre_start:help_pre_end])
+
+    def test_handrive_code_file_pre_blocks_are_unpadded_and_transparent(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        code_pre_start = handrive_css.index(".handrive-json pre,\n.handrive-html pre,")
+        code_pre_end = handrive_css.index(".handrive-json pre code,", code_pre_start)
+        list_preview_pre_start = handrive_css.index(".handrive-list-preview-content.handrive-json pre,")
+        list_preview_pre_end = handrive_css.index(".handrive-list-preview-content.handrive-html,", list_preview_pre_start)
+        code_pre_block = handrive_css[code_pre_start:code_pre_end]
+        list_preview_pre_block = handrive_css[list_preview_pre_start:list_preview_pre_end]
+
+        self.assertIn("background: transparent;", code_pre_block)
+        self.assertIn("padding: 0;", code_pre_block)
+        self.assertNotIn("background: var(--handrive-surface-muted);", code_pre_block)
+        self.assertNotIn("padding: 10px;", code_pre_block)
+        self.assertIn("background: transparent;", list_preview_pre_block)
+        self.assertIn("padding: 0;", list_preview_pre_block)
 
     def test_spreadsheet_preview_has_portrait_height_fallback(self):
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
@@ -5634,6 +5679,74 @@ class HandriveAuthFlowTests(TestCase):
         self.assertIn("forgejo_session_blob.go", build_cmd[-1])
         self.assertIn("hanplanet_forgejo_session_blob", exec_cmd[0])
 
+    def test_persist_forgejo_external_login_link_upserts_hanplanet_source(self):
+        self.user.email = "handrive-login@example.com"
+        self.user.first_name = "Handrive"
+        self.user.last_name = "User"
+        self.user.save(update_fields=["email", "first_name", "last_name"])
+        mapping = mock.Mock(forgejo_user_id=123, forgejo_username="handrive_login_user")
+
+        with TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "gitea.db"
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    "CREATE TABLE login_source (id INTEGER PRIMARY KEY, name TEXT, is_active INTEGER)"
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE external_login_user (
+                        external_id TEXT NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        login_source_id INTEGER NOT NULL,
+                        raw_data TEXT NULL,
+                        provider TEXT NULL,
+                        email TEXT NULL,
+                        name TEXT NULL,
+                        first_name TEXT NULL,
+                        last_name TEXT NULL,
+                        nick_name TEXT NULL,
+                        description TEXT NULL,
+                        avatar_url TEXT NULL,
+                        location TEXT NULL,
+                        access_token TEXT NULL,
+                        access_token_secret TEXT NULL,
+                        refresh_token TEXT NULL,
+                        expires_at DATETIME NULL,
+                        PRIMARY KEY (external_id, login_source_id)
+                    )
+                    """
+                )
+                conn.execute(
+                    "INSERT INTO login_source (id, name, is_active) VALUES (?, ?, ?)",
+                    (7, "hanplanet", 1),
+                )
+                conn.commit()
+
+            with mock.patch("main.handrive_views._forgejo_db_path", return_value=db_path):
+                _persist_forgejo_external_login_link(self.user, mapping)
+
+            with sqlite3.connect(db_path) as conn:
+                row = conn.execute(
+                    """
+                    SELECT external_id, user_id, login_source_id, provider, email, name, nick_name
+                    FROM external_login_user
+                    """
+                ).fetchone()
+
+        self.assertEqual(
+            row,
+            (
+                str(self.user.id),
+                123,
+                7,
+                "hanplanet",
+                "handrive-login@example.com",
+                "Handrive User",
+                "handrive_login_user",
+            ),
+        )
+
+    @mock.patch("main.handrive_views._persist_forgejo_external_login_link")
     @mock.patch("main.handrive_views._persist_forgejo_session")
     @mock.patch("main.handrive_views._build_forgejo_session_blob", return_value=b"blob")
     @mock.patch("main.handrive_views._ensure_forgejo_mapping_for_user")
@@ -5642,6 +5755,7 @@ class HandriveAuthFlowTests(TestCase):
         mock_ensure_mapping,
         mock_build_blob,
         mock_persist_session,
+        mock_persist_external_link,
     ):
         response = self.client.get("/ko/login/")
         mock_ensure_mapping.return_value = mock.Mock(
@@ -5652,6 +5766,7 @@ class HandriveAuthFlowTests(TestCase):
         attached = _attach_forgejo_login_session(response, self.user)
 
         self.assertIs(attached, response)
+        mock_persist_external_link.assert_called_once_with(self.user, mock_ensure_mapping.return_value)
         mock_build_blob.assert_called_once_with(123, "handrive_login_user", False)
         mock_persist_session.assert_called_once()
         self.assertIn("i_like_gitea", attached.cookies)

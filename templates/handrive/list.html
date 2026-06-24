@@ -218,6 +218,19 @@
                 <ul id="handrive-list-items" class="handrive-list-items" aria-label="{{ handrive_text.list_aria_label }}"></ul>
             </div>
         </div>
+        <button
+            class="handrive-list-splitter"
+            id="handrive-list-splitter"
+            type="button"
+            role="separator"
+            aria-label="{{ handrive_text.list_splitter_label|default:'목록과 상세 영역 크기 조절' }}"
+            title="{{ handrive_text.list_splitter_label|default:'목록과 상세 영역 크기 조절' }}"
+            aria-orientation="vertical"
+            aria-valuemin="18"
+            aria-valuemax="78"
+            aria-valuenow="25"
+            hidden
+        ></button>
         <aside class="handrive-list-preview" id="handrive-list-preview" aria-live="polite" aria-hidden="true" hidden>
             <header class="handrive-list-preview-head">
                 <h2 class="handrive-list-preview-title" id="handrive-list-preview-title"><span class="handrive-list-preview-title-text">{{ handrive_text.list_preview_title }}</span></h2>

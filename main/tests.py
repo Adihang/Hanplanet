@@ -1360,6 +1360,11 @@ class LanguageUrlRoutingTests(TestCase):
         )
         self.assertEqual(response.context["meta_og_image"], MINECRAFT_SERVER_IMAGE_URL)
         self.assertEqual(response.context["meta_twitter_image"], MINECRAFT_SERVER_IMAGE_URL)
+        self.assertEqual(
+            MINECRAFT_SERVER_IMAGE_URL,
+            "https://www.hanplanet.com/static/media/icons/minecraft/server-og.png",
+        )
+        self.assertNotIn("/media/HanDrive/users/admin", MINECRAFT_SERVER_IMAGE_URL)
         self.assertContains(
             response,
             f'<meta property="og:image" content="{MINECRAFT_SERVER_IMAGE_URL}">',
@@ -1462,6 +1467,8 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, "font-size: 20px;", html=False)
         self.assertContains(response, "line-height: 22px;", html=False)
         self.assertEqual(response.context["weather_icon_url"], MINECRAFT_WEATHER_ICON_URL)
+        self.assertEqual(MINECRAFT_WEATHER_ICON_URL, "/static/media/icons/minecraft/weather.svg")
+        self.assertNotIn("/media/HanDrive/users/admin", MINECRAFT_WEATHER_ICON_URL)
         self.assertContains(response, f'<image href="{MINECRAFT_WEATHER_ICON_URL}" width="3318" height="3318">', html=False)
         self.assertContains(response, "weatherIconViewBoxes", html=False)
         self.assertContains(response, "flex: 0 0 28px;", html=False)
@@ -1469,8 +1476,11 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, "height: 28px;", html=False)
         self.assertContains(response, "rain: '899 1476 450 450'", html=False)
         self.assertContains(response, "thunder: '369 1476 450 450'", html=False)
+        self.assertContains(response, "moon: '1430 2066 450 450'", html=False)
         self.assertContains(response, "unknown: '369 848 450 450'", html=False)
-        self.assertContains(response, "setWeatherIcon(weather);", html=False)
+        self.assertContains(response, "function isMinecraftNight(ticks)", html=False)
+        self.assertContains(response, "normalizedWeather === 'clear' && isMinecraftNight(ticks)", html=False)
+        self.assertContains(response, "setWeatherIcon(weather, currentTicks);", html=False)
         self.assertContains(response, 'worldState.paused ? 0', html=False)
         self.assertContains(response, 'paused: Boolean(world.paused)', html=False)
         self.assertContains(response, 'window.setInterval(loadStatus, 5000);', html=False)
@@ -2619,6 +2629,72 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('".sql": [', completion_js)
         self.assertIn("SELECT *\\nFROM table_name", completion_js)
         self.assertIn("CREATE TABLE table_name", completion_js)
+
+    def test_job_queue_context_menu_uses_entry_actions_and_open_location(self):
+        base_dir = Path(settings.BASE_DIR)
+        context_template = (base_dir / "templates/popup/handrive/context_menu.html").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        queue_helpers_js = (base_dir / "static/js/handrive/queue_helpers.js").read_text(encoding="utf-8")
+        handrive_views = (base_dir / "main/handrive_views.py").read_text(encoding="utf-8")
+
+        self.assertIn('data-action="open-location"', context_template)
+        self.assertIn('"menu_open_location": "파일 위치 열기"', handrive_views)
+        self.assertIn('"menu_open_location": "Open file location"', handrive_views)
+        self.assertIn('const contextOpenLocationButton = contextMenu ? contextMenu.querySelector', page_js)
+        self.assertIn("function resolveUploadQueueContextEntry(item)", page_js)
+        self.assertIn("function openQueueItemLocation(item, entry)", page_js)
+        self.assertIn("function handleContextEntryAction(action, entry, entries, options)", page_js)
+        self.assertIn("syncContextMenuByEntries([queueEntry]);", page_js)
+        self.assertIn("handleContextEntryAction(action, uploadQueueContextEntry, [uploadQueueContextEntry]", page_js)
+        self.assertIn("openLocation: contextOpenLocationButton", page_js)
+        self.assertIn("var contextOpenLocationButton = buttons.openLocation || null;", queue_helpers_js)
+        self.assertIn("setContextButtonVisible(contextOpenLocationButton, canOpenLocation);", queue_helpers_js)
+
+    def test_handrive_list_splitter_persists_directional_ratios(self):
+        base_dir = Path(settings.BASE_DIR)
+        list_template = (base_dir / "templates/handrive/list.html").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        handrive_views = (base_dir / "main/handrive_views.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="handrive-list-splitter"', list_template)
+        self.assertIn('role="separator"', list_template)
+        self.assertIn('"list_splitter_label": "목록과 상세 영역 크기 조절"', handrive_views)
+        self.assertIn('"list_splitter_label": "Resize list and detail panes"', handrive_views)
+        self.assertIn("--handrive-list-pane-size-landscape: min(25%, 400px);", handrive_css)
+        self.assertIn("--handrive-list-pane-size-portrait: 30%;", handrive_css)
+        self.assertIn("left: var(--handrive-list-pane-size-landscape);", handrive_css)
+        self.assertIn("top: var(--handrive-list-pane-size-portrait);", handrive_css)
+        self.assertIn('const HANDRIVE_LIST_SPLIT_LANDSCAPE_COOKIE_NAME = "handrive-list-split-landscape";', page_js)
+        self.assertIn('const HANDRIVE_LIST_SPLIT_PORTRAIT_COOKIE_NAME = "handrive-list-split-portrait";', page_js)
+        self.assertIn("function applyStoredListSplitRatios()", page_js)
+        self.assertIn("function handleListSplitPointerDown(event)", page_js)
+        self.assertIn("listSplitter.addEventListener(\"pointerdown\", handleListSplitPointerDown);", page_js)
+        self.assertIn("setCookieValue(getListSplitCookieName(finishedDrag.mode), finishedDrag.latestRatio.toFixed(4));", page_js)
+
+    def test_archive_context_menu_does_not_show_edit_action(self):
+        base_dir = Path(settings.BASE_DIR)
+        context_helpers_js = (base_dir / "static/js/handrive/context_menu_helpers.js").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+
+        self.assertIn('var ARCHIVE_EXTENSIONS_FOR_ACTIONS = [".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz"];', context_helpers_js)
+        self.assertIn("function isArchiveContextMenuEntry(entry)", context_helpers_js)
+        self.assertIn("var isArchiveFile = isArchiveContextMenuEntry(targetEntry);", context_helpers_js)
+        self.assertIn("flags.edit = !isDirectory && !isArchiveFile && canShowEditEntry;", context_helpers_js)
+        self.assertIn(
+            "flags.extractArchive = Boolean(!isCurrentFolder && !isMultiSelection && targetEntry.is_archive && targetEntry.can_extract);",
+            context_helpers_js,
+        )
+        self.assertIn('const archiveFileExtensions = new Set([".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz"]);', page_js)
+        self.assertIn(
+            'entry.type === "file" && (entry.is_archive || archiveFileExtensions.has(entryExtension))',
+            page_js,
+        )
+        self.assertIn("if (isArchiveMember) {", context_helpers_js)
+        self.assertIn("flags.extractArchive = Boolean(!isCurrentFolder && targetEntry.can_extract);", context_helpers_js)
+        self.assertIn("flags.upload = isDirectory && canWriteChildren;", context_helpers_js)
+        self.assertNotIn("return Boolean(entry && entry.is_archive_member); })) {\n            return flags;", context_helpers_js)
+        self.assertNotIn("if (isArchiveMemberEntry(entry)) {\n                    return;\n                }", page_js)
 
     def test_folder_create_modal_uses_short_title_and_path_only_target(self):
         base_dir = Path(settings.BASE_DIR)
@@ -3893,9 +3969,15 @@ class SiteZIndexLayerTests(TestCase):
             handrive_css.index(".handrive-job-queue-panel {"):
             handrive_css.index(".handrive-job-queue-head {", handrive_css.index(".handrive-job-queue-panel {"))
         ]
+        context_menu_rule = handrive_css[
+            handrive_css.index(".handrive-context-menu {"):
+            handrive_css.index(".handrive-context-menu[hidden]", handrive_css.index(".handrive-context-menu {"))
+        ]
 
         self.assertIn("--handrive-job-queue-z: var(--site-z-popup-raised, 1125);", handrive_css)
+        self.assertIn("--handrive-context-menu-z: calc(var(--handrive-job-queue-z) + 1);", handrive_css)
         self.assertIn("z-index: var(--handrive-job-queue-z);", job_queue_rule)
+        self.assertIn("z-index: var(--handrive-context-menu-z, var(--site-z-popup));", context_menu_rule)
         self.assertIn("background: var(--site-modal-surface-bg, var(--handrive-modal-surface-bg));", job_queue_rule)
         self.assertIn("background-color: var(--site-modal-surface-bg, var(--handrive-modal-surface-bg));", job_queue_rule)
         self.assertIn("backdrop-filter: var(--site-modal-surface-filter, var(--handrive-modal-surface-filter));", job_queue_rule)
@@ -9436,8 +9518,65 @@ class HandriveAccessRuleTests(TestCase):
         entries = {item["name"]: item for item in archive_response.json()["entries"]}
         self.assertEqual(entries["folder"]["type"], "dir")
         self.assertTrue(entries["folder"]["is_archive_member"])
+        self.assertTrue(entries["folder"]["can_write_children"])
+        self.assertTrue(entries["folder"]["can_delete"])
         self.assertEqual(entries["root.txt"]["type"], "file")
         self.assertTrue(entries["root.txt"]["is_archive_member"])
+        self.assertTrue(entries["root.txt"]["can_delete"])
+
+    def test_docs_api_archive_virtual_allows_upload_move_and_delete(self):
+        editor = self.create_scoped_handrive_user("zip_modify_editor")
+        self.client.force_login(editor)
+
+        archive_relative = f"users/{editor.username}/sample.zip"
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
+        archive_path = handrive_root / "sample.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("folder/existing.txt", "existing")
+        (handrive_root / "outside.txt").write_text("outside", encoding="utf-8")
+
+        virtual_folder = build_archive_virtual_path(archive_relative, "folder")
+        list_response = self.client.get(reverse("main:handrive_api_list"), data={"path": virtual_folder})
+        self.assertEqual(list_response.status_code, 200)
+        self.assertTrue(list_response.json()["directory_meta"]["can_write_children"])
+
+        upload_response = self.client.post(
+            reverse("main:handrive_api_upload"),
+            data={
+                "dir": virtual_folder,
+                "files": SimpleUploadedFile("new.txt", b"new", content_type="text/plain"),
+            },
+        )
+        self.assertEqual(upload_response.status_code, 200, upload_response.content)
+        uploaded_entry = upload_response.json()["entries"][0]
+        self.assertEqual(uploaded_entry["path"], build_archive_virtual_path(archive_relative, "folder/new.txt"))
+        self.assertTrue(uploaded_entry["can_delete"])
+
+        move_response = self.client.post(
+            reverse("main:handrive_api_move"),
+            data=json.dumps({"source_path": f"users/{editor.username}/outside.txt", "target_dir": virtual_folder}),
+            content_type="application/json",
+        )
+        self.assertEqual(move_response.status_code, 200, move_response.content)
+        self.assertEqual(move_response.json()["path"], build_archive_virtual_path(archive_relative, "folder/outside.txt"))
+
+        migrated_archive = handrive_root / "sample.zip"
+        self.assertFalse((handrive_root / "outside.txt").exists())
+        with zipfile.ZipFile(migrated_archive) as archive:
+            self.assertEqual(archive.read("folder/existing.txt").decode("utf-8"), "existing")
+            self.assertEqual(archive.read("folder/new.txt").decode("utf-8"), "new")
+            self.assertEqual(archive.read("folder/outside.txt").decode("utf-8"), "outside")
+
+        delete_response = self.client.post(
+            reverse("main:handrive_api_delete"),
+            data=json.dumps({"path": uploaded_entry["path"]}),
+            content_type="application/json",
+        )
+        self.assertEqual(delete_response.status_code, 200, delete_response.content)
+        with zipfile.ZipFile(migrated_archive) as archive:
+            self.assertNotIn("folder/new.txt", archive.namelist())
+            self.assertIn("folder/existing.txt", archive.namelist())
+            self.assertIn("folder/outside.txt", archive.namelist())
 
     def test_docs_api_archive_extract_supports_full_and_partial_extract(self):
         editor = self.create_handrive_superuser("zip_extract_editor")

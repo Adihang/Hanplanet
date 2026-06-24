@@ -15,6 +15,8 @@
      * 1300-1399: media/fullscreen overlays
      * 1400-1499: modals, stacked by open order
      * 1500-1599: top/system modals
+     * 4000-4099: portaled modal feedback
+     * 4100-4199: third-party modal overlays
      */
     --site-z-map-pane-background: 200;
     --site-z-map-pane-overlay: 550;
@@ -28,6 +30,9 @@
     --site-z-media-overlay: 1320;
     --site-z-modal: 1400;
     --site-z-modal-top: 1500;
+    --site-modal-base-z-index: 4000;
+    --site-z-google-picker-backdrop: 4100;
+    --site-z-google-picker-dialog: 4101;
     --site-z-modal-stack-step: 5;
     --site-popup-radius-common: 12px;
     --site-popup-shadow-common: 0 8px 18px rgba(0, 0, 0, 0.2);

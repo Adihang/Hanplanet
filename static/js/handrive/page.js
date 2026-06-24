@@ -5311,6 +5311,7 @@
         const pathCurrentSizeEl = document.querySelector(".handrive-path-current-size");
         const originalDirSizeText = pathCurrentSizeEl ? (pathCurrentSizeEl.textContent || "") : "";
         const listLayout = document.getElementById("handrive-list-layout");
+        const listSplitter = document.getElementById("handrive-list-splitter");
         const listPane = root.querySelector(".handrive-list-pane");
         const listContainer = document.getElementById("handrive-list");
         const currentDirListContainer = document.getElementById("handrive-current-dir-list");
@@ -5319,6 +5320,10 @@
         const HANDRIVE_LIST_ITEM_SCALE_MIN = 0.72;
         const HANDRIVE_LIST_ITEM_SCALE_MAX = 1.6;
         const HANDRIVE_LIST_ITEM_SCALE_STEP = 0.05;
+        const HANDRIVE_LIST_SPLIT_LANDSCAPE_COOKIE_NAME = "handrive-list-split-landscape";
+        const HANDRIVE_LIST_SPLIT_PORTRAIT_COOKIE_NAME = "handrive-list-split-portrait";
+        const HANDRIVE_LIST_SPLIT_RATIO_MIN = 0.18;
+        const HANDRIVE_LIST_SPLIT_RATIO_MAX = 0.78;
         let handriveListItemScale = 1;
         let listSearchForm = document.getElementById("handrive-list-search-form");
         let listSearchInput = document.getElementById("handriveListSearchInput");
@@ -5404,6 +5409,7 @@
             : "HanDrive").trim() || "HanDrive";
         const contextMenu = document.getElementById("handrive-context-menu");
         const contextOpenButton = contextMenu ? contextMenu.querySelector('button[data-action="open"]') : null;
+        const contextOpenLocationButton = contextMenu ? contextMenu.querySelector('button[data-action="open-location"]') : null;
         const contextDownloadButton = contextMenu ? contextMenu.querySelector('button[data-action="download"]') : null;
         const contextExtractArchiveButton = contextMenu ? contextMenu.querySelector('button[data-action="extract-archive"]') : null;
         const contextShareButton = contextMenu ? contextMenu.querySelector('button[data-action="share"]') : null;
@@ -5479,6 +5485,7 @@
         const folderIconModalBackdrop = document.getElementById("handrive-folder-icon-modal-backdrop");
         const folderIconTarget = document.getElementById("handrive-folder-icon-target");
         const folderIconFileInput = document.getElementById("handrive-folder-icon-file-input");
+        const folderIconFileName = document.getElementById("handrive-folder-icon-file-name");
         const folderIconPreviewWrap = document.getElementById("handrive-folder-icon-preview-wrap");
         const folderIconPreviewImg = document.getElementById("handrive-folder-icon-preview-img");
         const folderIconDeleteButton = document.getElementById("handrive-folder-icon-delete-btn");
@@ -5526,6 +5533,7 @@
             ".weba",
             ".pdf",
         ]);
+        const archiveFileExtensions = new Set([".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz"]);
         const imageEditorExtensions = new Set([
             ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".avif",
         ]);
@@ -5867,6 +5875,7 @@
             uploadQueueDismissed: false,
             uploadQueueCollapsed: false,
             uploadQueueContextItem: null,
+            uploadQueueContextEntry: null,
             pendingContextUploadDir: "",
             searchQuery: "",
             searchResults: null,
@@ -7159,6 +7168,7 @@
 
         function resetUploadQueueContextMenuState() {
             state.uploadQueueContextItem = null;
+            state.uploadQueueContextEntry = null;
             if (contextOpenButton) {
                 contextOpenButton.textContent = defaultContextButtonLabels.open;
             }
@@ -7302,7 +7312,6 @@
                 "label",
                 "[role='button']",
                 "[tabindex]",
-                "[data-sort-key]",
                 "[contenteditable='true']",
                 ".ui-btn",
                 ".handrive-icon-btn",
@@ -7326,9 +7335,11 @@
             const isLandscape = window.innerWidth > window.innerHeight;
             listLayout.classList.toggle("is-landscape", isLandscape);
             listLayout.classList.toggle("is-portrait", !isLandscape);
+            syncListSplitterState();
 
             // 레이아웃 변경 후 동기화
             setTimeout(function() {
+                syncListSplitterState();
                 scheduleSyncCurrentDirRowHeightWithSideHead();
                 scheduleListBodyHeight();
                 schedulePreviewBodyHeight();
@@ -7714,6 +7725,328 @@
             });
         }
 
+        function clampListSplitRatio(ratio) {
+            const numericRatio = Number(ratio);
+            if (!Number.isFinite(numericRatio)) {
+                return null;
+            }
+            return Math.max(
+                HANDRIVE_LIST_SPLIT_RATIO_MIN,
+                Math.min(HANDRIVE_LIST_SPLIT_RATIO_MAX, numericRatio)
+            );
+        }
+
+        function parseStoredListSplitRatio(value) {
+            if (value === null || value === undefined || String(value).trim() === "") {
+                return null;
+            }
+            return clampListSplitRatio(Number(value));
+        }
+
+        function getListSplitCookieName(mode) {
+            return mode === "portrait"
+                ? HANDRIVE_LIST_SPLIT_PORTRAIT_COOKIE_NAME
+                : HANDRIVE_LIST_SPLIT_LANDSCAPE_COOKIE_NAME;
+        }
+
+        function getListSplitMode() {
+            if (!listLayout || !listSplitter) {
+                return "";
+            }
+            const hasDetailPanel = listLayout.classList.contains("has-preview") || listLayout.classList.contains("has-editor");
+            if (!hasDetailPanel) {
+                return "";
+            }
+            if (listLayout.classList.contains("is-portrait")) {
+                return "portrait";
+            }
+            if (listLayout.classList.contains("is-landscape")) {
+                return "landscape";
+            }
+            return "";
+        }
+
+        function getListSplitAxisSize(mode, rect) {
+            if (!rect) {
+                return 0;
+            }
+            return mode === "portrait" ? rect.height : rect.width;
+        }
+
+        function clampListSplitRatioToLayout(mode, ratio, rect) {
+            const baseRatio = clampListSplitRatio(ratio);
+            if (baseRatio === null) {
+                return null;
+            }
+            const axisSize = getListSplitAxisSize(mode, rect);
+            if (!axisSize || axisSize <= 0) {
+                return baseRatio;
+            }
+            const minPanePx = mode === "portrait" ? 150 : 220;
+            const minDetailPx = mode === "portrait" ? 180 : 320;
+            const minRatio = Math.max(HANDRIVE_LIST_SPLIT_RATIO_MIN, minPanePx / axisSize);
+            const maxRatio = Math.min(HANDRIVE_LIST_SPLIT_RATIO_MAX, (axisSize - minDetailPx) / axisSize);
+            if (maxRatio < minRatio) {
+                return baseRatio;
+            }
+            return Math.max(minRatio, Math.min(maxRatio, baseRatio));
+        }
+
+        function formatListSplitRatioCssValue(ratio) {
+            return (ratio * 100).toFixed(3) + "%";
+        }
+
+        function scheduleListSplitDependentLayout(options) {
+            scheduleSyncCurrentDirRowHeightWithSideHead();
+            scheduleListBodyHeight();
+            schedulePreviewBodyHeight();
+            scheduleEditorBodyHeight();
+            if (options && options.updateColumns) {
+                scheduleListColumnVisibilityUpdate({
+                    afterLayout: true,
+                    delayMs: 80,
+                });
+            }
+        }
+
+        function updateListSplitterAria(mode, ratio) {
+            if (!listSplitter || !mode) {
+                return;
+            }
+            listSplitter.setAttribute("aria-orientation", mode === "portrait" ? "horizontal" : "vertical");
+            if (Number.isFinite(ratio)) {
+                listSplitter.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+            }
+        }
+
+        function getCurrentListSplitRatio(mode) {
+            if (!listLayout || !listPane || !mode) {
+                return null;
+            }
+            const layoutRect = listLayout.getBoundingClientRect();
+            const paneRect = listPane.getBoundingClientRect();
+            const axisSize = getListSplitAxisSize(mode, layoutRect);
+            const paneSize = mode === "portrait" ? paneRect.height : paneRect.width;
+            if (!axisSize || axisSize <= 0 || !paneSize || paneSize <= 0) {
+                return null;
+            }
+            return clampListSplitRatio(paneSize / axisSize);
+        }
+
+        function applyListSplitRatio(mode, ratio, options) {
+            if (!listLayout || !mode) {
+                return;
+            }
+            const settings = options || {};
+            const normalizedRatio = clampListSplitRatio(ratio);
+            if (normalizedRatio === null) {
+                return;
+            }
+            const cssValue = formatListSplitRatioCssValue(normalizedRatio);
+            if (mode === "portrait") {
+                listLayout.style.setProperty("--handrive-list-pane-size-portrait", cssValue);
+            } else {
+                listLayout.style.setProperty("--handrive-list-pane-size-landscape", cssValue);
+            }
+            updateListSplitterAria(mode, normalizedRatio);
+            if (settings.persist) {
+                setCookieValue(getListSplitCookieName(mode), normalizedRatio.toFixed(4));
+            }
+            scheduleListSplitDependentLayout({
+                updateColumns: Boolean(settings.updateColumns),
+            });
+        }
+
+        function applyStoredListSplitRatios() {
+            if (!listLayout) {
+                return;
+            }
+            const landscapeRatio = parseStoredListSplitRatio(getCookieValue(HANDRIVE_LIST_SPLIT_LANDSCAPE_COOKIE_NAME));
+            const portraitRatio = parseStoredListSplitRatio(getCookieValue(HANDRIVE_LIST_SPLIT_PORTRAIT_COOKIE_NAME));
+            if (landscapeRatio === null) {
+                listLayout.style.removeProperty("--handrive-list-pane-size-landscape");
+            } else {
+                listLayout.style.setProperty("--handrive-list-pane-size-landscape", formatListSplitRatioCssValue(landscapeRatio));
+            }
+            if (portraitRatio === null) {
+                listLayout.style.removeProperty("--handrive-list-pane-size-portrait");
+            } else {
+                listLayout.style.setProperty("--handrive-list-pane-size-portrait", formatListSplitRatioCssValue(portraitRatio));
+            }
+        }
+
+        function syncListSplitterState() {
+            if (!listSplitter || !listLayout) {
+                return;
+            }
+            const mode = getListSplitMode();
+            const enabled = Boolean(mode);
+            listSplitter.hidden = !enabled;
+            listSplitter.setAttribute("aria-hidden", enabled ? "false" : "true");
+            if (!enabled) {
+                listSplitter.classList.remove("is-active");
+                return;
+            }
+            const currentRatio = getCurrentListSplitRatio(mode);
+            updateListSplitterAria(mode, currentRatio);
+        }
+
+        let activeListSplitDrag = null;
+
+        function handleListSplitPointerMove(event) {
+            if (!activeListSplitDrag || event.pointerId !== activeListSplitDrag.pointerId) {
+                return;
+            }
+            const mode = activeListSplitDrag.mode;
+            const axisDelta = mode === "portrait"
+                ? Math.abs(event.clientY - activeListSplitDrag.startClientY)
+                : Math.abs(event.clientX - activeListSplitDrag.startClientX);
+            if (!activeListSplitDrag.moved && axisDelta < 1) {
+                return;
+            }
+            event.preventDefault();
+            activeListSplitDrag.moved = true;
+            const layoutRect = listLayout.getBoundingClientRect();
+            const axisSize = getListSplitAxisSize(mode, layoutRect);
+            if (!axisSize || axisSize <= 0) {
+                return;
+            }
+            const rawRatio = mode === "portrait"
+                ? (event.clientY - layoutRect.top) / axisSize
+                : (event.clientX - layoutRect.left) / axisSize;
+            const nextRatio = clampListSplitRatioToLayout(mode, rawRatio, layoutRect);
+            if (nextRatio === null) {
+                return;
+            }
+            activeListSplitDrag.latestRatio = nextRatio;
+            applyListSplitRatio(mode, nextRatio, {
+                persist: false,
+                updateColumns: false,
+            });
+        }
+
+        function clearListSplitDragState() {
+            if (listSplitter) {
+                listSplitter.classList.remove("is-active");
+            }
+            if (listLayout) {
+                listLayout.classList.remove("is-split-resizing");
+            }
+            document.body.classList.remove(
+                "handrive-list-split-resizing-landscape",
+                "handrive-list-split-resizing-portrait"
+            );
+            document.removeEventListener("pointermove", handleListSplitPointerMove);
+            document.removeEventListener("pointerup", handleListSplitPointerUp);
+            document.removeEventListener("pointercancel", handleListSplitPointerUp);
+            activeListSplitDrag = null;
+        }
+
+        function handleListSplitPointerUp(event) {
+            if (!activeListSplitDrag || event.pointerId !== activeListSplitDrag.pointerId) {
+                return;
+            }
+            event.preventDefault();
+            const finishedDrag = activeListSplitDrag;
+            if (finishedDrag.moved && Number.isFinite(finishedDrag.latestRatio)) {
+                setCookieValue(getListSplitCookieName(finishedDrag.mode), finishedDrag.latestRatio.toFixed(4));
+                scheduleListSplitDependentLayout({
+                    updateColumns: true,
+                });
+            }
+            clearListSplitDragState();
+        }
+
+        function handleListSplitPointerDown(event) {
+            if (!listSplitter || !listLayout || !listPane) {
+                return;
+            }
+            if (event.button !== undefined && event.button !== 0) {
+                return;
+            }
+            const mode = getListSplitMode();
+            if (!mode) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            activeListSplitDrag = {
+                latestRatio: getCurrentListSplitRatio(mode),
+                mode: mode,
+                moved: false,
+                pointerId: event.pointerId,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+            };
+            listSplitter.classList.add("is-active");
+            listLayout.classList.add("is-split-resizing");
+            document.body.classList.add("handrive-list-split-resizing-" + mode);
+            try {
+                listSplitter.setPointerCapture(event.pointerId);
+            } catch (error) {
+                // Pointer capture can fail if the event is already canceled by the browser.
+            }
+            document.addEventListener("pointermove", handleListSplitPointerMove, { passive: false });
+            document.addEventListener("pointerup", handleListSplitPointerUp);
+            document.addEventListener("pointercancel", handleListSplitPointerUp);
+        }
+
+        function handleListSplitKeyDown(event) {
+            if (!listLayout || !listSplitter) {
+                return;
+            }
+            const mode = getListSplitMode();
+            if (!mode) {
+                return;
+            }
+            const key = event.key;
+            const isDecreaseKey = mode === "portrait" ? key === "ArrowUp" : key === "ArrowLeft";
+            const isIncreaseKey = mode === "portrait" ? key === "ArrowDown" : key === "ArrowRight";
+            if (!isDecreaseKey && !isIncreaseKey) {
+                return;
+            }
+            event.preventDefault();
+            const layoutRect = listLayout.getBoundingClientRect();
+            const currentRatio = getCurrentListSplitRatio(mode)
+                || parseStoredListSplitRatio(getCookieValue(getListSplitCookieName(mode)))
+                || (mode === "portrait" ? 0.3 : 0.25);
+            const step = event.shiftKey ? 0.05 : 0.02;
+            const nextRatio = clampListSplitRatioToLayout(
+                mode,
+                currentRatio + (isDecreaseKey ? -step : step),
+                layoutRect
+            );
+            if (nextRatio === null) {
+                return;
+            }
+            applyListSplitRatio(mode, nextRatio, {
+                persist: true,
+                updateColumns: true,
+            });
+        }
+
+        function setupListSplitter() {
+            applyStoredListSplitRatios();
+            syncListSplitterState();
+            if (!listSplitter || !listLayout) {
+                return;
+            }
+            listSplitter.addEventListener("pointerdown", handleListSplitPointerDown);
+            listSplitter.addEventListener("keydown", handleListSplitKeyDown);
+            if (window.MutationObserver) {
+                const listSplitObserver = new MutationObserver(function () {
+                    syncListSplitterState();
+                    scheduleListSplitDependentLayout({
+                        updateColumns: false,
+                    });
+                });
+                listSplitObserver.observe(listLayout, {
+                    attributes: true,
+                    attributeFilter: ["class"],
+                });
+            }
+        }
+
         let currentDirRowSyncRafId = null;
 
         function scheduleSyncCurrentDirRowHeightWithSideHead() {
@@ -7886,13 +8219,17 @@
         }
 
         function isEditableHandriveFileEntry(entry) {
+            const entryExtension = getEntryFileExtension(entry);
+            if (entry && entry.type === "file" && (entry.is_archive || archiveFileExtensions.has(entryExtension))) {
+                return false;
+            }
             if (getGoogleDriveDocsEditorUrl(entry)) {
                 return true;
             }
             if (entry && entry.google_drive && entry.google_drive.can_edit_content === false) {
                 return false;
             }
-            return !nonEditableMediaExtensions.has(getEntryFileExtension(entry))
+            return !nonEditableMediaExtensions.has(entryExtension)
                 || isImageEditorEntry(entry)
                 || isVideoEditorEntry(entry)
                 || isAudioEditorEntry(entry)
@@ -9956,6 +10293,7 @@
                 isEditableHandriveFileEntry: isEditableHandriveFileEntry,
             });
             setContextButtonVisible(contextOpenButton, Boolean(visibility.open));
+            setContextButtonVisible(contextOpenLocationButton, false);
             setContextButtonVisible(contextDownloadButton, Boolean(visibility.download));
             setContextButtonVisible(contextExtractArchiveButton, Boolean(visibility.extractArchive && archiveExtractApiUrl));
             setContextButtonVisible(contextShareButton, Boolean(visibility.share && urlShareApiUrl));
@@ -10954,7 +11292,9 @@
                         getStatusLabel: function (nextItem) {
                             return getQueueItemStatusLabel(nextItem, t);
                         },
-                        onOpenContextMenu: openUploadQueueContextMenu,
+                        onOpenContextMenu: function (nextItem, x, y) {
+                            openUploadQueueContextMenu(nextItem, x, y).catch(alertError);
+                        },
                     });
                 },
                 collapsed: state.uploadQueueCollapsed,
@@ -11040,14 +11380,113 @@
             await refreshCurrentDirectory();
         }
 
-        function openUploadQueueContextMenu(item, x, y) {
+        function getUploadQueueItemTargetPath(item) {
+            if (!item || (item.kind === "operation" && item.operationType === "delete")) {
+                return "";
+            }
+            const savedPath = normalizePath(item.savedPath || "", true);
+            if (savedPath) {
+                return savedPath;
+            }
+            if (item.status === "done" && item.kind !== "operation" && item.targetDirPath && item.fileName) {
+                return normalizePath(item.targetDirPath + "/" + item.fileName, true);
+            }
+            return "";
+        }
+
+        function findCachedEntryByPath(pathValue) {
+            const normalizedPath = normalizePath(pathValue || "", true);
+            if (!normalizedPath) {
+                return null;
+            }
+            const knownEntry = state.entryByPath.get(normalizedPath);
+            if (knownEntry) {
+                return knownEntry;
+            }
+            const parentPath = getParentDirectory(normalizedPath);
+            const entries = state.directoryCache && state.directoryCache.has(parentPath)
+                ? state.directoryCache.get(parentPath)
+                : [];
+            return (Array.isArray(entries) ? entries : []).find(function (entry) {
+                return normalizePath(entry && entry.path || "", true) === normalizedPath;
+            }) || null;
+        }
+
+        async function resolveUploadQueueContextEntry(item) {
+            const targetPath = getUploadQueueItemTargetPath(item);
+            if (!targetPath) {
+                return null;
+            }
+            const cachedEntry = findCachedEntryByPath(targetPath);
+            if (cachedEntry) {
+                return cachedEntry;
+            }
+            const parentPath = getParentDirectory(targetPath);
+            await loadDirectory(parentPath);
+            return findCachedEntryByPath(targetPath);
+        }
+
+        async function openQueueItemLocation(item, entry) {
+            const targetPath = normalizePath(
+                (entry && entry.path) || getUploadQueueItemTargetPath(item),
+                true
+            );
+            const targetDirPath = normalizePath((item && item.targetDirPath) || "", true);
+            const locationPath = targetPath
+                ? getParentDirectory(targetPath)
+                : targetDirPath;
+            await navigateToDirectory(locationPath || "");
+            if (targetPath) {
+                applySelection([targetPath], {
+                    primaryPath: targetPath,
+                    anchorPath: targetPath,
+                });
+                const row = state.entryRowByPath.get(targetPath);
+                if (row && typeof row.scrollIntoView === "function") {
+                    row.scrollIntoView({ block: "nearest" });
+                }
+            }
+        }
+
+        function positionContextMenuAt(x, y) {
+            contextMenu.hidden = false;
+            contextMenu.style.left = "0px";
+            contextMenu.style.top = "0px";
+
+            const rect = contextMenu.getBoundingClientRect();
+            const viewportPadding = 8;
+            const maxLeft = Math.max(viewportPadding, window.innerWidth - rect.width - viewportPadding);
+            const minTop = viewportPadding;
+            const maxTop = Math.max(minTop, window.innerHeight - rect.height - viewportPadding);
+
+            const left = Math.min(Math.max(viewportPadding, x), maxLeft);
+            const top = Math.min(Math.max(minTop, y), maxTop);
+
+            contextMenu.style.left = left + "px";
+            contextMenu.style.top = top + "px";
+        }
+
+        async function openUploadQueueContextMenu(item, x, y) {
             if (!contextMenu || !item) {
                 return;
             }
             closeContextMenu();
+            let queueEntry = null;
+            if (item.status === "done") {
+                queueEntry = await resolveUploadQueueContextEntry(item);
+            }
             state.uploadQueueContextItem = item;
-            state.contextTarget = null;
-            state.contextEntries = [];
+            state.uploadQueueContextEntry = queueEntry;
+            state.contextTarget = queueEntry || null;
+            state.contextEntries = queueEntry ? [queueEntry] : [];
+
+            if (queueEntry) {
+                syncContextMenuByEntries([queueEntry]);
+                setContextButtonVisible(contextOpenLocationButton, true);
+                syncContextMenuDividers(contextMenu);
+                positionContextMenuAt(x, y);
+                return;
+            }
 
             configureUploadQueueContextMenu({
                 buttons: {
@@ -11067,6 +11506,7 @@
                     newDoc: contextNewDocButton,
                     newFolder: contextNewFolderButton,
                     open: contextOpenButton,
+                    openLocation: contextOpenLocationButton,
                     rename: contextRenameButton,
                     upload: contextUploadButton,
                 },
@@ -11076,22 +11516,7 @@
                 t: t,
             });
             syncContextMenuDividers(contextMenu);
-
-            contextMenu.hidden = false;
-            contextMenu.style.left = "0px";
-            contextMenu.style.top = "0px";
-
-            const rect = contextMenu.getBoundingClientRect();
-            const viewportPadding = 8;
-            const maxLeft = Math.max(viewportPadding, window.innerWidth - rect.width - viewportPadding);
-            const minTop = viewportPadding;
-            const maxTop = Math.max(minTop, window.innerHeight - rect.height - viewportPadding);
-
-            const left = Math.min(Math.max(viewportPadding, x), maxLeft);
-            const top = Math.min(Math.max(minTop, y), maxTop);
-
-            contextMenu.style.left = left + "px";
-            contextMenu.style.top = top + "px";
+            positionContextMenuAt(x, y);
         }
 
         function queueNeedsRefresh() {
@@ -12058,6 +12483,7 @@
             const useArchiveFileIcon = shouldUseArchiveFileIconForCurrentDirectory(meta);
             return {
                 isDir: !useArchiveFileIcon,
+                folderPath: !useArchiveFileIcon ? normalizePath(meta.path || state.currentDir || "", true) : "",
                 isRootAvatar: !useArchiveFileIcon && Boolean(meta.is_root),
                 accountProfileImageUrl: handriveRootProfileImageUrl,
                 isGoogleDrive: !useArchiveFileIcon && isGoogleDriveRootMeta(meta),
@@ -13252,6 +13678,8 @@
                 isBranch: entry.type === "dir" && entry.git_branch_root,
                 isMap: entry.type === "dir" && entry.is_map_folder,
                 isEmpty: entry.type === "dir" && entry.has_children === false,
+                folderName: entry.type === "dir" ? entry.name : "",
+                folderPath: entry.type === "dir" ? entry.path : "",
                 fileIconKey: fileIconKey,
                 isGenericFileIcon: entry.type === "file" && isGenericFileIconKey(fileIconKey),
                 customIconUrl: (entry.type === "dir" && entry.folder_icon_url) ? entry.folder_icon_url : "",
@@ -13510,6 +13938,18 @@
             modalSetFolderCreateModalOpen(folderCreateModal, folderCreateTarget, folderCreateInput, syncModalBodyState, true, state.folderCreateParentEntry, targetLabel);
         }
 
+        function syncFolderIconFileName() {
+            if (!folderIconFileName) {
+                return;
+            }
+            const emptyLabel = folderIconFileName.dataset.emptyLabel || "";
+            const file = folderIconFileInput && folderIconFileInput.files && folderIconFileInput.files.length > 0
+                ? folderIconFileInput.files[0]
+                : null;
+            folderIconFileName.textContent = file && file.name ? file.name : emptyLabel;
+            folderIconFileName.classList.toggle("has-file", Boolean(file));
+        }
+
         function setFolderIconModalOpen(opened, entry) {
             if (!folderIconModal) {
                 return;
@@ -13525,6 +13965,7 @@
                     ""
                 );
                 if (folderIconFileInput) { folderIconFileInput.value = ""; }
+                syncFolderIconFileName();
                 if (folderIconPreviewWrap) { folderIconPreviewWrap.hidden = true; }
                 if (folderIconPreviewImg) { folderIconPreviewImg.src = ""; }
                 state.folderIconTargetEntry = null;
@@ -13545,6 +13986,7 @@
             if (folderIconPreviewWrap) { folderIconPreviewWrap.hidden = !hasExistingIcon; }
             if (folderIconPreviewImg && hasExistingIcon) { folderIconPreviewImg.src = entry.folder_icon_url; }
             if (folderIconFileInput) { folderIconFileInput.value = ""; }
+            syncFolderIconFileName();
         }
 
         function renameEntry(entry) {
@@ -13963,6 +14405,8 @@
                 isBranch: entry.type === "dir" && entry.git_branch_root,
                 isMap: entry.type === "dir" && entry.is_map_folder,
                 isEmpty: entry.type === "dir" && entry.has_children === false,
+                folderName: entry.type === "dir" ? entry.name : "",
+                folderPath: entry.type === "dir" ? entry.path : "",
                 fileIconKey: fileIconKey,
                 isGenericFileIcon: entry.type === "file" && isGenericFileIconKey(fileIconKey),
                 customIconUrl: (entry.type === "dir" && entry.folder_icon_url) ? entry.folder_icon_url : "",
@@ -14022,9 +14466,6 @@
                     return;
                 }
                 event.preventDefault();
-                if (isArchiveMemberEntry(entry)) {
-                    return;
-                }
                 openContextMenuForEntry(entry, event.clientX, event.clientY);
             });
 
@@ -14276,6 +14717,122 @@
             });
         }
 
+        function handleContextEntryAction(action, entry, entries, options) {
+            const settings = options || {};
+            const actionEntries = Array.isArray(entries) && entries.length > 0 ? entries : [entry];
+            if (action === "open") {
+                if (actionEntries.length > 1) {
+                    openEntriesInNewTabs(actionEntries);
+                } else {
+                    openEntry(entry);
+                }
+                return true;
+            }
+            if (action === "open-location") {
+                openQueueItemLocation(null, entry).catch(alertError);
+                return true;
+            }
+            if (action === "download") {
+                downloadEntries(actionEntries);
+                return true;
+            }
+            if (action === "extract-archive") {
+                if (isArchiveEntry(entry)) {
+                    setArchiveExtractModalOpen(true, entry);
+                }
+                return true;
+            }
+            if (action === "share") {
+                if (!entry || !entry.can_edit || !entry.path || !urlShareApiUrl) {
+                    return true;
+                }
+                openUrlShareDialogForEntry(entry);
+                return true;
+            }
+            if (action === "upload") {
+                openContextUploadPicker(entry);
+                return true;
+            }
+            if (action === "google-drive-add-items") {
+                openGoogleDriveItemPicker().catch(alertError);
+                return true;
+            }
+            if (action === "create-archive") {
+                if (actionEntries.length > 1) {
+                    setArchiveCreateModalOpen(true, actionEntries);
+                    return true;
+                }
+                createArchiveFromFolder(entry);
+                return true;
+            }
+            if (action === "rename") {
+                renameEntry(entry);
+                return true;
+            }
+            if (action === "edit") {
+                editEntry(entry);
+                return true;
+            }
+            if (action === "new-folder") {
+                setFolderCreateModalOpen(true, entry);
+                return true;
+            }
+            if (action === "new-doc") {
+                newDocumentInFolder(entry);
+                return true;
+            }
+            if (action === "delete") {
+                const deletePromise = actionEntries.length === 1 && entry && entry.isCurrentFolder
+                    ? deleteCurrentDirectory()
+                    : deleteEntries(actionEntries.length > 1 ? actionEntries : entry);
+                deletePromise
+                    .then(function () {
+                        if (typeof settings.afterDelete === "function") {
+                            settings.afterDelete();
+                        }
+                    })
+                    .catch(alertError);
+                return true;
+            }
+            if (action === "create-map") {
+                openMapCreateModal(entry);
+                return true;
+            }
+            if (action === "convert-mp3") {
+                convertEntryToMp3(entry).catch(alertError);
+                return true;
+            }
+            if (action === "git-create-repo") {
+                openGitRepoModal(entry);
+                return true;
+            }
+            if (action === "git-manage-repo") {
+                openGitRepoModal(entry);
+                return true;
+            }
+            if (action === "git-delete-repo") {
+                deleteEntries(entry, { repoDelete: true }).catch(alertError);
+                return true;
+            }
+            if (action === "git-create-branch") {
+                openBranchCreateModal(entry);
+                return true;
+            }
+            if (action === "git-delete-branch") {
+                deleteBranch(entry).catch(alertError);
+                return true;
+            }
+            if (action === "change-icon") {
+                if (entry && entry.type === "dir") {
+                    window.requestAnimationFrame(function () {
+                        setFolderIconModalOpen(true, entry);
+                    });
+                }
+                return true;
+            }
+            return false;
+        }
+
         if (contextMenu) {
             contextMenu.addEventListener("click", function (event) {
                 const button = event.target.closest("button[data-action]");
@@ -14286,7 +14843,16 @@
                 const action = button.dataset.action;
                 const uploadQueueItem = state.uploadQueueContextItem;
                 if (uploadQueueItem) {
+                    const uploadQueueContextEntry = state.uploadQueueContextEntry || null;
                     closeContextMenu();
+                    if (uploadQueueContextEntry) {
+                        handleContextEntryAction(action, uploadQueueContextEntry, [uploadQueueContextEntry], {
+                            afterDelete: function () {
+                                removeUploadQueueItem(uploadQueueItem.id);
+                            },
+                        });
+                        return;
+                    }
                     if (action === "open") {
                         if (uploadQueueItem.status === "uploading" || uploadQueueItem.status === "queued") {
                             cancelUploadQueueItem(uploadQueueItem);
@@ -14311,6 +14877,10 @@
                         }
                         return;
                     }
+                    if (action === "open-location") {
+                        openQueueItemLocation(uploadQueueItem, null).catch(alertError);
+                        return;
+                    }
                     if (action === "delete") {
                         deleteUploadedQueueItem(uploadQueueItem).catch(alertError);
                         return;
@@ -14327,100 +14897,7 @@
                     ? state.contextEntries.slice()
                     : [entry];
                 closeContextMenu();
-
-                if (action === "open") {
-                    if (entries.length > 1) {
-                        openEntriesInNewTabs(entries);
-                    } else {
-                        openEntry(entry);
-                    }
-                    return;
-                }
-                if (action === "download") {
-                    downloadEntries(entries);
-                    return;
-                }
-                if (action === "extract-archive") {
-                    if (isArchiveEntry(entry)) {
-                        setArchiveExtractModalOpen(true, entry);
-                    }
-                    return;
-                }
-                if (action === "share") {
-                    if (!entry || !entry.can_edit || !entry.path || !urlShareApiUrl) {
-                        return;
-                    }
-                    openUrlShareDialogForEntry(entry);
-                    return;
-                }
-                if (action === "upload") {
-                    openContextUploadPicker(entry);
-                    return;
-                }
-                if (action === "google-drive-add-items") {
-                    openGoogleDriveItemPicker().catch(alertError);
-                    return;
-                }
-                if (action === "create-archive") {
-                    if (entries.length > 1) {
-                        setArchiveCreateModalOpen(true, entries);
-                        return;
-                    }
-                    createArchiveFromFolder(entry);
-                    return;
-                }
-                if (action === "rename") {
-                    renameEntry(entry);
-                    return;
-                }
-                if (action === "edit") {
-                    editEntry(entry);
-                    return;
-                }
-                if (action === "new-folder") {
-                    setFolderCreateModalOpen(true, entry);
-                    return;
-                }
-                if (action === "new-doc") {
-                    newDocumentInFolder(entry);
-                    return;
-                }
-                if (action === "delete") {
-                    if (entries.length === 1 && entry && entry.isCurrentFolder) {
-                        deleteCurrentDirectory().catch(alertError);
-                        return;
-                    }
-                    deleteEntries(entries.length > 1 ? entries : entry).catch(alertError);
-                }
-                if (action === "create-map") {
-                    openMapCreateModal(entry);
-                }
-                if (action === "convert-mp3") {
-                    convertEntryToMp3(entry).catch(alertError);
-                }
-                if (action === "git-create-repo") {
-                    openGitRepoModal(entry);
-                }
-                if (action === "git-manage-repo") {
-                    openGitRepoModal(entry);
-                }
-                if (action === "git-delete-repo") {
-                    deleteEntries(entry, { repoDelete: true }).catch(alertError);
-                }
-                if (action === "git-create-branch") {
-                    openBranchCreateModal(entry);
-                }
-                if (action === "git-delete-branch") {
-                    deleteBranch(entry).catch(alertError);
-                }
-                if (action === "change-icon") {
-                    if (entry && entry.type === "dir") {
-                        window.requestAnimationFrame(function () {
-                            setFolderIconModalOpen(true, entry);
-                        });
-                    }
-                    return;
-                }
+                handleContextEntryAction(action, entry, entries);
             });
         }
 
@@ -14440,9 +14917,12 @@
         if (folderIconFileInput) {
             folderIconFileInput.addEventListener("change", function () {
                 if (!folderIconFileInput.files || folderIconFileInput.files.length === 0) {
+                    syncFolderIconFileName();
                     if (folderIconPreviewWrap) { folderIconPreviewWrap.hidden = true; }
+                    if (folderIconPreviewImg) { folderIconPreviewImg.src = ""; }
                     return;
                 }
+                syncFolderIconFileName();
                 if (folderIconPreviewImg) { folderIconPreviewImg.src = URL.createObjectURL(folderIconFileInput.files[0]); }
                 if (folderIconPreviewWrap) { folderIconPreviewWrap.hidden = false; }
             });
@@ -15571,6 +16051,8 @@
         window.addEventListener("orientationchange", schedulePreviewBodyHeight, { passive: true });
         window.addEventListener("resize", scheduleEditorBodyHeight, { passive: true });
         window.addEventListener("orientationchange", scheduleEditorBodyHeight, { passive: true });
+        window.addEventListener("resize", syncListSplitterState, { passive: true });
+        window.addEventListener("orientationchange", syncListSplitterState, { passive: true });
         window.addEventListener("handrive:github-repositories-updated", function () {
             if (root.dataset.currentDirIsRoot !== "1") {
                 return;
@@ -15679,6 +16161,8 @@
         if (listItemsContainer) {
             listItemsContainer.addEventListener("wheel", handleHandriveListItemsScaleWheel, { passive: false });
         }
+
+        setupListSplitter();
 
         schedulePreviewBodyHeight();
         scheduleEditorBodyHeight();
@@ -18112,6 +18596,8 @@
                 isBranch: Boolean(safeEntry.type === "dir" && safeEntry.git_branch_root),
                 isMap: Boolean(safeEntry.type === "dir" && safeEntry.is_map_folder),
                 isEmpty: Boolean(safeEntry.type === "dir" && safeEntry.has_children === false),
+                folderName: safeEntry.type === "dir" ? safeEntry.name : "",
+                folderPath: safeEntry.type === "dir" ? safeEntry.path : "",
                 customIconUrl: safeEntry.type === "dir" && safeEntry.folder_icon_url ? safeEntry.folder_icon_url : "",
                 fileIconKey: fileIconKey,
                 isGenericFileIcon: Boolean(fileIconKey && isGenericFileIconKey(fileIconKey)),

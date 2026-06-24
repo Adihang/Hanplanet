@@ -42,6 +42,29 @@
         });
     }
 
+    var ARCHIVE_EXTENSIONS_FOR_ACTIONS = [".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz"];
+
+    function getContextEntryFileExtension(entry) {
+        var rawPath = entry && (entry.name || entry.path) ? String(entry.name || entry.path) : "";
+        var fileName = rawPath.split("/").pop() || "";
+        var dotIndex = fileName.lastIndexOf(".");
+        if (dotIndex <= 0) {
+            return "";
+        }
+        return fileName.slice(dotIndex).toLowerCase();
+    }
+
+    function isArchiveContextMenuEntry(entry) {
+        return Boolean(
+            entry &&
+            entry.type === "file" &&
+            (
+                entry.is_archive ||
+                ARCHIVE_EXTENSIONS_FOR_ACTIONS.indexOf(getContextEntryFileExtension(entry)) !== -1
+            )
+        );
+    }
+
     function computeContextMenuVisibility(entries, options) {
         // Convert entry metadata into one flat action-visibility object so page.js only has
         // to apply button state instead of re-deriving permission logic in multiple places.
@@ -86,11 +109,11 @@
         if (!targetEntry) {
             return flags;
         }
-        if (targets.some(function (entry) { return Boolean(entry && entry.is_archive_member); })) {
-            return flags;
-        }
 
         var isDirectory = Boolean(targetEntry.type === "dir");
+        var isArchiveFile = isArchiveContextMenuEntry(targetEntry);
+        var isArchiveMember = Boolean(targetEntry.is_archive_member);
+        var isArchiveVirtualDirectory = Boolean(targetEntry.is_archive_virtual);
         var isCurrentFolder = Boolean(targetEntry.isCurrentFolder);
         var canEditEntry = Boolean(targetEntry.can_edit);
         var canDemoEditEntry = Boolean(targetEntry.can_demo_edit);
@@ -141,6 +164,23 @@
         );
         var hasShareablePath = Boolean(targetEntry.path || !isCurrentFolder);
 
+        if (isMultiSelection && targets.some(function (entry) { return Boolean(entry && entry.is_archive_member); })) {
+            var allArchiveMembers = targets.every(function (entry) {
+                return Boolean(entry && entry.is_archive_member);
+            });
+            var targetArchivePath = String(targetEntry.archive_path || "");
+            var sameArchive = allArchiveMembers && targets.every(function (entry) {
+                return String(entry.archive_path || "") === targetArchivePath;
+            });
+            flags.extractArchive = Boolean(allArchiveMembers && sameArchive && targets.every(function (entry) {
+                return Boolean(entry && entry.can_extract);
+            }));
+            flags.deleteEntry = Boolean(allArchiveMembers && sameArchive && targets.every(function (entry) {
+                return isEntryDeletable(entry);
+            }));
+            return flags;
+        }
+
         if (isMultiSelection) {
             var canDeleteAll = targets.every(function (entry) {
                 return isEntryDeletable(entry);
@@ -155,6 +195,19 @@
             return flags;
         }
 
+        if (isArchiveMember) {
+            flags.open = !isCurrentFolder && isDirectory;
+            flags.extractArchive = Boolean(!isCurrentFolder && targetEntry.can_extract);
+            flags.upload = isDirectory && canWriteChildren;
+            flags.deleteEntry = isEntryDeletable(targetEntry);
+            return flags;
+        }
+
+        if (isArchiveVirtualDirectory) {
+            flags.upload = isDirectory && canWriteChildren;
+            return flags;
+        }
+
         flags.open = !isCurrentFolder;
         flags.download = !isCurrentFolder && (!isDirectory || !isGitVirtualDirectoryEntry(targetEntry));
         flags.extractArchive = Boolean(!isCurrentFolder && !isMultiSelection && targetEntry.is_archive && targetEntry.can_extract);
@@ -162,7 +215,7 @@
         flags.googleDriveAddItems = !isMultiSelection && isGoogleDriveRootEntry;
         flags.upload = isDirectory && canWriteChildren && !hasGitRepo;
         flags.createArchive = Boolean(isDirectory && !isCurrentFolder && canEditEntry && !hasGitRepo && !isGitVirtualEntry && !isGoogleDriveEntry);
-        flags.edit = !isDirectory && canShowEditEntry;
+        flags.edit = !isDirectory && !isArchiveFile && canShowEditEntry;
         flags.rename = !isCurrentFolder && canEditEntry && !isPublicWriteFile && !hasGitRepo;
         flags.deleteEntry = isEntryDeletable(targetEntry);
         flags.newFolder = isDirectory && canWriteChildren && !hasGitRepo;

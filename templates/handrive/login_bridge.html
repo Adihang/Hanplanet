@@ -134,8 +134,9 @@
         line-height: 1;
         text-decoration: none;
         cursor: pointer;
+        translate: 0 0;
         transition:
-            transform 140ms ease,
+            translate 140ms ease,
             box-shadow 140ms ease,
             border-color 140ms ease,
             background-color 140ms ease,
@@ -144,7 +145,7 @@
 
     .oauth-authorize-actions .ui-btn:hover,
     .oauth-authorize-actions .ui-btn:focus-visible {
-        transform: translateY(-1px);
+        translate: 0 var(--btn-template-hover-lift, var(--site-ui-hover-lift, -1px));
         border-color: color-mix(in srgb, var(--site-text-muted) 40%, var(--site-border));
         background: var(--site-surface-muted-strong);
         color: var(--site-text-stronger);

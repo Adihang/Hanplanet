@@ -96,6 +96,7 @@ body.ui-page {
     --handrive-popup-close-icon-size: 18px;
     --handrive-popup-close-radius: 50%;
     --handrive-job-queue-z: var(--site-z-popup-raised, 1125);
+    --handrive-context-menu-z: calc(var(--handrive-job-queue-z) + 1);
     --handrive-transition-fast: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
     --handrive-item-indent-step: 16px;
     --handrive-list-head-pad-y: 8px;
@@ -1326,6 +1327,8 @@ body.theme-dark .handrive-help-icon-symbol {
 }
 
 .handrive-list-layout {
+    --handrive-list-pane-size-landscape: min(25%, 400px);
+    --handrive-list-pane-size-portrait: 30%;
     display: grid;
     grid-template-columns: 1fr;
     gap: 12px;
@@ -1343,6 +1346,10 @@ body.theme-dark .handrive-help-icon-symbol {
     margin-left: auto;
     margin-right: auto;
     transition: grid-template-columns 0.25s ease;
+}
+
+.handrive-list-layout.is-split-resizing {
+    transition: none;
 }
 
 .handrive-list-layout.is-landscape.has-preview,
@@ -1369,12 +1376,12 @@ body.theme-dark .handrive-help-icon-symbol {
 }
 
 .handrive-list-layout.is-landscape.has-preview {
-    grid-template-columns: minmax(0, min(25%, 400px)) minmax(0, 1fr);
+    grid-template-columns: minmax(0, var(--handrive-list-pane-size-landscape)) minmax(0, 1fr);
     align-items: stretch;
 }
 
 .handrive-list-layout.is-landscape.has-editor {
-    grid-template-columns: minmax(0, min(25%, 400px)) minmax(0, 1fr);
+    grid-template-columns: minmax(0, var(--handrive-list-pane-size-landscape)) minmax(0, 1fr);
     align-items: stretch;
 }
 
@@ -1409,6 +1416,7 @@ body.theme-dark .handrive-help-icon-symbol {
     border-radius: var(--handrive-radius-lg);
     background: var(--handrive-bg);
     overflow: hidden;
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: stretch;
@@ -1425,28 +1433,140 @@ body.theme-dark .handrive-help-icon-symbol {
 
 .handrive-list-layout.is-portrait.has-preview > .handrive-list-pane {
     width: 100%;
-    flex: 1 1 30%;
+    flex: 0 0 var(--handrive-list-pane-size-portrait);
     min-height: 0;
     border-bottom: 1px solid var(--handrive-border-soft);
 }
 
 .handrive-list-layout.is-portrait.has-editor > .handrive-list-pane {
     width: 100%;
-    flex: 1 1 30%;
+    flex: 0 0 var(--handrive-list-pane-size-portrait);
     min-height: 0;
     border-bottom: 1px solid var(--handrive-border-soft);
 }
 
 .handrive-list-layout.is-portrait.has-preview > .handrive-list-preview {
-    flex: 0 0 70%;
+    flex: 1 1 calc(100% - var(--handrive-list-pane-size-portrait));
     min-height: 0;
-    max-height: 70%;
+    max-height: calc(100% - var(--handrive-list-pane-size-portrait));
 }
 
 .handrive-list-layout.is-portrait.has-editor > .handrive-list-editor {
-    flex: 0 0 70%;
+    flex: 1 1 calc(100% - var(--handrive-list-pane-size-portrait));
     min-height: 0;
-    max-height: 70%;
+    max-height: calc(100% - var(--handrive-list-pane-size-portrait));
+}
+
+.handrive-list-splitter {
+    position: absolute;
+    z-index: 7;
+    display: none;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--handrive-accent, #4f8ef7);
+    appearance: none;
+    -webkit-appearance: none;
+    touch-action: none;
+}
+
+.handrive-list-layout.has-preview > .handrive-list-splitter:not([hidden]),
+.handrive-list-layout.has-editor > .handrive-list-splitter:not([hidden]) {
+    display: block;
+}
+
+.handrive-list-splitter::before,
+.handrive-list-splitter::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.handrive-list-splitter::before {
+    background: var(--handrive-border-soft);
+}
+
+.handrive-list-splitter::after {
+    opacity: 0;
+    background: color-mix(in srgb, currentColor 40%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.handrive-list-splitter:hover::after,
+.handrive-list-splitter:focus-visible::after,
+.handrive-list-splitter.is-active::after {
+    opacity: 1;
+}
+
+.handrive-list-splitter:focus-visible {
+    outline: 2px solid color-mix(in srgb, currentColor 72%, transparent);
+    outline-offset: 2px;
+}
+
+.handrive-list-layout.is-landscape > .handrive-list-splitter {
+    top: 0;
+    bottom: 0;
+    left: var(--handrive-list-pane-size-landscape);
+    width: 14px;
+    transform: translateX(-50%);
+    cursor: col-resize;
+}
+
+.handrive-list-layout.is-landscape > .handrive-list-splitter::before {
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    transform: translateX(-50%);
+}
+
+.handrive-list-layout.is-landscape > .handrive-list-splitter::after {
+    top: 50%;
+    left: 50%;
+    width: 3px;
+    height: 42px;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+}
+
+.handrive-list-layout.is-portrait > .handrive-list-splitter {
+    top: var(--handrive-list-pane-size-portrait);
+    right: 0;
+    left: 0;
+    height: 14px;
+    transform: translateY(-50%);
+    cursor: row-resize;
+}
+
+.handrive-list-layout.is-portrait > .handrive-list-splitter::before {
+    top: 50%;
+    right: 0;
+    left: 0;
+    height: 1px;
+    transform: translateY(-50%);
+}
+
+.handrive-list-layout.is-portrait > .handrive-list-splitter::after {
+    top: 50%;
+    left: 50%;
+    width: 42px;
+    height: 3px;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+}
+
+body.handrive-list-split-resizing-landscape,
+body.handrive-list-split-resizing-landscape * {
+    cursor: col-resize;
+    user-select: none;
+}
+
+body.handrive-list-split-resizing-portrait,
+body.handrive-list-split-resizing-portrait * {
+    cursor: row-resize;
+    user-select: none;
 }
 
 .handrive-list-pane {
@@ -2653,7 +2773,7 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     background: var(--handrive-row-hover-bg);
 }
 
-.handrive-item-row:active:not(:has(:is(
+.handrive-item-row:is(:active, .is-ui-pressing):not(:has(:is(
     button,
     a,
     input,
@@ -2662,7 +2782,6 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     label,
     [role="button"],
     [tabindex],
-    [data-sort-key],
     [contenteditable="true"],
     .ui-btn,
     .handrive-icon-btn,
@@ -2672,7 +2791,7 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     .root-search-input,
     .root-input-clear,
     .root-search-submit
-):active)) {
+):is(:active, .is-ui-pressing))) {
     background: var(--handrive-row-hover-bg);
     translate: 0 var(--btn-template-active-press-depth, 1px);
 }
@@ -2886,7 +3005,7 @@ body.theme-dark .handrive-list-pane.is-local-file-drop-target .handrive-list.is-
 }
 
 .handrive-current-dir-row {
-    --handrive-current-dir-row-height: 47px;
+    --handrive-current-dir-row-height: 48px;
     --handrive-current-dir-search-height: 38px;
     background: var(--handrive-hover-soft);
     height: var(--handrive-current-dir-row-height);
@@ -2907,12 +3026,10 @@ body.theme-dark .handrive-list-pane.is-local-file-drop-target .handrive-list.is-
 .handrive-current-dir-row:hover,
 .handrive-current-dir-row:focus-visible {
     background: var(--handrive-hover-soft);
-    translate: 0 var(--btn-template-hover-lift, -1px);
 }
 
 .handrive-current-dir-row:active {
     background: var(--handrive-hover-soft);
-    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .handrive-list-layout.is-landscape.has-preview .handrive-current-dir-row,
@@ -3272,7 +3389,7 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     width: 18px;
     height: 18px;
     background-size: 18px 18px;
-    transform: translateY(1px);
+    transform: translateY(0);
 }
 
 .handrive-current-dir-search-wrap {
@@ -3590,6 +3707,36 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
 
 .handrive-item-type-icon.is-dir.is-empty::before {
     background-image: url("/static/media/icons/handrive/folder_empty.png");
+}
+
+.handrive-item-type-icon.is-dir.is-markdown-image-folder::before {
+    content: "";
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    margin: 0;
+    transform: scale(1.331);
+    background-image:
+        url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect x=%273.5%27 y=%274.8%27 width=%2717%27 height=%2714.4%27 rx=%272.2%27 fill=%27%23fff7df%27 stroke=%27%236f5b2f%27 stroke-width=%271.6%27/%3E%3Ccircle cx=%278.3%27 cy=%279.2%27 r=%271.8%27 fill=%27%2357a6ff%27/%3E%3Cpath fill=%27%234a9f67%27 d=%27M4.9 17.2l4.2-4.1 2.7 2.5 2-1.8 5.3 3.4H4.9z%27/%3E%3C/svg%3E"),
+        url("/static/media/icons/handrive/folder.png");
+    background-position: center calc(50% + 1px), center;
+    background-repeat: no-repeat;
+    background-size: 14px 12px, contain;
+}
+
+.handrive-item-type-icon.is-dir.is-youtube-download-folder::before {
+    content: "";
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    margin: 0;
+    transform: scale(1.331);
+    background-image:
+        url("/static/media/icons/handrive/youtube-icon-red.png"),
+        url("/static/media/icons/handrive/folder.png");
+    background-position: center calc(50% + 1px), center;
+    background-repeat: no-repeat;
+    background-size: 16px auto, contain;
 }
 
 .handrive-item-type-icon.is-dir.is-root-avatar {
@@ -4097,7 +4244,9 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 .handrive-list-items .handrive-item-type-icon.is-dir.is-github-repo::before,
 .handrive-list-items .handrive-item-type-icon.is-dir.is-repo::before,
 .handrive-list-items .handrive-item-type-icon.is-dir.is-branch::before,
-.handrive-list-items .handrive-item-type-icon.is-dir.is-map::before {
+.handrive-list-items .handrive-item-type-icon.is-dir.is-map::before,
+.handrive-list-items .handrive-item-type-icon.is-dir.is-markdown-image-folder::before,
+.handrive-list-items .handrive-item-type-icon.is-dir.is-youtube-download-folder::before {
     width: var(--handrive-list-item-icon-18);
     height: var(--handrive-list-item-icon-18);
     min-width: var(--handrive-list-item-icon-18);
@@ -4147,7 +4296,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 
 .handrive-context-menu {
     position: fixed;
-    z-index: var(--site-z-popup);
+    z-index: var(--handrive-context-menu-z, var(--site-z-popup));
     min-width: 156px;
     border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
     border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
@@ -4816,8 +4965,10 @@ body.handrive-popup-dragging {
     color: var(--handrive-icon-btn-hover-color, var(--handrive-text-stronger));
     outline: 0;
 }
-.handrive-icon-btn:active {
+.handrive-icon-btn:is(:active, .is-ui-pressing):not(:disabled):not([aria-disabled="true"]) {
     background: var(--handrive-icon-btn-active-bg, var(--handrive-icon-action-active-bg));
+    color: var(--handrive-icon-btn-hover-color, var(--handrive-text-stronger));
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 .handrive-icon-btn:disabled,
 .handrive-icon-btn[aria-disabled="true"] {
@@ -7172,6 +7323,116 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     outline: none;
     border-color: var(--handrive-search-border-focus);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--handrive-search-border-focus) 22%, transparent);
+}
+
+.handrive-folder-icon-file-field {
+    position: relative;
+    cursor: pointer;
+}
+
+.handrive-field .handrive-folder-icon-file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    opacity: 0;
+}
+
+.handrive-field .handrive-folder-icon-file-input:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+.handrive-folder-icon-file-control {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 46px;
+    padding: 5px;
+    border: 1px solid var(--handrive-border-heavy);
+    border-radius: var(--handrive-radius-sm);
+    background: var(--handrive-surface-muted-strong);
+    color: var(--handrive-text-stronger);
+    box-sizing: border-box;
+    transition: background-color var(--motion-fast), border-color var(--motion-fast), box-shadow var(--motion-fast);
+}
+
+.handrive-folder-icon-file-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 92px;
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid var(--ui-btn-base-border);
+    border-radius: calc(var(--handrive-radius-sm) - 2px);
+    background: var(--ui-btn-base-bg);
+    color: var(--ui-btn-base-color);
+    font-size: 15px;
+    font-weight: var(--site-weight-button);
+    line-height: 1;
+    white-space: nowrap;
+    translate: 0 0;
+    transition: var(--ui-btn-transition);
+}
+
+.handrive-folder-icon-file-button::before {
+    content: "";
+    width: 15px;
+    height: 15px;
+    margin-right: 6px;
+    flex: 0 0 auto;
+    background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12'/%3E%3Cpath d='m7 8 5-5 5 5'/%3E%3Cpath d='M5 21h14'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12'/%3E%3Cpath d='m7 8 5-5 5 5'/%3E%3Cpath d='M5 21h14'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.handrive-folder-icon-file-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--handrive-text-muted);
+    font-size: 14px;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.handrive-folder-icon-file-name.has-file {
+    color: var(--handrive-text-stronger);
+    font-weight: 500;
+}
+
+.handrive-folder-icon-file-field:hover .handrive-folder-icon-file-control,
+.handrive-folder-icon-file-input:focus-visible + .handrive-folder-icon-file-control {
+    border-color: var(--handrive-search-border-focus);
+    background: color-mix(in srgb, var(--handrive-surface-muted-strong) 88%, var(--handrive-text-stronger));
+}
+
+.handrive-folder-icon-file-input:focus-visible + .handrive-folder-icon-file-control {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--handrive-search-border-focus) 22%, transparent);
+}
+
+.handrive-folder-icon-file-field:hover .handrive-folder-icon-file-button,
+.handrive-folder-icon-file-input:focus-visible + .handrive-folder-icon-file-control .handrive-folder-icon-file-button {
+    border-color: var(--ui-btn-hover-border);
+    background: var(--ui-btn-hover-bg);
+    color: var(--ui-btn-hover-color);
+    translate: 0 var(--ui-btn-hover-lift, var(--btn-template-hover-lift, -1px));
+}
+
+.handrive-folder-icon-file-field:active .handrive-folder-icon-file-button {
+    border-color: var(--ui-btn-active-border, var(--ui-btn-hover-border));
+    background: var(--ui-btn-active-bg, var(--ui-btn-hover-bg));
+    color: var(--ui-btn-active-color, var(--ui-btn-hover-color));
+    translate: 0 var(--ui-btn-active-press-depth, var(--btn-template-active-press-depth, 1px));
 }
 
 .handrive-field input::placeholder,

@@ -391,6 +391,7 @@
         var defaultLabels = settings.defaultLabels || {};
 
         var contextOpenButton = buttons.open || null;
+        var contextOpenLocationButton = buttons.openLocation || null;
         var contextDownloadButton = buttons.download || null;
         var contextShareButton = buttons.share || null;
         var contextUploadButton = buttons.upload || null;
@@ -410,6 +411,7 @@
         var contextExtractArchiveButton = buttons.extractArchive || null;
 
         setContextButtonVisible(contextOpenButton, false);
+        setContextButtonVisible(contextOpenLocationButton, false);
         setContextButtonVisible(contextDownloadButton, false);
         setContextButtonVisible(contextCreateArchiveButton, false);
         setContextButtonVisible(contextExtractArchiveButton, false);
@@ -430,6 +432,7 @@
 
         if (!item) {
             setContextButtonVisible(contextOpenButton, false);
+            setContextButtonVisible(contextOpenLocationButton, false);
             setContextButtonVisible(contextDeleteButton, false);
             return;
         }
@@ -441,11 +444,16 @@
                     : t("upload_cancel", "업로드 취소");
             }
             setContextButtonVisible(contextOpenButton, true);
+            setContextButtonVisible(contextOpenLocationButton, false);
             setContextButtonVisible(contextDeleteButton, false);
             return;
         }
 
         if (item.status === "done") {
+            var canOpenLocation = Boolean(
+                !(item.kind === "operation" && item.operationType === "delete") &&
+                (item.savedPath || item.targetDirPath)
+            );
             if (contextOpenButton) {
                 contextOpenButton.textContent = item.kind === "operation" && item.operationType === "delete"
                     ? ""
@@ -457,11 +465,13 @@
                     : defaultLabels.delete;
             }
             setContextButtonVisible(contextOpenButton, !(item.kind === "operation" && item.operationType === "delete"));
+            setContextButtonVisible(contextOpenLocationButton, canOpenLocation);
             setContextButtonVisible(contextDeleteButton, true);
             return;
         }
 
         setContextButtonVisible(contextOpenButton, false);
+        setContextButtonVisible(contextOpenLocationButton, false);
         if (contextDeleteButton) {
             contextDeleteButton.textContent = item.kind === "operation"
                 ? t("queue_remove", "목록에서 제거")

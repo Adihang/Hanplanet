@@ -959,6 +959,7 @@
             clear: '899 848 450 450',
             rain: '899 1476 450 450',
             thunder: '369 1476 450 450',
+            moon: '1430 2066 450 450',
             unknown: '369 848 450 450'
         };
 
@@ -977,6 +978,11 @@
             return hours + ':' + minutes;
         }
 
+        function isMinecraftNight(ticks) {
+            const dayTicks = normalizeMinecraftTicks(ticks);
+            return dayTicks !== null && dayTicks >= 12542 && dayTicks < 23460;
+        }
+
         function getWeatherLabel(weather) {
             if (weather === 'clear') return labels.weatherClear;
             if (weather === 'rain') return labels.weatherRain;
@@ -984,11 +990,12 @@
             return labels.weatherUnknown;
         }
 
-        function setWeatherIcon(weather) {
+        function setWeatherIcon(weather, ticks) {
             if (!serverWeatherIconEl) return;
             const normalizedWeather = weatherIconViewBoxes[weather] ? weather : 'unknown';
-            serverWeatherIconEl.setAttribute('viewBox', weatherIconViewBoxes[normalizedWeather]);
-            serverWeatherIconEl.dataset.weather = normalizedWeather;
+            const iconKey = normalizedWeather === 'clear' && isMinecraftNight(ticks) ? 'moon' : normalizedWeather;
+            serverWeatherIconEl.setAttribute('viewBox', weatherIconViewBoxes[iconKey]);
+            serverWeatherIconEl.dataset.weather = iconKey;
         }
 
         function extractServerVersion(status) {
@@ -1137,7 +1144,7 @@
         function renderServerClock() {
             if (!serverClockEl || !serverWeatherIconEl || !serverTimeLabelEl) return;
             if (!worldState) {
-                setWeatherIcon('unknown');
+                setWeatherIcon('unknown', null);
                 serverTimeLabelEl.textContent = '--:--';
                 serverClockEl.title = labels.serverClockLoading;
                 return;
@@ -1147,7 +1154,7 @@
             const currentTicks = worldState.timeTicks + elapsedTicks;
             const weather = worldState.weather || 'unknown';
             const timeLabel = formatMinecraftTime(currentTicks);
-            setWeatherIcon(weather);
+            setWeatherIcon(weather, currentTicks);
             serverTimeLabelEl.textContent = timeLabel;
             serverClockEl.title = getWeatherLabel(weather) + ' ' + timeLabel;
         }

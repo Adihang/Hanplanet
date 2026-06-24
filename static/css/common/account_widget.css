@@ -36,14 +36,15 @@
     padding: 4px 10px 4px 8px;
     margin: 0;
     cursor: pointer;
-    transition: color var(--motion-fast), background-color var(--motion-fast), border-color var(--motion-fast), transform var(--motion-fast);
+    translate: 0 0;
+    transition: color var(--motion-fast), background-color var(--motion-fast), border-color var(--motion-fast), translate var(--motion-fast);
 }
 
 .ui-auth-account-trigger:hover,
 .ui-auth-account-trigger:focus-visible {
     background-color: var(--color-hover-bg);
     color: var(--theme-accent-strong);
-    transform: translateY(-1px);
+    translate: 0 var(--btn-template-hover-lift, var(--site-ui-hover-lift, -1px));
     text-decoration: none;
 }
 
@@ -322,12 +323,13 @@ body.theme-dark .ui-auth-account-menu-actions .ui-auth-account-menu-item:focus-v
     padding: 0;
     line-height: 0;
     cursor: pointer;
-    transition: transform 0.16s ease;
+    translate: 0 0;
+    transition: translate 0.16s ease;
 }
 
 .ui-auth-account-profile-image-button:hover,
 .ui-auth-account-profile-image-button:focus-visible {
-    transform: translateY(-1px);
+    translate: 0 var(--btn-template-hover-lift, var(--site-ui-hover-lift, -1px));
     outline: none;
 }
 

@@ -108,6 +108,56 @@
         });
     };
 
+    let googlePickerStackObserver = null;
+
+    const getRootCssValue = function (propertyName, fallbackValue) {
+        const rootStyle = window.getComputedStyle
+            ? window.getComputedStyle(document.documentElement)
+            : null;
+        const value = rootStyle ? rootStyle.getPropertyValue(propertyName).trim() : "";
+        return value || fallbackValue;
+    };
+
+    const syncGooglePickerStack = function () {
+        const backdropZ = getRootCssValue("--site-z-google-picker-backdrop", "4100");
+        const dialogZ = getRootCssValue("--site-z-google-picker-dialog", "4101");
+        document.querySelectorAll(".picker-dialog-bg").forEach(function (element) {
+            if (element.style.zIndex !== backdropZ) {
+                element.style.zIndex = backdropZ;
+            }
+        });
+        document.querySelectorAll(".picker-dialog, .picker-dialog-content").forEach(function (element) {
+            if (element.style.zIndex !== dialogZ) {
+                element.style.zIndex = dialogZ;
+            }
+        });
+    };
+
+    const keepGooglePickerOnTop = function () {
+        syncGooglePickerStack();
+        if (googlePickerStackObserver) {
+            googlePickerStackObserver.disconnect();
+        }
+        if (typeof window.MutationObserver === "function" && document.body) {
+            googlePickerStackObserver = new MutationObserver(syncGooglePickerStack);
+            googlePickerStackObserver.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ["class", "style"]
+            });
+        }
+        [0, 50, 150, 350, 700, 1200, 2000].forEach(function (delay) {
+            window.setTimeout(syncGooglePickerStack, delay);
+        });
+        window.setTimeout(function () {
+            if (googlePickerStackObserver) {
+                googlePickerStackObserver.disconnect();
+                googlePickerStackObserver = null;
+            }
+        }, 3000);
+    };
+
     const setGooglePickerOpeningFlag = function () {
         document.documentElement.dataset.googlePickerOpening = "1";
         window.setTimeout(function () {
@@ -477,7 +527,9 @@
                 }
                 const scrollSnapshot = getWindowScrollSnapshot();
                 setGooglePickerOpeningFlag();
+                keepGooglePickerOnTop();
                 builder.build().setVisible(true);
+                keepGooglePickerOnTop();
                 preserveWindowScrollAfterPickerOpen(scrollSnapshot);
                 setStatus(statusElement, "", false);
                 return true;

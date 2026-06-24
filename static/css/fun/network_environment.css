@@ -89,6 +89,7 @@ body.network-environment-page .footer-links {
     cursor: pointer;
     appearance: none;
     overflow: visible;
+    translate: 0 0;
     transition: var(--ui-btn-transition, 160ms ease);
 }
 
@@ -111,7 +112,7 @@ body.network-environment-page .footer-links {
     border-color: var(--ui-btn-hover-border, var(--btn-template-base-hover-border, var(--handrive-border-soft)));
     background: var(--ui-btn-hover-bg, var(--btn-template-base-hover-bg, var(--color-hover-bg, rgba(0, 0, 0, 0.06))));
     color: var(--ui-btn-hover-color, var(--btn-template-base-hover-color, inherit));
-    transform: translateY(var(--ui-btn-hover-lift, 0));
+    translate: 0 var(--ui-btn-hover-lift, var(--btn-template-hover-lift, -1px));
 }
 
 .network-summary-action:active {

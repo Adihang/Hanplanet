@@ -196,6 +196,8 @@ Do not commit API keys or secrets. Production uses `DEBUG = False`.
 - Tests live in `main/tests.py` using Django's test framework.
 - Run all tests with `python manage.py test`.
 - No coverage threshold is defined; add tests when you change model logic or views.
+- Manual/browser testing against the persistent local or production-like DB must use the single fixed test account `codex_test`. Do not create ad-hoc accounts such as `tmp_*`, `*_check`, or feature-specific usernames for each task. If login credentials are needed, reset only this account's password locally and do not write the password into tracked files.
+- Django `TestCase`/temporary test databases may still create per-test users inside tests; those users must not be used as persistent manual testing accounts.
 
 ## Commit & Pull Request Guidelines
 

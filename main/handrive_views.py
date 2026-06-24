@@ -763,6 +763,7 @@ DOCS_TEXT = {
         "search_placeholder": "파일 검색",
         "list_aria_label": "목록",
         "menu_open": "열기",
+        "menu_open_location": "파일 위치 열기",
         "menu_download": "다운로드",
         "menu_google_drive_add_items": "항목 추가",
         "menu_upload": "업로드",
@@ -936,6 +937,7 @@ DOCS_TEXT = {
         "list_preview_loading": "미리보기를 불러오는 중...",
         "list_preview_error": "미리보기를 불러오지 못했습니다.",
         "list_preview_unsupported": "미리보기 미지원",
+        "list_splitter_label": "목록과 상세 영역 크기 조절",
         "view_read_unsupported": "읽기 미지원",
         "list_button": "목록",
         "filename_label": "파일명",
@@ -972,6 +974,8 @@ DOCS_TEXT = {
         "map_create_placeholder": "지도 이름을 입력하세요",
         "folder_icon_title": "아이콘 변경",
         "folder_icon_file_label": "이미지 파일 선택",
+        "folder_icon_file_button": "파일 선택",
+        "folder_icon_file_empty": "선택된 파일 없음",
         "folder_icon_delete_button": "아이콘 삭제",
         "git_repo_name_placeholder": "my-repo (letters, numbers, ., -, _)",
         "git_repo_create_title": "Git 리포지토리 생성",
@@ -1183,6 +1187,7 @@ DOCS_TEXT = {
         "search_placeholder": "Search files",
         "list_aria_label": "File list",
         "menu_open": "Open",
+        "menu_open_location": "Open file location",
         "menu_download": "Download",
         "menu_google_drive_add_items": "Add items",
         "menu_upload": "Upload",
@@ -1337,6 +1342,7 @@ DOCS_TEXT = {
         "list_preview_loading": "Loading preview...",
         "list_preview_error": "Failed to load preview.",
         "list_preview_unsupported": "Preview unavailable",
+        "list_splitter_label": "Resize list and detail panes",
         "view_read_unsupported": "Read unavailable",
         "list_button": "List",
         "filename_label": "File name",
@@ -1373,6 +1379,8 @@ DOCS_TEXT = {
         "map_create_placeholder": "Enter map name",
         "folder_icon_title": "Change Icon",
         "folder_icon_file_label": "Choose image file",
+        "folder_icon_file_button": "Choose file",
+        "folder_icon_file_empty": "No file selected",
         "folder_icon_delete_button": "Remove Icon",
         "git_repo_name_placeholder": "my-repo (letters, numbers, ., -, _)",
         "git_repo_create_title": "Create Git Repository",
@@ -2098,6 +2106,230 @@ def build_archive_virtual_path(archive_relative_path: str, inner_path: str = "")
     return f"{HANDRIVE_ARCHIVE_VIRTUAL_PREFIX}/{token}"
 
 
+def join_archive_member_path(parent_member_path: str, child_name: str) -> str:
+    parent = normalize_archive_member_name(parent_member_path)
+    child = normalize_archive_member_name(child_name)
+    if not child:
+        raise ValueError("압축파일 안에 추가할 이름이 올바르지 않습니다.")
+    return f"{parent}/{child}" if parent else child
+
+
+def archive_member_exists(member_names: set[str], member_path: str) -> bool:
+    normalized = normalize_archive_member_name(member_path)
+    if not normalized:
+        return False
+    if normalized in member_names:
+        return True
+    prefix = f"{normalized}/"
+    return any(name.startswith(prefix) for name in member_names)
+
+
+def get_archive_member_name_set(archive_path: Path) -> set[str]:
+    with zipfile.ZipFile(archive_path) as archive:
+        return {
+            normalize_archive_member_name(info.filename)
+            for info in archive.infolist()
+            if normalize_archive_member_name(info.filename)
+        }
+
+
+def build_available_archive_member_path(
+    existing_member_names: set[str],
+    parent_member_path: str,
+    original_name: str,
+    *,
+    is_dir: bool = False,
+) -> str:
+    raw_name = str(original_name or "").replace("\\", "/").split("/")[-1].strip()
+    if not raw_name:
+        raise ValueError("압축파일 안에 추가할 이름이 올바르지 않습니다.")
+
+    if is_dir:
+        base_name = validate_name(raw_name, for_file=False)
+        suffix = ""
+    else:
+        suffix = Path(raw_name).suffix.lower()
+        normalized_extension = normalize_file_extension(suffix, allow_empty=True)
+        suffix = normalized_extension
+        if normalized_extension:
+            base_name = validate_name(raw_name, for_file=True, file_extension=normalized_extension)
+        else:
+            base_name = validate_name(raw_name, for_file=False)
+
+    candidate_name = f"{base_name}{suffix}"
+    candidate = join_archive_member_path(parent_member_path, candidate_name)
+    if not archive_member_exists(existing_member_names, candidate):
+        return candidate
+
+    index = 2
+    while True:
+        candidate_name = f"{base_name} ({index}){suffix}"
+        candidate = join_archive_member_path(parent_member_path, candidate_name)
+        if not archive_member_exists(existing_member_names, candidate):
+            return candidate
+        index += 1
+
+
+def build_archive_member_entry(
+    request,
+    archive_relative: str,
+    member_path: str,
+    *,
+    is_dir: bool = False,
+    size: int = 0,
+) -> dict:
+    normalized_member_path = normalize_archive_member_name(member_path)
+    name = Path(normalized_member_path).name
+    can_edit_archive = has_handrive_write_access(request, archive_relative)
+    return {
+        "name": name,
+        "path": build_archive_virtual_path(archive_relative, normalized_member_path),
+        "type": "dir" if is_dir else "file",
+        "modified_display": format_handrive_modified_display(datetime.now()),
+        "can_edit": False,
+        "can_write_children": bool(is_dir and can_edit_archive),
+        "can_delete": bool(can_edit_archive),
+        "is_public_write": False,
+        "is_url_only": False,
+        "write_acl_labels": [],
+        "share_url": "",
+        "share_download_url": "",
+        "share_is_inherited": False,
+        "share_allowed_users": [],
+        "is_archive_member": True,
+        "can_extract": True,
+        "archive_path": archive_relative,
+        "archive_member_path": normalized_member_path,
+        "has_children": bool(is_dir),
+        "size_display": "" if is_dir else format_handrive_bytes_display(size),
+    }
+
+
+def build_zip_info_for_archive_member(member_name: str, *, is_dir: bool = False) -> zipfile.ZipInfo:
+    arcname = normalize_archive_member_name(member_name)
+    if not arcname:
+        raise ValueError("압축파일 안의 경로가 올바르지 않습니다.")
+    if is_dir:
+        arcname = arcname.rstrip("/") + "/"
+    zip_info = zipfile.ZipInfo(arcname)
+    zip_info.date_time = datetime.now().timetuple()[:6]
+    zip_info.compress_type = zipfile.ZIP_DEFLATED
+    zip_info.external_attr = ((0o40775 if is_dir else 0o100664) & 0xFFFF) << 16
+    return zip_info
+
+
+def rewrite_zip_archive(
+    archive_path: Path,
+    *,
+    should_skip_member=None,
+    additions: list[tuple[str, bytes, bool]] | None = None,
+) -> None:
+    should_skip = should_skip_member or (lambda _member_name: False)
+    pending_additions = additions or []
+    temp_handle = tempfile.NamedTemporaryFile(
+        prefix=f".{archive_path.name}.",
+        suffix=".tmp",
+        dir=str(archive_path.parent),
+        delete=False,
+    )
+    temp_path = Path(temp_handle.name)
+    temp_handle.close()
+    try:
+        with zipfile.ZipFile(archive_path, "r") as source_archive, zipfile.ZipFile(
+            temp_path,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as target_archive:
+            for info in source_archive.infolist():
+                member_name = normalize_archive_member_name(info.filename)
+                if not member_name or should_skip(member_name):
+                    continue
+                if info.is_dir() or info.filename.endswith("/"):
+                    target_archive.writestr(info, b"")
+                    continue
+                with source_archive.open(info, "r") as source_file, target_archive.open(info, "w") as target_file:
+                    shutil.copyfileobj(source_file, target_file)
+
+            for member_name, content, is_dir in pending_additions:
+                zip_info = build_zip_info_for_archive_member(member_name, is_dir=is_dir)
+                target_archive.writestr(zip_info, b"" if is_dir else content)
+        os.replace(temp_path, archive_path)
+    finally:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+
+
+def add_archive_members(
+    archive_path: Path,
+    additions: list[tuple[str, bytes, bool]],
+) -> None:
+    rewrite_zip_archive(archive_path, additions=additions)
+
+
+def remove_archive_members(archive_path: Path, member_paths: list[str]) -> int:
+    targets = [normalize_archive_member_name(member_path) for member_path in member_paths]
+    targets = [target for target in targets if target]
+    if not targets:
+        raise ValueError("삭제할 압축파일 내부 항목이 올바르지 않습니다.")
+
+    removed_count = 0
+
+    def should_skip(member_name: str) -> bool:
+        nonlocal removed_count
+        for target in targets:
+            if member_name == target or member_name.startswith(f"{target}/"):
+                removed_count += 1
+                return True
+        return False
+
+    rewrite_zip_archive(archive_path, should_skip_member=should_skip)
+    if removed_count == 0:
+        raise FileNotFoundError("압축파일 안에서 항목을 찾을 수 없습니다.")
+    return removed_count
+
+
+def add_uploaded_file_to_archive(
+    request,
+    archive_path: Path,
+    archive_relative: str,
+    target_member_dir: str,
+    original_name: str,
+    content: bytes,
+) -> dict:
+    existing_members = get_archive_member_name_set(archive_path)
+    member_path = build_available_archive_member_path(existing_members, target_member_dir, original_name)
+    add_archive_members(archive_path, [(member_path, content, False)])
+    return build_archive_member_entry(request, archive_relative, member_path, size=len(content or b""))
+
+
+def collect_local_item_archive_additions(
+    source_path: Path,
+    root_member_path: str,
+) -> list[tuple[str, bytes, bool]]:
+    normalized_root_member = normalize_archive_member_name(root_member_path)
+    if not normalized_root_member:
+        raise ValueError("압축파일 안에 추가할 이름이 올바르지 않습니다.")
+    if source_path.is_file():
+        return [(normalized_root_member, source_path.read_bytes(), False)]
+    if not source_path.is_dir():
+        raise ValueError("압축파일에 추가할 수 없는 항목입니다.")
+
+    additions: list[tuple[str, bytes, bool]] = [(normalized_root_member, b"", True)]
+    for child in sorted(source_path.rglob("*"), key=lambda path_obj: path_obj.as_posix().lower()):
+        if child.is_symlink():
+            continue
+        relative_child = child.relative_to(source_path).as_posix()
+        member_path = f"{normalized_root_member}/{relative_child}"
+        if child.is_dir():
+            additions.append((member_path, b"", True))
+        elif child.is_file():
+            additions.append((member_path, child.read_bytes(), False))
+    return additions
+
+
 def parse_archive_virtual_path(path_value: str | None) -> tuple[str, str] | None:
     normalized = normalize_relative_path(path_value, allow_empty=True)
     prefix = f"{HANDRIVE_ARCHIVE_VIRTUAL_PREFIX}/"
@@ -2148,7 +2380,7 @@ def build_archive_directory_meta(request, archive_relative: str, inner_path: str
         "path": virtual_path,
         "is_root": False,
         "can_edit": False,
-        "can_write_children": False,
+        "can_write_children": archive_can_edit,
         "has_children": bool(entries),
         "can_delete": False,
         "is_public_write": False,
@@ -2262,6 +2494,7 @@ def list_archive_entries(archive_path: Path, archive_relative: str, inner_path: 
     normalized_inner = normalize_archive_member_name(inner_path)
     prefix = f"{normalized_inner}/" if normalized_inner else ""
     children: dict[str, dict] = {}
+    archive_can_edit = bool(request is not None and has_handrive_write_access(request, archive_relative))
 
     with zipfile.ZipFile(archive_path) as archive:
         for info in archive.infolist():
@@ -2282,8 +2515,8 @@ def list_archive_entries(archive_path: Path, archive_relative: str, inner_path: 
                     "type": "dir" if is_dir else "file",
                     "modified_display": format_handrive_modified_display(datetime(*info.date_time)),
                     "can_edit": False,
-                    "can_write_children": False,
-                    "can_delete": False,
+                    "can_write_children": bool(is_dir and archive_can_edit),
+                    "can_delete": archive_can_edit,
                     "is_public_write": False,
                     "is_url_only": False,
                     "write_acl_labels": [],
@@ -11630,9 +11863,22 @@ def handrive_api_delete(request):
 
     resolved_targets: list[tuple[Path | None, str, dict | None]] = []
     google_drive_targets: list[dict] = []
+    archive_targets: list[tuple[Path, str, str, str]] = []
     seen_paths = set()
     try:
         for path_value in path_values:
+            archive_virtual = parse_archive_virtual_path(path_value)
+            if archive_virtual is not None:
+                archive_relative, archive_member_path = archive_virtual
+                if not archive_member_path:
+                    return json_error("압축파일 루트는 여기서 삭제할 수 없습니다.", status=400)
+                archive_path, archive_relative = resolve_path(archive_relative, must_exist=True)
+                target_relative = build_archive_virtual_path(archive_relative, archive_member_path)
+                if target_relative in seen_paths:
+                    continue
+                seen_paths.add(target_relative)
+                archive_targets.append((archive_path, archive_relative, archive_member_path, target_relative))
+                continue
             google_drive = _parse_google_drive_virtual_path(request, path_value)
             git_virtual = None if google_drive is not None else _get_git_virtual_context(request, path_value)
             if google_drive is not None:
@@ -11653,6 +11899,25 @@ def handrive_api_delete(request):
             resolved_targets.append((target_path, target_relative, git_virtual))
     except (ValueError, FileNotFoundError) as exc:
         return json_error(str(exc), status=400)
+
+    if archive_targets:
+        if resolved_targets or google_drive_targets:
+            return json_error("압축파일 내부 항목과 다른 항목은 함께 삭제할 수 없습니다.", status=400)
+        archive_paths = {str(item[0].resolve()) for item in archive_targets}
+        if len(archive_paths) != 1:
+            return json_error("같은 압축파일 안의 항목만 함께 삭제할 수 있습니다.", status=400)
+        archive_path, archive_relative = archive_targets[0][0], archive_targets[0][1]
+        if not archive_path.is_file() or not is_handrive_supported_archive_path(archive_path):
+            return json_error("지원하지 않는 압축파일입니다.", status=400)
+        if not has_handrive_write_access(request, archive_relative):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
+        try:
+            remove_archive_members(archive_path, [item[2] for item in archive_targets])
+        except FileNotFoundError as exc:
+            return json_error(str(exc), status=404)
+        except (zipfile.BadZipFile, OSError) as exc:
+            return json_error(f"압축파일 수정에 실패했습니다: {exc}", status=500)
+        return JsonResponse({"ok": True, "deleted_paths": [item[3] for item in archive_targets]})
 
     if google_drive_targets:
         if resolved_targets:
@@ -12286,11 +12551,19 @@ def handrive_api_move(request):
         source_path_value = normalize_relative_path(payload.get("source_path"), allow_empty=False)
         target_dir_value = normalize_relative_path(payload.get("target_dir"), allow_empty=True)
         commit_message = str(payload.get("commit_message") or "").strip()
-        google_drive_source = _parse_google_drive_virtual_path(request, source_path_value)
-        google_drive_target = _parse_google_drive_virtual_path(request, target_dir_value)
-        git_virtual_source = None if google_drive_source is not None else _get_git_virtual_context(request, source_path_value)
-        git_virtual_target = None if google_drive_target is not None else _get_git_virtual_context(request, target_dir_value)
-        if google_drive_source is not None:
+        source_archive_virtual = parse_archive_virtual_path(source_path_value)
+        target_archive_virtual = parse_archive_virtual_path(target_dir_value) if target_dir_value else None
+        google_drive_source = None if source_archive_virtual is not None else _parse_google_drive_virtual_path(request, source_path_value)
+        google_drive_target = None if target_archive_virtual is not None else _parse_google_drive_virtual_path(request, target_dir_value)
+        git_virtual_source = None if google_drive_source is not None or source_archive_virtual is not None else _get_git_virtual_context(request, source_path_value)
+        git_virtual_target = None if google_drive_target is not None or target_archive_virtual is not None else _get_git_virtual_context(request, target_dir_value)
+        target_archive_path = None
+        target_archive_relative = ""
+        target_archive_member_path = ""
+        if source_archive_virtual is not None:
+            source_path = None
+            source_relative = source_path_value
+        elif google_drive_source is not None:
             source_path = None
             source_relative = source_path_value
         elif git_virtual_source is None:
@@ -12298,7 +12571,12 @@ def handrive_api_move(request):
         else:
             source_path = None
             source_relative = source_path_value
-        if google_drive_target is not None:
+        if target_archive_virtual is not None:
+            target_archive_relative, target_archive_member_path = target_archive_virtual
+            target_archive_path, target_archive_relative = resolve_path(target_archive_relative, must_exist=True)
+            target_dir_path = None
+            target_dir_relative = build_archive_virtual_path(target_archive_relative, target_archive_member_path)
+        elif google_drive_target is not None:
             target_dir_path = None
             target_dir_relative = target_dir_value
         elif git_virtual_target is None:
@@ -12311,6 +12589,60 @@ def handrive_api_move(request):
 
     if source_relative == "":
         return json_error("루트 폴더는 이동할 수 없습니다.", status=400)
+    if source_archive_virtual is not None:
+        return json_error("압축파일 내부 항목은 압축해제로 복사할 수 있습니다.", status=400)
+    if target_archive_virtual is not None:
+        if google_drive_source is not None or git_virtual_source is not None:
+            return json_error("일반 HanDrive 항목만 압축파일 안으로 이동할 수 있습니다.", status=400)
+        if target_archive_path is None or not target_archive_path.is_file() or not is_handrive_supported_archive_path(target_archive_path):
+            return json_error("지원하지 않는 압축파일입니다.", status=400)
+        if not has_handrive_write_access(request, source_relative):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
+        if not has_handrive_write_access(request, target_archive_relative):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
+        if source_path.is_file() and is_handrive_public_write_enabled(request, source_relative):
+            return json_error("전체 허용 파일은 이동할 수 없습니다.", status=403)
+        try:
+            existing_members = get_archive_member_name_set(target_archive_path)
+            root_member_path = build_available_archive_member_path(
+                existing_members,
+                target_archive_member_path,
+                source_path.name,
+                is_dir=source_path.is_dir(),
+            )
+            additions = collect_local_item_archive_additions(source_path, root_member_path)
+            enforce_handrive_scoped_quota(
+                request,
+                quota_path=target_archive_relative,
+                extra_bytes=sum(len(content) for _member_path, content, is_dir in additions if not is_dir),
+                extra_entries=sum(1 for _member_path, _content, is_dir in additions if not is_dir),
+            )
+            add_archive_members(target_archive_path, additions)
+        except ValueError as exc:
+            return json_error(str(exc), status=400)
+        except zipfile.BadZipFile:
+            return json_error("압축파일을 읽을 수 없습니다.", status=400)
+        except OSError as exc:
+            return json_error(f"압축파일 수정에 실패했습니다: {exc}", status=500)
+
+        source_was_dir = source_path.is_dir()
+        if source_was_dir:
+            if source_path.is_symlink():
+                source_path.unlink()
+            else:
+                shutil.rmtree(source_path)
+        else:
+            source_path.unlink()
+        delete_handrive_acl_rules_for_path(source_relative)
+        delete_handrive_shared_links_for_path(source_relative)
+        delete_handrive_sync_excluded_paths_for_path(source_relative)
+        destination_relative = build_archive_virtual_path(target_archive_relative, root_member_path)
+        response = {
+            "ok": True,
+            "path": destination_relative,
+            "type": "dir" if source_was_dir else "file",
+        }
+        return JsonResponse(response)
     if google_drive_source is not None and google_drive_target is None:
         if google_drive_source["is_root"]:
             return json_error("Google Drive 루트는 이동할 수 없습니다.", status=400)
@@ -12587,9 +12919,18 @@ def handrive_api_upload(request):
     """
     try:
         target_dir_value = normalize_relative_path(request.POST.get("dir"), allow_empty=True)
-        google_drive_target = _parse_google_drive_virtual_path(request, target_dir_value)
-        git_virtual_target = None if google_drive_target is not None else _get_git_virtual_context(request, target_dir_value)
-        if google_drive_target is not None:
+        target_archive_virtual = parse_archive_virtual_path(target_dir_value) if target_dir_value else None
+        google_drive_target = None if target_archive_virtual is not None else _parse_google_drive_virtual_path(request, target_dir_value)
+        git_virtual_target = None if google_drive_target is not None or target_archive_virtual is not None else _get_git_virtual_context(request, target_dir_value)
+        target_archive_path = None
+        target_archive_relative = ""
+        target_archive_member_path = ""
+        if target_archive_virtual is not None:
+            target_archive_relative, target_archive_member_path = target_archive_virtual
+            target_archive_path, target_archive_relative = resolve_path(target_archive_relative, must_exist=True)
+            target_dir_path = None
+            target_dir_relative = build_archive_virtual_path(target_archive_relative, target_archive_member_path)
+        elif google_drive_target is not None:
             target_dir_path = None
             target_dir_relative = target_dir_value
         elif git_virtual_target is None:
@@ -12600,14 +12941,20 @@ def handrive_api_upload(request):
     except (ValueError, FileNotFoundError) as exc:
         return json_error(str(exc), status=400)
 
-    if google_drive_target is not None:
+    if target_archive_virtual is not None:
+        if target_archive_path is None or not target_archive_path.is_file() or not is_handrive_supported_archive_path(target_archive_path):
+            return json_error("지원하지 않는 압축파일입니다.", status=400)
+    elif google_drive_target is not None:
         try:
             _ensure_google_drive_folder_context(google_drive_target)
         except GoogleDriveError as exc:
             return json_error(str(exc), status=exc.status_code)
     elif git_virtual_target is None and not target_dir_path.is_dir():
         return json_error("업로드 위치가 폴더가 아닙니다.", status=400)
-    if not has_handrive_directory_write_access(request, target_dir_relative):
+    if target_archive_virtual is not None:
+        if not has_handrive_write_access(request, target_archive_relative):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
+    elif not has_handrive_directory_write_access(request, target_dir_relative):
         return json_error("파일을 수정할 권한이 없습니다.", status=403)
     commit_message = str(request.POST.get("commit_message") or "").strip()
 
@@ -12677,7 +13024,16 @@ def handrive_api_upload(request):
                 (session_dir / f"{index:06d}.part").stat().st_size
                 for index in range(total_chunks)
             )
-            if google_drive_target is not None:
+            if target_archive_virtual is not None:
+                existing_members = get_archive_member_name_set(target_archive_path)
+                build_available_archive_member_path(existing_members, target_archive_member_path, original_name)
+                enforce_handrive_scoped_quota(
+                    request,
+                    quota_path=target_archive_relative,
+                    extra_bytes=upload_size,
+                    extra_entries=1,
+                )
+            elif google_drive_target is not None:
                 existing_files = (
                     _get_google_drive_selected_items(google_drive_target["mapping"])
                     if google_drive_target["is_root"]
@@ -12711,7 +13067,21 @@ def handrive_api_upload(request):
             part_path = session_dir / f"{index:06d}.part"
             content_bytes.extend(part_path.read_bytes())
         shutil.rmtree(session_dir, ignore_errors=True)
-        if google_drive_target is not None:
+        if target_archive_virtual is not None:
+            try:
+                uploaded_entry = add_uploaded_file_to_archive(
+                    request,
+                    target_archive_path,
+                    target_archive_relative,
+                    target_archive_member_path,
+                    original_name,
+                    bytes(content_bytes),
+                )
+            except zipfile.BadZipFile:
+                return json_error("압축파일을 읽을 수 없습니다.", status=400)
+            except (ValueError, OSError) as exc:
+                return json_error(f"압축파일 수정에 실패했습니다: {exc}", status=500)
+        elif google_drive_target is not None:
             try:
                 created = create_google_drive_file(
                     google_drive_target["mapping"],
@@ -12770,9 +13140,12 @@ def handrive_api_upload(request):
     upload_total_entries = 0
     for uploaded_file in uploaded_files:
         try:
-            if google_drive_target is not None:
+            if target_archive_virtual is not None:
+                existing_members = get_archive_member_name_set(target_archive_path)
+                build_available_archive_member_path(existing_members, target_archive_member_path, uploaded_file.name)
+            elif google_drive_target is not None:
                 continue
-            if git_virtual_target is None:
+            elif git_virtual_target is None:
                 build_available_upload_path(target_dir_path, uploaded_file.name)
             else:
                 if git_virtual_target["kind"] != "branch_dir":
@@ -12788,7 +13161,34 @@ def handrive_api_upload(request):
         upload_total_size += uploaded_file.size or 0
         upload_total_entries += 1
 
-    if google_drive_target is not None:
+    if target_archive_virtual is not None:
+        try:
+            enforce_handrive_scoped_quota(
+                request,
+                quota_path=target_archive_relative,
+                extra_bytes=upload_total_size,
+                extra_entries=upload_total_entries,
+            )
+        except ValueError as exc:
+            return json_error(str(exc), status=400)
+
+        for uploaded_file in uploaded_files:
+            try:
+                uploaded_entries.append(
+                    add_uploaded_file_to_archive(
+                        request,
+                        target_archive_path,
+                        target_archive_relative,
+                        target_archive_member_path,
+                        uploaded_file.name,
+                        uploaded_file.read(),
+                    )
+                )
+            except zipfile.BadZipFile:
+                return json_error("압축파일을 읽을 수 없습니다.", status=400)
+            except (ValueError, OSError) as exc:
+                return json_error(f"압축파일 수정에 실패했습니다: {exc}", status=500)
+    elif google_drive_target is not None:
         try:
             existing_files = (
                 _get_google_drive_selected_items(google_drive_target["mapping"])

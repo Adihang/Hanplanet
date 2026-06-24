@@ -64,6 +64,21 @@
             typeMarker.classList.add("is-empty");
         }
 
+        if (settings.isDir) {
+            var folderName = String(settings.folderName || "").trim();
+            var folderPath = String(settings.folderPath || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+            if (!folderName && folderPath) {
+                var folderParts = folderPath.split("/");
+                folderName = folderParts[folderParts.length - 1] || "";
+            }
+            var normalizedFolderName = folderName.toLowerCase();
+            if (normalizedFolderName === "md-img") {
+                typeMarker.classList.add("is-markdown-image-folder");
+            } else if (normalizedFolderName === "youtube-downloader") {
+                typeMarker.classList.add("is-youtube-download-folder");
+            }
+        }
+
         if (!settings.isDir && settings.fileIconKey) {
             typeMarker.setAttribute("data-file-icon", settings.fileIconKey);
             if (settings.isGenericFileIcon) {

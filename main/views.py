@@ -114,8 +114,8 @@ MINECRAFT_SERVER_ADDRESS = "mc.hanplanet.com"
 MINECRAFT_META_TITLE = "Minecraft Server | Hanplanet"
 MINECRAFT_META_DESCRIPTION_KO = "Minecraft 서버의 실시간 플레이어 상태와 월드 지도를 제공합니다."
 MINECRAFT_META_DESCRIPTION_EN = "Provides real-time player status and a world map for the Minecraft server."
-MINECRAFT_SERVER_IMAGE_URL = "https://www.hanplanet.com/media/HanDrive/users/admin/mc_server.png"
-MINECRAFT_WEATHER_ICON_URL = "/media/HanDrive/users/admin/weather.svg"
+MINECRAFT_SERVER_IMAGE_URL = urljoin("https://www.hanplanet.com", static("media/icons/minecraft/server-og.png"))
+MINECRAFT_WEATHER_ICON_URL = static("media/icons/minecraft/weather.svg")
 MINECRAFT_PLUGIN_DIR = Path("/Users/imhanbyeol/Development/minecraft/plugins")
 MINECRAFT_STATUS_PATH = Path("/Users/imhanbyeol/Development/minecraft/web/status.json")
 MINECRAFT_CONSOLE_OUTPUT_PATH = Path("/Users/imhanbyeol/Development/minecraft/run/console.out")
@@ -5803,13 +5803,13 @@ def pwa_manifest(request):
                 "src": "/static/media/icons/pwa-192.png",
                 "type": "image/png",
                 "sizes": "192x192",
-                "purpose": "any maskable",
+                "purpose": "any",
             },
             {
                 "src": "/static/media/icons/pwa-512.png",
                 "type": "image/png",
                 "sizes": "512x512",
-                "purpose": "any maskable",
+                "purpose": "any",
             },
         ],
     }

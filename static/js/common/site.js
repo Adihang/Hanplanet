@@ -2,6 +2,126 @@
     // 테마, 공용 네비게이션, 배경/인쇄 표면 처리, 검색/팝업이 아닌
     // 기본 사이트 상호작용을 한곳에서 초기화한다.
 document.addEventListener('DOMContentLoaded', function () {
+    const UI_PRESS_FEEDBACK_CLASS = 'is-ui-pressing';
+    const UI_PRESS_FEEDBACK_MIN_MS = 120;
+    const UI_PRESS_FEEDBACK_MAX_MS = 240;
+    const UI_PRESS_FEEDBACK_SELECTOR = [
+        'button:not(:disabled)',
+        'input[type="button"]:not(:disabled)',
+        'input[type="submit"]:not(:disabled)',
+        'input[type="reset"]:not(:disabled)',
+        'a[href]',
+        '.btn',
+        '.ui-btn',
+        '[role="button"]',
+        '[class$="-btn"]',
+        '[class*="-btn "]',
+        '[class$="_btn"]',
+        '[class*="_btn "]',
+        '[class$="-button"]',
+        '[class*="-button "]',
+        '[class$="_button"]',
+        '[class*="_button "]',
+        '[class$="-toggle"]',
+        '[class*="-toggle "]',
+        '[class$="_toggle"]',
+        '[class*="_toggle "]',
+        '[class$="-option"]',
+        '[class*="-option "]',
+        '[class$="_option"]',
+        '[class*="_option "]',
+        '[class$="-menu-item"]',
+        '[class*="-menu-item "]',
+        '[class$="_menu_item"]',
+        '[class*="_menu_item "]',
+        '[class$="-trigger"]',
+        '[class*="-trigger "]',
+        '[class$="_trigger"]',
+        '[class*="_trigger "]',
+        '.handrive-icon-btn',
+        '.ui-control-link',
+        '.ui-lang-link',
+        '.ui-path-link',
+        '.root-shortcuts-item',
+        '.portfolio-write-list-item',
+        '.hpmail-message-item',
+        '.handrive-item-row',
+        '.handrive-current-dir-row',
+        '.handrive-tree-browser-row',
+        '.network-summary-action',
+        '.sub-link',
+        '.root-search-submit',
+        '.root-input-clear'
+    ].join(',');
+
+    const initUiPressFeedback = function () {
+        let pressedElement = null;
+        let pressedAt = 0;
+        let clearTimer = null;
+
+        const clearPressedElement = function () {
+            if (clearTimer) {
+                window.clearTimeout(clearTimer);
+                clearTimer = null;
+            }
+            if (pressedElement) {
+                pressedElement.classList.remove(UI_PRESS_FEEDBACK_CLASS);
+            }
+            pressedElement = null;
+            pressedAt = 0;
+        };
+
+        const schedulePressedElementClear = function () {
+            if (!pressedElement) {
+                return;
+            }
+            const elapsed = window.performance && typeof window.performance.now === 'function'
+                ? window.performance.now() - pressedAt
+                : UI_PRESS_FEEDBACK_MIN_MS;
+            const delay = Math.max(0, UI_PRESS_FEEDBACK_MIN_MS - elapsed);
+            if (clearTimer) {
+                window.clearTimeout(clearTimer);
+            }
+            clearTimer = window.setTimeout(clearPressedElement, delay);
+        };
+
+        const setPressedElement = function (element) {
+            if (!element || element.getAttribute('aria-disabled') === 'true') {
+                return;
+            }
+            if (pressedElement && pressedElement !== element) {
+                pressedElement.classList.remove(UI_PRESS_FEEDBACK_CLASS);
+            }
+            if (clearTimer) {
+                window.clearTimeout(clearTimer);
+                clearTimer = null;
+            }
+            pressedElement = element;
+            pressedAt = window.performance && typeof window.performance.now === 'function'
+                ? window.performance.now()
+                : Date.now();
+            pressedElement.classList.add(UI_PRESS_FEEDBACK_CLASS);
+            clearTimer = window.setTimeout(clearPressedElement, UI_PRESS_FEEDBACK_MAX_MS);
+        };
+
+        document.addEventListener('pointerdown', function (event) {
+            if (event.isPrimary === false || event.button !== 0 || !(event.target instanceof Element)) {
+                return;
+            }
+            const target = event.target.closest(UI_PRESS_FEEDBACK_SELECTOR);
+            if (!target) {
+                return;
+            }
+            setPressedElement(target);
+        }, { passive: true });
+
+        document.addEventListener('pointerup', schedulePressedElementClear, { passive: true });
+        document.addEventListener('pointercancel', clearPressedElement, { passive: true });
+        window.addEventListener('blur', clearPressedElement);
+    };
+
+    initUiPressFeedback();
+
     // 페이지 배경을 강제로 바꿔야 하는 인쇄/라이트 서피스 override 에서 공통으로 쓰는 색 값.
     const SURFACE_COLOR = {
         light: '#ffffff',

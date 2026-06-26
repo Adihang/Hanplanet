@@ -404,6 +404,40 @@ class UserProfile(models.Model):
         blank=True,
         default="",
     )
+    weather_country = models.CharField(
+        "날씨 국가",
+        max_length=80,
+        blank=True,
+        default="",
+    )
+    weather_city = models.CharField(
+        "날씨 도시",
+        max_length=120,
+        blank=True,
+        default="",
+    )
+    weather_location_label = models.CharField(
+        "날씨 위치 표시명",
+        max_length=180,
+        blank=True,
+        default="",
+    )
+    weather_latitude = models.FloatField(
+        "날씨 위도",
+        null=True,
+        blank=True,
+    )
+    weather_longitude = models.FloatField(
+        "날씨 경도",
+        null=True,
+        blank=True,
+    )
+    weather_location_source = models.CharField(
+        "날씨 위치 출처",
+        max_length=16,
+        blank=True,
+        default="",
+    )
     bumpercar_spiky_stats = models.JSONField(
         "범퍼카 스핔이 전적",
         default=dict,

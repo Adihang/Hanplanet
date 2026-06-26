@@ -47,7 +47,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.conf import settings
-from django.db import transaction
+from django.db import OperationalError, ProgrammingError, transaction
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse, StreamingHttpResponse
@@ -553,6 +553,7 @@ DOCS_RENDER_MODE_PLAIN_TEXT = "plain_text"
 DOCS_RENDER_MODE_MEDIA_IMAGE = "media_image"
 DOCS_RENDER_MODE_MEDIA_VIDEO = "media_video"
 DOCS_RENDER_MODE_MEDIA_AUDIO = "media_audio"
+DOCS_RENDER_MODE_MEDIA_3D = "media_3d"
 DOCS_RENDER_MODE_OFFICE = "office"
 DOCS_RENDER_MODE_PDF = "pdf"
 DOCS_RENDER_MODE_UNSUPPORTED = "unsupported"
@@ -744,11 +745,20 @@ DOCS_RENDER_PROFILES_BY_EXTENSION = {
         "mode": DOCS_RENDER_MODE_MEDIA_AUDIO,
         "css_class": "handrive-media handrive-media-audio",
     },
+    ".stl": {
+        "mode": DOCS_RENDER_MODE_MEDIA_3D,
+        "css_class": "handrive-media handrive-media-3d",
+    },
+    ".obj": {
+        "mode": DOCS_RENDER_MODE_MEDIA_3D,
+        "css_class": "handrive-media handrive-media-3d",
+    },
 }
 DOCS_NON_EDITABLE_MEDIA_MODES = {
     DOCS_RENDER_MODE_MEDIA_IMAGE,
     DOCS_RENDER_MODE_MEDIA_VIDEO,
     DOCS_RENDER_MODE_MEDIA_AUDIO,
+    DOCS_RENDER_MODE_MEDIA_3D,
     DOCS_RENDER_MODE_OFFICE,
     DOCS_RENDER_MODE_PDF,
 }
@@ -863,6 +873,11 @@ DOCS_TEXT = {
         "media_loop_off": "일반 재생",
         "media_loop_next": "끝나면 다음 파일 재생",
         "media_loop_toggle": "재생 모드 변경",
+        "model_preview_loading": "3D 모델을 불러오는 중...",
+        "model_preview_error": "3D 모델을 표시하지 못했습니다.",
+        "model_preview_reset": "3D 보기 초기화",
+        "model_preview_wireframe": "와이어프레임 보기",
+        "model_preview_solid": "솔리드 보기",
         "video_editor_title": "비디오 편집",
         "video_editor_start": "시작",
         "video_editor_end": "끝",
@@ -1268,6 +1283,11 @@ DOCS_TEXT = {
         "media_loop_off": "Normal playback",
         "media_loop_next": "Play next file when ended",
         "media_loop_toggle": "Change playback mode",
+        "model_preview_loading": "Loading 3D model...",
+        "model_preview_error": "Failed to display 3D model.",
+        "model_preview_reset": "Reset 3D view",
+        "model_preview_wireframe": "Show wireframe",
+        "model_preview_solid": "Show solid",
         "video_editor_title": "Video Edit",
         "video_editor_start": "Start",
         "video_editor_end": "End",
@@ -1866,6 +1886,12 @@ def build_markdown_image_upload_name(markdown_name: str, image_name: str, image_
     return f"{safe_markdown_stem}_{safe_image_stem}{image_extension}"
 
 
+def get_user_markdown_image_dir(user) -> Path:
+    """Return the per-user markdown image directory under MEDIA_ROOT/uploads."""
+    username_key = sanitize_upload_segment(getattr(user, "username", "")) or "anon"
+    return (Path(settings.MEDIA_ROOT) / "uploads" / username_key / "md-img").resolve()
+
+
 def build_markdown_image_public_url(relative_path: str, request=None) -> str:
     """MEDIA_ROOT 기준 상대경로를 외부 접근 가능한 media URL로 변환한다."""
     normalized = normalize_relative_path(relative_path, allow_empty=False)
@@ -1933,8 +1959,7 @@ def cleanup_removed_markdown_image_files(
     if not markdown_relative_path.lower().endswith(DOCS_FILE_EXTENSION):
         return
 
-    username_key = sanitize_upload_segment(getattr(user, "username", "")) or "anon"
-    user_md_img_dir = (handrive_root_dir() / "users" / username_key / "md-img").resolve()
+    user_md_img_dir = get_user_markdown_image_dir(user)
     markdown_stem = sanitize_upload_segment(Path(markdown_relative_path).stem) or "markdown"
     expected_prefix = f"{markdown_stem}_"
     previous_paths = extract_markdown_image_media_paths(previous_content)
@@ -1956,9 +1981,8 @@ def cleanup_removed_markdown_image_files(
 
 def resolve_user_markdown_image_paths(user, raw_paths) -> set[Path]:
     """클라이언트가 전달한 이미지 path/url 중 현재 사용자 md-img 내부 파일만 반환한다."""
-    username_key = sanitize_upload_segment(getattr(user, "username", "")) or "anon"
     media_root = Path(settings.MEDIA_ROOT).resolve()
-    user_md_img_dir = (handrive_root_dir() / "users" / username_key / "md-img").resolve()
+    user_md_img_dir = get_user_markdown_image_dir(user)
     media_url = str(getattr(settings, "MEDIA_URL", "/media/") or "/media/")
     if not media_url.startswith("/"):
         media_url = "/" + media_url
@@ -2861,6 +2885,29 @@ def render_handrive_media_safely(source_path: Path, relative_path: str, share_ow
     """이미지·비디오·오디오 파일을 HanDrive 미리보기용 HTML로 감싼다."""
     source_url = escape(build_handrive_download_url(relative_path, share_owner=share_owner, share_slug=share_slug, request=request))
     extension = source_path.suffix.lower()
+    if extension in {".stl", ".obj"}:
+        text = get_handrive_text(resolve_ui_lang(request)) if request is not None else {}
+        reset_label = escape(text.get("model_preview_reset", "Reset 3D view"))
+        wireframe_label = escape(text.get("model_preview_wireframe", "Show wireframe"))
+        return mark_safe(
+            '<div class="handrive-media-wrap handrive-model-preview-wrap">'
+            '<section class="handrive-model-preview is-loading" data-handrive-model-preview="1"'
+            f' data-model-url="{source_url}"'
+            f' data-model-extension="{escape(extension)}"'
+            f' data-filename="{escape(source_path.name)}">'
+            '<div class="handrive-model-preview-viewport" data-handrive-model-viewport></div>'
+            '<div class="handrive-model-preview-toolbar handrive-icon-actions" data-handrive-model-toolbar>'
+            f'<button class="handrive-icon-btn handrive-model-preview-reset-btn" type="button" data-handrive-model-reset aria-label="{reset_label}" title="{reset_label}">'
+            '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 7.5a5 5 0 1 1 .2 5.3"/><polyline points="5.5 3.5 5.5 7.5 9.5 7.5"/></svg>'
+            "</button>"
+            f'<button class="handrive-icon-btn handrive-model-preview-wireframe-btn" type="button" data-handrive-model-wireframe aria-label="{wireframe_label}" title="{wireframe_label}" aria-pressed="false">'
+            '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.8 16.2 6.4v7.2L10 17.2l-6.2-3.6V6.4L10 2.8Z"/><path d="M3.8 6.4 10 10l6.2-3.6"/><path d="M10 10v7.2"/><path d="M6.9 4.6 13.1 15.4"/><path d="M13.1 4.6 6.9 15.4"/></svg>'
+            "</button>"
+            "</div>"
+            '<div class="handrive-model-preview-status" data-handrive-model-status aria-live="polite"></div>'
+            "</section>"
+            "</div>"
+        )
     if extension in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".ico"}:
         return mark_safe(
             '<div class="handrive-media-wrap handrive-media-image-wrap">'
@@ -3009,6 +3056,25 @@ def render_handrive_markdown_safely(content: str):
     return render_markdown_safely(content, preserve_blank_lines=True)
 
 
+def resolve_handrive_request_theme_mode(request) -> str:
+    if request is None:
+        return ""
+    if getattr(request, "user", None) is not None and request.user.is_authenticated:
+        try:
+            theme_mode = (
+                UserProfile.objects
+                .filter(user=request.user)
+                .values_list("theme_mode", flat=True)
+                .first()
+            )
+        except (OperationalError, ProgrammingError):
+            theme_mode = ""
+        if theme_mode in {"light", "dark"}:
+            return theme_mode
+    cookie_theme = str(request.COOKIES.get("portfolio_theme_mode") or "").strip().lower()
+    return cookie_theme if cookie_theme in {"light", "dark"} else ""
+
+
 def render_handrive_content(
     content: str,
     file_extension: str | None,
@@ -3062,7 +3128,12 @@ def render_handrive_content(
             pdf_url = append_handrive_admin_switch_query(request, pdf_url)
         else:
             pdf_url = ""
-        rendered = render_handrive_pdf_safely(b"", file_name=file_name, pdf_url=pdf_url)
+        rendered = render_handrive_pdf_safely(
+            b"",
+            file_name=file_name,
+            pdf_url=pdf_url,
+            viewer_theme=resolve_handrive_request_theme_mode(request),
+        )
     elif profile["extension"] == ".csv":
         file_name = source_path.name if source_path is not None else "CSV"
         rendered = render_handrive_csv_preview_safely(content, file_name=file_name)
@@ -3080,6 +3151,7 @@ def render_handrive_content(
         DOCS_RENDER_MODE_MEDIA_IMAGE,
         DOCS_RENDER_MODE_MEDIA_VIDEO,
         DOCS_RENDER_MODE_MEDIA_AUDIO,
+        DOCS_RENDER_MODE_MEDIA_3D,
     } and source_path is not None:
         rendered = render_handrive_media_safely(source_path, relative_path, share_owner=share_owner, share_slug=share_slug, request=request)
     else:
@@ -4723,7 +4795,13 @@ def _get_visible_git_repositories(request):
         .prefetch_related("collaborators")
     )
     for repo in all_repos:
-        _sync_git_collaborators_from_forgejo(repo)
+        try:
+            _sync_git_collaborators_from_forgejo(repo)
+        except OperationalError:
+            logger.warning(
+                "Skipping Forgejo collaborator sync because database is locked repo_id=%s",
+                getattr(repo, "id", ""),
+            )
     repos = list(
         GitRepository.objects.filter(
             Q(owner=request.user) | Q(collaborators__user=request.user)
@@ -6815,7 +6893,6 @@ def handrive_common_context(request, ui_lang):
             "meta_description": DOCS_META_DESCRIPTION,
             "meta_og_description": DOCS_META_DESCRIPTION,
             "meta_robots": get_default_meta_robots_for_path(request.path),
-            "site_footer_purpose_i18n_key": "root_footer_purpose",
             "handrive_base_url": handrive_base_url,
             "handrive_root_url": handrive_root_url,
             "handrive_write_url": handrive_write_url,
@@ -10811,6 +10888,7 @@ def handrive_view(request, doc_path, ui_lang=None):
     doc_edit_url = append_handrive_admin_switch_query(request, doc_edit_url)
     doc_can_print = render_profile["mode"] not in {
         DOCS_RENDER_MODE_MEDIA_VIDEO,
+        DOCS_RENDER_MODE_MEDIA_3D,
         DOCS_RENDER_MODE_UNSUPPORTED,
     }
 
@@ -10930,6 +11008,7 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
             "doc_can_read": True,
             "doc_can_print": render_profile["mode"] not in {
                 DOCS_RENDER_MODE_MEDIA_VIDEO,
+                DOCS_RENDER_MODE_MEDIA_3D,
                 DOCS_RENDER_MODE_UNSUPPORTED,
             },
             "doc_can_edit": False,
@@ -13390,8 +13469,7 @@ def handrive_api_markdown_image_upload(request):
     except ValueError as exc:
         return json_error(str(exc), status=400)
 
-    username_key = sanitize_upload_segment(getattr(user, "username", "")) or "anon"
-    upload_dir = handrive_root_dir() / "users" / username_key / "md-img"
+    upload_dir = get_user_markdown_image_dir(user)
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -14538,7 +14616,7 @@ def handrive_api_pdf_preview(request):
         rel_path = shared_context["root_path"]
 
     google_drive = _parse_google_drive_virtual_path(request, rel_path)
-    git_virtual = None if google_drive is not None else _get_git_virtual_context(request, rel_path)
+    git_virtual = None
     source_bytes = None
     file_path = None
     if google_drive is not None:
@@ -14554,28 +14632,44 @@ def handrive_api_pdf_preview(request):
         filename = _google_drive_download_filename(download)
         extension = _google_drive_download_extension(download)
         source_bytes = download.content or b""
-    elif git_virtual is None:
+    else:
         try:
             file_path, rel_path = normalize_handrive_relative_path(rel_path, must_exist=True)
         except (ValueError, FileNotFoundError):
-            raise Http404("파일을 찾을 수 없습니다.")
-        filename = file_path.name
-        extension = file_path.suffix.lower()
-    else:
-        if git_virtual["kind"] != "branch_file":
-            raise Http404("파일을 찾을 수 없습니다.")
-        filename = Path(git_virtual["repo_relative_path"]).name
-        extension = Path(filename).suffix.lower()
-        source_bytes = _git_repo_read_file_bytes(
-            git_virtual["repo"],
-            git_virtual["branch_name"],
-            git_virtual["repo_relative_path"],
-        )
+            git_virtual = _get_git_virtual_context(request, rel_path)
+            if git_virtual is None or git_virtual["kind"] != "branch_file":
+                raise Http404("파일을 찾을 수 없습니다.")
+            filename = Path(git_virtual["repo_relative_path"]).name
+            extension = Path(filename).suffix.lower()
+            source_bytes = _git_repo_read_file_bytes(
+                git_virtual["repo"],
+                git_virtual["branch_name"],
+                git_virtual["repo_relative_path"],
+            )
+        else:
+            filename = file_path.name
+            extension = file_path.suffix.lower()
 
     if not has_handrive_read_access(request, rel_path):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
 
+    viewer_mode = str(request.GET.get("viewer") or "").strip().lower()
+
     if extension == ".pdf":
+        if viewer_mode == "1":
+            return _render_handrive_pdf_preview_viewer_response(
+                request,
+                filename,
+                pdf_path=file_path,
+                pdf_bytes=source_bytes if file_path is None else None,
+            )
+        if viewer_mode == "page":
+            return _render_handrive_pdf_preview_page_response(
+                request,
+                filename,
+                pdf_path=file_path,
+                pdf_bytes=source_bytes if file_path is None else None,
+            )
         if file_path is not None:
             response = FileResponse(file_path.open("rb"), content_type="application/pdf")
         else:
@@ -14596,11 +14690,213 @@ def handrive_api_pdf_preview(request):
         return HttpResponse("PDF 변환에 실패했습니다.", status=502, content_type="text/plain; charset=utf-8")
 
     pdf_filename = f"{Path(filename).stem or 'preview'}.pdf"
+    if viewer_mode == "1":
+        return _render_handrive_pdf_preview_viewer_response(request, pdf_filename, pdf_bytes=pdf_bytes)
+    if viewer_mode == "page":
+        return _render_handrive_pdf_preview_page_response(request, pdf_filename, pdf_bytes=pdf_bytes)
+
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f"inline; filename*=UTF-8''{quote(pdf_filename)}"
     response["Content-Length"] = str(len(pdf_bytes))
     response["Cache-Control"] = "no-store"
     return response
+
+
+def _normalize_handrive_pdf_preview_viewer_theme(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    return "dark" if normalized == "dark" else "light"
+
+
+def _build_handrive_pdf_preview_page_url(request, page_index: int) -> str:
+    query = request.GET.copy()
+    query["viewer"] = "page"
+    query["page"] = str(page_index)
+    query.pop("theme", None)
+    return f"{request.path}?{query.urlencode()}"
+
+
+def _open_handrive_pdf_preview_document(*, pdf_path: Path | None = None, pdf_bytes: bytes | None = None):
+    fitz = _load_pymupdf()
+    if pdf_path is not None:
+        return fitz.open(str(pdf_path))
+    return fitz.open(stream=pdf_bytes or b"", filetype="pdf")
+
+
+def _render_handrive_pdf_preview_viewer_response(
+    request,
+    filename: str,
+    *,
+    pdf_path: Path | None = None,
+    pdf_bytes: bytes | None = None,
+) -> HttpResponse:
+    theme = _normalize_handrive_pdf_preview_viewer_theme(
+        request.GET.get("theme") or resolve_handrive_request_theme_mode(request)
+    )
+    try:
+        doc = _open_handrive_pdf_preview_document(pdf_path=pdf_path, pdf_bytes=pdf_bytes)
+    except RuntimeError as exc:
+        return HttpResponse(str(exc), status=500, content_type="text/plain; charset=utf-8")
+    except Exception as exc:
+        logger.exception("HanDrive PDF preview viewer failed filename=%s", filename)
+        return HttpResponse(f"PDF 미리보기를 열 수 없습니다: {exc}", status=500, content_type="text/plain; charset=utf-8")
+
+    try:
+        page_items = []
+        for page_index, page in enumerate(doc):
+            rect = page.rect
+            page_width = max(1, float(rect.width))
+            page_height = max(1, float(rect.height))
+            page_items.append(
+                '<figure class="handrive-pdf-preview-page" '
+                f'style="--handrive-pdf-preview-page-width:{page_width:.3f}px">'
+                f'<img class="handrive-pdf-preview-page-image" src="{escape(_build_handrive_pdf_preview_page_url(request, page_index))}" '
+                f'width="{int(round(page_width))}" height="{int(round(page_height))}" '
+                f'alt="{escape(filename)} {page_index + 1}" loading="lazy" decoding="async">'
+                "</figure>"
+            )
+        safe_title = escape(filename or "PDF")
+        root_class = "theme-dark" if theme == "dark" else "theme-light"
+        pages_html = "\n".join(page_items) or '<p class="handrive-pdf-preview-empty">PDF 페이지가 없습니다.</p>'
+        html = f"""<!doctype html>
+<html class="{root_class}" lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{safe_title}</title>
+<style>
+:root {{
+    color-scheme: light;
+    --handrive-pdf-preview-bg: #f4f5f7;
+    --handrive-pdf-preview-page-bg: #ffffff;
+    --handrive-pdf-preview-page-filter: none;
+    --handrive-pdf-preview-page-shadow: 0 6px 20px rgba(15, 23, 42, 0.18);
+}}
+:root.theme-dark {{
+    color-scheme: dark;
+    --handrive-pdf-preview-bg: #1f1f1f;
+    --handrive-pdf-preview-page-bg: #ffffff;
+    --handrive-pdf-preview-page-filter: none;
+    --handrive-pdf-preview-page-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+}}
+html,
+body {{
+    min-height: 100%;
+    margin: 0;
+    background: var(--handrive-pdf-preview-bg);
+}}
+body {{
+    overflow: auto;
+}}
+.handrive-pdf-preview-viewer {{
+    min-height: 100vh;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+}}
+.handrive-pdf-preview-page {{
+    width: min(100%, var(--handrive-pdf-preview-page-width, 900px));
+    margin: 0;
+    background: var(--handrive-pdf-preview-page-bg);
+    box-shadow: var(--handrive-pdf-preview-page-shadow);
+}}
+.handrive-pdf-preview-page-image {{
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #ffffff;
+    filter: var(--handrive-pdf-preview-page-filter);
+    transition: filter 0.18s ease, background-color 0.18s ease;
+}}
+.handrive-pdf-preview-empty {{
+    margin: 24px;
+    color: #6b7280;
+    font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}}
+@media print {{
+    :root {{
+        --handrive-pdf-preview-bg: #ffffff;
+        --handrive-pdf-preview-page-filter: none;
+        --handrive-pdf-preview-page-shadow: none;
+    }}
+    .handrive-pdf-preview-viewer {{
+        display: block;
+        min-height: auto;
+        padding: 0;
+    }}
+    .handrive-pdf-preview-page {{
+        width: 100%;
+        break-after: page;
+    }}
+}}
+</style>
+</head>
+<body>
+<main class="handrive-pdf-preview-viewer" aria-label="{safe_title}">
+{pages_html}
+</main>
+<script>
+(function () {{
+    function applyTheme(theme) {{
+        var useDark = theme === "dark";
+        document.documentElement.classList.toggle("theme-dark", useDark);
+        document.documentElement.classList.toggle("theme-light", !useDark);
+    }}
+    window.addEventListener("message", function (event) {{
+        if (event.origin && event.origin !== window.location.origin) {{
+            return;
+        }}
+        var data = event.data || {{}};
+        if (data.handrivePdfTheme === "dark" || data.handrivePdfTheme === "light") {{
+            applyTheme(data.handrivePdfTheme);
+        }}
+    }});
+}}());
+</script>
+</body>
+</html>"""
+        response = HttpResponse(html, content_type="text/html; charset=utf-8")
+        response["Cache-Control"] = "no-store"
+        return response
+    finally:
+        doc.close()
+
+
+def _render_handrive_pdf_preview_page_response(
+    request,
+    filename: str,
+    *,
+    pdf_path: Path | None = None,
+    pdf_bytes: bytes | None = None,
+) -> HttpResponse:
+    del filename
+    try:
+        page_index = int(request.GET.get("page") or 0)
+    except (TypeError, ValueError):
+        page_index = 0
+    scale = _clamp_pdf_editor_float(request.GET.get("scale"), 1.65, 0.5, 3)
+
+    try:
+        fitz = _load_pymupdf()
+        doc = _open_handrive_pdf_preview_document(pdf_path=pdf_path, pdf_bytes=pdf_bytes)
+    except RuntimeError as exc:
+        return HttpResponse(str(exc), status=500, content_type="text/plain; charset=utf-8")
+    except Exception as exc:
+        logger.exception("HanDrive PDF preview page open failed")
+        return HttpResponse(f"PDF 페이지를 열 수 없습니다: {exc}", status=500, content_type="text/plain; charset=utf-8")
+
+    try:
+        if page_index < 0 or page_index >= len(doc):
+            raise Http404("PDF 페이지를 찾을 수 없습니다.")
+        page = doc[page_index]
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+        response = HttpResponse(pixmap.tobytes("png"), content_type="image/png")
+        response["Cache-Control"] = "no-store"
+        return response
+    finally:
+        doc.close()
 
 
 def _load_pymupdf():
@@ -14900,6 +15196,43 @@ def _normalize_pdf_editor_annotations(raw_json: str | None) -> list[dict]:
     return annotations
 
 
+def _interpolate_pdf_editor_quadratic(
+    start: tuple[float, float],
+    control: tuple[float, float],
+    end: tuple[float, float],
+    ratio: float,
+) -> tuple[float, float]:
+    inverse = 1.0 - ratio
+    return (
+        (inverse * inverse * start[0]) + (2.0 * inverse * ratio * control[0]) + (ratio * ratio * end[0]),
+        (inverse * inverse * start[1]) + (2.0 * inverse * ratio * control[1]) + (ratio * ratio * end[1]),
+    )
+
+
+def _smooth_pdf_editor_draw_points(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    if len(points) < 3:
+        return points
+
+    smoothed: list[tuple[float, float]] = [points[0]]
+    segment_start = points[0]
+    for index in range(1, len(points) - 1):
+        control = points[index]
+        next_point = points[index + 1]
+        end = ((control[0] + next_point[0]) / 2.0, (control[1] + next_point[1]) / 2.0)
+        distance_hint = (
+            abs(control[0] - segment_start[0])
+            + abs(control[1] - segment_start[1])
+            + abs(end[0] - control[0])
+            + abs(end[1] - control[1])
+        )
+        steps = max(2, min(10, int(distance_hint / 8.0) + 1))
+        for step in range(1, steps + 1):
+            smoothed.append(_interpolate_pdf_editor_quadratic(segment_start, control, end, step / steps))
+        segment_start = end
+    smoothed.append(points[-1])
+    return smoothed
+
+
 @require_http_methods(["GET"])
 @with_request_handrive_root
 def handrive_api_pdf_editor_meta(request):
@@ -15062,7 +15395,7 @@ def handrive_api_pdf_editor_save(request):
                         y = _clamp_pdf_editor_float(point.get("y"), 0, 0, float(rect.height))
                         points.append((x, y))
                     if len(points) >= 2:
-                        page.draw_polyline(points, color=color, width=float(annotation["width"]))
+                        page.draw_polyline(_smooth_pdf_editor_draw_points(points), color=color, width=float(annotation["width"]))
                 elif annotation["type"] == "text":
                     font_size = float(annotation["font_size"])
                     x = _clamp_pdf_editor_float(annotation.get("x"), 0, 0, float(rect.width))

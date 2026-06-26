@@ -109,7 +109,7 @@
                     <div class="pe-ribbon">
                         <div class="pe-ribbon-section">
                             <button class="pe-tool-btn is-active" type="button" data-pdf-tool="draw" title="서명/선 그리기">
-                                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 15c2.3-5.2 4.4-5.2 6.2 0 1-2.1 2-3.1 3-3 1.1.1 1.8 1 2.4 2.7.5-2.2 1.4-3.7 2.4-4.7"/></svg>
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
                             </button>
                             <button class="pe-tool-btn" type="button" data-pdf-tool="text" title="텍스트 입력">
                                 <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="5" x2="16" y2="5"/><line x1="10" y1="5" x2="10" y2="16"/><line x1="7" y1="16" x2="13" y2="16"/></svg>
@@ -125,7 +125,7 @@
                         <div class="pe-ribbon-sep pe-ribbon-sep--vertical"></div>
                         <div class="pe-ribbon-section pe-ribbon-section--line">
                             <label class="pe-icon-field pe-line-field" aria-label="선 두께" title="선 두께">
-                                <span class="pe-style-icon pe-style-icon--line" aria-hidden="true">―</span>
+                                <span class="pe-style-icon pe-style-icon--line" id="pe-line-width-preview" aria-hidden="true"></span>
                                 <input type="range" id="pe-line-width" min="1" max="12" step="0.5" value="2.5" class="pe-line-width-slider">
                                 <span id="pe-line-width-display" class="pe-size-value">2.5px</span>
                             </label>

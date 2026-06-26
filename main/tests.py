@@ -86,8 +86,11 @@ from .handrive_views import (
 from .views import (
     build_game_auth_token,
     build_lang_switch_url,
+    extract_minecraft_bedrock_server_version,
     extract_minecraft_server_version,
     has_excessive_korean_text,
+    MINECRAFT_BEDROCK_SERVER_ADDRESS,
+    MINECRAFT_BEDROCK_SERVER_PORT,
     MINECRAFT_META_DESCRIPTION_EN,
     MINECRAFT_META_DESCRIPTION_KO,
     MINECRAFT_SERVER_IMAGE_URL,
@@ -99,6 +102,7 @@ from .views import (
     should_return_github_link,
     UI_LANG_SESSION_KEY,
 )
+from .onscripter_views import ONSCRIPTER_META_IMAGE_ALT, ONSCRIPTER_META_IMAGE_URL
 from oauth2_provider.models import get_application_model
 
 
@@ -1213,6 +1217,47 @@ class ChatLanguageHelperTests(TestCase):
         self.assertTrue(should_return_github_link("Can you explain your code design style?"))
 
 
+class PwaMetadataTests(TestCase):
+    def test_base_template_uses_cache_busted_app_icon_links(self):
+        response = self.client.get("/en/sub/")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertRegex(html, r'href="/manifest\.webmanifest\?v=\d+"')
+        self.assertRegex(html, r'href="/static/favicon\.ico\?v=\d+"')
+        self.assertRegex(html, r'href="/static/media/icons/pwa-180\.png\?v=\d+"')
+        self.assertRegex(html, r'href="/static/media/icons/pwa-192\.png\?v=\d+"')
+        self.assertRegex(html, r'href="/static/media/icons/pwa-512\.png\?v=\d+"')
+        self.assertNotIn('href="/favicon.ico"', html)
+
+    def test_pwa_manifest_uses_cache_busted_icon_urls(self):
+        response = self.client.get(reverse("main:pwa_manifest"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "public, max-age=0, must-revalidate")
+        payload = response.json()
+        icon_paths = {urlparse(icon["src"]).path for icon in payload["icons"]}
+
+        self.assertEqual(
+            icon_paths,
+            {
+                "/static/media/icons/pwa-192.png",
+                "/static/media/icons/pwa-512.png",
+            },
+        )
+        for icon in payload["icons"]:
+            query = parse_qs(urlparse(icon["src"]).query)
+            self.assertRegex(query.get("v", [""])[0], r"^\d+$")
+
+    def test_service_worker_static_cache_version_is_bumped(self):
+        response = self.client.get(reverse("main:service_worker"))
+
+        self.assertEqual(response.status_code, 200)
+        script = response.content.decode()
+        self.assertIn("hanplanet-static-v9", script)
+        self.assertIn("hanplanet-page-v9", script)
+
+
 class LanguageUrlRoutingTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
@@ -1329,9 +1374,9 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, '<meta name="twitter:title" content="Handrive">', html=False)
         self.assertEqual(response.context["meta_robots"], "noindex,follow")
         self.assertContains(response, '<meta name="robots" content="noindex,follow">', html=False)
-        self.assertContains(response, "footer-purpose", html=False)
-        self.assertContains(response, "HanDrive의 파일 업로드, 정리, 미리보기, 편집, 공유", html=False)
-        self.assertContains(response, "Google Picker로 선택한 Drive 항목만 사용자 허용 시 표시하고 관리", html=False)
+        self.assertNotContains(response, "footer-purpose", html=False)
+        self.assertNotContains(response, "HanDrive의 파일 업로드, 정리, 미리보기, 편집, 공유", html=False)
+        self.assertNotContains(response, "Google Picker로 선택한 Drive 항목만 사용자 허용 시 표시하고 관리", html=False)
 
     def test_low_value_public_html_pages_use_noindex(self):
         for url in ("/ko/login", "/ko/sub/", "/ko/sub/image-pip-demo/", "/ko/project/sample/1/"):
@@ -1353,7 +1398,32 @@ class LanguageUrlRoutingTests(TestCase):
         )
         self.assertEqual(response.context["meta_twitter_image"], response.context["meta_og_image"])
 
-    def test_minecraft_home_uses_server_image_metadata(self):
+    def test_onscripter_index_uses_static_meta_image(self):
+        response = self.client.get(reverse("main:onscripter_index_lang", kwargs={"ui_lang": "ko"}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["meta_og_image"], ONSCRIPTER_META_IMAGE_URL)
+        self.assertEqual(response.context["meta_twitter_image"], ONSCRIPTER_META_IMAGE_URL)
+        self.assertEqual(response.context["meta_image_alt"], ONSCRIPTER_META_IMAGE_ALT)
+        self.assertNotIn("/media/HanDrive/users/admin", ONSCRIPTER_META_IMAGE_URL)
+        self.assertContains(
+            response,
+            f'<meta property="og:image" content="{ONSCRIPTER_META_IMAGE_URL}">',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            f'<meta name="twitter:image" content="{ONSCRIPTER_META_IMAGE_URL}">',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            f'<meta property="og:image:alt" content="{ONSCRIPTER_META_IMAGE_ALT}">',
+            html=False,
+        )
+
+    @mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30")
+    def test_minecraft_home_uses_server_image_metadata(self, mocked_bedrock_version):
         response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
         english_response = self.client.get("/en/", HTTP_HOST="mc.hanplanet.com")
 
@@ -1400,6 +1470,7 @@ class LanguageUrlRoutingTests(TestCase):
             '<meta property="og:image:alt" content="Hanplanet Minecraft server preview image">',
             html=False,
         )
+        self.assertGreaterEqual(mocked_bedrock_version.call_count, 2)
 
     def test_sub_minecraft_card_uses_server_image_metadata(self):
         response = self.client.get(reverse("main:sub_lang", kwargs={"ui_lang": "ko"}))
@@ -1455,15 +1526,26 @@ class LanguageUrlRoutingTests(TestCase):
             "26.3",
         )
 
+    def test_extract_minecraft_bedrock_server_version_uses_pong_version_field(self):
+        self.assertEqual(
+            extract_minecraft_bedrock_server_version(
+                "MCPE;Hanplanet Minecraft;1001;26.30;0;20;3660409496541872082;mcbe.hanplanet.com;Survival;1;19132;19132;"
+            ),
+            "26.30",
+        )
+        self.assertEqual(extract_minecraft_bedrock_server_version("MCPE;missing"), "")
+
+    @mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30")
     @mock.patch("main.views.read_minecraft_server_status", return_value={"version": {"name": "Paper 26.3", "protocol": 776}})
     @mock.patch("main.views.get_minecraft_server_plugins", return_value=[{"name": "BlueMap", "version": "5.22"}])
-    def test_minecraft_home_shows_plugin_panel_without_sub_return_button(self, mocked_plugins, mocked_status):
+    def test_minecraft_home_shows_plugin_panel_without_sub_return_button(self, mocked_plugins, mocked_status, mocked_bedrock_version):
         response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["links_panel_title"], "플러그인")
         self.assertEqual(response.context["server_panel_title"], "지도")
         self.assertEqual(response.context["server_version"], "26.3")
+        self.assertEqual(response.context["bedrock_server_version"], "26.30")
         content = response.content.decode("utf-8")
         self.assertGreater(content.index('class="minecraft-panel minecraft-plugin-panel"'), content.index('class="minecraft-panel minecraft-player-panel"'))
         self.assertLess(content.index('class="minecraft-map-embed-section"'), content.index('class="minecraft-detail-grid"'))
@@ -1583,7 +1665,16 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertIn('handrive-url-share-inline-copy-btn handrive-inline-copy-action', url_share_template)
         self.assertContains(response, 'class="minecraft-address handrive-inline-copy-field"', html=False)
         self.assertContains(response, 'class="minecraft-address-copy handrive-inline-copy-action"', html=False)
-        self.assertContains(response, "window.showHandriveInlineCopyFeedback(addressCopyEl, 'Copied!');", html=False)
+        self.assertContains(response, "window.showHandriveInlineCopyFeedback(button, 'Copied!');", html=False)
+        self.assertContains(response, MINECRAFT_BEDROCK_SERVER_ADDRESS, html=False)
+        self.assertContains(response, f"UDP {MINECRAFT_BEDROCK_SERVER_PORT}", html=False)
+        self.assertContains(response, "Minecraft Bedrock Edition 26.30", html=False)
+        self.assertContains(response, '<p class="minecraft-meta minecraft-server-version">Minecraft Bedrock Edition 26.30</p>', html=False)
+        self.assertContains(response, f'<p class="minecraft-meta minecraft-address-note">UDP {MINECRAFT_BEDROCK_SERVER_PORT}</p>', html=False)
+        self.assertContains(response, 'id="minecraftBedrockServerAddress"', html=False)
+        self.assertContains(response, 'id="minecraftBedrockAddressCopy"', html=False)
+        self.assertContains(response, 'aria-label="베드락 서버 주소 복사"', html=False)
+        self.assertContains(response, 'data-copy-target="minecraftBedrockServerAddress"', html=False)
         self.assertContains(response, '<rect x="7" y="7" width="9" height="9" rx="1.5"></rect>', html=False)
         self.assertContains(response, '<path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"></path>', html=False)
         self.assertNotContains(response, '<path d="M4 13H3a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>', html=False)
@@ -1591,6 +1682,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'id="minecraftServerAddress"', html=False)
         self.assertContains(response, 'id="minecraftAddressCopy"', html=False)
         self.assertContains(response, 'aria-label="서버 주소 복사"', html=False)
+        self.assertContains(response, 'data-copy-target="minecraftServerAddress"', html=False)
         self.assertIn('padding: 8px 56px 8px 12px;', minecraft_address_block)
         self.assertIn('width: 40px;', minecraft_address_block)
         self.assertIn('height: 40px;', minecraft_address_block)
@@ -1629,6 +1721,9 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, '.minecraft-player-item.is-current-account {', html=False)
         self.assertContains(response, 'border-width: 2px;', html=False)
         self.assertContains(response, 'border-color: var(--handrive-border-heavy);', html=False)
+        self.assertContains(response, '.minecraft-player-list {\n        padding: 2px;', html=False)
+        self.assertContains(response, 'width: calc(100% + 4px);', html=False)
+        self.assertContains(response, 'margin: -2px;', html=False)
         self.assertContains(response, "const currentAccountUsername = normalizeMinecraftPlayerName('');", html=False)
         self.assertContains(response, 'function normalizeMinecraftPlayerName(name)', html=False)
         self.assertContains(response, 'function isCurrentAccountPlayer(player)', html=False)
@@ -1640,28 +1735,31 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'padding: 10px;', html=False)
         self.assertContains(response, 'margin-bottom: 6px;', html=False)
         self.assertContains(response, '@media (max-width: 840px), (orientation: portrait) {', html=False)
-        self.assertContains(response, 'grid-template-rows: max-content max-content;', html=False)
+        self.assertContains(response, 'grid-template-rows: 100% max-content;', html=False)
         self.assertNotContains(response, 'grid-template-rows: auto auto;', html=False)
         self.assertNotContains(response, 'grid-template-rows: minmax(100%, auto) auto;', html=False)
+        self.assertNotContains(response, 'grid-template-rows: minmax(0, 100%) max-content;', html=False)
         self.assertIn('align-content: start;', minecraft_responsive_page_layout_block)
-        self.assertIn('align-items: start;', minecraft_responsive_page_layout_block)
+        self.assertIn('align-items: stretch;', minecraft_responsive_page_layout_block)
         self.assertIn('height: 100%;', minecraft_responsive_page_layout_block)
         self.assertIn('min-height: 0;', minecraft_responsive_page_layout_block)
         self.assertIn('overflow: auto;', minecraft_responsive_page_layout_block)
         self.assertNotIn('height: auto;', minecraft_responsive_page_layout_block)
         self.assertNotIn('min-height: 100%;', minecraft_responsive_page_layout_block)
         self.assertNotIn('overflow: visible;', minecraft_responsive_page_layout_block)
-        self.assertIn('height: auto;', minecraft_responsive_layout_block)
+        self.assertIn('height: 100%;', minecraft_responsive_layout_block)
         self.assertIn('min-height: 0;', minecraft_responsive_layout_block)
-        self.assertIn('align-content: start;', minecraft_responsive_layout_block)
-        self.assertIn('align-items: start;', minecraft_responsive_layout_block)
-        self.assertIn('align-self: start;', minecraft_responsive_server_panel_block)
-        self.assertIn('height: auto;', minecraft_responsive_server_panel_block)
+        self.assertIn('align-content: stretch;', minecraft_responsive_layout_block)
+        self.assertIn('align-items: stretch;', minecraft_responsive_layout_block)
+        self.assertNotIn('height: auto;', minecraft_responsive_layout_block)
+        self.assertIn('align-self: stretch;', minecraft_responsive_server_panel_block)
+        self.assertIn('height: 100%;', minecraft_responsive_server_panel_block)
         self.assertIn('min-height: 0;', minecraft_responsive_server_panel_block)
+        self.assertNotIn('height: auto;', minecraft_responsive_server_panel_block)
         self.assertNotIn('min-height: 100%;', minecraft_responsive_layout_block)
         self.assertNotIn('min-height: 100%;', minecraft_responsive_server_panel_block)
         self.assertNotContains(response, '.minecraft-layout,\n        .minecraft-server-panel', html=False)
-        self.assertIn('flex: 0 0 auto;', minecraft_responsive_map_block)
+        self.assertIn('flex: 1 1 auto;', minecraft_responsive_map_block)
         self.assertIn('aspect-ratio: auto;', minecraft_responsive_map_block)
         self.assertNotIn('aspect-ratio: 1 / 1;', minecraft_responsive_map_block)
         self.assertNotIn('aspect-ratio: 4 / 3;', minecraft_responsive_map_block)
@@ -1672,10 +1770,11 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertNotIn('max-width: 80%;', minecraft_responsive_map_block)
         self.assertNotIn('width: min(100%, 80cqw);', minecraft_responsive_map_block)
         self.assertNotIn('max-width: min(100%, 80cqw);', minecraft_responsive_map_block)
-        self.assertIn('height: min(100cqw, 80cqh);', minecraft_responsive_map_block)
-        self.assertIn('max-height: 80cqh;', minecraft_responsive_map_block)
+        self.assertIn('height: auto;', minecraft_responsive_map_block)
+        self.assertIn('max-height: none;', minecraft_responsive_map_block)
         self.assertIn('min-height: 0;', minecraft_responsive_map_block)
-        self.assertNotIn('height: auto;', minecraft_responsive_map_block)
+        self.assertNotIn('height: min(100cqw, 80cqh);', minecraft_responsive_map_block)
+        self.assertNotIn('max-height: 80cqh;', minecraft_responsive_map_block)
         self.assertContains(response, 'height: max-content;', html=False)
         self.assertContains(response, 'min-height: max-content;', html=False)
         self.assertNotContains(response, '@media (orientation: portrait) {\n        .minecraft-page-layout,', html=False)
@@ -1705,6 +1804,9 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, '<h1 class="ui-title">Minecraft Server</h1>', html=False)
         self.assertContains(response, '<span class="ui-path-current">Minecraft Server</span>', html=False)
         self.assertNotContains(response, '<span class="ui-path-current">Minecraft</span>', html=False)
+        self.assertNotContains(response, 'id="minecraftPlayerDetailModal"', html=False)
+        self.assertNotContains(response, 'id="minecraftTimePicker"', html=False)
+        self.assertNotContains(response, 'id="minecraftWeatherMenu"', html=False)
         self.assertNotContains(response, 'id="minecraftConsoleTrigger"', html=False)
         self.assertNotContains(response, 'class="ui-path-current minecraft-console-trigger"', html=False)
         self.assertNotContains(response, '.minecraft-console-trigger.ui-path-current:hover', html=False)
@@ -1714,10 +1816,12 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertNotContains(response, 'server-command.json', html=False)
         mocked_plugins.assert_called_once_with()
         mocked_status.assert_called()
+        mocked_bedrock_version.assert_called_once_with()
 
+    @mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30")
     @mock.patch("main.views.read_minecraft_server_status", return_value={"version": {"name": "Paper 26.3", "protocol": 776}})
     @mock.patch("main.views.get_minecraft_server_plugins", return_value=[{"name": "BlueMap", "version": "5.22"}])
-    def test_minecraft_home_exposes_login_username_for_player_highlight(self, mocked_plugins, mocked_status):
+    def test_minecraft_home_exposes_login_username_for_player_highlight(self, mocked_plugins, mocked_status, mocked_bedrock_version):
         user = get_user_model().objects.create_user(
             username="HanPlayer",
             email="hanplayer@example.com",
@@ -1736,10 +1840,12 @@ class LanguageUrlRoutingTests(TestCase):
         )
         mocked_plugins.assert_called_once_with()
         mocked_status.assert_called()
+        mocked_bedrock_version.assert_called_once_with()
 
+    @mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30")
     @mock.patch("main.views.read_minecraft_server_status", return_value={"version": {"name": "Paper 26.3", "protocol": 776}})
     @mock.patch("main.views.get_minecraft_server_plugins", return_value=[{"name": "BlueMap", "version": "5.22"}])
-    def test_minecraft_home_shows_server_log_panel_for_superuser_only(self, mocked_plugins, mocked_status):
+    def test_minecraft_home_shows_server_log_panel_for_superuser_only(self, mocked_plugins, mocked_status, mocked_bedrock_version):
         admin = get_user_model().objects.create_superuser(
             username="minecraft_admin",
             email="minecraft-admin@example.com",
@@ -1759,6 +1865,18 @@ class LanguageUrlRoutingTests(TestCase):
             content.index('class="handrive-help-modal-dialog site-modal-dialog minecraft-server-log-dialog"'):
             content.index('id="minecraft-server-help-modal"')
         ]
+        player_detail_modal_block = content[
+            content.index('id="minecraftPlayerDetailModal"'):
+            content.index('id="minecraftTimePicker"')
+        ]
+        player_detail_dialog_css_block = content[
+            content.index('.minecraft-player-detail-modal .minecraft-player-detail-dialog {'):
+            content.index('.minecraft-player-detail-body {')
+        ]
+        player_detail_grid_css_block = content[
+            content.index('.minecraft-player-detail-grid {'):
+            content.index('.minecraft-player-detail-card {\n        display: grid;', content.index('.minecraft-player-detail-grid {'))
+        ]
         self.assertContains(response, 'class="ui-path-current minecraft-console-trigger"', html=False)
         self.assertContains(response, '<h1 class="ui-title">Minecraft Server</h1>', html=False)
         self.assertContains(response, '<button class="ui-path-current minecraft-console-trigger" type="button" id="minecraftConsoleTrigger" aria-controls="minecraftServerLogModal" aria-expanded="false">Minecraft Server</button>', html=False)
@@ -1767,6 +1885,28 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'id="minecraftServerLogModal"', html=False)
         self.assertContains(response, 'class="handrive-help-modal minecraft-server-log-modal"', html=False)
         self.assertContains(response, 'class="handrive-help-modal-dialog site-modal-dialog minecraft-server-log-dialog"', html=False)
+        self.assertContains(response, '.minecraft-player-item.is-online[role="button"] {', html=False)
+        self.assertContains(response, 'translate: 0 0 !important;', html=False)
+        self.assertContains(response, 'id="minecraftPlayerDetailModal"', html=False)
+        self.assertContains(response, 'class="handrive-help-modal minecraft-player-detail-modal"', html=False)
+        self.assertContains(response, 'id="minecraftPlayerDetailBody"', html=False)
+        self.assertIn('width: 560px;', player_detail_dialog_css_block)
+        self.assertIn('max-width: calc(100vw - 20px);', player_detail_dialog_css_block)
+        self.assertIn('height: auto;', player_detail_dialog_css_block)
+        self.assertIn('max-height: calc(100dvh - 20px);', player_detail_dialog_css_block)
+        self.assertNotIn('width: min(900px', player_detail_dialog_css_block)
+        self.assertNotIn('height: min(760px', player_detail_dialog_css_block)
+        self.assertIn('gap: 6px;', player_detail_grid_css_block)
+        self.assertNotIn('gap: 10px;', player_detail_grid_css_block)
+        self.assertNotIn('data-handrive-help-modal-resize-handle', player_detail_modal_block)
+        self.assertNotContains(response, 'minecraft-player-detail-hero', html=False)
+        self.assertNotContains(response, 'renderPlayerHero', html=False)
+        self.assertContains(response, 'id="minecraftTimePicker"', html=False)
+        self.assertContains(response, 'id="minecraftTimeHourList"', html=False)
+        self.assertContains(response, 'id="minecraftTimeMinuteList"', html=False)
+        self.assertContains(response, 'id="minecraftWeatherMenu"', html=False)
+        self.assertContains(response, 'aria-controls="minecraftTimePicker"', html=False)
+        self.assertContains(response, 'aria-controls="minecraftWeatherMenu"', html=False)
         self.assertContains(response, 'id="minecraft-server-log-backdrop"', html=False)
         self.assertContains(response, 'id="minecraft-server-log-close-btn"', html=False)
         for resize_direction in ("n", "ne", "e", "se", "s", "sw", "w", "nw"):
@@ -1840,6 +1980,103 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'serverLogModalEl.hidden = !opened;', html=False)
         self.assertContains(response, "minecraftConsoleTriggerEl.setAttribute('aria-expanded', opened ? 'true' : 'false');", html=False)
         self.assertContains(response, 'setupServerCommandForm();', html=False)
+        self.assertContains(response, 'setupPlayerDetailModal();', html=False)
+        self.assertContains(response, 'setupTimePicker();', html=False)
+        self.assertContains(response, 'setupWeatherMenu();', html=False)
+        self.assertContains(response, "sendMinecraftServerCommand('minecraft:time set ' + ticks", html=False)
+        self.assertContains(response, "sendMinecraftServerCommand('minecraft:weather ' + weather", html=False)
+        self.assertContains(response, "renderPlayerEditFormWithUnit('health'", html=False)
+        self.assertContains(response, "renderPlayerEditFormWithUnit('food'", html=False)
+        self.assertContains(response, "renderPlayerLevelExpForm(String(level), formatPlayerNumber(xpPercent, 0))", html=False)
+        self.assertContains(response, 'data-player-edit-field="level-exp"', html=False)
+        self.assertContains(response, 'name="level"', html=False)
+        self.assertContains(response, 'name="exp"', html=False)
+        self.assertContains(response, "const levelOk = await sendPlayerStateEdit('level ' + String(nextLevel), { refresh: false });", html=False)
+        self.assertContains(response, "await sendPlayerStateEdit('exp ' + String(nextExp));", html=False)
+        self.assertNotContains(response, "renderPlayerEditForm('level'", html=False)
+        self.assertNotContains(response, "renderPlayerEditFormWithUnit('exp'", html=False)
+        self.assertContains(response, "renderPlayerLocationForm(worldName, location)", html=False)
+        self.assertContains(response, "let latestWorldOptions = [];", html=False)
+        self.assertContains(response, "const defaultMinecraftWorldNames = ['world', 'world_nether', 'world_the_end'];", html=False)
+        self.assertContains(response, "function normalizeMinecraftWorldOptions(worlds, currentWorld)", html=False)
+        self.assertContains(response, "const sourceWorlds = Array.isArray(worlds) && worlds.length ? worlds : defaultMinecraftWorldNames;", html=False)
+        self.assertContains(response, "const name = world.name || world.value || world.key || '';", html=False)
+        self.assertContains(response, 'name="world" aria-label="', html=False)
+        self.assertContains(response, 'data-site-custom-select="1"', html=False)
+        self.assertContains(response, "latestWorldOptions = normalizeMinecraftWorldOptions(status && status.worlds, '');", html=False)
+        self.assertNotContains(response, 'name="world" type="text"', html=False)
+        self.assertContains(response, "renderPlayerEffectAddForm()", html=False)
+        self.assertContains(response, "function submitPlayerEditForm(form)", html=False)
+        self.assertContains(response, "form.querySelector('input.minecraft-player-edit-input, select.minecraft-player-edit-select')", html=False)
+        self.assertContains(response, "function handlePlayerEditButtonClick(event)", html=False)
+        self.assertContains(response, "function handlePlayerEditChange(event)", html=False)
+        self.assertContains(response, "form.dataset.playerEditField !== 'gamemode'", html=False)
+        self.assertContains(response, "playerDetailBodyEl.addEventListener('click', handlePlayerEditButtonClick);", html=False)
+        self.assertContains(response, "playerDetailBodyEl.addEventListener('change', handlePlayerEditChange);", html=False)
+        self.assertContains(response, ".minecraft-player-detail-meta.is-location", html=False)
+        self.assertContains(response, "overflow-wrap: anywhere;", html=False)
+        self.assertContains(response, 'class="minecraft-player-detail-meta is-location"', html=False)
+        self.assertNotContains(response, "minecraft-player-detail-meta-grid", html=False)
+        self.assertContains(response, "padding-right: 20px;", html=False)
+        self.assertContains(response, ".minecraft-player-edit-form.is-level-exp", html=False)
+        self.assertContains(response, "grid-template-columns: minmax(72px, 1fr) minmax(76px, 1fr) max-content;", html=False)
+        self.assertContains(response, ".minecraft-player-edit-unit-wrap .minecraft-player-edit-input.is-exp", html=False)
+        self.assertContains(response, 'type="text" inputmode="decimal"', html=False)
+        self.assertContains(response, 'name="level" type="text" inputmode="numeric"', html=False)
+        self.assertContains(response, 'name="duration" type="text" inputmode="numeric"', html=False)
+        self.assertContains(response, 'name="amount" type="text" inputmode="numeric"', html=False)
+        self.assertNotContains(response, 'type="number"', html=False)
+        self.assertNotContains(response, "::-webkit-inner-spin-button", html=False)
+        self.assertNotContains(response, "::-webkit-outer-spin-button", html=False)
+        self.assertContains(response, "'minecraft-player-edit-input' + (field ? ' is-' + String(field)", html=False)
+        self.assertContains(response, 'data-player-edit-field="effects-add"', html=False)
+        self.assertContains(response, 'data-player-edit-field="gamemode"', html=False)
+        self.assertContains(response, 'data-player-edit-field="location"', html=False)
+        self.assertContains(response, 'data-player-edit-field="inventory-set"', html=False)
+        self.assertContains(response, "function normalizeMinecraftWorldName(value)", html=False)
+        self.assertContains(response, "function formatMinecraftCommandNumber(value)", html=False)
+        self.assertContains(response, "sendPlayerStateEdit('location ' + worldValue", html=False)
+        self.assertContains(response, 'class="minecraft-player-edit-form is-inventory-edit"', html=False)
+        self.assertContains(response, "let latestItemOptions = [];", html=False)
+        self.assertContains(response, "const defaultMinecraftItemOptions = [", html=False)
+        self.assertContains(response, "function normalizeMinecraftItemOptions(items)", html=False)
+        self.assertContains(response, "function filterMinecraftItemOptions(query)", html=False)
+        self.assertContains(response, 'role="combobox"', html=False)
+        self.assertContains(response, 'class="minecraft-inventory-item-menu"', html=False)
+        self.assertContains(response, "playerDetailBodyEl.addEventListener('input', handleInventoryItemInput);", html=False)
+        self.assertContains(response, "playerDetailBodyEl.addEventListener('keydown', handleInventoryItemKeydown);", html=False)
+        self.assertContains(response, "latestItemOptions = normalizeMinecraftItemOptions(status && status.items);", html=False)
+        self.assertContains(response, "'minecraft-inventory-slot'", html=False)
+        self.assertContains(response, 'data-inventory-slot', html=False)
+        self.assertContains(response, 'function renderPlayerInventoryPanel', html=False)
+        self.assertNotContains(response, "renderPlayerDetailCard(labels.playerArmor", html=False)
+        self.assertContains(response, "labels.playerOffhand + ' / ' + labels.playerArmor", html=False)
+        self.assertNotContains(response, "labels.playerArmor + ' / ' + labels.playerOffhand", html=False)
+        self.assertContains(response, '.minecraft-player-inventory-panel {', html=False)
+        self.assertContains(response, 'grid-template-columns: max-content max-content;', html=False)
+        self.assertContains(response, 'justify-content: center;', html=False)
+        self.assertContains(response, 'justify-items: center;', html=False)
+        self.assertContains(response, '.minecraft-equipment-grid {', html=False)
+        self.assertContains(response, 'grid-template-columns: repeat(2, 34px);', html=False)
+        self.assertContains(response, 'grid-template-rows: repeat(4, 34px);', html=False)
+        self.assertContains(response, '.minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="offhand"]', html=False)
+        self.assertContains(response, 'grid-column: 1;', html=False)
+        self.assertContains(response, 'function normalizeMinecraftItemId(value)', html=False)
+        self.assertContains(response, 'function handleInventorySlotClick(event)', html=False)
+        self.assertContains(response, "playerDetailBodyEl.addEventListener('click', handleInventorySlotClick);", html=False)
+        self.assertContains(response, "'inventory set ' +", html=False)
+        self.assertContains(response, "sendPlayerStateEdit('inventory clear ' + slot);", html=False)
+        self.assertContains(response, "renderPlayerActionButton('effects-clear'", html=False)
+        self.assertContains(response, "renderPlayerActionButton('inventory-clear'", html=False)
+        self.assertContains(response, 'id="minecraftPlayerEditStatus" hidden', html=False)
+        self.assertContains(response, "statusEl.hidden = !message;", html=False)
+        self.assertContains(response, "sendMinecraftServerCommand('minecraftstatus set ' + targetName", html=False)
+        self.assertContains(response, 'class="minecraft-weather-option-icon"', html=False)
+        self.assertNotContains(response, 'minecraft-weather-option-symbol', html=False)
+        self.assertContains(response, "document.querySelector('meta[name=\"csrf-token\"]')", html=False)
+        self.assertContains(response, "return { ok: false, error: 'missing_url' };", html=False)
+        self.assertContains(response, "const result = await sendMinecraftServerCommand('minecraftstatus set ' + targetName", html=False)
+        self.assertContains(response, "setPlayerEditStatus(ok ? labels.playerEditSaved : labels.playerEditFailed + detail, !ok);", html=False)
         self.assertContains(response, 'let serverCommandRequestInFlight = false;', html=False)
         self.assertContains(response, 'if (serverCommandRequestInFlight) return;', html=False)
         self.assertContains(response, "serverCommandButtonEl.setAttribute('aria-label', labels.serverCommandSending);", html=False)
@@ -1847,6 +2084,69 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'window.setInterval(loadServerLog, 3000);', html=False)
         mocked_plugins.assert_called_once_with()
         mocked_status.assert_called()
+        mocked_bedrock_version.assert_called_once_with()
+
+    @mock.patch("main.views.read_minecraft_server_status")
+    def test_minecraft_status_json_hides_player_details_for_non_admins(self, mocked_status):
+        mocked_status.return_value = {
+            "serverOnline": True,
+            "onlineCount": 1,
+            "maxPlayers": 20,
+            "worlds": [
+                {"name": "world", "key": "minecraft:overworld", "environment": "normal"},
+                {"name": "world_nether", "key": "minecraft:the_nether", "environment": "nether"},
+            ],
+            "items": [
+                {"value": "stone", "label": "Stone", "maxStackSize": 64},
+                {"value": "diamond_pickaxe", "label": "Diamond Pickaxe", "maxStackSize": 1},
+            ],
+            "players": [
+                {
+                    "name": "HanPlayer",
+                    "online": True,
+                    "uuid": "00000000-0000-0000-0000-000000000001",
+                    "detail": {
+                        "health": 20,
+                        "food": 20,
+                        "level": 7,
+                        "inventory": [{"slot": 0, "type": "diamond", "amount": 1}],
+                    },
+                }
+            ],
+        }
+        url = reverse("main:minecraft_status_json")
+
+        response = self.client.get(url, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["worlds"],
+            [
+                {"name": "world", "key": "minecraft:overworld", "environment": "normal"},
+                {"name": "world_nether", "key": "minecraft:the_nether", "environment": "nether"},
+            ],
+        )
+        self.assertNotIn("items", response.json())
+        public_player = response.json()["players"][0]
+        self.assertEqual(public_player, {"name": "HanPlayer", "online": True})
+
+        admin = get_user_model().objects.create_superuser(
+            username="minecraft_status_admin",
+            email="minecraft-status-admin@example.com",
+            password="pw123456",
+        )
+        self.client.force_login(admin)
+        response = self.client.get(url, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["items"],
+            [
+                {"value": "stone", "label": "Stone", "maxStackSize": 64},
+                {"value": "diamond_pickaxe", "label": "Diamond Pickaxe", "maxStackSize": 1},
+            ],
+        )
+        admin_player = response.json()["players"][0]
+        self.assertEqual(admin_player["uuid"], "00000000-0000-0000-0000-000000000001")
+        self.assertEqual(admin_player["detail"]["inventory"][0]["type"], "diamond")
 
     def test_minecraft_server_log_json_is_superuser_only(self):
         url = reverse("main:minecraft_server_log_json")
@@ -1941,7 +2241,8 @@ class LanguageUrlRoutingTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-        page_response = csrf_client.get("/", HTTP_HOST="mc.hanplanet.com")
+        with mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30"):
+            page_response = csrf_client.get("/", HTTP_HOST="mc.hanplanet.com")
         csrf_token = page_response.cookies["csrftoken"].value
         with mock.patch("main.views.write_minecraft_console_command") as mocked_send:
             response = csrf_client.post(
@@ -1959,6 +2260,45 @@ class LanguageUrlRoutingTests(TestCase):
         with mock.patch("main.views.write_minecraft_console_command") as mocked_send:
             response = csrf_client.post(
                 url,
+                data=json.dumps({"command": "minecraftstatus set Player gamemode creative"}),
+                content_type="application/json",
+                HTTP_X_CSRFTOKEN=csrf_token,
+                HTTP_HOST="mc.hanplanet.com",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"ok": True, "response": ""})
+        mocked_send.assert_called_once_with("minecraftstatus set Player gamemode creative")
+
+        with mock.patch("main.views.write_minecraft_console_command") as mocked_send:
+            response = csrf_client.post(
+                url,
+                data=json.dumps({"command": "minecraftstatus set Player effects add speed 1 60"}),
+                content_type="application/json",
+                HTTP_X_CSRFTOKEN=csrf_token,
+                HTTP_HOST="mc.hanplanet.com",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"ok": True, "response": ""})
+        mocked_send.assert_called_once_with("minecraftstatus set Player effects add speed 1 60")
+
+        with mock.patch("main.views.write_minecraft_console_command") as mocked_send:
+            response = csrf_client.post(
+                url,
+                data=json.dumps({"command": "minecraftstatus set Player location world -96.3 70 -65.3"}),
+                content_type="application/json",
+                HTTP_X_CSRFTOKEN=csrf_token,
+                HTTP_HOST="mc.hanplanet.com",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"ok": True, "response": ""})
+        mocked_send.assert_called_once_with("minecraftstatus set Player location world -96.3 70 -65.3")
+
+        with mock.patch("main.views.write_minecraft_console_command") as mocked_send:
+            response = csrf_client.post(
+                url,
                 data=json.dumps({"command": "say hello\nop bad"}),
                 content_type="application/json",
                 HTTP_X_CSRFTOKEN=csrf_token,
@@ -1968,8 +2308,9 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(response.status_code, 400)
         mocked_send.assert_not_called()
 
+    @mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30")
     @override_settings(PUBLIC_BASE_URL="https://www.hanplanet.com")
-    def test_minecraft_navbar_links_point_to_public_site_origin(self):
+    def test_minecraft_navbar_links_point_to_public_site_origin(self, mocked_bedrock_version):
         NavLink.objects.all().delete()
         NavLink.objects.create(order=1, name="HanDrive", url="/handrive/")
         NavLink.objects.create(order=2, name="Sub", url="sub/")
@@ -1996,6 +2337,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'class="ui-path-link" href="https://www.hanplanet.com/ko/sub"', html=False)
         self.assertNotContains(response, 'href="/handrive/"', html=False)
         self.assertNotContains(response, 'href="sub/"', html=False)
+        mocked_bedrock_version.assert_called_once_with()
 
     def test_toolbar_auth_right_renders_login_actions_on_tool_pages(self):
         response = self.client.get(reverse("main:image_color_picker_lang", kwargs={"ui_lang": "ko"}))
@@ -2260,7 +2602,7 @@ class SiteNavResponsiveSourceTests(TestCase):
         common_css = (Path(settings.BASE_DIR) / "static/css/common/style.css").read_text(encoding="utf-8")
         nav_js = (Path(settings.BASE_DIR) / "static/js/common/site_nav_responsive_manager.js").read_text(encoding="utf-8")
 
-        nav_links_rule_start = common_css.index(".ui-nav.nav-auto-collapsed .ui-nav-links {\n    margin-top:")
+        nav_links_rule_start = common_css.index(".ui-nav.nav-auto-collapsed .ui-nav-links {\n    margin: 0;")
         nav_links_rule = common_css[
             nav_links_rule_start:
             common_css.index("@media (forced-colors: active)", nav_links_rule_start)
@@ -2269,12 +2611,18 @@ class SiteNavResponsiveSourceTests(TestCase):
             common_css.index(".ui-nav.nav-auto-collapsed .ui-nav-links .nav-item {"):
             common_css.index(".ui-nav.nav-auto-collapsed .ui-nav-links .nav-item + .nav-item")
         ]
+        footer_collapse_rule = common_css[
+            common_css.index("body.site-nav-auto-collapsed:not(.root-page) .footer-links {"):
+            common_css.index("body.site-nav-auto-collapsed:not(.root-page) .footer-links > * {")
+        ]
+        footer_collapse_children_rule = common_css[
+            common_css.index("body.site-nav-auto-collapsed:not(.root-page) .footer-links > * {"):
+            common_css.index(".footer-nav {")
+        ]
 
         self.assertIn("flex-direction: row;", nav_links_rule)
         self.assertIn("flex-wrap: nowrap;", nav_links_rule)
-        self.assertIn("margin-left: auto;", nav_links_rule)
-        self.assertIn("margin-right: auto;", nav_links_rule)
-        self.assertIn("width: max-content;", nav_links_rule)
+        self.assertIn("width: 100%;", nav_links_rule)
         self.assertIn("max-width: 100%;", nav_links_rule)
         self.assertIn("overflow-x: auto;", nav_links_rule)
         self.assertIn("-webkit-overflow-scrolling: touch;", nav_links_rule)
@@ -2288,6 +2636,23 @@ class SiteNavResponsiveSourceTests(TestCase):
         self.assertIn("const shouldAllowNavLinksHorizontalScroll = function (event)", nav_js)
         self.assertIn("if (shouldAllowNavLinksHorizontalScroll(event))", nav_js)
         self.assertIn("if (getCollapsedNavLinksScroller(target))", nav_js)
+        self.assertIn("const collapsedBodyClass = 'site-nav-auto-collapsed';", nav_js)
+        self.assertIn("const navOpenClass = 'show';", nav_js)
+        self.assertIn("const setFallbackNavMenuOpen = function (open)", nav_js)
+        self.assertIn("const toggleFallbackNavMenu = function ()", nav_js)
+        self.assertIn("if (!window.bootstrap || !window.bootstrap.Collapse)", nav_js)
+        self.assertIn("event.preventDefault();", nav_js)
+        self.assertIn("toggleFallbackNavMenu();", nav_js)
+        self.assertIn("const syncDocumentNavMode = function ()", nav_js)
+        self.assertIn("document.body.classList.toggle(collapsedBodyClass, nav.classList.contains('nav-auto-collapsed'));", nav_js)
+        self.assertIn("syncDocumentNavMode();", nav_js)
+        self.assertIn("height: 10px;", footer_collapse_rule)
+        self.assertIn("min-height: 10px;", footer_collapse_rule)
+        self.assertIn("flex: 0 0 10px;", footer_collapse_rule)
+        self.assertIn("margin: 0;", footer_collapse_rule)
+        self.assertIn("padding: 0;", footer_collapse_rule)
+        self.assertIn("overflow: hidden;", footer_collapse_rule)
+        self.assertIn("display: none;", footer_collapse_children_rule)
 
 
 class SiteToolbarAuthSourceTests(TestCase):
@@ -2295,7 +2660,67 @@ class SiteToolbarAuthSourceTests(TestCase):
         base_dir = Path(settings.BASE_DIR)
         partial = (base_dir / "templates/partials/toolbar_auth_right.html").read_text(encoding="utf-8")
         base_template = (base_dir / "templates/base.html").read_text(encoding="utf-8")
+        account_widget_template = (base_dir / "templates/partials/account_widget.html").read_text(encoding="utf-8")
+        account_widget_css = (base_dir / "static/css/common/account_widget.css").read_text(encoding="utf-8")
         account_widget_js = (base_dir / "static/js/common/account_widget.js").read_text(encoding="utf-8")
+        account_weather_js = (base_dir / "static/js/common/account_weather_widget.js").read_text(encoding="utf-8")
+        account_weather_select_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-select {"):
+            account_widget_css.index(".site-custom-select.ui-auth-account-weather-select {")
+        ]
+        account_weather_chip_icons_start = account_widget_css.index(".ui-auth-account-weather-chip-icons {")
+        account_weather_chip_icons_block = account_widget_css[
+            account_weather_chip_icons_start:
+            account_widget_css.index(".ui-auth-account-weather-chip-range {", account_weather_chip_icons_start)
+        ]
+        account_weather_chip_range_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-chip-range {"):
+            account_widget_css.index(".ui-auth-account-weather-symbol {")
+        ]
+        account_weather_details_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-card-details {"):
+            account_widget_css.index(".ui-auth-account-weather-card-detail {")
+        ]
+        account_weather_detail_value_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-card-detail-value {"):
+            account_widget_css.index(".ui-auth-account-weather-card-periods {")
+        ]
+        account_weather_daily_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-card-daily {"):
+            account_widget_css.index(".ui-auth-account-weather-card-day-row {")
+        ]
+        account_weather_day_date_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-card-day-date {"):
+            account_widget_css.index(".ui-auth-account-weather-card-day-label {")
+        ]
+        account_weather_day_label_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-card-day-label {"):
+            account_widget_css.index(".ui-auth-account-weather-card-day-icons {")
+        ]
+        account_weather_day_precipitation_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-card-day-precipitation {"):
+            account_widget_css.index(".ui-auth-account-weather-card-day-range {")
+        ]
+        account_weather_day_range_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-card-day-range {"):
+            account_widget_css.index(".ui-auth-account-weather-status.is-error")
+        ]
+        account_weather_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather {"):
+            account_widget_css.index(".ui-auth-account-weather-trigger {")
+        ]
+        account_weather_hidden_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather[hidden] {"):
+            account_widget_css.index(".ui-auth-account-weather-trigger {")
+        ]
+        account_weather_trigger_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-trigger {"):
+            account_widget_css.index(".ui-auth-account-weather-trigger:hover")
+        ]
+        account_weather_symbol_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-symbol {"):
+            account_widget_css.index(".ui-auth-account-weather-symbol.is-clear")
+        ]
         templates_with_toolbar_auth = [
             "templates/fun/sub.html",
             "templates/fun/image_color_picker.html",
@@ -2313,9 +2738,154 @@ class SiteToolbarAuthSourceTests(TestCase):
         self.assertIn('data-auth-modal="login"', partial)
         self.assertIn('data-auth-modal="signup"', partial)
         self.assertIn("js/common/account_widget.js", base_template)
+        self.assertIn("js/common/account_weather_widget.js", base_template)
         self.assertIn('include "popup/root/auth_logout_modal.html"', base_template)
         self.assertIn("body.classList.contains('root-page')", account_widget_js)
         self.assertIn("body.classList.contains('handrive-page')", account_widget_js)
+        self.assertIn("data-auth-account-weather", account_widget_template)
+        self.assertIn("data-weather-location-search-url", account_widget_template)
+        self.assertIn("data-weather-no-location-results-label", account_widget_template)
+        self.assertIn("ui-auth-account-weather-symbol is-unknown", account_widget_template)
+        self.assertIn("data-weather-url=\"{{ account_weather_url }}\"", account_widget_template)
+        self.assertIn("data-auth-account-weather\n        data-weather-url", account_widget_template)
+        self.assertIn("hidden\n    >", account_widget_template)
+        self.assertNotIn("ui-auth-account-weather-chip-day", account_widget_template)
+        self.assertNotIn("data-auth-account-weather-day>--</span>", account_widget_template)
+        self.assertIn("ui-auth-account-weather-chip-icons", account_widget_template)
+        self.assertIn("data-auth-account-weather-am-icon", account_widget_template)
+        self.assertIn("data-auth-account-weather-pm-icon", account_widget_template)
+        self.assertNotIn("data-auth-account-weather-am-label", account_widget_template)
+        self.assertNotIn("data-auth-account-weather-pm-label", account_widget_template)
+        self.assertIn("data-auth-account-weather-range", account_widget_template)
+        self.assertIn("data-auth-account-weather-range-high", account_widget_template)
+        self.assertIn("data-auth-account-weather-range-low", account_widget_template)
+        self.assertIn("data-auth-account-weather-location-search", account_widget_template)
+        self.assertIn("root-input-clear ui-auth-account-weather-location-clear", account_widget_template)
+        self.assertIn("data-auth-account-weather-location-clear", account_widget_template)
+        self.assertIn("data-auth-account-weather-location-results", account_widget_template)
+        self.assertIn("account_weather_location_search_placeholder", account_widget_template)
+        self.assertIn("data-auth-account-weather-card", account_widget_template)
+        self.assertIn("data-auth-account-weather-card-details", account_widget_template)
+        self.assertIn("data-auth-account-weather-daily", account_widget_template)
+        self.assertIn("data-auth-account-weather-settings-toggle", account_widget_template)
+        self.assertIn("data-auth-account-weather-form hidden", account_widget_template)
+        self.assertIn("ui-auth-account-weather-input ui-auth-account-weather-location-input", account_widget_template)
+        self.assertNotIn("data-auth-account-weather-country", account_widget_template)
+        self.assertNotIn("data-auth-account-weather-city", account_widget_template)
+        self.assertNotIn('type="text"\n                        class="ui-auth-account-weather-input"', account_widget_template)
+        self.assertIn("display: flex;", account_weather_block)
+        self.assertIn("justify-content: flex-end;", account_weather_block)
+        self.assertIn("display: none;", account_weather_hidden_block)
+        self.assertIn("flex-direction: row;", account_weather_trigger_block)
+        self.assertIn("align-items: center;", account_weather_trigger_block)
+        self.assertIn("justify-content: center;", account_weather_trigger_block)
+        self.assertIn("gap: 0;", account_weather_trigger_block)
+        self.assertIn("min-height: 58px;", account_weather_trigger_block)
+        self.assertIn("max-width: min(160px, calc(100vw - 132px));", account_weather_trigger_block)
+        self.assertIn("font-size: 17px;", account_weather_trigger_block)
+        self.assertIn("padding: 3px 5px;", account_weather_trigger_block)
+        self.assertIn("width: 34px;", account_weather_symbol_block)
+        self.assertIn("height: 34px;", account_weather_symbol_block)
+        self.assertIn("flex: 0 0 34px;", account_weather_symbol_block)
+        self.assertIn(".ui-auth-account-weather-chip-icons.is-single-icon .ui-auth-account-weather-symbol", account_weather_symbol_block)
+        self.assertIn("width: 42px;", account_weather_symbol_block)
+        self.assertIn("height: 42px;", account_weather_symbol_block)
+        self.assertIn("flex-basis: 42px;", account_weather_symbol_block)
+        self.assertNotIn("background-image:", account_weather_select_block)
+        self.assertIn("min-height: 34px;", account_widget_css)
+        self.assertIn("line-height: 1.25;", account_widget_css)
+        self.assertIn("gap: 0;", account_weather_chip_icons_block)
+        self.assertIn("justify-content: center;", account_weather_chip_icons_block)
+        self.assertIn("flex-direction: column;", account_weather_chip_range_block)
+        self.assertIn("gap: 1px;", account_weather_chip_range_block)
+        self.assertIn("min-width: 34px;", account_weather_chip_range_block)
+        self.assertIn("line-height: 1;", account_weather_chip_range_block)
+        self.assertIn("font-size: 15px;", account_weather_chip_range_block)
+        self.assertIn("font-weight: 600;", account_weather_chip_range_block)
+        self.assertIn("justify-content: center;", account_weather_chip_range_block)
+        self.assertIn("text-align: center;", account_weather_chip_range_block)
+        self.assertIn(".ui-auth-account-weather-chip-range-high,", account_weather_chip_range_block)
+        self.assertIn(".ui-auth-account-weather-chip-range-low", account_weather_chip_range_block)
+        self.assertIn(".ui-auth-account-weather-location-search", account_widget_css)
+        self.assertIn(".ui-auth-account-weather-location-input::-webkit-search-cancel-button", account_widget_css)
+        self.assertIn(".ui-auth-account-weather-location-clear", account_widget_css)
+        self.assertIn("padding-right: 38px;", account_widget_css)
+        self.assertIn(".ui-auth-account-weather-location-results", account_widget_css)
+        self.assertIn(".ui-auth-account-weather-location-option", account_widget_css)
+        self.assertIn(".ui-auth-account-weather-card-day-date", account_widget_css)
+        self.assertIn(".ui-auth-account-weather-card-day-icons", account_widget_css)
+        self.assertIn("font-weight: 400;", account_weather_details_block)
+        self.assertIn("font-weight: 400;", account_weather_detail_value_block)
+        self.assertIn("font-weight: 400;", account_weather_daily_block)
+        self.assertIn("font-weight: 400;", account_weather_day_date_block)
+        self.assertIn("font-weight: 400;", account_weather_day_label_block)
+        self.assertIn("font-weight: 400;", account_weather_day_precipitation_block)
+        self.assertIn("font-weight: 400;", account_weather_day_range_block)
+        self.assertNotIn(".ui-auth-account-weather-card-day-row.is-active .ui-auth-account-weather-card-day-date", account_widget_css)
+        self.assertIn("const ACCOUNT_WEATHER_LOCATION_OPTIONS = [", account_weather_js)
+        self.assertIn("const setWeatherIconType = function (element, iconType)", account_weather_js)
+        self.assertIn("const setWeatherWidgetVisible = function (widget, visible)", account_weather_js)
+        self.assertIn("const requestWeatherLocations = async function (widget, query)", account_weather_js)
+        self.assertIn("data-auth-account-weather-location-search", account_weather_js)
+        self.assertIn("const syncWeatherLocationClearButton = function (input)", account_weather_js)
+        self.assertIn("clearButton.hidden = !String(input.value || '').length;", account_weather_js)
+        self.assertIn("const locationClearButton = widget.querySelector('[data-auth-account-weather-location-clear]');", account_weather_js)
+        self.assertIn("locationClearButton.addEventListener('click'", account_weather_js)
+        self.assertIn("locationSearchToken += 1;", account_weather_js)
+        self.assertIn("renderWeatherLocationResults(", account_weather_js)
+        self.assertIn("locations.length ? '' : (widget.dataset.weatherNoLocationResultsLabel || '')", account_weather_js)
+        self.assertIn("const setWeatherTriggerRange = function (range, day)", account_weather_js)
+        self.assertIn("day.temperature_max_label", account_weather_js)
+        self.assertIn("day.temperature_min_label", account_weather_js)
+        self.assertIn("setWeatherWidgetVisible(widget, false);", account_weather_js)
+        self.assertIn("setWeatherWidgetVisible(widget, true);", account_weather_js)
+        self.assertIn("const syncWeatherTriggerIcons = function (widget, firstIconType, secondIconType)", account_weather_js)
+        self.assertIn("const isSingleIcon = firstType === secondType;", account_weather_js)
+        self.assertIn("secondPeriod.hidden = isSingleIcon;", account_weather_js)
+        self.assertIn("iconHost.classList.toggle('is-single-icon', isSingleIcon);", account_weather_js)
+        self.assertIn("syncWeatherTriggerIcons(widget, 'unknown', 'unknown');", account_weather_js)
+        self.assertIn("const getWeatherTriggerIconTypes = function (hourlyForecast, fallbackIconType)", account_weather_js)
+        self.assertIn("getRepresentativeWeatherIcon(hourlyForecast, 0, 11, fallbackIconType)", account_weather_js)
+        self.assertIn("getRepresentativeWeatherIcon(hourlyForecast, 12, 23, fallbackIconType)", account_weather_js)
+        self.assertIn("const getCalendarHourlyForecastForDate = function (payload, date)", account_weather_js)
+        self.assertIn("return hourlyByDate[selectedDate];", account_weather_js)
+        self.assertIn("const triggerIconTypes = getWeatherTriggerIconTypes(getCalendarHourlyForecastForDate(payload, day.date), day.icon_type);", account_weather_js)
+        self.assertIn("const dailyIconTypes = getWeatherTriggerIconTypes(getCalendarHourlyForecastForDate(payload, forecastDate), day.icon_type);", account_weather_js)
+        self.assertIn("setWeatherTriggerRange(triggerRange, day);", account_weather_js)
+        self.assertIn("syncWeatherTriggerIcons(widget, triggerIconTypes.first, triggerIconTypes.second);", account_weather_js)
+        self.assertNotIn("const firstHourly = hourlyForecast[0]", account_weather_js)
+        self.assertIn("const formatWeatherSubtitle = function (payload, day)", account_weather_js)
+        self.assertIn("formatWeatherDateLabel(day)", account_weather_js)
+        self.assertIn("const formatWeatherMonthDayLabel = function (day)", account_weather_js)
+        self.assertNotIn("formatWeatherUpdatedTimeLabel(payload)", account_weather_js)
+        self.assertIn("cardDay.textContent = formatWeatherSubtitle(payload, day)", account_weather_js)
+        self.assertIn("const setSettingsOpen = function (widget, opened)", account_weather_js)
+        self.assertIn("ui-auth-account-weather-card-period", account_weather_js)
+        self.assertIn("payload.hourly_forecast", account_weather_js)
+        self.assertIn("payload.daily_forecast", account_weather_js)
+        self.assertIn("payload.hourly_forecast_by_date", account_weather_js)
+        self.assertIn("payload.current_forecast_date", account_weather_js)
+        self.assertIn("selectedDate === currentForecastDate", account_weather_js)
+        self.assertIn("payload.hourly_forecast.slice(0, 24)", account_weather_js)
+        self.assertIn("activateWeatherDay(widget, payload, day)", account_weather_js)
+        self.assertIn("data-auth-account-weather-day-date", account_weather_js)
+        self.assertIn("ui-auth-account-weather-card-day-precipitation", account_weather_js)
+        self.assertIn("ui-auth-account-weather-card-day-icons", account_weather_js)
+        self.assertIn("item.append(date, label, icons, condition, precipitation, range);", account_weather_js)
+        self.assertIn("renderWeatherDetails(cardDetails, day.detail_items);", account_weather_js)
+        self.assertIn("ui-auth-account-weather-card-detail-label", account_weather_js)
+        self.assertNotIn("ui-auth-account-weather-card-period-condition", account_weather_js)
+        self.assertIn("isWeatherCustomSelectTarget(widget, target)", account_weather_js)
+        self.assertIn("dataset.siteCustomSelectMenuId === menu.id", account_weather_js)
+        self.assertIn("const rootAccount = document.getElementById('ui-auth-account-root');", account_weather_js)
+        self.assertIn("rootAccount ? rootAccount.querySelector('[data-auth-account]') : null;", account_weather_js)
+        self.assertIn("locationInput.addEventListener('input'", account_weather_js)
+        self.assertIn("locationInput.addEventListener('keydown'", account_weather_js)
+        self.assertIn("readWeatherSelectedLocation(locationInput)", account_weather_js)
+        self.assertIn("saveWeather(widget, selectedLocation);", account_weather_js)
+        self.assertIn("query: locationInput ? locationInput.value : ''", account_weather_js)
+        self.assertIn("requestWeather(widget, {", account_weather_js)
+        self.assertIn("saveWeather(widget, { use_ip: true });", account_weather_js)
         self.assertNotIn("js/common/sub_account_widget.js", (base_dir / "templates/fun/sub.html").read_text(encoding="utf-8"))
         self.assertNotIn("js/common/sub_account_widget.js", (base_dir / "templates/fun/Hanplanet_Multiplayer.html").read_text(encoding="utf-8"))
 
@@ -2351,6 +2921,10 @@ class SiteDropdownMenuSourceTests(TestCase):
             popup_common_css.index(".site-custom-select-caret {"):
             popup_common_css.index(".site-custom-select-menu")
         ]
+        custom_select_menu_block = popup_common_css[
+            popup_common_css.index(".site-custom-select-menu {"):
+            popup_common_css.index(".site-custom-select-option")
+        ]
 
         for token in (
             "--site-dropdown-menu-radius",
@@ -2382,6 +2956,12 @@ class SiteDropdownMenuSourceTests(TestCase):
         self.assertIn('select.dataset.siteCustomSelect !== "0"', popup_common_js)
         self.assertIn("window.SiteCustomSelect", popup_common_js)
         self.assertIn("site-custom-select-menu site-dropdown-menu", popup_common_js)
+        self.assertIn(".site-dropdown-menu:not(.site-custom-select-menu), [data-popup-fit-bottom], [data-popup-fit-top]", popup_common_js)
+        self.assertIn("preparePopupFitWidth(element, availableWidth);", popup_common_js)
+        self.assertIn("rightLimit - rect.right", popup_common_js)
+        self.assertIn("delete element.dataset.popupFitMaxWidthOverride;", popup_common_js)
+        self.assertIn("delete element.dataset.popupFitMinWidthOverride;", popup_common_js)
+        self.assertIn("element.style.maxWidth = String(width) + \"px\";", popup_common_js)
         self.assertIn("scrollbar-width: thin;", popup_common_css)
         self.assertIn("width: var(--site-dropdown-scrollbar-size, 3px);", popup_common_css)
         self.assertIn("height: var(--site-dropdown-scrollbar-size, 3px);", popup_common_css)
@@ -2390,6 +2970,10 @@ class SiteDropdownMenuSourceTests(TestCase):
         self.assertIn("backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter", popup_common_css)
         self.assertIn("box-shadow: var(--site-dropdown-menu-shadow", popup_common_css)
         self.assertIn("border-radius: var(--site-dropdown-menu-radius", popup_common_css)
+        self.assertIn("max-width: var(--popup-fit-max-width, calc(100vw - 20px));", popup_common_css)
+        self.assertIn(".site-dropdown-menu:not(.site-custom-select-menu):not([data-popup-fit-bottom]):not([data-popup-fit-top])", popup_common_css)
+        self.assertIn("calc(var(--popup-fit-x-shift, 0px) + var(--popup-drag-x, 0px))", popup_common_css)
+        self.assertIn("translate(var(--popup-fit-x-shift, 0px), 0)", popup_common_css)
         self.assertIn("--site-custom-select-button-color: var(--handrive-text, var(--site-text, CanvasText));", popup_common_css)
         self.assertIn("--site-custom-select-caret-color: var(--handrive-text-secondary, var(--site-text-secondary, currentColor));", popup_common_css)
         self.assertIn("body.theme-dark .site-custom-select", popup_common_css)
@@ -2397,7 +2981,7 @@ class SiteDropdownMenuSourceTests(TestCase):
         self.assertIn("--site-custom-select-caret-color: var(--handrive-text-secondary, var(--site-text-secondary, #c2c2c2));", popup_common_css)
         self.assertIn("color: var(--site-custom-select-button-color);", popup_common_css)
         self.assertIn("padding-right: 0;", custom_select_block)
-        self.assertIn("padding-right: 0;", custom_select_button_block)
+        self.assertIn("padding-right: var(--site-custom-select-button-padding-right, 8px);", custom_select_button_block)
         self.assertIn("align-items: center;", custom_select_button_block)
         self.assertIn("line-height: 1;", custom_select_button_block)
         self.assertIn("display: flex;", custom_select_label_block)
@@ -2408,6 +2992,8 @@ class SiteDropdownMenuSourceTests(TestCase):
         self.assertIn("text-align: right;", popup_common_css)
         self.assertIn("border-top: 5px solid var(--site-custom-select-caret-color);", popup_common_css)
         self.assertIn('wrapper.style.setProperty("padding-right", "0px");', popup_common_js)
+        self.assertIn("background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg", custom_select_menu_block)
+        self.assertNotIn("background: var(--handrive-bg, Canvas);", custom_select_menu_block)
         self.assertNotIn("--site-dropdown-menu-bg", popup_common_css)
         self.assertNotIn("--site-dropdown-menu-filter", popup_common_css)
         for source_name, source in (
@@ -2688,6 +3274,11 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('"menu_open_location": "Open file location"', handrive_views)
         self.assertIn('const contextOpenLocationButton = contextMenu ? contextMenu.querySelector', page_js)
         self.assertIn("function resolveUploadQueueContextEntry(item)", page_js)
+        self.assertIn("function resolveUploadQueuePreviewEntry(item)", page_js)
+        self.assertIn("function openUploadQueueItemPreview(item)", page_js)
+        self.assertIn("openUploadQueueItemPreview(nextItem).catch(alertError);", page_js)
+        self.assertIn("await loadPreviewForEntry(previewEntry);", page_js)
+        self.assertIn("await updatePreviewNavButtons(previewEntry);", page_js)
         self.assertIn("function openQueueItemLocation(item, entry)", page_js)
         self.assertIn("function handleContextEntryAction(action, entry, entries, options)", page_js)
         self.assertIn("syncContextMenuByEntries([queueEntry]);", page_js)
@@ -2695,6 +3286,14 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('if (action === "open-location") {\n                        openQueueItemLocation(uploadQueueItem, uploadQueueContextEntry).catch(alertError);', page_js)
         self.assertIn("skipPreview: true,", page_js)
         self.assertIn("openLocation: contextOpenLocationButton", page_js)
+        self.assertIn("var onActivate = settings.onActivate || function () {};", queue_helpers_js)
+        click_start = queue_helpers_js.index('listItem.addEventListener("click"')
+        click_end = queue_helpers_js.index('listItem.addEventListener("contextmenu"', click_start)
+        click_block = queue_helpers_js[click_start:click_end]
+        self.assertIn("onActivate(item, event);", click_block)
+        self.assertNotIn("onOpenContextMenu", click_block)
+        self.assertIn('listItem.addEventListener("contextmenu"', queue_helpers_js)
+        self.assertIn("onOpenContextMenu(item, event.clientX, event.clientY);", queue_helpers_js)
         self.assertIn("var contextOpenLocationButton = buttons.openLocation || null;", queue_helpers_js)
         self.assertIn("setContextButtonVisible(contextOpenLocationButton, canOpenLocation);", queue_helpers_js)
 
@@ -2722,6 +3321,195 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("function handleListSplitPointerDown(event)", page_js)
         self.assertIn("listSplitter.addEventListener(\"pointerdown\", handleListSplitPointerDown);", page_js)
         self.assertIn("setCookieValue(getListSplitCookieName(finishedDrag.mode), finishedDrag.latestRatio.toFixed(4));", page_js)
+
+    def test_floating_list_detail_eighty_percent_width_uses_top_bottom_side(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        width_start = page_js.index("function shouldUsePortraitFloatingListDetailWidth(sourceRect)")
+        width_block = page_js[
+            width_start:
+            page_js.index("function isPortraitFloatingListDetailPanel(panel)", width_start)
+        ]
+        split_mode_start = page_js.index("function getListDetailSplitModeForSide(side)")
+        split_mode_block = page_js[
+            split_mode_start:
+            page_js.index("function syncListDetailSideState()", split_mode_start)
+        ]
+
+        self.assertIn('getListDetailSplitModeForSide(getEffectiveListDetailSide()) === "portrait"', width_block)
+        self.assertNotIn('listLayout.classList.contains("is-portrait")', width_block)
+        self.assertIn("const FLOATING_LIST_DETAIL_PORTRAIT_WIDTH_RATIO = 0.8;", page_js)
+        self.assertIn('normalizedSide === "top" || normalizedSide === "bottom"', split_mode_block)
+        self.assertIn('return "portrait";', split_mode_block)
+        self.assertIn('normalizedSide === "left" || normalizedSide === "right"', split_mode_block)
+        self.assertIn('return "landscape";', split_mode_block)
+
+    def test_floating_list_detail_release_edge_keeps_outside_viewport_side(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        edge_start = page_js.index("function getFloatingListDetailReleaseEdgeSide(event)")
+        edge_block = page_js[
+            edge_start:
+            page_js.index("function applyFloatingListDetailFrameToLayoutSplit(panel, frame)", edge_start)
+        ]
+
+        self.assertIn("const threshold = FLOATING_LIST_DETAIL_RELEASE_EDGE_THRESHOLD;", edge_block)
+        self.assertIn("active: clientX <= viewportLeft + threshold", edge_block)
+        self.assertIn("active: clientX >= viewportRight - threshold", edge_block)
+        self.assertIn("active: clientY <= viewportTop + threshold", edge_block)
+        self.assertIn("active: clientY >= viewportBottom - threshold", edge_block)
+        self.assertIn("return edge.active;", edge_block)
+        self.assertNotIn("edge.distance >= 0 && edge.distance <=", edge_block)
+
+    def test_floating_list_detail_modal_state_persists_by_viewport_ratio(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        state_start = page_js.index("function persistFloatingListDetailPanelState(panel)")
+        state_block = page_js[
+            state_start:
+            page_js.index("function shouldUsePortraitFloatingListDetailWidth(sourceRect)", state_start)
+        ]
+        setup_start = page_js.index("function setupFloatingListDetailPanels()")
+        setup_block = page_js[
+            setup_start:
+            page_js.index("// preview/editor body", setup_start)
+        ]
+        restore_start = page_js.index("function restoreFloatingListDetailPanel(panel, options)")
+        restore_block = page_js[
+            restore_start:
+            page_js.index("function handleFloatingListDetailPointerMove(event)", restore_start)
+        ]
+        observer_start = page_js.index("function observeFloatingListDetailPanelVisibility(panel)")
+        observer_block = page_js[
+            observer_start:
+            page_js.index("function setupFloatingListDetailPanels()", observer_start)
+        ]
+
+        self.assertIn('const HANDRIVE_LIST_DETAIL_FLOATING_COOKIE_NAME = "handrive-list-detail-floating";', page_js)
+        self.assertIn("JSON.stringify(payload)", state_block)
+        self.assertIn("(rect.left - viewportRect.left) / viewportRect.width", state_block)
+        self.assertIn("(rect.top - viewportRect.top) / viewportRect.height", state_block)
+        self.assertIn("rect.width / viewportRect.width", state_block)
+        self.assertIn("rect.height / viewportRect.height", state_block)
+        self.assertIn("function getStoredFloatingListDetailFrame(panel, options)", state_block)
+        self.assertIn("if (!settings.allowAnyPanel && storedState.panel !== getFloatingListDetailPanelKind(panel))", state_block)
+        self.assertIn("storedState.width * viewportRect.width", state_block)
+        self.assertIn("storedState.height * viewportRect.height", state_block)
+        self.assertNotIn("payload.path", state_block)
+        self.assertNotIn("data.path", state_block)
+        self.assertIn("refreshFloatingListDetailPanelForViewport(previewPanel);", setup_block)
+        self.assertIn("refreshFloatingListDetailPanelForViewport(editorPanel);", setup_block)
+        self.assertNotIn("restoreStoredFloatingListDetailSession", page_js)
+        self.assertNotIn("resolveStoredFloatingListDetailEntry", page_js)
+        self.assertIn("const preservedStoredState = settings.preserveStoredState", restore_block)
+        self.assertIn("restoreFloatingListDetailPanel(panel, { preserveStoredState: true });", observer_block)
+        self.assertIn("setCookieValue(HANDRIVE_LIST_DETAIL_FLOATING_COOKIE_NAME, preservedStoredState);", restore_block)
+        self.assertIn("restoreStoredFloatingListDetailPanelIfPreferred(previewPanel, { allowAnyPanel: true });", page_js)
+        self.assertIn("restoreStoredFloatingListDetailPanelIfPreferred(editorPanel, { allowAnyPanel: true });", page_js)
+
+    def test_floating_list_detail_uses_common_modal_surface(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        floating_start = handrive_css.index(".handrive-list-preview.is-floating-detail,")
+        floating_block = handrive_css[
+            floating_start:
+            handrive_css.index(".handrive-list-preview.is-floating-detail.is-floating-detail-portrait", floating_start)
+        ]
+        floating_head_block = handrive_css[
+            handrive_css.index(".handrive-list-preview.is-floating-detail .handrive-list-preview-head {", floating_start):
+            handrive_css.index(".handrive-list-preview.is-floating-detail.is-floating-detail-dragging", floating_start)
+        ]
+
+        self.assertIn("border-radius: var(--site-popup-radius-common, var(--handrive-radius-lg));", floating_block)
+        self.assertIn("background: var(--site-modal-surface-bg, var(--handrive-modal-surface-bg, var(--handrive-bg)));", floating_block)
+        self.assertIn("-webkit-backdrop-filter: var(--site-modal-surface-filter", floating_block)
+        self.assertIn("backdrop-filter: var(--site-modal-surface-filter", floating_block)
+        self.assertIn("box-shadow: var(--site-popup-shadow-common", floating_block)
+        self.assertNotIn("--site-modal-exterior-dim-shadow", floating_block)
+        self.assertIn("color-mix(in srgb, var(--site-modal-surface-bg", floating_head_block)
+
+    def test_handrive_model_preview_assets_are_loaded_before_page_runtime(self):
+        base_dir = Path(settings.BASE_DIR)
+        assets_template = (base_dir / "templates/handrive/_assets_script.html").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        model_js = (base_dir / "static/js/handrive/model_preview.js").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        self.assertIn('"three":"{% static_v \'vendor/three/0.164.1/build/three.module.js\' %}"', assets_template)
+        self.assertLess(
+            assets_template.index("js/handrive/model_preview.js"),
+            assets_template.index("js/handrive/page.js"),
+        )
+        self.assertIn("data-three-stl-loader-url", (base_dir / "templates/handrive/list.html").read_text(encoding="utf-8"))
+        self.assertIn("data-three-obj-loader-url", (base_dir / "templates/handrive/view.html").read_text(encoding="utf-8"))
+        self.assertIn("import(config.threeModuleUrl)", model_js)
+        self.assertIn("import(config.stlLoaderUrl)", model_js)
+        self.assertIn("import(config.objLoaderUrl)", model_js)
+        self.assertIn("hydrateModelPreviews(previewContent);", page_js)
+        self.assertIn("destroyModelPreviews(previewContent);", page_js)
+        self.assertIn(".handrive-list-preview-content.handrive-media-3d", handrive_css)
+        self.assertIn(".handrive-model-preview-viewport canvas", handrive_css)
+
+    def test_floating_list_detail_header_hold_shows_release_edge_shadow(self):
+        base_dir = Path(settings.BASE_DIR)
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        shadow_start = handrive_css.index("body.handrive-list-page::before")
+        shadow_block = handrive_css[
+            shadow_start:
+            handrive_css.index("body.handrive-list-page.handrive-list-detail-holding::before,", shadow_start)
+        ]
+        active_shadow_start = handrive_css.index("body.handrive-list-page.handrive-list-detail-holding::before,")
+        active_shadow_block = handrive_css[
+            active_shadow_start:
+            handrive_css.index("body.handrive-page.theme-dark.handrive-list-page::before", active_shadow_start)
+        ]
+        dark_shadow_start = handrive_css.index("body.handrive-page.theme-dark.handrive-list-page::before")
+        dark_shadow_block = handrive_css[
+            dark_shadow_start:
+            handrive_css.index("body.handrive-list-detail-resizing", dark_shadow_start)
+        ]
+
+        self.assertIn("--handrive-list-detail-release-zone-size: 30px;", shadow_block)
+        self.assertIn("--handrive-list-detail-release-zone-shadow: rgba(0, 0, 0, 0.32);", shadow_block)
+        self.assertIn("--handrive-list-detail-release-zone-soft: rgba(0, 0, 0, 0.1);", shadow_block)
+        self.assertIn("--handrive-list-detail-release-zone-shadow: rgba(255, 255, 255, 0.34);", dark_shadow_block)
+        self.assertIn("--handrive-list-detail-release-zone-soft: rgba(255, 255, 255, 0.12);", dark_shadow_block)
+        self.assertIn("pointer-events: none;", shadow_block)
+        self.assertIn("z-index: 1030;", shadow_block)
+        self.assertIn("opacity: 0;", shadow_block)
+        self.assertIn("transition: opacity 0.18s ease;", shadow_block)
+        self.assertIn("will-change: opacity;", shadow_block)
+        self.assertIn("opacity: 1;", active_shadow_block)
+        self.assertIn("background: transparent;", shadow_block)
+        self.assertIn("box-shadow:", shadow_block)
+        self.assertIn("inset 0 0 0 1px var(--handrive-list-detail-release-zone-soft)", shadow_block)
+        self.assertIn("inset 0 0 calc(var(--handrive-list-detail-release-zone-size) * 0.55)", shadow_block)
+        self.assertIn("inset 0 0 calc(var(--handrive-list-detail-release-zone-size) * 1.05)", shadow_block)
+        self.assertNotIn("radial-gradient(", shadow_block)
+        self.assertNotIn("linear-gradient(", shadow_block)
+        self.assertIn('document.body.classList.add("handrive-list-detail-holding");', page_js)
+        self.assertIn('document.body.classList.remove("handrive-list-detail-holding");', page_js)
+
+    def test_list_preview_close_button_is_available_in_normal_mode(self):
+        base_dir = Path(settings.BASE_DIR)
+        list_template = (base_dir / "templates/handrive/list.html").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        close_start = list_template.index('id="handrive-list-preview-close-btn"')
+        close_block = list_template[
+            close_start:
+            list_template.index("</button>", close_start)
+        ]
+        setup_start = page_js.index("function setupFloatingListDetailPanels()")
+        setup_block = page_js[
+            setup_start:
+            page_js.index("// preview/editor body", setup_start)
+        ]
+
+        self.assertIn('class="handrive-icon-btn handrive-list-detail-close-btn"', close_block)
+        self.assertIn("data-handrive-floating-detail-close", close_block)
+        self.assertIn('data-handrive-no-drag="true"', close_block)
+        self.assertIsNone(re.search(r"\shidden(?:\s|>|$)", close_block))
+        self.assertIn("function bindFloatingListDetailCloseButton(closeButton)", page_js)
+        self.assertIn("ensureFloatingListDetailCloseButton(previewPanel);", setup_block)
+        self.assertNotIn("function removeFloatingListDetailCloseButton", page_js)
+        self.assertNotIn("removeFloatingListDetailCloseButton(panel);", page_js)
 
     def test_handrive_zoom_persistence_is_text_code_extension_scoped(self):
         base_dir = Path(settings.BASE_DIR)
@@ -3106,8 +3894,11 @@ class HandriveStyleSourceTests(TestCase):
 
         self.assertIn("flex: 1 1 auto;", editor_surface_block)
         self.assertIn("min-height: 0;", editor_surface_block)
+        self.assertIn("border-radius: 0;", editor_surface_block)
         self.assertNotIn("border:", editor_surface_block)
         self.assertNotIn("background:", editor_surface_block)
+        self.assertIn("#handrive-list-editor-surface > .handrive-editor-highlight", handrive_css)
+        self.assertIn("#handrive-list-editor-surface > #handrive-list-content-input", handrive_css)
         self.assertIn("--handrive-list-editor-head-pad-bottom: 10px;", handrive_css)
         self.assertIn("var(--handrive-list-editor-head-pad-bottom)", editor_head_block)
         self.assertNotIn(".handrive-list-editor-body .handrive-editor-surface:focus-within", handrive_css)
@@ -3122,6 +3913,47 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("--site-loading-overlay-bg: var(--handrive-bg);", editor_body_block)
         self.assertIn(".site-loading-host.is-loading > :not(.site-loading-overlay)", common_css)
         self.assertNotIn(".handrive-list-editor-body-loading-spinner {", handrive_css)
+
+    def test_list_pdf_preview_fills_preview_body_without_outer_scroll(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        preview_py = (Path(settings.BASE_DIR) / "main/handrive/preview.py").read_text(encoding="utf-8")
+        pdf_fill_start = handrive_css.index(".handrive-list-preview-content.handrive-media:has(.handrive-media-pdf-wrap),")
+        pdf_fill_block = handrive_css[
+            pdf_fill_start:
+            handrive_css.index("/* 가로모드 미리보기", pdf_fill_start)
+        ]
+        pdf_element_block = handrive_css[
+            handrive_css.index(".handrive-media-pdf-element {"):
+            handrive_css.index("body.handrive-page.theme-dark .handrive-media-pdf-wrap")
+        ]
+        dark_pdf_element_block = handrive_css[
+            handrive_css.index("body.handrive-page.theme-dark .handrive-media-pdf-element {"):
+            handrive_css.index(".handrive-media-audio-element {")
+        ]
+
+        self.assertIn(".handrive-list-preview-content.handrive-media-pdf,", pdf_fill_block)
+        self.assertIn(".handrive-list-preview-content.handrive-office:has(.handrive-media-pdf-wrap)", pdf_fill_block)
+        self.assertIn("position: relative;", pdf_fill_block)
+        self.assertIn("min-height: 0;", pdf_fill_block)
+        self.assertIn("overflow: hidden;", pdf_fill_block)
+        self.assertIn("position: absolute;", pdf_fill_block)
+        self.assertIn("inset: 0;", pdf_fill_block)
+        self.assertIn("display: block;", pdf_fill_block)
+        self.assertIn("width: 100%;", pdf_fill_block)
+        self.assertIn("height: 100%;", pdf_fill_block)
+        self.assertIn("--handrive-media-pdf-filter: none;", pdf_element_block)
+        self.assertIn("filter: var(--handrive-media-pdf-filter);", pdf_element_block)
+        self.assertIn("background: #fff;", dark_pdf_element_block)
+        self.assertIn("color-scheme: light;", dark_pdf_element_block)
+        self.assertNotIn("invert(1)", dark_pdf_element_block)
+        self.assertNotIn(':not([data-handrive-pdf-viewer="1"]):not(.handrive-google-docs-preview-frame)', dark_pdf_element_block)
+        self.assertIn("def build_handrive_pdf_viewer_url", preview_py)
+        self.assertIn('data-handrive-pdf-viewer="1"', preview_py)
+        self.assertIn('data-handrive-pdf-source=', preview_py)
+        self.assertIn('pdfFrame.getAttribute("data-handrive-pdf-source")', page_js)
+        self.assertIn("function syncHandrivePdfViewerFrameTheme(frame)", page_js)
+        self.assertIn('window.addEventListener("hanplanet:themechange"', page_js)
 
     def test_current_dir_list_search_form_uses_thirty_eight_pixel_height(self):
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
@@ -3224,6 +4056,37 @@ class HandriveStyleSourceTests(TestCase):
                     self.assertIn("height: 20px;", style_icon_block)
                     self.assertIn("min-width: 20px;", style_icon_block)
 
+    def test_pdf_editor_draw_tool_uses_pencil_preview_and_smoothing(self):
+        base_dir = Path(settings.BASE_DIR)
+        media_template = (base_dir / "templates/handrive/_media_editor_surfaces.html").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        pdf_editor_js = (base_dir / "static/js/handrive/pdf_editor.js").read_text(encoding="utf-8")
+        handrive_views = (base_dir / "main/handrive_views.py").read_text(encoding="utf-8")
+
+        self.assertIn('data-pdf-tool="draw" title="서명/선 그리기"', media_template)
+        self.assertIn("M3 17.25V21h3.75L17.81 9.94", media_template)
+        self.assertIn('id="pe-line-width-preview"', media_template)
+        self.assertIn("--pe-line-preview-width: 2.5px;", handrive_css)
+        self.assertIn(".pe-style-icon--line::before", handrive_css)
+        self.assertIn("height: var(--pe-line-preview-width);", handrive_css)
+        self.assertIn(".pe-page-list.is-pdf-draw-mode .pe-draw-layer", handrive_css)
+        self.assertIn("M3 17.25V21h3.75L17.81 9.94", handrive_css)
+        self.assertIn("cursor: url(", handrive_css)
+        self.assertIn("function setActivePdfTool(tool)", pdf_editor_js)
+        self.assertIn('pageList.classList.toggle("is-pdf-draw-mode", state.activeTool === "draw");', pdf_editor_js)
+        self.assertIn('setActivePdfTool("draw");', pdf_editor_js)
+        self.assertIn('setActivePdfTool(state.activeTool === nextTool ? "" : nextTool);', pdf_editor_js)
+        self.assertIn('surface.addEventListener("contextmenu"', pdf_editor_js)
+        self.assertIn("deactivateActivePdfTool()", pdf_editor_js)
+        self.assertIn('if (state.activeTool !== "draw")', pdf_editor_js)
+        self.assertIn("function syncLineWidthControls()", pdf_editor_js)
+        self.assertIn("lineWidthPreview.style.setProperty(\"--pe-line-preview-width\", formatLineWidth(width));", pdf_editor_js)
+        self.assertIn("ctx.quadraticCurveTo", pdf_editor_js)
+        self.assertIn("event.getCoalescedEvents", pdf_editor_js)
+        self.assertIn("function appendDrawingPoint(point)", pdf_editor_js)
+        self.assertIn("def _smooth_pdf_editor_draw_points", handrive_views)
+        self.assertIn("page.draw_polyline(_smooth_pdf_editor_draw_points(points)", handrive_views)
+
     def test_media_editor_text_style_controls_share_common_template(self):
         base_dir = Path(settings.BASE_DIR)
         media_template = (base_dir / "templates/handrive/_media_editor_surfaces.html").read_text(encoding="utf-8")
@@ -3250,11 +4113,13 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn(system_font_css, video_editor_js)
 
         self.assertIn("--handrive-editor-text-style-height: 30px;", common_text_style_block)
+        self.assertIn("width: 150px;", common_text_style_block)
         self.assertIn("border: 1px solid var(--handrive-editor-text-style-border);", common_text_style_block)
         self.assertIn("background: var(--handrive-editor-text-style-bg);", common_text_style_block)
         self.assertIn(".handrive-editor-text-style-field:focus-within", common_text_style_block)
         self.assertIn(".handrive-editor-text-style-icon {", common_text_style_block)
         self.assertIn(".handrive-editor-text-style-field > .handrive-editor-text-style-font-family", common_text_style_block)
+        self.assertIn("flex: 1 1 auto;", common_text_style_block)
         self.assertIn(".handrive-editor-text-style-field > .handrive-editor-text-style-font-size", common_text_style_block)
         self.assertIn(".handrive-editor-text-style-field > input.handrive-editor-text-style-color", common_text_style_block)
         self.assertIn(".ie-font-family-select.handrive-editor-text-style-font-family", common_text_style_block)
@@ -3421,6 +4286,52 @@ class HandriveStyleSourceTests(TestCase):
         self.assertNotIn("padding: 10px;", code_pre_block)
         self.assertIn("background: transparent;", list_preview_pre_block)
         self.assertIn("padding: 0;", list_preview_pre_block)
+        self.assertIn("overflow: visible;", list_preview_pre_block)
+        self.assertNotIn("overflow-x: auto;", list_preview_pre_block)
+        self.assertNotIn("overflow-y: visible;", list_preview_pre_block)
+        self.assertIn(".handrive-list-preview-content.handrive-plain-text pre", list_preview_pre_block)
+
+    def test_list_markdown_preview_scrolls_from_preview_body(self):
+        base_dir = Path(settings.BASE_DIR)
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+
+        body_scroll_start = handrive_css.index(".handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-json)")
+        body_scroll_end = handrive_css.index(".handrive-list-preview-body:has(.handrive-media-pdf-element) .handrive-list-preview-content", body_scroll_start)
+        body_scroll_block = handrive_css[body_scroll_start:body_scroll_end]
+        preview_overflow_start = handrive_css.index(".handrive-list-preview-content.handrive-json,")
+        preview_overflow_end = handrive_css.index(".handrive-list-preview-content.handrive-json pre,", preview_overflow_start)
+        preview_overflow_block = handrive_css[preview_overflow_start:preview_overflow_end]
+        markdown_pre_start = handrive_css.index(".handrive-list-preview-content.handrive-markdown pre {")
+        markdown_pre_end = handrive_css.index(".handrive-list-preview-content.handrive-json pre,", markdown_pre_start)
+        markdown_pre_block = handrive_css[markdown_pre_start:markdown_pre_end]
+
+        self.assertIn(".handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-json)", body_scroll_block)
+        self.assertIn(".handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-css)", body_scroll_block)
+        self.assertIn(".handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-js)", body_scroll_block)
+        self.assertIn(".handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-py)", body_scroll_block)
+        self.assertIn(".handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-sql)", body_scroll_block)
+        self.assertIn(".handrive-list-preview-body:has(> .handrive-list-preview-content.ui-markdown)", body_scroll_block)
+        self.assertIn(".handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-markdown)", body_scroll_block)
+        self.assertIn(".handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-plain-text)", body_scroll_block)
+        self.assertIn("overflow: auto;", body_scroll_block)
+        self.assertNotIn("overflow-x:", body_scroll_block)
+        self.assertNotIn("overflow-y:", body_scroll_block)
+        self.assertIn(".handrive-list-preview-content.ui-markdown", preview_overflow_block)
+        self.assertIn(".handrive-list-preview-content.handrive-markdown", preview_overflow_block)
+        self.assertIn("background: transparent;", preview_overflow_block)
+        self.assertIn("overflow: visible;", preview_overflow_block)
+        self.assertIn(".handrive-list-preview-content.ui-markdown > .ui-markdown", handrive_css)
+        self.assertIn(".handrive-list-preview-content.ui-markdown > .handrive-markdown", handrive_css)
+        self.assertIn("overflow: visible;", markdown_pre_block)
+        self.assertNotIn("overflow-x: auto;", markdown_pre_block)
+        self.assertNotIn("overflow-y: visible;", markdown_pre_block)
+        self.assertIn('const previewBody = previewPanel ? previewPanel.querySelector(".handrive-list-preview-body") : null;', page_js)
+        self.assertIn("function handleListPreviewBodyWheel(event)", page_js)
+        self.assertIn("function canScrollListPreviewBodyVertically(element, deltaY)", page_js)
+        self.assertIn("previewBody.addEventListener(\"wheel\", handleListPreviewBodyWheel, { passive: false });", page_js)
+        self.assertIn("event.shiftKey", page_js)
+        self.assertIn("previewBody.scrollTop += deltaY;", page_js)
 
     def test_spreadsheet_preview_has_portrait_height_fallback(self):
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
@@ -3915,6 +4826,12 @@ class PortfolioPerUserRoutingTests(TestCase):
         self.assertContains(response, 'title="프로필 사진 변경"', html=False)
         self.assertNotContains(response, 'aria-label="프로필 사진 변경\n', html=False)
         self.assertNotContains(response, 'title="프로필 사진 변경\n', html=False)
+        self.assertContains(response, 'data-auth-account-weather', html=False)
+        self.assertContains(response, 'data-weather-url="/ko/api/account-weather/"', html=False)
+        self.assertContains(response, 'data-weather-location-search-url="/ko/api/account-weather/locations/"', html=False)
+        self.assertContains(response, 'data-auth-account-weather-am-icon', html=False)
+        self.assertContains(response, 'data-auth-account-weather-pm-icon', html=False)
+        self.assertContains(response, 'data-auth-account-weather-settings-toggle', html=False)
 
     def test_non_root_page_does_not_render_root_account_widget(self):
         self.client.login(username="GuestUser", password="pw12345")
@@ -3923,6 +4840,7 @@ class PortfolioPerUserRoutingTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "data-auth-account", html=False)
+        self.assertNotContains(response, "data-auth-account-weather", html=False)
 
     def test_empty_portfolio_shows_dummy_data(self):
         empty_user = self.user_model.objects.create_user(username="EmptyUser", password="pw12345")
@@ -4059,9 +4977,317 @@ class UserPreferenceApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        profile = UserProfile.objects.get(user=self.user)
+        profile, _ = UserProfile.objects.get_or_create(user=self.user)
         self.assertEqual(profile.preferred_ui_lang, "en")
         self.assertEqual(profile.preferred_root_search_engine, "gpt")
+
+
+class AccountWeatherApiTests(TestCase):
+    class FakeWeatherResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.payload
+
+    def setUp(self):
+        cache.clear()
+        self.user = get_user_model().objects.create_user(username="weather_user", password="pw123456")
+        self.client.login(username="weather_user", password="pw123456")
+
+    def forecast_response(self, utc_offset_seconds=0, hourly_codes=None, daily_codes=None):
+        hourly_codes = hourly_codes or [0, 1, 2, 3, 61, 61, 63, 65, 80, 0, 1, 2, 3, 61, 63, 65, 71, 73, 75, 95, 0, 1, 2, 3]
+        daily_codes = daily_codes or [61, 0, 2, 3, 61, 71, 95]
+        daily_dates = [
+            "2026-06-25",
+            "2026-06-26",
+            "2026-06-27",
+            "2026-06-28",
+            "2026-06-29",
+            "2026-06-30",
+            "2026-07-01",
+        ]
+        return self.FakeWeatherResponse(
+            {
+                "utc_offset_seconds": utc_offset_seconds,
+                "hourly": {
+                    "time": [f"{day}T{hour:02d}:00" for day in daily_dates for hour in range(24)],
+                    "weather_code": hourly_codes * len(daily_dates),
+                    "temperature_2m": [
+                        21.1 + hour * 0.4 + day_index
+                        for day_index, _day in enumerate(daily_dates)
+                        for hour in range(24)
+                    ],
+                    "relative_humidity_2m": [
+                        70 + day_index
+                        for day_index, _day in enumerate(daily_dates)
+                        for _hour in range(24)
+                    ],
+                    "wind_speed_10m": [
+                        2.0 + day_index * 0.1
+                        for day_index, _day in enumerate(daily_dates)
+                        for _hour in range(24)
+                    ],
+                },
+                "daily": {
+                    "time": daily_dates,
+                    "weather_code": daily_codes,
+                    "temperature_2m_min": [21.1, 22.2, 23.1, 24.0, 21.7, 20.2, 19.5],
+                    "temperature_2m_max": [30.4, 31.2, 32.4, 29.7, 28.1, 26.4, 25.3],
+                    "precipitation_probability_max": [60, 10, 20, 30, 55, 45, 75],
+                },
+            }
+        )
+
+    @mock.patch("main.views.timezone.now", return_value=timezone.make_aware(datetime(2026, 6, 24, 23, 30)))
+    @mock.patch("main.views.httpx.get")
+    def test_account_weather_patch_saves_manual_location_and_returns_hourly_and_daily_forecast(self, mocked_get, mocked_now):
+        mocked_get.side_effect = [
+            self.FakeWeatherResponse(
+                {
+                    "results": [
+                        {
+                            "name": "Seoul",
+                            "country": "South Korea",
+                            "latitude": 37.5665,
+                            "longitude": 126.9780,
+                        }
+                    ]
+                }
+            ),
+            self.forecast_response(),
+        ]
+
+        response = self.client.patch(
+            "/ko/api/account-weather/",
+            data=json.dumps({"country": "대한민국", "city": "서울"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["location"]["source"], "manual")
+        self.assertEqual(payload["day"]["weekday"], "목요일")
+        self.assertEqual(payload["day"]["weekday_short"], "목")
+        self.assertEqual(payload["day"]["temperature_min"], 21)
+        self.assertEqual(payload["day"]["temperature_max"], 30)
+        self.assertEqual(payload["day"]["icon_type"], "rain")
+        self.assertEqual(payload["day"]["precipitation_probability_label"], "60%")
+        self.assertEqual(payload["day"]["humidity_label"], "70%")
+        self.assertEqual(payload["day"]["wind_speed_label"], "2m/s")
+        self.assertEqual(
+            payload["day"]["detail_items"],
+            [
+                {"key": "precipitation", "label": "강수확률", "value": 60, "value_label": "60%"},
+                {"key": "humidity", "label": "습도", "value": 70, "value_label": "70%"},
+                {"key": "wind_speed", "label": "풍속", "value": 2.0, "value_label": "2m/s"},
+            ],
+        )
+        self.assertEqual(len(payload["hourly_forecast"]), 24)
+        self.assertEqual(payload["hourly_forecast"][0]["label"], "00시")
+        self.assertEqual(payload["hourly_forecast"][0]["icon_type"], "clear")
+        self.assertEqual(payload["hourly_forecast"][1]["label"], "01시")
+        self.assertEqual(payload["periods"], payload["hourly_forecast"])
+        self.assertEqual(len(payload["daily_forecast"]), 7)
+        self.assertEqual(payload["daily_forecast"][0]["weekday"], "목요일")
+        self.assertEqual(payload["daily_forecast"][0]["temperature_range_label"], "21° / 30°")
+        self.assertEqual(payload["daily_forecast"][0]["precipitation_probability_label"], "60%")
+        self.assertEqual(payload["daily_forecast"][1]["humidity_label"], "71%")
+        self.assertEqual(payload["daily_forecast"][1]["wind_speed_label"], "2.1m/s")
+        self.assertEqual(payload["hourly_forecast_by_date"]["2026-06-26"][0]["temperature_label"], "22°")
+        self.assertIn("00시 맑음 21°", payload["summary"])
+        self.assertNotIn("오전", payload["summary"])
+        self.assertNotIn("오후", payload["summary"])
+        profile = UserProfile.objects.get(user=self.user)
+        self.assertEqual(profile.weather_country, "대한민국")
+        self.assertEqual(profile.weather_city, "서울")
+        self.assertEqual(profile.weather_location_label, "Seoul · South Korea")
+        self.assertAlmostEqual(profile.weather_latitude, 37.5665)
+        self.assertAlmostEqual(profile.weather_longitude, 126.9780)
+        self.assertEqual(profile.weather_location_source, "manual")
+        self.assertEqual(mocked_get.call_args_list[0].args[0], "https://geocoding-api.open-meteo.com/v1/search")
+        self.assertEqual(mocked_get.call_args_list[1].args[0], "https://api.open-meteo.com/v1/forecast")
+        self.assertEqual(mocked_get.call_args_list[1].kwargs["params"]["forecast_days"], "7")
+        self.assertEqual(mocked_get.call_args_list[1].kwargs["params"]["hourly"], "temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m")
+        self.assertIn("precipitation_probability_max", mocked_get.call_args_list[1].kwargs["params"]["daily"])
+        self.assertEqual(mocked_get.call_args_list[1].kwargs["params"]["wind_speed_unit"], "ms")
+
+    @mock.patch("main.views.timezone.now", return_value=timezone.make_aware(datetime(2026, 6, 25, 13, 30)))
+    @mock.patch("main.views.httpx.get")
+    def test_account_weather_today_hourly_forecast_starts_at_current_hour(self, mocked_get, mocked_now):
+        profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        profile.weather_country = "대한민국"
+        profile.weather_city = "서울"
+        profile.weather_location_label = "서울 · 대한민국"
+        profile.weather_latitude = 37.5665
+        profile.weather_longitude = 126.9780
+        profile.weather_location_source = "manual"
+        profile.save(
+            update_fields=[
+                "weather_country",
+                "weather_city",
+                "weather_location_label",
+                "weather_latitude",
+                "weather_longitude",
+                "weather_location_source",
+            ]
+        )
+        mocked_get.return_value = self.forecast_response(utc_offset_seconds=32400)
+
+        response = self.client.get("/ko/api/account-weather/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["current_forecast_date"], "2026-06-25")
+        self.assertEqual(payload["current_forecast_hour"], 13)
+        self.assertEqual(len(payload["hourly_forecast"]), 24)
+        self.assertEqual(payload["hourly_forecast"][0]["time"], "2026-06-25T13:00")
+        self.assertEqual(payload["hourly_forecast"][0]["label"], "13시")
+        self.assertEqual(payload["hourly_forecast"][10]["time"], "2026-06-25T23:00")
+        self.assertEqual(payload["hourly_forecast"][11]["time"], "2026-06-26T00:00")
+        self.assertEqual(payload["hourly_forecast"][-1]["time"], "2026-06-26T12:00")
+        self.assertEqual(payload["periods"], payload["hourly_forecast"])
+        self.assertEqual(len(payload["hourly_forecast_by_date"]["2026-06-25"]), 24)
+        self.assertEqual(payload["hourly_forecast_by_date"]["2026-06-25"][0]["time"], "2026-06-25T00:00")
+        self.assertIn("13시", payload["summary"])
+
+    @mock.patch("main.views.timezone.now", return_value=timezone.make_aware(datetime(2026, 6, 25, 9, 0)))
+    @mock.patch("main.views.httpx.get")
+    def test_account_weather_daily_hail_thunderstorm_labels_are_softened(self, mocked_get, mocked_now):
+        profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        profile.weather_country = "대한민국"
+        profile.weather_city = "서울"
+        profile.weather_location_label = "서울 · 대한민국"
+        profile.weather_latitude = 37.5665
+        profile.weather_longitude = 126.9780
+        profile.weather_location_source = "manual"
+        profile.save(
+            update_fields=[
+                "weather_country",
+                "weather_city",
+                "weather_location_label",
+                "weather_latitude",
+                "weather_longitude",
+                "weather_location_source",
+            ]
+        )
+        mocked_get.return_value = self.forecast_response(
+            daily_codes=[96, 0, 2, 3, 96, 71, 99],
+            hourly_codes=[96, 99, 2, 3, 61, 61, 63, 65, 80, 0, 1, 2, 3, 61, 63, 65, 71, 73, 75, 95, 0, 1, 2, 3],
+        )
+
+        response = self.client.get("/ko/api/account-weather/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["day"]["weather_code"], 95)
+        self.assertEqual(payload["day"]["raw_weather_code"], 96)
+        self.assertEqual(payload["day"]["weather_label"], "뇌우")
+        self.assertEqual(payload["day"]["icon_type"], "storm")
+        self.assertEqual(payload["daily_forecast"][4]["weather_code"], 95)
+        self.assertEqual(payload["daily_forecast"][4]["raw_weather_code"], 96)
+        self.assertEqual(payload["daily_forecast"][4]["weather_label"], "뇌우")
+        self.assertEqual(payload["daily_forecast"][6]["weather_code"], 95)
+        self.assertEqual(payload["daily_forecast"][6]["raw_weather_code"], 99)
+        self.assertEqual(payload["daily_forecast"][6]["weather_label"], "뇌우")
+        self.assertNotIn("우박", payload["day"]["weather_label"])
+        self.assertNotIn("우박", payload["daily_forecast"][4]["weather_label"])
+        self.assertNotIn("우박", payload["daily_forecast"][6]["weather_label"])
+        self.assertEqual(payload["hourly_forecast_by_date"]["2026-06-25"][0]["weather_label"], "우박 뇌우")
+        self.assertEqual(payload["hourly_forecast_by_date"]["2026-06-25"][1]["weather_label"], "강한 우박 뇌우")
+
+    @mock.patch("main.views.httpx.get")
+    def test_account_weather_locations_search_returns_geocoder_granularity(self, mocked_get):
+        mocked_get.return_value = self.FakeWeatherResponse(
+            {
+                "results": [
+                    {
+                        "name": "Gangnam-gu",
+                        "admin1": "Seoul",
+                        "country": "South Korea",
+                        "latitude": 37.5172,
+                        "longitude": 127.0473,
+                    }
+                ]
+            }
+        )
+
+        response = self.client.get("/ko/api/account-weather/locations/", data={"q": "강남구"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["results"][0]["city"], "Gangnam-gu")
+        self.assertEqual(payload["results"][0]["country"], "South Korea")
+        self.assertEqual(payload["results"][0]["label"], "Gangnam-gu · Seoul · South Korea")
+        self.assertAlmostEqual(payload["results"][0]["latitude"], 37.5172)
+        self.assertAlmostEqual(payload["results"][0]["longitude"], 127.0473)
+        self.assertEqual(mocked_get.call_args.kwargs["params"]["count"], "8")
+
+    @mock.patch("main.views.timezone.now", return_value=timezone.make_aware(datetime(2026, 6, 24, 23, 30)))
+    @mock.patch("main.views.httpx.get")
+    def test_account_weather_patch_saves_selected_coordinate_location_without_geocoding(self, mocked_get, mocked_now):
+        mocked_get.return_value = self.forecast_response()
+
+        response = self.client.patch(
+            "/ko/api/account-weather/",
+            data=json.dumps(
+                {
+                    "label": "강남구 · 서울 · 대한민국",
+                    "country": "South Korea",
+                    "city": "Gangnam-gu",
+                    "latitude": 37.5172,
+                    "longitude": 127.0473,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["location_name"], "강남구 · 서울 · 대한민국")
+        profile = UserProfile.objects.get(user=self.user)
+        self.assertEqual(profile.weather_location_label, "강남구 · 서울 · 대한민국")
+        self.assertEqual(profile.weather_country, "South Korea")
+        self.assertEqual(profile.weather_city, "Gangnam-gu")
+        self.assertAlmostEqual(profile.weather_latitude, 37.5172)
+        self.assertAlmostEqual(profile.weather_longitude, 127.0473)
+        self.assertEqual(mocked_get.call_args.args[0], "https://api.open-meteo.com/v1/forecast")
+        self.assertEqual(mocked_get.call_count, 1)
+
+    @mock.patch("main.views.timezone.now", return_value=timezone.make_aware(datetime(2026, 6, 24, 23, 30)))
+    @mock.patch("main.views.httpx.get")
+    def test_account_weather_get_uses_public_request_ip_without_saved_location(self, mocked_get, mocked_now):
+        mocked_get.side_effect = [
+            self.FakeWeatherResponse(
+                {
+                    "country_name": "United States",
+                    "city": "Mountain View",
+                    "latitude": 37.386,
+                    "longitude": -122.084,
+                }
+            ),
+            self.forecast_response(),
+        ]
+
+        response = self.client.get("/ko/api/account-weather/", HTTP_CF_CONNECTING_IP="8.8.8.8")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["location"]["source"], "ip")
+        self.assertEqual(payload["location"]["city"], "Mountain View")
+        self.assertEqual(payload["day"]["temperature_range_label"], "21° / 30°")
+        self.assertIn("00시 맑음 21°", payload["summary"])
+        self.assertEqual(len(payload["daily_forecast"]), 7)
+        self.assertEqual(mocked_get.call_args_list[0].args[0], "https://ipapi.co/8.8.8.8/json/")
+        self.assertEqual(mocked_get.call_args_list[1].args[0], "https://api.open-meteo.com/v1/forecast")
 
 
 class SiteZIndexLayerTests(TestCase):
@@ -4147,6 +5373,76 @@ class SiteZIndexLayerTests(TestCase):
         self.assertIn("z-index: var(--site-z-modal, 1400);", account_widget_css)
         self.assertIn(".ui-toolbar-wrap:has(.root-auth-modal:not([hidden]))", handrive_css)
         self.assertIn(".ui-auth-account-floating:has(.root-auth-modal:not([hidden]))", handrive_css)
+
+    def test_root_weather_moves_left_and_account_uses_fixed_controls_slot(self):
+        base_dir = Path(settings.BASE_DIR)
+        common_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
+        root_template = (base_dir / "templates/none.html").read_text(encoding="utf-8")
+        root_search_js = (Path(settings.BASE_DIR) / "static/js/pages/none/root_search.js").read_text(encoding="utf-8")
+        root_controls_block = common_css[
+            common_css.index(".root-shell-controls-fixed {"):
+            common_css.index(".root-shell-weather-fixed {")
+        ]
+        root_weather_host_block = common_css[
+            common_css.index(".root-shell-weather-fixed {"):
+            common_css.index(".root-shell-controls-fixed:has(.ui-auth-account-menu:not([hidden]))")
+        ]
+        root_account_host_block = common_css[
+            common_css.index(".root-shell-controls-fixed [data-root-nav-account-host] {"):
+            common_css.index(".root-shell-controls-fixed .ui-controls-stack {")
+        ]
+        root_controls_stack_block = common_css[
+            common_css.index(".root-shell-controls-fixed .ui-controls-stack {"):
+            common_css.index(".root-shell-controls-fixed .ui-auth-account-floating {")
+        ]
+        root_account_floating_block = common_css[
+            common_css.index(".root-shell-controls-fixed .ui-auth-account-floating {"):
+            common_css.index(".root-shell-weather-fixed .ui-auth-account-weather {")
+        ]
+        root_account_weather_block = common_css[
+            common_css.index(".root-shell-weather-fixed .ui-auth-account-weather {"):
+            common_css.index(".root-shell-weather-fixed .ui-auth-account-weather-popup {")
+        ]
+        root_account_weather_popup_block = common_css[
+            common_css.index(".root-shell-weather-fixed .ui-auth-account-weather-popup {"):
+            common_css.index(".root-shell-controls-fixed .ui-auth-account-trigger {")
+        ]
+        root_account_trigger_order_block = common_css[
+            common_css.index(".root-shell-controls-fixed .ui-auth-account-trigger {"):
+            common_css.index(".root-shell-controls-fixed .ui-auth-account-trigger {", common_css.index(".root-shell-controls-fixed .ui-auth-account-trigger {") + 1)
+        ]
+
+        self.assertIn('class="root-shell-weather-fixed" data-root-weather-host', root_template)
+        self.assertIn("display: grid;", root_controls_block)
+        self.assertIn("grid-template-areas:", root_controls_block)
+        self.assertIn('"account controls"', root_controls_block)
+        self.assertNotIn('"weather controls"', root_controls_block)
+        self.assertNotIn('"account account"', root_controls_block)
+        self.assertIn("align-items: center;", root_controls_block)
+        self.assertIn("gap: 6px 3px;", root_controls_block)
+        self.assertIn("position: fixed;", root_weather_host_block)
+        self.assertIn("top: 14px;", root_weather_host_block)
+        self.assertIn("left: 16px;", root_weather_host_block)
+        self.assertIn("justify-content: flex-start;", root_weather_host_block)
+        self.assertIn("root-shell-weather-fixed:has(.ui-auth-account-weather-popup:not([hidden]))", common_css)
+        self.assertIn("const weatherHost = document.querySelector('[data-root-weather-host]');", root_search_js)
+        self.assertIn("|| (weatherHost ? weatherHost.querySelector('.ui-auth-account-weather') : null);", root_search_js)
+        self.assertIn("weatherHost.appendChild(accountWeather);", root_search_js)
+        self.assertNotIn("controlsHost.appendChild(accountWeather);", root_search_js)
+        self.assertIn("grid-area: account;", root_account_host_block)
+        self.assertIn("align-self: end;", root_account_host_block)
+        self.assertIn("justify-self: end;", root_account_host_block)
+        self.assertIn("order: 1;", root_account_host_block)
+        self.assertIn("grid-area: controls;", root_controls_stack_block)
+        self.assertIn("align-self: center;", root_controls_stack_block)
+        self.assertIn("order: 2;", root_controls_stack_block)
+        self.assertIn("flex-direction: column;", root_account_floating_block)
+        self.assertIn("align-items: flex-end;", root_account_floating_block)
+        self.assertIn("justify-content: flex-start;", root_account_weather_block)
+        self.assertIn("border-radius: var(--btn-template-radius, 8px);", root_account_weather_block)
+        self.assertIn("right: auto;", root_account_weather_popup_block)
+        self.assertIn("left: 0;", root_account_weather_popup_block)
+        self.assertIn("order: 1;", root_account_trigger_order_block)
 
     def test_handrive_job_queue_uses_popup_raised_layer(self):
         base_dir = Path(settings.BASE_DIR)
@@ -10198,48 +11494,54 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(payload["entries"][0]["path"], "restricted/hello.txt")
 
     def test_docs_api_markdown_image_upload_saves_under_user_md_img(self):
-        editor = self.create_handrive_superuser("md_image_editor")
+        editor = self.create_scoped_handrive_user("md_image_editor")
+        markdown_relative_path = f"users/{editor.username}/public.md"
+        (Path(settings.MEDIA_ROOT) / "HanDrive" / markdown_relative_path).write_text("# public", encoding="utf-8")
         self.client.force_login(editor)
 
         response = self.client.post(
             reverse("main:handrive_api_markdown_image_upload"),
             data={
-                "markdown_path": "public.md",
+                "markdown_path": markdown_relative_path,
                 "image": SimpleUploadedFile("photo.png", b"\x89PNG\r\n\x1a\n", content_type="image/png"),
             },
         )
 
         self.assertEqual(response.status_code, 200)
-        expected_path = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / "md_image_editor" / "md-img" / "public_photo.png"
+        expected_path = Path(settings.MEDIA_ROOT) / "uploads" / "md_image_editor" / "md-img" / "public_photo.png"
+        legacy_path = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / "md_image_editor" / "md-img" / "public_photo.png"
         self.assertTrue(expected_path.exists())
+        self.assertFalse(legacy_path.exists())
         payload = response.json()
-        self.assertEqual(payload["path"], "HanDrive/users/md_image_editor/md-img/public_photo.png")
-        self.assertEqual(payload["url"], "https://www.hanplanet.com/media/HanDrive/users/md_image_editor/md-img/public_photo.png")
-        self.assertEqual(payload["markdown"], "![photo](https://www.hanplanet.com/media/HanDrive/users/md_image_editor/md-img/public_photo.png)")
+        self.assertEqual(payload["path"], "uploads/md_image_editor/md-img/public_photo.png")
+        self.assertEqual(payload["url"], "https://www.hanplanet.com/media/uploads/md_image_editor/md-img/public_photo.png")
+        self.assertEqual(payload["markdown"], "![photo](https://www.hanplanet.com/media/uploads/md_image_editor/md-img/public_photo.png)")
 
     def test_docs_api_save_deletes_removed_markdown_image_references(self):
-        editor = self.create_handrive_superuser("md_image_cleanup_editor")
+        editor = self.create_scoped_handrive_user("md_image_cleanup_editor")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
+        markdown_relative_path = f"users/{editor.username}/public.md"
+        markdown_path = handrive_root / "public.md"
+        markdown_path.write_text("# public", encoding="utf-8")
         self.client.force_login(editor)
 
         removed_response = self.client.post(
             reverse("main:handrive_api_markdown_image_upload"),
             data={
-                "markdown_path": "public.md",
+                "markdown_path": markdown_relative_path,
                 "image": SimpleUploadedFile("removed.png", b"removed", content_type="image/png"),
             },
         )
         kept_response = self.client.post(
             reverse("main:handrive_api_markdown_image_upload"),
             data={
-                "markdown_path": "public.md",
+                "markdown_path": markdown_relative_path,
                 "image": SimpleUploadedFile("kept.png", b"kept", content_type="image/png"),
             },
         )
         self.assertEqual(removed_response.status_code, 200)
         self.assertEqual(kept_response.status_code, 200)
 
-        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
-        markdown_path = handrive_root / "public.md"
         removed_markdown = removed_response.json()["markdown"]
         kept_markdown = kept_response.json()["markdown"]
         markdown_path.write_text(f"{removed_markdown}\n{kept_markdown}\n", encoding="utf-8")
@@ -10247,8 +11549,8 @@ class HandriveAccessRuleTests(TestCase):
         response = self.client.post(
             reverse("main:handrive_api_save"),
             data=json.dumps({
-                "original_path": "public.md",
-                "target_dir": "",
+                "original_path": markdown_relative_path,
+                "target_dir": f"users/{editor.username}",
                 "filename": "public",
                 "extension": ".md",
                 "content": f"{kept_markdown}\n",
@@ -10257,19 +11559,21 @@ class HandriveAccessRuleTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        removed_path = handrive_root / "users" / "md_image_cleanup_editor" / "md-img" / "public_removed.png"
-        kept_path = handrive_root / "users" / "md_image_cleanup_editor" / "md-img" / "public_kept.png"
+        removed_path = Path(settings.MEDIA_ROOT) / "uploads" / "md_image_cleanup_editor" / "md-img" / "public_removed.png"
+        kept_path = Path(settings.MEDIA_ROOT) / "uploads" / "md_image_cleanup_editor" / "md-img" / "public_kept.png"
         self.assertFalse(removed_path.exists())
         self.assertTrue(kept_path.exists())
 
     def test_docs_api_markdown_image_cleanup_deletes_cancelled_upload(self):
-        editor = self.create_handrive_superuser("md_image_cancel_editor")
+        editor = self.create_scoped_handrive_user("md_image_cancel_editor")
+        markdown_relative_path = f"users/{editor.username}/public.md"
+        (Path(settings.MEDIA_ROOT) / "HanDrive" / markdown_relative_path).write_text("# public", encoding="utf-8")
         self.client.force_login(editor)
 
         upload_response = self.client.post(
             reverse("main:handrive_api_markdown_image_upload"),
             data={
-                "markdown_path": "public.md",
+                "markdown_path": markdown_relative_path,
                 "image": SimpleUploadedFile("cancelled.png", b"cancelled", content_type="image/png"),
             },
         )
@@ -10280,8 +11584,8 @@ class HandriveAccessRuleTests(TestCase):
         cleanup_response = self.client.post(
             reverse("main:handrive_api_markdown_image_cleanup"),
             data=json.dumps({
-                "markdown_path": "public.md",
-                "target_dir": "",
+                "markdown_path": markdown_relative_path,
+                "target_dir": f"users/{editor.username}",
                 "image_paths": [upload_response.json()["path"]],
             }),
             content_type="application/json",
@@ -10861,16 +12165,16 @@ class HandriveAccessRuleTests(TestCase):
         self.assertIn("height: frameHeight", rendered)
 
     def test_pdf_preview_converts_office_file_to_inline_pdf(self):
-        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        editor = self.create_scoped_handrive_user("office_pdf_preview_editor")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
         (handrive_root / "report.docx").write_bytes(b"office-bytes")
         pdf_bytes = b"%PDF-1.4\n% test\n%%EOF"
-        editor = self.create_handrive_superuser("office_pdf_preview_editor")
         self.client.force_login(editor)
 
         with mock.patch("main.handrive_views.convert_office_bytes_to_pdf", return_value=pdf_bytes) as convert_mock:
             response = self.client.get(
                 reverse("main:handrive_api_pdf_preview"),
-                data={"path": "report.docx"},
+                data={"path": f"users/{editor.username}/report.docx"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -10878,6 +12182,48 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(response["Content-Disposition"], "inline; filename*=UTF-8''report.pdf")
         self.assertEqual(response.content, pdf_bytes)
         convert_mock.assert_called_once_with(".docx", b"office-bytes", "report.docx")
+
+    def test_pdf_preview_viewer_returns_theme_aware_html_and_png_page(self):
+        from main import handrive_views
+
+        editor = self.create_scoped_handrive_user("pdf_preview_viewer_editor")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
+        fitz = handrive_views._load_pymupdf()
+        doc = fitz.open()
+        page = doc.new_page(width=240, height=140)
+        page.insert_text((32, 72), "HanDrive PDF")
+        (handrive_root / "sample.pdf").write_bytes(doc.tobytes())
+        doc.close()
+        self.client.force_login(editor)
+
+        with mock.patch(
+            "main.handrive_views._get_git_virtual_context",
+            side_effect=AssertionError("local PDF previews should not resolve git virtual paths"),
+        ):
+            viewer_response = self.client.get(
+                reverse("main:handrive_api_pdf_preview"),
+                data={"path": f"users/{editor.username}/sample.pdf", "viewer": "1", "theme": "dark"},
+            )
+
+            self.assertEqual(viewer_response.status_code, 200)
+            self.assertEqual(viewer_response["Content-Type"], "text/html; charset=utf-8")
+            viewer_html = viewer_response.content.decode("utf-8")
+            self.assertIn('class="theme-dark"', viewer_html)
+            self.assertIn("--handrive-pdf-preview-page-bg: #ffffff;", viewer_html)
+            self.assertIn("--handrive-pdf-preview-page-filter: none;", viewer_html)
+            self.assertNotIn("invert(1) hue-rotate(180deg)", viewer_html)
+            self.assertIn("handrive-pdf-preview-page-image", viewer_html)
+            self.assertIn("viewer=page", viewer_html)
+            self.assertIn("handrivePdfTheme", viewer_html)
+
+            page_response = self.client.get(
+                reverse("main:handrive_api_pdf_preview"),
+                data={"path": f"users/{editor.username}/sample.pdf", "viewer": "page", "page": "0"},
+            )
+
+            self.assertEqual(page_response.status_code, 200)
+            self.assertEqual(page_response["Content-Type"], "image/png")
+            self.assertTrue(page_response.content.startswith(b"\x89PNG"))
 
     def test_docs_api_preview_returns_unsupported_message_for_binary_file(self):
         handrive_root = Path(settings.MEDIA_ROOT) / "docs"
@@ -11080,6 +12426,68 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(payload.get("render_mode"), "media_video")
         self.assertIn("<video", payload.get("html", ""))
         self.assertIn("/handrive/api/download?path=sample.mkv", payload.get("html", ""))
+
+    def test_docs_api_preview_renders_stl_and_obj_as_3d_model_files(self):
+        editor = self.create_scoped_handrive_user("model_preview_editor")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
+        (handrive_root / "sample.stl").write_text(
+            "solid sample\n"
+            "facet normal 0 0 1\n"
+            "outer loop\n"
+            "vertex 0 0 0\n"
+            "vertex 1 0 0\n"
+            "vertex 0 1 0\n"
+            "endloop\n"
+            "endfacet\n"
+            "endsolid sample\n",
+            encoding="utf-8",
+        )
+        (handrive_root / "sample.obj").write_text(
+            "o sample\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n",
+            encoding="utf-8",
+        )
+        self.client.force_login(editor)
+
+        for filename, extension in (("sample.stl", ".stl"), ("sample.obj", ".obj")):
+            path = f"users/{editor.username}/{filename}"
+            response = self.client.post(
+                reverse("main:handrive_api_preview"),
+                data=json.dumps({"path": path}),
+                content_type="application/json",
+            )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            html = payload.get("html", "")
+            self.assertEqual(payload.get("render_mode"), "media_3d")
+            self.assertEqual(payload.get("render_class"), "handrive-media handrive-media-3d")
+            self.assertIn('data-handrive-model-preview="1"', html)
+            self.assertIn(f'data-model-extension="{extension}"', html)
+            self.assertIn(f"/handrive/api/download?path=users/{editor.username}/{filename}", html)
+            self.assertNotIn("미리보기 미지원", html)
+
+    def test_docs_view_renders_stl_model_preview_and_hides_print_button(self):
+        editor = self.create_scoped_handrive_user("model_viewer")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
+        (handrive_root / "sample.stl").write_text(
+            "solid sample\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid sample\n",
+            encoding="utf-8",
+        )
+        self.client.force_login(editor)
+        doc_path = f"users/{editor.username}/sample.stl"
+
+        response = self.client.get(
+            reverse("main:handrive_view_lang", kwargs={"ui_lang": "ko", "doc_path": doc_path})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn('class="handrive-media handrive-media-3d"', html)
+        self.assertIn('data-handrive-model-preview="1"', html)
+        self.assertIn(f"/handrive/api/download?path=users/{editor.username}/sample.stl", html)
+        self.assertIn("vendor/three/0.164.1/examples/jsm/loaders/STLLoader.js", html)
+        self.assertIn("js/handrive/model_preview.js", html)
+        self.assertNotIn('id="handrive-print-btn"', html)
 
     def test_docs_view_renders_html_live_with_same_name_css_and_js(self):
         handrive_root = Path(settings.MEDIA_ROOT) / "docs"

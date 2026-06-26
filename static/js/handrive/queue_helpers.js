@@ -244,6 +244,7 @@
     function createQueueListItem(item, options) {
         var settings = options || {};
         var documentRef = settings.documentRef || document;
+        var onActivate = settings.onActivate || function () {};
         var onOpenContextMenu = settings.onOpenContextMenu || function () {};
         var getStatusLabel = settings.getStatusLabel || function () { return ""; };
         var getMetaLabel = settings.getMetaLabel || function () { return ""; };
@@ -322,7 +323,7 @@
         listItem.addEventListener("click", function (event) {
             event.preventDefault();
             event.stopPropagation();
-            onOpenContextMenu(item, event.clientX, event.clientY);
+            onActivate(item, event);
         });
         listItem.addEventListener("contextmenu", function (event) {
             event.preventDefault();

@@ -18,6 +18,7 @@ import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from xml.etree import ElementTree as ET
 
 from django.utils.html import escape
@@ -42,17 +43,42 @@ def _normalize_file_extension(extension: str | None, *, allow_empty: bool = Fals
     return value if value.startswith(".") else f".{value}"
 
 
-def render_handrive_pdf_safely(pdf_bytes: bytes, file_name: str = "preview.pdf", *, pdf_url: str = "") -> str:
+def build_handrive_pdf_viewer_url(pdf_url: str, *, theme: str = "") -> str:
+    parts = urlsplit(str(pdf_url or ""))
+    query_items = [
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key not in {"viewer", "theme"}
+    ]
+    query_items.append(("viewer", "1"))
+    if theme in {"light", "dark"}:
+        query_items.append(("theme", theme))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query_items), parts.fragment))
+
+
+def render_handrive_pdf_safely(
+    pdf_bytes: bytes,
+    file_name: str = "preview.pdf",
+    *,
+    pdf_url: str = "",
+    viewer_theme: str = "",
+) -> str:
     """PDF를 iframe으로 렌더한다. pdf_url이 있으면 직접 URL로, 없으면 base64 data URL로."""
     safe_title = escape(file_name)
     if pdf_url:
-        src = escape(pdf_url)
+        raw_src = str(pdf_url)
+        src = build_handrive_pdf_viewer_url(raw_src, theme=viewer_theme)
+        extra_attrs = (
+            ' data-handrive-pdf-viewer="1"'
+            f' data-handrive-pdf-source="{escape(raw_src)}"'
+        )
     else:
         encoded_pdf = base64.b64encode(pdf_bytes).decode("ascii")
         src = f"data:application/pdf;base64,{encoded_pdf}#view=FitH"
+        extra_attrs = ""
     return mark_safe(
         '<div class="handrive-media-wrap handrive-media-pdf-wrap">'
-        f'<iframe class="handrive-media-element handrive-media-pdf-element" src="{src}" title="{safe_title}"></iframe>'
+        f'<iframe class="handrive-media-element handrive-media-pdf-element" src="{escape(src)}" title="{safe_title}"{extra_attrs}></iframe>'
         "</div>"
     )
 

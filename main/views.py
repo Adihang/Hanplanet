@@ -23,7 +23,7 @@ from portfolio.models import (
 )
 from stratagem.models import Stratagem, Stratagem_Hero_Score
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.cache import cache_control
 from django.urls import NoReverseMatch, get_resolver, reverse
@@ -64,10 +64,13 @@ from urllib.parse import quote, unquote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 from pathlib import Path
 from types import SimpleNamespace
+from datetime import datetime, timedelta, timezone as datetime_timezone
 
 from git.models import GitHubAccountMapping, GoogleAccountMapping
 from .github_auth import is_github_auth_configured
 from .google_auth import is_google_auth_configured
+
+logger = logging.getLogger(__name__)
 from .restart_utils import restart_gunicorn_and_wait
 
 PORTFOLIO_DEFAULT_USERNAME = "HanbyelLim"
@@ -111,11 +114,30 @@ BUNGIE_FIRETEAM_CACHE_SECONDS = 30
 BUNGIE_DEFINITION_CACHE_SECONDS = 60 * 60 * 24
 MINECRAFT_PUBLIC_HOST = "mc.hanplanet.com"
 MINECRAFT_SERVER_ADDRESS = "mc.hanplanet.com"
+MINECRAFT_BEDROCK_SERVER_ADDRESS = "mcbe.hanplanet.com"
+MINECRAFT_BEDROCK_SERVER_PORT = 19132
+MINECRAFT_BEDROCK_SERVER_VERSION_FALLBACK = "26.30"
+MINECRAFT_BEDROCK_VERSION_CACHE_KEY = "minecraft_bedrock_server_version"
+MINECRAFT_BEDROCK_VERSION_CACHE_SECONDS = 60
+MINECRAFT_BEDROCK_PING_MAGIC = bytes.fromhex("00ffff00fefefefefdfdfdfd12345678")
 MINECRAFT_META_TITLE = "Minecraft Server | Hanplanet"
 MINECRAFT_META_DESCRIPTION_KO = "Minecraft 서버의 실시간 플레이어 상태와 월드 지도를 제공합니다."
 MINECRAFT_META_DESCRIPTION_EN = "Provides real-time player status and a world map for the Minecraft server."
 MINECRAFT_SERVER_IMAGE_URL = urljoin("https://www.hanplanet.com", static("media/icons/minecraft/server-og.png"))
 MINECRAFT_WEATHER_ICON_URL = static("media/icons/minecraft/weather.svg")
+MINECRAFT_UI_ICON_URLS = {
+    "armor_full": static("media/icons/minecraft/ui/armor_full.png"),
+    "armor_half": static("media/icons/minecraft/ui/armor_half.png"),
+    "experience_bottle": static("media/icons/minecraft/ui/experience_bottle.png"),
+    "food_empty": static("media/icons/minecraft/ui/food_empty.png"),
+    "food_full": static("media/icons/minecraft/ui/food_full.png"),
+    "food_half": static("media/icons/minecraft/ui/food_half.png"),
+    "heart_container": static("media/icons/minecraft/ui/heart_container.png"),
+    "heart_full": static("media/icons/minecraft/ui/heart_full.png"),
+    "heart_half": static("media/icons/minecraft/ui/heart_half.png"),
+    "potion": static("media/icons/minecraft/ui/potion.png"),
+    "slot": static("media/icons/minecraft/ui/slot.png"),
+}
 MINECRAFT_PLUGIN_DIR = Path("/Users/imhanbyeol/Development/minecraft/plugins")
 MINECRAFT_STATUS_PATH = Path("/Users/imhanbyeol/Development/minecraft/web/status.json")
 MINECRAFT_CONSOLE_OUTPUT_PATH = Path("/Users/imhanbyeol/Development/minecraft/run/console.out")
@@ -163,6 +185,11 @@ WARGAME_CHALLENGE_ID_PATTERN = re.compile(r"^level\d{1,3}$")
 NETWORK_REVERSE_GEOCODE_URL = "https://nominatim.openstreetmap.org/reverse"
 NETWORK_REVERSE_GEOCODE_TIMEOUT = 3.0
 NETWORK_REVERSE_GEOCODE_USER_AGENT = "Hanplanet network-info/1.0 (https://www.hanplanet.com/)"
+ACCOUNT_WEATHER_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+ACCOUNT_WEATHER_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+ACCOUNT_WEATHER_IPAPI_URL_TEMPLATE = "https://ipapi.co/{ip}/json/"
+ACCOUNT_WEATHER_TIMEOUT = 3.0
+ACCOUNT_WEATHER_USER_AGENT = "Hanplanet account-weather/1.0 (https://www.hanplanet.com/)"
 IMAGE_COLOR_PICKER_MAX_URL_LENGTH = 2048
 IMAGE_COLOR_PICKER_MAX_BYTES = 12 * 1024 * 1024
 IMAGE_COLOR_PICKER_MAX_PIXELS = 80_000_000
@@ -1345,6 +1372,12 @@ def apply_ui_context(request, context, ui_lang):
     context["account_theme_mode"] = ""
     context["account_root_search_engine"] = "google"
     context["account_bumpercar_spiky_stats"] = None
+    context["show_account_weather"] = False
+    context["account_weather_url"] = build_localized_url(request, "main:account_weather_lang")
+    context["account_weather_location_search_url"] = build_localized_url(request, "main:account_weather_locations_lang")
+    context["account_weather_country"] = ""
+    context["account_weather_city"] = ""
+    context["account_weather_location_label"] = ""
     context["show_account_bumpercar_spiky_stats"] = bool(context.get("show_account_bumpercar_spiky_stats", False))
     context["show_account_my_portfolio"] = bool(context.get("show_account_my_portfolio", default_show_account_my_portfolio))
     context["theme_preference_url"] = build_localized_url(request, "main:theme_preference_lang")
@@ -1448,6 +1481,9 @@ def apply_ui_context(request, context, ui_lang):
                 "bumpercar_spiky_stats",
                 "privacy_policy_agreed_at",
                 "terms_of_service_agreed_at",
+                "weather_country",
+                "weather_city",
+                "weather_location_label",
             )
             .first()
         )
@@ -1457,6 +1493,9 @@ def apply_ui_context(request, context, ui_lang):
         account_root_search_engine = (profile_preferences or {}).get("preferred_root_search_engine")
         if account_root_search_engine in SUPPORTED_ROOT_SEARCH_ENGINES:
             context["account_root_search_engine"] = account_root_search_engine
+        context["account_weather_country"] = (profile_preferences or {}).get("weather_country") or ""
+        context["account_weather_city"] = (profile_preferences or {}).get("weather_city") or ""
+        context["account_weather_location_label"] = (profile_preferences or {}).get("weather_location_label") or ""
         context["account_bumpercar_spiky_stats"] = normalize_bumpercar_spiky_account_stats(
             (profile_preferences or {}).get("bumpercar_spiky_stats")
         )
@@ -5300,6 +5339,7 @@ def none(request, ui_lang=None):
         context["account_logout_form_id"] = "auth-logout-form-root"
         context["account_logout_next"] = reverse("main:none_lang", kwargs={"ui_lang": resolved_lang})
         context["account_logout_url"] = context["handrive_logout_url"]
+        context["show_account_weather"] = True
     return render(request, 'none.html', context)
 
 
@@ -5411,6 +5451,36 @@ def read_minecraft_server_status():
     return payload if isinstance(payload, dict) else {}
 
 
+def sanitize_minecraft_status_payload(payload, include_private_player_data=False):
+    """Remove private player fields from the public Minecraft status response."""
+    if not isinstance(payload, dict):
+        return {}
+
+    sanitized = dict(payload)
+    sanitized_players = []
+    raw_players = payload.get("players")
+    if isinstance(raw_players, list):
+        for raw_player in raw_players:
+            if not isinstance(raw_player, dict):
+                continue
+            player = {
+                "name": str(raw_player.get("name") or ""),
+                "online": bool(raw_player.get("online")),
+            }
+            if include_private_player_data:
+                uuid_value = str(raw_player.get("uuid") or "").strip()
+                detail = raw_player.get("detail")
+                if uuid_value:
+                    player["uuid"] = uuid_value
+                if isinstance(detail, dict):
+                    player["detail"] = detail
+            sanitized_players.append(player)
+    sanitized["players"] = sanitized_players
+    if not include_private_player_data:
+        sanitized.pop("items", None)
+    return sanitized
+
+
 def extract_minecraft_server_version(status_payload):
     """Extract the Java Edition version from a Minecraft ping status payload."""
     version = status_payload.get("version") if isinstance(status_payload, dict) else {}
@@ -5426,6 +5496,100 @@ def extract_minecraft_server_version(status_payload):
 def get_minecraft_server_version():
     """Return the current Minecraft Java Edition version from generated status."""
     return extract_minecraft_server_version(read_minecraft_server_status())
+
+
+def extract_minecraft_bedrock_server_version(pong_text):
+    """Extract the Bedrock Edition version from a RakNet pong MOTD string."""
+    parts = str(pong_text or "").split(";")
+    if len(parts) <= 3:
+        return ""
+    version_name = parts[3].strip()
+    match = MINECRAFT_VERSION_PATTERN.search(version_name)
+    return match.group(1) if match else version_name
+
+
+def query_minecraft_bedrock_server_version(timeout=0.25):
+    """Query the local Geyser Bedrock listener and return its advertised version."""
+    packet = (
+        b"\x01"
+        + int(time.time() * 1000).to_bytes(8, "big", signed=False)
+        + MINECRAFT_BEDROCK_PING_MAGIC
+        + secrets.randbits(64).to_bytes(8, "big", signed=False)
+    )
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.settimeout(timeout)
+        sock.sendto(packet, ("127.0.0.1", MINECRAFT_BEDROCK_SERVER_PORT))
+        data, _ = sock.recvfrom(4096)
+
+    if len(data) < 35 or data[0] != 0x1C:
+        return ""
+    motd_length = int.from_bytes(data[33:35], "big", signed=False)
+    motd = data[35:35 + motd_length].decode("utf-8", errors="replace")
+    return extract_minecraft_bedrock_server_version(motd)
+
+
+def get_minecraft_bedrock_server_version():
+    """Return the current Minecraft Bedrock Edition version from Geyser."""
+    cached_version = cache.get(MINECRAFT_BEDROCK_VERSION_CACHE_KEY)
+    if cached_version is not None:
+        return cached_version
+
+    try:
+        version = query_minecraft_bedrock_server_version()
+    except OSError:
+        version = ""
+    version = version or MINECRAFT_BEDROCK_SERVER_VERSION_FALLBACK
+    cache.set(MINECRAFT_BEDROCK_VERSION_CACHE_KEY, version, MINECRAFT_BEDROCK_VERSION_CACHE_SECONDS)
+    return version
+
+
+def get_minecraft_effect_options(is_english=False):
+    """Return common potion effect options for Minecraft admin controls."""
+    labels = {
+        "speed": ("Speed", "신속"),
+        "slowness": ("Slowness", "감속"),
+        "haste": ("Haste", "성급함"),
+        "mining_fatigue": ("Mining Fatigue", "채굴 피로"),
+        "strength": ("Strength", "힘"),
+        "instant_health": ("Instant Health", "즉시 회복"),
+        "instant_damage": ("Instant Damage", "즉시 피해"),
+        "jump_boost": ("Jump Boost", "점프 강화"),
+        "nausea": ("Nausea", "멀미"),
+        "regeneration": ("Regeneration", "재생"),
+        "resistance": ("Resistance", "저항"),
+        "fire_resistance": ("Fire Resistance", "화염 저항"),
+        "water_breathing": ("Water Breathing", "수중 호흡"),
+        "invisibility": ("Invisibility", "투명화"),
+        "blindness": ("Blindness", "실명"),
+        "night_vision": ("Night Vision", "야간 투시"),
+        "hunger": ("Hunger", "허기"),
+        "weakness": ("Weakness", "나약함"),
+        "poison": ("Poison", "독"),
+        "wither": ("Wither", "위더"),
+        "health_boost": ("Health Boost", "생명력 강화"),
+        "absorption": ("Absorption", "흡수"),
+        "saturation": ("Saturation", "포화"),
+        "glowing": ("Glowing", "발광"),
+        "levitation": ("Levitation", "공중 부양"),
+        "luck": ("Luck", "행운"),
+        "unluck": ("Bad Luck", "불운"),
+        "slow_falling": ("Slow Falling", "느린 낙하"),
+        "conduit_power": ("Conduit Power", "전달체의 힘"),
+        "dolphins_grace": ("Dolphin's Grace", "돌고래의 우아함"),
+        "darkness": ("Darkness", "어둠"),
+        "trial_omen": ("Trial Omen", "시련의 징조"),
+        "raid_omen": ("Raid Omen", "습격의 징조"),
+        "wind_charged": ("Wind Charged", "돌풍 충전"),
+        "weaving": ("Weaving", "직조"),
+        "oozing": ("Oozing", "점액화"),
+        "infested": ("Infested", "감염"),
+        "breath_of_the_nautilus": ("Breath of the Nautilus", "앵무조개의 숨결"),
+    }
+    label_index = 0 if is_english else 1
+    return [
+        {"value": value, "label": label_pair[label_index]}
+        for value, label_pair in labels.items()
+    ]
 
 
 def clean_minecraft_log_text(text):
@@ -5496,12 +5660,19 @@ def minecraft_home(request, ui_lang=None):
     minecraft_admin_log_enabled = is_minecraft_admin_user(getattr(request, "user", None))
     canonical_url = "https://mc.hanplanet.com/"
     server_version = get_minecraft_server_version()
+    bedrock_server_version = get_minecraft_bedrock_server_version()
     server_version_prefix = "Minecraft Java Edition"
+    bedrock_server_version_prefix = "Minecraft Bedrock Edition"
     server_version_loading_label = "Checking" if is_english else "확인 중"
     server_version_text = (
         f"{server_version_prefix} {server_version}"
         if server_version
         else f"{server_version_prefix} {server_version_loading_label}"
+    )
+    bedrock_server_version_text = (
+        f"{bedrock_server_version_prefix} {bedrock_server_version}"
+        if bedrock_server_version
+        else f"{bedrock_server_version_prefix} {server_version_loading_label}"
     )
     meta_description = (
         MINECRAFT_META_DESCRIPTION_EN
@@ -5510,10 +5681,15 @@ def minecraft_home(request, ui_lang=None):
     )
     context = {
         "server_address": MINECRAFT_SERVER_ADDRESS,
+        "bedrock_server_address": MINECRAFT_BEDROCK_SERVER_ADDRESS,
+        "bedrock_server_port": MINECRAFT_BEDROCK_SERVER_PORT,
         "server_version": server_version,
+        "bedrock_server_version": bedrock_server_version,
         "server_version_prefix": server_version_prefix,
+        "bedrock_server_version_prefix": bedrock_server_version_prefix,
         "server_version_loading_label": server_version_loading_label,
         "server_version_text": server_version_text,
+        "bedrock_server_version_text": bedrock_server_version_text,
         "status_url": reverse("main:minecraft_status_json"),
         "page_title": "Minecraft Server",
         "home_label": "Hanplanet",
@@ -5521,10 +5697,13 @@ def minecraft_home(request, ui_lang=None):
         "sub_label": "Sub",
         "sub_url": build_public_site_nav_url(reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang})),
         "server_panel_title": "Map" if is_english else "지도",
-        "server_address_label": "Server address" if is_english else "서버 주소",
+        "server_address_label": "Java Edition" if is_english else "자바 에디션",
+        "bedrock_server_address_label": "Bedrock Edition" if is_english else "베드락 에디션",
         "server_address_copy_label": "Copy server address" if is_english else "서버 주소 복사",
+        "bedrock_server_address_copy_label": "Copy Bedrock server address" if is_english else "베드락 서버 주소 복사",
         "server_address_copied_label": "Copied" if is_english else "복사됨",
         "server_version_label": "Version" if is_english else "버전",
+        "bedrock_server_port_label": f"UDP {MINECRAFT_BEDROCK_SERVER_PORT}",
         "server_hint": "",
         "links_panel_title": "Plugins" if is_english else "플러그인",
         "server_log_title": "Server Console" if is_english else "서버 콘솔",
@@ -5577,10 +5756,46 @@ def minecraft_home(request, ui_lang=None):
             else "서버 시간을 불러오는 중입니다."
         ),
         "weather_icon_url": MINECRAFT_WEATHER_ICON_URL,
+        "minecraft_ui_icon_urls": MINECRAFT_UI_ICON_URLS,
+        "server_time_picker_title": "Set server time" if is_english else "서버 시간 설정",
+        "server_time_picker_apply_label": "Set time" if is_english else "시간 설정",
+        "server_weather_menu_title": "Set server weather" if is_english else "서버 날씨 설정",
         "weather_clear_label": "Clear" if is_english else "맑음",
         "weather_rain_label": "Rain" if is_english else "비",
         "weather_thunder_label": "Thunder" if is_english else "천둥",
         "weather_unknown_label": "Unknown weather" if is_english else "날씨 알 수 없음",
+        "player_detail_title": "Player details" if is_english else "플레이어 정보",
+        "player_detail_offline_label": "Offline player details are unavailable." if is_english else "오프라인 플레이어 상세 정보는 없습니다.",
+        "player_detail_unavailable_label": "Player details are not available yet." if is_english else "플레이어 상세 정보를 아직 불러오지 못했습니다.",
+        "player_health_label": "Health" if is_english else "체력",
+        "player_food_label": "Hunger" if is_english else "배고픔",
+        "player_level_label": "Level" if is_english else "레벨",
+        "player_experience_label": "Experience" if is_english else "경험치",
+        "player_game_mode_label": "Game mode" if is_english else "게임모드",
+        "player_buffs_label": "Effects" if is_english else "버프",
+        "player_inventory_label": "Inventory" if is_english else "인벤토리",
+        "player_armor_label": "Armor" if is_english else "방어구",
+        "player_offhand_label": "Offhand" if is_english else "보조손",
+        "player_world_label": "World" if is_english else "월드",
+        "player_location_label": "Location" if is_english else "위치",
+        "player_no_effects_label": "No active effects" if is_english else "적용 중인 버프 없음",
+        "player_empty_inventory_label": "Empty" if is_english else "비어 있음",
+        "player_state_edit_apply_label": "Apply" if is_english else "적용",
+        "player_state_edit_saved_label": "Updated" if is_english else "수정됨",
+        "player_state_edit_failed_label": "Update failed" if is_english else "수정 실패",
+        "player_state_edit_invalid_label": "Invalid value" if is_english else "값이 올바르지 않습니다",
+        "player_effect_type_label": "Effect" if is_english else "버프",
+        "player_effect_level_label": "Level" if is_english else "수치",
+        "player_effect_duration_label": "Seconds" if is_english else "시간",
+        "player_add_effect_label": "Add effect" if is_english else "버프 추가",
+        "player_clear_effects_label": "Clear effects" if is_english else "버프 초기화",
+        "player_clear_inventory_label": "Clear inventory" if is_english else "인벤토리 비우기",
+        "player_inventory_slot_label": "Slot" if is_english else "칸",
+        "player_inventory_item_label": "Item" if is_english else "아이템",
+        "player_inventory_amount_label": "Amount" if is_english else "개수",
+        "player_inventory_save_label": "Set item" if is_english else "아이템 적용",
+        "player_inventory_remove_label": "Remove" if is_english else "빼기",
+        "minecraft_effect_options_json": json.dumps(get_minecraft_effect_options(is_english), ensure_ascii=False),
         "online_label": "Online" if is_english else "온라인",
         "offline_label": "Offline" if is_english else "오프라인",
         "minecraft_account_username": (
@@ -5650,6 +5865,10 @@ def minecraft_status_json(request):
             "maxPlayers": 0,
             "players": [],
         }
+    payload = sanitize_minecraft_status_payload(
+        payload,
+        include_private_player_data=is_minecraft_admin_user(getattr(request, "user", None)),
+    )
     response = JsonResponse(payload)
     response["X-Hanplanet-App"] = "django-minecraft"
     return response
@@ -5691,12 +5910,29 @@ def minecraft_server_command_json(request):
 
     command = normalize_minecraft_command(payload.get("command") or request.POST.get("command"))
     if not command:
+        logger.warning(
+            "Minecraft server command rejected: invalid command user=%s host=%s",
+            getattr(getattr(request, "user", None), "username", ""),
+            request.get_host(),
+        )
         return JsonResponse({"ok": False, "error": "invalid_command"}, status=400)
 
     try:
         write_minecraft_console_command(command)
-    except RuntimeError:
+    except RuntimeError as exc:
+        logger.warning(
+            "Minecraft server command failed: user=%s command=%r error=%s",
+            getattr(getattr(request, "user", None), "username", ""),
+            command,
+            exc,
+        )
         return JsonResponse({"ok": False, "error": "console_unavailable"}, status=503)
+
+    logger.info(
+        "Minecraft server command sent: user=%s command=%r",
+        getattr(getattr(request, "user", None), "username", ""),
+        command,
+    )
 
     response = JsonResponse({"ok": True, "response": ""})
     response["X-Hanplanet-App"] = "django-minecraft"
@@ -5784,7 +6020,7 @@ def sitemap_xml(request):
     return HttpResponse(xml, content_type="application/xml; charset=utf-8")
 
 
-@cache_control(public=True, max_age=300, must_revalidate=True)
+@cache_control(public=True, max_age=0, must_revalidate=True)
 def pwa_manifest(request):
     """Serve the install manifest consumed by browsers when Hanplanet is added to the home screen."""
     # Browser install metadata for "Add to Home screen" / app install prompts.
@@ -5800,13 +6036,13 @@ def pwa_manifest(request):
         "theme_color": "#0d6efd",
         "icons": [
             {
-                "src": "/static/media/icons/pwa-192.png",
+                "src": _static_with_mtime_version("media/icons/pwa-192.png"),
                 "type": "image/png",
                 "sizes": "192x192",
                 "purpose": "any",
             },
             {
-                "src": "/static/media/icons/pwa-512.png",
+                "src": _static_with_mtime_version("media/icons/pwa-512.png"),
                 "type": "image/png",
                 "sizes": "512x512",
                 "purpose": "any",
@@ -5824,8 +6060,8 @@ def service_worker(request):
     """Serve the root-scope service worker used for Hanplanet page and static caching."""
     # Keep service worker script dynamic at root scope so it can control "/".
     script = """
-const STATIC_CACHE = 'hanplanet-static-v8';
-const PAGE_CACHE = 'hanplanet-page-v8';
+const STATIC_CACHE = 'hanplanet-static-v9';
+const PAGE_CACHE = 'hanplanet-page-v9';
 
 function isDownloadRequest(url) {
   return url.pathname.includes('/download/');
@@ -6955,6 +7191,834 @@ def _normalize_root_search_engine(raw_value):
     return ""
 
 
+def _account_weather_language(ui_lang):
+    return "en" if str(ui_lang or "").strip().lower() == "en" else "ko"
+
+
+def _normalize_account_weather_text(raw_value, max_length):
+    value = re.sub(r"\s+", " ", str(raw_value or "").strip())
+    if not value:
+        return ""
+    if len(value) > max_length:
+        return None
+    return value
+
+
+def _account_weather_public_client_ip(request):
+    x_forwarded_for = _network_meta_value(request, "HTTP_X_FORWARDED_FOR")
+    forwarded_chain = [part.strip() for part in x_forwarded_for.split(",") if part.strip()]
+    candidates = [
+        _network_meta_value(request, "HTTP_CF_CONNECTING_IP"),
+        _network_meta_value(request, "HTTP_X_REAL_IP"),
+        *forwarded_chain,
+        _network_meta_value(request, "REMOTE_ADDR"),
+        get_client_ip(request),
+    ]
+    for candidate in candidates:
+        parsed = _parse_ip_address(candidate)
+        if parsed and parsed.is_global:
+            return str(parsed)
+    return ""
+
+
+def _account_weather_saved_location(profile):
+    latitude = _coerce_network_coordinate(getattr(profile, "weather_latitude", None), -90, 90)
+    longitude = _coerce_network_coordinate(getattr(profile, "weather_longitude", None), -180, 180)
+    if latitude is None or longitude is None:
+        return None
+    country = str(getattr(profile, "weather_country", "") or "").strip()
+    city = str(getattr(profile, "weather_city", "") or "").strip()
+    label = str(getattr(profile, "weather_location_label", "") or "").strip()
+    return {
+        "country": country,
+        "city": city,
+        "label": label,
+        "latitude": latitude,
+        "longitude": longitude,
+        "source": str(getattr(profile, "weather_location_source", "") or "").strip() or "manual",
+    }
+
+
+def _account_weather_location_name(location):
+    label = str(location.get("label") or "").strip()
+    if label:
+        return label
+    parts = []
+    for value in (location.get("city"), location.get("country")):
+        text = str(value or "").strip()
+        if text and text not in parts:
+            parts.append(text)
+    return " · ".join(parts)
+
+
+def _account_weather_location_label_from_parts(*parts):
+    labels = []
+    for value in parts:
+        text = str(value or "").strip()
+        if text and text not in labels:
+            labels.append(text)
+    return " · ".join(labels)
+
+
+def _account_weather_location_from_geocode_match(match, ui_lang, *, source="manual", country="", city=""):
+    del ui_lang
+    match = match if isinstance(match, dict) else {}
+    latitude = _coerce_network_coordinate(match.get("latitude"), -90, 90)
+    longitude = _coerce_network_coordinate(match.get("longitude"), -180, 180)
+    if latitude is None or longitude is None:
+        return None
+    resolved_country = str(match.get("country") or match.get("country_code") or "").strip()
+    resolved_city = str(match.get("name") or "").strip()
+    admin_parts = [
+        match.get("admin4"),
+        match.get("admin3"),
+        match.get("admin2"),
+        match.get("admin1"),
+        resolved_country,
+    ]
+    label = _account_weather_location_label_from_parts(resolved_city, *admin_parts)
+    return {
+        "country": country or resolved_country,
+        "city": city or resolved_city,
+        "label": label or _account_weather_location_label_from_parts(city, country),
+        "latitude": latitude,
+        "longitude": longitude,
+        "source": source,
+        "resolved_country": resolved_country,
+        "resolved_city": resolved_city,
+    }
+
+
+def _account_weather_geocode_query(query, ui_lang, *, count=8):
+    query = _normalize_account_weather_text(query, 160)
+    if query is None:
+        raise ValueError("location_query_too_long")
+    if not query:
+        return []
+    response = httpx.get(
+        ACCOUNT_WEATHER_GEOCODING_URL,
+        params={
+            "name": query,
+            "count": str(max(1, min(int(count or 1), 10))),
+            "language": _account_weather_language(ui_lang),
+            "format": "json",
+        },
+        headers={
+            "Accept": "application/json",
+            "Referer": "https://www.hanplanet.com/",
+            "User-Agent": ACCOUNT_WEATHER_USER_AGENT,
+        },
+        timeout=ACCOUNT_WEATHER_TIMEOUT,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    results = payload.get("results") if isinstance(payload, dict) else None
+    if not isinstance(results, list):
+        return []
+    locations = [
+        location
+        for location in (
+            _account_weather_location_from_geocode_match(match, ui_lang)
+            for match in results
+        )
+        if location
+    ]
+    return locations
+
+
+def _account_weather_geocode_location(country, city, ui_lang):
+    query = ", ".join(part for part in (city, country) if part)
+    locations = _account_weather_geocode_query(query, ui_lang, count=1)
+    if not locations:
+        raise ValueError("location_not_found")
+    location = dict(locations[0])
+    location["country"] = country or location.get("country", "")
+    location["city"] = city or location.get("city", "")
+    location["label"] = location.get("label") or _account_weather_location_label_from_parts(city, country)
+    return location
+
+
+def _account_weather_ip_location(request, ui_lang):
+    client_ip = _account_weather_public_client_ip(request)
+    if not client_ip:
+        return None
+    language = _account_weather_language(ui_lang)
+    cache_key = f"account-weather-ip-location:v1:{language}:{client_ip}"
+    cached_location = cache.get(cache_key)
+    if cached_location:
+        return cached_location
+
+    response = httpx.get(
+        ACCOUNT_WEATHER_IPAPI_URL_TEMPLATE.format(ip=client_ip),
+        headers={
+            "Accept": "application/json",
+            "Referer": "https://www.hanplanet.com/",
+            "User-Agent": ACCOUNT_WEATHER_USER_AGENT,
+        },
+        timeout=ACCOUNT_WEATHER_TIMEOUT,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict) or payload.get("error"):
+        return None
+    latitude = _coerce_network_coordinate(payload.get("latitude"), -90, 90)
+    longitude = _coerce_network_coordinate(payload.get("longitude"), -180, 180)
+    if latitude is None or longitude is None:
+        return None
+    location = {
+        "country": str(payload.get("country_name") or payload.get("country") or payload.get("country_code") or "").strip(),
+        "city": str(payload.get("city") or "").strip(),
+        "latitude": latitude,
+        "longitude": longitude,
+        "source": "ip",
+    }
+    location["label"] = _account_weather_location_name(location)
+    cache.set(cache_key, location, 24 * 60 * 60)
+    return location
+
+
+def _account_weather_resolve_location(profile, request, ui_lang):
+    return _account_weather_saved_location(profile) or _account_weather_ip_location(request, ui_lang)
+
+
+def _account_weather_code_label(weather_code, ui_lang, *, daily_summary=False):
+    labels = {
+        0: ("맑음", "Clear"),
+        1: ("대체로 맑음", "Mainly clear"),
+        2: ("구름 조금", "Partly cloudy"),
+        3: ("흐림", "Overcast"),
+        45: ("안개", "Fog"),
+        48: ("서리 안개", "Rime fog"),
+        51: ("약한 이슬비", "Light drizzle"),
+        53: ("이슬비", "Drizzle"),
+        55: ("강한 이슬비", "Heavy drizzle"),
+        56: ("어는 이슬비", "Freezing drizzle"),
+        57: ("강한 어는 이슬비", "Heavy freezing drizzle"),
+        61: ("약한 비", "Light rain"),
+        63: ("비", "Rain"),
+        65: ("강한 비", "Heavy rain"),
+        66: ("어는 비", "Freezing rain"),
+        67: ("강한 어는 비", "Heavy freezing rain"),
+        71: ("약한 눈", "Light snow"),
+        73: ("눈", "Snow"),
+        75: ("강한 눈", "Heavy snow"),
+        77: ("싸락눈", "Snow grains"),
+        80: ("약한 소나기", "Light showers"),
+        81: ("소나기", "Showers"),
+        82: ("강한 소나기", "Heavy showers"),
+        85: ("약한 눈소나기", "Light snow showers"),
+        86: ("눈소나기", "Snow showers"),
+        95: ("뇌우", "Thunderstorm"),
+        96: ("우박 뇌우", "Thunderstorm with hail"),
+        99: ("강한 우박 뇌우", "Heavy thunderstorm with hail"),
+    }
+    try:
+        normalized_code = int(weather_code)
+    except (TypeError, ValueError):
+        normalized_code = -1
+    if daily_summary and normalized_code == 96:
+        normalized_code = 95
+    elif daily_summary and normalized_code == 99:
+        return "Heavy thunderstorm" if _account_weather_language(ui_lang) == "en" else "강한 뇌우"
+    ko_label, en_label = labels.get(normalized_code, ("알 수 없음", "Unknown"))
+    return en_label if _account_weather_language(ui_lang) == "en" else ko_label
+
+
+def _account_weather_daily_display_code(weather_code):
+    try:
+        normalized_code = int(weather_code)
+    except (TypeError, ValueError):
+        return weather_code
+    if normalized_code in {96, 99}:
+        return 95
+    return normalized_code
+
+
+def _account_weather_icon_type(weather_code):
+    try:
+        normalized_code = int(weather_code)
+    except (TypeError, ValueError):
+        return "unknown"
+    if normalized_code in {0, 1}:
+        return "clear"
+    if normalized_code == 2:
+        return "partly-cloudy"
+    if normalized_code == 3:
+        return "cloudy"
+    if normalized_code in {45, 48}:
+        return "fog"
+    if normalized_code in {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82}:
+        return "rain"
+    if normalized_code in {71, 73, 75, 77, 85, 86}:
+        return "snow"
+    if normalized_code in {95, 96, 99}:
+        return "storm"
+    return "unknown"
+
+
+def _account_weather_weekday_payload(date_text, ui_lang):
+    value = str(date_text or "").strip()
+    try:
+        parsed_date = datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return {
+            "date": value,
+            "weekday": "",
+            "weekday_short": "",
+        }
+    weekday_index = parsed_date.weekday()
+    korean_weekdays = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
+    korean_weekdays_short = ["월", "화", "수", "목", "금", "토", "일"]
+    english_weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    english_weekdays_short = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    if _account_weather_language(ui_lang) == "en":
+        weekday = english_weekdays[weekday_index]
+        weekday_short = english_weekdays_short[weekday_index]
+    else:
+        weekday = korean_weekdays[weekday_index]
+        weekday_short = korean_weekdays_short[weekday_index]
+    return {
+        "date": value,
+        "weekday": weekday,
+        "weekday_short": weekday_short,
+    }
+
+
+def _account_weather_numeric_at(values, index):
+    try:
+        return float(values[index])
+    except (IndexError, TypeError, ValueError):
+        return None
+
+
+def _account_weather_detail_label(detail_key, ui_lang):
+    labels = {
+        "precipitation": ("Precipitation", "강수확률"),
+        "humidity": ("Humidity", "습도"),
+        "wind_speed": ("Wind", "풍속"),
+    }
+    en_label, ko_label = labels.get(detail_key, (detail_key, detail_key))
+    return en_label if _account_weather_language(ui_lang) == "en" else ko_label
+
+
+def _account_weather_average(values):
+    numeric_values = [value for value in values if isinstance(value, (int, float))]
+    if not numeric_values:
+        return None
+    return sum(numeric_values) / len(numeric_values)
+
+
+def _account_weather_format_wind_speed(value):
+    if value is None:
+        return ""
+    rounded = round(value, 1)
+    if rounded == int(rounded):
+        return f"{int(rounded)}m/s"
+    return f"{rounded:.1f}m/s"
+
+
+def _account_weather_hourly_numeric_values(hourly, key, target_date):
+    hourly = hourly if isinstance(hourly, dict) else {}
+    times = hourly.get("time") if isinstance(hourly.get("time"), list) else []
+    values = hourly.get(key) if isinstance(hourly.get(key), list) else []
+    selected_date = str(target_date or "").strip()
+    numeric_values = []
+    for index, _raw_value in enumerate(values):
+        if selected_date and times:
+            try:
+                time_text = str(times[index] or "")
+            except IndexError:
+                continue
+            if not time_text.startswith(f"{selected_date}T"):
+                continue
+        numeric_value = _account_weather_numeric_at(values, index)
+        if numeric_value is not None:
+            numeric_values.append(numeric_value)
+    return numeric_values
+
+
+def _account_weather_detail_payload(daily, hourly, index, target_date, ui_lang):
+    daily = daily if isinstance(daily, dict) else {}
+    precipitation_values = daily.get("precipitation_probability_max") if isinstance(daily.get("precipitation_probability_max"), list) else []
+    precipitation_probability = _account_weather_numeric_at(precipitation_values, index)
+    humidity = _account_weather_average(_account_weather_hourly_numeric_values(hourly, "relative_humidity_2m", target_date))
+    wind_speed = _account_weather_average(_account_weather_hourly_numeric_values(hourly, "wind_speed_10m", target_date))
+    precipitation_probability_int = int(round(precipitation_probability)) if precipitation_probability is not None else None
+    humidity_int = int(round(humidity)) if humidity is not None else None
+    wind_speed_label = _account_weather_format_wind_speed(wind_speed)
+    detail_values = [
+        ("precipitation", precipitation_probability_int, f"{precipitation_probability_int}%" if precipitation_probability_int is not None else ""),
+        ("humidity", humidity_int, f"{humidity_int}%" if humidity_int is not None else ""),
+        ("wind_speed", wind_speed, wind_speed_label),
+    ]
+    detail_items = [
+        {
+            "key": detail_key,
+            "label": _account_weather_detail_label(detail_key, ui_lang),
+            "value": value,
+            "value_label": value_label,
+        }
+        for detail_key, value, value_label in detail_values
+        if value_label
+    ]
+    return {
+        "precipitation_probability": precipitation_probability_int,
+        "precipitation_probability_label": f"{precipitation_probability_int}%" if precipitation_probability_int is not None else "",
+        "humidity": humidity_int,
+        "humidity_label": f"{humidity_int}%" if humidity_int is not None else "",
+        "wind_speed": wind_speed,
+        "wind_speed_label": wind_speed_label,
+        "detail_items": detail_items,
+    }
+
+
+def _account_weather_daily_payload(daily, hourly, hourly_forecast, ui_lang):
+    daily = daily if isinstance(daily, dict) else {}
+    time_values = daily.get("time") if isinstance(daily.get("time"), list) else []
+    min_values = daily.get("temperature_2m_min") if isinstance(daily.get("temperature_2m_min"), list) else []
+    max_values = daily.get("temperature_2m_max") if isinstance(daily.get("temperature_2m_max"), list) else []
+    code_values = daily.get("weather_code") if isinstance(daily.get("weather_code"), list) else []
+    hourly_times = hourly.get("time") if isinstance(hourly, dict) and isinstance(hourly.get("time"), list) else []
+    hourly_temperatures = hourly.get("temperature_2m") if isinstance(hourly, dict) and isinstance(hourly.get("temperature_2m"), list) else []
+
+    date_text = str(time_values[0]).strip() if time_values else ""
+    if not date_text and hourly_times:
+        date_text = str(hourly_times[0]).split("T", 1)[0]
+
+    min_temperature = _account_weather_numeric_at(min_values, 0)
+    max_temperature = _account_weather_numeric_at(max_values, 0)
+    if min_temperature is None or max_temperature is None:
+        parsed_hourly_temperatures = [
+            float(value)
+            for value in hourly_temperatures
+            if isinstance(value, (int, float)) or re.fullmatch(r"-?\d+(?:\.\d+)?", str(value or "").strip())
+        ]
+        if parsed_hourly_temperatures:
+            min_temperature = min_temperature if min_temperature is not None else min(parsed_hourly_temperatures)
+            max_temperature = max_temperature if max_temperature is not None else max(parsed_hourly_temperatures)
+
+    weather_code = None
+    try:
+        weather_code = int(code_values[0])
+    except (IndexError, TypeError, ValueError):
+        if hourly_forecast:
+            weather_code = hourly_forecast[0].get("weather_code")
+    raw_weather_code = weather_code
+    display_weather_code = _account_weather_daily_display_code(raw_weather_code)
+
+    min_temperature_int = int(round(min_temperature)) if min_temperature is not None else None
+    max_temperature_int = int(round(max_temperature)) if max_temperature is not None else None
+    weekday_payload = _account_weather_weekday_payload(date_text, ui_lang)
+    weather_label = _account_weather_code_label(display_weather_code, ui_lang, daily_summary=True)
+    return {
+        **weekday_payload,
+        **_account_weather_detail_payload(daily, hourly, 0, date_text, ui_lang),
+        "weather_code": display_weather_code,
+        "raw_weather_code": raw_weather_code,
+        "weather_label": weather_label,
+        "icon_type": _account_weather_icon_type(display_weather_code),
+        "temperature_min": min_temperature_int,
+        "temperature_max": max_temperature_int,
+        "temperature_min_label": f"{min_temperature_int}°" if min_temperature_int is not None else "",
+        "temperature_max_label": f"{max_temperature_int}°" if max_temperature_int is not None else "",
+        "temperature_range_label": (
+            f"{min_temperature_int}° / {max_temperature_int}°"
+            if min_temperature_int is not None and max_temperature_int is not None
+            else ""
+        ),
+    }
+
+
+def _account_weather_parse_hourly_time(raw_time):
+    time_text = str(raw_time or "").strip()
+    try:
+        return datetime.strptime(time_text, "%Y-%m-%dT%H:%M")
+    except ValueError:
+        return None
+
+
+def _account_weather_payload_utc_offset_seconds(payload):
+    try:
+        return int((payload or {}).get("utc_offset_seconds") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _account_weather_current_forecast_datetime(payload):
+    now = timezone.now()
+    if timezone.is_naive(now):
+        now = now.replace(tzinfo=datetime_timezone.utc)
+    utc_now = now.astimezone(datetime_timezone.utc)
+    local_now = utc_now + timedelta(seconds=_account_weather_payload_utc_offset_seconds(payload))
+    return local_now.replace(tzinfo=None)
+
+
+def _account_weather_floor_hour(value):
+    if not isinstance(value, datetime):
+        return None
+    return value.replace(minute=0, second=0, microsecond=0)
+
+
+def _account_weather_hour_label(raw_time, ui_lang):
+    parsed_time = _account_weather_parse_hourly_time(raw_time)
+    if not parsed_time:
+        return str(raw_time or "").strip()
+    if _account_weather_language(ui_lang) == "en":
+        return f"{parsed_time.hour:02d}:00"
+    return f"{parsed_time.hour:02d}시"
+
+
+def _account_weather_hourly_forecast_payloads(hourly, ui_lang, target_date=None, limit=24, start_at=None):
+    times = hourly.get("time") if isinstance(hourly, dict) else []
+    codes = hourly.get("weather_code") if isinstance(hourly, dict) else []
+    temperatures = hourly.get("temperature_2m") if isinstance(hourly, dict) else []
+    if not isinstance(times, list) or not times:
+        return []
+    selected_date = str(target_date or "").strip()
+    start_at_hour = _account_weather_floor_hour(start_at)
+    if not selected_date and start_at_hour is None:
+        selected_date = str(times[0] or "").split("T", 1)[0]
+    selected_indexes = []
+    if start_at_hour is not None:
+        for index, raw_time in enumerate(times):
+            parsed_time = _account_weather_parse_hourly_time(raw_time)
+            if parsed_time and parsed_time >= start_at_hour:
+                selected_indexes.append(index)
+            if len(selected_indexes) >= limit:
+                break
+    else:
+        for index, raw_time in enumerate(times):
+            time_text = str(raw_time or "")
+            if time_text.startswith(f"{selected_date}T"):
+                selected_indexes.append(index)
+            if len(selected_indexes) >= limit:
+                break
+    if not selected_indexes:
+        selected_indexes = list(range(min(len(times), limit)))
+
+    forecasts = []
+    for index in selected_indexes[:limit]:
+        try:
+            weather_code = int(codes[index])
+            temperature = int(round(float(temperatures[index])))
+        except (IndexError, TypeError, ValueError):
+            continue
+        label = _account_weather_hour_label(times[index], ui_lang)
+        weather_label = _account_weather_code_label(weather_code, ui_lang)
+        forecasts.append(
+            {
+                "key": f"hour-{index}",
+                "label": label,
+                "time": str(times[index]),
+                "weather_code": weather_code,
+                "icon_type": _account_weather_icon_type(weather_code),
+                "weather_label": weather_label,
+                "temperature": temperature,
+                "temperature_label": f"{temperature}°",
+                "summary": f"{label} {weather_label} {temperature}°",
+            }
+        )
+    return forecasts
+
+
+def _account_weather_daily_forecast_payloads(daily, hourly, ui_lang, start_index=0, limit=7):
+    daily = daily if isinstance(daily, dict) else {}
+    time_values = daily.get("time") if isinstance(daily.get("time"), list) else []
+    min_values = daily.get("temperature_2m_min") if isinstance(daily.get("temperature_2m_min"), list) else []
+    max_values = daily.get("temperature_2m_max") if isinstance(daily.get("temperature_2m_max"), list) else []
+    code_values = daily.get("weather_code") if isinstance(daily.get("weather_code"), list) else []
+    forecasts = []
+    for index in range(start_index, min(len(time_values), start_index + limit)):
+        weather_code = None
+        try:
+            weather_code = int(code_values[index])
+        except (IndexError, TypeError, ValueError):
+            pass
+        raw_weather_code = weather_code
+        display_weather_code = _account_weather_daily_display_code(raw_weather_code)
+        min_temperature = _account_weather_numeric_at(min_values, index)
+        max_temperature = _account_weather_numeric_at(max_values, index)
+        min_temperature_int = int(round(min_temperature)) if min_temperature is not None else None
+        max_temperature_int = int(round(max_temperature)) if max_temperature is not None else None
+        weather_label = _account_weather_code_label(display_weather_code, ui_lang, daily_summary=True)
+        date_text = str(time_values[index] or "").strip()
+        forecasts.append(
+            {
+                **_account_weather_weekday_payload(date_text, ui_lang),
+                **_account_weather_detail_payload(daily, hourly, index, date_text, ui_lang),
+                "weather_code": display_weather_code,
+                "raw_weather_code": raw_weather_code,
+                "weather_label": weather_label,
+                "icon_type": _account_weather_icon_type(display_weather_code),
+                "temperature_min": min_temperature_int,
+                "temperature_max": max_temperature_int,
+                "temperature_min_label": f"{min_temperature_int}°" if min_temperature_int is not None else "",
+                "temperature_max_label": f"{max_temperature_int}°" if max_temperature_int is not None else "",
+                "temperature_range_label": (
+                    f"{min_temperature_int}° / {max_temperature_int}°"
+                    if min_temperature_int is not None and max_temperature_int is not None
+                    else ""
+                ),
+            }
+        )
+    return forecasts
+
+
+def _account_weather_forecast(location, ui_lang):
+    latitude = _coerce_network_coordinate(location.get("latitude"), -90, 90)
+    longitude = _coerce_network_coordinate(location.get("longitude"), -180, 180)
+    if latitude is None or longitude is None:
+        raise ValueError("invalid_location")
+    language = _account_weather_language(ui_lang)
+    cache_hour = timezone.now().astimezone(datetime_timezone.utc).strftime("%Y%m%d%H")
+    cache_key = f"account-weather-forecast:v6:{language}:{round(latitude, 4):.4f}:{round(longitude, 4):.4f}:{cache_hour}"
+    cached_forecast = cache.get(cache_key)
+    if cached_forecast:
+        forecast = dict(cached_forecast)
+        forecast["location"] = location
+        forecast["location_name"] = _account_weather_location_name(location)
+        return forecast
+
+    response = httpx.get(
+        ACCOUNT_WEATHER_FORECAST_URL,
+        params={
+            "latitude": f"{latitude:.4f}",
+            "longitude": f"{longitude:.4f}",
+            "hourly": "temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m",
+            "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+            "wind_speed_unit": "ms",
+            "timezone": "auto",
+            "forecast_days": "7",
+        },
+        headers={
+            "Accept": "application/json",
+            "Referer": "https://www.hanplanet.com/",
+            "User-Agent": ACCOUNT_WEATHER_USER_AGENT,
+        },
+        timeout=ACCOUNT_WEATHER_TIMEOUT,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    hourly = payload.get("hourly") if isinstance(payload, dict) else {}
+    daily = payload.get("daily") if isinstance(payload, dict) else {}
+    current_forecast_datetime = _account_weather_current_forecast_datetime(payload if isinstance(payload, dict) else {})
+    daily_forecast = _account_weather_daily_forecast_payloads(daily, hourly, ui_lang)
+    default_date = str(daily_forecast[0].get("date") or "").strip() if daily_forecast else ""
+    hourly_forecast_by_date = {}
+    for forecast_day in daily_forecast:
+        forecast_date = str(forecast_day.get("date") or "").strip()
+        if forecast_date:
+            hourly_forecast_by_date[forecast_date] = _account_weather_hourly_forecast_payloads(hourly, ui_lang, forecast_date)
+    current_forecast_date = current_forecast_datetime.date().isoformat()
+    if current_forecast_date not in hourly_forecast_by_date:
+        current_forecast_date = default_date
+    hourly_forecast = _account_weather_hourly_forecast_payloads(hourly, ui_lang, limit=24, start_at=current_forecast_datetime)
+    if not hourly_forecast:
+        hourly_forecast = hourly_forecast_by_date.get(default_date) or _account_weather_hourly_forecast_payloads(hourly, ui_lang)
+    if not hourly_forecast:
+        raise ValueError("forecast_unavailable")
+    day = _account_weather_daily_payload(daily, hourly, hourly_forecast, ui_lang)
+    forecast = {
+        "ok": True,
+        "provider": "Open-Meteo",
+        "day": day,
+        "current_forecast_date": current_forecast_date,
+        "current_forecast_hour": current_forecast_datetime.hour,
+        "hourly_forecast": hourly_forecast,
+        "hourly_forecast_by_date": hourly_forecast_by_date,
+        "daily_forecast": daily_forecast,
+        "periods": hourly_forecast,
+        "summary": " · ".join(
+            item for item in (
+                day.get("weekday"),
+                day.get("temperature_range_label"),
+                " / ".join(period["summary"] for period in hourly_forecast[:3]),
+            )
+            if item
+        ),
+        "updated_at": timezone.now().isoformat(),
+    }
+    cache.set(cache_key, forecast, 10 * 60)
+    forecast = dict(forecast)
+    forecast["location"] = location
+    forecast["location_name"] = _account_weather_location_name(location)
+    return forecast
+
+
+def _account_weather_save_location(profile, location):
+    next_values = {
+        "weather_country": str(location.get("country") or "").strip(),
+        "weather_city": str(location.get("city") or "").strip(),
+        "weather_location_label": str(location.get("label") or _account_weather_location_name(location)).strip()[:180],
+        "weather_latitude": location.get("latitude"),
+        "weather_longitude": location.get("longitude"),
+        "weather_location_source": str(location.get("source") or "manual").strip()[:16],
+    }
+    update_fields = []
+    for field_name, value in next_values.items():
+        if getattr(profile, field_name) == value:
+            continue
+        setattr(profile, field_name, value)
+        update_fields.append(field_name)
+    if update_fields:
+        update_fields.append("updated_at")
+        profile.save(update_fields=update_fields)
+
+
+def _account_weather_clear_saved_location(profile):
+    next_values = {
+        "weather_country": "",
+        "weather_city": "",
+        "weather_location_label": "",
+        "weather_latitude": None,
+        "weather_longitude": None,
+        "weather_location_source": "",
+    }
+    update_fields = []
+    for field_name, value in next_values.items():
+        if getattr(profile, field_name) == value:
+            continue
+        setattr(profile, field_name, value)
+        update_fields.append(field_name)
+    if update_fields:
+        update_fields.append("updated_at")
+        profile.save(update_fields=update_fields)
+
+
+def _account_weather_location_from_request_payload(payload, ui_lang):
+    latitude = _coerce_network_coordinate(payload.get("latitude"), -90, 90)
+    longitude = _coerce_network_coordinate(payload.get("longitude"), -180, 180)
+    if latitude is not None and longitude is not None:
+        country = _normalize_account_weather_text(payload.get("country"), 80)
+        city = _normalize_account_weather_text(payload.get("city"), 120)
+        label = _normalize_account_weather_text(payload.get("label") or payload.get("location_label"), 180)
+        if country is None or city is None or label is None:
+            raise ValueError("location_text_too_long")
+        fallback_city = label[:120] if label else ""
+        return {
+            "country": country,
+            "city": city or fallback_city,
+            "label": label or _account_weather_location_label_from_parts(city, country),
+            "latitude": latitude,
+            "longitude": longitude,
+            "source": "manual",
+        }
+    query = _normalize_account_weather_text(payload.get("query"), 160)
+    if query is None:
+        raise ValueError("location_query_too_long")
+    if query:
+        locations = _account_weather_geocode_query(query, ui_lang, count=1)
+        if not locations:
+            raise ValueError("location_not_found")
+        return locations[0]
+    country = _normalize_account_weather_text(payload.get("country"), 80)
+    city = _normalize_account_weather_text(payload.get("city"), 120)
+    if country is None or city is None:
+        raise ValueError("location_text_too_long")
+    if not city:
+        raise ValueError("location_required")
+    return _account_weather_geocode_location(country, city, ui_lang)
+
+
+@require_GET
+def account_weather_locations(request, ui_lang=None):
+    """Search account weather locations at geocoder granularity."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    if not request.user.is_authenticated:
+        return _json_error_response(request, "로그인이 필요합니다.", "Login required.", status=401, ui_lang=resolved_lang)
+    query = _normalize_account_weather_text(request.GET.get("q"), 160)
+    if query is None:
+        return _json_error_response(request, "검색어가 너무 깁니다.", "The search query is too long.", status=400, ui_lang=resolved_lang)
+    if not query or len(query) < 2:
+        return JsonResponse({"ok": True, "results": []}, json_dumps_params={"ensure_ascii": False})
+    try:
+        locations = _account_weather_geocode_query(query, resolved_lang, count=8)
+    except (httpx.HTTPError, TypeError, KeyError) as error:
+        return _json_error_response(
+            request,
+            "위치 검색에 실패했습니다.",
+            "Location lookup failed.",
+            status=502,
+            ui_lang=resolved_lang,
+            detail=str(error),
+        )
+    return JsonResponse({"ok": True, "results": locations}, json_dumps_params={"ensure_ascii": False})
+
+
+@require_http_methods(["GET", "PATCH"])
+@csrf_protect
+def account_weather(request, ui_lang=None):
+    """Expose the account weather summary and store a manually selected location."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+
+    if not request.user.is_authenticated:
+        return _json_error_response(request, "로그인이 필요합니다.", "Login required.", status=401, ui_lang=resolved_lang)
+
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+
+    if request.method == "PATCH":
+        try:
+            payload = json.loads(request.body or "{}")
+        except (TypeError, ValueError):
+            return _json_error_response(
+                request,
+                "요청 데이터 형식이 올바르지 않습니다.",
+                "The request body is invalid.",
+                status=400,
+                ui_lang=resolved_lang,
+            )
+
+        if payload.get("use_ip"):
+            _account_weather_clear_saved_location(profile)
+        else:
+            try:
+                location = _account_weather_location_from_request_payload(payload, resolved_lang)
+            except ValueError as error:
+                error_code = str(error)
+                if error_code in {"location_text_too_long", "location_query_too_long"}:
+                    return _json_error_response(request, "위치 이름이 너무 깁니다.", "Location text is too long.", status=400, ui_lang=resolved_lang)
+                if error_code == "location_required":
+                    return _json_error_response(request, "위치를 입력해 주세요.", "Enter a location.", status=400, ui_lang=resolved_lang)
+                return _json_error_response(request, "위치를 찾지 못했습니다.", "Location was not found.", status=404, ui_lang=resolved_lang)
+            except (httpx.HTTPError, TypeError, KeyError) as error:
+                return _json_error_response(
+                    request,
+                    "위치 검색에 실패했습니다.",
+                    "Location lookup failed.",
+                    status=502,
+                    ui_lang=resolved_lang,
+                    detail=str(error),
+                )
+            _account_weather_save_location(profile, location)
+
+    try:
+        location = _account_weather_resolve_location(profile, request, resolved_lang)
+        if not location:
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "location_unavailable",
+                    "location": {
+                        "country": str(getattr(profile, "weather_country", "") or "").strip(),
+                        "city": str(getattr(profile, "weather_city", "") or "").strip(),
+                        "label": str(getattr(profile, "weather_location_label", "") or "").strip(),
+                        "source": str(getattr(profile, "weather_location_source", "") or "").strip(),
+                    },
+                },
+                status=200,
+            )
+        return JsonResponse(_account_weather_forecast(location, resolved_lang), json_dumps_params={"ensure_ascii": False})
+    except (httpx.HTTPError, ValueError, TypeError, KeyError) as error:
+        return _json_error_response(
+            request,
+            "날씨 정보를 불러오지 못했습니다.",
+            "Weather lookup failed.",
+            status=502,
+            ui_lang=resolved_lang,
+            detail=str(error),
+        )
+
+
 @require_http_methods(["GET", "PATCH"])
 @csrf_protect
 def theme_preference(request, ui_lang=None):
@@ -7306,8 +8370,6 @@ def root_shortcuts_reorder(request, ui_lang=None):
 
     refreshed_items = QuickLink.objects.filter(user=request.user).order_by("display_order", "id")
     return JsonResponse({"items": [_serialize_quick_link(item) for item in refreshed_items]}, status=200)
-
-logger = logging.getLogger(__name__)
 
 def sanitize_text(text, max_length=500):
     """Strip HTML-like tags from text and optionally clamp message length."""

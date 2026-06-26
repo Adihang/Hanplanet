@@ -1,0 +1,45 @@
+{
+  "layoutState": {
+    "nav": {
+      "top": 0,
+      "height": 68,
+      "bottom": 68
+    },
+    "main": {
+      "top": 68,
+      "height": 692,
+      "bottom": 760
+    },
+    "stage": {
+      "top": 68,
+      "height": 692,
+      "bottom": 760
+    },
+    "canvas": {
+      "top": 68,
+      "width": 922.65625,
+      "height": 692
+    },
+    "bodyOverflow": "hidden",
+    "bodyDisplay": "flex"
+  },
+  "textState": {
+    "canvasRect": {
+      "top": 68,
+      "left": 18.671875,
+      "width": 922.65625,
+      "height": 692
+    },
+    "audioPanelRect": {
+      "top": 78,
+      "left": 10,
+      "width": 190,
+      "height": 46
+    },
+    "audioPanelOpacity": "1"
+  },
+  "errors": [
+    "Failed to use accelerated renderer, fallback to software...",
+    " *** failed to open nsa or ns2 archive, ignored.  ***"
+  ]
+}

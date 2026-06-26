@@ -71,6 +71,8 @@
         const navControls = navCollapse ? navCollapse.querySelector('.ui-controls-stack') : null;
         const navToggler = nav.querySelector('.ui-nav-toggler');
         const installButton = nav.querySelector('[data-pwa-install]');
+        const collapsedBodyClass = 'site-nav-auto-collapsed';
+        const navOpenClass = 'show';
 
         if (!navContainer || !navBrandGroup || !navLinks || !navCollapse || !navToggler) {
             return;
@@ -221,11 +223,31 @@
                 }
             }
 
-            navCollapse.classList.remove('show', 'collapsing');
+            navCollapse.classList.remove(navOpenClass, 'collapsing');
             navCollapse.style.height = '';
             navToggler.classList.add('collapsed');
             navToggler.setAttribute('aria-expanded', 'false');
             forceClearNavContainerDecorations();
+        };
+
+        const setFallbackNavMenuOpen = function (open) {
+            navCollapse.classList.toggle(navOpenClass, open);
+            navCollapse.classList.remove('collapsing');
+            navCollapse.style.height = '';
+            navToggler.classList.toggle('collapsed', !open);
+            navToggler.setAttribute('aria-expanded', open ? 'true' : 'false');
+            forceClearNavContainerDecorations();
+        };
+
+        const toggleFallbackNavMenu = function () {
+            setFallbackNavMenuOpen(!navCollapse.classList.contains(navOpenClass));
+        };
+
+        const syncDocumentNavMode = function () {
+            if (!document.body) {
+                return;
+            }
+            document.body.classList.toggle(collapsedBodyClass, nav.classList.contains('nav-auto-collapsed'));
         };
 
         const updateNavMode = function () {
@@ -250,6 +272,7 @@
                 placeInstallButtonInline();
             }
 
+            syncDocumentNavMode();
             forceClearNavContainerDecorations();
         };
 
@@ -265,7 +288,12 @@
         window.addEventListener('orientationchange', scheduleNavModeUpdate, { passive: true });
         window.addEventListener('beforeinstallprompt', scheduleNavModeUpdate);
         window.addEventListener('appinstalled', scheduleNavModeUpdate);
-        navToggler.addEventListener('click', function () {
+        navToggler.addEventListener('click', function (event) {
+            if (!window.bootstrap || !window.bootstrap.Collapse) {
+                event.preventDefault();
+                toggleFallbackNavMenu();
+                return;
+            }
             window.requestAnimationFrame(forceClearNavContainerDecorations);
         });
         navCollapse.addEventListener('transitionend', forceClearNavContainerDecorations);

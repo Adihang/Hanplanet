@@ -7,6 +7,7 @@
     var statusEl = null;
     var lineWidthInput = null;
     var lineWidthDisplay = null;
+    var lineWidthPreview = null;
     var fontFamilySelect = null;
     var fontSizeInput = null;
     var fontColorInput = null;
@@ -208,6 +209,57 @@
             return raw;
         }
         return fallback || "#111827";
+    }
+
+    function formatLineWidth(value) {
+        return String(Number(value) || state.lineWidth || 2.5).replace(/\.0$/, "") + "px";
+    }
+
+    function syncLineWidthControls() {
+        var width = clamp(state.lineWidth, 1, 12);
+        state.lineWidth = width;
+        if (lineWidthInput) {
+            lineWidthInput.value = String(width);
+        }
+        if (lineWidthDisplay) {
+            lineWidthDisplay.textContent = formatLineWidth(width);
+        }
+        if (lineWidthPreview) {
+            lineWidthPreview.style.setProperty("--pe-line-preview-width", formatLineWidth(width));
+            lineWidthPreview.style.color = state.drawColor;
+        }
+    }
+
+    function setActivePdfTool(tool) {
+        var nextTool = tool === "draw" || tool === "text" ? tool : "";
+        if (state.drawing && nextTool !== "draw") {
+            var pageIndex = state.drawing.page;
+            state.drawing = null;
+            renderDrawLayer(pageIndex);
+        }
+        if (nextTool !== "text") {
+            state.lastTextCreate = null;
+        }
+        state.activeTool = nextTool;
+        if (surface) {
+            Array.prototype.slice.call(surface.querySelectorAll("[data-pdf-tool]")).forEach(function (button) {
+                var isActive = button.getAttribute("data-pdf-tool") === state.activeTool;
+                button.classList.toggle("is-active", isActive);
+                button.setAttribute("aria-pressed", isActive ? "true" : "false");
+            });
+        }
+        if (pageList) {
+            pageList.classList.toggle("is-pdf-draw-mode", state.activeTool === "draw");
+            pageList.classList.toggle("is-pdf-text-mode", state.activeTool === "text");
+        }
+    }
+
+    function deactivateActivePdfTool() {
+        if (!state.activeTool) {
+            return false;
+        }
+        setActivePdfTool("");
+        return true;
     }
 
     var PDF_FONT_CSS_FALLBACKS = {
@@ -435,8 +487,18 @@
         ctx.lineJoin = "round";
         ctx.beginPath();
         ctx.moveTo(points[0].x * state.zoom, points[0].y * state.zoom);
-        for (var i = 1; i < points.length; i += 1) {
-            ctx.lineTo(points[i].x * state.zoom, points[i].y * state.zoom);
+        if (points.length === 2) {
+            ctx.lineTo(points[1].x * state.zoom, points[1].y * state.zoom);
+        } else {
+            for (var i = 1; i < points.length - 1; i += 1) {
+                var current = points[i];
+                var next = points[i + 1];
+                var midX = ((current.x + next.x) / 2) * state.zoom;
+                var midY = ((current.y + next.y) / 2) * state.zoom;
+                ctx.quadraticCurveTo(current.x * state.zoom, current.y * state.zoom, midX, midY);
+            }
+            var last = points[points.length - 1];
+            ctx.lineTo(last.x * state.zoom, last.y * state.zoom);
         }
         ctx.stroke();
         ctx.restore();
@@ -669,8 +731,7 @@
         }
         if (fontSizeInput) fontSizeInput.value = String(Math.round(state.fontSize));
         if (fontColorInput) fontColorInput.value = state.fontColor;
-        if (lineWidthInput) lineWidthInput.value = String(state.lineWidth);
-        if (lineWidthDisplay) lineWidthDisplay.textContent = String(state.lineWidth).replace(/\.0$/, "") + "px";
+        syncLineWidthControls();
     }
 
     function applyTextStyleChange() {
@@ -679,6 +740,7 @@
         state.fontSize = clamp(fontSizeInput ? fontSizeInput.value : state.fontSize, 8, 96);
         state.fontColor = normalizeColor(fontColorInput ? fontColorInput.value : state.fontColor, "#111827");
         state.drawColor = state.fontColor;
+        syncLineWidthControls();
 
         var selected = getSelectedTextAnnotation();
         if (!selected) {
@@ -733,6 +795,9 @@
             createTextAt(point.page, point.x, point.y);
             return;
         }
+        if (state.activeTool !== "draw") {
+            return;
+        }
         event.preventDefault();
         canvas.setPointerCapture(event.pointerId);
         state.drawing = {
@@ -746,29 +811,41 @@
         renderDrawLayer(point.page);
     }
 
+    function appendDrawingPoint(point) {
+        if (!state.drawing || point.page !== state.drawing.page) {
+            return false;
+        }
+        var points = state.drawing.points;
+        var last = points[points.length - 1];
+        if (last && Math.hypot(last.x - point.x, last.y - point.y) < 0.4) {
+            return false;
+        }
+        points.push({ x: point.x, y: point.y });
+        return true;
+    }
+
     function onCanvasPointerMove(event) {
         if (!state.drawing) {
             return;
         }
         var canvas = event.currentTarget;
-        var point = pagePointFromEvent(event, canvas);
-        if (point.page !== state.drawing.page) {
-            return;
+        var changed = false;
+        var pageIndex = state.drawing.page;
+        var sourceEvents = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [event];
+        sourceEvents.forEach(function (sourceEvent) {
+            changed = appendDrawingPoint(pagePointFromEvent(sourceEvent, canvas)) || changed;
+        });
+        if (changed) {
+            renderDrawLayer(pageIndex);
+            setDirty(true);
         }
-        var points = state.drawing.points;
-        var last = points[points.length - 1];
-        if (last && Math.hypot(last.x - point.x, last.y - point.y) < 0.8) {
-            return;
-        }
-        points.push({ x: point.x, y: point.y });
-        renderDrawLayer(point.page);
-        setDirty(true);
     }
 
     function onCanvasPointerUp(event) {
         if (!state.drawing) {
             return;
         }
+        appendDrawingPoint(pagePointFromEvent(event, event.currentTarget));
         var drawing = state.drawing;
         state.drawing = null;
         try {
@@ -890,13 +967,8 @@
         surface.addEventListener("click", function (event) {
             var toolButton = event.target instanceof Element ? event.target.closest("[data-pdf-tool]") : null;
             if (toolButton && surface.contains(toolButton)) {
-                state.activeTool = toolButton.getAttribute("data-pdf-tool") || "draw";
-                Array.prototype.slice.call(surface.querySelectorAll("[data-pdf-tool]")).forEach(function (button) {
-                    button.classList.toggle("is-active", button === toolButton);
-                });
-                if (pageList) {
-                    pageList.classList.toggle("is-pdf-text-mode", state.activeTool === "text");
-                }
+                var nextTool = toolButton.getAttribute("data-pdf-tool") || "";
+                setActivePdfTool(state.activeTool === nextTool ? "" : nextTool);
                 return;
             }
             var actionButton = event.target instanceof Element ? event.target.closest("[data-pdf-action]") : null;
@@ -906,13 +978,20 @@
                 if (action === "redo") redo();
             }
         });
+        surface.addEventListener("contextmenu", function (event) {
+            if (state.disabled || !(event.target instanceof Element) || !surface.contains(event.target)) {
+                return;
+            }
+            if (deactivateActivePdfTool()) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        });
 
         if (lineWidthInput) {
             lineWidthInput.addEventListener("input", function () {
                 state.lineWidth = clamp(lineWidthInput.value, 1, 12);
-                if (lineWidthDisplay) {
-                    lineWidthDisplay.textContent = String(state.lineWidth).replace(/\.0$/, "") + "px";
-                }
+                syncLineWidthControls();
             });
         }
         [fontFamilySelect, fontSizeInput, fontColorInput].forEach(function (control) {
@@ -957,6 +1036,7 @@
         statusEl = $("pe-status");
         lineWidthInput = $("pe-line-width");
         lineWidthDisplay = $("pe-line-width-display");
+        lineWidthPreview = $("pe-line-width-preview");
         fontFamilySelect = $("pe-font-family");
         fontSizeInput = $("pe-font-size");
         fontColorInput = $("pe-font-color");
@@ -986,17 +1066,14 @@
         state.fontSize = 18;
         state.fontColor = "#111827";
         if (pageList) pageList.innerHTML = "";
-        if (lineWidthInput) lineWidthInput.value = "2.5";
         if (fontFamilySelect) {
             fontFamilySelect.value = "system";
             syncFontFamilySelectPreview(fontFamilySelect);
         }
         if (fontSizeInput) fontSizeInput.value = "18";
         if (fontColorInput) fontColorInput.value = "#111827";
-        Array.prototype.slice.call(surface.querySelectorAll("[data-pdf-tool]")).forEach(function (button) {
-            button.classList.toggle("is-active", button.getAttribute("data-pdf-tool") === "draw");
-        });
-        if (pageList) pageList.classList.remove("is-pdf-text-mode");
+        syncLineWidthControls();
+        setActivePdfTool("draw");
         bindControls();
         syncToolbarFromSelection();
         setDirty(false);

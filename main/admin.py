@@ -136,9 +136,9 @@ class QuickLinkAdmin(admin.ModelAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ["user", "theme_mode", "preferred_ui_lang", "preferred_root_search_engine", "updated_at"]
-    list_filter = ["theme_mode", "preferred_ui_lang", "preferred_root_search_engine"]
-    search_fields = ["user__username"]
+    list_display = ["user", "theme_mode", "preferred_ui_lang", "preferred_root_search_engine", "weather_city", "weather_country", "updated_at"]
+    list_filter = ["theme_mode", "preferred_ui_lang", "preferred_root_search_engine", "weather_location_source"]
+    search_fields = ["user__username", "weather_city", "weather_country"]
     ordering = ["user__username"]
 
 

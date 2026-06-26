@@ -1,6 +1,6 @@
 from django.urls import path, re_path
 
-from . import handrive_views, sync_views, views
+from . import handrive_views, onscripter_views, sync_views, views
 
 app_name = 'main'
 
@@ -202,6 +202,10 @@ urlpatterns = [
     re_path(r'^(?P<ui_lang>ko|en)/sub/network-info/api/reverse-geocode/?$', views.network_reverse_geocode_api, name='network_reverse_geocode_api_lang'),
     re_path(r'^(?P<ui_lang>ko|en)/sub/qrbarcode/?$', views.qrbarcode_page, name='qrbarcode_lang'),
     re_path(r'^(?P<ui_lang>ko|en)/sub/qrbarcode/generate/?$', views.qrbarcode_generate, name='qrbarcode_generate_lang'),
+    re_path(r'^(?P<ui_lang>ko|en)/sub/onscripter/?$', onscripter_views.onscripter_index, name='onscripter_index_lang'),
+    re_path(r'^(?P<ui_lang>ko|en)/sub/onscripter/(?P<game_slug>[A-Za-z0-9_-]+)/?$', onscripter_views.onscripter_player, name='onscripter_player_lang'),
+    re_path(r'^(?P<ui_lang>ko|en)/sub/onscripter/(?P<game_slug>[A-Za-z0-9_-]+)/index\.json$', onscripter_views.onscripter_game_index, name='onscripter_game_index_lang'),
+    re_path(r'^(?P<ui_lang>ko|en)/sub/onscripter/(?P<game_slug>[A-Za-z0-9_-]+)/save\.zip$', onscripter_views.onscripter_game_save, name='onscripter_game_save_lang'),
     re_path(r'^(?P<ui_lang>ko|en)/sub/youtube-downloader/?$', views.youtube_downloader_page, name='youtube_downloader_lang'),
     re_path(r'^(?P<ui_lang>ko|en)/sub/youtube-downloader/formats/?$', views.youtube_formats, name='youtube_formats_lang'),
     re_path(r'^(?P<ui_lang>ko|en)/sub/youtube-downloader/download/?$', views.youtube_download, name='youtube_download_lang'),
@@ -219,6 +223,8 @@ urlpatterns = [
     re_path(r'^(?P<ui_lang>ko|en)/api/root-shortcuts/(?P<shortcut_id>\d+)/$', views.root_shortcuts_detail, name='root_shortcuts_detail_lang'),
     re_path(r'^(?P<ui_lang>ko|en)/api/theme-preference/$', views.theme_preference, name='theme_preference_lang'),
     re_path(r'^(?P<ui_lang>ko|en)/api/user-preferences/$', views.user_preferences, name='user_preferences_lang'),
+    re_path(r'^(?P<ui_lang>ko|en)/api/account-weather/locations/$', views.account_weather_locations, name='account_weather_locations_lang'),
+    re_path(r'^(?P<ui_lang>ko|en)/api/account-weather/$', views.account_weather, name='account_weather_lang'),
     re_path(r'^(?P<ui_lang>ko|en)/api/wargame/session/$', views.wargame_session, name='wargame_session_lang'),
     re_path(r'^(?P<ui_lang>ko|en)/api/wargame/navbar/$', views.wargame_navbar, name='wargame_navbar_lang'),
     re_path(r'^(?P<ui_lang>ko|en)/api/wargame/solves/$', views.wargame_solves, name='wargame_solves_lang'),
@@ -266,6 +272,10 @@ urlpatterns = [
     path('sub/qrbarcode', views.redirect_to_language_prefixed_path, name='qrbarcode_no_slash'),
     path('sub/qrbarcode/', views.redirect_to_language_prefixed_path, name='qrbarcode'),
     path('sub/qrbarcode/generate/', views.qrbarcode_generate, name='qrbarcode_generate'),
+    path('sub/onscripter', views.redirect_to_language_prefixed_path, name='onscripter_index_no_slash'),
+    path('sub/onscripter/', views.redirect_to_language_prefixed_path, name='onscripter_index'),
+    path('sub/onscripter/<slug:game_slug>', views.redirect_to_language_prefixed_path, name='onscripter_player_no_slash'),
+    path('sub/onscripter/<slug:game_slug>/', views.redirect_to_language_prefixed_path, name='onscripter_player'),
     path('sub/youtube-downloader', views.redirect_to_language_prefixed_path, name='youtube_downloader_no_slash'),
     path('sub/youtube-downloader/', views.redirect_to_language_prefixed_path, name='youtube_downloader'),
     path('sub/youtube-downloader/formats/', views.youtube_formats, name='youtube_formats'),
@@ -289,6 +299,8 @@ urlpatterns = [
     path('api/root-shortcuts/<int:shortcut_id>/', views.root_shortcuts_detail, name='root_shortcuts_detail'),
     path('api/theme-preference/', views.theme_preference, name='theme_preference'),
     path('api/user-preferences/', views.user_preferences, name='user_preferences'),
+    path('api/account-weather/locations/', views.account_weather_locations, name='account_weather_locations'),
+    path('api/account-weather/', views.account_weather, name='account_weather'),
     path('api/wargame/session/', views.wargame_session, name='wargame_session'),
     path('api/wargame/navbar/', views.wargame_navbar, name='wargame_navbar'),
     path('api/wargame/solves/', views.wargame_solves, name='wargame_solves'),

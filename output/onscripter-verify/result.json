@@ -1,0 +1,19 @@
+{
+  "audioState": {
+    "panel": true,
+    "range": true,
+    "mute": true,
+    "opacity": "1",
+    "width": "190px",
+    "rangeValue": "80",
+    "muted": "false"
+  },
+  "canvasTextProbe": {
+    "width": 800,
+    "height": 600
+  },
+  "errors": [
+    "Failed to use accelerated renderer, fallback to software...",
+    " *** failed to open nsa or ns2 archive, ignored.  ***"
+  ]
+}

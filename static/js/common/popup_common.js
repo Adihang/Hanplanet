@@ -2,7 +2,7 @@
 (function () {
     // Keep a small inset so popups never touch the viewport edge.
     const viewportPadding = 10;
-    const popupSelector = "[data-popup-fit-bottom], [data-popup-fit-top]";
+    const popupSelector = ".site-dropdown-menu:not(.site-custom-select-menu), [data-popup-fit-bottom], [data-popup-fit-top]";
     const modalRootSelector = [
         ".root-auth-modal",
         ".handrive-popup-modal",
@@ -597,26 +597,90 @@
         element.removeAttribute("data-site-modal-stack-index");
     }
 
+    function resetPopupFitWidth(element) {
+        element.style.removeProperty("--popup-fit-max-width");
+        if (element.dataset && element.dataset.popupFitMaxWidthOverride === "1") {
+            element.style.removeProperty("max-width");
+            delete element.dataset.popupFitMaxWidthOverride;
+        }
+        if (element.dataset && element.dataset.popupFitMinWidthOverride === "1") {
+            element.style.removeProperty("min-width");
+            delete element.dataset.popupFitMinWidthOverride;
+        }
+    }
+
+    function preparePopupFitWidth(element, availableWidth) {
+        if (!element.classList || !element.classList.contains("site-dropdown-menu") || element.classList.contains("site-custom-select-menu")) {
+            return;
+        }
+        const width = Math.max(80, Math.floor(availableWidth));
+        element.style.setProperty("--popup-fit-max-width", String(width) + "px");
+        if (element.dataset && element.dataset.popupFitMaxWidthOverride === "1") {
+            element.style.removeProperty("max-width");
+            delete element.dataset.popupFitMaxWidthOverride;
+        }
+        if (element.dataset && element.dataset.popupFitMinWidthOverride === "1") {
+            element.style.removeProperty("min-width");
+            delete element.dataset.popupFitMinWidthOverride;
+        }
+        const computedStyle = window.getComputedStyle(element);
+        const maxWidth = computedStyle.maxWidth === "none"
+            ? Number.POSITIVE_INFINITY
+            : Number.parseFloat(computedStyle.maxWidth || "0");
+        if (Number.isFinite(maxWidth) && maxWidth > width || maxWidth === Number.POSITIVE_INFINITY) {
+            element.style.maxWidth = String(width) + "px";
+            if (element.dataset) {
+                element.dataset.popupFitMaxWidthOverride = "1";
+            }
+        }
+        const minWidth = Number.parseFloat(computedStyle.minWidth || "0");
+        if (Number.isFinite(minWidth) && minWidth > width) {
+            element.style.minWidth = "0px";
+            if (element.dataset) {
+                element.dataset.popupFitMinWidthOverride = "1";
+            }
+        }
+    }
+
     function repositionPopup(element) {
         // Skin modal popups shift through a parent CSS variable so the child transform stack stays simple.
         const skinModalParent = element.closest(".multiplayer-skin-modal");
 
         if (!isVisible(element)) {
+            element.style.removeProperty("--popup-fit-x-shift");
             element.style.removeProperty("--popup-fit-bottom-shift");
             element.style.removeProperty("--popup-fit-top-shift");
+            resetPopupFitWidth(element);
             if (skinModalParent) {
                 skinModalParent.style.removeProperty("--popup-fit-child-top-shift");
             }
             return;
         }
 
+        element.style.setProperty("--popup-fit-x-shift", "0px");
         element.style.setProperty("--popup-fit-bottom-shift", "0px");
         element.style.setProperty("--popup-fit-top-shift", "0px");
         if (skinModalParent) {
             skinModalParent.style.setProperty("--popup-fit-child-top-shift", "0px");
         }
 
+        const viewport = getViewportSize();
+        const leftLimit = viewportPadding;
+        const rightLimit = viewport.width - viewportPadding;
+        const availableWidth = Math.max(80, rightLimit - leftLimit);
+        preparePopupFitWidth(element, availableWidth);
+
         const rect = element.getBoundingClientRect();
+        let shiftX = 0;
+        if (rect.width > availableWidth) {
+            shiftX = leftLimit - rect.left;
+        } else if (rect.left < leftLimit) {
+            shiftX = leftLimit - rect.left;
+        } else if (rect.right > rightLimit) {
+            shiftX = rightLimit - rect.right;
+        }
+        element.style.setProperty("--popup-fit-x-shift", String(Math.round(shiftX)) + "px");
+
         const viewportHeight = getViewportHeight();
         const overflowBottom = rect.bottom + viewportPadding - viewportHeight;
         const overflowTop = viewportPadding - rect.top;

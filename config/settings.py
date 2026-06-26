@@ -20,6 +20,7 @@ from storage_profile import get_disc_mode, get_forgejo_repos_root, get_github_re
 
 mimetypes.add_type("application/javascript", ".js", strict=True)
 mimetypes.add_type("application/javascript", ".mjs", strict=True)
+mimetypes.add_type("application/wasm", ".wasm", strict=True)
 mimetypes.add_type("video/x-matroska", ".mkv", strict=True)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.

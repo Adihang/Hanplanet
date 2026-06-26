@@ -1,0 +1,6 @@
+{
+  "errors": [
+    "Failed to use accelerated renderer, fallback to software...",
+    " *** failed to open nsa or ns2 archive, ignored.  ***"
+  ]
+}

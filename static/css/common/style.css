@@ -1161,17 +1161,34 @@ body.root-page {
 }
 
 .root-shell-controls-fixed {
+    display: grid;
     position: fixed;
     top: 14px;
     right: 16px;
     width: auto;
     z-index: var(--site-z-nav);
     margin-bottom: 0;
+    grid-template-columns: auto auto;
+    grid-template-areas:
+        "account controls";
     justify-content: flex-end;
     align-items: center;
+    justify-items: flex-end;
+    gap: 6px 3px;
 }
 
-.root-shell-controls-fixed:has(.ui-auth-account-menu:not([hidden])) {
+.root-shell-weather-fixed {
+    position: fixed;
+    top: 14px;
+    left: 16px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    z-index: var(--site-z-nav);
+}
+
+.root-shell-controls-fixed:has(.ui-auth-account-menu:not([hidden])),
+.root-shell-weather-fixed:has(.ui-auth-account-weather-popup:not([hidden])) {
     z-index: var(--site-z-popup);
 }
 
@@ -1193,14 +1210,43 @@ body.root-page {
 }
 
 .root-shell-controls-fixed [data-root-nav-account-host] {
-    margin-right: 10px;
+    grid-area: account;
+    align-self: end;
+    justify-self: end;
+    order: 1;
+    margin-right: 0;
+}
+
+.root-shell-controls-fixed .ui-controls-stack {
+    grid-area: controls;
+    align-self: center;
+    order: 2;
 }
 
 .root-shell-controls-fixed .ui-auth-account-floating {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-end;
     justify-content: flex-end;
+    gap: 6px;
     margin: 0;
+}
+
+.root-shell-weather-fixed .ui-auth-account-weather {
+    justify-content: flex-start;
+}
+
+.root-shell-weather-fixed .ui-auth-account-weather-trigger {
+    border-radius: var(--btn-template-radius, 8px);
+}
+
+.root-shell-weather-fixed .ui-auth-account-weather-popup {
+    right: auto;
+    left: 0;
+}
+
+.root-shell-controls-fixed .ui-auth-account-trigger {
+    order: 1;
 }
 
 .root-shell-controls-fixed .ui-auth-account-trigger {
@@ -4791,6 +4837,23 @@ body.portfolio-page .footer-links {
 
 .footer-links:has(.footer-purpose) {
     padding: 8px 0;
+}
+
+body.site-nav-auto-collapsed:not(.root-page) .footer-links {
+    height: 10px;
+    min-height: 10px;
+    flex: 0 0 10px;
+    margin: 0;
+    padding: 0;
+    gap: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+    font-size: 0;
+    line-height: 0;
+}
+
+body.site-nav-auto-collapsed:not(.root-page) .footer-links > * {
+    display: none;
 }
 
 .footer-nav {

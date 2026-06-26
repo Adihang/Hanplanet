@@ -1,0 +1,16 @@
+{
+  "light": {
+    "themeDark": false,
+    "bodyBg": "rgb(0, 0, 0)",
+    "mainBg": "rgb(255, 255, 255)",
+    "stageBg": "rgba(248, 248, 248, 0.92)",
+    "navBg": "rgba(0, 0, 0, 0)"
+  },
+  "dark": {
+    "themeDark": true,
+    "bodyBg": "rgb(0, 0, 0)",
+    "mainBg": "rgb(34, 34, 34)",
+    "stageBg": "rgba(40, 40, 40, 0.94)",
+    "navBg": "rgba(34, 34, 34, 0.84)"
+  }
+}

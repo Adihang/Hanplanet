@@ -36,3 +36,13 @@ def static_v(path):
     version = int(static_file.stat().st_mtime)
     separator = "&" if "?" in base_url else "?"
     return f"{base_url}{separator}v={version}"
+
+
+@register.simple_tag
+def static_mtime(path):
+    static_file = _find_static_file(path)
+
+    if static_file is None:
+        return ""
+
+    return int(static_file.stat().st_mtime)

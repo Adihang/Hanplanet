@@ -983,7 +983,10 @@
         }
 
         const pdfFrame = contentElement.querySelector(".handrive-media-pdf-element");
-        if (pdfFrame && printFrameSource(pdfFrame.getAttribute("src") || pdfFrame.src, title)) {
+        const pdfPrintSource = pdfFrame
+            ? (pdfFrame.getAttribute("data-handrive-pdf-source") || pdfFrame.getAttribute("src") || pdfFrame.src)
+            : "";
+        if (pdfFrame && printFrameSource(pdfPrintSource, title)) {
             return true;
         }
 
@@ -2178,6 +2181,30 @@
         });
     }
 
+    function hydrateModelPreviews(container) {
+        if (
+            !container ||
+            !(container instanceof Element) ||
+            !window.HandriveModelPreview ||
+            typeof window.HandriveModelPreview.hydrate !== "function"
+        ) {
+            return;
+        }
+        window.HandriveModelPreview.hydrate(container);
+    }
+
+    function destroyModelPreviews(container) {
+        if (
+            !container ||
+            !(container instanceof Element) ||
+            !window.HandriveModelPreview ||
+            typeof window.HandriveModelPreview.destroy !== "function"
+        ) {
+            return;
+        }
+        window.HandriveModelPreview.destroy(container);
+    }
+
     // 템플릿을 포맷팅하는 함수
     function formatTemplate(template, values) {
         // Small named-token formatter for localized strings such as "{count}개 항목".
@@ -2575,6 +2602,10 @@
             frame.dataset.handriveFrameLoadingBound = "1";
             frame.addEventListener("load", markFrameReady, { once: true });
             frame.addEventListener("error", markFrameReady, { once: true });
+            frame.addEventListener("load", function () {
+                syncHandrivePdfViewerFrameTheme(frame);
+            });
+            syncHandrivePdfViewerFrameTheme(frame);
             try {
                 const frameDocument = frame.contentDocument;
                 const frameDocumentUrl = frameDocument ? String(frameDocument.URL || "") : "";
@@ -2590,6 +2621,30 @@
         });
         window.setTimeout(hideOverlay, 12000);
     }
+
+    function getCurrentHandriveThemeMode() {
+        return document.body && document.body.classList.contains("theme-dark") ? "dark" : "light";
+    }
+
+    function syncHandrivePdfViewerFrameTheme(frame) {
+        if (!frame || frame.dataset.handrivePdfViewer !== "1" || !frame.contentWindow) {
+            return;
+        }
+        try {
+            frame.contentWindow.postMessage({
+                handrivePdfTheme: getCurrentHandriveThemeMode(),
+            }, window.location.origin);
+        } catch (error) {}
+    }
+
+    function syncHandrivePdfViewerFrameThemes(root) {
+        const scope = root && root.querySelectorAll ? root : document;
+        Array.prototype.slice.call(scope.querySelectorAll(".handrive-media-pdf-element[data-handrive-pdf-viewer='1']")).forEach(syncHandrivePdfViewerFrameTheme);
+    }
+
+    window.addEventListener("hanplanet:themechange", function () {
+        syncHandrivePdfViewerFrameThemes(document);
+    });
 
     // HTML을 이스케이프하는 함수
     function escapeHtml(value) {
@@ -5407,9 +5462,12 @@
         const HANDRIVE_LIST_ITEM_SCALE_STEP = 0.05;
         const HANDRIVE_LIST_SPLIT_LANDSCAPE_COOKIE_NAME = "handrive-list-split-landscape";
         const HANDRIVE_LIST_SPLIT_PORTRAIT_COOKIE_NAME = "handrive-list-split-portrait";
+        const HANDRIVE_LIST_DETAIL_SIDE_COOKIE_NAME = "handrive-list-detail-side";
+        const HANDRIVE_LIST_DETAIL_FLOATING_COOKIE_NAME = "handrive-list-detail-floating";
         const HANDRIVE_LIST_SPLIT_RATIO_MIN = 0.18;
         const HANDRIVE_LIST_SPLIT_RATIO_MAX = 0.78;
         let handriveListItemScale = 1;
+        let handriveListDetailSidePreference = normalizeListDetailSide(getCookieValue(HANDRIVE_LIST_DETAIL_SIDE_COOKIE_NAME));
         let listSearchForm = document.getElementById("handrive-list-search-form");
         let listSearchInput = document.getElementById("handriveListSearchInput");
         let listSearchSubmitButton = document.getElementById("handrive-list-search-submit");
@@ -5420,6 +5478,7 @@
         const previewHead = previewPanel ? previewPanel.querySelector(".handrive-list-preview-head") : null;
         const previewTitle = document.getElementById("handrive-list-preview-title");
         const previewContent = document.getElementById("handrive-list-preview-content");
+        const previewBody = previewPanel ? previewPanel.querySelector(".handrive-list-preview-body") : null;
         const previewBodyLoadingOverlay = document.getElementById("handrive-list-preview-body-loading");
         const previewZoomWrap = document.getElementById("handrive-list-preview-zoom");
         const previewZoomOutButton = document.getElementById("handrive-list-preview-zoom-out");
@@ -7587,6 +7646,7 @@
             const isLandscape = window.innerWidth > window.innerHeight;
             listLayout.classList.toggle("is-landscape", isLandscape);
             listLayout.classList.toggle("is-portrait", !isLandscape);
+            syncListDetailSideState();
             syncListSplitterState();
 
             // 레이아웃 변경 후 동기화
@@ -7816,7 +7876,7 @@
         const FLOATING_LIST_DETAIL_DRAG_THRESHOLD = 50;
         const FLOATING_LIST_DETAIL_VIEWPORT_MARGIN = 0;
         const FLOATING_LIST_DETAIL_PORTRAIT_WIDTH_RATIO = 0.8;
-        const FLOATING_LIST_DETAIL_RELEASE_EDGE_THRESHOLD = 50;
+        const FLOATING_LIST_DETAIL_RELEASE_EDGE_THRESHOLD = 30;
         let floatingListDetailPanel = null;
         let floatingListDetailPress = null;
         let floatingListDetailDrag = null;
@@ -7850,10 +7910,150 @@
             return isFloatingListDetailPanel(previewPanel) || isFloatingListDetailPanel(editorPanel);
         }
 
+        function getFloatingListDetailPanelKind(panel) {
+            if (panel === previewPanel) {
+                return "preview";
+            }
+            if (panel === editorPanel) {
+                return "editor";
+            }
+            return "";
+        }
+
+        function parseFloatingListDetailStoredRatio(value) {
+            const numberValue = Number(value);
+            if (!Number.isFinite(numberValue)) {
+                return null;
+            }
+            return clampFloatingListDetailValue(numberValue, 0, 1);
+        }
+
+        function formatFloatingListDetailStoredRatio(value) {
+            return Number(clampFloatingListDetailValue(value, 0, 1).toFixed(5));
+        }
+
+        function readStoredFloatingListDetailState() {
+            const rawValue = getCookieValue(HANDRIVE_LIST_DETAIL_FLOATING_COOKIE_NAME);
+            if (!rawValue) {
+                return null;
+            }
+            let data = null;
+            try {
+                data = JSON.parse(rawValue);
+            } catch (error) {
+                return null;
+            }
+            if (!data || typeof data !== "object") {
+                return null;
+            }
+            const panelKind = data.panel === "editor" ? "editor" : (data.panel === "preview" ? "preview" : "");
+            const leftRatio = parseFloatingListDetailStoredRatio(data.left);
+            const topRatio = parseFloatingListDetailStoredRatio(data.top);
+            const widthRatio = parseFloatingListDetailStoredRatio(data.width);
+            const heightRatio = parseFloatingListDetailStoredRatio(data.height);
+            if (!panelKind || leftRatio === null || topRatio === null || widthRatio === null || heightRatio === null) {
+                return null;
+            }
+            return {
+                panel: panelKind,
+                left: leftRatio,
+                top: topRatio,
+                width: widthRatio,
+                height: heightRatio,
+                portraitWidth: Boolean(data.portraitWidth),
+            };
+        }
+
+        function persistFloatingListDetailPanelState(panel) {
+            if (!isFloatingListDetailPanel(panel)) {
+                return;
+            }
+            const panelKind = getFloatingListDetailPanelKind(panel);
+            if (!panelKind) {
+                return;
+            }
+            const viewportRect = getFloatingListDetailViewportRect();
+            if (!viewportRect.width || !viewportRect.height) {
+                return;
+            }
+            const rect = panel.getBoundingClientRect();
+            const payload = {
+                v: 1,
+                panel: panelKind,
+                left: formatFloatingListDetailStoredRatio((rect.left - viewportRect.left) / viewportRect.width),
+                top: formatFloatingListDetailStoredRatio((rect.top - viewportRect.top) / viewportRect.height),
+                width: formatFloatingListDetailStoredRatio(rect.width / viewportRect.width),
+                height: formatFloatingListDetailStoredRatio(rect.height / viewportRect.height),
+                portraitWidth: isPortraitFloatingListDetailPanel(panel),
+            };
+            setCookieValue(HANDRIVE_LIST_DETAIL_FLOATING_COOKIE_NAME, JSON.stringify(payload));
+        }
+
+        function clearStoredFloatingListDetailState() {
+            deleteCookieValue(HANDRIVE_LIST_DETAIL_FLOATING_COOKIE_NAME);
+        }
+
+        function getStoredFloatingListDetailFrame(panel, options) {
+            const settings = options || {};
+            const storedState = readStoredFloatingListDetailState();
+            if (!storedState) {
+                return null;
+            }
+            if (!settings.allowAnyPanel && storedState.panel !== getFloatingListDetailPanelKind(panel)) {
+                return null;
+            }
+            const viewportRect = getFloatingListDetailViewportRect();
+            if (!viewportRect.width || !viewportRect.height) {
+                return null;
+            }
+            const limits = getFloatingListDetailSizeLimits(panel);
+            const width = clampFloatingListDetailValue(storedState.width * viewportRect.width, limits.minWidth, limits.maxWidth);
+            const height = clampFloatingListDetailValue(storedState.height * viewportRect.height, limits.minHeight, limits.maxHeight);
+            const minLeft = viewportRect.left + FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const minTop = viewportRect.top + FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const maxLeft = viewportRect.left + viewportRect.width - width - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            const maxTop = viewportRect.top + viewportRect.height - height - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
+            return {
+                left: clampFloatingListDetailValue(viewportRect.left + storedState.left * viewportRect.width, minLeft, maxLeft),
+                top: clampFloatingListDetailValue(viewportRect.top + storedState.top * viewportRect.height, minTop, maxTop),
+                width: width,
+                height: height,
+                portraitWidth: storedState.portraitWidth,
+            };
+        }
+
+        function refreshFloatingListDetailPanelForViewport(panel) {
+            if (!isFloatingListDetailPanel(panel)) {
+                return;
+            }
+            const storedFrame = getStoredFloatingListDetailFrame(panel);
+            if (storedFrame) {
+                applyFloatingListDetailFrame(panel, storedFrame);
+                return;
+            }
+            clampFloatingListDetailPanelToViewport(panel);
+            persistFloatingListDetailPanelState(panel);
+        }
+
+        function restoreStoredFloatingListDetailPanelIfPreferred(panel, options) {
+            if (!panel || panel.hidden) {
+                return false;
+            }
+            const storedFrame = getStoredFloatingListDetailFrame(panel, options);
+            if (!storedFrame) {
+                return false;
+            }
+            if (!ensureFloatingListDetailPanel(panel, panel.getBoundingClientRect())) {
+                return false;
+            }
+            applyFloatingListDetailFrame(panel, storedFrame);
+            scheduleFloatingListDetailViewportRefresh();
+            return true;
+        }
+
         function shouldUsePortraitFloatingListDetailWidth(sourceRect) {
             return Boolean(
-                listLayout &&
-                listLayout.classList.contains("is-portrait") &&
+                getListDetailSplitModeForSide(getEffectiveListDetailSide()) === "portrait" &&
                 sourceRect &&
                 sourceRect.width
             );
@@ -7867,9 +8067,75 @@
             );
         }
 
+        function normalizeListDetailSide(side) {
+            const normalizedSide = String(side || "").trim().toLowerCase();
+            return ["left", "right", "top", "bottom"].indexOf(normalizedSide) === -1
+                ? ""
+                : normalizedSide;
+        }
+
+        function getDefaultListDetailSide() {
+            return listLayout && listLayout.classList.contains("is-portrait") ? "bottom" : "right";
+        }
+
+        function getEffectiveListDetailSide() {
+            return normalizeListDetailSide(handriveListDetailSidePreference) || getDefaultListDetailSide();
+        }
+
+        function getListDetailSplitModeForSide(side) {
+            const normalizedSide = normalizeListDetailSide(side);
+            if (normalizedSide === "left" || normalizedSide === "right") {
+                return "landscape";
+            }
+            if (normalizedSide === "top" || normalizedSide === "bottom") {
+                return "portrait";
+            }
+            return "";
+        }
+
+        function syncListDetailSideState() {
+            if (!listLayout) {
+                return;
+            }
+            const side = getEffectiveListDetailSide();
+            const splitMode = getListDetailSplitModeForSide(side);
+            listLayout.classList.remove(
+                "is-detail-side-left",
+                "is-detail-side-right",
+                "is-detail-side-top",
+                "is-detail-side-bottom",
+                "is-detail-axis-horizontal",
+                "is-detail-axis-vertical"
+            );
+            listLayout.classList.add("is-detail-side-" + side);
+            if (splitMode === "landscape") {
+                listLayout.classList.add("is-detail-axis-horizontal");
+            } else if (splitMode === "portrait") {
+                listLayout.classList.add("is-detail-axis-vertical");
+            }
+        }
+
+        function setListDetailSidePreference(side) {
+            const normalizedSide = normalizeListDetailSide(side);
+            if (!normalizedSide) {
+                return;
+            }
+            const previousSide = getEffectiveListDetailSide();
+            handriveListDetailSidePreference = normalizedSide;
+            if (normalizedSide !== previousSide) {
+                setCookieValue(HANDRIVE_LIST_DETAIL_SIDE_COOKIE_NAME, normalizedSide);
+            }
+            syncListDetailSideState();
+            syncListSplitterState();
+            scheduleListSplitDependentLayout({
+                updateColumns: true,
+            });
+        }
+
         function syncFloatingListDetailLayoutState() {
             const hasFloatingDetail = isAnyFloatingListDetailPanel();
             if (listLayout) {
+                syncListDetailSideState();
                 listLayout.classList.toggle("has-floating-detail", hasFloatingDetail);
             }
             document.body.classList.toggle("handrive-list-detail-modal-open", hasFloatingDetail);
@@ -7889,8 +8155,8 @@
             }
             floatingListDetailViewportRefreshRafId = window.requestAnimationFrame(function () {
                 floatingListDetailViewportRefreshRafId = null;
-                clampFloatingListDetailPanelToViewport(previewPanel);
-                clampFloatingListDetailPanelToViewport(editorPanel);
+                refreshFloatingListDetailPanelForViewport(previewPanel);
+                refreshFloatingListDetailPanelForViewport(editorPanel);
                 try {
                     window.dispatchEvent(new Event("resize"));
                 } catch (error) {}
@@ -7904,20 +8170,54 @@
             return panel.querySelector(".handrive-list-preview-head, .handrive-list-editor-head");
         }
 
-        function isFloatingListDetailReleaseEdge(event) {
+        function getFloatingListDetailReleaseEdgeSide(event) {
             if (!event) {
-                return false;
+                return "";
             }
             const clientX = Number(event.clientX);
             const clientY = Number(event.clientY);
             if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
-                return false;
+                return "";
             }
             const viewportRect = getFloatingListDetailViewportRect();
-            if (listLayout && listLayout.classList.contains("is-portrait")) {
-                return clientY >= viewportRect.top + viewportRect.height - FLOATING_LIST_DETAIL_RELEASE_EDGE_THRESHOLD;
+            const threshold = FLOATING_LIST_DETAIL_RELEASE_EDGE_THRESHOLD;
+            const viewportLeft = viewportRect.left;
+            const viewportTop = viewportRect.top;
+            const viewportRight = viewportRect.left + viewportRect.width;
+            const viewportBottom = viewportRect.top + viewportRect.height;
+            const edges = [
+                { side: "left", distance: Math.max(0, clientX - viewportLeft), active: clientX <= viewportLeft + threshold },
+                { side: "right", distance: Math.max(0, viewportRight - clientX), active: clientX >= viewportRight - threshold },
+                { side: "top", distance: Math.max(0, clientY - viewportTop), active: clientY <= viewportTop + threshold },
+                { side: "bottom", distance: Math.max(0, viewportBottom - clientY), active: clientY >= viewportBottom - threshold },
+            ].filter(function (edge) {
+                return edge.active;
+            });
+            if (!edges.length) {
+                return "";
             }
-            return clientX >= viewportRect.left + viewportRect.width - FLOATING_LIST_DETAIL_RELEASE_EDGE_THRESHOLD;
+            edges.sort(function (leftEdge, rightEdge) {
+                return leftEdge.distance - rightEdge.distance;
+            });
+            const closestDistance = edges[0].distance;
+            const closestEdges = edges.filter(function (edge) {
+                return Math.abs(edge.distance - closestDistance) < 0.5;
+            });
+            const preferredSides = [
+                getEffectiveListDetailSide(),
+                getDefaultListDetailSide(),
+                "right",
+                "bottom",
+                "left",
+                "top",
+            ];
+            for (let index = 0; index < preferredSides.length; index += 1) {
+                const preferredSide = preferredSides[index];
+                if (closestEdges.some(function (edge) { return edge.side === preferredSide; })) {
+                    return preferredSide;
+                }
+            }
+            return edges[0].side;
         }
 
         function applyFloatingListDetailFrameToLayoutSplit(panel, frame) {
@@ -7930,9 +8230,7 @@
             ) {
                 return;
             }
-            const mode = listLayout.classList.contains("is-portrait")
-                ? "portrait"
-                : (listLayout.classList.contains("is-landscape") ? "landscape" : "");
+            const mode = getListDetailSplitModeForSide(getEffectiveListDetailSide());
             if (!mode) {
                 return;
             }
@@ -7974,8 +8272,14 @@
             const panel = dragState.panel;
             const restore = panel.__handriveFloatingListDetailRestore || {};
             const frame = getFloatingListDetailFrame(panel);
+            const releaseSide = normalizeListDetailSide(dragState.releaseSide);
             dragState.temporaryRestored = true;
             dragState.temporaryFrame = frame;
+            if (releaseSide) {
+                setListDetailSidePreference(releaseSide);
+            } else {
+                syncListDetailSideState();
+            }
             panel.classList.remove(
                 "is-floating-detail",
                 "is-floating-detail-dragging",
@@ -7983,7 +8287,6 @@
                 "is-floating-detail-portrait"
             );
             removeFloatingListDetailResizeHandles(panel);
-            removeFloatingListDetailCloseButton(panel);
             panel.style.width = restore.inlineWidth || "";
             panel.style.height = restore.inlineHeight || "";
             panel.style.left = restore.inlineLeft || "";
@@ -8031,6 +8334,7 @@
             if (event) {
                 positionFloatingListDetailPanel(panel, event.clientX, event.clientY, dragState);
             }
+            persistFloatingListDetailPanelState(panel);
             scheduleFloatingListDetailViewportRefresh();
         }
 
@@ -8050,6 +8354,7 @@
             if (floatingListDetailPanel === panel) {
                 floatingListDetailPanel = null;
             }
+            clearStoredFloatingListDetailState();
             syncFloatingListDetailLayoutState();
             applyFloatingListDetailFrameToLayoutSplit(panel, frame);
             scheduleFloatingListDetailViewportRefresh();
@@ -8059,8 +8364,9 @@
             if (!dragState || !dragState.panel) {
                 return false;
             }
-            const shouldTemporarilyRestore = isFloatingListDetailReleaseEdge(event);
-            if (shouldTemporarilyRestore) {
+            const releaseSide = getFloatingListDetailReleaseEdgeSide(event);
+            if (releaseSide) {
+                dragState.releaseSide = releaseSide;
                 temporarilyRestoreFloatingListDetailPanel(dragState);
                 return true;
             }
@@ -8099,6 +8405,19 @@
             panel.style.height = height + "px";
             panel.style.left = clampFloatingListDetailValue(frame.left, minLeft, maxLeft) + "px";
             panel.style.top = clampFloatingListDetailValue(frame.top, minTop, maxTop) + "px";
+            persistFloatingListDetailPanelState(panel);
+        }
+
+        function bindFloatingListDetailCloseButton(closeButton) {
+            if (!closeButton || closeButton.dataset.handrivePreviewCloseBound === "1") {
+                return;
+            }
+            closeButton.dataset.handrivePreviewCloseBound = "1";
+            closeButton.addEventListener("click", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                clearPreviewPane();
+            });
         }
 
         function ensureFloatingListDetailCloseButton(panel) {
@@ -8111,6 +8430,7 @@
             }
             let closeButton = actions.querySelector("[data-handrive-floating-detail-close]");
             if (closeButton) {
+                bindFloatingListDetailCloseButton(closeButton);
                 return;
             }
             closeButton = document.createElement("button");
@@ -8121,22 +8441,8 @@
             closeButton.setAttribute("aria-label", t("close", "닫기"));
             closeButton.title = t("close", "닫기");
             closeButton.innerHTML = '<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>';
-            closeButton.addEventListener("click", function (event) {
-                event.preventDefault();
-                event.stopPropagation();
-                clearPreviewPane();
-            });
+            bindFloatingListDetailCloseButton(closeButton);
             actions.appendChild(closeButton);
-        }
-
-        function removeFloatingListDetailCloseButton(panel) {
-            if (!panel) {
-                return;
-            }
-            const closeButton = panel.querySelector("[data-handrive-floating-detail-close]");
-            if (closeButton) {
-                closeButton.remove();
-            }
         }
 
         function isFloatingListDetailDragBlockedTarget(target, head) {
@@ -8201,6 +8507,7 @@
             const top = clampFloatingListDetailValue(clientY - grabOffsetY, minTop, maxTop);
             panel.style.left = left + "px";
             panel.style.top = top + "px";
+            persistFloatingListDetailPanelState(panel);
         }
 
         function clampFloatingListDetailPanelToViewport(panel) {
@@ -8215,6 +8522,7 @@
             const maxTop = viewportRect.top + viewportRect.height - panelRect.height - FLOATING_LIST_DETAIL_VIEWPORT_MARGIN;
             panel.style.left = clampFloatingListDetailValue(panelRect.left, minLeft, maxLeft) + "px";
             panel.style.top = clampFloatingListDetailValue(panelRect.top, minTop, maxTop) + "px";
+            persistFloatingListDetailPanelState(panel);
         }
 
         function getFloatingListDetailSizeLimits(panel) {
@@ -8320,6 +8628,7 @@
             resizeState.panel.style.top = nextTop + "px";
             resizeState.panel.style.width = nextWidth + "px";
             resizeState.panel.style.height = nextHeight + "px";
+            persistFloatingListDetailPanelState(resizeState.panel);
             scheduleFloatingListDetailViewportRefresh();
         }
 
@@ -8330,6 +8639,9 @@
             }
             event.preventDefault();
             suppressFloatingListDetailClickUntil = Date.now() + 250;
+            if (resizeState.panel) {
+                persistFloatingListDetailPanelState(resizeState.panel);
+            }
             clearFloatingListDetailResizeState();
             scheduleFloatingListDetailViewportRefresh();
         }
@@ -8385,6 +8697,7 @@
                     pressHead.releasePointerCapture(pressPointerId);
                 } catch (error) {}
             }
+            document.body.classList.remove("handrive-list-detail-holding");
             document.body.classList.remove("handrive-list-detail-dragging");
             document.removeEventListener("pointermove", handleFloatingListDetailPointerMove);
             document.removeEventListener("pointerup", handleFloatingListDetailPointerUp);
@@ -8467,7 +8780,11 @@
             return true;
         }
 
-        function restoreFloatingListDetailPanel(panel) {
+        function restoreFloatingListDetailPanel(panel, options) {
+            const settings = options || {};
+            const preservedStoredState = settings.preserveStoredState
+                ? getCookieValue(HANDRIVE_LIST_DETAIL_FLOATING_COOKIE_NAME)
+                : "";
             if (!isFloatingListDetailPanel(panel)) {
                 if (panel && panel.__handriveFloatingListDetailRestore) {
                     finalizeTemporarilyRestoredFloatingListDetailPanel({
@@ -8492,7 +8809,6 @@
                 "is-floating-detail-portrait"
             );
             removeFloatingListDetailResizeHandles(panel);
-            removeFloatingListDetailCloseButton(panel);
             panel.style.width = restore.inlineWidth || "";
             panel.style.height = restore.inlineHeight || "";
             panel.style.left = restore.inlineLeft || "";
@@ -8506,6 +8822,11 @@
             delete panel.__handriveFloatingListDetailRestore;
             if (floatingListDetailPanel === panel) {
                 floatingListDetailPanel = null;
+            }
+            if (settings.preserveStoredState && preservedStoredState) {
+                setCookieValue(HANDRIVE_LIST_DETAIL_FLOATING_COOKIE_NAME, preservedStoredState);
+            } else {
+                clearStoredFloatingListDetailState();
             }
             syncFloatingListDetailLayoutState();
             applyFloatingListDetailFrameToLayoutSplit(panel, frame);
@@ -8575,6 +8896,9 @@
                 return;
             }
             clearFloatingListDetailPointerState();
+            if (isFloatingListDetailPanel(panel)) {
+                document.body.classList.add("handrive-list-detail-holding");
+            }
             const headRect = head.getBoundingClientRect();
             const panelRect = panel.getBoundingClientRect();
             floatingListDetailPress = {
@@ -8614,7 +8938,7 @@
             }
             const observer = new MutationObserver(function () {
                 if (panel.hidden && isFloatingListDetailPanel(panel)) {
-                    restoreFloatingListDetailPanel(panel);
+                    restoreFloatingListDetailPanel(panel, { preserveStoredState: true });
                 }
             });
             observer.observe(panel, {
@@ -8624,6 +8948,7 @@
         }
 
         function setupFloatingListDetailPanels() {
+            ensureFloatingListDetailCloseButton(previewPanel);
             [previewHead, editorHead].forEach(function (head) {
                 if (head) {
                     head.addEventListener("pointerdown", handleFloatingListDetailPointerDown);
@@ -8632,12 +8957,12 @@
             [previewPanel, editorPanel].forEach(observeFloatingListDetailPanelVisibility);
             document.addEventListener("click", handleFloatingListDetailClickCapture, true);
             window.addEventListener("resize", function () {
-                clampFloatingListDetailPanelToViewport(previewPanel);
-                clampFloatingListDetailPanelToViewport(editorPanel);
+                refreshFloatingListDetailPanelForViewport(previewPanel);
+                refreshFloatingListDetailPanelForViewport(editorPanel);
             }, { passive: true });
             window.addEventListener("orientationchange", function () {
-                clampFloatingListDetailPanelToViewport(previewPanel);
-                clampFloatingListDetailPanelToViewport(editorPanel);
+                refreshFloatingListDetailPanelForViewport(previewPanel);
+                refreshFloatingListDetailPanelForViewport(editorPanel);
             }, { passive: true });
         }
 
@@ -8667,7 +8992,7 @@
                 !previewPanel ||
                 previewPanel.hidden ||
                 !listLayout ||
-                !listLayout.classList.contains("is-portrait") ||
+                getListDetailSplitModeForSide(getEffectiveListDetailSide()) !== "portrait" ||
                 !listLayout.classList.contains("has-preview")
             ) {
                 return;
@@ -8701,7 +9026,7 @@
                 if (!previewBody) {
                     return;
                 }
-                if (listLayout && listLayout.classList.contains("is-landscape")) {
+                if (listLayout && getListDetailSplitModeForSide(getEffectiveListDetailSide()) === "landscape") {
                     syncPreviewBodyHeight();
                     return;
                 }
@@ -8722,14 +9047,14 @@
                 clearPreviewBodyHeightStyles(previewBody);
                 return;
             }
-            const isLandscape = listLayout.classList.contains("is-landscape");
+            const isLandscape = getListDetailSplitModeForSide(getEffectiveListDetailSide()) === "landscape";
             const hasPreview = listLayout.classList.contains("has-preview");
             if (!isLandscape || !hasPreview) {
                 if (
                     previewPortraitLoadingHeightLocked &&
                     hasPreview &&
                     !previewPanel.hidden &&
-                    listLayout.classList.contains("is-portrait")
+                    getListDetailSplitModeForSide(getEffectiveListDetailSide()) === "portrait"
                 ) {
                     return;
                 }
@@ -8755,7 +9080,7 @@
                 editorBody.style.maxHeight = "";
                 return;
             }
-            const isLandscape = listLayout.classList.contains("is-landscape");
+            const isLandscape = getListDetailSplitModeForSide(getEffectiveListDetailSide()) === "landscape";
             const hasEditor = listLayout.classList.contains("has-editor");
             if (!isLandscape || !hasEditor || editorPanel.hidden) {
                 editorBody.style.height = "";
@@ -8774,7 +9099,7 @@
             if (!listContainer || !listLayout) {
                 return;
             }
-            const isLandscape = listLayout.classList.contains("is-landscape");
+            const isLandscape = getListDetailSplitModeForSide(getEffectiveListDetailSide()) === "landscape";
             if (!isLandscape) {
                 listContainer.style.height = "";
                 listContainer.style.minHeight = "";
@@ -8851,13 +9176,7 @@
             if (!hasDetailPanel) {
                 return "";
             }
-            if (listLayout.classList.contains("is-portrait")) {
-                return "portrait";
-            }
-            if (listLayout.classList.contains("is-landscape")) {
-                return "landscape";
-            }
-            return "";
+            return getListDetailSplitModeForSide(getEffectiveListDetailSide());
         }
 
         function getListSplitAxisSize(mode, rect) {
@@ -8865,6 +9184,21 @@
                 return 0;
             }
             return mode === "portrait" ? rect.height : rect.width;
+        }
+
+        function getListSplitRatioFromPointer(mode, side, event, layoutRect) {
+            const axisSize = getListSplitAxisSize(mode, layoutRect);
+            if (!axisSize || axisSize <= 0) {
+                return null;
+            }
+            if (mode === "portrait") {
+                return side === "top"
+                    ? (layoutRect.top + layoutRect.height - event.clientY) / axisSize
+                    : (event.clientY - layoutRect.top) / axisSize;
+            }
+            return side === "left"
+                ? (layoutRect.left + layoutRect.width - event.clientX) / axisSize
+                : (event.clientX - layoutRect.left) / axisSize;
         }
 
         function clampListSplitRatioToLayout(mode, ratio, rect) {
@@ -8992,6 +9326,7 @@
                 return;
             }
             const mode = activeListSplitDrag.mode;
+            const side = normalizeListDetailSide(activeListSplitDrag.side) || getEffectiveListDetailSide();
             const axisDelta = mode === "portrait"
                 ? Math.abs(event.clientY - activeListSplitDrag.startClientY)
                 : Math.abs(event.clientX - activeListSplitDrag.startClientX);
@@ -9005,9 +9340,10 @@
             if (!axisSize || axisSize <= 0) {
                 return;
             }
-            const rawRatio = mode === "portrait"
-                ? (event.clientY - layoutRect.top) / axisSize
-                : (event.clientX - layoutRect.left) / axisSize;
+            const rawRatio = getListSplitRatioFromPointer(mode, side, event, layoutRect);
+            if (rawRatio === null) {
+                return;
+            }
             const nextRatio = clampListSplitRatioToLayout(mode, rawRatio, layoutRect);
             if (nextRatio === null) {
                 return;
@@ -9069,6 +9405,7 @@
                 mode: mode,
                 moved: false,
                 pointerId: event.pointerId,
+                side: getEffectiveListDetailSide(),
                 startClientX: event.clientX,
                 startClientY: event.clientY,
             };
@@ -9121,6 +9458,7 @@
 
         function setupListSplitter() {
             applyStoredListSplitRatios();
+            syncListDetailSideState();
             syncListSplitterState();
             if (!listSplitter || !listLayout) {
                 return;
@@ -9206,7 +9544,10 @@
                 scheduleEditorBodyHeight();
             };
 
-            const isLandscape = Boolean(listLayout && listLayout.classList.contains("is-landscape"));
+            const isLandscape = Boolean(
+                listLayout &&
+                getListDetailSplitModeForSide(getEffectiveListDetailSide()) === "landscape"
+            );
             if (!isLandscape) {
                 currentDirRow.style.minHeight = "";
                 clearSideHeadHeight(previewHead);
@@ -9308,6 +9649,7 @@
             previewSetVisibility(previewPanel, listLayout, isVisible, scheduleSyncCurrentDirRowHeightWithSideHead);
             syncCurrentDirRowDetailCloseTarget();
             if (isVisible) {
+                restoreStoredFloatingListDetailPanelIfPreferred(previewPanel, { allowAnyPanel: true });
                 schedulePreviewBodyHeight();
             }
             scheduleEditorBodyHeight();
@@ -9883,6 +10225,7 @@
                 return Promise.resolve();
             }
             stopPreviewMediaElements(previewContent);
+            destroyModelPreviews(previewContent);
             setListEditorBodyLoading(false);
 
             if (isPdfEditorEntry(entry)) {
@@ -9934,6 +10277,7 @@
                     scheduleEditorBodyHeight();
                     syncSearchFormVisibility();
                     syncListEditorPreviewButtonVisibility();
+                    restoreStoredFloatingListDetailPanelIfPreferred(editorPanel, { allowAnyPanel: true });
                 },
                 loadContent: function (targetEntry) {
                     const targetUrl = buildDownloadUrl(targetEntry.path);
@@ -9958,6 +10302,7 @@
         async function switchToPdfEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
+            destroyModelPreviews(previewContent);
 
             if (editorSurface) editorSurface.hidden = true;
             if (imageEditorSurface) imageEditorSurface.hidden = true;
@@ -9984,6 +10329,7 @@
             scheduleSyncCurrentDirRowHeightWithSideHead();
             syncSearchFormVisibility();
             syncListEditorPreviewButtonVisibility();
+            restoreStoredFloatingListDetailPanelIfPreferred(editorPanel, { allowAnyPanel: true });
 
             if (editorSaveButton) editorSaveButton.disabled = true;
             setListEditorSaving(true);
@@ -10031,6 +10377,7 @@
         async function switchToImageEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
+            destroyModelPreviews(previewContent);
             setListEditorBodyLoading(true);
             if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
                 window.HandrivePdfEditor.destroy();
@@ -10064,6 +10411,7 @@
             scheduleSyncCurrentDirRowHeightWithSideHead();
             syncSearchFormVisibility();
             syncListEditorPreviewButtonVisibility();
+            restoreStoredFloatingListDetailPanelIfPreferred(editorPanel, { allowAnyPanel: true });
 
             // ImageEditor 초기화
             const imageServeUrl = buildDownloadUrl(entry.path);
@@ -10117,6 +10465,7 @@
         async function switchToVideoEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
+            destroyModelPreviews(previewContent);
             if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
                 window.HandrivePdfEditor.destroy();
             }
@@ -10146,6 +10495,7 @@
             scheduleSyncCurrentDirRowHeightWithSideHead();
             syncSearchFormVisibility();
             syncListEditorPreviewButtonVisibility();
+            restoreStoredFloatingListDetailPanelIfPreferred(editorPanel, { allowAnyPanel: true });
 
             const videoServeUrl = buildDownloadUrl(entry.path);
             if (editorSaveButton) editorSaveButton.disabled = true;
@@ -10182,6 +10532,7 @@
         async function switchToAudioEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
+            destroyModelPreviews(previewContent);
             if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
                 window.HandrivePdfEditor.destroy();
             }
@@ -10211,6 +10562,7 @@
             scheduleSyncCurrentDirRowHeightWithSideHead();
             syncSearchFormVisibility();
             syncListEditorPreviewButtonVisibility();
+            restoreStoredFloatingListDetailPanelIfPreferred(editorPanel, { allowAnyPanel: true });
 
             const audioServeUrl = buildDownloadUrl(entry.path);
             if (editorSaveButton) editorSaveButton.disabled = true;
@@ -10247,6 +10599,7 @@
         async function switchToSpreadsheetEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
+            destroyModelPreviews(previewContent);
             if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
                 window.HandrivePdfEditor.destroy();
             }
@@ -10275,6 +10628,7 @@
             scheduleSyncCurrentDirRowHeightWithSideHead();
             syncSearchFormVisibility();
             syncListEditorPreviewButtonVisibility();
+            restoreStoredFloatingListDetailPanelIfPreferred(editorPanel, { allowAnyPanel: true });
 
             if (editorSaveButton) editorSaveButton.disabled = true;
             setListEditorSaving(true);
@@ -11270,6 +11624,7 @@
             const previousActivePreviewPath = state.activePreviewPath;
             floatingListEditorDraftPreview = null;
             setPreviewBodyLoading(false);
+            destroyModelPreviews(previewContent);
             state.activePreviewPath = "";
             state.activeRenderedPreviewPath = "";
             state.activePreviewRenderMode = "";
@@ -11441,6 +11796,7 @@
                 .then(scheduleSyncCurrentDirRowHeightWithSideHead)
                 .catch(alertError);
             bindHandrivePdfFrameLoading(previewContent);
+            hydrateModelPreviews(previewContent);
             initializePreviewVideoPlayers(previewContent).catch(alertError);
             releasePreviewBodyHeightWhenRendered(renderMode);
         }
@@ -11450,7 +11806,9 @@
             await loadPreviewEntryFlow({
                 buildPostOptions: buildPostOptions,
                 beforePreviewContentReplace: function () {
-                    return releasePreviewVideoPlayers(previewContent);
+                    return releasePreviewVideoPlayers(previewContent).then(function () {
+                        destroyModelPreviews(previewContent);
+                    });
                 },
                 clearPreviewPane: clearPreviewPane,
                 editorPanel: editorPanel,
@@ -12509,6 +12867,9 @@
                         getStatusLabel: function (nextItem) {
                             return getQueueItemStatusLabel(nextItem, t);
                         },
+                        onActivate: function (nextItem) {
+                            openUploadQueueItemPreview(nextItem).catch(alertError);
+                        },
                         onOpenContextMenu: function (nextItem, x, y) {
                             openUploadQueueContextMenu(nextItem, x, y).catch(alertError);
                         },
@@ -12641,6 +13002,73 @@
             const parentPath = getParentDirectory(targetPath);
             await loadDirectory(parentPath);
             return findCachedEntryByPath(targetPath);
+        }
+
+        function buildUploadQueueFallbackPreviewEntry(item, targetPath) {
+            const normalizedPath = normalizePath(targetPath || "", true);
+            if (!item || item.status !== "done" || !normalizedPath) {
+                return null;
+            }
+            if (item.kind === "operation") {
+                if (item.operationType === "delete") {
+                    return null;
+                }
+                if (item.operationType === "move") {
+                    const movedEntries = Array.isArray(item.entries) ? item.entries : [];
+                    if (movedEntries.length === 1 && movedEntries[0] && movedEntries[0].type !== "file") {
+                        return null;
+                    }
+                }
+                if (item.operationType === "extract" && !getPathFileExtension(normalizedPath)) {
+                    return null;
+                }
+            }
+            const segments = normalizedPath.split("/");
+            const fileName = segments[segments.length - 1] || item.fileName || "";
+            if (!fileName) {
+                return null;
+            }
+            return {
+                path: normalizedPath,
+                slug_path: item.savedSlugPath || "",
+                name: fileName,
+                type: "file",
+                can_read: true,
+                can_edit: false,
+                can_demo_edit: false,
+                size_display: item.sizeDisplay || "",
+            };
+        }
+
+        async function resolveUploadQueuePreviewEntry(item) {
+            if (!item || item.status !== "done") {
+                return null;
+            }
+            const targetPath = getUploadQueueItemTargetPath(item);
+            if (!targetPath) {
+                return null;
+            }
+            const cachedEntry = await resolveUploadQueueContextEntry(item);
+            if (cachedEntry) {
+                return cachedEntry;
+            }
+            return buildUploadQueueFallbackPreviewEntry(item, targetPath);
+        }
+
+        async function openUploadQueueItemPreview(item) {
+            closeContextMenu();
+            const previewEntry = await resolveUploadQueuePreviewEntry(item);
+            if (!isPreviewableFileEntry(previewEntry)) {
+                return;
+            }
+            const previewPath = normalizePath(previewEntry.path, true);
+            applySelection([previewPath], {
+                primaryPath: previewPath,
+                anchorPath: previewPath,
+                skipPreview: true,
+            });
+            await loadPreviewForEntry(previewEntry);
+            await updatePreviewNavButtons(previewEntry);
         }
 
         async function openQueueItemLocation(item, entry) {
@@ -16738,6 +17166,67 @@
             });
         }
 
+        function isListPreviewBodyScrollContent(element) {
+            if (!element || !element.classList) {
+                return false;
+            }
+            return [
+                "handrive-json",
+                "handrive-css",
+                "handrive-js",
+                "handrive-py",
+                "handrive-sql",
+                "handrive-markdown",
+                "handrive-plain-text",
+            ].some(function (className) {
+                return element.classList.contains(className);
+            });
+        }
+
+        function normalizeListPreviewWheelDelta(delta, deltaMode, pageSize) {
+            const value = Number(delta) || 0;
+            if (!value) {
+                return 0;
+            }
+            if (deltaMode === 1) {
+                return value * 16;
+            }
+            if (deltaMode === 2) {
+                return value * Math.max(1, Number(pageSize) || 1);
+            }
+            return value;
+        }
+
+        function canScrollListPreviewBodyVertically(element, deltaY) {
+            if (!element || !deltaY || element.scrollHeight <= element.clientHeight + 1) {
+                return false;
+            }
+            if (deltaY < 0) {
+                return element.scrollTop > 0;
+            }
+            return element.scrollTop + element.clientHeight < element.scrollHeight - 1;
+        }
+
+        function handleListPreviewBodyWheel(event) {
+            if (
+                !previewBody ||
+                !previewContent ||
+                event.defaultPrevented ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey ||
+                !isListPreviewBodyScrollContent(previewContent)
+            ) {
+                return;
+            }
+            const deltaY = normalizeListPreviewWheelDelta(event.deltaY, event.deltaMode, previewBody.clientHeight);
+            if (!canScrollListPreviewBodyVertically(previewBody, deltaY)) {
+                return;
+            }
+            event.preventDefault();
+            previewBody.scrollTop += deltaY;
+        }
+
         if (previewZoomOutButton) {
             previewZoomOutButton.addEventListener("click", function () {
                 setPreviewImageZoom(state.previewImageZoom - 0.25);
@@ -16765,6 +17254,10 @@
                 const delta = event.deltaY < 0 ? 2 : -2;
                 setListPreviewFontSize(listPreviewFontSize + delta);
             }, { passive: false });
+        }
+
+        if (previewBody) {
+            previewBody.addEventListener("wheel", handleListPreviewBodyWheel, { passive: false });
         }
 
         if (previewUrlShareButton) {
@@ -17556,6 +18049,7 @@
             ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif", ".ico",
             ".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv",
             ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".weba",
+            ".stl", ".obj",
         ]);
         const viewPlayableMediaNavExtensions = new Set([
             ".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv",
@@ -17754,6 +18248,7 @@
             viewNavRequestToken = requestToken;
             try {
                 await releasePreviewVideoPlayers(contentArticle);
+                destroyModelPreviews(contentArticle);
                 if (requestToken !== viewNavRequestToken) {
                     return;
                 }
@@ -17778,6 +18273,7 @@
                 hydrateMediaAudioElements(contentArticle);
                 bindHandrivePdfFrameLoading(contentArticle);
                 applyHandriveCodeHighlighting(contentArticle, newClass);
+                hydrateModelPreviews(contentArticle);
                 await initializePreviewVideoPlayers(contentArticle);
 
                 restoreViewZoomForPath(entry.path);
@@ -17865,6 +18361,7 @@
         }
         renderHandriveMermaidDiagrams(contentArticle).catch(alertError);
         bindHandrivePdfFrameLoading(contentArticle);
+        hydrateModelPreviews(contentArticle);
         initializePreviewVideoPlayers(contentArticle).catch(alertError);
 
         restoreViewZoomForPath(currentDocPath);

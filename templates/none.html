@@ -2,6 +2,9 @@
 {% load static_versioned template_utils %}
 {% block body_class %}root-page{% endblock %}
 {% block content %}
+{% if request.user.is_authenticated %}
+<div class="root-shell-weather-fixed" data-root-weather-host></div>
+{% endif %}
 <div class="root-shell-controls root-shell-controls-fixed" data-root-controls-host>
     {% if request.user.is_authenticated %}
     <div data-root-nav-account-host id="ui-auth-account-root">

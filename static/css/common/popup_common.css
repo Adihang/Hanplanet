@@ -16,6 +16,7 @@
     -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)));
+    max-width: var(--popup-fit-max-width, calc(100vw - 20px));
 }
 
 .site-dropdown-menu,
@@ -170,7 +171,7 @@ body.theme-dark .site-custom-select {
     line-height: 1;
     letter-spacing: inherit;
     padding: inherit;
-    padding-right: 0;
+    padding-right: var(--site-custom-select-button-padding-right, 8px);
     text-align: right;
     cursor: inherit;
 }
@@ -210,8 +211,8 @@ body.theme-dark .site-custom-select {
     max-height: var(--site-custom-select-menu-max-height, 260px);
     overflow: auto;
     padding: 4px;
-    background: var(--handrive-bg, Canvas);
-    color: var(--handrive-text, CanvasText);
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+    color: var(--site-text, var(--handrive-text, CanvasText));
 }
 
 .site-custom-select-option {
@@ -543,16 +544,20 @@ body.theme-dark .site-custom-select {
 
 [data-popup-fit-bottom] {
     transform: translate(
-        var(--popup-drag-x, 0px),
+        calc(var(--popup-fit-x-shift, 0px) + var(--popup-drag-x, 0px)),
         calc(-1 * var(--popup-fit-bottom-shift, 0px) + var(--popup-drag-y, 0px))
     );
 }
 
 [data-popup-fit-top] {
     transform: translate(
-        var(--popup-drag-x, 0px),
+        calc(var(--popup-fit-x-shift, 0px) + var(--popup-drag-x, 0px)),
         calc(var(--popup-fit-top-shift, 0px) + var(--popup-drag-y, 0px))
     );
+}
+
+.site-dropdown-menu:not(.site-custom-select-menu):not([data-popup-fit-bottom]):not([data-popup-fit-top]) {
+    transform: translate(var(--popup-fit-x-shift, 0px), 0);
 }
 
 [data-popup-draggable-dialog]:not([data-popup-fit-bottom]):not([data-popup-fit-top]) {

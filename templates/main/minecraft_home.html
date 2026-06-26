@@ -120,6 +120,7 @@
     }
 
     .minecraft-panel-heading {
+        position: relative;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -185,6 +186,146 @@
     .theme-dark .minecraft-server-weather-icon {
         filter: invert(1);
     }
+
+    {% if minecraft_admin_log_enabled %}
+    .minecraft-clock-control {
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+    }
+
+    .minecraft-clock-control:hover,
+    .minecraft-clock-control:focus-visible {
+        background: var(--handrive-hover);
+        color: var(--handrive-text-strong);
+        outline: none;
+    }
+
+    .minecraft-server-time.minecraft-clock-control {
+        padding: 0 3px;
+        margin: 0 -3px;
+    }
+
+    .minecraft-clock-popover {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 10px;
+        z-index: 30;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--shared-card-bg);
+        box-shadow: var(--handrive-shadow-menu, 0 12px 36px rgba(15, 23, 42, 0.16));
+        color: var(--handrive-text-stronger);
+        box-sizing: border-box;
+    }
+
+    .minecraft-clock-popover[hidden] {
+        display: none;
+    }
+
+    .minecraft-time-picker {
+        width: 218px;
+        padding: 10px;
+    }
+
+    .minecraft-time-picker-title,
+    .minecraft-weather-menu-title {
+        margin: 0 0 8px;
+        color: var(--handrive-text-muted);
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .minecraft-time-picker-columns {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+    }
+
+    .minecraft-time-picker-list {
+        display: grid;
+        gap: 4px;
+        max-height: 154px;
+        padding: 4px;
+        overflow: auto;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted);
+    }
+
+    .minecraft-time-option,
+    .minecraft-weather-option,
+    .minecraft-time-picker-apply {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid transparent;
+        border-radius: var(--handrive-radius-sm);
+        background: transparent;
+        color: var(--handrive-text-stronger);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        box-sizing: border-box;
+        transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+    }
+
+    .minecraft-time-option {
+        min-height: 28px;
+        padding: 0 8px;
+    }
+
+    .minecraft-time-option:hover,
+    .minecraft-time-option:focus-visible,
+    .minecraft-weather-option:hover,
+    .minecraft-weather-option:focus-visible,
+    .minecraft-time-picker-apply:hover,
+    .minecraft-time-picker-apply:focus-visible {
+        background: var(--handrive-hover);
+        outline: none;
+    }
+
+    .minecraft-time-option.is-selected {
+        border-color: var(--handrive-border-heavy);
+        background: var(--handrive-surface-muted-strong);
+    }
+
+    .minecraft-time-picker-apply {
+        width: 100%;
+        min-height: 32px;
+        margin-top: 8px;
+        background: var(--handrive-surface-muted-strong);
+    }
+
+    .minecraft-weather-menu {
+        width: 168px;
+        padding: 8px;
+    }
+
+    .minecraft-weather-option {
+        justify-content: flex-start;
+        gap: 8px;
+        width: 100%;
+        min-height: 32px;
+        padding: 0 8px;
+        text-align: left;
+    }
+
+    .minecraft-weather-option-icon {
+        display: block;
+        flex: 0 0 18px;
+        width: 18px;
+        height: 18px;
+        overflow: hidden;
+        opacity: 0.86;
+    }
+
+    .theme-dark .minecraft-weather-option-icon {
+        filter: invert(1);
+    }
+    {% endif %}
 
     .minecraft-map-embed-section {
         flex: 1 1 auto;
@@ -295,6 +436,14 @@
         text-align: right;
     }
 
+    .minecraft-address-note {
+        margin-top: 4px;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.2;
+        text-align: right;
+    }
+
     .minecraft-panel-list {
         display: grid;
         flex: 1 1 auto;
@@ -379,6 +528,12 @@
         display: none;
     }
 
+    .minecraft-player-list {
+        padding: 2px;
+        width: calc(100% + 4px);
+        margin: -2px;
+    }
+
     .minecraft-player-name {
         display: inline-flex;
         align-items: center;
@@ -416,6 +571,659 @@
     .minecraft-player-item.is-online .minecraft-player-state {
         color: #2f9d58;
     }
+
+    {% if minecraft_admin_log_enabled %}
+    .minecraft-player-item.is-online[role="button"] {
+        cursor: pointer;
+        translate: 0 0 !important;
+        transition: background-color 0.16s ease, border-color 0.16s ease;
+    }
+
+    .minecraft-player-item.is-online[role="button"]:hover,
+    .minecraft-player-item.is-online[role="button"]:focus-visible,
+    .minecraft-player-item.is-online[role="button"]:active {
+        border-color: var(--handrive-border-heavy);
+        background: var(--handrive-surface-muted-strong);
+        translate: 0 0 !important;
+        outline: none;
+    }
+
+    .minecraft-player-detail-modal .minecraft-player-detail-dialog {
+        width: 560px;
+        max-width: calc(100vw - 20px);
+        height: auto;
+        max-height: calc(100vh - 20px);
+        max-height: calc(100dvh - 20px);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .minecraft-player-detail-body {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        min-height: 0;
+        padding: 10px;
+        overflow: auto;
+        box-sizing: border-box;
+    }
+
+    .minecraft-player-detail-card {
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted);
+        box-sizing: border-box;
+    }
+
+    .minecraft-player-detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        align-items: start;
+        min-width: 0;
+    }
+
+    .minecraft-player-detail-card {
+        display: grid;
+        align-content: start;
+        gap: 8px;
+        min-width: 0;
+        padding: 10px;
+    }
+
+    .minecraft-player-detail-card.is-location,
+    .minecraft-player-detail-card.is-wide {
+        grid-column: 1 / -1;
+    }
+
+    .minecraft-player-detail-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .minecraft-player-detail-card-title {
+        margin: 0;
+        color: var(--handrive-text-muted);
+        font-size: 13px;
+        font-weight: 800;
+        line-height: 1.2;
+    }
+
+    .minecraft-player-detail-value {
+        color: var(--handrive-text-stronger);
+        font-size: 15px;
+        font-weight: 800;
+        line-height: 1.2;
+    }
+
+    .minecraft-player-detail-card-body {
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .minecraft-player-edit-status {
+        margin: 0;
+        color: var(--handrive-text-muted);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.35;
+    }
+
+    .minecraft-player-edit-status[hidden] {
+        display: none;
+    }
+
+    .minecraft-player-edit-status.is-success {
+        color: #15803d;
+    }
+
+    .minecraft-player-edit-status.is-error {
+        color: #dc2626;
+    }
+
+    .minecraft-player-edit-form {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) max-content;
+        gap: 6px;
+        align-items: center;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .minecraft-player-edit-form.is-value-control {
+        grid-template-columns: minmax(0, 1fr) max-content;
+    }
+
+    .minecraft-player-edit-form.is-level-exp {
+        grid-template-columns: minmax(72px, 1fr) minmax(76px, 1fr) max-content;
+        align-items: end;
+    }
+
+    .minecraft-player-edit-form.is-effect-add {
+        grid-template-columns: minmax(128px, 1.2fr) minmax(72px, 0.55fr) minmax(82px, 0.65fr) max-content;
+    }
+
+    .minecraft-player-edit-form.is-inventory-edit {
+        grid-template-columns: max-content minmax(130px, 1fr) minmax(72px, 0.45fr) max-content max-content;
+    }
+
+    .minecraft-player-edit-form.is-location-edit {
+        grid-template-columns: minmax(150px, 1.25fr) repeat(3, minmax(90px, 0.75fr)) max-content;
+        align-items: end;
+        gap: 8px;
+    }
+
+    .minecraft-player-edit-input,
+    .minecraft-player-edit-select {
+        width: 100%;
+        min-width: 0;
+        height: 32px;
+        padding: 0 8px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--shared-card-bg);
+        color: var(--handrive-text-stronger);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        box-sizing: border-box;
+    }
+
+    .minecraft-player-edit-input {
+        text-align: right;
+    }
+
+    .minecraft-inventory-item-input {
+        text-align: left;
+    }
+
+    .minecraft-inventory-item-combobox {
+        position: relative;
+        display: block;
+        min-width: 0;
+    }
+
+    .minecraft-inventory-item-menu {
+        position: absolute;
+        top: calc(100% + 3px);
+        left: 0;
+        right: 0;
+        z-index: 42;
+        display: grid;
+        max-height: 190px;
+        overflow: auto;
+        padding: 4px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--shared-card-bg);
+        box-shadow: var(--handrive-shadow-soft);
+        box-sizing: border-box;
+    }
+
+    .minecraft-inventory-item-menu[hidden] {
+        display: none;
+    }
+
+    .minecraft-inventory-item-option {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) max-content;
+        align-items: center;
+        gap: 8px;
+        min-height: 28px;
+        padding: 0 7px;
+        border: 0;
+        border-radius: var(--handrive-radius-sm);
+        background: transparent;
+        color: var(--handrive-text-stronger);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 800;
+        text-align: left;
+        cursor: pointer;
+        box-sizing: border-box;
+    }
+
+    .minecraft-inventory-item-option:hover,
+    .minecraft-inventory-item-option:focus-visible,
+    .minecraft-inventory-item-option.is-active {
+        background: var(--handrive-hover);
+        outline: none;
+    }
+
+    .minecraft-inventory-item-option-label,
+    .minecraft-inventory-item-option-value {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .minecraft-inventory-item-option-value {
+        color: var(--handrive-text-muted);
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    .minecraft-player-edit-form.is-value-control .minecraft-player-edit-input,
+    .minecraft-player-edit-form.is-value-control .minecraft-player-edit-select {
+        height: 38px;
+        font-size: 16px;
+        font-weight: 800;
+    }
+
+    .minecraft-player-edit-form.is-level-exp .minecraft-player-edit-button {
+        height: 38px;
+    }
+
+    .minecraft-player-edit-form .site-custom-select.minecraft-player-edit-select {
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    .minecraft-player-edit-form.is-value-control .site-custom-select.minecraft-player-edit-select {
+        height: 38px !important;
+    }
+
+    .minecraft-player-edit-form .site-custom-select-button {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    .minecraft-player-edit-input:focus,
+    .minecraft-player-edit-select:focus {
+        border-color: var(--handrive-border-heavy);
+        outline: none;
+    }
+
+    .minecraft-player-edit-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 52px;
+        height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted-strong);
+        color: var(--handrive-text-stronger);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+        box-sizing: border-box;
+        transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+    }
+
+    .minecraft-player-edit-button:hover,
+    .minecraft-player-edit-button:focus-visible {
+        background: var(--handrive-hover);
+        border-color: var(--handrive-border-heavy);
+        outline: none;
+    }
+
+    .minecraft-player-edit-button:disabled,
+    .minecraft-player-edit-input:disabled,
+    .minecraft-player-edit-select:disabled {
+        cursor: default;
+        opacity: 0.55;
+    }
+
+    .minecraft-player-edit-unit-wrap {
+        position: relative;
+        min-width: 0;
+    }
+
+    .minecraft-player-edit-unit-wrap .minecraft-player-edit-input {
+        padding-right: 34px;
+    }
+
+    .minecraft-player-edit-unit-wrap .minecraft-player-edit-input.is-duration {
+        padding-right: 20px;
+    }
+
+    .minecraft-player-edit-unit-wrap .minecraft-player-edit-input.is-exp {
+        padding-right: 20px;
+    }
+
+    .minecraft-player-edit-unit {
+        position: absolute;
+        top: 50%;
+        right: 8px;
+        color: var(--handrive-text-muted);
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1;
+        pointer-events: none;
+        transform: translateY(-50%);
+    }
+
+    .minecraft-player-edit-field {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+    }
+
+    .minecraft-player-edit-field-label {
+        color: var(--handrive-text-muted);
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 1;
+    }
+
+    .minecraft-player-edit-form.is-location-edit .minecraft-player-edit-input,
+    .minecraft-player-edit-form.is-location-edit .minecraft-player-edit-select,
+    .minecraft-player-edit-form.is-location-edit .site-custom-select-button,
+    .minecraft-player-edit-form.is-location-edit .minecraft-player-edit-button {
+        height: 34px;
+        font-size: 14px;
+    }
+
+    .minecraft-inventory-edit-slot {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+        color: var(--handrive-text-muted);
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .minecraft-player-pixel-icons {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 2px;
+        min-height: 22px;
+    }
+
+    .minecraft-player-pixel-icon {
+        width: 18px;
+        height: 18px;
+        image-rendering: pixelated;
+    }
+
+    .minecraft-player-stat-icon {
+        width: 24px;
+        height: 24px;
+        image-rendering: pixelated;
+    }
+
+    .minecraft-player-xp-row,
+    .minecraft-player-location-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .minecraft-player-xp-bar {
+        position: relative;
+        flex: 1 1 auto;
+        height: 8px;
+        overflow: hidden;
+        border: 1px solid color-mix(in srgb, #14532d 55%, var(--handrive-border-soft));
+        border-radius: 999px;
+        background: #152011;
+    }
+
+    .minecraft-player-xp-bar-fill {
+        display: block;
+        width: var(--minecraft-player-xp, 0%);
+        height: 100%;
+        background: #76b82a;
+    }
+
+    .minecraft-player-detail-meta {
+        min-width: 0;
+    }
+
+    .minecraft-player-detail-meta.is-location {
+        grid-column: 1 / -1;
+    }
+
+    .minecraft-player-detail-meta-label {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--handrive-text-muted);
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .minecraft-player-detail-meta-value {
+        display: block;
+        overflow: hidden;
+        color: var(--handrive-text-stronger);
+        font-size: 14px;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .minecraft-player-detail-meta.is-location .minecraft-player-detail-meta-value {
+        overflow: visible;
+        text-overflow: clip;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .minecraft-player-effect-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .minecraft-player-effect-item {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+        min-height: 30px;
+        padding: 4px 6px;
+        border-radius: var(--handrive-radius-sm);
+        background: var(--shared-card-bg);
+        box-sizing: border-box;
+    }
+
+    .minecraft-player-effect-name {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--handrive-text-stronger);
+        font-size: 13px;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .minecraft-player-effect-duration {
+        flex: 0 0 auto;
+        color: var(--handrive-text-muted);
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .minecraft-inventory-grid {
+        display: grid;
+        grid-template-columns: repeat(9, 34px);
+        grid-auto-rows: 34px;
+        gap: 2px;
+        align-content: start;
+        justify-content: start;
+    }
+
+    .minecraft-equipment-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 34px);
+        grid-template-rows: repeat(4, 34px);
+        gap: 2px;
+        align-content: start;
+        justify-content: start;
+    }
+
+    .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="helmet"] {
+        grid-column: 2;
+        grid-row: 1;
+    }
+
+    .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="chestplate"] {
+        grid-column: 2;
+        grid-row: 2;
+    }
+
+    .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="leggings"] {
+        grid-column: 2;
+        grid-row: 3;
+    }
+
+    .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="boots"] {
+        grid-column: 2;
+        grid-row: 4;
+    }
+
+    .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="offhand"] {
+        grid-column: 1;
+        grid-row: 4;
+    }
+
+    .minecraft-player-inventory-panel {
+        display: grid;
+        grid-template-columns: max-content max-content;
+        align-items: start;
+        justify-content: center;
+        gap: 10px;
+        min-width: 0;
+    }
+
+    .minecraft-player-inventory-section {
+        display: grid;
+        align-content: start;
+        justify-items: start;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .minecraft-player-inventory-section-title {
+        margin: 0;
+        color: var(--handrive-text-muted);
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1;
+    }
+
+    .minecraft-inventory-slot {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border: 0;
+        background: var(--handrive-surface-muted-strong) url("{{ minecraft_ui_icon_urls.slot }}") center / 100% 100% no-repeat;
+        color: inherit;
+        font: inherit;
+        image-rendering: pixelated;
+        cursor: pointer;
+        box-sizing: border-box;
+        transition: filter 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .minecraft-inventory-slot:hover,
+    .minecraft-inventory-slot:focus-visible {
+        filter: brightness(1.08);
+        outline: none;
+    }
+
+    .minecraft-inventory-slot.is-held {
+        outline: 2px solid #76b82a;
+        outline-offset: -2px;
+    }
+
+    .minecraft-inventory-slot.is-selected {
+        box-shadow: inset 0 0 0 2px var(--handrive-border-heavy);
+    }
+
+    .minecraft-inventory-slot:disabled {
+        cursor: default;
+        opacity: 0.55;
+    }
+
+    .minecraft-inventory-slot.is-enchanted .minecraft-inventory-code {
+        color: #a78bfa;
+    }
+
+    .minecraft-inventory-code {
+        max-width: 25px;
+        overflow: hidden;
+        color: var(--handrive-text-stronger);
+        font-size: 10px;
+        font-weight: 900;
+        line-height: 1;
+        text-align: center;
+        text-transform: uppercase;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-shadow: 0 1px 0 var(--shared-card-bg);
+    }
+
+    .minecraft-inventory-amount {
+        position: absolute;
+        right: 3px;
+        bottom: 2px;
+        color: #fff;
+        font-size: 10px;
+        font-weight: 900;
+        line-height: 1;
+        text-shadow: 0 1px 2px #000, 1px 0 2px #000;
+    }
+
+    .minecraft-player-detail-empty {
+        margin: 0;
+        color: var(--handrive-text-muted);
+        font-size: 14px;
+        line-height: 1.4;
+    }
+
+    @media (max-width: 620px) {
+        .minecraft-player-detail-grid,
+        .minecraft-player-effect-list {
+            grid-template-columns: 1fr;
+        }
+
+        .minecraft-inventory-grid {
+            grid-template-columns: repeat(6, 34px);
+        }
+
+        .minecraft-player-edit-form {
+            grid-template-columns: 1fr;
+        }
+
+        .minecraft-player-edit-form.is-effect-add {
+            grid-template-columns: 1fr;
+        }
+
+        .minecraft-player-edit-form.is-inventory-edit {
+            grid-template-columns: 1fr;
+        }
+
+        .minecraft-player-edit-form.is-location-edit {
+            grid-template-columns: 1fr;
+        }
+
+        .minecraft-player-inventory-panel {
+            grid-template-columns: 1fr;
+            justify-items: center;
+        }
+    }
+    {% endif %}
 
     .minecraft-status-empty {
         margin: 0;
@@ -695,35 +1503,35 @@
     @media (max-width: 840px), (orientation: portrait) {
         .minecraft-page-layout {
             grid-template-columns: 1fr;
-            grid-template-rows: max-content max-content;
+            grid-template-rows: 100% max-content;
             align-content: start;
-            align-items: start;
+            align-items: stretch;
             height: 100%;
             min-height: 0;
             overflow: auto;
         }
 
         .minecraft-layout {
-            height: auto;
+            height: 100%;
             min-height: 0;
-            align-content: start;
-            align-items: start;
+            align-content: stretch;
+            align-items: stretch;
         }
 
         .minecraft-server-panel {
-            align-self: start;
-            height: auto;
+            align-self: stretch;
+            height: 100%;
             min-height: 0;
         }
 
         .minecraft-server-panel .minecraft-map-embed-section {
-            flex: 0 0 auto;
+            flex: 1 1 auto;
             aspect-ratio: auto;
             align-self: stretch;
             width: 100%;
             max-width: none;
-            height: min(100cqw, 80cqh);
-            max-height: 80cqh;
+            height: auto;
+            max-height: none;
             min-height: 0;
         }
 
@@ -791,11 +1599,61 @@
                 <div class="minecraft-panel-heading">
                     <h2 class="minecraft-panel-title" id="minecraft-server-title">{{ server_panel_title }}</h2>
                     <p class="minecraft-server-clock" id="serverClock" aria-live="polite" title="{{ server_clock_loading_label }}">
-                        <svg class="minecraft-server-weather-icon" id="serverWeatherIcon" viewBox="369 848 450 450" aria-hidden="true" focusable="false">
+                        <svg
+                            class="minecraft-server-weather-icon{% if minecraft_admin_log_enabled %} minecraft-clock-control{% endif %}"
+                            id="serverWeatherIcon"
+                            viewBox="369 848 450 450"
+                            {% if minecraft_admin_log_enabled %}
+                            role="button"
+                            tabindex="0"
+                            aria-label="{{ server_weather_menu_title }}"
+                            aria-controls="minecraftWeatherMenu"
+                            aria-expanded="false"
+                            focusable="true"
+                            {% else %}
+                            aria-hidden="true"
+                            focusable="false"
+                            {% endif %}
+                        >
                             <image href="{{ weather_icon_url }}" width="3318" height="3318"></image>
                         </svg>
-                        <span class="minecraft-server-time" id="serverTimeLabel">--:--</span>
+                        <span
+                            class="minecraft-server-time{% if minecraft_admin_log_enabled %} minecraft-clock-control{% endif %}"
+                            id="serverTimeLabel"
+                            {% if minecraft_admin_log_enabled %}
+                            role="button"
+                            tabindex="0"
+                            aria-label="{{ server_time_picker_title }}"
+                            aria-controls="minecraftTimePicker"
+                            aria-expanded="false"
+                            {% endif %}
+                        >--:--</span>
                     </p>
+                    {% if minecraft_admin_log_enabled %}
+                    <div class="minecraft-clock-popover minecraft-time-picker" id="minecraftTimePicker" role="dialog" aria-label="{{ server_time_picker_title }}" hidden>
+                        <p class="minecraft-time-picker-title">{{ server_time_picker_title }}</p>
+                        <div class="minecraft-time-picker-columns">
+                            <div class="minecraft-time-picker-list" id="minecraftTimeHourList" aria-label="Hour"></div>
+                            <div class="minecraft-time-picker-list" id="minecraftTimeMinuteList" aria-label="Minute"></div>
+                        </div>
+                        <button class="minecraft-time-picker-apply" id="minecraftTimeApply" type="button">{{ server_time_picker_apply_label }}</button>
+                    </div>
+                    <div class="minecraft-clock-popover minecraft-weather-menu" id="minecraftWeatherMenu" role="menu" aria-label="{{ server_weather_menu_title }}" hidden>
+                        <p class="minecraft-weather-menu-title">{{ server_weather_menu_title }}</p>
+                        <button class="minecraft-weather-option" type="button" role="menuitem" data-weather-command="clear">
+                            <svg class="minecraft-weather-option-icon" viewBox="899 848 450 450" aria-hidden="true" focusable="false"><image href="{{ weather_icon_url }}" width="3318" height="3318"></image></svg>
+                            {{ weather_clear_label }}
+                        </button>
+                        <button class="minecraft-weather-option" type="button" role="menuitem" data-weather-command="rain">
+                            <svg class="minecraft-weather-option-icon" viewBox="899 1476 450 450" aria-hidden="true" focusable="false"><image href="{{ weather_icon_url }}" width="3318" height="3318"></image></svg>
+                            {{ weather_rain_label }}
+                        </button>
+                        <button class="minecraft-weather-option" type="button" role="menuitem" data-weather-command="thunder">
+                            <svg class="minecraft-weather-option-icon" viewBox="369 1476 450 450" aria-hidden="true" focusable="false"><image href="{{ weather_icon_url }}" width="3318" height="3318"></image></svg>
+                            {{ weather_thunder_label }}
+                        </button>
+                    </div>
+                    {% endif %}
                 </div>
                 <script>
                     try {
@@ -834,10 +1692,33 @@
                                 title="{{ server_address_copy_label }}"
                                 data-copy-label="{{ server_address_copy_label }}"
                                 data-copied-label="{{ server_address_copied_label }}"
+                                data-copy-target="minecraftServerAddress"
                             >
                                 <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="7" width="9" height="9" rx="1.5"></rect><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"></path></svg>
                             </button>
                         </div>
+                    </div>
+                    <div class="minecraft-field">
+                        <div class="minecraft-field-heading">
+                            <span class="minecraft-label">{{ bedrock_server_address_label }}</span>
+                            <p class="minecraft-meta minecraft-server-version">{{ bedrock_server_version_text }}</p>
+                        </div>
+                        <div class="minecraft-address handrive-inline-copy-field" data-server-address="{{ bedrock_server_address }}">
+                            <code class="minecraft-address-text" id="minecraftBedrockServerAddress">{{ bedrock_server_address }}</code>
+                            <button
+                                class="minecraft-address-copy handrive-inline-copy-action"
+                                type="button"
+                                id="minecraftBedrockAddressCopy"
+                                aria-label="{{ bedrock_server_address_copy_label }}"
+                                title="{{ bedrock_server_address_copy_label }}"
+                                data-copy-label="{{ bedrock_server_address_copy_label }}"
+                                data-copied-label="{{ server_address_copied_label }}"
+                                data-copy-target="minecraftBedrockServerAddress"
+                            >
+                                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="7" width="9" height="9" rx="1.5"></rect><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"></path></svg>
+                            </button>
+                        </div>
+                        <p class="minecraft-meta minecraft-address-note">{{ bedrock_server_port_label }}</p>
                     </div>
                     {% if server_hint %}
                     <p class="minecraft-meta">{{ server_hint }}</p>
@@ -888,6 +1769,7 @@
 
 {% if minecraft_admin_log_enabled %}
 {% include "popup/minecraft/server_log_modal.html" %}
+{% include "popup/minecraft/player_detail_modal.html" %}
 {% include "popup/handrive/_help_modal.html" with modal_id="minecraft-server-help-modal" backdrop_id="minecraft-server-help-backdrop" close_button_id="minecraft-server-help-close-btn" close_click_target_id="minecraft-server-help-backdrop" aria_label=minecraft_command_help_title article_html=minecraft_command_help_html %}
 {% endif %}
 
@@ -903,6 +1785,7 @@
         const serverVersionEl = document.getElementById('serverVersion');
         const addressCopyEl = document.getElementById('minecraftAddressCopy');
         const addressTextEl = document.getElementById('minecraftServerAddress');
+        const addressCopyEls = Array.from(document.querySelectorAll('.minecraft-address-copy'));
         const mapFrameEl = document.getElementById('minecraftMapFrame');
         const minecraftConsoleTriggerEl = document.getElementById('minecraftConsoleTrigger');
         const serverLogModalEl = document.getElementById('minecraftServerLogModal');
@@ -918,20 +1801,40 @@
         const serverHelpModalEl = document.getElementById('minecraft-server-help-modal');
         const serverHelpBackdropEl = document.getElementById('minecraft-server-help-backdrop');
         const serverHelpCloseEl = document.getElementById('minecraft-server-help-close-btn');
+        const minecraftTimePickerEl = document.getElementById('minecraftTimePicker');
+        const minecraftTimeHourListEl = document.getElementById('minecraftTimeHourList');
+        const minecraftTimeMinuteListEl = document.getElementById('minecraftTimeMinuteList');
+        const minecraftTimeApplyEl = document.getElementById('minecraftTimeApply');
+        const minecraftWeatherMenuEl = document.getElementById('minecraftWeatherMenu');
+        const playerDetailModalEl = document.getElementById('minecraftPlayerDetailModal');
+        const playerDetailBackdropEl = document.getElementById('minecraft-player-detail-backdrop');
+        const playerDetailCloseEl = document.getElementById('minecraft-player-detail-close-btn');
+        const playerDetailTitleEl = document.getElementById('minecraft-player-detail-title');
+        const playerDetailBodyEl = document.getElementById('minecraftPlayerDetailBody');
         const statusUrl = '{{ status_url }}';
         const blueMapLanguage = normalizeBlueMapLanguage('{{ bluemap_language|escapejs }}');
         const currentAccountUsername = normalizeMinecraftPlayerName('{{ minecraft_account_username|escapejs }}');
         const serverLogUrl = serverLogPanelEl ? serverLogPanelEl.dataset.logUrl : '';
         const serverCommandUrl = serverCommandFormEl ? serverCommandFormEl.dataset.commandUrl : '';
+        const isMinecraftAdmin = {{ minecraft_admin_log_enabled|yesno:"true,false" }};
         let hasRenderedStatus = false;
         let worldState = null;
-        let addressCopyResetTimer = null;
+        let latestWorldOptions = [];
+        let latestItemOptions = [];
+        let latestPlayersByName = new Map();
+        const addressCopyResetTimers = new WeakMap();
         let serverLogCursor = null;
         let serverLogText = '';
         let serverLogHasLoaded = false;
         let serverLogRequestInFlight = false;
         let serverLogReloadQueued = false;
         let serverCommandRequestInFlight = false;
+        let selectedTimeHour = 0;
+        let selectedTimeMinute = 0;
+        let playerDetailLastFocusedElement = null;
+        let activePlayerDetailName = '';
+        let activeInventoryEditSlot = '';
+        let shouldRefreshPlayerDetailModal = false;
         const labels = {
             online: '{{ online_label|escapejs }}',
             offline: '{{ offline_label|escapejs }}',
@@ -950,10 +1853,55 @@
             serverCommandSending: '{{ server_command_sending_label|escapejs }}',
             serverCommandFailed: '{{ server_command_failed_label|escapejs }}',
             serverCommandEmpty: '{{ server_command_empty_label|escapejs }}',
+            serverTimePickerTitle: '{{ server_time_picker_title|escapejs }}',
             weatherClear: '{{ weather_clear_label|escapejs }}',
             weatherRain: '{{ weather_rain_label|escapejs }}',
             weatherThunder: '{{ weather_thunder_label|escapejs }}',
-            weatherUnknown: '{{ weather_unknown_label|escapejs }}'
+            weatherUnknown: '{{ weather_unknown_label|escapejs }}',
+            playerDetailTitle: '{{ player_detail_title|escapejs }}',
+            playerOfflineDetail: '{{ player_detail_offline_label|escapejs }}',
+            playerDetailUnavailable: '{{ player_detail_unavailable_label|escapejs }}',
+            playerHealth: '{{ player_health_label|escapejs }}',
+            playerFood: '{{ player_food_label|escapejs }}',
+            playerLevel: '{{ player_level_label|escapejs }}',
+            playerExperience: '{{ player_experience_label|escapejs }}',
+            playerGameMode: '{{ player_game_mode_label|escapejs }}',
+            playerBuffs: '{{ player_buffs_label|escapejs }}',
+            playerInventory: '{{ player_inventory_label|escapejs }}',
+            playerArmor: '{{ player_armor_label|escapejs }}',
+            playerOffhand: '{{ player_offhand_label|escapejs }}',
+            playerWorld: '{{ player_world_label|escapejs }}',
+            playerLocation: '{{ player_location_label|escapejs }}',
+            playerNoEffects: '{{ player_no_effects_label|escapejs }}',
+            playerEmptyInventory: '{{ player_empty_inventory_label|escapejs }}',
+            playerEditApply: '{{ player_state_edit_apply_label|escapejs }}',
+            playerEditSaved: '{{ player_state_edit_saved_label|escapejs }}',
+            playerEditFailed: '{{ player_state_edit_failed_label|escapejs }}',
+            playerEditInvalid: '{{ player_state_edit_invalid_label|escapejs }}',
+            playerEffectType: '{{ player_effect_type_label|escapejs }}',
+            playerEffectLevel: '{{ player_effect_level_label|escapejs }}',
+            playerEffectDuration: '{{ player_effect_duration_label|escapejs }}',
+            playerAddEffect: '{{ player_add_effect_label|escapejs }}',
+            playerClearEffects: '{{ player_clear_effects_label|escapejs }}',
+            playerClearInventory: '{{ player_clear_inventory_label|escapejs }}',
+            playerInventorySlot: '{{ player_inventory_slot_label|escapejs }}',
+            playerInventoryItem: '{{ player_inventory_item_label|escapejs }}',
+            playerInventoryAmount: '{{ player_inventory_amount_label|escapejs }}',
+            playerInventorySave: '{{ player_inventory_save_label|escapejs }}',
+            playerInventoryRemove: '{{ player_inventory_remove_label|escapejs }}'
+        };
+        const minecraftEffectOptions = JSON.parse('{{ minecraft_effect_options_json|escapejs }}');
+        const playerIconUrls = {
+            armorFull: '{{ minecraft_ui_icon_urls.armor_full|escapejs }}',
+            armorHalf: '{{ minecraft_ui_icon_urls.armor_half|escapejs }}',
+            experienceBottle: '{{ minecraft_ui_icon_urls.experience_bottle|escapejs }}',
+            foodEmpty: '{{ minecraft_ui_icon_urls.food_empty|escapejs }}',
+            foodFull: '{{ minecraft_ui_icon_urls.food_full|escapejs }}',
+            foodHalf: '{{ minecraft_ui_icon_urls.food_half|escapejs }}',
+            heartContainer: '{{ minecraft_ui_icon_urls.heart_container|escapejs }}',
+            heartFull: '{{ minecraft_ui_icon_urls.heart_full|escapejs }}',
+            heartHalf: '{{ minecraft_ui_icon_urls.heart_half|escapejs }}',
+            potion: '{{ minecraft_ui_icon_urls.potion|escapejs }}'
         };
         const weatherIconViewBoxes = {
             clear: '899 848 450 450',
@@ -962,6 +1910,14 @@
             moon: '1430 2066 450 450',
             unknown: '369 848 450 450'
         };
+        const defaultMinecraftWorldNames = ['world', 'world_nether', 'world_the_end'];
+        const defaultMinecraftItemOptions = [
+            'stone', 'dirt', 'grass_block', 'cobblestone', 'oak_log', 'oak_planks',
+            'torch', 'coal', 'iron_ingot', 'gold_ingot', 'diamond', 'emerald',
+            'stick', 'bread', 'cooked_beef', 'water_bucket', 'shield',
+            'iron_sword', 'iron_pickaxe', 'diamond_sword', 'diamond_pickaxe',
+            'bow', 'arrow', 'crafting_table', 'furnace', 'chest', 'white_bed'
+        ].map((value) => ({ value: value, label: formatPlayerLabel(value) }));
 
         function normalizeMinecraftTicks(ticks) {
             const numberValue = Number(ticks);
@@ -976,6 +1932,28 @@
             const hours = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
             const minutes = String(totalMinutes % 60).padStart(2, '0');
             return hours + ':' + minutes;
+        }
+
+        function getCurrentMinecraftTicks() {
+            if (!worldState) return 0;
+            const elapsedTicks = worldState.paused ? 0 : (Date.now() - worldState.receivedAt) / 1000 * 20;
+            return normalizeMinecraftTicks(worldState.timeTicks + elapsedTicks) || 0;
+        }
+
+        function minecraftTicksToTimeParts(ticks) {
+            const dayTicks = normalizeMinecraftTicks(ticks) || 0;
+            const totalMinutes = Math.floor(((dayTicks + 6000) % 24000) * 1440 / 24000);
+            return {
+                hour: Math.floor(totalMinutes / 60),
+                minute: totalMinutes % 60
+            };
+        }
+
+        function timePartsToMinecraftTicks(hour, minute) {
+            const normalizedHour = Math.max(0, Math.min(23, Number(hour) || 0));
+            const normalizedMinute = Math.max(0, Math.min(59, Number(minute) || 0));
+            const totalMinutes = normalizedHour * 60 + normalizedMinute;
+            return Math.floor(((totalMinutes * 24000 / 1440) - 6000 + 24000) % 24000);
         }
 
         function isMinecraftNight(ticks) {
@@ -1033,32 +2011,51 @@
             }
         }
 
-        function resetAddressCopyButton() {
-            if (!addressCopyEl) return;
-            const copyLabel = addressCopyEl.dataset.copyLabel || '';
-            addressCopyEl.setAttribute('aria-label', copyLabel);
-            addressCopyEl.title = copyLabel;
+        function resetAddressCopyButton(button) {
+            if (!button) return;
+            const copyLabel = button.dataset.copyLabel || '';
+            button.setAttribute('aria-label', copyLabel);
+            button.title = copyLabel;
         }
 
-        function markAddressCopied() {
-            if (!addressCopyEl) return;
-            const copiedLabel = addressCopyEl.dataset.copiedLabel || '';
-            addressCopyEl.setAttribute('aria-label', copiedLabel);
-            addressCopyEl.title = copiedLabel;
+        function markAddressCopied(button) {
+            if (!button) return;
+            const copiedLabel = button.dataset.copiedLabel || '';
+            button.setAttribute('aria-label', copiedLabel);
+            button.title = copiedLabel;
             if (typeof window.showHandriveInlineCopyFeedback === 'function') {
-                window.showHandriveInlineCopyFeedback(addressCopyEl, 'Copied!');
+                window.showHandriveInlineCopyFeedback(button, 'Copied!');
             }
-            window.clearTimeout(addressCopyResetTimer);
-            addressCopyResetTimer = window.setTimeout(resetAddressCopyButton, 1500);
+            window.clearTimeout(addressCopyResetTimers.get(button));
+            addressCopyResetTimers.set(button, window.setTimeout(function () {
+                resetAddressCopyButton(button);
+            }, 1500));
         }
 
-        function setupAddressCopyButton() {
-            if (!addressCopyEl || !addressTextEl) return;
-            addressCopyEl.addEventListener('click', function () {
-                const address = addressTextEl.textContent.trim();
+        function setupAddressCopyButton(button) {
+            if (!button) return;
+            const targetId = button.dataset.copyTarget || '';
+            const targetEl = targetId ? document.getElementById(targetId) : button.closest('.minecraft-address')?.querySelector('.minecraft-address-text');
+            if (!targetEl) return;
+            button.addEventListener('click', function () {
+                const address = targetEl.textContent.trim();
                 if (!address) return;
-                writeClipboardText(address).then(markAddressCopied).catch(resetAddressCopyButton);
+                writeClipboardText(address).then(function () {
+                    markAddressCopied(button);
+                }).catch(function () {
+                    resetAddressCopyButton(button);
+                });
             });
+        }
+
+        function setupAddressCopyButtons() {
+            if (addressCopyEls.length) {
+                addressCopyEls.forEach(setupAddressCopyButton);
+                return;
+            }
+            if (addressCopyEl && addressTextEl) {
+                setupAddressCopyButton(addressCopyEl);
+            }
         }
 
         function getCurrentThemeMode() {
@@ -1150,8 +2147,7 @@
                 return;
             }
 
-            const elapsedTicks = worldState.paused ? 0 : (Date.now() - worldState.receivedAt) / 1000 * 20;
-            const currentTicks = worldState.timeTicks + elapsedTicks;
+            const currentTicks = getCurrentMinecraftTicks();
             const weather = worldState.weather || 'unknown';
             const timeLabel = formatMinecraftTime(currentTicks);
             setWeatherIcon(weather, currentTicks);
@@ -1192,7 +2188,8 @@
         }
 
         function escapeHtml(value) {
-            return String(value || 'Unknown').replace(/[&<>"']/g, function (char) {
+            const text = value === null || value === undefined || value === '' ? 'Unknown' : String(value);
+            return text.replace(/[&<>"']/g, function (char) {
                 return {
                     '&': '&amp;',
                     '<': '&lt;',
@@ -1203,12 +2200,899 @@
             });
         }
 
+        function escapeAttribute(value) {
+            return escapeHtml(value).replace(/`/g, '&#96;');
+        }
+
         function normalizeMinecraftPlayerName(name) {
             return String(name || '').trim().toLowerCase();
         }
 
         function isCurrentAccountPlayer(player) {
             return Boolean(currentAccountUsername && normalizeMinecraftPlayerName(player && player.name) === currentAccountUsername);
+        }
+
+        function formatPlayerNumber(value, digits) {
+            const numberValue = Number(value);
+            if (!Number.isFinite(numberValue)) return '0';
+            if (Math.round(numberValue) === numberValue) return String(numberValue);
+            return numberValue.toFixed(digits || 1).replace(/\.0+$/, '');
+        }
+
+        function formatPlayerLabel(value) {
+            return String(value || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, function (char) {
+                return char.toUpperCase();
+            });
+        }
+
+        function addMinecraftWorldOption(options, seen, value, label) {
+            const normalizedValue = normalizeMinecraftWorldName(value);
+            if (!normalizedValue) return;
+            const key = normalizedValue.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            options.push({
+                value: normalizedValue,
+                label: String(label || normalizedValue)
+            });
+        }
+
+        function normalizeMinecraftWorldOptions(worlds, currentWorld) {
+            const options = [];
+            const seen = new Set();
+            addMinecraftWorldOption(options, seen, currentWorld, currentWorld);
+            const sourceWorlds = Array.isArray(worlds) && worlds.length ? worlds : defaultMinecraftWorldNames;
+            sourceWorlds.forEach((world) => {
+                if (typeof world === 'string') {
+                    addMinecraftWorldOption(options, seen, world, world);
+                    return;
+                }
+                if (!world || typeof world !== 'object') return;
+                const name = world.name || world.value || world.key || '';
+                addMinecraftWorldOption(options, seen, name, world.label || world.name || world.value || world.key || name);
+            });
+            return options;
+        }
+
+        function addMinecraftItemOption(options, seen, value, label) {
+            const normalizedValue = normalizeMinecraftItemId(value);
+            if (!normalizedValue) return;
+            const key = normalizedValue.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            options.push({
+                value: normalizedValue,
+                label: String(label || formatPlayerLabel(normalizedValue))
+            });
+        }
+
+        function normalizeMinecraftItemOptions(items) {
+            const options = [];
+            const seen = new Set();
+            const sourceItems = Array.isArray(items) && items.length ? items : defaultMinecraftItemOptions;
+            sourceItems.forEach((item) => {
+                if (typeof item === 'string') {
+                    addMinecraftItemOption(options, seen, item, formatPlayerLabel(item));
+                    return;
+                }
+                if (!item || typeof item !== 'object') return;
+                const value = item.value || item.key || item.name || '';
+                addMinecraftItemOption(options, seen, value, item.label || item.name || item.value || item.key || value);
+            });
+            return options;
+        }
+
+        function getMinecraftItemOptions() {
+            return latestItemOptions.length ? latestItemOptions : defaultMinecraftItemOptions;
+        }
+
+        function filterMinecraftItemOptions(query) {
+            const rawQuery = String(query || '').trim().toLowerCase();
+            const normalizedQuery = rawQuery.replace(/^minecraft:/, '').replace(/[\s-]+/g, '_');
+            return getMinecraftItemOptions().filter((option) => {
+                if (!rawQuery) return true;
+                const label = String(option.label || '').toLowerCase();
+                const value = String(option.value || '').toLowerCase();
+                return value.includes(normalizedQuery) || label.includes(rawQuery);
+            }).slice(0, 30);
+        }
+
+        function renderPlayerIcon(src, label, extraClass) {
+            return '<img class="minecraft-player-pixel-icon ' + (extraClass || '') + '" src="' + escapeAttribute(src) + '" alt="' + escapeAttribute(label) + '" draggable="false">';
+        }
+
+        function renderPlayerStatIcon(src, label) {
+            return '<img class="minecraft-player-stat-icon" src="' + escapeAttribute(src) + '" alt="' + escapeAttribute(label) + '" draggable="false">';
+        }
+
+        function renderPixelMeter(value, maxValue, fullIcon, halfIcon, emptyIcon, label) {
+            const maxSlots = Math.max(1, Math.ceil((Number(maxValue) || 20) / 2));
+            const filledUnits = Math.max(0, Number(value) || 0) / 2;
+            let html = '<div class="minecraft-player-pixel-icons" title="' + escapeAttribute(label) + '">';
+            for (let index = 0; index < maxSlots; index += 1) {
+                if (filledUnits >= index + 1) {
+                    html += renderPlayerIcon(fullIcon, label);
+                } else if (filledUnits > index) {
+                    html += renderPlayerIcon(halfIcon, label);
+                } else {
+                    html += renderPlayerIcon(emptyIcon, label);
+                }
+            }
+            html += '</div>';
+            return html;
+        }
+
+        function renderPlayerDetailCard(title, value, bodyHtml, iconHtml, variant) {
+            const classes = ['minecraft-player-detail-card'];
+            if (variant === true || variant === 'wide') {
+                classes.push('is-wide');
+            } else if (variant) {
+                classes.push('is-' + String(variant).replace(/[^a-z0-9_-]/gi, '').toLowerCase());
+            }
+            return '<section class="' + escapeAttribute(classes.join(' ')) + '">' +
+                '<div class="minecraft-player-detail-card-head">' +
+                '<h3 class="minecraft-player-detail-card-title">' + escapeHtml(title) + '</h3>' +
+                (iconHtml || '') +
+                '</div>' +
+                (value ? '<div class="minecraft-player-detail-value">' + value + '</div>' : '') +
+                '<div class="minecraft-player-detail-card-body">' + (bodyHtml || '') + '</div>' +
+                '</section>';
+        }
+
+        function renderPlayerEditForm(field, value, min, max, step, label) {
+            return '<form class="minecraft-player-edit-form is-value-control" data-player-edit-field="' + escapeAttribute(field) + '">' +
+                '<input class="minecraft-player-edit-input" type="text" inputmode="decimal" min="' + escapeAttribute(min) + '" max="' + escapeAttribute(max) + '" step="' + escapeAttribute(step) + '" value="' + escapeAttribute(value) + '" aria-label="' + escapeAttribute(label) + '">' +
+                '<button class="minecraft-player-edit-button" type="submit">' + escapeHtml(labels.playerEditApply) + '</button>' +
+                '</form>';
+        }
+
+        function renderPlayerEditFormWithUnit(field, value, min, max, step, label, unit) {
+            const inputClass = 'minecraft-player-edit-input' + (field ? ' is-' + String(field).replace(/[^a-z0-9_-]/gi, '').toLowerCase() : '');
+            return '<form class="minecraft-player-edit-form is-value-control" data-player-edit-field="' + escapeAttribute(field) + '">' +
+                '<span class="minecraft-player-edit-unit-wrap">' +
+                '<input class="' + escapeAttribute(inputClass) + '" type="text" inputmode="decimal" min="' + escapeAttribute(min) + '" max="' + escapeAttribute(max) + '" step="' + escapeAttribute(step) + '" value="' + escapeAttribute(value) + '" aria-label="' + escapeAttribute(label) + '">' +
+                '<span class="minecraft-player-edit-unit">' + escapeHtml(unit) + '</span>' +
+                '</span>' +
+                '<button class="minecraft-player-edit-button" type="submit">' + escapeHtml(labels.playerEditApply) + '</button>' +
+                '</form>';
+        }
+
+        function renderPlayerLevelExpForm(levelValue, expPercent) {
+            return '<form class="minecraft-player-edit-form is-value-control is-level-exp" data-player-edit-field="level-exp">' +
+                '<label class="minecraft-player-edit-field">' +
+                '<span class="minecraft-player-edit-field-label">' + escapeHtml(labels.playerLevel) + '</span>' +
+                '<input class="minecraft-player-edit-input is-level" name="level" type="text" inputmode="numeric" min="0" max="21863" step="1" value="' + escapeAttribute(levelValue) + '" aria-label="' + escapeAttribute(labels.playerLevel) + '">' +
+                '</label>' +
+                '<label class="minecraft-player-edit-field">' +
+                '<span class="minecraft-player-edit-field-label">' + escapeHtml(labels.playerExperience) + '</span>' +
+                '<span class="minecraft-player-edit-unit-wrap">' +
+                '<input class="minecraft-player-edit-input is-exp" name="exp" type="text" inputmode="decimal" min="0" max="100" step="1" value="' + escapeAttribute(expPercent) + '" aria-label="' + escapeAttribute(labels.playerExperience) + '">' +
+                '<span class="minecraft-player-edit-unit">%</span>' +
+                '</span>' +
+                '</label>' +
+                '<button class="minecraft-player-edit-button" type="submit">' + escapeHtml(labels.playerEditApply) + '</button>' +
+                '</form>';
+        }
+
+        function renderPlayerGameModeForm(currentGameMode) {
+            const current = String(currentGameMode || 'survival').toLowerCase();
+            const modes = ['survival', 'creative', 'adventure', 'spectator'];
+            return '<form class="minecraft-player-edit-form is-value-control" data-player-edit-field="gamemode">' +
+                '<select class="minecraft-player-edit-select" aria-label="' + escapeAttribute(labels.playerGameMode) + '">' +
+                modes.map((mode) => {
+                    return '<option value="' + escapeAttribute(mode) + '"' + (mode === current ? ' selected' : '') + '>' + escapeHtml(formatPlayerLabel(mode)) + '</option>';
+                }).join('') +
+                '</select>' +
+                '<button class="minecraft-player-edit-button" type="submit">' + escapeHtml(labels.playerEditApply) + '</button>' +
+                '</form>';
+        }
+
+        function renderPlayerLocationForm(worldName, location) {
+            const safeLocation = location && typeof location === 'object' ? location : {};
+            const worldValue = String(worldName || '');
+            const worldOptions = normalizeMinecraftWorldOptions(latestWorldOptions, worldValue);
+            const worldSelect = '<select class="minecraft-player-edit-select" name="world" aria-label="' + escapeAttribute(labels.playerWorld) + '" data-site-custom-select="1">' +
+                worldOptions.map((option) => {
+                    return '<option value="' + escapeAttribute(option.value) + '"' + (option.value === worldValue ? ' selected' : '') + '>' + escapeHtml(option.label) + '</option>';
+                }).join('') +
+                '</select>';
+            return '<form class="minecraft-player-edit-form is-location-edit" data-player-edit-field="location">' +
+                '<label class="minecraft-player-edit-field"><span class="minecraft-player-edit-field-label">' + escapeHtml(labels.playerWorld) + '</span>' + worldSelect + '</label>' +
+                '<label class="minecraft-player-edit-field"><span class="minecraft-player-edit-field-label">X</span><input class="minecraft-player-edit-input" name="x" type="text" inputmode="decimal" step="0.1" value="' + escapeAttribute(formatPlayerNumber(safeLocation.x, 1)) + '" aria-label="X"></label>' +
+                '<label class="minecraft-player-edit-field"><span class="minecraft-player-edit-field-label">Y</span><input class="minecraft-player-edit-input" name="y" type="text" inputmode="decimal" step="0.1" value="' + escapeAttribute(formatPlayerNumber(safeLocation.y, 1)) + '" aria-label="Y"></label>' +
+                '<label class="minecraft-player-edit-field"><span class="minecraft-player-edit-field-label">Z</span><input class="minecraft-player-edit-input" name="z" type="text" inputmode="decimal" step="0.1" value="' + escapeAttribute(formatPlayerNumber(safeLocation.z, 1)) + '" aria-label="Z"></label>' +
+                '<button class="minecraft-player-edit-button" type="submit">' + escapeHtml(labels.playerEditApply) + '</button>' +
+                '</form>';
+        }
+
+        function renderPlayerActionButton(action, label) {
+            return '<button class="minecraft-player-edit-button" type="button" data-player-action="' + escapeAttribute(action) + '">' + escapeHtml(label) + '</button>';
+        }
+
+        function renderPlayerEffectAddForm() {
+            return '<form class="minecraft-player-edit-form is-effect-add" data-player-edit-field="effects-add">' +
+                '<select class="minecraft-player-edit-select" name="effect" aria-label="' + escapeAttribute(labels.playerEffectType) + '">' +
+                minecraftEffectOptions.map((option) => {
+                    return '<option value="' + escapeAttribute(option.value) + '">' + escapeHtml(option.label) + '</option>';
+                }).join('') +
+                '</select>' +
+                '<input class="minecraft-player-edit-input" name="level" type="text" inputmode="numeric" min="1" max="256" step="1" value="1" aria-label="' + escapeAttribute(labels.playerEffectLevel) + '">' +
+                '<span class="minecraft-player-edit-unit-wrap">' +
+                '<input class="minecraft-player-edit-input is-duration" name="duration" type="text" inputmode="numeric" min="1" max="86400" step="1" value="60" aria-label="' + escapeAttribute(labels.playerEffectDuration) + '">' +
+                '<span class="minecraft-player-edit-unit">s</span>' +
+                '</span>' +
+                '<button class="minecraft-player-edit-button" type="submit">' + escapeHtml(labels.playerAddEffect) + '</button>' +
+                '</form>';
+        }
+
+        function formatEffectDuration(effect) {
+            if (effect && effect.infinite) return '∞';
+            const ticks = Number(effect && effect.durationTicks);
+            if (!Number.isFinite(ticks) || ticks <= 0) return '--';
+            const seconds = Math.ceil(ticks / 20);
+            if (seconds < 60) return seconds + 's';
+            return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+        }
+
+        function renderPlayerEffects(effects) {
+            if (!Array.isArray(effects) || !effects.length) {
+                return '<p class="minecraft-player-detail-empty">' + escapeHtml(labels.playerNoEffects) + '</p>';
+            }
+            return '<ul class="minecraft-player-effect-list">' + effects.map((effect) => {
+                const label = effect && (effect.label || formatPlayerLabel(effect.type));
+                const amplifier = Number(effect && effect.amplifier);
+                const suffix = Number.isFinite(amplifier) && amplifier > 0 ? ' ' + (amplifier + 1) : '';
+                return '<li class="minecraft-player-effect-item">' +
+                    renderPlayerIcon(playerIconUrls.potion, labels.playerBuffs) +
+                    '<span class="minecraft-player-effect-name">' + escapeHtml(label + suffix) + '</span>' +
+                    '<span class="minecraft-player-effect-duration">' + escapeHtml(formatEffectDuration(effect)) + '</span>' +
+                    '</li>';
+            }).join('') + '</ul>';
+        }
+
+        function getInventoryItemCode(item) {
+            const label = String((item && (item.label || item.type)) || '').trim();
+            if (!label) return '';
+            const words = label.split(/\s+/).filter(Boolean);
+            if (words.length >= 2) {
+                return (words[0][0] + words[1][0]).slice(0, 2);
+            }
+            return label.slice(0, 2);
+        }
+
+        function isStorageInventorySlot(slot) {
+            const text = String(slot || '');
+            if (!/^\d+$/.test(text)) return false;
+            const numberValue = Number(text);
+            return Number.isInteger(numberValue) && numberValue >= 0 && numberValue <= 35;
+        }
+
+        function isEquipmentInventorySlot(slot) {
+            return ['helmet', 'chestplate', 'leggings', 'boots', 'offhand'].includes(String(slot || ''));
+        }
+
+        function isSafeInventorySlot(slot) {
+            return isStorageInventorySlot(slot) || isEquipmentInventorySlot(slot);
+        }
+
+        function formatInventorySlotLabel(slot) {
+            const text = String(slot || '');
+            if (isStorageInventorySlot(text)) {
+                return '#' + String(Number(text) + 1);
+            }
+            return formatPlayerLabel(text);
+        }
+
+        function normalizeMinecraftItemId(value) {
+            const normalized = String(value || '')
+                .trim()
+                .toLowerCase()
+                .replace(/^minecraft:/, '')
+                .replace(/[\s-]+/g, '_');
+            return /^[a-z0-9_]+$/.test(normalized) ? normalized : '';
+        }
+
+        function normalizeMinecraftWorldName(value) {
+            const normalized = String(value || '').trim();
+            return /^[A-Za-z0-9_.:-]{1,128}$/.test(normalized) ? normalized : '';
+        }
+
+        function formatMinecraftCommandNumber(value) {
+            const numberValue = Number(value);
+            if (!Number.isFinite(numberValue)) return '';
+            const rounded = Math.round(numberValue * 100) / 100;
+            return String(rounded);
+        }
+
+        function renderInventoryEditForm(slot, item) {
+            const safeSlot = String(slot || '');
+            const itemType = String((item && item.type) || '');
+            const amount = Number(item && item.amount);
+            const amountValue = Number.isFinite(amount) && amount > 0 ? Math.min(64, Math.round(amount)) : 1;
+            const itemMenuId = 'minecraft-inventory-item-menu-' + safeSlot.replace(/[^a-z0-9_-]/gi, '-');
+            return '<form class="minecraft-player-edit-form is-inventory-edit" data-player-edit-field="inventory-set" data-inventory-slot="' + escapeAttribute(safeSlot) + '">' +
+                '<span class="minecraft-inventory-edit-slot">' + escapeHtml(labels.playerInventorySlot + ' ' + formatInventorySlotLabel(safeSlot)) + '</span>' +
+                '<span class="minecraft-inventory-item-combobox" data-inventory-item-combobox>' +
+                '<input class="minecraft-player-edit-input minecraft-inventory-item-input" name="item" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="' + escapeAttribute(itemMenuId) + '" value="' + escapeAttribute(itemType) + '" placeholder="' + escapeAttribute(labels.playerInventoryItem) + '" aria-label="' + escapeAttribute(labels.playerInventoryItem) + '" autocapitalize="none" autocomplete="off" spellcheck="false">' +
+                '<span class="minecraft-inventory-item-menu" id="' + escapeAttribute(itemMenuId) + '" role="listbox" hidden></span>' +
+                '</span>' +
+                '<input class="minecraft-player-edit-input" name="amount" type="text" inputmode="numeric" min="1" max="64" step="1" value="' + escapeAttribute(amountValue) + '" aria-label="' + escapeAttribute(labels.playerInventoryAmount) + '">' +
+                '<button class="minecraft-player-edit-button" type="submit">' + escapeHtml(labels.playerInventorySave) + '</button>' +
+                '<button class="minecraft-player-edit-button" type="button" data-player-action="inventory-slot-clear" data-inventory-slot="' + escapeAttribute(safeSlot) + '">' + escapeHtml(labels.playerInventoryRemove) + '</button>' +
+                '</form>';
+        }
+
+        function renderInventorySlot(item, slot, isHeld) {
+            const slotKey = String(slot);
+            const title = item ? (item.label || item.type || labels.playerInventory) : labels.playerEmptyInventory;
+            const amount = Number(item && item.amount);
+            const classes = [
+                'minecraft-inventory-slot',
+                isHeld ? 'is-held' : '',
+                activeInventoryEditSlot === slotKey ? 'is-selected' : '',
+                item && item.enchanted ? 'is-enchanted' : ''
+            ].filter(Boolean).join(' ');
+            return '<button class="' + classes + '" type="button" title="' + escapeAttribute(title) + '" data-inventory-slot="' + escapeAttribute(slotKey) + '" aria-label="' + escapeAttribute(labels.playerInventorySlot + ' ' + formatInventorySlotLabel(slotKey) + ': ' + title) + '">' +
+                (item ? '<span class="minecraft-inventory-code">' + escapeHtml(getInventoryItemCode(item)) + '</span>' : '') +
+                (item && Number.isFinite(amount) && amount > 1 ? '<span class="minecraft-inventory-amount">' + escapeHtml(String(amount)) + '</span>' : '') +
+                '</button>';
+        }
+
+        function getStorageInventoryItem(items, slot) {
+            const slotNumber = Number(slot);
+            if (!Array.isArray(items) || !Number.isInteger(slotNumber)) return null;
+            return items.find((item) => item && Number(item.slot) === slotNumber) || null;
+        }
+
+        function getEquipmentInventoryItem(armor, offhand, slot) {
+            const slotKey = String(slot || '');
+            if (slotKey === 'offhand') return offhand || null;
+            if (!Array.isArray(armor)) return null;
+            return armor.find((item) => item && String(item.slot || '') === slotKey) || null;
+        }
+
+        function renderInventoryGrid(items, heldSlot, includeEditor) {
+            const itemMap = new Map();
+            if (Array.isArray(items)) {
+                items.forEach((item) => {
+                    if (item && Number.isFinite(Number(item.slot))) {
+                        itemMap.set(Number(item.slot), item);
+                    }
+                });
+            }
+            let html = '<div class="minecraft-inventory-grid">';
+            for (let slot = 0; slot < 36; slot += 1) {
+                html += renderInventorySlot(itemMap.get(slot), slot, Number(heldSlot) === slot);
+            }
+            html += '</div>';
+            if (includeEditor !== false && isStorageInventorySlot(activeInventoryEditSlot)) {
+                html += renderInventoryEditForm(activeInventoryEditSlot, itemMap.get(Number(activeInventoryEditSlot)));
+            }
+            return html;
+        }
+
+        function renderEquipmentGrid(armor, offhand, includeEditor) {
+            const armorMap = new Map();
+            if (Array.isArray(armor)) {
+                armor.forEach((item) => {
+                    if (item && item.slot) armorMap.set(String(item.slot), item);
+                });
+            }
+            const slotOrder = ['helmet', 'chestplate', 'leggings', 'boots'];
+            let html = '<div class="minecraft-equipment-grid">';
+            slotOrder.forEach((slot) => {
+                html += renderInventorySlot(armorMap.get(slot), slot, false);
+            });
+            html += renderInventorySlot(offhand || null, 'offhand', false);
+            html += '</div>';
+            if (includeEditor !== false && isEquipmentInventorySlot(activeInventoryEditSlot)) {
+                const selectedItem = activeInventoryEditSlot === 'offhand' ? offhand : armorMap.get(activeInventoryEditSlot);
+                html += renderInventoryEditForm(activeInventoryEditSlot, selectedItem || null);
+            }
+            return html;
+        }
+
+        function renderPlayerInventoryPanel(armor, offhand, inventory, heldSlot) {
+            let selectedItem = null;
+            if (isStorageInventorySlot(activeInventoryEditSlot)) {
+                selectedItem = getStorageInventoryItem(inventory, activeInventoryEditSlot);
+            } else if (isEquipmentInventorySlot(activeInventoryEditSlot)) {
+                selectedItem = getEquipmentInventoryItem(armor, offhand, activeInventoryEditSlot);
+            }
+            return '<div class="minecraft-player-inventory-panel">' +
+                '<section class="minecraft-player-inventory-section">' +
+                '<h4 class="minecraft-player-inventory-section-title">' + escapeHtml(labels.playerOffhand + ' / ' + labels.playerArmor) + '</h4>' +
+                renderEquipmentGrid(armor, offhand, false) +
+                '</section>' +
+                '<section class="minecraft-player-inventory-section">' +
+                '<h4 class="minecraft-player-inventory-section-title">' + escapeHtml(labels.playerInventory) + '</h4>' +
+                renderInventoryGrid(inventory, heldSlot, false) +
+                '</section>' +
+                '</div>' +
+                (isSafeInventorySlot(activeInventoryEditSlot) ? renderInventoryEditForm(activeInventoryEditSlot, selectedItem) : '');
+        }
+
+        function renderPlayerDetail(player) {
+            if (!playerDetailTitleEl || !playerDetailBodyEl) return;
+            const safePlayer = player || { name: 'Unknown', online: false };
+            const detail = safePlayer.detail && typeof safePlayer.detail === 'object' ? safePlayer.detail : null;
+            playerDetailTitleEl.textContent = labels.playerDetailTitle + ' - ' + (safePlayer.name || 'Unknown');
+
+            if (!safePlayer.online || !detail) {
+                activeInventoryEditSlot = '';
+                playerDetailBodyEl.innerHTML = '<p class="minecraft-player-edit-status" id="minecraftPlayerEditStatus" hidden></p>' +
+                    '<p class="minecraft-status-empty">' + escapeHtml(safePlayer.online ? labels.playerDetailUnavailable : labels.playerOfflineDetail) + '</p>';
+                return;
+            }
+
+            const health = Number(detail.health) || 0;
+            const maxHealth = Number(detail.maxHealth) || 20;
+            const food = Number(detail.food) || 0;
+            const level = Number(detail.level) || 0;
+            const xpPercent = Math.max(0, Math.min(100, (Number(detail.experience) || 0) * 100));
+            const location = detail.location && typeof detail.location === 'object' ? detail.location : {};
+            const worldName = String(detail.world || '');
+            const locationText = [
+                worldName || '-',
+                'X ' + formatPlayerNumber(location.x, 1),
+                'Y ' + formatPlayerNumber(location.y, 1),
+                'Z ' + formatPlayerNumber(location.z, 1)
+            ].join(' / ');
+            const metaHtml = '<div class="minecraft-player-detail-meta is-location"><span class="minecraft-player-detail-meta-label">' + escapeHtml(labels.playerLocation) + '</span><span class="minecraft-player-detail-meta-value">' + escapeHtml(locationText) + '</span></div>' +
+                renderPlayerLocationForm(worldName, location);
+
+            playerDetailBodyEl.innerHTML = '<p class="minecraft-player-edit-status" id="minecraftPlayerEditStatus" hidden></p>' +
+                '<div class="minecraft-player-detail-grid">' +
+                renderPlayerDetailCard(
+                    labels.playerHealth,
+                    '',
+                    renderPixelMeter(health, maxHealth, playerIconUrls.heartFull, playerIconUrls.heartHalf, playerIconUrls.heartContainer, labels.playerHealth) +
+                    renderPlayerEditFormWithUnit('health', formatPlayerNumber(health, 1), 0, formatPlayerNumber(maxHealth, 1), 0.5, labels.playerHealth, '/ ' + formatPlayerNumber(maxHealth, 1)),
+                    '',
+                    false
+                ) +
+                renderPlayerDetailCard(
+                    labels.playerFood,
+                    '',
+                    renderPixelMeter(food, 20, playerIconUrls.foodFull, playerIconUrls.foodHalf, playerIconUrls.foodEmpty, labels.playerFood) +
+                    renderPlayerEditFormWithUnit('food', formatPlayerNumber(food, 0), 0, 20, 1, labels.playerFood, '/ 20'),
+                    '',
+                    false
+                ) +
+                renderPlayerDetailCard(
+                    labels.playerLevel,
+                    '',
+                    '<div class="minecraft-player-xp-row">' + renderPlayerStatIcon(playerIconUrls.experienceBottle, labels.playerLevel) + '<span class="minecraft-player-xp-bar" style="--minecraft-player-xp: ' + xpPercent + '%"><span class="minecraft-player-xp-bar-fill"></span></span></div>' +
+                    renderPlayerLevelExpForm(String(level), formatPlayerNumber(xpPercent, 0)),
+                    '',
+                    false
+                ) +
+                renderPlayerDetailCard(
+                    labels.playerGameMode,
+                    '',
+                    renderPlayerGameModeForm(detail.gameMode),
+                    '',
+                    false
+                ) +
+                renderPlayerDetailCard(
+                    labels.playerLocation,
+                    '',
+                    metaHtml,
+                    '',
+                    'location'
+                ) +
+                renderPlayerDetailCard(labels.playerBuffs, '', renderPlayerEffects(detail.effects) + renderPlayerEffectAddForm() + renderPlayerActionButton('effects-clear', labels.playerClearEffects), '', true) +
+                renderPlayerDetailCard(labels.playerInventory, '', renderPlayerInventoryPanel(detail.armor, detail.offhand, detail.inventory, detail.heldSlot) + renderPlayerActionButton('inventory-clear', labels.playerClearInventory), '', true) +
+                '</div>';
+        }
+
+        function setPlayerDetailModalOpen(opened, player) {
+            if (!playerDetailModalEl) return;
+            playerDetailModalEl.hidden = !opened;
+            if (opened) {
+                const nextPlayerName = normalizeMinecraftPlayerName(player && player.name);
+                if (activePlayerDetailName !== nextPlayerName) {
+                    activeInventoryEditSlot = '';
+                }
+                playerDetailLastFocusedElement = document.activeElement;
+                activePlayerDetailName = nextPlayerName;
+                renderPlayerDetail(player);
+                const dialog = playerDetailModalEl.querySelector('[role="dialog"]');
+                if (dialog) {
+                    dialog.setAttribute('tabindex', '-1');
+                    dialog.focus({ preventScroll: true });
+                }
+                return;
+            }
+            if (playerDetailLastFocusedElement && typeof playerDetailLastFocusedElement.focus === 'function') {
+                playerDetailLastFocusedElement.focus();
+            }
+            playerDetailLastFocusedElement = null;
+            activePlayerDetailName = '';
+            activeInventoryEditSlot = '';
+            shouldRefreshPlayerDetailModal = false;
+        }
+
+        function getPlayerFromListItem(target) {
+            const item = target && target.closest ? target.closest('.minecraft-player-item[data-player-name]') : null;
+            if (!item || !listEl.contains(item)) return null;
+            return latestPlayersByName.get(normalizeMinecraftPlayerName(item.dataset.playerName)) || null;
+        }
+
+        function getActivePlayerDetail() {
+            return activePlayerDetailName ? latestPlayersByName.get(activePlayerDetailName) : null;
+        }
+
+        function getSafeMinecraftTargetName(player) {
+            const name = String(player && player.name || '').trim();
+            return /^[A-Za-z0-9_.]{1,32}$/.test(name) ? name : '';
+        }
+
+        function setPlayerEditStatus(message, isError) {
+            if (!playerDetailBodyEl) return;
+            const statusEl = playerDetailBodyEl.querySelector('#minecraftPlayerEditStatus');
+            if (!statusEl) return;
+            statusEl.textContent = message || '';
+            statusEl.hidden = !message;
+            statusEl.classList.toggle('is-success', Boolean(message && !isError));
+            statusEl.classList.toggle('is-error', Boolean(isError));
+        }
+
+        function setPlayerEditBusy(isBusy) {
+            if (!playerDetailBodyEl) return;
+            if (isBusy) {
+                closeInventoryItemMenus();
+            }
+            playerDetailBodyEl.querySelectorAll('.minecraft-player-edit-button, .minecraft-player-edit-input, .minecraft-player-edit-select, .minecraft-inventory-slot, .minecraft-inventory-item-option').forEach((element) => {
+                element.disabled = Boolean(isBusy);
+            });
+        }
+
+        function closeInventoryItemMenus(exceptCombobox) {
+            if (!playerDetailBodyEl) return;
+            playerDetailBodyEl.querySelectorAll('.minecraft-inventory-item-combobox').forEach((combobox) => {
+                if (exceptCombobox && combobox === exceptCombobox) return;
+                const input = combobox.querySelector('.minecraft-inventory-item-input');
+                const menu = combobox.querySelector('.minecraft-inventory-item-menu');
+                if (menu) {
+                    menu.hidden = true;
+                    menu.innerHTML = '';
+                }
+                if (input) {
+                    input.setAttribute('aria-expanded', 'false');
+                    input.removeAttribute('aria-activedescendant');
+                }
+                combobox.dataset.activeIndex = '-1';
+            });
+        }
+
+        function setInventoryItemMenuActiveOption(combobox, index) {
+            const menu = combobox ? combobox.querySelector('.minecraft-inventory-item-menu') : null;
+            const input = combobox ? combobox.querySelector('.minecraft-inventory-item-input') : null;
+            if (!menu || !input) return;
+            const options = Array.prototype.slice.call(menu.querySelectorAll('.minecraft-inventory-item-option'));
+            if (!options.length) {
+                combobox.dataset.activeIndex = '-1';
+                input.removeAttribute('aria-activedescendant');
+                return;
+            }
+            const nextIndex = Math.max(0, Math.min(options.length - 1, index));
+            combobox.dataset.activeIndex = String(nextIndex);
+            options.forEach((option, optionIndex) => {
+                option.classList.toggle('is-active', optionIndex === nextIndex);
+            });
+            input.setAttribute('aria-activedescendant', options[nextIndex].id);
+            options[nextIndex].scrollIntoView({ block: 'nearest' });
+        }
+
+        function renderInventoryItemMenu(input) {
+            const combobox = input ? input.closest('.minecraft-inventory-item-combobox') : null;
+            const menu = combobox ? combobox.querySelector('.minecraft-inventory-item-menu') : null;
+            if (!combobox || !menu) return;
+            const matches = filterMinecraftItemOptions(input.value);
+            closeInventoryItemMenus(combobox);
+            if (!matches.length) {
+                menu.hidden = true;
+                menu.innerHTML = '';
+                input.setAttribute('aria-expanded', 'false');
+                combobox.dataset.activeIndex = '-1';
+                return;
+            }
+            menu.innerHTML = matches.map((option, index) => {
+                const optionId = menu.id + '-option-' + index;
+                return '<button class="minecraft-inventory-item-option" id="' + escapeAttribute(optionId) + '" type="button" role="option" data-item-value="' + escapeAttribute(option.value) + '">' +
+                    '<span class="minecraft-inventory-item-option-label">' + escapeHtml(option.label) + '</span>' +
+                    '<span class="minecraft-inventory-item-option-value">' + escapeHtml(option.value) + '</span>' +
+                    '</button>';
+            }).join('');
+            menu.hidden = false;
+            input.setAttribute('aria-expanded', 'true');
+            setInventoryItemMenuActiveOption(combobox, 0);
+        }
+
+        function chooseInventoryItemOption(option) {
+            if (!option) return;
+            const menu = option.closest ? option.closest('.minecraft-inventory-item-menu') : null;
+            const combobox = menu ? menu.closest('.minecraft-inventory-item-combobox') : null;
+            const input = combobox ? combobox.querySelector('.minecraft-inventory-item-input') : null;
+            if (!input) return;
+            input.value = option.dataset.itemValue || '';
+            closeInventoryItemMenus();
+            input.focus({ preventScroll: true });
+        }
+
+        function handleInventoryItemInput(event) {
+            const input = event.target.closest ? event.target.closest('.minecraft-inventory-item-input') : null;
+            if (!input || !playerDetailBodyEl.contains(input)) return;
+            renderInventoryItemMenu(input);
+        }
+
+        function handleInventoryItemFocus(event) {
+            const input = event.target.closest ? event.target.closest('.minecraft-inventory-item-input') : null;
+            if (!input || !playerDetailBodyEl.contains(input)) return;
+            renderInventoryItemMenu(input);
+        }
+
+        function handleInventoryItemKeydown(event) {
+            const input = event.target.closest ? event.target.closest('.minecraft-inventory-item-input') : null;
+            if (!input || !playerDetailBodyEl.contains(input)) return;
+            const combobox = input.closest('.minecraft-inventory-item-combobox');
+            const menu = combobox ? combobox.querySelector('.minecraft-inventory-item-menu') : null;
+            const options = menu ? Array.prototype.slice.call(menu.querySelectorAll('.minecraft-inventory-item-option')) : [];
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (!menu || menu.hidden || !options.length) {
+                    renderInventoryItemMenu(input);
+                    return;
+                }
+                setInventoryItemMenuActiveOption(combobox, Number(combobox.dataset.activeIndex || 0) + 1);
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (!menu || menu.hidden || !options.length) {
+                    renderInventoryItemMenu(input);
+                    return;
+                }
+                setInventoryItemMenuActiveOption(combobox, Number(combobox.dataset.activeIndex || 0) - 1);
+            } else if (event.key === 'Enter' && menu && !menu.hidden && options.length) {
+                event.preventDefault();
+                event.stopPropagation();
+                chooseInventoryItemOption(options[Number(combobox.dataset.activeIndex || 0)] || options[0]);
+            } else if (event.key === 'Escape') {
+                event.stopPropagation();
+                closeInventoryItemMenus();
+            }
+        }
+
+        function handleInventoryItemOptionClick(event) {
+            const option = event.target.closest ? event.target.closest('.minecraft-inventory-item-option') : null;
+            if (!option || !playerDetailBodyEl.contains(option)) return;
+            event.preventDefault();
+            chooseInventoryItemOption(option);
+        }
+
+        async function sendPlayerStateEdit(commandSuffix, options) {
+            const settings = options || {};
+            const player = getActivePlayerDetail();
+            const targetName = getSafeMinecraftTargetName(player);
+            if (!targetName || !player || !player.online) {
+                setPlayerEditStatus(labels.playerEditInvalid, true);
+                return false;
+            }
+
+            setPlayerEditBusy(true);
+            const result = await sendMinecraftServerCommand('minecraftstatus set ' + targetName + ' ' + commandSuffix, { updateStatus: false });
+            setPlayerEditBusy(false);
+            const ok = Boolean(result && result.ok);
+            const detail = result && !ok && (result.status || result.error)
+                ? ' (' + [result.status, result.error].filter(Boolean).join(' ') + ')'
+                : '';
+            setPlayerEditStatus(ok ? labels.playerEditSaved : labels.playerEditFailed + detail, !ok);
+            if (ok && settings.refresh !== false) {
+                shouldRefreshPlayerDetailModal = true;
+                window.setTimeout(loadStatus, 500);
+            }
+            return ok;
+        }
+
+        function getPlayerEditFieldValue(form) {
+            const input = form.querySelector('input.minecraft-player-edit-input, select.minecraft-player-edit-select');
+            return input && typeof input.value === 'string' ? input.value.trim() : '';
+        }
+
+        async function submitPlayerEditForm(form) {
+            if (!form || !playerDetailBodyEl.contains(form)) return;
+            const field = form.dataset.playerEditField || '';
+            if (field === 'level-exp') {
+                const levelInput = form.querySelector('[name="level"]');
+                const expInput = form.querySelector('[name="exp"]');
+                const levelValue = Number(levelInput ? levelInput.value : NaN);
+                const expPercent = Number(expInput ? expInput.value : NaN);
+                if (!Number.isFinite(levelValue) || !Number.isFinite(expPercent)) {
+                    setPlayerEditStatus(labels.playerEditInvalid, true);
+                    return;
+                }
+                const nextLevel = Math.max(0, Math.min(21863, Math.round(levelValue)));
+                const nextExp = Math.max(0, Math.min(100, expPercent)) / 100;
+                const levelOk = await sendPlayerStateEdit('level ' + String(nextLevel), { refresh: false });
+                if (!levelOk) return;
+                await sendPlayerStateEdit('exp ' + String(nextExp));
+                return;
+            }
+            const value = getPlayerEditFieldValue(form);
+            if (!value) {
+                setPlayerEditStatus(labels.playerEditInvalid, true);
+                return;
+            }
+            if (field === 'exp') {
+                const percent = Number(value);
+                if (!Number.isFinite(percent)) {
+                    setPlayerEditStatus(labels.playerEditInvalid, true);
+                    return;
+                }
+                sendPlayerStateEdit('exp ' + String(Math.max(0, Math.min(100, percent)) / 100));
+                return;
+            }
+            if (field === 'effects-add') {
+                const effect = form.querySelector('[name="effect"]');
+                const level = form.querySelector('[name="level"]');
+                const duration = form.querySelector('[name="duration"]');
+                const effectValue = effect ? effect.value.trim() : '';
+                const levelValue = Number(level ? level.value : NaN);
+                const durationValue = Number(duration ? duration.value : NaN);
+                if (!effectValue || !Number.isFinite(levelValue) || !Number.isFinite(durationValue)) {
+                    setPlayerEditStatus(labels.playerEditInvalid, true);
+                    return;
+                }
+                sendPlayerStateEdit(
+                    'effects add ' +
+                    effectValue + ' ' +
+                    String(Math.max(1, Math.min(256, Math.round(levelValue)))) + ' ' +
+                    String(Math.max(1, Math.min(86400, Math.round(durationValue))))
+                );
+                return;
+            }
+            if (field === 'inventory-set') {
+                const slot = String(form.dataset.inventorySlot || '');
+                const itemInput = form.querySelector('[name="item"]');
+                const amountInput = form.querySelector('[name="amount"]');
+                const itemValue = normalizeMinecraftItemId(itemInput ? itemInput.value : '');
+                const amountValue = Number(amountInput ? amountInput.value : NaN);
+                if (!isSafeInventorySlot(slot) || !itemValue || !Number.isFinite(amountValue)) {
+                    setPlayerEditStatus(labels.playerEditInvalid, true);
+                    return;
+                }
+                sendPlayerStateEdit(
+                    'inventory set ' +
+                    slot + ' ' +
+                    itemValue + ' ' +
+                    String(Math.max(1, Math.min(64, Math.round(amountValue))))
+                );
+                return;
+            }
+            if (field === 'location') {
+                const worldInput = form.querySelector('[name="world"]');
+                const xInput = form.querySelector('[name="x"]');
+                const yInput = form.querySelector('[name="y"]');
+                const zInput = form.querySelector('[name="z"]');
+                const worldValue = normalizeMinecraftWorldName(worldInput ? worldInput.value : '');
+                const xValue = formatMinecraftCommandNumber(xInput ? xInput.value : NaN);
+                const yValue = formatMinecraftCommandNumber(yInput ? yInput.value : NaN);
+                const zValue = formatMinecraftCommandNumber(zInput ? zInput.value : NaN);
+                if (!worldValue || !xValue || !yValue || !zValue) {
+                    setPlayerEditStatus(labels.playerEditInvalid, true);
+                    return;
+                }
+                sendPlayerStateEdit('location ' + worldValue + ' ' + xValue + ' ' + yValue + ' ' + zValue);
+                return;
+            }
+            if (['health', 'food', 'level', 'gamemode'].includes(field)) {
+                sendPlayerStateEdit(field + ' ' + value);
+            }
+        }
+
+        function handlePlayerEditSubmit(event) {
+            const form = event.target.closest ? event.target.closest('.minecraft-player-edit-form') : null;
+            if (!form || !playerDetailBodyEl.contains(form)) return;
+            event.preventDefault();
+            submitPlayerEditForm(form);
+        }
+
+        function handlePlayerEditButtonClick(event) {
+            const button = event.target.closest ? event.target.closest('.minecraft-player-edit-button[type="submit"]') : null;
+            if (!button || !playerDetailBodyEl.contains(button)) return;
+            const form = button.closest ? button.closest('.minecraft-player-edit-form') : null;
+            if (!form) return;
+            event.preventDefault();
+            submitPlayerEditForm(form);
+        }
+
+        function handlePlayerEditChange(event) {
+            const control = event.target.closest ? event.target.closest('.minecraft-player-edit-select') : null;
+            if (!control || !playerDetailBodyEl.contains(control)) return;
+            const form = control.closest ? control.closest('.minecraft-player-edit-form') : null;
+            if (!form || form.dataset.playerEditField !== 'gamemode') return;
+            submitPlayerEditForm(form);
+        }
+
+        function handleInventorySlotClick(event) {
+            const button = event.target.closest ? event.target.closest('.minecraft-inventory-slot[data-inventory-slot]') : null;
+            if (!button || !playerDetailBodyEl.contains(button)) return;
+            const slot = String(button.dataset.inventorySlot || '');
+            if (!isSafeInventorySlot(slot)) return;
+            activeInventoryEditSlot = slot;
+            const player = getActivePlayerDetail();
+            if (!player) return;
+            renderPlayerDetail(player);
+            const editor = Array.prototype.slice.call(playerDetailBodyEl.querySelectorAll('.minecraft-player-edit-form.is-inventory-edit')).find((form) => {
+                return String(form.dataset.inventorySlot || '') === slot;
+            });
+            const input = editor ? editor.querySelector('[name="item"]') : null;
+            if (input && typeof input.focus === 'function') {
+                input.focus({ preventScroll: true });
+                if (typeof input.select === 'function') input.select();
+            }
+        }
+
+        function handlePlayerActionClick(event) {
+            const button = event.target.closest ? event.target.closest('[data-player-action]') : null;
+            if (!button || !playerDetailBodyEl.contains(button)) return;
+            const action = button.dataset.playerAction;
+            if (action === 'effects-clear') {
+                sendPlayerStateEdit('effects clear');
+            } else if (action === 'inventory-slot-clear') {
+                const slot = String(button.dataset.inventorySlot || activeInventoryEditSlot || '');
+                if (!isSafeInventorySlot(slot)) {
+                    setPlayerEditStatus(labels.playerEditInvalid, true);
+                    return;
+                }
+                sendPlayerStateEdit('inventory clear ' + slot);
+            } else if (action === 'inventory-clear') {
+                sendPlayerStateEdit('inventory clear');
+            }
+        }
+
+        function setupPlayerDetailModal() {
+            if (!isMinecraftAdmin || !listEl || !playerDetailModalEl || !playerDetailBackdropEl || !playerDetailBodyEl) return;
+            listEl.addEventListener('click', function (event) {
+                const player = getPlayerFromListItem(event.target);
+                if (!player) return;
+                setPlayerDetailModalOpen(true, player);
+            });
+            listEl.addEventListener('keydown', function (event) {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                const player = getPlayerFromListItem(event.target);
+                if (!player) return;
+                event.preventDefault();
+                setPlayerDetailModalOpen(true, player);
+            });
+            playerDetailBackdropEl.addEventListener('click', function () {
+                setPlayerDetailModalOpen(false);
+            });
+            if (playerDetailCloseEl) {
+                playerDetailCloseEl.addEventListener('click', function () {
+                    setPlayerDetailModalOpen(false);
+                });
+            }
+            playerDetailBodyEl.addEventListener('submit', handlePlayerEditSubmit);
+            playerDetailBodyEl.addEventListener('click', handlePlayerEditButtonClick);
+            playerDetailBodyEl.addEventListener('change', handlePlayerEditChange);
+            playerDetailBodyEl.addEventListener('click', handleInventorySlotClick);
+            playerDetailBodyEl.addEventListener('click', handlePlayerActionClick);
+            playerDetailBodyEl.addEventListener('input', handleInventoryItemInput);
+            playerDetailBodyEl.addEventListener('focusin', handleInventoryItemFocus);
+            playerDetailBodyEl.addEventListener('keydown', handleInventoryItemKeydown);
+            playerDetailBodyEl.addEventListener('mousedown', handleInventoryItemOptionClick);
+            document.addEventListener('keydown', function (event) {
+                if (event.key !== 'Escape' || playerDetailModalEl.hidden) return;
+                event.preventDefault();
+                setPlayerDetailModalOpen(false);
+            });
+            document.addEventListener('mousedown', function (event) {
+                if (playerDetailModalEl.hidden) return;
+                const target = event.target;
+                if (target && target.closest && target.closest('.minecraft-inventory-item-combobox')) return;
+                closeInventoryItemMenus();
+            });
         }
 
         function escapeLogHtml(value) {
@@ -1335,6 +3219,8 @@
         function renderStatus(status) {
             updateServerVersion(status);
             updateServerClock(status);
+            latestWorldOptions = normalizeMinecraftWorldOptions(status && status.worlds, '');
+            latestItemOptions = normalizeMinecraftItemOptions(status && status.items);
             const players = (Array.isArray(status.players) ? status.players : []).slice().sort((leftPlayer, rightPlayer) => {
                 const leftOnline = Boolean(leftPlayer.online);
                 const rightOnline = Boolean(rightPlayer.online);
@@ -1342,6 +3228,11 @@
                     return leftOnline ? -1 : 1;
                 }
                 return String(leftPlayer.name || '').localeCompare(String(rightPlayer.name || ''), undefined, { sensitivity: 'base' });
+            });
+            latestPlayersByName = new Map();
+            players.forEach((player) => {
+                const key = normalizeMinecraftPlayerName(player && player.name);
+                if (key) latestPlayersByName.set(key, player);
             });
             const onlineCount = Number.isFinite(status.onlineCount) ? status.onlineCount : players.filter((player) => player.online).length;
             const maxPlayers = Number.isFinite(status.maxPlayers) && status.maxPlayers > 0 ? status.maxPlayers : null;
@@ -1370,11 +3261,21 @@
                     isOnline ? 'is-online' : 'is-offline',
                     isCurrentAccount ? 'is-current-account' : ''
                 ].filter(Boolean).join(' ');
-                return '<li class="' + itemClass + '">' +
+                const adminAttributes = isMinecraftAdmin && isOnline
+                    ? ' role="button" tabindex="0" data-player-name="' + escapeAttribute(player.name) + '"'
+                    : '';
+                return '<li class="' + itemClass + '"' + adminAttributes + '>' +
                     '<span class="minecraft-player-name"><span class="minecraft-player-dot" aria-hidden="true"></span>' + escapeHtml(player.name) + '</span>' +
                     '<span class="minecraft-player-state">' + (isOnline ? labels.online : labels.offline) + '</span>' +
                     '</li>';
             }).join('');
+            if (shouldRefreshPlayerDetailModal && playerDetailModalEl && !playerDetailModalEl.hidden && activePlayerDetailName) {
+                const activePlayer = latestPlayersByName.get(activePlayerDetailName);
+                if (activePlayer) {
+                    renderPlayerDetail(activePlayer);
+                }
+                shouldRefreshPlayerDetailModal = false;
+            }
         }
 
         async function loadStatus() {
@@ -1453,9 +3354,207 @@
         }
 
         function getCsrfToken() {
-            if (!serverCommandFormEl) return '';
-            const tokenInput = serverCommandFormEl.querySelector('input[name="csrfmiddlewaretoken"]');
-            return tokenInput ? tokenInput.value : '';
+            const tokenInput = serverCommandFormEl
+                ? serverCommandFormEl.querySelector('input[name="csrfmiddlewaretoken"]')
+                : null;
+            if (tokenInput && tokenInput.value) {
+                return tokenInput.value;
+            }
+            const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+            return tokenMeta ? tokenMeta.getAttribute('content') || '' : '';
+        }
+
+        async function sendMinecraftServerCommand(command, options) {
+            const settings = options || {};
+            if (!serverCommandUrl) return { ok: false, error: 'missing_url' };
+            if (serverCommandRequestInFlight) return { ok: false, error: 'busy' };
+            serverCommandRequestInFlight = true;
+            if (serverCommandButtonEl) {
+                serverCommandButtonEl.disabled = true;
+                serverCommandButtonEl.setAttribute('aria-label', labels.serverCommandSending);
+                serverCommandButtonEl.title = labels.serverCommandSending;
+            }
+            try {
+                const response = await fetch(serverCommandUrl, {
+                    method: 'POST',
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                    referrerPolicy: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({ command: command })
+                });
+                const payload = await response.json().catch(function () { return {}; });
+                if (!response.ok || !payload.ok) {
+                    return {
+                        ok: false,
+                        status: response.status,
+                        error: payload && payload.error ? String(payload.error) : 'request_failed'
+                    };
+                }
+                if (settings.clearInput && serverCommandInputEl) {
+                    serverCommandInputEl.value = '';
+                }
+                if (serverLogStatusEl && settings.updateStatus !== false) {
+                    serverLogStatusEl.textContent = labels.serverLogUpdated;
+                }
+                window.setTimeout(loadServerLog, 500);
+                return { ok: true };
+            } catch (error) {
+                if (serverLogStatusEl && settings.updateStatus !== false) {
+                    serverLogStatusEl.textContent = labels.serverCommandFailed;
+                }
+                return { ok: false, error: 'network' };
+            } finally {
+                serverCommandRequestInFlight = false;
+                if (serverCommandButtonEl) {
+                    serverCommandButtonEl.disabled = false;
+                    serverCommandButtonEl.setAttribute('aria-label', labels.serverCommandSend);
+                    serverCommandButtonEl.title = labels.serverCommandSend;
+                }
+                if (settings.refocusInput && serverCommandInputEl) {
+                    serverCommandInputEl.focus();
+                }
+            }
+        }
+
+        function closeMinecraftClockPopovers() {
+            if (minecraftTimePickerEl) minecraftTimePickerEl.hidden = true;
+            if (minecraftWeatherMenuEl) minecraftWeatherMenuEl.hidden = true;
+            if (serverTimeLabelEl) serverTimeLabelEl.setAttribute('aria-expanded', 'false');
+            if (serverWeatherIconEl) serverWeatherIconEl.setAttribute('aria-expanded', 'false');
+        }
+
+        function setTimePickerSelection(hour, minute) {
+            selectedTimeHour = Math.max(0, Math.min(23, Number(hour) || 0));
+            selectedTimeMinute = Math.max(0, Math.min(59, Number(minute) || 0));
+            if (minecraftTimeHourListEl) {
+                minecraftTimeHourListEl.querySelectorAll('.minecraft-time-option').forEach((button) => {
+                    const selected = Number(button.dataset.timeValue) === selectedTimeHour;
+                    button.classList.toggle('is-selected', selected);
+                    button.setAttribute('aria-selected', selected ? 'true' : 'false');
+                    if (selected && !minecraftTimePickerEl.hidden) button.scrollIntoView({ block: 'nearest' });
+                });
+            }
+            if (minecraftTimeMinuteListEl) {
+                minecraftTimeMinuteListEl.querySelectorAll('.minecraft-time-option').forEach((button) => {
+                    const selected = Number(button.dataset.timeValue) === selectedTimeMinute;
+                    button.classList.toggle('is-selected', selected);
+                    button.setAttribute('aria-selected', selected ? 'true' : 'false');
+                    if (selected && !minecraftTimePickerEl.hidden) button.scrollIntoView({ block: 'nearest' });
+                });
+            }
+        }
+
+        function buildTimePickerOptions() {
+            if (!minecraftTimeHourListEl || !minecraftTimeMinuteListEl) return;
+            minecraftTimeHourListEl.innerHTML = Array.from({ length: 24 }, function (_, hour) {
+                return '<button class="minecraft-time-option" type="button" role="option" data-time-kind="hour" data-time-value="' + hour + '">' + String(hour).padStart(2, '0') + '</button>';
+            }).join('');
+            minecraftTimeMinuteListEl.innerHTML = Array.from({ length: 60 }, function (_, minute) {
+                return '<button class="minecraft-time-option" type="button" role="option" data-time-kind="minute" data-time-value="' + minute + '">' + String(minute).padStart(2, '0') + '</button>';
+            }).join('');
+        }
+
+        function openTimePicker() {
+            if (!minecraftTimePickerEl || !serverTimeLabelEl) return;
+            const parts = minecraftTicksToTimeParts(getCurrentMinecraftTicks());
+            closeMinecraftClockPopovers();
+            minecraftTimePickerEl.hidden = false;
+            serverTimeLabelEl.setAttribute('aria-expanded', 'true');
+            setTimePickerSelection(parts.hour, parts.minute);
+        }
+
+        function setupTimePicker() {
+            if (!isMinecraftAdmin || !minecraftTimePickerEl || !serverTimeLabelEl || !minecraftTimeApplyEl) return;
+            buildTimePickerOptions();
+            serverTimeLabelEl.addEventListener('click', function (event) {
+                event.preventDefault();
+                if (minecraftTimePickerEl.hidden) openTimePicker();
+                else closeMinecraftClockPopovers();
+            });
+            serverTimeLabelEl.addEventListener('keydown', function (event) {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                if (minecraftTimePickerEl.hidden) openTimePicker();
+                else closeMinecraftClockPopovers();
+            });
+            minecraftTimePickerEl.addEventListener('click', function (event) {
+                const option = event.target.closest('.minecraft-time-option');
+                if (!option) return;
+                if (option.dataset.timeKind === 'hour') {
+                    setTimePickerSelection(Number(option.dataset.timeValue), selectedTimeMinute);
+                } else {
+                    setTimePickerSelection(selectedTimeHour, Number(option.dataset.timeValue));
+                }
+            });
+            minecraftTimeApplyEl.addEventListener('click', async function () {
+                const ticks = timePartsToMinecraftTicks(selectedTimeHour, selectedTimeMinute);
+                const result = await sendMinecraftServerCommand('minecraft:time set ' + ticks, { updateStatus: false });
+                if (!result || !result.ok) return;
+                if (worldState) {
+                    worldState.timeTicks = ticks;
+                    worldState.receivedAt = Date.now();
+                }
+                renderServerClock();
+                closeMinecraftClockPopovers();
+                window.setTimeout(loadStatus, 800);
+            });
+        }
+
+        function setupWeatherMenu() {
+            if (!isMinecraftAdmin || !minecraftWeatherMenuEl || !serverWeatherIconEl) return;
+            serverWeatherIconEl.addEventListener('click', function (event) {
+                event.preventDefault();
+                const shouldOpen = minecraftWeatherMenuEl.hidden;
+                closeMinecraftClockPopovers();
+                minecraftWeatherMenuEl.hidden = !shouldOpen;
+                serverWeatherIconEl.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+            });
+            serverWeatherIconEl.addEventListener('keydown', function (event) {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                const shouldOpen = minecraftWeatherMenuEl.hidden;
+                closeMinecraftClockPopovers();
+                minecraftWeatherMenuEl.hidden = !shouldOpen;
+                serverWeatherIconEl.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+            });
+            minecraftWeatherMenuEl.addEventListener('click', async function (event) {
+                const button = event.target.closest('[data-weather-command]');
+                if (!button) return;
+                const weather = button.dataset.weatherCommand;
+                const result = await sendMinecraftServerCommand('minecraft:weather ' + weather, { updateStatus: false });
+                if (!result || !result.ok) return;
+                if (worldState) {
+                    worldState.weather = weather;
+                    worldState.receivedAt = Date.now();
+                }
+                renderServerClock();
+                closeMinecraftClockPopovers();
+                window.setTimeout(loadStatus, 800);
+            });
+        }
+
+        function setupClockPopoverDismissal() {
+            if (!isMinecraftAdmin) return;
+            document.addEventListener('click', function (event) {
+                const target = event.target;
+                if (
+                    (minecraftTimePickerEl && minecraftTimePickerEl.contains(target)) ||
+                    (minecraftWeatherMenuEl && minecraftWeatherMenuEl.contains(target)) ||
+                    (serverTimeLabelEl && serverTimeLabelEl.contains(target)) ||
+                    (serverWeatherIconEl && serverWeatherIconEl.contains(target))
+                ) {
+                    return;
+                }
+                closeMinecraftClockPopovers();
+            });
+            document.addEventListener('keydown', function (event) {
+                if (event.key !== 'Escape') return;
+                closeMinecraftClockPopovers();
+            });
         }
 
         function setupServerLogModal() {
@@ -1549,7 +3648,7 @@
 
         function setupServerCommandForm() {
             if (!serverCommandFormEl || !serverCommandInputEl || !serverCommandButtonEl || !serverCommandUrl) return;
-            serverCommandFormEl.addEventListener('submit', async function (event) {
+            serverCommandFormEl.addEventListener('submit', function (event) {
                 event.preventDefault();
                 if (serverCommandRequestInFlight) return;
                 const command = serverCommandInputEl.value.trim();
@@ -1557,40 +3656,16 @@
                     serverLogStatusEl.textContent = labels.serverCommandEmpty;
                     return;
                 }
-                serverCommandRequestInFlight = true;
-                serverCommandButtonEl.disabled = true;
-                serverCommandButtonEl.setAttribute('aria-label', labels.serverCommandSending);
-                serverCommandButtonEl.title = labels.serverCommandSending;
-                try {
-                    const response = await fetch(serverCommandUrl, {
-                        method: 'POST',
-                        cache: 'no-store',
-                        credentials: 'same-origin',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': getCsrfToken()
-                        },
-                        body: JSON.stringify({ command: command })
-                    });
-                    const payload = await response.json().catch(function () { return {}; });
-                    if (!response.ok || !payload.ok) throw new Error('command request failed');
-                    serverCommandInputEl.value = '';
-                    serverLogStatusEl.textContent = labels.serverLogUpdated;
-                    window.setTimeout(loadServerLog, 500);
-                } catch (error) {
-                    serverLogStatusEl.textContent = labels.serverCommandFailed;
-                } finally {
-                    serverCommandRequestInFlight = false;
-                    serverCommandButtonEl.disabled = false;
-                    serverCommandButtonEl.setAttribute('aria-label', labels.serverCommandSend);
-                    serverCommandButtonEl.title = labels.serverCommandSend;
-                    serverCommandInputEl.focus();
-                }
+                sendMinecraftServerCommand(command, { clearInput: true, refocusInput: true });
             });
         }
 
-        setupAddressCopyButton();
+        setupAddressCopyButtons();
         setupBlueMapThemeSync();
+        setupPlayerDetailModal();
+        setupTimePicker();
+        setupWeatherMenu();
+        setupClockPopoverDismissal();
         setupServerLogModal();
         setupServerHelpModal();
         setupServerCommandForm();

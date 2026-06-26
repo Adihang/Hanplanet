@@ -1590,6 +1590,206 @@ body.theme-dark .handrive-help-icon-symbol {
     transform: translate(-50%, -50%);
 }
 
+.handrive-list-layout.is-detail-axis-horizontal {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+}
+
+.handrive-list-layout.is-detail-side-right.has-preview,
+.handrive-list-layout.is-detail-side-right.has-editor {
+    grid-template-columns: minmax(0, var(--handrive-list-pane-size-landscape)) minmax(0, 1fr);
+}
+
+.handrive-list-layout.is-detail-side-left.has-preview,
+.handrive-list-layout.is-detail-side-left.has-editor {
+    grid-template-columns: minmax(0, 1fr) minmax(0, var(--handrive-list-pane-size-landscape));
+}
+
+.handrive-list-layout.is-detail-axis-horizontal.has-floating-detail {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.handrive-list-layout.is-detail-axis-horizontal > .handrive-list-pane,
+.handrive-list-layout.is-detail-axis-horizontal > .handrive-list-preview,
+.handrive-list-layout.is-detail-axis-horizontal > .handrive-list-editor {
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    max-height: none;
+    overflow: hidden;
+}
+
+.handrive-list-layout.is-detail-axis-horizontal.has-preview > .handrive-list-preview,
+.handrive-list-layout.is-detail-axis-horizontal.has-editor > .handrive-list-editor {
+    height: 100%;
+    max-height: none;
+}
+
+.handrive-list-layout.is-detail-side-right > .handrive-list-pane {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.handrive-list-layout.is-detail-side-right > .handrive-list-preview,
+.handrive-list-layout.is-detail-side-right > .handrive-list-editor {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.handrive-list-layout.is-detail-side-left > .handrive-list-pane {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.handrive-list-layout.is-detail-side-left > .handrive-list-preview,
+.handrive-list-layout.is-detail-side-left > .handrive-list-editor {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.handrive-list-layout.is-detail-axis-horizontal.has-floating-detail > .handrive-list-pane {
+    grid-column: 1 / -1;
+}
+
+.handrive-list-layout.is-detail-axis-vertical {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    grid-template-columns: 1fr;
+}
+
+.handrive-list-layout.is-detail-axis-vertical > .handrive-list-pane {
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.handrive-list-layout.is-detail-side-bottom.has-preview > .handrive-list-pane,
+.handrive-list-layout.is-detail-side-bottom.has-editor > .handrive-list-pane {
+    order: 1;
+    flex: 0 0 var(--handrive-list-pane-size-portrait);
+    border-top: 0;
+    border-bottom: 1px solid var(--handrive-border-soft);
+}
+
+.handrive-list-layout.is-detail-side-bottom > .handrive-list-preview,
+.handrive-list-layout.is-detail-side-bottom > .handrive-list-editor {
+    order: 3;
+}
+
+.handrive-list-layout.is-detail-side-top.has-preview > .handrive-list-pane,
+.handrive-list-layout.is-detail-side-top.has-editor > .handrive-list-pane {
+    order: 3;
+    flex: 0 0 var(--handrive-list-pane-size-portrait);
+    border-top: 1px solid var(--handrive-border-soft);
+    border-bottom: 0;
+}
+
+.handrive-list-layout.is-detail-side-top > .handrive-list-preview,
+.handrive-list-layout.is-detail-side-top > .handrive-list-editor {
+    order: 1;
+}
+
+.handrive-list-layout.is-detail-axis-vertical.has-preview > .handrive-list-preview,
+.handrive-list-layout.is-detail-axis-vertical.has-editor > .handrive-list-editor {
+    flex: 1 1 calc(100% - var(--handrive-list-pane-size-portrait));
+    height: auto;
+    min-height: 0;
+    max-height: calc(100% - var(--handrive-list-pane-size-portrait));
+}
+
+.handrive-list-layout.is-detail-axis-vertical.has-floating-detail > .handrive-list-pane {
+    order: 1;
+    flex: 1 1 auto;
+    border-top: 0;
+    border-bottom: 0;
+}
+
+.handrive-list-layout.is-detail-axis-horizontal > .handrive-list-splitter {
+    top: 0;
+    right: auto;
+    bottom: 0;
+    width: 14px;
+    height: auto;
+    transform: translateX(-50%);
+    cursor: col-resize;
+}
+
+.handrive-list-layout.is-detail-side-right > .handrive-list-splitter {
+    left: var(--handrive-list-pane-size-landscape);
+}
+
+.handrive-list-layout.is-detail-side-left > .handrive-list-splitter {
+    left: calc(100% - var(--handrive-list-pane-size-landscape));
+}
+
+.handrive-list-layout.is-detail-axis-horizontal > .handrive-list-splitter::before {
+    top: 0;
+    right: auto;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    height: auto;
+    transform: translateX(-50%);
+}
+
+.handrive-list-layout.is-detail-axis-horizontal > .handrive-list-splitter.is-active::before {
+    width: 3px;
+    height: auto;
+}
+
+.handrive-list-layout.is-detail-axis-horizontal > .handrive-list-splitter::after {
+    top: 50%;
+    left: 50%;
+    width: 3px;
+    height: 42px;
+    transform: translate(-50%, -50%);
+}
+
+.handrive-list-layout.is-detail-axis-vertical > .handrive-list-splitter {
+    right: 0;
+    left: 0;
+    width: auto;
+    height: 14px;
+    transform: translateY(-50%);
+    cursor: row-resize;
+}
+
+.handrive-list-layout.is-detail-side-bottom > .handrive-list-splitter {
+    top: var(--handrive-list-pane-size-portrait);
+}
+
+.handrive-list-layout.is-detail-side-top > .handrive-list-splitter {
+    top: calc(100% - var(--handrive-list-pane-size-portrait));
+}
+
+.handrive-list-layout.is-detail-axis-vertical > .handrive-list-splitter::before {
+    top: 50%;
+    right: 0;
+    bottom: auto;
+    left: 0;
+    width: auto;
+    height: 1px;
+    transform: translateY(-50%);
+}
+
+.handrive-list-layout.is-detail-axis-vertical > .handrive-list-splitter.is-active::before {
+    width: auto;
+    height: 3px;
+}
+
+.handrive-list-layout.is-detail-axis-vertical > .handrive-list-splitter::after {
+    top: 50%;
+    left: 50%;
+    width: 42px;
+    height: 3px;
+    transform: translate(-50%, -50%);
+}
+
 body.handrive-list-split-resizing-landscape,
 body.handrive-list-split-resizing-landscape * {
     cursor: col-resize;
@@ -1997,6 +2197,39 @@ body.handrive-list-detail-dragging {
     user-select: none;
 }
 
+body.handrive-list-detail-holding {
+    user-select: none;
+}
+
+body.handrive-list-page::before {
+    --handrive-list-detail-release-zone-size: 30px;
+    --handrive-list-detail-release-zone-shadow: rgba(0, 0, 0, 0.32);
+    --handrive-list-detail-release-zone-soft: rgba(0, 0, 0, 0.1);
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 1030;
+    pointer-events: none;
+    opacity: 0;
+    background: transparent;
+    box-shadow:
+        inset 0 0 0 1px var(--handrive-list-detail-release-zone-soft),
+        inset 0 0 calc(var(--handrive-list-detail-release-zone-size) * 0.55) calc(var(--handrive-list-detail-release-zone-size) * 0.12) var(--handrive-list-detail-release-zone-soft),
+        inset 0 0 calc(var(--handrive-list-detail-release-zone-size) * 1.05) calc(var(--handrive-list-detail-release-zone-size) * 0.28) var(--handrive-list-detail-release-zone-shadow);
+    transition: opacity 0.18s ease;
+    will-change: opacity;
+}
+
+body.handrive-list-page.handrive-list-detail-holding::before,
+body.handrive-list-page.handrive-list-detail-dragging::before {
+    opacity: 1;
+}
+
+body.handrive-page.theme-dark.handrive-list-page::before {
+    --handrive-list-detail-release-zone-shadow: rgba(255, 255, 255, 0.34);
+    --handrive-list-detail-release-zone-soft: rgba(255, 255, 255, 0.12);
+}
+
 body.handrive-list-detail-resizing {
     user-select: none;
 }
@@ -2011,7 +2244,10 @@ body.handrive-list-detail-resizing {
     max-height: 100vh;
     margin: 0;
     border: 1px solid var(--handrive-border);
-    border-radius: var(--handrive-radius-lg);
+    border-radius: var(--site-popup-radius-common, var(--handrive-radius-lg));
+    background: var(--site-modal-surface-bg, var(--handrive-modal-surface-bg, var(--handrive-bg)));
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, var(--handrive-modal-surface-filter, saturate(120%) blur(4px)));
+    backdrop-filter: var(--site-modal-surface-filter, var(--handrive-modal-surface-filter, saturate(120%) blur(4px)));
     box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2));
     overflow: hidden;
 }
@@ -2026,6 +2262,14 @@ body.handrive-list-detail-resizing {
     cursor: grab;
     touch-action: none;
     user-select: none;
+}
+
+.handrive-list-preview.is-floating-detail .handrive-list-preview-head {
+    background: color-mix(in srgb, var(--site-modal-surface-bg, var(--handrive-modal-surface-bg, var(--handrive-bg))) 76%, var(--handrive-hover-soft));
+}
+
+.handrive-list-editor.is-floating-detail .handrive-list-editor-head {
+    background: color-mix(in srgb, var(--site-modal-surface-bg, var(--handrive-modal-surface-bg, var(--handrive-bg))) 72%, var(--handrive-surface-muted));
 }
 
 .handrive-list-preview.is-floating-detail.is-floating-detail-dragging .handrive-list-preview-head,
@@ -2334,12 +2578,25 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 }
 
 .handrive-list-preview-body:has(.handrive-media-pdf-element),
+.handrive-list-preview-body:has(.handrive-model-preview),
 .handrive-list-preview-body:has(.handrive-office-sheet),
 .handrive-list-preview-body:has(.handrive-html-live-frame) {
     padding: 0;
 }
 
+.handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-json),
+.handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-css),
+.handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-js),
+.handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-py),
+.handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-sql),
+.handrive-list-preview-body:has(> .handrive-list-preview-content.ui-markdown),
+.handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-markdown),
+.handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-plain-text) {
+    overflow: auto;
+}
+
 .handrive-list-preview-body:has(.handrive-media-pdf-element) .handrive-list-preview-content,
+.handrive-list-preview-body:has(.handrive-model-preview) .handrive-list-preview-content,
 .handrive-list-preview-body:has(.handrive-office-sheet) .handrive-list-preview-content,
 .handrive-list-preview-body:has(.handrive-html-live-frame) .handrive-list-preview-content {
     border-radius: 0;
@@ -2380,6 +2637,12 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 .handrive-list-editor-body .handrive-editor-surface {
     flex: 1 1 auto;
     min-height: 0;
+    border-radius: 0;
+}
+
+#handrive-list-editor-surface > .handrive-editor-highlight,
+#handrive-list-editor-surface > #handrive-list-content-input {
+    border-radius: 0;
 }
 
 .handrive-list-editor-body {
@@ -2400,7 +2663,9 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     overflow: hidden;
 }
 
-.handrive-list-layout.is-landscape.has-preview .handrive-list-preview-body {
+.handrive-list-layout.is-landscape.has-preview {}
+
+.handrive-list-layout.is-detail-axis-horizontal.has-preview .handrive-list-preview-body {
     flex: 1 1 auto;
     min-height: 0;
     /* min-height / max-height 는 JS(page.js syncPreviewBodyHeight)가 정확히 계산해 inline style로 세팅 */
@@ -2408,17 +2673,29 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     overflow-x: auto;
 }
 
-.handrive-list-layout.is-portrait .handrive-list-preview-body {
+.handrive-list-layout.is-detail-axis-vertical .handrive-list-preview-body {
     height: auto;
     max-height: none;
     overflow: auto;
     -webkit-overflow-scrolling: touch;
 }
 
-.handrive-list-layout.is-landscape.has-preview > .handrive-list-preview,
-.handrive-list-layout.is-landscape.has-editor > .handrive-list-editor {
+.handrive-list-layout.is-detail-side-right.has-preview > .handrive-list-preview,
+.handrive-list-layout.is-detail-side-right.has-editor > .handrive-list-editor {
     box-sizing: border-box;
     border-left: 1px solid var(--handrive-border-soft);
+}
+
+.handrive-list-layout.is-detail-side-left.has-preview > .handrive-list-preview,
+.handrive-list-layout.is-detail-side-left.has-editor > .handrive-list-editor {
+    box-sizing: border-box;
+    border-right: 1px solid var(--handrive-border-soft);
+}
+
+.handrive-list-layout.is-detail-side-top.has-preview > .handrive-list-preview,
+.handrive-list-layout.is-detail-side-top.has-editor > .handrive-list-editor {
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--handrive-border-soft);
 }
 
 .handrive-list-preview-content {
@@ -3107,9 +3384,19 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     border-radius: calc(var(--handrive-radius-lg) + 3px);
 }
 
-.handrive-list-layout.is-landscape.has-preview .handrive-list-pane.is-file-drop-target .handrive-current-dir-item.is-file-drop-group-start,
-.handrive-list-layout.is-landscape.has-editor .handrive-list-pane.is-file-drop-target .handrive-current-dir-item.is-file-drop-group-start {
+.handrive-list-layout.is-detail-side-right.has-preview .handrive-list-pane.is-file-drop-target .handrive-current-dir-item.is-file-drop-group-start,
+.handrive-list-layout.is-detail-side-right.has-editor .handrive-list-pane.is-file-drop-target .handrive-current-dir-item.is-file-drop-group-start {
     border-radius: calc(var(--handrive-radius-lg) + 3px) 0 0 0;
+}
+
+.handrive-list-layout.is-detail-side-left.has-preview .handrive-list-pane.is-file-drop-target .handrive-current-dir-item.is-file-drop-group-start,
+.handrive-list-layout.is-detail-side-left.has-editor .handrive-list-pane.is-file-drop-target .handrive-current-dir-item.is-file-drop-group-start {
+    border-radius: 0 calc(var(--handrive-radius-lg) + 3px) 0 0;
+}
+
+.handrive-list-layout.is-detail-side-top.has-preview .handrive-list-pane.is-file-drop-target .handrive-current-dir-item.is-file-drop-group-start,
+.handrive-list-layout.is-detail-side-top.has-editor .handrive-list-pane.is-file-drop-target .handrive-current-dir-item.is-file-drop-group-start {
+    border-radius: 0;
 }
 
 .handrive-list-pane.is-file-drop-target .handrive-item.is-file-drop-group-item::before {
@@ -3256,9 +3543,19 @@ body.theme-dark .handrive-list-pane.is-local-file-drop-target .handrive-list.is-
     background: var(--handrive-hover-soft);
 }
 
-.handrive-list-layout.is-landscape.has-preview .handrive-current-dir-row,
-.handrive-list-layout.is-landscape.has-editor .handrive-current-dir-row {
+.handrive-list-layout.is-detail-side-right.has-preview .handrive-current-dir-row,
+.handrive-list-layout.is-detail-side-right.has-editor .handrive-current-dir-row {
     border-radius: calc(var(--handrive-radius-lg) - 1px) 0 0 0;
+}
+
+.handrive-list-layout.is-detail-side-left.has-preview .handrive-current-dir-row,
+.handrive-list-layout.is-detail-side-left.has-editor .handrive-current-dir-row {
+    border-radius: 0 calc(var(--handrive-radius-lg) - 1px) 0 0;
+}
+
+.handrive-list-layout.is-detail-side-top.has-preview .handrive-current-dir-row,
+.handrive-list-layout.is-detail-side-top.has-editor .handrive-current-dir-row {
+    border-radius: 0;
 }
 
 .handrive-current-dir-row.is-drop-target {
@@ -6070,7 +6367,25 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
 .handrive-list-preview-content.handrive-js,
 .handrive-list-preview-content.handrive-py,
 .handrive-list-preview-content.handrive-sql,
+.handrive-list-preview-content.ui-markdown,
+.handrive-list-preview-content.handrive-markdown,
 .handrive-list-preview-content.handrive-plain-text {
+    background: transparent;
+    overflow: visible;
+}
+
+.handrive-list-preview-content.ui-markdown > .ui-markdown,
+.handrive-list-preview-content.ui-markdown > .handrive-markdown,
+.handrive-list-preview-content.handrive-markdown > .ui-markdown,
+.handrive-list-preview-content.handrive-markdown > .handrive-markdown {
+    background: transparent;
+}
+
+.handrive-list-preview-content.handrive-markdown pre {
+    overflow: visible;
+}
+
+.handrive-list-preview-content.ui-markdown pre {
     overflow: visible;
 }
 
@@ -6085,8 +6400,11 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     box-sizing: border-box;
     background: transparent;
     padding: 0;
-    overflow-x: auto;
-    overflow-y: visible;
+    overflow: visible;
+}
+
+.handrive-list-preview-content.handrive-plain-text pre {
+    overflow: visible;
 }
 
 .handrive-list-preview-content.handrive-html,
@@ -6318,14 +6636,17 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
 }
 
 .handrive-media-pdf-element {
+    --handrive-media-pdf-filter: none;
     display: block;
     width: 100%;
     height: 100%;
     min-height: 720px;
     border: 0;
     border-radius: 0;
-    background: var(--handrive-elevated-bg, var(--handrive-bg, var(--site-bg, #fff)));
-    color-scheme: light dark;
+    background: #fff;
+    color-scheme: light;
+    filter: var(--handrive-media-pdf-filter);
+    transition: filter 0.18s ease, background-color 0.18s ease;
 }
 
 body.handrive-page.theme-dark .handrive-media-pdf-wrap {
@@ -6334,8 +6655,8 @@ body.handrive-page.theme-dark .handrive-media-pdf-wrap {
 }
 
 body.handrive-page.theme-dark .handrive-media-pdf-element {
-    background: var(--handrive-elevated-bg, var(--handrive-bg, var(--site-bg, #222)));
-    color-scheme: dark light;
+    background: #fff;
+    color-scheme: light;
 }
 
 .handrive-media-audio-element {
@@ -6370,6 +6691,98 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
     min-width: 0;
     margin-left: 0;
     margin-right: 0;
+}
+
+.handrive-model-preview-wrap {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+}
+
+.handrive-model-preview {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 360px;
+    overflow: hidden;
+    background:
+        linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--handrive-elevated-bg) 92%, var(--theme-accent, #3b82f6) 8%),
+            color-mix(in srgb, var(--handrive-bg) 94%, var(--handrive-text-muted) 6%)
+        );
+    color: var(--handrive-text-stronger);
+    touch-action: none;
+}
+
+.handrive-model-preview-viewport {
+    position: absolute;
+    inset: 0;
+    min-width: 0;
+    min-height: 0;
+}
+
+.handrive-model-preview-viewport canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.handrive-model-preview-toolbar {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 3;
+    display: inline-flex;
+    gap: 6px;
+    padding: 4px;
+    border: 1px solid color-mix(in srgb, var(--handrive-border-soft) 74%, transparent);
+    border-radius: var(--handrive-radius-md);
+    background: color-mix(in srgb, var(--handrive-elevated-bg) 72%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+}
+
+.handrive-model-preview-toolbar .handrive-icon-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    border-radius: var(--handrive-radius-sm);
+    background: transparent;
+}
+
+.handrive-model-preview-toolbar .handrive-icon-btn.is-active {
+    background: var(--handrive-selected-bg);
+    color: var(--handrive-text-stronger);
+}
+
+.handrive-model-preview-status {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    z-index: 3;
+    max-width: calc(100% - 24px);
+    padding: 7px 10px;
+    border: 1px solid color-mix(in srgb, var(--handrive-border-soft) 72%, transparent);
+    border-radius: var(--handrive-radius-sm);
+    background: color-mix(in srgb, var(--handrive-elevated-bg) 72%, transparent);
+    color: var(--handrive-text-stronger);
+    font-size: 13px;
+    line-height: 1.35;
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+}
+
+.handrive-model-preview-status[hidden] {
+    display: none;
+}
+
+.handrive-model-preview.has-error .handrive-model-preview-status {
+    border-color: color-mix(in srgb, #ef4444 52%, var(--handrive-border-soft));
+    color: var(--handrive-text-stronger);
 }
 
 .handrive-media-loop-button {
@@ -6418,14 +6831,16 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
 }
 
 .handrive-list-preview-content.handrive-media-image,
-.handrive-list-preview-content.handrive-media-video {
+.handrive-list-preview-content.handrive-media-video,
+.handrive-list-preview-content.handrive-media-3d {
     min-height: 360px;
     align-items: center;
     justify-content: center;
 }
 
 .handrive-list-preview-content.handrive-media-image .handrive-media-wrap,
-.handrive-list-preview-content.handrive-media-video .handrive-media-wrap {
+.handrive-list-preview-content.handrive-media-video .handrive-media-wrap,
+.handrive-list-preview-content.handrive-media-3d .handrive-model-preview-wrap {
     width: 100%;
     height: 100%;
     min-width: 0;
@@ -6442,7 +6857,8 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
 }
 
 .handrive-list-preview-content.handrive-media-image .handrive-media-image-wrap,
-.handrive-list-preview-content.handrive-media-video .handrive-media-video-wrap {
+.handrive-list-preview-content.handrive-media-video .handrive-media-video-wrap,
+.handrive-list-preview-content.handrive-media-3d .handrive-model-preview-wrap {
     transform-origin: center center;
     width: 100%;
     height: 100%;
@@ -6461,6 +6877,17 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
     display: block;
 }
 
+.handrive-list-preview-content.handrive-media-3d {
+    position: relative;
+    overflow: hidden;
+    padding: 0;
+}
+
+.handrive-list-preview-content.handrive-media-3d .handrive-model-preview {
+    flex: 1 1 auto;
+    min-height: 360px;
+}
+
 .handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-video {
     min-height: 0;
 }
@@ -6474,6 +6901,10 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
     height: auto !important;
     min-height: 180px;
     aspect-ratio: 16 / 9;
+}
+
+.handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-3d {
+    min-height: min(68vh, 640px);
 }
 
 .handrive-list-preview-content.handrive-office .handrive-media-pdf-wrap {
@@ -6498,14 +6929,53 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
     min-height: max(720px, calc(100vh - 220px));
 }
 
+.handrive-list-preview-content.handrive-media:has(.handrive-media-pdf-wrap),
+.handrive-list-preview-content.handrive-media-pdf,
+.handrive-list-preview-content.handrive-office:has(.handrive-media-pdf-wrap) {
+    position: relative;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.handrive-list-preview-content.handrive-media:has(.handrive-media-pdf-wrap) .handrive-media-pdf-wrap,
+.handrive-list-preview-content.handrive-media-pdf .handrive-media-pdf-wrap,
+.handrive-list-preview-content.handrive-office:has(.handrive-media-pdf-wrap) .handrive-media-pdf-wrap {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 0;
+}
+
+.handrive-list-preview-content.handrive-media:has(.handrive-media-pdf-wrap) .handrive-media-pdf-element,
+.handrive-list-preview-content.handrive-media-pdf .handrive-media-pdf-element,
+.handrive-list-preview-content.handrive-office:has(.handrive-media-pdf-wrap) .handrive-media-pdf-element {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
 /* 가로모드 미리보기: PDF를 article 전체에 채움
    position: absolute; inset: 0 으로 flex/height:100% 해석 문제를 우회
    handrive-office(pptx/docx/xlsx)도 PDF iframe으로 렌더되므로 동일 규칙 적용 */
 .handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-media,
 .handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-media-pdf,
+.handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-media-3d,
 .handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-office {
     position: relative;
     overflow: auto;
+}
+
+.handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-media-3d {
+    overflow: hidden;
+}
+
+.handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-media-3d .handrive-model-preview {
+    min-height: 0;
 }
 
 .handrive-list-layout.is-landscape.has-preview .handrive-list-preview-content.handrive-media .handrive-media-pdf-wrap,
@@ -6524,9 +6994,18 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
 
 .handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-media,
 .handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-media-pdf,
+.handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-media-3d,
 .handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-office {
     position: relative;
     overflow: auto;
+}
+
+.handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-media-3d {
+    overflow: hidden;
+}
+
+.handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-media-3d .handrive-model-preview {
+    min-height: 0;
 }
 
 .handrive-list-preview.is-floating-detail .handrive-list-preview-content.handrive-media .handrive-media-pdf-wrap,
@@ -6544,13 +7023,15 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
 }
 
 .ui-content[data-handrive-page="view"] > article.handrive-media-image,
-.ui-content[data-handrive-page="view"] > article.handrive-media-video {
+.ui-content[data-handrive-page="view"] > article.handrive-media-video,
+.ui-content[data-handrive-page="view"] > article.handrive-media-3d {
     align-items: center;
     justify-content: center;
 }
 
 .ui-content[data-handrive-page="view"] > article.handrive-media-image .handrive-media-wrap,
-.ui-content[data-handrive-page="view"] > article.handrive-media-video .handrive-media-wrap {
+.ui-content[data-handrive-page="view"] > article.handrive-media-video .handrive-media-wrap,
+.ui-content[data-handrive-page="view"] > article.handrive-media-3d .handrive-model-preview-wrap {
     width: 100%;
     height: 100%;
     min-width: 0;
@@ -6562,6 +7043,16 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
 .ui-content[data-handrive-page="view"] > article.handrive-media .handrive-media-pdf-wrap {
     min-height: max(720px, calc(100vh - 180px));
     overflow-x: hidden;
+}
+
+.ui-content[data-handrive-page="view"] > article.handrive-media-3d {
+    min-height: max(520px, calc(100vh - 180px));
+    overflow: hidden;
+    padding: 0;
+}
+
+.ui-content[data-handrive-page="view"] > article.handrive-media-3d .handrive-model-preview {
+    min-height: max(520px, calc(100vh - 180px));
 }
 
 .ui-content[data-handrive-page="view"] .handrive-preview-nav-btn,
@@ -10778,7 +11269,20 @@ input.ae-range-input::-moz-range-thumb {
 }
 
 .pe-style-icon--line {
+    --pe-line-preview-width: 2.5px;
     font-size: 20px;
+    color: var(--handrive-text-stronger);
+}
+
+.pe-style-icon--line::before {
+    content: "";
+    width: 18px;
+    height: var(--pe-line-preview-width);
+    min-height: 1px;
+    max-height: 12px;
+    border-radius: 999px;
+    background: currentColor;
+    display: block;
 }
 
 .pe-font-family-select {
@@ -10910,8 +11414,12 @@ body.handrive-page .pe-line-width-slider {
 
 .pe-draw-layer {
     z-index: 2;
-    cursor: crosshair;
+    cursor: default;
     touch-action: none;
+}
+
+.pe-page-list.is-pdf-draw-mode .pe-draw-layer {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23111827' stroke='%23ffffff' stroke-width='1.1' stroke-linejoin='round' d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z'/%3E%3C/svg%3E") 4 20, crosshair;
 }
 
 .pe-page-list.is-pdf-text-mode .pe-draw-layer {
@@ -10987,6 +11495,7 @@ body.handrive-page.theme-dark .pe-page-wrap {
     gap: 6px;
     height: var(--handrive-editor-text-style-height);
     min-height: var(--handrive-editor-text-style-height);
+    width: 150px;
     min-width: 0;
     border: 1px solid var(--handrive-editor-text-style-border);
     border-radius: var(--handrive-editor-text-style-radius);
@@ -11040,6 +11549,7 @@ body.handrive-page.theme-dark .pe-page-wrap {
 .handrive-editor-text-style-field > .handrive-editor-text-style-font-family,
 .handrive-editor-text-style-field > .site-custom-select.handrive-editor-text-style-font-family {
     width: var(--handrive-editor-text-style-font-family-width, 128px);
+    flex: 1 1 auto;
     height: calc(var(--handrive-editor-text-style-height) - 2px);
     min-width: 0;
     border: 0;

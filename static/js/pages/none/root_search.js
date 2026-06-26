@@ -59,9 +59,17 @@
 
         const navLinks = nav.querySelector('.ui-nav-links');
         const controlsStack = nav.querySelector('.ui-controls-stack');
+        const weatherHost = document.querySelector('[data-root-weather-host]');
+        const accountRoot = document.getElementById('ui-auth-account-root');
+        const accountWeather = (accountRoot ? accountRoot.querySelector('.ui-auth-account-weather') : null)
+            || (weatherHost ? weatherHost.querySelector('.ui-auth-account-weather') : null);
 
         if (controlsStack && controlsStack.parentNode !== controlsHost) {
             controlsHost.appendChild(controlsStack);
+        }
+
+        if (accountWeather && weatherHost && accountWeather.parentNode !== weatherHost) {
+            weatherHost.appendChild(accountWeather);
         }
 
         if (navLinks && navLinks.parentNode !== linksHost) {

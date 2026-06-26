@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load static_versioned %}
-{% block body_class %}ui-page sub-page{% endblock %}
+{% block body_class %}ui-page sub-page{% if sub_page_modifier_class %} {{ sub_page_modifier_class }}{% endif %}{% endblock %}
 {% block content %}
 {% include 'handrive/_assets_head.html' %}
 
@@ -347,6 +347,14 @@
 
         .sub-list {
             grid-template-columns: 1fr;
+        }
+
+        body.sub-page.sub-page-single-group .sub-ui-panel {
+            grid-template-columns: 1fr;
+        }
+
+        body.sub-page.sub-page-single-group .sub-list {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
     }
 

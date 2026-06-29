@@ -5750,7 +5750,6 @@ def sanitize_minecraft_status_payload(
     payload,
     include_private_player_data=False,
     current_account_names=None,
-    current_account_uuids=None,
 ):
     """Remove private player fields from the public Minecraft status response."""
     if not isinstance(payload, dict):
@@ -5761,11 +5760,6 @@ def sanitize_minecraft_status_payload(
         normalize_minecraft_player_name(name).lower()
         for name in (current_account_names or [])
         if normalize_minecraft_player_name(name)
-    }
-    current_account_uuid_keys = {
-        normalize_minecraft_uuid(uuid_value).lower()
-        for uuid_value in (current_account_uuids or [])
-        if normalize_minecraft_uuid(uuid_value)
     }
     sanitized_players = []
     raw_players = payload.get("players")
@@ -5778,11 +5772,7 @@ def sanitize_minecraft_status_payload(
                 "online": bool(raw_player.get("online")),
             }
             player_name_key = normalize_minecraft_player_name(raw_player.get("name")).lower()
-            player_uuid_key = normalize_minecraft_uuid(raw_player.get("uuid")).lower()
-            if (
-                (player_name_key and player_name_key in current_account_name_keys)
-                or (player_uuid_key and player_uuid_key in current_account_uuid_keys)
-            ):
+            if player_name_key and player_name_key in current_account_name_keys:
                 player["currentAccount"] = True
             if include_private_player_data:
                 uuid_value = str(raw_player.get("uuid") or "").strip()
@@ -5991,9 +5981,7 @@ def minecraft_home(request, ui_lang=None):
         if bedrock_server_version
         else f"{bedrock_server_version_prefix} {server_version_loading_label}"
     )
-    minecraft_account_names, minecraft_account_uuids = get_current_minecraft_account_identity(
-        getattr(request, "user", None)
-    )
+    minecraft_account_names = get_current_minecraft_account_names(getattr(request, "user", None))
     meta_description = (
         MINECRAFT_META_DESCRIPTION_EN
         if is_english
@@ -6018,18 +6006,13 @@ def minecraft_home(request, ui_lang=None):
         "server_panel_title": "Map" if is_english else "지도",
         "minecraft_account_link_title": "Account Link" if is_english else "계정연동",
         "minecraft_account_link_modal_title": "Minecraft account link" if is_english else "Minecraft 계정연동",
-        "minecraft_account_link_intro": (
-            "Copy the link code and run it in the Minecraft server chat."
-            if is_english
-            else "연동코드를 복사한 뒤 Minecraft 서버 채팅에 입력하세요."
-        ),
         "minecraft_account_link_code_label": "Link code" if is_english else "연동코드",
         "minecraft_account_link_copy_label": "Copy link code" if is_english else "연동코드 복사",
         "minecraft_account_link_usage_label": "Usage" if is_english else "사용방법",
         "minecraft_account_link_usage_text": (
             "Open chat in the server and enter /link <code>."
             if is_english
-            else "서버 채팅창에서 /link <연동코드> 를 입력하세요."
+            else "Minecraft 서버 채팅창에서 /link <연동코드>를 입력하세요."
         ),
         "minecraft_account_link_linked_label": "Linked accounts" if is_english else "연동된 유저",
         "minecraft_account_link_empty_label": "No linked Minecraft accounts." if is_english else "연동된 Minecraft 유저가 없습니다.",
@@ -6141,13 +6124,7 @@ def minecraft_home(request, ui_lang=None):
         "minecraft_effect_options_json": json.dumps(get_minecraft_effect_options(is_english), ensure_ascii=False),
         "online_label": "Online" if is_english else "온라인",
         "offline_label": "Offline" if is_english else "오프라인",
-        "minecraft_account_username": (
-            str(request.user.username or "")
-            if getattr(request, "user", None) is not None and request.user.is_authenticated
-            else ""
-        ),
         "minecraft_account_names_json": json.dumps(minecraft_account_names, ensure_ascii=False),
-        "minecraft_account_uuids_json": json.dumps(minecraft_account_uuids, ensure_ascii=False),
         "meta_title": MINECRAFT_META_TITLE,
         "meta_og_title": MINECRAFT_META_TITLE,
         "meta_description": meta_description,
@@ -6210,14 +6187,11 @@ def minecraft_status_json(request):
             "maxPlayers": 0,
             "players": [],
         }
-    minecraft_account_names, minecraft_account_uuids = get_current_minecraft_account_identity(
-        getattr(request, "user", None)
-    )
+    minecraft_account_names = get_current_minecraft_account_names(getattr(request, "user", None))
     payload = sanitize_minecraft_status_payload(
         payload,
         include_private_player_data=is_minecraft_admin_user(getattr(request, "user", None)),
         current_account_names=minecraft_account_names,
-        current_account_uuids=minecraft_account_uuids,
     )
     response = JsonResponse(payload)
     response["X-Hanplanet-App"] = "django-minecraft"

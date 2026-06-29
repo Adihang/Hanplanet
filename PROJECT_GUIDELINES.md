@@ -118,7 +118,15 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.celery
 - `manage.py`: Django management entry point.
 - `requirements.txt`: Python dependencies.
 - `bumpercar-spiky-server/`: Separate Node.js WebSocket game server (see its own `AGENTS.md`).
+- `map-collab-server/`: Separate Node.js WebSocket/admin server for HanDrive map collaboration.
 - `Wargame/`: Separate Apache + PHP + SQLite site for `wargame.hanplanet.com`; Django APIs may be used only for non-challenge site integration such as account identity, solve records, and shared navigation (see `Wargame/AGENTS.md`).
+- `docs/plans/`: Development plans and product notes.
+- `docs/samples/`: Preserved samples, HTML dumps, and reference outputs.
+- `.local/`: Local-only preserved scratch artifacts; git-ignored.
+
+**launchd-sensitive stable paths:** repository launchd plists and installed LaunchAgents use absolute paths and `WorkingDirectory` values for `scripts/`, `nginx/`, `forgejo/`, `bumpercar-spiky-server/`, `map-collab-server/`, `Wargame/`, and `storage_profile.py`. Do not move these paths unless you update the plist files, docs, and installed LaunchAgents together.
+
+Generated verification output and scratch files do not belong in source control. Keep `output/`, `tmp/`, `test-results/`, `.playwright*`, HPmail generated/backups, and built sync-client binaries out of Git; use `.local/` for local preservation when needed.
 
 ## Architecture
 

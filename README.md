@@ -511,7 +511,13 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 | [`scripts/`](./scripts/) | launchd 실행 래퍼, access log rotate/summary, 헬스체크, HDD 정리 스크립트 |
 | [`storage_profile.py`](./storage_profile.py) | `DISC` 값에 따른 media/Forgejo/GitHub cache root 결정 |
 | [`docker/`](./docker/) | 현재 운영 미사용 Docker/Cloudflared 예시 설정 |
+| [`docs/plans/`](./docs/plans/) | 기능/제품 개발 계획서 |
+| [`docs/samples/`](./docs/samples/) | 보존용 샘플, HTML 덤프, 참고 출력물 |
 | [`docs/readme-assets/`](./docs/readme-assets/) | README에서 참조하는 이미지 자산 |
+
+`deploy/launchd/`, `bumpercar-spiky-server/deploy/launchd/`, `map-collab-server/deploy/launchd/`, `Wargame/deploy/launchd/`의 plist는 절대경로와 `WorkingDirectory`를 사용합니다. 따라서 `scripts/`, `nginx/`, `forgejo/`, `bumpercar-spiky-server/`, `map-collab-server/`, `Wargame/`, `storage_profile.py`는 launchd 안정 경로로 취급하고, 이 경로를 옮길 때는 plist, README, 배포 문서, 설치된 LaunchAgents 재설치까지 같이 처리해야 합니다.
+
+검증 산출물과 로컬 스크래치 파일은 소스 트리에 두지 않습니다. `output/`, `tmp/`, `test-results/`, `.playwright*`, `deploy/hpmail/backups/`, sync client 빌드 실행 파일은 `.gitignore` 대상이며, 보존이 필요한 로컬 결과물은 `.local/` 아래에 둡니다.
 
 ### `main/` 핵심 파일
 

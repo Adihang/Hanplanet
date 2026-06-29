@@ -244,7 +244,7 @@
         display: grid;
         gap: 10px;
         min-height: 0;
-        padding: 10px;
+        padding: 0 10px 10px;
         overflow: auto;
         box-sizing: border-box;
     }
@@ -742,8 +742,7 @@
     }
 
     .minecraft-player-item.is-current-account {
-        border-width: 2px;
-        border-color: var(--handrive-border-heavy);
+        border-color: var(--handrive-text-stronger);
     }
 
     .minecraft-player-state {
@@ -2068,12 +2067,8 @@
         const accountLinkStatusUrl = accountLinkBodyEl ? accountLinkBodyEl.dataset.statusUrl || '' : '';
         const accountLinkUnlinkUrlTemplate = accountLinkBodyEl ? accountLinkBodyEl.dataset.unlinkUrlTemplate || '' : '';
         const blueMapLanguage = normalizeBlueMapLanguage('{{ bluemap_language|escapejs }}');
-        const currentAccountUsername = normalizeMinecraftPlayerName('{{ minecraft_account_username|escapejs }}');
         const currentAccountNames = new Set({{ minecraft_account_names_json|safe }}.map(function (name) {
             return normalizeMinecraftPlayerName(name);
-        }).filter(Boolean));
-        const currentAccountUuids = new Set({{ minecraft_account_uuids_json|safe }}.map(function (uuidValue) {
-            return normalizeMinecraftUuid(uuidValue);
         }).filter(Boolean));
         const serverLogUrl = serverLogPanelEl ? serverLogPanelEl.dataset.logUrl : '';
         const serverCommandUrl = serverCommandFormEl ? serverCommandFormEl.dataset.commandUrl : '';
@@ -2356,15 +2351,9 @@
         function updateCurrentAccountLinks(links) {
             const safeLinks = Array.isArray(links) ? links : [];
             currentAccountNames.clear();
-            currentAccountUuids.clear();
-            if (currentAccountUsername) {
-                currentAccountNames.add(currentAccountUsername);
-            }
             safeLinks.forEach(function (link) {
                 const linkedName = normalizeMinecraftPlayerName(link && link.minecraftName);
-                const linkedUuid = normalizeMinecraftUuid(link && link.minecraftUuid);
                 if (linkedName) currentAccountNames.add(linkedName);
-                if (linkedUuid) currentAccountUuids.add(linkedUuid);
             });
             if (hasRenderedStatus) {
                 loadStatus();
@@ -2670,18 +2659,11 @@
             return String(name || '').trim().toLowerCase();
         }
 
-        function normalizeMinecraftUuid(uuidValue) {
-            return String(uuidValue || '').trim().toLowerCase();
-        }
-
         function isCurrentAccountPlayer(player) {
             const playerName = normalizeMinecraftPlayerName(player && player.name);
-            const playerUuid = normalizeMinecraftUuid(player && player.uuid);
             return Boolean(
                 (player && player.currentAccount) ||
-                (currentAccountUsername && playerName === currentAccountUsername) ||
-                (playerName && currentAccountNames.has(playerName)) ||
-                (playerUuid && currentAccountUuids.has(playerUuid))
+                (playerName && currentAccountNames.has(playerName))
             );
         }
 

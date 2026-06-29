@@ -32,6 +32,15 @@ local_settings.py
 /media/
 staticfiles/
 
+# Local generated artifacts
+/.local/
+/output/
+/tmp/
+/test-results/
+/.playwright/
+/.playwright-cli/
+/media.before-external.*/
+
 # Virtual Environment
 venv/
 env/
@@ -69,5 +78,12 @@ forgejo/log/
 # Celery / application logs
 log/
 
-# Generated HPmail Postfix maps
+# Generated HPmail Postfix maps and local config backups
 deploy/hpmail/generated/
+deploy/hpmail/backups/
+
+# Sync client build artifacts
+sync-client/*.exe
+sync-client/*.msi
+sync-client/popup-preview
+sync-client/cmd/installer/*.exe

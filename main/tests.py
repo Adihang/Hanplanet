@@ -1737,7 +1737,8 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'window.setInterval(loadStatus, 5000);', html=False)
         self.assertContains(response, "return leftOnline ? -1 : 1;", html=False)
         self.assertContains(response, "localeCompare(String(rightPlayer.name || '')", html=False)
-        self.assertEqual(response.context["minecraft_account_username"], "")
+        self.assertEqual(response.context["minecraft_account_names_json"], "[]")
+        self.assertNotIn("minecraft_account_username", response.context)
         handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
         common_popup_js = (Path(settings.BASE_DIR) / "static/js/common/popup_common.js").read_text(encoding="utf-8")
         handrive_page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
@@ -1799,6 +1800,14 @@ class LanguageUrlRoutingTests(TestCase):
         minecraft_low_height_side_layout_block = content[
             content.index("        .minecraft-side-layout {", minecraft_low_height_landscape_start):
             content.index("    }\n</style>", minecraft_low_height_landscape_start)
+        ]
+        minecraft_account_link_body_block = content[
+            content.index("    .minecraft-account-link-body {"):
+            content.index("    .minecraft-account-link-status,", content.index("    .minecraft-account-link-body {"))
+        ]
+        minecraft_current_account_player_block = content[
+            content.index("    .minecraft-player-item.is-current-account {"):
+            content.index("    .minecraft-player-state {")
         ]
         self.assertIn(".handrive-inline-copy-field,", handrive_css)
         self.assertIn(".handrive-inline-copy-action,", handrive_css)
@@ -1884,21 +1893,21 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'class="minecraft-panel-list-item minecraft-plugin-item"', html=False)
         self.assertContains(response, "'minecraft-panel-list-item',", html=False)
         self.assertContains(response, '.minecraft-player-item.is-current-account {', html=False)
-        self.assertContains(response, 'border-width: 2px;', html=False)
-        self.assertContains(response, 'border-color: var(--handrive-border-heavy);', html=False)
+        self.assertIn('border-color: var(--handrive-text-stronger);', minecraft_current_account_player_block)
+        self.assertNotIn('border-width:', minecraft_current_account_player_block)
+        self.assertNotIn('border-color: var(--handrive-border-heavy);', minecraft_current_account_player_block)
         self.assertContains(response, '.minecraft-player-list {\n        padding: 2px;', html=False)
         self.assertContains(response, 'width: calc(100% + 4px);', html=False)
         self.assertContains(response, 'margin: -2px;', html=False)
-        self.assertContains(response, "const currentAccountUsername = normalizeMinecraftPlayerName('');", html=False)
         self.assertContains(response, "const currentAccountNames = new Set([].map(function (name) {", html=False)
-        self.assertContains(response, "const currentAccountUuids = new Set([].map(function (uuidValue) {", html=False)
         self.assertContains(response, 'function normalizeMinecraftPlayerName(name)', html=False)
-        self.assertContains(response, 'function normalizeMinecraftUuid(uuidValue)', html=False)
         self.assertContains(response, 'function isCurrentAccountPlayer(player)', html=False)
         self.assertContains(response, 'player && player.currentAccount', html=False)
         self.assertContains(response, 'currentAccountNames.has(playerName)', html=False)
-        self.assertContains(response, 'currentAccountUuids.has(playerUuid)', html=False)
         self.assertContains(response, 'function updateCurrentAccountLinks(links)', html=False)
+        self.assertNotContains(response, 'currentAccountUsername', html=False)
+        self.assertNotContains(response, 'currentAccountUuids', html=False)
+        self.assertNotContains(response, 'normalizeMinecraftUuid', html=False)
         self.assertContains(response, "isCurrentAccount ? 'is-current-account' : ''", html=False)
         self.assertContains(response, '.minecraft-player-list:empty', html=False)
         self.assertContains(response, 'overflow: auto;', html=False)
@@ -1966,6 +1975,8 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertIn('height: 100%;', minecraft_low_height_side_layout_block)
         self.assertIn('min-height: 0;', minecraft_low_height_side_layout_block)
         self.assertIn('overflow: auto;', minecraft_low_height_side_layout_block)
+        self.assertIn('padding: 0 10px 10px;', minecraft_account_link_body_block)
+        self.assertNotIn('padding: 10px;', minecraft_account_link_body_block)
         self.assertContains(response, 'height: max-content;', html=False)
         self.assertContains(response, 'min-height: max-content;', html=False)
         self.assertNotContains(response, '@media (orientation: portrait) {\n        .minecraft-page-layout,', html=False)
@@ -1994,6 +2005,9 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'id="minecraftAccountLinkModal"', html=False)
         self.assertContains(response, 'id="minecraftAccountLinkCode"', html=False)
         self.assertContains(response, 'class="minecraft-account-link-code-field handrive-inline-copy-field"', html=False)
+        self.assertContains(response, 'Minecraft 서버 채팅창에서 /link &lt;연동코드&gt;를 입력하세요.', html=False)
+        self.assertNotContains(response, '연동코드를 복사한 뒤 Minecraft 서버 채팅에 입력하세요.', html=False)
+        self.assertNotContains(response, '서버 채팅창에서 /link &lt;연동코드&gt; 를 입력하세요.', html=False)
         self.assertContains(response, 'data-start-url="/api/minecraft/link/start"', html=False)
         self.assertContains(response, 'data-status-url="/api/minecraft/link/status"', html=False)
         self.assertContains(response, 'data-unlink-url-template="/api/minecraft/link/0"', html=False)
@@ -2027,7 +2041,7 @@ class LanguageUrlRoutingTests(TestCase):
     @mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30")
     @mock.patch("main.views.read_minecraft_server_status", return_value={"version": {"name": "Paper 26.3", "protocol": 776}})
     @mock.patch("main.views.get_minecraft_server_plugins", return_value=[{"name": "BlueMap", "version": "5.22"}])
-    def test_minecraft_home_exposes_login_username_for_player_highlight(self, mocked_plugins, mocked_status, mocked_bedrock_version):
+    def test_minecraft_home_exposes_linked_names_for_player_highlight(self, mocked_plugins, mocked_status, mocked_bedrock_version):
         user = get_user_model().objects.create_user(
             username="HanPlayer",
             email="hanplayer@example.com",
@@ -2044,24 +2058,16 @@ class LanguageUrlRoutingTests(TestCase):
         response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["minecraft_account_username"], "HanPlayer")
-        self.assertEqual(response.context["minecraft_account_names_json"], '["HanPlayer", "LinkedPlayer"]')
-        self.assertEqual(response.context["minecraft_account_uuids_json"], '["00000000-0000-0000-0000-000000000031"]')
+        self.assertEqual(response.context["minecraft_account_names_json"], '["LinkedPlayer"]')
         self.assertContains(
             response,
-            "const currentAccountUsername = normalizeMinecraftPlayerName('HanPlayer');",
+            'const currentAccountNames = new Set(["LinkedPlayer"].map(function (name) {',
             html=False,
         )
-        self.assertContains(
-            response,
-            'const currentAccountNames = new Set(["HanPlayer", "LinkedPlayer"].map(function (name) {',
-            html=False,
-        )
-        self.assertContains(
-            response,
-            'const currentAccountUuids = new Set(["00000000-0000-0000-0000-000000000031"].map(function (uuidValue) {',
-            html=False,
-        )
+        self.assertNotIn("minecraft_account_username", response.context)
+        self.assertNotIn("minecraft_account_uuids_json", response.context)
+        self.assertNotContains(response, "currentAccountUsername", html=False)
+        self.assertNotContains(response, "currentAccountUuids", html=False)
         mocked_plugins.assert_called_once_with()
         mocked_status.assert_called()
         mocked_bedrock_version.assert_called_once_with()
@@ -2353,6 +2359,17 @@ class LanguageUrlRoutingTests(TestCase):
         public_player = response.json()["players"][0]
         self.assertEqual(public_player, {"name": "HanPlayer", "online": True})
 
+        username_only_user = get_user_model().objects.create_user(
+            username="HanPlayer",
+            email="minecraft-username-only@example.com",
+            password="pw123456",
+        )
+        self.client.force_login(username_only_user)
+        response = self.client.get(url, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 200)
+        username_only_player = response.json()["players"][0]
+        self.assertEqual(username_only_player, {"name": "HanPlayer", "online": True})
+
         linked_user = get_user_model().objects.create_user(
             username="django_account_owner",
             email="minecraft-linked-status@example.com",
@@ -2369,7 +2386,24 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("items", response.json())
         linked_public_player = response.json()["players"][0]
-        self.assertEqual(linked_public_player, {"name": "HanPlayer", "online": True, "currentAccount": True})
+        self.assertEqual(linked_public_player, {"name": "HanPlayer", "online": True})
+
+        name_linked_user = get_user_model().objects.create_user(
+            username="minecraft_name_linked_owner",
+            email="minecraft-name-linked-status@example.com",
+            password="pw123456",
+        )
+        MinecraftAccountLink.objects.create(
+            user=name_linked_user,
+            minecraft_uuid="00000000-0000-0000-0000-000000000002",
+            minecraft_name="HanPlayer",
+            edition=MinecraftAccountLink.EDITION_JAVA,
+        )
+        self.client.force_login(name_linked_user)
+        response = self.client.get(url, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 200)
+        name_linked_player = response.json()["players"][0]
+        self.assertEqual(name_linked_player, {"name": "HanPlayer", "online": True, "currentAccount": True})
 
         admin = get_user_model().objects.create_superuser(
             username="minecraft_status_admin",

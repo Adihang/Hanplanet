@@ -119,6 +119,42 @@
         line-height: 1.2;
     }
 
+    .minecraft-account-link-trigger {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        min-height: 22px;
+        padding: 0 4px;
+        border: 0;
+        border-radius: 3px;
+        background: transparent;
+        color: var(--handrive-text-muted);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 800;
+        line-height: 1.2;
+        text-decoration: none;
+        text-underline-offset: 3px;
+        cursor: pointer;
+        translate: 0 0;
+        transition: color 0.16s ease, text-decoration-color 0.16s ease, translate 0.12s ease;
+    }
+
+    .minecraft-account-link-trigger:hover,
+    .minecraft-account-link-trigger:focus-visible {
+        color: var(--handrive-text-stronger);
+        text-decoration: underline;
+        translate: 0 var(--btn-template-hover-lift, -1px);
+        outline: none;
+    }
+
+    .minecraft-account-link-trigger:active {
+        color: var(--handrive-text-stronger);
+        text-decoration: underline;
+        translate: 0 var(--btn-template-active-press-depth, 1px);
+    }
+
     .minecraft-panel-heading {
         position: relative;
         display: flex;
@@ -128,6 +164,15 @@
         height: 22px;
         padding: 0 10px;
         margin-bottom: 8px;
+    }
+
+    .minecraft-panel-heading-actions {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        min-width: 0;
+        margin-left: auto;
     }
 
     {% if minecraft_admin_log_enabled %}
@@ -185,6 +230,145 @@
 
     .theme-dark .minecraft-server-weather-icon {
         filter: invert(1);
+    }
+
+    .minecraft-account-link-dialog {
+        width: min(420px, calc(100vw - 20px));
+        max-height: calc(100vh - 20px);
+        max-height: calc(100dvh - 20px);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .minecraft-account-link-body {
+        display: grid;
+        gap: 10px;
+        min-height: 0;
+        padding: 10px;
+        overflow: auto;
+        box-sizing: border-box;
+    }
+
+    .minecraft-account-link-status,
+    .minecraft-account-link-description {
+        margin: 0;
+        color: var(--handrive-text-muted);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.45;
+    }
+
+    .minecraft-account-link-status[hidden] {
+        display: none;
+    }
+
+    .minecraft-account-link-status.is-error {
+        color: #dc2626;
+    }
+
+    .minecraft-account-link-code-section,
+    .minecraft-account-link-usage,
+    .minecraft-account-link-linked {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .minecraft-account-link-label {
+        margin: 0;
+        color: var(--handrive-text-muted);
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1.2;
+    }
+
+    .minecraft-account-link-code-field {
+        min-height: 44px;
+        padding: 7px 50px 7px 12px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted-strong);
+        color: var(--handrive-text-stronger);
+        box-sizing: border-box;
+    }
+
+    .minecraft-account-link-code {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        color: inherit;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.25;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .minecraft-account-link-copy {
+        width: 34px;
+        height: 34px;
+    }
+
+    .minecraft-account-link-copy svg {
+        width: 24px;
+        height: 24px;
+    }
+
+    .minecraft-account-link-list {
+        display: grid;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .minecraft-account-link-list:empty {
+        display: none;
+    }
+
+    .minecraft-account-link-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) max-content;
+        align-items: center;
+        gap: 8px;
+        min-height: 38px;
+        padding: 6px 8px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted);
+        box-sizing: border-box;
+    }
+
+    .minecraft-account-link-name,
+    .minecraft-account-link-meta {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .minecraft-account-link-name {
+        color: var(--handrive-text-stronger);
+        font-size: 14px;
+        font-weight: 800;
+        line-height: 1.2;
+    }
+
+    .minecraft-account-link-meta {
+        margin-top: 2px;
+        color: var(--handrive-text-muted);
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .minecraft-account-link-unlink {
+        min-height: 30px;
+        padding: 0 9px;
+        font-size: 12px;
+        white-space: nowrap;
     }
 
     {% if minecraft_admin_log_enabled %}
@@ -494,6 +678,13 @@
         justify-content: space-between;
         gap: 12px;
         margin-bottom: 10px;
+    }
+
+    .minecraft-status-title-row {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 8px;
+        min-width: 0;
     }
 
     .minecraft-server-log-title-row {
@@ -1554,8 +1745,55 @@
             gap: 4px;
         }
 
+        .minecraft-panel-heading {
+            align-items: flex-start;
+            height: auto;
+            min-height: 22px;
+        }
+
+        .minecraft-panel-heading-actions {
+            flex-wrap: wrap;
+            row-gap: 4px;
+        }
+
         .minecraft-status-summary {
             white-space: normal;
+        }
+    }
+
+    @media (max-height: 520px) and (orientation: landscape) {
+        .minecraft-page-layout {
+            grid-template-columns: minmax(0, 1fr) minmax(220px, 360px);
+            grid-template-rows: minmax(0, 1fr) max-content;
+            align-items: stretch;
+        }
+
+        .minecraft-layout {
+            height: 100%;
+            min-height: 0;
+            align-content: stretch;
+        }
+
+        .minecraft-server-panel {
+            height: 100%;
+            min-height: 0;
+            overflow: auto;
+        }
+
+        .minecraft-server-panel .minecraft-map-embed-section {
+            flex: 0 0 clamp(72px, 26dvh, 140px);
+            height: clamp(72px, 26dvh, 140px);
+            min-height: 72px;
+        }
+
+        .minecraft-side-layout {
+            justify-self: stretch;
+            width: 100%;
+            min-width: 220px;
+            max-width: 360px;
+            height: 100%;
+            min-height: 0;
+            overflow: auto;
         }
     }
 </style>
@@ -1590,37 +1828,39 @@
             <section class="minecraft-panel minecraft-server-panel" aria-labelledby="minecraft-server-title">
                 <div class="minecraft-panel-heading">
                     <h2 class="minecraft-panel-title" id="minecraft-server-title">{{ server_panel_title }}</h2>
-                    <p class="minecraft-server-clock" id="serverClock" aria-live="polite" title="{{ server_clock_loading_label }}">
-                        <svg
-                            class="minecraft-server-weather-icon{% if minecraft_admin_log_enabled %} minecraft-clock-control{% endif %}"
-                            id="serverWeatherIcon"
-                            viewBox="369 848 450 450"
-                            {% if minecraft_admin_log_enabled %}
-                            role="button"
-                            tabindex="0"
-                            aria-label="{{ server_weather_menu_title }}"
-                            aria-controls="minecraftWeatherMenu"
-                            aria-expanded="false"
-                            focusable="true"
-                            {% else %}
-                            aria-hidden="true"
-                            focusable="false"
-                            {% endif %}
-                        >
-                            <image href="{{ weather_icon_url }}" width="3318" height="3318"></image>
-                        </svg>
-                        <span
-                            class="minecraft-server-time{% if minecraft_admin_log_enabled %} minecraft-clock-control{% endif %}"
-                            id="serverTimeLabel"
-                            {% if minecraft_admin_log_enabled %}
-                            role="button"
-                            tabindex="0"
-                            aria-label="{{ server_time_picker_title }}"
-                            aria-controls="minecraftTimePicker"
-                            aria-expanded="false"
-                            {% endif %}
-                        >--:--</span>
-                    </p>
+                    <div class="minecraft-panel-heading-actions">
+                        <p class="minecraft-server-clock" id="serverClock" aria-live="polite" title="{{ server_clock_loading_label }}">
+                            <svg
+                                class="minecraft-server-weather-icon{% if minecraft_admin_log_enabled %} minecraft-clock-control{% endif %}"
+                                id="serverWeatherIcon"
+                                viewBox="369 848 450 450"
+                                {% if minecraft_admin_log_enabled %}
+                                role="button"
+                                tabindex="0"
+                                aria-label="{{ server_weather_menu_title }}"
+                                aria-controls="minecraftWeatherMenu"
+                                aria-expanded="false"
+                                focusable="true"
+                                {% else %}
+                                aria-hidden="true"
+                                focusable="false"
+                                {% endif %}
+                            >
+                                <image href="{{ weather_icon_url }}" width="3318" height="3318"></image>
+                            </svg>
+                            <span
+                                class="minecraft-server-time{% if minecraft_admin_log_enabled %} minecraft-clock-control{% endif %}"
+                                id="serverTimeLabel"
+                                {% if minecraft_admin_log_enabled %}
+                                role="button"
+                                tabindex="0"
+                                aria-label="{{ server_time_picker_title }}"
+                                aria-controls="minecraftTimePicker"
+                                aria-expanded="false"
+                                {% endif %}
+                            >--:--</span>
+                        </p>
+                    </div>
                     {% if minecraft_admin_log_enabled %}
                     <div class="minecraft-clock-popover minecraft-time-picker" id="minecraftTimePicker" role="dialog" aria-label="{{ server_time_picker_title }}" hidden>
                         <p class="minecraft-time-picker-title">{{ server_time_picker_title }}</p>
@@ -1722,7 +1962,17 @@
         <div class="minecraft-side-layout">
             <section class="minecraft-panel minecraft-player-panel" aria-labelledby="minecraft-players-title">
                 <div class="minecraft-status-header">
-                    <h2 class="minecraft-panel-title" id="minecraft-players-title">{{ players_panel_title }}</h2>
+                    <div class="minecraft-status-title-row">
+                        <h2 class="minecraft-panel-title" id="minecraft-players-title">{{ players_panel_title }}</h2>
+                        <button
+                            class="minecraft-account-link-trigger"
+                            type="button"
+                            id="minecraftAccountLinkTrigger"
+                            aria-controls="minecraftAccountLinkModal"
+                            aria-expanded="false"
+                            data-login-url="{{ handrive_login_url }}"
+                        >{{ minecraft_account_link_title }}</button>
+                    </div>
                     <p class="minecraft-status-summary" id="playerSummary">{{ status_loading_label }}</p>
                 </div>
                 <ul class="minecraft-panel-list minecraft-player-list" id="playerList"></ul>
@@ -1758,6 +2008,7 @@
 
 {% include "partials/site_footer_links.html" %}
 
+{% include "popup/minecraft/account_link_modal.html" %}
 {% if minecraft_admin_log_enabled %}
 {% include "popup/minecraft/server_log_modal.html" %}
 {% include "popup/minecraft/player_detail_modal.html" %}
@@ -1774,9 +2025,19 @@
         const serverWeatherIconEl = document.getElementById('serverWeatherIcon');
         const serverTimeLabelEl = document.getElementById('serverTimeLabel');
         const serverVersionEl = document.getElementById('serverVersion');
+        const accountLinkTriggerEl = document.getElementById('minecraftAccountLinkTrigger');
+        const accountLinkModalEl = document.getElementById('minecraftAccountLinkModal');
+        const accountLinkBackdropEl = document.getElementById('minecraft-account-link-backdrop');
+        const accountLinkCloseEl = document.getElementById('minecraft-account-link-close-btn');
+        const accountLinkBodyEl = document.getElementById('minecraftAccountLinkBody');
+        const accountLinkStatusEl = document.getElementById('minecraftAccountLinkStatus');
+        const accountLinkCodeEl = document.getElementById('minecraftAccountLinkCode');
+        const accountLinkCopyEl = document.getElementById('minecraftAccountLinkCopy');
+        const accountLinkListEl = document.getElementById('minecraftAccountLinkList');
+        const accountLinkEmptyEl = document.getElementById('minecraftAccountLinkEmpty');
         const addressCopyEl = document.getElementById('minecraftAddressCopy');
         const addressTextEl = document.getElementById('minecraftServerAddress');
-        const addressCopyEls = Array.from(document.querySelectorAll('.minecraft-address-copy'));
+        const addressCopyEls = Array.from(document.querySelectorAll('.minecraft-address-copy, .minecraft-account-link-copy'));
         const mapFrameEl = document.getElementById('minecraftMapFrame');
         const minecraftConsoleTriggerEl = document.getElementById('minecraftConsoleTrigger');
         const serverLogModalEl = document.getElementById('minecraftServerLogModal');
@@ -1803,11 +2064,21 @@
         const playerDetailTitleEl = document.getElementById('minecraft-player-detail-title');
         const playerDetailBodyEl = document.getElementById('minecraftPlayerDetailBody');
         const statusUrl = '{{ status_url }}';
+        const accountLinkStartUrl = accountLinkBodyEl ? accountLinkBodyEl.dataset.startUrl || '' : '';
+        const accountLinkStatusUrl = accountLinkBodyEl ? accountLinkBodyEl.dataset.statusUrl || '' : '';
+        const accountLinkUnlinkUrlTemplate = accountLinkBodyEl ? accountLinkBodyEl.dataset.unlinkUrlTemplate || '' : '';
         const blueMapLanguage = normalizeBlueMapLanguage('{{ bluemap_language|escapejs }}');
         const currentAccountUsername = normalizeMinecraftPlayerName('{{ minecraft_account_username|escapejs }}');
+        const currentAccountNames = new Set({{ minecraft_account_names_json|safe }}.map(function (name) {
+            return normalizeMinecraftPlayerName(name);
+        }).filter(Boolean));
+        const currentAccountUuids = new Set({{ minecraft_account_uuids_json|safe }}.map(function (uuidValue) {
+            return normalizeMinecraftUuid(uuidValue);
+        }).filter(Boolean));
         const serverLogUrl = serverLogPanelEl ? serverLogPanelEl.dataset.logUrl : '';
         const serverCommandUrl = serverCommandFormEl ? serverCommandFormEl.dataset.commandUrl : '';
         const isMinecraftAdmin = {{ minecraft_admin_log_enabled|yesno:"true,false" }};
+        const isAuthenticated = document.body && document.body.dataset.authenticated === '1';
         let hasRenderedStatus = false;
         let worldState = null;
         let latestWorldOptions = [];
@@ -1826,6 +2097,8 @@
         let activePlayerDetailName = '';
         let activeInventoryEditSlot = '';
         let shouldRefreshPlayerDetailModal = false;
+        let accountLinkLastFocusedElement = null;
+        let accountLinkRequestInFlight = false;
         const labels = {
             online: '{{ online_label|escapejs }}',
             offline: '{{ offline_label|escapejs }}',
@@ -1879,7 +2152,13 @@
             playerInventoryItem: '{{ player_inventory_item_label|escapejs }}',
             playerInventoryAmount: '{{ player_inventory_amount_label|escapejs }}',
             playerInventorySave: '{{ player_inventory_save_label|escapejs }}',
-            playerInventoryRemove: '{{ player_inventory_remove_label|escapejs }}'
+            playerInventoryRemove: '{{ player_inventory_remove_label|escapejs }}',
+            accountLinkLoading: '{{ minecraft_account_link_loading_label|escapejs }}',
+            accountLinkFailed: '{{ minecraft_account_link_failed_label|escapejs }}',
+            accountLinkUnlink: '{{ minecraft_account_link_unlink_label|escapejs }}',
+            accountLinkUnlinkFailed: '{{ minecraft_account_link_unlink_failed_label|escapejs }}',
+            accountLinkEmpty: '{{ minecraft_account_link_empty_label|escapejs }}',
+            accountLinkLoginRequired: '{{ minecraft_account_link_login_required_label|escapejs }}'
         };
         const minecraftEffectOptions = JSON.parse('{{ minecraft_effect_options_json|escapejs }}');
         const playerIconUrls = {
@@ -2049,6 +2328,198 @@
             }
         }
 
+        function openLoginModalForMinecraftLink() {
+            const loginLink = document.querySelector('a[data-auth-modal="login"]');
+            if (loginLink && typeof loginLink.click === 'function') {
+                loginLink.click();
+                return;
+            }
+            const loginUrl = accountLinkTriggerEl ? accountLinkTriggerEl.dataset.loginUrl : '';
+            if (loginUrl) {
+                window.location.assign(loginUrl);
+            }
+        }
+
+        function setAccountLinkStatus(message, isError) {
+            if (!accountLinkStatusEl) return;
+            accountLinkStatusEl.textContent = message || '';
+            accountLinkStatusEl.hidden = !message;
+            accountLinkStatusEl.classList.toggle('is-error', Boolean(isError));
+        }
+
+        function buildAccountLinkUnlinkUrl(linkId) {
+            const safeId = String(linkId || '').replace(/[^0-9]/g, '');
+            if (!safeId || !accountLinkUnlinkUrlTemplate) return '';
+            return accountLinkUnlinkUrlTemplate.replace(/\/0\/?$/, '/' + safeId);
+        }
+
+        function updateCurrentAccountLinks(links) {
+            const safeLinks = Array.isArray(links) ? links : [];
+            currentAccountNames.clear();
+            currentAccountUuids.clear();
+            if (currentAccountUsername) {
+                currentAccountNames.add(currentAccountUsername);
+            }
+            safeLinks.forEach(function (link) {
+                const linkedName = normalizeMinecraftPlayerName(link && link.minecraftName);
+                const linkedUuid = normalizeMinecraftUuid(link && link.minecraftUuid);
+                if (linkedName) currentAccountNames.add(linkedName);
+                if (linkedUuid) currentAccountUuids.add(linkedUuid);
+            });
+            if (hasRenderedStatus) {
+                loadStatus();
+            }
+        }
+
+        function renderAccountLinks(links) {
+            if (!accountLinkListEl || !accountLinkEmptyEl) return;
+            const safeLinks = Array.isArray(links) ? links : [];
+            updateCurrentAccountLinks(safeLinks);
+            accountLinkListEl.innerHTML = safeLinks.map(function (link) {
+                const edition = String(link && link.edition || '').trim();
+                const editionLabel = edition ? edition.charAt(0).toUpperCase() + edition.slice(1) : 'Minecraft';
+                return '<li class="minecraft-account-link-item" data-link-id="' + escapeAttribute(link.id) + '">' +
+                    '<span class="minecraft-account-link-info">' +
+                    '<span class="minecraft-account-link-name">' + escapeHtml(link.minecraftName || 'Unknown') + '</span>' +
+                    '<span class="minecraft-account-link-meta">' + escapeHtml(editionLabel) + '</span>' +
+                    '</span>' +
+                    '<button class="ui-btn minecraft-account-link-unlink" type="button" data-account-link-unlink="' + escapeAttribute(link.id) + '">' + escapeHtml(labels.accountLinkUnlink) + '</button>' +
+                    '</li>';
+            }).join('');
+            accountLinkEmptyEl.hidden = safeLinks.length > 0;
+            accountLinkEmptyEl.textContent = labels.accountLinkEmpty;
+        }
+
+        function renderAccountLinkCode(payload) {
+            if (!accountLinkCodeEl) return;
+            const code = String(payload && payload.code || '').trim();
+            accountLinkCodeEl.textContent = code || '------';
+            if (accountLinkCopyEl) {
+                accountLinkCopyEl.disabled = !code;
+            }
+        }
+
+        async function loadAccountLinkCode() {
+            if (!accountLinkStartUrl || accountLinkRequestInFlight) return;
+            accountLinkRequestInFlight = true;
+            setAccountLinkStatus(labels.accountLinkLoading, false);
+            renderAccountLinkCode({});
+            try {
+                const response = await fetch(accountLinkStartUrl, {
+                    method: 'POST',
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                    referrerPolicy: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({})
+                });
+                const payload = await response.json().catch(function () { return {}; });
+                if (response.status === 401) {
+                    setAccountLinkModalOpen(false);
+                    openLoginModalForMinecraftLink();
+                    return;
+                }
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload && payload.error ? payload.error : 'request_failed');
+                }
+                renderAccountLinkCode(payload);
+                renderAccountLinks(payload.links);
+                setAccountLinkStatus('', false);
+            } catch (error) {
+                setAccountLinkStatus(labels.accountLinkFailed, true);
+            } finally {
+                accountLinkRequestInFlight = false;
+            }
+        }
+
+        async function unlinkMinecraftAccount(linkId) {
+            const unlinkUrl = buildAccountLinkUnlinkUrl(linkId);
+            if (!unlinkUrl) return;
+            setAccountLinkStatus(labels.accountLinkLoading, false);
+            try {
+                const response = await fetch(unlinkUrl, {
+                    method: 'DELETE',
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                    referrerPolicy: 'same-origin',
+                    headers: {
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                });
+                const payload = await response.json().catch(function () { return {}; });
+                if (response.status === 401) {
+                    setAccountLinkModalOpen(false);
+                    openLoginModalForMinecraftLink();
+                    return;
+                }
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload && payload.error ? payload.error : 'request_failed');
+                }
+                renderAccountLinks(payload.links);
+                setAccountLinkStatus('', false);
+            } catch (error) {
+                setAccountLinkStatus(labels.accountLinkUnlinkFailed, true);
+            }
+        }
+
+        function setAccountLinkModalOpen(opened) {
+            if (!accountLinkModalEl || !accountLinkTriggerEl) return;
+            accountLinkModalEl.hidden = !opened;
+            accountLinkTriggerEl.setAttribute('aria-expanded', opened ? 'true' : 'false');
+            if (opened) {
+                accountLinkLastFocusedElement = document.activeElement;
+                const dialog = accountLinkModalEl.querySelector('[role="dialog"]');
+                if (dialog) {
+                    dialog.setAttribute('tabindex', '-1');
+                    dialog.focus({ preventScroll: true });
+                }
+                loadAccountLinkCode();
+                return;
+            }
+            if (accountLinkLastFocusedElement && typeof accountLinkLastFocusedElement.focus === 'function') {
+                accountLinkLastFocusedElement.focus({ preventScroll: true });
+            }
+            accountLinkLastFocusedElement = null;
+        }
+
+        function setupAccountLinkModal() {
+            if (!accountLinkTriggerEl) return;
+            accountLinkTriggerEl.addEventListener('click', function (event) {
+                event.preventDefault();
+                if (!isAuthenticated) {
+                    openLoginModalForMinecraftLink();
+                    return;
+                }
+                setAccountLinkModalOpen(true);
+            });
+            if (accountLinkBackdropEl) {
+                accountLinkBackdropEl.addEventListener('click', function () {
+                    setAccountLinkModalOpen(false);
+                });
+            }
+            if (accountLinkCloseEl) {
+                accountLinkCloseEl.addEventListener('click', function () {
+                    setAccountLinkModalOpen(false);
+                });
+            }
+            if (accountLinkListEl) {
+                accountLinkListEl.addEventListener('click', function (event) {
+                    const button = event.target.closest ? event.target.closest('[data-account-link-unlink]') : null;
+                    if (!button || !accountLinkListEl.contains(button)) return;
+                    event.preventDefault();
+                    unlinkMinecraftAccount(button.dataset.accountLinkUnlink);
+                });
+            }
+            document.addEventListener('keydown', function (event) {
+                if (event.key !== 'Escape' || !accountLinkModalEl || accountLinkModalEl.hidden) return;
+                event.preventDefault();
+                setAccountLinkModalOpen(false);
+            });
+        }
+
         function getCurrentThemeMode() {
             return document.body.classList.contains('theme-dark') ? 'dark' : 'light';
         }
@@ -2199,8 +2670,19 @@
             return String(name || '').trim().toLowerCase();
         }
 
+        function normalizeMinecraftUuid(uuidValue) {
+            return String(uuidValue || '').trim().toLowerCase();
+        }
+
         function isCurrentAccountPlayer(player) {
-            return Boolean(currentAccountUsername && normalizeMinecraftPlayerName(player && player.name) === currentAccountUsername);
+            const playerName = normalizeMinecraftPlayerName(player && player.name);
+            const playerUuid = normalizeMinecraftUuid(player && player.uuid);
+            return Boolean(
+                (player && player.currentAccount) ||
+                (currentAccountUsername && playerName === currentAccountUsername) ||
+                (playerName && currentAccountNames.has(playerName)) ||
+                (playerUuid && currentAccountUuids.has(playerUuid))
+            );
         }
 
         function formatPlayerNumber(value, digits) {
@@ -3652,6 +4134,7 @@
         }
 
         setupAddressCopyButtons();
+        setupAccountLinkModal();
         setupBlueMapThemeSync();
         setupPlayerDetailModal();
         setupTimePicker();

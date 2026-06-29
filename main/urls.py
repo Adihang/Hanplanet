@@ -18,6 +18,8 @@ urlpatterns = [
     path("api/minecraft/link/start/", views.minecraft_link_start_json),
     path("api/minecraft/link/status", views.minecraft_link_status_json, name="minecraft_link_status_json"),
     path("api/minecraft/link/status/", views.minecraft_link_status_json),
+    path("api/minecraft/link/<int:link_id>", views.minecraft_link_unlink_json, name="minecraft_link_unlink_json"),
+    path("api/minecraft/link/<int:link_id>/", views.minecraft_link_unlink_json),
     path("api/minecraft/link/complete", views.minecraft_link_complete_json, name="minecraft_link_complete_json"),
     path("api/minecraft/link/complete/", views.minecraft_link_complete_json),
     path('', views.none, name='none'),

@@ -340,13 +340,23 @@
         <!-- 편집기 요소 (초기에는 hidden) -->
         <aside class="handrive-list-editor" id="handrive-list-editor" aria-live="polite" aria-hidden="true" hidden>
             <header class="handrive-list-editor-head">
-                <div class="handrive-list-editor-actions">
+                <div class="handrive-list-editor-actions handrive-icon-actions">
                     <div class="handrive-filename-field">
                         <input type="text" id="handrive-list-filename-input" placeholder="{{ handrive_text.filename_placeholder }}">
                     </div>
                     <button class="ui-btn" type="button" id="handrive-list-preview-btn" hidden disabled>{{ handrive_text.preview_button }}</button>
-                    <button class="ui-btn" type="button" id="handrive-list-cancel-btn">{{ handrive_text.cancel }}</button>
-                    <button class="ui-btn ui-btn-primary" type="button" id="handrive-list-save-btn">{{ handrive_text.save_button }}</button>
+                    <button class="handrive-icon-btn handrive-list-editor-cancel-btn" type="button" id="handrive-list-cancel-btn" aria-label="{{ handrive_text.cancel }}" title="{{ handrive_text.cancel }}">
+                        <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="12,5 7,10 12,15"/>
+                        </svg>
+                    </button>
+                    <button class="handrive-icon-btn handrive-list-editor-save-btn" type="button" id="handrive-list-save-btn" aria-label="{{ handrive_text.save_button }}" title="{{ handrive_text.save_button }}">
+                        <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M4 3h10l2 2v12H4z"/>
+                            <path d="M7 3v5h6V3"/>
+                            <path d="M7 13h6v4H7z"/>
+                        </svg>
+                    </button>
                 </div>
             </header>
             <div class="handrive-list-editor-body site-loading-host">

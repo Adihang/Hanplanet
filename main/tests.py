@@ -1257,8 +1257,10 @@ class PwaMetadataTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         script = response.content.decode()
-        self.assertIn("hanplanet-static-v9", script)
-        self.assertIn("hanplanet-page-v9", script)
+        self.assertIn("hanplanet-static-v10", script)
+        self.assertIn("hanplanet-page-v10", script)
+        self.assertIn("cacheControl.includes('no-store')", script)
+        self.assertIn("cacheControl.includes('no-cache')", script)
 
 
 class LanguageUrlRoutingTests(TestCase):
@@ -1777,6 +1779,27 @@ class LanguageUrlRoutingTests(TestCase):
             content.index("        .minecraft-server-panel .minecraft-map-embed-section {", minecraft_responsive_start):
             content.index("        .minecraft-side-layout {", minecraft_responsive_start)
         ]
+        minecraft_low_height_landscape_start = content.index("@media (max-height: 520px) and (orientation: landscape) {")
+        minecraft_low_height_page_layout_block = content[
+            content.index("        .minecraft-page-layout {", minecraft_low_height_landscape_start):
+            content.index("        .minecraft-layout {", minecraft_low_height_landscape_start)
+        ]
+        minecraft_low_height_layout_block = content[
+            content.index("        .minecraft-layout {", minecraft_low_height_landscape_start):
+            content.index("        .minecraft-server-panel {", minecraft_low_height_landscape_start)
+        ]
+        minecraft_low_height_server_panel_block = content[
+            content.index("        .minecraft-server-panel {", minecraft_low_height_landscape_start):
+            content.index("        .minecraft-server-panel .minecraft-map-embed-section {", minecraft_low_height_landscape_start)
+        ]
+        minecraft_low_height_map_block = content[
+            content.index("        .minecraft-server-panel .minecraft-map-embed-section {", minecraft_low_height_landscape_start):
+            content.index("        .minecraft-side-layout {", minecraft_low_height_landscape_start)
+        ]
+        minecraft_low_height_side_layout_block = content[
+            content.index("        .minecraft-side-layout {", minecraft_low_height_landscape_start):
+            content.index("    }\n</style>", minecraft_low_height_landscape_start)
+        ]
         self.assertIn(".handrive-inline-copy-field,", handrive_css)
         self.assertIn(".handrive-inline-copy-action,", handrive_css)
         self.assertIn(".handrive-inline-copy-action:active,", handrive_css)
@@ -1867,8 +1890,15 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'width: calc(100% + 4px);', html=False)
         self.assertContains(response, 'margin: -2px;', html=False)
         self.assertContains(response, "const currentAccountUsername = normalizeMinecraftPlayerName('');", html=False)
+        self.assertContains(response, "const currentAccountNames = new Set([].map(function (name) {", html=False)
+        self.assertContains(response, "const currentAccountUuids = new Set([].map(function (uuidValue) {", html=False)
         self.assertContains(response, 'function normalizeMinecraftPlayerName(name)', html=False)
+        self.assertContains(response, 'function normalizeMinecraftUuid(uuidValue)', html=False)
         self.assertContains(response, 'function isCurrentAccountPlayer(player)', html=False)
+        self.assertContains(response, 'player && player.currentAccount', html=False)
+        self.assertContains(response, 'currentAccountNames.has(playerName)', html=False)
+        self.assertContains(response, 'currentAccountUuids.has(playerUuid)', html=False)
+        self.assertContains(response, 'function updateCurrentAccountLinks(links)', html=False)
         self.assertContains(response, "isCurrentAccount ? 'is-current-account' : ''", html=False)
         self.assertContains(response, '.minecraft-player-list:empty', html=False)
         self.assertContains(response, 'overflow: auto;', html=False)
@@ -1917,6 +1947,25 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertIn('min-height: 0;', minecraft_responsive_map_block)
         self.assertNotIn('height: min(100cqw, 80cqh);', minecraft_responsive_map_block)
         self.assertNotIn('max-height: 80cqh;', minecraft_responsive_map_block)
+        self.assertIn('grid-template-columns: minmax(0, 1fr) minmax(220px, 360px);', minecraft_low_height_page_layout_block)
+        self.assertIn('grid-template-rows: minmax(0, 1fr) max-content;', minecraft_low_height_page_layout_block)
+        self.assertIn('align-items: stretch;', minecraft_low_height_page_layout_block)
+        self.assertIn('height: 100%;', minecraft_low_height_layout_block)
+        self.assertIn('min-height: 0;', minecraft_low_height_layout_block)
+        self.assertIn('align-content: stretch;', minecraft_low_height_layout_block)
+        self.assertIn('height: 100%;', minecraft_low_height_server_panel_block)
+        self.assertIn('min-height: 0;', minecraft_low_height_server_panel_block)
+        self.assertIn('overflow: auto;', minecraft_low_height_server_panel_block)
+        self.assertIn('flex: 0 0 clamp(72px, 26dvh, 140px);', minecraft_low_height_map_block)
+        self.assertIn('height: clamp(72px, 26dvh, 140px);', minecraft_low_height_map_block)
+        self.assertIn('min-height: 72px;', minecraft_low_height_map_block)
+        self.assertIn('justify-self: stretch;', minecraft_low_height_side_layout_block)
+        self.assertIn('width: 100%;', minecraft_low_height_side_layout_block)
+        self.assertIn('min-width: 220px;', minecraft_low_height_side_layout_block)
+        self.assertIn('max-width: 360px;', minecraft_low_height_side_layout_block)
+        self.assertIn('height: 100%;', minecraft_low_height_side_layout_block)
+        self.assertIn('min-height: 0;', minecraft_low_height_side_layout_block)
+        self.assertIn('overflow: auto;', minecraft_low_height_side_layout_block)
         self.assertContains(response, 'height: max-content;', html=False)
         self.assertContains(response, 'min-height: max-content;', html=False)
         self.assertNotContains(response, '@media (orientation: portrait) {\n        .minecraft-page-layout,', html=False)
@@ -1936,7 +1985,22 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'src="/map/"', html=False)
         self.assertContains(response, 'data-bluemap-language="ko"', html=False)
         self.assertEqual(response.context["bluemap_language"], "ko")
-        self.assertContains(response, '<div class="minecraft-status-header">\n                    <h2 class="minecraft-panel-title" id="minecraft-links-title">플러그인</h2>\n                </div>', html=False)
+        self.assertContains(response, 'class="minecraft-status-title-row"', html=False)
+        self.assertContains(response, 'id="minecraftAccountLinkTrigger"', html=False)
+        self.assertContains(response, '>계정연동</button>', html=False)
+        self.assertLess(content.index('id="minecraft-players-title"'), content.index('id="minecraftAccountLinkTrigger"'))
+        self.assertLess(content.index('id="minecraftAccountLinkTrigger"'), content.index('id="playerSummary"'))
+        self.assertContains(response, 'aria-controls="minecraftAccountLinkModal"', html=False)
+        self.assertContains(response, 'id="minecraftAccountLinkModal"', html=False)
+        self.assertContains(response, 'id="minecraftAccountLinkCode"', html=False)
+        self.assertContains(response, 'class="minecraft-account-link-code-field handrive-inline-copy-field"', html=False)
+        self.assertContains(response, 'data-start-url="/api/minecraft/link/start"', html=False)
+        self.assertContains(response, 'data-status-url="/api/minecraft/link/status"', html=False)
+        self.assertContains(response, 'data-unlink-url-template="/api/minecraft/link/0"', html=False)
+        self.assertContains(response, "function openLoginModalForMinecraftLink()", html=False)
+        self.assertContains(response, 'a[data-auth-modal="login"]', html=False)
+        self.assertContains(response, "setupAccountLinkModal();", html=False)
+        self.assertContains(response, "method: 'DELETE'", html=False)
         self.assertContains(response, '<h2 class="minecraft-panel-title" id="minecraft-links-title">플러그인</h2>', html=False)
         self.assertContains(response, '<span class="minecraft-plugin-name">BlueMap</span>', html=False)
         self.assertContains(response, '<span class="minecraft-plugin-version">5.22</span>', html=False)
@@ -1969,15 +2033,33 @@ class LanguageUrlRoutingTests(TestCase):
             email="hanplayer@example.com",
             password="password",
         )
+        MinecraftAccountLink.objects.create(
+            user=user,
+            minecraft_uuid="00000000-0000-0000-0000-000000000031",
+            minecraft_name="LinkedPlayer",
+            edition=MinecraftAccountLink.EDITION_JAVA,
+        )
         self.client.force_login(user)
 
         response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["minecraft_account_username"], "HanPlayer")
+        self.assertEqual(response.context["minecraft_account_names_json"], '["HanPlayer", "LinkedPlayer"]')
+        self.assertEqual(response.context["minecraft_account_uuids_json"], '["00000000-0000-0000-0000-000000000031"]')
         self.assertContains(
             response,
             "const currentAccountUsername = normalizeMinecraftPlayerName('HanPlayer');",
+            html=False,
+        )
+        self.assertContains(
+            response,
+            'const currentAccountNames = new Set(["HanPlayer", "LinkedPlayer"].map(function (name) {',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            'const currentAccountUuids = new Set(["00000000-0000-0000-0000-000000000031"].map(function (uuidValue) {',
             html=False,
         )
         mocked_plugins.assert_called_once_with()
@@ -2270,6 +2352,24 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertNotIn("items", response.json())
         public_player = response.json()["players"][0]
         self.assertEqual(public_player, {"name": "HanPlayer", "online": True})
+
+        linked_user = get_user_model().objects.create_user(
+            username="django_account_owner",
+            email="minecraft-linked-status@example.com",
+            password="pw123456",
+        )
+        MinecraftAccountLink.objects.create(
+            user=linked_user,
+            minecraft_uuid="00000000-0000-0000-0000-000000000001",
+            minecraft_name="LinkedStatusName",
+            edition=MinecraftAccountLink.EDITION_JAVA,
+        )
+        self.client.force_login(linked_user)
+        response = self.client.get(url, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("items", response.json())
+        linked_public_player = response.json()["players"][0]
+        self.assertEqual(linked_public_player, {"name": "HanPlayer", "online": True, "currentAccount": True})
 
         admin = get_user_model().objects.create_superuser(
             username="minecraft_status_admin",
@@ -2676,6 +2776,38 @@ class MinecraftAccountLinkApiTests(TestCase):
         self.assertEqual(response.json()["error"], "minecraft_account_already_linked")
         self.assertFalse(MinecraftLinkCode.objects.get(user=requester).used)
 
+    def test_minecraft_link_unlink_removes_only_owned_link(self):
+        owner = get_user_model().objects.create_user(username="minecraft_unlink_owner", password="pw123456")
+        other = get_user_model().objects.create_user(username="minecraft_unlink_other", password="pw123456")
+        owned_link = MinecraftAccountLink.objects.create(
+            user=owner,
+            minecraft_uuid="00000000-0000-0000-0000-000000000021",
+            minecraft_name="OwnedPlayer",
+            edition=MinecraftAccountLink.EDITION_JAVA,
+        )
+        other_link = MinecraftAccountLink.objects.create(
+            user=other,
+            minecraft_uuid="00000000-0000-0000-0000-000000000022",
+            minecraft_name="OtherPlayer",
+            edition=MinecraftAccountLink.EDITION_JAVA,
+        )
+        self.client.force_login(owner)
+
+        response = self.client.delete(
+            reverse("main:minecraft_link_unlink_json", kwargs={"link_id": other_link.id}),
+            HTTP_HOST="mc.hanplanet.com",
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(MinecraftAccountLink.objects.filter(id=other_link.id).exists())
+
+        response = self.client.delete(
+            reverse("main:minecraft_link_unlink_json", kwargs={"link_id": owned_link.id}),
+            HTTP_HOST="mc.hanplanet.com",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["links"], [])
+        self.assertFalse(MinecraftAccountLink.objects.filter(id=owned_link.id).exists())
+
 
 class CanvasPictureInPictureBehaviorTests(TestCase):
     def read_project_file(self, relative_path):
@@ -3038,6 +3170,10 @@ class SiteToolbarAuthSourceTests(TestCase):
             account_widget_css.index(".ui-auth-account-weather[hidden] {"):
             account_widget_css.index(".ui-auth-account-weather-trigger {")
         ]
+        account_weather_popup_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-popup {"):
+            account_widget_css.index(".ui-auth-account-weather-popup[hidden] {")
+        ]
         account_weather_trigger_block = account_widget_css[
             account_widget_css.index(".ui-auth-account-weather-trigger {"):
             account_widget_css.index(".ui-auth-account-weather-trigger:not([aria-expanded=\"true\"]):hover")
@@ -3119,6 +3255,7 @@ class SiteToolbarAuthSourceTests(TestCase):
         self.assertIn("display: flex;", account_weather_block)
         self.assertIn("justify-content: flex-end;", account_weather_block)
         self.assertIn("display: none;", account_weather_hidden_block)
+        self.assertIn("padding: 14px 14px 12px;", account_weather_popup_block)
         self.assertIn("flex-direction: row;", account_weather_trigger_block)
         self.assertIn("align-items: center;", account_weather_trigger_block)
         self.assertIn("justify-content: center;", account_weather_trigger_block)
@@ -3575,12 +3712,32 @@ class HandriveWriteFilenameExtensionSourceTests(TestCase):
             'id="handrive-list-preview-btn" hidden disabled>{{ handrive_text.preview_button }}</button>',
             list_template,
         )
+        self.assertIn('class="handrive-list-editor-actions handrive-icon-actions"', list_template)
+        self.assertIn(
+            'class="handrive-icon-btn handrive-list-editor-cancel-btn" type="button" id="handrive-list-cancel-btn" aria-label="{{ handrive_text.cancel }}" title="{{ handrive_text.cancel }}"',
+            list_template,
+        )
+        self.assertIn(
+            'class="handrive-icon-btn handrive-list-editor-save-btn" type="button" id="handrive-list-save-btn" aria-label="{{ handrive_text.save_button }}" title="{{ handrive_text.save_button }}"',
+            list_template,
+        )
+        self.assertIn('<polyline points="12,5 7,10 12,15"/>', list_template)
+        self.assertIn('<path d="M4 3h10l2 2v12H4z"/>', list_template)
+        self.assertNotIn('id="handrive-list-cancel-btn">{{ handrive_text.cancel }}</button>', list_template)
+        self.assertNotIn('id="handrive-list-save-btn">{{ handrive_text.save_button }}</button>', list_template)
         self.assertLess(
             list_template.index('id="handrive-list-preview-btn"'),
             list_template.index('id="handrive-list-cancel-btn"'),
         )
         self.assertIn('{% include "popup/handrive/preview_modal.html" %}', list_template)
         self.assertIn('const editorPreviewButton = document.getElementById("handrive-list-preview-btn");', page_js)
+        self.assertIn("function getButtonActionLabel(button)", page_js)
+        self.assertIn("function setButtonActionLabel(button, label)", page_js)
+        self.assertIn('!button.classList.contains("handrive-icon-btn")', page_js)
+        self.assertIn("const origLabel = getButtonActionLabel(editorSaveButton);", page_js)
+        self.assertIn("setButtonActionLabel(editorSaveButton, savingText);", page_js)
+        self.assertIn("setButtonActionLabel(editorSaveButton, origLabel);", page_js)
+        self.assertNotIn("editorSaveButton.textContent = savingText", page_js)
         self.assertIn('const LIST_EDITOR_PREVIEW_EXTENSIONS = new Set([".md", ".html"]);', page_js)
         self.assertIn("function syncListEditorPreviewButtonVisibility()", page_js)
         self.assertIn("editorPreviewButton.hidden = !isAvailable;", page_js)

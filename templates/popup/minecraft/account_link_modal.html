@@ -1,0 +1,47 @@
+<div id="minecraftAccountLinkModal" class="handrive-help-modal minecraft-account-link-modal" hidden>
+    <div class="handrive-help-modal-backdrop site-modal-backdrop" id="minecraft-account-link-backdrop"></div>
+    <div class="handrive-help-modal-dialog site-modal-dialog minecraft-account-link-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="minecraft-account-link-title">
+        <header class="handrive-help-modal-head site-modal-head">
+            <h2 class="handrive-popup-title handrive-help-modal-title" id="minecraft-account-link-title">{{ minecraft_account_link_modal_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with button_id="minecraft-account-link-close-btn" click_target_id="minecraft-account-link-backdrop" %}
+        </header>
+        <section
+            class="minecraft-account-link-body"
+            id="minecraftAccountLinkBody"
+            data-start-url="{{ minecraft_account_link_start_url }}"
+            data-status-url="{{ minecraft_account_link_status_url }}"
+            data-unlink-url-template="{{ minecraft_account_link_unlink_url_template }}"
+        >
+            <p class="minecraft-account-link-status" id="minecraftAccountLinkStatus">{{ minecraft_account_link_loading_label }}</p>
+            <p class="minecraft-account-link-description">{{ minecraft_account_link_intro }}</p>
+            <div class="minecraft-account-link-code-section">
+                <p class="minecraft-account-link-label">{{ minecraft_account_link_code_label }}</p>
+                <div class="minecraft-account-link-code-field handrive-inline-copy-field">
+                    <code class="minecraft-account-link-code" id="minecraftAccountLinkCode">------</code>
+                    <button
+                        class="minecraft-account-link-copy handrive-inline-copy-action"
+                        type="button"
+                        id="minecraftAccountLinkCopy"
+                        aria-label="{{ minecraft_account_link_copy_label }}"
+                        title="{{ minecraft_account_link_copy_label }}"
+                        data-copy-label="{{ minecraft_account_link_copy_label }}"
+                        data-copied-label="{{ server_address_copied_label }}"
+                        data-copy-target="minecraftAccountLinkCode"
+                        disabled
+                    >
+                        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="7" width="9" height="9" rx="1.5"></rect><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"></path></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="minecraft-account-link-usage">
+                <p class="minecraft-account-link-label">{{ minecraft_account_link_usage_label }}</p>
+                <p class="minecraft-account-link-description" id="minecraftAccountLinkUsage">{{ minecraft_account_link_usage_text }}</p>
+            </div>
+            <div class="minecraft-account-link-linked">
+                <p class="minecraft-account-link-label">{{ minecraft_account_link_linked_label }}</p>
+                <ul class="minecraft-account-link-list" id="minecraftAccountLinkList"></ul>
+                <p class="minecraft-status-empty" id="minecraftAccountLinkEmpty">{{ minecraft_account_link_empty_label }}</p>
+            </div>
+        </section>
+    </div>
+</div>

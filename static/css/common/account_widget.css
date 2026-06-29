@@ -203,7 +203,7 @@ body.theme-dark .ui-auth-account-weather-trigger:not([aria-expanded="true"]):foc
     backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
     box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)));
     color: var(--account-text-stronger);
-    padding: 14px;
+    padding: 14px 14px 12px;
     z-index: var(--site-z-popup);
 }
 

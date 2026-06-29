@@ -1437,6 +1437,20 @@
         return uiLang === "en" ? enValue : koValue;
     }
 
+    function getButtonActionLabel(button) {
+        if (!button) return "";
+        return String(button.getAttribute("aria-label") || button.getAttribute("title") || button.textContent || "").trim();
+    }
+
+    function setButtonActionLabel(button, label) {
+        if (!button || !label) return;
+        button.setAttribute("aria-label", label);
+        button.setAttribute("title", label);
+        if (!button.classList.contains("handrive-icon-btn")) {
+            button.textContent = label;
+        }
+    }
+
     function toAbsoluteUrl(url) {
         const rawUrl = String(url || "").trim();
         if (!rawUrl) {
@@ -11038,7 +11052,7 @@
                 if (spreadsheetEditorSurface && !spreadsheetEditorSurface.hidden && window.HandriveSpreadsheetEditor) {
                     const csrfToken = getCsrfToken();
                     const savingText = t("spreadsheet_editor_saving", "저장 중...");
-                    const origText = editorSaveButton.textContent;
+                    const origLabel = getButtonActionLabel(editorSaveButton);
                     const spreadsheetFilename = String(editorFilenameInput ? editorFilenameInput.value || "" : "").trim();
                     if (!spreadsheetFilename) {
                         alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
@@ -11053,7 +11067,7 @@
                         return;
                     }
                     editorSaveButton.disabled = true;
-                    editorSaveButton.textContent = savingText;
+                    setButtonActionLabel(editorSaveButton, savingText);
                     (async function () {
                         const isDirty = typeof window.HandriveSpreadsheetEditor.getIsDirty === "function"
                             ? window.HandriveSpreadsheetEditor.getIsDirty()
@@ -11093,14 +11107,14 @@
                         .finally(function () {
                             setListEditorSaving(false);
                             editorSaveButton.disabled = false;
-                            editorSaveButton.textContent = origText;
+                            setButtonActionLabel(editorSaveButton, origLabel);
                     });
                     return;
                 }
                 if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
                     const csrfToken = getCsrfToken();
                     const savingText = t("pdf_editor_saving", "저장 중...");
-                    const origText = editorSaveButton.textContent;
+                    const origLabel = getButtonActionLabel(editorSaveButton);
                     const pdfFilename = String(editorFilenameInput ? editorFilenameInput.value || "" : "").trim();
                     if (!pdfFilename) {
                         alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
@@ -11122,7 +11136,7 @@
                             return;
                         }
                         editorSaveButton.disabled = true;
-                        editorSaveButton.textContent = savingText;
+                        setButtonActionLabel(editorSaveButton, savingText);
                         setListEditorSaving(true);
                         window.HandrivePdfEditor.saveToServer(
                             pdfEditorSaveUrl,
@@ -11131,7 +11145,7 @@
                             function (result) {
                                 setListEditorSaving(false);
                                 editorSaveButton.disabled = false;
-                                editorSaveButton.textContent = origText;
+                                setButtonActionLabel(editorSaveButton, origLabel);
                                 if (result && result.ok) {
                                     handleMediaEditorSaved(result, { openPreview: true });
                                 } else {
@@ -11147,7 +11161,7 @@
                 if (imageEditorSurface && !imageEditorSurface.hidden && window.HandriveImageEditor) {
                     const csrfToken = getCsrfToken();
                     const savingText = t("image_editor_saving", "저장 중...");
-                    const origText = editorSaveButton.textContent;
+                    const origLabel = getButtonActionLabel(editorSaveButton);
                     const imageFilename = String(editorFilenameInput ? editorFilenameInput.value || "" : "").trim();
                     if (!imageFilename) {
                         alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
@@ -11169,7 +11183,7 @@
                             return;
                         }
                         editorSaveButton.disabled = true;
-                        editorSaveButton.textContent = savingText;
+                        setButtonActionLabel(editorSaveButton, savingText);
                         setListEditorSaving(true);
                         window.HandriveImageEditor.saveToServer(
                             imageEditorSaveUrl,
@@ -11178,7 +11192,7 @@
                             function (result) {
                                 setListEditorSaving(false);
                                 editorSaveButton.disabled = false;
-                                editorSaveButton.textContent = origText;
+                                setButtonActionLabel(editorSaveButton, origLabel);
                                 if (result.ok) {
                                     handleMediaEditorSaved(result, { openPreview: true });
                                 } else {
@@ -11193,7 +11207,7 @@
                 if (videoEditorSurface && !videoEditorSurface.hidden && window.HandriveVideoEditor) {
                     const csrfToken = getCsrfToken();
                     const savingText = t("video_editor_saving", "저장 중...");
-                    const origText = editorSaveButton.textContent;
+                    const origLabel = getButtonActionLabel(editorSaveButton);
                     const videoFilename = String(editorFilenameInput ? editorFilenameInput.value || "" : "").trim();
                     if (!videoFilename) {
                         alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
@@ -11215,7 +11229,7 @@
                             return;
                         }
                         editorSaveButton.disabled = true;
-                        editorSaveButton.textContent = savingText;
+                        setButtonActionLabel(editorSaveButton, savingText);
                         setListEditorSaving(true);
                         window.HandriveVideoEditor.saveToServer(
                             videoEditorSaveUrl,
@@ -11224,7 +11238,7 @@
                             function (result) {
                                 setListEditorSaving(false);
                                 editorSaveButton.disabled = false;
-                                editorSaveButton.textContent = origText;
+                                setButtonActionLabel(editorSaveButton, origLabel);
                                 if (result && result.ok) {
                                     handleMediaEditorSaved(result);
                                 } else {
@@ -11239,7 +11253,7 @@
                 if (audioEditorSurface && !audioEditorSurface.hidden && window.HandriveAudioEditor) {
                     const csrfToken = getCsrfToken();
                     const savingText = t("audio_editor_saving", "저장 중...");
-                    const origText = editorSaveButton.textContent;
+                    const origLabel = getButtonActionLabel(editorSaveButton);
                     const audioFilename = String(editorFilenameInput ? editorFilenameInput.value || "" : "").trim();
                     if (!audioFilename) {
                         alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
@@ -11261,7 +11275,7 @@
                             return;
                         }
                         editorSaveButton.disabled = true;
-                        editorSaveButton.textContent = savingText;
+                        setButtonActionLabel(editorSaveButton, savingText);
                         setListEditorSaving(true);
                         window.HandriveAudioEditor.saveToServer(
                             audioEditorSaveUrl,
@@ -11270,7 +11284,7 @@
                             function (result) {
                                 setListEditorSaving(false);
                                 editorSaveButton.disabled = false;
-                                editorSaveButton.textContent = origText;
+                                setButtonActionLabel(editorSaveButton, origLabel);
                                 if (result && result.ok) {
                                     handleMediaEditorSaved(result);
                                 } else {
@@ -18553,20 +18567,6 @@
             document.querySelectorAll("button[data-editor-snippet]")
         );
         const DOCS_CUSTOM_EXTENSION_OPTION_VALUE = "__custom__";
-
-        function getButtonActionLabel(button) {
-            if (!button) return "";
-            return String(button.getAttribute("aria-label") || button.getAttribute("title") || button.textContent || "").trim();
-        }
-
-        function setButtonActionLabel(button, label) {
-            if (!button || !label) return;
-            button.setAttribute("aria-label", label);
-            button.setAttribute("title", label);
-            if (!button.classList.contains("handrive-icon-btn")) {
-                button.textContent = label;
-            }
-        }
 
         async function promptWriteCommitMessage(targetPath) {
             return requestCommitMessageDialog({

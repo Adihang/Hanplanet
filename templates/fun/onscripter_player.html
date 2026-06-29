@@ -97,8 +97,8 @@
                 <span class="onscripter-rotate-icon onscripter-rotate-icon-ccw onscripter-rotate-icon-270" aria-hidden="true"></span>
             </button>
             <div id="onscripter_canvas_controls" aria-label="Canvas controls">
-                <div id="onscripter_audio_panel" aria-label="Audio controls" data-muted="false">
-                    <button id="onscripter_audio_mute" type="button" aria-label="Mute audio" aria-pressed="false">
+                <div id="onscripter_audio_panel" aria-label="Audio controls" data-muted="true">
+                    <button id="onscripter_audio_mute" type="button" aria-label="Unmute audio" aria-pressed="true">
                         <svg class="onscripter-audio-icon onscripter-audio-icon-volume" viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M11 5 6 9H2v6h4l5 4V5Z"></path>
                             <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
@@ -119,6 +119,14 @@
                 </button>
             </div>
             <div id="onscripter_bottom_controls" aria-label="Playback controls">
+                <button id="onscripter_save_slot_one" class="onscripter-canvas-button" type="button" aria-label="Save to data1" title="Save to data1">
+                    <svg class="onscripter-playback-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="3.6" y="3.6" width="16.8" height="16.8" rx="2.4"></rect>
+                        <rect x="7.2" y="3.6" width="9.6" height="6" rx="1.2"></rect>
+                        <rect x="7.2" y="13.2" width="9.6" height="7.2" rx="1.2"></rect>
+                        <path d="M9.6 5.4h4.8"></path>
+                    </svg>
+                </button>
                 <button id="onscripter_skip_toggle" class="onscripter-canvas-button" type="button" aria-label="Hold for skip mode" aria-pressed="false" title="Hold for skip mode">
                     <svg class="onscripter-playback-icon" viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M4 5v14l8-7Z"></path>
@@ -432,7 +440,7 @@
 
             async function upload_remote_save() {
                 var saveconfig = g_onsyuri_index.save || {};
-                if(!saveconfig.saveUrl || !g_onsyuri_module.FS) return;
+                if(!saveconfig.saveUrl || !g_onsyuri_module.FS) return true;
                 var files = em_lsfiles(g_onsyuri_module.FS, g_onsyuri_index.savedir);
                 var data = await em_export_data(g_onsyuri_module.FS, files);
                 var csrfToken = saveconfig.csrfToken || get_cookie("csrftoken");
@@ -448,6 +456,7 @@
                 });
                 if(!response.ok) throw new Error("remote save upload failed: " + response.status);
                 console.log("## onsyuri_fs: remote save uploaded", files.length);
+                return true;
             }
 
             // mount --savedir using IDBFS
@@ -477,21 +486,33 @@
         
         <script type="text/javascript"> // onsyuri C interface of val or function
             
+            var g_onscripter_save_flush_promise = null;
+
             // flush the savedir to IDFBFS for persistence
-            function flush_save() { 
-                g_onsyuri_module.FS.syncfs(false, async (err)=>{
-                    if(err) console.log(err);
-                    else {
+            function flush_save() {
+                if(!g_onsyuri_module.FS) return Promise.resolve(false);
+                if(g_onscripter_save_flush_promise) return g_onscripter_save_flush_promise;
+                g_onscripter_save_flush_promise = new Promise(function(resolve) {
+                    g_onsyuri_module.FS.syncfs(false, async (err)=>{
+                        if(err) {
+                            console.log(err);
+                            resolve(false);
+                            return;
+                        }
                         console.log("## onsyuri_fs: flush_save, sync finished");
                         try {
-                            await upload_remote_save();
+                            resolve(await upload_remote_save());
                         }
                         catch(error) {
                             console.log(error);
                             onsyuri_debug("save-upload-error", [error]);
+                            resolve(false);
                         }
-                    }
+                    });
+                }).finally(function() {
+                    g_onscripter_save_flush_promise = null;
                 });
+                return g_onscripter_save_flush_promise;
             }
 
             // fetch file from the remote server, and write them to local fs
@@ -636,7 +657,7 @@
             const ONSCRIPTER_AUTO_ADVANCE_VOICE_FALLBACK_MS = 6500;
             var g_onscripter_audio_volume = 0.8;
             var g_onscripter_audio_previous_volume = 0.8;
-            var g_onscripter_audio_muted = false;
+            var g_onscripter_audio_muted = true;
             var g_onscripter_audio_gain = null;
             var g_onscripter_audio_source = null;
             var g_onscripter_audio_sync_timer = null;
@@ -662,6 +683,8 @@
             var g_onscripter_auto_voice_durations = Object.create(null);
             var g_onscripter_auto_probe_canvas = null;
             var g_onscripter_auto_probe_context = null;
+            var g_onscripter_slot_save_status = "idle";
+            var g_onscripter_slot_save_last_path = "";
 
             function clamp_onscripter_volume(value) {
                 var number = Number(value);
@@ -992,6 +1015,73 @@
                     else {
                         delete canvas.getBoundingClientRect;
                     }
+                }
+            }
+
+            function get_onscripter_virtual_canvas_rect(canvas) {
+                var width = canvas && canvas.width ? canvas.width : (g_screen_width || 800);
+                var height = canvas && canvas.height ? canvas.height : (g_screen_height || 600);
+                return {
+                    x: 0,
+                    y: 0,
+                    left: 0,
+                    top: 0,
+                    right: width,
+                    bottom: height,
+                    width: width,
+                    height: height,
+                    toJSON: function() {
+                        return {
+                            x: this.x,
+                            y: this.y,
+                            left: this.left,
+                            top: this.top,
+                            right: this.right,
+                            bottom: this.bottom,
+                            width: this.width,
+                            height: this.height
+                        };
+                    }
+                };
+            }
+
+            function dispatch_onscripter_canvas_logical_mouse_event(canvas, eventType, x, y, button, buttons) {
+                if(!canvas) return;
+                var rect = get_onscripter_virtual_canvas_rect(canvas);
+                var mapped = {
+                    clientX: rect.left + Math.max(0, Math.min(rect.width, x)),
+                    clientY: rect.top + Math.max(0, Math.min(rect.height, y)),
+                    rect: rect
+                };
+                dispatch_onscripter_canvas_mapped_mouse_event(
+                    canvas,
+                    {
+                        bubbles: true,
+                        cancelable: true,
+                        composed: true,
+                        view: window,
+                        detail: 1
+                    },
+                    eventType,
+                    mapped,
+                    button,
+                    buttons
+                );
+            }
+
+            function click_onscripter_canvas_logical(x, y, button) {
+                var canvas = document.getElementById("canvas");
+                if(!canvas) return;
+                var nextButton = typeof button === "number" ? button : 0;
+                var downButtons = nextButton === 2 ? 2 : 1;
+                dispatch_onscripter_canvas_logical_mouse_event(canvas, "mousemove", x, y, nextButton, 0);
+                dispatch_onscripter_canvas_logical_mouse_event(canvas, "mousedown", x, y, nextButton, downButtons);
+                dispatch_onscripter_canvas_logical_mouse_event(canvas, "mouseup", x, y, nextButton, 0);
+                if(nextButton === 2) {
+                    dispatch_onscripter_canvas_logical_mouse_event(canvas, "contextmenu", x, y, nextButton, 0);
+                }
+                else {
+                    dispatch_onscripter_canvas_logical_mouse_event(canvas, "click", x, y, nextButton, 0);
                 }
             }
 
@@ -1659,6 +1749,200 @@
                 sync_onscripter_skip_control();
             }
 
+            function wait_onscripter(ms) {
+                return new Promise(function(resolve) {
+                    window.setTimeout(resolve, ms);
+                });
+            }
+
+            function get_onscripter_save_slot_path(slotNumber) {
+                var savedir = g_onsyuri_index && g_onsyuri_index.savedir ? String(g_onsyuri_index.savedir) : "";
+                if(!savedir) return "";
+                return savedir.replace(/\/+$/, "") + "/save" + String(slotNumber || 1) + ".dat";
+            }
+
+            function onscripter_save_slot_exists(slotNumber) {
+                var path = get_onscripter_save_slot_path(slotNumber);
+                if(!path || !g_onsyuri_module || !g_onsyuri_module.FS) return false;
+                try {
+                    var stat = g_onsyuri_module.FS.stat(path);
+                    return !!(stat && stat.size > 0);
+                }
+                catch(error) {
+                    return false;
+                }
+            }
+
+            async function wait_for_onscripter_save_slot(slotNumber, timeoutMs) {
+                var startedAt = performance.now();
+                while(performance.now() - startedAt < timeoutMs) {
+                    if(onscripter_save_slot_exists(slotNumber)) return true;
+                    await wait_onscripter(150);
+                }
+                return onscripter_save_slot_exists(slotNumber);
+            }
+
+            function read_onscripter_text_resource(relativePath) {
+                if(!relativePath || !g_onsyuri_module || !g_onsyuri_module.FS || !g_onsyuri_index || !g_onsyuri_index.gamedir) {
+                    return "";
+                }
+                var root = String(g_onsyuri_index.gamedir).replace(/\/+$/, "");
+                var paths = [
+                    root + "/" + relativePath,
+                    (root + "/" + relativePath).toLowerCase()
+                ];
+                for(var i = 0; i < paths.length; i++) {
+                    try {
+                        var data = g_onsyuri_module.FS.readFile(paths[i]);
+                        return new TextDecoder("utf-8").decode(data);
+                    }
+                    catch(error) {}
+                }
+                return "";
+            }
+
+            function split_onscripter_command_args(value) {
+                var args = [];
+                var current = "";
+                var inQuote = false;
+                for(var i = 0; i < value.length; i++) {
+                    var char = value.charAt(i);
+                    if(char === '"') {
+                        inQuote = !inQuote;
+                        current += char;
+                    }
+                    else if(char === "," && !inQuote) {
+                        args.push(current.trim());
+                        current = "";
+                    }
+                    else {
+                        current += char;
+                    }
+                }
+                if(current.trim()) args.push(current.trim());
+                return args;
+            }
+
+            function get_onscripter_custom_rmenu_save_position(text) {
+                if(!text) return null;
+                var match = null;
+                var pattern = /(?:^|\n)\s*lsp\s+[0-9]+\s*,\s*":s\/([0-9]+)\s*,([0-9]+)[^"]*?(?:SAVE|저장|세이브)[^"]*"\s*,\s*(-?[0-9]+)\s*,\s*(-?[0-9]+)/gi;
+                var candidate;
+                while((candidate = pattern.exec(text)) !== null) {
+                    match = candidate;
+                }
+                if(!match) return null;
+                return {
+                    x: Number(match[3]) + Math.max(1, Number(match[1]) || 24) * 2,
+                    y: Number(match[4]) + Math.max(1, Number(match[2]) || 24) / 2
+                };
+            }
+
+            function get_onscripter_save_menu_metrics(canvas) {
+                var text = read_onscripter_text_resource("0.txt");
+                var pitchY = 26;
+                var saveSlotCount = 20;
+                var rmenuSaveIndex = 2;
+                var rmenuItemCount = 6;
+                var customRmenuSavePosition = get_onscripter_custom_rmenu_save_position(text);
+
+                var menuMatch = text.match(/(?:^|\n)\s*menusetwindow\s+([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)/i);
+                if(menuMatch) {
+                    pitchY = Number(menuMatch[2]) + Number(menuMatch[4]);
+                }
+
+                var saveNumberMatch = text.match(/(?:^|\n)\s*savenumber\s+([0-9]+)/i);
+                if(saveNumberMatch) {
+                    saveSlotCount = Math.max(1, Number(saveNumberMatch[1]) || saveSlotCount);
+                }
+
+                var rmenuMatch = text.match(/(?:^|\n)\s*rmenu\s+([^\r\n]+)/i);
+                if(rmenuMatch) {
+                    var parts = split_onscripter_command_args(rmenuMatch[1]);
+                    rmenuItemCount = Math.max(1, Math.floor(parts.length / 2) || rmenuItemCount);
+                    for(var i = 1; i < parts.length; i += 2) {
+                        if(parts[i].replace(/\s+/g, "").toLowerCase() === "save") {
+                            rmenuSaveIndex = Math.floor(i / 2) + 1;
+                            break;
+                        }
+                    }
+                }
+
+                var width = canvas && canvas.width ? canvas.width : (g_screen_width || 800);
+                var height = canvas && canvas.height ? canvas.height : (g_screen_height || 600);
+                var rmenuTop = (height - rmenuItemCount * pitchY) / 2;
+                var saveMenuTop = (height - (saveSlotCount + 2) * pitchY) / 2;
+                var confirmTop = (height - 3 * pitchY) / 2;
+
+                return {
+                    width: width,
+                    height: height,
+                    pitchY: pitchY,
+                    rmenuSaveX: customRmenuSavePosition ? customRmenuSavePosition.x : width * 0.5,
+                    rmenuSaveY: customRmenuSavePosition ? customRmenuSavePosition.y : rmenuTop + (rmenuSaveIndex - 0.5) * pitchY,
+                    slotOneY: saveMenuTop + 2.5 * pitchY,
+                    confirmYesX: width * 0.4,
+                    confirmYesY: confirmTop + 2.5 * pitchY,
+                    rmenuSaveIndex: rmenuSaveIndex,
+                    rmenuItemCount: rmenuItemCount,
+                    saveSlotCount: saveSlotCount,
+                    usesCustomRmenu: !!customRmenuSavePosition
+                };
+            }
+
+            async function run_onscripter_save_slot_one() {
+                if(g_onscripter_slot_save_status === "saving") return;
+                if(!is_onscripter_canvas_ready()) {
+                    g_onscripter_slot_save_status = "not-ready";
+                    return;
+                }
+
+                var canvas = document.getElementById("canvas");
+                if(!canvas) {
+                    g_onscripter_slot_save_status = "unavailable";
+                    return;
+                }
+
+                set_onscripter_auto_advance_enabled(false);
+                set_onscripter_skip_enabled(false);
+                resume_onscripter_audio_context();
+
+                var metrics = get_onscripter_save_menu_metrics(canvas);
+                var centerX = metrics.width * 0.5;
+                var centerY = metrics.height * 0.5;
+                g_onscripter_slot_save_last_path = get_onscripter_save_slot_path(1);
+                g_onscripter_slot_save_status = "saving";
+
+                // R-menu -> Save item -> slot 1 -> yes. Coordinates are logical engine pixels.
+                click_onscripter_canvas_logical(centerX, centerY, 2);
+                await wait_onscripter(240);
+                click_onscripter_canvas_logical(metrics.rmenuSaveX, metrics.rmenuSaveY, 0);
+                await wait_onscripter(320);
+                click_onscripter_canvas_logical(centerX, metrics.slotOneY, 0);
+                await wait_onscripter(320);
+                click_onscripter_canvas_logical(metrics.confirmYesX, metrics.confirmYesY, 0);
+
+                var saved = await wait_for_onscripter_save_slot(1, 3000);
+                if(saved) {
+                    var synced = await flush_save();
+                    g_onscripter_slot_save_status = synced ? "saved" : "sync-error";
+                }
+                else {
+                    g_onscripter_slot_save_status = "unavailable";
+                }
+            }
+
+            function setup_onscripter_save_control() {
+                var button = document.getElementById("onscripter_save_slot_one");
+                if(!button) return;
+                button.addEventListener("click", function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    run_onscripter_save_slot_one();
+                    if(button.blur) button.blur();
+                });
+            }
+
             function toggle_webinfo() {
                 var onsyuri_webinfo = document.getElementById("onsyuri_webinfo");
                 if(onsyuri_webinfo.style.display=="none") {
@@ -1691,7 +1975,7 @@
             async function click_import() {
                 var data = await upload_data();
                 await em_import(g_onsyuri_module.FS, data);
-                flush_save();
+                await flush_save();
             }
 
             function resize_onscripter_viewport() {
@@ -1994,6 +2278,7 @@
                 var settingsButton = document.getElementById("onscripter_settings_toggle");
                 var autoButton = document.getElementById("onscripter_auto_toggle");
                 var skipButton = document.getElementById("onscripter_skip_toggle");
+                var saveButton = document.getElementById("onscripter_save_slot_one");
                 var audioPanel = document.getElementById("onscripter_audio_panel");
                 var volumeInput = document.getElementById("onscripter_audio_volume");
                 return JSON.stringify({
@@ -2012,6 +2297,10 @@
                     autoAdvanceVoicePath: g_onscripter_auto_cycle_voice_path,
                     autoAdvanceLastVoicePath: g_onscripter_auto_voice_path,
                     autoButtonVisible: is_onscripter_element_visible(autoButton),
+                    saveButtonVisible: is_onscripter_element_visible(saveButton),
+                    saveSlotOneStatus: g_onscripter_slot_save_status,
+                    saveSlotOnePath: g_onscripter_slot_save_last_path,
+                    saveSlotOneExists: onscripter_save_slot_exists(1),
                     skipEnabled: g_skip,
                     skipButtonVisible: is_onscripter_element_visible(skipButton),
                     audioMuted: g_onscripter_audio_muted,
@@ -2037,6 +2326,7 @@
             setup_onscripter_audio_unlock_handlers();
             setup_onscripter_canvas_rotation_control();
             setup_onscripter_settings_control();
+            setup_onscripter_save_control();
             setup_onscripter_auto_advance_control();
             setup_onscripter_skip_control();
             setup_onscripter_rotated_canvas_input_mapping();

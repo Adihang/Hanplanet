@@ -5456,6 +5456,24 @@ def normalize_minecraft_player_name(value):
     return normalized
 
 
+def get_current_minecraft_account_names(user):
+    """Return linked Minecraft names that should map to the Django user."""
+    if not getattr(user, "is_authenticated", False):
+        return []
+
+    name_values = []
+    name_keys = set()
+
+    for link in user.minecraft_account_links.only("minecraft_name").order_by("minecraft_name", "id"):
+        minecraft_name = normalize_minecraft_player_name(link.minecraft_name)
+        minecraft_name_key = minecraft_name.lower()
+        if minecraft_name and minecraft_name_key not in name_keys:
+            name_values.append(minecraft_name)
+            name_keys.add(minecraft_name_key)
+
+    return name_values
+
+
 @cache_control(no_store=True)
 @require_http_methods(["POST"])
 def minecraft_link_start_json(request):
@@ -5511,6 +5529,31 @@ def minecraft_link_status_json(request):
         raise Http404
     if not getattr(request.user, "is_authenticated", False):
         return JsonResponse({"ok": False, "error": "authentication_required"}, status=401)
+
+    response = JsonResponse({
+        "ok": True,
+        "links": [
+            serialize_minecraft_account_link(link)
+            for link in request.user.minecraft_account_links.order_by("edition", "minecraft_name", "id")
+        ],
+    })
+    response["X-Hanplanet-App"] = "django-minecraft"
+    return response
+
+
+@cache_control(no_store=True)
+@csrf_protect
+@require_http_methods(["DELETE"])
+def minecraft_link_unlink_json(request, link_id):
+    """Remove one Minecraft account link owned by the logged-in Django user."""
+    if not is_minecraft_host(request):
+        raise Http404
+    if not getattr(request.user, "is_authenticated", False):
+        return JsonResponse({"ok": False, "error": "authentication_required"}, status=401)
+
+    deleted_count, _ = MinecraftAccountLink.objects.filter(id=link_id, user=request.user).delete()
+    if not deleted_count:
+        return JsonResponse({"ok": False, "error": "not_found"}, status=404)
 
     response = JsonResponse({
         "ok": True,
@@ -5703,12 +5746,27 @@ def read_minecraft_server_status():
     return payload if isinstance(payload, dict) else {}
 
 
-def sanitize_minecraft_status_payload(payload, include_private_player_data=False):
+def sanitize_minecraft_status_payload(
+    payload,
+    include_private_player_data=False,
+    current_account_names=None,
+    current_account_uuids=None,
+):
     """Remove private player fields from the public Minecraft status response."""
     if not isinstance(payload, dict):
         return {}
 
     sanitized = dict(payload)
+    current_account_name_keys = {
+        normalize_minecraft_player_name(name).lower()
+        for name in (current_account_names or [])
+        if normalize_minecraft_player_name(name)
+    }
+    current_account_uuid_keys = {
+        normalize_minecraft_uuid(uuid_value).lower()
+        for uuid_value in (current_account_uuids or [])
+        if normalize_minecraft_uuid(uuid_value)
+    }
     sanitized_players = []
     raw_players = payload.get("players")
     if isinstance(raw_players, list):
@@ -5719,6 +5777,13 @@ def sanitize_minecraft_status_payload(payload, include_private_player_data=False
                 "name": str(raw_player.get("name") or ""),
                 "online": bool(raw_player.get("online")),
             }
+            player_name_key = normalize_minecraft_player_name(raw_player.get("name")).lower()
+            player_uuid_key = normalize_minecraft_uuid(raw_player.get("uuid")).lower()
+            if (
+                (player_name_key and player_name_key in current_account_name_keys)
+                or (player_uuid_key and player_uuid_key in current_account_uuid_keys)
+            ):
+                player["currentAccount"] = True
             if include_private_player_data:
                 uuid_value = str(raw_player.get("uuid") or "").strip()
                 detail = raw_player.get("detail")
@@ -5926,6 +5991,9 @@ def minecraft_home(request, ui_lang=None):
         if bedrock_server_version
         else f"{bedrock_server_version_prefix} {server_version_loading_label}"
     )
+    minecraft_account_names, minecraft_account_uuids = get_current_minecraft_account_identity(
+        getattr(request, "user", None)
+    )
     meta_description = (
         MINECRAFT_META_DESCRIPTION_EN
         if is_english
@@ -5948,6 +6016,31 @@ def minecraft_home(request, ui_lang=None):
         "sub_label": "Sub",
         "sub_url": build_public_site_nav_url(reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang})),
         "server_panel_title": "Map" if is_english else "지도",
+        "minecraft_account_link_title": "Account Link" if is_english else "계정연동",
+        "minecraft_account_link_modal_title": "Minecraft account link" if is_english else "Minecraft 계정연동",
+        "minecraft_account_link_intro": (
+            "Copy the link code and run it in the Minecraft server chat."
+            if is_english
+            else "연동코드를 복사한 뒤 Minecraft 서버 채팅에 입력하세요."
+        ),
+        "minecraft_account_link_code_label": "Link code" if is_english else "연동코드",
+        "minecraft_account_link_copy_label": "Copy link code" if is_english else "연동코드 복사",
+        "minecraft_account_link_usage_label": "Usage" if is_english else "사용방법",
+        "minecraft_account_link_usage_text": (
+            "Open chat in the server and enter /link <code>."
+            if is_english
+            else "서버 채팅창에서 /link <연동코드> 를 입력하세요."
+        ),
+        "minecraft_account_link_linked_label": "Linked accounts" if is_english else "연동된 유저",
+        "minecraft_account_link_empty_label": "No linked Minecraft accounts." if is_english else "연동된 Minecraft 유저가 없습니다.",
+        "minecraft_account_link_unlink_label": "Unlink" if is_english else "연동 해제",
+        "minecraft_account_link_loading_label": "Loading account link." if is_english else "계정연동 정보를 불러오는 중입니다.",
+        "minecraft_account_link_failed_label": "Could not load account link." if is_english else "계정연동 정보를 불러오지 못했습니다.",
+        "minecraft_account_link_unlink_failed_label": "Unlink failed" if is_english else "연동 해제 실패",
+        "minecraft_account_link_login_required_label": "Log in to link your account." if is_english else "계정연동은 로그인 후 사용할 수 있습니다.",
+        "minecraft_account_link_start_url": reverse("main:minecraft_link_start_json"),
+        "minecraft_account_link_status_url": reverse("main:minecraft_link_status_json"),
+        "minecraft_account_link_unlink_url_template": reverse("main:minecraft_link_unlink_json", kwargs={"link_id": 0}),
         "server_address_label": "Java Edition" if is_english else "자바 에디션",
         "bedrock_server_address_label": "Bedrock Edition" if is_english else "베드락 에디션",
         "server_address_copy_label": "Copy server address" if is_english else "서버 주소 복사",
@@ -6053,6 +6146,8 @@ def minecraft_home(request, ui_lang=None):
             if getattr(request, "user", None) is not None and request.user.is_authenticated
             else ""
         ),
+        "minecraft_account_names_json": json.dumps(minecraft_account_names, ensure_ascii=False),
+        "minecraft_account_uuids_json": json.dumps(minecraft_account_uuids, ensure_ascii=False),
         "meta_title": MINECRAFT_META_TITLE,
         "meta_og_title": MINECRAFT_META_TITLE,
         "meta_description": meta_description,
@@ -6115,9 +6210,14 @@ def minecraft_status_json(request):
             "maxPlayers": 0,
             "players": [],
         }
+    minecraft_account_names, minecraft_account_uuids = get_current_minecraft_account_identity(
+        getattr(request, "user", None)
+    )
     payload = sanitize_minecraft_status_payload(
         payload,
         include_private_player_data=is_minecraft_admin_user(getattr(request, "user", None)),
+        current_account_names=minecraft_account_names,
+        current_account_uuids=minecraft_account_uuids,
     )
     response = JsonResponse(payload)
     response["X-Hanplanet-App"] = "django-minecraft"
@@ -6310,8 +6410,8 @@ def service_worker(request):
     """Serve the root-scope service worker used for Hanplanet page and static caching."""
     # Keep service worker script dynamic at root scope so it can control "/".
     script = """
-const STATIC_CACHE = 'hanplanet-static-v9';
-const PAGE_CACHE = 'hanplanet-page-v9';
+const STATIC_CACHE = 'hanplanet-static-v10';
+const PAGE_CACHE = 'hanplanet-page-v10';
 
 function isDownloadRequest(url) {
   return url.pathname.includes('/download/');
@@ -6332,6 +6432,10 @@ function canStoreInCache(request, response) {
 
 function canStorePageInCache(request, response) {
   if (!canStoreInCache(request, response)) {
+    return false;
+  }
+  const cacheControl = response.headers.get('cache-control') || '';
+  if (cacheControl.includes('no-store') || cacheControl.includes('no-cache')) {
     return false;
   }
   const contentType = response.headers.get('content-type') || '';

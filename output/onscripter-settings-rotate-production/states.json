@@ -1,0 +1,42 @@
+{
+  "settingsState": {
+    "game": "onscripter",
+    "rotated": false,
+    "settingsButtonVisible": true,
+    "audioMuted": false,
+    "audioVolume": 80,
+    "navRevealed": false,
+    "canvas": {
+      "width": 800,
+      "height": 600,
+      "cssWidth": 1200,
+      "cssHeight": 900
+    },
+    "audioPanelFocused": false
+  },
+  "rotatedState": {
+    "game": "onscripter",
+    "rotated": true,
+    "settingsButtonVisible": true,
+    "audioMuted": false,
+    "audioVolume": 80,
+    "navRevealed": false,
+    "canvas": {
+      "width": 800,
+      "height": 600,
+      "cssWidth": 900,
+      "cssHeight": 675
+    },
+    "audioPanelFocused": false
+  },
+  "errors": [
+    {
+      "scenario": "settings",
+      "text": " *** failed to open nsa or ns2 archive, ignored.  ***"
+    },
+    {
+      "scenario": "rotated",
+      "text": " *** failed to open nsa or ns2 archive, ignored.  ***"
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import base64
 import io
 import json
 import hashlib
+import hmac
 import re
 import sqlite3
 import zipfile
@@ -31,7 +32,10 @@ from .models import (
     HandriveLoginAttemptGuard,
     HandriveSharedLink,
     HandriveUserQuota,
+    MinecraftAccountLink,
+    MinecraftLinkCode,
     NavLink,
+    OnscripterAccessUser,
     SyncFile,
     UserProfile,
 )
@@ -90,7 +94,6 @@ from .views import (
     extract_minecraft_server_version,
     has_excessive_korean_text,
     MINECRAFT_BEDROCK_SERVER_ADDRESS,
-    MINECRAFT_BEDROCK_SERVER_PORT,
     MINECRAFT_META_DESCRIPTION_EN,
     MINECRAFT_META_DESCRIPTION_KO,
     MINECRAFT_SERVER_IMAGE_URL,
@@ -102,7 +105,7 @@ from .views import (
     should_return_github_link,
     UI_LANG_SESSION_KEY,
 )
-from .onscripter_views import ONSCRIPTER_META_IMAGE_ALT, ONSCRIPTER_META_IMAGE_URL
+from .onscripter_views import ONSCRIPTER_GAMES, ONSCRIPTER_META_IMAGE_ALT, ONSCRIPTER_META_IMAGE_URL
 from oauth2_provider.models import get_application_model
 
 
@@ -1399,12 +1402,27 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(response.context["meta_twitter_image"], response.context["meta_og_image"])
 
     def test_onscripter_index_uses_static_meta_image(self):
+        admin_user = get_user_model().objects.create_superuser(
+            username="onscripter_meta_admin",
+            email="onscripter-meta-admin@example.com",
+            password="pw",
+        )
+        self.client.force_login(admin_user)
+
         response = self.client.get(reverse("main:onscripter_index_lang", kwargs={"ui_lang": "ko"}))
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [crumb["label"] for crumb in response.context["sub_breadcrumbs"]],
+            ["Hanplanet", "Sub", "ONScripter"],
+        )
+        self.assertContains(response, 'href="/ko/sub"', html=False)
         self.assertEqual(response.context["meta_og_image"], ONSCRIPTER_META_IMAGE_URL)
         self.assertEqual(response.context["meta_twitter_image"], ONSCRIPTER_META_IMAGE_URL)
         self.assertEqual(response.context["meta_image_alt"], ONSCRIPTER_META_IMAGE_ALT)
+        hoshizora_link = next(item for item in response.context["sub_links"] if item["slug"] == "hoshizora")
+        self.assertEqual(hoshizora_link["title"], "hoshizora")
+        self.assertContains(response, 'data-meta-title="hoshizora"', html=False)
         self.assertNotIn("/media/HanDrive/users/admin", ONSCRIPTER_META_IMAGE_URL)
         self.assertContains(
             response,
@@ -1421,6 +1439,130 @@ class LanguageUrlRoutingTests(TestCase):
             f'<meta property="og:image:alt" content="{ONSCRIPTER_META_IMAGE_ALT}">',
             html=False,
         )
+
+    def test_sub_page_hides_onscripter_card_until_user_is_allowed(self):
+        User = get_user_model()
+        allowed_user = User.objects.create_user(
+            username="onscripter_allowed",
+            email="onscripter-allowed@example.com",
+            password="pw",
+        )
+        blocked_user = User.objects.create_user(
+            username="onscripter_blocked",
+            email="onscripter-blocked@example.com",
+            password="pw",
+        )
+        staff_user = User.objects.create_user(
+            username="onscripter_staff",
+            email="onscripter-staff@example.com",
+            password="pw",
+            is_staff=True,
+        )
+        OnscripterAccessUser.objects.create(user=allowed_user)
+
+        response = self.client.get(reverse("main:sub_lang", kwargs={"ui_lang": "ko"}))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("onscripter", {item["slug"] for item in response.context["sub_links"]})
+        self.assertNotContains(response, "/ko/sub/onscripter", html=False)
+
+        self.client.force_login(blocked_user)
+        response = self.client.get(reverse("main:sub_lang", kwargs={"ui_lang": "ko"}))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("onscripter", {item["slug"] for item in response.context["sub_links"]})
+
+        self.client.force_login(allowed_user)
+        response = self.client.get(reverse("main:sub_lang", kwargs={"ui_lang": "ko"}))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("onscripter", {item["slug"] for item in response.context["sub_links"]})
+        self.assertContains(response, "/ko/sub/onscripter", html=False)
+
+        self.client.force_login(staff_user)
+        response = self.client.get(reverse("main:sub_lang", kwargs={"ui_lang": "ko"}))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("onscripter", {item["slug"] for item in response.context["sub_links"]})
+
+    def test_onscripter_routes_reject_unallowed_users(self):
+        blocked_user = get_user_model().objects.create_user(
+            username="onscripter_route_blocked",
+            email="onscripter-route-blocked@example.com",
+            password="pw",
+        )
+        self.client.force_login(blocked_user)
+
+        urls = [
+            reverse("main:onscripter_index_lang", kwargs={"ui_lang": "ko"}),
+            reverse("main:onscripter_player_lang", kwargs={"ui_lang": "ko", "game_slug": "haruuru"}),
+            reverse("main:onscripter_game_index_lang", kwargs={"ui_lang": "ko", "game_slug": "haruuru"}),
+            reverse("main:onscripter_game_save_lang", kwargs={"ui_lang": "ko", "game_slug": "haruuru"}),
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 403)
+
+    def test_onscripter_player_uses_game_specific_korean_meta_and_tab_titles(self):
+        admin_user = get_user_model().objects.create_superuser(
+            username="onscripter_player_admin",
+            email="onscripter-player-admin@example.com",
+            password="pw",
+        )
+        self.client.force_login(admin_user)
+
+        with TemporaryDirectory() as tmpdir, override_settings(MEDIA_ROOT=tmpdir):
+            onscripter_root = Path(tmpdir) / "HanDrive" / "ONScripter"
+            runtime_root = onscripter_root / "_web_runtime"
+            (runtime_root / "onsyuri" / "0.7.7beta").mkdir(parents=True)
+            (runtime_root / "jszip" / "3.10.1").mkdir(parents=True)
+            for runtime_file in (
+                runtime_root / "onsyuri" / "0.7.7beta" / "onsyuri.js",
+                runtime_root / "onsyuri" / "0.7.7beta" / "onsyuri.wasm",
+                runtime_root / "jszip" / "3.10.1" / "jszip.min.js",
+            ):
+                runtime_file.write_bytes(b"stub")
+
+            for slug, game in ONSCRIPTER_GAMES.items():
+                expected_title = game.meta_title or f"{game.title} | Hanplanet ONScripter"
+                expected_description = game.description_ko
+                if slug == "hoshizora":
+                    self.assertEqual(expected_title, "hoshizora")
+                (onscripter_root / game.asset_folder_name).mkdir(parents=True)
+                response = self.client.get(
+                    reverse("main:onscripter_player_lang", kwargs={"ui_lang": "ko", "game_slug": slug})
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.context["meta_title"], expected_title)
+                self.assertEqual(response.context["meta_og_title"], expected_title)
+                self.assertEqual(response.context["meta_description"], expected_description)
+                self.assertEqual(response.context["meta_og_description"], expected_description)
+                self.assertContains(response, f"<title>{expected_title}</title>", html=False)
+                self.assertContains(response, f'var desiredTitle = "{expected_title}";', html=False)
+                self.assertContains(response, "window.__onscripter_title_head_observer", html=False)
+                self.assertContains(
+                    response,
+                    "--site-loading-overlay-bg: color-mix(in srgb, var(--onscripter-stage-bg) 86%, transparent);",
+                    html=False,
+                )
+                self.assertContains(
+                    response,
+                    "--site-loading-spinner-track: color-mix(in srgb, var(--theme-ink, #222) 30%, transparent);",
+                    html=False,
+                )
+                self.assertContains(
+                    response,
+                    "--site-loading-spinner-accent: var(--theme-accent-strong, #2563eb);",
+                    html=False,
+                )
+                self.assertContains(
+                    response,
+                    f'<meta name="description" content="{expected_description}">',
+                    html=False,
+                )
+                self.assertContains(
+                    response,
+                    f'<meta property="og:description" content="{expected_description}">',
+                    html=False,
+                )
 
     @mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30")
     def test_minecraft_home_uses_server_image_metadata(self, mocked_bedrock_version):
@@ -1667,10 +1809,10 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'class="minecraft-address-copy handrive-inline-copy-action"', html=False)
         self.assertContains(response, "window.showHandriveInlineCopyFeedback(button, 'Copied!');", html=False)
         self.assertContains(response, MINECRAFT_BEDROCK_SERVER_ADDRESS, html=False)
-        self.assertContains(response, f"UDP {MINECRAFT_BEDROCK_SERVER_PORT}", html=False)
         self.assertContains(response, "Minecraft Bedrock Edition 26.30", html=False)
         self.assertContains(response, '<p class="minecraft-meta minecraft-server-version">Minecraft Bedrock Edition 26.30</p>', html=False)
-        self.assertContains(response, f'<p class="minecraft-meta minecraft-address-note">UDP {MINECRAFT_BEDROCK_SERVER_PORT}</p>', html=False)
+        self.assertNotContains(response, 'minecraft-address-note', html=False)
+        self.assertNotContains(response, 'UDP 19132', html=False)
         self.assertContains(response, 'id="minecraftBedrockServerAddress"', html=False)
         self.assertContains(response, 'id="minecraftBedrockAddressCopy"', html=False)
         self.assertContains(response, 'aria-label="베드락 서버 주소 복사"', html=False)
@@ -2341,13 +2483,31 @@ class LanguageUrlRoutingTests(TestCase):
 
     def test_toolbar_auth_right_renders_login_actions_on_tool_pages(self):
         response = self.client.get(reverse("main:image_color_picker_lang", kwargs={"ui_lang": "ko"}))
+        html = response.content.decode()
+        login_href = 'href="/ko/login?next=%2Fko%2Fsub%2Fimage-color-picker"'
+        signup_href = 'href="/ko/signup?next=%2Fko%2Fsub%2Fimage-color-picker"'
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'class="ui-toolbar-right ui-toolbar-auth-right"', html=False)
-        self.assertContains(response, 'href="/ko/login?next=%2Fko%2Fsub%2Fimage-color-picker"', html=False)
-        self.assertContains(response, 'href="/ko/signup?next=%2Fko%2Fsub%2Fimage-color-picker"', html=False)
+        self.assertContains(response, signup_href, html=False)
+        self.assertContains(response, login_href, html=False)
+        self.assertLess(html.index(signup_href), html.index(login_href))
+        self.assertContains(response, f'<a class="ui-btn" {signup_href} data-auth-modal="signup">', html=False)
+        self.assertContains(response, f'<a class="ui-btn ui-btn-primary" {login_href} data-auth-modal="login">', html=False)
         self.assertContains(response, 'data-auth-modal="login"', html=False)
         self.assertContains(response, 'data-auth-modal="signup"', html=False)
+
+    def test_root_shortcuts_auth_actions_use_shared_auth_buttons(self):
+        response = self.client.get(reverse("main:none_lang", kwargs={"ui_lang": "ko"}))
+        html = response.content.decode()
+        login_href = 'href="/ko/login?next=%2Fko%2F"'
+        signup_href = 'href="/ko/signup?next=%2Fko%2F"'
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="ui-auth-action-buttons root-shortcuts-auth-actions"', html=False)
+        self.assertLess(html.index(signup_href), html.index(login_href))
+        self.assertContains(response, f'<a class="ui-btn" {signup_href} data-auth-modal="signup">', html=False)
+        self.assertContains(response, f'<a class="ui-btn ui-btn-primary" {login_href} data-auth-modal="login">', html=False)
 
     def test_toolbar_auth_right_renders_account_widget_on_tool_pages(self):
         user = get_user_model().objects.create_user(
@@ -2373,6 +2533,148 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'class="ui-toolbar-right"', html=False)
         self.assertNotContains(response, "ui-toolbar-auth-right", html=False)
+
+
+@override_settings(
+    MINECRAFT_LINK_SHARED_SECRET="minecraft-link-test-secret",
+    MINECRAFT_LINK_CODE_TTL_SECONDS=600,
+    MINECRAFT_LINK_HMAC_SKEW_SECONDS=300,
+)
+class MinecraftAccountLinkApiTests(TestCase):
+    shared_secret = "minecraft-link-test-secret"
+
+    def sign_body(self, body, timestamp=None):
+        timestamp_value = str(timestamp or int(timezone.now().timestamp()))
+        signature = hmac.new(
+            self.shared_secret.encode("utf-8"),
+            timestamp_value.encode("utf-8") + b"." + body,
+            hashlib.sha256,
+        ).hexdigest()
+        return {
+            "HTTP_X_HANPLANET_MINECRAFT_TIMESTAMP": timestamp_value,
+            "HTTP_X_HANPLANET_MINECRAFT_SIGNATURE": signature,
+        }
+
+    def issue_code(self, user):
+        self.client.force_login(user)
+        response = self.client.post(
+            reverse("main:minecraft_link_start_json"),
+            data=b"{}",
+            content_type="application/json",
+            HTTP_HOST="mc.hanplanet.com",
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.json()["code"]
+
+    def post_complete(self, payload, headers=None):
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        return self.client.post(
+            reverse("main:minecraft_link_complete_json"),
+            data=body,
+            content_type="application/json",
+            **(headers or self.sign_body(body)),
+        )
+
+    def test_minecraft_link_start_requires_minecraft_host_and_login(self):
+        url = reverse("main:minecraft_link_start_json")
+
+        response = self.client.post(url, data=b"{}", content_type="application/json", HTTP_HOST="www.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
+        response = self.client.post(url, data=b"{}", content_type="application/json", HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 401)
+
+        user = get_user_model().objects.create_user(username="minecraft_link_user", password="pw123456")
+        self.client.force_login(user)
+        response = self.client.post(url, data=b"{}", content_type="application/json", HTTP_HOST="mc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["code"].startswith("HNP-"))
+        self.assertEqual(payload["command"], f"/link {payload['code']}")
+        self.assertEqual(payload["links"], [])
+        self.assertEqual(MinecraftLinkCode.objects.filter(user=user, used=False).count(), 1)
+
+    def test_minecraft_link_complete_requires_valid_plugin_signature(self):
+        body = json.dumps({
+            "code": "HNP-ABC234",
+            "minecraftUuid": "00000000-0000-0000-0000-000000000001",
+            "minecraftName": "HanPlayer",
+        }, separators=(",", ":")).encode("utf-8")
+        headers = self.sign_body(body)
+        headers["HTTP_X_HANPLANET_MINECRAFT_SIGNATURE"] = "bad-signature"
+
+        response = self.client.post(
+            reverse("main:minecraft_link_complete_json"),
+            data=body,
+            content_type="application/json",
+            **headers,
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "invalid_signature")
+        self.assertFalse(MinecraftAccountLink.objects.exists())
+
+    def test_minecraft_link_complete_links_java_account(self):
+        user = get_user_model().objects.create_user(username="minecraft_link_owner", password="pw123456")
+        code = self.issue_code(user)
+
+        response = self.post_complete({
+            "code": code,
+            "minecraftUuid": "00000000-0000-0000-0000-000000000011",
+            "minecraftName": "HanPlayer",
+            "edition": "java",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["user"], user.username)
+        link = MinecraftAccountLink.objects.get(minecraft_uuid="00000000-0000-0000-0000-000000000011")
+        self.assertEqual(link.user, user)
+        self.assertEqual(link.minecraft_name, "HanPlayer")
+        self.assertEqual(link.edition, MinecraftAccountLink.EDITION_JAVA)
+        self.assertTrue(MinecraftLinkCode.objects.get(user=user).used)
+
+    def test_minecraft_link_complete_links_bedrock_account_with_floodgate_xuid(self):
+        user = get_user_model().objects.create_user(username="minecraft_bedrock_owner", password="pw123456")
+        code = self.issue_code(user)
+
+        response = self.post_complete({
+            "code": code,
+            "minecraftUuid": "00000000-0000-0000-0000-000000000012",
+            "minecraftName": "BE_Adihang",
+            "edition": "bedrock",
+            "floodgateXuid": "2535412456123456",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        link = MinecraftAccountLink.objects.get(minecraft_uuid="00000000-0000-0000-0000-000000000012")
+        self.assertEqual(link.user, user)
+        self.assertEqual(link.edition, MinecraftAccountLink.EDITION_BEDROCK)
+        self.assertEqual(link.floodgate_xuid, "2535412456123456")
+
+    def test_minecraft_link_complete_rejects_uuid_linked_to_other_user(self):
+        linked_user = get_user_model().objects.create_user(username="minecraft_existing_owner", password="pw123456")
+        requester = get_user_model().objects.create_user(username="minecraft_conflict_owner", password="pw123456")
+        MinecraftAccountLink.objects.create(
+            user=linked_user,
+            minecraft_uuid="00000000-0000-0000-0000-000000000013",
+            minecraft_name="TakenName",
+            edition=MinecraftAccountLink.EDITION_JAVA,
+        )
+        code = self.issue_code(requester)
+
+        response = self.post_complete({
+            "code": code,
+            "minecraftUuid": "00000000-0000-0000-0000-000000000013",
+            "minecraftName": "OtherName",
+            "edition": "java",
+        })
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "minecraft_account_already_linked")
+        self.assertFalse(MinecraftLinkCode.objects.get(user=requester).used)
 
 
 class CanvasPictureInPictureBehaviorTests(TestCase):
@@ -2601,6 +2903,9 @@ class SiteNavResponsiveSourceTests(TestCase):
     def test_auto_collapsed_nav_links_use_horizontal_touch_scroll(self):
         common_css = (Path(settings.BASE_DIR) / "static/css/common/style.css").read_text(encoding="utf-8")
         nav_js = (Path(settings.BASE_DIR) / "static/js/common/site_nav_responsive_manager.js").read_text(encoding="utf-8")
+        onscripter_template = (
+            Path(settings.BASE_DIR) / "templates/fun/onscripter_player.html"
+        ).read_text(encoding="utf-8")
 
         nav_links_rule_start = common_css.index(".ui-nav.nav-auto-collapsed .ui-nav-links {\n    margin: 0;")
         nav_links_rule = common_css[
@@ -2653,13 +2958,33 @@ class SiteNavResponsiveSourceTests(TestCase):
         self.assertIn("padding: 0;", footer_collapse_rule)
         self.assertIn("overflow: hidden;", footer_collapse_rule)
         self.assertIn("display: none;", footer_collapse_children_rule)
+        self.assertNotIn(
+            "body.onscripter-player-page .ui-nav.nav-auto-collapsed .ui-nav-toggler",
+            onscripter_template,
+        )
+        self.assertNotIn(
+            "body.onscripter-player-page .ui-nav.nav-auto-collapsed .ui-nav-collapse",
+            onscripter_template,
+        )
+        self.assertIn("function setup_onscripter_nav_reveal()", onscripter_template)
+        self.assertIn('body.classList.add("onscripter-navbar-auto-hide");', onscripter_template)
+        self.assertIn("var revealZoneHeight = 56;", onscripter_template)
+        self.assertIn('window.addEventListener("mousemove", handlePointerPosition, {passive: true});', onscripter_template)
+        self.assertIn("body.onscripter-player-page.onscripter-navbar-auto-hide .ui-nav", onscripter_template)
+        self.assertIn("transform: translateY(-100%);", onscripter_template)
+        self.assertIn("body.onscripter-player-page.onscripter-navbar-auto-hide.is-navbar-revealed .ui-nav", onscripter_template)
 
 
 class SiteToolbarAuthSourceTests(TestCase):
     def test_toolbar_auth_right_is_shared_by_pages_without_toolbar_right(self):
         base_dir = Path(settings.BASE_DIR)
         partial = (base_dir / "templates/partials/toolbar_auth_right.html").read_text(encoding="utf-8")
+        auth_action_template = (base_dir / "templates/partials/auth_action_buttons.html").read_text(encoding="utf-8")
+        handrive_auth_button_template = (base_dir / "templates/handrive/_auth_button.html").read_text(encoding="utf-8")
         base_template = (base_dir / "templates/base.html").read_text(encoding="utf-8")
+        root_template = (base_dir / "templates/none.html").read_text(encoding="utf-8")
+        common_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
         account_widget_template = (base_dir / "templates/partials/account_widget.html").read_text(encoding="utf-8")
         account_widget_css = (base_dir / "static/css/common/account_widget.css").read_text(encoding="utf-8")
         account_widget_js = (base_dir / "static/js/common/account_widget.js").read_text(encoding="utf-8")
@@ -2715,7 +3040,11 @@ class SiteToolbarAuthSourceTests(TestCase):
         ]
         account_weather_trigger_block = account_widget_css[
             account_widget_css.index(".ui-auth-account-weather-trigger {"):
-            account_widget_css.index(".ui-auth-account-weather-trigger:hover")
+            account_widget_css.index(".ui-auth-account-weather-trigger:not([aria-expanded=\"true\"]):hover")
+        ]
+        account_weather_trigger_hover_block = account_widget_css[
+            account_widget_css.index(".ui-auth-account-weather-trigger:not([aria-expanded=\"true\"]):hover"):
+            account_widget_css.index(".ui-auth-account-weather-chip-range {")
         ]
         account_weather_symbol_block = account_widget_css[
             account_widget_css.index(".ui-auth-account-weather-symbol {"):
@@ -2735,8 +3064,22 @@ class SiteToolbarAuthSourceTests(TestCase):
 
         self.assertIn("ui-toolbar-auth-right", partial)
         self.assertIn('include "partials/account_widget.html"', partial)
-        self.assertIn('data-auth-modal="login"', partial)
-        self.assertIn('data-auth-modal="signup"', partial)
+        self.assertIn('include "partials/auth_action_buttons.html"', partial)
+        self.assertIn('include "partials/auth_action_buttons.html"', handrive_auth_button_template)
+        self.assertIn("auth_action_next=handrive_auth_next", handrive_auth_button_template)
+        self.assertNotIn('href="{{ handrive_login_url }}?next=', handrive_auth_button_template)
+        self.assertNotIn('href="{{ handrive_signup_url }}?next=', handrive_auth_button_template)
+        self.assertIn('include "partials/auth_action_buttons.html" with auth_actions_class="root-shortcuts-auth-actions"', root_template)
+        self.assertIn('data-auth-modal="login"', auth_action_template)
+        self.assertIn('data-auth-modal="signup"', auth_action_template)
+        self.assertIn('class="ui-btn ui-btn-primary" href="{{ resolved_auth_login_url }}', auth_action_template)
+        self.assertIn('class="ui-btn" href="{{ resolved_auth_signup_url }}', auth_action_template)
+        self.assertIn(".ui-auth-action-buttons .ui-btn", common_css)
+        self.assertIn(".ui-toolbar-actions > .ui-auth-action-buttons", handrive_css)
+        self.assertIn('.ui-toolbar-actions > [data-auth-modal="signup"]', handrive_css)
+        self.assertIn('.ui-toolbar-actions > [data-auth-modal="login"]', handrive_css)
+        self.assertNotIn("root-shortcuts-auth-btn", root_template)
+        self.assertNotIn("root-shortcuts-auth-btn", common_css)
         self.assertIn("js/common/account_widget.js", base_template)
         self.assertIn("js/common/account_weather_widget.js", base_template)
         self.assertIn('include "popup/root/auth_logout_modal.html"', base_template)
@@ -2784,6 +3127,9 @@ class SiteToolbarAuthSourceTests(TestCase):
         self.assertIn("max-width: min(160px, calc(100vw - 132px));", account_weather_trigger_block)
         self.assertIn("font-size: 17px;", account_weather_trigger_block)
         self.assertIn("padding: 3px 5px;", account_weather_trigger_block)
+        self.assertIn(".ui-auth-account-weather-trigger:not([aria-expanded=\"true\"]):hover", account_weather_trigger_hover_block)
+        self.assertIn(".ui-auth-account-weather-trigger:not([aria-expanded=\"true\"]):focus-visible", account_weather_trigger_hover_block)
+        self.assertNotIn(".ui-auth-account-weather-trigger[aria-expanded=\"true\"]", account_weather_trigger_hover_block)
         self.assertIn("width: 34px;", account_weather_symbol_block)
         self.assertIn("height: 34px;", account_weather_symbol_block)
         self.assertIn("flex: 0 0 34px;", account_weather_symbol_block)
@@ -2821,6 +3167,15 @@ class SiteToolbarAuthSourceTests(TestCase):
         self.assertIn("font-weight: 400;", account_weather_day_label_block)
         self.assertIn("font-weight: 400;", account_weather_day_precipitation_block)
         self.assertIn("font-weight: 400;", account_weather_day_range_block)
+        self.assertIn("justify-self: center;", account_weather_day_precipitation_block)
+        self.assertIn("min-width: 34px;", account_weather_day_precipitation_block)
+        self.assertIn("text-align: center;", account_weather_day_precipitation_block)
+        self.assertIn("justify-self: end;", account_weather_day_range_block)
+        self.assertIn("margin-left: 8px;", account_weather_day_range_block)
+        self.assertNotIn(
+            ".ui-auth-account-weather-card-day-precipitation:not(:empty) + .ui-auth-account-weather-card-day-range::before",
+            account_widget_css,
+        )
         self.assertNotIn(".ui-auth-account-weather-card-day-row.is-active .ui-auth-account-weather-card-day-date", account_widget_css)
         self.assertIn("const ACCOUNT_WEATHER_LOCATION_OPTIONS = [", account_weather_js)
         self.assertIn("const setWeatherIconType = function (element, iconType)", account_weather_js)
@@ -2837,6 +3192,8 @@ class SiteToolbarAuthSourceTests(TestCase):
         self.assertIn("const setWeatherTriggerRange = function (range, day)", account_weather_js)
         self.assertIn("day.temperature_max_label", account_weather_js)
         self.assertIn("day.temperature_min_label", account_weather_js)
+        self.assertIn("const formatWeatherDailyRangeLabel = function (day)", account_weather_js)
+        self.assertIn("return [lowLabel, highLabel].filter(Boolean).join(' ');", account_weather_js)
         self.assertIn("setWeatherWidgetVisible(widget, false);", account_weather_js)
         self.assertIn("setWeatherWidgetVisible(widget, true);", account_weather_js)
         self.assertIn("const syncWeatherTriggerIcons = function (widget, firstIconType, secondIconType)", account_weather_js)
@@ -2871,6 +3228,8 @@ class SiteToolbarAuthSourceTests(TestCase):
         self.assertIn("data-auth-account-weather-day-date", account_weather_js)
         self.assertIn("ui-auth-account-weather-card-day-precipitation", account_weather_js)
         self.assertIn("ui-auth-account-weather-card-day-icons", account_weather_js)
+        self.assertIn("const dailyRangeLabel = formatWeatherDailyRangeLabel(day);", account_weather_js)
+        self.assertIn("range.textContent = dailyRangeLabel;", account_weather_js)
         self.assertIn("item.append(date, label, icons, condition, precipitation, range);", account_weather_js)
         self.assertIn("renderWeatherDetails(cardDetails, day.detail_items);", account_weather_js)
         self.assertIn("ui-auth-account-weather-card-detail-label", account_weather_js)
@@ -4853,7 +5212,7 @@ class PortfolioPerUserRoutingTests(TestCase):
         self.assertContains(response, "+82-10-0000-0000")
         self.assertContains(response, "your.email@example.com")
         self.assertContains(response, "/static/media/icons/hanplanet.svg", html=False)
-        self.assertContains(response, "/static/media/icons/hanplanet-og-1200.png", html=False)
+        self.assertContains(response, "/static/media/icons/hanplanet-og-1200-v3.png", html=False)
 
 
 class HandriveScopedAccessTests(TestCase):
@@ -8541,6 +8900,7 @@ class HanplanetMultiplayerPageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "@media (min-width: 841px)", html=False)
+        self.assertContains(response, "padding-right: 30px;", html=False)
         self.assertNotContains(response, "@media (orientation: landscape) and (min-width: 900px)", html=False)
 
     def test_sub_page_groups_text_speaki_as_game(self):

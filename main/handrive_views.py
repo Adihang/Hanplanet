@@ -59,7 +59,7 @@ from django.utils.html import escape
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.safestring import mark_safe
 from django.views.csrf import csrf_failure as default_csrf_failure
-from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_http_methods
 
@@ -16933,6 +16933,7 @@ def handrive_api_video_editor_save(request):
     })
 
 
+@ensure_csrf_cookie
 @with_request_handrive_root
 def handrive_map_viewer(request, map_path, ui_lang=None):
     """맵 뷰어 페이지를 렌더한다."""

@@ -95,18 +95,16 @@ body.theme-dark .ui-auth-account-trigger:focus-visible {
     white-space: nowrap;
 }
 
-.ui-auth-account-weather-trigger:hover,
-.ui-auth-account-weather-trigger:focus-visible,
-.ui-auth-account-weather-trigger[aria-expanded="true"] {
+.ui-auth-account-weather-trigger:not([aria-expanded="true"]):hover,
+.ui-auth-account-weather-trigger:not([aria-expanded="true"]):focus-visible {
     background-color: var(--color-hover-bg);
     color: var(--theme-accent-strong);
     translate: 0 var(--btn-template-hover-lift, var(--site-ui-hover-lift, -1px));
     outline: none;
 }
 
-body.theme-dark .ui-auth-account-weather-trigger:hover,
-body.theme-dark .ui-auth-account-weather-trigger:focus-visible,
-body.theme-dark .ui-auth-account-weather-trigger[aria-expanded="true"] {
+body.theme-dark .ui-auth-account-weather-trigger:not([aria-expanded="true"]):hover,
+body.theme-dark .ui-auth-account-weather-trigger:not([aria-expanded="true"]):focus-visible {
     background-color: rgba(255, 255, 255, 0.12);
 }
 
@@ -276,11 +274,11 @@ body.theme-dark .ui-auth-account-weather-popup {
     height: 17px;
     display: block;
     background-color: currentColor;
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5-2-3.5-2.4 1a8 8 0 0 0-2.6-1.5L14 2h-4l-.4 3a8 8 0 0 0-2.6 1.5l-2.4-1-2 3.5 2 1.5A8.8 8.8 0 0 0 4.5 12c0 .5 0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 2.6 1.5l.4 3h4l.4-3a8 8 0 0 0 2.6-1.5l2.4 1 2-3.5-2-1.5ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z'/%3E%3C/svg%3E");
+    -webkit-mask-image: url("/static/media/icons/settings-gears.svg");
     -webkit-mask-repeat: no-repeat;
     -webkit-mask-position: center;
     -webkit-mask-size: contain;
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5-2-3.5-2.4 1a8 8 0 0 0-2.6-1.5L14 2h-4l-.4 3a8 8 0 0 0-2.6 1.5l-2.4-1-2 3.5 2 1.5A8.8 8.8 0 0 0 4.5 12c0 .5 0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 2.6 1.5l.4 3h4l.4-3a8 8 0 0 0 2.6-1.5l2.4 1 2-3.5-2-1.5ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z'/%3E%3C/svg%3E");
+    mask-image: url("/static/media/icons/settings-gears.svg");
     mask-repeat: no-repeat;
     mask-position: center;
     mask-size: contain;
@@ -495,6 +493,10 @@ body.theme-dark .ui-auth-account-weather-popup {
     font-size: 12px;
     font-weight: 400;
     line-height: 1;
+    justify-self: center;
+    min-width: 34px;
+    text-align: center;
+    white-space: nowrap;
 }
 
 .ui-auth-account-weather-card-day-range {
@@ -502,6 +504,9 @@ body.theme-dark .ui-auth-account-weather-popup {
     font-size: 12px;
     font-weight: 400;
     line-height: 1;
+    justify-self: end;
+    margin-left: 8px;
+    white-space: nowrap;
 }
 
 .ui-auth-account-weather-status.is-error {
@@ -664,7 +669,7 @@ body.theme-dark .ui-auth-account-weather-location-results {
     border-radius: 8px;
     padding: 6px 10px;
     font-size: 12px;
-    font-weight: 800;
+    font-weight: 700;
     line-height: 1.1;
     cursor: pointer;
 }
@@ -677,6 +682,8 @@ body.theme-dark .ui-auth-account-weather-location-results {
 .ui-auth-account-weather-secondary {
     background: transparent;
     color: var(--account-text);
+    text-decoration: none;
+    text-underline-offset: 3px;
 }
 
 .ui-auth-account-weather-primary:hover,
@@ -689,6 +696,7 @@ body.theme-dark .ui-auth-account-weather-location-results {
 .ui-auth-account-weather-secondary:focus-visible {
     background: var(--account-hover);
     color: var(--account-text-stronger);
+    text-decoration: underline;
     outline: none;
 }
 
@@ -836,11 +844,11 @@ body.theme-dark .ui-auth-account-google-btn.is-connected {
     height: 36px;
     display: block;
     background-color: currentColor;
-    -webkit-mask-image: url("/static/media/icons/admin.png");
+    -webkit-mask-image: url("/static/media/icons/settings-gears.svg");
     -webkit-mask-repeat: no-repeat;
     -webkit-mask-position: center;
     -webkit-mask-size: contain;
-    mask-image: url("/static/media/icons/admin.png");
+    mask-image: url("/static/media/icons/settings-gears.svg");
     mask-repeat: no-repeat;
     mask-position: center;
     mask-size: contain;

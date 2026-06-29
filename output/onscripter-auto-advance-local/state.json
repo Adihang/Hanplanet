@@ -1,0 +1,247 @@
+{
+  "before": {
+    "state": {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": false,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 0,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    "autoRect": {
+      "x": 1146,
+      "y": 846,
+      "width": 44,
+      "height": 44,
+      "top": 846,
+      "right": 1190,
+      "bottom": 890,
+      "left": 1146
+    },
+    "canvasRect": {
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 900,
+      "top": 0,
+      "right": 1200,
+      "bottom": 900,
+      "left": 0
+    },
+    "autoPressed": "false",
+    "autoLabel": "Start auto advance"
+  },
+  "afterToggle": {
+    "game": "onscripter",
+    "rotated": false,
+    "settingsButtonVisible": true,
+    "autoAdvanceEnabled": true,
+    "autoAdvancePollMs": 250,
+    "autoAdvanceDelayAfterReadyMs": 2000,
+    "autoAdvanceTextStableMs": 700,
+    "autoAdvanceVoiceRemainingMs": 0,
+    "autoAdvanceTextStableForMs": 0,
+    "autoAdvanceVoicePath": "",
+    "autoButtonVisible": true,
+    "audioMuted": false,
+    "audioVolume": 80,
+    "navRevealed": false,
+    "canvasControlsReady": true,
+    "canvas": {
+      "width": 800,
+      "height": 600,
+      "cssWidth": 1200,
+      "cssHeight": 900
+    },
+    "audioPanelFocused": false
+  },
+  "afterVoiceMark": {
+    "game": "onscripter",
+    "rotated": false,
+    "settingsButtonVisible": true,
+    "autoAdvanceEnabled": true,
+    "autoAdvancePollMs": 250,
+    "autoAdvanceDelayAfterReadyMs": 2000,
+    "autoAdvanceTextStableMs": 700,
+    "autoAdvanceVoiceRemainingMs": 6500,
+    "autoAdvanceTextStableForMs": 0,
+    "autoAdvanceVoicePath": "/onsyuri/haruuru/voice/aka_0118.ogg",
+    "autoButtonVisible": true,
+    "audioMuted": false,
+    "audioVolume": 80,
+    "navRevealed": false,
+    "canvasControlsReady": true,
+    "canvas": {
+      "width": 800,
+      "height": 600,
+      "cssWidth": 1200,
+      "cssHeight": 900
+    },
+    "audioPanelFocused": false
+  },
+  "afterWait": {
+    "game": "onscripter",
+    "rotated": false,
+    "settingsButtonVisible": true,
+    "autoAdvanceEnabled": true,
+    "autoAdvancePollMs": 250,
+    "autoAdvanceDelayAfterReadyMs": 2000,
+    "autoAdvanceTextStableMs": 700,
+    "autoAdvanceVoiceRemainingMs": 3696,
+    "autoAdvanceTextStableForMs": 0,
+    "autoAdvanceVoicePath": "/onsyuri/haruuru/voice/aka_0118.ogg",
+    "autoButtonVisible": true,
+    "audioMuted": false,
+    "audioVolume": 80,
+    "navRevealed": false,
+    "canvasControlsReady": true,
+    "canvas": {
+      "width": 800,
+      "height": 600,
+      "cssWidth": 1200,
+      "cssHeight": 900
+    },
+    "audioPanelFocused": false
+  },
+  "rotated": {
+    "state": {
+      "game": "onscripter",
+      "rotated": true,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 3591,
+      "autoAdvanceTextStableForMs": 0,
+      "autoAdvanceVoicePath": "/onsyuri/haruuru/voice/aka_0118.ogg",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 900,
+        "cssHeight": 675
+      },
+      "audioPanelFocused": false
+    },
+    "autoRect": {
+      "x": 272.5,
+      "y": 846,
+      "width": 44,
+      "height": 44,
+      "top": 846,
+      "right": 316.5,
+      "bottom": 890,
+      "left": 272.5
+    },
+    "canvasRect": {
+      "x": 262.5,
+      "y": 0,
+      "width": 675,
+      "height": 900,
+      "top": 0,
+      "right": 937.5,
+      "bottom": 900,
+      "left": 262.5
+    },
+    "topHit": ""
+  },
+  "consoleMessages": [
+    {
+      "type": "warning",
+      "text": "The keyword 'slider-vertical' specified to an 'appearance' property is not standardized. It will be removed in the future. Use <input type=range style=\"writing-mode: vertical-lr; direction: rtl\"> instead."
+    },
+    {
+      "type": "warning",
+      "text": "The keyword 'slider-vertical' specified to an 'appearance' property is not standardized. It will be removed in the future. Use <input type=range style=\"writing-mode: vertical-lr; direction: rtl\"> instead."
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri: preRun"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri_fs: mount_onsgame /onsyuri/haruuru"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri_fs: mount_onssave /onsyuri_save/haruuru/user-dbdc006002b83e91ea9affa6"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri: onRuntimeInitialized"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri: args [--root, /onsyuri/haruuru, --font, /onsyuri/haruuru/default.ttf, --save-dir, /onsyuri_save/haruuru/user-dbdc006002b83e91ea9affa6, --enc:utf8, --width, 800, --height, 600, --window]"
+    },
+    {
+      "type": "log",
+      "text": "ONScripter Yuri 0.7.7, (Jh0.8.0,Ons20181218,NSC2.96)"
+    },
+    {
+      "type": "log",
+      "text": "Initialize GameController"
+    },
+    {
+      "type": "log",
+      "text": "Display: 800 x 600 (32 bpp)"
+    },
+    {
+      "type": "warning",
+      "text": "The ScriptProcessorNode is deprecated. Use AudioWorkletNode instead. (https://bit.ly/audio-worklet)"
+    },
+    {
+      "type": "log",
+      "text": "Audio: 48000 Hz 16 bit stereo"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x11c00588a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "error",
+      "text": " *** failed to open nsa or ns2 archive, ignored.  ***"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri: onmessage  onsinit"
+    },
+    {
+      "type": "log",
+      "text": "cannot open system.lua"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x11c00588a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x11c00588a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x11c00588a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    }
+  ]
+}

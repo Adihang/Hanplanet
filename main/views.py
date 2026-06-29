@@ -10,7 +10,7 @@ from .forms import (
     PortfolioProfileForm,
     PortfolioProjectForm,
 )
-from .models import NavLink, QuickLink, UserProfile, WargameSolve
+from .models import MinecraftAccountLink, MinecraftLinkCode, NavLink, QuickLink, UserProfile, WargameSolve
 from portfolio.models import (
     PortfolioActionButton,
     PortfolioCareer,
@@ -36,6 +36,7 @@ import io
 import hashlib
 import hmac
 import time
+import uuid as uuid_lib
 import subprocess
 import shutil
 import sys
@@ -69,6 +70,7 @@ from datetime import datetime, timedelta, timezone as datetime_timezone
 from git.models import GitHubAccountMapping, GoogleAccountMapping
 from .github_auth import is_github_auth_configured
 from .google_auth import is_google_auth_configured
+from .onscripter_access import is_onscripter_user_allowed
 
 logger = logging.getLogger(__name__)
 from .restart_utils import restart_gunicorn_and_wait
@@ -145,6 +147,9 @@ MINECRAFT_CONSOLE_INPUT_PATH = Path("/Users/imhanbyeol/Development/minecraft/run
 MINECRAFT_LOG_TAIL_BYTES = 64 * 1024
 MINECRAFT_LOG_TAIL_LINES = 220
 MINECRAFT_COMMAND_MAX_LENGTH = 1024
+MINECRAFT_LINK_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+MINECRAFT_LINK_CODE_PREFIX = "HNP"
+MINECRAFT_LINK_CODE_LENGTH = 6
 MINECRAFT_VERSION_PATTERN = re.compile(r"(?<!\d)(\d+(?:\.\d+){1,2}(?:[-+][0-9A-Za-z.-]+)?)(?!\d)")
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 UI_LANG_PATH_PREFIX_PATTERN = re.compile(r"^/(ko|en)(/|$)")
@@ -1362,7 +1367,7 @@ def apply_ui_context(request, context, ui_lang):
     context["lang_switch_ko_url"] = build_lang_switch_url(request, "ko")
     context["lang_switch_en_url"] = build_lang_switch_url(request, "en")
     canonical_url = build_public_absolute_url(request.path)
-    default_meta_image = "https://www.hanplanet.com/static/media/icons/hanplanet-og-1200.png"
+    default_meta_image = "https://www.hanplanet.com/static/media/icons/hanplanet-og-1200-v3.png"
     context["meta_robots"] = context.get("meta_robots") or get_default_meta_robots_for_path(request.path)
     context["meta_site_name"] = context.get("meta_site_name", "Hanplanet")
     context["meta_canonical_url"] = context.get("meta_canonical_url", canonical_url)
@@ -1960,6 +1965,13 @@ def get_bumpercar_spiky_connected_player_count():
     return max(0, int(payload.get("connectedPlayers", 0)))
 
 
+def _normalize_game_auth_slug(game_slug):
+    resolved = str(game_slug or "bumpercar-spiky").strip() or "bumpercar-spiky"
+    if resolved.startswith("map:"):
+        return resolved
+    return resolved.lower()
+
+
 def build_game_auth_token(
     user=None,
     subject=None,
@@ -1986,7 +1998,7 @@ def build_game_auth_token(
         "username": resolved_subject,
         "display_name": resolved_display_name,
         "is_guest": bool(is_guest),
-        "game": str(game_slug or "bumpercar-spiky").strip().lower() or "bumpercar-spiky",
+        "game": _normalize_game_auth_slug(game_slug),
         "selected_skin": resolve_bumpercar_skin_name(user, skin_name),
         "iat": now,
         "nbf": now,
@@ -2279,7 +2291,7 @@ def _is_public_sub_child_url(url, resolved_lang):
     return True
 
 
-def _build_sub_links(resolved_lang):
+def _build_sub_links(resolved_lang, request=None):
     """Return the actual public Sub child URLs from URLConf in resolver order."""
     links = []
     seen_urls = set()
@@ -2306,6 +2318,9 @@ def _build_sub_links(resolved_lang):
         seen_urls.add(normalized_url)
 
         slug = unquote(urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]).lower()
+        if slug == "onscripter" and not is_onscripter_user_allowed(getattr(request, "user", None)):
+            continue
+
         links.append({
             "slug": slug,
             "url": url,
@@ -2332,7 +2347,7 @@ def sub_page(request, ui_lang=None):
     """Render the sub landing page that links to the browser game collection."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
-    links = _build_sub_links(resolved_lang)
+    links = _build_sub_links(resolved_lang, request=request)
 
     link_groups = [
         {
@@ -5163,6 +5178,7 @@ def map_collab_auth_token(request, ui_lang=None):
     return response
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 def map_collab_presence(request, ui_lang=None):
     """Presence ping — tracks viewers without a WS session. Returns room viewer count."""
@@ -5356,6 +5372,242 @@ def is_minecraft_admin_user(user):
         and getattr(user, "is_authenticated", False)
         and getattr(user, "is_superuser", False)
     )
+
+
+def normalize_minecraft_link_code(code):
+    """Normalize a user-entered Minecraft linking code."""
+    compact = re.sub(r"[^0-9A-Za-z]", "", str(code or "")).upper()
+    if compact.startswith(MINECRAFT_LINK_CODE_PREFIX):
+        compact = compact[len(MINECRAFT_LINK_CODE_PREFIX):]
+    if len(compact) != MINECRAFT_LINK_CODE_LENGTH:
+        return ""
+    if any(character not in MINECRAFT_LINK_CODE_ALPHABET for character in compact):
+        return ""
+    return f"{MINECRAFT_LINK_CODE_PREFIX}-{compact}"
+
+
+def hash_minecraft_link_code(code):
+    normalized = normalize_minecraft_link_code(code)
+    if not normalized:
+        return ""
+    material = f"minecraft-link:{settings.SECRET_KEY}:{normalized}".encode("utf-8")
+    return hashlib.sha256(material).hexdigest()
+
+
+def generate_minecraft_link_code():
+    suffix = "".join(secrets.choice(MINECRAFT_LINK_CODE_ALPHABET) for _ in range(MINECRAFT_LINK_CODE_LENGTH))
+    return f"{MINECRAFT_LINK_CODE_PREFIX}-{suffix}"
+
+
+def serialize_minecraft_account_link(link):
+    return {
+        "id": link.id,
+        "minecraftUuid": link.minecraft_uuid,
+        "minecraftName": link.minecraft_name,
+        "edition": link.edition,
+        "floodgateXuid": link.floodgate_xuid,
+        "firstLinkedAt": link.first_linked_at.isoformat() if link.first_linked_at else "",
+        "lastLinkedAt": link.last_linked_at.isoformat() if link.last_linked_at else "",
+        "lastSeenAt": link.last_seen_at.isoformat() if link.last_seen_at else "",
+    }
+
+
+def verify_minecraft_link_hmac(request):
+    shared_secret = str(getattr(settings, "MINECRAFT_LINK_SHARED_SECRET", "") or "").strip()
+    if not shared_secret:
+        return False, "secret_not_configured"
+
+    timestamp_value = str(request.headers.get("X-Hanplanet-Minecraft-Timestamp") or "").strip()
+    signature_value = str(request.headers.get("X-Hanplanet-Minecraft-Signature") or "").strip()
+    if not timestamp_value or not signature_value:
+        return False, "missing_signature"
+
+    if signature_value.startswith("sha256="):
+        signature_value = signature_value[len("sha256="):]
+    try:
+        timestamp = int(timestamp_value)
+    except ValueError:
+        return False, "invalid_timestamp"
+
+    skew_seconds = int(getattr(settings, "MINECRAFT_LINK_HMAC_SKEW_SECONDS", 300) or 300)
+    if abs(int(time.time()) - timestamp) > skew_seconds:
+        return False, "stale_signature"
+
+    signed_body = timestamp_value.encode("utf-8") + b"." + request.body
+    expected = hmac.new(shared_secret.encode("utf-8"), signed_body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature_value):
+        return False, "invalid_signature"
+    return True, ""
+
+
+def normalize_minecraft_uuid(value):
+    try:
+        return str(uuid_lib.UUID(str(value or "").strip()))
+    except (TypeError, ValueError, AttributeError):
+        return ""
+
+
+def normalize_minecraft_player_name(value):
+    normalized = str(value or "").strip()
+    if not normalized or len(normalized) > 32:
+        return ""
+    if any(ord(character) < 32 for character in normalized):
+        return ""
+    return normalized
+
+
+@cache_control(no_store=True)
+@require_http_methods(["POST"])
+def minecraft_link_start_json(request):
+    """Issue a short-lived account-linking code for the logged-in Django user."""
+    if not is_minecraft_host(request):
+        raise Http404
+    if not getattr(request.user, "is_authenticated", False):
+        return JsonResponse({"ok": False, "error": "authentication_required"}, status=401)
+
+    now = timezone.now()
+    MinecraftLinkCode.objects.filter(user=request.user, used=False, expires_at__lte=now).update(
+        used=True,
+        used_at=now,
+    )
+    MinecraftLinkCode.objects.filter(user=request.user, used=False, expires_at__gt=now).update(
+        used=True,
+        used_at=now,
+    )
+
+    expires_at = now + timedelta(seconds=int(getattr(settings, "MINECRAFT_LINK_CODE_TTL_SECONDS", 600) or 600))
+    link_code = ""
+    for _ in range(20):
+        candidate = generate_minecraft_link_code()
+        code_hash = hash_minecraft_link_code(candidate)
+        if not MinecraftLinkCode.objects.filter(code_hash=code_hash).exists():
+            MinecraftLinkCode.objects.create(user=request.user, code_hash=code_hash, expires_at=expires_at)
+            link_code = candidate
+            break
+    if not link_code:
+        logger.warning("Minecraft link code generation failed for user=%s", request.user.username)
+        return JsonResponse({"ok": False, "error": "code_generation_failed"}, status=503)
+
+    response = JsonResponse({
+        "ok": True,
+        "code": link_code,
+        "command": f"/link {link_code}",
+        "expiresAt": expires_at.isoformat(),
+        "expiresInSeconds": max(0, int((expires_at - now).total_seconds())),
+        "links": [
+            serialize_minecraft_account_link(link)
+            for link in request.user.minecraft_account_links.order_by("edition", "minecraft_name", "id")
+        ],
+    })
+    response["X-Hanplanet-App"] = "django-minecraft"
+    return response
+
+
+@cache_control(no_store=True)
+@require_http_methods(["GET"])
+def minecraft_link_status_json(request):
+    """Return Minecraft account links for the logged-in Django user."""
+    if not is_minecraft_host(request):
+        raise Http404
+    if not getattr(request.user, "is_authenticated", False):
+        return JsonResponse({"ok": False, "error": "authentication_required"}, status=401)
+
+    response = JsonResponse({
+        "ok": True,
+        "links": [
+            serialize_minecraft_account_link(link)
+            for link in request.user.minecraft_account_links.order_by("edition", "minecraft_name", "id")
+        ],
+    })
+    response["X-Hanplanet-App"] = "django-minecraft"
+    return response
+
+
+@cache_control(no_store=True)
+@csrf_exempt
+@require_http_methods(["POST"])
+def minecraft_link_complete_json(request):
+    """Complete an account link from the trusted Paper plugin."""
+    signature_ok, signature_error = verify_minecraft_link_hmac(request)
+    if not signature_ok:
+        status = 503 if signature_error == "secret_not_configured" else 403
+        logger.warning("Minecraft account link rejected: %s", signature_error)
+        return JsonResponse({"ok": False, "error": signature_error}, status=status)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        payload = {}
+
+    code = normalize_minecraft_link_code(payload.get("code"))
+    code_hash = hash_minecraft_link_code(code)
+    minecraft_uuid = normalize_minecraft_uuid(payload.get("minecraftUuid"))
+    minecraft_name = normalize_minecraft_player_name(payload.get("minecraftName"))
+    edition = str(payload.get("edition") or MinecraftAccountLink.EDITION_UNKNOWN).strip().lower()
+    floodgate_xuid = str(payload.get("floodgateXuid") or "").strip()[:32]
+
+    if edition not in {
+        MinecraftAccountLink.EDITION_JAVA,
+        MinecraftAccountLink.EDITION_BEDROCK,
+        MinecraftAccountLink.EDITION_UNKNOWN,
+    }:
+        edition = MinecraftAccountLink.EDITION_UNKNOWN
+
+    if not code_hash or not minecraft_uuid or not minecraft_name:
+        return JsonResponse({"ok": False, "error": "invalid_payload"}, status=400)
+
+    now = timezone.now()
+    with transaction.atomic():
+        link_code = (
+            MinecraftLinkCode.objects
+            .select_for_update()
+            .select_related("user")
+            .filter(code_hash=code_hash, used=False)
+            .first()
+        )
+        if link_code is None:
+            return JsonResponse({"ok": False, "error": "invalid_code"}, status=404)
+        if link_code.expires_at <= now:
+            link_code.used = True
+            link_code.used_at = now
+            link_code.save(update_fields=["used", "used_at"])
+            return JsonResponse({"ok": False, "error": "expired_code"}, status=410)
+
+        account_link = (
+            MinecraftAccountLink.objects
+            .select_for_update()
+            .filter(minecraft_uuid=minecraft_uuid)
+            .first()
+        )
+        if account_link is not None and account_link.user_id != link_code.user_id:
+            return JsonResponse({"ok": False, "error": "minecraft_account_already_linked"}, status=409)
+
+        if account_link is None:
+            account_link = MinecraftAccountLink(user=link_code.user, minecraft_uuid=minecraft_uuid)
+        account_link.minecraft_name = minecraft_name
+        account_link.edition = edition
+        account_link.floodgate_xuid = floodgate_xuid
+        account_link.last_seen_at = now
+        account_link.save()
+
+        link_code.used = True
+        link_code.used_at = now
+        link_code.save(update_fields=["used", "used_at"])
+
+    logger.info(
+        "Minecraft account linked: user=%s uuid=%s name=%s edition=%s",
+        link_code.user.username,
+        minecraft_uuid,
+        minecraft_name,
+        edition,
+    )
+    response = JsonResponse({
+        "ok": True,
+        "user": link_code.user.username,
+        "link": serialize_minecraft_account_link(account_link),
+    })
+    response["X-Hanplanet-App"] = "django-minecraft"
+    return response
 
 
 def normalize_minecraft_command(command):
@@ -5682,7 +5934,6 @@ def minecraft_home(request, ui_lang=None):
     context = {
         "server_address": MINECRAFT_SERVER_ADDRESS,
         "bedrock_server_address": MINECRAFT_BEDROCK_SERVER_ADDRESS,
-        "bedrock_server_port": MINECRAFT_BEDROCK_SERVER_PORT,
         "server_version": server_version,
         "bedrock_server_version": bedrock_server_version,
         "server_version_prefix": server_version_prefix,
@@ -5703,7 +5954,6 @@ def minecraft_home(request, ui_lang=None):
         "bedrock_server_address_copy_label": "Copy Bedrock server address" if is_english else "베드락 서버 주소 복사",
         "server_address_copied_label": "Copied" if is_english else "복사됨",
         "server_version_label": "Version" if is_english else "버전",
-        "bedrock_server_port_label": f"UDP {MINECRAFT_BEDROCK_SERVER_PORT}",
         "server_hint": "",
         "links_panel_title": "Plugins" if is_english else "플러그인",
         "server_log_title": "Server Console" if is_english else "서버 콘솔",

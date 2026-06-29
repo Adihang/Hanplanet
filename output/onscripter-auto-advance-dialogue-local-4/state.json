@@ -1,0 +1,377 @@
+{
+  "samples": [
+    {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 758,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 1761,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 0,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 519,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 1523,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 2525,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 29,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 782,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 1789,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 0,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 46,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "autoAdvanceEnabled": true,
+      "autoAdvancePollMs": 250,
+      "autoAdvanceDelayAfterReadyMs": 2000,
+      "autoAdvanceTextStableMs": 700,
+      "autoAdvanceVoiceRemainingMs": 0,
+      "autoAdvanceTextStableForMs": 1050,
+      "autoAdvanceVoicePath": "",
+      "autoButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvasControlsReady": true,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    }
+  ],
+  "requestUrls": [
+    "http://127.0.0.1:8010/media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/BGM/MUSIC_02.OGG?v=1782433639235566095-1610661"
+  ],
+  "consoleMessages": [
+    {
+      "type": "warning",
+      "text": "The keyword 'slider-vertical' specified to an 'appearance' property is not standardized. It will be removed in the future. Use <input type=range style=\"writing-mode: vertical-lr; direction: rtl\"> instead."
+    },
+    {
+      "type": "warning",
+      "text": "The keyword 'slider-vertical' specified to an 'appearance' property is not standardized. It will be removed in the future. Use <input type=range style=\"writing-mode: vertical-lr; direction: rtl\"> instead."
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri: onmessage  "
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri: preRun"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri_fs: mount_onsgame /onsyuri/haruuru"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri_fs: mount_onssave /onsyuri_save/haruuru/user-dbdc006002b83e91ea9affa6"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri: onRuntimeInitialized"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri: args [--root, /onsyuri/haruuru, --font, /onsyuri/haruuru/default.ttf, --save-dir, /onsyuri_save/haruuru/user-dbdc006002b83e91ea9affa6, --enc:utf8, --width, 800, --height, 600, --window]"
+    },
+    {
+      "type": "log",
+      "text": "ONScripter Yuri 0.7.7, (Jh0.8.0,Ons20181218,NSC2.96)"
+    },
+    {
+      "type": "log",
+      "text": "Initialize GameController"
+    },
+    {
+      "type": "log",
+      "text": "Display: 800 x 600 (32 bpp)"
+    },
+    {
+      "type": "warning",
+      "text": "The ScriptProcessorNode is deprecated. Use AudioWorkletNode instead. (https://bit.ly/audio-worklet)"
+    },
+    {
+      "type": "log",
+      "text": "Audio: 48000 Hz 16 bit stereo"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x10400588a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "error",
+      "text": " *** failed to open nsa or ns2 archive, ignored.  ***"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri: onmessage  onsinit"
+    },
+    {
+      "type": "log",
+      "text": "cannot open system.lua"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x10400588a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x10400588a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x10400588a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    }
+  ]
+}

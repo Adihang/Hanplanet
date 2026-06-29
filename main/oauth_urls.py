@@ -27,7 +27,7 @@ class HanplanetAuthorizationView(oauth2_views.AuthorizationView):
         # base.html uses these as filter arguments (|default:meta_canonical_url),
         # which raises VariableDoesNotExist if missing — unlike standalone variables.
         ctx.setdefault("meta_canonical_url", self.request.build_absolute_uri(self.request.path))
-        ctx.setdefault("meta_og_image", "https://www.hanplanet.com/static/media/icons/hanplanet-og-1200.png")
+        ctx.setdefault("meta_og_image", "https://www.hanplanet.com/static/media/icons/hanplanet-og-1200-v3.png")
         # 인증 중인 계정 표시
         ctx["oauth_username"] = getattr(getattr(self, "_authenticated_user", None), "username", "")
         return ctx

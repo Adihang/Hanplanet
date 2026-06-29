@@ -5,26 +5,136 @@
         <meta onsyuri_js="{{ engine_js_url }}">
         <meta onsyuri_wasm="{{ engine_wasm_url }}">
         <meta onsyuri_index="{{ index_url }}">
+        <style>
+            body.onscripter-player-page #onscripter_canvas_frame:not(.is-onscripter-canvas-ready) {
+                aspect-ratio: 4 / 3;
+                width: min(100%, calc(100svh * 4 / 3));
+                max-width: 100%;
+                max-height: 100%;
+            }
+
+            body.onscripter-player-page #onscripter_canvas_frame:not(.is-onscripter-canvas-ready) #canvas,
+            body.onscripter-player-page #onscripter_canvas_frame:not(.is-onscripter-canvas-ready) #video,
+            body.onscripter-player-page #onscripter_rotate_toggle,
+            body.onscripter-player-page #onscripter_bottom_controls,
+            body.onscripter-player-page #onscripter_canvas_controls {
+                visibility: hidden;
+                pointer-events: none;
+            }
+
+            body.onscripter-player-page #onscripter_audio_volume {
+                width: 32px;
+                height: 92px;
+                min-width: 0;
+                margin: 0;
+                opacity: 0;
+                pointer-events: none;
+                writing-mode: vertical-lr;
+                direction: rtl;
+                -webkit-appearance: slider-vertical;
+            }
+        </style>
+        <script>
+            (function () {
+                var desiredTitle = "{{ meta_title|escapejs }}";
+                if(!desiredTitle) return;
+
+                var restoring = false;
+                function restoreOnscripterDocumentTitle() {
+                    if(restoring || document.title === desiredTitle) return;
+                    restoring = true;
+                    document.title = desiredTitle;
+                    restoring = false;
+                }
+
+                window.restore_onscripter_document_title = restoreOnscripterDocumentTitle;
+                restoreOnscripterDocumentTitle();
+
+                function installOnscripterTitleGuard() {
+                    restoreOnscripterDocumentTitle();
+
+                    if(typeof MutationObserver === "function" && !window.__onscripter_title_head_observer && document.head) {
+                        window.__onscripter_title_head_observer = new MutationObserver(restoreOnscripterDocumentTitle);
+                        window.__onscripter_title_head_observer.observe(document.head, {
+                            childList: true,
+                            characterData: true,
+                            subtree: true
+                        });
+                    }
+
+                    if(!window.__onscripter_title_guard_timer) {
+                        var guardUntil = Date.now() + 15000;
+                        window.__onscripter_title_guard_timer = window.setInterval(function () {
+                            restoreOnscripterDocumentTitle();
+                            if(Date.now() > guardUntil) {
+                                window.clearInterval(window.__onscripter_title_guard_timer);
+                                window.__onscripter_title_guard_timer = null;
+                            }
+                        }, 250);
+                    }
+                }
+
+                if(document.readyState === "loading") {
+                    document.addEventListener("DOMContentLoaded", installOnscripterTitleGuard, {once: true});
+                } else {
+                    installOnscripterTitleGuard();
+                }
+                window.addEventListener("load", installOnscripterTitleGuard, {once: true});
+            })();
+        </script>
 {% endblock %}
 {% block content %}
         <main class="onscripter-player-main">
-            <section class="onscripter-stage" aria-label="{{ page_title }}">
-        <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
-        <video id="video" onended="videoEnded()"></video>
-        <div id="onscripter_audio_panel" aria-label="Audio controls" data-muted="false">
-            <button id="onscripter_audio_mute" type="button" aria-label="Mute audio" aria-pressed="false">
-                <svg class="onscripter-audio-icon onscripter-audio-icon-volume" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M11 5 6 9H2v6h4l5 4V5Z"></path>
-                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
-                </svg>
-                <svg class="onscripter-audio-icon onscripter-audio-icon-muted" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M11 5 6 9H2v6h4l5 4V5Z"></path>
-                    <path d="m22 9-6 6"></path>
-                    <path d="m16 9 6 6"></path>
-                </svg>
+            <section class="onscripter-stage site-loading-host" aria-label="{{ page_title }}">
+        <div id="onscripter_canvas_frame">
+            <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+            <video id="video" onended="videoEnded()"></video>
+            <div id="onscripter_canvas_loader" class="site-loading-overlay" role="status" aria-label="{{ loading_label }}">
+                <span class="site-loading-spinner" aria-hidden="true"></span>
+            </div>
+            <button id="onscripter_rotate_toggle" class="onscripter-canvas-button" type="button" aria-label="Rotate canvas clockwise" aria-pressed="false" title="Rotate canvas clockwise">
+                <span class="onscripter-rotate-icon onscripter-rotate-icon-cw onscripter-rotate-icon-90" aria-hidden="true"></span>
+                <span class="onscripter-rotate-icon onscripter-rotate-icon-ccw onscripter-rotate-icon-270" aria-hidden="true"></span>
             </button>
-            <input id="onscripter_audio_volume" type="range" min="0" max="100" step="1" value="80" aria-label="Volume">
+            <div id="onscripter_canvas_controls" aria-label="Canvas controls">
+                <div id="onscripter_audio_panel" aria-label="Audio controls" data-muted="false">
+                    <button id="onscripter_audio_mute" type="button" aria-label="Mute audio" aria-pressed="false">
+                        <svg class="onscripter-audio-icon onscripter-audio-icon-volume" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M11 5 6 9H2v6h4l5 4V5Z"></path>
+                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                        </svg>
+                        <svg class="onscripter-audio-icon onscripter-audio-icon-muted" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M11 5 6 9H2v6h4l5 4V5Z"></path>
+                            <path d="m22 9-6 6"></path>
+                            <path d="m16 9 6 6"></path>
+                        </svg>
+                    </button>
+                    <input id="onscripter_audio_volume" type="range" min="0" max="100" step="1" value="80" aria-label="Volume">
+                </div>
+                <button id="onscripter_settings_toggle" class="onscripter-canvas-button" type="button" aria-label="Open game menu" title="Open game menu">
+                    <svg class="onscripter-settings-icon" viewBox="0 0 512 512" aria-hidden="true">
+                        <path fill-rule="evenodd" clip-rule="evenodd" d="M321 200 L315 202 L310 207 L301 229 L290 234 L287 234 L268 225 L257 226 L228 254 L225 260 L225 268 L232 282 L234 290 L228 302 L213 307 L207 310 L202 315 L200 321 L200 358 L201 362 L205 368 L229 378 L234 392 L225 411 L226 422 L255 452 L259 454 L269 454 L289 445 L302 451 L309 471 L312 475 L320 479 L360 479 L369 473 L378 450 L392 445 L410 454 L423 453 L453 423 L454 410 L445 390 L451 377 L459 375 L473 369 L479 360 L479 320 L475 312 L471 309 L450 301 L445 287 L454 269 L454 259 L452 255 L424 227 L419 225 L411 225 L395 233 L390 234 L377 228 L370 208 L367 204 L362 201 L358 200 Z M324 68 L318 65 L309 65 L281 78 L271 73 L261 70 L259 68 L248 39 L241 33 L238 32 L187 32 L182 34 L177 39 L167 67 L164 70 L144 78 L119 66 L107 65 L103 67 L67 103 L65 107 L65 116 L78 145 L74 152 L71 162 L67 167 L39 177 L33 184 L32 187 L32 238 L34 243 L39 248 L67 258 L70 261 L78 282 L65 309 L65 318 L68 324 L101 357 L106 360 L111 361 L117 360 L144 347 L159 354 L167 356 L168 313 L174 298 L183 287 L174 283 L165 277 L148 260 L140 247 L136 237 L133 224 L133 201 L138 183 L148 165 L165 148 L183 138 L201 133 L224 133 L237 136 L249 141 L265 152 L280 169 L287 183 L298 174 L313 168 L356 167 L354 159 L347 144 L360 117 L361 112 L360 106 L357 101 Z M339 275 L355 277 L364 280 L378 288 L391 301 L400 317 L404 334 L404 346 L402 356 L397 369 L388 382 L377 392 L369 397 L356 402 L346 404 L334 404 L317 400 L301 391 L288 378 L284 372 L277 355 L276 341 L275 340 L276 329 L280 315 L289 300 L299 290 L309 283 L324 277 L338 276 Z"></path>
+                    </svg>
+                </button>
+            </div>
+            <div id="onscripter_bottom_controls" aria-label="Playback controls">
+                <button id="onscripter_skip_toggle" class="onscripter-canvas-button" type="button" aria-label="Hold for skip mode" aria-pressed="false" title="Hold for skip mode">
+                    <svg class="onscripter-playback-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 5v14l8-7Z"></path>
+                        <path d="M12 5v14l8-7Z"></path>
+                    </svg>
+                </button>
+                <button id="onscripter_auto_toggle" class="onscripter-canvas-button" type="button" aria-label="Start auto advance" aria-pressed="false" title="Start auto advance">
+                    <svg class="onscripter-playback-icon onscripter-auto-icon-play" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M8 5v14l11-7Z"></path>
+                    </svg>
+                    <svg class="onscripter-playback-icon onscripter-auto-icon-pause" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M8 5v14"></path>
+                        <path d="M16 5v14"></path>
+                    </svg>
+                </button>
+            </div>
         </div>
         <script type="text/javascript"> // browser universe function
             function scale_full(docobj, ratio=0) {
@@ -32,19 +142,27 @@
                 var hostRect = host ? host.getBoundingClientRect() : null;
                 var w = hostRect && hostRect.width ? hostRect.width : window.innerWidth;
                 var h = hostRect && hostRect.height ? hostRect.height : window.innerHeight;
+                var rotated = typeof is_onscripter_canvas_rotated === "function" && is_onscripter_canvas_rotated();
+                var layoutWidth = rotated ? h : w;
+                var layoutHeight = rotated ? w : h;
+                var targetWidth = layoutWidth;
+                var targetHeight = layoutHeight;
                 if(ratio>0) {
-                    if(w/h > ratio) {
-                        docobj.style.width  = h * ratio  + "px";
-                        docobj.style.height = h + "px";
+                    if(layoutWidth/layoutHeight > ratio) {
+                        targetWidth = layoutHeight * ratio;
+                        targetHeight = layoutHeight;
                     }
                     else {
-                        docobj.style.width  = w  + "px";
-                        docobj.style.height = w / ratio + "px";
+                        targetWidth = layoutWidth;
+                        targetHeight = layoutWidth / ratio;
                     }
                 }
-                else {
-                    docobj.style.width  = w + "px";
-                    docobj.style.height = h + "px";
+                docobj.style.width  = targetWidth + "px";
+                docobj.style.height = targetHeight + "px";
+                var frame = document.getElementById("onscripter_canvas_frame");
+                if(frame && (docobj.id === "canvas" || docobj.id === "video")) {
+                    frame.style.width = targetWidth + "px";
+                    frame.style.height = targetHeight + "px";
                 }
                 return {w: docobj.style.width, h: docobj.style.height}
             }
@@ -253,8 +371,15 @@
                         filemap[key.toLowerCase()] = {
                             url: url,
                             loaded: false,
-                            mountedPath: key
+                            mountedPath: key,
+                            lookupPath: key.toLowerCase()
                         };
+                        if(!filemap[path.toLowerCase()]) {
+                            filemap[path.toLowerCase()] = filemap[key.toLowerCase()];
+                        }
+                        if(!filemap[("/" + path).toLowerCase()]) {
+                            filemap[("/" + path).toLowerCase()] = filemap[key.toLowerCase()];
+                        }
                     }
                     else {
                         _FS.createPreloadedFile(basedir, filename, url, true, false);
@@ -371,19 +496,42 @@
 
             // fetch file from the remote server, and write them to local fs
             async function fetch_file(_FS, path, filemap) {
-                var fnode = filemap[path];
+                var lookupPath = String(path || "");
+                var fnode = filemap[lookupPath] || filemap[lookupPath.toLowerCase()];
                 return new Promise((res)=>{
                     if(!fnode){
                         res(0);
                     }
                     else{
-                        if(fnode.loaded) res(1);
+                        if(fnode.loaded) {
+                            if(fnode.mountedPath && fnode.mountedPath !== path) {
+                                try {
+                                    _FS.stat(path);
+                                }
+                                catch(error) {
+                                    try {
+                                        var cachedData = _FS.readFile(fnode.mountedPath);
+                                        em_mkdirs(_FS, path.substring(0, path.lastIndexOf("/") + 1));
+                                        _FS.writeFile(path, cachedData);
+                                    }
+                                    catch(copyError) {}
+                                }
+                            }
+                            if(typeof mark_onscripter_lazy_file_access === "function") {
+                                mark_onscripter_lazy_file_access(path, fnode.url, null);
+                            }
+                            res(1);
+                            return;
+                        }
                         fetch(fnode.url).then( (resp)=>{
                             return resp.arrayBuffer();
                         }).then((data)=>{
                             var writePaths = [path];
                             if(fnode.mountedPath && fnode.mountedPath !== path) {
                                 writePaths.push(fnode.mountedPath);
+                            }
+                            if(fnode.lookupPath && writePaths.indexOf(fnode.lookupPath) < 0) {
+                                writePaths.push(fnode.lookupPath);
                             }
                             for(var i = 0; i < writePaths.length; i++) {
                                 var writePath = writePaths[i];
@@ -392,6 +540,14 @@
                             }
                             onsyuri_debug("fetch", [path, fnode.url, writePaths]);
                             fnode.loaded = true;
+                            if(typeof mark_onscripter_lazy_file_access === "function") {
+                                mark_onscripter_lazy_file_access(path, fnode.url, data);
+                            }
+                            if(typeof should_hide_onscripter_loader_for_path === "function"
+                                && should_hide_onscripter_loader_for_path(path)
+                                && typeof hide_onscripter_loading_indicator === "function") {
+                                hide_onscripter_loading_indicator();
+                            }
                             res(1);
                         }).catch((err)=>{
                             console.log("## fetch_file ${path}", err);
@@ -436,9 +592,13 @@
                     );
                 }
                 mount_save(g_onsyuri_module, g_onsyuri_index.savedir);
+                if(typeof install_onscripter_voice_open_tracker === "function") {
+                    install_onscripter_voice_open_tracker(g_onsyuri_module.FS);
+                }
             };
             g_onsyuri_module.onRuntimeInitialized = () => {
                 console.log("## onsyuri: onRuntimeInitialized");
+                if(typeof restore_onscripter_document_title === "function") restore_onscripter_document_title();
             };
             
             (async() => {
@@ -464,16 +624,44 @@
 
         <script type="text/javascript"> // onsyuri ui
             var g_fullstrech = false;
+            var g_onscripter_canvas_rotated = false;
             var g_screen_height, g_screen_width; // initial in onsyuri C code
             var g_lastpressdown; // for longpress 
             const LONG_CLICK_TIME = 1200;
             const ONSCRIPTER_AUDIO_STORAGE_KEY = "hanplanet.onscripter.audio";
+            const ONSCRIPTER_AUTO_ADVANCE_POLL_MS = 250;
+            const ONSCRIPTER_AUTO_ADVANCE_TEXT_STABLE_MS = 700;
+            const ONSCRIPTER_AUTO_ADVANCE_DELAY_AFTER_READY_MS = 2000;
+            const ONSCRIPTER_AUTO_ADVANCE_MIN_CLICK_GAP_MS = 1200;
+            const ONSCRIPTER_AUTO_ADVANCE_VOICE_FALLBACK_MS = 6500;
             var g_onscripter_audio_volume = 0.8;
             var g_onscripter_audio_previous_volume = 0.8;
             var g_onscripter_audio_muted = false;
             var g_onscripter_audio_gain = null;
             var g_onscripter_audio_source = null;
             var g_onscripter_audio_sync_timer = null;
+            var g_onscripter_direct_voice_audio = null;
+            var g_onscripter_direct_voice_source = null;
+            var g_onscripter_direct_voice_gain = null;
+            var g_onscripter_direct_voice_path = "";
+            var g_onscripter_direct_voice_started_at = 0;
+            var g_onscripter_direct_voice_sequence = 0;
+            var g_onscripter_auto_advance_enabled = false;
+            var g_onscripter_auto_advance_timer = null;
+            var g_onscripter_auto_last_text_hash = null;
+            var g_onscripter_auto_text_stable_since = 0;
+            var g_onscripter_auto_last_click_at = 0;
+            var g_onscripter_auto_dispatching_click = false;
+            var g_onscripter_auto_voice_until = 0;
+            var g_onscripter_auto_voice_marked_at = 0;
+            var g_onscripter_auto_dialogue_started_at = 0;
+            var g_onscripter_auto_cycle_voice_until = 0;
+            var g_onscripter_auto_voice_sequence = 0;
+            var g_onscripter_auto_voice_path = "";
+            var g_onscripter_auto_cycle_voice_path = "";
+            var g_onscripter_auto_voice_durations = Object.create(null);
+            var g_onscripter_auto_probe_canvas = null;
+            var g_onscripter_auto_probe_context = null;
 
             function clamp_onscripter_volume(value) {
                 var number = Number(value);
@@ -545,6 +733,20 @@
                     videoNode.muted = volume <= 0;
                 }
 
+                if(g_onscripter_direct_voice_audio) {
+                    g_onscripter_direct_voice_audio.volume = volume;
+                    g_onscripter_direct_voice_audio.muted = volume <= 0;
+                }
+                if(g_onscripter_direct_voice_gain) {
+                    var directContext = g_onscripter_direct_voice_gain.context;
+                    if(g_onscripter_direct_voice_gain.gain.setTargetAtTime) {
+                        g_onscripter_direct_voice_gain.gain.setTargetAtTime(volume, directContext.currentTime, 0.015);
+                    }
+                    else {
+                        g_onscripter_direct_voice_gain.gain.value = volume;
+                    }
+                }
+
                 if(ensure_onscripter_audio_gain()) {
                     var audioContext = g_onscripter_audio_gain.context;
                     if(g_onscripter_audio_gain.gain.setTargetAtTime) {
@@ -586,9 +788,10 @@
             }
 
             function setup_onscripter_audio_controls() {
+                var panel = document.getElementById("onscripter_audio_panel");
                 var button = document.getElementById("onscripter_audio_mute");
                 var volumeInput = document.getElementById("onscripter_audio_volume");
-                if(!button || !volumeInput) return;
+                if(!panel || !button || !volumeInput) return;
 
                 load_onscripter_audio_state();
                 update_onscripter_audio_controls();
@@ -624,6 +827,243 @@
                     save_onscripter_audio_state();
                     resume_onscripter_audio_context();
                 });
+
+                document.addEventListener("pointerdown", function(event) {
+                    if(panel.contains(event.target)) return;
+                    if(panel.contains(document.activeElement) && document.activeElement.blur) {
+                        document.activeElement.blur();
+                    }
+                }, true);
+            }
+
+            function setup_onscripter_audio_unlock_handlers() {
+                function unlockAudioFromUserGesture() {
+                    resume_onscripter_audio_context();
+                    apply_onscripter_audio_state();
+                }
+
+                document.addEventListener("pointerdown", unlockAudioFromUserGesture, true);
+                document.addEventListener("mousedown", unlockAudioFromUserGesture, true);
+                document.addEventListener("touchstart", unlockAudioFromUserGesture, true);
+                document.addEventListener("keydown", unlockAudioFromUserGesture, true);
+            }
+
+            function is_onscripter_canvas_rotated() {
+                return !!g_onscripter_canvas_rotated;
+            }
+
+            function sync_onscripter_canvas_rotation_controls() {
+                var stage = document.querySelector(".onscripter-stage");
+                var button = document.getElementById("onscripter_rotate_toggle");
+                var rotated = is_onscripter_canvas_rotated();
+
+                if(stage) {
+                    stage.classList.toggle("is-onscripter-canvas-rotated", rotated);
+                }
+                if(button) {
+                    button.setAttribute("aria-pressed", rotated ? "true" : "false");
+                    button.setAttribute(
+                        "aria-label",
+                        rotated ? "Rotate canvas counterclockwise" : "Rotate canvas clockwise"
+                    );
+                    button.title = rotated ? "Rotate canvas counterclockwise" : "Rotate canvas clockwise";
+                }
+            }
+
+            function toggle_onscripter_canvas_rotation() {
+                g_onscripter_canvas_rotated = !g_onscripter_canvas_rotated;
+                sync_onscripter_canvas_rotation_controls();
+                resize_onscripter_viewport();
+                window.requestAnimationFrame(function() {
+                    sync_onscripter_canvas_rotation_controls();
+                    resize_onscripter_viewport();
+                });
+            }
+
+            function setup_onscripter_canvas_rotation_control() {
+                var button = document.getElementById("onscripter_rotate_toggle");
+                if(!button) return;
+                button.addEventListener("click", toggle_onscripter_canvas_rotation);
+                sync_onscripter_canvas_rotation_controls();
+            }
+
+            function is_onscripter_canvas_ready() {
+                var frame = document.getElementById("onscripter_canvas_frame");
+                return !!(frame && frame.classList.contains("is-onscripter-canvas-ready"));
+            }
+
+            function get_onscripter_canvas_layout_size(canvas) {
+                var width = canvas.offsetWidth || canvas.clientWidth || 0;
+                var height = canvas.offsetHeight || canvas.clientHeight || 0;
+                if((!width || !height) && window.getComputedStyle) {
+                    var style = window.getComputedStyle(canvas);
+                    width = width || parseFloat(style.width) || 0;
+                    height = height || parseFloat(style.height) || 0;
+                }
+                return {
+                    width: width || canvas.width || 0,
+                    height: height || canvas.height || 0
+                };
+            }
+
+            function map_onscripter_rotated_canvas_point(canvas, clientX, clientY) {
+                if(!is_onscripter_canvas_rotated()) return null;
+                var visualRect = canvas.getBoundingClientRect();
+                var layoutSize = get_onscripter_canvas_layout_size(canvas);
+                if(!visualRect || !visualRect.width || !visualRect.height || !layoutSize.width || !layoutSize.height) {
+                    return null;
+                }
+
+                var visualX = clientX - visualRect.left;
+                var visualY = clientY - visualRect.top;
+                var mappedX = visualY * layoutSize.width / visualRect.height;
+                var mappedY = (visualRect.width - visualX) * layoutSize.height / visualRect.width;
+                mappedX = Math.max(0, Math.min(layoutSize.width, mappedX));
+                mappedY = Math.max(0, Math.min(layoutSize.height, mappedY));
+
+                var virtualRect = {
+                    x: visualRect.left,
+                    y: visualRect.top,
+                    left: visualRect.left,
+                    top: visualRect.top,
+                    right: visualRect.left + layoutSize.width,
+                    bottom: visualRect.top + layoutSize.height,
+                    width: layoutSize.width,
+                    height: layoutSize.height,
+                    toJSON: function() {
+                        return {
+                            x: this.x,
+                            y: this.y,
+                            left: this.left,
+                            top: this.top,
+                            right: this.right,
+                            bottom: this.bottom,
+                            width: this.width,
+                            height: this.height
+                        };
+                    }
+                };
+
+                return {
+                    clientX: virtualRect.left + mappedX,
+                    clientY: virtualRect.top + mappedY,
+                    rect: virtualRect
+                };
+            }
+
+            function dispatch_onscripter_canvas_mapped_mouse_event(canvas, sourceEvent, eventType, mapped, button, buttons) {
+                var syntheticEvent = new MouseEvent(eventType, {
+                    bubbles: sourceEvent.bubbles !== false,
+                    cancelable: sourceEvent.cancelable !== false,
+                    composed: sourceEvent.composed,
+                    view: sourceEvent.view || window,
+                    detail: sourceEvent.detail || 0,
+                    screenX: sourceEvent.screenX || 0,
+                    screenY: sourceEvent.screenY || 0,
+                    clientX: mapped.clientX,
+                    clientY: mapped.clientY,
+                    ctrlKey: sourceEvent.ctrlKey,
+                    altKey: sourceEvent.altKey,
+                    shiftKey: sourceEvent.shiftKey,
+                    metaKey: sourceEvent.metaKey,
+                    button: button,
+                    buttons: buttons,
+                    relatedTarget: sourceEvent.relatedTarget || null
+                });
+                try {
+                    Object.defineProperty(syntheticEvent, "__onscripterRotatedInput", {value: true});
+                }
+                catch(error) {
+                    syntheticEvent.__onscripterRotatedInput = true;
+                }
+
+                var hadOwnRectMethod = Object.prototype.hasOwnProperty.call(canvas, "getBoundingClientRect");
+                var originalRectMethod = canvas.getBoundingClientRect;
+                canvas.getBoundingClientRect = function() {
+                    return mapped.rect;
+                };
+                try {
+                    canvas.dispatchEvent(syntheticEvent);
+                }
+                finally {
+                    if(hadOwnRectMethod) {
+                        canvas.getBoundingClientRect = originalRectMethod;
+                    }
+                    else {
+                        delete canvas.getBoundingClientRect;
+                    }
+                }
+            }
+
+            function dispatch_onscripter_rotated_mouse_event(canvas, event) {
+                if(event.__onscripterRotatedInput || !is_onscripter_canvas_rotated()) return;
+                if(event.target !== canvas) return;
+
+                var mapped = map_onscripter_rotated_canvas_point(canvas, event.clientX, event.clientY);
+                if(!mapped) return;
+
+                event.stopImmediatePropagation();
+                if(event.cancelable) event.preventDefault();
+                dispatch_onscripter_canvas_mapped_mouse_event(canvas, event, event.type, mapped, event.button, event.buttons);
+            }
+
+            function setup_onscripter_rotated_canvas_input_mapping() {
+                var canvas = document.getElementById("canvas");
+                if(!canvas) return;
+                ["mousedown", "mouseup", "mousemove", "click", "dblclick", "contextmenu"].forEach(function(eventName) {
+                    canvas.addEventListener(eventName, function(event) {
+                        dispatch_onscripter_rotated_mouse_event(canvas, event);
+                    }, true);
+                });
+                ["touchstart", "touchmove", "touchend", "touchcancel"].forEach(function(eventName) {
+                    canvas.addEventListener(eventName, function(event) {
+                        dispatch_onscripter_rotated_touch_event(canvas, event);
+                    }, true);
+                });
+            }
+
+            function dispatch_onscripter_rotated_touch_event(canvas, event) {
+                if(event.__onscripterRotatedInput || !is_onscripter_canvas_rotated()) return;
+                if(event.target !== canvas) return;
+
+                var touch = event.changedTouches && event.changedTouches.length
+                    ? event.changedTouches[0]
+                    : (event.touches && event.touches.length ? event.touches[0] : null);
+                if(!touch) return;
+
+                var mapped = map_onscripter_rotated_canvas_point(canvas, touch.clientX, touch.clientY);
+                if(!mapped) return;
+
+                event.stopImmediatePropagation();
+                if(event.cancelable) event.preventDefault();
+
+                var sourceEvent = {
+                    bubbles: true,
+                    cancelable: true,
+                    composed: event.composed,
+                    view: window,
+                    detail: 1,
+                    screenX: touch.screenX,
+                    screenY: touch.screenY,
+                    ctrlKey: event.ctrlKey,
+                    altKey: event.altKey,
+                    shiftKey: event.shiftKey,
+                    metaKey: event.metaKey
+                };
+
+                if(event.type === "touchstart") {
+                    dispatch_onscripter_canvas_mapped_mouse_event(canvas, sourceEvent, "mousedown", mapped, 0, 1);
+                }
+                else if(event.type === "touchmove") {
+                    dispatch_onscripter_canvas_mapped_mouse_event(canvas, sourceEvent, "mousemove", mapped, 0, 1);
+                }
+                else if(event.type === "touchend") {
+                    dispatch_onscripter_canvas_mapped_mouse_event(canvas, sourceEvent, "mouseup", mapped, 0, 0);
+                    dispatch_onscripter_canvas_mapped_mouse_event(canvas, sourceEvent, "click", mapped, 0, 0);
+                }
+                else if(event.type === "touchcancel") {
+                    dispatch_onscripter_canvas_mapped_mouse_event(canvas, sourceEvent, "mouseup", mapped, 0, 0);
+                }
             }
 
             function toggle_stretchfull() {
@@ -644,25 +1084,579 @@
                 }
             }
 
+            function create_onscripter_keyboard_event(type, key, code, keyCode) {
+                var event = new KeyboardEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    key: key,
+                    code: code,
+                    keyCode: keyCode,
+                    which: keyCode
+                });
+                try {
+                    Object.defineProperty(event, "keyCode", {get: function() { return keyCode; }});
+                    Object.defineProperty(event, "which", {get: function() { return keyCode; }});
+                }
+                catch(error) {}
+                return event;
+            }
+
             function toggle_onsmenu(){
-                var canvas = document.getElementById('canvas');    
-                var event = new KeyboardEvent("keydown", 
-                    {bubbles: true, cancelable: true, keyCode: 0x1B}); // ESC key
-                canvas.dispatchEvent(event);
+                var canvas = document.getElementById('canvas');
+                if(!canvas) return;
+                canvas.dispatchEvent(create_onscripter_keyboard_event("keydown", "Escape", "Escape", 0x1B));
                 setTimeout(() => {
-                    var event = new KeyboardEvent("keyup", 
-                    {bubbles: true, cancelable: true, keyCode: 0x1B}); // ESC key
-                    canvas.dispatchEvent(event);
+                    canvas.dispatchEvent(create_onscripter_keyboard_event("keyup", "Escape", "Escape", 0x1B));
                 }, 50);
             }
 
+            function setup_onscripter_settings_control() {
+                var button = document.getElementById("onscripter_settings_toggle");
+                if(!button) return;
+                button.addEventListener("click", function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    set_onscripter_auto_advance_enabled(false);
+                    toggle_onsmenu();
+                    resume_onscripter_audio_context();
+                    if(button.blur) button.blur();
+                });
+            }
+
+            function sync_onscripter_auto_advance_control() {
+                var button = document.getElementById("onscripter_auto_toggle");
+                if(!button) return;
+                button.setAttribute("aria-pressed", g_onscripter_auto_advance_enabled ? "true" : "false");
+                button.setAttribute(
+                    "aria-label",
+                    g_onscripter_auto_advance_enabled ? "Stop auto advance" : "Start auto advance"
+                );
+                button.title = g_onscripter_auto_advance_enabled ? "Stop auto advance" : "Start auto advance";
+            }
+
+            function should_dispatch_onscripter_auto_advance() {
+                if(!g_onscripter_auto_advance_enabled || !is_onscripter_canvas_ready()) return false;
+                if(document.hidden) return false;
+                var webMenu = document.getElementById("onsyuri_webrmenu");
+                var webInfo = document.getElementById("onsyuri_webinfo");
+                var videoNode = document.getElementById("video");
+                if(is_onscripter_element_visible(webMenu)) return false;
+                if(is_onscripter_element_visible(webInfo)) return false;
+                if(is_onscripter_element_visible(videoNode)) return false;
+                return true;
+            }
+
+            function is_onscripter_element_visible(element) {
+                if(!element || element.hidden) return false;
+                if(element.style && element.style.display === "none") return false;
+                if(!window.getComputedStyle) return true;
+                var style = window.getComputedStyle(element);
+                return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+            }
+
+            function normalize_onscripter_resource_path(path) {
+                return String(path || "").replace(/\\/g, "/").toLowerCase();
+            }
+
+            function is_onscripter_voice_resource(path) {
+                return /(^|\/)voice\//.test(normalize_onscripter_resource_path(path));
+            }
+
+            function should_use_onscripter_direct_voice() {
+                return !!(window.g_onsyuri_index && window.g_onsyuri_index.directVoicePlayback);
+            }
+
+            function get_onscripter_filemap_node(path) {
+                var filemap = window.g_onsyuri_filemap || {};
+                var normalized = normalize_onscripter_resource_path(path);
+                if(!normalized) return null;
+
+                var candidates = [normalized];
+                var gamedir = normalize_onscripter_resource_path(window.g_onsyuri_index && window.g_onsyuri_index.gamedir);
+                if(normalized[0] !== "/" && gamedir) {
+                    candidates.push(gamedir + "/" + normalized);
+                }
+                if(gamedir) {
+                    var voiceIndex = normalized.indexOf("/voice/");
+                    if(voiceIndex >= 0) {
+                        candidates.push(gamedir + normalized.substring(voiceIndex));
+                    }
+                }
+
+                for(var i = 0; i < candidates.length; i++) {
+                    var candidate = candidates[i];
+                    var node = filemap[candidate] || filemap[candidate.toLowerCase()];
+                    if(node) return node;
+                }
+                return null;
+            }
+
+            function get_onscripter_lazy_file_url(path) {
+                var node = get_onscripter_filemap_node(path);
+                return node && node.url ? node.url : "";
+            }
+
+            function stop_onscripter_direct_voice() {
+                if(g_onscripter_direct_voice_audio) {
+                    try {
+                        g_onscripter_direct_voice_audio.pause();
+                        g_onscripter_direct_voice_audio.removeAttribute("src");
+                        g_onscripter_direct_voice_audio.load();
+                    }
+                    catch(error) {}
+                    g_onscripter_direct_voice_audio = null;
+                }
+                if(g_onscripter_direct_voice_source) {
+                    try {
+                        g_onscripter_direct_voice_source.stop(0);
+                    }
+                    catch(error) {}
+                    try {
+                        g_onscripter_direct_voice_source.disconnect();
+                    }
+                    catch(error) {}
+                    g_onscripter_direct_voice_source = null;
+                }
+                if(g_onscripter_direct_voice_gain) {
+                    try {
+                        g_onscripter_direct_voice_gain.disconnect();
+                    }
+                    catch(error) {}
+                    g_onscripter_direct_voice_gain = null;
+                }
+            }
+
+            function play_onscripter_direct_voice_element(path, url, sequence) {
+                var audio = new Audio(url);
+                g_onscripter_direct_voice_audio = audio;
+                audio.preload = "auto";
+                audio.setAttribute("playsinline", "");
+                audio.volume = get_onscripter_effective_volume();
+                audio.muted = audio.volume <= 0;
+                audio.addEventListener("ended", function() {
+                    if(sequence === g_onscripter_direct_voice_sequence && g_onscripter_direct_voice_audio === audio) {
+                        g_onscripter_direct_voice_audio = null;
+                    }
+                }, {once: true});
+                audio.play().catch(function(error) {
+                    onsyuri_debug("direct-voice-play-error", [path, error && error.message ? error.message : String(error)]);
+                });
+            }
+
+            function play_onscripter_direct_voice_buffer(path, data, url, sequence) {
+                var audioContext = get_onscripter_audio_decode_context();
+                if(!audioContext || typeof audioContext.decodeAudioData !== "function" || !data) return false;
+                if(audioContext.state === "suspended" && audioContext.resume) {
+                    audioContext.resume().catch(function() {});
+                }
+
+                var sourceData = data.slice ? data.slice(0) : data;
+                audioContext.decodeAudioData(
+                    sourceData,
+                    function(buffer) {
+                        if(sequence !== g_onscripter_direct_voice_sequence) return;
+                        stop_onscripter_direct_voice();
+                        g_onscripter_direct_voice_path = path;
+                        var source = audioContext.createBufferSource();
+                        var gain = audioContext.createGain();
+                        source.buffer = buffer;
+                        gain.gain.value = get_onscripter_effective_volume();
+                        source.connect(gain);
+                        gain.connect(audioContext.destination);
+                        g_onscripter_direct_voice_source = source;
+                        g_onscripter_direct_voice_gain = gain;
+                        source.onended = function() {
+                            if(sequence === g_onscripter_direct_voice_sequence && g_onscripter_direct_voice_source === source) {
+                                g_onscripter_direct_voice_source = null;
+                                g_onscripter_direct_voice_gain = null;
+                            }
+                        };
+                        source.start(0);
+                    },
+                    function() {
+                        if(sequence === g_onscripter_direct_voice_sequence && url) {
+                            play_onscripter_direct_voice_element(path, url, sequence);
+                        }
+                    }
+                );
+                return true;
+            }
+
+            function play_onscripter_direct_voice(path, url, data) {
+                if(!should_use_onscripter_direct_voice() || !url || !is_onscripter_voice_resource(path) || g_skip) return;
+
+                var normalized = normalize_onscripter_resource_path(path);
+                var now = performance.now();
+                if(normalized === g_onscripter_direct_voice_path && now - g_onscripter_direct_voice_started_at < 500) {
+                    return;
+                }
+
+                var sequence = ++g_onscripter_direct_voice_sequence;
+                g_onscripter_direct_voice_path = normalized;
+                g_onscripter_direct_voice_started_at = now;
+                stop_onscripter_direct_voice();
+                if(!play_onscripter_direct_voice_buffer(normalized, data, url, sequence)) {
+                    play_onscripter_direct_voice_element(normalized, url, sequence);
+                }
+            }
+
+            function get_onscripter_audio_decode_context() {
+                var sdl2 = g_onsyuri_module && g_onsyuri_module.SDL2;
+                if(sdl2 && sdl2.audioContext) return sdl2.audioContext;
+                var Context = window.AudioContext || window.webkitAudioContext;
+                if(!Context) return null;
+                if(!window.__onscripter_auto_decode_context) {
+                    window.__onscripter_auto_decode_context = new Context();
+                }
+                return window.__onscripter_auto_decode_context;
+            }
+
+            function decode_onscripter_voice_duration(path, data) {
+                var normalized = normalize_onscripter_resource_path(path);
+                if(!data || g_onscripter_auto_voice_durations[normalized]) {
+                    return g_onscripter_auto_voice_durations[normalized] || null;
+                }
+                var audioContext = get_onscripter_audio_decode_context();
+                if(!audioContext || typeof audioContext.decodeAudioData !== "function") return null;
+                var sourceData = data.slice ? data.slice(0) : data;
+                var promise = new Promise(function(resolve) {
+                    audioContext.decodeAudioData(
+                        sourceData,
+                        function(buffer) {
+                            resolve(buffer && Number.isFinite(buffer.duration) ? buffer.duration * 1000 : 0);
+                        },
+                        function() {
+                            resolve(0);
+                        }
+                    );
+                });
+                g_onscripter_auto_voice_durations[normalized] = promise;
+                return promise;
+            }
+
+            function apply_onscripter_auto_voice_timing(path, markedAt, voiceUntil) {
+                var normalized = normalize_onscripter_resource_path(path);
+                g_onscripter_auto_voice_path = normalized;
+                g_onscripter_auto_voice_marked_at = markedAt;
+                g_onscripter_auto_voice_until = voiceUntil;
+                if(!g_onscripter_auto_dialogue_started_at || markedAt >= g_onscripter_auto_dialogue_started_at - 250) {
+                    g_onscripter_auto_cycle_voice_path = normalized;
+                    g_onscripter_auto_cycle_voice_until = voiceUntil;
+                }
+            }
+
+            function mark_onscripter_voice_playback(path, data) {
+                if(!is_onscripter_voice_resource(path)) return;
+                var now = performance.now();
+                var sequence = ++g_onscripter_auto_voice_sequence;
+                var normalized = normalize_onscripter_resource_path(path);
+                apply_onscripter_auto_voice_timing(
+                    normalized,
+                    now,
+                    now + ONSCRIPTER_AUTO_ADVANCE_VOICE_FALLBACK_MS
+                );
+
+                var durationResult = decode_onscripter_voice_duration(normalized, data);
+                if(durationResult && typeof durationResult.then === "function") {
+                    durationResult.then(function(durationMs) {
+                        if(sequence !== g_onscripter_auto_voice_sequence) return;
+                        if(durationMs > 0) {
+                            apply_onscripter_auto_voice_timing(normalized, now, now + durationMs);
+                        }
+                    });
+                }
+                else if(durationResult > 0) {
+                    apply_onscripter_auto_voice_timing(normalized, now, now + durationResult);
+                }
+            }
+
+            function mark_onscripter_lazy_file_access(path, url, data) {
+                play_onscripter_direct_voice(path || url, url, data);
+                mark_onscripter_voice_playback(path || url, data);
+            }
+
+            function install_onscripter_voice_open_tracker(_FS) {
+                if(!_FS || _FS.__onscripter_voice_open_tracker_installed || typeof _FS.open !== "function") return;
+                var originalOpen = _FS.open;
+                _FS.open = function(path) {
+                    play_onscripter_direct_voice(path, get_onscripter_lazy_file_url(path));
+                    mark_onscripter_voice_playback(path, null);
+                    return originalOpen.apply(this, arguments);
+                };
+                _FS.__onscripter_voice_open_tracker_installed = true;
+            }
+
+            function get_onscripter_auto_text_hash(canvas) {
+                if(!canvas || !canvas.width || !canvas.height) return null;
+                if(!g_onscripter_auto_probe_canvas) {
+                    g_onscripter_auto_probe_canvas = document.createElement("canvas");
+                    g_onscripter_auto_probe_canvas.width = 96;
+                    g_onscripter_auto_probe_canvas.height = 36;
+                    g_onscripter_auto_probe_context = g_onscripter_auto_probe_canvas.getContext("2d", {willReadFrequently: true});
+                }
+                if(!g_onscripter_auto_probe_context) return null;
+
+                var sourceX = Math.floor(canvas.width * 0.05);
+                var sourceY = Math.floor(canvas.height * 0.68);
+                var sourceWidth = Math.max(1, Math.floor(canvas.width * 0.76));
+                var sourceHeight = Math.max(1, Math.floor(canvas.height * 0.24));
+                try {
+                    g_onscripter_auto_probe_context.clearRect(0, 0, 96, 36);
+                    g_onscripter_auto_probe_context.drawImage(
+                        canvas,
+                        sourceX,
+                        sourceY,
+                        sourceWidth,
+                        sourceHeight,
+                        0,
+                        0,
+                        96,
+                        36
+                    );
+                    var data = g_onscripter_auto_probe_context.getImageData(0, 0, 96, 36).data;
+                    var hash = 2166136261;
+                    for(var i = 0; i < data.length; i += 16) {
+                        hash ^= data[i] >> 3;
+                        hash = Math.imul(hash, 16777619);
+                        hash ^= data[i + 1] >> 3;
+                        hash = Math.imul(hash, 16777619);
+                        hash ^= data[i + 2] >> 3;
+                        hash = Math.imul(hash, 16777619);
+                    }
+                    return hash >>> 0;
+                }
+                catch(error) {
+                    return null;
+                }
+            }
+
+            function update_onscripter_auto_text_stability(now) {
+                var canvas = document.getElementById("canvas");
+                var hash = get_onscripter_auto_text_hash(canvas);
+                if(hash === null) {
+                    if(!g_onscripter_auto_text_stable_since) {
+                        g_onscripter_auto_text_stable_since = now;
+                    }
+                    return;
+                }
+                if(g_onscripter_auto_last_text_hash === null || g_onscripter_auto_last_text_hash !== hash) {
+                    g_onscripter_auto_last_text_hash = hash;
+                    g_onscripter_auto_text_stable_since = now;
+                }
+            }
+
+            function dispatch_onscripter_auto_advance_click() {
+                var canvas = document.getElementById("canvas");
+                if(!canvas || !should_dispatch_onscripter_auto_advance()) return false;
+                var rect = canvas.getBoundingClientRect();
+                if(!rect || !rect.width || !rect.height) return false;
+                var clientX = rect.left + rect.width * 0.88;
+                var clientY = rect.top + rect.height * 0.88;
+                var eventOptions = {
+                    bubbles: true,
+                    cancelable: true,
+                    composed: true,
+                    view: window,
+                    detail: 1,
+                    screenX: Math.round(window.screenX + clientX),
+                    screenY: Math.round(window.screenY + clientY),
+                    clientX: clientX,
+                    clientY: clientY,
+                    button: 0,
+                    buttons: 0
+                };
+                g_onscripter_auto_dispatching_click = true;
+                try {
+                    canvas.dispatchEvent(new MouseEvent("mousemove", eventOptions));
+                    eventOptions.buttons = 1;
+                    canvas.dispatchEvent(new MouseEvent("mousedown", eventOptions));
+                    eventOptions.buttons = 0;
+                    canvas.dispatchEvent(new MouseEvent("mouseup", eventOptions));
+                    canvas.dispatchEvent(new MouseEvent("click", eventOptions));
+                }
+                finally {
+                    g_onscripter_auto_dispatching_click = false;
+                }
+                resume_onscripter_audio_context();
+                g_onscripter_auto_last_click_at = performance.now();
+                return true;
+            }
+
+            function tick_onscripter_auto_advance() {
+                var now = performance.now();
+                if(!should_dispatch_onscripter_auto_advance()) return;
+                update_onscripter_auto_text_stability(now);
+                if(!g_onscripter_auto_text_stable_since) return;
+
+                var textReadyAt = g_onscripter_auto_text_stable_since + ONSCRIPTER_AUTO_ADVANCE_TEXT_STABLE_MS;
+                var readyAt = Math.max(textReadyAt, g_onscripter_auto_cycle_voice_until) + ONSCRIPTER_AUTO_ADVANCE_DELAY_AFTER_READY_MS;
+                if(now < readyAt) return;
+                if(now - g_onscripter_auto_last_click_at < ONSCRIPTER_AUTO_ADVANCE_MIN_CLICK_GAP_MS) return;
+                if(dispatch_onscripter_auto_advance_click()) {
+                    reset_onscripter_auto_advance_observation();
+                }
+            }
+
+            function reset_onscripter_auto_advance_observation() {
+                var now = performance.now();
+                g_onscripter_auto_last_text_hash = null;
+                g_onscripter_auto_text_stable_since = 0;
+                g_onscripter_auto_dialogue_started_at = now;
+                g_onscripter_auto_cycle_voice_until = 0;
+                g_onscripter_auto_cycle_voice_path = "";
+                g_onscripter_auto_last_click_at = now;
+            }
+
+            function restart_onscripter_auto_advance_timer() {
+                if(g_onscripter_auto_advance_timer) {
+                    window.clearInterval(g_onscripter_auto_advance_timer);
+                    g_onscripter_auto_advance_timer = null;
+                }
+                if(!g_onscripter_auto_advance_enabled) return;
+                reset_onscripter_auto_advance_observation();
+                g_onscripter_auto_advance_timer = window.setInterval(
+                    tick_onscripter_auto_advance,
+                    ONSCRIPTER_AUTO_ADVANCE_POLL_MS
+                );
+            }
+
+            function set_onscripter_auto_advance_enabled(enabled) {
+                var nextEnabled = !!enabled;
+                if(nextEnabled && typeof set_onscripter_skip_enabled === "function") {
+                    set_onscripter_skip_enabled(false);
+                }
+                if(g_onscripter_auto_advance_enabled === nextEnabled) {
+                    sync_onscripter_auto_advance_control();
+                    return;
+                }
+                g_onscripter_auto_advance_enabled = nextEnabled;
+                restart_onscripter_auto_advance_timer();
+                sync_onscripter_auto_advance_control();
+            }
+
+            function toggle_onscripter_auto_advance() {
+                set_onscripter_auto_advance_enabled(!g_onscripter_auto_advance_enabled);
+            }
+
+            function setup_onscripter_auto_advance_control() {
+                var button = document.getElementById("onscripter_auto_toggle");
+                if(!button) return;
+                button.addEventListener("click", function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggle_onscripter_auto_advance();
+                    resume_onscripter_audio_context();
+                });
+                var canvas = document.getElementById("canvas");
+                if(canvas && !canvas.__onscripter_auto_cycle_reset_installed) {
+                    var handleManualAdvance = function() {
+                        if(g_onscripter_auto_dispatching_click) return;
+                        if(typeof set_onscripter_skip_enabled === "function" && g_skip) {
+                            set_onscripter_skip_enabled(false);
+                        }
+                        if(g_onscripter_auto_advance_enabled) {
+                            reset_onscripter_auto_advance_observation();
+                        }
+                    };
+                    canvas.addEventListener("click", handleManualAdvance, true);
+                    canvas.addEventListener("touchend", handleManualAdvance, true);
+                    canvas.__onscripter_auto_cycle_reset_installed = true;
+                }
+                sync_onscripter_auto_advance_control();
+            }
+
             var g_skip = false;
+            function sync_onscripter_skip_control() {
+                var button = document.getElementById("onscripter_skip_toggle");
+                if(!button) return;
+                button.setAttribute("aria-pressed", g_skip ? "true" : "false");
+                button.setAttribute("aria-label", g_skip ? "Release to stop skip mode" : "Hold for skip mode");
+                button.title = g_skip ? "Release to stop skip mode" : "Hold for skip mode";
+            }
+
+            function dispatch_onscripter_skip_key_event(enabled) {
+                var canvas = document.getElementById('canvas');
+                if(!canvas) return;
+                canvas.dispatchEvent(create_onscripter_keyboard_event(
+                    enabled ? "keydown" : "keyup",
+                    "Control",
+                    "ControlLeft",
+                    0x11
+                ));
+            }
+
+            function set_onscripter_skip_enabled(enabled) {
+                var nextEnabled = !!enabled;
+                if(g_skip === nextEnabled) {
+                    sync_onscripter_skip_control();
+                    return;
+                }
+                if(nextEnabled) {
+                    set_onscripter_auto_advance_enabled(false);
+                }
+                g_skip = nextEnabled;
+                dispatch_onscripter_skip_key_event(g_skip);
+                sync_onscripter_skip_control();
+            }
+
+            function start_onscripter_skip_hold(event) {
+                if(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                set_onscripter_skip_enabled(true);
+                resume_onscripter_audio_context();
+            }
+
+            function stop_onscripter_skip_hold(event) {
+                if(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                set_onscripter_skip_enabled(false);
+            }
+
             function toggle_skip() {
-                g_skip = !g_skip;
-                var canvas = document.getElementById('canvas');    
-                var event = new KeyboardEvent(g_skip ? "keydown": "keyup", 
-                    {bubbles: true, cancelable: true, keyCode: 0x11}); // ctrl key
-                canvas.dispatchEvent(event);
+                set_onscripter_skip_enabled(false);
+            }
+
+            function setup_onscripter_skip_control() {
+                var button = document.getElementById("onscripter_skip_toggle");
+                if(!button) return;
+                button.addEventListener("pointerdown", function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if(button.setPointerCapture && event.pointerId != null) {
+                        try {
+                            button.setPointerCapture(event.pointerId);
+                        }
+                        catch(error) {}
+                    }
+                    start_onscripter_skip_hold();
+                });
+                button.addEventListener("pointerup", stop_onscripter_skip_hold);
+                button.addEventListener("pointercancel", stop_onscripter_skip_hold);
+                button.addEventListener("lostpointercapture", stop_onscripter_skip_hold);
+                button.addEventListener("mouseleave", function(event) {
+                    if(event.buttons) stop_onscripter_skip_hold(event);
+                });
+                button.addEventListener("click", function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                });
+                button.addEventListener("keydown", function(event) {
+                    if(event.key !== " " && event.key !== "Enter") return;
+                    if(event.repeat) return;
+                    start_onscripter_skip_hold(event);
+                });
+                button.addEventListener("keyup", function(event) {
+                    if(event.key !== " " && event.key !== "Enter") return;
+                    stop_onscripter_skip_hold(event);
+                });
+                window.addEventListener("blur", function() {
+                    set_onscripter_skip_enabled(false);
+                });
+                sync_onscripter_skip_control();
             }
 
             function toggle_webinfo() {
@@ -703,11 +1697,12 @@
             function resize_onscripter_viewport() {
                 var canvas = document.getElementById('canvas');
                 var videoNode = document.getElementById('video');
-                if(!canvas || !g_screen_width || !g_screen_height) return;
+                if(!canvas) return;
+                if(!g_screen_width || !g_screen_height) return;
                 var stage = document.querySelector(".onscripter-stage");
                 var stageRect = stage ? stage.getBoundingClientRect() : null;
                 var ratio = g_fullstrech && stageRect && stageRect.height
-                    ? stageRect.width/stageRect.height
+                    ? (is_onscripter_canvas_rotated() ? stageRect.height/stageRect.width : stageRect.width/stageRect.height)
                     : g_screen_width/g_screen_height;
                 scale_full(canvas, ratio);
                 if(videoNode) scale_full(videoNode, ratio);
@@ -719,6 +1714,8 @@
                 if(typeof ResizeObserver !== "function") return;
                 var stage = document.querySelector(".onscripter-stage");
                 var nav = document.querySelector(".ui-nav");
+                var canvas = document.getElementById("canvas");
+                var frame = document.getElementById("onscripter_canvas_frame");
                 var pending = false;
                 var observer = new ResizeObserver(function() {
                     if(pending) return;
@@ -730,6 +1727,179 @@
                 });
                 if(stage) observer.observe(stage);
                 if(nav) observer.observe(nav);
+                if(canvas) observer.observe(canvas);
+                if(frame) observer.observe(frame);
+            }
+
+            function setup_onscripter_nav_reveal() {
+                var body = document.body;
+                var nav = document.querySelector(".ui-nav");
+                if(!body || !nav) return;
+
+                var revealZoneHeight = 56;
+                var audioPanel = document.getElementById("onscripter_audio_panel");
+                var rotateButton = document.getElementById("onscripter_rotate_toggle");
+                var autoButton = document.getElementById("onscripter_auto_toggle");
+                var skipButton = document.getElementById("onscripter_skip_toggle");
+                var bottomControls = document.getElementById("onscripter_bottom_controls");
+                var canvasControls = document.getElementById("onscripter_canvas_controls");
+                var hideTimer = null;
+                var lastPointerPosition = null;
+
+                function clearHideTimer() {
+                    if(!hideTimer) return;
+                    window.clearTimeout(hideTimer);
+                    hideTimer = null;
+                }
+
+                function rememberPointerPosition(event) {
+                    if(!event || typeof event.clientX !== "number" || typeof event.clientY !== "number") return;
+                    lastPointerPosition = {
+                        x: event.clientX,
+                        y: event.clientY
+                    };
+                }
+
+                function isPointInRect(point, rect, padding) {
+                    if(!point || !rect || !rect.width || !rect.height) return false;
+                    var pad = padding || 0;
+                    return point.x >= rect.left - pad
+                        && point.x <= rect.right + pad
+                        && point.y >= rect.top - pad
+                        && point.y <= rect.bottom + pad;
+                }
+
+                function isPointerOverNav() {
+                    if(!lastPointerPosition) return nav.matches(":hover");
+                    return isPointInRect(lastPointerPosition, nav.getBoundingClientRect(), 0);
+                }
+
+                function shouldKeepNavVisible() {
+                    return isPointerOverNav() || nav.contains(document.activeElement);
+                }
+
+                function revealNav() {
+                    clearHideTimer();
+                    body.classList.add("is-navbar-revealed");
+                }
+
+                function hideNav() {
+                    hideTimer = null;
+                    if(shouldKeepNavVisible()) return;
+                    body.classList.remove("is-navbar-revealed");
+                }
+
+                function scheduleHideNav(delay) {
+                    clearHideTimer();
+                    hideTimer = window.setTimeout(hideNav, typeof delay === "number" ? delay : 60);
+                }
+
+                function isPointerInAudioPanel(event) {
+                    if(!audioPanel || typeof event.clientX !== "number" || typeof event.clientY !== "number") return false;
+                    var rect = audioPanel.getBoundingClientRect();
+                    if(!rect || !rect.width || !rect.height) return false;
+                    var expandedX = Math.max(16, 160 - rect.width);
+                    var expandedY = Math.max(16, 160 - rect.height);
+                    return event.clientX >= rect.left - expandedX - 8
+                        && event.clientX <= rect.right + expandedX + 8
+                        && event.clientY >= rect.top - expandedY - 8
+                        && event.clientY <= rect.bottom + expandedY + 8;
+                }
+
+                function isPointerInRotateButton(event) {
+                    if(!rotateButton || typeof event.clientX !== "number" || typeof event.clientY !== "number") return false;
+                    var rect = rotateButton.getBoundingClientRect();
+                    if(!rect || !rect.width || !rect.height) return false;
+                    return event.clientX >= rect.left - 8
+                        && event.clientX <= rect.right + 8
+                        && event.clientY >= rect.top - 8
+                        && event.clientY <= rect.bottom + 8;
+                }
+
+                function isPointerInAutoButton(event) {
+                    if(!autoButton || typeof event.clientX !== "number" || typeof event.clientY !== "number") return false;
+                    var rect = autoButton.getBoundingClientRect();
+                    if(!rect || !rect.width || !rect.height) return false;
+                    return event.clientX >= rect.left - 8
+                        && event.clientX <= rect.right + 8
+                        && event.clientY >= rect.top - 8
+                        && event.clientY <= rect.bottom + 8;
+                }
+
+                function isPointerInSkipButton(event) {
+                    if(!skipButton || typeof event.clientX !== "number" || typeof event.clientY !== "number") return false;
+                    var rect = skipButton.getBoundingClientRect();
+                    if(!rect || !rect.width || !rect.height) return false;
+                    return event.clientX >= rect.left - 8
+                        && event.clientX <= rect.right + 8
+                        && event.clientY >= rect.top - 8
+                        && event.clientY <= rect.bottom + 8;
+                }
+
+                function isPointerInBottomControls(event) {
+                    if(!bottomControls || typeof event.clientX !== "number" || typeof event.clientY !== "number") return false;
+                    var rect = bottomControls.getBoundingClientRect();
+                    if(!rect || !rect.width || !rect.height) return false;
+                    return event.clientX >= rect.left - 8
+                        && event.clientX <= rect.right + 8
+                        && event.clientY >= rect.top - 8
+                        && event.clientY <= rect.bottom + 8;
+                }
+
+                function isPointerInCanvasControls(event) {
+                    if(!canvasControls || typeof event.clientX !== "number" || typeof event.clientY !== "number") return false;
+                    var rect = canvasControls.getBoundingClientRect();
+                    if(!rect || !rect.width || !rect.height) return false;
+                    return event.clientX >= rect.left - 8
+                        && event.clientX <= rect.right + 8
+                        && event.clientY >= rect.top - 8
+                        && event.clientY <= rect.bottom + 8;
+                }
+
+                function handlePointerPosition(event) {
+                    if(!event || typeof event.clientY !== "number") return;
+                    rememberPointerPosition(event);
+                    var target = event.target && event.target.nodeType ? event.target : null;
+                    var navHeight = Math.max(nav.getBoundingClientRect().height, 0);
+                    var hideBoundary = Math.max(revealZoneHeight, navHeight + 24);
+
+                    if(isPointerInAudioPanel(event) || isPointerInRotateButton(event) || isPointerInAutoButton(event) || isPointerInSkipButton(event) || isPointerInBottomControls(event) || isPointerInCanvasControls(event)) {
+                        clearHideTimer();
+                        body.classList.remove("is-navbar-revealed");
+                        return;
+                    }
+
+                    if(event.clientY <= revealZoneHeight || (target && nav.contains(target))) {
+                        revealNav();
+                        return;
+                    }
+
+                    if(event.clientY > hideBoundary) {
+                        scheduleHideNav();
+                    }
+                }
+
+                function handleNavMouseEnter(event) {
+                    rememberPointerPosition(event);
+                    revealNav();
+                }
+
+                function handleNavMouseLeave(event) {
+                    rememberPointerPosition(event);
+                    scheduleHideNav(20);
+                }
+
+                body.classList.add("onscripter-navbar-auto-hide");
+                body.classList.remove("is-navbar-revealed");
+                window.addEventListener("mousemove", handlePointerPosition, {passive: true});
+                window.addEventListener("pointerdown", handlePointerPosition, {passive: true});
+                window.addEventListener("touchstart", function(event) {
+                    if(event.touches && event.touches[0]) handlePointerPosition(event.touches[0]);
+                }, {passive: true});
+                nav.addEventListener("mouseenter", handleNavMouseEnter);
+                nav.addEventListener("mouseleave", handleNavMouseLeave);
+                nav.addEventListener("focusin", revealNav);
+                nav.addEventListener("focusout", scheduleHideNav);
             }
 
             window.onkeydown = (event) => {
@@ -783,6 +1953,22 @@
                 }
             }
 
+            function hide_onscripter_loading_indicator() {
+                var loader = document.getElementById("onscripter_canvas_loader");
+                var frame = document.getElementById("onscripter_canvas_frame");
+                if(loader) loader.hidden = true;
+                if(frame) frame.classList.add("is-onscripter-canvas-ready");
+            }
+
+            function should_hide_onscripter_loader_for_path(path) {
+                var normalized = String(path || "").toLowerCase();
+                var fileName = normalized.substring(normalized.lastIndexOf("/") + 1);
+                if(fileName.indexOf("cursor") >= 0 || fileName.indexOf("cur.") >= 0 || fileName.endsWith("cur.bmp")) {
+                    return false;
+                }
+                return /\.(png|jpe?g|webp|bmp)$/.test(normalized);
+            }
+
             window.onmessage = (event)=> {
                 console.log("## onsyuri: onmessage ", event.data);
                 if(!event.data) return;
@@ -796,14 +1982,64 @@
                             body.style.removeProperty("background-image");
                         }
                         if(onsyuri_webinfo) onsyuri_webinfo.style.display = "none";
+                        if(typeof restore_onscripter_document_title === "function") restore_onscripter_document_title();
                         apply_onscripter_audio_state();
                         resize_onscripter_viewport();
                         break;
                 }
             }
 
+            window.render_game_to_text = function() {
+                var canvas = document.getElementById("canvas");
+                var settingsButton = document.getElementById("onscripter_settings_toggle");
+                var autoButton = document.getElementById("onscripter_auto_toggle");
+                var skipButton = document.getElementById("onscripter_skip_toggle");
+                var audioPanel = document.getElementById("onscripter_audio_panel");
+                var volumeInput = document.getElementById("onscripter_audio_volume");
+                return JSON.stringify({
+                    game: "onscripter",
+                    rotated: is_onscripter_canvas_rotated(),
+                    settingsButtonVisible: !!(settingsButton && settingsButton.offsetParent !== null),
+                    autoAdvanceEnabled: g_onscripter_auto_advance_enabled,
+                    autoAdvancePollMs: ONSCRIPTER_AUTO_ADVANCE_POLL_MS,
+                    autoAdvanceDelayAfterReadyMs: ONSCRIPTER_AUTO_ADVANCE_DELAY_AFTER_READY_MS,
+                    autoAdvanceTextStableMs: ONSCRIPTER_AUTO_ADVANCE_TEXT_STABLE_MS,
+                    autoAdvanceVoiceRemainingMs: Math.max(0, Math.round(g_onscripter_auto_cycle_voice_until - performance.now())),
+                    autoAdvanceLastVoiceRemainingMs: Math.max(0, Math.round(g_onscripter_auto_voice_until - performance.now())),
+                    autoAdvanceTextStableForMs: g_onscripter_auto_text_stable_since
+                        ? Math.max(0, Math.round(performance.now() - g_onscripter_auto_text_stable_since))
+                        : 0,
+                    autoAdvanceVoicePath: g_onscripter_auto_cycle_voice_path,
+                    autoAdvanceLastVoicePath: g_onscripter_auto_voice_path,
+                    autoButtonVisible: is_onscripter_element_visible(autoButton),
+                    skipEnabled: g_skip,
+                    skipButtonVisible: is_onscripter_element_visible(skipButton),
+                    audioMuted: g_onscripter_audio_muted,
+                    audioVolume: volumeInput ? Number(volumeInput.value) : null,
+                    directVoicePlayback: should_use_onscripter_direct_voice(),
+                    directVoicePath: g_onscripter_direct_voice_path,
+                    directVoiceActive: !!(g_onscripter_direct_voice_audio || g_onscripter_direct_voice_source),
+                    navRevealed: document.body.classList.contains("is-navbar-revealed"),
+                    canvasControlsReady: is_onscripter_canvas_ready(),
+                    canvas: canvas ? {
+                        width: canvas.width,
+                        height: canvas.height,
+                        cssWidth: canvas.offsetWidth,
+                        cssHeight: canvas.offsetHeight
+                    } : null,
+                    audioPanelFocused: !!(audioPanel && audioPanel.contains(document.activeElement))
+                });
+            };
+
             setup_onscripter_layout_observer();
+            setup_onscripter_nav_reveal();
             setup_onscripter_audio_controls();
+            setup_onscripter_audio_unlock_handlers();
+            setup_onscripter_canvas_rotation_control();
+            setup_onscripter_settings_control();
+            setup_onscripter_auto_advance_control();
+            setup_onscripter_skip_control();
+            setup_onscripter_rotated_canvas_input_mapping();
         </script>
         
         <script type="text/javascript"> // onsyuri video 
@@ -863,16 +2099,17 @@
                 flex: 0 0 auto;
             }
 
-            body.onscripter-player-page .ui-nav.nav-auto-collapsed .ui-nav-toggler {
-                display: none;
+            body.onscripter-player-page.onscripter-navbar-auto-hide .ui-nav {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                transform: translateY(-100%);
             }
 
-            body.onscripter-player-page .ui-nav.nav-auto-collapsed .ui-nav-collapse {
-                display: block;
-            }
-
-            body.onscripter-player-page .ui-nav.nav-auto-collapsed .ui-nav-links {
-                justify-content: flex-start;
+            body.onscripter-player-page.onscripter-navbar-auto-hide.is-navbar-revealed .ui-nav,
+            body.onscripter-player-page.onscripter-navbar-auto-hide .ui-nav:focus-within {
+                transform: translateY(0);
             }
 
             .onscripter-player-main {
@@ -883,6 +2120,9 @@
             }
 
             .onscripter-stage {
+                --site-loading-overlay-bg: color-mix(in srgb, var(--onscripter-stage-bg) 86%, transparent);
+                --site-loading-spinner-track: color-mix(in srgb, var(--theme-ink, #222) 30%, transparent);
+                --site-loading-spinner-accent: var(--theme-accent-strong, #2563eb);
                 position: relative;
                 flex: 1 1 auto;
                 min-width: 0;
@@ -894,23 +2134,223 @@
                 background: var(--onscripter-stage-bg);
             }
 
+            #onscripter_canvas_frame {
+                position: relative;
+                flex: 0 0 auto;
+                min-width: 0;
+                min-height: 0;
+                margin: 0 auto;
+                display: block;
+                transform-origin: center center;
+                will-change: transform;
+                overflow: visible;
+            }
+
+            .onscripter-stage.is-onscripter-canvas-rotated #onscripter_canvas_frame {
+                transform: rotate(90deg);
+            }
+
             #canvas,
             #video {
                 margin: 0 auto;
                 display: block;
                 max-width: 100%;
                 max-height: 100%;
+                position: relative;
+                z-index: 1;
             }
 
             #video {
                 display: none;
             }
 
+            #onscripter_canvas_loader {
+                pointer-events: none;
+            }
+
+            #onscripter_rotate_toggle {
+                position: absolute;
+                z-index: var(--site-z-floating, 1220);
+                top: 10px;
+                left: 10px;
+                visibility: hidden;
+                pointer-events: none;
+            }
+
+            #onscripter_bottom_controls {
+                position: absolute;
+                z-index: var(--site-z-floating, 1220);
+                right: 10px;
+                bottom: 10px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-end;
+                gap: 8px;
+                visibility: hidden;
+                pointer-events: none;
+            }
+
+            #onscripter_canvas_controls {
+                position: absolute;
+                z-index: var(--site-z-floating, 1220);
+                top: 10px;
+                right: 10px;
+                display: flex;
+                align-items: flex-start;
+                justify-content: flex-end;
+                gap: 8px;
+                pointer-events: none;
+                visibility: hidden;
+            }
+
+            #onscripter_canvas_frame.is-onscripter-canvas-ready #onscripter_rotate_toggle {
+                visibility: visible;
+                pointer-events: auto;
+            }
+
+            #onscripter_canvas_frame.is-onscripter-canvas-ready #onscripter_bottom_controls {
+                visibility: visible;
+            }
+
+            #onscripter_canvas_frame.is-onscripter-canvas-ready #onscripter_canvas_controls {
+                visibility: visible;
+            }
+
+            #onscripter_canvas_controls > *,
+            #onscripter_bottom_controls > * {
+                pointer-events: auto;
+            }
+
+            .onscripter-canvas-button {
+                width: 44px;
+                height: 44px;
+                flex: 0 0 44px;
+                padding: 6px;
+                box-sizing: border-box;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                border: 0;
+                border-radius: var(--site-popup-radius-common, 12px);
+                background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+                background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+                background-image: none;
+                box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)));
+                color: var(--theme-ink, #222);
+                opacity: 0.88;
+                cursor: pointer;
+                -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
+                backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
+                transition: opacity 160ms ease, background 160ms ease, box-shadow 160ms ease;
+            }
+
+            .onscripter-canvas-button:focus-visible {
+                opacity: 1;
+                outline: none;
+            }
+
+            @media (hover: hover) and (pointer: fine) {
+                .onscripter-canvas-button:hover {
+                    opacity: 1;
+                    background: color-mix(in srgb, currentColor 10%, var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72)))));
+                }
+            }
+
+            #onscripter_auto_toggle:hover,
+            #onscripter_auto_toggle:focus-visible,
+            #onscripter_auto_toggle[aria-pressed="true"],
+            #onscripter_auto_toggle[aria-pressed="true"]:hover,
+            #onscripter_auto_toggle[aria-pressed="true"]:focus-visible {
+                background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+                background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+            }
+
+            #onscripter_auto_toggle[aria-pressed="true"] {
+                opacity: 1;
+                color: var(--theme-accent-strong, currentColor);
+            }
+
+            #onscripter_settings_toggle:focus-visible {
+                background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+                background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+            }
+
+            #onscripter_skip_toggle[aria-pressed="true"] {
+                opacity: 1;
+                color: var(--theme-accent-strong, currentColor);
+            }
+
+            .onscripter-rotate-icon,
+            .onscripter-settings-icon,
+            .onscripter-playback-icon {
+                width: 20px;
+                height: 20px;
+                fill: none;
+                stroke: currentColor;
+                stroke-width: 2;
+                stroke-linecap: round;
+                stroke-linejoin: round;
+            }
+
+            .onscripter-rotate-icon {
+                width: 36.4px;
+                height: 36.4px;
+                flex: 0 0 36.4px;
+                display: block;
+                background-color: currentColor;
+                fill: none;
+                stroke: none;
+                stroke-width: 0;
+                -webkit-mask-repeat: no-repeat;
+                -webkit-mask-position: center;
+                -webkit-mask-size: contain;
+                mask-repeat: no-repeat;
+                mask-position: center;
+                mask-size: contain;
+            }
+
+            .onscripter-rotate-icon-90 {
+                -webkit-mask-image: url("/static/media/icons/rotate-90.png");
+                mask-image: url("/static/media/icons/rotate-90.png");
+            }
+
+            .onscripter-rotate-icon-270 {
+                -webkit-mask-image: url("/static/media/icons/rotate-270.png");
+                mask-image: url("/static/media/icons/rotate-270.png");
+            }
+
+            .onscripter-settings-icon {
+                width: 21px;
+                height: 21px;
+                fill: currentColor;
+                stroke: none;
+                stroke-width: 0;
+            }
+
+            .onscripter-playback-icon {
+                width: 22px;
+                height: 22px;
+                fill: currentColor;
+                stroke: currentColor;
+                stroke-width: 2.2;
+            }
+
+            #onscripter_rotate_toggle[aria-pressed="false"] .onscripter-rotate-icon-ccw,
+            #onscripter_rotate_toggle[aria-pressed="true"] .onscripter-rotate-icon-cw {
+                display: none;
+            }
+
+            #onscripter_auto_toggle[aria-pressed="false"] .onscripter-auto-icon-pause,
+            #onscripter_auto_toggle[aria-pressed="true"] .onscripter-auto-icon-play {
+                display: none;
+            }
+
             #onsyuri_webinfo {
                 position: absolute;
                 z-index: var(--site-z-floating, 1220);
-                display: block;
-                top: clamp(18px, 8vh, 96px);
+                display: none;
+                top: 50%;
                 left: 50%;
                 right: auto;
                 width: min(420px, calc(100vw - 32px));
@@ -925,7 +2365,7 @@
                 color: var(--theme-ink, #222);
                 text-align: left;
                 box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)));
-                transform: translateX(-50%);
+                transform: translate(-50%, -50%);
                 -webkit-backdrop-filter: blur(14px);
                 backdrop-filter: blur(14px);
             }
@@ -968,7 +2408,7 @@
                 display: flex;
                 flex-wrap: wrap;
                 justify-content: center;
-                gap: 8px;
+                gap: 0;
                 top: clamp(16px, 6vh, 74px);
                 left: 50%;
                 right: auto;
@@ -1042,35 +2482,51 @@
             }
 
             #onscripter_audio_panel {
-                position: absolute;
-                z-index: 30;
-                top: 10px;
-                left: 10px;
+                position: relative;
+                z-index: auto;
+                top: auto;
+                right: auto;
+                left: auto;
                 width: 44px;
-                min-height: 44px;
+                height: 44px;
+                flex: 0 0 44px;
                 padding: 6px;
                 box-sizing: border-box;
                 display: flex;
+                flex-direction: column;
                 align-items: center;
-                gap: 10px;
+                justify-content: flex-start;
+                gap: 0;
                 overflow: hidden;
-                border: 1px solid rgba(255, 255, 255, 0.24);
-                border-radius: 12px;
-                background: rgba(10, 14, 23, 0.72);
-                color: #fff;
-                opacity: 0;
-                transform: translateY(-4px);
-                transition: width 160ms ease, opacity 160ms ease, transform 160ms ease, background 160ms ease;
-                -webkit-backdrop-filter: blur(10px);
-                backdrop-filter: blur(10px);
+                border: 0;
+                border-radius: var(--site-popup-radius-common, 12px);
+                background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+                background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+                background-image: none;
+                box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)));
+                color: var(--theme-ink, #222);
+                opacity: 0.88;
+                --onscripter-audio-panel-offset-y: 0px;
+                transform: translateY(var(--onscripter-audio-panel-offset-y));
+                transition: width 160ms ease, height 160ms ease, opacity 160ms ease, box-shadow 160ms ease;
+                -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
+                backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
             }
 
-            #onscripter_audio_panel:hover,
             #onscripter_audio_panel:focus-within {
-                width: 190px;
+                height: 150px;
+                gap: 8px;
                 opacity: 1;
-                transform: translateY(0);
-                background: rgba(10, 14, 23, 0.84);
+                --onscripter-audio-panel-offset-y: 0px;
+            }
+
+            @media (hover: hover) and (pointer: fine) {
+                #onscripter_audio_panel:hover {
+                    height: 150px;
+                    gap: 8px;
+                    opacity: 1;
+                    --onscripter-audio-panel-offset-y: 0px;
+                }
             }
 
             #onscripter_audio_mute {
@@ -1082,16 +2538,21 @@
                 justify-content: center;
                 border: 0;
                 border-radius: 8px;
-                background: rgba(255, 255, 255, 0.14);
+                background: transparent;
                 color: currentColor;
                 padding: 0;
                 cursor: pointer;
             }
 
-            #onscripter_audio_mute:hover,
             #onscripter_audio_mute:focus-visible {
-                background: rgba(255, 255, 255, 0.24);
+                background: color-mix(in srgb, currentColor 16%, transparent);
                 outline: none;
+            }
+
+            @media (hover: hover) and (pointer: fine) {
+                #onscripter_audio_mute:hover {
+                    background: color-mix(in srgb, currentColor 16%, transparent);
+                }
             }
 
             .onscripter-audio-icon {
@@ -1110,33 +2571,56 @@
             }
 
             #onscripter_audio_volume {
-                width: 118px;
-                flex: 0 0 118px;
+                width: 32px;
+                height: 92px;
+                flex: 0 0 92px;
+                margin: 0;
+                min-width: 0;
                 opacity: 0;
-                accent-color: #f8fafc;
+                accent-color: var(--theme-accent-strong, currentColor);
                 cursor: pointer;
+                pointer-events: none;
+                writing-mode: vertical-lr;
+                direction: rtl;
+                -webkit-appearance: slider-vertical;
                 transition: opacity 160ms ease;
             }
 
-            #onscripter_audio_panel:hover #onscripter_audio_volume,
             #onscripter_audio_panel:focus-within #onscripter_audio_volume {
                 opacity: 1;
+                pointer-events: auto;
+            }
+
+            @media (hover: hover) and (pointer: fine) {
+                #onscripter_audio_panel:hover #onscripter_audio_volume {
+                    opacity: 1;
+                    pointer-events: auto;
+                }
             }
 
             @media (pointer: coarse) {
                 #onscripter_audio_panel {
-                    width: 176px;
-                    opacity: 0.92;
-                    transform: none;
+                    width: 44px;
+                    height: 44px;
+                    gap: 0;
+                    opacity: 0.88;
+                    --onscripter-audio-panel-offset-y: 0px;
                 }
 
-                #onscripter_audio_volume {
+                #onscripter_audio_panel:focus-within {
+                    height: 150px;
+                    gap: 8px;
                     opacity: 1;
+                }
+
+                #onscripter_audio_panel:not(:focus-within) #onscripter_audio_volume {
+                    opacity: 0;
+                    pointer-events: none;
                 }
             }
         </style>
         
-        <div id="onsyuri_webinfo" role="status" aria-live="polite">
+        <div id="onsyuri_webinfo" style="display: none;" role="status" aria-live="polite">
             <p>{{ loading_label }}</p>
             <p>Powered by <a href="https://github.com/YuriSizuku/OnscripterYuri" target="_blank" rel="noopener">Onscripter Yuri</a> v0.7.7beta</p>
         </div>
@@ -1145,7 +2629,7 @@
             <button type="button" onclick="toggle_stretchfull()">화면 맞춤</button>
             <button type="button" onclick="toggle_screenfull()">전체화면</button>
             <button type="button" onclick="toggle_onsmenu()">게임 메뉴</button>
-            <button type="button" onclick="toggle_skip()">스킵</button>
+            <button type="button" onpointerdown="start_onscripter_skip_hold(event)" onpointerup="stop_onscripter_skip_hold(event)" onpointercancel="stop_onscripter_skip_hold(event)" onmouseleave="if(event.buttons) stop_onscripter_skip_hold(event)" onclick="event.preventDefault()">스킵</button>
             <button type="button" onclick="click_export()">세이브 내보내기</button>
             <button type="button" onclick="click_import()">세이브 가져오기</button>
             <button type="button" onclick="toggle_webinfo()">정보</button>

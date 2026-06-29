@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from django.conf import settings
+from django.core.exceptions import PermissionDenied
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import render
@@ -18,6 +19,7 @@ from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
 from portfolio.models import PortfolioProfile
 
+from .onscripter_access import is_onscripter_user_allowed
 from .views import apply_ui_context, build_public_absolute_url, get_account_display_name, resolve_ui_lang
 
 
@@ -33,6 +35,8 @@ class OnscripterGame:
     encoding_arg: str
     width: int
     height: int
+    meta_title: str | None = None
+    direct_voice_playback: bool = False
 
 
 ONSCRIPTER_GAMES = {
@@ -41,9 +45,9 @@ ONSCRIPTER_GAMES = {
         title="하루우루",
         folder_name=unicodedata.normalize("NFD", "하루우루"),
         asset_folder_name=unicodedata.normalize("NFD", "하루우루_web"),
-        description_ko="브라우저에서 실행되는 ONScripter 웹 포팅판입니다. 세이브는 사용자별로 저장됩니다.",
+        description_ko="아득히 우러러본, 아름다운",
         description_en="An ONScripter web port playable in the browser. Saves are stored per user.",
-        thumbnail_path="IMAGE/MAINIP.JPG",
+        thumbnail_path="IMAGE/HARUURU_META.webp",
         encoding_arg="--enc:utf8",
         width=800,
         height=600,
@@ -53,9 +57,46 @@ ONSCRIPTER_GAMES = {
         title="Kanoina",
         folder_name="kanoina",
         asset_folder_name="kanoina_web",
-        description_ko="브라우저에서 실행되는 ONScripter 웹 포팅판입니다. 세이브는 사용자별로 저장됩니다.",
+        description_ko="×××인 그녀가 시골 생활을 만끽하는 비밀의 방법",
         description_en="An ONScripter web port playable in the browser. Saves are stored per user.",
         thumbnail_path="image/title.png",
+        encoding_arg="--enc:utf8",
+        width=800,
+        height=600,
+    ),
+    "konosora": OnscripterGame(
+        slug="konosora",
+        title="KonoSora",
+        folder_name="konosora",
+        asset_folder_name="konosora_web",
+        description_ko="이 넓은 하늘에, 날개를 펼치고",
+        description_en="An ONScripter web port playable in the browser. Saves are stored per user.",
+        thumbnail_path="image/title.png",
+        encoding_arg="--enc:utf8",
+        width=800,
+        height=600,
+    ),
+    "hoshizora": OnscripterGame(
+        slug="hoshizora",
+        title="별하늘에 걸린 다리",
+        folder_name=unicodedata.normalize("NFD", "별하늘에 걸린 다리"),
+        asset_folder_name=unicodedata.normalize("NFD", "별하늘에 걸린 다리_web"),
+        description_ko="별하늘에 걸린 다리",
+        description_en="An ONScripter web port playable in the browser. Saves are stored per user.",
+        thumbnail_path="image/menu.jpg",
+        encoding_arg="--enc:utf8",
+        width=800,
+        height=600,
+        meta_title="hoshizora",
+    ),
+    "grisaia-kajitsu": OnscripterGame(
+        slug="grisaia-kajitsu",
+        title="그리자이아의 과실",
+        folder_name=unicodedata.normalize("NFD", "그리자이아의 과실"),
+        asset_folder_name=unicodedata.normalize("NFD", "그리자이아의 과실_web"),
+        description_ko="그리자이아의 과실",
+        description_en="An ONScripter web port playable in the browser. Saves are stored per user.",
+        thumbnail_path="title.png",
         encoding_arg="--enc:utf8",
         width=800,
         height=600,
@@ -64,6 +105,7 @@ ONSCRIPTER_GAMES = {
 
 EXCLUDED_GAME_FILE_PATTERNS = (
     ".DS_Store",
+    "thumbs.db",
     "*.nsa",
     "*.ns2",
     "*.sar",
@@ -73,6 +115,7 @@ EXCLUDED_GAME_FILE_PATTERNS = (
     "global.sav",
     "kidoku.dat",
     "save*.dat",
+    "*.pre-*-backup",
     "*.web-audio-backup",
     "*.web-encoding-backup",
     "*.web-spacing-backup",
@@ -87,6 +130,11 @@ def _get_game_or_404(game_slug: str) -> OnscripterGame:
     if game is None:
         raise Http404("ONScripter game not found")
     return game
+
+
+def _require_onscripter_access(request) -> None:
+    if not is_onscripter_user_allowed(getattr(request, "user", None)):
+        raise PermissionDenied("ONScripter access is restricted.")
 
 
 def _onscripter_storage_root() -> Path:
@@ -116,6 +164,14 @@ def _game_thumbnail_url(game: OnscripterGame) -> str:
     if not thumbnail_path.is_file():
         return ""
     return _media_url_for_path(thumbnail_path)
+
+
+def _game_meta_title(game: OnscripterGame) -> str:
+    return game.meta_title or f"{game.title} | Hanplanet ONScripter"
+
+
+def _game_card_title(game: OnscripterGame) -> str:
+    return game.meta_title or game.title
 
 
 def _is_excluded_game_file(relative_path: str) -> bool:
@@ -163,7 +219,7 @@ def _build_onscripter_links(resolved_lang: str) -> list[dict[str, str]]:
                 "main:onscripter_player_lang",
                 kwargs={"ui_lang": resolved_lang, "game_slug": game.slug},
             ),
-            "title": game.title,
+            "title": _game_card_title(game),
             "site_name": "ONScripter",
             "description": game.description_en if is_english else game.description_ko,
             "image": _game_thumbnail_url(game),
@@ -201,6 +257,7 @@ def _apply_onscripter_auth_context(request, context: dict, resolved_lang: str) -
 
 @require_GET
 def onscripter_index(request, ui_lang=None):
+    _require_onscripter_access(request)
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
     links = _build_onscripter_links(resolved_lang)
@@ -213,6 +270,11 @@ def onscripter_index(request, ui_lang=None):
             "title": "Games" if is_english else "게임",
         }],
         "sub_home_label": "Hanplanet",
+        "sub_breadcrumbs": [
+            {"label": "Hanplanet", "url": "/"},
+            {"label": "Sub", "url": reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang})},
+            {"label": "ONScripter"},
+        ],
         "sub_page_modifier_class": "sub-page-single-group",
         "sub_category": "game",
         "handrive_login_url": reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang}),
@@ -287,14 +349,16 @@ def _build_game_index(request, game: OnscripterGame, ui_lang: str | None = None)
             "--window",
         ],
         "lazyload": True,
+        "directVoicePlayback": game.direct_voice_playback,
         "dirs": sorted(dirs),
         "files": files,
-}
+    }
 
 
 @ensure_csrf_cookie
 @require_GET
 def onscripter_player(request, ui_lang=None, game_slug="haruuru"):
+    _require_onscripter_access(request)
     resolved_lang = resolve_ui_lang(request, ui_lang)
     game = _get_game_or_404(game_slug)
     if not _game_root(game).is_dir():
@@ -317,14 +381,14 @@ def onscripter_player(request, ui_lang=None, game_slug="haruuru"):
         "engine_js_url": _media_url_for_path(engine_js_path),
         "engine_wasm_url": _media_url_for_path(engine_wasm_path),
         "jszip_url": _media_url_for_path(jszip_path),
-        "meta_title": f"{game.title} | Hanplanet ONScripter",
-        "meta_og_title": f"{game.title} | Hanplanet ONScripter",
+        "meta_title": _game_meta_title(game),
+        "meta_og_title": _game_meta_title(game),
         "meta_description": game.description_en if resolved_lang == "en" else game.description_ko,
         "sub_category": "game",
     }
     context["meta_og_description"] = context["meta_description"]
     thumbnail_url = _game_thumbnail_url(game)
-    meta_image_url = thumbnail_url or ONSCRIPTER_META_IMAGE_URL
+    meta_image_url = build_public_absolute_url(thumbnail_url) if thumbnail_url else ONSCRIPTER_META_IMAGE_URL
     context["meta_og_image"] = meta_image_url
     context["meta_twitter_image"] = meta_image_url
     if not thumbnail_url:
@@ -338,6 +402,7 @@ def onscripter_player(request, ui_lang=None, game_slug="haruuru"):
 
 @require_GET
 def onscripter_game_index(request, ui_lang=None, game_slug="haruuru"):
+    _require_onscripter_access(request)
     game = _get_game_or_404(game_slug)
     try:
         payload = _build_game_index(request, game, ui_lang)
@@ -352,6 +417,7 @@ def onscripter_game_index(request, ui_lang=None, game_slug="haruuru"):
 @csrf_protect
 @require_http_methods(["GET", "POST"])
 def onscripter_game_save(request, ui_lang=None, game_slug="haruuru"):
+    _require_onscripter_access(request)
     game = _get_game_or_404(game_slug)
     owner_key = _save_owner_key(request)
     archive_path = _save_archive_path(game, owner_key)

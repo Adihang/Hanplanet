@@ -548,6 +548,13 @@
         };
     };
 
+    const formatWeatherDailyRangeLabel = function (day) {
+        const fallback = splitWeatherTemperatureRangeLabel(day && day.temperature_range_label);
+        const lowLabel = String((day && day.temperature_min_label) || fallback.low || '').trim();
+        const highLabel = String((day && day.temperature_max_label) || fallback.high || '').trim();
+        return [lowLabel, highLabel].filter(Boolean).join(' ');
+    };
+
     const ensureWeatherTriggerRangeParts = function (range) {
         if (!range) {
             return { high: null, low: null };
@@ -903,14 +910,15 @@
 
         const range = document.createElement('strong');
         range.className = 'ui-auth-account-weather-card-day-range';
-        range.textContent = String(day.temperature_range_label || '').trim();
+        const dailyRangeLabel = formatWeatherDailyRangeLabel(day);
+        range.textContent = dailyRangeLabel;
 
         item.setAttribute('aria-label', [
             monthDayLabel,
             day.weekday || day.weekday_short,
             day.weather_label,
             day.precipitation_probability_label,
-            day.temperature_range_label
+            dailyRangeLabel
         ].filter(Boolean).join(' '));
         item.addEventListener('click', function () {
             activateWeatherDay(widget, payload, day);

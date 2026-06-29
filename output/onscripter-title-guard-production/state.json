@@ -1,0 +1,74 @@
+{
+  "result": {
+    "runtimeTitle": "별하늘에 걸린 다리 | Hanplanet ONScripter",
+    "restoredTitle": "별하늘에 걸린 다리 | Hanplanet ONScripter",
+    "severe": [],
+    "messageCount": 16
+  },
+  "messages": [
+    {
+      "type": "log",
+      "text": "## onsyuri: preRun"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri_fs: mount_onsgame /onsyuri/hoshizora"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri_fs: mount_onssave /onsyuri_save/hoshizora/session-c713f245500367dd44da362d"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri: onRuntimeInitialized"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri: args [--root, /onsyuri/hoshizora, --font, /onsyuri/hoshizora/default.ttf, --save-dir, /onsyuri_save/hoshizora/session-c713f245500367dd44da362d, --enc:utf8, --width, 800, --height, 600, --window]"
+    },
+    {
+      "type": "log",
+      "text": "ONScripter Yuri v0.7.7beta, (Jh0.8.0,Ons20181218,NSC2.96)"
+    },
+    {
+      "type": "log",
+      "text": "Initialize GameController"
+    },
+    {
+      "type": "log",
+      "text": "Display: 800 x 600 (32 bpp)"
+    },
+    {
+      "type": "warning",
+      "text": "The ScriptProcessorNode is deprecated. Use AudioWorkletNode instead. (https://bit.ly/audio-worklet)"
+    },
+    {
+      "type": "log",
+      "text": "Audio: 48000 Hz 16 bit stereo"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x12c005c5000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x12c005c5000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "log",
+      "text": "## onsyuri: onmessage  onsinit"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x12c005c5000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "log",
+      "text": "cannot open system.lua"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x12c005c5000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    }
+  ]
+}

@@ -363,13 +363,18 @@ body.handrive-write-page .handrive-toolbar {
     height: var(--handrive-icon-action-icon-size);
 }
 
-.ui-toolbar-actions > [data-auth-modal="login"] {
+.ui-toolbar-actions > [data-auth-modal="signup"] {
     order: 900;
     margin-left: auto;
 }
 
-.ui-toolbar-actions > [data-auth-modal="signup"] {
+.ui-toolbar-actions > [data-auth-modal="login"] {
     order: 901;
+}
+
+.ui-toolbar-actions > .ui-auth-action-buttons {
+    order: 900;
+    margin-left: auto;
 }
 
 .handrive-content-snippet-tools {

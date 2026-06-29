@@ -296,6 +296,26 @@ class EmailTwoFactorBypassUser(models.Model):
         return str(self.user.get_username())
 
 
+class OnscripterAccessUser(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="onscripter_access",
+        verbose_name="사용자",
+    )
+    created_at = models.DateTimeField("등록일", auto_now_add=True)
+    updated_at = models.DateTimeField("수정일", auto_now=True)
+
+    class Meta:
+        db_table = "main_onscripteraccessuser"
+        ordering = ["user__username"]
+        verbose_name = "ONScripter 허용 사용자"
+        verbose_name_plural = "ONScripter 허용 사용자"
+
+    def __str__(self):
+        return str(self.user.get_username())
+
+
 class HandriveUserQuota(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -353,6 +373,73 @@ class QuickLink(models.Model):
 
     def __str__(self):
         return f"{self.user}: {self.name}"
+
+
+class MinecraftAccountLink(models.Model):
+    EDITION_JAVA = "java"
+    EDITION_BEDROCK = "bedrock"
+    EDITION_UNKNOWN = "unknown"
+    EDITION_CHOICES = [
+        (EDITION_JAVA, "Java Edition"),
+        (EDITION_BEDROCK, "Bedrock Edition"),
+        (EDITION_UNKNOWN, "Unknown"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="minecraft_account_links",
+        verbose_name="사용자",
+    )
+    minecraft_uuid = models.CharField("Minecraft UUID", max_length=36, unique=True)
+    minecraft_name = models.CharField("Minecraft 닉네임", max_length=32)
+    edition = models.CharField("에디션", max_length=12, choices=EDITION_CHOICES, default=EDITION_UNKNOWN)
+    floodgate_xuid = models.CharField("Floodgate XUID", max_length=32, blank=True, default="")
+    first_linked_at = models.DateTimeField("최초 연동일", auto_now_add=True)
+    last_linked_at = models.DateTimeField("최근 연동일", auto_now=True)
+    last_seen_at = models.DateTimeField("마지막 확인일", null=True, blank=True)
+
+    class Meta:
+        db_table = "main_minecraftaccountlink"
+        ordering = ["user__username", "minecraft_name"]
+        verbose_name = "Minecraft 계정 연동"
+        verbose_name_plural = "Minecraft 계정 연동"
+        indexes = [
+            models.Index(fields=["user", "edition"]),
+            models.Index(fields=["minecraft_name"]),
+            models.Index(fields=["floodgate_xuid"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} — {self.minecraft_name} ({self.edition})"
+
+
+class MinecraftLinkCode(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="minecraft_link_codes",
+        verbose_name="사용자",
+    )
+    code_hash = models.CharField("코드 해시", max_length=64, unique=True)
+    created_at = models.DateTimeField("생성일", auto_now_add=True)
+    expires_at = models.DateTimeField("만료일")
+    used = models.BooleanField("사용됨", default=False)
+    used_at = models.DateTimeField("사용일", null=True, blank=True)
+
+    class Meta:
+        db_table = "main_minecraftlinkcode"
+        ordering = ["-created_at"]
+        verbose_name = "Minecraft 연동 코드"
+        verbose_name_plural = "Minecraft 연동 코드"
+        indexes = [
+            models.Index(fields=["user", "expires_at"]),
+            models.Index(fields=["used", "expires_at"]),
+        ]
+
+    def __str__(self):
+        state = "used" if self.used else "pending"
+        return f"{self.user.username} — {state} until {self.expires_at}"
 
 
 class UserProfile(models.Model):

@@ -1,0 +1,31 @@
+{
+  "state": {
+    "game": "onscripter",
+    "rotated": false,
+    "settingsButtonVisible": true,
+    "autoAdvanceEnabled": false,
+    "autoAdvancePollMs": 250,
+    "autoAdvanceDelayAfterReadyMs": 2000,
+    "autoAdvanceTextStableMs": 700,
+    "autoAdvanceVoiceRemainingMs": 0,
+    "autoAdvanceLastVoiceRemainingMs": 0,
+    "autoAdvanceTextStableForMs": 0,
+    "autoAdvanceVoicePath": "",
+    "autoAdvanceLastVoicePath": "",
+    "autoButtonVisible": true,
+    "skipEnabled": false,
+    "skipButtonVisible": true,
+    "audioMuted": false,
+    "audioVolume": 80,
+    "navRevealed": false,
+    "canvasControlsReady": true,
+    "canvas": {
+      "width": 800,
+      "height": 600,
+      "cssWidth": 1200,
+      "cssHeight": 900
+    },
+    "audioPanelFocused": false
+  },
+  "errors": []
+}

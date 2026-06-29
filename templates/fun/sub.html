@@ -11,9 +11,22 @@
                 <h1 class="ui-title">{{ page_title }}</h1>
             </div>
             <div class="ui-subtitle ui-path-breadcrumbs">
-                <a class="ui-path-link" href="/">{{ sub_home_label }}</a>
-                <span class="ui-path-sep">/</span>
-                <span class="ui-path-current">{{ page_title }}</span>
+                {% if sub_breadcrumbs %}
+                    {% for crumb in sub_breadcrumbs %}
+                        {% if not forloop.first %}
+                            <span class="ui-path-sep">/</span>
+                        {% endif %}
+                        {% if crumb.url and not forloop.last %}
+                            <a class="ui-path-link" href="{{ crumb.url }}">{{ crumb.label }}</a>
+                        {% else %}
+                            <span class="ui-path-current">{{ crumb.label }}</span>
+                        {% endif %}
+                    {% endfor %}
+                {% else %}
+                    <a class="ui-path-link" href="/">{{ sub_home_label }}</a>
+                    <span class="ui-path-sep">/</span>
+                    <span class="ui-path-current">{{ page_title }}</span>
+                {% endif %}
             </div>
         </div>
         {% include "partials/toolbar_auth_right.html" with toolbar_auth_class="sub-auth-host" %}
@@ -228,7 +241,7 @@
 
     .sub-link-content {
         min-width: 0;
-        padding-right: 72px;
+        padding-right: 30px;
     }
 
     .sub-link-head {

@@ -1,0 +1,26 @@
+{
+  "result": {
+    "state": {
+      "game": "onscripter",
+      "rotated": false,
+      "settingsButtonVisible": true,
+      "audioMuted": false,
+      "audioVolume": 80,
+      "navRevealed": false,
+      "canvas": {
+        "width": 800,
+        "height": 600,
+        "cssWidth": 1200,
+        "cssHeight": 900
+      },
+      "audioPanelFocused": false
+    },
+    "title": "하루우루 | Hanplanet ONScripter"
+  },
+  "errors": [
+    {
+      "type": "console",
+      "text": " *** failed to open nsa or ns2 archive, ignored.  ***"
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "state": {
+    "debugTail": [
+      "[2026-06-27T09:08:54.061Z] log ## onsyuri: onmessage  ",
+      "[2026-06-27T09:08:55.057Z] log ## onsyuri: preRun",
+      "[2026-06-27T09:08:55.057Z] log ## onsyuri_fs: mount_onsgame /onsyuri/haruuru",
+      "[2026-06-27T09:08:55.117Z] log ## onsyuri_fs: mount_onssave /onsyuri_save/haruuru/user-dbdc006002b83e91ea9affa6",
+      "[2026-06-27T09:08:55.125Z] log ## onsyuri: onRuntimeInitialized",
+      "[2026-06-27T09:08:55.125Z] log ## onsyuri: args [\"--root\",\"/onsyuri/haruuru\",\"--font\",\"/onsyuri/haruuru/default.ttf\",\"--save-dir\",\"/onsyuri_save/haruuru/user-dbdc006002b83e91ea9affa6\",\"--enc:utf8\",\"--width\",\"800\",\"--height\",\"600\",\"--window\"]",
+      "[2026-06-27T09:08:55.127Z] log ONScripter Yuri 0.7.7, (Jh0.8.0,Ons20181218,NSC2.96)",
+      "[2026-06-27T09:08:55.134Z] fetch /onsyuri/haruuru/0.txt /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/0.txt?v=1782551049854212166-90169 [\"/onsyuri/haruuru/0.txt\"]",
+      "[2026-06-27T09:08:55.166Z] fetch /onsyuri/haruuru/1.txt /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/1.txt?v=1782483155230349954-9070511 [\"/onsyuri/haruuru/1.txt\"]",
+      "[2026-06-27T09:08:55.227Z] log Initialize GameController",
+      "[2026-06-27T09:08:55.401Z] log Display: 800 x 600 (32 bpp)",
+      "[2026-06-27T09:08:55.545Z] log Audio: 48000 Hz 16 bit stereo",
+      "[2026-06-27T09:08:55.560Z] fetch /onsyuri/haruuru/default.ttf /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/default.ttf?v=1782483154115016103-1929352 [\"/onsyuri/haruuru/default.ttf\"]",
+      "[2026-06-27T09:08:55.563Z] error  *** failed to open nsa or ns2 archive, ignored.  ***",
+      "[2026-06-27T09:08:55.564Z] log ## onsyuri: onmessage  onsinit",
+      "[2026-06-27T09:08:55.572Z] fetch /onsyuri/haruuru/uoncur.bmp /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/uoncur.bmp?v=1782433802735220364-822 [\"/onsyuri/haruuru/uoncur.bmp\"]",
+      "[2026-06-27T09:08:55.584Z] fetch /onsyuri/haruuru/uoffcur.bmp /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/uoffcur.bmp?v=1782433802755295091-822 [\"/onsyuri/haruuru/uoffcur.bmp\"]",
+      "[2026-06-27T09:08:55.600Z] fetch /onsyuri/haruuru/doncur.bmp /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/doncur.bmp?v=1782433802756484067-822 [\"/onsyuri/haruuru/doncur.bmp\"]",
+      "[2026-06-27T09:08:55.609Z] fetch /onsyuri/haruuru/doffcur.bmp /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/doffcur.bmp?v=1782433802757727628-822 [\"/onsyuri/haruuru/doffcur.bmp\"]",
+      "[2026-06-27T09:08:55.714Z] fetch /onsyuri/haruuru/cursor0.bmp /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/cursor0.bmp?v=1782433802757812130-822 [\"/onsyuri/haruuru/cursor0.bmp\"]",
+      "[2026-06-27T09:08:55.728Z] fetch /onsyuri/haruuru/cursor1.bmp /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/cursor1.bmp?v=1782433802759162442-822 [\"/onsyuri/haruuru/cursor1.bmp\"]",
+      "[2026-06-27T09:08:55.735Z] log cannot open system.lua",
+      "[2026-06-27T09:08:55.749Z] fetch /onsyuri/haruuru/image/black.jpg /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/IMAGE/BLACK.JPG?v=1782433641587248975-8227 [\"/onsyuri/haruuru/image/black.jpg\",\"/onsyuri/haruuru/IMAGE/BLACK.JPG\"]",
+      "[2026-06-27T09:08:55.779Z] fetch /onsyuri/haruuru/image/winbase0.jpg /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/IMAGE/WINBASE0.JPG?v=1782433649090560399-26969 [\"/onsyuri/haruuru/image/winbase0.jpg\",\"/onsyuri/haruuru/IMAGE/WINBASE0.JPG\"]",
+      "[2026-06-27T09:08:55.831Z] fetch /onsyuri/haruuru/image/main1gp.jpg /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/IMAGE/MAIN1GP.JPG?v=1782433646194753135-94691 [\"/onsyuri/haruuru/image/main1gp.jpg\",\"/onsyuri/haruuru/IMAGE/MAIN1GP.JPG\"]",
+      "[2026-06-27T09:08:57.897Z] fetch /onsyuri/haruuru/bgm/music_02.ogg /media/HanDrive/ONScripter/%E1%84%92%E1%85%A1%E1%84%85%E1%85%AE%E1%84%8B%E1%85%AE%E1%84%85%E1%85%AE_web/BGM/MUSIC_02.OGG?v=1782433639235566095-1610661 [\"/onsyuri/haruuru/bgm/music_02.ogg\",\"/onsyuri/haruuru/BGM/MUSIC_02.OGG\"]"
+    ]
+  },
+  "logs": [
+    {
+      "type": "warning",
+      "text": "The keyword 'slider-vertical' specified to an 'appearance' property is not standardized. It will be removed in the future. Use <input type=range style=\"writing-mode: vertical-lr; direction: rtl\"> instead."
+    },
+    {
+      "type": "warning",
+      "text": "The ScriptProcessorNode is deprecated. Use AudioWorkletNode instead. (https://bit.ly/audio-worklet)"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x12400593800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x12400593800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x12400593800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "error",
+      "text": " *** failed to open nsa or ns2 archive, ignored.  ***"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x12400593800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    }
+  ]
+}

@@ -23,7 +23,10 @@ from .models import (
     EmailTwoFactorBypassUser,
     HandriveAccessRule,
     HandriveUserQuota,
+    MinecraftAccountLink,
+    MinecraftLinkCode,
     NavLink,
+    OnscripterAccessUser,
     QuickLink,
     UserProfile,
 )
@@ -134,6 +137,26 @@ class QuickLinkAdmin(admin.ModelAdmin):
     ordering = ["user__username", "display_order", "id"]
 
 
+@admin.register(MinecraftAccountLink)
+class MinecraftAccountLinkAdmin(admin.ModelAdmin):
+    list_display = ["user", "minecraft_name", "edition", "minecraft_uuid", "floodgate_xuid", "last_linked_at", "last_seen_at"]
+    list_filter = ["edition"]
+    search_fields = ["user__username", "user__email", "minecraft_name", "minecraft_uuid", "floodgate_xuid"]
+    readonly_fields = ["first_linked_at", "last_linked_at"]
+    autocomplete_fields = ["user"]
+    ordering = ["user__username", "minecraft_name"]
+
+
+@admin.register(MinecraftLinkCode)
+class MinecraftLinkCodeAdmin(admin.ModelAdmin):
+    list_display = ["user", "used", "created_at", "expires_at", "used_at"]
+    list_filter = ["used"]
+    search_fields = ["user__username", "user__email", "code_hash"]
+    readonly_fields = ["code_hash", "created_at", "used_at"]
+    autocomplete_fields = ["user"]
+    ordering = ["-created_at"]
+
+
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
     list_display = ["user", "theme_mode", "preferred_ui_lang", "preferred_root_search_engine", "weather_city", "weather_country", "updated_at"]
@@ -144,6 +167,18 @@ class UserProfileAdmin(admin.ModelAdmin):
 
 @admin.register(EmailTwoFactorBypassUser)
 class EmailTwoFactorBypassUserAdmin(admin.ModelAdmin):
+    list_display = ["user", "user_email", "created_at", "updated_at"]
+    search_fields = ["user__username", "user__email"]
+    autocomplete_fields = ["user"]
+    ordering = ["user__username"]
+
+    @admin.display(description="이메일")
+    def user_email(self, obj):
+        return obj.user.email
+
+
+@admin.register(OnscripterAccessUser)
+class OnscripterAccessUserAdmin(admin.ModelAdmin):
     list_display = ["user", "user_email", "created_at", "updated_at"]
     search_fields = ["user__username", "user__email"]
     autocomplete_fields = ["user"]

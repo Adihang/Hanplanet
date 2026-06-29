@@ -14,6 +14,12 @@ urlpatterns = [
     path("status.json", views.minecraft_status_json, name="minecraft_status_json"),
     path("server-log.json", views.minecraft_server_log_json, name="minecraft_server_log_json"),
     path("server-command.json", views.minecraft_server_command_json, name="minecraft_server_command_json"),
+    path("api/minecraft/link/start", views.minecraft_link_start_json, name="minecraft_link_start_json"),
+    path("api/minecraft/link/start/", views.minecraft_link_start_json),
+    path("api/minecraft/link/status", views.minecraft_link_status_json, name="minecraft_link_status_json"),
+    path("api/minecraft/link/status/", views.minecraft_link_status_json),
+    path("api/minecraft/link/complete", views.minecraft_link_complete_json, name="minecraft_link_complete_json"),
+    path("api/minecraft/link/complete/", views.minecraft_link_complete_json),
     path('', views.none, name='none'),
 
     # ── Sync API (/api/sync/) ────────────────────────────────────────────────

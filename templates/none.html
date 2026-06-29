@@ -157,14 +157,7 @@
         >
             <p class="root-shortcuts-hint" data-root-shortcuts-hint></p>
             {% if not request.user.is_authenticated %}
-            <div class="root-shortcuts-auth-actions">
-                <a class="root-shortcuts-auth-btn" href="{{ handrive_login_url }}" data-auth-modal="login">
-                    {% include 'partials/ui_i18n.html' with key='login' %}
-                </a>
-                <a class="root-shortcuts-auth-btn root-shortcuts-auth-btn-primary" href="{{ handrive_signup_url }}" data-auth-modal="signup">
-                    {% include 'partials/ui_i18n.html' with key='signup' %}
-                </a>
-            </div>
+                {% include "partials/auth_action_buttons.html" with auth_actions_class="root-shortcuts-auth-actions" %}
             {% endif %}
             <form class="root-shortcuts-form" data-root-shortcut-form hidden>
                 <input type="text" class="root-shortcuts-input" data-root-shortcut-name maxlength="80">

@@ -1,0 +1,10 @@
+{% firstof auth_action_login_url toolbar_auth_login_url handrive_login_url as resolved_auth_login_url %}
+{% firstof auth_action_signup_url toolbar_auth_signup_url handrive_signup_url as resolved_auth_signup_url %}
+<div class="ui-auth-action-buttons{% if auth_actions_class %} {{ auth_actions_class }}{% endif %}">
+    <a class="ui-btn" href="{{ resolved_auth_signup_url }}{% if auth_action_next %}?next={{ auth_action_next|urlencode }}{% endif %}" data-auth-modal="signup">
+        {% include 'partials/ui_i18n.html' with key='signup' %}
+    </a>
+    <a class="ui-btn ui-btn-primary" href="{{ resolved_auth_login_url }}{% if auth_action_next %}?next={{ auth_action_next|urlencode }}{% endif %}" data-auth-modal="login">
+        {% include 'partials/ui_i18n.html' with key='login' %}
+    </a>
+</div>

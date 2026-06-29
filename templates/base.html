@@ -89,14 +89,14 @@
     <meta property="og:site_name" content="{{ meta_site_name|default:'Hanplanet' }}">
     <meta property="og:description" content="{{ meta_og_description|default:'Django로 작성한 포트폴리오 입니다.' }}">
     <meta property="og:url" content="{{ meta_og_url|default:meta_canonical_url|default:request.build_absolute_uri }}">
-    <meta property="og:image" content="{{ meta_og_image|default:'https://www.hanplanet.com/static/media/icons/hanplanet-og-1200.png' }}">
+    <meta property="og:image" content="{{ meta_og_image|default:'https://www.hanplanet.com/static/media/icons/hanplanet-og-1200-v3.png' }}">
     {% if meta_image_alt %}
     <meta property="og:image:alt" content="{{ meta_image_alt }}">
     {% endif %}
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ meta_og_title|default:'Hanplanet' }}">
     <meta name="twitter:description" content="{{ meta_og_description|default:'Django로 작성한 포트폴리오 입니다.' }}">
-    <meta name="twitter:image" content="{{ meta_twitter_image|default:meta_og_image|default:'https://www.hanplanet.com/static/media/icons/hanplanet-og-1200.png' }}">
+    <meta name="twitter:image" content="{{ meta_twitter_image|default:meta_og_image|default:'https://www.hanplanet.com/static/media/icons/hanplanet-og-1200-v3.png' }}">
     {% if meta_image_alt %}
     <meta name="twitter:image:alt" content="{{ meta_image_alt }}">
     {% endif %}

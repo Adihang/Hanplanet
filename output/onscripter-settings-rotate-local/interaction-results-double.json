@@ -1,0 +1,66 @@
+{
+  "startPoint": {
+    "x": 640,
+    "y": 441
+  },
+  "rotatedPoint": {
+    "x": 646.75,
+    "y": 450,
+    "visual": {
+      "x": 302.5,
+      "y": 0,
+      "width": 675,
+      "height": 900,
+      "top": 0,
+      "right": 977.5,
+      "bottom": 900,
+      "left": 302.5
+    },
+    "layoutWidth": 900,
+    "layoutHeight": 675,
+    "localX": 450,
+    "localY": 330.75
+  },
+  "settingsState": {
+    "game": "onscripter",
+    "rotated": false,
+    "settingsButtonVisible": true,
+    "audioMuted": false,
+    "audioVolume": 80,
+    "navRevealed": false,
+    "canvas": {
+      "width": 800,
+      "height": 600,
+      "cssWidth": 1200,
+      "cssHeight": 900
+    },
+    "audioPanelFocused": false
+  },
+  "rotatedState": {
+    "game": "onscripter",
+    "rotated": true,
+    "settingsButtonVisible": true,
+    "audioMuted": false,
+    "audioVolume": 80,
+    "navRevealed": false,
+    "canvas": {
+      "width": 800,
+      "height": 600,
+      "cssWidth": 900,
+      "cssHeight": 675
+    },
+    "audioPanelFocused": false
+  },
+  "errors": [
+    {
+      "scenario": "settings-double",
+      "type": "console",
+      "text": " *** failed to open nsa or ns2 archive, ignored.  ***"
+    },
+    {
+      "scenario": "rotated-double",
+      "type": "console",
+      "text": " *** failed to open nsa or ns2 archive, ignored.  ***"
+    }
+  ]
+}

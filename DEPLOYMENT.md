@@ -1,8 +1,10 @@
-# 운영/배포 가이드 (macOS launchd — Docker 미사용)
+# 운영/배포 가이드 (Docker Compose + macOS launchd)
 
 이 문서는 현재 프로젝트의 운영 배포 방법을 정리합니다.
 
-> **Docker는 현재 사용하지 않습니다.** 모든 서비스는 macOS launchd 네이티브 데몬으로 실행합니다.
+> Docker Compose는 새 서버 복제용 운영 경로입니다. 기존 macOS launchd 네이티브 데몬 구성도 유지합니다.
+
+Docker 운영 복제 절차는 [README.md](./README.md)의 "Docker 운영 복제" 섹션을 우선 참고하세요.
 
 현재 기본 구성:
 
@@ -64,7 +66,7 @@ chmod 600 config/secrets.json
 - `DJANGO_SERVE_FILES` (기본: `true`)
 - `OLLAMA_BASE_URL` (기본: `http://localhost:11434`)
 - `OLLAMA_MODEL` (기본: `gemma4:12b`)
-- `GAME_JWT_SECRET`, `GAME_JWT_ISSUER`, `GAME_JWT_AUDIENCE`
+- `GAME_JWT_SECRET`, `GAME_JWT_ISSUER`, `GAME_JWT_AUDIENCE`, `BUMPERCAR_SPIKY_INTERNAL_SECRET`
 - `FORGEJO_BASE_URL`, `FORGEJO_ADMIN_TOKEN`, `PUBLIC_GIT_BASE_URL`
 
 ---
@@ -392,9 +394,12 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.nginx-accesslog-rotate
 
 ---
 
-## 14. Docker (미사용 — 참고용)
+## 14. Docker Compose
 
-> Docker는 현재 사용하지 않습니다. 아래는 이전 설계 참고용 정보입니다.
+Docker Compose 설정은 새 서버에서 앱 런타임을 재현하기 위한 기본 경로입니다. launchd 운영과 같은 포트를 공유하므로 전환 시 기존 launchd 서비스와 Cloudflare Tunnel 라우팅을 같이 조정해야 합니다.
 
 관련 파일: `docker-compose.yml`, `Dockerfile`, `docker/entrypoint.sh`,
-`docker/nginx/default.conf`, `docker/cloudflared/config.yml.example`, `.env.docker.example`
+`docker/nginx/default.conf`, `docker/cloudflared/config.yml.example`, `.env.docker.example`,
+`scripts/start_docker_stack.sh`, `deploy/launchd/com.hanplanet.docker-stack.plist`
+
+macOS 운영에서 Docker Compose를 주 런타임으로 쓰는 경우 `com.hanplanet.docker-stack` launchd 항목을 설치합니다. 이 항목은 로그인/부팅 시 Colima를 시작하고 `docker compose up -d --remove-orphans`를 실행합니다. 같은 포트를 쓰는 기존 네이티브 항목(`gunicorn`, `nginx`, `gitea`, `celery`, 게임 서버, 맵 협업 서버, Wargame Apache, healthcheck)과 `homebrew.mxcl.nginx`는 disable 상태로 유지해야 합니다.

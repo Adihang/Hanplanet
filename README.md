@@ -38,104 +38,109 @@ Hanplanet은 하나의 Django 프로젝트 안에 아래 기능을 함께 운영
 
 ### 1. 공개 트래픽 경로
 
-현재 실제 운영 ingress는 Cloudflare Tunnel이 먼저 받고, 호스트 내부 포트로 직접 연결합니다.
+현재 운영 ingress는 호스트 launchd로 실행되는 Cloudflare Tunnel이 먼저 받고, 모든 HTTP 도메인을 호스트 `localhost:80`으로 전달합니다. `localhost:80`은 Docker Compose의 `nginx` 컨테이너가 publish한 포트이며, Nginx가 각 컨테이너와 남아 있는 호스트 서비스로 라우팅합니다.
 
 ```mermaid
 flowchart LR
   U["Client Browser"] --> CF["Cloudflare"]
-  CF --> T["cloudflared tunnel"]
-  T --> WWW["localhost:8000 (Django/Gunicorn)"]
-  T --> MC["localhost:80 (Nginx -> Django/BlueMap)"]
-  T --> GIT["localhost:3000 (Gitea)"]
-  T --> GAME["localhost:8081 (Node game server)"]
-  T --> MAP["localhost:8083 (Map collab WS)"]
-  T --> WG["localhost:8090 (Wargame Apache)"]
-  T --> SSH["localhost:22 (SSH)"]
+  CF --> T["cloudflared (host launchd)"]
+  T --> N["localhost:80 (Docker Nginx)"]
+  T --> SSH["localhost:22 (host SSH)"]
+  N --> Django["django:8000"]
+  N --> Gitea["gitea:3000"]
+  N --> Game["bumpercar-spiky-server:8080"]
+  N --> Map["map-collab-server:8083"]
+  N --> Wargame["wargame:8090"]
+  N --> BlueMap["host.docker.internal:8100 (BlueMap)"]
 ```
 
 현재 `~/.cloudflared/config.yml` 기준:
 
-- `mc.hanplanet.com` -> `http://localhost:80`
-- `www.hanplanet.com`, `hanplanet.com` -> `http://localhost:8000`
-- `git.hanplanet.com` -> `http://localhost:3000`
-- `game.hanplanet.com` -> `http://localhost:8081`
-- `map-collab.hanplanet.com` -> `http://localhost:8083`
+- `www.hanplanet.com`, `hanplanet.com`, `mc.hanplanet.com`, `git.hanplanet.com`, `game.hanplanet.com`, `map-collab.hanplanet.com`, `wargame.hanplanet.com` -> `http://localhost:80`
 - `ssh.hanplanet.com` -> `ssh://localhost:22`
-- `wargame.hanplanet.com` -> `http://localhost:8090`
 
-메인 도메인은 현재 Cloudflare Tunnel이 Gunicorn `:8000`으로 직접 전달합니다. Nginx `:80`도 launchd로 실행되지만, 현재 역할은 로컬 reverse proxy, 정적/미디어 alias, JSON access log, 직접 IP/로컬 접속 대응입니다.
+컨테이너형 Cloudflare Tunnel을 쓸 때는 [`docker/cloudflared/config.yml.example`](./docker/cloudflared/config.yml.example)처럼 HTTP hostname을 모두 `http://nginx:80`으로 보냅니다. HPmail(Postfix/Dovecot), Minecraft/Paper/BlueMap, Ollama는 아직 컨테이너 밖 호스트 서비스로 남기고 Docker 내부에서는 `host.docker.internal`로 연결합니다.
 
 ### 2. 호스트 내부 서비스 구조
 
 ```mermaid
 flowchart TD
-  Django["Django / Gunicorn :8000"]
-  Nginx["Nginx :80 (host local reverse proxy, static/media alias, logs)"]
-  Forgejo["Forgejo(Gitea) :3000"]
-  Redis["Redis :6379"]
-  Celery["Celery worker"]
-  Ollama["Ollama :11434"]
-  Game["Bumpercar Node WS :8081"]
-  MapCollab["Map collab Node WS :8083"]
-  MapAdmin["Map collab admin :8084"]
-  Wargame["Wargame Apache :8090"]
-  PHPFPM["PHP-FPM :9000"]
+  Nginx["Docker Nginx :80"]
+  Django["Django / Gunicorn container :8000"]
+  Gitea["Gitea container :3000"]
+  Redis["Redis container :6379"]
+  Celery["Celery worker container"]
+  Game["Bumpercar Node container :8080"]
+  GameAdmin["Bumpercar admin :8082 (container network, host 127.0.0.1)"]
+  MapCollab["Map collab Node container :8083"]
+  MapAdmin["Map collab admin :8084 (container network, host 127.0.0.1)"]
+  Wargame["Wargame PHP built-in server container :8090"]
+  Ollama["Host Ollama :11434"]
   Postfix["Postfix :25"]
   Dovecot["Dovecot IMAP/LMTP"]
   HPmailStorage["HPmail storage"]
-  Minecraft["Minecraft/Paper :25565"]
-  BlueMap["BlueMap web :8100"]
-  SQLite["SQLite (Django DB / Forgejo DB)"]
+  Minecraft["Host Minecraft/Paper :25565"]
+  BlueMap["Host BlueMap web :8100"]
+  DjangoDB["/data/django/db.sqlite3"]
+  GiteaDB["/data/gitea"]
   WargameDB["Wargame SQLite"]
-  Media["media/"]
-  Static["staticfiles/"]
-  RepoData["forgejo/data/repos/"]
+  Media["/data/media"]
+  Static["/app/staticfiles"]
+  RepoData["/data/forgejo-repos"]
+  McData["Minecraft bind mount"]
 
-  Django --> SQLite
+  Nginx --> Django
+  Nginx --> Gitea
+  Nginx --> Game
+  Nginx --> MapCollab
+  Nginx --> Wargame
+  Nginx --> Static
+  Nginx --> Media
+  Nginx --> BlueMap
+  Django --> DjangoDB
   Django --> Media
   Django --> Static
   Django --> Ollama
   Django --> Redis
   Django --> Celery
-  Django --> Forgejo
+  Django --> Gitea
+  Django --> GameAdmin
   Django --> MapAdmin
+  Django --> McData
   Django --> Dovecot
   Django --> Postfix
   Django --> HPmailStorage
   Postfix --> Dovecot
   Dovecot --> HPmailStorage
-  Celery --> Forgejo
+  Celery --> Gitea
   Celery --> Redis
-  Forgejo --> RepoData
-  Forgejo --> SQLite
-  Django --> Game
+  Gitea --> RepoData
+  Gitea --> GiteaDB
+  Game --> Django
+  Game --> GameAdmin
   MapCollab -. exposes .-> MapAdmin
-  Wargame --> PHPFPM
   Wargame --> WargameDB
-  Nginx --> Django
-  Nginx --> Static
-  Nginx --> Media
-  Nginx --> BlueMap
   Minecraft --> BlueMap
+  McData --> Minecraft
 ```
 
 ### 3. 서버별 역할
 
 | 서버/서비스 | 역할 | 주요 설정 파일 |
 | --- | --- | --- |
-| Django + Gunicorn | 메인 웹, API, 템플릿 렌더링, HanDrive, 포트폴리오, 게임/맵/동기화 토큰 발급 | [`config/settings.py`](./config/settings.py), [`config/urls.py`](./config/urls.py), [`main/views.py`](./main/views.py), [`main/handrive_views.py`](./main/handrive_views.py), [`main/sync_views.py`](./main/sync_views.py) |
+| Django + Gunicorn | 메인 웹, API, 템플릿 렌더링, HanDrive, 포트폴리오, 게임/맵/동기화 토큰 발급. Docker에서는 `django` 서비스 | [`Dockerfile`](./Dockerfile), [`docker/entrypoint.sh`](./docker/entrypoint.sh), [`config/settings.py`](./config/settings.py), [`main/views.py`](./main/views.py), [`main/handrive_views.py`](./main/handrive_views.py), [`main/sync_views.py`](./main/sync_views.py) |
 | Django 분리 앱 | AI 프록시/사용량, GitHub/Google/Gitea 모델, HPmail, portfolio/stratagem 모델 | [`ai/`](./ai/), [`git/`](./git/), [`hpmail/`](./hpmail/), [`portfolio/`](./portfolio/), [`stratagem/`](./stratagem/) |
-| Forgejo / Gitea | Git 저장소 웹 UI, bare repo 저장소, OAuth/세션 기반 Git 웹 | [`forgejo/custom/conf/app.ini`](./forgejo/custom/conf/app.ini), [`forgejo/custom/templates/`](./forgejo/custom/templates/) |
-| Celery worker | HanDrive -> Git 저장소 생성/재시도 같은 비동기 작업 | [`main/git_tasks.py`](./main/git_tasks.py), [`deploy/launchd/com.hanplanet.celery.plist`](./deploy/launchd/com.hanplanet.celery.plist) |
-| Redis | Celery broker | launchd/brew services 환경 |
-| HPmail | 웹메일 UI/API, Postfix map export, Dovecot IMAP 읽기, SMTP 발송 | [`hpmail/`](./hpmail/), [`deploy/hpmail/`](./deploy/hpmail/), [`deploy/launchd/com.hanplanet.dovecot.plist`](./deploy/launchd/com.hanplanet.dovecot.plist) |
-| Node game server | 실시간 범퍼카 월드 시뮬레이션, JWT 검증, WebSocket | [`bumpercar-spiky-server/server.js`](./bumpercar-spiky-server/server.js), [`bumpercar-spiky-server/world/world.js`](./bumpercar-spiky-server/world/world.js) |
-| Map collab server | HanDrive 지도 뷰어 실시간 협업, presence/admin endpoint | [`map-collab-server/server.js`](./map-collab-server/server.js), [`map-collab-server/network/websocket.js`](./map-collab-server/network/websocket.js) |
-| Wargame Apache/PHP | `wargame.hanplanet.com` 전용 PHP 앱, 문제/플래그/SQLite 격리 | [`Wargame/README.md`](./Wargame/README.md), [`Wargame/deploy/apache/httpd-wargame.conf`](./Wargame/deploy/apache/httpd-wargame.conf) |
+| Gitea | Git 저장소 웹 UI, bare repo 저장소, OAuth/세션 기반 Git 웹. Docker에서는 `gitea` 서비스와 커스텀 이미지 사용 | [`docker/gitea/Dockerfile`](./docker/gitea/Dockerfile), [`docker/gitea/entrypoint.sh`](./docker/gitea/entrypoint.sh), [`forgejo/custom/conf/app.ini`](./forgejo/custom/conf/app.ini), [`forgejo/custom/templates/`](./forgejo/custom/templates/) |
+| Celery worker | HanDrive -> Git 저장소 생성/재시도 같은 비동기 작업. Docker에서는 `celery` 서비스 | [`main/git_tasks.py`](./main/git_tasks.py), [`docker-compose.yml`](./docker-compose.yml) |
+| Redis | Celery broker. Docker에서는 `redis:7-alpine` 서비스 | [`docker-compose.yml`](./docker-compose.yml) |
+| HPmail | 웹메일 UI/API, Postfix map export, Dovecot IMAP 읽기, SMTP 발송. Postfix/Dovecot은 아직 호스트 서비스 | [`hpmail/`](./hpmail/), [`deploy/hpmail/`](./deploy/hpmail/), [`deploy/launchd/com.hanplanet.dovecot.plist`](./deploy/launchd/com.hanplanet.dovecot.plist) |
+| Node game server | 실시간 범퍼카/스피키 월드 시뮬레이션, JWT 검증, WebSocket, Docker 내부 admin API | [`bumpercar-spiky-server/Dockerfile`](./bumpercar-spiky-server/Dockerfile), [`bumpercar-spiky-server/server.js`](./bumpercar-spiky-server/server.js), [`bumpercar-spiky-server/world/world.js`](./bumpercar-spiky-server/world/world.js) |
+| Map collab server | HanDrive 지도 뷰어 실시간 협업, presence/admin endpoint | [`map-collab-server/Dockerfile`](./map-collab-server/Dockerfile), [`map-collab-server/server.js`](./map-collab-server/server.js), [`map-collab-server/network/websocket.js`](./map-collab-server/network/websocket.js) |
+| Wargame PHP | `wargame.hanplanet.com` 전용 PHP 앱, 문제/플래그/SQLite 격리. Docker에서는 PHP built-in server `:8090` | [`Wargame/Dockerfile`](./Wargame/Dockerfile), [`Wargame/docker-entrypoint.sh`](./Wargame/docker-entrypoint.sh), [`Wargame/README.md`](./Wargame/README.md) |
 | Ollama | `/api/chat/`, `/ai/v1/*`의 LLM 백엔드 | [`config/settings.py`](./config/settings.py), [`ai/views.py`](./ai/views.py) |
 | Minecraft/Paper | `mc.hanplanet.com` 상태 페이지, 콘솔 API, BlueMap 프록시 | [`scripts/run_minecraft_server.sh`](./scripts/run_minecraft_server.sh), [`scripts/write_minecraft_status.py`](./scripts/write_minecraft_status.py), [`minecraft-status-plugin/`](./minecraft-status-plugin/) |
-| Nginx | host local reverse proxy, static/media alias, access log JSON, `/ai/` long-streaming proxy 설정, `mc.hanplanet.com`/BlueMap 프록시 | [`nginx/nginx.autorun.conf`](./nginx/nginx.autorun.conf), [`nginx/portfolio.conf`](./nginx/portfolio.conf) |
-| Cloudflare Tunnel | 공개 도메인 -> 로컬 포트 라우팅 | `~/.cloudflared/config.yml` |
+| Nginx | Docker ingress reverse proxy, static/media alias, access log JSON, `/ai/` long-streaming proxy, Git/Game/Map/Wargame/Minecraft/BlueMap 라우팅 | [`docker/nginx/default.conf`](./docker/nginx/default.conf), [`docker-compose.yml`](./docker-compose.yml) |
+| Cloudflare Tunnel | 공개 도메인 -> Docker Nginx 라우팅. 호스트 launchd 또는 컨테이너 profile 둘 다 가능 | `~/.cloudflared/config.yml`, [`docker/cloudflared/config.yml.example`](./docker/cloudflared/config.yml.example) |
 
 ## 서버들은 어떻게 연동되는가
 
@@ -189,8 +194,11 @@ flowchart TD
 2. 클라이언트가 `/api/game-auth-token/`으로 JWT 요청
 3. Django가 게임 전용 JWT 발급
 4. 브라우저가 `wss://game.hanplanet.com`으로 WebSocket 연결
-5. Node 게임 서버가 JWT를 검증하고 월드 시뮬레이션에 플레이어를 추가
-6. 월드 상태를 msgpack/WebSocket으로 브라우저에 지속 전송
+5. Docker Nginx가 WebSocket upgrade를 `bumpercar-spiky-server:8080`으로 전달
+6. Node 게임 서버가 JWT를 검증하고 월드 시뮬레이션에 플레이어를 추가
+7. 게임 결과 통계는 Node -> Django 내부 API `/api/internal/bumpercar-spiky/stats/`로 저장되며, Docker에서는 `BUMPERCAR_SPIKY_INTERNAL_SECRET` 헤더로 인증
+8. Django 관리자 화면의 NPC 체력/런타임 재시작은 `GAME_ADMIN_URL`의 admin API를 호출함
+9. 월드 상태를 msgpack/WebSocket으로 브라우저에 지속 전송
 
 관련 코드:
 
@@ -204,8 +212,9 @@ flowchart TD
 1. 사용자가 HanDrive map viewer/editor를 열면 Django가 맵 경로와 사용자 권한을 확인
 2. 브라우저가 `/api/map-collab-auth-token/`으로 협업 JWT와 WebSocket URL을 요청
 3. 브라우저가 `wss://map-collab.hanplanet.com`으로 연결
-4. Node 맵 협업 서버가 JWT를 검증하고 방 단위로 stroke/text/ping/presence 이벤트를 중계
-5. Django admin의 맵 협업 세션 화면은 `127.0.0.1:8084` admin endpoint로 현재 방/사용자 상태를 조회
+4. Docker Nginx가 WebSocket upgrade를 `map-collab-server:8083`으로 전달
+5. Node 맵 협업 서버가 JWT를 검증하고 방 단위로 stroke/text/ping/presence 이벤트를 중계
+6. Django admin의 맵 협업 세션 화면은 Docker에서는 `http://map-collab-server:8084`, 네이티브 launchd에서는 `http://127.0.0.1:8084` admin endpoint로 현재 방/사용자 상태를 조회
 
 관련 코드:
 
@@ -216,11 +225,12 @@ flowchart TD
 
 ### Wargame 연동
 
-1. `wargame.hanplanet.com`은 Cloudflare Tunnel이 Apache `:8090`으로 직접 전달
-2. Apache는 `Wargame/public/`만 DocumentRoot로 노출하고 PHP-FPM `127.0.0.1:9000`으로 PHP 실행
-3. 문제/플래그/힌트/문제별 상태는 `Wargame/data/wargame.sqlite3`만 사용
-4. 사이트 통합이 필요한 로그인 상태, navbar, 풀이 기록, 사용자 설정만 Django API와 통신
-5. Wargame PHP는 Django DB, Django session, `media/` 파일 시스템에 직접 접근하지 않음
+1. `wargame.hanplanet.com`은 Cloudflare Tunnel -> Docker Nginx -> `wargame:8090`으로 전달
+2. Docker 운영에서는 `Wargame/Dockerfile` 이미지가 PHP built-in server를 `0.0.0.0:8090`에서 실행하고 `Wargame/public/`만 document root로 노출
+3. 네이티브 launchd 운영에서는 별도 Apache 설정 [`Wargame/deploy/apache/httpd-wargame.conf`](./Wargame/deploy/apache/httpd-wargame.conf)을 사용
+4. 문제/플래그/힌트/문제별 상태는 `Wargame/data/wargame.sqlite3` 또는 Docker volume `/app/Wargame/data/wargame.sqlite3`만 사용
+5. 사이트 통합이 필요한 로그인 상태, navbar, 풀이 기록, 사용자 설정만 Django API와 통신
+6. Wargame PHP는 Django DB, Django session, `media/` 파일 시스템에 직접 접근하지 않음
 
 관련 코드:
 
@@ -262,8 +272,12 @@ OpenAI-compatible API가 필요한 외부 도구는 `/ai/v1/*`를 사용합니�
 1. `com.hanplanet.minecraft`가 `/Users/imhanbyeol/Development/minecraft`의 Paper 서버를 실행
 2. `com.hanplanet.minecraft-status`가 15초마다 서버 query/log/world data를 읽어 status JSON을 생성
 3. Bukkit/Paper 플러그인 `HanplanetStatus.jar`도 상태 파일 작성에 사용될 수 있음
-4. `mc.hanplanet.com`은 Cloudflare Tunnel -> Nginx `:80`으로 들어오며, `/map/`은 BlueMap `:8100`, 나머지는 Django로 프록시
-5. Django는 `/status.json`, `/server-log.json`, `/server-command.json`으로 상태/로그/콘솔 명령 API를 제공
+4. `mc.hanplanet.com`은 Cloudflare Tunnel -> Docker Nginx `:80`으로 들어옴
+5. `/map/`, `/map/maps/`, `/map/maps-v20260623-0630/`은 호스트 BlueMap `host.docker.internal:8100`으로 프록시
+6. `/static/`과 `/media/`는 Nginx가 컨테이너 볼륨에서 직접 서빙
+7. `/status.json`, `/server-log.json`, `/server-command.json`과 나머지 페이지는 Django로 프록시
+8. Django 컨테이너는 `MINECRAFT_SERVER_VOLUME` bind mount로 호스트 Minecraft 서버 디렉터리를 읽음
+9. Docker Django에서 Minecraft 명령은 기본적으로 RCON(`MINECRAFT_CONSOLE_TRANSPORT=rcon`)으로 호스트 Paper 서버에 전달
 
 관련 코드:
 
@@ -303,6 +317,7 @@ OpenAI-compatible API가 필요한 외부 도구는 `/ai/v1/*`를 사용합니�
 - GitHub OAuth / Google OAuth + Drive API
 - Cloudflare Tunnel
 - Nginx
+- Docker / Docker Compose
 - macOS launchd
 - Apache HTTP Server
 - PHP-FPM
@@ -339,7 +354,7 @@ OpenAI-compatible API가 필요한 외부 도구는 `/ai/v1/*`를 사용합니�
 | `/service-worker.js` | service worker | [`main/views.py`](./main/views.py) `service_worker` |
 | `/status.json` | Minecraft 공개 상태 JSON | [`main/views.py`](./main/views.py) `minecraft_status_json` |
 | `/server-log.json` | Minecraft 콘솔 로그 tail | [`main/views.py`](./main/views.py) `minecraft_server_log_json` |
-| `/server-command.json` | Minecraft 콘솔 명령 입력 | [`main/views.py`](./main/views.py) `minecraft_server_command_json` |
+| `/server-command.json` | Minecraft 서버 명령 입력(RCON/FIFO) | [`main/views.py`](./main/views.py) `minecraft_server_command_json` |
 | `/api/chat/` | Ollama 챗봇 | [`main/views.py`](./main/views.py) `chat_with_ai` |
 | `/api/translate/` | Ollama 기반 번역 | [`main/views.py`](./main/views.py) `translate_text` |
 | `/ai/v1/models` | OpenAI-compatible models endpoint | [`ai/views.py`](./ai/views.py) `ollama_models` |
@@ -498,24 +513,28 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 | [`static/`](./static/) | 소스 정적 파일. CSS/JS/아이콘/게임 자산 |
 | [`staticfiles/`](./staticfiles/) | `collectstatic` 결과물. 직접 수정 금지 |
 | [`media/`](./media/) | 업로드 파일, HanDrive 실제 파일, 포트폴리오 업로드 |
-| [`forgejo/`](./forgejo/) | Gitea work path, custom templates/assets, data/log |
-| [`bumpercar-spiky-server/`](./bumpercar-spiky-server/) | 별도 Node 게임 서버 |
-| [`map-collab-server/`](./map-collab-server/) | HanDrive 지도 실시간 협업 WebSocket/admin 서버 |
-| [`Wargame/`](./Wargame/) | `wargame.hanplanet.com` 전용 Apache/PHP/SQLite 앱 |
+| [`forgejo/`](./forgejo/) | Gitea custom templates/assets와 네이티브 운영용 work path |
+| [`bumpercar-spiky-server/`](./bumpercar-spiky-server/) | 별도 Node 게임 서버. Dockerfile 포함 |
+| [`map-collab-server/`](./map-collab-server/) | HanDrive 지도 실시간 협업 WebSocket/admin 서버. Dockerfile 포함 |
+| [`Wargame/`](./Wargame/) | `wargame.hanplanet.com` 전용 PHP/SQLite 앱. Dockerfile과 launchd Apache 설정을 모두 보유 |
 | [`sync-client/`](./sync-client/) | HanDrive 동기화 클라이언트 |
 | [`HanHarness/`](./HanHarness/) | HanDrive CLI/HanHarness 소스 및 패키징 트리 |
 | [`minecraft-status-plugin/`](./minecraft-status-plugin/) | Minecraft Paper 상태 전송 플러그인 |
-| [`deploy/`](./deploy/) | launchd plist, helper script |
+| [`deploy/`](./deploy/) | launchd plist, Docker stack launchd plist, helper script |
 | [`deploy/hpmail/`](./deploy/hpmail/) | Postfix/Dovecot map 생성과 메일 배포 설정 |
-| [`nginx/`](./nginx/) | nginx 설정 |
+| [`nginx/`](./nginx/) | 네이티브 launchd 운영용 nginx 설정 |
 | [`scripts/`](./scripts/) | launchd 실행 래퍼, access log rotate/summary, 헬스체크, HDD 정리 스크립트 |
 | [`storage_profile.py`](./storage_profile.py) | `DISC` 값에 따른 media/Forgejo/GitHub cache root 결정 |
-| [`docker/`](./docker/) | 현재 운영 미사용 Docker/Cloudflared 예시 설정 |
+| [`docker/`](./docker/) | Docker Compose용 Nginx, Cloudflared, Gitea image, Django entrypoint 설정 |
+| [`docker-compose.yml`](./docker-compose.yml) | Docker 운영 스택 정의 |
+| [`Dockerfile`](./Dockerfile) | Django/Celery 공용 이미지 |
 | [`docs/plans/`](./docs/plans/) | 기능/제품 개발 계획서 |
 | [`docs/samples/`](./docs/samples/) | 보존용 샘플, HTML 덤프, 참고 출력물 |
 | [`docs/readme-assets/`](./docs/readme-assets/) | README에서 참조하는 이미지 자산 |
 
 `deploy/launchd/`, `bumpercar-spiky-server/deploy/launchd/`, `map-collab-server/deploy/launchd/`, `Wargame/deploy/launchd/`의 plist는 절대경로와 `WorkingDirectory`를 사용합니다. 따라서 `scripts/`, `nginx/`, `forgejo/`, `bumpercar-spiky-server/`, `map-collab-server/`, `Wargame/`, `storage_profile.py`는 launchd 안정 경로로 취급하고, 이 경로를 옮길 때는 plist, README, 배포 문서, 설치된 LaunchAgents 재설치까지 같이 처리해야 합니다.
+
+Docker 운영에서도 [`deploy/launchd/com.hanplanet.docker-stack.plist`](./deploy/launchd/com.hanplanet.docker-stack.plist)가 [`scripts/start_docker_stack.sh`](./scripts/start_docker_stack.sh)를 절대경로로 실행합니다. 프로젝트 루트 자체를 옮길 때는 `HANPLANET_APP_DIR` 환경변수 또는 plist의 경로를 같이 수정합니다.
 
 검증 산출물과 로컬 스크래치 파일은 소스 트리에 두지 않습니다. `output/`, `tmp/`, `test-results/`, `.playwright*`, `deploy/hpmail/backups/`, sync client 빌드 실행 파일은 `.gitignore` 대상이며, 보존이 필요한 로컬 결과물은 `.local/` 아래에 둡니다.
 
@@ -587,18 +606,22 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 | [`forgejo/custom/conf/app.ini`](./forgejo/custom/conf/app.ini) | Gitea 설정 |
 | [`forgejo/custom/templates/`](./forgejo/custom/templates/) | Gitea 템플릿 오버라이드 |
 | [`forgejo/custom/public/assets/`](./forgejo/custom/public/assets/) | Gitea가 쓰는 커스텀 CSS/JS/이미지 |
-| `forgejo/data/repos/` | 프로젝트 내 bare Git 저장소 링크/마운트 지점 |
+| `forgejo/data/repos/` | 네이티브 운영의 bare Git 저장소 링크/마운트 지점 |
 | `/Volumes/HANPLANET_HDD/Hanplanet/forgejo-repos` | `DISC=hdd` 기준 실제 bare Git 저장소 root |
 | `forgejo/data/gitea.db` | Gitea SQLite DB |
 | `forgejo/log/` | Gitea stdout/stderr 및 app 로그 |
+| `/data/gitea` | Docker 컨테이너 내부 Gitea DB/config/runtime data |
+| `/data/git/repositories` | Docker 컨테이너 내부 bare Git 저장소 root |
 
 ### `bumpercar-spiky-server/` 구조
 
 | 경로 | 목적 |
 | --- | --- |
 | [`server.js`](./bumpercar-spiky-server/server.js) | 진입점 |
+| [`Dockerfile`](./bumpercar-spiky-server/Dockerfile) | Docker 이미지 정의 |
 | [`config/config.js`](./bumpercar-spiky-server/config/config.js) | 런타임 기본 설정 |
 | [`config/gameplaySettings.js`](./bumpercar-spiky-server/config/gameplaySettings.js) | Django 공유 게임 설정 로더 |
+| [`services/accountStats.js`](./bumpercar-spiky-server/services/accountStats.js) | 게임 결과 통계를 Django 내부 API로 전송 |
 | [`network/websocket.js`](./bumpercar-spiky-server/network/websocket.js) | WebSocket 연결/메시지 처리 |
 | [`game/gameLoop.js`](./bumpercar-spiky-server/game/gameLoop.js) | fixed tick 루프 |
 | [`world/world.js`](./bumpercar-spiky-server/world/world.js) | 월드 핵심 판정 |
@@ -611,6 +634,7 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 | 경로 | 목적 |
 | --- | --- |
 | [`server.js`](./map-collab-server/server.js) | WebSocket/admin 서버 진입점 |
+| [`Dockerfile`](./map-collab-server/Dockerfile) | Docker 이미지 정의 |
 | [`config/config.js`](./map-collab-server/config/config.js) | 포트/JWT/presence TTL 설정 |
 | [`network/websocket.js`](./map-collab-server/network/websocket.js) | 맵 협업 WebSocket 연결/메시지 처리 |
 | [`network/admin.js`](./map-collab-server/network/admin.js) | Django admin이 조회하는 로컬 admin endpoint |
@@ -623,6 +647,8 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 | [`Wargame/public/`](./Wargame/public/) | Apache DocumentRoot. 공개 PHP/CSS/JS만 위치 |
 | [`Wargame/app/`](./Wargame/app/) | Wargame PHP 애플리케이션 로직 |
 | [`Wargame/data/`](./Wargame/data/) | Wargame SQLite DB와 Apache/launchd 로그 |
+| [`Wargame/Dockerfile`](./Wargame/Dockerfile) | Docker 이미지 정의 |
+| [`Wargame/docker-entrypoint.sh`](./Wargame/docker-entrypoint.sh) | Docker 기동 시 DB 초기화 후 PHP built-in server 실행 |
 | [`Wargame/deploy/apache/httpd-wargame.conf`](./Wargame/deploy/apache/httpd-wargame.conf) | 전용 Apache 인스턴스 설정 |
 | [`Wargame/deploy/launchd/com.hanplanet.wargame-apache.plist`](./Wargame/deploy/launchd/com.hanplanet.wargame-apache.plist) | Wargame Apache launchd 설정 |
 
@@ -757,10 +783,11 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 ### Minecraft
 
 1. [`main/views.py`](./main/views.py) 의 `minecraft_*` 함수
-2. [`nginx/nginx.autorun.conf`](./nginx/nginx.autorun.conf) 의 `mc.hanplanet.com` server block
-3. [`scripts/write_minecraft_status.py`](./scripts/write_minecraft_status.py)
-4. [`scripts/run_minecraft_server.sh`](./scripts/run_minecraft_server.sh)
-5. [`minecraft-status-plugin/`](./minecraft-status-plugin/)
+2. [`docker/nginx/default.conf`](./docker/nginx/default.conf) 의 `mc.hanplanet.com` server block
+3. 네이티브 launchd 운영일 때는 [`nginx/nginx.autorun.conf`](./nginx/nginx.autorun.conf) 의 `mc.hanplanet.com` server block
+4. [`scripts/write_minecraft_status.py`](./scripts/write_minecraft_status.py)
+5. [`scripts/run_minecraft_server.sh`](./scripts/run_minecraft_server.sh)
+6. [`minecraft-status-plugin/`](./minecraft-status-plugin/)
 
 ### 공용 UI / 위젯
 
@@ -772,16 +799,72 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 
 ## 초기 세팅
 
+### Docker로 빠른 실행
+
+Docker 경로는 이 저장소에 포함된 [`Dockerfile`](./Dockerfile), [`docker-compose.yml`](./docker-compose.yml), [`docker/`](./docker/) 설정으로 재현합니다. 새 컴퓨터에서는 Python venv, Homebrew 패키지, Node 패키지를 직접 깔지 않아도 Docker가 Django, Celery, Redis, Gitea, Nginx, 게임 서버, 맵 협업 서버, Wargame 런타임을 이미지로 구성합니다.
+
+```bash
+cd /path/to/Hanplanet
+cp .env.docker.example .env
+docker compose up -d --build
+docker compose ps
+```
+
+로컬 확인 주소:
+
+- 메인: `http://localhost:8080`
+- Django 직접 접근: `http://localhost:8000`
+- Gitea 직접 접근: `http://localhost:3000`
+- 게임 WebSocket: `ws://localhost:8081`
+- 맵 협업 WebSocket: `ws://localhost:8083`
+- Wargame: `http://localhost:8090`
+
+Docker 서비스와 기본 포트:
+
+| Compose 서비스 | 컨테이너 내부 | 호스트 공개 | 역할 |
+| --- | --- | --- | --- |
+| `nginx` | `:80` | `${HTTP_PORT:-8080}` | 모든 HTTP hostname ingress, static/media, BlueMap proxy |
+| `django` | `:8000` | `${DJANGO_PORT:-8000}` | 메인 Django/Gunicorn |
+| `celery` | 내부 전용 | 없음 | 비동기 Git/HanDrive 작업 |
+| `redis` | `:6379` | 없음 | Celery broker |
+| `gitea` | `:3000` | `${GITEA_PORT:-3000}` | Git 웹 UI/API |
+| `bumpercar-spiky-server` | WS `:8080`, admin `:8082` | `${GAME_PORT:-8081}`, `127.0.0.1:${GAME_ADMIN_PORT:-8082}` | 게임 WebSocket/admin |
+| `map-collab-server` | WS `:8083`, admin `:8084` | `${MAP_COLLAB_PORT:-8083}`, `127.0.0.1:${MAP_COLLAB_ADMIN_PORT:-8084}` | 지도 협업 WebSocket/admin |
+| `wargame` | `:8090` | `${WARGAME_PORT:-8090}` | Wargame PHP 앱 |
+| `cloudflared` | profile `tunnel` | 없음 | 선택 사항. 컨테이너형 Cloudflare Tunnel |
+
+처음 구동할 때 `django` 컨테이너가 `migrate`와 `collectstatic`을 자동 실행합니다. 관리자 계정은 컨테이너 안에서 생성합니다.
+
+```bash
+docker compose exec django python manage.py createsuperuser
+```
+
+Git 기능까지 쓰려면 Gitea 관리자 계정과 API 토큰을 만든 뒤 `.env`의 `FORGEJO_ADMIN_TOKEN`에 넣고 재시작합니다.
+
+```bash
+docker compose restart django celery
+```
+
+주의할 점:
+
+- Git에 포함되는 것은 Docker 실행 정의와 코드입니다. 실제 운영 데이터(DB, media, mail, Gitea 저장소, Wargame DB)는 Docker volume 또는 bind mount에 저장되며 Git에 넣지 않습니다.
+- `.env`와 Cloudflare tunnel credential JSON은 비밀값이라 Git에 넣지 않습니다. `.env.docker.example`만 템플릿으로 관리합니다.
+- Docker Nginx가 `/static/`과 `/media/`를 직접 서빙합니다. `mc.hanplanet.com`도 같은 media alias를 사용합니다.
+- 범퍼카 설정 파일은 Docker에서 `/data/django/bumpercar_spiky_settings.json`을 Django와 게임 서버가 공유합니다.
+- HPmail의 Postfix/Dovecot, Minecraft/Paper/BlueMap, Ollama는 아직 컨테이너 밖 호스트 서비스로 연결합니다. 이 기능까지 완전 복제하려면 해당 호스트 서비스 데이터와 설정도 별도로 옮겨야 합니다.
+
 ### 1. 필수 도구
 
-권장 환경:
+Docker 운영/복제에 필요한 도구:
+
+- Docker Desktop 또는 Docker Engine + Compose plugin
+
+네이티브 launchd 운영 또는 Docker 없이 로컬 재현할 때 필요한 도구:
 
 - macOS
 - Python 3.x
 - Node.js + npm
 - Homebrew
-
-운영 또는 로컬 재현에 필요한 도구:
 
 ```bash
 brew install nginx redis gitea php libreoffice dovecot msitools
@@ -860,9 +943,9 @@ cd /Users/imhanbyeol/Development/Hanplanet
 chmod 600 config/secrets.json
 ```
 
-### 4-1. 저장소 프로필 전환 (`DISC`)
+### 4-1. 저장소 프로필 전환 (`DISC`, 네이티브 launchd)
 
-Hanplanet은 `config/secrets.json`의 `DISC` 값으로 저장소 위치를 전환합니다.
+네이티브 launchd/venv 운영은 `config/secrets.json`의 `DISC` 값으로 저장소 위치를 전환합니다. Docker 운영은 `DISC` 대신 `.env`의 `HANPLANET_MEDIA_VOLUME`, `FORGEJO_REPOS_VOLUME`, `HANPLANET_GITHUB_CACHE_VOLUME` 같은 volume/bind mount 값을 사용합니다.
 
 - `DISC = "hdd"`
   - 운영 기본값
@@ -1026,9 +1109,141 @@ ollama serve
 
 ## 운영 배포 / 재시작
 
+### Docker 운영 복제
+
+Docker로 복제하면 코드와 런타임 정의는 Git으로 옮겨지고, 새 서버는 Docker만 준비하면 같은 서비스 묶음을 띄울 수 있습니다. 단, 운영 데이터와 비밀값은 Git에 넣지 않으므로 별도 백업/복원이 필요합니다.
+
+새 서버 기본 절차:
+
+```bash
+git clone <repo-url> /srv/hanplanet/app
+cd /srv/hanplanet/app
+cp .env.docker.example .env
+```
+
+`.env`에서 운영값을 먼저 바꿉니다.
+
+```dotenv
+DJANGO_DEBUG=false
+HTTP_PORT=80
+DJANGO_SECRET_KEY=<long-random-secret>
+PUBLIC_BASE_URL=https://www.hanplanet.com
+DJANGO_SECURE_SSL_REDIRECT=true
+DJANGO_SESSION_COOKIE_SECURE=true
+DJANGO_CSRF_COOKIE_SECURE=true
+CANONICAL_PUBLIC_HOST_REDIRECT=true
+PUBLIC_GIT_BASE_URL=https://git.hanplanet.com
+GITEA_DOMAIN=git.hanplanet.com
+GAME_JWT_SECRET=<long-random-secret>
+BUMPERCAR_SPIKY_SETTINGS_PATH=/data/django/bumpercar_spiky_settings.json
+BUMPERCAR_SPIKY_INTERNAL_SECRET=<long-random-secret>
+SYNC_JWT_SECRET=<long-random-secret>
+GAME_JWT_ISSUER=https://www.hanplanet.com
+GAME_WS_PUBLIC_URL=wss://game.hanplanet.com
+MAP_COLLAB_WS_PUBLIC_URL=wss://map-collab.hanplanet.com
+MINECRAFT_SERVER_VOLUME=/srv/hanplanet/data/minecraft
+```
+
+운영 데이터는 named volume 그대로 써도 되지만, 백업/마이그레이션이 쉬운 bind mount를 권장합니다.
+
+```bash
+sudo mkdir -p /srv/hanplanet/data/{django,media,mail,github-repo-cache,forgejo-repos,backups,gitea,redis,wargame}
+sudo chown -R "$USER" /srv/hanplanet/data
+```
+
+`.env`의 volume 값을 host path로 바꿉니다.
+
+```dotenv
+DJANGO_DATA_VOLUME=/srv/hanplanet/data/django
+HANPLANET_MEDIA_VOLUME=/srv/hanplanet/data/media
+HANPLANET_MAIL_VOLUME=/srv/hanplanet/data/mail
+HANPLANET_GITHUB_CACHE_VOLUME=/srv/hanplanet/data/github-repo-cache
+FORGEJO_REPOS_VOLUME=/srv/hanplanet/data/forgejo-repos
+HANPLANET_BACKUP_VOLUME=/srv/hanplanet/data/backups
+GITEA_DATA_VOLUME=/srv/hanplanet/data/gitea
+REDIS_DATA_VOLUME=/srv/hanplanet/data/redis
+WARGAME_DATA_VOLUME=/srv/hanplanet/data/wargame
+MINECRAFT_SERVER_VOLUME=/srv/hanplanet/data/minecraft
+```
+
+기존 운영 서버에서 복원해야 하는 최소 데이터:
+
+| 데이터 | Docker 복원 위치 |
+| --- | --- |
+| Django SQLite DB | `/srv/hanplanet/data/django/db.sqlite3` |
+| `media/` / HanDrive 파일 | `/srv/hanplanet/data/media/` |
+| Forgejo bare repo root | `/srv/hanplanet/data/forgejo-repos/` |
+| Gitea DB/config/runtime data | `/srv/hanplanet/data/gitea/` |
+| GitHub repo cache | `/srv/hanplanet/data/github-repo-cache/` |
+| HPmail storage | `/srv/hanplanet/data/mail/` |
+| Wargame SQLite DB | `/srv/hanplanet/data/wargame/wargame.sqlite3` |
+| Minecraft server dir | `/srv/hanplanet/data/minecraft/` |
+
+처음 기동:
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs -f django nginx
+```
+
+macOS 운영 서버에서 재부팅 후에도 Docker 스택을 자동 기동하려면 Docker용 launchd 항목을 설치합니다. 이 항목은 Colima를 먼저 켜고 `docker compose up -d --remove-orphans`를 실행합니다.
+
+```bash
+chmod +x scripts/start_docker_stack.sh
+cp deploy/launchd/com.hanplanet.docker-stack.plist ~/Library/LaunchAgents/
+launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.hanplanet.docker-stack.plist
+launchctl enable "gui/$(id -u)/com.hanplanet.docker-stack"
+launchctl kickstart -k "gui/$(id -u)/com.hanplanet.docker-stack"
+```
+
+Cloudflare Tunnel도 컨테이너로 운영하려면 예시 파일을 복사하고 tunnel credential JSON을 같은 폴더에 둡니다.
+
+```bash
+cp docker/cloudflared/config.yml.example docker/cloudflared/config.yml
+# docker/cloudflared/config.yml의 tunnel 값과 credentials-file 경로를 운영값으로 수정
+docker compose --profile tunnel up -d cloudflared
+```
+
+Docker 운영에서 Cloudflare Tunnel을 컨테이너로 같이 띄우면 `docker/cloudflared/config.yml`의 HTTP hostname들이 모두 `http://nginx:80`으로 들어가야 합니다. 지금처럼 Cloudflare Tunnel을 호스트 launchd로 계속 운영하면 HTTP hostname들은 모두 `http://localhost:80`으로 들어가야 합니다. 기존 launchd 네이티브 운영에서 쓰던 `localhost:8000`, `localhost:3000`, `localhost:8081`, `localhost:8083`, `localhost:8090` 직접 라우팅은 Docker 전환 후 제거합니다.
+
+복제 후 확인:
+
+```bash
+curl -I http://localhost/portfolio/
+curl -I -H 'Host: git.hanplanet.com' http://localhost/
+curl -I -H 'Host: wargame.hanplanet.com' http://localhost/
+curl -I -H 'Host: mc.hanplanet.com' http://localhost/media/uploads/admin/admin.png
+docker compose exec django python manage.py check
+```
+
+launchd 운영 서버에서 Docker로 전환할 때는 같은 포트를 동시에 잡을 수 없습니다. 전환 전 `com.hanplanet.gunicorn`, `com.hanplanet.nginx`, `com.hanplanet.gitea`, `com.hanplanet.celery`, `com.hanplanet.bumpercar-spiky-server`, `com.hanplanet.map-collab-server`, `com.hanplanet.wargame-apache`를 내리고 Docker를 올립니다. HPmail, Minecraft, Ollama는 계속 호스트 서비스로 둘 수 있습니다.
+
+재부팅 후 기존 네이티브 launchd 웹 서비스가 다시 살아나지 않게 Docker 운영 중에는 아래 항목을 disable 상태로 둡니다.
+
+```bash
+for label in \
+  com.hanplanet.healthcheck \
+  com.hanplanet.gunicorn \
+  com.hanplanet.celery \
+  com.hanplanet.nginx \
+  com.hanplanet.gitea \
+  com.hanplanet.bumpercar-spiky-server \
+  com.hanplanet.map-collab-server \
+  com.hanplanet.wargame-apache; do
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+  launchctl disable "gui/$(id -u)/$label"
+done
+
+launchctl bootout "gui/$(id -u)/homebrew.mxcl.nginx" 2>/dev/null || true
+launchctl disable "gui/$(id -u)/homebrew.mxcl.nginx"
+```
+
+호스트에서 Cloudflare Tunnel을 계속 launchd로 운영하는 경우 `~/.cloudflared/config.yml`의 HTTP hostname은 모두 `http://localhost:80`으로 보내고, SSH 같은 호스트 전용 라우팅만 기존 포트를 유지합니다.
+
 ### launchd 서비스
 
-운영은 Docker가 아니라 macOS `launchd` 네이티브 데몬으로 유지합니다. 저장소의 plist가 원본이고, 실제 로드된 파일은 보통 `~/Library/LaunchAgents/`에 복사되어 있습니다.
+기존 macOS 운영은 `launchd` 네이티브 데몬으로 유지할 수 있습니다. 저장소의 plist가 원본이고, 실제 로드된 파일은 보통 `~/Library/LaunchAgents/`에 복사되어 있습니다.
 
 | 서비스 | 라벨 | 원본 plist / 위치 | 역할 |
 | --- | --- | --- | --- |
@@ -1068,6 +1283,44 @@ ollama serve
 
 ### 자주 쓰는 명령
 
+Docker 운영:
+
+```bash
+cd /Users/imhanbyeol/Development/Hanplanet
+
+# 전체 상태
+docker compose ps
+docker compose logs -f django nginx
+
+# Django/templates/static 변경
+docker compose up -d --build django celery nginx
+
+# Nginx 라우팅만 변경
+docker compose exec nginx nginx -t
+docker compose exec nginx nginx -s reload
+
+# Gitea custom template/asset 변경
+docker compose up -d --build gitea nginx
+
+# 범퍼카 게임 서버 변경
+docker compose up -d --build bumpercar-spiky-server nginx
+
+# 맵 협업 서버 변경
+docker compose up -d --build map-collab-server nginx
+
+# Wargame 변경
+docker compose up -d --build wargame nginx
+
+# 운영 헬스 체크
+curl -I https://www.hanplanet.com/
+curl -I https://git.hanplanet.com/
+curl -I https://mc.hanplanet.com/status.json
+curl -I https://mc.hanplanet.com/map/
+curl -I https://wargame.hanplanet.com/
+```
+
+네이티브 launchd 운영:
+
 ```bash
 # Django 변경
 cd /Users/imhanbyeol/Development/Hanplanet
@@ -1103,6 +1356,13 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.minecraft-status
 
 | 대상 | 위치 |
 | --- | --- |
+| Docker 전체 상태 | `docker compose ps` |
+| Docker 서비스 로그 | `docker compose logs -f <service>` |
+| Docker Nginx 로그 | `docker compose logs -f nginx` |
+| Docker Django 로그 | `docker compose logs -f django` |
+| Docker Gitea 로그 | `docker compose logs -f gitea` |
+| Docker 범퍼카/맵 협업 로그 | `docker compose logs -f bumpercar-spiky-server map-collab-server` |
+| Docker Wargame 로그 | `docker compose logs -f wargame` |
 | Gunicorn stdout/stderr | `~/Library/Logs/gunicorn.out.log`, `~/Library/Logs/gunicorn.err.log` |
 | Nginx launchd stdout/stderr | `~/Library/Logs/hanplanet-nginx.out.log`, `~/Library/Logs/hanplanet-nginx.err.log` |
 | Celery stdout | [`log/celery.stdout.log`](./log/celery.stdout.log) |
@@ -1123,6 +1383,8 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.minecraft-status
 
 | 파일 | 목적 |
 | --- | --- |
+| [`scripts/start_docker_stack.sh`](./scripts/start_docker_stack.sh) | macOS Docker 운영에서 Colima 시작 후 `docker compose up -d --remove-orphans` 실행 |
+| [`deploy/launchd/com.hanplanet.docker-stack.plist`](./deploy/launchd/com.hanplanet.docker-stack.plist) | Docker stack 자동 기동 launchd 항목 |
 | [`deploy/scripts/git-credential-hanplanet`](./deploy/scripts/git-credential-hanplanet) | Git credential helper. OAuth2 device flow로 Git clone/push 인증 |
 | [`scripts/launch_service_by_disc.py`](./scripts/launch_service_by_disc.py) | `DISC` 값에 맞춰 gunicorn/gitea/celery/nginx 실행 전 storage profile 적용 |
 | [`scripts/wait_for_storage_then_exec.py`](./scripts/wait_for_storage_then_exec.py) | 외장 스토리지 준비 대기 후 command 실행 |
@@ -1139,16 +1401,16 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.minecraft-status
 ## 이 프로젝트에서 주의할 점
 
 - `staticfiles/`는 결과물이라 직접 수정하지 않습니다.
-- CSS/JS 또는 이를 참조하는 템플릿을 바꾸면 항상 `collectstatic` 후 gunicorn 재시작이 필요합니다.
-- HanDrive Git 기능은 Django + Celery + Redis + Forgejo 네 요소가 모두 살아 있어야 정상 동작합니다.
+- CSS/JS 또는 이를 참조하는 템플릿을 바꾸면 Docker에서는 `django` 이미지 재빌드/재기동으로 `collectstatic`을 다시 실행하고, 네이티브 운영에서는 `collectstatic` 후 gunicorn을 재시작합니다.
+- HanDrive Git 기능은 Django + Celery + Redis + Gitea 네 요소가 모두 살아 있어야 정상 동작합니다.
 - HanDrive sync client는 Django sync API + MinIO/S3 설정 + `SYNC_JWT_SECRET`이 맞아야 정상 동작합니다.
 - GitHub/Google Drive 가상 폴더는 OAuth client 설정과 `GITHUB_REPO_CACHE_ROOT`/Drive 권한 scope가 맞아야 합니다.
 - HPmail은 Django DB 모델만으로 끝나지 않고 Postfix map, Dovecot master-user, DNS(MX/A/SPF/DMARC), DDNS 설정이 함께 맞아야 합니다.
-- 범퍼카 게임은 Django만 살아 있어도 안 되고, Node 게임 서버와 JWT 설정이 같이 맞아야 합니다.
-- HanDrive 지도 협업은 Django 토큰 API + `map-collab-server` `:8083` + admin endpoint `:8084`가 같이 살아 있어야 합니다.
-- Wargame은 Django 앱 안에 있지 않고 Apache/PHP/SQLite로 분리되어 있으며, 문제 로직은 Django DB나 media에 직접 의존하면 안 됩니다.
-- Minecraft 상태 페이지는 Django + Nginx `mc.hanplanet.com` block + Paper 서버 + status writer + BlueMap이 같이 얽혀 있습니다.
-- Forgejo custom asset은 [`forgejo/custom/public/assets/`](./forgejo/custom/public/assets/) 아래에서 관리합니다.
+- 범퍼카 게임은 Django만 살아 있어도 안 되고, Node 게임 서버, JWT 설정, `GAME_ADMIN_URL`, `BUMPERCAR_SPIKY_INTERNAL_SECRET`, 공유 설정 파일 경로가 같이 맞아야 합니다.
+- HanDrive 지도 협업은 Django 토큰 API + `map-collab-server` `:8083` + admin endpoint `:8084`가 같이 살아 있어야 합니다. Docker에서는 admin endpoint가 컨테이너 네트워크에서 열리고 호스트 공개는 `127.0.0.1`로 제한됩니다.
+- Wargame은 Django 앱 안에 있지 않고 PHP/SQLite로 분리되어 있으며, 문제 로직은 Django DB나 media에 직접 의존하면 안 됩니다.
+- Minecraft 상태 페이지는 Django + Docker Nginx `mc.hanplanet.com` block + Paper 서버 + status writer + BlueMap + `MINECRAFT_SERVER_VOLUME` bind mount + RCON command channel이 같이 맞아야 합니다.
+- Gitea custom asset은 [`forgejo/custom/public/assets/`](./forgejo/custom/public/assets/) 아래에서 관리하고, Docker 이미지는 [`docker/gitea/Dockerfile`](./docker/gitea/Dockerfile)로 이 파일들을 포함합니다.
 - Office 미리보기는 LibreOffice가 설치되어 있어야 품질이 제대로 나옵니다.
 
 ## 같이 보면 좋은 문서

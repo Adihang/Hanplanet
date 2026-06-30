@@ -73,7 +73,10 @@
   if (isSigned) {
     return;
   }
-  if (!getCookie('hp_account_active') && getCookie('hp_sso_probe_failed')) {
+  if (!getCookie('hp_account_active')) {
+    return;
+  }
+  if (getCookie('hp_sso_probe_failed')) {
     return;
   }
   if (

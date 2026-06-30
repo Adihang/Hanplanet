@@ -47,6 +47,7 @@ import ipaddress
 import socket
 import os
 import stat
+import struct
 from django.utils import timezone
 from django.utils.safestring import mark_safe
 import markdown
@@ -140,13 +141,17 @@ MINECRAFT_UI_ICON_URLS = {
     "potion": static("media/icons/minecraft/ui/potion.png"),
     "slot": static("media/icons/minecraft/ui/slot.png"),
 }
-MINECRAFT_PLUGIN_DIR = Path("/Users/imhanbyeol/Development/minecraft/plugins")
-MINECRAFT_STATUS_PATH = Path("/Users/imhanbyeol/Development/minecraft/web/status.json")
-MINECRAFT_CONSOLE_OUTPUT_PATH = Path("/Users/imhanbyeol/Development/minecraft/run/console.out")
-MINECRAFT_CONSOLE_INPUT_PATH = Path("/Users/imhanbyeol/Development/minecraft/run/console.in")
+MINECRAFT_SERVER_DIR = Path(getattr(settings, "MINECRAFT_SERVER_DIR", "/Users/imhanbyeol/Development/minecraft"))
+MINECRAFT_PLUGIN_DIR = MINECRAFT_SERVER_DIR / "plugins"
+MINECRAFT_STATUS_PATH = MINECRAFT_SERVER_DIR / "web" / "status.json"
+MINECRAFT_CONSOLE_OUTPUT_PATH = MINECRAFT_SERVER_DIR / "run" / "console.out"
+MINECRAFT_CONSOLE_INPUT_PATH = MINECRAFT_SERVER_DIR / "run" / "console.in"
 MINECRAFT_LOG_TAIL_BYTES = 64 * 1024
 MINECRAFT_LOG_TAIL_LINES = 220
 MINECRAFT_COMMAND_MAX_LENGTH = 1024
+MINECRAFT_RCON_PACKET_AUTH = 3
+MINECRAFT_RCON_PACKET_COMMAND = 2
+MINECRAFT_RCON_MAX_PACKET_BYTES = 4096
 MINECRAFT_LINK_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 MINECRAFT_LINK_CODE_PREFIX = "HNP"
 MINECRAFT_LINK_CODE_LENGTH = 6
@@ -1920,19 +1925,48 @@ def _to_admin_speed_multiplier(value, reference):
     return round(float(value) / safe_reference, 4)
 
 
+def is_docker_runtime():
+    """Return True when Django is running inside the Docker Compose runtime."""
+    return (
+        str(os.environ.get("HANPLANET_RUNTIME", "") or "").strip().lower() == "docker"
+        or Path("/.dockerenv").exists()
+    )
+
+
+def request_bumpercar_runtime_restart():
+    """Ask the bumpercar runtime to exit so its process manager can restart it."""
+    admin_url = str(getattr(settings, "GAME_ADMIN_URL", "http://127.0.0.1:8082") or "http://127.0.0.1:8082").rstrip("/")
+    request = Request(
+        f"{admin_url}/admin/restart",
+        data=b"{}",
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=5) as response:
+        if response.status not in {200, 202, 204}:
+            raise RuntimeError(f"bumpercar restart failed: HTTP {response.status}")
+
+
 def restart_bumpercar_spiky_runtime():
     """Restart both the Django site and the dedicated bumpercar runtime after admin changes."""
+    if is_docker_runtime():
+        request_bumpercar_runtime_restart()
+        return
+
     if not restart_gunicorn_and_wait(timeout_seconds=180):
         raise RuntimeError("gunicorn 재시작 후 응답 확인에 실패했습니다.")
-    subprocess.run(
-        ["/bin/zsh", "-lc", "launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server"],
-        check=True,
-        timeout=20,
-    )
+    restart_bumpercar_spiky_server()
 
 
 def restart_bumpercar_spiky_server():
     """Restart only the dedicated bumpercar runtime service without touching Django."""
+    try:
+        request_bumpercar_runtime_restart()
+        return
+    except Exception:
+        if is_docker_runtime():
+            raise
+
     subprocess.run(
         ["/bin/zsh", "-lc", "launchctl kickstart -k gui/$(id -u)/com.hanplanet.bumpercar-spiky-server"],
         check=True,
@@ -1942,9 +1976,10 @@ def restart_bumpercar_spiky_server():
 
 def set_bumpercar_spiky_npc_health(npc_health):
     """Forward an admin NPC health override to the local bumpercar runtime control API."""
+    admin_url = str(getattr(settings, "GAME_ADMIN_URL", "http://127.0.0.1:8082") or "http://127.0.0.1:8082").rstrip("/")
     payload = json.dumps({"npcHealth": int(npc_health)}).encode("utf-8")
     request = Request(
-        "http://127.0.0.1:8082/admin/npc-health",
+        f"{admin_url}/admin/npc-health",
         data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -1955,8 +1990,9 @@ def set_bumpercar_spiky_npc_health(npc_health):
 
 def get_bumpercar_spiky_connected_player_count():
     """Read the current connected player count from the local bumpercar runtime status API."""
+    admin_url = str(getattr(settings, "GAME_ADMIN_URL", "http://127.0.0.1:8082") or "http://127.0.0.1:8082").rstrip("/")
     request = Request(
-        "http://127.0.0.1:8082/admin/status",
+        f"{admin_url}/admin/status",
         headers={"Accept": "application/json"},
         method="GET",
     )
@@ -4699,7 +4735,7 @@ def _build_multiplayer_page_context(
     )
     default_skin = next((skin for skin in skin_catalog if skin["name"] == "default"), skin_catalog[0])
     multiplayer_meta_image = build_public_absolute_url(
-        static("media/Spikip/main.png" if game_slug == "raise-speaki" else "Spikip/speaki_default/icon/main.png")
+        static("media/Spikip/main.png" if game_slug == "raise-speaki" else "media/Spikip/speaki_default/icon/main.png")
     )
     portfolio_profile = (
         PortfolioProfile.objects.filter(user=request.user).only("profile_img").first()
@@ -5236,17 +5272,23 @@ def _is_local_internal_request(request):
     return remote_addr in {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
 
 
+def _has_valid_bumpercar_internal_secret(request):
+    required_secret = str(getattr(settings, "BUMPERCAR_SPIKY_INTERNAL_SECRET", "") or "")
+    provided = str(request.headers.get("X-Internal-Secret", "") or "")
+    return bool(required_secret and provided and secrets.compare_digest(provided, required_secret))
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def bumpercar_spiky_stats_record(request):
     """Accept runtime stat deltas from the local game server and persist them onto the user profile."""
-    if not _is_local_internal_request(request):
-        raise Http404()
-    required_secret = getattr(settings, "BUMPERCAR_SPIKY_INTERNAL_SECRET", "")
+    is_local_request = _is_local_internal_request(request)
+    required_secret = str(getattr(settings, "BUMPERCAR_SPIKY_INTERNAL_SECRET", "") or "")
     if required_secret:
-        provided = request.headers.get("X-Internal-Secret", "")
-        if not provided or provided != required_secret:
+        if not _has_valid_bumpercar_internal_secret(request):
             raise Http404()
+    elif not is_local_request:
+        raise Http404()
 
     try:
         payload = json.loads((request.body or b"{}").decode("utf-8"))
@@ -5654,7 +5696,7 @@ def minecraft_link_complete_json(request):
 
 
 def normalize_minecraft_command(command):
-    """Validate a console command before sending it to the Minecraft console stdin."""
+    """Validate a console command before sending it to the Minecraft server."""
     normalized = str(command or "").strip()
     if normalized.startswith("/"):
         normalized = normalized[1:].strip()
@@ -5669,7 +5711,85 @@ def normalize_minecraft_command(command):
     return normalized
 
 
-def write_minecraft_console_command(command):
+def _read_minecraft_server_properties():
+    properties_path = MINECRAFT_SERVER_DIR / "server.properties"
+    properties = {}
+    try:
+        lines = properties_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return properties
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        properties[key.strip()] = value.strip()
+    return properties
+
+
+def _get_minecraft_rcon_config():
+    properties = _read_minecraft_server_properties()
+    host = str(getattr(settings, "MINECRAFT_RCON_HOST", "") or "").strip()
+    port = int(getattr(settings, "MINECRAFT_RCON_PORT", 25575) or 25575)
+    password = str(getattr(settings, "MINECRAFT_RCON_PASSWORD", "") or "").strip()
+    if not password:
+        password = str(properties.get("rcon.password") or "").strip()
+    if not host or not port or not password:
+        raise RuntimeError("rcon_unavailable")
+    timeout_seconds = float(getattr(settings, "MINECRAFT_RCON_TIMEOUT_SECONDS", 3) or 3)
+    return host, port, password, timeout_seconds
+
+
+def _recv_exact(sock, byte_count):
+    chunks = []
+    remaining = byte_count
+    while remaining > 0:
+        chunk = sock.recv(remaining)
+        if not chunk:
+            raise RuntimeError("rcon_connection_closed")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def _send_rcon_packet(sock, request_id, packet_type, payload):
+    payload_bytes = str(payload or "").encode("utf-8")
+    body = struct.pack("<ii", request_id, packet_type) + payload_bytes + b"\x00\x00"
+    sock.sendall(struct.pack("<i", len(body)) + body)
+
+
+def _read_rcon_packet(sock):
+    length = struct.unpack("<i", _recv_exact(sock, 4))[0]
+    if length < 10 or length > MINECRAFT_RCON_MAX_PACKET_BYTES:
+        raise RuntimeError("rcon_invalid_packet")
+    body = _recv_exact(sock, length)
+    request_id, packet_type = struct.unpack("<ii", body[:8])
+    payload = body[8:-2].decode("utf-8", errors="replace")
+    return request_id, packet_type, payload
+
+
+def send_minecraft_rcon_command(command):
+    """Send a validated command through Minecraft RCON."""
+    host, port, password, timeout_seconds = _get_minecraft_rcon_config()
+    try:
+        with socket.create_connection((host, port), timeout=timeout_seconds) as sock:
+            sock.settimeout(timeout_seconds)
+            _send_rcon_packet(sock, 1, MINECRAFT_RCON_PACKET_AUTH, password)
+            auth_request_id, _packet_type, _payload = _read_rcon_packet(sock)
+            if auth_request_id != 1:
+                raise RuntimeError("rcon_auth_failed")
+
+            _send_rcon_packet(sock, 2, MINECRAFT_RCON_PACKET_COMMAND, command)
+            response_request_id, _packet_type, payload = _read_rcon_packet(sock)
+            if response_request_id not in {2, 0}:
+                raise RuntimeError("rcon_command_failed")
+            return payload
+    except (OSError, struct.error) as exc:
+        raise RuntimeError("rcon_unavailable") from exc
+
+
+def _write_minecraft_fifo_command(command):
     """Write a validated command line to the Minecraft process stdin FIFO."""
     try:
         input_stat = MINECRAFT_CONSOLE_INPUT_PATH.stat()
@@ -5690,6 +5810,38 @@ def write_minecraft_console_command(command):
         raise RuntimeError("console_write_failed") from exc
     finally:
         os.close(fd)
+
+
+def write_minecraft_console_command(command):
+    """Send a validated command line using the configured Minecraft command transport."""
+    transport = str(getattr(settings, "MINECRAFT_CONSOLE_TRANSPORT", "") or "").strip().lower()
+    prefer_rcon = transport in {"rcon", "rcon_first"}
+    allow_fifo = transport not in {"rcon_only"}
+    allow_rcon = transport not in {"fifo", "fifo_only"}
+    errors = []
+
+    if prefer_rcon and allow_rcon:
+        try:
+            return send_minecraft_rcon_command(command)
+        except RuntimeError as exc:
+            errors.append(exc)
+
+    if allow_fifo:
+        try:
+            _write_minecraft_fifo_command(command)
+            return ""
+        except RuntimeError as exc:
+            errors.append(exc)
+
+    if allow_rcon and not prefer_rcon:
+        try:
+            return send_minecraft_rcon_command(command)
+        except RuntimeError as exc:
+            errors.append(exc)
+
+    if errors:
+        raise RuntimeError(str(errors[-1])) from errors[-1]
+    raise RuntimeError("console_unavailable")
 
 
 def _read_plugin_yaml_scalar(text, key):
@@ -6223,7 +6375,7 @@ def minecraft_server_log_json(request):
 @csrf_protect
 @require_http_methods(["POST"])
 def minecraft_server_command_json(request):
-    """Execute a Minecraft command through the actual server console stdin for the superuser only."""
+    """Execute a Minecraft command through the configured server command channel for the superuser only."""
     if not is_minecraft_host(request) or not is_minecraft_admin_user(getattr(request, "user", None)):
         raise Http404
 
@@ -8464,8 +8616,10 @@ def _normalize_shortcut_url(raw_url):
 def _build_shortcut_icon_url(shortcut_url):
     """Build the favicon service URL used to render shortcut icons on the home page."""
     parsed = urlparse(shortcut_url)
-    host = parsed.netloc
+    host = parsed.hostname or parsed.netloc
     if not host:
+        return ""
+    if any(label.startswith("xn--") for label in host.lower().split(".")):
         return ""
     return f"https://www.google.com/s2/favicons?domain={host}&sz=64"
 

@@ -6,6 +6,16 @@ ingress:
     service: http://nginx:80
   - hostname: hanplanet.com
     service: http://nginx:80
+  - hostname: mc.hanplanet.com
+    service: http://nginx:80
+  - hostname: git.hanplanet.com
+    service: http://nginx:80
+  - hostname: game.hanplanet.com
+    service: http://nginx:80
+  - hostname: map-collab.hanplanet.com
+    service: http://nginx:80
+  - hostname: wargame.hanplanet.com
+    service: http://nginx:80
   - hostname: ssh.hanplanet.com
     service: ssh://host.docker.internal:22
   - service: http_status:404

@@ -60,7 +60,7 @@ if DEBUG:
 
 
 def load_secret_key():
-    secret_key = os.environ.get("DJANGO_SECRET_KEY")
+    secret_key = load_env_or_file_secret("DJANGO_SECRET_KEY")
     if secret_key:
         return secret_key
 
@@ -86,14 +86,30 @@ def load_secret_key():
     )
 
 
+def load_env_or_file_secret(name):
+    file_path = os.environ.get(f"{name}_FILE")
+    if file_path:
+        try:
+            value = Path(file_path).read_text(encoding="utf-8").strip()
+        except OSError:
+            value = ""
+        if value:
+            return value
+
+    value = os.environ.get(name)
+    if value is not None and str(value).strip():
+        return str(value).strip()
+    return ""
+
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = load_secret_key()
 
 
 def load_optional_secret(name, default=""):
-    from_env = os.environ.get(name)
-    if from_env is not None and str(from_env).strip():
-        return str(from_env).strip()
+    from_env = load_env_or_file_secret(name)
+    if from_env:
+        return from_env
 
     # 디버그 모드에서는 secrets.json 파일이 없어도 기본값 반환
     if DEBUG:
@@ -113,10 +129,10 @@ def load_optional_secret(name, default=""):
 
 
 def load_optional_int_secret(name, default):
-    from_env = os.environ.get(name)
-    if from_env is not None and str(from_env).strip():
+    from_env = load_env_or_file_secret(name)
+    if from_env:
         try:
-            return int(str(from_env).strip())
+            return int(from_env)
         except ValueError:
             return default
 
@@ -139,9 +155,9 @@ def load_optional_int_secret(name, default):
 
 
 def load_optional_bool_secret(name, default=False):
-    from_env = os.environ.get(name)
-    if from_env is not None and str(from_env).strip():
-        return str(from_env).strip().lower() in {"1", "true", "yes", "on"}
+    from_env = load_env_or_file_secret(name)
+    if from_env:
+        return from_env.lower() in {"1", "true", "yes", "on"}
 
     if DEBUG:
         return default
@@ -196,6 +212,8 @@ CANONICAL_PUBLIC_HOST_REDIRECT = load_optional_bool_secret(
 DJANGO_SERVE_FILES = env_bool("DJANGO_SERVE_FILES", default=True)
 GAME_WS_PUBLIC_URL = os.environ.get("GAME_WS_PUBLIC_URL", "wss://game.hanplanet.com").rstrip("/")
 GAME_WS_LOCAL_URL = os.environ.get("GAME_WS_LOCAL_URL", "ws://127.0.0.1:8081").rstrip("/")
+GAME_ADMIN_URL = os.environ.get("GAME_ADMIN_URL", "http://127.0.0.1:8082").rstrip("/")
+BUMPERCAR_SPIKY_SETTINGS_PATH = os.environ.get("BUMPERCAR_SPIKY_SETTINGS_PATH", "").strip()
 GAME_JWT_SECRET = load_optional_secret("GAME_JWT_SECRET", SECRET_KEY)
 GAME_JWT_ISSUER = load_optional_secret("GAME_JWT_ISSUER", PUBLIC_BASE_URL).rstrip("/")
 GAME_JWT_AUDIENCE = load_optional_secret("GAME_JWT_AUDIENCE", "hanplanet-game")
@@ -203,6 +221,19 @@ GAME_JWT_EXP_SECONDS = max(30, load_optional_int_secret("GAME_JWT_EXP_SECONDS", 
 MINECRAFT_LINK_SHARED_SECRET = load_optional_secret("MINECRAFT_LINK_SHARED_SECRET", "")
 MINECRAFT_LINK_CODE_TTL_SECONDS = max(60, load_optional_int_secret("MINECRAFT_LINK_CODE_TTL_SECONDS", 600))
 MINECRAFT_LINK_HMAC_SKEW_SECONDS = max(30, load_optional_int_secret("MINECRAFT_LINK_HMAC_SKEW_SECONDS", 300))
+HANPLANET_RUNTIME = os.environ.get("HANPLANET_RUNTIME", "").strip().lower()
+MINECRAFT_SERVER_DIR = os.environ.get("MINECRAFT_SERVER_DIR", "/Users/imhanbyeol/Development/minecraft").strip()
+MINECRAFT_CONSOLE_TRANSPORT = os.environ.get(
+    "MINECRAFT_CONSOLE_TRANSPORT",
+    "rcon" if HANPLANET_RUNTIME == "docker" else "fifo",
+).strip().lower()
+MINECRAFT_RCON_HOST = load_optional_secret(
+    "MINECRAFT_RCON_HOST",
+    "host.docker.internal" if HANPLANET_RUNTIME == "docker" else "127.0.0.1",
+)
+MINECRAFT_RCON_PORT = load_optional_int_secret("MINECRAFT_RCON_PORT", 25575)
+MINECRAFT_RCON_PASSWORD = load_optional_secret("MINECRAFT_RCON_PASSWORD", "")
+MINECRAFT_RCON_TIMEOUT_SECONDS = max(1, load_optional_int_secret("MINECRAFT_RCON_TIMEOUT_SECONDS", 3))
 MAP_COLLAB_WS_PUBLIC_URL  = os.environ.get("MAP_COLLAB_WS_PUBLIC_URL",  "wss://map-collab.hanplanet.com").rstrip("/")
 MAP_COLLAB_WS_LOCAL_URL   = os.environ.get("MAP_COLLAB_WS_LOCAL_URL",   "ws://127.0.0.1:8083").rstrip("/")
 MAP_COLLAB_ADMIN_URL      = os.environ.get("MAP_COLLAB_ADMIN_URL",      "http://127.0.0.1:8084").rstrip("/")
@@ -336,7 +367,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": Path(os.environ.get("DJANGO_SQLITE_PATH", BASE_DIR / "db.sqlite3")),
     }
 }
 
@@ -499,8 +530,8 @@ SECURE_REFERRER_POLICY = os.environ.get("DJANGO_SECURE_REFERRER_POLICY", "same-o
 X_FRAME_OPTIONS = "DENY"
 CSRF_FAILURE_VIEW = "main.handrive_views.handrive_csrf_failure"
 
-# 로컬 게임 서버 → Django 내부 API 인증 시크릿 (설정 시 요청에 X-Internal-Secret 헤더 필요)
-BUMPERCAR_SPIKY_INTERNAL_SECRET = os.environ.get("BUMPERCAR_SPIKY_INTERNAL_SECRET", "")
+# 로컬/컨테이너 게임 서버 → Django 내부 API 인증 시크릿 (설정 시 요청에 X-Internal-Secret 헤더 필요)
+BUMPERCAR_SPIKY_INTERNAL_SECRET = load_optional_secret("BUMPERCAR_SPIKY_INTERNAL_SECRET", "")
 
 # config/settings.py
 

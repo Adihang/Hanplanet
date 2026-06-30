@@ -6,7 +6,7 @@ const RaiseSpeakiWorld = require("./world/raiseSpeakiWorld")
 const createServer = require("./network/websocket")
 const startGameLoop = require("./game/gameLoop")
 const startRaiseSpeakiLoop = require("./game/raiseSpeakiLoop")
-const { PORT, ADMIN_PORT, TICK_RATE, WORLD_SIZE, CELL_SIZE } = require("./config/config")
+const { PORT, ADMIN_HOST, ADMIN_PORT, TICK_RATE, WORLD_SIZE, CELL_SIZE } = require("./config/config")
 
 // 각 게임은 독립 월드를 유지하고, 단일 WebSocket 서버에서 game slug 기준으로 분기한다.
 const worlds = {
@@ -55,10 +55,19 @@ const adminServer = http.createServer((request, response) => {
         return
     }
 
+    if (request.method === "POST" && requestUrl.pathname === "/admin/restart") {
+        response.writeHead(202, { "content-type": "application/json" })
+        response.end(JSON.stringify({ ok: true, restarting: true }))
+        setTimeout(() => {
+            shutdown("admin-restart")
+        }, 50).unref()
+        return
+    }
+
     response.writeHead(404, { "content-type": "application/json" })
     response.end(JSON.stringify({ ok: false, error: "not_found" }))
 })
-adminServer.listen(ADMIN_PORT, "127.0.0.1")
+adminServer.listen(ADMIN_PORT, ADMIN_HOST)
 
 // 게임별 루프는 같은 WebSocket 서버를 공유하되, 클라이언트는 slug 기준으로 분기한다.
 startGameLoop(
@@ -73,7 +82,7 @@ startRaiseSpeakiLoop(
 )
 
 console.log(`Bumper Car Spiky server started on port ${PORT}`)
-console.log(`admin_port=${ADMIN_PORT}`)
+console.log(`admin_host=${ADMIN_HOST} admin_port=${ADMIN_PORT}`)
 console.log(`tick_rate=${TICK_RATE} world_size=${WORLD_SIZE} cell_size=${CELL_SIZE}`)
 
 function shutdown(signal) {

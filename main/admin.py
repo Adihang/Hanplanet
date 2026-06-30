@@ -199,7 +199,6 @@ class HandriveAccessRuleAdmin(admin.ModelAdmin):
         "write_users__username",
         "write_groups__name",
     ]
-    filter_horizontal = ["read_users", "read_groups", "write_users", "write_groups"]
     ordering = ["path"]
 
     @admin.display(description="읽기 주체 수")

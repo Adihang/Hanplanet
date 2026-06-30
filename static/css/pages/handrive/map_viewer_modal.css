@@ -1,0 +1,91 @@
+.map-collab-anchor {
+    position: relative;
+}
+
+.map-viewer-wrap #handrive-url-share-modal .handrive-popup-modal-backdrop.site-modal-backdrop {
+    background: var(--site-modal-backdrop-surface-bg, transparent);
+    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
+    backdrop-filter: var(--site-modal-backdrop-filter, none);
+}
+
+.map-viewer-wrap #handrive-url-share-modal .handrive-popup-modal-dialog.site-modal-dialog {
+    border-radius: var(--site-popup-radius-common, 12px);
+    background: var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72)));
+    background-color: var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72)));
+    background-image: none;
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)));
+}
+
+.map-collab-popup {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: var(--site-z-popup);
+    min-width: 180px;
+    max-width: min(260px, calc(100vw - 20px));
+    padding: 6px;
+    color: var(--handrive-text, var(--site-text, #222));
+}
+
+.map-collab-popup.site-dropdown-menu {
+    border: 1px solid var(--site-dropdown-menu-border, var(--site-border-context, rgba(0, 0, 0, 0.14)));
+    border-radius: var(--site-dropdown-menu-radius, var(--site-popup-radius-common, 12px));
+    background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+    background-color: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+    background-image: none;
+    -webkit-backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
+    backdrop-filter: var(--site-dropdown-surface-filter, var(--site-modal-surface-filter, saturate(120%) blur(4px)));
+    box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)));
+    opacity: 1;
+}
+
+.map-collab-popup[hidden] {
+    display: none;
+}
+
+.map-collab-popup-title {
+    padding: 4px 8px 6px;
+    color: var(--handrive-text-muted, var(--site-text-muted, #666));
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.map-collab-popup-empty {
+    padding: 5px 8px;
+    color: var(--handrive-text-muted, var(--site-text-muted, #666));
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.map-collab-popup-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding: 5px 8px;
+    border-radius: var(--btn-template-radius, 8px);
+    color: var(--handrive-text-stronger, var(--site-text-stronger, #111));
+    font-size: 12px;
+    line-height: 1.25;
+    white-space: nowrap;
+}
+
+.map-collab-popup-dot {
+    display: block;
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+}
+
+.map-collab-popup-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

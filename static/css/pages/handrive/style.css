@@ -1816,7 +1816,6 @@ body.handrive-list-split-resizing-portrait * {
 .handrive-list-pane.is-loading .handrive-list {
     filter: blur(2px);
     opacity: 0.45;
-    pointer-events: none;
 }
 
 .handrive-list-loading {
@@ -1830,6 +1829,7 @@ body.handrive-list-split-resizing-portrait * {
     -webkit-backdrop-filter: blur(3px);
     z-index: 4;
     border-radius: 10px;
+    pointer-events: none;
 }
 
 .handrive-list-loading[hidden] {
@@ -3310,10 +3310,6 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     opacity: 0.55;
 }
 
-.handrive-item-row.is-row-loading {
-    pointer-events: none;
-}
-
 .handrive-item-row.is-row-loading > * {
     filter: blur(2px);
     opacity: 0.42;
@@ -4236,7 +4232,7 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     justify-content: center;
     margin: 0;
     transform: scale(1.331);
-    background-image: url("/static/media/icons/handrive/folder.png");
+    background-image: url("/static/media/icons/handrive/folder-list.png?v=20260629");
     background-position: center;
     background-repeat: no-repeat;
     background-size: contain;
@@ -4244,7 +4240,7 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
 }
 
 .handrive-item-type-icon.is-dir.is-empty::before {
-    background-image: url("/static/media/icons/handrive/folder_empty.png");
+    background-image: url("/static/media/icons/handrive/folder_empty-list.png?v=20260629");
 }
 
 .handrive-item-type-icon.is-dir.is-markdown-image-folder::before {
@@ -4255,11 +4251,11 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     margin: 0;
     transform: scale(1.331);
     background-image:
-        url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect x=%273.5%27 y=%274.8%27 width=%2717%27 height=%2714.4%27 rx=%272.2%27 fill=%27%23fff7df%27 stroke=%27%236f5b2f%27 stroke-width=%271.6%27/%3E%3Ccircle cx=%278.3%27 cy=%279.2%27 r=%271.8%27 fill=%27%2357a6ff%27/%3E%3Cpath fill=%27%234a9f67%27 d=%27M4.9 17.2l4.2-4.1 2.7 2.5 2-1.8 5.3 3.4H4.9z%27/%3E%3C/svg%3E"),
-        url("/static/media/icons/handrive/folder.png");
+        url("/static/media/icons/handrive/image-list.png?v=20260629"),
+        url("/static/media/icons/handrive/folder-list.png?v=20260629");
     background-position: center calc(50% + 1px), center;
     background-repeat: no-repeat;
-    background-size: 14px 12px, contain;
+    background-size: auto 12px, contain;
 }
 
 .handrive-item-type-icon.is-dir.is-youtube-download-folder::before {
@@ -4270,8 +4266,8 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     margin: 0;
     transform: scale(1.331);
     background-image:
-        url("/static/media/icons/handrive/youtube-icon-red.png"),
-        url("/static/media/icons/handrive/folder.png");
+        url("/static/media/icons/handrive/youtube-icon-red-badge.png?v=20260629"),
+        url("/static/media/icons/handrive/folder-list.png?v=20260629");
     background-position: center calc(50% + 1px), center;
     background-repeat: no-repeat;
     background-size: 16px auto, contain;
@@ -4338,7 +4334,12 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 }
 
 .handrive-item-type-icon.is-dir.has-custom-icon::before {
-    display: none;
+    opacity: 0.58;
+    transition: opacity 0.16s ease;
+}
+
+.handrive-item-type-icon.is-dir.has-custom-icon.is-custom-icon-loaded::before {
+    opacity: 0;
 }
 
 .handrive-folder-custom-icon {
@@ -4349,6 +4350,13 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     object-fit: cover;
     display: block;
     border-radius: 2px;
+    opacity: 0;
+    transition: opacity 0.16s ease;
+    z-index: 1;
+}
+
+.handrive-item-type-icon.is-dir.has-custom-icon.is-custom-icon-loaded .handrive-folder-custom-icon {
+    opacity: 1;
 }
 
 .handrive-folder-icon-preview-wrap {
@@ -4513,7 +4521,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     height: 20px;
     margin: 0;
     transform: scaleX(1.2) scaleY(1.38);
-    background-image: url("/static/media/icons/handrive/Audio.png?v=blue3");
+    background-image: url("/static/media/icons/handrive/Audio-list.png?v=20260629");
     background-position: center;
     background-repeat: no-repeat;
     background-size: contain;
@@ -4528,7 +4536,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     min-width: 18px;
     margin: 0;
     transform: scale(1.331);
-    background-image: url("/static/media/icons/handrive/zip.png?v=20260617m");
+    background-image: url("/static/media/icons/handrive/zip-list.png?v=20260629");
     background-position: center;
     background-repeat: no-repeat;
     background-size: contain;
@@ -5067,6 +5075,10 @@ body.handrive-popup-dragging {
 }
 
 .handrive-popup-body {
+    --site-loading-overlay-bg: color-mix(in srgb, var(--site-modal-surface-bg, var(--handrive-modal-surface-bg, var(--handrive-bg))) 84%, transparent);
+    --site-loading-overlay-filter: var(--site-modal-surface-filter, var(--handrive-modal-surface-filter, saturate(120%) blur(4px)));
+    --site-loading-spinner-track: color-mix(in srgb, var(--handrive-text-subtle) 42%, transparent);
+    --site-loading-spinner-accent: var(--theme-accent-strong, #3b82f6);
     display: flex;
     flex-direction: column;
     gap: 10px;

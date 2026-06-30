@@ -1894,7 +1894,10 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, "'minecraft-panel-list-item',", html=False)
         self.assertContains(response, '.minecraft-player-item.is-current-account {', html=False)
         self.assertIn('border-color: var(--handrive-text-stronger);', minecraft_current_account_player_block)
-        self.assertNotIn('border-width:', minecraft_current_account_player_block)
+        self.assertIn('.minecraft-player-item.is-online.is-current-account {', minecraft_current_account_player_block)
+        self.assertIn('border-color: #2f9d58;', minecraft_current_account_player_block)
+        self.assertIn('border-width: 2px;', minecraft_current_account_player_block)
+        self.assertIn('box-shadow: 0 0 0 1px color-mix(in srgb, #2f9d58 28%, transparent);', minecraft_current_account_player_block)
         self.assertNotIn('border-color: var(--handrive-border-heavy);', minecraft_current_account_player_block)
         self.assertContains(response, '.minecraft-player-list {\n        padding: 2px;', html=False)
         self.assertContains(response, 'width: calc(100% + 4px);', html=False)
@@ -1997,6 +2000,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'data-bluemap-language="ko"', html=False)
         self.assertEqual(response.context["bluemap_language"], "ko")
         self.assertContains(response, 'class="minecraft-status-title-row"', html=False)
+        self.assertContains(response, '.minecraft-player-panel .minecraft-status-title-row {\n        gap: 0;', html=False)
         self.assertContains(response, 'id="minecraftAccountLinkTrigger"', html=False)
         self.assertContains(response, '>계정연동</button>', html=False)
         self.assertLess(content.index('id="minecraft-players-title"'), content.index('id="minecraftAccountLinkTrigger"'))
@@ -2584,6 +2588,34 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(response.status_code, 400)
         mocked_send.assert_not_called()
 
+    @override_settings(MINECRAFT_CONSOLE_TRANSPORT="rcon")
+    def test_write_minecraft_console_command_prefers_rcon_transport(self):
+        from .views import write_minecraft_console_command
+
+        with (
+            mock.patch("main.views.send_minecraft_rcon_command", return_value="done") as mocked_rcon,
+            mock.patch("main.views._write_minecraft_fifo_command") as mocked_fifo,
+        ):
+            response = write_minecraft_console_command("list")
+
+        self.assertEqual(response, "done")
+        mocked_rcon.assert_called_once_with("list")
+        mocked_fifo.assert_not_called()
+
+    @override_settings(MINECRAFT_CONSOLE_TRANSPORT="fifo")
+    def test_write_minecraft_console_command_uses_fifo_transport(self):
+        from .views import write_minecraft_console_command
+
+        with (
+            mock.patch("main.views._write_minecraft_fifo_command") as mocked_fifo,
+            mock.patch("main.views.send_minecraft_rcon_command") as mocked_rcon,
+        ):
+            response = write_minecraft_console_command("list")
+
+        self.assertEqual(response, "")
+        mocked_fifo.assert_called_once_with("list")
+        mocked_rcon.assert_not_called()
+
     @mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30")
     @override_settings(PUBLIC_BASE_URL="https://www.hanplanet.com")
     def test_minecraft_navbar_links_point_to_public_site_origin(self, mocked_bedrock_version):
@@ -2976,6 +3008,16 @@ class RootShortcutNameTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["item"]["name"], "https://한글.com")
+        self.assertEqual(response.json()["item"]["icon_url"], "")
+
+    def test_create_keeps_google_favicon_for_plain_ascii_domain(self):
+        response = self.post_shortcut("", "https://example.com/path")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            response.json()["item"]["icon_url"],
+            "https://www.google.com/s2/favicons?domain=example.com&sz=64",
+        )
 
     def test_create_repairs_mojibake_title_before_counting(self):
         response = self.post_shortcut("í•œê¸€", "https://example.com/very/long/path")
@@ -3996,6 +4038,115 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn(".handrive-list-preview-content.handrive-media-3d", handrive_css)
         self.assertIn(".handrive-model-preview-viewport canvas", handrive_css)
 
+    def test_map_viewer_reuses_handrive_url_share_modal(self):
+        base_dir = Path(settings.BASE_DIR)
+        assets_template = (base_dir / "templates/handrive/_assets_script.html").read_text(encoding="utf-8")
+        map_viewer_template = (base_dir / "templates/handrive/map_viewer.html").read_text(encoding="utf-8")
+        map_viewer_modal_css = (base_dir / "static/css/pages/handrive/map_viewer_modal.css").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        url_share_js = (base_dir / "static/js/handrive/url_share_modal.js").read_text(encoding="utf-8")
+        handrive_views = (base_dir / "main/handrive_views.py").read_text(encoding="utf-8")
+
+        self.assertIn('include "popup/handrive/url_share_modal.html"', map_viewer_template)
+        self.assertIn("css/pages/handrive/map_viewer_modal.css", map_viewer_template)
+        self.assertIn('js/handrive/url_share_modal.js', map_viewer_template)
+        self.assertIn('handrive_text|json_script:"handrive-i18n"', map_viewer_template)
+        self.assertIn('map_share_allowed_users|json_script:"map-viewer-share-allowed-users"', map_viewer_template)
+        self.assertIn('data-map-is-url-only="{{ map_is_url_only|yesno:\'true,false\' }}"', map_viewer_template)
+        self.assertIn('data-map-share-url="{{ map_share_url }}"', map_viewer_template)
+        self.assertIn('window.HandriveUrlShareModal.create()', map_viewer_template)
+        self.assertIn(".map-viewer-wrap #handrive-url-share-modal .handrive-popup-modal-dialog.site-modal-dialog", map_viewer_modal_css)
+        self.assertIn("background: var(--site-modal-surface-bg", map_viewer_modal_css)
+        self.assertIn("backdrop-filter: var(--site-modal-surface-filter", map_viewer_modal_css)
+        self.assertIn("box-shadow: var(--site-popup-shadow-common", map_viewer_modal_css)
+        self.assertIn("allowed_usernames: allowedUsernames || []", map_viewer_template)
+        self.assertIn("share_allowed_users", map_viewer_template)
+        self.assertNotIn('id="map-viewer-share-modal"', map_viewer_template)
+        self.assertNotIn("map-viewer-share-toggle", map_viewer_template)
+        self.assertNotIn("map-viewer-share-copy-btn", map_viewer_template)
+        self.assertIn("function createHandriveUrlShareModal(options)", url_share_js)
+        self.assertIn("window.HandriveUrlShareModal", url_share_js)
+        self.assertIn("url_share_target_remove_label", url_share_js)
+        self.assertIn("url_share_copy_download_button", url_share_js)
+        self.assertIn("window.HandriveUrlShareModal.create({", page_js)
+        self.assertNotIn("function createHandriveUrlShareModal()", page_js)
+        self.assertLess(
+            assets_template.index("js/handrive/url_share_modal.js"),
+            assets_template.index("js/handrive/page.js"),
+        )
+        self.assertIn('response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"', handrive_views)
+        self.assertIn('response["Pragma"] = "no-cache"', handrive_views)
+
+    def test_map_collab_popup_uses_common_dropdown_surface(self):
+        base_dir = Path(settings.BASE_DIR)
+        map_viewer_template = (base_dir / "templates/handrive/map_viewer.html").read_text(encoding="utf-8")
+        map_viewer_modal_css = (base_dir / "static/css/pages/handrive/map_viewer_modal.css").read_text(encoding="utf-8")
+        collab_popup_css_block = map_viewer_modal_css[
+            map_viewer_modal_css.index(".map-collab-popup {"):
+            map_viewer_modal_css.index(".map-collab-popup[hidden] {")
+        ]
+
+        self.assertIn('class="map-collab-popup site-dropdown-menu"', map_viewer_template)
+        self.assertIn("data-popup-fit-bottom", map_viewer_template)
+        self.assertIn(".map-collab-popup-title", map_viewer_modal_css)
+        self.assertIn(".map-collab-popup-row", map_viewer_modal_css)
+        self.assertIn(".map-collab-popup-dot", map_viewer_modal_css)
+        self.assertIn('class="map-collab-popup-title"', map_viewer_template)
+        self.assertIn('class="map-collab-popup-row"', map_viewer_template)
+        self.assertIn('class="map-collab-popup-dot"', map_viewer_template)
+        self.assertIn("popup.hidden = false;", map_viewer_template)
+        self.assertIn("popup.hidden = true;", map_viewer_template)
+        self.assertIn("popup && !popup.hidden", map_viewer_template)
+        self.assertNotIn('id="map-collab-popup" style=', map_viewer_template)
+        self.assertNotIn("popup.style.display", map_viewer_template)
+        self.assertIn("position: absolute;", collab_popup_css_block)
+        self.assertIn("z-index: var(--site-z-popup);", collab_popup_css_block)
+        self.assertIn(".map-collab-popup.site-dropdown-menu {", collab_popup_css_block)
+        self.assertIn("background: var(--site-dropdown-surface-bg", collab_popup_css_block)
+        self.assertIn("background-color: var(--site-dropdown-surface-bg", collab_popup_css_block)
+        self.assertIn("background-image: none;", collab_popup_css_block)
+        self.assertIn("backdrop-filter: var(--site-dropdown-surface-filter", collab_popup_css_block)
+        self.assertIn("box-shadow: var(--site-dropdown-menu-shadow", collab_popup_css_block)
+        self.assertNotIn("box-shadow:0 4px 16px rgba(0,0,0,.14)", map_viewer_template)
+
+    def test_handrive_item_row_loading_does_not_block_clicks(self):
+        base_dir = Path(settings.BASE_DIR)
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        list_loading_block = handrive_css[
+            handrive_css.index(".handrive-list-pane.is-loading .handrive-list {"):
+            handrive_css.index(".handrive-list-loading {")
+        ]
+        list_loading_overlay_block = handrive_css[
+            handrive_css.index(".handrive-list-loading {"):
+            handrive_css.index(".handrive-list-loading[hidden] {")
+        ]
+        row_loading_visual_block = handrive_css[
+            handrive_css.index(".handrive-item-row.is-row-loading > * {"):
+            handrive_css.index(".handrive-item-row.is-drop-target {")
+        ]
+
+        self.assertNotIn("pointer-events: none;", list_loading_block)
+        self.assertIn("pointer-events: none;", list_loading_overlay_block)
+        self.assertNotIn(".handrive-item-row.is-row-loading {\n    pointer-events: none;\n}", handrive_css)
+        self.assertIn("filter: blur(2px);", row_loading_visual_block)
+        self.assertIn(".handrive-item-row.is-row-loading::before {", row_loading_visual_block)
+        self.assertIn(".handrive-item-row.is-row-loading::after {", row_loading_visual_block)
+        self.assertIn("pointer-events: none;", row_loading_visual_block)
+        self.assertIn("const HANDRIVE_ENTRY_SINGLE_CLICK_DELAY_MS = 360;", page_js)
+        self.assertIn("const entryLoadingPathCounts = new Map();", page_js)
+        self.assertIn("entryLoadingPathCounts.set(loadingPath, (entryLoadingPathCounts.get(loadingPath) || 0) + 1);", page_js)
+        self.assertIn("entryLoadingPathCounts.has(entryPath)", page_js)
+        self.assertIn("listPane.classList.contains(\"is-loading\")", page_js)
+        self.assertIn("function cancelPendingEntrySingleClick()", page_js)
+        self.assertIn("function scheduleEntrySingleClick(entry, callback)", page_js)
+        self.assertIn("function shouldOpenEntryDuringItemLoading(row, entry)", page_js)
+        self.assertIn("scheduleEntrySingleClick(entry, function () {\n                            return toggleFolderExpansion(entry);", page_js)
+        self.assertIn("scheduleEntrySingleClick(entry, function () {\n                            return toggleArchiveExpansion(entry);", page_js)
+        self.assertIn("cancelPendingEntrySingleClick();\n                openEntry(entry);", page_js)
+        self.assertIn("if (shouldOpenEntryDuringItemLoading(row, entry)) {", page_js)
+        self.assertIn("cancelPendingEntrySingleClick();\n                    openEntry(entry);\n                    return;", page_js)
+
     def test_floating_list_detail_header_hold_shows_release_edge_shadow(self):
         base_dir = Path(settings.BASE_DIR)
         page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
@@ -4196,6 +4347,10 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('class="site-modal-loading-spinner site-loading-spinner"', text_input_template)
         self.assertIn("display: flex;", popup_body_block)
         self.assertIn("gap: 10px;", popup_body_block)
+        self.assertIn("--site-loading-overlay-bg: color-mix(in srgb, var(--site-modal-surface-bg", popup_body_block)
+        self.assertIn("--site-loading-overlay-filter: var(--site-modal-surface-filter", popup_body_block)
+        self.assertIn("--site-loading-spinner-track: color-mix(in srgb, var(--handrive-text-subtle)", popup_body_block)
+        self.assertIn("--site-loading-spinner-accent: var(--theme-accent-strong", popup_body_block)
         self.assertIn(".site-loading-host.is-loading > :not(.site-loading-overlay)", site_loading_block)
         self.assertIn("filter: var(--site-loading-content-filter);", site_loading_block)
         self.assertIn(".site-loading-overlay {", site_loading_block)
@@ -4422,6 +4577,50 @@ class HandriveStyleSourceTests(TestCase):
 
         self.assertIn('row.className = "handrive-tree-browser-row handrive-save-folder-row has-tree-prefix";', handrive_page_js)
         self.assertIn('badge.className = "handrive-tree-browser-badge handrive-save-overwrite-badge";', handrive_page_js)
+
+    def test_handrive_item_type_icons_have_immediate_fallbacks(self):
+        base_dir = Path(settings.BASE_DIR)
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        list_render_helpers = (base_dir / "static/js/handrive/list_render_helpers.js").read_text(encoding="utf-8")
+        markdown_folder_icon_block = handrive_css[
+            handrive_css.index(".handrive-item-type-icon.is-dir.is-markdown-image-folder::before {"):
+            handrive_css.index(".handrive-item-type-icon.is-dir.is-youtube-download-folder::before {")
+        ]
+        custom_icon_block = handrive_css[
+            handrive_css.index(".handrive-item-type-icon.is-dir.has-custom-icon {"):
+            handrive_css.index(".handrive-folder-icon-preview-wrap {")
+        ]
+
+        self.assertNotIn('--handrive-folder-icon-url: url("data:image/svg+xml,', handrive_css)
+        self.assertNotIn('--handrive-folder-empty-icon-url: url("data:image/svg+xml,', handrive_css)
+        self.assertNotIn('--handrive-file-icon-url: url("data:image/svg+xml,', handrive_css)
+        self.assertNotIn('--handrive-text-icon-url: url("data:image/svg+xml,', handrive_css)
+        self.assertNotIn('--handrive-data-icon-url: url("data:image/svg+xml,', handrive_css)
+        self.assertNotIn("background-image: var(--handrive-folder-icon-url);", handrive_css)
+        self.assertNotIn("background-image: var(--handrive-folder-empty-icon-url);", handrive_css)
+        self.assertNotIn("background-image: var(--handrive-file-icon-url);", handrive_css)
+        self.assertNotIn("background-image: var(--handrive-text-icon-url);", handrive_css)
+        self.assertNotIn("-webkit-mask-image: var(--handrive-data-icon-url);", handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/folder-list.png?v=20260629")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/folder_empty-list.png?v=20260629")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/image-list.png?v=20260629")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/youtube-icon-red-badge.png?v=20260629")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/Audio-list.png?v=20260629")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/zip-list.png?v=20260629")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/file.svg?v=blue1")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/file.svg?v=blue2")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/text.svg?v=blue1")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/data.svg")', handrive_css)
+        self.assertNotIn("data:image/svg+xml", markdown_folder_icon_block)
+        self.assertIn("background-size: auto 12px, contain;", markdown_folder_icon_block)
+        self.assertIn(".handrive-item-type-icon.is-dir.has-custom-icon::before {", custom_icon_block)
+        self.assertIn("opacity: 0.58;", custom_icon_block)
+        self.assertNotIn("display: none;", custom_icon_block)
+        self.assertIn(".handrive-item-type-icon.is-dir.has-custom-icon.is-custom-icon-loaded::before", custom_icon_block)
+        self.assertIn(".handrive-item-type-icon.is-dir.has-custom-icon.is-custom-icon-loaded .handrive-folder-custom-icon", custom_icon_block)
+        self.assertIn('customIconImg.loading = "eager";', list_render_helpers)
+        self.assertIn('customIconImg.decoding = "async";', list_render_helpers)
+        self.assertIn('typeMarker.classList.add("is-custom-icon-loaded");', list_render_helpers)
 
     def test_list_editor_body_has_no_frame_spacing_or_background(self):
         base_dir = Path(settings.BASE_DIR)
@@ -6226,6 +6425,7 @@ class SiteZIndexLayerTests(TestCase):
         fun_sub_template = (base_dir / "templates/fun/sub.html").read_text(encoding="utf-8")
         map_editor_template = (base_dir / "templates/handrive/map_editor.html").read_text(encoding="utf-8")
         map_viewer_template = (base_dir / "templates/handrive/map_viewer.html").read_text(encoding="utf-8")
+        map_viewer_modal_css = (base_dir / "static/css/pages/handrive/map_viewer_modal.css").read_text(encoding="utf-8")
         print_js = (base_dir / "static/js/common/portfolio_print_selector_dialog.js").read_text(encoding="utf-8")
         dark_theme_block = common_css[
             common_css.index("body.theme-dark {"):
@@ -6323,6 +6523,7 @@ class SiteZIndexLayerTests(TestCase):
             "fun_sub": fun_sub_template,
             "map_editor": map_editor_template,
             "map_viewer": map_viewer_template,
+            "map_viewer_modal": map_viewer_modal_css,
             "print_js": print_js,
         }.items():
             with self.subTest(modal_surface_alpha_source=name):
@@ -6341,6 +6542,7 @@ class SiteZIndexLayerTests(TestCase):
             "fun_sub": fun_sub_template,
             "map_editor": map_editor_template,
             "map_viewer": map_viewer_template,
+            "map_viewer_modal": map_viewer_modal_css,
         }.items():
             with self.subTest(modal_source=name):
                 self.assertNotIn("background: var(--site-modal-backdrop-bg", source)
@@ -8642,6 +8844,13 @@ class HanplanetMultiplayerPageTests(TestCase):
         self.assertContains(response, "data-game-client", html=False)
         self.assertContains(response, "범퍼카 스핔이", html=False)
 
+    def test_bumpercar_spiky_meta_image_uses_existing_static_media_path(self):
+        response = self.client.get("/ko/sub/bumpercar-spiky/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "/static/media/Spikip/speaki_default/icon/main.png", html=False)
+        self.assertNotContains(response, "/static/Spikip/speaki_default/icon/main.png", html=False)
+
     def test_multiplayer_page_renders_for_authenticated_user(self):
         self.client.force_login(self.user)
 
@@ -8928,6 +9137,36 @@ class HanplanetMultiplayerPageTests(TestCase):
             ),
             content_type="application/json",
             REMOTE_ADDR="203.0.113.10",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(UserProfile.objects.filter(user=self.user).exists())
+
+    @override_settings(BUMPERCAR_SPIKY_INTERNAL_SECRET="test-internal-secret")
+    def test_bumpercar_spiky_stats_record_accepts_internal_secret(self):
+        response = self.client.post(
+            reverse("main:bumpercar_spiky_stats_record"),
+            data=json.dumps(
+                {"username": self.user.username, "increments": {"dummy_kills": 1}}
+            ),
+            content_type="application/json",
+            REMOTE_ADDR="172.18.0.10",
+            HTTP_X_INTERNAL_SECRET="test-internal-secret",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        profile = UserProfile.objects.get(user=self.user)
+        self.assertEqual(profile.bumpercar_spiky_stats["dummy_kills"], 1)
+
+    @override_settings(BUMPERCAR_SPIKY_INTERNAL_SECRET="test-internal-secret")
+    def test_bumpercar_spiky_stats_record_rejects_missing_internal_secret(self):
+        response = self.client.post(
+            reverse("main:bumpercar_spiky_stats_record"),
+            data=json.dumps(
+                {"username": self.user.username, "increments": {"dummy_kills": 1}}
+            ),
+            content_type="application/json",
+            REMOTE_ADDR="172.18.0.10",
         )
 
         self.assertEqual(response.status_code, 404)

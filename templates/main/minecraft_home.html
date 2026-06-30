@@ -687,6 +687,10 @@
         min-width: 0;
     }
 
+    .minecraft-player-panel .minecraft-status-title-row {
+        gap: 0;
+    }
+
     .minecraft-server-log-title-row {
         display: inline-flex;
         align-items: center;
@@ -745,6 +749,12 @@
         border-color: var(--handrive-text-stronger);
     }
 
+    .minecraft-player-item.is-online.is-current-account {
+        border-color: #2f9d58;
+        border-width: 2px;
+        box-shadow: 0 0 0 1px color-mix(in srgb, #2f9d58 28%, transparent);
+    }
+
     .minecraft-player-state {
         font-size: 13px;
         flex: 0 0 auto;
@@ -768,6 +778,13 @@
         background: var(--handrive-surface-muted-strong);
         translate: 0 0 !important;
         outline: none;
+    }
+
+    .minecraft-player-item.is-online.is-current-account[role="button"]:hover,
+    .minecraft-player-item.is-online.is-current-account[role="button"]:focus-visible,
+    .minecraft-player-item.is-online.is-current-account[role="button"]:active {
+        border-color: #2f9d58;
+        background: color-mix(in srgb, #2f9d58 10%, var(--handrive-surface-muted));
     }
 
     .minecraft-player-detail-modal .minecraft-player-detail-dialog {

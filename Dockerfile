@@ -7,7 +7,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
+    ffmpeg \
+    fontconfig \
+    fonts-noto-cjk \
+    git \
+    golang-go \
+    libglib2.0-0 \
+    libgl1 \
+    libgomp1 \
+    libreoffice \
+    rsync \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/requirements.txt

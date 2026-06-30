@@ -56,16 +56,16 @@
 		    gap: 8px;
 		    flex-shrink: 0;
 		}
-	.map-viewer-toolbar-actions {
-	    display: flex;
-	    align-items: center;
-	    gap: 2px;
-	    justify-content: flex-end;
-	}
-	.map-viewer-background-select {
-    position: absolute;
-    top: calc(var(--map-viewer-toolbar-offset) + 10px);
-    left: 10px;
+		.map-viewer-toolbar-actions {
+		    display: flex;
+		    align-items: center;
+		    gap: 2px;
+		    justify-content: flex-end;
+		}
+			.map-viewer-background-select {
+	    position: absolute;
+	    top: calc(var(--map-viewer-toolbar-offset) + 10px);
+	    left: 10px;
     z-index: var(--site-z-page-overlay);
     width: min(240px, calc(100vw - 20px));
     box-sizing: border-box;
@@ -984,8 +984,9 @@ body.map-viewer-page.eraser-mode .leaflet-container {
     font-size: 12px;
 }
 </style>
+<link rel="stylesheet" href="{% static_v 'css/pages/handrive/map_viewer_modal.css' %}">
 
-	<div class="map-viewer-wrap">
+		<div class="map-viewer-wrap">
 	    <div class="map-viewer-toolbar">
 	        <span class="map-viewer-toolbar-title" title="{{ map_name }}">{{ map_name }}</span>
 	        <div class="map-viewer-toolbar-right">
@@ -1005,8 +1006,8 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 	                    <div class="handrive-list-loading-spinner" style="width:10px;height:10px;border-width:1.5px;flex-shrink:0"></div>
 	                    <span>{% include 'partials/ui_i18n.html' with key='map_collab_connecting' %}</span>
 	                </div>
-	                <div style="position:relative">
-	                <button type="button" id="map-collab-indicator"
+		                <div class="map-collab-anchor">
+		                <button type="button" id="map-collab-indicator"
 	                    data-online-text="{% if ui_lang == 'en' %}Online{% else %}온라인{% endif %}"
 	                    data-offline-text="{% if ui_lang == 'en' %}Offline{% else %}오프라인{% endif %}"
 	                    data-members-header="{% if ui_lang == 'en' %}Collaborators{% else %}협업 중인 사용자{% endif %}"
@@ -1016,36 +1017,14 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 	                    <span id="map-collab-dot" style="width:8px;height:8px;border-radius:50%;background:#bbb;display:block;flex-shrink:0"></span>
 	                    <span id="map-collab-label">{% if ui_lang == 'en' %}Offline{% else %}오프라인{% endif %}</span>
 	                </button>
-	                <div id="map-collab-popup" style="display:none;position:absolute;top:calc(100% + 6px);right:0;min-width:160px;background:var(--handrive-surface,#fff);border:1px solid var(--handrive-border,#e0e0e0);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.14);padding:6px 0;z-index:var(--site-z-popup)"></div>
-	                </div>
+		                <div id="map-collab-popup" class="map-collab-popup site-dropdown-menu" data-popup-fit-bottom hidden></div>
+		                </div>
 {% endif %}
 	            </div>
 	            {% include "partials/ui_controls_stack.html" %}
 	        </div>
 	    </div>
-    <!-- 공유 팝업 -->
-    <div id="map-viewer-share-modal" class="handrive-popup-modal" hidden>
-        <div class="handrive-popup-modal-backdrop site-modal-backdrop" id="map-viewer-share-modal-backdrop"></div>
-        <div class="handrive-popup-modal-dialog site-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="map-viewer-share-title">
-            <header class="handrive-popup-head site-modal-head">
-                <h2 id="map-viewer-share-title" class="handrive-popup-title">공유</h2>
-                {% include "popup/handrive/_popup_close_button.html" with button_id="map-viewer-share-head-close" %}
-            </header>
-            {% if url_share_api_url %}
-            <label class="handrive-url-share-toggle-label">
-                <input type="checkbox" id="map-viewer-share-toggle" {% if map_is_url_only %}checked{% endif %}>
-                <span>URL 공유 활성화</span>
-            </label>
-            {% endif %}
-            <div id="map-viewer-share-url-row" class="handrive-field handrive-field-full" {% if not map_is_url_only %}hidden{% endif %}>
-                <input type="text" id="map-viewer-share-url-input" value="{{ map_share_url }}" readonly>
-            </div>
-            <div class="handrive-popup-actions">
-                <button type="button" class="ui-btn" id="map-viewer-share-close">닫기</button>
-                <button type="button" class="ui-btn ui-btn-primary" id="map-viewer-share-copy-btn" {% if not map_is_url_only %}hidden{% endif %}>복사</button>
-            </div>
-        </div>
-    </div>
+    {% include "popup/handrive/url_share_modal.html" %}
 
     <div id="map-viewer-container"
         data-map-path="{{ map_path }}"
@@ -1054,6 +1033,8 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         data-map-icon-api="{{ map_icon_api_url }}"
         data-url-share-api="{{ url_share_api_url }}"
         data-map-path-for-share="{{ map_path }}"
+        data-map-is-url-only="{{ map_is_url_only|yesno:'true,false' }}"
+        data-map-share-url="{{ map_share_url }}"
         data-shared-owner="{{ shared_owner }}"
         data-shared-slug="{{ shared_slug }}"
         data-collab-auth-url="{{ map_collab_auth_url }}"
@@ -1089,9 +1070,12 @@ body.map-viewer-page.eraser-mode .leaflet-container {
     </div>
 </div>
 
+{{ handrive_text|json_script:"handrive-i18n" }}
+{{ map_share_allowed_users|json_script:"map-viewer-share-allowed-users" }}
 <script src="{% static_v 'js/vendor/leaflet.js' %}"></script>
 <script src="{% static_v 'js/vendor/msgpack.min.js' %}"></script>
 <script src="{% static_v 'js/handrive/modal_helpers.js' %}"></script>
+<script src="{% static_v 'js/handrive/url_share_modal.js' %}"></script>
 <script>var msgpack = window.MessagePack;</script>
 <script>
 (function () {
@@ -3465,69 +3449,77 @@ body.map-viewer-page.eraser-mode .leaflet-container {
     // 공유 팝업
     (function() {
         var shareBtn = document.getElementById("map-viewer-share-btn");
-        var modal = document.getElementById("map-viewer-share-modal");
-        var backdrop = document.getElementById("map-viewer-share-modal-backdrop");
-        var closeBtn = document.getElementById("map-viewer-share-close");
-        var headCloseBtn = document.getElementById("map-viewer-share-head-close");
-        var toggle = document.getElementById("map-viewer-share-toggle");
-        var urlRow = document.getElementById("map-viewer-share-url-row");
-        var urlInput = document.getElementById("map-viewer-share-url-input");
-        var copyBtn = document.getElementById("map-viewer-share-copy-btn");
         var urlShareApi = container.dataset.urlShareApi || "";
         var mapPathForShare = container.dataset.mapPathForShare || "";
+        var mapIsUrlOnly = container.dataset.mapIsUrlOnly === "true";
+        var mapShareUrl = container.dataset.mapShareUrl || "";
+        var mapShareAllowedUsers = [];
+        var allowedUsersNode = document.getElementById("map-viewer-share-allowed-users");
+        var urlShareModal = window.HandriveUrlShareModal && typeof window.HandriveUrlShareModal.create === "function"
+            ? window.HandriveUrlShareModal.create()
+            : { open: function () {}, close: function () {} };
 
-        if (!shareBtn || !modal) return;
+        if (!shareBtn) return;
 
-        function openModal() { modal.hidden = false; }
-        function closeModal() { modal.hidden = true; }
+        if (allowedUsersNode) {
+            try {
+                mapShareAllowedUsers = JSON.parse(allowedUsersNode.textContent || "[]") || [];
+            } catch (error) {
+                mapShareAllowedUsers = [];
+            }
+        }
 
-        shareBtn.addEventListener("click", openModal);
-        closeBtn && closeBtn.addEventListener("click", closeModal);
-        headCloseBtn && headCloseBtn.addEventListener("click", closeModal);
-        backdrop.addEventListener("click", closeModal);
-        document.addEventListener("keydown", function(e) {
-            if (e.key === "Escape" && !modal.hidden) closeModal();
+        function getCsrfToken() {
+            var match = document.cookie.match(/(?:^|;)\s*csrftoken=([^;]+)/);
+            return match ? decodeURIComponent(match[1]) : "";
+        }
+
+        function postMapUrlShare(enabled, allowedUsernames) {
+            return fetch(urlShareApi, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRFToken": getCsrfToken()
+                },
+                body: JSON.stringify({
+                    path: mapPathForShare,
+                    enabled: enabled,
+                    allowed_usernames: allowedUsernames || []
+                })
+            }).then(function(response) {
+                return response.json().then(function(data) {
+                    if (!response.ok || data.ok === false) {
+                        throw new Error(data.error || data.message || "URL 공유 설정에 실패했습니다.");
+                    }
+                    return data;
+                });
+            });
+        }
+
+        shareBtn.addEventListener("click", function() {
+            urlShareModal.open({
+                isUrlOnly: mapIsUrlOnly || Boolean(mapShareUrl),
+                shareUrl: mapShareUrl,
+                downloadUrl: "",
+                allowedUsers: mapShareAllowedUsers,
+                readOnly: !urlShareApi,
+                onToggle: urlShareApi ? async function(enabled, allowedUsernames) {
+                    var data = await postMapUrlShare(enabled, allowedUsernames);
+                    mapIsUrlOnly = Boolean(data.is_url_only);
+                    mapShareUrl = data.share_url || "";
+                    mapShareAllowedUsers = data.share_allowed_users || [];
+                    container.dataset.mapIsUrlOnly = mapIsUrlOnly ? "true" : "false";
+                    container.dataset.mapShareUrl = mapShareUrl;
+                    return {
+                        isUrlOnly: mapIsUrlOnly,
+                        shareUrl: mapShareUrl,
+                        downloadUrl: "",
+                        allowedUsers: mapShareAllowedUsers
+                    };
+                } : null
+            });
         });
-
-        if (toggle && urlShareApi) {
-            toggle.addEventListener("change", function() {
-                var enabled = toggle.checked;
-                toggle.disabled = true;
-                fetch(urlShareApi, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest", "X-CSRFToken": (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "" },
-                    body: JSON.stringify({ path: mapPathForShare, enabled: enabled })
-                })
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    var isOn = Boolean(data.is_url_only);
-                    toggle.checked = isOn;
-                    if (urlRow) urlRow.hidden = !isOn;
-                    if (urlInput && data.share_url) urlInput.value = data.share_url;
-                    if (copyBtn) copyBtn.textContent = "복사";
-                })
-                .catch(function() { toggle.checked = !enabled; })
-                .finally(function() { toggle.disabled = false; });
-            });
-        }
-
-        if (copyBtn && urlInput) {
-            copyBtn.addEventListener("click", function() {
-                var url = urlInput.value;
-                if (!url) return;
-                if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-                    navigator.clipboard.writeText(url).then(function() {
-                        copyBtn.textContent = "복사됨";
-                        setTimeout(function() { copyBtn.textContent = "복사"; }, 2000);
-                    }).catch(function() {});
-                } else {
-                    urlInput.select();
-                    document.execCommand("copy");
-                    copyBtn.textContent = "복사됨";
-                    setTimeout(function() { copyBtn.textContent = "복사"; }, 2000);
-                }
-            });
-        }
     })();
 
     // ── Map Collaboration ─────────────────────────────────────────────────
@@ -5024,7 +5016,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             var header = ind.dataset.membersHeader || "협업 중인 사용자";
             var noPeersText = ind.dataset.noPeersText || "다른 협업자 없음";
             var meSuffix = ind.dataset.meSuffix || " (나)";
-            var html = '<div style="padding:4px 12px 6px;font-size:11px;color:#888;white-space:nowrap">' + escHtml(header) + '</div>';
+            var html = '<div class="map-collab-popup-title">' + escHtml(header) + '</div>';
             var entries = [];
             if (myId) {
                 var myIsGuest = myId.indexOf("shared-") === 0;
@@ -5037,12 +5029,12 @@ body.map-viewer-page.eraser-mode .leaflet-container {
                 entries.push({ color: p.color, name: getLabelForPeer(id, p.displayName) });
             }
             if (entries.length === 0) {
-                html += '<div style="padding:4px 12px;font-size:12px;color:#888">' + escHtml(noPeersText) + '</div>';
+                html += '<div class="map-collab-popup-empty">' + escHtml(noPeersText) + '</div>';
             } else {
                 for (var i = 0; i < entries.length; i++) {
-                    html += '<div style="display:flex;align-items:center;gap:7px;padding:4px 12px;font-size:12px;white-space:nowrap">'
-                        + '<span style="width:9px;height:9px;border-radius:50%;background:' + escHtml(entries[i].color) + ';flex-shrink:0;display:block"></span>'
-                        + '<span>' + escHtml(entries[i].name) + '</span>'
+                    html += '<div class="map-collab-popup-row">'
+                        + '<span class="map-collab-popup-dot" style="background:' + escHtml(entries[i].color) + '"></span>'
+                        + '<span class="map-collab-popup-name">' + escHtml(entries[i].name) + '</span>'
                         + '</div>';
                 }
             }
@@ -5052,11 +5044,11 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             var popup = document.getElementById("map-collab-popup");
             if (!popup) return;
             buildCollabPopup();
-            popup.style.display = "block";
+            popup.hidden = false;
         }
         function closeCollabPopup() {
             var popup = document.getElementById("map-collab-popup");
-            if (popup) popup.style.display = "none";
+            if (popup) popup.hidden = true;
         }
         (function () {
             var ind = document.getElementById("map-collab-indicator");
@@ -5064,7 +5056,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             ind.addEventListener("click", function (e) {
                 e.stopPropagation();
                 var popup = document.getElementById("map-collab-popup");
-                if (popup && popup.style.display !== "none") {
+                if (popup && !popup.hidden) {
                     closeCollabPopup();
                 } else {
                     openCollabPopup();

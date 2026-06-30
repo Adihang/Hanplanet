@@ -90,9 +90,16 @@
             typeMarker.classList.add("has-custom-icon");
             var customIconImg = document.createElement("img");
             customIconImg.className = "handrive-folder-custom-icon";
-            customIconImg.src = settings.customIconUrl;
             customIconImg.alt = "";
-            customIconImg.loading = "lazy";
+            customIconImg.loading = "eager";
+            customIconImg.decoding = "async";
+            customIconImg.addEventListener("load", function () {
+                typeMarker.classList.add("is-custom-icon-loaded");
+            }, { once: true });
+            customIconImg.src = settings.customIconUrl;
+            if (customIconImg.complete && customIconImg.naturalWidth > 0) {
+                typeMarker.classList.add("is-custom-icon-loaded");
+            }
             typeMarker.appendChild(customIconImg);
         }
 

@@ -16972,8 +16972,9 @@ def handrive_map_viewer(request, map_path, ui_lang=None):
         parent_list_url = f"{context['handrive_base_url']}/{parent_path}/list"
 
     can_edit = has_handrive_write_access(request, normalized)
+    map_share_info = build_handrive_existing_share_info(request, normalized)
     map_is_url_only = is_handrive_url_only_enabled(request, normalized)
-    map_share_url = build_handrive_existing_share_url(request, normalized)
+    map_share_url = map_share_info["share_url"]
 
     shared_context = get_handrive_shared_access_context(request)
     shared_owner = str(
@@ -17008,6 +17009,7 @@ def handrive_map_viewer(request, map_path, ui_lang=None):
         "url_share_api_url": reverse("main:handrive_api_url_share") if can_edit else "",
         "map_is_url_only": map_is_url_only,
         "map_share_url": map_share_url,
+        "map_share_allowed_users": map_share_info["share_allowed_users"],
         "shared_owner": shared_owner,
         "shared_slug": shared_slug,
         "hide_global_nav": True,
@@ -17016,7 +17018,10 @@ def handrive_map_viewer(request, map_path, ui_lang=None):
         "map_collab_auth_url": "/api/map-collab-auth-token/",
         "map_collab_enabled": request.user.is_authenticated or has_handrive_shared_read_access(request, normalized),
     })
-    return render(request, "handrive/map_viewer.html", context)
+    response = render(request, "handrive/map_viewer.html", context)
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    return response
 
 
 # ── HanDrive 데스크톱 클라이언트 OAuth 브리지 ────────────────────────────────────

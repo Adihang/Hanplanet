@@ -1,5 +1,5 @@
 const http = require("http")
-const { ADMIN_PORT } = require("../config/config")
+const { ADMIN_HOST, ADMIN_PORT } = require("../config/config")
 const { updatePresence, getPresenceCount, getRoomSnapshots } = require("../rooms/roomManager")
 
 function createAdminServer() {
@@ -35,8 +35,8 @@ function createAdminServer() {
         res.end(JSON.stringify({ error: "not_found" }))
     })
 
-    server.listen(ADMIN_PORT, "127.0.0.1", () => {
-        console.log(`Map collab admin on port ${ADMIN_PORT}`)
+    server.listen(ADMIN_PORT, ADMIN_HOST, () => {
+        console.log(`Map collab admin on ${ADMIN_HOST}:${ADMIN_PORT}`)
     })
 
     return server

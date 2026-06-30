@@ -334,7 +334,15 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         for (Block block : blocks) {
             BlockData originalData = block.getBlockData().clone();
             int heightAboveOrigin = Math.max(0, block.getY() - origin.getY());
-            logs.add(new LogSnapshot(block, block.getType(), originalData, makeHorizontal(originalData.clone(), axis), heightAboveOrigin));
+            logs.add(new LogSnapshot(
+                block,
+                block.getType(),
+                originalData,
+                makeHorizontal(originalData.clone(), axis),
+                heightAboveOrigin,
+                block.getX() - origin.getX(),
+                block.getZ() - origin.getZ()
+            ));
         }
         logs.sort((first, second) -> {
             int y = Integer.compare(first.block.getY(), second.block.getY());
@@ -510,9 +518,10 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         }
 
         Set<String> usedTargets = new HashSet<>();
+        FallenLayout layout = resolveFallenLayout(logs, direction);
         int placed = 0;
         for (LogSnapshot log : logs) {
-            Block target = findLandingBlock(origin, direction, log.heightAboveOrigin + 1, usedTargets);
+            Block target = findLandingBlock(origin, direction, layout, log, usedTargets);
             if (target == null) {
                 origin.getWorld().dropItemNaturally(origin.getLocation(), new ItemStack(log.material, 1));
                 continue;
@@ -527,11 +536,41 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         }
     }
 
-    private Block findLandingBlock(Block origin, FallDirection direction, int preferredStep, Set<String> usedTargets) {
+    private FallenLayout resolveFallenLayout(List<LogSnapshot> logs, FallDirection direction) {
+        int minForward = 0;
+        int minLateral = 0;
+        int maxLateral = 0;
+        boolean initialized = false;
+        for (LogSnapshot log : logs) {
+            int forward = direction.forwardOffset(log.relativeX, log.relativeZ);
+            int lateral = direction.lateralOffset(log.relativeX, log.relativeZ);
+            if (!initialized) {
+                minForward = forward;
+                minLateral = lateral;
+                maxLateral = lateral;
+                initialized = true;
+                continue;
+            }
+            minForward = Math.min(minForward, forward);
+            minLateral = Math.min(minLateral, lateral);
+            maxLateral = Math.max(maxLateral, lateral);
+        }
+        int lateralWidth = Math.max(1, maxLateral - minLateral + 1);
+        return new FallenLayout(minForward, minLateral, lateralWidth);
+    }
+
+    private Block findLandingBlock(Block origin, FallDirection direction, FallenLayout layout, LogSnapshot log, Set<String> usedTargets) {
+        int preferredStep = Math.max(1, log.heightAboveOrigin + 1);
+        int forwardLayer = direction.forwardOffset(log.relativeX, log.relativeZ) - layout.minForward;
+        int lateralLayer = direction.lateralOffset(log.relativeX, log.relativeZ) - layout.minLateral;
+        int lateralOffset = layout.minLateral + lateralLayer + (forwardLayer * layout.lateralWidth);
+        int baseX = origin.getX() + (direction.x * preferredStep) + (direction.lateralX * lateralOffset);
+        int baseZ = origin.getZ() + (direction.z * preferredStep) + (direction.lateralZ * lateralOffset);
         int maxStep = Math.max(preferredStep + 12, maxLogs + 12);
-        for (int step = Math.max(1, preferredStep); step <= maxStep; step += 1) {
-            int x = origin.getX() + (direction.x * step);
-            int z = origin.getZ() + (direction.z * step);
+        for (int step = preferredStep; step <= maxStep; step += 1) {
+            int stepDelta = step - preferredStep;
+            int x = baseX + (direction.x * stepDelta);
+            int z = baseZ + (direction.z * stepDelta);
             Block target = findLandingBlockAt(origin, x, z);
             if (target != null && !usedTargets.contains(key(target))) {
                 return target;
@@ -639,13 +678,29 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         private final BlockData originalData;
         private final BlockData fallenData;
         private final int heightAboveOrigin;
+        private final int relativeX;
+        private final int relativeZ;
 
-        private LogSnapshot(Block block, Material material, BlockData originalData, BlockData fallenData, int heightAboveOrigin) {
+        private LogSnapshot(Block block, Material material, BlockData originalData, BlockData fallenData, int heightAboveOrigin, int relativeX, int relativeZ) {
             this.block = block;
             this.material = material;
             this.originalData = originalData;
             this.fallenData = fallenData;
             this.heightAboveOrigin = heightAboveOrigin;
+            this.relativeX = relativeX;
+            this.relativeZ = relativeZ;
+        }
+    }
+
+    private static final class FallenLayout {
+        private final int minForward;
+        private final int minLateral;
+        private final int lateralWidth;
+
+        private FallenLayout(int minForward, int minLateral, int lateralWidth) {
+            this.minForward = minForward;
+            this.minLateral = minLateral;
+            this.lateralWidth = lateralWidth;
         }
     }
 
@@ -660,21 +715,25 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
     }
 
     private enum FallDirection {
-        NORTH(BlockFace.NORTH, 0, -1, Axis.Z),
-        SOUTH(BlockFace.SOUTH, 0, 1, Axis.Z),
-        EAST(BlockFace.EAST, 1, 0, Axis.X),
-        WEST(BlockFace.WEST, -1, 0, Axis.X);
+        NORTH(BlockFace.NORTH, 0, -1, Axis.Z, 1, 0),
+        SOUTH(BlockFace.SOUTH, 0, 1, Axis.Z, 1, 0),
+        EAST(BlockFace.EAST, 1, 0, Axis.X, 0, 1),
+        WEST(BlockFace.WEST, -1, 0, Axis.X, 0, 1);
 
         private final BlockFace face;
         private final int x;
         private final int z;
         private final Axis axis;
+        private final int lateralX;
+        private final int lateralZ;
 
-        FallDirection(BlockFace face, int x, int z, Axis axis) {
+        FallDirection(BlockFace face, int x, int z, Axis axis, int lateralX, int lateralZ) {
             this.face = face;
             this.x = x;
             this.z = z;
             this.axis = axis;
+            this.lateralX = lateralX;
+            this.lateralZ = lateralZ;
         }
 
         private Vector vector() {
@@ -684,6 +743,14 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         private Vector rotationAxis() {
             Vector up = new Vector(0.0D, 1.0D, 0.0D);
             return up.crossProduct(vector()).normalize();
+        }
+
+        private int forwardOffset(int relativeX, int relativeZ) {
+            return (relativeX * x) + (relativeZ * z);
+        }
+
+        private int lateralOffset(int relativeX, int relativeZ) {
+            return (relativeX * lateralX) + (relativeZ * lateralZ);
         }
     }
 }

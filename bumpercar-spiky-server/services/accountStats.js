@@ -1,6 +1,6 @@
 const http = require("http")
 const https = require("https")
-const { DJANGO_INTERNAL_BASE_URL } = require("../config/config")
+const { BUMPERCAR_SPIKY_INTERNAL_SECRET, DJANGO_INTERNAL_BASE_URL } = require("../config/config")
 
 const STATS_ENDPOINT_PATH = "/api/internal/bumpercar-spiky/stats/"
 
@@ -36,16 +36,21 @@ function postStatsUpdate(username, increments, maxima = null) {
         increments: normalizedIncrements,
         maxima: normalizedMaxima,
     })
+    const headers = {
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(requestBody),
+    }
+    if (BUMPERCAR_SPIKY_INTERNAL_SECRET) {
+        headers["x-internal-secret"] = BUMPERCAR_SPIKY_INTERNAL_SECRET
+    }
+
     const request = transport.request({
         protocol: baseUrl.protocol,
         hostname: baseUrl.hostname,
         port: baseUrl.port || (baseUrl.protocol === "https:" ? 443 : 80),
         method: "POST",
         path: STATS_ENDPOINT_PATH,
-        headers: {
-            "content-type": "application/json",
-            "content-length": Buffer.byteLength(requestBody),
-        },
+        headers,
         timeout: 2000,
     })
 

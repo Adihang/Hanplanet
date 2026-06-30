@@ -1,0 +1,429 @@
+(function () {
+    "use strict";
+
+    function readI18n(documentRef) {
+        var node = documentRef.getElementById("handrive-i18n");
+        if (!node) {
+            return {};
+        }
+        try {
+            return JSON.parse(node.textContent || "{}") || {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    function createDefaultTranslator(documentRef) {
+        var messages = readI18n(documentRef);
+        return function translate(key, fallbackValue) {
+            if (Object.prototype.hasOwnProperty.call(messages, key)) {
+                return messages[key];
+            }
+            return fallbackValue || key;
+        };
+    }
+
+    function defaultAlertError(error) {
+        var message = error && error.message ? error.message : String(error || "");
+        if (message) {
+            window.alert(message);
+        }
+    }
+
+    function defaultSyncModalBodyState(documentRef) {
+        var isOpen = Boolean(
+            documentRef.querySelector(
+                ".handrive-popup-modal:not([hidden]), .handrive-drive-modal:not([hidden]), .handrive-help-modal:not([hidden]), .handrive-folder-modal:not([hidden]), .handrive-sync-modal:not([hidden])"
+            )
+        );
+        documentRef.body.classList.toggle("handrive-modal-open", isOpen);
+    }
+
+    function createHandriveUrlShareModal(options) {
+        var settings = options || {};
+        var documentRef = settings.documentRef || document;
+        var translate = typeof settings.t === "function" ? settings.t : createDefaultTranslator(documentRef);
+        var syncModalBodyState = typeof settings.syncModalBodyState === "function"
+            ? settings.syncModalBodyState
+            : function () { defaultSyncModalBodyState(documentRef); };
+        var alertError = typeof settings.alertError === "function" ? settings.alertError : defaultAlertError;
+        var shareModal = documentRef.getElementById("handrive-url-share-modal");
+        var shareBackdrop = documentRef.getElementById("handrive-url-share-modal-backdrop");
+        var shareCheckbox = documentRef.getElementById("handrive-url-share-enabled-checkbox");
+        var shareTargets = documentRef.getElementById("handrive-url-share-targets");
+        var shareTargetInput = documentRef.getElementById("handrive-url-share-target-input");
+        var shareTargetList = documentRef.getElementById("handrive-url-share-target-list");
+        var shareTargetEmpty = shareTargets ? shareTargets.querySelector(".handrive-url-share-target-empty") : null;
+        var shareUrlRow = documentRef.getElementById("handrive-url-share-url-row");
+        var shareReadLabel = documentRef.getElementById("handrive-url-share-read-label");
+        var shareInput = documentRef.getElementById("handrive-url-share-input");
+        var shareDownloadRow = documentRef.getElementById("handrive-url-share-download-row");
+        var shareDownloadInput = documentRef.getElementById("handrive-url-share-download-input");
+        var shareCloseButton = documentRef.getElementById("handrive-url-share-close-btn");
+        var shareCopyButton = documentRef.getElementById("handrive-url-share-copy-url-icon-btn");
+        var shareCopyDownloadButton = documentRef.getElementById("handrive-url-share-copy-download-icon-btn");
+
+        if (
+            !shareModal ||
+            !shareBackdrop ||
+            !shareCheckbox ||
+            !shareTargets ||
+            !shareTargetInput ||
+            !shareTargetList ||
+            !shareInput ||
+            !shareDownloadRow ||
+            !shareDownloadInput ||
+            !shareCloseButton ||
+            !shareCopyButton ||
+            !shareCopyDownloadButton
+        ) {
+            return {
+                open: function () {},
+                close: function () {},
+            };
+        }
+
+        var lastFocusedElement = null;
+        var currentOnToggle = null;
+        var isToggling = false;
+        var currentShareUrl = "";
+        var currentShareDownloadUrl = "";
+        var currentAllowedUsers = [];
+        var currentReadOnly = false;
+
+        function decodeUrlForDisplay(url) {
+            var rawUrl = String(url || "");
+            if (!rawUrl) {
+                return "";
+            }
+            try {
+                return decodeURI(rawUrl);
+            } catch (error) {
+                return rawUrl;
+            }
+        }
+
+        function setCopyButtonLabel(button, key, fallbackLabel) {
+            var label = translate(key, fallbackLabel);
+            button.setAttribute("aria-label", label);
+            button.setAttribute("title", label);
+        }
+
+        function resetCopyButton(button, key, fallbackLabel) {
+            button.classList.remove("is-copied");
+            setCopyButtonLabel(button, key, fallbackLabel);
+        }
+
+        function setUrlRowVisible(visible, url, downloadUrl) {
+            currentShareUrl = visible ? String(url || "") : "";
+            currentShareDownloadUrl = visible ? String(downloadUrl || "") : "";
+            shareTargets.hidden = !visible || currentReadOnly;
+            shareUrlRow.hidden = !visible;
+            shareDownloadRow.hidden = !(visible && currentShareDownloadUrl);
+            shareCopyButton.disabled = !(visible && currentShareUrl);
+            shareCopyDownloadButton.disabled = !(visible && currentShareDownloadUrl);
+            if (shareReadLabel) {
+                shareReadLabel.textContent = currentShareDownloadUrl
+                    ? translate("url_share_read_label", "읽기 URL")
+                    : translate("url_share_label", "URL");
+            }
+            if (visible) {
+                shareInput.value = decodeUrlForDisplay(currentShareUrl);
+                shareDownloadInput.value = decodeUrlForDisplay(currentShareDownloadUrl);
+            } else {
+                shareInput.value = "";
+                shareDownloadInput.value = "";
+            }
+            resetCopyButton(shareCopyButton, "url_share_copy_button", "복사");
+            resetCopyButton(shareCopyDownloadButton, "url_share_copy_download_button", "다운로드 URL 복사");
+        }
+
+        function normalizeAllowedUsers(users) {
+            var result = [];
+            var seen = new Set();
+            if (!Array.isArray(users)) {
+                return result;
+            }
+            users.forEach(function (user) {
+                var username = "";
+                var label = "";
+                var id = "";
+                if (user && typeof user === "object") {
+                    username = String(user.username || user.label || user.id || "").trim();
+                    label = String(user.label || username).trim();
+                    id = user.id || "";
+                } else {
+                    username = String(user || "").trim();
+                    label = username;
+                }
+                if (!username || seen.has(username)) {
+                    return;
+                }
+                seen.add(username);
+                result.push({
+                    id: id,
+                    username: username,
+                    label: label || username,
+                });
+            });
+            return result;
+        }
+
+        function getAllowedUsernames() {
+            return currentAllowedUsers.map(function (user) {
+                return String(user.username || "").trim();
+            }).filter(Boolean);
+        }
+
+        function setTargetControlsDisabled(disabled) {
+            var isDisabled = Boolean(disabled || currentReadOnly || !currentOnToggle);
+            shareTargetInput.disabled = isDisabled;
+            shareTargetList.querySelectorAll(".handrive-url-share-target-remove").forEach(function (button) {
+                button.disabled = isDisabled;
+            });
+        }
+
+        function renderAllowedUsers() {
+            shareTargetList.innerHTML = "";
+            if (currentReadOnly) {
+                if (shareTargetEmpty) {
+                    shareTargetEmpty.hidden = true;
+                }
+                setTargetControlsDisabled(true);
+                return;
+            }
+            var removeLabel = translate("url_share_target_remove_label", "공유 대상 제거");
+            var controlsDisabled = currentReadOnly || isToggling || !currentOnToggle;
+            currentAllowedUsers.forEach(function (user) {
+                var card = documentRef.createElement("span");
+                card.className = "handrive-url-share-target-card";
+
+                var label = documentRef.createElement("span");
+                label.textContent = user.label || user.username;
+                label.title = user.label || user.username;
+                card.appendChild(label);
+
+                var removeButton = documentRef.createElement("button");
+                removeButton.type = "button";
+                removeButton.className = "handrive-url-share-target-remove";
+                removeButton.textContent = "x";
+                removeButton.setAttribute("aria-label", removeLabel);
+                removeButton.title = removeLabel;
+                removeButton.disabled = controlsDisabled;
+                removeButton.addEventListener("click", function () {
+                    removeAllowedUser(user.username);
+                });
+                card.appendChild(removeButton);
+
+                shareTargetList.appendChild(card);
+            });
+            if (shareTargetEmpty) {
+                shareTargetEmpty.hidden = currentAllowedUsers.length > 0;
+            }
+            setTargetControlsDisabled(controlsDisabled);
+        }
+
+        async function persistShareSettings(enabled, previousAllowedUsers, previousChecked) {
+            if (!currentOnToggle || isToggling) {
+                return;
+            }
+            isToggling = true;
+            shareCheckbox.disabled = true;
+            setTargetControlsDisabled(true);
+            try {
+                var result = await currentOnToggle(enabled, getAllowedUsernames());
+                shareCheckbox.checked = Boolean(result && result.isUrlOnly);
+                currentAllowedUsers = normalizeAllowedUsers(
+                    (result && (result.allowedUsers || result.share_allowed_users)) || currentAllowedUsers
+                );
+                setUrlRowVisible(
+                    shareCheckbox.checked,
+                    (result && result.shareUrl) || "",
+                    (result && result.downloadUrl) || ""
+                );
+                renderAllowedUsers();
+            } catch (error) {
+                currentAllowedUsers = normalizeAllowedUsers(previousAllowedUsers);
+                shareCheckbox.checked = Boolean(previousChecked);
+                renderAllowedUsers();
+                alertError(error);
+            } finally {
+                shareCheckbox.disabled = currentReadOnly;
+                isToggling = false;
+                setTargetControlsDisabled(false);
+            }
+        }
+
+        function addAllowedUser(username) {
+            var normalizedUsername = String(username || "").trim();
+            if (!normalizedUsername) {
+                return;
+            }
+            if (currentAllowedUsers.some(function (user) { return user.username === normalizedUsername; })) {
+                shareTargetInput.value = "";
+                return;
+            }
+            var previousAllowedUsers = currentAllowedUsers.slice();
+            currentAllowedUsers = currentAllowedUsers.concat([{
+                id: "",
+                username: normalizedUsername,
+                label: normalizedUsername,
+            }]);
+            shareTargetInput.value = "";
+            renderAllowedUsers();
+            if (shareCheckbox.checked && currentOnToggle) {
+                persistShareSettings(true, previousAllowedUsers, true);
+            }
+        }
+
+        function removeAllowedUser(username) {
+            if (currentReadOnly || isToggling || !currentOnToggle) {
+                return;
+            }
+            var previousAllowedUsers = currentAllowedUsers.slice();
+            currentAllowedUsers = currentAllowedUsers.filter(function (user) {
+                return user.username !== username;
+            });
+            renderAllowedUsers();
+            if (shareCheckbox.checked) {
+                persistShareSettings(true, previousAllowedUsers, true);
+            }
+        }
+
+        function close() {
+            if (shareModal.hidden) {
+                return;
+            }
+            shareModal.hidden = true;
+            currentOnToggle = null;
+            isToggling = false;
+            currentReadOnly = false;
+            currentAllowedUsers = [];
+            shareCheckbox.disabled = false;
+            shareCheckbox.hidden = false;
+            shareTargetInput.value = "";
+            shareTargets.hidden = true;
+            renderAllowedUsers();
+            resetCopyButton(shareCopyButton, "url_share_copy_button", "복사");
+            resetCopyButton(shareCopyDownloadButton, "url_share_copy_download_button", "다운로드 URL 복사");
+            if (lastFocusedElement && typeof lastFocusedElement.focus === "function") {
+                lastFocusedElement.focus();
+            }
+            lastFocusedElement = null;
+            syncModalBodyState();
+        }
+
+        async function copyUrlToClipboard(value, input, button, labelKey, fallbackLabel) {
+            if (!value) {
+                return;
+            }
+            try {
+                if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+                    await navigator.clipboard.writeText(value);
+                } else {
+                    input.focus();
+                    input.select();
+                    documentRef.execCommand("copy");
+                }
+                setCopyButtonLabel(button, "url_share_copied", "복사됨");
+                if (typeof window.showHandriveInlineCopyFeedback === "function") {
+                    window.showHandriveInlineCopyFeedback(button, "Copied!");
+                }
+                window.setTimeout(function () {
+                    resetCopyButton(button, labelKey, fallbackLabel);
+                }, 1400);
+            } catch (error) {
+                input.focus();
+                input.select();
+            }
+        }
+
+        async function copyCurrentUrl() {
+            await copyUrlToClipboard(
+                currentShareUrl || shareInput.value || "",
+                shareInput,
+                shareCopyButton,
+                "url_share_copy_button",
+                "복사"
+            );
+        }
+
+        async function copyCurrentDownloadUrl() {
+            await copyUrlToClipboard(
+                currentShareDownloadUrl || shareDownloadInput.value || "",
+                shareDownloadInput,
+                shareCopyDownloadButton,
+                "url_share_copy_download_button",
+                "다운로드 URL 복사"
+            );
+        }
+
+        function open(options) {
+            var isUrlOnly = Boolean(options && options.isUrlOnly);
+            var shareUrl = (options && options.shareUrl) || "";
+            var downloadUrl = (options && options.downloadUrl) || "";
+            var readOnly = Boolean(options && options.readOnly);
+            currentReadOnly = readOnly;
+            currentOnToggle = (!readOnly && options && typeof options.onToggle === "function") ? options.onToggle : null;
+            currentAllowedUsers = readOnly ? [] : normalizeAllowedUsers((options && options.allowedUsers) || []);
+            shareTargetInput.value = "";
+            renderAllowedUsers();
+
+            shareCheckbox.checked = isUrlOnly;
+            shareCheckbox.disabled = readOnly;
+            shareCheckbox.hidden = readOnly;
+            setTargetControlsDisabled(false);
+            setUrlRowVisible(isUrlOnly || readOnly, shareUrl, downloadUrl);
+            shareModal.hidden = false;
+            lastFocusedElement = documentRef.activeElement;
+            syncModalBodyState();
+            window.requestAnimationFrame(function () {
+                if (readOnly && shareInput) {
+                    shareInput.focus();
+                    shareInput.select();
+                    return;
+                }
+                shareCheckbox.focus();
+            });
+        }
+
+        shareCheckbox.addEventListener("change", function () {
+            if (isToggling || !currentOnToggle) {
+                return;
+            }
+            var enabled = shareCheckbox.checked;
+            persistShareSettings(enabled, currentAllowedUsers.slice(), !enabled);
+        });
+
+        shareTargetInput.addEventListener("keydown", function (event) {
+            if (event.key !== "Enter") {
+                return;
+            }
+            event.preventDefault();
+            addAllowedUser(shareTargetInput.value);
+        });
+
+        shareBackdrop.addEventListener("click", close);
+        shareCloseButton.addEventListener("click", close);
+        shareCopyButton.addEventListener("click", function () {
+            copyCurrentUrl().catch(function () {});
+        });
+        shareCopyDownloadButton.addEventListener("click", function () {
+            copyCurrentDownloadUrl().catch(function () {});
+        });
+        documentRef.addEventListener("keydown", function (event) {
+            if (event.key !== "Escape" || shareModal.hidden) {
+                return;
+            }
+            event.preventDefault();
+            close();
+        });
+
+        return { open: open, close: close };
+    }
+
+    window.HandriveUrlShareModal = Object.assign({}, window.HandriveUrlShareModal, {
+        create: createHandriveUrlShareModal,
+    });
+    window.createHandriveUrlShareModal = createHandriveUrlShareModal;
+})();

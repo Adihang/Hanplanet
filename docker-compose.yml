@@ -1,40 +1,138 @@
+x-django-env: &django-env
+  HANPLANET_RUNTIME: "${HANPLANET_RUNTIME:-docker}"
+  DJANGO_DEBUG: "${DJANGO_DEBUG:-true}"
+  DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY:-docker-dev-insecure-secret-key-change-for-production}"
+  DJANGO_SECRET_KEY_FILE: "${DJANGO_SECRET_KEY_FILE:-}"
+  DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-hanplanet.com,www.hanplanet.com,mc.hanplanet.com,git.hanplanet.com,game.hanplanet.com,map-collab.hanplanet.com,wargame.hanplanet.com,localhost,127.0.0.1,django,nginx}"
+  DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080,http://localhost:8000,http://127.0.0.1:8000,https://hanplanet.com,https://www.hanplanet.com,https://mc.hanplanet.com,https://git.hanplanet.com,https://game.hanplanet.com,https://map-collab.hanplanet.com,https://wargame.hanplanet.com}"
+  DJANGO_SERVE_FILES: "${DJANGO_SERVE_FILES:-false}"
+  DJANGO_SECURE_SSL_REDIRECT: "${DJANGO_SECURE_SSL_REDIRECT:-false}"
+  DJANGO_SESSION_COOKIE_SECURE: "${DJANGO_SESSION_COOKIE_SECURE:-false}"
+  DJANGO_CSRF_COOKIE_SECURE: "${DJANGO_CSRF_COOKIE_SECURE:-false}"
+  DJANGO_SQLITE_PATH: "${DJANGO_SQLITE_PATH:-/data/django/db.sqlite3}"
+  PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:8080}"
+  CANONICAL_PUBLIC_HOST_REDIRECT: "${CANONICAL_PUBLIC_HOST_REDIRECT:-false}"
+  CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://redis:6379/0}"
+  HANPLANET_MEDIA_ROOT: "${HANPLANET_MEDIA_ROOT:-/data/media}"
+  HANPLANET_FORGEJO_REPOS_ROOT: "${HANPLANET_FORGEJO_REPOS_ROOT:-/data/forgejo-repos}"
+  HANPLANET_GITHUB_REPO_CACHE_ROOT: "${HANPLANET_GITHUB_REPO_CACHE_ROOT:-/data/github-repo-cache}"
+  HANDRIVE_HLS_CACHE_ROOT: "${HANDRIVE_HLS_CACHE_ROOT:-/data/media/hls_cache}"
+  HPMAIL_STORAGE_ROOT: "${HPMAIL_STORAGE_ROOT:-/data/mail}"
+  DATA_BACKUP_ROOT: "${DATA_BACKUP_ROOT:-/data/backups}"
+  HPMAIL_IMAP_HOST: "${HPMAIL_IMAP_HOST:-host.docker.internal}"
+  HPMAIL_SMTP_HOST: "${HPMAIL_SMTP_HOST:-host.docker.internal}"
+  FORGEJO_BASE_URL: "${FORGEJO_BASE_URL:-http://gitea:3000}"
+  FORGEJO_ADMIN_TOKEN: "${FORGEJO_ADMIN_TOKEN:-}"
+  FORGEJO_ADMIN_TOKEN_FILE: "${FORGEJO_ADMIN_TOKEN_FILE:-}"
+  PUBLIC_GIT_BASE_URL: "${PUBLIC_GIT_BASE_URL:-http://localhost:3000}"
+  GITHUB_REPO_CACHE_ROOT: "${GITHUB_REPO_CACHE_ROOT:-/data/github-repo-cache}"
+  GAME_WS_PUBLIC_URL: "${GAME_WS_PUBLIC_URL:-ws://localhost:8081}"
+  GAME_WS_LOCAL_URL: "${GAME_WS_LOCAL_URL:-ws://bumpercar-spiky-server:8080}"
+  GAME_ADMIN_URL: "${GAME_ADMIN_URL:-http://bumpercar-spiky-server:8082}"
+  BUMPERCAR_SPIKY_SETTINGS_PATH: "${BUMPERCAR_SPIKY_SETTINGS_PATH:-/data/django/bumpercar_spiky_settings.json}"
+  GAME_JWT_SECRET: "${GAME_JWT_SECRET:-docker-dev-game-secret-change-for-production}"
+  GAME_JWT_SECRET_FILE: "${GAME_JWT_SECRET_FILE:-}"
+  BUMPERCAR_SPIKY_INTERNAL_SECRET: "${BUMPERCAR_SPIKY_INTERNAL_SECRET:-${GAME_JWT_SECRET:-docker-dev-game-secret-change-for-production}}"
+  BUMPERCAR_SPIKY_INTERNAL_SECRET_FILE: "${BUMPERCAR_SPIKY_INTERNAL_SECRET_FILE:-}"
+  MAP_COLLAB_WS_PUBLIC_URL: "${MAP_COLLAB_WS_PUBLIC_URL:-ws://localhost:8083}"
+  MAP_COLLAB_WS_LOCAL_URL: "${MAP_COLLAB_WS_LOCAL_URL:-ws://map-collab-server:8083}"
+  MAP_COLLAB_ADMIN_URL: "${MAP_COLLAB_ADMIN_URL:-http://map-collab-server:8084}"
+  SYNC_JWT_SECRET: "${SYNC_JWT_SECRET:-}"
+  SYNC_JWT_SECRET_FILE: "${SYNC_JWT_SECRET_FILE:-}"
+  OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+  OLLAMA_MODEL: "${OLLAMA_MODEL:-}"
+  OLLAMA_PROXY_API_KEY: "${OLLAMA_PROXY_API_KEY:-}"
+  OLLAMA_PROXY_API_KEY_FILE: "${OLLAMA_PROXY_API_KEY_FILE:-}"
+
+x-django-volumes: &django-volumes
+  - "${DJANGO_DATA_VOLUME:-django_data}:/data/django"
+  - "${HANPLANET_MEDIA_VOLUME:-media_data}:/data/media"
+  - "${HANPLANET_MAIL_VOLUME:-mail_data}:/data/mail"
+  - "${HANPLANET_GITHUB_CACHE_VOLUME:-github_cache_data}:/data/github-repo-cache"
+  - "${FORGEJO_REPOS_VOLUME:-forgejo_repos_data}:/data/forgejo-repos"
+  - "${HANPLANET_BACKUP_VOLUME:-backup_data}:/data/backups"
+  - "${MINECRAFT_SERVER_VOLUME:-/Users/imhanbyeol/Development/minecraft}:/Users/imhanbyeol/Development/minecraft"
+  - "staticfiles_data:/app/staticfiles"
+  - "${HANPLANET_DOCKER_SECRETS_DIR:-./.local/docker-secrets}:/run/hanplanet-secrets:ro"
+
 services:
   django:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: portfolio-django
     restart: unless-stopped
     env_file:
-      - .env.docker
+      - .env
     environment:
-      DJANGO_SERVE_FILES: "false"
+      <<: *django-env
+      RUN_MIGRATIONS: "${RUN_MIGRATIONS:-true}"
+      COLLECTSTATIC_ON_START: "${COLLECTSTATIC_ON_START:-true}"
+      GUNICORN_WORKERS: "${GUNICORN_WORKERS:-3}"
+      GUNICORN_TIMEOUT: "${GUNICORN_TIMEOUT:-360}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - ./db.sqlite3:/app/db.sqlite3
-      - staticfiles_data:/app/staticfiles
-      - media_data:/app/media
+    volumes: *django-volumes
+    depends_on:
+      redis:
+        condition: service_started
+    ports:
+      - "${DJANGO_PORT:-8000}:8000"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/portfolio/ >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 45s
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["celery", "-A", "config", "worker", "-l", "info", "--concurrency=2"]
+    env_file:
+      - .env
+    environment:
+      <<: *django-env
+      RUN_MIGRATIONS: "false"
+      COLLECTSTATIC_ON_START: "false"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes: *django-volumes
+    depends_on:
+      redis:
+        condition: service_started
+      django:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - "${REDIS_DATA_VOLUME:-redis_data}:/data"
 
   nginx:
     image: nginx:1.27-alpine
-    container_name: portfolio-nginx
     restart: unless-stopped
     depends_on:
       django:
         condition: service_healthy
+      bumpercar-spiky-server:
+        condition: service_started
+      map-collab-server:
+        condition: service_started
+      wargame:
+        condition: service_started
+      gitea:
+        condition: service_started
     ports:
-      - "80:80"
+      - "${HTTP_PORT:-8080}:80"
     volumes:
-      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - staticfiles_data:/app/staticfiles:ro
-      - media_data:/app/media:ro
+      - "./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro"
+      - "staticfiles_data:/app/staticfiles:ro"
+      - "${HANPLANET_MEDIA_VOLUME:-media_data}:/data/media:ro"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/portfolio/ || exit 1"]
       interval: 30s
@@ -42,17 +140,103 @@ services:
       retries: 5
       start_period: 15s
 
+  bumpercar-spiky-server:
+    build:
+      context: .
+      dockerfile: bumpercar-spiky-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      ADMIN_HOST: "0.0.0.0"
+      ADMIN_PORT: "8082"
+      DJANGO_INTERNAL_BASE_URL: "http://django:8000"
+      BUMPERCAR_SPIKY_INTERNAL_SECRET: "${BUMPERCAR_SPIKY_INTERNAL_SECRET:-${GAME_JWT_SECRET:-docker-dev-game-secret-change-for-production}}"
+      BUMPERCAR_SPIKY_SETTINGS_PATH: "${BUMPERCAR_SPIKY_SETTINGS_PATH:-/data/django/bumpercar_spiky_settings.json}"
+      JWT_SECRET: "${GAME_JWT_SECRET:-docker-dev-game-secret-change-for-production}"
+      JWT_ISSUER: "${GAME_JWT_ISSUER:-http://localhost:8080}"
+      JWT_AUDIENCE: "${GAME_JWT_AUDIENCE:-hanplanet-game}"
+    volumes:
+      - "${DJANGO_DATA_VOLUME:-django_data}:/data/django"
+    depends_on:
+      django:
+        condition: service_healthy
+    ports:
+      - "${GAME_PORT:-8081}:8080"
+      - "127.0.0.1:${GAME_ADMIN_PORT:-8082}:8082"
+
+  map-collab-server:
+    build:
+      context: .
+      dockerfile: map-collab-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "8083"
+      ADMIN_HOST: "0.0.0.0"
+      ADMIN_PORT: "8084"
+      JWT_SECRET: "${GAME_JWT_SECRET:-docker-dev-game-secret-change-for-production}"
+      JWT_ISSUER: "${GAME_JWT_ISSUER:-http://localhost:8080}"
+      JWT_AUDIENCE: "${GAME_JWT_AUDIENCE:-hanplanet-game}"
+    ports:
+      - "${MAP_COLLAB_PORT:-8083}:8083"
+      - "127.0.0.1:${MAP_COLLAB_ADMIN_PORT:-8084}:8084"
+
+  gitea:
+    build:
+      context: .
+      dockerfile: docker/gitea/Dockerfile
+    image: hanplanet-gitea:1.25.5
+    restart: unless-stopped
+    depends_on:
+      django:
+        condition: service_healthy
+    environment:
+      USER_UID: "${GITEA_USER_UID:-1000}"
+      USER_GID: "${GITEA_USER_GID:-1000}"
+      GITEA__database__DB_TYPE: "sqlite3"
+      GITEA__database__PATH: "${GITEA_DB_PATH:-/data/gitea.db}"
+      GITEA__repository__ROOT: "/data/git/repositories"
+      GITEA__server__DOMAIN: "${GITEA_DOMAIN:-localhost}"
+      GITEA__server__SSH_DOMAIN: "${GITEA_SSH_DOMAIN:-localhost}"
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__ROOT_URL: "${PUBLIC_GIT_BASE_URL:-http://localhost:3000}/"
+      GITEA__server__DISABLE_SSH: "${GITEA_DISABLE_SSH:-true}"
+      GITEA__service__DISABLE_REGISTRATION: "${GITEA_DISABLE_REGISTRATION:-true}"
+      GITEA__security__INSTALL_LOCK: "true"
+    volumes:
+      - "${GITEA_DATA_VOLUME:-gitea_data}:/data"
+      - "${FORGEJO_REPOS_VOLUME:-forgejo_repos_data}:/data/git/repositories"
+    ports:
+      - "${GITEA_PORT:-3000}:3000"
+
+  wargame:
+    build:
+      context: .
+      dockerfile: Wargame/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - "${WARGAME_DATA_VOLUME:-wargame_data}:/app/Wargame/data"
+    ports:
+      - "${WARGAME_PORT:-8090}:8090"
+
   cloudflared:
     image: cloudflare/cloudflared:latest
-    container_name: portfolio-cloudflared
     restart: unless-stopped
+    profiles: ["tunnel"]
     depends_on:
       nginx:
         condition: service_healthy
     command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
     volumes:
-      - ./docker/cloudflared:/etc/cloudflared:ro
+      - "./docker/cloudflared:/etc/cloudflared:ro"
 
 volumes:
+  django_data:
   staticfiles_data:
   media_data:
+  mail_data:
+  github_cache_data:
+  forgejo_repos_data:
+  backup_data:
+  gitea_data:
+  redis_data:
+  wargame_data:

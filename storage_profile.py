@@ -23,6 +23,13 @@ def _load_secrets() -> dict:
         return {}
 
 
+def _env_path(name: str) -> Path | None:
+    value = str(os.environ.get(name) or "").strip()
+    if not value:
+        return None
+    return Path(value).expanduser()
+
+
 def get_disc_mode(default: str = DEFAULT_DISC) -> str:
     env_value = str(os.environ.get("DISC") or os.environ.get("HANPLANET_DISC") or "").strip().lower()
     if env_value in {"ssd", "hdd"}:
@@ -36,6 +43,10 @@ def get_disc_mode(default: str = DEFAULT_DISC) -> str:
 
 
 def get_media_root(disc_mode: str | None = None) -> Path:
+    override = _env_path("HANPLANET_MEDIA_ROOT")
+    if override is not None:
+        return override
+
     mode = (disc_mode or get_disc_mode()).strip().lower()
     if mode == "ssd":
         return TEMPORARY_ROOT / "media"
@@ -43,6 +54,10 @@ def get_media_root(disc_mode: str | None = None) -> Path:
 
 
 def get_forgejo_repos_root(disc_mode: str | None = None) -> Path:
+    override = _env_path("HANPLANET_FORGEJO_REPOS_ROOT")
+    if override is not None:
+        return override
+
     mode = (disc_mode or get_disc_mode()).strip().lower()
     if mode == "ssd":
         return TEMPORARY_ROOT / "forgejo-repos"
@@ -50,6 +65,10 @@ def get_forgejo_repos_root(disc_mode: str | None = None) -> Path:
 
 
 def get_github_repo_cache_root(disc_mode: str | None = None) -> Path:
+    override = _env_path("HANPLANET_GITHUB_REPO_CACHE_ROOT")
+    if override is not None:
+        return override
+
     mode = (disc_mode or get_disc_mode()).strip().lower()
     if mode == "ssd":
         return TEMPORARY_ROOT / "github-repo-cache"

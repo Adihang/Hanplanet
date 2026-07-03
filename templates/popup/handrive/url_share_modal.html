@@ -14,6 +14,7 @@
             {% include "popup/handrive/_popup_close_button.html" with button_id="handrive-url-share-close-btn" %}
         </header>
         <div class="handrive-url-share-targets" id="handrive-url-share-targets" hidden>
+            <p class="handrive-url-share-target-empty">{{ handrive_text.url_share_targets_empty_label }}</p>
             <input
                 type="text"
                 id="handrive-url-share-target-input"
@@ -23,10 +24,20 @@
                 placeholder="{{ handrive_text.url_share_targets_placeholder }}"
             >
             <div class="handrive-url-share-target-list" id="handrive-url-share-target-list" aria-live="polite"></div>
-            <p class="handrive-url-share-target-empty">{{ handrive_text.url_share_targets_empty_label }}</p>
         </div>
         <div id="handrive-url-share-url-row" class="handrive-field handrive-field-full" hidden>
-            <span id="handrive-url-share-read-label">{{ handrive_text.url_share_label }}</span>
+            <div class="handrive-url-share-read-head">
+                <span id="handrive-url-share-read-label">{{ handrive_text.url_share_label }}</span>
+                <label class="handrive-url-share-edit-toggle" id="handrive-url-share-edit-toggle">
+                    <span>{{ handrive_text.url_share_edit_label }}</span>
+                    <input
+                        type="checkbox"
+                        id="handrive-url-share-edit-checkbox"
+                        aria-label="{{ handrive_text.url_share_edit_label }}"
+                        title="{{ handrive_text.url_share_edit_label }}"
+                    >
+                </label>
+            </div>
             <div class="handrive-url-share-input-wrap handrive-inline-copy-field">
                 <input type="text" id="handrive-url-share-input" readonly>
                 <button

@@ -247,11 +247,24 @@ CELERY_TASK_ACKS_LATE                     = True
 CELERY_WORKER_PREFETCH_MULTIPLIER         = 1
 CELERY_WORKER_MAX_TASKS_PER_CHILD         = 50
 CELERY_BROKER_TRANSPORT_OPTIONS           = {"visibility_timeout": 3600}
+HANDRIVE_TUTORIAL_WORKSPACE_MAX_AGE_SECONDS = max(
+    60,
+    load_optional_int_secret("HANDRIVE_TUTORIAL_WORKSPACE_MAX_AGE_SECONDS", 60 * 60 * 24),
+)
+HANDRIVE_TUTORIAL_WORKSPACE_CLEANUP_INTERVAL_SECONDS = max(
+    60,
+    load_optional_int_secret("HANDRIVE_TUTORIAL_WORKSPACE_CLEANUP_INTERVAL_SECONDS", 60 * 60),
+)
 CELERY_BEAT_SCHEDULE = {
     # 만료된 Django 세션 매일 새벽 3시 정리
     "clearsessions-daily": {
         "task": "main.tasks.clear_expired_sessions",
         "schedule": 60 * 60 * 24,  # 24시간마다
+    },
+    # 완료/스킵 없이 이탈한 HanDrive 튜토리얼 임시 드라이브 정리
+    "handrive-tutorial-workspace-cleanup": {
+        "task": "main.tasks.cleanup_stale_handrive_tutorial_workspaces",
+        "schedule": HANDRIVE_TUTORIAL_WORKSPACE_CLEANUP_INTERVAL_SECONDS,
     },
 }
 

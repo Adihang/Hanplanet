@@ -1,9 +1,18 @@
 <div id="{{ modal_id }}" class="handrive-help-modal" hidden>
     <div class="handrive-help-modal-backdrop site-modal-backdrop" id="{{ backdrop_id }}"></div>
-    <div class="handrive-help-modal-dialog site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="{{ modal_id }}-title">
+    <div class="handrive-help-modal-dialog site-modal-dialog" data-popup-fit-bottom data-handrive-help-initial-width role="dialog" aria-modal="true" aria-labelledby="{{ modal_id }}-title">
         <header class="handrive-help-modal-head site-modal-head">
-            <h2 id="{{ modal_id }}-title" class="handrive-popup-title handrive-help-modal-title">{{ aria_label }}</h2>
-            {% include "popup/handrive/_popup_close_button.html" with button_id=close_button_id click_target_id=close_click_target_id %}
+            <div class="handrive-help-modal-title-row">
+                <h2 id="{{ modal_id }}-title" class="handrive-popup-title handrive-help-modal-title">{{ aria_label }}</h2>
+                {% if tutorial_button_url %}
+                <a class="site-inline-hover-link handrive-help-modal-tutorial-btn" href="{{ tutorial_button_url }}" id="{{ modal_id }}-tutorial-btn">
+                    {{ tutorial_button_label|default:"Tutorial" }}
+                </a>
+                {% endif %}
+            </div>
+            <div class="handrive-help-modal-head-actions">
+                {% include "popup/handrive/_popup_close_button.html" with button_id=close_button_id click_target_id=close_click_target_id %}
+            </div>
         </header>
         <div class="handrive-help-modal-body">
             {% if article_id %}

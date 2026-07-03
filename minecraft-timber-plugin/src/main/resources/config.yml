@@ -18,3 +18,4 @@ fall-vertical-velocity: 0.04
 falling-block-base-damage: 2.0
 falling-block-damage-per-height: 0.75
 falling-block-max-damage: 4
+fallen-leaf-decay-ticks: 600

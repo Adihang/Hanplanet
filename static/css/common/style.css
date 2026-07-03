@@ -54,6 +54,29 @@
     --site-loading-spinner-accent: var(--theme-accent-strong, #2563eb);
 }
 
+.site-inline-hover-link {
+    display: inline-flex;
+    align-items: baseline;
+    width: fit-content;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--site-inline-hover-link-color, var(--site-text-secondary, currentColor));
+    font: inherit;
+    font-size: var(--site-inline-hover-link-font-size, 0.875em);
+    font-weight: var(--site-inline-hover-link-font-weight, inherit);
+    line-height: var(--site-inline-hover-link-line-height, 1.25);
+    text-decoration: none;
+    text-underline-offset: var(--site-inline-hover-link-underline-offset, 3px);
+    cursor: pointer;
+}
+
+.site-inline-hover-link:hover,
+.site-inline-hover-link:focus-visible {
+    color: var(--site-inline-hover-link-hover-color, var(--site-text-stronger, currentColor));
+    text-decoration: underline;
+}
+
 .site-loading-host {
     position: relative;
 }
@@ -722,42 +745,6 @@ body,
 body * {
     scrollbar-width: thin;
     scrollbar-color: var(--site-scrollbar-thumb) transparent;
-}
-
-body.portfolio-page,
-body.portfolio-page .bubble-bg-layer,
-body.portfolio-page #interactiveBubbleCanvas,
-body.portfolio-page .ui-nav,
-body.portfolio-page .ui-nav-links,
-body.portfolio-page .ui-nav-link,
-body.portfolio-page .ui-nav-toggler,
-body.portfolio-page section,
-body.portfolio-page hr,
-body.portfolio-page .main-surface-layer,
-body.portfolio-page .main-surface-layer h1,
-body.portfolio-page .main-surface-layer h2,
-body.portfolio-page .main-surface-layer h3,
-body.portfolio-page .main-surface-layer h4,
-body.portfolio-page .main-surface-layer h5,
-body.portfolio-page .main-surface-layer p,
-body.portfolio-page .main-surface-layer li,
-body.portfolio-page .main-surface-layer span,
-body.portfolio-page .main-surface-layer div,
-body.portfolio-page .main-surface-layer b,
-body.portfolio-page .main-surface-layer strong,
-body.portfolio-page .project_card,
-body.portfolio-page .career_card,
-body.portfolio-page .project_card_img,
-body.portfolio-page .hobby_card_img,
-body.portfolio-page .tag,
-body.portfolio-page .career_card_date,
-body.portfolio-page .contact,
-body.portfolio-page .foot {
-    transition:
-        background-color 0.62s cubic-bezier(0.22, 1, 0.36, 1),
-        color 0.52s cubic-bezier(0.22, 1, 0.36, 1),
-        border-color 0.52s cubic-bezier(0.22, 1, 0.36, 1),
-        box-shadow 0.62s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 body.theme-dark {
@@ -3232,6 +3219,11 @@ body.portfolio-page section {
     background-color: transparent;
 }
 
+body.portfolio-page section.projects {
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
 :root {
     --site-bg: #ffffff;
     --site-text: #101010;
@@ -4094,11 +4086,6 @@ body.theme-dark .ui-nav.nav-auto-collapsed .ui-nav-links .nav-item + .nav-item {
         margin-left: auto; /* 왼쪽 여백을 auto로 설정하여 오른쪽 정렬됨 */
         max-height: 150px;
         margin-right: 40px;
-    }
-
-    section.projects {
-        padding-left: 10px;
-        padding-right: 10px;
     }
 
     .projects .project_card {
@@ -5467,4 +5454,8 @@ body.theme-dark .legal-page-prose th {
 
 .ui-field-checkbox-text {
     line-height: 1.5;
+}
+
+.hp-zoom-surface {
+    overscroll-behavior: contain;
 }

@@ -1,8 +1,8 @@
 name: HanplanetTimber
-version: 1.2.4
+version: 1.2.13
 main: com.hanplanet.minecraft.timber.HanplanetTimberPlugin
 api-version: "26.2"
-description: Connected falling tree animation plugin for Hanplanet.
+description: Independent falling log and leaf animation plugin for Hanplanet.
 author: Hanplanet
 permissions:
   hanplanettimber.use:

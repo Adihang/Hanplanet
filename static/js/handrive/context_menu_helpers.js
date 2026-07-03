@@ -116,6 +116,8 @@
         var isArchiveVirtualDirectory = Boolean(targetEntry.is_archive_virtual);
         var isCurrentFolder = Boolean(targetEntry.isCurrentFolder);
         var canEditEntry = Boolean(targetEntry.can_edit);
+        var canRenameEntry = canEditEntry && targetEntry.can_rename !== false;
+        var canManageShare = targetEntry.share_can_manage !== false;
         var canDemoEditEntry = Boolean(targetEntry.can_demo_edit);
         var canShowEditEntry = Boolean((canEditEntry || canDemoEditEntry) && isEditableHandriveFileEntry(targetEntry));
         var canWriteChildren = Boolean(targetEntry.type === "dir" && targetEntry.can_write_children);
@@ -211,12 +213,12 @@
         flags.open = !isCurrentFolder;
         flags.download = !isCurrentFolder && (!isDirectory || !isGitVirtualDirectoryEntry(targetEntry));
         flags.extractArchive = Boolean(!isCurrentFolder && !isMultiSelection && targetEntry.is_archive && targetEntry.can_extract);
-        flags.share = canEditEntry && !isGitVirtualEntry && !isGoogleDriveEntry && hasShareablePath;
+        flags.share = canEditEntry && canManageShare && !isGitVirtualEntry && !isGoogleDriveEntry && hasShareablePath;
         flags.googleDriveAddItems = !isMultiSelection && isGoogleDriveRootEntry;
         flags.upload = isDirectory && canWriteChildren && !hasGitRepo;
         flags.createArchive = Boolean(isDirectory && !isCurrentFolder && canEditEntry && !hasGitRepo && !isGitVirtualEntry && !isGoogleDriveEntry);
         flags.edit = !isDirectory && !isArchiveFile && canShowEditEntry;
-        flags.rename = !isCurrentFolder && canEditEntry && !isPublicWriteFile && !hasGitRepo;
+        flags.rename = !isCurrentFolder && canRenameEntry && !isPublicWriteFile && !hasGitRepo;
         flags.deleteEntry = isEntryDeletable(targetEntry);
         flags.newFolder = isDirectory && canWriteChildren && !hasGitRepo;
         flags.newDoc = isDirectory && canWriteChildren && !hasGitRepo;

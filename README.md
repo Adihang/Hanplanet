@@ -70,6 +70,7 @@ flowchart TD
   Gitea["Gitea container :3000"]
   Redis["Redis container :6379"]
   Celery["Celery worker container"]
+  CeleryBeat["Celery beat scheduler container"]
   Game["Bumpercar Node container :8080"]
   GameAdmin["Bumpercar admin :8082 (container network, host 127.0.0.1)"]
   MapCollab["Map collab Node container :8083"]
@@ -82,7 +83,7 @@ flowchart TD
   Minecraft["Host Minecraft/Paper :25565"]
   BlueMap["Host BlueMap web :8100"]
   DjangoDB["/data/django/db.sqlite3"]
-  GiteaDB["/data/gitea"]
+  GiteaDB["Gitea data volume (/data in gitea, /data/gitea in django)"]
   WargameDB["Wargame SQLite"]
   Media["/data/media"]
   Static["/app/staticfiles"]
@@ -104,6 +105,7 @@ flowchart TD
   Django --> Redis
   Django --> Celery
   Django --> Gitea
+  Django --> GiteaDB
   Django --> GameAdmin
   Django --> MapAdmin
   Django --> McData
@@ -114,6 +116,7 @@ flowchart TD
   Dovecot --> HPmailStorage
   Celery --> Gitea
   Celery --> Redis
+  CeleryBeat --> Redis
   Gitea --> RepoData
   Gitea --> GiteaDB
   Game --> Django
@@ -132,6 +135,7 @@ flowchart TD
 | Django 분리 앱 | AI 프록시/사용량, GitHub/Google/Gitea 모델, HPmail, portfolio/stratagem 모델 | [`ai/`](./ai/), [`git/`](./git/), [`hpmail/`](./hpmail/), [`portfolio/`](./portfolio/), [`stratagem/`](./stratagem/) |
 | Gitea | Git 저장소 웹 UI, bare repo 저장소, OAuth/세션 기반 Git 웹. Docker에서는 `gitea` 서비스와 커스텀 이미지 사용 | [`docker/gitea/Dockerfile`](./docker/gitea/Dockerfile), [`docker/gitea/entrypoint.sh`](./docker/gitea/entrypoint.sh), [`forgejo/custom/conf/app.ini`](./forgejo/custom/conf/app.ini), [`forgejo/custom/templates/`](./forgejo/custom/templates/) |
 | Celery worker | HanDrive -> Git 저장소 생성/재시도 같은 비동기 작업. Docker에서는 `celery` 서비스 | [`main/git_tasks.py`](./main/git_tasks.py), [`docker-compose.yml`](./docker-compose.yml) |
+| Celery beat | 만료 세션과 HanDrive 튜토리얼 임시 드라이브를 주기 정리하는 스케줄러. Docker에서는 `celery-beat` 서비스 | [`main/tasks.py`](./main/tasks.py), [`config/settings.py`](./config/settings.py), [`docker-compose.yml`](./docker-compose.yml) |
 | Redis | Celery broker. Docker에서는 `redis:7-alpine` 서비스 | [`docker-compose.yml`](./docker-compose.yml) |
 | HPmail | 웹메일 UI/API, Postfix map export, Dovecot IMAP 읽기, SMTP 발송. Postfix/Dovecot은 아직 호스트 서비스 | [`hpmail/`](./hpmail/), [`deploy/hpmail/`](./deploy/hpmail/), [`deploy/launchd/com.hanplanet.dovecot.plist`](./deploy/launchd/com.hanplanet.dovecot.plist) |
 | Node game server | 실시간 범퍼카/스피키 월드 시뮬레이션, JWT 검증, WebSocket, Docker 내부 admin API | [`bumpercar-spiky-server/Dockerfile`](./bumpercar-spiky-server/Dockerfile), [`bumpercar-spiky-server/server.js`](./bumpercar-spiky-server/server.js), [`bumpercar-spiky-server/world/world.js`](./bumpercar-spiky-server/world/world.js) |
@@ -608,9 +612,10 @@ Docker 운영에서도 [`deploy/launchd/com.hanplanet.docker-stack.plist`](./dep
 | [`forgejo/custom/public/assets/`](./forgejo/custom/public/assets/) | Gitea가 쓰는 커스텀 CSS/JS/이미지 |
 | `forgejo/data/repos/` | 네이티브 운영의 bare Git 저장소 링크/마운트 지점 |
 | `/Volumes/HANPLANET_HDD/Hanplanet/forgejo-repos` | `DISC=hdd` 기준 실제 bare Git 저장소 root |
-| `forgejo/data/gitea.db` | Gitea SQLite DB |
+| `forgejo/data/gitea.db` | 네이티브 운영의 Gitea SQLite DB |
 | `forgejo/log/` | Gitea stdout/stderr 및 app 로그 |
-| `/data/gitea` | Docker 컨테이너 내부 Gitea DB/config/runtime data |
+| `/data` | Docker `gitea` 컨테이너 내부 Gitea DB/config/runtime data |
+| `/data/gitea` | Docker `django`/`celery` 컨테이너에서 같은 `GITEA_DATA_VOLUME`을 보는 경로. `FORGEJO_DB_PATH=/data/gitea/gitea.db` |
 | `/data/git/repositories` | Docker 컨테이너 내부 bare Git 저장소 root |
 
 ### `bumpercar-spiky-server/` 구조
@@ -801,7 +806,7 @@ Docker 운영에서도 [`deploy/launchd/com.hanplanet.docker-stack.plist`](./dep
 
 ### Docker로 빠른 실행
 
-Docker 경로는 이 저장소에 포함된 [`Dockerfile`](./Dockerfile), [`docker-compose.yml`](./docker-compose.yml), [`docker/`](./docker/) 설정으로 재현합니다. 새 컴퓨터에서는 Python venv, Homebrew 패키지, Node 패키지를 직접 깔지 않아도 Docker가 Django, Celery, Redis, Gitea, Nginx, 게임 서버, 맵 협업 서버, Wargame 런타임을 이미지로 구성합니다.
+Docker 경로는 이 저장소에 포함된 [`Dockerfile`](./Dockerfile), [`docker-compose.yml`](./docker-compose.yml), [`docker/`](./docker/) 설정으로 재현합니다. 새 컴퓨터에서는 Python venv, Homebrew 패키지, Node 패키지를 직접 깔지 않아도 Docker가 Django, Celery worker/beat, Redis, Gitea, Nginx, 게임 서버, 맵 협업 서버, Wargame 런타임을 이미지로 구성합니다.
 
 ```bash
 cd /path/to/Hanplanet
@@ -826,6 +831,7 @@ Docker 서비스와 기본 포트:
 | `nginx` | `:80` | `${HTTP_PORT:-8080}` | 모든 HTTP hostname ingress, static/media, BlueMap proxy |
 | `django` | `:8000` | `${DJANGO_PORT:-8000}` | 메인 Django/Gunicorn |
 | `celery` | 내부 전용 | 없음 | 비동기 Git/HanDrive 작업 |
+| `celery-beat` | 내부 전용 | 없음 | 만료 세션과 HanDrive 튜토리얼 임시 드라이브 주기 정리 |
 | `redis` | `:6379` | 없음 | Celery broker |
 | `gitea` | `:3000` | `${GITEA_PORT:-3000}` | Git 웹 UI/API |
 | `bumpercar-spiky-server` | WS `:8080`, admin `:8082` | `${GAME_PORT:-8081}`, `127.0.0.1:${GAME_ADMIN_PORT:-8082}` | 게임 WebSocket/admin |
@@ -840,9 +846,10 @@ docker compose exec django python manage.py createsuperuser
 ```
 
 Git 기능까지 쓰려면 Gitea 관리자 계정과 API 토큰을 만든 뒤 `.env`의 `FORGEJO_ADMIN_TOKEN`에 넣고 재시작합니다.
+Hanplanet 로그인 응답이 Forgejo 웹 세션을 직접 생성하므로 Docker에서는 `GITEA_DATA_VOLUME`이 Django/Celery에도 `/data/gitea`로 마운트되고, `.env`의 `FORGEJO_DB_PATH`는 `/data/gitea/gitea.db`를 가리켜야 합니다.
 
 ```bash
-docker compose restart django celery
+docker compose restart django celery celery-beat
 ```
 
 주의할 점:
@@ -1173,7 +1180,7 @@ MINECRAFT_SERVER_VOLUME=/srv/hanplanet/data/minecraft
 | Django SQLite DB | `/srv/hanplanet/data/django/db.sqlite3` |
 | `media/` / HanDrive 파일 | `/srv/hanplanet/data/media/` |
 | Forgejo bare repo root | `/srv/hanplanet/data/forgejo-repos/` |
-| Gitea DB/config/runtime data | `/srv/hanplanet/data/gitea/` |
+| Gitea DB/config/runtime data | `/srv/hanplanet/data/gitea/` (`gitea.db` 포함, Django에서는 `/data/gitea/gitea.db`) |
 | GitHub repo cache | `/srv/hanplanet/data/github-repo-cache/` |
 | HPmail storage | `/srv/hanplanet/data/mail/` |
 | Wargame SQLite DB | `/srv/hanplanet/data/wargame/wargame.sqlite3` |
@@ -1187,14 +1194,18 @@ docker compose ps
 docker compose logs -f django nginx
 ```
 
-macOS 운영 서버에서 재부팅 후에도 Docker 스택을 자동 기동하려면 Docker용 launchd 항목을 설치합니다. 이 항목은 Colima를 먼저 켜고 `docker compose up -d --remove-orphans`를 실행합니다.
+macOS 운영 서버에서 재부팅 후에도 Docker 스택을 자동 기동하려면 Docker용 launchd 항목을 설치합니다. `com.hanplanet.docker-stack`은 Colima를 먼저 켜고 `docker compose up -d --remove-orphans`를 실행합니다. `com.hanplanet.docker-health-watchdog`는 60초마다 Compose 서비스의 Docker health 상태를 확인하고, `unhealthy`인 서비스가 있으면 `docker compose restart <service>`를 실행합니다.
 
 ```bash
-chmod +x scripts/start_docker_stack.sh
+chmod +x scripts/start_docker_stack.sh scripts/docker_health_watchdog.sh
 cp deploy/launchd/com.hanplanet.docker-stack.plist ~/Library/LaunchAgents/
+cp deploy/launchd/com.hanplanet.docker-health-watchdog.plist ~/Library/LaunchAgents/
 launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.hanplanet.docker-stack.plist
+launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.hanplanet.docker-health-watchdog.plist
 launchctl enable "gui/$(id -u)/com.hanplanet.docker-stack"
+launchctl enable "gui/$(id -u)/com.hanplanet.docker-health-watchdog"
 launchctl kickstart -k "gui/$(id -u)/com.hanplanet.docker-stack"
+launchctl kickstart -k "gui/$(id -u)/com.hanplanet.docker-health-watchdog"
 ```
 
 Cloudflare Tunnel도 컨테이너로 운영하려면 예시 파일을 복사하고 tunnel credential JSON을 같은 폴더에 둡니다.
@@ -1293,7 +1304,7 @@ docker compose ps
 docker compose logs -f django nginx
 
 # Django/templates/static 변경
-docker compose up -d --build django celery nginx
+docker compose up -d --build django celery celery-beat nginx
 
 # Nginx 라우팅만 변경
 docker compose exec nginx nginx -t
@@ -1363,6 +1374,7 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.minecraft-status
 | Docker Gitea 로그 | `docker compose logs -f gitea` |
 | Docker 범퍼카/맵 협업 로그 | `docker compose logs -f bumpercar-spiky-server map-collab-server` |
 | Docker Wargame 로그 | `docker compose logs -f wargame` |
+| Docker health watchdog | `~/Library/Logs/hanplanet-docker-health-watchdog.out.log`, `~/Library/Logs/hanplanet-docker-health-watchdog.err.log` |
 | Gunicorn stdout/stderr | `~/Library/Logs/gunicorn.out.log`, `~/Library/Logs/gunicorn.err.log` |
 | Nginx launchd stdout/stderr | `~/Library/Logs/hanplanet-nginx.out.log`, `~/Library/Logs/hanplanet-nginx.err.log` |
 | Celery stdout | [`log/celery.stdout.log`](./log/celery.stdout.log) |
@@ -1385,6 +1397,8 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.minecraft-status
 | --- | --- |
 | [`scripts/start_docker_stack.sh`](./scripts/start_docker_stack.sh) | macOS Docker 운영에서 Colima 시작 후 `docker compose up -d --remove-orphans` 실행 |
 | [`deploy/launchd/com.hanplanet.docker-stack.plist`](./deploy/launchd/com.hanplanet.docker-stack.plist) | Docker stack 자동 기동 launchd 항목 |
+| [`scripts/docker_health_watchdog.sh`](./scripts/docker_health_watchdog.sh) | Docker healthcheck가 `unhealthy`인 Compose 서비스를 재시작 |
+| [`deploy/launchd/com.hanplanet.docker-health-watchdog.plist`](./deploy/launchd/com.hanplanet.docker-health-watchdog.plist) | Docker health watchdog 60초 주기 launchd 항목 |
 | [`deploy/scripts/git-credential-hanplanet`](./deploy/scripts/git-credential-hanplanet) | Git credential helper. OAuth2 device flow로 Git clone/push 인증 |
 | [`scripts/launch_service_by_disc.py`](./scripts/launch_service_by_disc.py) | `DISC` 값에 맞춰 gunicorn/gitea/celery/nginx 실행 전 storage profile 적용 |
 | [`scripts/wait_for_storage_then_exec.py`](./scripts/wait_for_storage_then_exec.py) | 외장 스토리지 준비 대기 후 command 실행 |

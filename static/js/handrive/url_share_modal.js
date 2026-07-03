@@ -56,6 +56,8 @@
         var shareTargetEmpty = shareTargets ? shareTargets.querySelector(".handrive-url-share-target-empty") : null;
         var shareUrlRow = documentRef.getElementById("handrive-url-share-url-row");
         var shareReadLabel = documentRef.getElementById("handrive-url-share-read-label");
+        var shareEditToggle = documentRef.getElementById("handrive-url-share-edit-toggle");
+        var shareEditCheckbox = documentRef.getElementById("handrive-url-share-edit-checkbox");
         var shareInput = documentRef.getElementById("handrive-url-share-input");
         var shareDownloadRow = documentRef.getElementById("handrive-url-share-download-row");
         var shareDownloadInput = documentRef.getElementById("handrive-url-share-download-input");
@@ -70,6 +72,8 @@
             !shareTargets ||
             !shareTargetInput ||
             !shareTargetList ||
+            !shareEditToggle ||
+            !shareEditCheckbox ||
             !shareInput ||
             !shareDownloadRow ||
             !shareDownloadInput ||
@@ -90,6 +94,7 @@
         var currentShareDownloadUrl = "";
         var currentAllowedUsers = [];
         var currentReadOnly = false;
+        var currentShareCanEdit = false;
 
         function decodeUrlForDisplay(url) {
             var rawUrl = String(url || "");
@@ -119,7 +124,9 @@
             currentShareDownloadUrl = visible ? String(downloadUrl || "") : "";
             shareTargets.hidden = !visible || currentReadOnly;
             shareUrlRow.hidden = !visible;
-            shareDownloadRow.hidden = !(visible && currentShareDownloadUrl);
+            shareEditToggle.hidden = !visible || currentReadOnly;
+            shareEditCheckbox.disabled = !visible || currentReadOnly || isToggling || !currentOnToggle;
+            shareDownloadRow.hidden = currentReadOnly || !(visible && currentShareDownloadUrl);
             shareCopyButton.disabled = !(visible && currentShareUrl);
             shareCopyDownloadButton.disabled = !(visible && currentShareDownloadUrl);
             if (shareReadLabel) {
@@ -175,16 +182,56 @@
             }).filter(Boolean);
         }
 
+        function getResultCanEdit(result, fallbackValue) {
+            if (!result || typeof result !== "object") {
+                return Boolean(fallbackValue);
+            }
+            if (Object.prototype.hasOwnProperty.call(result, "canEdit")) {
+                return Boolean(result.canEdit);
+            }
+            if (Object.prototype.hasOwnProperty.call(result, "share_can_edit")) {
+                return Boolean(result.share_can_edit);
+            }
+            if (Object.prototype.hasOwnProperty.call(result, "editEnabled")) {
+                return Boolean(result.editEnabled);
+            }
+            return Boolean(fallbackValue);
+        }
+
         function setTargetControlsDisabled(disabled) {
             var isDisabled = Boolean(disabled || currentReadOnly || !currentOnToggle);
             shareTargetInput.disabled = isDisabled;
             shareTargetList.querySelectorAll(".handrive-url-share-target-remove").forEach(function (button) {
                 button.disabled = isDisabled;
             });
+            shareEditCheckbox.disabled = Boolean(isDisabled || !shareCheckbox.checked);
+        }
+
+        function dispatchShareUpdated(result) {
+            var detail = {
+                enabled: Boolean(shareCheckbox.checked),
+                canEdit: Boolean(currentShareCanEdit),
+                shareUrl: currentShareUrl,
+                downloadUrl: currentShareDownloadUrl,
+                allowedUsers: currentAllowedUsers.slice(),
+                result: result || null,
+            };
+            var eventObject = null;
+            if (typeof window.CustomEvent === "function") {
+                eventObject = new window.CustomEvent("handrive:url-share-updated", {
+                    bubbles: true,
+                    detail: detail,
+                });
+            } else {
+                eventObject = documentRef.createEvent("CustomEvent");
+                eventObject.initCustomEvent("handrive:url-share-updated", true, false, detail);
+            }
+            shareModal.dispatchEvent(eventObject);
         }
 
         function renderAllowedUsers() {
             shareTargetList.innerHTML = "";
+            shareTargetList.hidden = true;
             if (currentReadOnly) {
                 if (shareTargetEmpty) {
                     shareTargetEmpty.hidden = true;
@@ -217,6 +264,7 @@
 
                 shareTargetList.appendChild(card);
             });
+            shareTargetList.hidden = currentAllowedUsers.length === 0;
             if (shareTargetEmpty) {
                 shareTargetEmpty.hidden = currentAllowedUsers.length > 0;
             }
@@ -227,12 +275,16 @@
             if (!currentOnToggle || isToggling) {
                 return;
             }
+            var previousCanEdit = currentShareCanEdit;
             isToggling = true;
             shareCheckbox.disabled = true;
             setTargetControlsDisabled(true);
             try {
-                var result = await currentOnToggle(enabled, getAllowedUsernames());
+                var nextCanEdit = Boolean(enabled && shareEditCheckbox.checked);
+                var result = await currentOnToggle(enabled, getAllowedUsernames(), nextCanEdit);
                 shareCheckbox.checked = Boolean(result && result.isUrlOnly);
+                currentShareCanEdit = getResultCanEdit(result, nextCanEdit && shareCheckbox.checked);
+                shareEditCheckbox.checked = currentShareCanEdit;
                 currentAllowedUsers = normalizeAllowedUsers(
                     (result && (result.allowedUsers || result.share_allowed_users)) || currentAllowedUsers
                 );
@@ -242,8 +294,11 @@
                     (result && result.downloadUrl) || ""
                 );
                 renderAllowedUsers();
+                dispatchShareUpdated(result);
             } catch (error) {
                 currentAllowedUsers = normalizeAllowedUsers(previousAllowedUsers);
+                currentShareCanEdit = previousCanEdit;
+                shareEditCheckbox.checked = previousCanEdit;
                 shareCheckbox.checked = Boolean(previousChecked);
                 renderAllowedUsers();
                 alertError(error);
@@ -298,9 +353,13 @@
             currentOnToggle = null;
             isToggling = false;
             currentReadOnly = false;
+            currentShareCanEdit = false;
             currentAllowedUsers = [];
             shareCheckbox.disabled = false;
             shareCheckbox.hidden = false;
+            shareEditCheckbox.checked = false;
+            shareEditCheckbox.disabled = false;
+            shareEditToggle.hidden = true;
             shareTargetInput.value = "";
             shareTargets.hidden = true;
             renderAllowedUsers();
@@ -327,7 +386,7 @@
                 }
                 setCopyButtonLabel(button, "url_share_copied", "복사됨");
                 if (typeof window.showHandriveInlineCopyFeedback === "function") {
-                    window.showHandriveInlineCopyFeedback(button, "Copied!");
+                    window.showHandriveInlineCopyFeedback(button, translate("url_share_copy_feedback", "복사됨!"));
                 }
                 window.setTimeout(function () {
                     resetCopyButton(button, labelKey, fallbackLabel);
@@ -366,6 +425,8 @@
             currentReadOnly = readOnly;
             currentOnToggle = (!readOnly && options && typeof options.onToggle === "function") ? options.onToggle : null;
             currentAllowedUsers = readOnly ? [] : normalizeAllowedUsers((options && options.allowedUsers) || []);
+            currentShareCanEdit = Boolean(options && (options.canEdit || options.shareCanEdit || options.editEnabled));
+            shareEditCheckbox.checked = currentShareCanEdit;
             shareTargetInput.value = "";
             renderAllowedUsers();
 
@@ -393,6 +454,14 @@
             }
             var enabled = shareCheckbox.checked;
             persistShareSettings(enabled, currentAllowedUsers.slice(), !enabled);
+        });
+
+        shareEditCheckbox.addEventListener("change", function () {
+            if (isToggling || !currentOnToggle || currentReadOnly || !shareCheckbox.checked) {
+                shareEditCheckbox.checked = currentShareCanEdit;
+                return;
+            }
+            persistShareSettings(true, currentAllowedUsers.slice(), true);
         });
 
         shareTargetInput.addEventListener("keydown", function (event) {

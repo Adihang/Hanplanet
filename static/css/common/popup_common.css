@@ -188,6 +188,7 @@ body.theme-dark .site-custom-select {
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
+    font-size: 16px;
     line-height: 1;
     text-align: right;
     text-overflow: ellipsis;
@@ -355,6 +356,11 @@ body.theme-dark .site-custom-select {
 
 .site-modal-dialog.site-modal-dialog.is-loading {
     cursor: progress;
+    min-height: var(--site-modal-loading-min-height, 180px);
+}
+
+.site-modal-dialog.site-modal-dialog > .site-modal-loading.site-loading-overlay {
+    border-radius: inherit;
 }
 
 :where(
@@ -424,6 +430,37 @@ body.theme-dark .site-custom-select {
 .handrive-help-modal-title {
     min-width: 0;
     margin: 0;
+}
+
+.handrive-help-modal-title-row {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.handrive-help-modal-title-row .handrive-help-modal-title {
+    flex: 0 1 auto;
+}
+
+.handrive-help-modal-head-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex: 0 0 auto;
+    cursor: auto;
+    touch-action: auto;
+}
+
+.handrive-help-modal-tutorial-btn {
+    --site-inline-hover-link-color: var(--handrive-text-secondary, var(--site-text-secondary, currentColor));
+    --site-inline-hover-link-hover-color: var(--handrive-text-stronger, var(--site-text-stronger, currentColor));
+    --site-inline-hover-link-font-size: 16px;
+    --site-inline-hover-link-font-weight: 600;
+    --site-inline-hover-link-line-height: 1.2;
+    white-space: nowrap;
 }
 
 .site-modal-head.site-modal-head.is-popup-dragging {

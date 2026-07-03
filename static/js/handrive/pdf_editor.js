@@ -12,6 +12,7 @@
     var fontSizeInput = null;
     var fontColorInput = null;
     var textMeasureCanvas = null;
+    var pdfPageImageObserver = null;
     var TEXT_BOX_LINE_HEIGHT = 1.22;
     var TEXT_BOX_VERTICAL_CHROME = 8;
     var TEXT_BOX_DEFAULT_HEIGHT_RATIO = 1.5;
@@ -905,10 +906,63 @@
         return "";
     }
 
+    function disconnectPdfPageImageObserver() {
+        if (pdfPageImageObserver) {
+            pdfPageImageObserver.disconnect();
+            pdfPageImageObserver = null;
+        }
+    }
+
+    function ensurePdfPageImageLoaded(image) {
+        if (!image || image.dataset.pdfPageLoaded === "1") {
+            return;
+        }
+        var source = image.dataset.src || "";
+        if (!source) {
+            return;
+        }
+        image.src = source;
+        image.dataset.pdfPageLoaded = "1";
+    }
+
+    function getPdfPageImageObserver() {
+        if (!("IntersectionObserver" in window)) {
+            return null;
+        }
+        if (!pdfPageImageObserver) {
+            pdfPageImageObserver = new IntersectionObserver(function (entries, observer) {
+                entries.forEach(function (entry) {
+                    if (entry.isIntersecting || entry.intersectionRatio > 0) {
+                        ensurePdfPageImageLoaded(entry.target);
+                        observer.unobserve(entry.target);
+                    }
+                });
+            }, {
+                root: pageArea || null,
+                rootMargin: "900px 0px",
+            });
+        }
+        return pdfPageImageObserver;
+    }
+
+    function observePdfPageImage(image, loadImmediately) {
+        if (loadImmediately) {
+            ensurePdfPageImageLoaded(image);
+            return;
+        }
+        var observer = getPdfPageImageObserver();
+        if (observer) {
+            observer.observe(image);
+        } else {
+            ensurePdfPageImageLoaded(image);
+        }
+    }
+
     function renderPages() {
         if (!pageList) {
             return;
         }
+        disconnectPdfPageImageObserver();
         pageList.innerHTML = "";
         state.pages.forEach(function (page, index) {
             var width = Math.max(1, Math.round(Number(page.width || 0) * state.zoom));
@@ -932,7 +986,10 @@
             img.className = "pe-page-image";
             img.alt = label.textContent;
             img.draggable = false;
-            img.src = buildPageImageUrl(index);
+            img.loading = index < 2 ? "eager" : "lazy";
+            img.decoding = "async";
+            img.dataset.src = buildPageImageUrl(index);
+            observePdfPageImage(img, index < 2);
 
             var canvas = document.createElement("canvas");
             canvas.className = "pe-draw-layer";
@@ -1083,6 +1140,7 @@
 
     function destroy() {
         clearCommitTimer();
+        disconnectPdfPageImageObserver();
         if (pageList) {
             pageList.innerHTML = "";
         }

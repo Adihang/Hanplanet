@@ -159,8 +159,8 @@ class MinecraftLinkCodeAdmin(admin.ModelAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ["user", "theme_mode", "preferred_ui_lang", "preferred_root_search_engine", "weather_city", "weather_country", "updated_at"]
-    list_filter = ["theme_mode", "preferred_ui_lang", "preferred_root_search_engine", "weather_location_source"]
+    list_display = ["user", "theme_mode", "preferred_ui_lang", "preferred_root_search_engine", "force_password_change", "weather_city", "weather_country", "updated_at"]
+    list_filter = ["theme_mode", "preferred_ui_lang", "preferred_root_search_engine", "weather_location_source", "force_password_change"]
     search_fields = ["user__username", "weather_city", "weather_country"]
     ordering = ["user__username"]
 

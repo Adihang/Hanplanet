@@ -2,6 +2,7 @@
 (function () {
     // Keep a small inset so popups never touch the viewport edge.
     const viewportPadding = 10;
+    const inlineCopyFeedbackFadeMs = 190;
     const popupSelector = ".site-dropdown-menu:not(.site-custom-select-menu), [data-popup-fit-bottom], [data-popup-fit-top]";
     const modalRootSelector = [
         ".root-auth-modal",
@@ -9,6 +10,7 @@
         ".handrive-drive-modal",
         ".handrive-folder-modal",
         ".handrive-help-modal",
+        ".handrive-sync-modal",
         ".site-legal-modal",
         ".hpmail-mailbox-modal",
         ".portfolio-print-selector-overlay",
@@ -126,7 +128,11 @@
     }
 
     function readRootZIndex(name, fallback) {
-        const value = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        const rootValue = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        const bodyValue = document.body
+            ? window.getComputedStyle(document.body).getPropertyValue(name).trim()
+            : "";
+        const value = bodyValue || rootValue;
         const parsed = Number.parseInt(value, 10);
         return Number.isFinite(parsed) ? parsed : fallback;
     }
@@ -193,6 +199,11 @@
         }
     }
 
+    function getInlineCopyDefaultMessage() {
+        const lang = String(document.documentElement.getAttribute("lang") || "").toLowerCase();
+        return lang.indexOf("en") === 0 ? "Copied!" : "복사됨!";
+    }
+
     function hideInlineCopyFeedback() {
         const state = activeInlineCopyFeedback;
         const element = state && state.element
@@ -215,7 +226,7 @@
                 );
                 element.style.removeProperty("z-index");
             }
-        }, 140);
+        }, inlineCopyFeedbackFadeMs);
     }
 
     function chooseInlineCopyFeedbackPlacement(rect, boundary, feedbackWidth, feedbackHeight) {
@@ -303,7 +314,7 @@
         hideInlineCopyFeedback();
 
         const element = getInlineCopyFeedbackElement();
-        const message = String(label || "Copied!");
+        const message = String(label || getInlineCopyDefaultMessage());
         const state = {
             button: button,
             element: element,
@@ -507,6 +518,7 @@
             viewportWidth: Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0),
             viewportHeight: Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0)
         };
+        dialog.style.setProperty("--handrive-help-modal-max-width", "var(--handrive-help-modal-viewport-max-width, calc(100vw - 20px))");
         setDialogDragOffset(dialog, activeHelpModalResize.startOffsetX, activeHelpModalResize.startOffsetY);
         dialog.classList.add("is-handrive-help-modal-resizing");
         document.body.classList.add("handrive-help-modal-resizing");
@@ -1073,6 +1085,9 @@
     }
 
     function getCustomSelectMenuZIndex(select) {
+        if (select && select.classList && select.classList.contains("handrive-guest-demo-steps")) {
+            return readRootZIndex("--handrive-tutorial-step-select-menu-z", 1241);
+        }
         const root = getModalRoot(select);
         if (root && isVisible(root)) {
             const inlineValue = Number.parseInt(root.style.zIndex || "", 10);
@@ -1325,6 +1340,9 @@
         const menuId = "site-custom-select-menu-" + String(++customSelectIdCounter);
         menu.id = menuId;
         menu.className = "site-custom-select-menu site-dropdown-menu";
+        if (select.classList && select.classList.contains("handrive-guest-demo-steps")) {
+            menu.classList.add("handrive-guest-demo-steps-menu");
+        }
         menu.setAttribute("role", "listbox");
         menu.setAttribute("aria-hidden", "true");
         menu.hidden = true;

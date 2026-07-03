@@ -97,6 +97,11 @@ body.ui-page {
     --handrive-popup-close-radius: 50%;
     --handrive-job-queue-z: var(--site-z-popup-raised, 1125);
     --handrive-context-menu-z: calc(var(--handrive-job-queue-z) + 1);
+    --handrive-tutorial-spotlight-z: 1200;
+    --handrive-tutorial-tip-z: 1220;
+    --handrive-tutorial-context-menu-z: calc(var(--handrive-tutorial-spotlight-z) - 1);
+    --handrive-tutorial-step-select-z: 1240;
+    --handrive-tutorial-step-select-menu-z: 1241;
     --handrive-transition-fast: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
     --handrive-item-indent-step: 16px;
     --handrive-list-head-pad-y: 8px;
@@ -1340,6 +1345,412 @@ body.theme-dark .handrive-help-icon-symbol {
     overflow: auto;
 }
 
+body:has(.handrive-guest-demo-tour-tip) {
+    --site-z-modal: 2000;
+    --site-modal-base-z-index: 2000;
+}
+
+body:has(.handrive-guest-demo-tour-tip) :where(
+    .root-auth-modal,
+    .site-legal-modal,
+    .auth-modal,
+    .handrive-popup-modal,
+    .handrive-drive-modal,
+    .handrive-folder-modal,
+    .handrive-help-modal,
+    .handrive-sync-modal,
+    .site-modal-backdrop,
+    .site-modal-dialog,
+    .hpmail-mailbox-modal,
+    .image-demo-modal-backdrop,
+    .media-tool-modal-backdrop,
+    .bumpercar-stats-modal-backdrop,
+    .multiplayer-skin-modal-backdrop,
+    .multiplayer-idle-modal-backdrop,
+    .multiplayer-death-modal-backdrop,
+    .map-image-viewer-modal,
+    .map-media-viewer-modal,
+    .map-video-viewer-modal,
+    .map-name-popup-overlay,
+    .map-bind-picker-overlay,
+    .ve-image-upload-dialog,
+    .portfolio-print-selector-overlay,
+    .ae-drive-picker
+) {
+    z-index: var(--site-modal-stack-z, var(--site-z-modal, 2000)) !important;
+}
+
+body.handrive-modal-open :where(
+    .handrive-guest-demo-spotlight,
+    .handrive-guest-demo-tour-tip
+),
+body:has(:where(
+    .root-auth-modal,
+    .site-legal-modal,
+    .auth-modal,
+    .handrive-popup-modal,
+    .handrive-drive-modal,
+    .handrive-folder-modal,
+    .handrive-help-modal,
+    .handrive-sync-modal,
+    .hpmail-mailbox-modal,
+    .image-demo-modal-backdrop,
+    .media-tool-modal-backdrop,
+    .bumpercar-stats-modal-backdrop,
+    .multiplayer-skin-modal-backdrop,
+    .multiplayer-idle-modal-backdrop,
+    .multiplayer-death-modal-backdrop,
+    .map-image-viewer-modal,
+    .map-media-viewer-modal,
+    .map-video-viewer-modal,
+    .map-name-popup-overlay,
+    .map-bind-picker-overlay,
+    .ve-image-upload-dialog,
+    .portfolio-print-selector-overlay,
+    .ae-drive-picker
+):not([hidden])) :where(
+    .handrive-guest-demo-spotlight,
+    .handrive-guest-demo-tour-tip
+) {
+    display: none;
+}
+
+body.is-handrive-guest-demo-modal-step :where(
+    .handrive-guest-demo-spotlight,
+    .handrive-guest-demo-tour-tip
+) {
+    display: block;
+}
+
+body.is-handrive-guest-demo-modal-step .handrive-guest-demo-spotlight {
+    z-index: calc(var(--site-z-modal, 2000) + 2);
+}
+
+body.is-handrive-guest-demo-modal-step .handrive-guest-demo-tour-tip {
+    z-index: calc(var(--site-z-modal, 2000) + 3);
+}
+
+.handrive-guest-demo-main {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.handrive-guest-demo-copy {
+    min-width: min(260px, 100%);
+}
+
+.handrive-guest-demo-copy h2 {
+    margin: 0 0 3px;
+    color: var(--handrive-text-stronger);
+    font-size: 14px;
+    line-height: 1.25;
+}
+
+.handrive-guest-demo-copy p {
+    margin: 0;
+    color: var(--handrive-text-secondary);
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre-line;
+}
+
+.handrive-guest-demo-steps {
+    --handrive-guest-demo-step-bg: var(--site-dropdown-surface-bg, var(--handrive-surface, #ffffff));
+    --handrive-guest-demo-step-text: var(--handrive-text-stronger, #141414);
+    --handrive-guest-demo-step-caret: var(--handrive-text-secondary, #5a5a5a);
+    --handrive-guest-demo-step-border: var(--handrive-border-soft, rgba(0, 0, 0, 0.08));
+    position: relative;
+    z-index: var(--handrive-tutorial-step-select-z);
+    flex: 0 0 auto;
+    width: 100px;
+    min-width: 100px;
+    max-width: 100px;
+    height: 38px;
+    min-height: 38px;
+    max-height: 38px;
+    margin: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--handrive-guest-demo-step-border);
+    border-radius: var(--handrive-radius-sm);
+    background: var(--handrive-guest-demo-step-bg);
+    background-color: var(--handrive-guest-demo-step-bg);
+    color: var(--handrive-guest-demo-step-text);
+    color-scheme: light;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+select.handrive-guest-demo-steps {
+    padding: 4px 22px 4px 8px;
+}
+
+.site-custom-select > select.handrive-guest-demo-steps.site-custom-select-native {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.site-custom-select.handrive-guest-demo-steps {
+    --site-custom-select-button-color: var(--handrive-guest-demo-step-text);
+    --site-custom-select-caret-color: var(--handrive-guest-demo-step-caret);
+    z-index: var(--handrive-tutorial-step-select-z);
+    display: inline-flex;
+    align-items: stretch;
+    justify-content: stretch;
+    overflow: hidden;
+    padding: 0;
+    color: var(--handrive-guest-demo-step-text);
+}
+
+.site-custom-select.handrive-guest-demo-steps .site-custom-select-button {
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 0 9px;
+    color: var(--handrive-guest-demo-step-text);
+    text-align: left;
+}
+
+.site-custom-select.handrive-guest-demo-steps .site-custom-select-label {
+    justify-content: flex-start;
+    align-self: center;
+    min-width: 0;
+    color: var(--handrive-guest-demo-step-text);
+    font-size: 16px;
+    line-height: 1;
+    text-align: left;
+}
+
+.site-custom-select.handrive-guest-demo-steps .site-custom-select-caret {
+    margin-left: 0;
+    border-top-color: var(--handrive-guest-demo-step-caret);
+}
+
+.site-custom-select-menu.handrive-guest-demo-steps-menu {
+    z-index: var(--handrive-tutorial-step-select-menu-z);
+    background: var(--handrive-guest-demo-step-bg);
+    background-color: var(--handrive-guest-demo-step-bg);
+    color: var(--handrive-guest-demo-step-text);
+    border-color: var(--handrive-guest-demo-step-border);
+}
+
+body.handrive-page.theme-dark .handrive-guest-demo-steps,
+body.ui-page.theme-dark .handrive-guest-demo-steps,
+body.theme-dark .site-custom-select-menu.handrive-guest-demo-steps-menu {
+    --handrive-guest-demo-step-bg: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 46 46 46) / var(--site-modal-surface-opacity, 0.72))));
+    --handrive-guest-demo-step-text: var(--handrive-text-stronger, var(--site-text-stronger, #fafafa));
+    --handrive-guest-demo-step-caret: var(--handrive-text-secondary, var(--site-text-secondary, #c2c2c2));
+    --handrive-guest-demo-step-border: var(--handrive-border-soft, var(--site-border-soft, rgba(255, 255, 255, 0.13)));
+    color-scheme: dark;
+}
+
+body.handrive-page:not(.theme-dark) .handrive-guest-demo-steps,
+body.ui-page:not(.theme-dark) .handrive-guest-demo-steps,
+body:not(.theme-dark) .site-custom-select-menu.handrive-guest-demo-steps-menu {
+    --handrive-guest-demo-step-bg: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
+    --handrive-guest-demo-step-text: var(--handrive-text-stronger, var(--site-text-stronger, #141414));
+    --handrive-guest-demo-step-caret: var(--handrive-text-secondary, var(--site-text-secondary, #5a5a5a));
+    --handrive-guest-demo-step-border: var(--handrive-border-soft, var(--site-border-soft, rgba(0, 0, 0, 0.08)));
+    color-scheme: light;
+}
+
+.handrive-guest-demo-steps option {
+    background: var(--handrive-guest-demo-step-bg);
+    color: var(--handrive-guest-demo-step-text);
+}
+
+.handrive-guest-demo-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+.handrive-guest-demo-actions .ui-btn {
+    min-height: 34px;
+    padding: 6px 10px;
+    white-space: nowrap;
+}
+
+.handrive-guest-demo-next {
+    --handrive-icon-action-size: 34px;
+}
+
+.handrive-guest-demo-spotlight {
+    position: fixed;
+    z-index: var(--handrive-tutorial-spotlight-z);
+    box-sizing: border-box;
+    border: 2px solid var(--theme-accent, #2563eb);
+    border-radius: 8px;
+    box-shadow:
+        0 0 0 9999px color-mix(in srgb, #000000 30%, transparent),
+        0 0 0 5px color-mix(in srgb, var(--theme-accent, #2563eb) 16%, transparent);
+    pointer-events: none;
+    transition: left 140ms ease, top 140ms ease, width 140ms ease, height 140ms ease;
+}
+
+.handrive-guest-demo-spotlight.is-following-moving-target {
+    transition: left 80ms linear, top 80ms linear, width 80ms ease, height 80ms ease;
+}
+
+.handrive-guest-demo-tour-tip {
+    position: fixed;
+    z-index: var(--handrive-tutorial-tip-z);
+    width: min(320px, calc(100vw - 24px));
+    padding: 12px 13px;
+    box-sizing: border-box;
+    border: 1px solid color-mix(in srgb, var(--theme-accent, #2563eb) 45%, var(--handrive-border));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--handrive-surface) 96%, #ffffff);
+    color: var(--handrive-text);
+    box-shadow: 0 16px 36px color-mix(in srgb, #000000 24%, transparent);
+    pointer-events: auto;
+}
+
+.handrive-guest-demo-tour-tip::after {
+    content: "";
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border: inherit;
+    border-right: 0;
+    border-bottom: 0;
+    background: inherit;
+}
+
+.handrive-guest-demo-tour-tip[data-placement="bottom"]::after {
+    top: -7px;
+    left: var(--handrive-demo-arrow-left, 50%);
+    transform: translateX(-50%) rotate(45deg);
+}
+
+.handrive-guest-demo-tour-tip[data-placement="top"]::after {
+    bottom: -7px;
+    left: var(--handrive-demo-arrow-left, 50%);
+    transform: translateX(-50%) rotate(225deg);
+}
+
+.handrive-guest-demo-tour-tip[data-placement="right"]::after {
+    left: -7px;
+    top: var(--handrive-demo-arrow-top, 50%);
+    transform: translateY(-50%) rotate(-45deg);
+}
+
+.handrive-guest-demo-tour-tip[data-placement="left"]::after {
+    right: -7px;
+    top: var(--handrive-demo-arrow-top, 50%);
+    transform: translateY(-50%) rotate(135deg);
+}
+
+.handrive-guest-demo-tour-kicker {
+    flex: 0 0 auto;
+    margin: 0 auto 0 0;
+    color: var(--theme-accent, var(--handrive-text-stronger));
+    font-size: 14px;
+    font-weight: var(--site-weight-body);
+    line-height: 1.25;
+}
+
+.handrive-guest-demo-tour-title {
+    margin: 0 0 6px;
+    color: var(--handrive-text-stronger);
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.handrive-guest-demo-tour-body,
+.handrive-guest-demo-tour-action {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.handrive-guest-demo-tour-body {
+    color: var(--handrive-text);
+}
+
+.handrive-guest-demo-tour-action {
+    margin-top: 8px;
+    color: var(--handrive-text-secondary);
+    font-weight: 700;
+}
+
+.handrive-guest-demo-tour-nav {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.handrive-guest-demo-tour-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    min-height: 30px;
+    padding: 0;
+    line-height: 1;
+}
+
+.handrive-guest-demo-tour-nav-btn svg {
+    flex: 0 0 auto;
+}
+
+.handrive-guest-demo-tour-complete {
+    width: auto;
+    min-width: 52px;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.handrive-job-queue-panel.is-tutorial-preview {
+    display: block;
+}
+
+.handrive-guest-demo-choice-modal .handrive-popup-actions {
+    flex-wrap: wrap;
+}
+
+@media (max-width: 560px) {
+    .handrive-guest-demo-actions .ui-btn {
+        flex: 1 1 120px;
+    }
+
+    .handrive-guest-demo-tour-tip {
+        width: calc(100vw - 20px);
+        padding: 11px 12px;
+    }
+
+    .handrive-guest-demo-next {
+        margin-left: auto;
+    }
+}
+
 .handrive-list-layout {
     --handrive-list-pane-size-landscape: min(25%, 400px);
     --handrive-list-pane-size-portrait: 30%;
@@ -1615,6 +2026,10 @@ body.theme-dark .handrive-help-icon-symbol {
     grid-template-columns: minmax(0, 1fr);
 }
 
+.handrive-list-layout.is-detail-axis-horizontal:not(.has-preview):not(.has-editor) {
+    grid-template-columns: minmax(0, 1fr);
+}
+
 .handrive-list-layout.is-detail-axis-horizontal > .handrive-list-pane,
 .handrive-list-layout.is-detail-axis-horizontal > .handrive-list-preview,
 .handrive-list-layout.is-detail-axis-horizontal > .handrive-list-editor {
@@ -1631,28 +2046,31 @@ body.theme-dark .handrive-help-icon-symbol {
     max-height: none;
 }
 
-.handrive-list-layout.is-detail-side-right > .handrive-list-pane {
+.handrive-list-layout.is-detail-side-right.has-preview > .handrive-list-pane,
+.handrive-list-layout.is-detail-side-right.has-editor > .handrive-list-pane {
     grid-column: 1;
     grid-row: 1;
 }
 
-.handrive-list-layout.is-detail-side-right > .handrive-list-preview,
-.handrive-list-layout.is-detail-side-right > .handrive-list-editor {
+.handrive-list-layout.is-detail-side-right.has-preview > .handrive-list-preview,
+.handrive-list-layout.is-detail-side-right.has-editor > .handrive-list-editor {
     grid-column: 2;
     grid-row: 1;
 }
 
-.handrive-list-layout.is-detail-side-left > .handrive-list-pane {
+.handrive-list-layout.is-detail-side-left.has-preview > .handrive-list-pane,
+.handrive-list-layout.is-detail-side-left.has-editor > .handrive-list-pane {
     grid-column: 2;
     grid-row: 1;
 }
 
-.handrive-list-layout.is-detail-side-left > .handrive-list-preview,
-.handrive-list-layout.is-detail-side-left > .handrive-list-editor {
+.handrive-list-layout.is-detail-side-left.has-preview > .handrive-list-preview,
+.handrive-list-layout.is-detail-side-left.has-editor > .handrive-list-editor {
     grid-column: 1;
     grid-row: 1;
 }
 
+.handrive-list-layout.is-detail-axis-horizontal:not(.has-preview):not(.has-editor) > .handrive-list-pane,
 .handrive-list-layout.is-detail-axis-horizontal.has-floating-detail > .handrive-list-pane {
     grid-column: 1 / -1;
 }
@@ -3154,11 +3572,22 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     -webkit-overflow-scrolling: touch;
 }
 
+.handrive-list-items.is-virtualized {
+    contain: layout paint;
+}
+
 .handrive-item {
     display: flex;
     align-items: stretch;
     min-width: 0;
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.handrive-virtual-spacer {
+    flex: 0 0 auto;
+    min-height: 0;
+    pointer-events: none;
+    transition: none;
 }
 
 .handrive-item.is-entering {
@@ -3825,6 +4254,9 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
 .handrive-current-dir-row .handrive-item-meta-trail {
     font-size: 15px;
     margin-left: 10px;
+    width: max-content;
+    min-width: max-content;
+    max-width: none;
     -webkit-user-select: none;
     user-select: none;
 }
@@ -4857,6 +5289,10 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)));
 }
 
+.handrive-context-menu.is-guest-demo-context-menu {
+    z-index: var(--handrive-tutorial-context-menu-z);
+}
+
 .handrive-context-menu[hidden] {
     display: none;
 }
@@ -4958,7 +5394,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 
 .handrive-popup-title {
     margin: 0;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 900;
     line-height: 1.25;
     color: var(--handrive-text-stronger);
@@ -5074,11 +5510,14 @@ body.handrive-popup-dragging {
     height: var(--handrive-popup-close-icon-size);
 }
 
-.handrive-popup-body {
+.handrive-popup-modal-dialog.site-modal-dialog {
     --site-loading-overlay-bg: color-mix(in srgb, var(--site-modal-surface-bg, var(--handrive-modal-surface-bg, var(--handrive-bg))) 84%, transparent);
     --site-loading-overlay-filter: var(--site-modal-surface-filter, var(--handrive-modal-surface-filter, saturate(120%) blur(4px)));
     --site-loading-spinner-track: color-mix(in srgb, var(--handrive-text-subtle) 42%, transparent);
     --site-loading-spinner-accent: var(--theme-accent-strong, #3b82f6);
+}
+
+.handrive-popup-body {
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -5206,6 +5645,10 @@ body.handrive-popup-dragging {
     min-height: 0;
 }
 
+.handrive-url-share-target-list[hidden] {
+    display: none;
+}
+
 .handrive-url-share-target-card {
     display: inline-flex;
     align-items: center;
@@ -5267,14 +5710,76 @@ body.handrive-popup-dragging {
 }
 
 .handrive-url-share-target-empty {
-    margin: -1px 0 0;
+    margin: 0;
     color: var(--handrive-text-secondary);
     font-size: 12px;
     line-height: 1.35;
 }
 
-.handrive-url-share-target-list:not(:empty) + .handrive-url-share-target-empty {
-    display: none;
+#handrive-url-share-url-row {
+    min-width: 0;
+    align-items: stretch;
+}
+
+.handrive-url-share-read-head {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: nowrap;
+    gap: 9px;
+    width: 100%;
+    min-width: 0;
+}
+
+#handrive-url-share-read-label {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    word-break: keep-all;
+    overflow-wrap: normal;
+}
+
+.handrive-url-share-edit-toggle {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 5px;
+    min-width: 0;
+    color: var(--handrive-text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    word-break: keep-all;
+    overflow-wrap: normal;
+    cursor: pointer;
+    user-select: none;
+}
+
+.handrive-url-share-edit-toggle span {
+    white-space: nowrap;
+    word-break: keep-all;
+    overflow-wrap: normal;
+}
+
+.handrive-url-share-edit-toggle input {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+}
+
+#handrive-url-share-edit-checkbox {
+    flex-basis: 14px;
+    min-width: 14px;
+    max-width: 14px;
+    inline-size: 14px;
+    box-sizing: border-box;
+    padding: 0;
+}
+
+.handrive-url-share-edit-toggle:has(input:disabled) {
+    cursor: default;
+    opacity: 0.58;
 }
 
 .handrive-inline-copy-field,
@@ -5377,7 +5882,8 @@ body.handrive-popup-dragging {
     pointer-events: none;
     opacity: 0;
     transform: translateY(2px);
-    transition: opacity 0.12s ease, transform 0.12s ease;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    will-change: opacity, transform;
 }
 
 .handrive-inline-copy-feedback::before,
@@ -5680,11 +6186,12 @@ body.handrive-popup-dragging {
 
 .ui-markdown pre,
 .handrive-markdown pre {
+    position: relative;
     margin: 8px 0;
     border: 0;
     border-radius: 0;
     background: var(--handrive-markdown-code-block-bg);
-    padding: 8px 10px;
+    padding: 8px 46px 8px 10px;
     overflow: auto;
 }
 
@@ -5698,6 +6205,45 @@ body.handrive-popup-dragging {
     padding: 0;
     font-size: var(--handrive-text-font-size, 16px);
     line-height: 1.45;
+}
+
+.ui-markdown pre .handrive-markdown-code-copy-btn,
+.handrive-markdown pre .handrive-markdown-code-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--handrive-radius-sm);
+    background: color-mix(in srgb, var(--handrive-bg) 84%, transparent);
+    color: var(--handrive-text-secondary);
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s, translate 0.12s;
+}
+
+.ui-markdown pre .handrive-markdown-code-copy-btn:hover,
+.ui-markdown pre .handrive-markdown-code-copy-btn:focus-visible,
+.handrive-markdown pre .handrive-markdown-code-copy-btn:hover,
+.handrive-markdown pre .handrive-markdown-code-copy-btn:focus-visible {
+    border-color: var(--handrive-border-heavy);
+    background: var(--handrive-surface-muted);
+    color: var(--handrive-text-stronger);
+    outline: none;
+    translate: 0 var(--btn-template-hover-lift, -1px);
+}
+
+.ui-markdown pre .handrive-markdown-code-copy-btn:active,
+.handrive-markdown pre .handrive-markdown-code-copy-btn:active {
+    border-color: color-mix(in srgb, var(--handrive-success, #0f7b6c) 42%, var(--handrive-border-heavy));
+    background: color-mix(in srgb, var(--handrive-success, #0f7b6c) 12%, var(--handrive-surface-muted));
+    color: var(--handrive-success, #0f7b6c);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .ui-markdown img,
@@ -9403,12 +9949,14 @@ body.handrive-modal-open {
 }
 
 .handrive-help-modal-dialog {
+    --handrive-help-modal-viewport-max-width: calc(100vw - 20px);
+    --handrive-help-modal-initial-min-width: min(320px, var(--handrive-help-modal-viewport-max-width));
     position: relative;
     width: fit-content;
-    min-width: min(320px, calc(100vw - 20px));
+    min-width: var(--handrive-help-modal-initial-min-width);
     min-height: min(220px, calc(100vh - 20px));
     min-height: min(220px, calc(100dvh - 20px));
-    max-width: calc(100vw - 20px);
+    max-width: var(--handrive-help-modal-max-width, var(--handrive-help-modal-viewport-max-width));
     max-height: calc(100vh - 20px);
     max-height: calc(100dvh - 20px);
     border: 0;
@@ -9419,6 +9967,10 @@ body.handrive-modal-open {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
+}
+
+.handrive-help-modal-dialog[data-handrive-help-initial-width] {
+    width: clamp(var(--handrive-help-modal-initial-min-width), 50vw, var(--handrive-help-modal-viewport-max-width));
 }
 
 .handrive-help-modal-body {
@@ -9611,7 +10163,7 @@ body.handrive-help-modal-resizing {
     border: 0;
     border-radius: 0;
     background: var(--handrive-markdown-code-block-bg);
-    padding: 8px 10px;
+    padding: 8px 46px 8px 10px;
     overflow: auto;
 }
 
@@ -9922,6 +10474,10 @@ body.theme-dark .handrive-spreadsheet-preview-hot .ht-root-wrapper {
 }
 
 .handrive-spreadsheet-preview-toolbar {
+    display: none;
+}
+
+.handrive-spreadsheet-preview-toolbar.is-visible {
     display: flex;
     align-items: center;
     gap: 8px;

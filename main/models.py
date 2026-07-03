@@ -176,6 +176,7 @@ class HandriveSharedLink(models.Model):
         default=list,
         blank=True,
     )
+    can_edit = models.BooleanField("편집 권한 허용", default=False)
     share_slug = models.CharField("공유 슬러그", max_length=255)
     created_at = models.DateTimeField("생성일", auto_now_add=True)
     updated_at = models.DateTimeField("수정일", auto_now=True)
@@ -551,6 +552,10 @@ class UserProfile(models.Model):
         max_length=64,
         blank=True,
         default="",
+    )
+    force_password_change = models.BooleanField(
+        "비밀번호 변경 필요",
+        default=False,
     )
     updated_at = models.DateTimeField("수정일", auto_now=True)
 

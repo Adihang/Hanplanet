@@ -1940,6 +1940,7 @@
                                 title="{{ server_address_copy_label }}"
                                 data-copy-label="{{ server_address_copy_label }}"
                                 data-copied-label="{{ server_address_copied_label }}"
+                                data-copy-feedback-label="{{ server_address_copy_feedback_label }}"
                                 data-copy-target="minecraftServerAddress"
                             >
                                 <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="7" width="9" height="9" rx="1.5"></rect><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"></path></svg>
@@ -1961,6 +1962,7 @@
                                 title="{{ bedrock_server_address_copy_label }}"
                                 data-copy-label="{{ bedrock_server_address_copy_label }}"
                                 data-copied-label="{{ server_address_copied_label }}"
+                                data-copy-feedback-label="{{ server_address_copy_feedback_label }}"
                                 data-copy-target="minecraftBedrockServerAddress"
                             >
                                 <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="7" width="9" height="9" rx="1.5"></rect><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"></path></svg>
@@ -2303,10 +2305,11 @@
         function markAddressCopied(button) {
             if (!button) return;
             const copiedLabel = button.dataset.copiedLabel || '';
+            const feedbackLabel = button.dataset.copyFeedbackLabel || copiedLabel;
             button.setAttribute('aria-label', copiedLabel);
             button.title = copiedLabel;
             if (typeof window.showHandriveInlineCopyFeedback === 'function') {
-                window.showHandriveInlineCopyFeedback(button, 'Copied!');
+                window.showHandriveInlineCopyFeedback(button, feedbackLabel);
             }
             window.clearTimeout(addressCopyResetTimers.get(button));
             addressCopyResetTimers.set(button, window.setTimeout(function () {

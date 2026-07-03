@@ -1035,6 +1035,8 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         data-map-path-for-share="{{ map_path }}"
         data-map-is-url-only="{{ map_is_url_only|yesno:'true,false' }}"
         data-map-share-url="{{ map_share_url }}"
+        data-map-share-can-edit="{{ map_share_can_edit|yesno:'true,false' }}"
+        data-map-share-can-manage="{{ map_share_can_manage|yesno:'true,false' }}"
         data-shared-owner="{{ shared_owner }}"
         data-shared-slug="{{ shared_slug }}"
         data-collab-auth-url="{{ map_collab_auth_url }}"
@@ -3453,6 +3455,8 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         var mapPathForShare = container.dataset.mapPathForShare || "";
         var mapIsUrlOnly = container.dataset.mapIsUrlOnly === "true";
         var mapShareUrl = container.dataset.mapShareUrl || "";
+        var mapShareCanEdit = container.dataset.mapShareCanEdit === "true";
+        var mapShareCanManage = container.dataset.mapShareCanManage !== "false";
         var mapShareAllowedUsers = [];
         var allowedUsersNode = document.getElementById("map-viewer-share-allowed-users");
         var urlShareModal = window.HandriveUrlShareModal && typeof window.HandriveUrlShareModal.create === "function"
@@ -3474,7 +3478,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             return match ? decodeURIComponent(match[1]) : "";
         }
 
-        function postMapUrlShare(enabled, allowedUsernames) {
+        function postMapUrlShare(enabled, allowedUsernames, editEnabled) {
             return fetch(urlShareApi, {
                 method: "POST",
                 headers: {
@@ -3485,7 +3489,8 @@ body.map-viewer-page.eraser-mode .leaflet-container {
                 body: JSON.stringify({
                     path: mapPathForShare,
                     enabled: enabled,
-                    allowed_usernames: allowedUsernames || []
+                    allowed_usernames: allowedUsernames || [],
+                    can_edit: Boolean(editEnabled)
                 })
             }).then(function(response) {
                 return response.json().then(function(data) {
@@ -3503,19 +3508,25 @@ body.map-viewer-page.eraser-mode .leaflet-container {
                 shareUrl: mapShareUrl,
                 downloadUrl: "",
                 allowedUsers: mapShareAllowedUsers,
-                readOnly: !urlShareApi,
-                onToggle: urlShareApi ? async function(enabled, allowedUsernames) {
-                    var data = await postMapUrlShare(enabled, allowedUsernames);
+                canEdit: mapShareCanEdit,
+                readOnly: !urlShareApi || !mapShareCanManage,
+                onToggle: urlShareApi && mapShareCanManage ? async function(enabled, allowedUsernames, editEnabled) {
+                    var data = await postMapUrlShare(enabled, allowedUsernames, editEnabled);
                     mapIsUrlOnly = Boolean(data.is_url_only);
                     mapShareUrl = data.share_url || "";
                     mapShareAllowedUsers = data.share_allowed_users || [];
+                    mapShareCanEdit = Boolean(data.share_can_edit);
+                    mapShareCanManage = data.share_can_manage !== false;
                     container.dataset.mapIsUrlOnly = mapIsUrlOnly ? "true" : "false";
                     container.dataset.mapShareUrl = mapShareUrl;
+                    container.dataset.mapShareCanEdit = mapShareCanEdit ? "true" : "false";
+                    container.dataset.mapShareCanManage = mapShareCanManage ? "true" : "false";
                     return {
                         isUrlOnly: mapIsUrlOnly,
                         shareUrl: mapShareUrl,
                         downloadUrl: "",
-                        allowedUsers: mapShareAllowedUsers
+                        allowedUsers: mapShareAllowedUsers,
+                        canEdit: mapShareCanEdit
                     };
                 } : null
             });

@@ -19,6 +19,107 @@
     const handriveAdminUserParam = String(root.dataset.handriveAdminUserParam || "handrive_user").trim() || "handrive_user";
     const isAuthenticated = root.dataset.isAuthenticated === "1";
     const isDemoSaveMode = root.dataset.demoSaveMode === "1" && !isAuthenticated;
+    const isTutorialMode = root.dataset.tutorialMode === "1";
+    const isTutorialForcedMode = root.dataset.tutorialForced === "1";
+    const shouldAutostartTutorial = root.dataset.tutorialAutostart === "1";
+    const demoTutorialPath = String(root.dataset.demoTutorialPath || "").trim();
+    const tutorialCompleteApiUrl = String(root.dataset.tutorialCompleteApiUrl || "").trim();
+    const HANDRIVE_EDITOR_HIGHLIGHT_CHAR_LIMIT = 120000;
+    const initialTutorialStepValue = (function () {
+        try {
+            return String(new URLSearchParams(window.location.search).get("tutorial_step") || "").trim();
+        } catch (error) {
+            return "";
+        }
+    })();
+
+    function getGuestDemoParagraphLineCount(onboarding) {
+        const paragraph = onboarding
+            ? onboarding.querySelector(".handrive-guest-demo-copy p")
+            : null;
+        if (!paragraph) {
+            return 0;
+        }
+        const hadStackClass = onboarding.classList.contains("is-copy-three-lines");
+        if (hadStackClass) {
+            onboarding.classList.remove("is-copy-three-lines");
+        }
+        const style = window.getComputedStyle ? window.getComputedStyle(paragraph) : null;
+        const fontSize = style ? parseFloat(style.fontSize) : 0;
+        const parsedLineHeight = style ? parseFloat(style.lineHeight) : 0;
+        const lineHeight = Number.isFinite(parsedLineHeight) && parsedLineHeight > 0
+            ? parsedLineHeight
+            : Math.max(1, (Number.isFinite(fontSize) && fontSize > 0 ? fontSize : 12) * 1.4);
+        const lineCount = Math.max(1, Math.round(paragraph.getBoundingClientRect().height / lineHeight));
+        if (hadStackClass) {
+            onboarding.classList.add("is-copy-three-lines");
+        }
+        return lineCount;
+    }
+
+    function syncGuestDemoOnboardingLayout(onboarding) {
+        if (!onboarding || onboarding.classList.contains("is-dismissed")) {
+            return;
+        }
+        onboarding.classList.toggle("is-copy-three-lines", getGuestDemoParagraphLineCount(onboarding) >= 3);
+    }
+
+    function initializeGuestDemoOnboardingLayout(onboarding) {
+        if (!onboarding) {
+            return;
+        }
+        let scheduled = false;
+        let lastMeasuredWidth = -1;
+
+        function schedule(force) {
+            if (scheduled) {
+                return;
+            }
+            scheduled = true;
+            window.requestAnimationFrame(function () {
+                scheduled = false;
+                const width = Math.round(onboarding.getBoundingClientRect().width);
+                if (!force && width === lastMeasuredWidth) {
+                    return;
+                }
+                lastMeasuredWidth = width;
+                syncGuestDemoOnboardingLayout(onboarding);
+            });
+        }
+
+        schedule(true);
+        window.setTimeout(function () { schedule(true); }, 80);
+        window.setTimeout(function () { schedule(true); }, 260);
+        window.addEventListener("resize", function () { schedule(true); }, { passive: true });
+        window.addEventListener("orientationchange", function () { schedule(true); }, { passive: true });
+        if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === "function") {
+            document.fonts.ready.then(function () {
+                schedule(true);
+            }).catch(function () {});
+        }
+        if (window.ResizeObserver) {
+            const resizeObserver = new ResizeObserver(function () {
+                schedule(false);
+            });
+            resizeObserver.observe(root);
+        }
+    }
+
+    function shouldUseEditorSyntaxHighlight(source) {
+        return String(source || "").length <= HANDRIVE_EDITOR_HIGHLIGHT_CHAR_LIMIT;
+    }
+
+    function setEditorHighlightCodeContent(codeElement, source, highlightedHtml, useHighlightedHtml) {
+        if (!codeElement) {
+            return;
+        }
+        const tail = String(source || "").endsWith("\n") ? "\u200b" : "";
+        if (useHighlightedHtml) {
+            codeElement.innerHTML = String(highlightedHtml || "") + tail;
+        } else {
+            codeElement.textContent = String(source || "") + tail;
+        }
+    }
 
     document.addEventListener("click", function (event) {
         if (event.defaultPrevented) {
@@ -130,6 +231,7 @@
     }
 
     const lazyScriptLoadPromises = Object.create(null);
+    const lazyStylesheetLoadPromises = Object.create(null);
 
     function loadLazyScriptOnce(scriptUrl, globalName) {
         const url = String(scriptUrl || "").trim();
@@ -163,6 +265,37 @@
             document.head.appendChild(script);
         });
         return lazyScriptLoadPromises[url];
+    }
+
+    function loadLazyStylesheetOnce(stylesheetUrl) {
+        const url = String(stylesheetUrl || "").trim();
+        if (!url) {
+            return Promise.resolve(null);
+        }
+        if (lazyStylesheetLoadPromises[url]) {
+            return lazyStylesheetLoadPromises[url];
+        }
+        lazyStylesheetLoadPromises[url] = new Promise(function (resolve, reject) {
+            const existingLink = Array.prototype.slice.call(document.querySelectorAll('link[rel~="stylesheet"][href]')).find(function (candidate) {
+                return candidate && candidate.href === getAbsoluteResourceUrl(url);
+            });
+            if (existingLink) {
+                resolve(existingLink);
+                return;
+            }
+            const link = document.createElement("link");
+            link.rel = "stylesheet";
+            link.href = url;
+            link.onload = function () {
+                resolve(link);
+            };
+            link.onerror = function () {
+                delete lazyStylesheetLoadPromises[url];
+                reject(new Error("Stylesheet load failed: " + url));
+            };
+            document.head.appendChild(link);
+        });
+        return lazyStylesheetLoadPromises[url];
     }
 
     function renderHandriveMermaidDiagrams(container) {
@@ -516,6 +649,7 @@
     }
 
     let videoPlayerStackPromise = null;
+    let spreadsheetEditorStackPromise = null;
 
     function loadOptionalLazyScriptOnce(scriptUrl) {
         const url = String(scriptUrl || "").trim();
@@ -588,6 +722,71 @@
                 throw error;
             });
         return videoPlayerStackPromise;
+    }
+
+    function loadSpreadsheetEditorStack() {
+        if (
+            window.HandriveSpreadsheetEditor &&
+            window.Handsontable &&
+            window.XLSX &&
+            window.ExcelJS &&
+            window.ExcelJS.Workbook
+        ) {
+            return Promise.resolve(window.HandriveSpreadsheetEditor);
+        }
+        if (spreadsheetEditorStackPromise) {
+            return spreadsheetEditorStackPromise;
+        }
+
+        const handsontableStyleUrl = root.dataset.handsontableStyleUrl || "";
+        const handsontableScriptUrl = root.dataset.handsontableScriptUrl || "";
+        const sheetjsScriptUrl = root.dataset.sheetjsScriptUrl || "";
+        const exceljsScriptUrl = root.dataset.exceljsScriptUrl || "";
+        const spreadsheetEditorScriptUrl = root.dataset.spreadsheetEditorScriptUrl || "";
+
+        const stylesheetPromise = loadLazyStylesheetOnce(handsontableStyleUrl);
+        const scriptsPromise = loadLazyScriptOnce(handsontableScriptUrl, "Handsontable")
+            .then(function () {
+                return loadLazyScriptOnce(sheetjsScriptUrl, "XLSX");
+            })
+            .then(function () {
+                return loadLazyScriptOnce(exceljsScriptUrl, "ExcelJS");
+            })
+            .then(function () {
+                return loadLazyScriptOnce(spreadsheetEditorScriptUrl, "HandriveSpreadsheetEditor");
+            });
+
+        spreadsheetEditorStackPromise = Promise.all([stylesheetPromise, scriptsPromise])
+            .then(function (results) {
+                return results[1];
+            })
+            .catch(function (error) {
+                spreadsheetEditorStackPromise = null;
+                throw error;
+            });
+        return spreadsheetEditorStackPromise;
+    }
+
+    function shouldHydrateSpreadsheetPreviews(container) {
+        if (!container || !container.querySelector) {
+            return false;
+        }
+        return Boolean(
+            (container.matches && container.matches("[data-handrive-spreadsheet-preview], .handrive-office-table")) ||
+            container.querySelector("[data-handrive-spreadsheet-preview], .handrive-office-table")
+        );
+    }
+
+    function hydrateSpreadsheetPreviews(container) {
+        if (!shouldHydrateSpreadsheetPreviews(container)) {
+            return Promise.resolve(null);
+        }
+        return loadSpreadsheetEditorStack().then(function (editor) {
+            if (editor && typeof editor.hydratePreviews === "function") {
+                editor.hydratePreviews(container);
+            }
+            return editor;
+        });
     }
 
     function getAbsoluteResourceUrl(rawUrl) {
@@ -1118,6 +1317,39 @@
         return appendSharedQuery(baseUrl + "/" + encoded);
     }
 
+    function appendQueryParams(urlValue, params) {
+        const source = String(urlValue || "").trim();
+        if (!source) {
+            return source;
+        }
+        try {
+            const url = new URL(source, window.location.href);
+            Object.keys(params || {}).forEach(function (key) {
+                const value = params[key];
+                if (value === undefined || value === null || value === "") {
+                    return;
+                }
+                url.searchParams.set(key, String(value));
+            });
+            return url.pathname + (url.search ? url.search : "") + (url.hash || "");
+        } catch (error) {
+            const hashIndex = source.indexOf("#");
+            const hashPart = hashIndex >= 0 ? source.slice(hashIndex) : "";
+            const beforeHash = hashIndex >= 0 ? source.slice(0, hashIndex) : source;
+            const separator = beforeHash.indexOf("?") >= 0 ? "&" : "?";
+            const query = new URLSearchParams();
+            Object.keys(params || {}).forEach(function (key) {
+                const value = params[key];
+                if (value === undefined || value === null || value === "") {
+                    return;
+                }
+                query.set(key, String(value));
+            });
+            const queryString = query.toString();
+            return queryString ? beforeHash + separator + queryString + hashPart : source;
+        }
+    }
+
     function getGoogleDriveDocsEditorUrl(entry) {
         const googleDriveMeta = entry && entry.google_drive ? entry.google_drive : null;
         const docsEditorUrl = googleDriveMeta && googleDriveMeta.docs_editor_url
@@ -1437,6 +1669,431 @@
         return uiLang === "en" ? enValue : koValue;
     }
 
+    const HANDRIVE_TUTORIAL_TOTAL_GROUPS = 17;
+    const HANDRIVE_TUTORIAL_STEP_PROGRESS = [
+        [1, 1, 1],
+        [2, 1, 2],
+        [2, 2, 2],
+        [3, 1, 1],
+        [4, 1, 2],
+        [4, 2, 2],
+        [5, 1, 2],
+        [5, 2, 2],
+        [6, 1, 3],
+        [6, 2, 3],
+        [6, 3, 3],
+        [7, 1, 5],
+        [7, 2, 5],
+        [7, 3, 5],
+        [7, 4, 5],
+        [7, 5, 5],
+        [8, 1, 2],
+        [8, 2, 2],
+        [9, 1, 4],
+        [9, 2, 4],
+        [9, 3, 4],
+        [9, 4, 4],
+        [10, 1, 5],
+        [10, 2, 5],
+        [10, 3, 5],
+        [10, 4, 5],
+        [10, 5, 5],
+        [11, 1, 2],
+        [11, 2, 2],
+        [12, 1, 7],
+        [12, 2, 7],
+        [12, 3, 7],
+        [12, 4, 7],
+        [12, 5, 7],
+        [12, 6, 7],
+        [12, 7, 7],
+        [13, 1, 1],
+        [14, 1, 1],
+        [15, 1, 2],
+        [15, 2, 2],
+        [16, 1, 2],
+        [16, 2, 2],
+        [17, 1, 1],
+    ];
+    const HANDRIVE_TUTORIAL_TOTAL_STEPS = HANDRIVE_TUTORIAL_STEP_PROGRESS.length;
+
+    function parseTutorialStepIndex(fallbackIndex, totalSteps) {
+        const total = Math.max(1, Number(totalSteps) || HANDRIVE_TUTORIAL_TOTAL_STEPS);
+        const fallback = Math.max(0, Math.min(total - 1, Math.floor(Number(fallbackIndex) || 0)));
+        const rawValue = initialTutorialStepValue;
+        if (!rawValue) {
+            return fallback;
+        }
+        const parsed = Number(rawValue);
+        if (!Number.isFinite(parsed)) {
+            return fallback;
+        }
+        return Math.max(0, Math.min(total - 1, Math.floor(parsed)));
+    }
+
+    function parseTutorialStepIndexFromUrl(urlValue, totalSteps) {
+        try {
+            const total = Math.max(1, Number(totalSteps) || HANDRIVE_TUTORIAL_TOTAL_STEPS);
+            const parsedUrl = new URL(String(urlValue || ""), window.location.href);
+            const parsed = Number(parsedUrl.searchParams.get("tutorial_step"));
+            if (!Number.isFinite(parsed)) {
+                return null;
+            }
+            return Math.max(0, Math.min(total - 1, Math.floor(parsed)));
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function formatTutorialTourProgress(current, total) {
+        return t("guest_demo_tour_progress", "{current}/{total}")
+            .replace("{current}", String(current))
+            .replace("{total}", String(total));
+    }
+
+    function normalizeTutorialStepProgressMeta(stepIndex, step) {
+        const source = step && Number.isFinite(Number(step.groupIndex))
+            ? [step.groupIndex, step.partIndex, step.partCount]
+            : (HANDRIVE_TUTORIAL_STEP_PROGRESS[Math.max(0, Math.floor(Number(stepIndex) || 0))] || [1, 1, 1]);
+        const groupIndex = Math.max(1, Math.floor(Number(source[0]) || 1));
+        const partIndex = Math.max(1, Math.floor(Number(source[1]) || 1));
+        const partCount = Math.max(1, Math.floor(Number(source[2]) || 1));
+        return {
+            groupIndex: groupIndex,
+            partIndex: Math.min(partIndex, partCount),
+            partCount: partCount,
+        };
+    }
+
+    function formatTutorialStepProgress(stepIndex, step) {
+        const meta = normalizeTutorialStepProgressMeta(stepIndex, step);
+        return formatTutorialTourProgress(meta.groupIndex, HANDRIVE_TUTORIAL_TOTAL_GROUPS);
+    }
+
+    function getTutorialGroupFirstStepIndex(groupIndex) {
+        const targetGroup = Math.max(1, Math.min(HANDRIVE_TUTORIAL_TOTAL_GROUPS, Math.floor(Number(groupIndex) || 1)));
+        for (let index = 0; index < HANDRIVE_TUTORIAL_STEP_PROGRESS.length; index += 1) {
+            if (Math.floor(Number(HANDRIVE_TUTORIAL_STEP_PROGRESS[index][0]) || 0) === targetGroup) {
+                return index;
+            }
+        }
+        return 0;
+    }
+
+    function getTutorialAdjacentGroupStepIndex(stepIndex, delta) {
+        const currentMeta = normalizeTutorialStepProgressMeta(stepIndex, null);
+        const targetGroup = Math.max(
+            1,
+            Math.min(HANDRIVE_TUTORIAL_TOTAL_GROUPS, currentMeta.groupIndex + (Number(delta) || 0))
+        );
+        return getTutorialGroupFirstStepIndex(targetGroup);
+    }
+
+    function buildTutorialStepUrl(returnUrl, stepIndex) {
+        return appendQueryParams(returnUrl, {
+            tutorial: "1",
+            tutorial_step: String(Math.max(0, Math.floor(Number(stepIndex) || 0))),
+        });
+    }
+
+    function isTutorialElementVisible(element) {
+        if (!element || !document.documentElement.contains(element)) {
+            return false;
+        }
+        if (element.hidden || (element.closest && element.closest("[hidden]"))) {
+            return false;
+        }
+        const style = window.getComputedStyle ? window.getComputedStyle(element) : null;
+        if (style && (style.display === "none" || style.visibility === "hidden")) {
+            return false;
+        }
+        const rect = element.getBoundingClientRect();
+        return rect.width > 1 && rect.height > 1;
+    }
+
+    function resolveTutorialElement(candidate) {
+        if (!candidate) {
+            return null;
+        }
+        if (typeof candidate === "function") {
+            return resolveTutorialElement(candidate());
+        }
+        if (typeof candidate === "string") {
+            return document.querySelector(candidate);
+        }
+        return candidate;
+    }
+
+    function findFirstVisibleTutorialElement(candidates) {
+        const list = Array.isArray(candidates) ? candidates : [];
+        for (let index = 0; index < list.length; index += 1) {
+            const element = resolveTutorialElement(list[index]);
+            if (isTutorialElementVisible(element)) {
+                return element;
+            }
+        }
+        return null;
+    }
+
+    function ensureStandaloneTutorialCompositeTarget() {
+        if (
+            ensureStandaloneTutorialCompositeTarget.element &&
+            document.documentElement.contains(ensureStandaloneTutorialCompositeTarget.element)
+        ) {
+            return ensureStandaloneTutorialCompositeTarget.element;
+        }
+        const target = document.createElement("div");
+        target.className = "handrive-guest-demo-composite-target";
+        target.setAttribute("aria-hidden", "true");
+        target.style.position = "fixed";
+        target.style.pointerEvents = "none";
+        target.style.opacity = "0";
+        target.style.zIndex = "-1";
+        document.body.appendChild(target);
+        ensureStandaloneTutorialCompositeTarget.element = target;
+        return target;
+    }
+
+    function buildStandaloneTutorialCompositeTarget(elements) {
+        const visibleElements = (Array.isArray(elements) ? elements : [])
+            .map(resolveTutorialElement)
+            .filter(isTutorialElementVisible);
+        if (!visibleElements.length) {
+            return null;
+        }
+        const firstElement = visibleElements[0];
+        if (firstElement && typeof firstElement.scrollIntoView === "function") {
+            try {
+                firstElement.scrollIntoView({ block: "nearest", inline: "nearest" });
+            } catch (error) {
+                firstElement.scrollIntoView();
+            }
+        }
+        let left = Infinity;
+        let top = Infinity;
+        let right = -Infinity;
+        let bottom = -Infinity;
+        visibleElements.forEach(function (element) {
+            const rect = element.getBoundingClientRect();
+            left = Math.min(left, rect.left);
+            top = Math.min(top, rect.top);
+            right = Math.max(right, rect.right);
+            bottom = Math.max(bottom, rect.bottom);
+        });
+        if (!Number.isFinite(left) || !Number.isFinite(top) || right <= left || bottom <= top) {
+            return null;
+        }
+        const target = ensureStandaloneTutorialCompositeTarget();
+        target.style.left = Math.round(left) + "px";
+        target.style.top = Math.round(top) + "px";
+        target.style.width = Math.max(1, Math.round(right - left)) + "px";
+        target.style.height = Math.max(1, Math.round(bottom - top)) + "px";
+        return target;
+    }
+
+    function createTutorialNavButton(className, label, svgMarkup) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = className;
+        button.setAttribute("aria-label", label);
+        button.setAttribute("title", label);
+        button.innerHTML = svgMarkup || label;
+        return button;
+    }
+
+    function positionStandaloneTutorialTour(spotlight, tip, target, placement) {
+        if (!spotlight || !tip || !isTutorialElementVisible(target)) {
+            return;
+        }
+        const viewportPad = 8;
+        const targetRect = target.getBoundingClientRect();
+        const targetPad = 6;
+        const left = Math.max(viewportPad, targetRect.left - targetPad);
+        const top = Math.max(viewportPad, targetRect.top - targetPad);
+        const right = Math.min((window.innerWidth || document.documentElement.clientWidth || 1) - viewportPad, targetRect.right + targetPad);
+        const bottom = Math.min((window.innerHeight || document.documentElement.clientHeight || 1) - viewportPad, targetRect.bottom + targetPad);
+
+        spotlight.hidden = false;
+        spotlight.style.left = Math.round(left) + "px";
+        spotlight.style.top = Math.round(top) + "px";
+        spotlight.style.width = Math.max(1, Math.round(right - left)) + "px";
+        spotlight.style.height = Math.max(1, Math.round(bottom - top)) + "px";
+
+        tip.hidden = false;
+        tip.style.visibility = "hidden";
+        tip.style.left = "0px";
+        tip.style.top = "0px";
+
+        const tipRect = tip.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1;
+        const gap = 12;
+        let resolvedPlacement = placement || "";
+        if (!resolvedPlacement) {
+            if (targetRect.bottom + gap + tipRect.height <= viewportHeight - viewportPad) {
+                resolvedPlacement = "bottom";
+            } else if (targetRect.top - gap - tipRect.height >= viewportPad) {
+                resolvedPlacement = "top";
+            } else if (targetRect.right + gap + tipRect.width <= viewportWidth - viewportPad) {
+                resolvedPlacement = "right";
+            } else {
+                resolvedPlacement = "left";
+            }
+        }
+
+        let tipLeft = 0;
+        let tipTop = 0;
+        if (resolvedPlacement === "right") {
+            tipLeft = targetRect.right + gap;
+            tipTop = targetRect.top + (targetRect.height - tipRect.height) / 2;
+        } else if (resolvedPlacement === "left") {
+            tipLeft = targetRect.left - gap - tipRect.width;
+            tipTop = targetRect.top + (targetRect.height - tipRect.height) / 2;
+        } else if (resolvedPlacement === "top") {
+            tipLeft = targetRect.left + (targetRect.width - tipRect.width) / 2;
+            tipTop = targetRect.top - gap - tipRect.height;
+        } else {
+            resolvedPlacement = "bottom";
+            tipLeft = targetRect.left + (targetRect.width - tipRect.width) / 2;
+            tipTop = targetRect.bottom + gap;
+        }
+
+        tipLeft = Math.max(viewportPad, Math.min(tipLeft, Math.max(viewportPad, viewportWidth - tipRect.width - viewportPad)));
+        tipTop = Math.max(viewportPad, Math.min(tipTop, Math.max(viewportPad, viewportHeight - tipRect.height - viewportPad)));
+        const arrowLeft = Math.max(16, Math.min(tipRect.width - 16, targetRect.left + targetRect.width / 2 - tipLeft));
+        const arrowTop = Math.max(16, Math.min(tipRect.height - 16, targetRect.top + targetRect.height / 2 - tipTop));
+
+        tip.dataset.placement = resolvedPlacement;
+        tip.style.setProperty("--handrive-demo-arrow-left", Math.round(arrowLeft) + "px");
+        tip.style.setProperty("--handrive-demo-arrow-top", Math.round(arrowTop) + "px");
+        tip.style.left = Math.round(tipLeft) + "px";
+        tip.style.top = Math.round(tipTop) + "px";
+        tip.style.visibility = "";
+    }
+
+    function initializeStandaloneTutorialTour(options) {
+        if (!isTutorialMode) {
+            return;
+        }
+        const settings = options || {};
+        const returnUrl = String(settings.returnUrl || "").trim();
+        if (!returnUrl) {
+            return;
+        }
+        const totalSteps = Math.max(1, Number(settings.totalSteps) || HANDRIVE_TUTORIAL_TOTAL_STEPS);
+        const returnStepIndex = parseTutorialStepIndexFromUrl(returnUrl, totalSteps);
+        const fallbackStepIndex = returnStepIndex === null ? (settings.fallbackStepIndex || 0) : returnStepIndex;
+        const stepIndex = parseTutorialStepIndex(fallbackStepIndex, totalSteps);
+        const resolveTarget = function () {
+            return findFirstVisibleTutorialElement(settings.targets || [root]) || root;
+        };
+        let target = resolveTarget();
+        if (!target) {
+            return;
+        }
+
+        const spotlight = document.createElement("div");
+        spotlight.className = "handrive-guest-demo-spotlight";
+        spotlight.hidden = true;
+
+        const tip = document.createElement("aside");
+        tip.className = "handrive-guest-demo-tour-tip";
+        tip.setAttribute("role", "status");
+        tip.setAttribute("aria-live", "polite");
+        tip.hidden = true;
+
+        const title = document.createElement("h3");
+        title.className = "handrive-guest-demo-tour-title";
+        title.textContent = settings.title || textByLang("튜토리얼 계속 진행", "Continue tutorial");
+        const body = document.createElement("p");
+        body.className = "handrive-guest-demo-tour-body";
+        body.textContent = settings.body || textByLang("현재 페이지에서도 튜토리얼이 계속됩니다.", "The tutorial continues on this page.");
+        const action = document.createElement("p");
+        action.className = "handrive-guest-demo-tour-action";
+        action.textContent = settings.action || textByLang("이전/다음 버튼으로 튜토리얼 단계로 돌아갈 수 있습니다.", "Use Previous/Next to return to the tutorial step.");
+
+        const nav = document.createElement("div");
+        nav.className = "handrive-guest-demo-tour-nav";
+        const kicker = document.createElement("div");
+        kicker.className = "handrive-guest-demo-tour-kicker";
+        kicker.textContent = formatTutorialStepProgress(stepIndex, settings.stepMeta || null);
+
+        const previousLabel = t("guest_demo_onboarding_previous", textByLang("이전", "Previous"));
+        const nextLabel = t("guest_demo_onboarding_next", textByLang("다음", "Next"));
+        const completeLabel = t("guest_demo_onboarding_complete", textByLang("종료", "End"));
+        const prevButton = createTutorialNavButton(
+            "ui-btn ui-btn-primary handrive-guest-demo-tour-nav-btn handrive-guest-demo-tour-prev",
+            previousLabel,
+            '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="12,4 6,10 12,16"></polyline></svg>'
+        );
+        const nextButton = createTutorialNavButton(
+            "ui-btn ui-btn-primary handrive-guest-demo-tour-nav-btn handrive-guest-demo-tour-next",
+            nextLabel,
+            '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="8,4 14,10 8,16"></polyline></svg>'
+        );
+        const completeButton = createTutorialNavButton(
+            "ui-btn handrive-guest-demo-tour-nav-btn handrive-guest-demo-tour-complete",
+            completeLabel,
+            completeLabel
+        );
+        const stepMeta = normalizeTutorialStepProgressMeta(stepIndex, settings.stepMeta || null);
+        prevButton.hidden = stepMeta.groupIndex <= 1;
+        nextButton.hidden = stepMeta.groupIndex >= HANDRIVE_TUTORIAL_TOTAL_GROUPS;
+        completeButton.hidden = !isAuthenticated || stepMeta.groupIndex < HANDRIVE_TUTORIAL_TOTAL_GROUPS;
+
+        function navigateToStep(nextStepIndex) {
+            const nextUrl = buildTutorialStepUrl(returnUrl, nextStepIndex);
+            if (typeof settings.navigate === "function") {
+                settings.navigate(nextUrl);
+                return;
+            }
+            window.location.assign(nextUrl);
+        }
+
+        prevButton.addEventListener("click", function () {
+            navigateToStep(getTutorialAdjacentGroupStepIndex(stepIndex, -1));
+        });
+        nextButton.addEventListener("click", function () {
+            navigateToStep(getTutorialAdjacentGroupStepIndex(stepIndex, 1));
+        });
+        completeButton.addEventListener("click", function () {
+            if (typeof settings.complete === "function") {
+                settings.complete("complete");
+                return;
+            }
+            window.location.assign(returnUrl);
+        });
+
+        nav.appendChild(kicker);
+        nav.appendChild(prevButton);
+        nav.appendChild(nextButton);
+        nav.appendChild(completeButton);
+        tip.appendChild(title);
+        tip.appendChild(body);
+        tip.appendChild(action);
+        tip.appendChild(nav);
+        document.body.appendChild(spotlight);
+        document.body.appendChild(tip);
+
+        const schedulePosition = function () {
+            window.requestAnimationFrame(function () {
+                target = resolveTarget() || target;
+                positionStandaloneTutorialTour(spotlight, tip, target, settings.placement || "");
+            });
+        };
+        schedulePosition();
+        window.setTimeout(schedulePosition, 80);
+        window.setTimeout(schedulePosition, 240);
+        window.addEventListener("resize", schedulePosition, { passive: true });
+        window.addEventListener("orientationchange", schedulePosition, { passive: true });
+        window.addEventListener("scroll", schedulePosition, true);
+        if (window.ResizeObserver) {
+            const resizeObserver = new ResizeObserver(schedulePosition);
+            resizeObserver.observe(target);
+            resizeObserver.observe(root);
+        }
+    }
+
     function getButtonActionLabel(button) {
         if (!button) return "";
         return String(button.getAttribute("aria-label") || button.getAttribute("title") || button.textContent || "").trim();
@@ -1620,6 +2277,57 @@
         HANDRIVE_MEDIA_PLAYBACK_MODE_REPEAT,
         HANDRIVE_MEDIA_PLAYBACK_MODE_NEXT,
     ];
+
+    function bindHanplanetZoomGesture(surface, options) {
+        const zoomGesture = window.HanplanetZoomGesture;
+        if (zoomGesture && typeof zoomGesture.bind === "function") {
+            return zoomGesture.bind(surface, options);
+        }
+        if (!surface || typeof surface.addEventListener !== "function" || !options || typeof options.setValue !== "function") {
+            return null;
+        }
+        const handleWheel = function (event) {
+            if (!event || event.defaultPrevented || !(event.ctrlKey || event.metaKey) || (options.ignoreAlt && event.altKey)) {
+                return;
+            }
+            const deltaY = Number(event.deltaY) || 0;
+            if (Math.abs(deltaY) < 0.01) {
+                return;
+            }
+            event.preventDefault();
+            const direction = deltaY < 0 ? 1 : -1;
+            let normalizedDelta = deltaY;
+            if (event.deltaMode === 1) {
+                normalizedDelta *= 16;
+            } else if (event.deltaMode === 2) {
+                normalizedDelta *= window.innerHeight || 800;
+            }
+            const context = {
+                inputType: "wheel",
+                originalEvent: event,
+                delta: deltaY,
+                normalizedDelta: normalizedDelta,
+                direction: direction,
+                clientX: Number(event.clientX) || 0,
+                clientY: Number(event.clientY) || 0,
+            };
+            const currentValue = typeof options.getValue === "function" ? Number(options.getValue(context)) : 1;
+            const step = typeof options.wheelStep === "function" ? Number(options.wheelStep(context)) : Number(options.wheelStep);
+            const safeStep = Number.isFinite(step) ? step : 1;
+            context.currentValue = currentValue;
+            context.step = safeStep;
+            const nextValue = typeof options.getWheelValue === "function"
+                ? options.getWheelValue(context)
+                : currentValue + (direction * safeStep);
+            options.setValue(nextValue, context);
+        };
+        surface.addEventListener("wheel", handleWheel, { passive: false });
+        return {
+            destroy: function () {
+                surface.removeEventListener("wheel", handleWheel);
+            },
+        };
+    }
 
     function parseStoredMediaVolume(value) {
         if (value === null || value === undefined || String(value).trim() === "") {
@@ -2463,6 +3171,165 @@
         }
         event.preventDefault();
         openImagePictureInPicture(target).catch(alertError);
+    }
+
+    const HANDRIVE_MARKDOWN_INLINE_CODE_SELECTOR = ".ui-markdown code, .handrive-markdown code";
+
+    function isMarkdownInlineCodeElement(codeElement) {
+        if (!codeElement || !codeElement.matches || !codeElement.matches("code")) {
+            return false;
+        }
+        return !codeElement.closest("pre") && Boolean(codeElement.closest(".ui-markdown, .handrive-markdown"));
+    }
+
+    function getMarkdownInlineCodeFromEvent(event) {
+        if (!event) {
+            return null;
+        }
+        let target = event.target || null;
+        if (target && target.nodeType === 3) {
+            target = target.parentElement;
+        }
+        if (!target || !target.closest) {
+            return null;
+        }
+        const codeElement = target.closest(HANDRIVE_MARKDOWN_INLINE_CODE_SELECTOR);
+        return isMarkdownInlineCodeElement(codeElement) ? codeElement : null;
+    }
+
+    function selectMarkdownInlineCode(codeElement) {
+        if (!codeElement || !document.createRange || !window.getSelection) {
+            return "";
+        }
+        const selection = window.getSelection();
+        if (!selection) {
+            return "";
+        }
+        const range = document.createRange();
+        range.selectNodeContents(codeElement);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return codeElement.textContent || "";
+    }
+
+    function handleMarkdownInlineCodeMouseDown(event) {
+        if (!event || event.button !== 0 || event.detail < 2) {
+            return;
+        }
+        const codeElement = getMarkdownInlineCodeFromEvent(event);
+        if (!codeElement) {
+            return;
+        }
+        selectMarkdownInlineCode(codeElement);
+    }
+
+    function handleMarkdownInlineCodeDoubleClick(event) {
+        const codeElement = getMarkdownInlineCodeFromEvent(event);
+        if (!codeElement) {
+            return;
+        }
+        selectMarkdownInlineCode(codeElement);
+        event.preventDefault();
+    }
+
+    function handleMarkdownInlineCodeDragStart(event) {
+        const codeElement = getMarkdownInlineCodeFromEvent(event);
+        if (!codeElement) {
+            return;
+        }
+        const selectedText = selectMarkdownInlineCode(codeElement);
+        if (selectedText && event.dataTransfer) {
+            event.dataTransfer.setData("text/plain", selectedText);
+            event.dataTransfer.effectAllowed = "copy";
+        }
+    }
+
+    document.addEventListener("mousedown", handleMarkdownInlineCodeMouseDown, true);
+    document.addEventListener("dblclick", handleMarkdownInlineCodeDoubleClick, true);
+    document.addEventListener("dragstart", handleMarkdownInlineCodeDragStart, true);
+
+    const HANDRIVE_MARKDOWN_CODE_COPY_ICON = '<svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M4 13H3a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>';
+
+    function writeHandriveClipboardText(text) {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+            const textarea = document.createElement("textarea");
+            textarea.value = text;
+            textarea.setAttribute("readonly", "readonly");
+            textarea.style.position = "fixed";
+            textarea.style.left = "-9999px";
+            textarea.style.top = "0";
+            textarea.style.opacity = "0";
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            try {
+                if (!document.execCommand("copy")) {
+                    throw new Error("copy failed");
+                }
+                resolve();
+            } catch (error) {
+                reject(error);
+            } finally {
+                textarea.remove();
+            }
+        });
+    }
+
+    function getMarkdownCodeBlockNodes(container) {
+        if (!container || !(container instanceof Element)) {
+            return [];
+        }
+        const markdownRoots = [];
+        if (container.matches && container.matches(".ui-markdown, .handrive-markdown")) {
+            markdownRoots.push(container);
+        }
+        container.querySelectorAll(".ui-markdown, .handrive-markdown").forEach(function (markdownRoot) {
+            markdownRoots.push(markdownRoot);
+        });
+        const codeNodes = [];
+        markdownRoots.forEach(function (markdownRoot) {
+            markdownRoot.querySelectorAll("pre > code").forEach(function (codeNode) {
+                if (codeNode instanceof HTMLElement && codeNodes.indexOf(codeNode) === -1) {
+                    codeNodes.push(codeNode);
+                }
+            });
+        });
+        return codeNodes;
+    }
+
+    function hydrateMarkdownCodeBlockCopyButtons(container) {
+        getMarkdownCodeBlockNodes(container).forEach(function (codeNode) {
+            const pre = codeNode.closest("pre");
+            if (!pre || pre.dataset.handriveCodeCopyBound === "1") {
+                return;
+            }
+            pre.dataset.handriveCodeCopyBound = "1";
+            pre.classList.add("handrive-markdown-code-copy-wrap");
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "handrive-markdown-code-copy-btn";
+            button.innerHTML = HANDRIVE_MARKDOWN_CODE_COPY_ICON;
+            const copyLabel = t("markdown_code_copy_button", textByLang("복사", "Copy"));
+            button.setAttribute("aria-label", copyLabel);
+            button.setAttribute("title", copyLabel);
+            button.addEventListener("click", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                const text = codeNode.textContent || "";
+                writeHandriveClipboardText(text).then(function () {
+                    if (typeof window.showHandriveInlineCopyFeedback === "function") {
+                        window.showHandriveInlineCopyFeedback(
+                            button,
+                            t("markdown_code_copied", textByLang("복사됨!", "Copied!"))
+                        );
+                    }
+                }).catch(function () {});
+            });
+            pre.appendChild(button);
+        });
     }
 
     // 문서 렌더링 콘텐츠 모드 클래스를 적용하는 함수
@@ -4115,7 +4982,11 @@
             requestedRenderClass = "handrive-sql";
         } else if (renderClasses.includes("handrive-html") || renderClasses.includes("handrive-editor-html")) {
             requestedRenderClass = "handrive-html";
-        } else if (renderClasses.includes("ui-markdown")) {
+        } else if (
+            renderClasses.includes("ui-markdown") ||
+            renderClasses.includes("handrive-markdown") ||
+            (targetElement.matches && targetElement.matches(".ui-markdown, .handrive-markdown"))
+        ) {
             requestedRenderClass = "ui-markdown";
         }
         if (!requestedRenderClass) {
@@ -4152,6 +5023,9 @@
             }
             codeNode.dataset.handriveCodeHighlighted = "1";
         });
+        if (requestedRenderClass === "ui-markdown") {
+            hydrateMarkdownCodeBlockCopyButtons(targetElement);
+        }
     }
 
     // 열린 문서 모달이 있는지 확인하는 함수
@@ -4429,7 +5303,7 @@
         const cancelButton = document.getElementById("handrive-admin-user-cancel-btn");
         const confirmButton = document.getElementById("handrive-admin-user-confirm-btn");
         const dialog = modal ? modal.querySelector(".site-modal-dialog") : null;
-        const loadingHost = modal ? modal.querySelector(".site-loading-host") : null;
+        const loadingHost = dialog;
         const loading = modal ? modal.querySelector(".site-modal-loading") : null;
 
         if (!modal || !backdrop || !target || !input || !cancelButton || !confirmButton) {
@@ -4731,6 +5605,7 @@
         const pageHelpButton = document.getElementById("handrive-page-help-btn");
         const pageHelpModal = document.getElementById("handrive-page-help-modal");
         const pageHelpBackdrop = document.getElementById("handrive-page-help-backdrop");
+        const pageHelpTutorialButton = pageHelpModal ? pageHelpModal.querySelector(".handrive-help-modal-tutorial-btn") : null;
         if (!pageHelpButton || !pageHelpModal || !pageHelpBackdrop) {
             return;
         }
@@ -4756,6 +5631,16 @@
             event.preventDefault();
             setPageHelpModalOpen(true);
         });
+
+        if (pageHelpTutorialButton) {
+            pageHelpTutorialButton.addEventListener("click", function (event) {
+                if (!isTutorialMode) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+            }, true);
+        }
 
         pageHelpBackdrop.addEventListener("click", function () {
             setPageHelpModalOpen(false);
@@ -5103,6 +5988,14 @@
         const HANDRIVE_LIST_ITEM_SCALE_MIN = 0.72;
         const HANDRIVE_LIST_ITEM_SCALE_MAX = 1.6;
         const HANDRIVE_LIST_ITEM_SCALE_STEP = 0.05;
+        const HANDRIVE_LIST_ITEM_SCALE_WHEEL_SENSITIVITY = 0.00042;
+        const HANDRIVE_LIST_ITEM_SCALE_LAYOUT_DELAY_MS = 120;
+        const HANDRIVE_LIST_ITEM_SCALE_PERSIST_DELAY_MS = 420;
+        const HANDRIVE_LIST_VIRTUAL_SCROLL_MIN_ITEMS = 180;
+        const HANDRIVE_LIST_VIRTUAL_SCROLL_OVERSCAN = 30;
+        const HANDRIVE_LIST_VIRTUAL_SCROLL_EDGE_BUFFER = 8;
+        const HANDRIVE_LIST_VIRTUAL_ROW_BASE_HEIGHT = 43;
+        const HANDRIVE_LIST_META_TEXT_MEASURE_CACHE_LIMIT = 1200;
         const HANDRIVE_LIST_SPLIT_LANDSCAPE_COOKIE_NAME = "handrive-list-split-landscape";
         const HANDRIVE_LIST_SPLIT_PORTRAIT_COOKIE_NAME = "handrive-list-split-portrait";
         const HANDRIVE_LIST_DETAIL_SIDE_COOKIE_NAME = "handrive-list-detail-side";
@@ -5110,6 +6003,14 @@
         const HANDRIVE_LIST_SPLIT_RATIO_MIN = 0.18;
         const HANDRIVE_LIST_SPLIT_RATIO_MAX = 0.78;
         let handriveListItemScale = 1;
+        let pendingStoredHandriveListItemScale = null;
+        let listItemScaleLayoutTimeoutId = null;
+        let listItemScalePersistTimeoutId = null;
+        const handriveListMetaTextMeasure = {
+            canvas: null,
+            context: null,
+            cache: new Map(),
+        };
         let handriveListDetailSidePreference = normalizeListDetailSide(getCookieValue(HANDRIVE_LIST_DETAIL_SIDE_COOKIE_NAME));
         let listSearchForm = document.getElementById("handrive-list-search-form");
         let listSearchInput = document.getElementById("handriveListSearchInput");
@@ -5405,8 +6306,10 @@
         }
 
         const currentDir = normalizePath(root.dataset.currentDir || "", true);
+        const currentDirDisplayLabel = String(root.dataset.currentDirDisplayLabel || "").trim();
         const currentDirIsRoot = root.dataset.currentDirIsRoot === "1";
         const currentDirCanEdit = root.dataset.currentDirCanEdit === "1";
+        const currentDirCanDelete = root.dataset.currentDirCanDelete !== "0";
         const currentDirCanWriteChildren =
             root.dataset.currentDirCanWriteChildren === "1" || currentDirCanEdit;
         const currentDirHasChildren = root.dataset.currentDirHasChildren === "1";
@@ -5428,11 +6331,15 @@
         const currentDirShareUrl = String(root.dataset.currentDirShareUrl || "").trim();
         const currentDirShareDownloadUrl = String(root.dataset.currentDirShareDownloadUrl || "").trim();
         const currentDirShareIsInherited = root.dataset.currentDirShareIsInherited === "1";
+        const currentDirShareCanEdit = root.dataset.currentDirShareCanEdit === "1";
+        const currentDirShareCanManage = root.dataset.currentDirShareCanManage !== "0";
         const accountProfileImageUrl = String(root.dataset.accountProfileImageUrl || "").trim();
         const handriveRootProfileImageUrl = String(root.dataset.handriveRootProfileImageUrl || accountProfileImageUrl).trim();
         const canSwitchAdminHandriveUser = root.dataset.handriveAdminUserSwitchEnabled === "1";
         const handriveRootLabel = (root.dataset.handriveRootLabel || breadcrumbRootLabel || "HanDrive").trim() || "HanDrive";
         const effectiveRootLabel = handriveRootLabel;
+        const localizedTutorialDisplayLabel = textByLang("튜토리얼", "Tutorial");
+        const tutorialDisplayLabel = currentDirDisplayLabel || localizedTutorialDisplayLabel;
         const syncSettingsApiUrl = root.dataset.syncSettingsApiUrl || "";
         const sharedRootPath = normalizePath(root.dataset.handriveSharedRootPath || "", true);
         const initialEntries = getJsonScriptData("handrive-initial-entries", []);
@@ -5443,8 +6350,12 @@
         let currentDirGoogleDrive = getJsonScriptData("handrive-current-dir-google-drive", null);
         const adminUserCheckApiUrl = String(root.dataset.adminUserCheckApiUrl || "").trim();
 
-        function shouldPreserveDemoAllListOrder(dirPath) {
-            return !hasSharedContext() && normalizePath(dirPath, true) === "all";
+        function shouldPreserveGuestDemoListOrder(dirPath) {
+            const normalizedPath = normalizePath(dirPath, true);
+            return !hasSharedContext() && (
+                normalizedPath === "guest" ||
+                getTutorialRootPath(normalizedPath) === normalizedPath
+            );
         }
 
         async function promptCommitMessage(targetPath) {
@@ -5589,8 +6500,10 @@
             currentDir: currentDir,
             currentDirMeta: {
                 path: currentDir,
+                display_label: currentDirDisplayLabel,
                 is_root: currentDirIsRoot,
                 can_edit: currentDirCanEdit,
+                can_delete: currentDirCanDelete,
                 can_write_children: currentDirCanWriteChildren,
                 has_children: currentDirHasChildren,
                 is_git_repo_root: currentDirIsGitRepoRoot,
@@ -5605,6 +6518,8 @@
                 share_url: currentDirShareUrl,
                 share_download_url: currentDirShareDownloadUrl,
                 share_is_inherited: currentDirShareIsInherited,
+                share_can_edit: currentDirShareCanEdit,
+                share_can_manage: currentDirShareCanManage,
                 share_allowed_users: Array.isArray(currentDirShareAllowedUsers) ? currentDirShareAllowedUsers : [],
                 write_acl_labels: Array.isArray(currentDirWriteAclLabels) ? currentDirWriteAclLabels : [],
                 git_repo: currentDirGitRepo,
@@ -5639,6 +6554,14 @@
             entryByPath: new Map(),
             entryRowByPath: new Map(),
             visibleEntryPaths: [],
+            virtualListRecords: [],
+            virtualListActive: false,
+            virtualListRowHeight: 0,
+            virtualListStartIndex: 0,
+            virtualListEndIndex: 0,
+            virtualListRenderFrame: 0,
+            virtualListMetaMutationIgnoreActive: false,
+            virtualListMetaMutationIgnoreToken: 0,
             dragOverElement: null,
             dragHoverElement: null,
             fileDropGroupRows: [],
@@ -5666,7 +6589,7 @@
             pendingContextUploadDir: "",
             searchQuery: "",
             searchResults: null,
-            listSortKey: shouldPreserveDemoAllListOrder(currentDir) ? "" : "type",
+            listSortKey: shouldPreserveGuestDemoListOrder(currentDir) ? "" : "type",
             listSortDirection: "asc",
             listSortWasUserApplied: false,
             searchGeneration: 0,
@@ -6058,8 +6981,126 @@
             });
         }
 
-        function applyVirtualBreadcrumbLabels(crumbs) {
-            return applyGoogleDriveBreadcrumbLabels(applyGithubBreadcrumbLabels(crumbs));
+        function isTutorialTokenSegment(value) {
+            return /^[0-9a-f]{32}$/i.test(String(value || "").trim());
+        }
+
+        function getUserTutorialStoragePathMeta(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            if (!normalizedPath) {
+                return null;
+            }
+            const parts = normalizedPath.split("/").filter(Boolean);
+            if (
+                parts.length >= 4 &&
+                parts[0] === "users" &&
+                parts[2] === "tutorial-temp" &&
+                isTutorialTokenSegment(parts[3])
+            ) {
+                return {
+                    homeParts: parts.slice(0, 2),
+                    rootParts: parts.slice(0, 4),
+                    tailParts: parts.slice(4),
+                };
+            }
+            return null;
+        }
+
+        function isUserTutorialTempDirPath(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            const parts = normalizedPath.split("/").filter(Boolean);
+            return parts.length === 3 && parts[0] === "users" && parts[2] === "tutorial-temp";
+        }
+
+        function toReadableTutorialUrlPath(pathValue) {
+            const meta = getUserTutorialStoragePathMeta(pathValue);
+            if (!meta) {
+                return "";
+            }
+            return meta.homeParts.concat(["tutorial"], meta.tailParts).join("/");
+        }
+
+        function getTutorialRootPath(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            if (!normalizedPath) {
+                return "";
+            }
+            const parts = normalizedPath.split("/").filter(Boolean);
+            const guestIndex = parts.indexOf("guest-tutorial");
+            if (guestIndex >= 0 && isTutorialTokenSegment(parts[guestIndex + 1])) {
+                return parts.slice(0, guestIndex + 2).join("/");
+            }
+            const tempIndex = parts.indexOf("tutorial-temp");
+            if (tempIndex >= 0 && isTutorialTokenSegment(parts[tempIndex + 1])) {
+                return parts.slice(0, tempIndex + 2).join("/");
+            }
+            return "";
+        }
+
+        function getTutorialRootPathFromCrumbs(crumbs) {
+            if (!Array.isArray(crumbs)) {
+                return "";
+            }
+            for (let index = crumbs.length - 1; index >= 0; index -= 1) {
+                const tutorialRootPath = getTutorialRootPath(crumbs[index] && crumbs[index].path);
+                if (tutorialRootPath) {
+                    return tutorialRootPath;
+                }
+            }
+            return "";
+        }
+
+        function isGuestTutorialRootPath(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            return Boolean(normalizedPath && normalizedPath.startsWith("guest-tutorial/"));
+        }
+
+        function getTutorialBreadcrumbRootLabel(tutorialRootPath) {
+            if ((!scopedHomeDir || scopedHomeDir === "guest" || scopedHomeDir === "all") && isGuestTutorialRootPath(tutorialRootPath)) {
+                return "guest";
+            }
+            return "";
+        }
+
+        function applyTutorialBreadcrumbLabels(crumbs, pathValue) {
+            if (!Array.isArray(crumbs)) {
+                return [];
+            }
+            const tutorialRootPath = getTutorialRootPath(pathValue || state.currentDir) || getTutorialRootPathFromCrumbs(crumbs);
+            if (!tutorialRootPath) {
+                return crumbs;
+            }
+            const tutorialRootLabel = getTutorialBreadcrumbRootLabel(tutorialRootPath);
+            return crumbs.reduce(function (items, crumb) {
+                const crumbPath = normalizePath(crumb && crumb.path || "", true);
+                if (isUserTutorialTempDirPath(crumbPath)) {
+                    return items;
+                }
+                if (tutorialRootLabel && (crumbPath === "" || crumbPath === "guest" || crumbPath === "all")) {
+                    items.push(Object.assign({}, crumb, {
+                        label: tutorialRootLabel,
+                        path: "guest",
+                        url: buildListUrl(handriveBaseUrl, "guest", handriveRootUrl),
+                    }));
+                    return items;
+                }
+                if (crumbPath === tutorialRootPath) {
+                    items.push(Object.assign({}, crumb, { label: tutorialDisplayLabel }));
+                    return items;
+                }
+                if (crumbPath && tutorialRootPath.startsWith(crumbPath + "/") && crumbPath !== scopedHomeDir) {
+                    return items;
+                }
+                items.push(crumb);
+                return items;
+            }, []);
+        }
+
+        function applyVirtualBreadcrumbLabels(crumbs, pathValue) {
+            return applyTutorialBreadcrumbLabels(
+                applyGoogleDriveBreadcrumbLabels(applyGithubBreadcrumbLabels(crumbs)),
+                pathValue
+            );
         }
 
         function getPathLeafLabel(pathValue, fallbackValue) {
@@ -6292,7 +7333,14 @@
             if (!normalizedPath) {
                 return normalizedPath;
             }
+            if (normalizedPath === "all" || normalizedPath.indexOf("all/") === 0) {
+                return "guest" + normalizedPath.slice("all".length);
+            }
             const parts = normalizedPath.split("/").filter(Boolean);
+            const tutorialUrlPath = toReadableTutorialUrlPath(normalizedPath);
+            if (tutorialUrlPath) {
+                return tutorialUrlPath;
+            }
             const githubRootPath = resolveGithubVirtualRootPath(normalizedPath);
             if (githubRootPath) {
                 const rootParts = githubRootPath.split("/").filter(Boolean);
@@ -6354,7 +7402,7 @@
         const LIST_EDITOR_PREVIEW_EXTENSIONS = new Set([".md", ".html"]);
         const listMarkdownImageInput = createMarkdownImageInputHandler({
             textarea: editorContentInput,
-            uploadApiUrl: markdownImageUploadApiUrl,
+            uploadApiUrl: appendSharedQuery(markdownImageUploadApiUrl),
             isEnabled: function () {
                 return Boolean(activeListEditorEntry && resolveListEditorExtension() === ".md");
             },
@@ -6998,30 +8046,39 @@
 
             const extension = resolveListEditorExtension();
             const source = editorContentInput.value || "";
+            const useSyntaxHighlight = shouldUseEditorSyntaxHighlight(source);
             let renderClass = "handrive-plain-text";
-            let highlightedHtml = escapeHtml(source);
+            let highlightedHtml = "";
+            let useHighlightedHtml = false;
 
-            if (extension === ".js") {
+            if (useSyntaxHighlight && extension === ".js") {
                 renderClass = "handrive-js";
                 highlightedHtml = highlightJavaScriptCode(source);
-            } else if (extension === ".md") {
+                useHighlightedHtml = true;
+            } else if (useSyntaxHighlight && extension === ".md") {
                 renderClass = "handrive-editor-md";
                 highlightedHtml = highlightMarkdownSourceCode(source);
-            } else if (extension === ".css") {
+                useHighlightedHtml = true;
+            } else if (useSyntaxHighlight && extension === ".css") {
                 renderClass = "handrive-css";
                 highlightedHtml = highlightCssCode(source);
-            } else if (extension === ".json") {
+                useHighlightedHtml = true;
+            } else if (useSyntaxHighlight && extension === ".json") {
                 renderClass = "handrive-json";
                 highlightedHtml = highlightJsonCode(source);
-            } else if (extension === ".py") {
+                useHighlightedHtml = true;
+            } else if (useSyntaxHighlight && extension === ".py") {
                 renderClass = "handrive-py";
                 highlightedHtml = highlightPythonCode(source);
-            } else if (extension === ".sql") {
+                useHighlightedHtml = true;
+            } else if (useSyntaxHighlight && extension === ".sql") {
                 renderClass = "handrive-sql";
                 highlightedHtml = highlightSqlCode(source);
-            } else if (extension === ".html") {
+                useHighlightedHtml = true;
+            } else if (useSyntaxHighlight && extension === ".html") {
                 renderClass = "handrive-editor-html";
                 highlightedHtml = highlightHtmlCode(source);
+                useHighlightedHtml = true;
             }
 
             editorHighlight.classList.remove(
@@ -7035,7 +8092,7 @@
                 "handrive-editor-html"
             );
             editorHighlight.classList.add(renderClass);
-            editorHighlightCode.innerHTML = highlightedHtml + (source.endsWith("\n") ? "\u200b" : "");
+            setEditorHighlightCodeContent(editorHighlightCode, source, highlightedHtml, useHighlightedHtml);
             syncListEditorHighlightScroll();
         }
 
@@ -7097,6 +8154,7 @@
                 return;
             }
             resetUploadQueueContextMenuState();
+            contextMenu.classList.remove("is-guest-demo-context-menu");
             contextMenu.hidden = true;
             state.contextTarget = null;
             state.contextEntries = [];
@@ -7197,39 +8255,87 @@
             } catch (error) {}
         }
 
+        function flushStoredHandriveListItemScaleWrite() {
+            if (listItemScalePersistTimeoutId !== null) {
+                window.clearTimeout(listItemScalePersistTimeoutId);
+                listItemScalePersistTimeoutId = null;
+            }
+            if (pendingStoredHandriveListItemScale === null) {
+                return;
+            }
+            writeStoredHandriveListItemScale(pendingStoredHandriveListItemScale);
+            pendingStoredHandriveListItemScale = null;
+        }
+
+        function scheduleStoredHandriveListItemScaleWrite(value) {
+            pendingStoredHandriveListItemScale = clampHandriveListItemScale(value);
+            if (listItemScalePersistTimeoutId !== null) {
+                window.clearTimeout(listItemScalePersistTimeoutId);
+            }
+            listItemScalePersistTimeoutId = window.setTimeout(
+                flushStoredHandriveListItemScaleWrite,
+                HANDRIVE_LIST_ITEM_SCALE_PERSIST_DELAY_MS
+            );
+        }
+
+        function scheduleHandriveListItemScaleLayoutUpdate() {
+            if (listItemScaleLayoutTimeoutId !== null) {
+                window.clearTimeout(listItemScaleLayoutTimeoutId);
+            }
+            listItemScaleLayoutTimeoutId = window.setTimeout(function () {
+                listItemScaleLayoutTimeoutId = null;
+                scheduleListColumnVisibilityUpdate({ afterLayout: true, delayMs: 80 });
+                scheduleListBodyHeight();
+            }, HANDRIVE_LIST_ITEM_SCALE_LAYOUT_DELAY_MS);
+        }
+
         function applyHandriveListItemScale(value, options) {
             const settings = options || {};
             const normalizedValue = clampHandriveListItemScale(value);
+            const previousValue = handriveListItemScale;
+            const dataScale = normalizedValue.toFixed(2);
+            const didScaleChange = Math.abs(normalizedValue - previousValue) >= 0.0005;
             handriveListItemScale = normalizedValue;
             if (listItemsContainer) {
-                listItemsContainer.style.setProperty("--handrive-list-item-scale", normalizedValue.toFixed(3));
-                listItemsContainer.setAttribute("data-list-item-scale", normalizedValue.toFixed(2));
+                if (didScaleChange || listItemsContainer.getAttribute("data-list-item-scale") !== dataScale) {
+                    listItemsContainer.style.setProperty("--handrive-list-item-scale", normalizedValue.toFixed(3));
+                    listItemsContainer.setAttribute("data-list-item-scale", dataScale);
+                }
+            }
+            if (!didScaleChange) {
+                return;
             }
             if (!settings.skipPersist) {
-                writeStoredHandriveListItemScale(normalizedValue);
+                scheduleStoredHandriveListItemScaleWrite(normalizedValue);
             }
             if (!settings.skipLayout) {
-                scheduleListColumnVisibilityUpdate({ afterLayout: true, delayMs: 80 });
-                scheduleListBodyHeight();
+                state.virtualListRowHeight = 0;
+                scheduleVirtualListWindowRender({ force: true });
+                scheduleHandriveListItemScaleLayoutUpdate();
             }
         }
 
-        function handleHandriveListItemsScaleWheel(event) {
-            if (!listItemsContainer || !(event.ctrlKey || event.metaKey) || event.altKey) {
+        function bindHandriveListItemsScaleGesture() {
+            if (!listItemsContainer) {
                 return;
             }
-            if (!(event.target instanceof Element) || !listItemsContainer.contains(event.target)) {
-                return;
-            }
-            if (event.deltaY === 0) {
-                return;
-            }
-            event.preventDefault();
-            event.stopPropagation();
-            const direction = event.deltaY < 0 ? 1 : -1;
-            applyHandriveListItemScale(
-                handriveListItemScale + (direction * HANDRIVE_LIST_ITEM_SCALE_STEP)
-            );
+            bindHanplanetZoomGesture(listItemsContainer, {
+                min: HANDRIVE_LIST_ITEM_SCALE_MIN,
+                max: HANDRIVE_LIST_ITEM_SCALE_MAX,
+                wheelStep: HANDRIVE_LIST_ITEM_SCALE_STEP,
+                getWheelValue: function (context) {
+                    const currentValue = Number(context.currentValue) || handriveListItemScale;
+                    const normalizedDelta = Number(context.normalizedDelta) || Number(context.delta) || 0;
+                    return currentValue * Math.exp(-normalizedDelta * HANDRIVE_LIST_ITEM_SCALE_WHEEL_SENSITIVITY);
+                },
+                ignoreAlt: true,
+                getValue: function () {
+                    return handriveListItemScale;
+                },
+                setValue: function (value) {
+                    applyHandriveListItemScale(value);
+                },
+            });
         }
 
         function getSelectedEntries() {
@@ -7304,7 +8410,120 @@
                 scheduleEditorBodyHeight();
                 updateListColumnVisibility();
                 syncSearchFormVisibility();
+                scheduleGuestDemoTourPositionAfterLayoutChange();
             }, 10);
+        }
+
+        function getListMetaTextMeasureContext() {
+            if (!handriveListMetaTextMeasure.canvas) {
+                handriveListMetaTextMeasure.canvas = document.createElement("canvas");
+            }
+            if (!handriveListMetaTextMeasure.context) {
+                handriveListMetaTextMeasure.context = handriveListMetaTextMeasure.canvas.getContext("2d");
+            }
+            return handriveListMetaTextMeasure.context;
+        }
+
+        function clearListMetaTextMeasureCache() {
+            handriveListMetaTextMeasure.cache.clear();
+        }
+
+        function buildListMetaCanvasFont(style) {
+            const shorthand = String(style.font || "").trim();
+            if (shorthand) {
+                return shorthand;
+            }
+            return [
+                style.fontStyle || "normal",
+                style.fontVariant || "normal",
+                style.fontWeight || "400",
+                style.fontSize || "14px",
+                style.fontFamily || "sans-serif",
+            ].join(" ");
+        }
+
+        function normalizeListMetaMeasureText(text, style) {
+            const textValue = String(text || "");
+            const transform = String(style.textTransform || "").toLowerCase();
+            const locale = document.documentElement ? document.documentElement.lang || undefined : undefined;
+            if (transform === "uppercase") {
+                return textValue.toLocaleUpperCase(locale);
+            }
+            if (transform === "lowercase") {
+                return textValue.toLocaleLowerCase(locale);
+            }
+            if (transform === "capitalize") {
+                return textValue.replace(/(^|[\s-])(\S)/g, function (match, prefix, character) {
+                    return prefix + String(character || "").toLocaleUpperCase(locale);
+                });
+            }
+            return textValue;
+        }
+
+        function getListMetaLetterSpacing(style) {
+            const spacing = parseFloat(style.letterSpacing);
+            return Number.isFinite(spacing) ? spacing : 0;
+        }
+
+        function normalizeCanvasFontStretch(value) {
+            const fontStretch = String(value || "").trim().toLowerCase();
+            if (!fontStretch || fontStretch === "normal" || fontStretch === "100%") {
+                return "normal";
+            }
+            if (/^\d+(?:\.\d+)?%$/.test(fontStretch)) {
+                return "";
+            }
+            return fontStretch;
+        }
+
+        function measureListMetaTextWidth(text, style) {
+            const context = getListMetaTextMeasureContext();
+            if (!context) {
+                return 0;
+            }
+            const normalizedText = normalizeListMetaMeasureText(text, style);
+            if (!normalizedText) {
+                return 0;
+            }
+            const font = buildListMetaCanvasFont(style);
+            const letterSpacing = getListMetaLetterSpacing(style);
+            const cacheKey = [
+                font,
+                String(style.fontKerning || ""),
+                String(style.fontStretch || ""),
+                String(style.fontVariantCaps || ""),
+                String(style.textTransform || ""),
+                String(letterSpacing),
+                normalizedText,
+            ].join("\u0001");
+            const cachedWidth = handriveListMetaTextMeasure.cache.get(cacheKey);
+            if (cachedWidth !== undefined) {
+                return cachedWidth;
+            }
+            context.font = font;
+            try {
+                if ("fontKerning" in context) {
+                    context.fontKerning = style.fontKerning || "auto";
+                }
+                if ("fontStretch" in context) {
+                    const canvasFontStretch = normalizeCanvasFontStretch(style.fontStretch);
+                    if (canvasFontStretch) {
+                        context.fontStretch = canvasFontStretch;
+                    }
+                }
+                if ("fontVariantCaps" in context) {
+                    context.fontVariantCaps = style.fontVariantCaps || "normal";
+                }
+            } catch (_) {}
+            let width = context.measureText(normalizedText).width || 0;
+            if (letterSpacing !== 0) {
+                width += Math.max(0, Array.from(normalizedText).length - 1) * letterSpacing;
+            }
+            if (handriveListMetaTextMeasure.cache.size >= HANDRIVE_LIST_META_TEXT_MEASURE_CACHE_LIMIT) {
+                clearListMetaTextMeasureCache();
+            }
+            handriveListMetaTextMeasure.cache.set(cacheKey, width);
+            return width;
         }
 
         function updateListColumnVisibility() {
@@ -7335,16 +8554,33 @@
                 );
             };
 
+            const isVisibleCurrentDirMetaRow = function (row) {
+                return Boolean(
+                    row &&
+                    row.classList.contains("handrive-current-dir-row") &&
+                    !row.closest("[hidden]") &&
+                    row.offsetParent !== null &&
+                    row.getClientRects().length > 0
+                );
+            };
+
             const getRegularItemRows = function () {
                 return Array.from(listPane.querySelectorAll(".handrive-item-row")).filter(isVisibleMetaRow);
+            };
+
+            const getCurrentDirRowsForWidth = function () {
+                return Array.from(listPane.querySelectorAll(".handrive-current-dir-row")).filter(isVisibleCurrentDirMetaRow);
+            };
+
+            const getRowsForWidth = function () {
+                return getRegularItemRows().concat(getCurrentDirRowsForWidth());
             };
 
             const getColumnText = function (element) {
                 return String(element && element.textContent || "").trim();
             };
 
-            const hasRegularItemColumnText = function (column) {
-                const rows = getRegularItemRows();
+            const hasColumnText = function (rows, column) {
                 for (let index = 0; index < rows.length; index += 1) {
                     if (getColumnText(rows[index].querySelector(column.selector))) {
                         return true;
@@ -7353,24 +8589,17 @@
                 return false;
             };
 
+            const hasRegularItemColumnText = function (column) {
+                return hasColumnText(getRegularItemRows(), column);
+            };
+
+            const hasMeasuredColumnText = function (column) {
+                return hasColumnText(getRowsForWidth(), column);
+            };
+
             const syncSharedMetaColumnWidths = function () {
                 const maxWidthByVarName = {};
-                const rowsForWidth = getRegularItemRows();
-                const currentDirRow = listPane.querySelector(".handrive-current-dir-row");
-                const measureWrap = document.createElement("span");
-                measureWrap.setAttribute("aria-hidden", "true");
-                measureWrap.style.position = "fixed";
-                measureWrap.style.left = "-10000px";
-                measureWrap.style.top = "-10000px";
-                measureWrap.style.visibility = "hidden";
-                measureWrap.style.whiteSpace = "nowrap";
-                measureWrap.style.width = "auto";
-                measureWrap.style.minWidth = "0";
-                measureWrap.style.maxWidth = "none";
-                measureWrap.style.overflow = "visible";
-                measureWrap.style.textOverflow = "clip";
-                measureWrap.style.display = "inline-block";
-                document.body.appendChild(measureWrap);
+                const rowsForWidth = getRowsForWidth();
 
                 const measureElementTextWidth = function (element) {
                     const text = getColumnText(element);
@@ -7378,30 +8607,28 @@
                         return 0;
                     }
                     const style = window.getComputedStyle(element);
-                    measureWrap.style.fontFamily = style.fontFamily;
-                    measureWrap.style.fontSize = style.fontSize;
-                    measureWrap.style.fontStyle = style.fontStyle;
-                    measureWrap.style.fontWeight = style.fontWeight;
-                    measureWrap.style.fontVariant = style.fontVariant;
-                    measureWrap.style.letterSpacing = style.letterSpacing;
-                    measureWrap.style.textTransform = style.textTransform;
-                    measureWrap.textContent = text;
-                    return Math.ceil(measureWrap.getBoundingClientRect().width || 0);
+                    let adornmentWidth = 0;
+                    element.querySelectorAll(".handrive-sort-direction-mark").forEach(function (marker) {
+                        const markerStyle = window.getComputedStyle(marker);
+                        if (markerStyle.display === "none" || markerStyle.visibility === "hidden") {
+                            return;
+                        }
+                        const markerRect = marker.getBoundingClientRect();
+                        const borderWidth = (parseFloat(markerStyle.borderLeftWidth) || 0) + (parseFloat(markerStyle.borderRightWidth) || 0);
+                        const marginWidth = (parseFloat(markerStyle.marginLeft) || 0) + (parseFloat(markerStyle.marginRight) || 0);
+                        adornmentWidth += Math.max(markerRect.width || 0, borderWidth) + marginWidth;
+                    });
+                    return Math.ceil(measureListMetaTextWidth(text, style) + adornmentWidth);
                 };
 
                 metaColumnMap.forEach(function (column) {
                     maxWidthByVarName[column.cssVarName] = 0;
-                    const hasItemText = hasRegularItemColumnText(column);
-                    if (!hasItemText) {
+                    if (!hasMeasuredColumnText(column)) {
                         return;
                     }
                     const elements = rowsForWidth
                         .map(function (row) { return row.querySelector(column.selector); })
                         .filter(Boolean);
-                    const headerElement = currentDirRow ? currentDirRow.querySelector(column.selector) : null;
-                    if (headerElement) {
-                        elements.push(headerElement);
-                    }
                     elements.forEach(function (element) {
                         const measuredWidth = measureElementTextWidth(element);
                         if (measuredWidth > maxWidthByVarName[column.cssVarName]) {
@@ -7409,8 +8636,6 @@
                         }
                     });
                 });
-
-                measureWrap.remove();
 
                 Object.keys(maxWidthByVarName).forEach(function (cssVarName) {
                     const measuredWidth = maxWidthByVarName[cssVarName];
@@ -9300,6 +10525,7 @@
             }
             scheduleEditorBodyHeight();
             syncSearchFormVisibility();
+            scheduleGuestDemoTourPositionAfterLayoutChange();
         }
 
         function scrollPreviewIntoViewIfPortrait() {
@@ -10279,9 +11505,7 @@
             if (editorSaveButton) editorSaveButton.disabled = true;
             setListEditorSaving(true);
             try {
-                if (!window.HandriveSpreadsheetEditor) {
-                    throw new Error(t("spreadsheet_editor_load_error", "스프레드시트 에디터를 불러오지 못했습니다."));
-                }
+                await loadSpreadsheetEditorStack();
                 await window.HandriveSpreadsheetEditor.init({
                     surface: spreadsheetEditorSurface,
                     entry: entry,
@@ -10307,6 +11531,7 @@
         }
 
         function switchToPreview() {
+            guestDemoEditTransitionUntil = 0;
             setListEditorBodyLoading(false);
             // 이미지 에디터 정리
             if (imageEditorSurface && !imageEditorSurface.hidden) {
@@ -10351,6 +11576,9 @@
             activeListEditorEntry = null;
             syncListEditorPreviewButtonVisibility();
             setListEditorPreviewModalOpen(false);
+            if (isTutorialMode) {
+                window.setTimeout(scheduleGuestDemoTourPositionAfterLayoutChange, 0);
+            }
         }
 
         function buildListEditorTargetPath(targetDir, filenameValue, extensionValue) {
@@ -10449,6 +11677,9 @@
                 })
                 .then(function () {
                     applyPreviewFloatingFrame(editorFloatingFrame);
+                    if (isTutorialMode) {
+                        scheduleGuestDemoTourPositionAfterLayoutChange();
+                    }
                 })
                 .catch(alertError);
         }
@@ -10497,12 +11728,17 @@
                     updateListEditorSuggestion();
                 });
                 editorContentInput.addEventListener("scroll", syncListEditorHighlightScroll, { passive: true });
-                editorContentInput.addEventListener("wheel", function (event) {
-                    if (!event.ctrlKey && !event.metaKey) return;
-                    event.preventDefault();
-                    const delta = event.deltaY < 0 ? 2 : -2;
-                    applyListEditorFontSize(listEditorFontSize + delta);
-                }, { passive: false });
+                bindHanplanetZoomGesture(editorContentInput, {
+                    min: 8,
+                    max: 40,
+                    wheelStep: 2,
+                    getValue: function () {
+                        return listEditorFontSize;
+                    },
+                    setValue: function (value) {
+                        applyListEditorFontSize(value);
+                    },
+                });
                 editorContentInput.addEventListener("click", function () {
                     clearListEditorSuggestion();
                 });
@@ -10721,7 +11957,7 @@
                         }
                         setListEditorSaving(true);
                         return window.HandriveSpreadsheetEditor.saveToServer({
-                            saveUrl: spreadsheetSaveApiUrl,
+                            saveUrl: appendSharedQuery(spreadsheetSaveApiUrl),
                             csrfToken: csrfToken,
                             originalPath: sourcePath,
                             targetDir: saveTarget.targetDir,
@@ -10771,7 +12007,7 @@
                         setButtonActionLabel(editorSaveButton, savingText);
                         setListEditorSaving(true);
                         window.HandrivePdfEditor.saveToServer(
-                            pdfEditorSaveUrl,
+                            appendSharedQuery(pdfEditorSaveUrl),
                             csrfToken,
                             entry.path,
                             function (result) {
@@ -10818,7 +12054,7 @@
                         setButtonActionLabel(editorSaveButton, savingText);
                         setListEditorSaving(true);
                         window.HandriveImageEditor.saveToServer(
-                            imageEditorSaveUrl,
+                            appendSharedQuery(imageEditorSaveUrl),
                             csrfToken,
                             entry.path,
                             function (result) {
@@ -10864,7 +12100,7 @@
                         setButtonActionLabel(editorSaveButton, savingText);
                         setListEditorSaving(true);
                         window.HandriveVideoEditor.saveToServer(
-                            videoEditorSaveUrl,
+                            appendSharedQuery(videoEditorSaveUrl),
                             csrfToken,
                             entry.path,
                             function (result) {
@@ -10910,7 +12146,7 @@
                         setButtonActionLabel(editorSaveButton, savingText);
                         setListEditorSaving(true);
                         window.HandriveAudioEditor.saveToServer(
-                            audioEditorSaveUrl,
+                            appendSharedQuery(audioEditorSaveUrl),
                             csrfToken,
                             entry.path,
                             function (result) {
@@ -11060,7 +12296,7 @@
                 }
                 setListEditorSaving(true);
                 editorSavingShown = true;
-                const data = await requestJson(saveApiUrl, buildPostOptions(payload));
+                const data = await requestJson(appendSharedQuery(saveApiUrl), buildPostOptions(payload));
                 listMarkdownUploadedImagePaths = [];
 
                 // 저장 후에는 취소 버튼 동작처럼 편집기를 닫고, 해당 파일 미리보기를 다시 연다.
@@ -11119,7 +12355,7 @@
             const imagePaths = Array.from(new Set(listMarkdownUploadedImagePaths));
             listMarkdownUploadedImagePaths = [];
             await requestJson(
-                markdownImageCleanupApiUrl,
+                appendSharedQuery(markdownImageCleanupApiUrl),
                 buildPostOptions({
                     markdown_path: sourcePath,
                     target_dir: targetDir,
@@ -11307,6 +12543,9 @@
             setListPreviewFontSize(16, { skipPersist: true });
             syncPreviewImageZoom();
             void updatePreviewNavButtons(null);
+            if (isTutorialMode) {
+                window.setTimeout(scheduleGuestDemoTourPositionAfterLayoutChange, 0);
+            }
         }
 
         function closePreviewPaneIfOpen() {
@@ -11435,9 +12674,7 @@
                 t: t,
             });
             restorePreviewZoomForEntry(entry, renderMode);
-            if (window.HandriveSpreadsheetEditor && typeof window.HandriveSpreadsheetEditor.hydratePreviews === "function") {
-                window.HandriveSpreadsheetEditor.hydratePreviews(previewContent);
-            }
+            hydrateSpreadsheetPreviews(previewContent).catch(alertError);
             renderHandriveMermaidDiagrams(previewContent)
                 .then(scheduleSyncCurrentDirRowHeightWithSideHead)
                 .catch(alertError);
@@ -11620,7 +12857,7 @@
             renderPathBreadcrumbs(state.selectedPath || state.currentDir);
             syncEntryRowSelectedStates(previousSelectedPaths.concat([previousSelectedPath]));
             updatePathCurrentSize();
-            if (!settings.skipPreview) {
+            if (settings.openPreview && !settings.skipPreview) {
                 syncPreviewFromSelection();
             }
         }
@@ -11703,6 +12940,7 @@
             applySelection([entryPath], {
                 primaryPath: entryPath,
                 anchorPath: entryPath,
+                openPreview: true,
             });
         }
 
@@ -11725,6 +12963,7 @@
                 return;
             }
 
+            contextMenu.classList.toggle("is-guest-demo-context-menu", isTutorialMode);
             contextMenu.hidden = false;
             contextMenu.style.left = "0px";
             contextMenu.style.top = "0px";
@@ -11753,18 +12992,18 @@
             const normalizedPath = normalizePath(pathValue, true);
             const archiveCrumbs = buildArchiveBreadcrumbItems(normalizedPath);
             if (archiveCrumbs) {
-                return applyVirtualBreadcrumbLabels(archiveCrumbs);
+                return applyVirtualBreadcrumbLabels(archiveCrumbs, normalizedPath);
             }
             const sharedCrumbs = buildSharedBreadcrumbItemsForPath(normalizedPath);
             if (sharedCrumbs) {
-                return applyVirtualBreadcrumbLabels(sharedCrumbs);
+                return applyVirtualBreadcrumbLabels(sharedCrumbs, normalizedPath);
             }
             return applyVirtualBreadcrumbLabels(buildNavigationBreadcrumbItems(pathValue, {
                 effectiveRootLabel: effectiveRootLabel,
                 isSuperuser: isSuperuser,
                 normalizePath: normalizePath,
                 scopedHomeDir: scopedHomeDir,
-            }));
+            }), normalizedPath);
         }
 
         function renderPathBreadcrumbs(pathValue) {
@@ -11913,9 +13152,16 @@
         function updateDirectoryHistory(dirPath, mode) {
             const historyMode = mode || "push";
             const normalizedDirPath = normalizePath(dirPath, true);
-            const targetUrl = (hasSharedContext() && sharedRootPath && normalizedDirPath === sharedRootPath)
+            let targetUrl = (hasSharedContext() && sharedRootPath && normalizedDirPath === sharedRootPath)
                 ? handriveRootUrl
                 : buildListUrl(handriveBaseUrl, normalizedDirPath, handriveRootUrl);
+            if (isTutorialMode) {
+                const tutorialParams = { tutorial: "1" };
+                if (initialTutorialStepValue) {
+                    tutorialParams.tutorial_step = initialTutorialStepValue;
+                }
+                targetUrl = appendQueryParams(targetUrl, tutorialParams);
+            }
             const historyState = {
                 handriveListDir: normalizedDirPath,
             };
@@ -12534,6 +13780,9 @@
                         onActivate: function (nextItem) {
                             openUploadQueueItemPreview(nextItem).catch(alertError);
                         },
+                        onOpen: function (nextItem) {
+                            openUploadQueueItem(nextItem).catch(alertError);
+                        },
                         onOpenContextMenu: function (nextItem, x, y) {
                             openUploadQueueContextMenu(nextItem, x, y).catch(alertError);
                         },
@@ -12552,6 +13801,35 @@
                 uploadQueueSummary: uploadQueueSummary,
                 uploadQueueToggleButton: uploadQueueToggleButton,
             });
+        }
+
+        function syncUploadQueueCollapsedUi(collapsed) {
+            const isCollapsed = Boolean(collapsed);
+            if (uploadQueuePanel) {
+                uploadQueuePanel.classList.toggle("is-collapsed", isCollapsed);
+            }
+            if (uploadQueueList) {
+                uploadQueueList.hidden = isCollapsed;
+            }
+            if (uploadQueueToggleButton) {
+                const toggleLabel = isCollapsed
+                    ? t("expand", "펼치기")
+                    : t("collapse", "접기");
+                uploadQueueToggleButton.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+                uploadQueueToggleButton.setAttribute("aria-label", toggleLabel);
+                uploadQueueToggleButton.setAttribute("title", toggleLabel);
+            }
+        }
+
+        function toggleTutorialUploadQueuePreviewCollapse() {
+            if (!uploadQueuePanel || !uploadQueuePanel.classList.contains("is-tutorial-preview")) {
+                return false;
+            }
+            state.uploadQueueCollapsed = !state.uploadQueueCollapsed;
+            uploadQueuePanel.hidden = false;
+            syncUploadQueueCollapsedUi(state.uploadQueueCollapsed);
+            scheduleGuestDemoTourPositionAfterLayoutChange();
+            return true;
         }
 
         function removeUploadQueueItem(itemId) {
@@ -12735,6 +14013,15 @@
             await updatePreviewNavButtons(previewEntry);
         }
 
+        async function openUploadQueueItem(item) {
+            closeContextMenu();
+            const entry = await resolveUploadQueuePreviewEntry(item);
+            if (!isPreviewableFileEntry(entry)) {
+                return;
+            }
+            openEntry(entry);
+        }
+
         async function openQueueItemLocation(item, entry) {
             const targetPath = normalizePath(
                 (entry && entry.path) || getUploadQueueItemTargetPath(item),
@@ -12759,6 +14046,7 @@
         }
 
         function positionContextMenuAt(x, y) {
+            contextMenu.classList.toggle("is-guest-demo-context-menu", isTutorialMode);
             contextMenu.hidden = false;
             contextMenu.style.left = "0px";
             contextMenu.style.top = "0px";
@@ -12991,7 +14279,7 @@
             await runDeleteQueueOperation(item, {
                 applySelection: applySelection,
                 buildPostOptions: buildPostOptions,
-                deleteApiUrl: deleteApiUrl,
+                deleteApiUrl: appendSharedQuery(deleteApiUrl),
                 onEntryDeleted: removeSyncExcludedStateForDelete,
                 queueNeedsRefresh: queueNeedsRefresh,
                 removeExpandedFoldersByDeletedPaths: removeExpandedFoldersByDeletedPaths,
@@ -13004,7 +14292,7 @@
         async function runCreateArchiveOperationQueueItem(item) {
             await runCreateArchiveQueueOperation(item, {
                 applySelection: applySelection,
-                archiveCreateApiUrl: archiveCreateApiUrl,
+                archiveCreateApiUrl: appendSharedQuery(archiveCreateApiUrl),
                 buildPostOptions: buildPostOptions,
                 queueNeedsRefresh: queueNeedsRefresh,
                 renderUploadQueue: renderUploadQueue,
@@ -13018,7 +14306,7 @@
             await runMoveQueueOperation(item, {
                 applySelection: applySelection,
                 buildPostOptions: buildPostOptions,
-                moveApiUrl: moveApiUrl,
+                moveApiUrl: appendSharedQuery(moveApiUrl),
                 onEntryMoved: remapSyncExcludedStateForMove,
                 queueNeedsRefresh: queueNeedsRefresh,
                 renderUploadQueue: renderUploadQueue,
@@ -13030,7 +14318,7 @@
         async function runExtractOperationQueueItem(item) {
             await runExtractQueueOperation(item, {
                 applySelection: applySelection,
-                archiveExtractApiUrl: archiveExtractApiUrl,
+                archiveExtractApiUrl: appendSharedQuery(archiveExtractApiUrl),
                 buildPostOptions: buildPostOptions,
                 queueNeedsRefresh: queueNeedsRefresh,
                 renderUploadQueue: renderUploadQueue,
@@ -13119,7 +14407,7 @@
                 renderUploadQueue: renderUploadQueue,
                 requiresCommitMessageForDirectory: requiresCommitMessageForDirectory,
                 state: state,
-                uploadApiUrl: uploadApiUrl,
+                uploadApiUrl: appendSharedQuery(uploadApiUrl),
             });
         }
 
@@ -13745,9 +15033,12 @@
         function getCurrentFolderName(pathValue) {
             const currentMeta = getCurrentDirMeta();
             const normalized = normalizePath(pathValue, true);
+            const metaPath = normalizePath(currentMeta && currentMeta.path ? currentMeta.path : state.currentDir, true);
+            if (currentMeta && currentMeta.display_label && normalized === metaPath) {
+                return String(currentMeta.display_label || "").trim();
+            }
             if (currentMeta && currentMeta.is_archive_virtual && currentMeta.archive_path) {
                 const archiveRootPath = getArchiveVirtualRootPath(currentMeta);
-                const metaPath = normalizePath(currentMeta.path || state.currentDir, true);
                 const isArchiveDisplayPath = normalized === archiveRootPath ||
                     normalized === metaPath ||
                     (archiveRootPath && normalized.startsWith(archiveRootPath + "/")) ||
@@ -13810,6 +15101,12 @@
             const rawMeta = incomingMeta || {};
             const normalizedPath = normalizePath(rawMeta.path !== undefined ? rawMeta.path : fallbackPath, true);
             const nextMeta = Object.assign({}, baseMeta || {}, rawMeta, { path: normalizedPath });
+            if (
+                rawMeta.display_label === undefined &&
+                normalizePath(baseMeta && baseMeta.path ? baseMeta.path : "", true) !== normalizedPath
+            ) {
+                nextMeta.display_label = "";
+            }
             if (rawMeta.is_archive_virtual === undefined && rawMeta.archive_path === undefined && rawMeta.archive_member_path === undefined) {
                 nextMeta.is_archive_virtual = false;
                 nextMeta.archive_path = "";
@@ -13853,7 +15150,9 @@
                 !meta.requires_commit_message &&
                 !meta.git_branch_root &&
                 !meta.git_repo &&
-                meta.can_edit
+                meta.can_edit &&
+                meta.can_delete !== false &&
+                meta.can_rename !== false
             );
         }
 
@@ -13862,15 +15161,17 @@
             const normalizedPath = normalizePath(nextMeta.path, true);
             state.currentDir = normalizedPath;
             state.currentDirMeta = nextMeta;
-            if (shouldPreserveDemoAllListOrder(normalizedPath) && !state.listSortWasUserApplied) {
+            if (shouldPreserveGuestDemoListOrder(normalizedPath) && !state.listSortWasUserApplied) {
                 state.listSortKey = "";
                 state.listSortDirection = "asc";
             }
             state.directoryMetaCache.set(normalizedPath, nextMeta);
             registerGithubRepoLabelFromMeta(nextMeta);
             root.dataset.currentDir = normalizedPath;
+            root.dataset.currentDirDisplayLabel = nextMeta.display_label || "";
             root.dataset.currentDirIsRoot = nextMeta.is_root ? "1" : "0";
             root.dataset.currentDirCanEdit = nextMeta.can_edit ? "1" : "0";
+            root.dataset.currentDirCanDelete = nextMeta.can_delete === false ? "0" : "1";
             root.dataset.currentDirCanWriteChildren = nextMeta.can_write_children ? "1" : "0";
             root.dataset.currentDirHasChildren = nextMeta.has_children ? "1" : "0";
             root.dataset.currentDirIsGitRepoRoot = nextMeta.is_git_repo_root ? "1" : "0";
@@ -13886,6 +15187,8 @@
             root.dataset.currentDirShareUrl = nextMeta.share_url || "";
             root.dataset.currentDirShareDownloadUrl = nextMeta.share_download_url || "";
             root.dataset.currentDirShareIsInherited = nextMeta.share_is_inherited ? "1" : "0";
+            root.dataset.currentDirShareCanEdit = nextMeta.share_can_edit ? "1" : "0";
+            root.dataset.currentDirShareCanManage = nextMeta.share_can_manage === false ? "0" : "1";
             root.dataset.currentDirIsArchiveVirtual = nextMeta.is_archive_virtual ? "1" : "0";
             root.dataset.currentDirArchivePath = nextMeta.archive_path || "";
             root.dataset.currentDirArchiveMemberPath = nextMeta.archive_member_path || "";
@@ -13899,14 +15202,16 @@
 
         function buildCurrentDirectoryEntry() {
             const currentDirMeta = getCurrentDirMeta();
+            const treatCurrentDirAsRoot = Boolean(currentDirMeta.is_root || isTutorialMode);
             return {
                 path: state.currentDir,
                 type: "dir",
                 isCurrentFolder: true,
-                is_root: Boolean(currentDirMeta.is_root),
+                is_root: treatCurrentDirAsRoot,
                 can_edit: Boolean(currentDirMeta.can_edit),
+                can_rename: !treatCurrentDirAsRoot && currentDirMeta.can_rename !== false,
                 can_write_children: Boolean(currentDirMeta.can_write_children),
-                can_delete: Boolean(
+                can_delete: !treatCurrentDirAsRoot && Boolean(
                     canDeleteCurrentDirectoryMeta(currentDirMeta) ||
                     (currentDirMeta.git_repo && currentDirMeta.is_git_repo_root) ||
                     (currentDirMeta.is_google_drive && currentDirMeta.can_delete)
@@ -13932,7 +15237,10 @@
                 share_url: currentDirMeta.share_url || "",
                 share_download_url: currentDirMeta.share_download_url || "",
                 share_is_inherited: Boolean(currentDirMeta.share_is_inherited),
+                share_can_edit: Boolean(currentDirMeta.share_can_edit),
+                share_can_manage: currentDirMeta.share_can_manage !== false,
                 share_allowed_users: Array.isArray(currentDirMeta.share_allowed_users) ? currentDirMeta.share_allowed_users : [],
+                name: getCurrentFolderName(state.currentDir),
                 modified_display: currentDirMeta.modified_display || "",
                 size_display: currentDirMeta.size_display || "",
             };
@@ -13944,6 +15252,7 @@
             if (
                 !currentDirMeta ||
                 !currentPath ||
+                isTutorialMode ||
                 currentDirMeta.is_root ||
                 currentDirMeta.is_archive_virtual ||
                 currentDirMeta.is_google_drive ||
@@ -13965,6 +15274,7 @@
                 isCurrentFolder: true,
                 can_read: true,
                 can_edit: true,
+                can_rename: currentDirMeta.can_rename !== false,
                 can_delete: true,
                 can_write_children: Boolean(currentDirMeta.can_write_children),
                 is_public_write: false,
@@ -13972,6 +15282,8 @@
                 share_url: currentDirMeta.share_url || "",
                 share_download_url: currentDirMeta.share_download_url || "",
                 share_is_inherited: Boolean(currentDirMeta.share_is_inherited),
+                share_can_edit: Boolean(currentDirMeta.share_can_edit),
+                share_can_manage: currentDirMeta.share_can_manage !== false,
                 share_allowed_users: Array.isArray(currentDirMeta.share_allowed_users) ? currentDirMeta.share_allowed_users : [],
                 modified_display: currentDirMeta.modified_display || "",
                 size_display: currentDirMeta.size_display || "",
@@ -13993,12 +15305,15 @@
                 type: "file",
                 can_read: true,
                 can_edit: Boolean(currentDirMeta.archive_can_edit),
+                can_rename: Boolean(currentDirMeta.archive_can_edit),
                 can_delete: Boolean(currentDirMeta.archive_can_delete),
                 is_public_write: false,
                 is_url_only: Boolean(currentDirMeta.is_url_only),
                 share_url: currentDirMeta.share_url || "",
                 share_download_url: currentDirMeta.share_download_url || "",
                 share_is_inherited: Boolean(currentDirMeta.share_is_inherited),
+                share_can_edit: Boolean(currentDirMeta.share_can_edit),
+                share_can_manage: currentDirMeta.share_can_manage !== false,
                 share_allowed_users: Array.isArray(currentDirMeta.share_allowed_users) ? currentDirMeta.share_allowed_users : [],
                 modified_display: currentDirMeta.modified_display || "",
                 size_display: currentDirMeta.size_display || "",
@@ -14054,7 +15369,7 @@
             if (!confirmed) {
                 return;
             }
-            await requestJson(deleteApiUrl, buildPostOptions({ path: currentDirEntry.path }));
+            await requestJson(appendSharedQuery(deleteApiUrl), buildPostOptions({ path: currentDirEntry.path }));
             state.directoryCache.delete(state.currentDir);
             state.directoryMetaCache.delete(state.currentDir);
             await navigateToDirectory(getParentDirectory(currentDirEntry.path), { historyMode: "replace" });
@@ -14077,7 +15392,7 @@
             if (!confirmed) {
                 return;
             }
-            await requestJson(deleteApiUrl, buildPostOptions({ path: archiveEntry.path }));
+            await requestJson(appendSharedQuery(deleteApiUrl), buildPostOptions({ path: archiveEntry.path }));
             state.directoryCache.delete(state.currentDir);
             state.directoryMetaCache.delete(state.currentDir);
             await navigateToDirectory(getParentDirectory(archiveEntry.path), { historyMode: "replace" });
@@ -14178,21 +15493,28 @@
             if (!entry || !entry.path) {
                 return;
             }
-            const canToggleShare = Boolean(entry.can_edit && urlShareApiUrl && !entry.share_is_inherited);
+            const canToggleShare = Boolean(
+                entry.can_edit &&
+                urlShareApiUrl &&
+                !entry.share_is_inherited &&
+                entry.share_can_manage !== false
+            );
             const shouldShowDownloadUrl = isSimpleUrlShareFileEntry(entry);
             urlShareModal.open({
                 isUrlOnly: Boolean(entry.is_url_only || entry.share_url || entry.share_is_inherited),
                 shareUrl: entry.share_url || "",
                 downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(entry.share_download_url || "") : "",
                 allowedUsers: entry.share_allowed_users || [],
+                canEdit: Boolean(entry.share_can_edit),
                 readOnly: !canToggleShare,
-                onToggle: canToggleShare ? async function (enabled, allowedUsernames) {
+                onToggle: canToggleShare ? async function (enabled, allowedUsernames, editEnabled) {
                     const data = await requestJson(
                         appendSharedQuery(urlShareApiUrl),
                         buildPostOptions({
                             path: entry.path,
                             enabled: enabled,
                             allowed_usernames: allowedUsernames || [],
+                            can_edit: Boolean(editEnabled),
                         })
                     );
                     await refreshCurrentDirectory();
@@ -14201,6 +15523,7 @@
                         shareUrl: data.share_url || "",
                         downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(data.share_download_url || "") : "",
                         allowedUsers: data.share_allowed_users || [],
+                        canEdit: Boolean(data.share_can_edit),
                     };
                 } : null,
             });
@@ -14620,7 +15943,7 @@
 
             const name = document.createElement("span");
             name.className = "handrive-item-name";
-            name.textContent = getCurrentFolderName(state.currentDir);
+            name.textContent = currentFolderEntry.name;
 
             const nameWrap = document.createElement("span");
             nameWrap.className = "handrive-item-name-wrap";
@@ -14943,7 +16266,7 @@
 
             const name = document.createElement("span");
             name.className = "handrive-item-name";
-            name.textContent = getCurrentFolderName(state.currentDir);
+            name.textContent = currentFolderEntry.name;
 
             row.appendChild(typeMarker);
             row.appendChild(nameWrap);
@@ -15114,6 +16437,7 @@
             if (!opened) {
                 modalSetRenameModalOpen(renameModal, renameTarget, renameInput, syncModalBodyState, false, null, getEntryEditableName);
                 state.renameTargetEntry = null;
+                scheduleGuestDemoTourForRenameModalChange(false);
                 return;
             }
             state.renameTargetEntry = entry || null;
@@ -15127,6 +16451,7 @@
                 getEntryEditableName,
                 getHandrivePathLabel(entry && entry.path ? entry.path : "")
             );
+            scheduleGuestDemoTourForRenameModalChange(true);
         }
 
         function setArchiveExtractModalOpen(opened, entry) {
@@ -15202,7 +16527,7 @@
                 : getParentDirectory(sourcePath);
             const targetDir = resolveArchiveExtractTargetDir(entry, rawTargetDir);
             const data = await requestJson(
-                archiveExtractApiUrl,
+                appendSharedQuery(archiveExtractApiUrl),
                 buildPostOptions({
                     source_path: sourcePath,
                     target_dir: targetDir,
@@ -15300,6 +16625,35 @@
             syncFolderIconFileName();
         }
 
+        function getCurrentTutorialListReturnUrl(stepIndex) {
+            const normalizedStep = Math.max(0, Math.floor(Number(stepIndex) || 0));
+            return appendQueryParams(window.location.pathname + window.location.search, {
+                tutorial: "1",
+                tutorial_step: String(normalizedStep),
+            });
+        }
+
+        function appendTutorialSourceQuery(urlValue, stepIndex) {
+            if (!isTutorialMode) {
+                return urlValue;
+            }
+            return appendQueryParams(urlValue, {
+                tutorial: "1",
+                from_list: getCurrentTutorialListReturnUrl(stepIndex),
+            });
+        }
+
+        function getCurrentTutorialNavigationStepIndex() {
+            if (
+                isTutorialMode &&
+                guestDemoTourActiveStep &&
+                guestDemoTourActiveStep.id === "create_open_action"
+            ) {
+                return Number(guestDemoTourActiveIndex) + 1;
+            }
+            return Number(guestDemoTourActiveIndex) || 0;
+        }
+
         function renameEntry(entry) {
             if (!entry) {
                 return;
@@ -15311,7 +16665,10 @@
             if (!entry || entry.type !== "dir") {
                 return;
             }
-            window.location.href = buildWriteUrl(writeUrl, { dir: entry.path });
+            window.location.href = appendSharedQuery(appendTutorialSourceQuery(
+                buildWriteUrl(writeUrl, { dir: entry.path }),
+                getCurrentTutorialNavigationStepIndex()
+            ));
         }
 
         async function submitRename() {
@@ -15335,7 +16692,7 @@
                 }
             }
 
-            const data = await requestJson(renameApiUrl, buildPostOptions({
+            const data = await requestJson(appendSharedQuery(renameApiUrl), buildPostOptions({
                 path: entry.path,
                 new_name: trimmed,
                 commit_message: commitMessage
@@ -15378,7 +16735,7 @@
             }
 
             await requestJson(
-                mkdirApiUrl,
+                appendSharedQuery(mkdirApiUrl),
                 buildPostOptions({
                     parent_dir: parentEntry.path,
                     folder_name: folderName,
@@ -15571,7 +16928,11 @@
                 window.location.href = docsEditorUrl;
                 return;
             }
-            window.location.href = buildViewUrl(handriveBaseUrl, entry.slug_path || entry.path);
+            let targetUrl = buildViewUrl(handriveBaseUrl, entry.slug_path || entry.path);
+            if (isTutorialMode) {
+                targetUrl = appendTutorialSourceQuery(targetUrl, Number(guestDemoTourActiveIndex) || 0);
+            }
+            window.location.href = targetUrl;
         }
 
         function openEntriesInNewTabs(entries) {
@@ -15649,7 +17010,10 @@
                 return;
             }
             if (entry.type === "dir") {
-                window.location.href = buildWriteUrl(writeUrl, { dir: entry.path });
+                window.location.href = appendSharedQuery(appendTutorialSourceQuery(
+                    buildWriteUrl(writeUrl, { dir: entry.path }),
+                    Number(guestDemoTourActiveIndex) || 0
+                ));
                 return;
             }
             const docsEditorUrl = getGoogleDriveDocsEditorUrl(entry);
@@ -15740,7 +17104,270 @@
             }
         }
 
-        function addEntryNode(entry, fragment, ancestorHasNextSiblings, isLastSibling) {
+        function getVirtualListScrollContainer() {
+            return listItemsContainer || null;
+        }
+
+        function getEstimatedVirtualListRowHeight() {
+            const measuredHeight = Number(state.virtualListRowHeight);
+            if (Number.isFinite(measuredHeight) && measuredHeight > 0) {
+                return measuredHeight;
+            }
+            return Math.max(30, Math.round(HANDRIVE_LIST_VIRTUAL_ROW_BASE_HEIGHT * (handriveListItemScale || 1)));
+        }
+
+        function shouldVirtualizeListRecords(records) {
+            return Boolean(
+                listItemsContainer &&
+                Array.isArray(records) &&
+                records.length >= HANDRIVE_LIST_VIRTUAL_SCROLL_MIN_ITEMS
+            );
+        }
+
+        function createVirtualListSpacer(height) {
+            const spacer = document.createElement("li");
+            spacer.className = "handrive-item handrive-virtual-spacer";
+            spacer.setAttribute("aria-hidden", "true");
+            spacer.style.height = String(Math.max(0, Math.round(height))) + "px";
+            return spacer;
+        }
+
+        function resetRenderedEntryRowsForListItems() {
+            const nextRows = new Map();
+            const currentDirPath = normalizePath(state.currentDir || "", true);
+            const currentDirRow = state.entryRowByPath.get(currentDirPath);
+            if (currentDirRow) {
+                nextRows.set(currentDirPath, currentDirRow);
+            }
+            state.entryRowByPath = nextRows;
+        }
+
+        function beginVirtualListMetaMutationIgnore() {
+            state.virtualListMetaMutationIgnoreActive = true;
+            state.virtualListMetaMutationIgnoreToken += 1;
+            const token = state.virtualListMetaMutationIgnoreToken;
+            window.requestAnimationFrame(function () {
+                if (state.virtualListMetaMutationIgnoreToken === token) {
+                    state.virtualListMetaMutationIgnoreActive = false;
+                }
+            });
+        }
+
+        function isMutationInsideVirtualList(mutation) {
+            if (!listItemsContainer || !mutation) {
+                return false;
+            }
+            const target = mutation.target;
+            const targetElement = target instanceof Element
+                ? target
+                : (target && target.parentElement ? target.parentElement : null);
+            return Boolean(
+                targetElement &&
+                (targetElement === listItemsContainer || listItemsContainer.contains(targetElement))
+            );
+        }
+
+        function shouldIgnoreVirtualListMetaMutations(mutations) {
+            if (
+                !state.virtualListActive ||
+                !state.virtualListMetaMutationIgnoreActive ||
+                !Array.isArray(mutations)
+            ) {
+                return false;
+            }
+            return mutations.length > 0 && mutations.every(isMutationInsideVirtualList);
+        }
+
+        function clearVirtualListState() {
+            state.virtualListRecords = [];
+            state.virtualListActive = false;
+            state.virtualListStartIndex = 0;
+            state.virtualListEndIndex = 0;
+            state.virtualListMetaMutationIgnoreActive = false;
+            if (state.virtualListRenderFrame) {
+                window.cancelAnimationFrame(state.virtualListRenderFrame);
+                state.virtualListRenderFrame = 0;
+            }
+            const container = getListItemsRenderContainer();
+            if (container && container.classList) {
+                container.classList.remove("is-virtualized");
+            }
+        }
+
+        function measureRenderedVirtualListRowHeight() {
+            if (!state.virtualListActive || !listItemsContainer) {
+                return;
+            }
+            const row = listItemsContainer.querySelector(".handrive-item:not(.handrive-virtual-spacer) > .handrive-item-row");
+            if (!row) {
+                return;
+            }
+            const item = row.closest(".handrive-item");
+            const rect = item ? item.getBoundingClientRect() : row.getBoundingClientRect();
+            const nextHeight = Math.max(1, Math.round(rect.height || row.getBoundingClientRect().height || 0));
+            if (!Number.isFinite(nextHeight) || nextHeight <= 0) {
+                return;
+            }
+            const previousHeight = Number(state.virtualListRowHeight) || 0;
+            if (Math.abs(nextHeight - previousHeight) < 1) {
+                return;
+            }
+            state.virtualListRowHeight = nextHeight;
+            scheduleVirtualListWindowRender({ force: true });
+        }
+
+        function collectEntryRenderRecord(entry, records, ancestorHasNextSiblings, isLastSibling, options) {
+            if (!entry || !Array.isArray(records)) {
+                return;
+            }
+            const settings = options || {};
+            const ancestors = Array.isArray(ancestorHasNextSiblings) ? ancestorHasNextSiblings.slice() : [];
+            state.entryByPath.set(entry.path, entry);
+            state.visibleEntryPaths.push(entry.path);
+            records.push({
+                entry: entry,
+                ancestorHasNextSiblings: ancestors,
+                isLastSibling: Boolean(isLastSibling),
+            });
+            if (settings.recurse === false) {
+                return;
+            }
+            const expandsAsArchive = isArchiveEntry(entry) && state.expandedFolders.has(entry.path);
+            const expandsAsDirectory = entry.type === "dir" && state.expandedFolders.has(entry.path);
+            if (!expandsAsArchive && !expandsAsDirectory) {
+                return;
+            }
+            const childEntries = getSortedEntriesForRender(getCachedEntries(expandsAsArchive ? entry.archive_virtual_path : entry.path));
+            const nextAncestorHasNextSiblings = ancestors.slice();
+            nextAncestorHasNextSiblings.push(!isLastSibling);
+            childEntries.forEach(function (child, index) {
+                collectEntryRenderRecord(
+                    child,
+                    records,
+                    nextAncestorHasNextSiblings,
+                    index === childEntries.length - 1,
+                    settings
+                );
+            });
+        }
+
+        function collectSearchResultRenderRecords(records, entries) {
+            entries.forEach(function (entry) {
+                collectEntryRenderRecord(entry, records, [], true, { recurse: false });
+            });
+        }
+
+        function addEntryRecordNode(record, fragment) {
+            if (!record || !record.entry) {
+                return;
+            }
+            addEntryNode(
+                record.entry,
+                fragment,
+                record.ancestorHasNextSiblings || [],
+                record.isLastSibling,
+                {
+                    recurse: false,
+                    trackState: false,
+                }
+            );
+        }
+
+        function renderListRecordRange(records, startIndex, endIndex, fragment) {
+            for (let index = startIndex; index < endIndex; index += 1) {
+                addEntryRecordNode(records[index], fragment);
+            }
+        }
+
+        function renderVirtualListRecords(records, options) {
+            const settings = options || {};
+            const container = getListItemsRenderContainer();
+            if (!container) {
+                return;
+            }
+            const shouldVirtualize = shouldVirtualizeListRecords(records);
+            state.virtualListRecords = shouldVirtualize ? records : [];
+            state.virtualListActive = shouldVirtualize;
+            container.classList.toggle("is-virtualized", shouldVirtualize);
+            if (!shouldVirtualize) {
+                if (state.virtualListRenderFrame) {
+                    window.cancelAnimationFrame(state.virtualListRenderFrame);
+                    state.virtualListRenderFrame = 0;
+                }
+                state.virtualListStartIndex = 0;
+                state.virtualListEndIndex = records.length;
+                state.virtualListRowHeight = 0;
+                resetRenderedEntryRowsForListItems();
+                const fragment = document.createDocumentFragment();
+                renderListRecordRange(records, 0, records.length, fragment);
+                container.appendChild(fragment);
+                return;
+            }
+
+            const scrollContainer = getVirtualListScrollContainer();
+            const rowHeight = getEstimatedVirtualListRowHeight();
+            const scrollTop = scrollContainer ? Math.max(0, Number(scrollContainer.scrollTop) || 0) : 0;
+            const viewportHeight = scrollContainer ? Math.max(1, Number(scrollContainer.clientHeight) || 1) : 1;
+            const totalCount = records.length;
+            const visibleStartIndex = Math.max(0, Math.floor(scrollTop / rowHeight));
+            const visibleEndIndex = Math.min(totalCount, Math.ceil((scrollTop + viewportHeight) / rowHeight));
+            const hasReusableWindow = state.virtualListEndIndex > state.virtualListStartIndex;
+            const isNearWindowStart = state.virtualListStartIndex > 0
+                && visibleStartIndex < state.virtualListStartIndex + HANDRIVE_LIST_VIRTUAL_SCROLL_EDGE_BUFFER;
+            const isNearWindowEnd = state.virtualListEndIndex < totalCount
+                && visibleEndIndex > state.virtualListEndIndex - HANDRIVE_LIST_VIRTUAL_SCROLL_EDGE_BUFFER;
+            if (settings.preserveWindow && hasReusableWindow && !isNearWindowStart && !isNearWindowEnd) {
+                return;
+            }
+            const rawStart = visibleStartIndex - HANDRIVE_LIST_VIRTUAL_SCROLL_OVERSCAN;
+            const startIndex = Math.max(0, Math.min(totalCount, rawStart));
+            const visibleCount = Math.ceil(viewportHeight / rowHeight) + (HANDRIVE_LIST_VIRTUAL_SCROLL_OVERSCAN * 2);
+            const endIndex = Math.max(startIndex, Math.min(totalCount, startIndex + visibleCount));
+            const topSpacerHeight = startIndex * rowHeight;
+            const bottomSpacerHeight = Math.max(0, (totalCount - endIndex) * rowHeight);
+            const fragment = document.createDocumentFragment();
+
+            resetRenderedEntryRowsForListItems();
+            if (topSpacerHeight > 0) {
+                fragment.appendChild(createVirtualListSpacer(topSpacerHeight));
+            }
+            renderListRecordRange(records, startIndex, endIndex, fragment);
+            if (bottomSpacerHeight > 0) {
+                fragment.appendChild(createVirtualListSpacer(bottomSpacerHeight));
+            }
+            beginVirtualListMetaMutationIgnore();
+            container.innerHTML = "";
+            container.appendChild(fragment);
+            state.virtualListStartIndex = startIndex;
+            state.virtualListEndIndex = endIndex;
+            if (!settings.skipMeasure) {
+                window.requestAnimationFrame(measureRenderedVirtualListRowHeight);
+            }
+        }
+
+        function scheduleVirtualListWindowRender(options) {
+            const settings = options || {};
+            if (!state.virtualListActive || !Array.isArray(state.virtualListRecords) || state.virtualListRecords.length === 0) {
+                return;
+            }
+            if (state.virtualListRenderFrame) {
+                return;
+            }
+            state.virtualListRenderFrame = window.requestAnimationFrame(function () {
+                state.virtualListRenderFrame = 0;
+                renderVirtualListRecords(state.virtualListRecords, {
+                    preserveWindow: !settings.force,
+                    skipMeasure: Boolean(state.virtualListRowHeight),
+                });
+                restoreActiveDropPreviewAfterRender();
+                scheduleAdjacentSelectedRowCornerSync();
+            });
+        }
+
+        function addEntryNode(entry, fragment, ancestorHasNextSiblings, isLastSibling, options) {
+            const settings = options || {};
+            const shouldTrackState = settings.trackState !== false;
+            const shouldRenderChildren = settings.recurse !== false;
             const item = document.createElement("li");
             item.className = "handrive-item";
             const openingFolderPath = state.openingFolderPath;
@@ -15915,9 +17542,14 @@
             item.appendChild(treePrefix);
             item.appendChild(row);
             fragment.appendChild(item);
-            state.entryByPath.set(entry.path, entry);
-            state.visibleEntryPaths.push(entry.path);
+            if (shouldTrackState) {
+                state.entryByPath.set(entry.path, entry);
+                state.visibleEntryPaths.push(entry.path);
+            }
 
+            if (!shouldRenderChildren) {
+                return;
+            }
             const expandsAsArchive = isArchiveEntry(entry) && state.expandedFolders.has(entry.path);
             const expandsAsDirectory = entry.type === "dir" && state.expandedFolders.has(entry.path);
             if (expandsAsArchive || expandsAsDirectory) {
@@ -15986,6 +17618,7 @@
             state.visibleEntryPaths = [];
             const currentDirFragment = document.createDocumentFragment();
             const itemFragment = document.createDocumentFragment();
+            const itemRecords = [];
             const entries = state.searchQuery && Array.isArray(state.searchResults)
                 ? state.searchResults
                 : getCachedEntries(state.currentDir);
@@ -16021,6 +17654,7 @@
             }
 
             if (renderEntries.length === 0) {
+                clearVirtualListState();
                 const emptyItem = document.createElement("li");
                 emptyItem.className = "handrive-item";
                 const emptyRow = document.createElement("div");
@@ -16047,17 +17681,17 @@
                 updateListColumnVisibility();
                 scheduleListBodyHeight();
                 scheduleAdjacentSelectedRowCornerSync();
-                if (!renderListOptions.skipPreview) { syncPreviewFromSelection(); }
+                if (renderListOptions.openPreview) { syncPreviewFromSelection(); }
                 state.openingFolderPath = "";
                 state.suppressOpeningAnimation = false;
                 return;
             }
             if (state.searchQuery) {
-                renderSearchResultItems(itemFragment, renderEntries);
+                collectSearchResultRenderRecords(itemRecords, renderEntries);
             } else {
                 renderEntries.forEach(function (entry, index) {
                     const isLastRootEntry = index === renderEntries.length - 1;
-                    addEntryNode(entry, itemFragment, [], isLastRootEntry);
+                    collectEntryRenderRecord(entry, itemRecords, [], isLastRootEntry);
                 });
             }
             const filteredSelection = Array.from(state.selectedPaths).filter(function (pathValue) {
@@ -16068,15 +17702,13 @@
             state.selectionAnchorPath = state.selectedPaths.has(state.selectionAnchorPath)
                 ? state.selectionAnchorPath
                 : (state.selectedPath || "");
-            if (listItemsRenderContainer) {
-                listItemsRenderContainer.appendChild(itemFragment);
-            }
+            renderVirtualListRecords(itemRecords);
             restoreActiveDropPreviewAfterRender();
             syncSearchFormVisibility();
             updateListColumnVisibility();
             scheduleListBodyHeight();
             scheduleAdjacentSelectedRowCornerSync();
-            if (!renderListOptions.skipPreview) { syncPreviewFromSelection(); }
+            if (renderListOptions.openPreview) { syncPreviewFromSelection(); }
             scheduleSyncCurrentDirRowHeightWithSideHead();
             state.openingFolderPath = "";
             state.suppressOpeningAnimation = false;
@@ -16266,9 +17898,12 @@
                             return;
                         }
                         if (uploadQueueItem.savedPath || uploadQueueItem.savedSlugPath) {
-                            window.location.href = buildViewUrl(
-                                handriveBaseUrl,
-                                uploadQueueItem.savedSlugPath || uploadQueueItem.savedPath
+                            window.location.href = appendTutorialSourceQuery(
+                                buildViewUrl(
+                                    handriveBaseUrl,
+                                    uploadQueueItem.savedSlugPath || uploadQueueItem.savedPath
+                                ),
+                                Number(guestDemoTourActiveIndex) || 0
                             );
                         }
                         return;
@@ -16964,18 +18599,29 @@
         if (previewContent) {
             previewContent.addEventListener("click", openClickedImagePictureInPicture);
 
-            previewContent.addEventListener("wheel", function (event) {
-                if (!event.ctrlKey && !event.metaKey) return;
-                if (previewContent.classList.contains("handrive-media")) {
-                    event.preventDefault();
-                    const delta = event.deltaY < 0 ? 0.15 : -0.15;
-                    setPreviewImageZoom(state.previewImageZoom + delta);
-                    return;
-                }
-                event.preventDefault();
-                const delta = event.deltaY < 0 ? 2 : -2;
-                setListPreviewFontSize(listPreviewFontSize + delta);
-            }, { passive: false });
+            bindHanplanetZoomGesture(previewContent, {
+                min: function () {
+                    return previewContent.classList.contains("handrive-media") ? getPreviewImageMinZoom() : 8;
+                },
+                max: function () {
+                    return previewContent.classList.contains("handrive-media") ? 3 : 40;
+                },
+                wheelStep: function () {
+                    return previewContent.classList.contains("handrive-media") ? 0.15 : 2;
+                },
+                getValue: function () {
+                    return previewContent.classList.contains("handrive-media")
+                        ? state.previewImageZoom
+                        : listPreviewFontSize;
+                },
+                setValue: function (value) {
+                    if (previewContent.classList.contains("handrive-media")) {
+                        setPreviewImageZoom(value);
+                        return;
+                    }
+                    setListPreviewFontSize(value);
+                },
+            });
         }
 
         if (previewBody) {
@@ -16992,19 +18638,22 @@
                     return;
                 }
                 const shouldShowDownloadUrl = isSimpleUrlShareFileEntry(selectedEntry);
+                const canManageShare = selectedEntry.share_can_manage !== false && !selectedEntry.share_is_inherited;
                 urlShareModal.open({
                     isUrlOnly: Boolean(selectedEntry.is_url_only),
                     shareUrl: selectedEntry.share_url || "",
                     downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(selectedEntry.share_download_url || "") : "",
                     allowedUsers: selectedEntry.share_allowed_users || [],
-                    readOnly: Boolean(selectedEntry.share_is_inherited),
-                    onToggle: async function (enabled, allowedUsernames) {
+                    canEdit: Boolean(selectedEntry.share_can_edit),
+                    readOnly: !canManageShare,
+                    onToggle: canManageShare ? async function (enabled, allowedUsernames, editEnabled) {
                         const data = await requestJson(
                             appendSharedQuery(urlShareApiUrl),
                             buildPostOptions({
                                 path: selectedEntry.path,
                                 enabled: enabled,
                                 allowed_usernames: allowedUsernames || [],
+                                can_edit: Boolean(editEnabled),
                             })
                         );
                         await refreshCurrentDirectory();
@@ -17020,8 +18669,9 @@
                             shareUrl: data.share_url || "",
                             downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(data.share_download_url || "") : "",
                             allowedUsers: data.share_allowed_users || [],
+                            canEdit: Boolean(data.share_can_edit),
                         };
-                    },
+                    } : null,
                 });
             });
         }
@@ -17440,6 +19090,9 @@
 
         if (uploadQueueToggleButton) {
             uploadQueueToggleButton.addEventListener("click", function () {
+                if (toggleTutorialUploadQueuePreviewCollapse()) {
+                    return;
+                }
                 state.uploadQueueCollapsed = !state.uploadQueueCollapsed;
                 renderUploadQueue();
             });
@@ -17502,12 +19155,20 @@
         window.addEventListener("orientationchange", updateListColumnVisibility, { passive: true });
         window.addEventListener("resize", scheduleListBodyHeight, { passive: true });
         window.addEventListener("orientationchange", scheduleListBodyHeight, { passive: true });
+        window.addEventListener("resize", scheduleVirtualListWindowRender, { passive: true });
+        window.addEventListener("orientationchange", scheduleVirtualListWindowRender, { passive: true });
         window.addEventListener("resize", schedulePreviewBodyHeight, { passive: true });
         window.addEventListener("orientationchange", schedulePreviewBodyHeight, { passive: true });
         window.addEventListener("resize", scheduleEditorBodyHeight, { passive: true });
         window.addEventListener("orientationchange", scheduleEditorBodyHeight, { passive: true });
         window.addEventListener("resize", syncListSplitterState, { passive: true });
         window.addEventListener("orientationchange", syncListSplitterState, { passive: true });
+        if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(function () {
+                clearListMetaTextMeasureCache();
+                scheduleListColumnVisibilityUpdate({ afterLayout: true, delayMs: 0 });
+            }).catch(function () {});
+        }
         window.addEventListener("handrive:github-repositories-updated", function () {
             if (root.dataset.currentDirIsRoot !== "1") {
                 return;
@@ -17578,6 +19239,9 @@
             });
             if (window.MutationObserver) {
                 const metaMutationObserver = new MutationObserver(function (mutations) {
+                    if (shouldIgnoreVirtualListMetaMutations(mutations)) {
+                        return;
+                    }
                     const hasMetaMutation = mutations.some(function (mutation) {
                         if (!(mutation.target instanceof Element)) {
                             return false;
@@ -17616,9 +19280,11 @@
             skipLayout: true,
             skipPersist: true,
         });
+        bindHandriveListItemsScaleGesture();
         if (listItemsContainer) {
-            listItemsContainer.addEventListener("wheel", handleHandriveListItemsScaleWheel, { passive: false });
+            listItemsContainer.addEventListener("scroll", scheduleVirtualListWindowRender, { passive: true });
         }
+        window.addEventListener("pagehide", flushStoredHandriveListItemScaleWrite);
 
         setupFloatingListDetailPanels();
         setupListSplitter();
@@ -17640,8 +19306,12 @@
                 if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
                     return;
                 }
+                const targetDir = normalizePath(link.getAttribute("data-handrive-dir") || "", true);
+                if (isTutorialMode && targetDir && !getTutorialRootPath(targetDir)) {
+                    return;
+                }
                 event.preventDefault();
-                navigateToDirectory(link.getAttribute("data-handrive-dir") || "").catch(alertError);
+                navigateToDirectory(targetDir).catch(alertError);
             });
             renderPathBreadcrumbs(state.currentDir);
         } else {
@@ -17717,16 +19387,3035 @@
             });
             switchToEditor(entry);
         }
-        
+
+        function getGuestDemoOnboardingStorageKey() {
+            return "handrive_guest_demo_onboarding_dismissed";
+        }
+
+        function isGuestDemoOnboardingDismissed() {
+            if (isAuthenticated || isTutorialForcedMode) {
+                return false;
+            }
+            try {
+                return window.localStorage.getItem(getGuestDemoOnboardingStorageKey()) === "1";
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function setGuestDemoOnboardingDismissed() {
+            if (isAuthenticated) {
+                return;
+            }
+            try {
+                window.localStorage.setItem(getGuestDemoOnboardingStorageKey(), "1");
+            } catch (error) {}
+        }
+
+        function getPreferredGuestDemoEntry() {
+            var preferredPath = "";
+            try {
+                preferredPath = normalizePath(demoTutorialPath || "", true);
+            } catch (error) {
+                preferredPath = "";
+            }
+            if (preferredPath && state.entryByPath.has(preferredPath)) {
+                return state.entryByPath.get(preferredPath);
+            }
+
+            var entries = getCachedEntries(state.currentDir) || [];
+            var candidates = entries.filter(function (entry) {
+                return entry && entry.path;
+            });
+            var files = candidates.filter(function (entry) {
+                return entry.type === "file";
+            });
+            candidates = files.length ? files : candidates;
+            if (!candidates.length) {
+                return null;
+            }
+            candidates.sort(function (left, right) {
+                function score(entry) {
+                    var text = String((entry && entry.name) || "") + " " + String((entry && entry.path) || "");
+                    text = text.toLowerCase();
+                    if (text.indexOf("튜토리얼") !== -1 || text.indexOf("튜도리얼") !== -1 || text.indexOf("tutorial") !== -1) {
+                        return 0;
+                    }
+                    if (text.indexOf("시작") !== -1 || text.indexOf("start") !== -1 || text.indexOf("guide") !== -1) {
+                        return 1;
+                    }
+                    return 2;
+                }
+                var leftScore = score(left);
+                var rightScore = score(right);
+                if (leftScore !== rightScore) {
+                    return leftScore - rightScore;
+                }
+                return String(left.name || left.path || "").localeCompare(String(right.name || right.path || ""));
+            });
+            return candidates[0] || null;
+        }
+
+        function scrollEntryRowIntoView(entryPath) {
+            var normalizedPath = "";
+            try {
+                normalizedPath = normalizePath(entryPath || "", true);
+            } catch (error) {
+                normalizedPath = "";
+            }
+            if (!normalizedPath) {
+                return;
+            }
+
+            if (state.virtualListActive && Array.isArray(state.virtualListRecords)) {
+                var index = state.visibleEntryPaths.indexOf(normalizedPath);
+                var scrollContainer = getVirtualListScrollContainer();
+                if (index >= 0 && scrollContainer) {
+                    scrollContainer.scrollTop = Math.max(0, (index * getEstimatedVirtualListRowHeight()) - 16);
+                    renderVirtualListRecords(state.virtualListRecords, { skipMeasure: Boolean(state.virtualListRowHeight) });
+                }
+            }
+
+            window.requestAnimationFrame(function () {
+                var row = state.entryRowByPath.get(normalizedPath);
+                if (row && typeof row.scrollIntoView === "function") {
+                    row.scrollIntoView({ block: "nearest" });
+                }
+            });
+        }
+
+        function startGuestDemoOnboarding() {
+            var entry = getPreferredGuestDemoEntry();
+            if (!entry) {
+                return;
+            }
+            var entryPath = normalizePath(entry.path || "", true);
+            if (entry.type === "dir") {
+                openEntry(entry);
+                return;
+            }
+            if (isPreviewableFileEntry(entry)) {
+                if (state.activePreviewPath !== entryPath) {
+                    applySelection([entryPath], {
+                        primaryPath: entryPath,
+                        anchorPath: entryPath,
+                        openPreview: true,
+                    });
+                } else {
+                    syncEntryRowSelectedStates([entryPath]);
+                }
+                scrollEntryRowIntoView(entryPath);
+                return;
+            }
+            openEntry(entry);
+        }
+
+        function editGuestDemoOnboardingEntry() {
+            var entry = getPreferredGuestDemoEntry();
+            if (!entry) {
+                return;
+            }
+            var entryPath = normalizePath(entry.path || "", true);
+            if (entry.type === "dir") {
+                openEntry(entry);
+                return;
+            }
+            applySelection([entryPath], {
+                primaryPath: entryPath,
+                anchorPath: entryPath,
+                skipPreview: true,
+            });
+            if (canEditOrDemoEntry(entry)) {
+                switchToEditor(entry);
+            } else if (isPreviewableFileEntry(entry)) {
+                startGuestDemoOnboarding();
+            } else {
+                openEntry(entry);
+            }
+            scrollEntryRowIntoView(entryPath);
+        }
+
+        function focusGuestDemoSaveAction() {
+            var saveButton = document.getElementById("handrive-list-save-btn");
+            if (!saveButton) {
+                editGuestDemoOnboardingEntry();
+                return;
+            }
+            if (typeof saveButton.scrollIntoView === "function") {
+                saveButton.scrollIntoView({ block: "nearest", inline: "nearest" });
+            }
+            if (!saveButton.disabled && typeof saveButton.focus === "function") {
+                try {
+                    saveButton.focus({ preventScroll: true });
+                } catch (error) {
+                    saveButton.focus();
+                }
+            }
+        }
+
+        var guestDemoTourSpotlight = null;
+        var guestDemoTourTip = null;
+        var guestDemoTourKicker = null;
+        var guestDemoTourTitle = null;
+        var guestDemoTourBody = null;
+        var guestDemoTourAction = null;
+        var guestDemoTourNav = null;
+        var guestDemoTourPrevButton = null;
+        var guestDemoTourNextButton = null;
+        var guestDemoTourCompleteButton = null;
+        var guestDemoTourCompositeTarget = null;
+        var guestDemoTourActiveTarget = null;
+        var guestDemoTourActiveStep = null;
+        var guestDemoTourActiveIndex = 0;
+        var guestDemoTourCurrentIndex = 0;
+        var guestDemoTourStepCleanup = null;
+        var guestDemoTourPositionRaf = null;
+        var guestDemoTourEventsBound = false;
+        var guestDemoTourResizeObserver = null;
+        var guestDemoTourObservedElements = [];
+        var guestDemoTourMovingTargetSelector = [
+            ".site-modal-dialog",
+            ".handrive-popup-modal-dialog",
+            ".handrive-drive-modal-dialog",
+            ".handrive-folder-modal-dialog",
+            ".handrive-job-queue-panel",
+            ".handrive-list-preview.is-floating-detail",
+            ".handrive-list-editor.is-floating-detail",
+            ".map-name-popup",
+            ".map-bind-picker",
+            ".map-image-viewer-modal",
+            ".map-media-viewer-modal",
+            ".map-video-viewer-modal",
+            ".ve-image-upload-panel",
+            ".ae-drive-dialog",
+        ].join(", ");
+        var guestDemoStepNavigationToken = 0;
+        var guestDemoEditTransitionUntil = 0;
+
+        function formatGuestDemoTourProgress(current, total) {
+            return t("guest_demo_tour_progress", "{current}/{total}")
+                .replace("{current}", String(current))
+                .replace("{total}", String(total));
+        }
+
+        function ensureGuestDemoTourElements() {
+            if (guestDemoTourSpotlight && guestDemoTourTip) {
+                return;
+            }
+
+            if (!guestDemoTourSpotlight) {
+                guestDemoTourSpotlight = document.createElement("div");
+                guestDemoTourSpotlight.className = "handrive-guest-demo-spotlight";
+                guestDemoTourSpotlight.hidden = true;
+                document.body.appendChild(guestDemoTourSpotlight);
+            }
+
+            if (!guestDemoTourTip) {
+                guestDemoTourTip = document.createElement("aside");
+                guestDemoTourTip.className = "handrive-guest-demo-tour-tip";
+                guestDemoTourTip.setAttribute("role", "status");
+                guestDemoTourTip.setAttribute("aria-live", "polite");
+                guestDemoTourTip.hidden = true;
+            }
+
+            guestDemoTourKicker = document.createElement("div");
+            guestDemoTourKicker.className = "handrive-guest-demo-tour-kicker";
+            guestDemoTourTitle = document.createElement("h3");
+            guestDemoTourTitle.className = "handrive-guest-demo-tour-title";
+            guestDemoTourBody = document.createElement("p");
+            guestDemoTourBody.className = "handrive-guest-demo-tour-body";
+            guestDemoTourAction = document.createElement("p");
+            guestDemoTourAction.className = "handrive-guest-demo-tour-action";
+            guestDemoTourNav = document.createElement("div");
+            guestDemoTourNav.className = "handrive-guest-demo-tour-nav";
+            guestDemoTourPrevButton = document.createElement("button");
+            guestDemoTourPrevButton.type = "button";
+            guestDemoTourPrevButton.className = "ui-btn ui-btn-primary handrive-guest-demo-tour-nav-btn handrive-guest-demo-tour-prev";
+            guestDemoTourPrevButton.innerHTML = '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="12,4 6,10 12,16"></polyline></svg>';
+            guestDemoTourPrevButton.addEventListener("click", function () {
+                runGuestDemoGroupStep(getGuestDemoActiveGroupIndex() - 1).catch(alertError);
+            });
+            guestDemoTourNextButton = document.createElement("button");
+            guestDemoTourNextButton.type = "button";
+            guestDemoTourNextButton.className = "ui-btn ui-btn-primary handrive-guest-demo-tour-nav-btn handrive-guest-demo-tour-next";
+            guestDemoTourNextButton.innerHTML = '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="8,4 14,10 8,16"></polyline></svg>';
+            guestDemoTourNextButton.addEventListener("click", function () {
+                runGuestDemoGroupStep(getGuestDemoActiveGroupIndex() + 1).catch(alertError);
+            });
+            guestDemoTourCompleteButton = document.createElement("button");
+            guestDemoTourCompleteButton.type = "button";
+            guestDemoTourCompleteButton.className = "ui-btn handrive-guest-demo-tour-nav-btn handrive-guest-demo-tour-complete";
+            guestDemoTourCompleteButton.addEventListener("click", function () {
+                completeGuestDemoOnboarding(null, "complete");
+            });
+            guestDemoTourNav.appendChild(guestDemoTourKicker);
+            guestDemoTourNav.appendChild(guestDemoTourPrevButton);
+            guestDemoTourNav.appendChild(guestDemoTourNextButton);
+            guestDemoTourNav.appendChild(guestDemoTourCompleteButton);
+
+            guestDemoTourTip.appendChild(guestDemoTourTitle);
+            guestDemoTourTip.appendChild(guestDemoTourBody);
+            guestDemoTourTip.appendChild(guestDemoTourAction);
+            guestDemoTourTip.appendChild(guestDemoTourNav);
+            document.body.appendChild(guestDemoTourTip);
+        }
+
+        function isGuestDemoElementVisible(element) {
+            if (!element || !document.documentElement.contains(element)) {
+                return false;
+            }
+            if (element.hidden || (element.closest && element.closest("[hidden]"))) {
+                return false;
+            }
+            var style = window.getComputedStyle ? window.getComputedStyle(element) : null;
+            if (style && (style.display === "none" || style.visibility === "hidden")) {
+                return false;
+            }
+            var rect = element.getBoundingClientRect();
+            return rect.width > 1 && rect.height > 1;
+        }
+
+        function resolveGuestDemoElement(candidate) {
+            if (!candidate) {
+                return null;
+            }
+            if (typeof candidate === "function") {
+                return resolveGuestDemoElement(candidate());
+            }
+            if (typeof candidate === "string") {
+                return document.querySelector(candidate);
+            }
+            return candidate;
+        }
+
+        function findFirstVisibleGuestDemoElement(candidates) {
+            for (var index = 0; index < candidates.length; index += 1) {
+                var element = resolveGuestDemoElement(candidates[index]);
+                if (isGuestDemoElementVisible(element)) {
+                    return element;
+                }
+            }
+            return null;
+        }
+
+        function normalizeGuestDemoSampleName(name) {
+            return String(name || "").trim().toLowerCase();
+        }
+
+        function getGuestDemoEntryRowByNames(names) {
+            var wantedNames = (Array.isArray(names) ? names : [names])
+                .map(normalizeGuestDemoSampleName)
+                .filter(Boolean);
+            if (!wantedNames.length) {
+                return null;
+            }
+            var entries = getCachedEntries(state.currentDir) || [];
+            for (var index = 0; index < entries.length; index += 1) {
+                var entry = entries[index];
+                var leafName = String(entry && (entry.name || entry.path || "") || "").split("/").pop();
+                if (wantedNames.indexOf(normalizeGuestDemoSampleName(leafName)) === -1 || !entry || !entry.path) {
+                    continue;
+                }
+                var row = state.entryRowByPath.get(normalizePath(entry.path, true));
+                if (row) {
+                    return row;
+                }
+            }
+            return null;
+        }
+
+        function getGuestDemoEntryByNames(names) {
+            var wantedNames = (Array.isArray(names) ? names : [names])
+                .map(normalizeGuestDemoSampleName)
+                .filter(Boolean);
+            if (!wantedNames.length) {
+                return null;
+            }
+            var entries = getCachedEntries(state.currentDir) || [];
+            for (var index = 0; index < entries.length; index += 1) {
+                var entry = entries[index];
+                var leafName = String(entry && (entry.name || entry.path || "") || "").split("/").pop();
+                if (entry && entry.path && wantedNames.indexOf(normalizeGuestDemoSampleName(leafName)) !== -1) {
+                    return entry;
+                }
+            }
+            return null;
+        }
+
+        function getGuestDemoEntryRowsByNameGroups(nameGroups) {
+            var rows = [];
+            (Array.isArray(nameGroups) ? nameGroups : []).forEach(function (names) {
+                var row = getGuestDemoEntryRowByNames(names);
+                if (row && rows.indexOf(row) === -1) {
+                    rows.push(row);
+                }
+            });
+            return rows;
+        }
+
+        function ensureGuestDemoCompositeTarget() {
+            if (guestDemoTourCompositeTarget && document.documentElement.contains(guestDemoTourCompositeTarget)) {
+                return guestDemoTourCompositeTarget;
+            }
+            guestDemoTourCompositeTarget = document.createElement("div");
+            guestDemoTourCompositeTarget.className = "handrive-guest-demo-composite-target";
+            guestDemoTourCompositeTarget.setAttribute("aria-hidden", "true");
+            guestDemoTourCompositeTarget.style.position = "fixed";
+            guestDemoTourCompositeTarget.style.pointerEvents = "none";
+            guestDemoTourCompositeTarget.style.opacity = "0";
+            guestDemoTourCompositeTarget.style.zIndex = "-1";
+            document.body.appendChild(guestDemoTourCompositeTarget);
+            return guestDemoTourCompositeTarget;
+        }
+
+        function buildGuestDemoCompositeTarget(elements) {
+            var visibleElements = (Array.isArray(elements) ? elements : [])
+                .map(resolveGuestDemoElement)
+                .filter(isGuestDemoElementVisible);
+            if (!visibleElements.length) {
+                return null;
+            }
+            var firstElement = visibleElements[0];
+            var lastElement = visibleElements[visibleElements.length - 1];
+            if (firstElement && typeof firstElement.scrollIntoView === "function") {
+                try {
+                    firstElement.scrollIntoView({ block: "nearest", inline: "nearest" });
+                } catch (error) {
+                    firstElement.scrollIntoView();
+                }
+            }
+            if (lastElement && lastElement !== firstElement && typeof lastElement.scrollIntoView === "function") {
+                try {
+                    lastElement.scrollIntoView({ block: "nearest", inline: "nearest" });
+                } catch (error) {}
+            }
+            var left = Infinity;
+            var top = Infinity;
+            var right = -Infinity;
+            var bottom = -Infinity;
+            visibleElements.forEach(function (element) {
+                var rect = element.getBoundingClientRect();
+                left = Math.min(left, rect.left);
+                top = Math.min(top, rect.top);
+                right = Math.max(right, rect.right);
+                bottom = Math.max(bottom, rect.bottom);
+            });
+            if (!Number.isFinite(left) || !Number.isFinite(top) || right <= left || bottom <= top) {
+                return null;
+            }
+            var target = ensureGuestDemoCompositeTarget();
+            target.style.left = Math.round(left) + "px";
+            target.style.top = Math.round(top) + "px";
+            target.style.width = Math.max(1, Math.round(right - left)) + "px";
+            target.style.height = Math.max(1, Math.round(bottom - top)) + "px";
+            return target;
+        }
+
+        function isGuestDemoCreateMenuReady() {
+            return Boolean(
+                contextMenu &&
+                !contextMenu.hidden &&
+                isGuestDemoElementVisible(contextNewFolderButton) &&
+                isGuestDemoElementVisible(contextNewDocButton)
+            );
+        }
+
+        function getGuestDemoCreateMenuTarget() {
+            if (!isGuestDemoCreateMenuReady()) {
+                return null;
+            }
+            return buildGuestDemoCompositeTarget([contextNewFolderButton, contextNewDocButton]);
+        }
+
+        function openGuestDemoCreateContextMenu() {
+            var openedTarget = openGuestDemoContextMenu(true, "new-folder");
+            var menuTarget = getGuestDemoCreateMenuTarget();
+            if (menuTarget) {
+                return menuTarget;
+            }
+            return openedTarget;
+        }
+
+        function openGuestDemoUploadContextMenu() {
+            var openedTarget = openGuestDemoContextMenu(true, "upload");
+            return getGuestDemoContextActionButton("upload") || openedTarget;
+        }
+
+        function getGuestDemoAdvancedSampleNameGroups() {
+            return [
+                ["11-압축-샘플.zip", "11-archive-sample.zip"],
+                ["12-Git-공개-테스트-레포", "12-public-git-test-repo"],
+                ["13-지도-샘플.svg", "13-map-sample.svg"],
+                ["14-MP3-변환-샘플.mp4", "14-mp3-conversion-sample.mp4"],
+                ["15-오디오-미리보기-샘플.mp3", "15-audio-preview-sample.mp3"],
+            ];
+        }
+
+        function getGuestDemoAdvancedSampleNamesForKind(kind) {
+            var normalizedKind = String(kind || "").trim();
+            if (normalizedKind === "archive") {
+                return ["11-압축-샘플.zip", "11-archive-sample.zip"];
+            }
+            if (normalizedKind === "git") {
+                return ["12-Git-공개-테스트-레포", "12-public-git-test-repo"];
+            }
+            if (normalizedKind === "map") {
+                return ["13-지도-샘플.svg", "13-map-sample.svg"];
+            }
+            if (normalizedKind === "mp3") {
+                return ["14-MP3-변환-샘플.mp4", "14-mp3-conversion-sample.mp4"];
+            }
+            if (normalizedKind === "audio") {
+                return ["15-오디오-미리보기-샘플.mp3", "15-audio-preview-sample.mp3"];
+            }
+            return [];
+        }
+
+        function getGuestDemoAdvancedSampleRows() {
+            return getGuestDemoEntryRowsByNameGroups(getGuestDemoAdvancedSampleNameGroups());
+        }
+
+        function getGuestDemoAdvancedSampleTarget() {
+            return buildGuestDemoCompositeTarget(getGuestDemoAdvancedSampleRows());
+        }
+
+        function getGuestDemoAdvancedSampleRow() {
+            return getGuestDemoAdvancedSampleRows()[0] || getGuestDemoPreferredRow();
+        }
+
+        function getGuestDemoAdvancedSampleRowForKind(kind) {
+            return getGuestDemoEntryRowByNames(getGuestDemoAdvancedSampleNamesForKind(kind)) || getGuestDemoAdvancedSampleRow();
+        }
+
+        function getGuestDemoAdvancedSampleEntry() {
+            return getGuestDemoEntryByNames(getGuestDemoAdvancedSampleNameGroups().flat()) || getPreferredGuestDemoEntry();
+        }
+
+        function getGuestDemoAdvancedSampleEntryForKind(kind) {
+            return getGuestDemoEntryByNames(getGuestDemoAdvancedSampleNamesForKind(kind)) || getGuestDemoAdvancedSampleEntry();
+        }
+
+        function isGuestDemoAudioContextTarget() {
+            var entry = state.contextTarget || null;
+            var extension = getPathFileExtension(entry && (entry.name || entry.path) ? String(entry.name || entry.path) : "");
+            return [".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".weba"].indexOf(extension) !== -1;
+        }
+
+        function getGuestDemoAdvancedMenuStepId() {
+            if (isGuestDemoElementVisible(contextExtractArchiveButton)) {
+                return "advanced_archive_menu";
+            }
+            if (
+                isGuestDemoElementVisible(contextGitCreateRepoButton) ||
+                isGuestDemoElementVisible(contextGitManageRepoButton) ||
+                isGuestDemoElementVisible(contextGitCreateBranchButton)
+            ) {
+                return "advanced_git_menu";
+            }
+            if (isGuestDemoElementVisible(contextCreateMapButton)) {
+                return "advanced_map_menu";
+            }
+            if (isGuestDemoElementVisible(contextConvertMp3Button)) {
+                return "advanced_mp3_menu";
+            }
+            if (isGuestDemoAudioContextTarget() && isGuestDemoElementVisible(contextOpenButton)) {
+                return "advanced_audio_menu";
+            }
+            if (isGuestDemoElementVisible(contextMenu)) {
+                return "advanced_default_menu";
+            }
+            return "";
+        }
+
+        function isGuestDemoAdvancedMenuStepId(stepId) {
+            return [
+                "advanced_archive_menu",
+                "advanced_git_menu",
+                "advanced_map_menu",
+                "advanced_mp3_menu",
+                "advanced_audio_menu",
+                "advanced_default_menu",
+            ].indexOf(String(stepId || "")) !== -1;
+        }
+
+        function getGuestDemoCurrentDirRow() {
+            return listContainer ? listContainer.querySelector(".handrive-current-dir-row") : null;
+        }
+
+        function getGuestDemoPreferredRow() {
+            var entry = getPreferredGuestDemoEntry();
+            var entryPath = "";
+            if (entry && entry.path) {
+                entryPath = normalizePath(entry.path || "", true);
+                scrollEntryRowIntoView(entryPath);
+            }
+            return findFirstVisibleGuestDemoElement([
+                function () {
+                    return entryPath ? state.entryRowByPath.get(entryPath) : null;
+                },
+                ".handrive-list-items .handrive-item-row:not(.is-empty)",
+                getGuestDemoCurrentDirRow,
+                listContainer,
+            ]);
+        }
+
+        function getGuestDemoFirstListRow() {
+            return findFirstVisibleGuestDemoElement([
+                ".handrive-list-items .handrive-item-row:not(.is-empty):not(.handrive-current-dir-row)",
+                getGuestDemoPreferredRow,
+            ]);
+        }
+
+        function getGuestDemoEntryForRow(row) {
+            if (!row) {
+                return null;
+            }
+            var matchedPath = "";
+            state.entryRowByPath.forEach(function (entryRow, entryPath) {
+                if (!matchedPath && entryRow === row) {
+                    matchedPath = normalizePath(entryPath || "", true);
+                }
+            });
+            return matchedPath ? state.entryByPath.get(matchedPath) || null : null;
+        }
+
+        function getGuestDemoFirstListEntry() {
+            var row = getGuestDemoFirstListRow();
+            var entry = getGuestDemoEntryForRow(row);
+            if (entry && entry.path && entry.can_rename !== false) {
+                return entry;
+            }
+            return getPreferredGuestDemoEntry();
+        }
+
+        function getGuestDemoContextActionButton(action) {
+            if (!contextMenu || !action) {
+                return null;
+            }
+            var buttons = Array.prototype.slice.call(contextMenu.querySelectorAll("button[data-action]"));
+            return buttons.find(function (button) {
+                return button.getAttribute("data-action") === action && isGuestDemoElementVisible(button);
+            }) || null;
+        }
+
+        function getGuestDemoContextActionsTarget(actions) {
+            var targets = (Array.isArray(actions) ? actions : [actions])
+                .map(getGuestDemoContextActionButton)
+                .filter(isGuestDemoElementVisible);
+            return buildGuestDemoCompositeTarget(targets);
+        }
+
+        function openGuestDemoContextMenu(useCurrentDirectory, preferredAction) {
+            if (!contextMenu) {
+                return null;
+            }
+            var anchor = useCurrentDirectory ? getGuestDemoCurrentDirRow() : getGuestDemoPreferredRow();
+            var entry = useCurrentDirectory ? buildCurrentDirectoryEntry() : getPreferredGuestDemoEntry();
+            if (!entry || !entry.path) {
+                entry = buildCurrentDirectoryEntry();
+            }
+            if (!anchor || !entry || !entry.path) {
+                return null;
+            }
+            if (typeof anchor.scrollIntoView === "function") {
+                anchor.scrollIntoView({ block: "center", inline: "nearest" });
+            }
+            var rect = anchor.getBoundingClientRect();
+            openContextMenuForEntry(
+                entry,
+                rect.left + Math.min(Math.max(24, rect.width * 0.18), Math.max(24, rect.width - 12)),
+                rect.top + Math.min(Math.max(24, rect.height / 2), Math.max(24, rect.height - 6))
+            );
+            contextMenu.classList.add("is-guest-demo-context-menu");
+            guestDemoTourStepCleanup = function () {
+                contextMenu.classList.remove("is-guest-demo-context-menu");
+                closeContextMenu();
+            };
+            return getGuestDemoContextActionButton(preferredAction) || contextMenu;
+        }
+
+        function openGuestDemoManageContextMenu() {
+            var openedTarget = openGuestDemoContextMenu(false, "rename");
+            return getGuestDemoContextActionsTarget(["rename", "delete", "download"]) || openedTarget;
+        }
+
+        function openGuestDemoSaveRenameContextMenu() {
+            if (!contextMenu) {
+                return null;
+            }
+            var anchor = getGuestDemoFirstListRow();
+            var entry = getGuestDemoEntryForRow(anchor) || getGuestDemoFirstListEntry();
+            if (!anchor || !entry || !entry.path) {
+                return null;
+            }
+            if (typeof anchor.scrollIntoView === "function") {
+                anchor.scrollIntoView({ block: "center", inline: "nearest" });
+            }
+            var rect = anchor.getBoundingClientRect();
+            openContextMenuForEntry(
+                entry,
+                rect.left + Math.min(Math.max(24, rect.width * 0.18), Math.max(24, rect.width - 12)),
+                rect.top + Math.min(Math.max(24, rect.height / 2), Math.max(24, rect.height - 6))
+            );
+            contextMenu.classList.add("is-guest-demo-context-menu");
+            guestDemoTourStepCleanup = function () {
+                contextMenu.classList.remove("is-guest-demo-context-menu");
+                closeContextMenu();
+            };
+            return contextRenameButton || contextMenu;
+        }
+
+        function getGuestDemoRenameModalControlTarget() {
+            return buildGuestDemoCompositeTarget([renameInput, renameConfirmButton]);
+        }
+
+        function getGuestDemoRenameModalTarget() {
+            return findFirstVisibleGuestDemoElement([
+                getGuestDemoRenameModalControlTarget,
+                "#handrive-rename-modal .handrive-popup-body",
+                "#handrive-rename-modal .site-modal-dialog",
+                "#handrive-rename-modal",
+                renameInput,
+                renameConfirmButton,
+                renameModal,
+            ]);
+        }
+
+        function scheduleGuestDemoTourForRenameModalChange(opened) {
+            if (!isTutorialMode) {
+                return;
+            }
+            if (opened && getGuestDemoActiveGroupIndex() === 7) {
+                document.body.classList.add("is-handrive-guest-demo-modal-step");
+            }
+            var updateTour = function () {
+                if (!guestDemoTourActiveStep) {
+                    return;
+                }
+                var activeStepMeta = normalizeTutorialStepProgressMeta(guestDemoTourActiveIndex, guestDemoTourActiveStep);
+                if (
+                    opened &&
+                    activeStepMeta.groupIndex === 7 &&
+                    showGuestDemoPreferredStepForCurrentUi(activeStepMeta, guestDemoTourActiveStep)
+                ) {
+                    return;
+                }
+                scheduleGuestDemoTourPositionAfterLayoutChange();
+            };
+            window.requestAnimationFrame(updateTour);
+            window.setTimeout(updateTour, 80);
+            window.setTimeout(scheduleGuestDemoTourPositionAfterLayoutChange, 200);
+        }
+
+        function openGuestDemoSaveRenameModal() {
+            var target = getGuestDemoRenameModalTarget();
+            if (target) {
+                return target;
+            }
+            var entry = getGuestDemoFirstListEntry();
+            if (entry && entry.path) {
+                setRenameModalOpen(true, entry);
+            }
+            return getGuestDemoRenameModalTarget();
+        }
+
+        function openGuestDemoAdvancedContextMenu(kind) {
+            if (!contextMenu) {
+                return null;
+            }
+            var normalizedKind = String(kind || "").trim();
+            var entry = normalizedKind ? getGuestDemoAdvancedSampleEntryForKind(normalizedKind) : getGuestDemoAdvancedSampleEntry();
+            var anchor = normalizedKind ? getGuestDemoAdvancedSampleRowForKind(normalizedKind) : getGuestDemoAdvancedSampleRow();
+            if (!entry || !entry.path || !anchor) {
+                return openGuestDemoContextMenu(false, "extract-archive");
+            }
+            if (typeof anchor.scrollIntoView === "function") {
+                anchor.scrollIntoView({ block: "center", inline: "nearest" });
+            }
+            var rect = anchor.getBoundingClientRect();
+            openContextMenuForEntry(
+                entry,
+                rect.left + Math.min(Math.max(24, rect.width * 0.18), Math.max(24, rect.width - 12)),
+                rect.top + Math.min(Math.max(24, rect.height / 2), Math.max(24, rect.height - 6))
+            );
+            contextMenu.classList.add("is-guest-demo-context-menu");
+            guestDemoTourStepCleanup = function () {
+                contextMenu.classList.remove("is-guest-demo-context-menu");
+                closeContextMenu();
+            };
+            return getGuestDemoContextActionsTarget([
+                "extract-archive",
+                "git-create-repo",
+                "git-manage-repo",
+                "git-create-branch",
+                "create-map",
+                "convert-mp3",
+                "open",
+                "download",
+            ]) || contextMenu;
+        }
+
+        function appendGuestDemoTourStepCleanup(cleanup) {
+            if (typeof cleanup !== "function") {
+                return;
+            }
+            var previousCleanup = guestDemoTourStepCleanup;
+            guestDemoTourStepCleanup = function () {
+                try {
+                    cleanup();
+                } finally {
+                    if (typeof previousCleanup === "function") {
+                        previousCleanup();
+                    }
+                }
+            };
+        }
+
+        function scheduleGuestDemoStepAdvance(stepId, delayMs, options) {
+            var expectedStepId = String(stepId || "");
+            var expectedIndex = guestDemoTourCurrentIndex;
+            var settings = options || {};
+            window.setTimeout(function () {
+                var activeStepId = guestDemoTourActiveStep && guestDemoTourActiveStep.id
+                    ? String(guestDemoTourActiveStep.id)
+                    : "";
+                if (guestDemoTourCurrentIndex !== expectedIndex) {
+                    return;
+                }
+                if (expectedStepId && activeStepId && activeStepId !== expectedStepId) {
+                    return;
+                }
+                var nextIndex = expectedIndex + 1;
+                if (settings.resolveCurrentUi) {
+                    runGuestDemoStep(nextIndex).catch(alertError);
+                    return;
+                }
+                runGuestDemoExactStep(nextIndex).catch(alertError);
+            }, Math.max(0, Number(delayMs) || 0));
+        }
+
+        function bindGuestDemoStepAutoAdvance(target, eventName, stepId, options) {
+            var element = resolveGuestDemoElement(target);
+            var settings = options || {};
+            if (!element || typeof element.addEventListener !== "function") {
+                return null;
+            }
+            var listenerOptions = settings.listenerOptions || (settings.capture ? { capture: true } : false);
+            var handler = function (event) {
+                if (typeof settings.filter === "function" && !settings.filter(event)) {
+                    return;
+                }
+                if (settings.once !== false) {
+                    element.removeEventListener(eventName, handler, listenerOptions);
+                }
+                scheduleGuestDemoStepAdvance(stepId, settings.delayMs === undefined ? 220 : settings.delayMs, {
+                    resolveCurrentUi: settings.resolveCurrentUi === true,
+                });
+            };
+            element.addEventListener(eventName, handler, listenerOptions);
+            appendGuestDemoTourStepCleanup(function () {
+                element.removeEventListener(eventName, handler, listenerOptions);
+            });
+            return element;
+        }
+
+        function bindGuestDemoStepAutoAdvanceMany(targets, eventName, stepId, options) {
+            (Array.isArray(targets) ? targets : [targets]).forEach(function (target) {
+                bindGuestDemoStepAutoAdvance(target, eventName, stepId, options);
+            });
+        }
+
+        function getGuestDemoVisiblePreviewPanel() {
+            return findFirstVisibleGuestDemoElement([previewPanel, previewContent, previewBody]);
+        }
+
+        function markGuestDemoEditTransition() {
+            guestDemoEditTransitionUntil = Date.now() + 1800;
+        }
+
+        function isGuestDemoEditTransitionPending() {
+            return Date.now() < guestDemoEditTransitionUntil;
+        }
+
+        function getGuestDemoFolderCreateModalTarget() {
+            return findFirstVisibleGuestDemoElement([
+                "#handrive-folder-create-modal .site-modal-dialog",
+                folderCreateInput,
+                folderCreateModal,
+            ]);
+        }
+
+        function getGuestDemoShareModalTarget() {
+            return findFirstVisibleGuestDemoElement([
+                "#handrive-url-share-modal .site-modal-dialog",
+                "#handrive-url-share-modal",
+            ]);
+        }
+
+        function getGuestDemoShareUrlTarget() {
+            return findFirstVisibleGuestDemoElement([
+                "#handrive-url-share-enabled-checkbox",
+                "#handrive-url-share-url-row",
+                "#handrive-url-share-modal .site-modal-dialog",
+            ]);
+        }
+
+        function getGuestDemoShareTargetUserTarget() {
+            return findFirstVisibleGuestDemoElement([
+                "#handrive-url-share-target-input",
+                "#handrive-url-share-targets",
+                "#handrive-url-share-modal .site-modal-dialog",
+            ]);
+        }
+
+        function getGuestDemoShareEditTarget() {
+            return findFirstVisibleGuestDemoElement([
+                "#handrive-url-share-edit-toggle",
+                "#handrive-url-share-edit-checkbox",
+                "#handrive-url-share-url-row",
+                "#handrive-url-share-modal .site-modal-dialog",
+            ]);
+        }
+
+        function getGuestDemoPreviewActionsTarget() {
+            return findFirstVisibleGuestDemoElement([
+                ".handrive-list-preview-actions",
+                previewUrlShareButton,
+                previewDownloadButton,
+                previewPrintButton,
+                previewEditButton,
+                previewHead,
+                previewPanel,
+            ]);
+        }
+
+        function getGuestDemoPreviewEditTarget() {
+            return findFirstVisibleGuestDemoElement([
+                previewEditButton,
+            ]);
+        }
+
+        function getGuestDemoPreviewZoomTarget() {
+            return findFirstVisibleGuestDemoElement([
+                previewZoomWrap,
+                previewContent,
+                previewBody,
+                previewPanel,
+            ]);
+        }
+
+        function isGuestDemoEditorVisible() {
+            return Boolean(editorPanel && !editorPanel.hidden && isGuestDemoElementVisible(editorPanel));
+        }
+
+        function getGuestDemoEditorTarget() {
+            if (isGuestDemoElementVisible(editorPanel)) {
+                return editorPanel;
+            }
+            return findFirstVisibleGuestDemoElement([
+                editorPanel,
+                spreadsheetEditorSurface,
+                imageEditorSurface,
+                videoEditorSurface,
+                audioEditorSurface,
+                pdfEditorSurface,
+                editorBody,
+                editorContentInput,
+            ]);
+        }
+
+        function getGuestDemoEditorSaveTarget() {
+            return findFirstVisibleGuestDemoElement([editorSaveButton, editorHead, editorPanel]);
+        }
+
+        function openGuestDemoShareModal() {
+            var entry = state.activePreviewPath
+                ? state.entryByPath.get(state.activePreviewPath) || null
+                : null;
+            if (!entry) {
+                entry = getPreferredGuestDemoEntry();
+            }
+            if (entry && entry.path) {
+                openUrlShareDialogForEntry(entry);
+            }
+            return getGuestDemoShareModalTarget();
+        }
+
+        function getGuestDemoJobItemTarget() {
+            return findFirstVisibleGuestDemoElement([
+                uploadQueueList ? uploadQueueList.querySelector("li, .handrive-job-queue-item, button") : null,
+                uploadQueueList,
+                uploadQueuePanel,
+            ]);
+        }
+
+        function getGuestDemoHelpModalTarget() {
+            return findFirstVisibleGuestDemoElement([
+                "#handrive-page-help-modal .handrive-help-modal",
+                "#handrive-page-help-modal .site-modal-dialog",
+                "#handrive-page-help-modal",
+            ]);
+        }
+
+        function openGuestDemoHelpModal() {
+            var helpButton = document.getElementById("handrive-page-help-btn");
+            if (!getGuestDemoHelpModalTarget() && helpButton && typeof helpButton.click === "function") {
+                helpButton.click();
+            }
+            return getGuestDemoHelpModalTarget() || helpButton;
+        }
+
+        function bindGuestDemoZoomAutoAdvance(stepId) {
+            var wheelFilter = function (event) {
+                return Boolean(event && (event.ctrlKey || event.metaKey));
+            };
+            var touchState = { pinching: false };
+            var touchStartFilter = function (event) {
+                touchState.pinching = Boolean(event && event.touches && event.touches.length >= 2);
+                return false;
+            };
+            var touchMoveFilter = function (event) {
+                return Boolean(touchState.pinching && event && event.touches && event.touches.length >= 2);
+            };
+            bindGuestDemoStepAutoAdvanceMany([listItemsContainer, previewContent, previewBody], "wheel", stepId, {
+                capture: true,
+                filter: wheelFilter,
+                delayMs: 160,
+            });
+            bindGuestDemoStepAutoAdvanceMany([listItemsContainer, previewContent, previewBody], "touchstart", stepId, {
+                capture: true,
+                filter: touchStartFilter,
+                once: false,
+                delayMs: 160,
+            });
+            bindGuestDemoStepAutoAdvanceMany([listItemsContainer, previewContent, previewBody], "touchmove", stepId, {
+                capture: true,
+                filter: touchMoveFilter,
+                delayMs: 160,
+            });
+        }
+
+        function buildGuestDemoQueueSampleItems() {
+            var currentPath = normalizePath(state.currentDir || "", true);
+            var buildPath = function (name) {
+                var leaf = String(name || "").trim();
+                return normalizePath((currentPath ? currentPath + "/" : "") + leaf, true);
+            };
+            return [
+                {
+                    id: -101,
+                    kind: "operation",
+                    operationType: "youtube-save",
+                    entries: [],
+                    fileName: textByLang("튜토리얼-영상-저장.mp4", "tutorial-video-save.mp4"),
+                    sourcePath: "YouTube Downloader",
+                    targetDirPath: buildPath("youtube-downloader"),
+                    status: "uploading",
+                    progress: 68,
+                    errorMessage: "",
+                    savedPath: buildPath("youtube-downloader/tutorial-video-save.mp4"),
+                    savedSlugPath: "",
+                    sizeDisplay: "48.2 MB",
+                },
+                {
+                    id: -102,
+                    kind: "operation",
+                    operationType: "convert-mp3",
+                    entries: [],
+                    fileName: textByLang("14-MP3-변환-샘플.mp4", "14-mp3-conversion-sample.mp4"),
+                    sourcePath: buildPath(textByLang("14-MP3-변환-샘플.mp4", "14-mp3-conversion-sample.mp4")),
+                    targetDirPath: currentPath,
+                    status: "queued",
+                    progress: 0,
+                    errorMessage: "",
+                    savedPath: "",
+                    savedSlugPath: "",
+                    sizeDisplay: "5.1 MB",
+                },
+                {
+                    id: -103,
+                    kind: "operation",
+                    operationType: "extract",
+                    entries: [],
+                    fileName: textByLang("11-압축-샘플.zip", "11-archive-sample.zip"),
+                    sourcePath: buildPath(textByLang("11-압축-샘플.zip", "11-archive-sample.zip")),
+                    targetDirPath: currentPath,
+                    status: "done",
+                    progress: 100,
+                    errorMessage: "",
+                    savedPath: buildPath(textByLang("11-압축-샘플", "11-archive-sample")),
+                    savedSlugPath: "",
+                    sizeDisplay: "1.8 MB",
+                },
+                {
+                    id: -104,
+                    kind: "upload",
+                    fileName: textByLang("자유연습-메모.md", "free-practice-note.md"),
+                    fileSize: 18640,
+                    targetDirPath: currentPath,
+                    status: "uploading",
+                    progress: 72,
+                    errorMessage: "",
+                    savedPath: buildPath(textByLang("자유연습-메모.md", "free-practice-note.md")),
+                    savedSlugPath: "",
+                    uploadSpeed: 420 * 1024,
+                    startTime: Date.now() - 38000,
+                },
+            ];
+        }
+
+        function showGuestDemoQueuePreview() {
+            if (!uploadQueuePanel) {
+                return null;
+            }
+            var previousHadItems = state.uploadQueueItems.length > 0;
+            var previousHidden = uploadQueuePanel.hidden;
+            var previousSummary = uploadQueueSummary ? uploadQueueSummary.textContent : "";
+            var previousListHtml = uploadQueueList ? uploadQueueList.innerHTML : "";
+            var previousListHidden = uploadQueueList ? uploadQueueList.hidden : false;
+            var previousCollapsed = uploadQueuePanel.classList.contains("is-collapsed");
+            var previousStateCollapsed = state.uploadQueueCollapsed;
+            var previousToggleExpanded = uploadQueueToggleButton ? uploadQueueToggleButton.getAttribute("aria-expanded") : null;
+            var previousToggleLabel = uploadQueueToggleButton ? uploadQueueToggleButton.getAttribute("aria-label") : null;
+            var previousToggleTitle = uploadQueueToggleButton ? uploadQueueToggleButton.getAttribute("title") : null;
+            var sampleItems = buildGuestDemoQueueSampleItems();
+
+            uploadQueuePanel.hidden = false;
+            uploadQueuePanel.classList.add("is-tutorial-preview");
+            uploadQueuePanel.classList.remove("is-collapsed");
+            state.uploadQueueCollapsed = false;
+            if (uploadQueueSummary) {
+                uploadQueueSummary.textContent = t("guest_demo_tour_jobs_sample", textByLang("튜토리얼 샘플 작업 4개", "4 tutorial sample jobs"));
+            }
+            if (uploadQueueList) {
+                uploadQueueList.hidden = false;
+                uploadQueueList.innerHTML = "";
+                sampleItems.forEach(function (item) {
+                    var listItem = createQueueListItem(item, {
+                        documentRef: document,
+                        getMetaLabel: function (nextItem) {
+                            return getQueueItemMetaLabel(nextItem, getHandrivePathLabel);
+                        },
+                        getStatusLabel: function (nextItem) {
+                            return getQueueItemStatusLabel(nextItem, t);
+                        },
+                    });
+                    if (listItem) {
+                        listItem.classList.add("is-tutorial-sample");
+                        uploadQueueList.appendChild(listItem);
+                    }
+                });
+            }
+            if (uploadQueueToggleButton) {
+                var collapseLabel = t("collapse", "접기");
+                uploadQueueToggleButton.setAttribute("aria-expanded", "true");
+                uploadQueueToggleButton.setAttribute("aria-label", collapseLabel);
+                uploadQueueToggleButton.setAttribute("title", collapseLabel);
+            }
+            guestDemoTourStepCleanup = function () {
+                uploadQueuePanel.classList.remove("is-tutorial-preview");
+                state.uploadQueueCollapsed = previousStateCollapsed;
+                if (previousHadItems || state.uploadQueueItems.length > 0) {
+                    renderUploadQueue();
+                    return;
+                }
+                uploadQueuePanel.hidden = previousHidden;
+                uploadQueuePanel.classList.toggle("is-collapsed", previousCollapsed);
+                if (uploadQueueSummary) {
+                    uploadQueueSummary.textContent = previousSummary;
+                }
+                if (uploadQueueList) {
+                    uploadQueueList.innerHTML = previousListHtml;
+                    uploadQueueList.hidden = previousListHidden;
+                }
+                if (uploadQueueToggleButton) {
+                    if (previousToggleExpanded === null) {
+                        uploadQueueToggleButton.removeAttribute("aria-expanded");
+                    } else {
+                        uploadQueueToggleButton.setAttribute("aria-expanded", previousToggleExpanded);
+                    }
+                    if (previousToggleLabel === null) {
+                        uploadQueueToggleButton.removeAttribute("aria-label");
+                    } else {
+                        uploadQueueToggleButton.setAttribute("aria-label", previousToggleLabel);
+                    }
+                    if (previousToggleTitle === null) {
+                        uploadQueueToggleButton.removeAttribute("title");
+                    } else {
+                        uploadQueueToggleButton.setAttribute("title", previousToggleTitle);
+                    }
+                }
+            };
+            return uploadQueuePanel;
+        }
+
+        function scrollGuestDemoTargetIntoView(target) {
+            if (!target || target === contextMenu || target === uploadQueuePanel) {
+                return;
+            }
+            var rect = target.getBoundingClientRect();
+            var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1;
+            var viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1;
+            if (
+                rect.top < 72 ||
+                rect.bottom > viewportHeight - 72 ||
+                rect.left < 12 ||
+                rect.right > viewportWidth - 12
+            ) {
+                try {
+                    target.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+                } catch (error) {
+                    target.scrollIntoView();
+                }
+            }
+        }
+
+        function updateGuestDemoSpotlightFrame(spotlight, target, targetPad) {
+            if (!spotlight || !isGuestDemoElementVisible(target)) {
+                if (spotlight) {
+                    spotlight.hidden = true;
+                }
+                return false;
+            }
+            var viewportPad = 8;
+            var rect = target.getBoundingClientRect();
+            var pad = Math.max(0, Number(targetPad) || 0);
+            var left = Math.max(viewportPad, rect.left - pad);
+            var top = Math.max(viewportPad, rect.top - pad);
+            var right = Math.min((window.innerWidth || document.documentElement.clientWidth || 1) - viewportPad, rect.right + pad);
+            var bottom = Math.min((window.innerHeight || document.documentElement.clientHeight || 1) - viewportPad, rect.bottom + pad);
+            spotlight.hidden = false;
+            spotlight.style.left = Math.round(left) + "px";
+            spotlight.style.top = Math.round(top) + "px";
+            spotlight.style.width = Math.max(1, Math.round(right - left)) + "px";
+            spotlight.style.height = Math.max(1, Math.round(bottom - top)) + "px";
+            return true;
+        }
+
+        function getGuestDemoMovingTargetRoot(target) {
+            if (!target || !target.closest) {
+                return null;
+            }
+            if (target.matches && target.matches(guestDemoTourMovingTargetSelector)) {
+                return target;
+            }
+            return target.closest(guestDemoTourMovingTargetSelector);
+        }
+
+        function isGuestDemoMovingTargetActive(target) {
+            var movingTarget = getGuestDemoMovingTargetRoot(target);
+            if (!movingTarget) {
+                return false;
+            }
+            return Boolean(
+                movingTarget.classList.contains("is-popup-dragging") ||
+                movingTarget.classList.contains("is-floating-detail-dragging") ||
+                movingTarget.classList.contains("is-handrive-help-modal-resizing") ||
+                document.body.classList.contains("handrive-popup-dragging") ||
+                document.body.classList.contains("handrive-list-detail-dragging") ||
+                document.body.classList.contains("handrive-help-modal-resizing")
+            );
+        }
+
+        function setGuestDemoSpotlightMovingTargetActive(active) {
+            if (!guestDemoTourSpotlight) {
+                return;
+            }
+            guestDemoTourSpotlight.classList.toggle("is-following-moving-target", Boolean(active));
+        }
+
+        function scheduleGuestDemoMovingTargetPosition() {
+            if (!guestDemoTourActiveTarget || !guestDemoTourActiveStep) {
+                return;
+            }
+            if (!isGuestDemoMovingTargetActive(guestDemoTourActiveTarget)) {
+                return;
+            }
+            setGuestDemoSpotlightMovingTargetActive(true);
+            scheduleGuestDemoTourPosition();
+        }
+
+        function finishGuestDemoMovingTargetPosition() {
+            setGuestDemoSpotlightMovingTargetActive(false);
+            scheduleGuestDemoTourPositionAfterLayoutChange();
+        }
+
+        function hideGuestDemoSpotlight() {
+            if (guestDemoTourSpotlight) {
+                guestDemoTourSpotlight.hidden = true;
+                guestDemoTourSpotlight.classList.remove("is-following-moving-target");
+            }
+            document.body.classList.remove("is-handrive-guest-demo-modal-step");
+        }
+
+        function isGuestDemoModalTarget(target) {
+            if (!target || !target.closest) {
+                return false;
+            }
+            if (
+                target.matches &&
+                target.matches(".site-modal-dialog, .handrive-popup-modal, .handrive-folder-modal, .handrive-help-modal, .handrive-drive-modal, .handrive-sync-modal")
+            ) {
+                return true;
+            }
+            return Boolean(target.closest(".site-modal-dialog, .handrive-popup-modal, .handrive-folder-modal, .handrive-help-modal, .handrive-drive-modal, .handrive-sync-modal"));
+        }
+
+        function positionGuestDemoTour(target, step, stepIndex, totalSteps) {
+            ensureGuestDemoTourElements();
+            if (!isGuestDemoElementVisible(target)) {
+                target = findFirstVisibleGuestDemoElement([
+                    listContainer,
+                    root,
+                ]);
+            }
+            if (!target) {
+                return;
+            }
+
+            guestDemoTourActiveTarget = target;
+            guestDemoTourActiveStep = step;
+            guestDemoTourActiveIndex = stepIndex;
+            document.body.classList.toggle("is-handrive-guest-demo-modal-step", isGuestDemoModalTarget(target));
+            syncGuestDemoTourResizeObservers(target);
+
+            var rect = target.getBoundingClientRect();
+            var pad = 8;
+            updateGuestDemoSpotlightFrame(guestDemoTourSpotlight, target, 6);
+
+            guestDemoTourKicker.textContent = formatTutorialStepProgress(stepIndex, step);
+            guestDemoTourTitle.textContent = t(step.titleKey, step.titleFallback);
+            guestDemoTourBody.textContent = t(step.bodyKey, step.bodyFallback);
+            guestDemoTourAction.textContent = t(step.actionKey, step.actionFallback);
+            var previousLabel = t("guest_demo_onboarding_previous", textByLang("이전", "Previous"));
+            var nextLabel = t("guest_demo_onboarding_next", textByLang("다음", "Next"));
+            var completeLabel = t("guest_demo_onboarding_complete", textByLang("종료", "End"));
+            var progressMeta = normalizeTutorialStepProgressMeta(stepIndex, step);
+            var isLastStep = progressMeta.groupIndex >= HANDRIVE_TUTORIAL_TOTAL_GROUPS;
+            guestDemoTourPrevButton.hidden = progressMeta.groupIndex <= 1;
+            guestDemoTourNextButton.hidden = isLastStep;
+            guestDemoTourCompleteButton.hidden = !isAuthenticated || !isLastStep;
+            guestDemoTourPrevButton.setAttribute("aria-label", previousLabel);
+            guestDemoTourPrevButton.setAttribute("title", previousLabel);
+            guestDemoTourNextButton.setAttribute("aria-label", nextLabel);
+            guestDemoTourNextButton.setAttribute("title", nextLabel);
+            guestDemoTourCompleteButton.textContent = completeLabel;
+            guestDemoTourCompleteButton.setAttribute("aria-label", completeLabel);
+            guestDemoTourCompleteButton.setAttribute("title", completeLabel);
+            guestDemoTourTip.hidden = false;
+            guestDemoTourTip.style.visibility = "hidden";
+            guestDemoTourTip.style.left = "0px";
+            guestDemoTourTip.style.top = "0px";
+
+            var tipRect = guestDemoTourTip.getBoundingClientRect();
+            var viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1;
+            var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1;
+            var gap = 12;
+            var placement = step.placement || "";
+            if (!placement) {
+                if (rect.bottom + gap + tipRect.height <= viewportHeight - pad) {
+                    placement = "bottom";
+                } else if (rect.top - gap - tipRect.height >= pad) {
+                    placement = "top";
+                } else if (rect.right + gap + tipRect.width <= viewportWidth - pad) {
+                    placement = "right";
+                } else {
+                    placement = "left";
+                }
+            }
+
+            var tipLeft = 0;
+            var tipTop = 0;
+            if (placement === "right") {
+                tipLeft = rect.right + gap;
+                tipTop = rect.top + (rect.height - tipRect.height) / 2;
+            } else if (placement === "left") {
+                tipLeft = rect.left - gap - tipRect.width;
+                tipTop = rect.top + (rect.height - tipRect.height) / 2;
+            } else if (placement === "top") {
+                tipLeft = rect.left + (rect.width - tipRect.width) / 2;
+                tipTop = rect.top - gap - tipRect.height;
+            } else {
+                placement = "bottom";
+                tipLeft = rect.left + (rect.width - tipRect.width) / 2;
+                tipTop = rect.bottom + gap;
+            }
+            tipLeft = Math.max(pad, Math.min(tipLeft, Math.max(pad, viewportWidth - tipRect.width - pad)));
+            tipTop = Math.max(pad, Math.min(tipTop, Math.max(pad, viewportHeight - tipRect.height - pad)));
+
+            var arrowLeft = Math.max(16, Math.min(tipRect.width - 16, rect.left + rect.width / 2 - tipLeft));
+            var arrowTop = Math.max(16, Math.min(tipRect.height - 16, rect.top + rect.height / 2 - tipTop));
+            guestDemoTourTip.dataset.placement = placement;
+            guestDemoTourTip.style.setProperty("--handrive-demo-arrow-left", Math.round(arrowLeft) + "px");
+            guestDemoTourTip.style.setProperty("--handrive-demo-arrow-top", Math.round(arrowTop) + "px");
+            guestDemoTourTip.style.left = Math.round(tipLeft) + "px";
+            guestDemoTourTip.style.top = Math.round(tipTop) + "px";
+            guestDemoTourTip.style.visibility = "";
+        }
+
+        function scheduleGuestDemoTourPosition() {
+            if (!guestDemoTourActiveTarget || !guestDemoTourActiveStep) {
+                return;
+            }
+            if (guestDemoTourPositionRaf !== null) {
+                return;
+            }
+            guestDemoTourPositionRaf = window.requestAnimationFrame(function () {
+                guestDemoTourPositionRaf = null;
+                var activeStepMeta = normalizeTutorialStepProgressMeta(guestDemoTourActiveIndex, guestDemoTourActiveStep);
+                if (rerouteGuestDemoStepForCurrentUi(activeStepMeta, guestDemoTourActiveStep)) {
+                    return;
+                }
+                var freshTarget = resolveGuestDemoElement(guestDemoTourActiveStep.target);
+                if (!isGuestDemoElementVisible(freshTarget)) {
+                    freshTarget = guestDemoTourActiveTarget;
+                }
+                if (!isGuestDemoElementVisible(freshTarget)) {
+                    freshTarget = resolveGuestDemoElement(guestDemoTourActiveStep.target);
+                }
+                if (!isGuestDemoElementVisible(freshTarget)) {
+                    var tourSteps = getGuestDemoTourSteps(null);
+                    if (activeStepMeta.groupIndex === 5 && !getGuestDemoVisiblePreviewPanel()) {
+                        showGuestDemoStep(null, getGuestDemoFirstGroupStepIndex(tourSteps, 6));
+                        return;
+                    }
+                    if (activeStepMeta.groupIndex === 7 && showGuestDemoPreferredStepForCurrentUi(activeStepMeta, guestDemoTourActiveStep)) {
+                        return;
+                    }
+                    if (rerouteGuestDemoStepForCurrentUi(activeStepMeta, guestDemoTourActiveStep)) {
+                        return;
+                    }
+                }
+                positionGuestDemoTour(
+                    freshTarget,
+                    guestDemoTourActiveStep,
+                    guestDemoTourActiveIndex,
+                    getGuestDemoTourSteps(null).length
+                );
+            });
+        }
+
+        function scheduleGuestDemoTourPositionAfterLayoutChange() {
+            if (!guestDemoTourActiveTarget || !guestDemoTourActiveStep) {
+                return;
+            }
+            scheduleGuestDemoTourPosition();
+            window.requestAnimationFrame(scheduleGuestDemoTourPosition);
+            window.setTimeout(scheduleGuestDemoTourPosition, 50);
+            window.setTimeout(scheduleGuestDemoTourPosition, 180);
+        }
+
+        function cancelGuestDemoTourPositionFrame() {
+            if (guestDemoTourPositionRaf === null) {
+                return;
+            }
+            window.cancelAnimationFrame(guestDemoTourPositionRaf);
+            guestDemoTourPositionRaf = null;
+        }
+
+        function disconnectGuestDemoTourResizeObservers() {
+            if (guestDemoTourResizeObserver) {
+                guestDemoTourResizeObserver.disconnect();
+            }
+            guestDemoTourObservedElements = [];
+        }
+
+        function syncGuestDemoTourResizeObservers(target) {
+            if (!window.ResizeObserver) {
+                return;
+            }
+            if (!guestDemoTourResizeObserver) {
+                guestDemoTourResizeObserver = new ResizeObserver(function () {
+                    scheduleGuestDemoTourPosition();
+                });
+            }
+            var candidates = [
+                target,
+                target && target.parentElement,
+                listItemsContainer,
+                listContainer,
+                listPane,
+                listLayout,
+                previewPanel,
+                editorPanel,
+                root,
+            ];
+            var nextElements = [];
+            candidates.forEach(function (element) {
+                if (
+                    element &&
+                    element.nodeType === 1 &&
+                    nextElements.indexOf(element) === -1
+                ) {
+                    nextElements.push(element);
+                }
+            });
+            if (
+                nextElements.length === guestDemoTourObservedElements.length &&
+                nextElements.every(function (element, index) {
+                    return element === guestDemoTourObservedElements[index];
+                })
+            ) {
+                return;
+            }
+            disconnectGuestDemoTourResizeObservers();
+            nextElements.forEach(function (element) {
+                guestDemoTourResizeObserver.observe(element);
+            });
+            guestDemoTourObservedElements = nextElements;
+        }
+
+        function bindGuestDemoTourPositionEvents() {
+            if (guestDemoTourEventsBound) {
+                return;
+            }
+            guestDemoTourEventsBound = true;
+            window.addEventListener("resize", scheduleGuestDemoTourPosition, { passive: true });
+            window.addEventListener("orientationchange", scheduleGuestDemoTourPosition, { passive: true });
+            window.addEventListener("scroll", scheduleGuestDemoTourPosition, true);
+            window.addEventListener("pointermove", scheduleGuestDemoMovingTargetPosition, { passive: true });
+            window.addEventListener("pointerup", finishGuestDemoMovingTargetPosition, true);
+            window.addEventListener("pointercancel", finishGuestDemoMovingTargetPosition, true);
+        }
+
+        function teardownGuestDemoTour() {
+            cancelGuestDemoTourPositionFrame();
+            if (guestDemoTourStepCleanup) {
+                guestDemoTourStepCleanup();
+                guestDemoTourStepCleanup = null;
+            }
+            guestDemoTourActiveTarget = null;
+            guestDemoTourActiveStep = null;
+            disconnectGuestDemoTourResizeObservers();
+            hideGuestDemoSpotlight();
+            if (guestDemoTourTip) {
+                guestDemoTourTip.hidden = true;
+            }
+        }
+
+        function makeGuestDemoTourStep(id, titleFallback, bodyFallback, actionFallback, options) {
+            var settings = options || {};
+            return {
+                id: id,
+                labelKey: settings.labelKey || ("guest_demo_onboarding_step_" + id),
+                titleKey: "guest_demo_tour_" + id + "_title",
+                bodyKey: "guest_demo_tour_" + id + "_body",
+                actionKey: "guest_demo_tour_" + id + "_action",
+                titleFallback: titleFallback,
+                bodyFallback: bodyFallback,
+                actionFallback: actionFallback,
+                placement: settings.placement || "",
+                allowTargetFallback: settings.allowTargetFallback !== false,
+                prepare: settings.prepare || null,
+                target: settings.target || null,
+                groupIndex: settings.groupIndex || 0,
+                partIndex: settings.partIndex || 0,
+                partCount: settings.partCount || 0,
+            };
+        }
+
+        function getGuestDemoTourSteps(onboarding) {
+            function step(groupIndex, partIndex, partCount, id, titleFallback, bodyFallback, actionFallback, options) {
+                var settings = Object.assign({}, options || {}, {
+                    groupIndex: groupIndex,
+                    partIndex: partIndex,
+                    partCount: partCount,
+                });
+                return makeGuestDemoTourStep(id, titleFallback, bodyFallback, actionFallback, settings);
+            }
+
+            return [
+                step(
+                    1,
+                    1,
+                    1,
+                    "overview",
+                    textByLang("HanDrive 전체 기능 투어", "HanDrive full feature tour"),
+                    textByLang("이 투어는 임시 드라이브에서 작동하며, 강조된 HanDrive 영역 안에서 기능 위치와 사용 순서를 말풍선으로 안내합니다.", "This tour runs inside a temporary drive and uses callouts in the highlighted HanDrive area to show where features live."),
+                    textByLang("튜토리얼 전용 임시 드라이브 영역을 확인한 뒤 다음 단계로 이동하세요.", "Review the temporary tutorial drive area, then move to the next step."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_overview",
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([listLayout, listPane, listContainer, root]);
+                        },
+                        placement: "top",
+                    }
+                ),
+                step(
+                    2,
+                    1,
+                    2,
+                    "browse_list",
+                    textByLang("파일 목록과 폴더 이동", "File list and folder navigation"),
+                    textByLang("파일 목록에는 현재 폴더의 파일과 폴더가 표시됩니다. 행을 선택하거나 드래그해서 기본 조작을 시작합니다.", "The file list shows files and folders in the current folder. Select rows or drag them to start common actions."),
+                    textByLang("목록의 튜토리얼 파일 행 위치를 확인하세요.", "Check where the tutorial file rows are in the list."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_browse",
+                        target: function () { return listItemsContainer || document.getElementById("handrive-list-items"); },
+                    }
+                ),
+                step(
+                    2,
+                    2,
+                    2,
+                    "browse_open",
+                    textByLang("파일 열기와 폴더 이동", "Opening files and folders"),
+                    textByLang("한 번 클릭하면 선택/미리보기, 더블클릭하면 열기입니다. 폴더는 펼치거나 들어갈 수 있고 드래그로 이동도 할 수 있습니다.", "Single-click selects and previews. Double-click opens. Folders can be expanded or opened, and items can be moved by drag and drop."),
+                    textByLang("강조된 파일 행을 더블클릭해 읽기 화면으로 들어가도 튜토리얼은 계속됩니다.", "Double-click the highlighted file row. The tutorial continues even on the read page."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_browse",
+                        prepare: function () {
+                            var row = getGuestDemoPreferredRow();
+                            bindGuestDemoStepAutoAdvance(row, "click", "browse_open", {
+                                capture: true,
+                                filter: function (event) {
+                                    return !event || event.detail >= 2;
+                                },
+                                delayMs: 220,
+                            });
+                            return row;
+                        },
+                        target: function () {
+                            return getGuestDemoPreferredRow();
+                        },
+                    }
+                ),
+                step(
+                    3,
+                    1,
+                    1,
+                    "search",
+                    textByLang("검색과 정렬", "Search and sorting"),
+                    textByLang("현재 폴더 행에서 검색창과 정렬 라벨을 함께 확인할 수 있습니다.", "The current-folder row contains both search and sort controls."),
+                    textByLang("현재 폴더 행의 검색과 정렬 영역을 확인하세요.", "Check the search and sort area in the current-folder row."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_search",
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([
+                                getGuestDemoCurrentDirRow,
+                                ".handrive-current-dir-row",
+                                listContainer,
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    4,
+                    1,
+                    2,
+                    "preview_select",
+                    textByLang("미리보기 파일 선택", "Select a file to preview"),
+                    textByLang("파일들을 클릭하면 탐색기에서 바로 미리보기가 열립니다.", "Click files to open previews directly in the file explorer."),
+                    textByLang("강조된 파일 행을 좌클릭해 미리보기를 여세요.", "Left-click the highlighted file row to open the preview."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_preview",
+                        prepare: function () {
+                            var row = getGuestDemoPreferredRow();
+                            bindGuestDemoStepAutoAdvance(row, "click", "preview_select", {
+                                capture: true,
+                                filter: function (event) {
+                                    return !event || event.button === 0 || event.button === undefined;
+                                },
+                                delayMs: 360,
+                            });
+                            return row;
+                        },
+                        target: function () {
+                            return getGuestDemoPreferredRow();
+                        },
+                    }
+                ),
+                step(
+                    4,
+                    2,
+                    2,
+                    "preview_panel",
+                    textByLang("미리보기 영역", "Preview area"),
+                    textByLang("선택한 파일 내용은 목록 오른쪽 또는 아래쪽의 미리보기 영역에 표시됩니다.", "The selected file appears in the preview area to the side or below the list."),
+                    textByLang("미리보기 내용을 확인한 뒤 다음 단계로 이동하세요.", "Review the preview content, then move to the next step."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_preview",
+                        prepare: function () {
+                            startGuestDemoOnboarding();
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([getGuestDemoVisiblePreviewPanel, previewPanel, getGuestDemoPreferredRow]);
+                        },
+                    }
+                ),
+                step(
+                    5,
+                    1,
+                    2,
+                    "preview_tools_actions",
+                    textByLang("미리보기 도구", "Preview tools"),
+                    textByLang("미리보기 상단에서 공유, 인쇄, 다운로드, 편집, 삭제 같은 파일 작업을 실행합니다.", "Use the preview header for sharing, printing, downloading, editing, deleting, and other file actions."),
+                    textByLang("상단 버튼들의 위치를 확인한 뒤 다음 단계로 이동하세요.", "Review the header buttons, then move to the next step."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_preview_tools",
+                        prepare: function () {
+                            startGuestDemoOnboarding();
+                        },
+                        target: function () {
+                            return getGuestDemoPreviewActionsTarget();
+                        },
+                    }
+                ),
+                step(
+                    5,
+                    2,
+                    2,
+                    "preview_tools_zoom",
+                    textByLang("미리보기 도구", "Preview tools"),
+                    textByLang("이미지와 문서 미리보기는 확대/축소 버튼이나 Ctrl+스크롤, 모바일 핀치로 배율을 조절할 수 있습니다.", "Image and document previews can be zoomed with buttons, Ctrl+wheel, or mobile pinch."),
+                    textByLang("확대/축소 컨트롤 또는 미리보기 영역을 확인하세요.", "Check the zoom controls or preview area."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_preview_tools",
+                        prepare: function () {
+                            startGuestDemoOnboarding();
+                        },
+                        target: function () {
+                            return getGuestDemoPreviewZoomTarget();
+                        },
+                    }
+                ),
+                step(
+                    6,
+                    1,
+                    3,
+                    "edit_select_file",
+                    textByLang("편집기", "Editor"),
+                    textByLang("에디터와 미리보기가 닫혀 있으면 먼저 파일을 선택해 미리보기를 열어야 합니다.", "If both the editor and preview are closed, select a file first to open its preview."),
+                    textByLang("강조된 파일 행을 좌클릭해 미리보기를 여세요.", "Left-click the highlighted file row to open the preview."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_edit",
+                        prepare: function () {
+                            if (isGuestDemoEditorVisible()) {
+                                return getGuestDemoEditorTarget();
+                            }
+                            if (getGuestDemoVisiblePreviewPanel()) {
+                                return getGuestDemoPreviewEditTarget();
+                            }
+                            var row = getGuestDemoPreferredRow();
+                            bindGuestDemoStepAutoAdvance(row, "click", "edit_select_file", {
+                                capture: true,
+                                filter: function (event) {
+                                    return !event || event.button === 0 || event.button === undefined;
+                                },
+                                delayMs: 360,
+                            });
+                            return row;
+                        },
+                        target: function () {
+                            if (isGuestDemoEditorVisible()) {
+                                return getGuestDemoEditorTarget();
+                            }
+                            if (getGuestDemoVisiblePreviewPanel()) {
+                                return getGuestDemoPreviewEditTarget();
+                            }
+                            return getGuestDemoPreferredRow();
+                        },
+                    }
+                ),
+                step(
+                    6,
+                    2,
+                    3,
+                    "edit_open",
+                    textByLang("편집기", "Editor"),
+                    textByLang("미리보기 상단의 편집 버튼으로 현재 파일을 편집 모드로 전환합니다.", "Use the edit button in the preview header to switch the current file into edit mode."),
+                    textByLang("편집 아이콘을 누르세요.", "Press the edit icon."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_edit",
+                        prepare: function () {
+                            if (isGuestDemoEditorVisible()) {
+                                scheduleGuestDemoStepAdvance("edit_open", 160);
+                                return getGuestDemoEditorTarget();
+                            }
+                            if (!getGuestDemoVisiblePreviewPanel()) {
+                                return getGuestDemoPreferredRow();
+                            }
+                            bindGuestDemoStepAutoAdvance(previewPanel, "click", "edit_open", {
+                                capture: true,
+                                filter: function (event) {
+                                    var target = event && event.target instanceof Element
+                                        ? event.target.closest("#handrive-list-preview-edit-btn")
+                                        : null;
+                                    if (!target) {
+                                        return false;
+                                    }
+                                    markGuestDemoEditTransition();
+                                    return true;
+                                },
+                                delayMs: 280,
+                            });
+                            return getGuestDemoPreviewEditTarget();
+                        },
+                        target: function () {
+                            if (isGuestDemoEditorVisible()) {
+                                return getGuestDemoEditorTarget();
+                            }
+                            if (!getGuestDemoVisiblePreviewPanel()) {
+                                return null;
+                            }
+                            return getGuestDemoPreviewEditTarget();
+                        },
+                        allowTargetFallback: false,
+                    }
+                ),
+                step(
+                    6,
+                    3,
+                    3,
+                    "edit_surface",
+                    textByLang("편집기", "Editor"),
+                    textByLang("텍스트와 Markdown은 코드 하이라이트, 자동완성, 스니펫 메뉴를 지원하고 이미지/오디오/영상/PDF/스프레드시트는 전용 편집기를 사용합니다.", "Text and Markdown support highlighting, completion, and snippets. Images, audio, video, PDFs, and spreadsheets use dedicated editors."),
+                    textByLang("편집 영역에서 내용을 바꿔볼 수 있습니다.", "Try changing content in the editor area."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_edit",
+                        prepare: function () {
+                            return isGuestDemoEditorVisible() ? getGuestDemoEditorTarget() : null;
+                        },
+                        target: function () {
+                            return getGuestDemoEditorTarget();
+                        },
+                        allowTargetFallback: false,
+                    }
+                ),
+                step(
+                    7,
+                    1,
+                    5,
+                    "save_filename",
+                    textByLang("저장과 파일명", "Save and filename"),
+                    textByLang("편집기 상단에서 파일명을 확인하고 필요하면 이름을 바꿀 수 있습니다.", "Check the filename in the editor header and rename it if needed."),
+                    textByLang("파일명 입력 영역을 확인하세요.", "Check the filename input."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_save",
+                        prepare: function () {
+                            if (!isGuestDemoEditorVisible()) {
+                                return getGuestDemoFirstListRow();
+                            }
+                            editGuestDemoOnboardingEntry();
+                        },
+                        target: function () {
+                            if (!isGuestDemoEditorVisible()) {
+                                return getGuestDemoFirstListRow();
+                            }
+                            return findFirstVisibleGuestDemoElement([editorFilenameInput, editorHead, editorPanel]);
+                        },
+                    }
+                ),
+                step(
+                    7,
+                    2,
+                    5,
+                    "save_action",
+                    textByLang("저장과 파일명", "Save and filename"),
+                    textByLang("저장 버튼을 누르면 현재 변경사항을 저장합니다. 공유/깃/데모 상태에 따라 저장 모달이나 커밋 메시지 입력이 추가될 수 있습니다.", "Press Save to store changes. Shared, Git, or demo contexts may show a save modal or commit message step."),
+                    textByLang("저장 아이콘 위치를 확인하세요.", "Check the save icon location."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_save",
+                        prepare: function () {
+                            if (!isGuestDemoEditorVisible()) {
+                                return getGuestDemoFirstListRow();
+                            }
+                            editGuestDemoOnboardingEntry();
+                        },
+                        target: function () {
+                            if (!isGuestDemoEditorVisible()) {
+                                return getGuestDemoFirstListRow();
+                            }
+                            return getGuestDemoEditorSaveTarget();
+                        },
+                    }
+                ),
+                step(
+                    7,
+                    3,
+                    5,
+                    "save_rename_row",
+                    textByLang("저장과 파일명", "Save and filename"),
+                    textByLang("에디터를 닫은 상태에서는 파일 행의 우클릭 메뉴로 이름을 바꿀 수 있습니다.", "When the editor is closed, rename from a file row context menu."),
+                    textByLang("첫 번째 파일 행을 우클릭하세요.", "Right-click the first file row."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_save",
+                        prepare: function () {
+                            var row = getGuestDemoFirstListRow();
+                            bindGuestDemoStepAutoAdvance(row, "contextmenu", "save_rename_row", {
+                                capture: true,
+                                delayMs: 220,
+                            });
+                            return row;
+                        },
+                        target: function () {
+                            return getGuestDemoFirstListRow();
+                        },
+                    }
+                ),
+                step(
+                    7,
+                    4,
+                    5,
+                    "save_rename_menu",
+                    textByLang("저장과 파일명", "Save and filename"),
+                    textByLang("우클릭 메뉴에서 파일 작업을 선택할 수 있습니다. 이름 바꾸기를 선택하면 파일명 변경 모달이 열립니다.", "The context menu contains file actions. Choose Rename to open the filename modal."),
+                    textByLang("이름 바꾸기 버튼을 누르세요.", "Press Rename."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_save",
+                        prepare: function () {
+                            var target = openGuestDemoSaveRenameContextMenu();
+                            bindGuestDemoStepAutoAdvance(contextRenameButton, "click", "save_rename_menu", {
+                                capture: true,
+                                delayMs: 220,
+                            });
+                            return target;
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([contextRenameButton, contextMenu, getGuestDemoFirstListRow]);
+                        },
+                    }
+                ),
+                step(
+                    7,
+                    5,
+                    5,
+                    "save_rename_modal",
+                    textByLang("저장과 파일명", "Save and filename"),
+                    textByLang("이름 바꾸기 모달에서 새 이름을 입력하고 적용하면 파일 또는 폴더 이름이 변경됩니다.", "Enter a new name in the rename modal and apply it to rename the file or folder."),
+                    textByLang("입력칸에 새 이름을 입력하고 적용 버튼을 누르세요.", "Enter a new name, then press Apply."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_save",
+                        prepare: function () {
+                            openGuestDemoSaveRenameModal();
+                        },
+                        target: function () {
+                            return getGuestDemoRenameModalTarget();
+                        },
+                    }
+                ),
+                step(
+                    8,
+                    1,
+                    2,
+                    "upload_drop",
+                    textByLang("업로드", "Upload"),
+                    textByLang("파일을 목록으로 드래그 앤 드롭하거나 붙여넣기로 현재 폴더에 추가할 수 있습니다.", "Drag files into the list or paste files from the clipboard to add them to the current folder."),
+                    textByLang("목록 영역 또는 현재 폴더 행에 파일을 끌어다 놓을 수 있습니다.", "You can drop files onto the list or current-folder row."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_upload",
+                        prepare: function () {
+                            bindGuestDemoStepAutoAdvanceMany([listContainer, getGuestDemoCurrentDirRow], "dragenter", "upload_drop", {
+                                capture: true,
+                                delayMs: 240,
+                            });
+                            bindGuestDemoStepAutoAdvanceMany([listContainer, getGuestDemoCurrentDirRow], "paste", "upload_drop", {
+                                capture: true,
+                                delayMs: 240,
+                            });
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([listContainer, listPane, getGuestDemoCurrentDirRow]);
+                        },
+                    }
+                ),
+                step(
+                    8,
+                    2,
+                    2,
+                    "upload_context",
+                    textByLang("업로드", "Upload"),
+                    textByLang("현재 폴더 행의 우클릭 메뉴에서도 업로드를 실행할 수 있습니다.", "You can also upload from the current-folder row context menu."),
+                    textByLang("우클릭 메뉴의 업로드 항목 위치를 확인하세요.", "Check the Upload item in the context menu."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_upload",
+                        prepare: function () {
+                            return openGuestDemoUploadContextMenu();
+                        },
+                        target: function () {
+                            if (!isGuestDemoElementVisible(contextUploadButton)) {
+                                openGuestDemoUploadContextMenu();
+                            }
+                            return findFirstVisibleGuestDemoElement([contextUploadButton, contextMenu, getGuestDemoCurrentDirRow, listContainer]);
+                        },
+                    }
+                ),
+                step(
+                    9,
+                    1,
+                    4,
+                    "create_folder_row",
+                    textByLang("새 폴더와 새 파일", "New folders and files"),
+                    textByLang("폴더 행의 우클릭 메뉴에서 새 폴더와 새 파일을 만들 수 있습니다.", "Use a folder row context menu to create new folders and files."),
+                    textByLang("강조된 폴더 행을 우클릭하세요.", "Right-click the highlighted folder row."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_create",
+                        prepare: function () {
+                            var row = getGuestDemoCurrentDirRow();
+                            bindGuestDemoStepAutoAdvance(row, "contextmenu", "create_folder_row", {
+                                capture: true,
+                                delayMs: 240,
+                            });
+                            return row;
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([getGuestDemoCurrentDirRow, listContainer]);
+                        },
+                    }
+                ),
+                step(
+                    9,
+                    2,
+                    4,
+                    "create_context_actions",
+                    textByLang("새 항목 메뉴", "New item menu"),
+                    textByLang("폴더 행의 우클릭 메뉴 안에 새 폴더와 새 파일 항목이 있습니다.", "The folder row context menu contains New folder and New file actions."),
+                    textByLang("새 폴더와 새 파일 위치를 확인하세요.", "Check the New folder and New file locations."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_create",
+                        prepare: function () {
+                            return openGuestDemoCreateContextMenu();
+                        },
+                        target: function () {
+                            if (!isGuestDemoCreateMenuReady()) {
+                                openGuestDemoCreateContextMenu();
+                            }
+                            return findFirstVisibleGuestDemoElement([getGuestDemoCreateMenuTarget, contextMenu, getGuestDemoCurrentDirRow]);
+                        },
+                    }
+                ),
+                step(
+                    9,
+                    3,
+                    4,
+                    "create_open_action",
+                    textByLang("새 항목 만들기", "Create a new item"),
+                    textByLang("새 폴더는 모달을 열고, 새 파일은 작성 페이지로 이동합니다. 튜토리얼은 어느 쪽에서도 계속됩니다.", "New folder opens a modal, and New file opens the write page. The tutorial continues in either flow."),
+                    textByLang("새 폴더 또는 새 파일을 클릭해보세요.", "Click New folder or New file."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_create",
+                        prepare: function () {
+                            var target = openGuestDemoCreateContextMenu();
+                            bindGuestDemoStepAutoAdvanceMany([contextNewFolderButton, contextNewDocButton], "click", "create_open_action", {
+                                capture: true,
+                                delayMs: 260,
+                            });
+                            return getGuestDemoCreateMenuTarget() || target;
+                        },
+                        target: function () {
+                            if (!isGuestDemoCreateMenuReady()) {
+                                openGuestDemoCreateContextMenu();
+                            }
+                            return findFirstVisibleGuestDemoElement([getGuestDemoCreateMenuTarget, contextMenu, getGuestDemoCurrentDirRow]);
+                        },
+                    }
+                ),
+                step(
+                    9,
+                    4,
+                    4,
+                    "create_result",
+                    textByLang("생성 화면", "Creation screen"),
+                    textByLang("새 폴더 모달에서는 폴더명을 입력해 새 폴더를 생성할 수 있습니다.", "In the New folder modal, enter a folder name to create a new folder."),
+                    textByLang("현재 열린 생성 화면을 확인한 뒤 다음 단계로 이동하세요.", "Review the open creation surface, then move to the next step."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_create",
+                        prepare: function () {
+                            return getGuestDemoFolderCreateModalTarget();
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([getGuestDemoFolderCreateModalTarget, getGuestDemoCreateMenuTarget, getGuestDemoCurrentDirRow, listContainer]);
+                        },
+                    }
+                ),
+                step(
+                    10,
+                    1,
+                    5,
+                    "share_select_file",
+                    textByLang("URL 공유와 편집권한", "URL sharing and edit permission"),
+                    textByLang("파일이나 폴더의 공유 링크를 만들고, 전체 공개/대상 사용자/편집권한을 설정할 수 있습니다.", "Create share links for files or folders and control public access, target users, and edit permission."),
+                    textByLang("먼저 공유할 파일 행을 좌클릭하세요.", "First left-click the file row to share."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_share",
+                        prepare: function () {
+                            if (state.activePreviewPath && getGuestDemoVisiblePreviewPanel()) {
+                                scheduleGuestDemoStepAdvance("share_select_file", 180);
+                                return getGuestDemoVisiblePreviewPanel();
+                            }
+                            var row = getGuestDemoPreferredRow();
+                            bindGuestDemoStepAutoAdvance(row, "click", "share_select_file", {
+                                capture: true,
+                                filter: function (event) {
+                                    return !event || event.button === 0 || event.button === undefined;
+                                },
+                                delayMs: 360,
+                            });
+                            return row;
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([getGuestDemoPreferredRow, getGuestDemoVisiblePreviewPanel, listContainer]);
+                        },
+                    }
+                ),
+                step(
+                    10,
+                    2,
+                    5,
+                    "share_button",
+                    textByLang("공유 버튼", "Share button"),
+                    textByLang("미리보기 상단의 공유 버튼으로 선택한 파일의 공유 모달을 엽니다.", "Use the share button in the preview header to open sharing for the selected file."),
+                    textByLang("공유 아이콘을 누르세요.", "Press the share icon."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_share",
+                        prepare: function () {
+                            startGuestDemoOnboarding();
+                            bindGuestDemoStepAutoAdvanceMany([previewUrlShareButton, currentDirToolbarUrlShareButton], "click", "share_button", {
+                                capture: true,
+                                delayMs: 260,
+                            });
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([previewUrlShareButton, currentDirToolbarUrlShareButton, ".handrive-item-url-share-indicator", previewHead, getGuestDemoPreferredRow]);
+                        },
+                    }
+                ),
+                step(
+                    10,
+                    3,
+                    5,
+                    "share_url",
+                    textByLang("공유 URL", "Share URL"),
+                    textByLang("상단 체크박스로 URL 공유를 켜면 링크 입력줄이 나타납니다.", "Turn on URL sharing with the top checkbox to show the link field."),
+                    textByLang("URL 공유 체크박스와 링크 행을 확인하세요.", "Check the URL sharing checkbox and link row."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_share",
+                        prepare: function () {
+                            if (!getGuestDemoShareModalTarget()) {
+                                openGuestDemoShareModal();
+                            }
+                            bindGuestDemoStepAutoAdvance("#handrive-url-share-modal", "handrive:url-share-updated", "share_url", {
+                                filter: function (event) {
+                                    return Boolean(event && event.detail && event.detail.enabled);
+                                },
+                                delayMs: 120,
+                            });
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([getGuestDemoShareUrlTarget, getGuestDemoShareModalTarget, previewUrlShareButton]);
+                        },
+                    }
+                ),
+                step(
+                    10,
+                    4,
+                    5,
+                    "share_targets",
+                    textByLang("공유 대상", "Share targets"),
+                    textByLang("대상 사용자를 지정하지 않으면 링크를 아는 모든 사용자가 접근하고, 입력하면 지정 사용자만 접근합니다.", "Without target users, anyone with the link can access it. Add users to restrict access."),
+                    textByLang("대상 사용자 입력 영역을 확인하세요.", "Check the target user input area."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_share",
+                        prepare: function () {
+                            if (!getGuestDemoShareModalTarget()) {
+                                openGuestDemoShareModal();
+                            }
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([getGuestDemoShareTargetUserTarget, getGuestDemoShareModalTarget, previewUrlShareButton]);
+                        },
+                    }
+                ),
+                step(
+                    10,
+                    5,
+                    5,
+                    "share_edit",
+                    textByLang("편집권한", "Edit permission"),
+                    textByLang("편집권한 체크박스를 켜면 공유 대상이 파일 내용이나 폴더 하위 파일을 편집할 수 있습니다. 소유자만 공유 설정과 공유 대상 이름 변경을 관리합니다.", "The edit permission checkbox lets share targets edit file contents or folder children. Only the owner manages sharing settings and the shared item name."),
+                    textByLang("편집권한 체크박스 위치를 확인하세요.", "Check the edit permission checkbox location."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_share",
+                        prepare: function () {
+                            if (!getGuestDemoShareModalTarget()) {
+                                openGuestDemoShareModal();
+                            }
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([getGuestDemoShareEditTarget, getGuestDemoShareModalTarget, previewUrlShareButton]);
+                        },
+                    }
+                ),
+                step(
+                    11,
+                    1,
+                    2,
+                    "manage_row",
+                    textByLang("이름 변경, 삭제, 이동", "Rename, delete, and move"),
+                    textByLang("파일 행에서 우클릭 메뉴와 키보드 Delete/Backspace로 이름 변경, 삭제, 다운로드, 위치 열기, 드래그 이동을 수행합니다.", "Use a file row context menu and Delete/Backspace for rename, delete, download, open location, and drag-to-move operations."),
+                    textByLang("강조된 파일 행을 우클릭하세요.", "Right-click the highlighted file row."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_manage",
+                        prepare: function () {
+                            var row = getGuestDemoPreferredRow();
+                            bindGuestDemoStepAutoAdvance(row, "contextmenu", "manage_row", {
+                                capture: true,
+                                delayMs: 240,
+                            });
+                            return row;
+                        },
+                        target: function () {
+                            return getGuestDemoPreferredRow();
+                        },
+                    }
+                ),
+                step(
+                    11,
+                    2,
+                    2,
+                    "manage_menu",
+                    textByLang("이름 변경, 삭제, 이동", "Rename, delete, and move"),
+                    textByLang("우클릭 메뉴에서 이름 바꾸기, 삭제, 다운로드, 수정 등의 항목을 선택할 수 있습니다.", "The context menu provides actions such as Rename, Delete, Download, and Edit."),
+                    textByLang("우클릭 메뉴를 확인한 뒤 다음 단계로 이동하세요.", "Review the context menu, then move to the next step."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_manage",
+                        prepare: function () {
+                            return openGuestDemoManageContextMenu();
+                        },
+                        target: function () {
+                            if (!isGuestDemoElementVisible(contextRenameButton)) {
+                                openGuestDemoManageContextMenu();
+                            }
+                            return findFirstVisibleGuestDemoElement([
+                                function () { return getGuestDemoContextActionsTarget(["rename", "delete", "download"]); },
+                                contextRenameButton,
+                                contextDeleteButton,
+                                contextMenu,
+                                getGuestDemoPreferredRow,
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    12,
+                    1,
+                    7,
+                    "advanced_samples",
+                    textByLang("압축, Git, 지도, MP3 변환", "Archive, Git, maps, and MP3 conversion"),
+                    textByLang("압축 해제, 공개 Git 레포 보기, 지도 생성, MP3 변환, 오디오 미리보기를 체험할 수 있도록 전용 샘플을 준비했습니다.", "Dedicated samples are prepared for archive extraction, public Git repo viewing, map creation, MP3 conversion, and audio preview."),
+                    textByLang("강조된 샘플 중 확인하고 싶은 행을 우클릭하세요.", "Right-click whichever highlighted sample you want to inspect."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_advanced",
+                        prepare: function () {
+                            bindGuestDemoStepAutoAdvance(listContainer, "contextmenu", "advanced_samples", {
+                                capture: true,
+                                resolveCurrentUi: true,
+                                filter: function (event) {
+                                    return Boolean(
+                                        event &&
+                                        event.target &&
+                                        event.target.closest &&
+                                        event.target.closest(".handrive-item-row")
+                                    );
+                                },
+                                delayMs: 240,
+                            });
+                            return getGuestDemoAdvancedSampleTarget() || getGuestDemoAdvancedSampleRow();
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([
+                                getGuestDemoAdvancedSampleTarget,
+                                ".handrive-list-items .handrive-item-row:not(.is-empty)",
+                                listContainer,
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    12,
+                    2,
+                    7,
+                    "advanced_archive_menu",
+                    textByLang("압축 해제", "Archive extraction"),
+                    textByLang("압축 파일을 우클릭하면 압축 해제 항목으로 압축 내용을 현재 드라이브에 풀 수 있습니다.", "Right-click an archive file to extract its contents into the current drive."),
+                    textByLang("압축 해제 항목을 확인한 뒤 다음 단계로 이동하세요.", "Check the Extract action, then move to the next step."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_advanced",
+                        prepare: function () {
+                            if (!isGuestDemoElementVisible(contextExtractArchiveButton)) {
+                                return openGuestDemoAdvancedContextMenu("archive");
+                            }
+                            return contextExtractArchiveButton;
+                        },
+                        target: function () {
+                            if (!isGuestDemoElementVisible(contextExtractArchiveButton)) {
+                                openGuestDemoAdvancedContextMenu("archive");
+                            }
+                            return findFirstVisibleGuestDemoElement([
+                                contextExtractArchiveButton,
+                                contextMenu,
+                                getGuestDemoAdvancedSampleTarget,
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    12,
+                    3,
+                    7,
+                    "advanced_git_menu",
+                    textByLang("Git 레포", "Git repository"),
+                    textByLang("폴더나 공개 repo 샘플을 우클릭하면 Git 레포 생성, 관리, 브랜치 같은 Git 관련 항목을 확인할 수 있습니다.", "Right-click a folder or public repo sample to find Git repository, management, and branch actions."),
+                    textByLang("Git 관련 메뉴 항목을 확인한 뒤 다음 단계로 이동하세요.", "Check the Git menu action, then move to the next step."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_advanced",
+                        prepare: function () {
+                            if (
+                                !isGuestDemoElementVisible(contextGitCreateRepoButton) &&
+                                !isGuestDemoElementVisible(contextGitManageRepoButton) &&
+                                !isGuestDemoElementVisible(contextGitCreateBranchButton)
+                            ) {
+                                return openGuestDemoAdvancedContextMenu("git");
+                            }
+                            return getGuestDemoContextActionsTarget(["git-create-repo", "git-manage-repo", "git-create-branch"]);
+                        },
+                        target: function () {
+                            if (
+                                !isGuestDemoElementVisible(contextGitCreateRepoButton) &&
+                                !isGuestDemoElementVisible(contextGitManageRepoButton) &&
+                                !isGuestDemoElementVisible(contextGitCreateBranchButton)
+                            ) {
+                                openGuestDemoAdvancedContextMenu("git");
+                            }
+                            return findFirstVisibleGuestDemoElement([
+                                function () { return getGuestDemoContextActionsTarget(["git-create-repo", "git-manage-repo", "git-create-branch"]); },
+                                contextGitCreateRepoButton,
+                                contextGitManageRepoButton,
+                                contextGitCreateBranchButton,
+                                contextMenu,
+                                getGuestDemoAdvancedSampleTarget,
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    12,
+                    4,
+                    7,
+                    "advanced_map_menu",
+                    textByLang("지도 생성", "Map creation"),
+                    textByLang("이미지나 SVG 파일을 우클릭하면 지도 생성 항목으로 맵 협업용 지도를 만들 수 있습니다.", "Right-click an image or SVG file to create a map for map collaboration."),
+                    textByLang("지도 생성 항목을 확인한 뒤 다음 단계로 이동하세요.", "Check the Create map action, then move to the next step."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_advanced",
+                        prepare: function () {
+                            if (!isGuestDemoElementVisible(contextCreateMapButton)) {
+                                return openGuestDemoAdvancedContextMenu("map");
+                            }
+                            return contextCreateMapButton;
+                        },
+                        target: function () {
+                            if (!isGuestDemoElementVisible(contextCreateMapButton)) {
+                                openGuestDemoAdvancedContextMenu("map");
+                            }
+                            return findFirstVisibleGuestDemoElement([
+                                contextCreateMapButton,
+                                contextMenu,
+                                getGuestDemoAdvancedSampleTarget,
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    12,
+                    5,
+                    7,
+                    "advanced_mp3_menu",
+                    textByLang("MP3 변환", "MP3 conversion"),
+                    textByLang("동영상 파일을 우클릭하면 MP3 변환 항목으로 오디오 파일을 작업 내역에 추가합니다.", "Right-click a video file to add an MP3 conversion job."),
+                    textByLang("MP3 변환 항목을 확인한 뒤 다음 단계로 이동하세요.", "Check the Convert to MP3 action, then move to the next step."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_advanced",
+                        prepare: function () {
+                            if (!isGuestDemoElementVisible(contextConvertMp3Button)) {
+                                return openGuestDemoAdvancedContextMenu("mp3");
+                            }
+                            return contextConvertMp3Button;
+                        },
+                        target: function () {
+                            if (!isGuestDemoElementVisible(contextConvertMp3Button)) {
+                                openGuestDemoAdvancedContextMenu("mp3");
+                            }
+                            return findFirstVisibleGuestDemoElement([
+                                contextConvertMp3Button,
+                                contextMenu,
+                                getGuestDemoAdvancedSampleTarget,
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    12,
+                    6,
+                    7,
+                    "advanced_audio_menu",
+                    textByLang("오디오 미리보기", "Audio preview"),
+                    textByLang("오디오 파일은 열기나 다운로드 항목으로 재생 가능한 파일을 확인하고 저장할 수 있습니다.", "Audio files use Open and Download actions for playback and saving."),
+                    textByLang("열기와 다운로드 항목을 확인한 뒤 다음 단계로 이동하세요.", "Check the Open and Download actions, then move to the next step."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_advanced",
+                        prepare: function () {
+                            if (!isGuestDemoAudioContextTarget()) {
+                                return openGuestDemoAdvancedContextMenu("audio");
+                            }
+                            return getGuestDemoContextActionsTarget(["open", "download"]) || contextMenu;
+                        },
+                        target: function () {
+                            if (!isGuestDemoAudioContextTarget()) {
+                                openGuestDemoAdvancedContextMenu("audio");
+                            }
+                            return findFirstVisibleGuestDemoElement([
+                                function () { return getGuestDemoContextActionsTarget(["open", "download"]); },
+                                contextOpenButton,
+                                contextDownloadButton,
+                                contextMenu,
+                                getGuestDemoAdvancedSampleTarget,
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    12,
+                    7,
+                    7,
+                    "advanced_default_menu",
+                    textByLang("선택한 항목의 메뉴", "Selected item menu"),
+                    textByLang("선택한 행의 종류와 권한에 따라 가능한 작업만 우클릭 메뉴에 표시됩니다.", "The context menu only shows actions available for the selected row type and permissions."),
+                    textByLang("현재 열린 우클릭 메뉴를 확인한 뒤 다음 단계로 이동하세요.", "Review the open context menu, then move to the next step."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_advanced",
+                        prepare: function () {
+                            return isGuestDemoElementVisible(contextMenu) ? contextMenu : openGuestDemoAdvancedContextMenu();
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([contextMenu, getGuestDemoAdvancedSampleTarget, listContainer]);
+                        },
+                    }
+                ),
+                step(
+                    13,
+                    1,
+                    1,
+                    "layout_splitter",
+                    textByLang("상세 영역과 확대/축소", "Detail layout and zoom"),
+                    textByLang("분할 막대로 목록과 미리보기/편집기 크기를 조절하고, 미리보기 영역에서는 Ctrl+스크롤 또는 모바일 핀치로 배율을 조절할 수 있습니다.", "Drag the splitter to resize the list and preview/editor, and use Ctrl+wheel or mobile pinch in the preview area to adjust zoom."),
+                    textByLang("분할 막대와 미리보기 영역을 확인하고 직접 조절해보세요.", "Check the splitter and preview area, then try resizing or zooming."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_layout",
+                        prepare: function () {
+                            startGuestDemoOnboarding();
+                        },
+                        target: function () {
+                            return buildGuestDemoCompositeTarget([previewBody, listSplitter]) ||
+                                findFirstVisibleGuestDemoElement([previewBody, listSplitter, previewPanel, listItemsContainer, listLayout]);
+                        },
+                    }
+                ),
+                step(
+                    14,
+                    1,
+                    1,
+                    "preview_drag",
+                    textByLang("미리보기 위치 이동", "Moving the preview"),
+                    textByLang("미리보기 헤더를 드래그하면 미리보기를 모달처럼 띄우거나 화면의 상하좌우 위치로 옮길 수 있습니다.", "Drag the preview header to float the preview like a modal or move it to any side of the screen."),
+                    textByLang("미리보기 헤더를 잡고 원하는 위치로 드래그해보세요.", "Drag the preview header to the position you want."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_preview_drag",
+                        prepare: function () {
+                            startGuestDemoOnboarding();
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([previewHead, previewPanel, previewBody, listLayout]);
+                        },
+                        placement: "top",
+                    }
+                ),
+                step(
+                    15,
+                    1,
+                    2,
+                    "jobs_panel",
+                    textByLang("작업 내역", "Job history"),
+                    textByLang("업로드, 이동, 삭제, 압축, YouTube 저장, MP3 변환 같은 비동기 작업은 이 패널에 진행률과 결과가 표시됩니다.", "Uploads, moves, deletes, archive jobs, YouTube saves, and MP3 conversions show progress and results in this panel."),
+                    textByLang("작업 내역 패널을 확인한 뒤 다음 단계로 이동하세요.", "Check the job history panel, then move to the next step."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_jobs",
+                        prepare: showGuestDemoQueuePreview,
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([uploadQueuePanel, listPane, listContainer]);
+                        },
+                        placement: "left",
+                    }
+                ),
+                step(
+                    15,
+                    2,
+                    2,
+                    "jobs_item",
+                    textByLang("작업 내역", "Job history"),
+                    textByLang("작업 항목은 클릭하면 미리보기, 더블클릭하면 열기 동작을 합니다.", "Click a job item to preview it, or double-click it to open."),
+                    textByLang("샘플 작업 항목을 확인하세요.", "Check the sample job items."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_jobs",
+                        prepare: showGuestDemoQueuePreview,
+                        target: function () {
+                            return getGuestDemoJobItemTarget();
+                        },
+                        placement: "left",
+                    }
+                ),
+                step(
+                    16,
+                    1,
+                    2,
+                    "help_button",
+                    textByLang("도움말과 튜토리얼 재실행", "Help and restarting the tutorial"),
+                    textByLang("상단 도움말에서 기능 설명을 다시 볼 수 있습니다.", "Open Help to review feature docs."),
+                    textByLang("도움말 아이콘을 누르면 도움말 모달이 열립니다.", "Press the help icon to open the help modal."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_help",
+                        prepare: function () {
+                            bindGuestDemoStepAutoAdvance("#handrive-page-help-btn", "click", "help_button", {
+                                capture: true,
+                                delayMs: 260,
+                            });
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement(["#handrive-page-help-btn", ".handrive-help-icon-link", onboarding]);
+                        },
+                    }
+                ),
+                step(
+                    16,
+                    2,
+                    2,
+                    "help_modal",
+                    textByLang("도움말과 튜토리얼 재실행", "Help and restarting the tutorial"),
+                    textByLang("도움말 모달의 튜토리얼 버튼으로 이 투어를 언제든 다시 시작할 수 있습니다.", "Use the Tutorial button in Help to run this tour again anytime."),
+                    textByLang("도움말 제목 옆의 튜토리얼 버튼 위치를 확인하세요.", "Check the Tutorial button next to the Help title."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_help",
+                        prepare: function () {
+                            return openGuestDemoHelpModal();
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([
+                                ".handrive-help-modal-title-row",
+                                ".handrive-help-modal-tutorial-btn",
+                                ".handrive-help-modal-title",
+                                ".handrive-help-modal-head",
+                                getGuestDemoHelpModalTarget,
+                                "#handrive-page-help-btn",
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    17,
+                    1,
+                    1,
+                    "practice",
+                    textByLang("자유연습", "Free practice"),
+                    textByLang("지금부터는 튜토리얼 임시 드라이브에서 파일 열기, 업로드, 새 파일 만들기, 공유 설정을 자유롭게 시도할 수 있습니다.", "You can now freely try opening files, uploading, creating files, and changing share settings inside the temporary tutorial drive."),
+                    isAuthenticated
+                        ? textByLang("강조된 HanDrive 영역 안에서 원하는 기능을 눌러 연습해보세요. 종료하면 임시 파일은 삭제됩니다.", "Use any feature inside the highlighted HanDrive area. Ending the tutorial removes the temporary files.")
+                        : textByLang("강조된 HanDrive 영역 안에서 원하는 기능을 눌러 연습해보세요. 로그인 시 개인 드라이브 이용이 가능합니다.", "Use any feature inside the highlighted HanDrive area. Log in to use your personal drive."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_practice",
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([listLayout, listPane, listContainer, root]);
+                        },
+                        placement: "top",
+                    }
+                ),
+            ];
+        }
+
+        function getGuestDemoStepIndexById(steps, stepId) {
+            var wantedId = String(stepId || "");
+            if (!wantedId) {
+                return -1;
+            }
+            for (var index = 0; index < steps.length; index += 1) {
+                if (steps[index] && steps[index].id === wantedId) {
+                    return index;
+                }
+            }
+            return -1;
+        }
+
+        function getGuestDemoFirstGroupStepIndex(steps, groupIndex) {
+            var targetGroup = Math.max(1, Math.min(HANDRIVE_TUTORIAL_TOTAL_GROUPS, Math.floor(Number(groupIndex) || 1)));
+            for (var index = 0; index < steps.length; index += 1) {
+                if (normalizeTutorialStepProgressMeta(index, steps[index]).groupIndex === targetGroup) {
+                    return index;
+                }
+            }
+            return 0;
+        }
+
+        function getGuestDemoPreferredStepIdForGroup(groupIndex) {
+            if (groupIndex === 4) {
+                return getGuestDemoVisiblePreviewPanel() ? "preview_panel" : "preview_select";
+            }
+            if (groupIndex === 5) {
+                return getGuestDemoVisiblePreviewPanel() ? "preview_tools_actions" : "preview_tools_actions";
+            }
+            if (groupIndex === 6) {
+                if (isGuestDemoEditorVisible() || isGuestDemoEditTransitionPending()) {
+                    return "edit_surface";
+                }
+                if (getGuestDemoVisiblePreviewPanel()) {
+                    return "edit_open";
+                }
+                return "edit_select_file";
+            }
+            if (groupIndex === 7) {
+                if (getGuestDemoRenameModalTarget()) {
+                    return "save_rename_modal";
+                }
+                if (isGuestDemoElementVisible(contextRenameButton)) {
+                    return "save_rename_menu";
+                }
+                return isGuestDemoEditorVisible() ? "save_filename" : "save_rename_row";
+            }
+            if (groupIndex === 8) {
+                return isGuestDemoElementVisible(contextUploadButton) ? "upload_context" : "upload_drop";
+            }
+            if (groupIndex === 9) {
+                if (getGuestDemoFolderCreateModalTarget()) {
+                    return "create_result";
+                }
+                if (isGuestDemoCreateMenuReady()) {
+                    return "create_context_actions";
+                }
+                return "create_folder_row";
+            }
+            if (groupIndex === 10) {
+                if (getGuestDemoShareModalTarget()) {
+                    return "share_url";
+                }
+                if (getGuestDemoVisiblePreviewPanel()) {
+                    return "share_button";
+                }
+                return "share_select_file";
+            }
+            if (groupIndex === 11) {
+                return isGuestDemoElementVisible(contextRenameButton) ? "manage_menu" : "manage_row";
+            }
+            if (groupIndex === 12) {
+                var advancedMenuStepId = getGuestDemoAdvancedMenuStepId();
+                if (advancedMenuStepId) {
+                    return advancedMenuStepId;
+                }
+                return "advanced_samples";
+            }
+            if (groupIndex === 14) {
+                return "preview_drag";
+            }
+            if (groupIndex === 15) {
+                return getGuestDemoJobItemTarget() ? "jobs_item" : "jobs_panel";
+            }
+            if (groupIndex === 16) {
+                return getGuestDemoHelpModalTarget() ? "help_modal" : "help_button";
+            }
+            return "";
+        }
+
+        function resolveGuestDemoStepIndexForCurrentUi(steps, requestedIndex) {
+            if (!steps.length) {
+                return 0;
+            }
+            var normalizedIndex = Math.max(0, Math.min(
+                steps.length - 1,
+                Math.floor(Number(requestedIndex) || 0)
+            ));
+            var requestedGroup = normalizeTutorialStepProgressMeta(normalizedIndex, steps[normalizedIndex]).groupIndex;
+            var preferredId = getGuestDemoPreferredStepIdForGroup(requestedGroup);
+            var preferredIndex = getGuestDemoStepIndexById(steps, preferredId);
+            if (
+                preferredIndex >= 0 &&
+                normalizeTutorialStepProgressMeta(preferredIndex, steps[preferredIndex]).groupIndex === requestedGroup
+            ) {
+                return preferredIndex;
+            }
+            return getGuestDemoFirstGroupStepIndex(steps, requestedGroup);
+        }
+
+        function isGuestDemoStepCompatibleWithCurrentUi(step) {
+            var stepId = step && step.id ? String(step.id) : "";
+            if (!stepId) {
+                return true;
+            }
+            var hasPreview = Boolean(getGuestDemoVisiblePreviewPanel());
+            var hasEditor = isGuestDemoEditorVisible();
+            var isEditTransition = isGuestDemoEditTransitionPending();
+            var hasRenameMenu = isGuestDemoElementVisible(contextRenameButton);
+            var hasRenameModal = Boolean(getGuestDemoRenameModalTarget());
+            var hasUploadMenu = isGuestDemoElementVisible(contextUploadButton);
+            var hasCreateMenu = isGuestDemoCreateMenuReady();
+            var hasCreateModal = Boolean(getGuestDemoFolderCreateModalTarget());
+            var hasShareModal = Boolean(getGuestDemoShareModalTarget());
+            var advancedMenuStepId = getGuestDemoAdvancedMenuStepId();
+            var hasHelpModal = Boolean(getGuestDemoHelpModalTarget());
+
+            switch (stepId) {
+                case "preview_select":
+                    return !hasPreview;
+                case "preview_panel":
+                    return hasPreview;
+                case "preview_tools_actions":
+                case "preview_tools_zoom":
+                    return hasPreview;
+                case "edit_select_file":
+                    return !hasPreview && !hasEditor && !isEditTransition;
+                case "edit_open":
+                    return hasPreview && !hasEditor && !isEditTransition;
+                case "edit_surface":
+                    return hasEditor || isEditTransition;
+                case "save_filename":
+                case "save_action":
+                    return hasEditor;
+                case "save_rename_row":
+                    return !hasEditor && !hasRenameMenu && !hasRenameModal;
+                case "save_rename_menu":
+                    return hasRenameMenu && !hasRenameModal;
+                case "save_rename_modal":
+                    return hasRenameModal;
+                case "upload_drop":
+                    return !hasUploadMenu;
+                case "upload_context":
+                    return hasUploadMenu;
+                case "create_folder_row":
+                    return !hasCreateMenu && !hasCreateModal;
+                case "create_context_actions":
+                case "create_open_action":
+                    return hasCreateMenu && !hasCreateModal;
+                case "create_result":
+                    return hasCreateModal;
+                case "share_select_file":
+                    return !hasPreview && !hasShareModal;
+                case "share_button":
+                    return hasPreview && !hasShareModal;
+                case "share_url":
+                case "share_targets":
+                case "share_edit":
+                    return hasShareModal;
+                case "manage_row":
+                    return !hasRenameMenu;
+                case "manage_menu":
+                    return hasRenameMenu;
+                case "advanced_samples":
+                    return !advancedMenuStepId;
+                case "advanced_archive_menu":
+                    return advancedMenuStepId === "advanced_archive_menu";
+                case "advanced_git_menu":
+                    return advancedMenuStepId === "advanced_git_menu";
+                case "advanced_map_menu":
+                    return advancedMenuStepId === "advanced_map_menu";
+                case "advanced_mp3_menu":
+                    return advancedMenuStepId === "advanced_mp3_menu";
+                case "advanced_audio_menu":
+                    return advancedMenuStepId === "advanced_audio_menu";
+                case "advanced_default_menu":
+                    return advancedMenuStepId === "advanced_default_menu";
+                case "jobs_panel":
+                case "jobs_item":
+                    return Boolean(uploadQueuePanel && !uploadQueuePanel.hidden);
+                case "help_button":
+                    return !hasHelpModal;
+                case "help_modal":
+                    return hasHelpModal;
+                default:
+                    return true;
+            }
+        }
+
+        function showGuestDemoPreferredStepForCurrentUi(activeStepMeta, activeStep) {
+            if (!activeStepMeta || !activeStep) {
+                return false;
+            }
+            var preferredId = getGuestDemoPreferredStepIdForGroup(activeStepMeta.groupIndex);
+            if (!preferredId || activeStep.id === preferredId) {
+                return false;
+            }
+            var tourSteps = getGuestDemoTourSteps(null);
+            var preferredStepIndex = getGuestDemoStepIndexById(tourSteps, preferredId);
+            if (
+                preferredStepIndex < 0 ||
+                normalizeTutorialStepProgressMeta(preferredStepIndex, tourSteps[preferredStepIndex]).groupIndex !== activeStepMeta.groupIndex
+            ) {
+                return false;
+            }
+            showGuestDemoStep(null, preferredStepIndex);
+            return true;
+        }
+
+        function rerouteGuestDemoStepForCurrentUi(activeStepMeta, activeStep) {
+            if (!activeStepMeta || !activeStep || isGuestDemoStepCompatibleWithCurrentUi(activeStep)) {
+                return false;
+            }
+            return showGuestDemoPreferredStepForCurrentUi(activeStepMeta, activeStep);
+        }
+
+        function getGuestDemoActiveGroupIndex() {
+            var meta = normalizeTutorialStepProgressMeta(guestDemoTourCurrentIndex, guestDemoTourActiveStep || null);
+            return meta.groupIndex;
+        }
+
+        function showGuestDemoStep(onboarding, stepIndex) {
+            var steps = getGuestDemoTourSteps(onboarding);
+            if (!steps.length) {
+                return 0;
+            }
+            var normalizedIndex = ((Number(stepIndex) || 0) % steps.length + steps.length) % steps.length;
+            var step = steps[normalizedIndex];
+            var keepOpenContextMenu = Boolean(
+                step &&
+                isGuestDemoAdvancedMenuStepId(step.id) &&
+                isGuestDemoElementVisible(contextMenu)
+            );
+            cancelGuestDemoTourPositionFrame();
+            guestDemoTourActiveTarget = null;
+            guestDemoTourActiveStep = null;
+            disconnectGuestDemoTourResizeObservers();
+            if (guestDemoTourStepCleanup) {
+                guestDemoTourStepCleanup();
+                guestDemoTourStepCleanup = null;
+            }
+            if (!keepOpenContextMenu) {
+                closeContextMenu();
+            }
+            var preparedTarget = null;
+            guestDemoTourActiveIndex = normalizedIndex;
+            guestDemoTourCurrentIndex = normalizedIndex;
+            updateGuestDemoStepState(onboarding, normalizedIndex);
+            bindGuestDemoTourPositionEvents();
+            if (typeof step.prepare === "function") {
+                preparedTarget = step.prepare();
+            }
+            var positionStepTarget = function (attempt) {
+                if (guestDemoTourCurrentIndex !== normalizedIndex) {
+                    return;
+                }
+                var target = resolveGuestDemoElement(preparedTarget) || resolveGuestDemoElement(step.target);
+                if (!isGuestDemoElementVisible(target)) {
+                    target = resolveGuestDemoElement(step.target);
+                }
+                if (!isGuestDemoElementVisible(target)) {
+                    if (step.allowTargetFallback) {
+                        target = findFirstVisibleGuestDemoElement([step.target, listContainer, root]);
+                    } else if (attempt < 20) {
+                        window.setTimeout(function () {
+                            positionStepTarget(attempt + 1);
+                        }, attempt < 2 ? 80 : 140);
+                        return;
+                    }
+                }
+                if (!isGuestDemoElementVisible(target)) {
+                    return;
+                }
+                scrollGuestDemoTargetIntoView(target);
+                window.setTimeout(function () {
+                    if (guestDemoTourCurrentIndex !== normalizedIndex) {
+                        return;
+                    }
+                    positionGuestDemoTour(target, step, normalizedIndex, steps.length);
+                }, 90);
+            };
+            window.requestAnimationFrame(function () {
+                window.setTimeout(function () {
+                    positionStepTarget(0);
+                }, 90);
+            });
+            return normalizedIndex;
+        }
+
+        function updateGuestDemoStepState(onboarding, stepIndex) {
+            if (!onboarding) {
+                return;
+            }
+            var stepSelect = onboarding.querySelector("select.handrive-guest-demo-steps");
+            if (stepSelect) {
+                stepSelect.value = String(stepIndex);
+            }
+            var steps = onboarding.querySelectorAll(".handrive-guest-demo-steps li");
+            steps.forEach(function (step, index) {
+                var isActive = index === stepIndex;
+                step.classList.toggle("is-active", isActive);
+                if (isActive) {
+                    step.setAttribute("aria-current", "step");
+                } else {
+                    step.removeAttribute("aria-current");
+                }
+            });
+        }
+
+        function getGuestDemoTutorialRootPath() {
+            var tutorialFilePath = normalizePath(demoTutorialPath || "", true);
+            if (tutorialFilePath) {
+                return normalizePath(getParentPath(tutorialFilePath), true);
+            }
+            return getTutorialRootPath(state.currentDir || currentDir || "");
+        }
+
+        function shouldReturnToGuestDemoTutorialRoot() {
+            if (!isTutorialMode) {
+                return false;
+            }
+            var tutorialRootPath = getGuestDemoTutorialRootPath();
+            var currentPath = normalizePath(state.currentDir || "", true);
+            return Boolean(
+                tutorialRootPath &&
+                currentPath &&
+                currentPath !== tutorialRootPath &&
+                currentPath.startsWith(tutorialRootPath + "/")
+            );
+        }
+
+        async function ensureGuestDemoTutorialRootForStepChange() {
+            var tutorialRootPath = getGuestDemoTutorialRootPath();
+            if (!tutorialRootPath || !shouldReturnToGuestDemoTutorialRoot()) {
+                return tutorialRootPath;
+            }
+            await navigateToDirectory(tutorialRootPath, { historyMode: "replace" });
+            return tutorialRootPath;
+        }
+
+        async function runGuestDemoExactStep(stepIndex) {
+            var navigationToken = guestDemoStepNavigationToken + 1;
+            guestDemoStepNavigationToken = navigationToken;
+            await ensureGuestDemoTutorialRootForStepChange();
+            if (navigationToken !== guestDemoStepNavigationToken) {
+                return guestDemoTourCurrentIndex;
+            }
+            return showGuestDemoStep(null, stepIndex);
+        }
+
+        async function runGuestDemoStep(stepIndex) {
+            var navigationToken = guestDemoStepNavigationToken + 1;
+            guestDemoStepNavigationToken = navigationToken;
+            await ensureGuestDemoTutorialRootForStepChange();
+            if (navigationToken !== guestDemoStepNavigationToken) {
+                return guestDemoTourCurrentIndex;
+            }
+            var steps = getGuestDemoTourSteps(null);
+            return showGuestDemoStep(null, resolveGuestDemoStepIndexForCurrentUi(steps, stepIndex));
+        }
+
+        async function runGuestDemoGroupStep(groupIndex) {
+            var steps = getGuestDemoTourSteps(null);
+            var stepIndex = getGuestDemoFirstGroupStepIndex(steps, groupIndex);
+            return runGuestDemoStep(stepIndex);
+        }
+
+        function dismissGuestDemoOnboarding(onboarding) {
+            teardownGuestDemoTour();
+            setGuestDemoOnboardingDismissed();
+            updateListLayoutMode();
+            scheduleListBodyHeight();
+        }
+
+        var guestDemoCompleting = false;
+
+        function getTutorialCleanUrl() {
+            try {
+                var url = new URL(window.location.href);
+                url.searchParams.delete("tutorial");
+                url.searchParams.delete("start");
+                url.searchParams.delete("tutorial_step");
+                return url.pathname + (url.search ? url.search : "") + (url.hash || "");
+            } catch (error) {
+                return window.location.pathname;
+            }
+        }
+
+        function getRequestedGuestDemoStepIndex(maxSteps) {
+            try {
+                var value = initialTutorialStepValue || new URLSearchParams(window.location.search).get("tutorial_step");
+                var parsed = Number(value);
+                if (!Number.isFinite(parsed)) {
+                    return 0;
+                }
+                return Math.max(0, Math.min(Math.floor(parsed), Math.max(0, Number(maxSteps) - 1)));
+            } catch (error) {
+                return 0;
+            }
+        }
+
+        async function completeGuestDemoOnboarding(onboarding, action) {
+            if (guestDemoCompleting) {
+                return;
+            }
+            guestDemoCompleting = true;
+            try {
+                var result = null;
+                if (tutorialCompleteApiUrl) {
+                    result = await requestJson(tutorialCompleteApiUrl, buildPostOptions({
+                        action: action || "complete"
+                    }));
+                }
+                dismissGuestDemoOnboarding(onboarding);
+                var shouldLeaveDeletedTutorialWorkspace = Boolean(
+                    result &&
+                    Array.isArray(result.deleted_paths) &&
+                    result.deleted_paths.length > 0
+                );
+                if (isAuthenticated || shouldLeaveDeletedTutorialWorkspace) {
+                    window.setTimeout(function () {
+                        var tutorialHomePath = isAuthenticated ? (scopedHomeDir || "guest") : "guest";
+                        var nextUrl = getTutorialCleanUrl();
+                        if (shouldLeaveDeletedTutorialWorkspace) {
+                            nextUrl = buildListUrl(handriveBaseUrl, tutorialHomePath, handriveRootUrl);
+                        } else if (!isAuthenticated) {
+                            nextUrl = buildListUrl(handriveBaseUrl, "guest", handriveRootUrl);
+                        }
+                        window.location.replace(nextUrl);
+                    }, 80);
+                }
+            } catch (error) {
+                guestDemoCompleting = false;
+                alertError(error);
+            }
+        }
+
+        function initializeGuestDemoOnboarding() {
+            if (!isTutorialMode) {
+                return;
+            }
+            if (isGuestDemoOnboardingDismissed()) {
+                return;
+            }
+            var tutorialStepIndex = getRequestedGuestDemoStepIndex(getGuestDemoTourSteps(null).length);
+            tutorialStepIndex = resolveGuestDemoStepIndexForCurrentUi(getGuestDemoTourSteps(null), tutorialStepIndex);
+            tutorialStepIndex = showGuestDemoStep(null, tutorialStepIndex);
+            if (shouldAutostartTutorial) {
+                window.setTimeout(function () {
+                    runGuestDemoStep(tutorialStepIndex).catch(alertError);
+                }, 220);
+            }
+        }
+
         // 초기화 시 약간의 지연 후 레이아웃 업데이트
         setTimeout(function() {
             updateListLayoutMode();
             updateListColumnVisibility();
         }, 100);
-        
+
         clearPreviewPane();
         syncArchiveToolbarActions();
         renderList();
+        initializeGuestDemoOnboarding();
         openInitialEditTargetFromQuery();
         enqueuePendingYoutubeDownloaderSave();
         var initialSearchQuery = listSearchInput
@@ -17747,9 +22436,13 @@
         const listApiUrl = root.dataset.listApiUrl || "";
         const previewApiUrl = root.dataset.previewApiUrl || "";
         const pdfPreviewApiUrl = root.dataset.pdfPreviewApiUrl || "";
+        const scopedHomeDir = normalizePath(root.dataset.scopedHomeDir || "", true);
+        const tutorialReturnUrl = String(root.dataset.tutorialReturnUrl || "").trim();
         let currentDocPath = root.dataset.docPath || "";
         let currentDocSlugPath = root.dataset.docSlugPath || currentDocPath;
         const docIsUrlOnly = root.dataset.docIsUrlOnly === "1";
+        let docShareCanEdit = root.dataset.docShareCanEdit === "1";
+        let docShareCanManage = root.dataset.docShareCanManage !== "0";
         const initialDocShareAllowedUsers = getJsonScriptData("handrive-doc-share-allowed-users", []);
         const parentDir = root.dataset.parentDir || "";
         const deleteButton = document.getElementById("handrive-delete-btn");
@@ -17777,6 +22470,55 @@
             ".mp4", ".webm", ".mov", ".mkv", ".m4v", ".ogv",
             ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".weba",
         ]);
+
+        function getViewTutorialReturnUrl() {
+            if (tutorialReturnUrl) {
+                return tutorialReturnUrl;
+            }
+            return appendQueryParams(buildListUrl(handriveBaseUrl, parentDir, handriveRootUrl), { tutorial: "1" });
+        }
+
+        function getViewTutorialReturnUrlForStep(stepIndex) {
+            const normalizedStep = Math.max(0, Math.floor(Number(stepIndex) || 0));
+            return appendQueryParams(getViewTutorialReturnUrl(), {
+                tutorial: "1",
+                tutorial_step: String(normalizedStep),
+            });
+        }
+
+        function buildViewTutorialUrl(urlValue) {
+            if (!isTutorialMode) {
+                return urlValue;
+            }
+            return appendQueryParams(urlValue, {
+                tutorial: "1",
+                from_list: getViewTutorialReturnUrl(),
+            });
+        }
+
+        function getViewTutorialExitUrl() {
+            return buildListUrl(handriveBaseUrl, isAuthenticated ? (scopedHomeDir || "guest") : "guest", handriveRootUrl);
+        }
+
+        let viewTutorialCompleting = false;
+
+        async function completeViewTutorial(action) {
+            if (viewTutorialCompleting) {
+                return;
+            }
+            viewTutorialCompleting = true;
+            try {
+                if (tutorialCompleteApiUrl) {
+                    await requestJson(tutorialCompleteApiUrl, buildPostOptions({
+                        action: action || "complete",
+                    }));
+                }
+                window.location.replace(getViewTutorialExitUrl());
+            } catch (error) {
+                viewTutorialCompleting = false;
+                alertError(error);
+            }
+        }
 
         function isViewMediaNavEntry(entry) {
             return Boolean(entry && entry.type === "file" && viewMediaNavExtensions.has(getPathFileExtension(entry.name)));
@@ -18010,7 +22752,7 @@
                 if (pathCurrentEl) pathCurrentEl.textContent = fileName;
                 document.title = fileName;
 
-                const newUrl = buildViewUrl(handriveBaseUrl, currentDocSlugPath);
+                const newUrl = buildViewTutorialUrl(buildViewUrl(handriveBaseUrl, currentDocSlugPath));
                 window.history.pushState({ handriveViewPath: currentDocPath }, "", newUrl);
 
                 updateViewNavButtons(viewNavSiblings, currentDocPath);
@@ -18078,9 +22820,7 @@
         }
 
         hydrateMediaAudioElements(contentArticle);
-        if (window.HandriveSpreadsheetEditor && typeof window.HandriveSpreadsheetEditor.hydratePreviews === "function") {
-            window.HandriveSpreadsheetEditor.hydratePreviews(contentArticle);
-        }
+        hydrateSpreadsheetPreviews(contentArticle).catch(alertError);
         renderHandriveMermaidDiagrams(contentArticle).catch(alertError);
         bindHandrivePdfFrameLoading(contentArticle);
         hydrateModelPreviews(contentArticle);
@@ -18089,6 +22829,23 @@
         restoreViewZoomForPath(currentDocPath);
 
         loadViewNavSiblings();
+
+        initializeStandaloneTutorialTour({
+            returnUrl: getViewTutorialReturnUrl(),
+            fallbackStepIndex: getTutorialGroupFirstStepIndex(2),
+            title: textByLang("파일 읽기", "Read file"),
+            body: textByLang(
+                "읽기 페이지에서도 튜토리얼이 계속됩니다. 파일 내용을 확인한 뒤 목록 튜토리얼로 돌아갈 수 있습니다.",
+                "The tutorial continues on the read page. Review the file, then return to the list tutorial."
+            ),
+            action: textByLang(
+                "이전/다음 버튼으로 목록 튜토리얼 단계로 돌아갈 수 있습니다.",
+                "Use Previous/Next to return to the list tutorial steps."
+            ),
+            targets: [contentArticle, ".handrive-toolbar", root],
+            placement: "top",
+            complete: completeViewTutorial,
+        });
 
         if (viewZoomOutButton) {
             viewZoomOutButton.addEventListener("click", function () {
@@ -18107,20 +22864,28 @@
         }
 
         const isTextArticle = contentArticle && !contentArticle.classList.contains("handrive-media");
-        if (isTextArticle) {
-            contentArticle.addEventListener("wheel", function (event) {
-                if (!event.ctrlKey && !event.metaKey) return;
-                event.preventDefault();
-                const delta = event.deltaY < 0 ? 2 : -2;
-                setViewTextFontSize(viewTextFontSize + delta);
-            }, { passive: false });
-        } else if (contentArticle && contentArticle.classList.contains("handrive-media") && getViewImageElement()) {
-            contentArticle.addEventListener("wheel", function (event) {
-                if (!event.ctrlKey && !event.metaKey) return;
-                event.preventDefault();
-                const delta = event.deltaY < 0 ? 0.15 : -0.15;
-                setViewImageZoom(viewImageZoom + delta);
-            }, { passive: false });
+        if (contentArticle && (isTextArticle || (contentArticle.classList.contains("handrive-media") && getViewImageElement()))) {
+            bindHanplanetZoomGesture(contentArticle, {
+                min: function () {
+                    return contentArticle.classList.contains("handrive-media") ? getViewImageMinZoom() : 8;
+                },
+                max: function () {
+                    return contentArticle.classList.contains("handrive-media") ? 3 : 40;
+                },
+                wheelStep: function () {
+                    return contentArticle.classList.contains("handrive-media") ? 0.15 : 2;
+                },
+                getValue: function () {
+                    return contentArticle.classList.contains("handrive-media") ? viewImageZoom : viewTextFontSize;
+                },
+                setValue: function (value) {
+                    if (contentArticle.classList.contains("handrive-media")) {
+                        setViewImageZoom(value);
+                        return;
+                    }
+                    setViewTextFontSize(value);
+                },
+            });
         }
 
         if (urlShareButton && urlShareApiUrl && currentDocPath) {
@@ -18132,26 +22897,31 @@
                     shareUrl: initialShareUrl,
                     downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(root.dataset.docShareDownloadUrl || "") : "",
                     allowedUsers: initialDocShareAllowedUsers,
-                    readOnly: root.dataset.docShareIsInherited === "1",
-                    onToggle: async function (enabled, allowedUsernames) {
+                    canEdit: docShareCanEdit,
+                    readOnly: root.dataset.docShareIsInherited === "1" || !docShareCanManage,
+                    onToggle: docShareCanManage ? async function (enabled, allowedUsernames, editEnabled) {
                         const data = await requestJson(
                             appendSharedQuery(urlShareApiUrl),
                             buildPostOptions({
                                 path: currentDocPath,
                                 enabled: enabled,
                                 allowed_usernames: allowedUsernames || [],
+                                can_edit: Boolean(editEnabled),
                             })
                         );
                         if (!enabled) {
                             window.location.reload();
                         }
+                        docShareCanEdit = Boolean(data.share_can_edit);
+                        docShareCanManage = data.share_can_manage !== false;
                         return {
                             isUrlOnly: Boolean(data.is_url_only),
                             shareUrl: data.share_url || "",
                             downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(data.share_download_url || "") : "",
                             allowedUsers: data.share_allowed_users || [],
+                            canEdit: Boolean(data.share_can_edit),
                         };
-                    },
+                    } : null,
                 });
             });
         }
@@ -18187,7 +22957,7 @@
             }
 
             try {
-                await requestJson(deleteApiUrl, buildPostOptions({ path: currentDocPath }));
+                await requestJson(appendSharedQuery(deleteApiUrl), buildPostOptions({ path: currentDocPath }));
                 window.location.href = buildListUrl(handriveBaseUrl, parentDir, handriveRootUrl);
             } catch (error) {
                 alertError(error);
@@ -18219,6 +22989,7 @@
         const mkdirApiUrl = root.dataset.mkdirApiUrl;
         const originalPath = root.dataset.originalPath || "";
         const initialDir = root.dataset.initialDir || "";
+        const tutorialReturnUrl = String(root.dataset.tutorialReturnUrl || "").trim();
         const writeEditorKind = String(root.dataset.writeEditorKind || "text").trim().toLowerCase();
         const isMediaWriteEditor = writeEditorKind === "image" || writeEditorKind === "audio" || writeEditorKind === "video" || writeEditorKind === "pdf";
         const isPublicWriteDirectSave = root.dataset.publicWriteDirectSave === "1";
@@ -18298,6 +23069,90 @@
         const handriveRootLabel = (root.dataset.handriveRootLabel || "HanDrive").trim() || "HanDrive";
         const effectiveRootLabel = handriveRootLabel;
 
+        function getWriteTutorialReturnUrl() {
+            if (tutorialReturnUrl) {
+                return tutorialReturnUrl;
+            }
+            const targetDir = normalizePath(initialDir || getParentPath(originalPath || "") || scopedHomeDir || "guest", true);
+            return buildTutorialStepUrl(
+                buildListUrl(handriveBaseUrl, targetDir, handriveRootUrl),
+                parseTutorialStepIndex(getTutorialGroupFirstStepIndex(6), HANDRIVE_TUTORIAL_TOTAL_STEPS)
+            );
+        }
+
+        function getWriteTutorialReturnStepIndex() {
+            const returnStepIndex = parseTutorialStepIndexFromUrl(getWriteTutorialReturnUrl(), HANDRIVE_TUTORIAL_TOTAL_STEPS);
+            if (returnStepIndex !== null) {
+                return returnStepIndex;
+            }
+            return getTutorialGroupFirstStepIndex(6);
+        }
+
+        function getWriteTutorialCreateTargets() {
+            return buildStandaloneTutorialCompositeTarget([filenameInput, contentInput, saveButton]);
+        }
+
+        function getWriteTutorialOptionOverrides() {
+            const returnStepIndex = getWriteTutorialReturnStepIndex();
+            const returnStepMeta = normalizeTutorialStepProgressMeta(returnStepIndex, null);
+            if (returnStepMeta.groupIndex !== 9) {
+                return {};
+            }
+            return {
+                fallbackStepIndex: returnStepIndex,
+                stepMeta: {
+                    groupIndex: 9,
+                    partIndex: 5,
+                    partCount: 5,
+                },
+                title: textByLang("새 파일 작성", "Write a new file"),
+                body: textByLang(
+                    "새 파일 작성 화면에서는 파일명과 내용을 입력하고 저장 버튼으로 파일을 생성합니다.",
+                    "On the new file write page, enter a filename and content, then use Save to create the file."
+                ),
+                action: textByLang(
+                    "파일명 입력칸, 내용 입력 영역, 저장 버튼 위치를 확인하세요.",
+                    "Check the filename field, content editor, and Save button."
+                ),
+                targets: [getWriteTutorialCreateTargets, filenameInput, contentInput, saveButton, root],
+                placement: "top",
+            };
+        }
+
+        function buildWriteTutorialViewUrl(urlValue) {
+            if (!isTutorialMode) {
+                return urlValue;
+            }
+            return appendQueryParams(urlValue, {
+                tutorial: "1",
+                from_list: getWriteTutorialReturnUrl(),
+            });
+        }
+
+        function getWriteTutorialExitUrl() {
+            return buildListUrl(handriveBaseUrl, isAuthenticated ? (scopedHomeDir || "guest") : "guest", handriveRootUrl);
+        }
+
+        let writeTutorialCompleting = false;
+
+        async function completeWriteTutorial(action) {
+            if (writeTutorialCompleting) {
+                return;
+            }
+            writeTutorialCompleting = true;
+            try {
+                if (tutorialCompleteApiUrl) {
+                    await requestJson(tutorialCompleteApiUrl, buildPostOptions({
+                        action: action || "complete",
+                    }));
+                }
+                window.location.replace(getWriteTutorialExitUrl());
+            } catch (error) {
+                writeTutorialCompleting = false;
+                alertError(error);
+            }
+        }
+
         const rawDirectories = getJsonScriptData("handrive-directory-data", []);
         const directories = [];
         const directorySet = new Set();
@@ -18339,7 +23194,7 @@
         const editorCompletionMap = window.__handriveEditorCompletionMap || {};
         const writeMarkdownImageInput = createMarkdownImageInputHandler({
             textarea: contentInput,
-            uploadApiUrl: markdownImageUploadApiUrl,
+            uploadApiUrl: appendSharedQuery(markdownImageUploadApiUrl),
             isEnabled: function () {
                 const originalExtension = getPathFileExtension(originalPath);
                 if (originalExtension) {
@@ -18531,7 +23386,7 @@
             const imagePaths = Array.from(new Set(writeMarkdownUploadedImagePaths));
             writeMarkdownUploadedImagePaths = [];
             await requestJson(
-                markdownImageCleanupApiUrl,
+                appendSharedQuery(markdownImageCleanupApiUrl),
                 buildPostOptions({
                     markdown_path: originalPath || "",
                     target_dir: normalizePath(initialDir, true),
@@ -19853,34 +24708,46 @@
             }
 
             const source = contentInput.value || "";
+            const useSyntaxHighlight = shouldUseEditorSyntaxHighlight(source);
             let renderClass = "handrive-plain-text";
-            let highlightedHtml = escapeHtml(source);
+            let highlightedHtml = "";
+            let useHighlightedHtml = false;
 
             try {
                 renderClass = resolveWriteEditorRenderClass();
-                if (renderClass === "handrive-js") {
+                if (!useSyntaxHighlight) {
+                    renderClass = "handrive-plain-text";
+                } else if (renderClass === "handrive-js") {
                     highlightedHtml = highlightJavaScriptCode(source);
+                    useHighlightedHtml = true;
                 } else if (renderClass === "handrive-editor-md") {
                     highlightedHtml = highlightMarkdownSourceCode(source);
+                    useHighlightedHtml = true;
                 } else if (renderClass === "handrive-css") {
                     highlightedHtml = highlightCssCode(source);
+                    useHighlightedHtml = true;
                 } else if (renderClass === "handrive-json") {
                     highlightedHtml = highlightJsonCode(source);
+                    useHighlightedHtml = true;
                 } else if (renderClass === "handrive-py") {
                     highlightedHtml = highlightPythonCode(source);
+                    useHighlightedHtml = true;
                 } else if (renderClass === "handrive-sql") {
                     highlightedHtml = highlightSqlCode(source);
+                    useHighlightedHtml = true;
                 } else if (renderClass === "handrive-editor-html") {
                     highlightedHtml = highlightHtmlCode(source);
+                    useHighlightedHtml = true;
                 }
             } catch (error) {
                 renderClass = "handrive-plain-text";
-                highlightedHtml = escapeHtml(source);
+                highlightedHtml = "";
+                useHighlightedHtml = false;
             }
 
             editorHighlight.classList.remove("handrive-plain-text", "handrive-editor-md", "handrive-js", "handrive-css", "handrive-json", "handrive-py", "handrive-sql", "handrive-editor-html");
             editorHighlight.classList.add(renderClass);
-            editorHighlightCode.innerHTML = highlightedHtml + (source.endsWith("\n") ? "\u200b" : "");
+            setEditorHighlightCodeContent(editorHighlightCode, source, highlightedHtml, useHighlightedHtml);
             syncEditorHighlightScroll();
         }
 
@@ -20909,6 +25776,7 @@
                 applyHandriveRenderedContentModeClass(previewContent, renderMode, renderClass);
                 previewContent.innerHTML = data && typeof data.html === "string" ? data.html : "";
                 applyHandriveCodeHighlighting(previewContent, renderClass || "ui-markdown");
+                hydrateSpreadsheetPreviews(previewContent).catch(alertError);
                 renderHandriveMermaidDiagrams(previewContent).catch(alertError);
             } catch (error) {
                 applyHandriveRenderedContentModeClass(previewContent, "plain_text", "handrive-plain-text");
@@ -21056,7 +25924,7 @@
                     return;
                 }
 
-                editor.saveToServer(saveUrl, csrfToken, originalPath, function (result) {
+                editor.saveToServer(appendSharedQuery(saveUrl), csrfToken, originalPath, function (result) {
                     if (saveButton) {
                         saveButton.disabled = false;
                         setButtonActionLabel(saveButton, originalButtonLabel);
@@ -21083,7 +25951,7 @@
                     }
                     const targetPath = (result && (result.slug_path || result.path)) || originalPath;
                     runWithBeforeUnloadBypass(function () {
-                        window.location.href = buildViewUrl(handriveBaseUrl, targetPath);
+                        window.location.href = buildWriteTutorialViewUrl(buildViewUrl(handriveBaseUrl, targetPath));
                     });
                 }, { filename: mediaFilename });
             })().catch(function (error) {
@@ -21173,7 +26041,7 @@
                     payload.commit_message = commitMessage;
                 }
                 setSaveModalSaving(true);
-                const data = await requestJson(saveApiUrl, buildPostOptions(payload));
+                const data = await requestJson(appendSharedQuery(saveApiUrl), buildPostOptions(payload));
                 writeMarkdownUploadedImagePaths = [];
                 markCurrentAsSaved();
 
@@ -21193,13 +26061,13 @@
                 if (data && data.slug_path) {
                     keepSaveLoading = Boolean(saveModal && !saveModal.hidden);
                     runWithBeforeUnloadBypass(function () {
-                        window.location.href = buildViewUrl(handriveBaseUrl, data.slug_path);
+                        window.location.href = buildWriteTutorialViewUrl(buildViewUrl(handriveBaseUrl, data.slug_path));
                     });
                     return data || {};
                 }
                 keepSaveLoading = Boolean(saveModal && !saveModal.hidden);
                 runWithBeforeUnloadBypass(function () {
-                    window.location.href = handriveRootUrl;
+                    window.location.href = isTutorialMode ? getWriteTutorialReturnUrl() : handriveRootUrl;
                 });
                 return data || {};
             } catch (error) {
@@ -21272,7 +26140,7 @@
                     }
                 }
                 const data = await requestJson(
-                    mkdirApiUrl,
+                    appendSharedQuery(mkdirApiUrl),
                     buildPostOptions({
                         parent_dir: parentDir,
                         folder_name: trimmed,
@@ -21327,7 +26195,11 @@
                         .catch(alertError)
                         .finally(function () {
                             bypassUnsavedBeforeUnload = true;
-                            window.location.assign(buildListUrl(handriveBaseUrl, targetDir, handriveRootUrl));
+                            window.location.assign(
+                                isTutorialMode
+                                    ? getWriteTutorialReturnUrl()
+                                    : buildListUrl(handriveBaseUrl, targetDir, handriveRootUrl)
+                            );
                         });
                 });
             });
@@ -21460,12 +26332,17 @@
                 recordWriteEditorSnapshot();
             });
             contentInput.addEventListener("scroll", syncEditorHighlightScroll, { passive: true });
-            contentInput.addEventListener("wheel", function (event) {
-                if (!event.ctrlKey && !event.metaKey) return;
-                event.preventDefault();
-                const delta = event.deltaY < 0 ? 2 : -2;
-                applyWriteEditorFontSize(writeEditorFontSize + delta);
-            }, { passive: false });
+            bindHanplanetZoomGesture(contentInput, {
+                min: 8,
+                max: 40,
+                wheelStep: 2,
+                getValue: function () {
+                    return writeEditorFontSize;
+                },
+                setValue: function (value) {
+                    applyWriteEditorFontSize(value);
+                },
+            });
             contentInput.addEventListener("click", function () {
                 clearEditorSuggestion();
             });
@@ -21875,9 +26752,31 @@
 
         scheduleContentInputAutoHeight();
         renderWriteEditorHighlight();
+        initializeStandaloneTutorialTour(Object.assign({
+            returnUrl: getWriteTutorialReturnUrl(),
+            fallbackStepIndex: getTutorialGroupFirstStepIndex(6),
+            title: textByLang("파일 작성과 편집", "Write and edit files"),
+            body: textByLang(
+                "작성 페이지에서도 튜토리얼이 계속됩니다. 파일명, 내용, 저장 버튼 위치를 확인하세요.",
+                "The tutorial continues on the write page. Check the filename, content, and save controls."
+            ),
+            action: textByLang(
+                "이전/다음 버튼으로 목록 튜토리얼 단계로 돌아갈 수 있습니다.",
+                "Use Previous/Next to return to the list tutorial steps."
+            ),
+            targets: [".ui-content[data-handrive-page]", root],
+            placement: "top",
+            navigate: function (url) {
+                attemptLeaveWithUnsavedGuard(function () {
+                    window.location.assign(url);
+                });
+            },
+            complete: completeWriteTutorial,
+        }, getWriteTutorialOptionOverrides()));
     }
 
     initializeHandriveAuthInteraction();
+    hydrateMarkdownCodeBlockCopyButtons(document.body);
     initializeHandrivePageHelpModal();
     initializeHandriveToolbarAutoCollapse();
     initializeHandriveBreadcrumbOverflow();

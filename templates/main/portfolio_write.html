@@ -368,8 +368,8 @@
             <div class="portfolio-write-public-url">
                 <div class="portfolio-write-public-url-main">
                     공개 URL:
-                    <a href="{% url 'main:portfolio_user_cover_letter_lang' ui_lang=ui_lang user_id=request.user.username company_slug=selected_cover_letter.slug %}" target="_blank" rel="noopener noreferrer">
-                        {% url 'main:portfolio_user_cover_letter_lang' ui_lang=ui_lang user_id=request.user.username company_slug=selected_cover_letter.slug %}
+                    <a href="{{ selected_cover_letter_public_url }}" target="_blank" rel="noopener noreferrer">
+                        {{ selected_cover_letter_public_url }}
                     </a>
                 </div>
                 <form method="post" class="portfolio-write-public-url-delete-form">

@@ -73,7 +73,7 @@
                     <a class="handrive-icon-btn" href="{{ doc_edit_url }}" aria-label="{{ handrive_text.edit_button }}" title="{{ handrive_text.edit_button }}"
                     ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true"><path d="M3 17l1-4L13 3l3 3L7 16l-4 1z"/><line x1="11" y1="5" x2="14" y2="8"/><line x1="4" y1="13" x2="7" y2="16"/></svg></a>
                 {% endif %}
-                {% if doc_can_edit %}
+                {% if doc_can_delete %}
                     <button class="handrive-icon-btn" type="button" id="handrive-delete-btn" aria-label="{{ handrive_text.delete_button }}" title="{{ handrive_text.delete_button }}"
                     ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5h4v2.5H8z"/><line x1="3" y1="5.5" x2="17" y2="5.5"/><rect x="5" y="6.5" width="10" height="11" rx="1.5"/><line x1="8.5" y1="9" x2="8.5" y2="15"/><line x1="11.5" y1="9" x2="11.5" y2="15"/></svg></button>
                 {% endif %}
@@ -88,10 +88,16 @@
     data-handrive-page="view"
     data-is-authenticated="{% if user.is_authenticated %}1{% else %}0{% endif %}"
     data-demo-save-mode="{% if handrive_demo_save_mode %}1{% else %}0{% endif %}"
+    data-tutorial-mode="{% if handrive_tutorial_mode %}1{% else %}0{% endif %}"
+    data-tutorial-forced="{% if handrive_tutorial_forced %}1{% else %}0{% endif %}"
+    data-tutorial-autostart="{% if handrive_tutorial_autostart %}1{% else %}0{% endif %}"
+    data-tutorial-return-url="{{ handrive_tutorial_return_url|default:''|escape }}"
     data-handrive-base-url="{{ handrive_base_url }}"
     data-handrive-root-url="{{ handrive_root_url }}"
+    data-scoped-home-dir="{{ scoped_home_dir|default:'' }}"
     data-delete-api-url="{{ handrive_api_delete_url }}"
     data-url-share-api-url="{{ handrive_api_url_share_url }}"
+    data-tutorial-complete-api-url="{{ handrive_api_tutorial_complete_url }}"
     data-doc-path="{{ doc_relative_path }}"
     data-doc-slug-path="{{ doc_slug_path }}"
     data-doc-extension="{{ doc_file_extension }}"
@@ -101,6 +107,8 @@
     data-doc-share-url="{{ doc_share_url }}"
     data-doc-share-download-url="{{ doc_share_download_url }}"
     data-doc-share-is-inherited="{% if doc_share_is_inherited %}1{% else %}0{% endif %}"
+    data-doc-share-can-edit="{% if doc_share_can_edit %}1{% else %}0{% endif %}"
+    data-doc-share-can-manage="{% if doc_share_can_manage %}1{% else %}0{% endif %}"
     data-parent-dir="{{ doc_parent_dir }}"
     data-ui-lang="{{ ui_lang|default:'ko' }}"
     data-handrive-shared-owner-username="{{ handrive_shared_owner_username|default:'' }}"
@@ -114,6 +122,11 @@
     data-preview-api-url="{{ handrive_api_preview_url }}"
     data-pdf-preview-api-url="{{ handrive_api_pdf_preview_url }}"
     data-handsontable-license-key="{{ handrive_handsontable_license_key|default:'non-commercial-and-evaluation' }}"
+    data-handsontable-style-url="{% static_v 'vendor/handsontable/handsontable.full.min.css' %}"
+    data-handsontable-script-url="{% static_v 'vendor/handsontable/handsontable.full.min.js' %}"
+    data-sheetjs-script-url="{% static_v 'vendor/sheetjs/xlsx.full.min.js' %}"
+    data-exceljs-script-url="{% static_v 'vendor/exceljs/exceljs.min.js' %}"
+    data-spreadsheet-editor-script-url="{% static_v 'js/handrive/spreadsheet_editor.js' %}"
     data-videojs-script-url="{% static_v 'vendor/videojs/video.min.js' %}"
     data-videojs-compat-script-url="{% static_v 'js/handrive/videojs_compat.js' %}"
     data-videojs-seek-buttons-script-url="{% static_v 'vendor/videojs/videojs-seek-buttons.min.js' %}"

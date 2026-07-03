@@ -245,6 +245,7 @@
         var settings = options || {};
         var documentRef = settings.documentRef || document;
         var onActivate = settings.onActivate || function () {};
+        var onOpen = settings.onOpen || function () {};
         var onOpenContextMenu = settings.onOpenContextMenu || function () {};
         var getStatusLabel = settings.getStatusLabel || function () { return ""; };
         var getMetaLabel = settings.getMetaLabel || function () { return ""; };
@@ -324,6 +325,11 @@
             event.preventDefault();
             event.stopPropagation();
             onActivate(item, event);
+        });
+        listItem.addEventListener("dblclick", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            onOpen(item, event);
         });
         listItem.addEventListener("contextmenu", function (event) {
             event.preventDefault();

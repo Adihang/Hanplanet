@@ -52,6 +52,7 @@ Docker services:
 |---------|------|-------------------|
 | `django` | Django/Gunicorn app, migrations, collectstatic | `${DJANGO_PORT:-8000}` -> `8000` |
 | `celery` | Git/HanDrive async worker | internal only |
+| `celery-beat` | Celery periodic scheduler for sessions and HanDrive tutorial cleanup | internal only |
 | `redis` | Celery broker | internal only |
 | `nginx` | Hostname router, static/media, BlueMap proxy | `${HTTP_PORT:-8080}` -> `80`; production uses `80` |
 | `gitea` | Git web UI and bare repo service | `${GITEA_PORT:-3000}` -> `3000` |
@@ -61,7 +62,7 @@ Docker services:
 
 Host services that still remain outside Docker: HPmail Postfix/Dovecot, Minecraft/Paper/BlueMap, Ollama, Cloudflare Tunnel, external HDD mount/cleanup, and host SSH.
 
-macOS Docker production uses `deploy/launchd/com.hanplanet.docker-stack.plist` plus `scripts/start_docker_stack.sh`. The script starts Colima, mounts `$HOME` and `/Volumes/HANPLANET_HDD` when present, waits for the HDD if `.env` references it, then runs `docker compose up -d --remove-orphans`.
+macOS Docker production uses `deploy/launchd/com.hanplanet.docker-stack.plist` plus `scripts/start_docker_stack.sh`. The script starts Colima, mounts `$HOME` and `/Volumes/HANPLANET_HDD` when present, waits for the HDD if `.env` references it, then runs `docker compose up -d --remove-orphans`. It also uses `deploy/launchd/com.hanplanet.docker-health-watchdog.plist` plus `scripts/docker_health_watchdog.sh` every 60 seconds to inspect Docker healthchecks and run `docker compose restart <service>` for services whose health is `unhealthy`.
 
 While Docker owns web traffic, keep these native web launchd labels disabled: `com.hanplanet.gunicorn`, `com.hanplanet.nginx`, `com.hanplanet.gitea`, `com.hanplanet.celery`, `com.hanplanet.bumpercar-spiky-server`, `com.hanplanet.map-collab-server`, `com.hanplanet.wargame-apache`, `com.hanplanet.healthcheck`, and `homebrew.mxcl.nginx`.
 
@@ -71,7 +72,7 @@ Use Docker commands for production unless the user explicitly asks for native la
 
 ```bash
 # Django/templates/static/Python dependency changes
-docker compose up -d --build django celery nginx
+docker compose up -d --build django celery celery-beat nginx
 
 # Nginx routing/config changes
 docker compose exec nginx nginx -t
@@ -94,7 +95,7 @@ Verification:
 
 ```bash
 docker compose ps
-docker compose logs --since=10m nginx django gitea bumpercar-spiky-server map-collab-server wargame
+docker compose logs --since=10m nginx django celery celery-beat gitea bumpercar-spiky-server map-collab-server wargame
 curl -I https://www.hanplanet.com/
 curl -I https://git.hanplanet.com/
 curl -fsS https://mc.hanplanet.com/status.json >/dev/null
@@ -165,7 +166,7 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.celery
 
 ### Native 헬스체크 (`com.hanplanet.healthcheck`)
 
-Docker production keeps `com.hanplanet.healthcheck` disabled and relies on Compose healthchecks plus `restart: unless-stopped`. The native fallback healthcheck is `scripts/healthcheck_and_restart.py`, 60초마다 실행:
+Docker production keeps `com.hanplanet.healthcheck` disabled and relies on Compose healthchecks, `restart: unless-stopped`, and `com.hanplanet.docker-health-watchdog` to restart containers whose Docker health status becomes `unhealthy`. The native fallback healthcheck is `scripts/healthcheck_and_restart.py`, 60초마다 실행:
 1. `https://www.hanplanet.com/` → **502** 감지: gunicorn 프로세스 자체가 다운된 상태
 2. `https://www.hanplanet.com/media/healthcheck.txt` → **503** 감지: gunicorn은 살아있지만 HDD 마운트 전에 시작돼 미디어를 못 읽는 상태
 
@@ -197,14 +198,16 @@ Docker production keeps `com.hanplanet.healthcheck` disabled and relies on Compo
 - `media/`: User-uploaded images and files.
 - `manage.py`: Django management entry point.
 - `requirements.txt`: Python dependencies.
-- `Dockerfile`: Django/Celery shared image.
-- `docker-compose.yml`: Docker production stack for Django, Celery, Redis, Nginx, Gitea, Bumpercar, Map Collab, and Wargame.
+- `Dockerfile`: Django/Celery worker/beat shared image.
+- `docker-compose.yml`: Docker production stack for Django, Celery worker/beat, Redis, Nginx, Gitea, Bumpercar, Map Collab, and Wargame.
 - `docker/`: Docker-only runtime files: Django entrypoint, Nginx config, Gitea image, optional Cloudflared config.
 - `bumpercar-spiky-server/`: Separate Node.js WebSocket game server (see its own `AGENTS.md`).
 - `map-collab-server/`: Separate Node.js WebSocket/admin server for HanDrive map collaboration.
 - `Wargame/`: Separate PHP + SQLite site for `wargame.hanplanet.com`; Docker uses a PHP built-in server and native launchd uses Apache. Django APIs may be used only for non-challenge site integration such as account identity, solve records, and shared navigation (see `Wargame/AGENTS.md`).
 - `deploy/launchd/com.hanplanet.docker-stack.plist`: macOS launchd wrapper for Docker production startup.
+- `deploy/launchd/com.hanplanet.docker-health-watchdog.plist`: macOS launchd timer that restarts unhealthy Docker Compose services.
 - `scripts/start_docker_stack.sh`: Colima + Docker Compose startup script used by the Docker launchd plist.
+- `scripts/docker_health_watchdog.sh`: Docker Compose health watchdog used by the Docker health launchd plist.
 - `docs/plans/`: Development plans and product notes.
 - `docs/samples/`: Preserved samples, HTML dumps, and reference outputs.
 - `.local/`: Local-only preserved scratch artifacts; git-ignored.
@@ -243,7 +246,7 @@ This is a Django 5.0.1 portfolio + content management + multiplayer game platfor
 
 **Wargame integration boundary:** `wargame.hanplanet.com` routes through Docker Nginx to the Docker `wargame:8090` service. Native launchd fallback uses Apache + PHP under `Wargame/`. PHP must not directly read Django DB/session/cookie/filesystem state. Django site APIs may be used only for non-challenge integration such as token-based identity, solve read/write, and navbar/common UI; do not use Django APIs for challenge mechanics, vulnerable problem files, flags, hints, or challenge-local data. Challenge-local data remains in `Wargame/data/wargame.sqlite3` or the Docker `WARGAME_DATA_VOLUME`.
 
-**Git 서버:** Docker `gitea` service on port `3000` + Docker `celery` worker + Docker `redis` broker. Native Homebrew Gitea/launchd remains a fallback only.
+**Git 서버:** Docker `gitea` service on port `3000` + Docker `celery` worker/`celery-beat` scheduler + Docker `redis` broker. Native Homebrew Gitea/launchd remains a fallback only.
 
 **Game/admin internal APIs:** Docker Django calls `GAME_ADMIN_URL=http://bumpercar-spiky-server:8082` and `MAP_COLLAB_ADMIN_URL=http://map-collab-server:8084`. The host-published admin ports are bound to `127.0.0.1` only. Bumpercar runtime settings are shared through `BUMPERCAR_SPIKY_SETTINGS_PATH` on `DJANGO_DATA_VOLUME`, and stats writes require `BUMPERCAR_SPIKY_INTERNAL_SECRET` when they come from non-loopback container addresses.
 
@@ -267,6 +270,7 @@ Key env vars:
 - `HPMAIL_IMAP_HOST=host.docker.internal`, `HPMAIL_SMTP_HOST=host.docker.internal`
 - `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` (Cloudflare CAPTCHA)
 - `BUNGIE_API_KEY`, `BUNGIE_API_BASE_URL`, `BUNGIE_MEDIA_BASE_URL`
+- `YOUTUBE_DOWNLOAD_EXTRACTOR_ARGS` — optional yt-dlp extractor override; keep empty unless a current YouTube workaround requires it.
 - `GITHUB_AUTH_SCOPE` — GitHub OAuth 권한 범위 (기본: `repo user:email`, collaborator/private repo 목록 조회용)
 
 Do not commit `.env`, API keys, private keys, OAuth client secrets, generated Gitea tokens, or Docker secret files. Production uses `DEBUG = False`.
@@ -313,7 +317,8 @@ Do not commit `.env`, API keys, private keys, OAuth client secrets, generated Gi
 **구성:**
 - **Gitea Docker service** — `docker/gitea/Dockerfile`, 포트 3000, SQLite DB
   - 설정/템플릿: `forgejo/custom/conf/app.ini`, `forgejo/custom/templates/`
-  - 컨테이너 runtime data: `/data/gitea` via `GITEA_DATA_VOLUME`
+  - 컨테이너 runtime data: `gitea` 컨테이너 `/data`, `django`/`celery` 컨테이너 `/data/gitea` via `GITEA_DATA_VOLUME`
+  - Django의 Forgejo direct session DB path: `FORGEJO_DB_PATH=/data/gitea/gitea.db`
   - bare repositories: `/data/git/repositories` via `FORGEJO_REPOS_VOLUME`
   - Docker internal URL: `FORGEJO_BASE_URL=http://gitea:3000`
   - Public URL: `PUBLIC_GIT_BASE_URL=https://git.hanplanet.com`
@@ -321,6 +326,8 @@ Do not commit `.env`, API keys, private keys, OAuth client secrets, generated Gi
 - **Redis Docker service** — Celery broker (`redis://redis:6379/0`)
 - **Celery Docker service** — `django-celery-results` backend, concurrency=2
   - Logs: `docker compose logs -f celery`
+- **Celery beat Docker service** — periodic sessions and HanDrive tutorial workspace cleanup scheduler
+  - Logs: `docker compose logs -f celery-beat`
 - **Native fallback** — Homebrew Gitea (`/opt/homebrew/bin/gitea`), Redis brew service, and launchd labels `com.hanplanet.gitea`/`com.hanplanet.celery` remain available only when Docker does not own production.
 
 **Django 모델:** `GitRepository`, `GitUserMapping`, `GitCollaborator` (`main/models.py`)
@@ -365,7 +372,7 @@ Docker production stores runtime data through Compose volumes or bind mounts. Fo
 | HPmail storage used by Django UI | `HANPLANET_MAIL_VOLUME` | `/data/mail` | host mail storage path or named volume |
 | GitHub cache | `HANPLANET_GITHUB_CACHE_VOLUME` | `/data/github-repo-cache` | `/Volumes/HANPLANET_HDD/Hanplanet/github-repo-cache` |
 | Gitea bare repositories | `FORGEJO_REPOS_VOLUME` | `/data/forgejo-repos`, `/data/git/repositories` | `/Volumes/HANPLANET_HDD/Hanplanet/forgejo-repos` |
-| Gitea DB/config/runtime | `GITEA_DATA_VOLUME` | `/data` | `/Volumes/HANPLANET_HDD/Hanplanet/gitea` or named volume |
+| Gitea DB/config/runtime | `GITEA_DATA_VOLUME` | `/data` in `gitea`, `/data/gitea` in Django/Celery | `/Volumes/HANPLANET_HDD/Hanplanet/gitea` or named volume |
 | Backups | `HANPLANET_BACKUP_VOLUME` | `/data/backups` | `/Volumes/HANPLANET_HDD/Hanplanet/backups` |
 | Wargame SQLite/data | `WARGAME_DATA_VOLUME` | `/app/Wargame/data` | `/Volumes/HANPLANET_HDD/Hanplanet/wargame-data` or named volume |
 | Minecraft host server | `MINECRAFT_SERVER_VOLUME` | `/Users/imhanbyeol/Development/minecraft` | `/Users/imhanbyeol/Development/minecraft` |

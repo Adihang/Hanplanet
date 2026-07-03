@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import binascii
 import fcntl
+import hashlib
 import io
 import logging
 import json
@@ -41,15 +42,17 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse, unquote
 import httpx
 
 from django import forms
-from django.contrib.auth import authenticate, login as auth_login
+from django.contrib.auth import authenticate, login as auth_login, update_session_auth_hash
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth import password_validation
 from django.conf import settings
 from django.db import OperationalError, ProgrammingError, transaction
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.cache import cache
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
@@ -193,6 +196,67 @@ PAGE_HELP_FILE_BASENAMES = {
 }
 DOCS_PUBLIC_WRITE_GROUP_NAME = "__DOCS_PUBLIC_ALL__"
 HANDRIVE_ADMIN_USER_QUERY_PARAM = "handrive_user"
+HANDRIVE_TUTORIAL_FILE_PREFIX = "00-HanDrive-튜토리얼"
+HANDRIVE_TUTORIAL_FILE_EXTENSION = ".md"
+HANDRIVE_TUTORIAL_MARKER = "<!-- handrive:tutorial-file:v1 -->"
+HANDRIVE_TUTORIAL_WORKSPACE_MARKER_FILENAME = ".handrive-tutorial-workspace"
+HANDRIVE_TUTORIAL_ASSET_DIR = Path(__file__).resolve().parent / "assets" / "handrive" / "tutorial"
+HANDRIVE_TUTORIAL_SAMPLE_VIDEO_ASSET = "sample-5s-360p.mp4"
+HANDRIVE_TUTORIAL_SAMPLE_AUDIO_ASSET = "sample-3s.mp3"
+HANDRIVE_TUTORIAL_GIT_REPO_OWNER_USERNAME = "codex_test"
+HANDRIVE_TUTORIAL_GIT_REPO_NAME = "handrive-tutorial-sample"
+HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_KO = "12-Git-공개-테스트-레포"
+HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_EN = "12-public-git-test-repo"
+HANDRIVE_TUTORIAL_SAMPLE_MP4_BASE64 = (
+    "AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAA2ptb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAAPoAAAB9AABAAABAAAA"
+    "AAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC"
+    "AAAClXRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAB9AAAAAAAAAAAAAAAAQEAAAAAAQAAAAAAAAAAAAAAAAAA"
+    "AAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAfQAAAQAAAEAAAAAAg1tZGlh"
+    "AAAAIG1kaGQAAAAAAAAAAAAAAAAAAKxEAABaIlXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFu"
+    "ZGxlcgAAAAG4bWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAF8c3Ri"
+    "bAAAAH5zdHNkAAAAAAAAAAEAAABubXA0YQAAAAAAAAABAAAAAAAAAAAAAQAQAAAAAKxEAAAAAAA2ZXNkcwAAAAADgICAJQAB"
+    "AASAgIAXQBUAAAAAAH0AAAB80wWAgIAFEghW5QAGgICAAQIAAAAUYnRydAAAAAAAAH0AAAB80wAAACBzdHRzAAAAAAAAAAIA"
+    "AAAWAAAEAAAAAAEAAAIiAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAAXAAAAAQAAAHBzdHN6AAAAAAAAAAAAAAAXAAAAhQAAAJ4A"
+    "AAA+AAAAQgAAAEwAAABCAAAAcQAAAEIAAABDAAAASgAAAFAAAABUAAAAbQAAAF0AAABNAAAAUwAAAGgAAAB2AAAAWAAAAFQA"
+    "AABsAAAAQwAAAHIAAAAUc3RjbwAAAAAAAAABAAADlgAAABpzZ3BkAQAAAHJvbGwAAAACAAAAAf//AAAAHHNiZ3AAAAAAcm9s"
+    "bAAAAAEAAAAXAAAAAQAAAGF1ZHRhAAAAWW1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALGls"
+    "c3QAAAAkqXRvbwAAABxkYXRhAAAAAQAAAABMYXZmNjIuMy4xMDAAAAAIZnJlZQAACDJtZGF03gIATGF2YzYyLjExLjEwMAAC"
+    "UKVa4OhtUQtClf1fG5N8/VdTN+dyRH1JIkl+0gtq2cxZhxLFRhRhWp2rTC4nbFqdp7i3/nezlefV87S6KjOZaxaq1pWtVNnM"
+    "lMlBEERLRLRJQMDAwMDAwMDAwMDAwMDIkUps2blliiiiiiiiiiiiiiii4AESlNrKXZZLqyXOmyXT/+n/9/jrTw1d7//rf+/1"
+    "1xxrV/0//q//P36483x7f3//q//b461x1OA7e0mGQYGBgaev1MV7CcWwIyMYjURUa4qPpRFFQb6buJUG+mvjEZf010ZYoqDL"
+    "1m+nGKF2hhzcan5I3pTATaiMyKNkUb0RRh5kUU4eeii6A8yKJAAeY9Aa6ExU886p5/lzcyjz1c3AASzyixrWS+8nfv+3r/n7"
+    "9ampq1y3VJci5EA+TMnP76H3zqHuIR8fDY99EIyfAGf30DJ8GGf3hD/wYO+8If4A7DKLGhEOrbyszxv5//tfP/+/7yrk1tIf"
+    "n2vMurxKCdskpeS8lLYjDz2Oll3eMQEvOXRM0sR3JS6EFilAQm+qYOABPjKAJHsZN0Ih0Qh1D/9XLxj/6b/+34ycZl3l2afz"
+    "KqVUqUAMo3Th+h1AKcs0SMoOQV+l0Lan6lmWAsLVGudZzLnWecboxUBsAqDgAPQyixoRDq145zvfP/979v/+H6ycM1V86p7/"
+    "MzNVe6ugRzISUSIu5BgYCKJEURXEggJEIXIzG/EICYmwxKGSKuDgAT4ygCR7GhxhoRE//e8PW9f6/b/7+0aXV0kfp+Hz9Zcx"
+    "qUAPRRQtZ46urEdALPFB1L4YTLeaaaaZc00Y2stnlzj0tFsn2tCey3lyTWmC+WGgqaKbNqoEpluUjdKQ8MsxGFkaIX9V9yqr"
+    "nomWR5k3AOAA9DKKAo0gh1CL93PPz//a/T//h/K6Sb4VHxWt/a8vF5QQ8jmRlf+R34wYRbPkjZVsiVqpDmqc9R/qvdqK+hSy"
+    "wOAA6DKLGkEOobq/Geufn/+18//7/wlqeeZlvv109VUZaBtZQPeaXkpuEITz3vDn1vNmWYOgMddvrOvC+0BiUC9K2IHAAOwy"
+    "lYTNCIdEIdQ5v03vnn/9vn///0uXGaqU/fV5Wt3iKFXqlKUq6ur4vP12cbJzznUpU5z+sNVc8azhEZhJOd/qOo77QomBlBwA"
+    "6jKI9lJgi0Qh1DK3zvc3/6c//n7M1KuUtXh+UVKSgzJoS8lJiNA3w3PdRFAARmAD37Y88yRNznewRMZ3seEpw884yC72JIyO"
+    "/m5JbAMQOAD0MokWQmaEQ6IQ6QQ6NxzWZzvP9f0//X2q1qSuKe36ZNMvOrqgsqzq9fX9DqBWCC/IowA4OAG9Y2o/XBrCgRma"
+    "FHUoLAE5zr+pjtcIbL7gSATFHADoMokWQmaESaERaERaEQt9yud88f+n6f/l8JrNSsuR+/b758vi8yUFrGSI7u7uSO8v5vrY"
+    "QAPlACERRSXcuUQL9oeS4UTyJAgdz2JXSMCND2YD041JBx181AKVpAZ5RSQlJMVg1RJyWj20MZwA6DKJMjJmhEOiEOkEi+d+"
+    "M53z/f9P/4ebi6S5Kf3iV2q6+NNijdLAuhdFEfwP6EmyRdFBjLMZdFBjAUQGDRgvzOieWBfOaKt7ZYEgQcBnyTtsaaVope1N"
+    "0CDAJcAA7DKI9lJmhEOiEOoc1rxzSf/h+f/y++LWyXKff5mSVMSgdhiqQiIU8su4v5r2sUAPFAAyxFERTPjuhf2EhAYOY4yo"
+    "dmOTUQHe9cCgOADqMokWQmaEQ6IQ6cQsrOc5zX/j9v/18y0lSB+/MqXuTduhaczxnXfoxRyVkEn5BEAHRgB57d9KF7gYzOfX"
+    "uFC9IcdIWreZA8+gMEkwM4E3sEuAAPAyiPZSZoRDohFoRDoRDoREqnPOcev/TP/x9lWaqJT33lc/FGRgayVTnPOhUkLeDc2V"
+    "1QkARCgE/NPOeacTzzqBKAJh+nBecYGOEKWedHqFjaD3WSSjAjaVb0gtdPFCz0Qry3yEA4AA6DKI9lJmhE+hEj31vfNN//Tn"
+    "/93VrlSVeW/f0/V7/WSsjY8kpYlLxjNlOQ0vKQHoAZmAAeeS8nF5iXcWISJDJeQhO114MYlfdQ9JcFmbwK0tr+DHRnBtz4Fs"
+    "vrl1deuKSn2tjE61WWd/PKROds+MrKNCbgHAAPQyiPZSZoRDohDpBDohCjeb3Of/2f/n5Nb1KlWfHqZkq9+bUD9Bz1nnHQI2"
+    "4FKEQFb4AkHAMOjq6p1BRwuhfU001GK6sDviv10C8SqvqzAWBFkJyiLpnADqMpE2MmaEQ6IQ6cQtfM5rnnf9vn/9PMjSFWff"
+    "qq2qTJXwLYqOUotGB6zL/v4ERAWB8oAkRFy5PRd0Rckyf/SV1yDjMUiV8kMfukqQjYBUCdMYcAD0Moj2QwjPQiLRCFrc8Zu9"
+    "/8ft/+fxMvW9RUV9v1r7fjHxO1cBES61roHOH0i6sByqIcoPgmzZsjHZs2orbI2rtbNllkUUcVn+LqZV7gaMlr8kcT9q3WB4"
+    "OzyjRW+elojpObPsFxRnQ+yLjwFGMpMa1L47zMr3/T/3a9uZxU1WjpuJIkiAAADCow8PDw+Jbh4eHh4etYgAAAAAAHeMPDw9"
+    "t3sAAAAMO7jw8PD23fgBPDKLWiIOhIuhELmqL1777+Pvua43qNVdnbNXchxA77+/v7+/vM/mzw+4LJ8fHx8fAHv7+/v7kB8f"
+    "Hx8GAd9/f3hAGT4+PhsB339/eEAAZPj4bAHx8fDYAz+/v7gB/4+PhsAZ/f3hAA+PjMAB/H+OEJc="
+)
+HANDRIVE_GUEST_ROOT = "guest"
+HANDRIVE_LEGACY_GUEST_ROOT = "all"
+HANDRIVE_GUEST_TUTORIAL_ROOT = "guest-tutorial"
+HANDRIVE_USER_TUTORIAL_DIR_NAME = "tutorial-temp"
+HANDRIVE_TUTORIAL_PUBLIC_SEGMENT = "tutorial"
+HANDRIVE_GUEST_TUTORIAL_SESSION_KEY = "handrive_guest_tutorial_token"
 MARKDOWN_IMAGE_UPLOAD_EXTENSIONS = {
     ".avif",
     ".bmp",
@@ -523,6 +587,8 @@ HANDRIVE_2FA_PENDING_UI_LANG_SESSION_KEY = "handrive_2fa_pending_ui_lang"
 HANDRIVE_2FA_PENDING_FORGEJO_KEY_SESSION_KEY = "handrive_2fa_pending_forgejo_key"
 HANDRIVE_2FA_PENDING_REQUIRES_ATTACH_SESSION_KEY = "handrive_2fa_pending_requires_attach"
 HANDRIVE_SIGNUP_2FA_SESSION_KEY = "handrive_signup_2fa_pending"  # 회원가입 AJAX 이메일 인증 세션 키
+HANDRIVE_PASSWORD_RESET_SENT_SESSION_KEY = "handrive_password_reset_sent"
+HANDRIVE_PASSWORD_RESET_RATE_SESSION_KEY = "handrive_password_reset_rate"
 DOCS_SIGNUP_FORBIDDEN_TERMS = (
     "admin",
     "administrator",
@@ -772,6 +838,81 @@ DOCS_TEXT = {
         "clear_button": "지우기",
         "search_placeholder": "파일 검색",
         "list_aria_label": "목록",
+        "guest_demo_onboarding_title": "HanDrive 튜토리얼",
+        "guest_demo_onboarding_description": "이곳은 튜토리얼 전용 임시 드라이브입니다.\n종료하면 이 폴더의 파일은 모두 삭제됩니다.",
+        "guest_demo_onboarding_start": "튜토리얼 시작",
+        "guest_demo_onboarding_restart": "튜토리얼",
+        "guest_demo_onboarding_complete": "종료",
+        "guest_demo_onboarding_previous": "이전",
+        "guest_demo_onboarding_next": "다음",
+        "guest_demo_onboarding_skip": "스킵",
+        "guest_demo_onboarding_dismiss": "튜토리얼 안내 닫기",
+        "guest_demo_onboarding_step_overview": "전체 흐름",
+        "guest_demo_onboarding_step_browse": "목록 탐색",
+        "guest_demo_onboarding_step_search": "검색/정렬",
+        "guest_demo_onboarding_step_preview": "미리보기",
+        "guest_demo_onboarding_step_preview_tools": "보기 도구",
+        "guest_demo_onboarding_step_edit": "편집",
+        "guest_demo_onboarding_step_save": "저장",
+        "guest_demo_onboarding_step_upload": "업로드",
+        "guest_demo_onboarding_step_create": "새 항목",
+        "guest_demo_onboarding_step_share": "공유",
+        "guest_demo_onboarding_step_manage": "관리",
+        "guest_demo_onboarding_step_advanced": "고급 기능",
+        "guest_demo_onboarding_step_layout": "레이아웃",
+        "guest_demo_onboarding_step_jobs": "작업 내역",
+        "guest_demo_onboarding_step_help": "도움말",
+        "guest_demo_onboarding_step_practice": "자유연습",
+        "guest_demo_tour_progress": "{current}/{total}",
+        "guest_demo_tour_overview_title": "HanDrive 전체 기능 투어",
+        "guest_demo_tour_overview_body": "이 투어는 임시 드라이브에서 작동하며, 강조된 HanDrive 영역 안에서 기능 위치와 사용 순서를 말풍선으로 안내합니다.",
+        "guest_demo_tour_overview_action": "튜토리얼 전용 임시 드라이브 영역을 확인한 뒤 다음 단계로 이동하세요.",
+        "guest_demo_tour_browse_title": "파일 목록과 폴더 이동",
+        "guest_demo_tour_browse_body": "한 번 클릭하면 선택/미리보기, 더블클릭하면 열기입니다. 폴더는 펼치거나 들어갈 수 있고 드래그로 이동도 할 수 있습니다.",
+        "guest_demo_tour_browse_action": "튜토리얼 파일 행을 클릭하거나 더블클릭해보세요.",
+        "guest_demo_tour_search_title": "검색과 정렬",
+        "guest_demo_tour_search_body": "현재 폴더에서 파일명을 검색하고, 수정일/유형/크기/커밋/ID 컬럼을 눌러 정렬할 수 있습니다.",
+        "guest_demo_tour_search_action": "검색창에 키워드를 입력하거나 컬럼 라벨을 눌러보세요.",
+        "guest_demo_tour_preview_title": "미리보기",
+        "guest_demo_tour_preview_body": "파일들을 클릭하면 탐색기에서 바로 미리보기가 열립니다.",
+        "guest_demo_tour_preview_action": "지금은 튜토리얼 파일을 자동으로 열어 미리보기 위치를 보여줍니다.",
+        "guest_demo_tour_preview_tools_title": "미리보기 도구",
+        "guest_demo_tour_preview_tools_body": "미리보기 상단에서 공유, 인쇄, 다운로드, 편집, 삭제를 실행하고 이미지/문서는 확대 축소할 수 있습니다.",
+        "guest_demo_tour_preview_tools_action": "상단 아이콘과 확대/축소 버튼 위치를 확인하세요.",
+        "guest_demo_tour_edit_title": "편집기",
+        "guest_demo_tour_edit_body": "텍스트와 Markdown은 코드 하이라이트, 자동완성, 스니펫 메뉴를 지원하고 이미지/오디오/영상/PDF/스프레드시트는 전용 편집기를 사용합니다.",
+        "guest_demo_tour_edit_action": "튜토리얼 파일을 편집 모드로 열었습니다. 내용을 바꿔볼 수 있습니다.",
+        "guest_demo_tour_save_title": "저장과 파일명",
+        "guest_demo_tour_save_body": "파일명을 바꾸고 저장할 수 있으며, 공유/깃/데모 상태에 따라 저장 모달이나 커밋 메시지 입력이 추가로 뜰 수 있습니다.",
+        "guest_demo_tour_save_action": "저장 아이콘을 누르면 현재 변경사항을 저장합니다.",
+        "guest_demo_tour_upload_title": "업로드",
+        "guest_demo_tour_upload_body": "파일을 목록으로 드래그 앤 드롭하거나 붙여넣기, 우클릭 메뉴의 업로드로 현재 폴더에 추가할 수 있습니다.",
+        "guest_demo_tour_upload_action": "목록 영역 또는 현재 폴더 행에 파일을 끌어다 놓으세요.",
+        "guest_demo_tour_create_title": "새 폴더와 새 파일",
+        "guest_demo_tour_create_body": "폴더 행의 우클릭 메뉴에서 새 폴더와 새 파일을 만들 수 있습니다.",
+        "guest_demo_tour_create_action": "강조된 새 폴더와 새 파일 위치를 확인하세요.",
+        "guest_demo_tour_share_title": "URL 공유와 편집권한",
+        "guest_demo_tour_share_body": "파일이나 폴더의 공유 링크를 만들고, 전체 공개/대상 사용자/편집권한을 설정할 수 있습니다.",
+        "guest_demo_tour_share_action": "공유 아이콘을 누르면 공유 모달이 열립니다.",
+        "guest_demo_tour_manage_title": "이름 변경, 삭제, 이동",
+        "guest_demo_tour_manage_body": "우클릭 메뉴와 키보드 Delete/Backspace로 이름 변경, 삭제, 다운로드, 위치 열기, 드래그 이동을 수행합니다.",
+        "guest_demo_tour_manage_action": "우클릭 메뉴에서 이름 바꾸기 또는 삭제 위치를 확인하세요.",
+        "guest_demo_tour_advanced_title": "압축, Git, 지도, MP3 변환",
+        "guest_demo_tour_advanced_body": "압축 해제, 공개 Git 레포 보기, 지도 생성, MP3 변환, 오디오 미리보기를 체험할 수 있도록 전용 샘플을 준비했습니다.",
+        "guest_demo_tour_advanced_action": "강조된 11~15 샘플을 우클릭해 고급 작업 위치를 확인하세요.",
+        "guest_demo_tour_layout_title": "상세 영역과 확대/축소",
+        "guest_demo_tour_layout_body": "분할 막대로 목록과 미리보기/편집기 크기를 조절하고, Ctrl+스크롤 또는 모바일 핀치로 목록과 문서 배율을 조절할 수 있습니다.",
+        "guest_demo_tour_layout_action": "분할 막대를 드래그하거나 목록에서 Ctrl+스크롤을 해보세요.",
+        "guest_demo_tour_jobs_title": "작업 내역",
+        "guest_demo_tour_jobs_body": "업로드, 이동, 삭제, 압축, YouTube 저장, MP3 변환 같은 비동기 작업은 이 패널에 진행률과 결과가 표시됩니다.",
+        "guest_demo_tour_jobs_action": "작업이 생기면 항목을 클릭해 미리보기, 더블클릭해 열 수 있습니다.",
+        "guest_demo_tour_jobs_sample": "튜토리얼 샘플 작업 4개",
+        "guest_demo_tour_help_title": "도움말과 튜토리얼 재실행",
+        "guest_demo_tour_help_body": "상단 도움말에서 기능 설명을 다시 보고, 튜토리얼 버튼으로 이 투어를 언제든 다시 시작할 수 있습니다.",
+        "guest_demo_tour_help_action": "도움말 아이콘을 누르면 도움말 모달이 열립니다.",
+        "guest_demo_tour_practice_title": "자유연습",
+        "guest_demo_tour_practice_body": "지금부터는 튜토리얼 임시 드라이브에서 파일 열기, 업로드, 새 파일 만들기, 공유 설정을 자유롭게 시도할 수 있습니다.",
+        "guest_demo_tour_practice_action": "강조된 HanDrive 영역 안에서 원하는 기능을 눌러 연습해보세요. 종료하면 임시 파일은 삭제됩니다.",
         "menu_open": "열기",
         "menu_open_location": "파일 위치 열기",
         "menu_download": "다운로드",
@@ -1047,6 +1188,7 @@ DOCS_TEXT = {
         "url_share_targets_placeholder": "대상 사용자 ID",
         "url_share_targets_empty_label": "비워두면 전체 공개",
         "url_share_target_remove_label": "공유 대상 제거",
+        "url_share_edit_label": "편집권한",
         "admin_user_switch_title": "사용자 HanDrive 열기",
         "admin_user_switch_label": "사용자 ID",
         "admin_user_switch_placeholder": "사용자 ID",
@@ -1061,6 +1203,9 @@ DOCS_TEXT = {
         "url_share_copy_button": "복사",
         "url_share_copy_download_button": "다운로드 URL 복사",
         "url_share_copied": "복사됨",
+        "url_share_copy_feedback": "복사됨!",
+        "markdown_code_copy_button": "코드 복사",
+        "markdown_code_copied": "복사됨!",
         "url_share_indicator": "URL 공유됨",
         "url_share_inherited_indicator": "상위 공유에서 상속됨",
         "job_queue_title": "작업 내역",
@@ -1134,6 +1279,21 @@ DOCS_TEXT = {
         "auth_privacy_consent_error": "개인정보 처리방침 및 이용약관 동의가 필요합니다.",
         "auth_signup_error": "회원가입 정보를 확인해주세요.",
         "auth_login_error": "아이디 또는 비밀번호를 확인해주세요.",
+        "auth_forgot_password_button": "비밀번호 찾기",
+        "auth_forgot_password_title": "비밀번호 찾기",
+        "auth_forgot_password_hint": "아이디를 입력하면 등록된 이메일로 임시 비밀번호를 전송합니다.",
+        "auth_forgot_password_submit": "임시 비밀번호 받기",
+        "auth_forgot_password_sent": "등록된 이메일로 임시 비밀번호를 전송했습니다. 임시 비밀번호로 로그인해주세요.",
+        "auth_forgot_password_send_error": "임시 비밀번호 전송에 실패했습니다. 잠시 후 다시 시도해주세요.",
+        "auth_forgot_password_rate_limit": "잠시 후 다시 시도해주세요.",
+        "auth_password_change_title": "비밀번호 변경",
+        "auth_password_change_hint": "임시 비밀번호로 로그인했습니다.\n계속하려면 새 비밀번호로 변경해주세요.",
+        "auth_new_password_label": "새 비밀번호",
+        "auth_new_password_confirm_label": "새 비밀번호 확인",
+        "auth_password_change_submit": "비밀번호 변경",
+        "auth_password_change_error": "비밀번호를 확인해주세요.",
+        "auth_password_mismatch_error": "비밀번호 확인이 일치하지 않습니다.",
+        "auth_password_change_success": "비밀번호가 변경되었습니다.",
         "auth_username_forbidden_chars": "아이디에는 공백, 따옴표, 슬래시 등 보안상 위험한 문자를 사용할 수 없습니다.",
         "auth_password_forbidden_chars": "비밀번호에는 공백, 따옴표, 슬래시 등 보안상 위험한 문자를 사용할 수 없습니다.",
         "auth_github_login_button": "GitHub로 로그인",
@@ -1201,6 +1361,81 @@ DOCS_TEXT = {
         "clear_button": "Clear",
         "search_placeholder": "Search files",
         "list_aria_label": "File list",
+        "guest_demo_onboarding_title": "HanDrive tutorial",
+        "guest_demo_onboarding_description": "This is a temporary tutorial-only drive.\nEverything in this folder is deleted when you end the tutorial.",
+        "guest_demo_onboarding_start": "Start tutorial",
+        "guest_demo_onboarding_restart": "Tutorial",
+        "guest_demo_onboarding_complete": "End",
+        "guest_demo_onboarding_previous": "Previous",
+        "guest_demo_onboarding_next": "Next",
+        "guest_demo_onboarding_skip": "Skip",
+        "guest_demo_onboarding_dismiss": "Dismiss tutorial guide",
+        "guest_demo_onboarding_step_overview": "Overview",
+        "guest_demo_onboarding_step_browse": "Browse",
+        "guest_demo_onboarding_step_search": "Search/Sort",
+        "guest_demo_onboarding_step_preview": "Preview",
+        "guest_demo_onboarding_step_preview_tools": "View tools",
+        "guest_demo_onboarding_step_edit": "Edit",
+        "guest_demo_onboarding_step_save": "Save",
+        "guest_demo_onboarding_step_upload": "Upload",
+        "guest_demo_onboarding_step_create": "Create",
+        "guest_demo_onboarding_step_share": "Share",
+        "guest_demo_onboarding_step_manage": "Manage",
+        "guest_demo_onboarding_step_advanced": "Advanced",
+        "guest_demo_onboarding_step_layout": "Layout",
+        "guest_demo_onboarding_step_jobs": "Jobs",
+        "guest_demo_onboarding_step_help": "Help",
+        "guest_demo_onboarding_step_practice": "Free practice",
+        "guest_demo_tour_progress": "{current}/{total}",
+        "guest_demo_tour_overview_title": "HanDrive full feature tour",
+        "guest_demo_tour_overview_body": "This tour runs inside a temporary drive and uses callouts in the highlighted HanDrive area to show where features live.",
+        "guest_demo_tour_overview_action": "Review the temporary tutorial drive area, then move to the next step.",
+        "guest_demo_tour_browse_title": "File list and folder navigation",
+        "guest_demo_tour_browse_body": "Single-click selects and previews. Double-click opens. Folders can be expanded or opened, and items can be moved by drag and drop.",
+        "guest_demo_tour_browse_action": "Click or double-click the tutorial file row.",
+        "guest_demo_tour_search_title": "Search and sorting",
+        "guest_demo_tour_search_body": "Search inside the current folder, then sort by modified time, type, size, commit, or ID columns.",
+        "guest_demo_tour_search_action": "Type a keyword or click a column label.",
+        "guest_demo_tour_preview_title": "Preview",
+        "guest_demo_tour_preview_body": "Click files to open previews directly in the file explorer.",
+        "guest_demo_tour_preview_action": "The tutorial file is opened automatically to show the preview area.",
+        "guest_demo_tour_preview_tools_title": "Preview tools",
+        "guest_demo_tour_preview_tools_body": "Use the preview header for sharing, printing, downloading, editing, deleting, and zoom controls where supported.",
+        "guest_demo_tour_preview_tools_action": "Check the header icons and zoom buttons.",
+        "guest_demo_tour_edit_title": "Editor",
+        "guest_demo_tour_edit_body": "Text and Markdown support highlighting, completion, and snippets. Images, audio, video, PDFs, and spreadsheets use dedicated editors.",
+        "guest_demo_tour_edit_action": "The tutorial file is opened in edit mode so you can try changing it.",
+        "guest_demo_tour_save_title": "Save and filename",
+        "guest_demo_tour_save_body": "Rename the file and save changes. Shared, Git, or demo contexts may show a save modal or commit message step.",
+        "guest_demo_tour_save_action": "Press the save icon to store changes.",
+        "guest_demo_tour_upload_title": "Upload",
+        "guest_demo_tour_upload_body": "Drag files into the list, paste files from the clipboard, or use Upload in the context menu to add them to the current folder.",
+        "guest_demo_tour_upload_action": "Drop files onto the list or current-folder row.",
+        "guest_demo_tour_create_title": "New folders and files",
+        "guest_demo_tour_create_body": "Use a folder row context menu to create new folders and files.",
+        "guest_demo_tour_create_action": "Check the highlighted New folder and New file actions.",
+        "guest_demo_tour_share_title": "URL sharing and edit permission",
+        "guest_demo_tour_share_body": "Create share links for files or folders and control public access, target users, and edit permission.",
+        "guest_demo_tour_share_action": "Press the share icon to open the sharing modal.",
+        "guest_demo_tour_manage_title": "Rename, delete, and move",
+        "guest_demo_tour_manage_body": "Use the context menu and Delete/Backspace keys for rename, delete, download, open location, and drag-to-move operations.",
+        "guest_demo_tour_manage_action": "Check Rename and Delete in the context menu.",
+        "guest_demo_tour_advanced_title": "Archive, Git, maps, and MP3 conversion",
+        "guest_demo_tour_advanced_body": "Dedicated samples are prepared for archive extraction, public Git repo viewing, map creation, MP3 conversion, and audio preview.",
+        "guest_demo_tour_advanced_action": "Right-click the highlighted 11-15 samples to find advanced actions.",
+        "guest_demo_tour_layout_title": "Detail layout and zoom",
+        "guest_demo_tour_layout_body": "Drag the splitter to resize the list and preview/editor. Use Ctrl+wheel or mobile pinch to zoom lists and document content.",
+        "guest_demo_tour_layout_action": "Drag the splitter or Ctrl+wheel over the list.",
+        "guest_demo_tour_jobs_title": "Job history",
+        "guest_demo_tour_jobs_body": "Uploads, moves, deletes, archive jobs, YouTube saves, and MP3 conversions show progress and results in this panel.",
+        "guest_demo_tour_jobs_action": "Click a finished job to preview it, or double-click to open it.",
+        "guest_demo_tour_jobs_sample": "4 tutorial sample jobs",
+        "guest_demo_tour_help_title": "Help and restarting the tutorial",
+        "guest_demo_tour_help_body": "Open Help to review feature docs, then use the Tutorial button there to run this tour again.",
+        "guest_demo_tour_help_action": "Press the help icon to open the help modal.",
+        "guest_demo_tour_practice_title": "Free practice",
+        "guest_demo_tour_practice_body": "You can now freely try opening files, uploading, creating files, and changing share settings inside the temporary tutorial drive.",
+        "guest_demo_tour_practice_action": "Use any feature inside the highlighted HanDrive area. Ending the tutorial removes the temporary files.",
         "menu_open": "Open",
         "menu_open_location": "Open file location",
         "menu_download": "Download",
@@ -1457,6 +1692,7 @@ DOCS_TEXT = {
         "url_share_targets_placeholder": "Target user ID",
         "url_share_targets_empty_label": "Leave empty for public access",
         "url_share_target_remove_label": "Remove allowed user",
+        "url_share_edit_label": "Edit permission",
         "admin_user_switch_title": "Open User HanDrive",
         "admin_user_switch_label": "User ID",
         "admin_user_switch_placeholder": "User ID",
@@ -1471,6 +1707,9 @@ DOCS_TEXT = {
         "url_share_copy_button": "Copy",
         "url_share_copy_download_button": "Copy Download URL",
         "url_share_copied": "Copied",
+        "url_share_copy_feedback": "Copied!",
+        "markdown_code_copy_button": "Copy code",
+        "markdown_code_copied": "Copied!",
         "url_share_indicator": "URL shared",
         "url_share_inherited_indicator": "Inherited URL share",
         "job_queue_title": "Jobs",
@@ -1563,6 +1802,21 @@ DOCS_TEXT = {
         "auth_privacy_consent_error": "You must agree to the Privacy Policy and Terms of Service.",
         "auth_signup_error": "Please check the sign up information.",
         "auth_login_error": "Please check your username or password.",
+        "auth_forgot_password_button": "Forgot password",
+        "auth_forgot_password_title": "Reset password",
+        "auth_forgot_password_hint": "Enter your username and we will send a temporary password to your registered email.",
+        "auth_forgot_password_submit": "Send temporary password",
+        "auth_forgot_password_sent": "A temporary password was sent to the registered email. Sign in with that temporary password.",
+        "auth_forgot_password_send_error": "Failed to send a temporary password. Please try again later.",
+        "auth_forgot_password_rate_limit": "Please wait a moment before trying again.",
+        "auth_password_change_title": "Change password",
+        "auth_password_change_hint": "You signed in with a temporary password.\nChange it before continuing.",
+        "auth_new_password_label": "New password",
+        "auth_new_password_confirm_label": "Confirm new password",
+        "auth_password_change_submit": "Change password",
+        "auth_password_change_error": "Please check your password.",
+        "auth_password_mismatch_error": "Passwords do not match.",
+        "auth_password_change_success": "Password changed.",
         "auth_username_forbidden_chars": "Usernames cannot contain spaces, quotes, slashes, or other unsafe characters.",
         "auth_password_forbidden_chars": "Passwords cannot contain spaces, quotes, slashes, or other unsafe characters.",
         "auth_github_login_button": "Login with GitHub",
@@ -2075,6 +2329,11 @@ def resolve_handrive_editor_destination(
         is_same_as_source = False
 
     destination_relative = relative_from_root(destination_path)
+
+    if source_path is not None and not is_same_as_source:
+        source_relative = relative_from_root(source_path)
+        if is_handrive_shared_root_locked_for_request(request, source_relative):
+            raise PermissionError("공유 루트 항목의 이름은 소유자만 바꿀 수 있습니다.")
 
     if destination_exists and not destination_path.is_file():
         raise FileExistsError("같은 이름의 폴더가 이미 존재합니다.")
@@ -2851,6 +3110,46 @@ def append_handrive_admin_switch_query(request, url: str) -> str:
     return path_part + (f"?{query}" if query else "") + hash_part
 
 
+def append_handrive_query_params(url: str, params: dict[str, str]) -> str:
+    next_url = str(url or "").strip()
+    if not next_url:
+        return next_url
+    hash_index = next_url.find("#")
+    hash_part = "" if hash_index < 0 else next_url[hash_index:]
+    before_hash = next_url if hash_index < 0 else next_url[:hash_index]
+    if "?" in before_hash:
+        path_part, query_part = before_hash.split("?", 1)
+    else:
+        path_part, query_part = before_hash, ""
+    query_params = parse_qs(query_part, keep_blank_values=True)
+    for key, value in (params or {}).items():
+        query_params[str(key)] = [str(value)]
+    query = urlencode(query_params, doseq=True)
+    return path_part + (f"?{query}" if query else "") + hash_part
+
+
+def resolve_handrive_tutorial_return_url(request, fallback_url: str) -> str:
+    candidate = str(request.GET.get("from_list", "") or "").strip()
+    if not candidate:
+        return fallback_url
+    if not url_has_allowed_host_and_scheme(
+        url=candidate,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return fallback_url
+    parsed = urlparse(candidate)
+    path = parsed.path or ""
+    if not re.match(r"^/(?:(?:ko|en)/)?handrive(?:/|$)", path):
+        return fallback_url
+    local_url = path
+    if parsed.query:
+        local_url += f"?{parsed.query}"
+    if parsed.fragment:
+        local_url += f"#{parsed.fragment}"
+    return append_handrive_query_params(local_url, {"tutorial": "1"})
+
+
 def build_handrive_download_url(relative_path: str, share_owner: str = "", share_slug: str = "", *, request=None) -> str:
     """문서/공유문서 다운로드 API URL 을 생성한다."""
     encoded_path = quote(relative_path or "")
@@ -3384,13 +3683,16 @@ def get_handrive_share_allowed_users(shared_link: HandriveSharedLink | None) -> 
 def get_handrive_share_allowed_users_for_request(request, shared_link: HandriveSharedLink | None) -> list[dict]:
     if shared_link is None:
         return []
-    try:
-        shared_path = normalize_relative_path(shared_link.path, allow_empty=False)
-    except ValueError:
-        return []
-    if not has_handrive_write_access(request, shared_path):
+    if not can_manage_handrive_shared_link(request, shared_link):
         return []
     return get_handrive_share_allowed_users(shared_link)
+
+
+def can_manage_handrive_shared_link(request, shared_link: HandriveSharedLink | None) -> bool:
+    if shared_link is None:
+        return False
+    user = getattr(request, "user", None)
+    return bool(user and user.is_authenticated and user.pk == shared_link.owner_id)
 
 
 def handrive_shared_link_allows_request_user(request, shared_link: HandriveSharedLink) -> bool:
@@ -3402,6 +3704,24 @@ def handrive_shared_link_allows_request_user(request, shared_link: HandriveShare
         return False
     if user.pk == shared_link.owner_id:
         return True
+    username = str(user.get_username() or "").strip()
+    if username and username in allowed_usernames:
+        return True
+    return shared_link.allowed_users.filter(pk=user.pk).exists()
+
+
+def handrive_shared_link_allows_request_edit(request, shared_link: HandriveSharedLink | None) -> bool:
+    if shared_link is None or not getattr(shared_link, "can_edit", False):
+        return False
+    if can_manage_handrive_shared_link(request, shared_link):
+        return True
+    allowed_usernames = set(get_handrive_share_allowed_usernames(shared_link))
+    has_named_targets = bool(allowed_usernames or shared_link.allowed_users.exists())
+    if not has_named_targets:
+        return True
+    user = getattr(request, "user", None)
+    if not (user and user.is_authenticated):
+        return False
     username = str(user.get_username() or "").strip()
     if username and username in allowed_usernames:
         return True
@@ -3488,6 +3808,8 @@ def get_handrive_shared_access_context(request):
         "root_path": normalized_path,
         "target_path": target_path,
         "is_dir": target_path.is_dir(),
+        "can_edit": handrive_shared_link_allows_request_edit(request, shared_link),
+        "can_manage": can_manage_handrive_shared_link(request, shared_link),
     }
     setattr(request, "_handrive_shared_access_context", context)
     return context
@@ -3510,6 +3832,41 @@ def has_handrive_shared_read_access(request, path_value: str | None) -> bool:
     return normalized_path.startswith(shared_root + "/")
 
 
+def has_handrive_shared_write_access(request, path_value: str | None) -> bool:
+    """공유 링크 컨텍스트에서 현재 경로 쓰기가 허용되는지 판정한다."""
+    shared_context = get_handrive_shared_access_context(request)
+    if not shared_context or not shared_context.get("can_edit"):
+        return False
+
+    normalized_path = normalize_relative_path(path_value, allow_empty=True)
+    shared_root = str(shared_context["root_path"] or "").strip()
+    if not shared_root:
+        return False
+    if normalized_path == shared_root:
+        return True
+    if not shared_context["is_dir"]:
+        return False
+    return normalized_path.startswith(shared_root + "/")
+
+
+def is_handrive_shared_root_locked_for_request(request, path_value: str | None) -> bool:
+    """공유 루트 항목 자체의 이름/위치/삭제는 소유자만 변경할 수 있다."""
+    shared_context = get_handrive_shared_access_context(request)
+    if not shared_context or shared_context.get("can_manage"):
+        return False
+    try:
+        normalized_path = normalize_relative_path(path_value, allow_empty=False)
+    except ValueError:
+        return False
+    return normalized_path == str(shared_context.get("root_path") or "").strip()
+
+
+def can_rename_handrive_path(request, path_value: str | None) -> bool:
+    if not has_handrive_write_access(request, path_value):
+        return False
+    return not is_handrive_shared_root_locked_for_request(request, path_value)
+
+
 def get_write_acl_display_labels(request, path_value: str | None) -> list[str]:
     """Legacy per-user/group ACL labels are no longer exposed in HanDrive."""
     return []
@@ -3521,6 +3878,8 @@ def has_handrive_read_access(request, path_value: str | None) -> bool:
         return True
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     normalized_path = normalize_relative_path(path_value, allow_empty=True)
+    if is_handrive_guest_tutorial_session_path(request, normalized_path):
+        return True
     google_drive = _parse_google_drive_virtual_path(request, normalized_path)
     if google_drive is not None:
         return True
@@ -3537,15 +3896,19 @@ def has_handrive_write_access(request, path_value: str | None) -> bool:
     user = getattr(request, "user", None)
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     normalized_path = normalize_relative_path(path_value, allow_empty=True)
+    git_virtual = _get_git_virtual_context(request, normalized_path)
+    if git_virtual is not None:
+        return git_virtual["kind"] == "branch_file" and str(git_virtual.get("repo_permission") or "").lower() in {"write", "admin", "owner"}
+    if is_handrive_guest_tutorial_session_path(request, normalized_path):
+        return True
+    if has_handrive_shared_write_access(request, normalized_path):
+        return True
     google_drive = _parse_google_drive_virtual_path(request, normalized_path)
     if google_drive is not None:
         if google_drive["is_root"]:
             return False
         mapping = google_drive["mapping"]
         return google_token_has_drive_scope(getattr(mapping, "token_scope", ""))
-    git_virtual = _get_git_virtual_context(request, normalized_path)
-    if git_virtual is not None:
-        return git_virtual["kind"] == "branch_file" and str(git_virtual.get("repo_permission") or "").lower() in {"write", "admin", "owner"}
     if is_handrive_git_repo_mounted_path(request, normalized_path):
         return False
     in_scoped_home = is_path_in_handrive_scope(normalized_path, scoped_home_dir)
@@ -3555,19 +3918,22 @@ def has_handrive_write_access(request, path_value: str | None) -> bool:
 
 
 def has_handrive_demo_edit_access(request, path_value: str | None) -> bool:
-    """비로그인 all 파일의 읽기/에디터 데모 접근 여부를 판정한다."""
+    """비로그인 게스트 튜토리얼/공개 데모 파일의 에디터 데모 접근 여부를 판정한다."""
     user = getattr(request, "user", None)
     if user and user.is_authenticated:
         return False
     if has_handrive_shared_access_hint(request) or getattr(request, "_handrive_shared_owner_username", ""):
         return False
 
-    scoped_home_dir = get_scoped_handrive_home_dir(request)
-    if scoped_home_dir != "all":
-        return False
     try:
         normalized_path = normalize_relative_path(path_value, allow_empty=False)
     except ValueError:
+        return False
+    if is_handrive_guest_tutorial_session_path(request, normalized_path):
+        return has_handrive_read_access(request, normalized_path)
+
+    scoped_home_dir = get_scoped_handrive_home_dir(request)
+    if scoped_home_dir != HANDRIVE_GUEST_ROOT:
         return False
     if not is_path_in_handrive_scope(normalized_path, scoped_home_dir):
         return False
@@ -3579,13 +3945,17 @@ def has_handrive_directory_write_access(request, path_value: str | None) -> bool
     user = getattr(request, "user", None)
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     normalized_path = normalize_relative_path(path_value, allow_empty=True)
+    git_virtual = _get_git_virtual_context(request, normalized_path)
+    if git_virtual is not None:
+        return git_virtual["kind"] == "branch_dir" and str(git_virtual.get("repo_permission") or "").lower() in {"write", "admin", "owner"}
+    if is_handrive_guest_tutorial_session_path(request, normalized_path):
+        return True
+    if has_handrive_shared_write_access(request, normalized_path):
+        return True
     google_drive = _parse_google_drive_virtual_path(request, normalized_path)
     if google_drive is not None:
         mapping = google_drive["mapping"]
         return google_token_has_drive_scope(getattr(mapping, "token_scope", ""))
-    git_virtual = _get_git_virtual_context(request, normalized_path)
-    if git_virtual is not None:
-        return git_virtual["kind"] == "branch_dir" and str(git_virtual.get("repo_permission") or "").lower() in {"write", "admin", "owner"}
     if is_handrive_git_repo_mounted_path(request, normalized_path):
         return False
     in_scoped_home = is_path_in_handrive_scope(normalized_path, scoped_home_dir)
@@ -4385,6 +4755,11 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
     """실제 디렉터리 엔트리와 가상 repo root 엔트리를 함께 구성한다."""
     entries = []
     existing_entry_paths = set()
+    current_dir_relative = ""
+    try:
+        current_dir_relative = relative_from_root(directory)
+    except ValueError:
+        current_dir_relative = ""
     folder_icon_stems = set()
     folder_icon_owner_key = ""
     if request is not None and hasattr(request, "user"):
@@ -4404,6 +4779,10 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
     except (PermissionError, OSError):
         _children = []
     for child in sorted(_children, key=lambda p: (0 if p.is_dir() else 1, p.name.lower())):
+        if child.name == HANDRIVE_TUTORIAL_WORKSPACE_MARKER_FILENAME:
+            continue
+        if child.is_dir() and is_hidden_handrive_internal_directory_entry(current_dir_relative, child.name):
+            continue
         if child.is_dir():
             entry = build_entry(child, include_dir_size=False)
             can_edit = False
@@ -4418,10 +4797,11 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
             if request is not None:
                 is_git_repo_root = is_handrive_git_repo_root_path(request, entry["path"])
                 entry["can_edit"] = can_edit
+                entry["can_rename"] = can_rename_handrive_path(request, entry["path"])
                 entry["can_read"] = can_read
                 entry["can_demo_edit"] = False
                 entry["can_write_children"] = has_handrive_directory_write_access(request, entry["path"])
-                entry["can_delete"] = can_edit or is_git_repo_root
+                entry["can_delete"] = (can_edit and not is_handrive_shared_root_locked_for_request(request, entry["path"])) or is_git_repo_root
                 entry["is_public_write"] = False
                 entry["is_url_only"] = is_handrive_url_only_enabled(request, entry["path"])
                 entry["write_acl_labels"] = get_write_acl_display_labels(request, entry["path"])
@@ -4430,6 +4810,8 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                 entry["share_download_url"] = share_info["share_download_url"]
                 entry["share_is_inherited"] = share_info["share_is_inherited"]
                 entry["share_allowed_users"] = share_info["share_allowed_users"]
+                entry["share_can_edit"] = share_info["share_can_edit"]
+                entry["share_can_manage"] = share_info["share_can_manage"]
                 # 커스텀 폴더 아이콘 URL 주입
                 if folder_icon_owner_key and folder_icon_owner_key != "anon":
                     _stem = sanitize_upload_segment(child.name) or "folder"
@@ -4453,10 +4835,11 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                     continue
             if request is not None:
                 entry["can_edit"] = can_edit
+                entry["can_rename"] = can_rename_handrive_path(request, entry["path"])
                 entry["can_read"] = can_read
                 entry["can_demo_edit"] = has_handrive_demo_edit_access(request, entry["path"])
                 entry["can_write_children"] = False
-                entry["can_delete"] = can_edit
+                entry["can_delete"] = can_edit and not is_handrive_shared_root_locked_for_request(request, entry["path"])
                 entry["is_public_write"] = is_handrive_public_write_enabled(request, entry["path"])
                 entry["is_url_only"] = is_handrive_url_only_enabled(request, entry["path"])
                 entry["write_acl_labels"] = get_write_acl_display_labels(request, entry["path"])
@@ -4465,6 +4848,8 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                 entry["share_download_url"] = share_info["share_download_url"]
                 entry["share_is_inherited"] = share_info["share_is_inherited"]
                 entry["share_allowed_users"] = share_info["share_allowed_users"]
+                entry["share_can_edit"] = share_info["share_can_edit"]
+                entry["share_can_manage"] = share_info["share_can_manage"]
                 if is_handrive_supported_archive_path(child):
                     entry["is_archive"] = True
                     entry["can_extract"] = can_read
@@ -4474,9 +4859,17 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
             entries.append(entry)
             existing_entry_paths.add(entry["path"])
 
+    tutorial_git_entry = _handrive_tutorial_git_repository_entry_for_directory(
+        request,
+        current_dir_relative,
+        existing_entry_paths,
+    )
+    if tutorial_git_entry is not None:
+        entries.append(tutorial_git_entry)
+        existing_entry_paths.add(tutorial_git_entry["path"])
+
     # 디렉토리 엔트리에 git repo 정보 일괄 추가
     if request is not None and hasattr(request, "user") and request.user.is_authenticated:
-        current_dir_relative = relative_from_root(directory)
         visible_repos = _get_visible_git_repositories(request)
         visible_repo_map = {
             _get_visible_git_repo_root_relative(request, repo): repo
@@ -4576,7 +4969,7 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
     return entries
 
 
-def sort_demo_all_list_entries(entries: list[dict]) -> list[dict]:
+def sort_guest_demo_list_entries(entries: list[dict]) -> list[dict]:
     """데모 루트는 파일/폴더 유형보다 번호가 붙은 이름 순서를 우선한다."""
     return sorted(
         entries,
@@ -4584,17 +4977,44 @@ def sort_demo_all_list_entries(entries: list[dict]) -> list[dict]:
     )
 
 
+def resolve_demo_tutorial_entry_path(entries: list[dict]) -> str:
+    """비로그인 데모 안내가 열 첫 파일 경로를 고른다."""
+    if not entries:
+        return ""
+
+    def is_file_entry(item: dict) -> bool:
+        return str(item.get("type") or "").lower() == "file" and bool(item.get("path"))
+
+    file_entries = [entry for entry in entries if is_file_entry(entry)]
+    candidates = file_entries or [entry for entry in entries if entry.get("path")]
+    if not candidates:
+        return ""
+
+    def score(entry: dict) -> tuple[int, str]:
+        text = f"{entry.get('name') or ''} {entry.get('path') or ''}".casefold()
+        if "튜토리얼" in text or "튜도리얼" in text or "tutorial" in text:
+            return (0, str(entry.get("name") or entry.get("path") or "").casefold())
+        if "시작" in text or "start" in text or "guide" in text:
+            return (1, str(entry.get("name") or entry.get("path") or "").casefold())
+        return (2, str(entry.get("name") or entry.get("path") or "").casefold())
+
+    return str(sorted(candidates, key=score)[0].get("path") or "")
+
+
 def _get_current_dir_git_repo(request, current_dir: str):
     """현재 디렉토리 자체의 GitRepository 정보를 반환 (없으면 None)."""
     if not current_dir or request is None or not hasattr(request, "user") or not request.user.is_authenticated:
         return None
     repo = _get_git_repo_for_relative_path(request, current_dir)
+    git_virtual = None
     if repo is None:
         git_virtual = _get_git_virtual_context(request, current_dir)
         if git_virtual is not None:
             repo = git_virtual.get("repo")
     if repo:
-        permission = _get_git_repo_permission_for_request(request, repo)
+        permission = str(git_virtual.get("repo_permission") or "").lower() if git_virtual is not None else ""
+        if not permission:
+            permission = _get_git_repo_permission_for_request(request, repo)
         if _is_github_virtual_repo(repo):
             return {
                 "id": repo.id,
@@ -4674,8 +5094,11 @@ def _build_handrive_directory_meta(
         current_share_info = build_handrive_existing_share_info(request, normalized_dir)
     return {
         "path": normalized_dir,
+        "display_label": get_handrive_display_label_for_path(request, normalized_dir, resolve_ui_lang(request)),
         "is_root": bool((scoped_home_dir and normalized_dir == scoped_home_dir) or (not scoped_home_dir and normalized_dir == "")),
         "can_edit": has_handrive_write_access(request, normalized_dir),
+        "can_rename": can_rename_handrive_path(request, normalized_dir) if normalized_dir else False,
+        "can_delete": has_handrive_write_access(request, normalized_dir) and not is_handrive_shared_root_locked_for_request(request, normalized_dir),
         "can_write_children": has_handrive_directory_write_access(request, normalized_dir),
         "has_children": bool(effective_entries),
         "is_git_repo_root": bool(
@@ -4700,6 +5123,8 @@ def _build_handrive_directory_meta(
         "share_download_url": current_share_info["share_download_url"],
         "share_is_inherited": current_share_info["share_is_inherited"],
         "share_allowed_users": current_share_info["share_allowed_users"],
+        "share_can_edit": current_share_info["share_can_edit"],
+        "share_can_manage": current_share_info["share_can_manage"],
         "is_google_drive": False,
         "google_drive": None,
         "is_archive_virtual": False,
@@ -4791,6 +5216,10 @@ def _get_visible_git_repositories(request):
 
     all_repos = list(
         GitRepository.objects.exclude(status="deleted")
+        .exclude(
+            owner__username=HANDRIVE_TUTORIAL_GIT_REPO_OWNER_USERNAME,
+            repo_name=HANDRIVE_TUTORIAL_GIT_REPO_NAME,
+        )
         .select_related("owner")
         .prefetch_related("collaborators")
     )
@@ -4807,6 +5236,10 @@ def _get_visible_git_repositories(request):
             Q(owner=request.user) | Q(collaborators__user=request.user)
         )
         .exclude(status="deleted")
+        .exclude(
+            owner__username=HANDRIVE_TUTORIAL_GIT_REPO_OWNER_USERNAME,
+            repo_name=HANDRIVE_TUTORIAL_GIT_REPO_NAME,
+        )
         .select_related("owner")
         .prefetch_related("collaborators")
         .distinct()
@@ -4843,6 +5276,164 @@ def _get_visible_git_repo_root_relative(request, repo) -> str:
             if viewer_root:
                 return normalize_relative_path(f"{viewer_root}/{repo.repo_name}", allow_empty=False)
     return normalize_relative_path(repo.handrive_path, allow_empty=False)
+
+
+def get_handrive_tutorial_git_entry_name(ui_lang: str | None = None) -> str:
+    return HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_EN if ui_lang == "en" else HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_KO
+
+
+def get_handrive_tutorial_git_entry_names() -> tuple[str, str]:
+    return (HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_KO, HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_EN)
+
+
+def get_handrive_tutorial_git_repository():
+    from git.models import GitRepository
+
+    try:
+        return (
+            GitRepository.objects.filter(
+                owner__username=HANDRIVE_TUTORIAL_GIT_REPO_OWNER_USERNAME,
+                repo_name=HANDRIVE_TUTORIAL_GIT_REPO_NAME,
+                status="active",
+            )
+            .select_related("owner")
+            .first()
+        )
+    except (OperationalError, ProgrammingError):
+        return None
+
+
+def _get_handrive_tutorial_git_repo_public_url(repo) -> str:
+    public_base_url = str(getattr(settings, "PUBLIC_GIT_BASE_URL", "") or "").strip().rstrip("/")
+    owner_name = str(getattr(repo, "forgejo_owner", "") or getattr(repo.owner, "username", "") or "").strip()
+    repo_name = str(getattr(repo, "forgejo_repo_name", "") or getattr(repo, "repo_name", "") or "").strip()
+    if public_base_url and owner_name and repo_name:
+        return f"{public_base_url}/{quote(owner_name)}/{quote(repo_name)}"
+    return str(getattr(repo, "forgejo_clone_http_url", "") or "").removesuffix(".git")
+
+
+def _get_handrive_tutorial_git_repo_root_relative(request, path_value: str | None) -> str:
+    if request is None:
+        return ""
+    token = get_handrive_tutorial_token(request, create=False)
+    tutorial_dir = build_handrive_session_tutorial_dir(request, token)
+    if not tutorial_dir:
+        return ""
+    try:
+        normalized = normalize_relative_path(path_value, allow_empty=False)
+    except ValueError:
+        return ""
+    for entry_name in get_handrive_tutorial_git_entry_names():
+        repo_root = normalize_relative_path(f"{tutorial_dir}/{entry_name}", allow_empty=False)
+        if normalized == repo_root or normalized.startswith(repo_root + "/"):
+            return repo_root
+    return ""
+
+
+def _get_handrive_tutorial_git_virtual_context(request, path_value: str | None):
+    repo_root = _get_handrive_tutorial_git_repo_root_relative(request, path_value)
+    if not repo_root:
+        return None
+
+    repo = get_handrive_tutorial_git_repository()
+    if repo is None:
+        return None
+
+    normalized = normalize_relative_path(path_value, allow_empty=False)
+    remaining = normalized[len(repo_root):].lstrip("/")
+    if not remaining:
+        return {
+            "repo": repo,
+            "repo_permission": "read",
+            "repo_root": repo_root,
+            "kind": "repo_root",
+            "display_path": repo_root,
+            "branch_segment": "",
+            "branch_name": "",
+            "repo_relative_path": "",
+            "is_tutorial_public_repo": True,
+        }
+
+    segments = remaining.split("/")
+    branch_segment = segments[0]
+    branch_name = _decode_git_branch_segment(branch_segment)
+    if branch_name not in _git_repo_branches(repo):
+        return None
+
+    repo_relative_path = "/".join(segments[1:])
+    kind = "branch_dir"
+    if repo_relative_path:
+        try:
+            object_type = _git_repo_object_type(repo, branch_name, repo_relative_path)
+        except RuntimeError:
+            return None
+        kind = "branch_dir" if object_type == "tree" else "branch_file"
+
+    return {
+        "repo": repo,
+        "repo_permission": "read",
+        "repo_root": repo_root,
+        "kind": kind,
+        "display_path": normalized,
+        "branch_segment": branch_segment,
+        "branch_name": branch_name,
+        "repo_relative_path": repo_relative_path,
+        "is_tutorial_public_repo": True,
+    }
+
+
+def _handrive_tutorial_git_repository_entry_for_directory(request, current_dir_relative: str, existing_entry_paths: set[str]) -> dict | None:
+    if request is None:
+        return None
+    if not is_handrive_session_tutorial_root_path(request, current_dir_relative):
+        return None
+
+    repo = get_handrive_tutorial_git_repository()
+    if repo is None:
+        return None
+
+    entry_name = get_handrive_tutorial_git_entry_name(resolve_ui_lang(request))
+    repo_path = normalize_relative_path(f"{current_dir_relative}/{entry_name}", allow_empty=False)
+    if repo_path in existing_entry_paths:
+        return None
+
+    _repo_storage = _get_repo_storage_path(repo.owner, repo.repo_name)
+    try:
+        _repo_size = sum(p.stat().st_size for p in _repo_storage.rglob("*") if p.is_file()) if _repo_storage.exists() else 0
+        _repo_size_display = format_handrive_bytes_display(_repo_size) if _repo_size else ""
+    except OSError:
+        _repo_size_display = ""
+
+    return {
+        "name": entry_name,
+        "path": repo_path,
+        "type": "dir",
+        "has_children": True,
+        "modified_display": format_handrive_modified_display(getattr(repo, "updated_at", None)),
+        "size_display": _repo_size_display,
+        "can_edit": False,
+        "can_read": True,
+        "can_write_children": False,
+        "can_delete": False,
+        "is_public_write": False,
+        "is_url_only": False,
+        "share_url": "",
+        "share_download_url": "",
+        "share_is_inherited": False,
+        "share_allowed_users": [],
+        "write_acl_labels": [],
+        "type_display": "Git",
+        "git_repo": {
+            "id": repo.id,
+            "status": repo.status,
+            "permission": "read",
+            "is_owner": False,
+            "owner_username": str(repo.forgejo_owner or getattr(repo.owner, "username", "") or "").strip(),
+            "can_delete": False,
+            "can_manage": False,
+            "html_url": _get_handrive_tutorial_git_repo_public_url(repo),
+        },
+    }
 
 
 def _get_git_repo_mount_prefixes(request) -> tuple[str, ...]:
@@ -5427,6 +6018,10 @@ def _get_git_virtual_context(request, path_value: str | None):
     - ``users/adihang/repo/main`` -> branch_dir
     - ``users/adihang/repo/main/src/app.js`` -> branch_file
     """
+    tutorial_context = _get_handrive_tutorial_git_virtual_context(request, path_value)
+    if tutorial_context is not None:
+        return tutorial_context
+
     if request is None or not hasattr(request, "user") or not request.user.is_authenticated:
         return None
 
@@ -5729,6 +6324,34 @@ def list_all_directories(request=None) -> list[str]:
     return directories
 
 
+def build_handrive_write_initial_directories(*paths: str | None) -> list[str]:
+    directories = []
+    seen = set()
+
+    def append(path_value: str | None):
+        try:
+            normalized = normalize_relative_path(path_value, allow_empty=True)
+        except ValueError:
+            return
+        if normalized in seen:
+            return
+        seen.add(normalized)
+        directories.append(normalized)
+
+    for path_value in paths:
+        normalized = normalize_relative_path(path_value, allow_empty=True) if path_value else ""
+        if not normalized:
+            append("")
+            continue
+        parts = [part for part in normalized.split("/") if part]
+        accumulated = []
+        for part in parts:
+            accumulated.append(part)
+            append("/".join(accumulated))
+
+    return directories
+
+
 def _handrive_url_safe_label(value: str, fallback: str = "item") -> str:
     label = str(value or "").strip() or fallback
     return label.replace("/", "-").replace("\\", "-")
@@ -5767,18 +6390,109 @@ def _selected_github_repo_by_owner_name(request, owner_login: str, repo_name: st
     return None
 
 
+def map_legacy_guest_path_to_guest(path_value: str | None, *, allow_empty: bool = True) -> str:
+    normalized = normalize_relative_path(path_value, allow_empty=allow_empty)
+    if normalized == HANDRIVE_LEGACY_GUEST_ROOT or normalized.startswith(HANDRIVE_LEGACY_GUEST_ROOT + "/"):
+        tail = normalized[len(HANDRIVE_LEGACY_GUEST_ROOT):].lstrip("/")
+        return normalize_relative_path(
+            "/".join(part for part in [HANDRIVE_GUEST_ROOT, tail] if part),
+            allow_empty=False,
+        )
+    return normalized
+
+
+def split_handrive_user_tutorial_storage_path(path_value: str | None) -> dict | None:
+    try:
+        normalized = normalize_relative_path(path_value, allow_empty=True)
+    except ValueError:
+        return None
+    if not normalized:
+        return None
+    parts = [part for part in normalized.split("/") if part]
+    if (
+        len(parts) >= 4
+        and parts[0] == "users"
+        and parts[2] == HANDRIVE_USER_TUTORIAL_DIR_NAME
+        and re.fullmatch(r"[0-9a-f]{32}", parts[3] or "")
+    ):
+        return {
+            "home": "/".join(parts[:2]),
+            "root": "/".join(parts[:4]),
+            "token": parts[3],
+            "tail": parts[4:],
+        }
+    return None
+
+
+def is_handrive_user_tutorial_storage_path(path_value: str | None) -> bool:
+    return split_handrive_user_tutorial_storage_path(path_value) is not None
+
+
+def is_handrive_user_tutorial_temp_dir_path(path_value: str | None) -> bool:
+    try:
+        normalized = normalize_relative_path(path_value, allow_empty=True)
+    except ValueError:
+        return False
+    parts = [part for part in normalized.split("/") if part]
+    return len(parts) == 3 and parts[0] == "users" and parts[2] == HANDRIVE_USER_TUTORIAL_DIR_NAME
+
+
+def build_handrive_user_tutorial_public_url_path(path_value: str | None) -> str:
+    parsed = split_handrive_user_tutorial_storage_path(path_value)
+    if not parsed:
+        return ""
+    return normalize_relative_path(
+        "/".join([parsed["home"], HANDRIVE_TUTORIAL_PUBLIC_SEGMENT, *parsed["tail"]]),
+        allow_empty=False,
+    )
+
+
+def resolve_handrive_tutorial_public_route_path(request, parts: list[str], start_index: int) -> str:
+    if start_index < 0 or start_index >= len(parts):
+        return ""
+    if parts[start_index] != HANDRIVE_TUTORIAL_PUBLIC_SEGMENT:
+        return ""
+    token = get_handrive_tutorial_token(request, create=False)
+    tutorial_dir = build_handrive_session_tutorial_dir(request, token)
+    parsed = split_handrive_user_tutorial_storage_path(tutorial_dir)
+    if not parsed:
+        return ""
+    tutorial_parts = tutorial_dir.split("/")
+    if parts[:start_index] != tutorial_parts[:start_index]:
+        return ""
+    return normalize_relative_path(
+        "/".join([tutorial_dir, *parts[start_index + 1 :]]),
+        allow_empty=False,
+    )
+
+
+def is_hidden_handrive_internal_directory_entry(parent_relative: str | None, child_name: str | None) -> bool:
+    if str(child_name or "") != HANDRIVE_USER_TUTORIAL_DIR_NAME:
+        return False
+    try:
+        normalized_parent = normalize_relative_path(parent_relative, allow_empty=True)
+    except ValueError:
+        return False
+    parent_parts = [part for part in normalized_parent.split("/") if part]
+    return len(parent_parts) == 2 and parent_parts[0] == "users"
+
+
 def resolve_handrive_route_path(request, path_value: str | None) -> str:
     """보기 좋은 HanDrive URL alias 를 내부 상대경로로 복원한다."""
     normalized = normalize_relative_path(path_value, allow_empty=True)
     if not normalized:
         return normalized
+    normalized = map_legacy_guest_path_to_guest(normalized)
     parts = [part for part in normalized.split("/") if part]
     start_index = _handrive_path_parts_start_index(parts, get_scoped_handrive_home_dir(request))
     if start_index is None or start_index >= len(parts):
         return normalized
 
-    prefix_parts = parts[:start_index]
     alias_prefix = parts[start_index]
+    tutorial_route = resolve_handrive_tutorial_public_route_path(request, parts, start_index)
+    if tutorial_route:
+        return tutorial_route
+
     if alias_prefix == HANDRIVE_GITHUB_URL_PREFIX and len(parts) >= start_index + 3:
         owner_login = unquote(parts[start_index + 1])
         repo_name = unquote(parts[start_index + 2])
@@ -5818,13 +6532,26 @@ def handrive_path_uses_internal_virtual_url(path_value: str | None) -> bool:
     )
 
 
+def handrive_path_uses_internal_public_url(request, path_value: str | None) -> bool:
+    if handrive_path_uses_internal_virtual_url(path_value):
+        return True
+    if request is None or not is_handrive_session_tutorial_path(request, path_value):
+        return False
+    return bool(build_handrive_user_tutorial_public_url_path(path_value))
+
+
 def build_handrive_public_url_path(request, relative_path: str) -> str:
     """내부 HanDrive path 를 사람이 읽기 좋은 URL path 로 변환한다."""
     normalized = normalize_relative_path(relative_path, allow_empty=True)
     if not normalized or request is None:
         return normalized
+    normalized = map_legacy_guest_path_to_guest(normalized)
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     prefix = scoped_home_dir if scoped_home_dir and is_path_in_handrive_scope(normalized, scoped_home_dir) else ""
+    if is_handrive_session_tutorial_path(request, normalized):
+        tutorial_url_path = build_handrive_user_tutorial_public_url_path(normalized)
+        if tutorial_url_path:
+            return tutorial_url_path
 
     google_drive = _parse_google_drive_virtual_path(request, normalized)
     if google_drive is not None:
@@ -5864,7 +6591,7 @@ def apply_handrive_entry_url_paths(request, entries: list[dict]) -> list[dict]:
         if not isinstance(entry, dict):
             continue
         entry_path = str(entry.get("path") or "").strip()
-        if not entry_path or not handrive_path_uses_internal_virtual_url(entry_path):
+        if not entry_path or not handrive_path_uses_internal_public_url(request, entry_path):
             continue
         if entry.get("url_path"):
             if entry.get("type") == "file" and not entry.get("slug_path"):
@@ -5950,7 +6677,7 @@ def get_scoped_handrive_home_dir(request) -> str:
 
     user = getattr(request, "user", None)
     if not (user and user.is_authenticated):
-        return "all"
+        return HANDRIVE_GUEST_ROOT
     username = str(user.get_username() or "").strip()
     if not username:
         return ""
@@ -6000,8 +6727,859 @@ def normalize_scoped_home_api_path(request, path_value: str | None, *, allow_emp
 def ensure_scoped_home_dir(scoped_home_dir: str) -> None:
     if not scoped_home_dir:
         return
+    if scoped_home_dir == HANDRIVE_GUEST_ROOT:
+        migrate_legacy_handrive_guest_root()
     path_obj, _ = resolve_path(scoped_home_dir, must_exist=False)
     path_obj.mkdir(parents=True, exist_ok=True)
+
+
+def merge_handrive_acl_rules(source_rule: HandriveAccessRule, target_rule: HandriveAccessRule) -> None:
+    target_rule.read_users.add(*list(source_rule.read_users.all()))
+    target_rule.read_groups.add(*list(source_rule.read_groups.all()))
+    target_rule.write_users.add(*list(source_rule.write_users.all()))
+    target_rule.write_groups.add(*list(source_rule.write_groups.all()))
+    source_rule.delete()
+
+
+@contextmanager
+def handrive_legacy_guest_migration_lock():
+    lock_dir = Path(tempfile.gettempdir()) / "hanplanet_handrive_locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / "legacy_guest_root_migration.lock"
+    with lock_path.open("w") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def migrate_legacy_handrive_guest_references() -> None:
+    legacy_filter = Q(path=HANDRIVE_LEGACY_GUEST_ROOT) | Q(path__startswith=f"{HANDRIVE_LEGACY_GUEST_ROOT}/")
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        try:
+            with transaction.atomic():
+                rules = HandriveAccessRule.objects.filter(legacy_filter).only("pk", "path").order_by("path", "pk")
+                for rule in rules:
+                    new_path = map_legacy_guest_path_to_guest(rule.path, allow_empty=False)
+                    existing_rule = HandriveAccessRule.objects.filter(path=new_path).exclude(pk=rule.pk).first()
+                    if existing_rule is not None:
+                        merge_handrive_acl_rules(rule, existing_rule)
+                        continue
+                    HandriveAccessRule.objects.filter(pk=rule.pk).update(path=new_path, updated_at=timezone.now())
+
+                shared_links = HandriveSharedLink.objects.filter(legacy_filter).order_by("path", "pk").values_list("pk", "path")
+                for shared_link_pk, shared_link_path in shared_links:
+                    new_path = map_legacy_guest_path_to_guest(shared_link_path, allow_empty=False)
+                    if HandriveSharedLink.objects.filter(path=new_path).exclude(pk=shared_link_pk).exists():
+                        HandriveSharedLink.objects.filter(pk=shared_link_pk).delete()
+                        continue
+                    HandriveSharedLink.objects.filter(pk=shared_link_pk).update(path=new_path, updated_at=timezone.now())
+
+                from git.models import GitRepository
+
+                repo_filter = Q(handrive_path=HANDRIVE_LEGACY_GUEST_ROOT) | Q(
+                    handrive_path__startswith=f"{HANDRIVE_LEGACY_GUEST_ROOT}/"
+                )
+                repos = GitRepository.objects.filter(repo_filter).only("pk", "handrive_path").order_by("handrive_path", "pk")
+                for repo in repos:
+                    new_path = map_legacy_guest_path_to_guest(repo.handrive_path, allow_empty=False)
+                    if GitRepository.objects.filter(handrive_path=new_path).exclude(pk=repo.pk).exists():
+                        logger.warning(
+                            "[handrive] Skipped legacy guest GitRepository path migration due to duplicate target: %s",
+                            new_path,
+                        )
+                        continue
+                    GitRepository.objects.filter(pk=repo.pk).update(handrive_path=new_path, updated_at=timezone.now())
+            return
+        except OperationalError as exc:
+            if "database is locked" in str(exc).lower() and attempt < max_attempts - 1:
+                time.sleep(0.2 * (attempt + 1))
+                continue
+            logger.exception("[handrive] Failed to migrate legacy all database references to guest")
+            return
+        except Exception:
+            logger.exception("[handrive] Failed to migrate legacy all database references to guest")
+            return
+
+
+def migrate_legacy_handrive_guest_root() -> None:
+    with handrive_legacy_guest_migration_lock():
+        migrate_legacy_handrive_guest_references()
+        try:
+            legacy_path, _ = resolve_path(HANDRIVE_LEGACY_GUEST_ROOT, must_exist=False)
+            guest_path, _ = resolve_path(HANDRIVE_GUEST_ROOT, must_exist=False)
+        except ValueError:
+            return
+        if not legacy_path.exists() or legacy_path == guest_path:
+            return
+        try:
+            if not legacy_path.is_dir():
+                return
+            if not guest_path.exists():
+                legacy_path.rename(guest_path)
+                return
+            if not legacy_path.is_dir() or not guest_path.is_dir():
+                return
+            for child in legacy_path.iterdir():
+                destination = guest_path / child.name
+                if destination.exists():
+                    continue
+                shutil.move(str(child), str(destination))
+            try:
+                legacy_path.rmdir()
+            except OSError:
+                pass
+        except OSError:
+            logger.exception("[handrive] Failed to migrate legacy all root to guest")
+
+
+def is_handrive_tutorial_requested(request) -> bool:
+    value = str(request.GET.get("tutorial", "") or "").strip().lower()
+    return value in {"1", "true", "yes", "on", "start"}
+
+
+def is_handrive_tutorial_autostart_requested(request) -> bool:
+    value = str(request.GET.get("start", "") or "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def get_handrive_tutorial_token(request, *, create: bool = False) -> str:
+    token = str(request.session.get(HANDRIVE_GUEST_TUTORIAL_SESSION_KEY, "") or "").strip()
+    if token and re.fullmatch(r"[0-9a-f]{32}", token):
+        return token
+    if not create:
+        return ""
+    token = uuid.uuid4().hex
+    request.session[HANDRIVE_GUEST_TUTORIAL_SESSION_KEY] = token
+    request.session.modified = True
+    return token
+
+
+def get_handrive_guest_tutorial_token(request, *, create: bool = False) -> str:
+    return get_handrive_tutorial_token(request, create=create)
+
+
+def build_handrive_guest_tutorial_dir(token: str) -> str:
+    safe_token = str(token or "").strip()
+    if not re.fullmatch(r"[0-9a-f]{32}", safe_token):
+        return ""
+    return f"{HANDRIVE_GUEST_TUTORIAL_ROOT}/{safe_token}"
+
+
+def build_handrive_authenticated_tutorial_dir(scoped_home_dir: str, token: str) -> str:
+    safe_token = str(token or "").strip()
+    if not re.fullmatch(r"[0-9a-f]{32}", safe_token):
+        return ""
+    try:
+        home_dir = normalize_relative_path(scoped_home_dir, allow_empty=False)
+    except ValueError:
+        return ""
+    if not home_dir or home_dir in {HANDRIVE_GUEST_ROOT, HANDRIVE_LEGACY_GUEST_ROOT}:
+        return ""
+    return f"{home_dir}/{HANDRIVE_USER_TUTORIAL_DIR_NAME}/{safe_token}"
+
+
+def build_handrive_session_tutorial_dir(request, token: str) -> str:
+    user = getattr(request, "user", None)
+    if user and user.is_authenticated:
+        if get_handrive_admin_switch_user(request) is not None:
+            return ""
+        return build_handrive_authenticated_tutorial_dir(get_scoped_handrive_home_dir(request), token)
+    return build_handrive_guest_tutorial_dir(token)
+
+
+def is_handrive_session_tutorial_path(request, path_value: str | None) -> bool:
+    token = get_handrive_tutorial_token(request, create=False)
+    tutorial_dir = build_handrive_session_tutorial_dir(request, token)
+    if not tutorial_dir:
+        return False
+    try:
+        normalized_path = normalize_relative_path(path_value, allow_empty=False)
+    except ValueError:
+        return False
+    return normalized_path == tutorial_dir or normalized_path.startswith(tutorial_dir + "/")
+
+
+def is_handrive_session_tutorial_root_path(request, path_value: str | None) -> bool:
+    token = get_handrive_tutorial_token(request, create=False)
+    tutorial_dir = build_handrive_session_tutorial_dir(request, token)
+    if not tutorial_dir:
+        return False
+    try:
+        normalized_path = normalize_relative_path(path_value, allow_empty=False)
+    except ValueError:
+        return False
+    return normalized_path == tutorial_dir
+
+
+def is_handrive_guest_tutorial_session_path(request, path_value: str | None) -> bool:
+    return is_handrive_session_tutorial_path(request, path_value)
+
+
+def get_handrive_tutorial_workspace_max_age_seconds(max_age_seconds: int | None = None) -> int:
+    if max_age_seconds is None:
+        max_age_seconds = getattr(settings, "HANDRIVE_TUTORIAL_WORKSPACE_MAX_AGE_SECONDS", 60 * 60 * 24)
+    try:
+        max_age_seconds = int(max_age_seconds)
+    except (TypeError, ValueError):
+        max_age_seconds = 60 * 60 * 24
+    return max(60, max_age_seconds)
+
+
+def get_handrive_tutorial_workspace_latest_mtime(path_obj: Path, *, max_entries: int = 5000) -> float:
+    latest_mtime = path_obj.stat().st_mtime
+    checked_entries = 0
+    for current_root, dir_names, file_names in os.walk(path_obj):
+        for entry_name in [*dir_names, *file_names]:
+            checked_entries += 1
+            if checked_entries > max_entries:
+                return time.time()
+            try:
+                latest_mtime = max(latest_mtime, (Path(current_root) / entry_name).stat().st_mtime)
+            except OSError:
+                continue
+    return latest_mtime
+
+
+def read_text_file_safely(path_obj: Path, *, limit_bytes: int = 4096) -> str:
+    try:
+        with path_obj.open("rb") as file_obj:
+            return file_obj.read(limit_bytes).decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def path_contains_handrive_tutorial_marker(path_obj: Path) -> bool:
+    return HANDRIVE_TUTORIAL_MARKER in read_text_file_safely(path_obj)
+
+
+def has_handrive_tutorial_workspace_marker(path_obj: Path) -> bool:
+    marker_file = path_obj / HANDRIVE_TUTORIAL_WORKSPACE_MARKER_FILENAME
+    return marker_file.is_file() and path_contains_handrive_tutorial_marker(marker_file)
+
+
+def write_handrive_tutorial_workspace_marker(path_obj: Path) -> None:
+    marker_file = path_obj / HANDRIVE_TUTORIAL_WORKSPACE_MARKER_FILENAME
+    marker_file.write_text(f"{HANDRIVE_TUTORIAL_MARKER}\n", encoding="utf-8")
+
+
+def has_handrive_tutorial_workspace_file(path_obj: Path) -> bool:
+    tutorial_file = path_obj / f"{HANDRIVE_TUTORIAL_FILE_PREFIX}{HANDRIVE_TUTORIAL_FILE_EXTENSION}"
+    try:
+        if not tutorial_file.is_file():
+            return False
+        return has_handrive_tutorial_workspace_marker(path_obj) or path_contains_handrive_tutorial_marker(tutorial_file)
+    except OSError:
+        return False
+
+
+def prune_stale_handrive_tutorial_root_dirs(root_relative: str, max_age_seconds: int | None = None) -> list[str]:
+    deleted_paths: list[str] = []
+    try:
+        max_age_seconds = get_handrive_tutorial_workspace_max_age_seconds(max_age_seconds)
+        root_path, root_normalized = resolve_path(root_relative, must_exist=False)
+        if not root_path.exists():
+            return deleted_paths
+        cutoff = time.time() - max_age_seconds
+        for child in root_path.iterdir():
+            if not child.is_dir() or not re.fullmatch(r"[0-9a-f]{32}", child.name):
+                continue
+            try:
+                if (
+                    not has_handrive_tutorial_workspace_file(child)
+                    or get_handrive_tutorial_workspace_latest_mtime(child) < cutoff
+                ):
+                    shutil.rmtree(child, ignore_errors=True)
+                    if not child.exists():
+                        deleted_paths.append(normalize_relative_path(f"{root_normalized}/{child.name}", allow_empty=False))
+            except OSError:
+                continue
+    except (OSError, ValueError):
+        logger.exception("[handrive tutorial] Failed to prune stale tutorial dirs under %s", root_relative)
+    return deleted_paths
+
+
+def prune_stale_handrive_guest_tutorial_dirs(max_age_seconds: int | None = None) -> list[str]:
+    return prune_stale_handrive_tutorial_root_dirs(HANDRIVE_GUEST_TUTORIAL_ROOT, max_age_seconds=max_age_seconds)
+
+
+def prune_stale_handrive_authenticated_tutorial_dirs(max_age_seconds: int | None = None) -> list[str]:
+    deleted_paths: list[str] = []
+    try:
+        users_root, _ = resolve_path("users", must_exist=False)
+        if not users_root.exists():
+            return deleted_paths
+        for user_root in users_root.iterdir():
+            if not user_root.is_dir():
+                continue
+            try:
+                tutorial_root_relative = normalize_relative_path(
+                    f"users/{user_root.name}/{HANDRIVE_USER_TUTORIAL_DIR_NAME}",
+                    allow_empty=False,
+                )
+            except ValueError:
+                continue
+            deleted_paths.extend(
+                prune_stale_handrive_tutorial_root_dirs(
+                    tutorial_root_relative,
+                    max_age_seconds=max_age_seconds,
+                )
+            )
+    except (OSError, ValueError):
+        logger.exception("[handrive tutorial] Failed to prune stale authenticated tutorial dirs")
+    return deleted_paths
+
+
+def prune_all_stale_handrive_tutorial_dirs(max_age_seconds: int | None = None) -> list[str]:
+    deleted_paths = prune_stale_handrive_guest_tutorial_dirs(max_age_seconds=max_age_seconds)
+    deleted_paths.extend(prune_stale_handrive_authenticated_tutorial_dirs(max_age_seconds=max_age_seconds))
+    return deleted_paths
+
+
+def prune_stale_handrive_session_tutorial_dirs(request, max_age_seconds: int | None = None) -> list[str]:
+    user = getattr(request, "user", None)
+    if user and user.is_authenticated:
+        scoped_home_dir = get_scoped_handrive_home_dir(request)
+        if scoped_home_dir and scoped_home_dir not in {HANDRIVE_GUEST_ROOT, HANDRIVE_LEGACY_GUEST_ROOT}:
+            return prune_stale_handrive_tutorial_root_dirs(
+                f"{scoped_home_dir}/{HANDRIVE_USER_TUTORIAL_DIR_NAME}",
+                max_age_seconds=max_age_seconds,
+            )
+        return []
+    return prune_stale_handrive_guest_tutorial_dirs(max_age_seconds=max_age_seconds)
+
+
+def get_user_handrive_tutorial_relative_candidates(scoped_home_dir: str) -> list[str]:
+    home_dir = normalize_relative_path(scoped_home_dir, allow_empty=False)
+    return [
+        f"{home_dir}/{HANDRIVE_TUTORIAL_FILE_PREFIX}{HANDRIVE_TUTORIAL_FILE_EXTENSION}",
+        *(
+            f"{home_dir}/{HANDRIVE_TUTORIAL_FILE_PREFIX}-{index}{HANDRIVE_TUTORIAL_FILE_EXTENSION}"
+            for index in range(2, 100)
+        ),
+    ]
+
+
+def is_handrive_tutorial_file(path_obj: Path) -> bool:
+    if not path_obj.is_file():
+        return False
+    if path_contains_handrive_tutorial_marker(path_obj):
+        return True
+    expected_name = f"{HANDRIVE_TUTORIAL_FILE_PREFIX}{HANDRIVE_TUTORIAL_FILE_EXTENSION}"
+    return path_obj.name == expected_name and has_handrive_tutorial_workspace_marker(path_obj.parent)
+
+
+def strip_handrive_tutorial_marker_from_file(path_obj: Path) -> None:
+    try:
+        content = path_obj.read_text(encoding="utf-8")
+    except OSError:
+        return
+    cleaned = content.replace(f"{HANDRIVE_TUTORIAL_MARKER}\r\n", "")
+    cleaned = cleaned.replace(f"{HANDRIVE_TUTORIAL_MARKER}\n", "")
+    cleaned = cleaned.replace(HANDRIVE_TUTORIAL_MARKER, "")
+    if cleaned != content:
+        path_obj.write_text(cleaned, encoding="utf-8")
+
+
+def build_handrive_tutorial_file_content(ui_lang: str) -> str:
+    if ui_lang == "en":
+        return (
+            "# HanDrive Tutorial\n\n"
+            "This is a temporary tutorial-only drive. Everything in this folder is deleted when you end the tutorial.\n\n"
+            "Use the on-screen tour bubbles to try the full HanDrive workflow:\n\n"
+            "1. Browse folders and open files.\n"
+            "2. Search and sort the current folder.\n"
+            "3. Preview documents, images, media, PDFs, and 3D files.\n"
+            "4. Edit text, Markdown, spreadsheets, images, audio, video, and PDFs with the matching editor.\n"
+            "5. Rename files and save changes.\n"
+            "6. Upload by drag and drop, paste, or the context menu.\n"
+            "7. Create folders, files, archives, maps, and Git repositories from the context menu.\n"
+            "8. Share files and folders with optional target users and edit permission.\n"
+            "9. Manage downloads, moves, deletes, archive extraction, MP3 conversion, and job history.\n\n"
+            "When you end the tutorial, this file is removed automatically.\n"
+        )
+    return (
+        "# HanDrive 튜토리얼\n\n"
+        "현재 폴더는 튜토리얼 전용 임시 드라이브입니다. 튜토리얼을 종료하면 이 폴더의 파일은 모두 삭제됩니다.\n\n"
+        "화면의 말풍선 안내를 따라 HanDrive 전체 흐름을 체험해보세요.\n\n"
+        "1. 폴더를 탐색하고 파일을 엽니다.\n"
+        "2. 현재 폴더에서 검색하고 컬럼별로 정렬합니다.\n"
+        "3. 문서, 이미지, 미디어, PDF, 3D 파일을 미리봅니다.\n"
+        "4. 텍스트, Markdown, 스프레드시트, 이미지, 오디오, 영상, PDF를 전용 편집기로 수정합니다.\n"
+        "5. 파일명을 바꾸고 변경사항을 저장합니다.\n"
+        "6. 드래그 앤 드롭, 붙여넣기, 우클릭 메뉴로 업로드합니다.\n"
+        "7. 우클릭 메뉴에서 폴더, 파일, 압축, 지도, Git 저장소를 만듭니다.\n"
+        "8. 파일과 폴더를 URL로 공유하고 대상 사용자와 편집권한을 설정합니다.\n"
+        "9. 다운로드, 이동, 삭제, 압축해제, MP3 변환, 작업 내역을 확인합니다.\n\n"
+        "튜토리얼을 종료하면 이 파일은 자동 삭제됩니다.\n"
+    )
+
+
+def build_handrive_tutorial_text_code_samples(ui_lang: str) -> list[tuple[str, str]]:
+    if ui_lang == "en":
+        markdown = """# Markdown syntax sample
+
+Use this file to check Markdown preview, syntax highlighting, inline code selection, and code-block copy buttons.
+
+## Checklist
+
+- **Bold**, *italic*, ~~strike~~, and `inline_code`
+- [HanDrive](https://www.hanplanet.com/) link
+- Table rendering
+
+| Feature | Expected result |
+| --- | --- |
+| Inline code | Double-click selects only the inline code text |
+| Fenced code | Copy button appears on the right |
+| Highlight | JavaScript, Python, and HTML tokens are colored |
+
+```js
+const items = ["preview", "edit", "share"];
+const enabled = items.filter((item) => item !== "share");
+console.log(`HanDrive features: ${enabled.join(", ")}`);
+```
+
+```py
+def summarize(entries):
+    return {"count": len(entries), "names": [item["name"] for item in entries]}
+```
+
+```html
+<button type="button" data-action="preview">Preview</button>
+```
+"""
+        plain = """HanDrive plain text sample
+
+This file checks text preview/editing without Markdown rendering.
+
+Expected:
+1. The viewer keeps line breaks.
+2. Ctrl+wheel or pinch zoom changes the text scale.
+3. Search should find words such as preview, upload, and share.
+"""
+    else:
+        markdown = """# Markdown 문법 샘플
+
+이 파일은 Markdown 미리보기, Syntax Highlighting, 인라인 코드 선택, 코드블록 복사 버튼을 확인하기 위한 샘플입니다.
+
+## 확인 항목
+
+- **굵게**, *기울임*, ~~취소선~~, `inline_code`
+- [HanDrive](https://www.hanplanet.com/) 링크
+- 표 렌더링
+
+| 기능 | 기대 결과 |
+| --- | --- |
+| 인라인 코드 | 더블클릭하면 인라인 코드 텍스트만 선택됨 |
+| 코드블록 | 우측에 복사 버튼 표시 |
+| 하이라이트 | JavaScript, Python, HTML 토큰 색상 표시 |
+
+```js
+const items = ["preview", "edit", "share"];
+const enabled = items.filter((item) => item !== "share");
+console.log(`HanDrive features: ${enabled.join(", ")}`);
+```
+
+```py
+def summarize(entries):
+    return {"count": len(entries), "names": [item["name"] for item in entries]}
+```
+
+```html
+<button type="button" data-action="preview">Preview</button>
+```
+"""
+        plain = """HanDrive 일반 텍스트 샘플
+
+Markdown 렌더링 없이 텍스트 미리보기와 편집을 확인하는 파일입니다.
+
+확인할 점:
+1. 줄바꿈이 그대로 유지됩니다.
+2. Ctrl+스크롤 또는 모바일 핀치로 텍스트 배율이 바뀝니다.
+3. preview, upload, share 같은 단어를 검색할 수 있습니다.
+"""
+
+    html = """<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HanDrive HTML Preview</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; color: #102033; }
+    .panel { border: 1px solid #7c9cff; border-radius: 8px; padding: 16px; background: #f4f8ff; }
+    .status { color: #0f766e; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <h1>HTML 미리보기 샘플</h1>
+    <p>이 파일은 HTML 미리보기와 코드 하이라이트를 함께 확인합니다.</p>
+    <button id="preview-button" type="button">상태 변경</button>
+    <p class="status" id="preview-status">ready</p>
+  </main>
+  <script>
+    const button = document.getElementById("preview-button");
+    const status = document.getElementById("preview-status");
+    button.addEventListener("click", () => {
+      status.textContent = `clicked at ${new Date().toLocaleTimeString()}`;
+    });
+  </script>
+</body>
+</html>
+"""
+    css = """:root {
+  --accent: #2563eb;
+  --surface: #f8fafc;
+}
+
+.handrive-sample-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent), white 55%);
+  background: linear-gradient(180deg, white, var(--surface));
+}
+
+.handrive-sample-card[data-state="active"] {
+  color: var(--accent);
+  font-weight: 700;
+}
+"""
+    javascript = """const tutorialSteps = [
+  { id: "preview", label: "Preview", enabled: true },
+  { id: "edit", label: "Edit", enabled: true },
+  { id: "share", label: "Share", enabled: false },
+];
+
+export function enabledStepLabels(steps = tutorialSteps) {
+  return steps
+    .filter((step) => step.enabled)
+    .map(({ label }) => label.toUpperCase());
+}
+
+console.log(enabledStepLabels().join(" -> "));
+"""
+    python = """from dataclasses import dataclass
+
+
+@dataclass
+class TutorialEntry:
+    name: str
+    extension: str
+    editable: bool = True
+
+
+def group_by_extension(entries: list[TutorialEntry]) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {}
+    for entry in entries:
+        grouped.setdefault(entry.extension, []).append(entry.name)
+    return grouped
+
+
+if __name__ == "__main__":
+    print(group_by_extension([TutorialEntry("sample", ".py")]))
+"""
+    json_sample = """{
+  "name": "HanDrive tutorial sample",
+  "features": ["preview", "syntax-highlighting", "html-preview", "share"],
+  "limits": {
+    "temporaryDrive": true,
+    "deletedAfterTutorial": true
+  },
+  "nested": {
+    "numbers": [1, 2, 3],
+    "enabled": true
+  }
+}
+"""
+    sql = """CREATE TABLE handrive_tutorial_entry (
+    id INTEGER PRIMARY KEY,
+    filename TEXT NOT NULL,
+    extension TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO handrive_tutorial_entry (filename, extension)
+VALUES
+    ('markdown-syntax', '.md'),
+    ('html-preview', '.html'),
+    ('python-highlight', '.py');
+
+SELECT extension, COUNT(*) AS file_count
+FROM handrive_tutorial_entry
+GROUP BY extension
+ORDER BY file_count DESC;
+"""
+
+    if ui_lang == "en":
+        return [
+            ("01-markdown-syntax.md", markdown),
+            ("02-plain-text.txt", plain),
+            ("03-html-preview.html", html),
+            ("04-style-highlight.css", css),
+            ("05-javascript-highlight.js", javascript),
+            ("06-python-highlight.py", python),
+            ("07-json-highlight.json", json_sample),
+            ("08-sql-highlight.sql", sql),
+        ]
+    return [
+        ("01-마크다운-문법.md", markdown),
+        ("02-텍스트-샘플.txt", plain),
+        ("03-HTML-미리보기.html", html),
+        ("04-CSS-하이라이트.css", css),
+        ("05-JavaScript-하이라이트.js", javascript),
+        ("06-Python-하이라이트.py", python),
+        ("07-JSON-하이라이트.json", json_sample),
+        ("08-SQL-하이라이트.sql", sql),
+    ]
+
+
+def remove_handrive_tutorial_legacy_sample_entries(workspace_root: Path) -> None:
+    legacy_names = {
+        "01-sample-note.md",
+        "01-샘플-메모.md",
+        "02-sample-data.csv",
+        "02-샘플-데이터.csv",
+        "03-sample-folder",
+        "03-샘플-폴더",
+        "04-archive-sample.zip",
+        "04-압축-샘플.zip",
+        "05-git-sample-folder",
+        "05-Git-샘플-폴더",
+        "06-map-sample.svg",
+        "06-지도-샘플.svg",
+        "07-mp3-conversion-sample.mp4",
+        "07-MP3-변환-샘플.mp4",
+    }
+    for legacy_name in legacy_names:
+        legacy_path = workspace_root / legacy_name
+        try:
+            if legacy_path.is_dir():
+                shutil.rmtree(legacy_path)
+            elif legacy_path.exists() or legacy_path.is_symlink():
+                legacy_path.unlink()
+        except OSError:
+            continue
+
+
+def write_handrive_tutorial_text_file(path_obj: Path, content: str) -> None:
+    if not path_obj.exists():
+        path_obj.write_text(content.rstrip() + "\n", encoding="utf-8")
+
+
+def copy_handrive_tutorial_asset(asset_filename: str, destination: Path) -> None:
+    source = HANDRIVE_TUTORIAL_ASSET_DIR / asset_filename
+    if not source.is_file():
+        return
+    try:
+        if destination.exists() and destination.stat().st_size == source.stat().st_size:
+            return
+    except OSError:
+        pass
+    shutil.copy2(source, destination)
+
+
+def populate_handrive_tutorial_workspace(workspace_root: Path, ui_lang: str) -> None:
+    write_handrive_tutorial_workspace_marker(workspace_root)
+    remove_handrive_tutorial_legacy_sample_entries(workspace_root)
+    tutorial_file = workspace_root / f"{HANDRIVE_TUTORIAL_FILE_PREFIX}{HANDRIVE_TUTORIAL_FILE_EXTENSION}"
+    if tutorial_file.exists():
+        strip_handrive_tutorial_marker_from_file(tutorial_file)
+    else:
+        tutorial_file.write_text(build_handrive_tutorial_file_content(ui_lang), encoding="utf-8")
+    for filename, content in build_handrive_tutorial_text_code_samples(ui_lang):
+        write_handrive_tutorial_text_file(workspace_root / filename, content)
+    sample_csv = workspace_root / ("09-sample-data.csv" if ui_lang == "en" else "09-샘플-데이터.csv")
+    write_handrive_tutorial_text_file(
+        sample_csv,
+        "name,type,status\nHanDrive,tutorial,ready\nUpload,feature,try\nShare,feature,try\n",
+    )
+    sample_folder = workspace_root / ("10-sample-folder" if ui_lang == "en" else "10-샘플-폴더")
+    sample_folder.mkdir(exist_ok=True)
+    folder_guide = sample_folder / ("guide.txt" if ui_lang == "en" else "안내.txt")
+    write_handrive_tutorial_text_file(
+        folder_guide,
+        "Folder sample\n\nDrag files here or create a new file from the context menu.\n"
+        if ui_lang == "en"
+        else "폴더 샘플\n\n이 폴더에 파일을 끌어놓거나 우클릭 메뉴에서 새 파일을 만들어보세요.\n",
+    )
+    archive_sample = workspace_root / ("11-archive-sample.zip" if ui_lang == "en" else "11-압축-샘플.zip")
+    if not archive_sample.exists():
+        with zipfile.ZipFile(archive_sample, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(
+                "README.txt",
+                "Archive sample\n\nUse this file to try archive extraction.\n"
+                if ui_lang == "en"
+                else "압축 샘플\n\n이 파일로 압축 해제 위치를 확인해보세요.\n",
+            )
+            archive.writestr(
+                "sample.json",
+                '{"feature":"archive extraction","ready":true}\n',
+            )
+    map_sample = workspace_root / ("13-map-sample.svg" if ui_lang == "en" else "13-지도-샘플.svg")
+    if not map_sample.exists():
+        map_sample.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160" role="img" aria-label="HanDrive map sample">'
+            '<rect width="240" height="160" fill="#eef6ff"/>'
+            '<path d="M24 112 72 54l42 40 36-30 66 58" fill="none" stroke="#2563eb" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>'
+            '<circle cx="176" cy="48" r="18" fill="#f59e0b"/>'
+            '</svg>\n',
+            encoding="utf-8",
+        )
+    video_sample = workspace_root / ("14-mp3-conversion-sample.mp4" if ui_lang == "en" else "14-MP3-변환-샘플.mp4")
+    copy_handrive_tutorial_asset(HANDRIVE_TUTORIAL_SAMPLE_VIDEO_ASSET, video_sample)
+    audio_sample = workspace_root / ("15-audio-preview-sample.mp3" if ui_lang == "en" else "15-오디오-미리보기-샘플.mp3")
+    copy_handrive_tutorial_asset(HANDRIVE_TUTORIAL_SAMPLE_AUDIO_ASSET, audio_sample)
+
+
+def ensure_handrive_tutorial_workspace(request, ui_lang: str, scoped_home_dir: str = "") -> str:
+    token = get_handrive_tutorial_token(request, create=True)
+    user = getattr(request, "user", None)
+    if user and user.is_authenticated:
+        tutorial_dir = build_handrive_authenticated_tutorial_dir(
+            scoped_home_dir or get_scoped_handrive_home_dir(request),
+            token,
+        )
+    else:
+        tutorial_dir = build_handrive_guest_tutorial_dir(token)
+    if not tutorial_dir:
+        return ""
+    try:
+        prune_stale_handrive_session_tutorial_dirs(request)
+        tutorial_root, normalized = resolve_path(tutorial_dir, must_exist=False)
+        tutorial_root.mkdir(parents=True, exist_ok=True)
+        populate_handrive_tutorial_workspace(tutorial_root, ui_lang)
+        return normalized
+    except (OSError, ValueError):
+        logger.exception("[handrive tutorial] Failed to prepare tutorial workspace")
+        return ""
+
+
+def ensure_guest_handrive_tutorial_workspace(request, ui_lang: str) -> str:
+    if request.user.is_authenticated:
+        return ""
+    migrate_legacy_handrive_guest_root()
+    return ensure_handrive_tutorial_workspace(request, ui_lang)
+
+
+def ensure_authenticated_handrive_tutorial_workspace(request, scoped_home_dir: str, ui_lang: str, *, force: bool = False) -> str:
+    user = getattr(request, "user", None)
+    if not (user and user.is_authenticated):
+        return ""
+    if not scoped_home_dir or scoped_home_dir in {HANDRIVE_GUEST_ROOT, HANDRIVE_LEGACY_GUEST_ROOT} or get_handrive_admin_switch_user(request) is not None:
+        return ""
+    return ensure_handrive_tutorial_workspace(request, ui_lang, scoped_home_dir=scoped_home_dir)
+
+
+def delete_handrive_tutorial_workspace(request) -> list[str]:
+    token = get_handrive_tutorial_token(request, create=False)
+    tutorial_dir = build_handrive_session_tutorial_dir(request, token)
+    if not tutorial_dir:
+        return []
+    try:
+        tutorial_root, normalized = resolve_path(tutorial_dir, must_exist=False)
+        if tutorial_root.exists() and tutorial_root.is_dir():
+            shutil.rmtree(tutorial_root)
+        request.session.pop(HANDRIVE_GUEST_TUTORIAL_SESSION_KEY, None)
+        request.session.modified = True
+        return [normalized]
+    except (OSError, ValueError):
+        logger.exception("[handrive tutorial] Failed to delete tutorial workspace")
+        return []
+
+
+def delete_guest_handrive_tutorial_workspace(request) -> list[str]:
+    return delete_handrive_tutorial_workspace(request)
+
+
+def get_handrive_tutorial_display_label(ui_lang: str | None = None) -> str:
+    return "Tutorial" if ui_lang == "en" else "튜토리얼"
+
+
+def get_handrive_guest_tutorial_root_label(ui_lang: str | None = None) -> str:
+    return HANDRIVE_GUEST_ROOT
+
+
+def get_handrive_display_label_for_path(request, path_value: str | None, ui_lang: str | None = None) -> str:
+    try:
+        normalized_path = normalize_relative_path(path_value, allow_empty=True)
+    except ValueError:
+        return ""
+    if normalized_path and is_handrive_session_tutorial_path(request, normalized_path):
+        token = get_handrive_tutorial_token(request, create=False)
+        tutorial_dir = build_handrive_session_tutorial_dir(request, token)
+        if normalized_path == tutorial_dir:
+            return get_handrive_tutorial_display_label(ui_lang)
+    return ""
+
+
+def apply_handrive_tutorial_breadcrumb_labels(
+    request,
+    breadcrumbs: list[dict],
+    *,
+    scoped_home_dir: str = "",
+    ui_lang: str | None = None,
+    base_url: str = "",
+) -> list[dict]:
+    token = get_handrive_tutorial_token(request, create=False)
+    tutorial_dir = build_handrive_session_tutorial_dir(request, token)
+    if not tutorial_dir or not breadcrumbs:
+        return breadcrumbs
+
+    normalized_home = normalize_relative_path(scoped_home_dir, allow_empty=True) if scoped_home_dir else ""
+    label = get_handrive_tutorial_display_label(ui_lang)
+    guest_root_label = get_handrive_guest_tutorial_root_label(ui_lang)
+    is_guest_tutorial = normalized_home in {"", HANDRIVE_GUEST_ROOT, HANDRIVE_LEGACY_GUEST_ROOT} and tutorial_dir.startswith(f"{HANDRIVE_GUEST_TUTORIAL_ROOT}/")
+    result: list[dict] = []
+    for crumb in breadcrumbs:
+        crumb_path = normalize_relative_path(crumb.get("path"), allow_empty=True)
+        if is_handrive_user_tutorial_temp_dir_path(crumb_path):
+            continue
+        if is_guest_tutorial and crumb_path in {"", HANDRIVE_GUEST_ROOT, HANDRIVE_LEGACY_GUEST_ROOT}:
+            root_crumb = {**crumb, "label": guest_root_label, "path": HANDRIVE_GUEST_ROOT}
+            if base_url:
+                root_crumb["url"] = build_handrive_list_url(base_url, HANDRIVE_GUEST_ROOT, request=request)
+            result.append(root_crumb)
+            continue
+        if crumb_path == tutorial_dir:
+            result.append({**crumb, "label": label})
+            continue
+        if crumb_path.startswith(tutorial_dir + "/"):
+            result.append(crumb)
+            continue
+        is_tutorial_parent = (
+            crumb_path
+            and tutorial_dir.startswith(crumb_path + "/")
+            and crumb_path != normalized_home
+        )
+        if is_tutorial_parent:
+            continue
+        result.append(crumb)
+    return result
+
+
+def delete_authenticated_handrive_tutorial_files(user) -> list[str]:
+    if not (user and getattr(user, "is_authenticated", False)):
+        return []
+    username = str(user.get_username() or "").strip()
+    if not username:
+        return []
+    try:
+        scoped_home_dir = normalize_relative_path(f"users/{username}", allow_empty=False)
+        deleted_paths = []
+        for relative_path in get_user_handrive_tutorial_relative_candidates(scoped_home_dir):
+            path_obj, normalized = resolve_path(relative_path, must_exist=False)
+            if not is_handrive_tutorial_file(path_obj):
+                continue
+            path_obj.unlink()
+            deleted_paths.append(normalized)
+        return deleted_paths
+    except (OSError, ValueError):
+        logger.exception("[handrive tutorial] Failed to delete tutorial files for user %s", getattr(user, "username", "?"))
+        return []
 
 
 def get_handrive_scoped_quota_root(request, path_value: str | None) -> Path | None:
@@ -6185,6 +7763,79 @@ def calculate_handrive_mail_usage(user) -> tuple[int, int]:
         return 0, 0
 
 
+HANDRIVE_QUOTA_CONTEXT_CACHE_TIMEOUT = 10
+
+
+def _handrive_quota_context_cache_key(user, quota_root: Path) -> str:
+    try:
+        root_key = str(quota_root.resolve())
+    except OSError:
+        root_key = str(quota_root)
+    root_hash = hashlib.sha256(root_key.encode("utf-8", errors="ignore")).hexdigest()[:24]
+    return f"handrive:quota-context:v2:{getattr(user, 'pk', 'anon')}:{root_hash}"
+
+
+def build_handrive_quota_context_values(user, quota_root: Path) -> dict:
+    cache_key = _handrive_quota_context_cache_key(user, quota_root)
+    cached = cache.get(cache_key)
+    if isinstance(cached, dict):
+        return cached
+
+    quota_used, _, breakdown = calculate_handrive_quota_breakdown(quota_root)
+    repo_bytes, repo_count = calculate_handrive_repo_usage(user)
+    mail_bytes, mail_count = calculate_handrive_mail_usage(user)
+    total_used = quota_used + repo_bytes + mail_bytes
+    user_quota = get_user_handrive_quota_bytes(user)
+    free_bytes = max(0, user_quota - total_used)
+
+    quota_breakdown = [
+        {
+            "key": key,
+            "label": label,
+            "color": color,
+            "bytes": breakdown[key]["bytes"],
+            "count": breakdown[key]["count"],
+            "display": format_handrive_bytes_display(breakdown[key]["bytes"]),
+            "percent": round(breakdown[key]["bytes"] / user_quota * 100, 2),
+        }
+        for key, label, color in _DOCS_QUOTA_TYPE_META
+    ]
+    if repo_count > 0:
+        quota_breakdown.append({
+            "key": "repo",
+            "label": "리포지토리",
+            "color": "#7c3aed",
+            "bytes": repo_bytes,
+            "count": repo_count,
+            "display": format_handrive_bytes_display(repo_bytes),
+            "percent": round(repo_bytes / user_quota * 100, 2),
+        })
+    if mail_count > 0:
+        quota_breakdown.append({
+            "key": "mail",
+            "label": "메일",
+            "color": "#0f7b6c",
+            "bytes": mail_bytes,
+            "count": mail_count,
+            "display": format_handrive_bytes_display(mail_bytes),
+            "percent": round(mail_bytes / user_quota * 100, 2),
+        })
+
+    values = {
+        "handrive_quota_used_bytes": total_used,
+        "handrive_quota_total_bytes": user_quota,
+        "handrive_quota_percent": min(100, round(total_used / user_quota * 100, 1)),
+        "handrive_quota_used_display": format_handrive_bytes_display(total_used),
+        "handrive_quota_total_display": format_handrive_bytes_display(user_quota),
+        "handrive_quota_free_bytes": free_bytes,
+        "handrive_quota_free_display": format_handrive_bytes_display(free_bytes),
+        "handrive_quota_free_percent": round(free_bytes / user_quota * 100, 2),
+        "handrive_quota_breakdown": quota_breakdown,
+    }
+    cache.set(cache_key, values, timeout=HANDRIVE_QUOTA_CONTEXT_CACHE_TIMEOUT)
+    return values
+
+
 def build_handrive_breadcrumbs(
     base_url: str,
     current_dir: str,
@@ -6260,6 +7911,13 @@ def get_handrive_root_label(request, scoped_home_dir: str = "") -> str:
 
 def get_handrive_js_root_label(request, scoped_home_dir: str = "") -> str:
     return get_handrive_root_label(request, scoped_home_dir)
+
+
+def get_handrive_tutorial_root_label(request, scoped_home_dir: str = "", ui_lang: str | None = None) -> str:
+    normalized_home = normalize_relative_path(scoped_home_dir, allow_empty=True) if scoped_home_dir else ""
+    if normalized_home and normalized_home not in {HANDRIVE_GUEST_ROOT, HANDRIVE_LEGACY_GUEST_ROOT}:
+        return get_handrive_js_root_label(request, scoped_home_dir)
+    return get_handrive_guest_tutorial_root_label(ui_lang)
 
 
 def require_handrive_superuser(view_func):
@@ -6351,7 +8009,7 @@ def _is_site_auth_panel_redirect(request, url: str) -> bool:
     ):
         return False
     path = urlparse(candidate).path or ""
-    return bool(re.match(r"^/(?:(?:ko|en)/)?(?:login|signup|register-email|2fa-verify)/?$", path))
+    return bool(re.match(r"^/(?:(?:ko|en)/)?(?:login|signup|register-email|2fa-verify|forgot-password|password-change-required)/?$", path))
 
 
 def _copy_response_cookies(source_response, target_response):
@@ -6523,7 +8181,7 @@ def build_handrive_view_url_for_path(request, ui_lang: str | None, relative_path
 
 
 def redirect_internal_virtual_handrive_url_if_needed(request, canonical_url: str, raw_path: str | None):
-    if not handrive_path_uses_internal_virtual_url(raw_path):
+    if not handrive_path_uses_internal_public_url(request, raw_path):
         return None
     query = request.META.get("QUERY_STRING", "")
     if not query:
@@ -6661,6 +8319,8 @@ def build_handrive_empty_share_info() -> dict:
         "share_download_url": "",
         "share_is_inherited": False,
         "share_allowed_users": [],
+        "share_can_edit": False,
+        "share_can_manage": True,
     }
 
 
@@ -6697,6 +8357,8 @@ def build_handrive_existing_share_info(request, path_value: str) -> dict:
                 ),
                 "share_is_inherited": bool(child_path),
                 "share_allowed_users": get_handrive_share_allowed_users_for_request(request, shared_context["shared_link"]),
+                "share_can_edit": handrive_shared_link_allows_request_edit(request, shared_context["shared_link"]),
+                "share_can_manage": can_manage_handrive_shared_link(request, shared_context["shared_link"]),
             }
 
     candidate_paths = [normalized_path]
@@ -6735,6 +8397,8 @@ def build_handrive_existing_share_info(request, path_value: str) -> dict:
         ),
         "share_is_inherited": bool(child_path),
         "share_allowed_users": get_handrive_share_allowed_users_for_request(request, shared_link),
+        "share_can_edit": handrive_shared_link_allows_request_edit(request, shared_link),
+        "share_can_manage": can_manage_handrive_shared_link(request, shared_link),
     }
 
 
@@ -6784,6 +8448,11 @@ def handrive_common_context(request, ui_lang):
         handrive_ops_apply_static_url = reverse("main:handrive_ops_apply_static")
     handrive_help_url = build_handrive_help_url(ui_lang, handrive_base_url)
     handrive_root_url = handrive_base_url
+    tutorial_home_dir = get_scoped_handrive_home_dir(request) or ""
+    handrive_tutorial_start_url = append_handrive_query_params(
+        build_handrive_list_url(handrive_base_url, tutorial_home_dir, request=request),
+        {"tutorial": "1", "start": "1"},
+    )
     force_login = str(request.GET.get("force_login", "") or "").strip() == "1"
     if request.user.is_authenticated and not force_login:
         profile = PortfolioProfile.objects.filter(user=request.user).only("profile_img").first()
@@ -6812,52 +8481,16 @@ def handrive_common_context(request, ui_lang):
             handrive_root_profile_image_url = ""
         if _quota_home and _quota_user is not None:
             _quota_root, _ = resolve_path(_quota_home, must_exist=False)
-            _quota_used, _, _breakdown = calculate_handrive_quota_breakdown(_quota_root)
-            _repo_bytes, _repo_count = calculate_handrive_repo_usage(_quota_user)
-            _mail_bytes, _mail_count = calculate_handrive_mail_usage(_quota_user)
-            _total_used = _quota_used + _repo_bytes + _mail_bytes
-            _user_quota = get_user_handrive_quota_bytes(_quota_user)
-            handrive_quota_used_bytes = _total_used
-            handrive_quota_total_bytes = _user_quota
-            handrive_quota_percent = min(100, round(_total_used / _user_quota * 100, 1))
-            handrive_quota_used_display = format_handrive_bytes_display(_total_used)
-            handrive_quota_total_display = format_handrive_bytes_display(_user_quota)
-            _free_bytes = max(0, _user_quota - _total_used)
-            handrive_quota_free_bytes = _free_bytes
-            handrive_quota_free_display = format_handrive_bytes_display(_free_bytes)
-            handrive_quota_free_percent = round(_free_bytes / _user_quota * 100, 2)
-            handrive_quota_breakdown = [
-                {
-                    "key": key,
-                    "label": label,
-                    "color": color,
-                    "bytes": _breakdown[key]["bytes"],
-                    "count": _breakdown[key]["count"],
-                    "display": format_handrive_bytes_display(_breakdown[key]["bytes"]),
-                    "percent": round(_breakdown[key]["bytes"] / _user_quota * 100, 2),
-                }
-                for key, label, color in _DOCS_QUOTA_TYPE_META
-            ]
-            if _repo_count > 0:
-                handrive_quota_breakdown.append({
-                    "key": "repo",
-                    "label": "리포지토리",
-                    "color": "#7c3aed",
-                    "bytes": _repo_bytes,
-                    "count": _repo_count,
-                    "display": format_handrive_bytes_display(_repo_bytes),
-                    "percent": round(_repo_bytes / _user_quota * 100, 2),
-                })
-            if _mail_count > 0:
-                handrive_quota_breakdown.append({
-                    "key": "mail",
-                    "label": "메일",
-                    "color": "#0f7b6c",
-                    "bytes": _mail_bytes,
-                    "count": _mail_count,
-                    "display": format_handrive_bytes_display(_mail_bytes),
-                    "percent": round(_mail_bytes / _user_quota * 100, 2),
-                })
+            quota_context = build_handrive_quota_context_values(_quota_user, _quota_root)
+            handrive_quota_used_bytes = quota_context["handrive_quota_used_bytes"]
+            handrive_quota_total_bytes = quota_context["handrive_quota_total_bytes"]
+            handrive_quota_percent = quota_context["handrive_quota_percent"]
+            handrive_quota_used_display = quota_context["handrive_quota_used_display"]
+            handrive_quota_total_display = quota_context["handrive_quota_total_display"]
+            handrive_quota_free_bytes = quota_context["handrive_quota_free_bytes"]
+            handrive_quota_free_display = quota_context["handrive_quota_free_display"]
+            handrive_quota_free_percent = quota_context["handrive_quota_free_percent"]
+            handrive_quota_breakdown = quota_context["handrive_quota_breakdown"]
         else:
             handrive_quota_used_bytes = None
             handrive_quota_total_bytes = None
@@ -6903,6 +8536,7 @@ def handrive_common_context(request, ui_lang):
             "handrive_auth_next": request.get_full_path(),
             "handrive_logout_next": handrive_base_url,
             "handrive_help_url": handrive_help_url,
+            "handrive_tutorial_start_url": handrive_tutorial_start_url,
             "handrive_my_portfolio_url": handrive_my_portfolio_url,
             "account_my_portfolio_url": handrive_my_portfolio_url,
             "account_logout_form_id": "auth-logout-form",
@@ -6934,6 +8568,7 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_pdf_preview_url": reverse("main:handrive_api_pdf_preview"),
             "handrive_api_url_share_url": reverse("main:handrive_api_url_share"),
             "handrive_api_sync_settings_url": reverse("main:handrive_api_sync_settings"),
+            "handrive_api_tutorial_complete_url": reverse("main:handrive_api_tutorial_complete"),
             "handrive_api_map_create_url": reverse("main:handrive_api_map_create"),
             "handrive_api_map_data_url": reverse("main:handrive_api_map_data"),
             "handrive_api_map_icon_upload_url": reverse("main:handrive_api_map_icon_upload"),
@@ -6988,10 +8623,20 @@ def handrive_csrf_failure(request, reason="", template_name="403_csrf.html"):
 @with_request_handrive_root
 def handrive_root(request, ui_lang=None):
     user = getattr(request, "user", None)
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    if not (user and user.is_authenticated):
+        context = handrive_common_context(request, resolved_lang)
+        guest_tutorial_dir = ensure_guest_handrive_tutorial_workspace(request, resolved_lang)
+        if guest_tutorial_dir:
+            return redirect(
+                append_handrive_query_params(
+                    build_handrive_list_url(context["handrive_base_url"], guest_tutorial_dir, request=request),
+                    {"tutorial": "1", "start": "1"},
+                )
+            )
     landing_dir = get_handrive_initial_landing_dir(request)
     if landing_dir:
         ensure_scoped_home_dir(landing_dir)
-        resolved_lang = resolve_ui_lang(request, ui_lang)
         if resolved_lang in SUPPORTED_UI_LANGS:
             return redirect(
                 reverse("main:handrive_list_lang", kwargs={"ui_lang": resolved_lang, "folder_path": landing_dir})
@@ -7320,6 +8965,98 @@ def _send_2fa_email(user, code: str, ui_lang: str = "ko") -> bool:
         return True
     except Exception:
         logger.exception("[2FA] Failed to send verification email to user %s", getattr(user, "username", "?"))
+        return False
+
+
+def _is_force_password_change_required(user) -> bool:
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    try:
+        return bool(getattr(user.profile, "force_password_change", False))
+    except Exception:
+        return False
+
+
+def _set_force_password_change_required(user, required: bool) -> None:
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    profile.force_password_change = bool(required)
+    profile.save(update_fields=["force_password_change", "updated_at"])
+
+
+def _generate_temporary_password(length: int = 12) -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+    return "Hp" + "".join(secrets.choice(alphabet) for _ in range(max(8, length - 2)))
+
+
+def _send_temporary_password_email(user, temporary_password: str, ui_lang: str = "ko") -> bool:
+    from django.core.mail import send_mail
+
+    email = str(getattr(user, "email", "") or "").strip()
+    if not email:
+        return False
+
+    is_en = ui_lang == "en"
+    login_url = "https://www.hanplanet.com/en/login" if is_en else "https://www.hanplanet.com/ko/login"
+    username = str(getattr(user, "username", "") or "").strip()
+    if is_en:
+        subject = "[Hanplanet] Temporary password"
+        body = (
+            f"Hi,\n\n"
+            f"A temporary password was issued for your Hanplanet account.\n\n"
+            f"Username: {username}\n"
+            f"Temporary password: {temporary_password}\n\n"
+            "Sign in with this password and change it immediately.\n"
+            "If you did not request this, sign in and change your password."
+        )
+        html_message = _render_hanplanet_email_html(
+            title="Temporary password",
+            eyebrow="Hanplanet Account Security",
+            intro_html='<p style="margin:0;">Use the temporary password below to sign in to Hanplanet.</p>',
+            body_html=(
+                f'<p style="margin:0 0 10px;color:#535353;">Username: <strong>{escape(username)}</strong></p>'
+                + _render_hanplanet_email_code_box(temporary_password)
+                + '<p style="margin:0;color:#535353;">After signing in, you will be asked to change this password.</p>'
+            ),
+            cta_label="Open Login",
+            cta_url=login_url,
+            footer_note="If you did not request this, change your password immediately.",
+        )
+    else:
+        subject = "[Hanplanet] 임시 비밀번호"
+        body = (
+            f"안녕하세요.\n\n"
+            f"Hanplanet 계정의 임시 비밀번호가 발급되었습니다.\n\n"
+            f"아이디: {username}\n"
+            f"임시 비밀번호: {temporary_password}\n\n"
+            "이 비밀번호로 로그인한 뒤 즉시 새 비밀번호로 변경해주세요.\n"
+            "본인이 요청하지 않은 경우 로그인 후 비밀번호를 변경해주세요."
+        )
+        html_message = _render_hanplanet_email_html(
+            title="임시 비밀번호",
+            eyebrow="Hanplanet Account Security",
+            intro_html='<p style="margin:0;">아래 임시 비밀번호로 Hanplanet에 로그인해주세요.</p>',
+            body_html=(
+                f'<p style="margin:0 0 10px;color:#535353;">아이디: <strong>{escape(username)}</strong></p>'
+                + _render_hanplanet_email_code_box(temporary_password)
+                + '<p style="margin:0;color:#535353;">로그인 후 새 비밀번호로 변경해야 계속 이용할 수 있습니다.</p>'
+            ),
+            cta_label="로그인 열기",
+            cta_url=login_url,
+            footer_note="본인이 요청하지 않은 경우 즉시 비밀번호를 변경해주세요.",
+        )
+
+    try:
+        send_mail(
+            subject,
+            body,
+            getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@hanplanet.com"),
+            [email],
+            html_message=html_message,
+            fail_silently=False,
+        )
+        return True
+    except Exception:
+        logger.exception("[password-reset] Failed to send temporary password email to user %s", getattr(user, "username", "?"))
         return False
 
 
@@ -7729,7 +9466,7 @@ def _resolve_handrive_post_login_url(request, ui_lang: str | None, fallback_next
     else:
         lang_base = reverse("main:handrive_root")
 
-    if re.match(r"^/(?:(ko|en)/)?handrive/all/list/?$", fallback_path):
+    if re.match(r"^/(?:(ko|en)/)?handrive/(?:all|guest)/list/?$", fallback_path):
         return lang_base
 
     # Preserve explicit shared-link destinations. The scoped landing directory is
@@ -7785,6 +9522,69 @@ class HandriveAuthenticationForm(AuthenticationForm):
     def clean_password(self):
         validate_auth_safe_value(self._raw_value("password"), "password", self._handrive_text)
         return self.cleaned_data.get("password")
+
+
+class HandriveForgotPasswordForm(forms.Form):
+    username = forms.CharField(max_length=150)
+
+    def __init__(self, *args, ui_lang: str | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._handrive_text = get_handrive_text(ui_lang)
+        self.fields["username"].label = self._handrive_text.get("auth_username_label", "아이디")
+        self.fields["username"].widget.attrs.update({
+            "autocomplete": "username",
+            "data-handrive-auth-safe-input": "username",
+            "pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
+            "title": get_auth_forbidden_char_message("username", self._handrive_text),
+        })
+
+    def clean_username(self):
+        username = str(self.cleaned_data.get("username", "") or "").strip()
+        validate_auth_safe_value(self.data.get(self.add_prefix("username"), ""), "username", self._handrive_text)
+        return username
+
+
+class HandriveTemporaryPasswordChangeForm(forms.Form):
+    password1 = forms.CharField(widget=forms.PasswordInput)
+    password2 = forms.CharField(widget=forms.PasswordInput)
+
+    def __init__(self, *args, user=None, ui_lang: str | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+        self._handrive_text = get_handrive_text(ui_lang)
+        self.fields["password1"].label = self._handrive_text.get("auth_new_password_label", "새 비밀번호")
+        self.fields["password2"].label = self._handrive_text.get("auth_new_password_confirm_label", "새 비밀번호 확인")
+        for field_name in ("password1", "password2"):
+            self.fields[field_name].widget.attrs.update({
+                "autocomplete": "new-password",
+                "data-handrive-auth-safe-input": "password",
+                "pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
+                "title": get_auth_forbidden_char_message("password", self._handrive_text),
+            })
+
+    def _raw_value(self, field_name: str):
+        if self.is_bound:
+            return self.data.get(self.add_prefix(field_name), "")
+        return self.cleaned_data.get(field_name, "")
+
+    def clean_password1(self):
+        password = str(self.cleaned_data.get("password1", "") or "")
+        validate_auth_safe_value(self._raw_value("password1"), "password", self._handrive_text)
+        password_validation.validate_password(password, self.user)
+        return password
+
+    def clean_password2(self):
+        password = str(self.cleaned_data.get("password2", "") or "")
+        validate_auth_safe_value(self._raw_value("password2"), "password", self._handrive_text)
+        return password
+
+    def clean(self):
+        cleaned = super().clean()
+        password1 = str(cleaned.get("password1", "") or "")
+        password2 = str(cleaned.get("password2", "") or "")
+        if password1 and password2 and password1 != password2:
+            self.add_error("password2", self._handrive_text.get("auth_password_mismatch_error", "비밀번호 확인이 일치하지 않습니다."))
+        return cleaned
 
 
 class HandriveSignupForm(UserCreationForm):
@@ -8028,6 +9828,10 @@ def _build_forgejo_session_blob(user_id: int, username: str, has_two_factor_auth
 
 def _forgejo_db_path() -> Path:
     """Forgejo SQLite DB 경로를 반환한다."""
+    for env_name in ("FORGEJO_DB_PATH", "GITEA_DB_PATH"):
+        db_path = os.environ.get(env_name, "").strip()
+        if db_path:
+            return Path(db_path)
     return Path(settings.BASE_DIR) / "forgejo" / "data" / "gitea.db"
 
 
@@ -8234,6 +10038,23 @@ def _build_github_auth_start_url(request, ui_lang: str | None, next_url: str, mo
     base_url = reverse(route_name, kwargs=kwargs) if kwargs else reverse(route_name)
     query = urlencode({"mode": mode, "next": next_url or ""})
     return f"{base_url}?{query}"
+
+
+def _preserve_oauth_return_origin(request, next_url: str, callback_url: str) -> str:
+    next_value = str(next_url or "").strip()
+    parsed_next = urlparse(next_value)
+    if not next_value or parsed_next.scheme or parsed_next.netloc or not next_value.startswith("/"):
+        return next_value
+
+    request_hostname = str(request.get_host() or "").split(":", 1)[0].strip().lower()
+    if request_hostname != "hanplanet.com" and not request_hostname.endswith(".hanplanet.com"):
+        return next_value
+
+    callback_host = urlparse(str(callback_url or "")).netloc
+    request_host = str(request.get_host() or "").strip()
+    if callback_host and request_host and callback_host != request_host:
+        return f"https://{request_host}{next_value}"
+    return next_value
 
 
 def _build_github_auth_callback_url(request) -> str:
@@ -8663,6 +10484,7 @@ def _render_handrive_login_page(
     show_2fa: bool = False,
     twofa_masked_email: str = "",
     twofa_error_message: str = "",
+    login_info_message: str = "",
 ):
     handrive_text = context["handrive_text"]
     pending_github = _get_pending_github_auth(request)
@@ -8676,6 +10498,7 @@ def _render_handrive_login_page(
         "handrive_login_form": form,
         "handrive_login_next": next_url,
         "handrive_login_error_message": login_error_message,
+        "handrive_login_info_message": login_info_message,
         "handrive_login_error_popup_message": login_error_popup_message,
         "handrive_login_show_captcha": show_captcha,
         "handrive_turnstile_site_key": turnstile_site_key,
@@ -8688,6 +10511,9 @@ def _render_handrive_login_page(
         "handrive_login_2fa_masked_email": twofa_masked_email,
         "handrive_login_2fa_error_message": twofa_error_message,
         "handrive_api_login_2fa_resend_code_url": reverse("main:handrive_api_login_2fa_resend_code"),
+        "handrive_forgot_password_modal_url": _with_site_auth_modal_param(
+            f"{reverse('main:handrive_forgot_password_lang', kwargs={'ui_lang': context.get('ui_lang') or 'ko'})}?{urlencode({'next': next_url or ''})}"
+        ),
         "handrive_auth_safe_input_pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
         "handrive_github_choice_required": github_choice_required,
         "handrive_github_choice_link_url": _github_auth_action_url(context["handrive_login_url"], next_url, "link"),
@@ -8764,6 +10590,61 @@ def _render_handrive_signup_page(
     return render(request, "handrive/signup.html", render_context)
 
 
+def _render_handrive_forgot_password_page(
+    request,
+    context,
+    form,
+    next_url: str,
+    error_message: str = "",
+):
+    handrive_text = context["handrive_text"]
+    render_context = {
+        **context,
+        "handrive_forgot_password_form": form,
+        "handrive_forgot_password_next": next_url,
+        "handrive_forgot_password_error_message": error_message,
+        "handrive_forgot_password_action_url": reverse("main:handrive_forgot_password_lang", kwargs={"ui_lang": context.get("ui_lang") or "ko"}),
+        "handrive_auth_safe_input_pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
+        "handrive_login_modal_url": _with_site_auth_modal_param(
+            f"{context['handrive_login_url']}?{urlencode({'next': next_url or ''})}"
+        ),
+        "hide_global_nav": True,
+    }
+    if _is_site_auth_modal_request(request):
+        render_context.update({
+            "site_auth_modal_mode": "forgot-password",
+            "site_auth_modal_title": handrive_text.get("auth_forgot_password_title", "비밀번호 찾기"),
+        })
+        return _render_site_auth_modal_panel(request, "partials/site_auth_modal_forgot_password.html", render_context)
+    return render(request, "handrive/forgot_password.html", render_context)
+
+
+def _render_handrive_password_change_required_page(
+    request,
+    context,
+    form,
+    next_url: str,
+    error_message: str = "",
+):
+    handrive_text = context["handrive_text"]
+    render_context = {
+        **context,
+        "handrive_password_change_form": form,
+        "handrive_password_change_next": next_url,
+        "handrive_password_change_error_message": error_message,
+        "handrive_password_change_action_url": reverse("main:handrive_password_change_required_lang", kwargs={"ui_lang": context.get("ui_lang") or "ko"}),
+        "handrive_auth_safe_input_pattern": HANDRIVE_AUTH_SAFE_INPUT_PATTERN,
+        "hide_global_nav": True,
+    }
+    if _is_site_auth_modal_request(request):
+        render_context.update({
+            "site_auth_modal_mode": "password-change-required",
+            "site_auth_modal_title": handrive_text.get("auth_password_change_title", "비밀번호 변경"),
+        })
+        return _render_site_auth_modal_panel(request, "partials/site_auth_modal_password_change_required.html", render_context)
+    return render(request, "handrive/password_change_required.html", render_context)
+
+
 @require_http_methods(["GET", "POST"])
 @csrf_protect
 def handrive_github_auth_start(request, ui_lang=None):
@@ -8803,6 +10684,8 @@ def handrive_github_auth_start(request, ui_lang=None):
                 handrive_text.get("auth_github_consent_error", "You must agree to continue GitHub sign up."),
             )
 
+    callback_url = _build_github_auth_callback_url(request)
+    next_url = _preserve_oauth_return_origin(request, next_url, callback_url)
     state = secrets.token_urlsafe(32)
     request.session[HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY] = {
         "state": state,
@@ -8815,7 +10698,7 @@ def handrive_github_auth_start(request, ui_lang=None):
     request.session.modified = True
 
     try:
-        authorize_url = build_github_authorize_url(_build_github_auth_callback_url(request), state)
+        authorize_url = build_github_authorize_url(callback_url, state)
     except GitHubAuthError:
         return _render_github_auth_error(
             request,
@@ -9212,6 +11095,8 @@ def handrive_google_auth_start(request, ui_lang=None):
                 handrive_text.get("auth_google_consent_error", "You must agree to continue Google sign up."),
             )
 
+    callback_url = _build_google_auth_callback_url(request)
+    next_url = _preserve_oauth_return_origin(request, next_url, callback_url)
     state = secrets.token_urlsafe(32)
     request.session[HANDRIVE_GOOGLE_AUTH_STATE_SESSION_KEY] = {
         "state": state,
@@ -9230,7 +11115,7 @@ def handrive_google_auth_start(request, ui_lang=None):
             else get_google_base_auth_scope()
         )
         authorize_url = build_google_authorize_url(
-            _build_google_auth_callback_url(request),
+            callback_url,
             state,
             scope=auth_scope,
             login_hint=getattr(drive_mapping, "google_email", "") if mode == "drive" else "",
@@ -9707,6 +11592,7 @@ def handrive_login(request, ui_lang=None):
 
     login_error_message = ""
     login_error_popup_message = ""
+    login_info_message = ""
     show_captcha = False
     captcha_question = ""
     show_2fa = False
@@ -9723,6 +11609,12 @@ def handrive_login(request, ui_lang=None):
 
     if request.method == "GET" and request.session.get(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY):
         _clear_2fa_pending_session(request)
+    if request.method == "GET" and request.session.pop(HANDRIVE_PASSWORD_RESET_SENT_SESSION_KEY, False):
+        request.session.modified = True
+        login_info_message = handrive_text.get(
+            "auth_forgot_password_sent",
+            "등록된 이메일로 임시 비밀번호를 전송했습니다. 임시 비밀번호로 로그인해주세요.",
+        )
 
     # ── 인라인 2FA 콜백 ───────────────────────────────────────────────────────
     def _render_login_with_2fa(masked_email, send_failed=False):
@@ -9732,6 +11624,17 @@ def handrive_login(request, ui_lang=None):
             next_url, "", "", False, turnstile_site_key, "",
             auth_breadcrumb_url, hide_global_nav,
             show_2fa=True, twofa_masked_email=masked_email, twofa_error_message=err,
+        )
+
+    def _render_password_change_for_temp_login(authed_user, target_url, captcha_was_shown=False):
+        if captcha_was_shown:
+            _clear_handrive_login_captcha(request)
+        _finalize_handrive_login_session(request, authed_user)
+        return _render_handrive_password_change_required_page(
+            request,
+            context,
+            HandriveTemporaryPasswordChangeForm(user=authed_user, ui_lang=resolved_lang),
+            target_url,
         )
 
     # ── 2FA 코드 제출 처리 (phase 2) ─────────────────────────────────────────
@@ -9811,6 +11714,8 @@ def handrive_login(request, ui_lang=None):
             elif form.is_valid():
                 authed_user = form.get_user()
                 target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, authed_user)
+                if _is_force_password_change_required(authed_user):
+                    return _render_password_change_for_temp_login(authed_user, target_url, captcha_was_shown=True)
                 requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
                 forgejo_session_key = None
                 if requires_direct_attach:
@@ -9851,6 +11756,8 @@ def handrive_login(request, ui_lang=None):
         elif form.is_valid():
             authed_user = form.get_user()
             target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, authed_user)
+            if _is_force_password_change_required(authed_user):
+                return _render_password_change_for_temp_login(authed_user, target_url, captcha_was_shown=False)
             requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
             forgejo_session_key = None
             if requires_direct_attach:
@@ -9900,6 +11807,7 @@ def handrive_login(request, ui_lang=None):
         captcha_question,
         auth_breadcrumb_url,
         hide_global_nav,
+        login_info_message=login_info_message,
     )
 
 
@@ -10094,6 +12002,124 @@ def handrive_api_signup_2fa_verify_code(request, ui_lang=None):
     # 30분 유효 서명 토큰 발급
     token = signing.dumps({"email": email}, salt="signup-email-verified")
     return JsonResponse({"ok": True, "token": token})
+
+
+@require_http_methods(["GET", "POST"])
+@csrf_protect
+def handrive_forgot_password(request, ui_lang=None):
+    if ui_lang is None and request.method in {"GET", "HEAD"}:
+        return redirect_to_language_prefixed_path(request)
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    context = handrive_common_context(request, resolved_lang)
+    handrive_text = context["handrive_text"]
+    next_url = resolve_next_url(request, context["handrive_base_url"])
+    form = HandriveForgotPasswordForm(request.POST or None, ui_lang=resolved_lang)
+    error_message = ""
+
+    if request.method == "POST" and form.is_valid():
+        username = form.cleaned_data["username"]
+        rate_state = request.session.get(HANDRIVE_PASSWORD_RESET_RATE_SESSION_KEY) or {}
+        import time as _time
+        now_ts = _time.time()
+        if rate_state.get("username") == username and (now_ts - float(rate_state.get("sent_at_ts") or 0)) < 30:
+            error_message = handrive_text.get("auth_forgot_password_rate_limit", "잠시 후 다시 시도해주세요.")
+            return _render_handrive_forgot_password_page(request, context, form, next_url, error_message)
+
+        user = _resolve_handrive_login_target_user(username)
+        should_send = bool(user and getattr(user, "is_active", False) and str(getattr(user, "email", "") or "").strip())
+        if should_send:
+            old_password_hash = user.password
+            old_force_password_change = _is_force_password_change_required(user)
+            temporary_password = _generate_temporary_password()
+            user.set_password(temporary_password)
+            try:
+                with transaction.atomic():
+                    user.save(update_fields=["password"])
+                    _set_force_password_change_required(user, True)
+                    _revoke_session_token(user)
+                email_sent = _send_temporary_password_email(user, temporary_password, resolved_lang)
+                if not email_sent:
+                    user.password = old_password_hash
+                    with transaction.atomic():
+                        user.save(update_fields=["password"])
+                        _set_force_password_change_required(user, old_force_password_change)
+                    error_message = handrive_text.get(
+                        "auth_forgot_password_send_error",
+                        "임시 비밀번호 전송에 실패했습니다. 잠시 후 다시 시도해주세요.",
+                    )
+                    return _render_handrive_forgot_password_page(request, context, form, next_url, error_message)
+            except Exception:
+                logger.exception("[password-reset] Failed to issue temporary password for user %s", username)
+                try:
+                    user.password = old_password_hash
+                    user.save(update_fields=["password"])
+                    _set_force_password_change_required(user, old_force_password_change)
+                except Exception:
+                    logger.exception("[password-reset] Failed to restore password after issuing failure for user %s", username)
+                error_message = handrive_text.get(
+                    "auth_forgot_password_send_error",
+                    "임시 비밀번호 전송에 실패했습니다. 잠시 후 다시 시도해주세요.",
+                )
+                return _render_handrive_forgot_password_page(request, context, form, next_url, error_message)
+
+        request.session[HANDRIVE_PASSWORD_RESET_RATE_SESSION_KEY] = {
+            "username": username,
+            "sent_at_ts": now_ts,
+        }
+        request.session[HANDRIVE_PASSWORD_RESET_SENT_SESSION_KEY] = True
+        request.session.modified = True
+        login_url = reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang})
+        redirect_url = f"{login_url}?{urlencode({'next': next_url or ''})}"
+        return _site_auth_modalize_response(request, redirect(redirect_url))
+
+    if request.method == "POST":
+        error_message = _first_auth_safety_error_message(form) or handrive_text.get(
+            "auth_login_error",
+            "아이디 또는 비밀번호를 확인해주세요.",
+        )
+
+    return _render_handrive_forgot_password_page(request, context, form, next_url, error_message)
+
+
+@require_http_methods(["GET", "POST"])
+@csrf_protect
+def handrive_password_change_required(request, ui_lang=None):
+    if ui_lang is None and request.method in {"GET", "HEAD"}:
+        return redirect_to_language_prefixed_path(request)
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    context = handrive_common_context(request, resolved_lang)
+    handrive_text = context["handrive_text"]
+    next_url = resolve_next_url(request, context["handrive_base_url"])
+
+    if not request.user.is_authenticated:
+        login_url = reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang})
+        return _site_auth_modalize_response(request, redirect(f"{login_url}?{urlencode({'next': next_url or ''})}"))
+
+    if not _is_force_password_change_required(request.user):
+        return _site_auth_modalize_response(
+            request,
+            _build_post_hanplanet_login_response(
+                _resolve_handrive_post_login_url(request, resolved_lang, next_url, request.user),
+                request.user,
+            ),
+        )
+
+    form = HandriveTemporaryPasswordChangeForm(request.POST or None, user=request.user, ui_lang=resolved_lang)
+    error_message = ""
+    if request.method == "POST":
+        if form.is_valid():
+            request.user.set_password(form.cleaned_data["password1"])
+            request.user.save(update_fields=["password"])
+            _set_force_password_change_required(request.user, False)
+            update_session_auth_hash(request, request.user)
+            target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, request.user)
+            return _site_auth_modalize_response(request, _build_post_hanplanet_login_response(target_url, request.user))
+        error_message = (
+            _first_auth_safety_error_message(form)
+            or form.errors.get("password2", [None])[0]
+            or handrive_text.get("auth_password_change_error", "비밀번호를 확인해주세요.")
+        )
+    return _render_handrive_password_change_required_page(request, context, form, next_url, str(error_message or ""))
 
 
 @require_http_methods(["GET", "POST"])
@@ -10437,6 +12463,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
     shared_context = get_handrive_shared_access_context(request)
+    handrive_tutorial_forced = is_handrive_tutorial_requested(request)
     if has_handrive_shared_access_hint(request) and not shared_context:
         raise Http404("폴더를 찾을 수 없습니다.")
     scoped_home_dir = get_scoped_handrive_home_dir(request)
@@ -10447,12 +12474,58 @@ def handrive_list(request, folder_path="", ui_lang=None):
     except ValueError:
         raise Http404("폴더를 찾을 수 없습니다.")
     requested_scope_dir = requested_archive_virtual[0] if requested_archive_virtual is not None else requested_dir
+    tutorial_scope_allowed = (
+        not shared_context
+        and requested_archive_virtual is None
+        and is_handrive_session_tutorial_path(request, requested_scope_dir)
+    )
+    if (
+        not request.user.is_authenticated
+        and not shared_context
+        and requested_archive_virtual is None
+        and not tutorial_scope_allowed
+        and is_path_in_handrive_scope(requested_scope_dir, HANDRIVE_GUEST_ROOT)
+    ):
+        guest_tutorial_dir = ensure_guest_handrive_tutorial_workspace(request, resolved_lang)
+        if guest_tutorial_dir:
+            return redirect(
+                append_handrive_query_params(
+                    build_handrive_list_url(context["handrive_base_url"], guest_tutorial_dir, request=request),
+                    {"tutorial": "1", "start": "1"},
+                )
+            )
+    if (
+        request.user.is_authenticated
+        and not shared_context
+        and get_handrive_admin_switch_user(request) is None
+        and requested_archive_virtual is None
+        and scoped_home_dir
+        and scoped_home_dir != HANDRIVE_GUEST_ROOT
+        and requested_scope_dir == scoped_home_dir
+        and handrive_tutorial_forced
+    ):
+        tutorial_dir = ensure_authenticated_handrive_tutorial_workspace(
+            request,
+            scoped_home_dir,
+            resolved_lang,
+            force=handrive_tutorial_forced,
+        )
+        if tutorial_dir:
+            tutorial_params = {"tutorial": "1"}
+            if is_handrive_tutorial_autostart_requested(request):
+                tutorial_params["start"] = "1"
+            return redirect(
+                append_handrive_query_params(
+                    build_handrive_list_url(context["handrive_base_url"], tutorial_dir, request=request),
+                    tutorial_params,
+                )
+            )
     if (
         not shared_context
-        and requested_scope_dir == "all"
+        and requested_scope_dir == HANDRIVE_GUEST_ROOT
         and request.user.is_authenticated
         and scoped_home_dir
-        and scoped_home_dir != "all"
+        and scoped_home_dir != HANDRIVE_GUEST_ROOT
     ):
         ensure_scoped_home_dir(scoped_home_dir)
         return redirect(build_handrive_list_url(context["handrive_base_url"], scoped_home_dir, request=request))
@@ -10464,7 +12537,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
                     reverse("main:handrive_list_lang", kwargs={"ui_lang": resolved_lang, "folder_path": scoped_home_dir})
                 )
             return redirect(reverse("main:handrive_list", kwargs={"folder_path": scoped_home_dir}))
-        if not is_path_in_handrive_scope(requested_scope_dir, scoped_home_dir):
+        if not is_path_in_handrive_scope(requested_scope_dir, scoped_home_dir) and not tutorial_scope_allowed:
             if not request.user.is_authenticated:
                 from urllib.parse import urlencode
                 if resolved_lang in SUPPORTED_UI_LANGS:
@@ -10514,9 +12587,14 @@ def handrive_list(request, folder_path="", ui_lang=None):
             raise Http404("폴더를 찾을 수 없습니다.")
         if not directory.is_dir():
             raise Http404("폴더를 찾을 수 없습니다.")
+        if not shared_context and is_handrive_session_tutorial_path(request, current_dir):
+            populate_handrive_tutorial_workspace(directory, resolved_lang)
         initial_entries = list_directory_entries(directory, request=request)
-        if not shared_context and normalize_relative_path(current_dir, allow_empty=True) == "all":
-            initial_entries = sort_demo_all_list_entries(initial_entries)
+        if not shared_context and (
+            normalize_relative_path(current_dir, allow_empty=True) == HANDRIVE_GUEST_ROOT
+            or is_handrive_session_tutorial_root_path(request, current_dir)
+        ):
+            initial_entries = sort_guest_demo_list_entries(initial_entries)
     elif archive_virtual is None:
         if git_virtual["kind"] == "branch_file":
             raise Http404("폴더를 찾을 수 없습니다.")
@@ -10540,6 +12618,25 @@ def handrive_list(request, folder_path="", ui_lang=None):
 
     if directory_meta is None:
         directory_meta = _build_handrive_directory_meta(request, current_dir, initial_entries)
+
+    current_dir_is_tutorial_workspace = is_handrive_session_tutorial_path(request, current_dir)
+    handrive_guest_demo_mode = (
+        not request.user.is_authenticated
+        and not shared_context
+        and current_dir_is_tutorial_workspace
+    )
+    handrive_authenticated_tutorial_mode = False
+    if (
+        request.user.is_authenticated
+        and not shared_context
+        and get_handrive_admin_switch_user(request) is None
+        and current_dir_is_tutorial_workspace
+    ):
+        handrive_authenticated_tutorial_mode = True
+    handrive_tutorial_mode = handrive_guest_demo_mode or handrive_authenticated_tutorial_mode
+    handrive_demo_tutorial_path = ""
+    if handrive_tutorial_mode:
+        handrive_demo_tutorial_path = resolve_demo_tutorial_entry_path(initial_entries)
 
     shared_root_url = context["handrive_root_url"]
     if shared_context:
@@ -10570,22 +12667,37 @@ def handrive_list(request, folder_path="", ui_lang=None):
             scoped_home_dir=scoped_home_dir,
             root_url=shared_root_url,
         )
+    breadcrumbs = apply_handrive_tutorial_breadcrumb_labels(
+        request,
+        breadcrumbs,
+        scoped_home_dir=scoped_home_dir,
+        ui_lang=resolved_lang,
+        base_url=context["handrive_base_url"],
+    )
 
     sync_excluded_paths = []
     if request.user.is_authenticated:
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
         sync_excluded_paths = _sanitize_sync_excluded_paths(profile.sync_excluded_paths, scoped_home_dir)
     handrive_demo_save_mode = has_handrive_demo_edit_access(request, current_dir)
+    current_dir_display_label = get_handrive_display_label_for_path(request, current_dir, resolved_lang)
+    handrive_root_label = (
+        get_handrive_tutorial_root_label(request, scoped_home_dir, resolved_lang)
+        if handrive_tutorial_mode
+        else get_handrive_js_root_label(request, scoped_home_dir)
+    )
 
     context.update(
         {
             "current_dir": current_dir,
-            "current_dir_display": current_dir or get_handrive_root_label(request, scoped_home_dir),
-            "current_path_label": current_dir or get_handrive_root_label(request, scoped_home_dir),
-            "handrive_root_label": get_handrive_js_root_label(request, scoped_home_dir),
+            "current_dir_display": current_dir_display_label,
+            "current_path_label": current_dir_display_label,
+            "current_dir_display_label": current_dir_display_label,
+            "handrive_root_label": handrive_root_label,
             "scoped_home_dir": scoped_home_dir,
             "current_dir_is_root": directory_meta["is_root"],
             "current_dir_can_edit": directory_meta["can_edit"],
+            "current_dir_can_delete": directory_meta.get("can_delete", directory_meta["can_edit"]),
             "current_dir_can_write_children": directory_meta["can_write_children"],
             "current_dir_has_children": directory_meta["has_children"],
             "current_dir_is_git_repo_root": directory_meta["is_git_repo_root"],
@@ -10600,6 +12712,8 @@ def handrive_list(request, folder_path="", ui_lang=None):
             "current_dir_share_download_url": directory_meta.get("share_download_url", ""),
             "current_dir_share_is_inherited": directory_meta["share_is_inherited"],
             "current_dir_share_allowed_users": directory_meta.get("share_allowed_users", []),
+            "current_dir_share_can_edit": directory_meta.get("share_can_edit", False),
+            "current_dir_share_can_manage": directory_meta.get("share_can_manage", False),
             "current_dir_is_google_drive": directory_meta.get("is_google_drive", False),
             "current_dir_google_drive": directory_meta.get("google_drive"),
             "current_dir_is_archive_virtual": directory_meta.get("is_archive_virtual", False),
@@ -10616,6 +12730,11 @@ def handrive_list(request, folder_path="", ui_lang=None):
             "hide_global_nav": bool(shared_context) and not request.user.is_authenticated,
             "is_handrive_shared_view": bool(shared_context),
             "handrive_demo_save_mode": handrive_demo_save_mode,
+            "handrive_guest_demo_mode": handrive_guest_demo_mode,
+            "handrive_tutorial_mode": handrive_tutorial_mode,
+            "handrive_tutorial_forced": handrive_tutorial_forced,
+            "handrive_tutorial_autostart": handrive_tutorial_mode and is_handrive_tutorial_autostart_requested(request),
+            "handrive_demo_tutorial_path": handrive_demo_tutorial_path,
             "handrive_shared_owner_username": shared_context["owner_username"] if shared_context else "",
             "handrive_shared_slug": shared_context["share_slug"] if shared_context else "",
             "handrive_shared_root_path": shared_context["root_path"] if shared_context else "",
@@ -10800,7 +12919,12 @@ def handrive_view(request, doc_path, ui_lang=None):
                     message=handrive_text.get("view_read_unsupported", "읽기 미지원"),
                 )
                 render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
-    if not shared_context and not is_path_in_handrive_scope(relative_file_path, scoped_home_dir):
+    tutorial_scope_allowed = (
+        not shared_context
+        and get_handrive_admin_switch_user(request) is None
+        and is_handrive_session_tutorial_path(request, relative_file_path)
+    )
+    if not shared_context and not is_path_in_handrive_scope(relative_file_path, scoped_home_dir) and not tutorial_scope_allowed:
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
     if not has_handrive_read_access(request, relative_file_path):
         raise PermissionDenied("파일을 볼 권한이 없습니다.")
@@ -10813,7 +12937,7 @@ def handrive_view(request, doc_path, ui_lang=None):
     if canonical_redirect is not None:
         return canonical_redirect
 
-    if handrive_path_uses_internal_virtual_url(relative_file_path):
+    if handrive_path_uses_internal_public_url(request, relative_file_path):
         slug_path = build_handrive_public_url_path(request, relative_file_path)
     else:
         slug_path = markdown_slug_from_relative(relative_file_path)
@@ -10821,12 +12945,30 @@ def handrive_view(request, doc_path, ui_lang=None):
     if parent_dir == ".":
         parent_dir = ""
 
+    handrive_tutorial_forced = is_handrive_tutorial_requested(request)
+    handrive_tutorial_mode = False
+    if (
+        tutorial_scope_allowed
+    ):
+        handrive_tutorial_mode = True
+    handrive_tutorial_return_url = ""
+    if handrive_tutorial_mode:
+        handrive_tutorial_return_url = resolve_handrive_tutorial_return_url(
+            request,
+            append_handrive_query_params(
+                build_handrive_list_url(context["handrive_base_url"], parent_dir, request=request),
+                {"tutorial": "1", "tutorial_step": "4"},
+            ),
+        )
+
     if google_drive is not None:
         doc_is_url_only = False
         doc_share_url = ""
         doc_share_download_url = ""
         doc_share_is_inherited = False
         doc_share_allowed_users = []
+        doc_share_can_edit = False
+        doc_share_can_manage = False
     else:
         doc_is_url_only = is_handrive_url_only_enabled(request, relative_file_path)
         doc_share_info = build_handrive_existing_share_info(request, relative_file_path)
@@ -10834,6 +12976,8 @@ def handrive_view(request, doc_path, ui_lang=None):
         doc_share_download_url = doc_share_info["share_download_url"]
         doc_share_is_inherited = doc_share_info["share_is_inherited"]
         doc_share_allowed_users = doc_share_info["share_allowed_users"]
+        doc_share_can_edit = doc_share_info["share_can_edit"]
+        doc_share_can_manage = doc_share_info["share_can_manage"]
 
     shared_root_url = context["handrive_root_url"]
     if shared_context:
@@ -10853,8 +12997,21 @@ def handrive_view(request, doc_path, ui_lang=None):
             scoped_home_dir=scoped_home_dir,
             root_url=shared_root_url,
         )
+    view_breadcrumbs = apply_handrive_tutorial_breadcrumb_labels(
+        request,
+        view_breadcrumbs,
+        scoped_home_dir=scoped_home_dir,
+        ui_lang=resolved_lang,
+        base_url=context["handrive_base_url"],
+    )
+    handrive_root_label = (
+        get_handrive_tutorial_root_label(request, scoped_home_dir, resolved_lang)
+        if handrive_tutorial_mode
+        else get_handrive_js_root_label(request, scoped_home_dir)
+    )
 
     doc_can_edit = has_handrive_write_access(request, relative_file_path)
+    doc_can_delete = doc_can_edit and not is_handrive_shared_root_locked_for_request(request, relative_file_path)
     doc_can_open_editor = doc_can_edit or doc_can_demo_edit
     doc_is_media_editor_file = git_virtual is None and google_drive is None and is_handrive_media_editor_extension(file_extension)
     doc_is_spreadsheet_editor_file = (
@@ -10885,7 +13042,18 @@ def handrive_view(request, doc_path, ui_lang=None):
         doc_edit_url += ("&" if "?" in doc_edit_url else "?") + urlencode({"edit": relative_file_path})
     else:
         doc_edit_url = context["handrive_write_url"] + "?" + urlencode({"path": relative_file_path})
+    if shared_context:
+        doc_edit_url = append_handrive_share_query(
+            doc_edit_url,
+            shared_context["owner_username"],
+            shared_context["share_slug"],
+        )
     doc_edit_url = append_handrive_admin_switch_query(request, doc_edit_url)
+    if handrive_tutorial_mode:
+        doc_edit_url = append_handrive_query_params(
+            doc_edit_url,
+            {"tutorial": "1", "from_list": handrive_tutorial_return_url},
+        )
     doc_can_print = render_profile["mode"] not in {
         DOCS_RENDER_MODE_MEDIA_VIDEO,
         DOCS_RENDER_MODE_MEDIA_3D,
@@ -10901,6 +13069,7 @@ def handrive_view(request, doc_path, ui_lang=None):
             "doc_can_read": True,
             "doc_can_print": doc_can_print,
             "doc_can_edit": doc_can_edit,
+            "doc_can_delete": doc_can_delete,
             "doc_can_demo_edit": doc_can_demo_edit,
             "doc_can_save_spreadsheet": doc_can_edit or doc_can_demo_edit,
             "doc_can_show_edit": doc_can_show_edit,
@@ -10910,6 +13079,8 @@ def handrive_view(request, doc_path, ui_lang=None):
             "doc_share_download_url": doc_share_download_url,
             "doc_share_is_inherited": doc_share_is_inherited,
             "doc_share_allowed_users": doc_share_allowed_users,
+            "doc_share_can_edit": doc_share_can_edit,
+            "doc_share_can_manage": doc_share_can_manage,
             "doc_content_html": rendered_content_html,
             "doc_content_mode": render_profile["mode"],
             "doc_content_class": render_profile["css_class"],
@@ -10919,10 +13090,16 @@ def handrive_view(request, doc_path, ui_lang=None):
             "view_breadcrumbs": view_breadcrumbs,
             "view_current_file_name": file_name,
             "view_current_file_size_display": file_size_display,
+            "scoped_home_dir": scoped_home_dir,
+            "handrive_root_label": handrive_root_label,
             "page_help_html": build_page_help_html(resolved_lang, "view", handrive_text),
             "hide_global_nav": bool(shared_context) and not request.user.is_authenticated,
             "is_handrive_shared_view": bool(shared_context),
             "handrive_demo_save_mode": doc_can_demo_edit,
+            "handrive_tutorial_mode": handrive_tutorial_mode,
+            "handrive_tutorial_forced": handrive_tutorial_forced,
+            "handrive_tutorial_autostart": False,
+            "handrive_tutorial_return_url": handrive_tutorial_return_url,
             "handrive_shared_owner_username": shared_context["owner_username"] if shared_context else "",
             "handrive_shared_slug": shared_context["share_slug"] if shared_context else "",
             "handrive_shared_root_path": shared_context["root_path"] if shared_context else "",
@@ -10979,25 +13156,45 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
+    file_extension = target_path.suffix.lower()
+    doc_can_edit = has_handrive_write_access(request, relative_path)
+    doc_can_delete = doc_can_edit and not is_handrive_shared_root_locked_for_request(request, relative_path)
 
     try:
         content = load_handrive_source_content(target_path, request=request, relative_path=relative_path)
         rendered_content_html, render_profile = render_handrive_content(
             content,
-            target_path.suffix.lower(),
+            file_extension,
             source_path=target_path,
             relative_path=relative_path,
             request=request,
             share_owner=owner_username,
             share_slug=share_slug,
+            can_edit=doc_can_edit,
         )
     except Http404:
         rendered_content_html = render_handrive_unsupported_safely(
             target_path.name,
-            target_path.suffix.lower(),
+            file_extension,
             message=handrive_text.get("view_read_unsupported", "읽기 미지원"),
         )
         render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
+    doc_is_spreadsheet_file = file_extension in HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS
+    doc_can_show_edit = (
+        doc_can_edit
+        and render_profile["mode"] != DOCS_RENDER_MODE_UNSUPPORTED
+        and (
+            file_extension not in HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS
+            or doc_is_spreadsheet_file
+        )
+        and (
+            not is_handrive_non_editable_media_extension(file_extension)
+            or is_handrive_media_editor_extension(file_extension)
+        )
+    )
+    doc_edit_url = context["handrive_write_url"] + "?" + urlencode({"path": relative_path})
+    doc_edit_url = append_handrive_share_query(doc_edit_url, owner_username, share_slug)
+    doc_edit_url = append_handrive_admin_switch_query(request, doc_edit_url)
 
     context.update(
         {
@@ -11011,20 +13208,28 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
                 DOCS_RENDER_MODE_MEDIA_3D,
                 DOCS_RENDER_MODE_UNSUPPORTED,
             },
-            "doc_can_edit": False,
+            "doc_can_edit": doc_can_edit,
+            "doc_can_delete": doc_can_delete,
             "doc_can_demo_edit": False,
-            "doc_can_save_spreadsheet": False,
+            "doc_can_save_spreadsheet": doc_can_edit,
+            "doc_can_show_edit": doc_can_show_edit,
+            "doc_edit_url": doc_edit_url,
+            "doc_is_excel_file": file_extension in {".xls", ".xlsx"},
+            "doc_is_spreadsheet_file": doc_is_spreadsheet_file,
             "doc_is_url_only": True,
             "doc_share_url": request.build_absolute_uri(build_handrive_shared_view_url(resolved_lang, owner_username, share_slug)),
             "doc_share_download_url": build_handrive_shared_download_url(request, relative_path, owner_username, share_slug),
             "doc_share_is_inherited": False,
             "doc_share_allowed_users": get_handrive_share_allowed_users_for_request(request, shared_link),
+            "doc_share_can_edit": handrive_shared_link_allows_request_edit(request, shared_link),
+            "doc_share_can_manage": can_manage_handrive_shared_link(request, shared_link),
             "hide_global_nav": not request.user.is_authenticated,
             "is_handrive_shared_view": True,
             "handrive_demo_save_mode": False,
             "doc_content_html": rendered_content_html,
             "doc_content_mode": render_profile["mode"],
             "doc_content_class": render_profile["css_class"],
+            "doc_file_extension": file_extension,
             "view_breadcrumbs": [
                 {
                     "label": owner_username,
@@ -11053,6 +13258,9 @@ def handrive_write(request, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
     handrive_text = context["handrive_text"]
+    shared_context = get_handrive_shared_access_context(request)
+    if has_handrive_shared_access_hint(request) and not shared_context:
+        return redirect_handrive_shared_access_to_login(request, ui_lang)
     scoped_home_dir = get_scoped_handrive_home_dir(request)
     if scoped_home_dir:
         ensure_scoped_home_dir(scoped_home_dir)
@@ -11072,6 +13280,9 @@ def handrive_write(request, ui_lang=None):
     write_requires_commit_message = False
     write_demo_edit = False
     write_editor_kind = "text"
+    handrive_tutorial_forced = is_handrive_tutorial_requested(request)
+    handrive_tutorial_mode = False
+    handrive_tutorial_return_url = ""
 
     if requested_path:
         try:
@@ -11151,7 +13362,12 @@ def handrive_write(request, ui_lang=None):
                 raise Http404("수정할 파일을 찾을 수 없습니다.")
             write_requires_commit_message = True
             write_public_direct_save = True
-        if not is_path_in_handrive_scope(original_relative_path, scoped_home_dir):
+        tutorial_scope_allowed = (
+            not shared_context
+            and get_handrive_admin_switch_user(request) is None
+            and is_handrive_session_tutorial_path(request, original_relative_path)
+        )
+        if not shared_context and not is_path_in_handrive_scope(original_relative_path, scoped_home_dir) and not tutorial_scope_allowed:
             raise PermissionDenied("파일을 수정할 권한이 없습니다.")
         write_demo_edit = has_handrive_demo_edit_access(request, original_relative_path)
         if not has_handrive_write_access(request, original_relative_path) and not write_demo_edit:
@@ -11164,7 +13380,12 @@ def handrive_write(request, ui_lang=None):
         initial_dir = "" if parent_dir == "." else parent_dir
     elif requested_dir:
         initial_dir = normalize_relative_path(requested_dir)
-        if not is_path_in_handrive_scope(initial_dir, scoped_home_dir):
+        tutorial_scope_allowed = (
+            not shared_context
+            and get_handrive_admin_switch_user(request) is None
+            and is_handrive_session_tutorial_path(request, initial_dir)
+        )
+        if not shared_context and not is_path_in_handrive_scope(initial_dir, scoped_home_dir) and not tutorial_scope_allowed:
             raise PermissionDenied("파일을 수정할 권한이 없습니다.")
         google_drive = _parse_google_drive_virtual_path(request, initial_dir)
         git_virtual = None if google_drive is not None else _get_git_virtual_context(request, initial_dir)
@@ -11192,6 +13413,22 @@ def handrive_write(request, ui_lang=None):
         if not has_handrive_directory_write_access(request, initial_dir):
             raise PermissionDenied("파일을 수정할 권한이 없습니다.")
 
+    write_tutorial_target_path = original_relative_path or initial_dir
+    if (
+        not shared_context
+        and get_handrive_admin_switch_user(request) is None
+        and write_tutorial_target_path
+        and is_handrive_session_tutorial_path(request, write_tutorial_target_path)
+    ):
+        handrive_tutorial_mode = True
+        handrive_tutorial_return_url = resolve_handrive_tutorial_return_url(
+            request,
+            append_handrive_query_params(
+                build_handrive_list_url(context["handrive_base_url"], initial_dir, request=request),
+                {"tutorial": "1", "tutorial_step": request.GET.get("tutorial_step", "6") or "6"},
+            ),
+        )
+
     markdown_help_path = resolve_markdown_help_file(resolved_lang)
     try:
         if markdown_help_path is not None:
@@ -11206,6 +13443,34 @@ def handrive_write(request, ui_lang=None):
             f"# {handrive_text['markdown_help_fallback_title']}\n\n"
             f"{handrive_text['markdown_help_fallback_read_error']}"
         )
+    shared_root_url = context["handrive_root_url"]
+    if shared_context:
+        shared_root_url = build_handrive_shared_view_url(
+            resolved_lang,
+            shared_context["owner_username"],
+            shared_context["share_slug"],
+        )
+        write_breadcrumbs = build_handrive_shared_breadcrumbs(request, resolved_lang, shared_context, initial_dir)
+    else:
+        write_breadcrumbs = _build_git_virtual_breadcrumbs(
+            request,
+            context["handrive_base_url"],
+            initial_dir,
+            scoped_home_dir=scoped_home_dir,
+            root_url=shared_root_url,
+        )
+    write_breadcrumbs = apply_handrive_tutorial_breadcrumb_labels(
+        request,
+        write_breadcrumbs,
+        scoped_home_dir=scoped_home_dir,
+        ui_lang=resolved_lang,
+        base_url=context["handrive_base_url"],
+    )
+    handrive_root_label = (
+        get_handrive_tutorial_root_label(request, scoped_home_dir, resolved_lang)
+        if handrive_tutorial_mode
+        else get_handrive_js_root_label(request, scoped_home_dir)
+    )
 
     context.update(
         {
@@ -11220,22 +13485,26 @@ def handrive_write(request, ui_lang=None):
             "initial_dir": initial_dir,
             "initial_content": initial_content,
             "scoped_home_dir": scoped_home_dir,
-            "handrive_root_label": get_handrive_js_root_label(request, scoped_home_dir),
-            "available_directories": sorted(set(list_all_directories(request=request) + ([initial_dir] if initial_dir else []))),
+            "handrive_root_label": handrive_root_label,
+            "available_directories": build_handrive_write_initial_directories(scoped_home_dir, initial_dir),
             "markdown_help_html": render_handrive_markdown_safely(markdown_help_content),
             "page_help_html": build_page_help_html(resolved_lang, "write", handrive_text),
-            "write_breadcrumbs": _build_git_virtual_breadcrumbs(
-                request,
-                context["handrive_base_url"],
-                initial_dir,
-                scoped_home_dir=scoped_home_dir,
-                root_url=context["handrive_root_url"],
-            ),
+            "write_breadcrumbs": write_breadcrumbs,
             "write_current_file_name": write_current_file_name,
             "write_public_direct_save": write_public_direct_save,
             "write_requires_commit_message": write_requires_commit_message,
             "write_demo_edit": write_demo_edit,
             "handrive_demo_save_mode": write_demo_edit,
+            "handrive_tutorial_mode": handrive_tutorial_mode,
+            "handrive_tutorial_forced": handrive_tutorial_forced,
+            "handrive_tutorial_autostart": False,
+            "handrive_tutorial_return_url": handrive_tutorial_return_url,
+            "hide_global_nav": bool(shared_context) and not request.user.is_authenticated,
+            "is_handrive_shared_view": bool(shared_context),
+            "handrive_shared_owner_username": shared_context["owner_username"] if shared_context else "",
+            "handrive_shared_slug": shared_context["share_slug"] if shared_context else "",
+            "handrive_shared_root_path": shared_context["root_path"] if shared_context else "",
+            "handrive_root_url": shared_root_url,
         }
     )
     return render(request, "handrive/write.html", context)
@@ -11283,6 +13552,10 @@ HANDRIVE_JSON_ERROR_MESSAGE_TRANSLATIONS = {
     "폴더를 자기 자신 또는 하위 폴더로 이동할 수 없습니다.": "A folder cannot be moved into itself or a child folder.",
     "전체 허용 파일은 이동할 수 없습니다.": "Publicly writable files cannot be moved.",
     "전체 허용 파일은 위치나 이름을 바꿀 수 없습니다.": "Publicly writable files cannot be moved or renamed.",
+    "공유 설정은 소유자만 변경할 수 있습니다.": "Only the owner can change share settings.",
+    "공유 루트 항목의 이름은 소유자만 바꿀 수 있습니다.": "Only the owner can rename the shared root item.",
+    "공유 루트 항목은 소유자만 삭제할 수 있습니다.": "Only the owner can delete the shared root item.",
+    "공유 루트 항목은 소유자만 이동할 수 있습니다.": "Only the owner can move the shared root item.",
     "전체 허용 파일은 오디오 편집기로 저장할 수 없습니다.": "Publicly writable files cannot be saved with the audio editor.",
     "전체 허용 파일은 비디오 편집기로 저장할 수 없습니다.": "Publicly writable files cannot be saved with the video editor.",
     "Repo 브랜치 항목은 같은 브랜치 안에서만 이동할 수 있습니다.": "Repository branch items can only be moved within the same branch.",
@@ -11385,14 +13658,65 @@ def parse_path_values(payload: dict, allow_empty: bool) -> list[str]:
 @require_http_methods(["POST"])
 @csrf_protect
 @with_request_handrive_root
+def handrive_api_tutorial_complete(request):
+    try:
+        payload = parse_json_body(request) if request.body else {}
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    action = str(payload.get("action") or "complete").strip().lower()
+    if action not in {"complete", "skip"}:
+        action = "complete"
+
+    deleted_paths = []
+    if request.user.is_authenticated:
+        deleted_paths = delete_handrive_tutorial_workspace(request)
+        deleted_paths.extend(
+            path for path in delete_authenticated_handrive_tutorial_files(request.user) if path not in deleted_paths
+        )
+        return JsonResponse(
+            {
+                "ok": True,
+                "authenticated": True,
+                "completed": True,
+                "action": action,
+                "deleted_paths": deleted_paths,
+            }
+        )
+
+    deleted_paths = delete_guest_handrive_tutorial_workspace(request)
+    return JsonResponse(
+        {
+            "ok": True,
+            "authenticated": False,
+            "completed": True,
+            "action": action,
+            "deleted_paths": deleted_paths,
+        }
+    )
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
 def handrive_api_url_share(request):
     try:
         payload = parse_json_body(request)
         rel_path = normalize_relative_path(payload.get("path"), allow_empty=False)
         enabled = bool(payload.get("enabled"))
+        share_can_edit = bool(payload.get("can_edit") or payload.get("edit_enabled"))
         target_path_obj, rel_path = resolve_path(rel_path, must_exist=True)
     except (ValueError, FileNotFoundError) as exc:
         return json_error(str(exc), status=400)
+
+    if not request.user.is_authenticated:
+        return json_error("로그인한 사용자만 url공유를 설정할 수 있습니다.", status=403)
+    shared_context = get_handrive_shared_access_context(request)
+    if shared_context and not shared_context.get("can_manage"):
+        return json_error("공유 설정은 소유자만 변경할 수 있습니다.", status=403)
+    existing_shared_link = HandriveSharedLink.objects.select_related("owner").filter(path=rel_path).first()
+    if existing_shared_link is not None and not can_manage_handrive_shared_link(request, existing_shared_link):
+        return json_error("공유 설정은 소유자만 변경할 수 있습니다.", status=403)
 
     if target_path_obj.is_dir():
         if not has_handrive_write_access(request, rel_path):
@@ -11400,8 +13724,6 @@ def handrive_api_url_share(request):
     else:
         if not has_handrive_write_access(request, rel_path):
             return json_error("파일을 수정할 권한이 없습니다.", status=403)
-    if not request.user.is_authenticated:
-        return json_error("로그인한 사용자만 url공유를 설정할 수 있습니다.", status=403)
     try:
         allowed_usernames, allowed_users = (
             resolve_handrive_share_allowed_users(payload.get("allowed_usernames", []))
@@ -11419,7 +13741,8 @@ def handrive_api_url_share(request):
         rule.read_groups.add(url_only_group)
         shared_link = ensure_handrive_shared_link(rel_path, request.user)
         shared_link.allowed_usernames = allowed_usernames
-        shared_link.save(update_fields=["allowed_usernames", "updated_at"])
+        shared_link.can_edit = share_can_edit
+        shared_link.save(update_fields=["allowed_usernames", "can_edit", "updated_at"])
         shared_link.allowed_users.set(allowed_users)
     else:
         rule.read_groups.remove(url_only_group)
@@ -11466,6 +13789,8 @@ def handrive_api_url_share(request):
             "share_url": share_url,
             "share_download_url": share_download_url,
             "share_allowed_users": get_handrive_share_allowed_users(shared_link) if shared_link is not None else [],
+            "share_can_edit": handrive_shared_link_allows_request_edit(request, shared_link) if shared_link is not None else False,
+            "share_can_manage": can_manage_handrive_shared_link(request, shared_link) if shared_link is not None else False,
             "owner_username": owner_username,
             "share_slug": shared_link.share_slug if shared_link is not None else "",
         }
@@ -11624,6 +13949,8 @@ def handrive_api_list(request):
         if not target_dir.is_dir():
             return json_error("폴더 경로가 아닙니다.", status=400)
         entries = list_directory_entries(target_dir, request=request)
+        if not shared_context and is_handrive_session_tutorial_root_path(request, normalized):
+            entries = sort_guest_demo_list_entries(entries)
     else:
         if git_virtual["kind"] == "branch_file":
             return json_error("폴더 경로가 아닙니다.", status=400)
@@ -11711,9 +14038,10 @@ def handrive_api_search(request):
                         "modified_display": format_handrive_modified_display_from_timestamp(file_path.stat().st_mtime) if file_path.exists() else "",
                         "size_display": "",
                         "can_edit": has_handrive_write_access(request, rel_dir),
+                        "can_rename": can_rename_handrive_path(request, rel_dir),
                         "can_read": True,
                         "can_write_children": has_handrive_directory_write_access(request, rel_dir),
-                        "can_delete": has_handrive_write_access(request, rel_dir),
+                        "can_delete": has_handrive_write_access(request, rel_dir) and not is_handrive_shared_root_locked_for_request(request, rel_dir),
                         "is_public_write": False,
                         "is_url_only": is_handrive_url_only_enabled(request, rel_dir),
                         "write_acl_labels": get_write_acl_display_labels(request, rel_dir),
@@ -11721,6 +14049,8 @@ def handrive_api_search(request):
                         "share_download_url": share_info["share_download_url"],
                         "share_is_inherited": share_info["share_is_inherited"],
                         "share_allowed_users": share_info["share_allowed_users"],
+                        "share_can_edit": share_info["share_can_edit"],
+                        "share_can_manage": share_info["share_can_manage"],
                     }
                     matches.append(entry)
 
@@ -11743,9 +14073,10 @@ def handrive_api_search(request):
                         "modified_display": format_handrive_modified_display_from_timestamp(file_path.stat().st_mtime),
                         "size_display": size_display,
                         "can_edit": has_handrive_write_access(request, rel_file),
+                        "can_rename": can_rename_handrive_path(request, rel_file),
                         "can_read": True,
                         "can_write_children": False,
-                        "can_delete": has_handrive_write_access(request, rel_file),
+                        "can_delete": has_handrive_write_access(request, rel_file) and not is_handrive_shared_root_locked_for_request(request, rel_file),
                         "is_public_write": is_handrive_public_write_enabled(request, rel_file),
                         "is_url_only": is_handrive_url_only_enabled(request, rel_file),
                         "write_acl_labels": get_write_acl_display_labels(request, rel_file),
@@ -11753,6 +14084,8 @@ def handrive_api_search(request):
                         "share_download_url": share_info["share_download_url"],
                         "share_is_inherited": share_info["share_is_inherited"],
                         "share_allowed_users": share_info["share_allowed_users"],
+                        "share_can_edit": share_info["share_can_edit"],
+                        "share_can_manage": share_info["share_can_manage"],
                     }
                     matches.append(entry)
 
@@ -11958,6 +14291,8 @@ def handrive_api_rename(request):
         return JsonResponse(response)
     if not has_handrive_write_access(request, source_relative):
         return json_error("파일을 수정할 권한이 없습니다.", status=403)
+    if is_handrive_shared_root_locked_for_request(request, source_relative):
+        return json_error("공유 루트 항목의 이름은 소유자만 바꿀 수 있습니다.", status=403)
     if source_path.is_file() and is_handrive_public_write_enabled(request, source_relative):
         return json_error("전체 허용 파일은 이름을 바꿀 수 없습니다.", status=403)
 
@@ -12148,6 +14483,8 @@ def handrive_api_delete(request):
         is_repo_root_delete = target_path.is_dir() and is_handrive_git_repo_root_path(request, target_relative)
         if is_repo_root_delete and not repo_delete_requested:
             return json_error("Repo 루트 삭제는 Repo 삭제를 사용해주세요.", status=403)
+        if not is_repo_root_delete and is_handrive_shared_root_locked_for_request(request, target_relative):
+            return json_error("공유 루트 항목은 소유자만 삭제할 수 있습니다.", status=403)
         if not is_repo_root_delete and not has_handrive_write_access(request, target_relative):
             return json_error("파일을 수정할 권한이 없습니다.", status=403)
         if target_path.is_file() and is_handrive_public_write_enabled(request, target_relative):
@@ -12742,6 +15079,8 @@ def handrive_api_move(request):
 
     if source_relative == "":
         return json_error("루트 폴더는 이동할 수 없습니다.", status=400)
+    if is_handrive_shared_root_locked_for_request(request, source_relative):
+        return json_error("공유 루트 항목은 소유자만 이동할 수 있습니다.", status=403)
     if source_archive_virtual is not None:
         return json_error("압축파일 내부 항목은 압축해제로 복사할 수 있습니다.", status=400)
     if target_archive_virtual is not None:
@@ -13972,6 +16311,8 @@ def handrive_api_save(request):
 
         if source_is_public_write and not is_same_as_source:
             return json_error("전체 허용 파일은 위치나 이름을 바꿀 수 없습니다.", status=403)
+        if source_relative and not is_same_as_source and is_handrive_shared_root_locked_for_request(request, source_relative):
+            return json_error("공유 루트 항목의 이름은 소유자만 바꿀 수 있습니다.", status=403)
 
         if destination_exists and not destination.is_file():
             return json_error("같은 이름의 폴더가 이미 존재합니다.", status=409)
@@ -14114,6 +16455,8 @@ def handrive_api_spreadsheet_save(request):
 
         if source_is_public_write and not is_same_as_source:
             return json_error("전체 허용 파일은 위치나 이름을 바꿀 수 없습니다.", status=403)
+        if source_relative and not is_same_as_source and is_handrive_shared_root_locked_for_request(request, source_relative):
+            return json_error("공유 루트 항목의 이름은 소유자만 바꿀 수 있습니다.", status=403)
 
         if destination_exists and not destination.is_file():
             return json_error("같은 이름의 폴더가 이미 존재합니다.", status=409)
@@ -14742,16 +17085,22 @@ def _render_handrive_pdf_preview_viewer_response(
 
     try:
         page_items = []
+        lazy_placeholder_src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
         for page_index, page in enumerate(doc):
             rect = page.rect
             page_width = max(1, float(rect.width))
             page_height = max(1, float(rect.height))
+            page_url = escape(_build_handrive_pdf_preview_page_url(request, page_index))
+            if page_index < 2:
+                image_source_attrs = f'src="{page_url}" data-handrive-pdf-loaded="1" loading="eager"'
+            else:
+                image_source_attrs = f'src="{lazy_placeholder_src}" data-src="{page_url}" loading="lazy"'
             page_items.append(
                 '<figure class="handrive-pdf-preview-page" '
                 f'style="--handrive-pdf-preview-page-width:{page_width:.3f}px">'
-                f'<img class="handrive-pdf-preview-page-image" src="{escape(_build_handrive_pdf_preview_page_url(request, page_index))}" '
+                f'<img class="handrive-pdf-preview-page-image" {image_source_attrs} '
                 f'width="{int(round(page_width))}" height="{int(round(page_height))}" '
-                f'alt="{escape(filename)} {page_index + 1}" loading="lazy" decoding="async">'
+                f'alt="{escape(filename)} {page_index + 1}" decoding="async">'
                 "</figure>"
             )
         safe_title = escape(filename or "PDF")
@@ -14839,11 +17188,48 @@ body {{
 </main>
 <script>
 (function () {{
+    function loadPdfPreviewImage(image) {{
+        if (!image || image.dataset.handrivePdfLoaded === "1") {{
+            return;
+        }}
+        var source = image.getAttribute("data-src") || "";
+        if (!source) {{
+            return;
+        }}
+        image.src = source;
+        image.dataset.handrivePdfLoaded = "1";
+    }}
+    function loadAllPdfPreviewImages() {{
+        Array.prototype.slice.call(document.querySelectorAll(".handrive-pdf-preview-page-image[data-src]")).forEach(loadPdfPreviewImage);
+    }}
+    function initLazyPdfPreviewImages() {{
+        var images = Array.prototype.slice.call(document.querySelectorAll(".handrive-pdf-preview-page-image[data-src]"));
+        if (!images.length) {{
+            return;
+        }}
+        if (!("IntersectionObserver" in window)) {{
+            loadAllPdfPreviewImages();
+            return;
+        }}
+        var observer = new IntersectionObserver(function (entries, activeObserver) {{
+            entries.forEach(function (entry) {{
+                if (entry.isIntersecting || entry.intersectionRatio > 0) {{
+                    loadPdfPreviewImage(entry.target);
+                    activeObserver.unobserve(entry.target);
+                }}
+            }});
+        }}, {{ rootMargin: "900px 0px" }});
+        images.forEach(function (image) {{
+            observer.observe(image);
+        }});
+    }}
     function applyTheme(theme) {{
         var useDark = theme === "dark";
         document.documentElement.classList.toggle("theme-dark", useDark);
         document.documentElement.classList.toggle("theme-light", !useDark);
     }}
+    initLazyPdfPreviewImages();
+    window.addEventListener("beforeprint", loadAllPdfPreviewImages);
     window.addEventListener("message", function (event) {{
         if (event.origin && event.origin !== window.location.origin) {{
             return;
@@ -15235,7 +17621,8 @@ def _smooth_pdf_editor_draw_points(points: list[tuple[float, float]]) -> list[tu
 
 @require_http_methods(["GET"])
 @with_request_handrive_root
-def handrive_api_pdf_editor_meta(request):
+def handrive_api_pdf_editor_meta(request, ui_lang=None):
+    del ui_lang
     try:
         file_path, normalized = _resolve_pdf_editor_file(request, request.GET.get("path"))
     except FileNotFoundError:
@@ -15274,7 +17661,8 @@ def handrive_api_pdf_editor_meta(request):
 
 @require_http_methods(["GET"])
 @with_request_handrive_root
-def handrive_api_pdf_editor_page(request):
+def handrive_api_pdf_editor_page(request, ui_lang=None):
+    del ui_lang
     try:
         file_path, normalized = _resolve_pdf_editor_file(request, request.GET.get("path"))
     except FileNotFoundError:
@@ -15313,7 +17701,8 @@ def handrive_api_pdf_editor_page(request):
 @require_http_methods(["POST"])
 @csrf_protect
 @with_request_handrive_root
-def handrive_api_pdf_editor_save(request):
+def handrive_api_pdf_editor_save(request, ui_lang=None):
+    del ui_lang
     try:
         file_path, normalized = _resolve_pdf_editor_file(request, request.POST.get("path"))
     except FileNotFoundError:
@@ -17010,6 +19399,8 @@ def handrive_map_viewer(request, map_path, ui_lang=None):
         "map_is_url_only": map_is_url_only,
         "map_share_url": map_share_url,
         "map_share_allowed_users": map_share_info["share_allowed_users"],
+        "map_share_can_edit": map_share_info["share_can_edit"],
+        "map_share_can_manage": map_share_info["share_can_manage"],
         "shared_owner": shared_owner,
         "shared_slug": shared_slug,
         "hide_global_nav": True,

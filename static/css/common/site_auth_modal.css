@@ -147,7 +147,7 @@ body.theme-dark .auth-modal {
 .auth-modal .handrive-popup-title.auth-modal-title {
     margin: 0;
     color: var(--site-auth-dialog-text-strong);
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 900;
     line-height: 1.25;
 }
@@ -453,6 +453,19 @@ body.theme-dark .auth-field textarea {
     gap: 8px;
 }
 
+.auth-secondary-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: -2px;
+}
+
+.auth-inline-link {
+    --site-inline-hover-link-color: color-mix(in srgb, var(--site-auth-dialog-text-muted) 78%, transparent);
+    --site-inline-hover-link-hover-color: var(--site-auth-dialog-text-strong);
+    font-size: 14px;
+    line-height: 1.4;
+}
+
 .auth-actions .ui-btn {
     flex: 1;
     text-align: center;
@@ -461,6 +474,15 @@ body.theme-dark .auth-field textarea {
 .auth-form .auth-2fa-hint {
     margin-bottom: 0;
     text-align: center;
+}
+
+.auth-form .auth-forgot-password-hint {
+    margin-bottom: 0;
+}
+
+.auth-form .auth-password-change-hint {
+    margin-bottom: 0;
+    white-space: pre-line;
 }
 
 .auth-form .auth-2fa-hint strong {

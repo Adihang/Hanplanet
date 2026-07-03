@@ -20,7 +20,6 @@
     const downloadFailedMessage = form.dataset.downloadFailedMessage || 'Download failed.';
     const qualityLoadingMessage = form.dataset.qualityLoadingMessage || 'Loading qualities...';
     const qualityBestLabel = form.dataset.qualityBestLabel || 'Best quality';
-    const pendingSaveStorageKey = 'hanplanet.youtubeDownloader.pendingSave';
 
     let currentResult = null;
     let currentPlayerEl = null;
@@ -276,22 +275,31 @@
         }
         saveButton.disabled = true;
         if (saveProgress) { saveProgress.hidden = false; }
-        try {
-            window.sessionStorage.setItem(pendingSaveStorageKey, JSON.stringify({
-                createdAt: Date.now(),
-                filename: currentResult.filename || 'youtube-download',
-                listUrl: listUrl,
-                saveUrl: saveUrl,
-                targetDir: saveButton.dataset.saveTargetDir || 'youtube-downloader',
-                token: currentResult.token
-            }));
-        } catch (error) {
-            saveButton.disabled = false;
-            if (saveProgress) { saveProgress.hidden = true; }
-            setStatus(saveButton.dataset.saveFailedMessage || 'Save failed.', true);
-            return;
-        }
-        window.location.assign(listUrl);
+        setStatus('', false);
+        fetch(saveUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({ token: currentResult.token })
+        })
+            .then(function (response) {
+                return response.json().catch(function () {
+                    return { ok: false, error: saveButton.dataset.saveFailedMessage || 'Save failed.' };
+                });
+            })
+            .then(function (data) {
+                if (!data || !data.ok) {
+                    throw new Error(selectServerMessage(data, saveButton.dataset.saveFailedMessage || 'Save failed.'));
+                }
+                window.location.assign(data.list_url || listUrl);
+            })
+            .catch(function (error) {
+                saveButton.disabled = false;
+                if (saveProgress) { saveProgress.hidden = true; }
+                setStatus(error.message || saveButton.dataset.saveFailedMessage || 'Save failed.', true);
+            });
     };
 
     if (saveButton) {

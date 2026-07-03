@@ -93,10 +93,17 @@
     data-handrive-page="list"
     data-is-authenticated="{% if user.is_authenticated %}1{% else %}0{% endif %}"
     data-demo-save-mode="{% if handrive_demo_save_mode %}1{% else %}0{% endif %}"
+    data-guest-demo-mode="{% if handrive_guest_demo_mode %}1{% else %}0{% endif %}"
+    data-tutorial-mode="{% if handrive_tutorial_mode %}1{% else %}0{% endif %}"
+    data-tutorial-forced="{% if handrive_tutorial_forced %}1{% else %}0{% endif %}"
+    data-tutorial-autostart="{% if handrive_tutorial_autostart %}1{% else %}0{% endif %}"
+    data-demo-tutorial-path="{{ handrive_demo_tutorial_path|default:''|escape }}"
     data-is-superuser="{% if user.is_superuser %}1{% else %}0{% endif %}"
     data-current-dir="{{ current_dir }}"
+    data-current-dir-display-label="{{ current_dir_display_label|default:current_dir_display|escape }}"
     data-current-dir-is-root="{% if current_dir_is_root %}1{% else %}0{% endif %}"
     data-current-dir-can-edit="{% if current_dir_can_edit %}1{% else %}0{% endif %}"
+    data-current-dir-can-delete="{% if current_dir_can_delete %}1{% else %}0{% endif %}"
     data-current-dir-can-write-children="{% if current_dir_can_write_children %}1{% else %}0{% endif %}"
     data-current-dir-has-children="{% if current_dir_has_children %}1{% else %}0{% endif %}"
     data-current-dir-is-git-repo-root="{% if current_dir_is_git_repo_root %}1{% else %}0{% endif %}"
@@ -117,6 +124,8 @@
     data-current-dir-share-url="{{ current_dir_share_url|default:''|escape }}"
     data-current-dir-share-download-url="{{ current_dir_share_download_url|default:''|escape }}"
     data-current-dir-share-is-inherited="{% if current_dir_share_is_inherited %}1{% else %}0{% endif %}"
+    data-current-dir-share-can-edit="{% if current_dir_share_can_edit %}1{% else %}0{% endif %}"
+    data-current-dir-share-can-manage="{% if current_dir_share_can_manage %}1{% else %}0{% endif %}"
     data-account-profile-image-url="{{ account_profile_image_url|default:''|escape }}"
     data-handrive-root-profile-image-url="{{ handrive_root_profile_image_url|default:''|escape }}"
     data-scoped-home-dir="{{ scoped_home_dir|default:'' }}"
@@ -143,6 +152,7 @@
     data-handrive-root-label="{{ handrive_root_label }}"
     data-url-share-api-url="{{ handrive_api_url_share_url }}"
     data-sync-settings-api-url="{{ handrive_api_sync_settings_url }}"
+    data-tutorial-complete-api-url="{{ handrive_api_tutorial_complete_url }}"
     data-admin-user-check-api-url="{{ handrive_api_admin_user_check_url }}"
     data-write-url="{{ handrive_write_url }}"
     data-ui-lang="{{ ui_lang|default:'ko' }}"
@@ -163,6 +173,11 @@
     data-pdf-editor-page-url="{{ handrive_pdf_editor_page_url }}"
     data-pdf-editor-save-url="{{ handrive_pdf_editor_save_url }}"
     data-handsontable-license-key="{{ handrive_handsontable_license_key|default:'non-commercial-and-evaluation' }}"
+    data-handsontable-style-url="{% static_v 'vendor/handsontable/handsontable.full.min.css' %}"
+    data-handsontable-script-url="{% static_v 'vendor/handsontable/handsontable.full.min.js' %}"
+    data-sheetjs-script-url="{% static_v 'vendor/sheetjs/xlsx.full.min.js' %}"
+    data-exceljs-script-url="{% static_v 'vendor/exceljs/exceljs.min.js' %}"
+    data-spreadsheet-editor-script-url="{% static_v 'js/handrive/spreadsheet_editor.js' %}"
     data-image-editor-script-url="{% static_v 'js/handrive/image_editor.js' %}"
     data-video-editor-script-url="{% static_v 'js/handrive/video_editor.js' %}"
     data-audio-editor-script-url="{% static_v 'js/handrive/audio_editor.js' %}"
@@ -345,17 +360,15 @@
                         <input type="text" id="handrive-list-filename-input" placeholder="{{ handrive_text.filename_placeholder }}">
                     </div>
                     <button class="ui-btn" type="button" id="handrive-list-preview-btn" hidden disabled>{{ handrive_text.preview_button }}</button>
-                    <button class="handrive-icon-btn handrive-list-editor-cancel-btn" type="button" id="handrive-list-cancel-btn" aria-label="{{ handrive_text.cancel }}" title="{{ handrive_text.cancel }}">
-                        <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <polyline points="12,5 7,10 12,15"/>
-                        </svg>
-                    </button>
                     <button class="handrive-icon-btn handrive-list-editor-save-btn" type="button" id="handrive-list-save-btn" aria-label="{{ handrive_text.save_button }}" title="{{ handrive_text.save_button }}">
                         <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M4 3h10l2 2v12H4z"/>
                             <path d="M7 3v5h6V3"/>
                             <path d="M7 13h6v4H7z"/>
                         </svg>
+                    </button>
+                    <button class="handrive-icon-btn handrive-list-editor-cancel-btn" type="button" id="handrive-list-cancel-btn" aria-label="{{ handrive_text.cancel }}" title="{{ handrive_text.cancel }}">
+                        <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>
                     </button>
                 </div>
             </header>

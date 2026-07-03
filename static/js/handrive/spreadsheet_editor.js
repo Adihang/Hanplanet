@@ -1459,16 +1459,28 @@
         return appendPreviewSharedQuery(query ? downloadApiUrl + "?" + query : downloadApiUrl, pageRoot);
     }
 
+    function syncPreviewToolbarVisibility(shell) {
+        var toolbar = shell ? shell.querySelector(".handrive-spreadsheet-preview-toolbar") : null;
+        if (!toolbar) {
+            return;
+        }
+        var sheetSelect = toolbar.querySelector("[data-handrive-spreadsheet-preview-sheet]");
+        var status = toolbar.querySelector("[data-handrive-spreadsheet-preview-status]");
+        var hasSheetSelect = Boolean(sheetSelect && !sheetSelect.hidden);
+        var hasStatus = Boolean(status && String(status.textContent || "").trim());
+        toolbar.classList.toggle("is-visible", hasSheetSelect || hasStatus);
+    }
+
     function setPreviewStatus(shell, message, isError, isLoading) {
         if (shell) {
             shell.classList.toggle("is-loading", Boolean(isLoading));
         }
         var status = shell ? shell.querySelector("[data-handrive-spreadsheet-preview-status]") : null;
-        if (!status) {
-            return;
+        if (status) {
+            status.textContent = String(message || "");
+            status.classList.toggle("is-error", Boolean(isError));
         }
-        status.textContent = String(message || "");
-        status.classList.toggle("is-error", Boolean(isError));
+        syncPreviewToolbarVisibility(shell);
     }
 
     function getPreviewFallbackHotHeight() {
@@ -2082,6 +2094,7 @@
                 renderSheet(Number(sheetSelect.value) || 0);
             };
         }
+        syncPreviewToolbarVisibility(shell);
         updatePreviewSaveButton(state);
         installPreviewLayoutListeners();
         installPreviewLayoutObserver(state);

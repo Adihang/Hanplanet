@@ -13,6 +13,8 @@ x-django-env: &django-env
   PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:8080}"
   CANONICAL_PUBLIC_HOST_REDIRECT: "${CANONICAL_PUBLIC_HOST_REDIRECT:-false}"
   CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://redis:6379/0}"
+  HANDRIVE_TUTORIAL_WORKSPACE_MAX_AGE_SECONDS: "${HANDRIVE_TUTORIAL_WORKSPACE_MAX_AGE_SECONDS:-86400}"
+  HANDRIVE_TUTORIAL_WORKSPACE_CLEANUP_INTERVAL_SECONDS: "${HANDRIVE_TUTORIAL_WORKSPACE_CLEANUP_INTERVAL_SECONDS:-3600}"
   HANPLANET_MEDIA_ROOT: "${HANPLANET_MEDIA_ROOT:-/data/media}"
   HANPLANET_FORGEJO_REPOS_ROOT: "${HANPLANET_FORGEJO_REPOS_ROOT:-/data/forgejo-repos}"
   HANPLANET_GITHUB_REPO_CACHE_ROOT: "${HANPLANET_GITHUB_REPO_CACHE_ROOT:-/data/github-repo-cache}"
@@ -24,6 +26,7 @@ x-django-env: &django-env
   FORGEJO_BASE_URL: "${FORGEJO_BASE_URL:-http://gitea:3000}"
   FORGEJO_ADMIN_TOKEN: "${FORGEJO_ADMIN_TOKEN:-}"
   FORGEJO_ADMIN_TOKEN_FILE: "${FORGEJO_ADMIN_TOKEN_FILE:-}"
+  FORGEJO_DB_PATH: "${FORGEJO_DB_PATH:-/data/gitea/gitea.db}"
   PUBLIC_GIT_BASE_URL: "${PUBLIC_GIT_BASE_URL:-http://localhost:3000}"
   GITHUB_REPO_CACHE_ROOT: "${GITHUB_REPO_CACHE_ROOT:-/data/github-repo-cache}"
   GAME_WS_PUBLIC_URL: "${GAME_WS_PUBLIC_URL:-ws://localhost:8081}"
@@ -50,6 +53,7 @@ x-django-volumes: &django-volumes
   - "${HANPLANET_MAIL_VOLUME:-mail_data}:/data/mail"
   - "${HANPLANET_GITHUB_CACHE_VOLUME:-github_cache_data}:/data/github-repo-cache"
   - "${FORGEJO_REPOS_VOLUME:-forgejo_repos_data}:/data/forgejo-repos"
+  - "${GITEA_DATA_VOLUME:-gitea_data}:/data/gitea"
   - "${HANPLANET_BACKUP_VOLUME:-backup_data}:/data/backups"
   - "${MINECRAFT_SERVER_VOLUME:-/Users/imhanbyeol/Development/minecraft}:/Users/imhanbyeol/Development/minecraft"
   - "staticfiles_data:/app/staticfiles"
@@ -104,6 +108,29 @@ services:
         condition: service_started
       django:
         condition: service_healthy
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["celery", "-A", "config", "beat", "-l", "info", "--schedule", "/data/django/celerybeat-schedule"]
+    env_file:
+      - .env
+    environment:
+      <<: *django-env
+      RUN_MIGRATIONS: "false"
+      COLLECTSTATIC_ON_START: "false"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes: *django-volumes
+    depends_on:
+      redis:
+        condition: service_started
+      django:
+        condition: service_healthy
+      celery:
+        condition: service_started
 
   redis:
     image: redis:7-alpine

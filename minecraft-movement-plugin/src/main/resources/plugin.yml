@@ -1,0 +1,17 @@
+name: MovementPlus
+version: 1.0.2
+main: dev.movementplus.MovementPlusPlugin
+api-version: "26.2"
+description: Adds crawl and climb movement assists.
+commands:
+  movementplus:
+    description: Reload MovementPlus settings.
+    usage: /movementplus reload
+    permission: movementplus.admin
+permissions:
+  movementplus.use:
+    description: Allows using MovementPlus crawl and climb assists.
+    default: true
+  movementplus.admin:
+    description: Allows reloading MovementPlus settings.
+    default: op

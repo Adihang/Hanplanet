@@ -51,7 +51,7 @@
             if (state.uploadRefreshPending) {
                 state.uploadRefreshPending = false;
                 try {
-                    await refreshCurrentDirectory();
+                    await refreshCurrentDirectory({ skipPreview: true });
                 } catch (error) {
                     alertError(error);
                 }
@@ -365,7 +365,7 @@
             if (state.uploadRefreshPending) {
                 state.uploadRefreshPending = false;
                 try {
-                    await refreshCurrentDirectory();
+                    await refreshCurrentDirectory({ skipPreview: true });
                 } catch (error) {
                     alertError(error);
                 }

@@ -954,6 +954,18 @@ def get_dummy_portfolio_projects(ui_lang):
     ]
 
 
+def _normalize_fenced_code_language(language: str) -> str:
+    normalized = (language or "").strip()
+    if not normalized:
+        return ""
+    if (
+        normalized.lower() in {"text", "txt", "plain", "plaintext"}
+        or normalized in {"텍스트", "일반텍스트"}
+    ):
+        return "text"
+    return re.sub(r"[^A-Za-z0-9_+.#-]", "", normalized)
+
+
 def _build_fenced_code_html(info: str, code_lines: list[str], base_indent: str) -> str:
     """Render extracted fenced code lines into safe HTML before placeholder restoration."""
     normalized_lines = []
@@ -967,7 +979,7 @@ def _build_fenced_code_html(info: str, code_lines: list[str], base_indent: str) 
 
     language = (info or "").strip().split(" ", 1)[0].strip()
     if language:
-        safe_language = re.sub(r"[^A-Za-z0-9_+.#-]", "", language)
+        safe_language = _normalize_fenced_code_language(language)
         if safe_language:
             if safe_language.lower() == "mermaid":
                 return (
@@ -4265,10 +4277,24 @@ def _youtube_base_command():
     return [sys.executable, "-m", "yt_dlp"]
 
 
-def _append_youtube_client_fallback(command):
-    if not YOUTUBE_DOWNLOAD_BIN.exists():
-        command.extend(["--extractor-args", "youtube:player_client=android"])
+def _append_youtube_extractor_args(command):
+    extractor_args = os.environ.get("YOUTUBE_DOWNLOAD_EXTRACTOR_ARGS", "").strip()
+    if extractor_args:
+        command.extend(["--extractor-args", extractor_args])
     return command
+
+
+def _youtube_format_video_height(format_info):
+    if str(format_info.get("vcodec") or "none").lower() == "none":
+        return 0
+    if str(format_info.get("ext") or "").lower() in {"mhtml", "storyboard"}:
+        return 0
+    if str(format_info.get("protocol") or "").lower() == "mhtml":
+        return 0
+    try:
+        return int(format_info.get("height") or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _normalize_youtube_download_filename(file_path):
@@ -4319,7 +4345,7 @@ def youtube_formats(request, ui_lang=None):
 
     command = _youtube_base_command()
     command.extend(["--no-playlist", "--dump-json"])
-    _append_youtube_client_fallback(command)
+    _append_youtube_extractor_args(command)
     command.append(youtube_url)
 
     try:
@@ -4336,14 +4362,7 @@ def youtube_formats(request, ui_lang=None):
 
     heights = set()
     for item in info.get("formats", []):
-        if str(item.get("vcodec") or "none").lower() == "none":
-            continue
-        if str(item.get("ext") or "").lower() != "mp4":
-            continue
-        try:
-            height = int(item.get("height") or 0)
-        except (TypeError, ValueError):
-            height = 0
+        height = _youtube_format_video_height(item)
         if height > 0:
             heights.add(height)
 
@@ -4419,7 +4438,7 @@ def youtube_download(request, ui_lang=None):
         "-o",
         output_template,
     ])
-    _append_youtube_client_fallback(base_command)
+    _append_youtube_extractor_args(base_command)
     if YOUTUBE_DOWNLOAD_FFMPEG_BIN.exists():
         base_command.extend(["--ffmpeg-location", str(YOUTUBE_DOWNLOAD_FFMPEG_BIN)])
     if download_format == "mp3":
@@ -6181,6 +6200,7 @@ def minecraft_home(request, ui_lang=None):
         "server_address_copy_label": "Copy server address" if is_english else "서버 주소 복사",
         "bedrock_server_address_copy_label": "Copy Bedrock server address" if is_english else "베드락 서버 주소 복사",
         "server_address_copied_label": "Copied" if is_english else "복사됨",
+        "server_address_copy_feedback_label": "Copied!" if is_english else "복사됨!",
         "server_version_label": "Version" if is_english else "버전",
         "server_hint": "",
         "links_panel_title": "Plugins" if is_english else "플러그인",
@@ -6536,7 +6556,7 @@ def service_worker(request):
     """Serve the root-scope service worker used for Hanplanet page and static caching."""
     # Keep service worker script dynamic at root scope so it can control "/".
     script = """
-const STATIC_CACHE = 'hanplanet-static-v10';
+const STATIC_CACHE = 'hanplanet-static-v38';
 const PAGE_CACHE = 'hanplanet-page-v10';
 
 function isDownloadRequest(url) {
@@ -6619,21 +6639,22 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       caches.open(STATIC_CACHE).then((cache) =>
         cache.match(request).then((cached) => {
-	          const fetched = fetch(request)
-	            .then((response) => {
-	              let responseForCache = null;
-	              try {
-	                responseForCache = response.clone();
-	              } catch (err) {
-	                responseForCache = null;
-	              }
-	              if (responseForCache) {
-	                putInCacheSafely(cache, request, responseForCache);
-	              }
-	              return response;
-	            })
-            .catch(() => cached);
-          return cached || fetched;
+          if (cached) {
+            return cached;
+          }
+          return fetch(request)
+            .then((response) => {
+              let responseForCache = null;
+              try {
+                responseForCache = response.clone();
+              } catch (err) {
+                responseForCache = null;
+              }
+              if (responseForCache) {
+                putInCacheSafely(cache, request, responseForCache);
+              }
+              return response;
+            });
         })
       )
     );
@@ -6732,12 +6753,13 @@ def _build_portfolio_view_context(request, ui_lang, owner, cover_letter=None):
         use_english_company = ui_lang == "en" and bool((career.company_en or "").strip())
         career.display_company = career.company_en if use_english_company else career.company
         career.display_content = render_markdown_safely(career.content_en if use_english_content else career.content)
+        rounded_period_text = career.display_period_en_rounded if ui_lang == "en" else career.display_period_rounded
         if career.is_currently_employed:
-            career.display_period_text = "Current" if ui_lang == "en" else "재직중"
-        else:
             career.display_period_text = (
-                career.display_period_en_rounded if ui_lang == "en" else career.display_period_rounded
+                f"Current for {rounded_period_text}" if ui_lang == "en" else f"{rounded_period_text} 재직중"
             )
+        else:
+            career.display_period_text = rounded_period_text
         if ui_lang == "en":
             effective_leave_date = career.effective_leave_date
             career.display_date_range = f"{career.join_date:%Y-%m-%d} ~ {effective_leave_date:%Y-%m-%d}"
@@ -7109,6 +7131,18 @@ def portfolio_write(request, ui_lang=None):
     if selected_cover_letter is None:
         cover_letter_mode = "add"
 
+    selected_cover_letter_public_url = ""
+    if selected_cover_letter is not None and cover_letter_mode != "add":
+        selected_cover_letter_path = reverse(
+            "main:portfolio_user_cover_letter_lang",
+            kwargs={
+                "ui_lang": resolved_lang,
+                "user_id": request.user.username,
+                "company_slug": selected_cover_letter.slug,
+            },
+        )
+        selected_cover_letter_public_url = build_public_absolute_url(selected_cover_letter_path)
+
     context = {
         "write_status_message": status_map.get(status, ""),
         "profile": profile,
@@ -7121,6 +7155,7 @@ def portfolio_write(request, ui_lang=None):
         "selected_career": selected_career,
         "selected_project": selected_project,
         "selected_cover_letter": selected_cover_letter,
+        "selected_cover_letter_public_url": selected_cover_letter_public_url,
         "selected_career_id": selected_career_id,
         "selected_project_id": selected_project_id,
         "selected_cover_letter_id": selected_cover_letter_id,
@@ -9110,12 +9145,13 @@ def chat_with_ai(request, ui_lang=None):
                 career_list_items = []
                 for c in careers:
                     company_name = c.company_en if is_english_mode and (c.company_en or "").strip() else c.company
+                    rounded_period_text = c.display_period_en_rounded if is_english_mode else c.display_period_rounded
                     if is_english_mode:
-                        period_text = "Current" if c.is_currently_employed else c.display_period_en_rounded
+                        period_text = f"Current for {rounded_period_text}" if c.is_currently_employed else rounded_period_text
                         leave_date = c.effective_leave_date
                         date_range = f"{c.join_date:%Y-%m-%d} ~ {leave_date:%Y-%m-%d}"
                     else:
-                        period_text = "재직중" if c.is_currently_employed else c.display_period_rounded
+                        period_text = f"{rounded_period_text} 재직중" if c.is_currently_employed else rounded_period_text
                         date_range = c.formatted_date_range
                     career_list_items.append(f"- {company_name}: {date_range} ({period_text}) {c.position}")
                 career_list = "\n".join(career_list_items) or (

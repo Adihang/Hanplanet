@@ -1,0 +1,18 @@
+crawl:
+  enabled: true
+  require-sneak-to-enter: true
+  forward-check-distance: 1.75
+  scan-step: 0.25
+  width-probe-offset: 0.28
+
+climb:
+  enabled: true
+  force-pose: true
+  pose: SNEAKING
+  speed: 0.18
+  max-upward-speed: 0.28
+  slide-speed: -0.12
+  hold-speed: -0.03
+  look-up-pitch: -22.0
+  recent-move-window-ms: 350
+  additional-climbable-materials: []

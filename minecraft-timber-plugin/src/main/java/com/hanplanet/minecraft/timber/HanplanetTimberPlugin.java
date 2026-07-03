@@ -8,6 +8,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Orientable;
+import org.bukkit.block.data.type.Leaves;
 import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
@@ -28,6 +29,7 @@ import org.joml.Vector3f;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -64,6 +66,7 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
     private double fallingBlockBaseDamage;
     private double fallingBlockDamagePerHeight;
     private int fallingBlockMaxDamage;
+    private int fallenLeafDecayTicks;
 
     @Override
     public void onEnable() {
@@ -136,6 +139,7 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         fallingBlockBaseDamage = Math.max(0.0D, getConfig().getDouble("falling-block-base-damage", getConfig().getDouble("falling-block-damage", 2.0D)));
         fallingBlockDamagePerHeight = Math.max(0.0D, getConfig().getDouble("falling-block-damage-per-height", 0.75D));
         fallingBlockMaxDamage = Math.max(0, getConfig().getInt("falling-block-max-damage", 8));
+        fallenLeafDecayTicks = Math.max(0, getConfig().getInt("fallen-leaf-decay-ticks", 600));
 
         logMaterials.clear();
         leafMaterials.clear();
@@ -288,9 +292,13 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
     private void breakTree(Player player, ItemStack tool, Block origin, TreeBlocks tree) {
         FallDirection direction = resolveFallDirection();
         List<LogSnapshot> logs = snapshotLogs(tree.logs, origin, direction.axis);
+        List<LeafSnapshot> leaves = breakLeaves ? snapshotLeaves(tree.leaves, origin) : List.of();
+        Set<LeafSnapshot> instantLeaves = breakLeaves ? selectInstantBreakLeaves(leaves) : Set.of();
+        List<LeafSnapshot> fallingLeaves = new ArrayList<>();
         int logsBroken = 0;
         int leavesBroken = 0;
         List<BlockDisplay> fallingBlocks = new ArrayList<>();
+        List<BlockDisplay> damagingBlocks = new ArrayList<>();
         Map<UUID, Double> fallingBlockDamageById = new HashMap<>();
 
         for (LogSnapshot log : logs) {
@@ -302,26 +310,30 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         }
 
         if (breakLeaves) {
-            for (Block leaf : tree.leaves) {
-                if (!isLeaf(leaf.getType())) {
+            for (LeafSnapshot leaf : leaves) {
+                if (instantLeaves.contains(leaf)) {
+                    if (!leaf.block.breakNaturally(tool, true)) {
+                        leaf.block.setType(Material.AIR, false);
+                    }
+                    leavesBroken += 1;
                     continue;
                 }
-                if (leaf.breakNaturally(tool, true)) {
-                    leavesBroken += 1;
-                }
+                leaf.block.setType(Material.AIR, false);
+                fallingLeaves.add(leaf);
+                leavesBroken += 1;
             }
         }
 
         if (fallingAnimation) {
-            fallingBlocks = spawnFallingLogs(origin, logs, direction, fallingBlockDamageById);
+            fallingBlocks = spawnFallingTreeBlocks(origin, logs, fallingLeaves, direction, fallingBlockDamageById, damagingBlocks);
             if (fallingBlocksDamageEntities) {
-                monitorFallingBlockDamage(fallingBlocks, fallingBlockDamageById);
+                monitorFallingBlockDamage(damagingBlocks, fallingBlockDamageById);
             }
         }
 
         List<BlockDisplay> spawnedBlocks = fallingBlocks;
         long settleDelay = fallingAnimation ? animationTicks + 2L : 1L;
-        getServer().getScheduler().runTaskLater(this, () -> settleFallenLogs(origin, logs, direction, spawnedBlocks), settleDelay);
+        getServer().getScheduler().runTaskLater(this, () -> settleFallenTree(origin, logs, fallingLeaves, direction, spawnedBlocks), settleDelay);
 
         damageAxe(player, tool, Math.max(0, logsBroken - 1));
         if (logActions && logsBroken > 0) {
@@ -358,6 +370,50 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         return logs;
     }
 
+    private List<LeafSnapshot> snapshotLeaves(List<Block> blocks, Block origin) {
+        List<LeafSnapshot> leaves = new ArrayList<>();
+        for (Block block : blocks) {
+            if (!isLeaf(block.getType())) {
+                continue;
+            }
+            leaves.add(new LeafSnapshot(
+                block,
+                block.getType(),
+                block.getBlockData().clone(),
+                Math.max(0, block.getY() - origin.getY()),
+                block.getX() - origin.getX(),
+                block.getZ() - origin.getZ()
+            ));
+        }
+        leaves.sort((first, second) -> {
+            int y = Integer.compare(first.block.getY(), second.block.getY());
+            if (y != 0) {
+                return y;
+            }
+            int x = Integer.compare(first.block.getX(), second.block.getX());
+            if (x != 0) {
+                return x;
+            }
+            return Integer.compare(first.block.getZ(), second.block.getZ());
+        });
+        return leaves;
+    }
+
+    private Set<LeafSnapshot> selectInstantBreakLeaves(List<LeafSnapshot> leaves) {
+        int remainingCount = Math.max(1, leaves.size() / 3);
+        int instantCount = Math.max(0, leaves.size() - remainingCount);
+        if (instantCount <= 0) {
+            return Set.of();
+        }
+        List<LeafSnapshot> shuffledLeaves = new ArrayList<>(leaves);
+        Collections.shuffle(shuffledLeaves, ThreadLocalRandom.current());
+        Set<LeafSnapshot> instantLeaves = new HashSet<>();
+        for (int index = 0; index < instantCount; index += 1) {
+            instantLeaves.add(shuffledLeaves.get(index));
+        }
+        return instantLeaves;
+    }
+
     private BlockData makeHorizontal(BlockData data, Axis axis) {
         if (data instanceof Orientable orientable && orientable.getAxes().contains(axis)) {
             orientable.setAxis(axis);
@@ -365,23 +421,33 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         return data;
     }
 
-    private List<BlockDisplay> spawnFallingLogs(Block origin, List<LogSnapshot> logs, FallDirection direction, Map<UUID, Double> fallingBlockDamageById) {
+    private List<BlockDisplay> spawnFallingTreeBlocks(Block origin, List<LogSnapshot> logs, List<LeafSnapshot> leaves, FallDirection direction, Map<UUID, Double> fallingBlockDamageById, List<BlockDisplay> damagingBlocks) {
         List<BlockDisplay> displays = new ArrayList<>();
-        List<AnimatedLog> animatedLogs = new ArrayList<>();
-        Vector hinge = blockCenter(origin);
-        Vector fallVector = direction.vector();
+        List<AnimatedBlock> animatedBlocks = new ArrayList<>();
         Vector rotationAxis = direction.rotationAxis();
+        Map<LogSnapshot, Block> landingTargets = resolveLandingTargets(origin, logs, direction);
+        Set<String> usedLeafTargets = new HashSet<>();
+        for (Block target : landingTargets.values()) {
+            usedLeafTargets.add(key(target));
+        }
+        ThreadLocalRandom random = ThreadLocalRandom.current();
 
         for (LogSnapshot log : logs) {
             Vector center = blockCenter(log.block);
+            log.landingBlock = landingTargets.get(log);
+            Vector targetCenter = log.landingBlock == null
+                ? fallbackLandingCenter(origin, direction, log)
+                : blockCenter(log.landingBlock);
+            int delayTicks = Math.min(Math.max(0, animationTicks / 4), Math.max(0, log.heightAboveOrigin / 2) + random.nextInt(0, 3));
+            double arcHeight = Math.min(1.6D, 0.35D + (log.heightAboveOrigin * 0.08D));
             Location spawnLocation = center.toLocation(log.block.getWorld());
             BlockDisplay fallingBlock = log.block.getWorld().spawn(spawnLocation, BlockDisplay.class);
             fallingBlock.setBlock(log.originalData);
             fallingBlock.setPersistent(false);
             fallingBlock.setViewRange(64.0F);
             fallingBlock.setShadowRadius(0.18F);
-            fallingBlock.setTeleportDuration(1);
-            fallingBlock.setInterpolationDuration(2);
+            fallingBlock.setTeleportDuration(2);
+            fallingBlock.setInterpolationDuration(3);
             fallingBlock.setTransformation(new Transformation(
                 centeredBlockTranslation(new Vector(0.0D, 1.0D, 0.0D), 0.0D),
                 new AxisAngle4f(0.0F, 0.0F, 1.0F, 0.0F),
@@ -392,47 +458,155 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
             fallingBlock.addScoreboardTag(FALLING_TREE_TAG);
             fallingBlockDamageById.put(fallingBlock.getUniqueId(), damage);
             displays.add(fallingBlock);
-            animatedLogs.add(new AnimatedLog(fallingBlock, center.subtract(hinge)));
+            damagingBlocks.add(fallingBlock);
+            int durationTicks = Math.max(8, animationTicks - delayTicks - 5);
+            animatedBlocks.add(new AnimatedBlock(fallingBlock, center, targetCenter, delayTicks, durationTicks, arcHeight, rotationAxis, Math.PI / 2.0D));
         }
 
-        animateFallingTree(animatedLogs, hinge, fallVector, rotationAxis);
+        for (LeafSnapshot leaf : leaves) {
+            Vector center = blockCenter(leaf.block);
+            Block target = findLeafLandingBlock(origin, direction, leaf, usedLeafTargets, random);
+            leaf.landingBlock = target;
+            leaf.targetCenter = target == null
+                ? fallbackLeafLandingCenter(origin, direction, leaf, random)
+                : blockCenter(target);
+            int delayTicks = Math.min(Math.max(0, animationTicks / 4), Math.max(0, leaf.heightAboveOrigin / 2) + random.nextInt(0, 3));
+            double arcHeight = Math.min(2.8D, 0.85D + (leaf.heightAboveOrigin * 0.08D) + random.nextDouble(0.2D, 0.9D));
+            Location spawnLocation = center.toLocation(leaf.block.getWorld());
+            BlockDisplay fallingLeaf = leaf.block.getWorld().spawn(spawnLocation, BlockDisplay.class);
+            fallingLeaf.setBlock(leaf.originalData);
+            fallingLeaf.setPersistent(false);
+            fallingLeaf.setViewRange(64.0F);
+            fallingLeaf.setShadowRadius(0.1F);
+            fallingLeaf.setTeleportDuration(2);
+            fallingLeaf.setInterpolationDuration(3);
+            fallingLeaf.setTransformation(new Transformation(
+                centeredBlockTranslation(new Vector(0.0D, 1.0D, 0.0D), 0.0D),
+                new AxisAngle4f(0.0F, 0.0F, 1.0F, 0.0F),
+                new Vector3f(1.0F, 1.0F, 1.0F),
+                new AxisAngle4f(0.0F, 0.0F, 1.0F, 0.0F)
+            ));
+            double damage = calculateFallingBlockDamage(leaf.heightAboveOrigin);
+            fallingLeaf.addScoreboardTag(FALLING_TREE_TAG);
+            fallingBlockDamageById.put(fallingLeaf.getUniqueId(), damage);
+            displays.add(fallingLeaf);
+            damagingBlocks.add(fallingLeaf);
+            int durationTicks = Math.max(8, animationTicks - delayTicks - 5);
+            animatedBlocks.add(new AnimatedBlock(fallingLeaf, center, leaf.targetCenter, delayTicks, durationTicks, arcHeight, randomRotationAxis(random), random.nextDouble(Math.PI * 1.1D, Math.PI * 2.4D)));
+        }
+
+        animateFallingTree(animatedBlocks);
         return displays;
     }
 
-    private void animateFallingTree(List<AnimatedLog> logs, Vector hinge, Vector fallVector, Vector rotationAxis) {
+    private Block findLeafLandingBlock(Block origin, FallDirection direction, LeafSnapshot leaf, Set<String> usedTargets, ThreadLocalRandom random) {
+        int preferredStep = Math.max(2, leaf.heightAboveOrigin + 1);
+        int baseStep = Math.max(1, preferredStep + random.nextInt(-1, 3));
+        int baseLateral = direction.lateralOffset(leaf.relativeX, leaf.relativeZ) + random.nextInt(-2, 3);
+
+        for (int radius = 0; radius <= 5; radius += 1) {
+            for (int stepDelta = -radius; stepDelta <= radius; stepDelta += 1) {
+                for (int lateralDelta = -radius; lateralDelta <= radius; lateralDelta += 1) {
+                    int step = Math.max(1, baseStep + stepDelta);
+                    int lateral = baseLateral + lateralDelta;
+                    int x = origin.getX() + (direction.x * step) + (direction.lateralX * lateral);
+                    int z = origin.getZ() + (direction.z * step) + (direction.lateralZ * lateral);
+                    Block candidate = findSupportedLeafBlockAt(origin, x, z, usedTargets);
+                    if (candidate != null) {
+                        usedTargets.add(key(candidate));
+                        return candidate;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private Vector fallbackLeafLandingCenter(Block origin, FallDirection direction, LeafSnapshot leaf, ThreadLocalRandom random) {
+        int preferredStep = Math.max(1, leaf.heightAboveOrigin + 1);
+        double forward = preferredStep + random.nextDouble(0.4D, 2.0D);
+        double lateral = direction.lateralOffset(leaf.relativeX, leaf.relativeZ) + random.nextDouble(-0.5D, 0.5D);
+        double x = origin.getX() + 0.5D + (direction.x * forward) + (direction.lateralX * lateral);
+        double z = origin.getZ() + 0.5D + (direction.z * forward) + (direction.lateralZ * lateral);
+        Block target = findLandingBlockAt(origin, (int) Math.floor(x), (int) Math.floor(z));
+        double y = target == null
+            ? origin.getY() + 0.5D
+            : target.getY() + 0.5D;
+        return new Vector(x, y, z);
+    }
+
+    private Vector randomRotationAxis(ThreadLocalRandom random) {
+        Vector axis = new Vector(
+            random.nextDouble(-1.0D, 1.0D),
+            random.nextDouble(0.2D, 1.0D),
+            random.nextDouble(-1.0D, 1.0D)
+        );
+        if (axis.lengthSquared() < 0.001D) {
+            return new Vector(0.0D, 1.0D, 0.0D);
+        }
+        return axis.normalize();
+    }
+
+    private void animateFallingTree(List<AnimatedBlock> blocks) {
         new BukkitRunnable() {
             private int tick;
 
             @Override
             public void run() {
                 tick += 1;
-                if (tick > animationTicks || logs.isEmpty()) {
+                if (tick > animationTicks + 4 || blocks.isEmpty()) {
                     cancel();
                     return;
                 }
 
-                double progress = Math.min(1.0D, tick / (double) animationTicks);
-                double eased = easeOutCubic(progress);
-                double angle = eased * (Math.PI / 2.0D);
-                Vector baseShift = fallVector.clone().multiply(Math.sin(angle));
-                double groundClearanceLift = rotatedCubeGroundClearanceLift(angle);
-
-                for (AnimatedLog log : logs) {
-                    if (!log.display.isValid()) {
+                for (AnimatedBlock block : blocks) {
+                    if (!block.display.isValid()) {
                         continue;
                     }
-                    Vector rotatedOffset = rotate(log.relativeCenter, rotationAxis, angle);
-                    Vector nextCenter = hinge.clone().add(baseShift).add(rotatedOffset).add(new Vector(0.0D, groundClearanceLift, 0.0D));
-                    log.display.teleport(nextCenter.toLocation(log.display.getWorld()));
-                    log.display.setTransformation(new Transformation(
-                        centeredBlockTranslation(rotationAxis, angle),
-                        new AxisAngle4f((float) angle, (float) rotationAxis.getX(), (float) rotationAxis.getY(), (float) rotationAxis.getZ()),
+                    double progress = Math.min(1.0D, Math.max(0.0D, (tick - block.delayTicks) / (double) Math.max(1, block.durationTicks)));
+                    double eased = smootherStep(progress);
+                    double angle = eased * block.rotationAngle;
+                    double arcLift = Math.sin(progress * Math.PI) * block.arcHeight;
+                    double groundClearanceLift = rotatedCubeGroundClearanceLift(angle);
+                    Vector nextCenter = lerp(block.startCenter, block.targetCenter, eased)
+                        .add(new Vector(0.0D, arcLift + groundClearanceLift, 0.0D));
+                    block.display.teleport(nextCenter.toLocation(block.display.getWorld()));
+                    block.display.setTransformation(new Transformation(
+                        centeredBlockTranslation(block.rotationAxis, angle),
+                        new AxisAngle4f((float) angle, (float) block.rotationAxis.getX(), (float) block.rotationAxis.getY(), (float) block.rotationAxis.getZ()),
                         new Vector3f(1.0F, 1.0F, 1.0F),
                         new AxisAngle4f(0.0F, 0.0F, 1.0F, 0.0F)
                     ));
                 }
             }
         }.runTaskTimer(this, 1L, 1L);
+    }
+
+    private Map<LogSnapshot, Block> resolveLandingTargets(Block origin, List<LogSnapshot> logs, FallDirection direction) {
+        Map<LogSnapshot, Block> targets = new HashMap<>();
+        Set<String> usedTargets = new HashSet<>();
+        FallenLayout layout = resolveFallenLayout(logs, direction);
+        for (LogSnapshot log : logs) {
+            Block target = findLandingBlock(origin, direction, layout, log, usedTargets);
+            if (target == null) {
+                continue;
+            }
+            targets.put(log, target);
+            usedTargets.add(key(target));
+        }
+        return targets;
+    }
+
+    private Vector fallbackLandingCenter(Block origin, FallDirection direction, LogSnapshot log) {
+        int preferredStep = Math.max(1, log.heightAboveOrigin + 1);
+        return blockCenter(origin)
+            .add(direction.vector().multiply(preferredStep))
+            .add(new Vector(log.relativeX * 0.15D, -Math.min(log.heightAboveOrigin, 6), log.relativeZ * 0.15D));
+    }
+
+    private Vector lerp(Vector start, Vector end, double amount) {
+        return start.clone().multiply(1.0D - amount).add(end.clone().multiply(amount));
     }
 
     private Vector3f centeredBlockTranslation(Vector rotationAxis, double angle) {
@@ -445,9 +619,9 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         return Math.max(0.0D, verticalHalfExtent - 0.5D);
     }
 
-    private double easeOutCubic(double value) {
-        double inverse = 1.0D - value;
-        return 1.0D - (inverse * inverse * inverse);
+    private double smootherStep(double value) {
+        double clamped = Math.min(1.0D, Math.max(0.0D, value));
+        return clamped * clamped * clamped * (clamped * (clamped * 6.0D - 15.0D) + 10.0D);
     }
 
     private Vector rotate(Vector vector, Vector axis, double angle) {
@@ -503,7 +677,7 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         }.runTaskTimer(this, 1L, 1L);
     }
 
-    private void settleFallenLogs(Block origin, List<LogSnapshot> logs, FallDirection direction, List<BlockDisplay> fallingBlocks) {
+    private void settleFallenTree(Block origin, List<LogSnapshot> logs, List<LeafSnapshot> leaves, FallDirection direction, List<BlockDisplay> fallingBlocks) {
         for (BlockDisplay fallingBlock : fallingBlocks) {
             if (fallingBlock.isValid()) {
                 fallingBlock.remove();
@@ -517,12 +691,12 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
             return;
         }
 
+        ensureLogLandingTargets(origin, logs, direction);
         Set<String> usedTargets = new HashSet<>();
-        FallenLayout layout = resolveFallenLayout(logs, direction);
         int placed = 0;
         for (LogSnapshot log : logs) {
-            Block target = findLandingBlock(origin, direction, layout, log, usedTargets);
-            if (target == null) {
+            Block target = log.landingBlock;
+            if (target == null || usedTargets.contains(key(target)) || !canReplace(target)) {
                 origin.getWorld().dropItemNaturally(origin.getLocation(), new ItemStack(log.material, 1));
                 continue;
             }
@@ -531,8 +705,66 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
             placed += 1;
         }
 
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        int placedLeaves = 0;
+        List<Block> settledLeaves = new ArrayList<>();
+        for (LeafSnapshot leaf : leaves) {
+            Block target = leaf.landingBlock;
+            if (target == null || !isSupportedLeafTarget(target, usedTargets)) {
+                target = findLeafLandingBlock(origin, direction, leaf, usedTargets, random);
+            } else {
+                usedTargets.add(key(target));
+            }
+            if (target == null) {
+                continue;
+            }
+            target.setBlockData(prepareFallenLeafData(leaf.originalData.clone()), true);
+            settledLeaves.add(target);
+            placedLeaves += 1;
+        }
+
+        if (!settledLeaves.isEmpty() && fallenLeafDecayTicks > 0) {
+            getServer().getScheduler().runTaskLater(this, () -> decaySettledLeaves(settledLeaves), fallenLeafDecayTicks);
+        }
+
         if (logActions && placed > 0) {
-            getLogger().info("Placed " + placed + " fallen log blocks.");
+            getLogger().info("Placed " + placed + " fallen log blocks and " + placedLeaves + " fallen leaf blocks.");
+        }
+    }
+
+    private void ensureLogLandingTargets(Block origin, List<LogSnapshot> logs, FallDirection direction) {
+        for (LogSnapshot log : logs) {
+            if (log.landingBlock == null) {
+                Map<LogSnapshot, Block> landingTargets = resolveLandingTargets(origin, logs, direction);
+                for (LogSnapshot targetLog : logs) {
+                    targetLog.landingBlock = landingTargets.get(targetLog);
+                }
+                return;
+            }
+        }
+    }
+
+    private BlockData prepareFallenLeafData(BlockData data) {
+        if (data instanceof Leaves leavesData) {
+            leavesData.setPersistent(false);
+            leavesData.setDistance(leavesData.getMaximumDistance());
+        }
+        return data;
+    }
+
+    private void decaySettledLeaves(List<Block> settledLeaves) {
+        int decayed = 0;
+        for (Block block : settledLeaves) {
+            if (!isLeaf(block.getType())) {
+                continue;
+            }
+            if (!block.breakNaturally(true, false)) {
+                block.setType(Material.AIR, true);
+            }
+            decayed += 1;
+        }
+        if (logActions && decayed > 0) {
+            getLogger().info("Decayed " + decayed + " fallen leaf blocks.");
         }
     }
 
@@ -590,6 +822,31 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
             }
         }
         return null;
+    }
+
+    private Block findSupportedLeafBlockAt(Block origin, int x, int z, Set<String> supportTargets) {
+        int maxY = Math.min(origin.getWorld().getMaxHeight() - 1, origin.getY() + 8);
+        int minY = Math.max(origin.getWorld().getMinHeight() + 1, origin.getY() - 12);
+        for (int y = maxY; y >= minY; y -= 1) {
+            Block target = origin.getWorld().getBlockAt(x, y, z);
+            if (!isSupportedLeafTarget(target, supportTargets)) {
+                continue;
+            }
+            return target;
+        }
+        return null;
+    }
+
+    private boolean isSupportedLeafTarget(Block target, Set<String> supportTargets) {
+        if (usedAsTarget(target, supportTargets) || !canReplace(target)) {
+            return false;
+        }
+        Block support = target.getRelative(BlockFace.DOWN);
+        return support.getType().isSolid() || supportTargets.contains(key(support));
+    }
+
+    private boolean usedAsTarget(Block target, Set<String> usedTargets) {
+        return usedTargets.contains(key(target));
     }
 
     private boolean canReplace(Block block) {
@@ -680,12 +937,33 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         private final int heightAboveOrigin;
         private final int relativeX;
         private final int relativeZ;
+        private Block landingBlock;
 
         private LogSnapshot(Block block, Material material, BlockData originalData, BlockData fallenData, int heightAboveOrigin, int relativeX, int relativeZ) {
             this.block = block;
             this.material = material;
             this.originalData = originalData;
             this.fallenData = fallenData;
+            this.heightAboveOrigin = heightAboveOrigin;
+            this.relativeX = relativeX;
+            this.relativeZ = relativeZ;
+        }
+    }
+
+    private static final class LeafSnapshot {
+        private final Block block;
+        private final Material material;
+        private final BlockData originalData;
+        private final int heightAboveOrigin;
+        private final int relativeX;
+        private final int relativeZ;
+        private Block landingBlock;
+        private Vector targetCenter;
+
+        private LeafSnapshot(Block block, Material material, BlockData originalData, int heightAboveOrigin, int relativeX, int relativeZ) {
+            this.block = block;
+            this.material = material;
+            this.originalData = originalData;
             this.heightAboveOrigin = heightAboveOrigin;
             this.relativeX = relativeX;
             this.relativeZ = relativeZ;
@@ -704,13 +982,25 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         }
     }
 
-    private static final class AnimatedLog {
+    private static final class AnimatedBlock {
         private final BlockDisplay display;
-        private final Vector relativeCenter;
+        private final Vector startCenter;
+        private final Vector targetCenter;
+        private final int delayTicks;
+        private final int durationTicks;
+        private final double arcHeight;
+        private final Vector rotationAxis;
+        private final double rotationAngle;
 
-        private AnimatedLog(BlockDisplay display, Vector relativeCenter) {
+        private AnimatedBlock(BlockDisplay display, Vector startCenter, Vector targetCenter, int delayTicks, int durationTicks, double arcHeight, Vector rotationAxis, double rotationAngle) {
             this.display = display;
-            this.relativeCenter = relativeCenter;
+            this.startCenter = startCenter;
+            this.targetCenter = targetCenter;
+            this.delayTicks = delayTicks;
+            this.durationTicks = durationTicks;
+            this.arcHeight = arcHeight;
+            this.rotationAxis = rotationAxis;
+            this.rotationAngle = rotationAngle;
         }
     }
 

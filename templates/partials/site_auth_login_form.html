@@ -28,6 +28,9 @@
     {% if handrive_login_error_message or handrive_login_form.non_field_errors %}
         <div class="auth-error">{{ handrive_login_error_message|default:handrive_text.auth_login_error }}</div>
     {% endif %}
+    {% if handrive_login_info_message %}
+        <div class="auth-error auth-info">{{ handrive_login_info_message }}</div>
+    {% endif %}
     {% if handrive_github_link_pending and not handrive_login_show_2fa %}
         <div class="auth-error auth-info">{{ handrive_text.auth_github_link_pending }}</div>
     {% endif %}
@@ -148,6 +151,17 @@
             <button class="ui-btn ui-btn-primary" type="submit" id="handrive-login-submit-btn">{{ handrive_text.auth_login_submit }}</button>
         {% endif %}
     </div>
+    {% if handrive_login_error_message and not handrive_login_show_2fa %}
+        <div class="auth-secondary-actions">
+            <a
+                class="site-inline-hover-link auth-inline-link"
+                href="{{ handrive_forgot_password_modal_url }}"
+                data-auth-modal="forgot-password"
+            >
+                {{ handrive_text.auth_forgot_password_button }}
+            </a>
+        </div>
+    {% endif %}
 
     {% if handrive_github_auth_enabled or handrive_google_auth_enabled %}
     {% if not handrive_login_show_2fa %}

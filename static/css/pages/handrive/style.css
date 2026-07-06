@@ -1729,7 +1729,7 @@ body:not(.theme-dark) .site-custom-select-menu.handrive-guest-demo-steps-menu {
 }
 
 .handrive-job-queue-panel.is-tutorial-preview {
-    display: block;
+    display: flex;
 }
 
 .handrive-guest-demo-choice-modal .handrive-popup-actions {
@@ -2424,13 +2424,17 @@ body.handrive-list-split-resizing-portrait * {
 }
 
 .handrive-job-queue-list {
+    flex: 1 1 auto;
+    min-height: 0;
     margin: 0;
     padding: 0 12px 10px;
     list-style: none;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .handrive-job-queue-item {
@@ -5595,11 +5599,22 @@ body.handrive-popup-dragging {
     user-select: none;
 }
 
+.handrive-url-share-link-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.handrive-url-share-link-group:not(:has(> :not([hidden]))) {
+    display: none;
+}
+
 .handrive-url-share-targets {
     display: flex;
     flex-direction: column;
     gap: 7px;
-    margin: 4px 0 2px;
+    margin: 0;
 }
 
 .handrive-url-share-targets > label {
@@ -5654,7 +5669,7 @@ body.handrive-popup-dragging {
     align-items: center;
     max-width: 100%;
     min-width: 0;
-    gap: 7px;
+    gap: 0;
     padding: 4px 5px 4px 10px;
     border: 1px solid color-mix(in srgb, var(--handrive-search-border-focus) 36%, var(--handrive-border-mid));
     border-radius: 999px;
@@ -5673,29 +5688,28 @@ body.handrive-popup-dragging {
 }
 
 .handrive-url-share-target-remove {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    display: inline-grid;
+    place-items: center;
     flex: 0 0 auto;
     width: 20px;
     height: 20px;
     padding: 0;
-    border: 1px solid transparent;
+    border: 0;
     border-radius: 50%;
-    background: color-mix(in srgb, var(--handrive-bg) 72%, transparent);
+    background: transparent;
     color: var(--handrive-text-secondary);
     cursor: pointer;
     font-size: 13px;
     font-family: var(--site-font-default);
     font-weight: 700;
-    line-height: 1;
-    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    line-height: 20px;
+    text-align: center;
+    transition: color 0.12s;
 }
 
 .handrive-url-share-target-remove:hover,
 .handrive-url-share-target-remove:focus-visible {
-    border-color: var(--handrive-border-heavy);
-    background: var(--handrive-bg);
+    background: transparent;
     color: var(--handrive-text-stronger);
 }
 
@@ -5719,6 +5733,7 @@ body.handrive-popup-dragging {
 #handrive-url-share-url-row {
     min-width: 0;
     align-items: stretch;
+    margin: 0;
 }
 
 .handrive-url-share-read-head {
@@ -5731,7 +5746,11 @@ body.handrive-popup-dragging {
 }
 
 #handrive-url-share-read-label {
+    align-self: flex-end;
+    display: inline-flex;
+    align-items: flex-end;
     flex: 0 0 auto;
+    line-height: 1.2;
     white-space: nowrap;
     word-break: keep-all;
     overflow-wrap: normal;
@@ -6197,6 +6216,9 @@ body.handrive-popup-dragging {
 
 .ui-markdown pre code,
 .handrive-markdown pre code {
+    display: block;
+    max-width: 100%;
+    min-width: 0;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     border: 0;
     border-radius: 0;
@@ -6205,6 +6227,9 @@ body.handrive-popup-dragging {
     padding: 0;
     font-size: var(--handrive-text-font-size, 16px);
     line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .ui-markdown pre .handrive-markdown-code-copy-btn,
@@ -6213,37 +6238,21 @@ body.handrive-popup-dragging {
     top: 6px;
     right: 6px;
     z-index: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    border: 1px solid transparent;
-    border-radius: var(--handrive-radius-sm);
-    background: color-mix(in srgb, var(--handrive-bg) 84%, transparent);
-    color: var(--handrive-text-secondary);
-    cursor: pointer;
-    transition: background 0.12s, border-color 0.12s, color 0.12s, translate 0.12s;
+    transform: none;
 }
 
-.ui-markdown pre .handrive-markdown-code-copy-btn:hover,
-.ui-markdown pre .handrive-markdown-code-copy-btn:focus-visible,
-.handrive-markdown pre .handrive-markdown-code-copy-btn:hover,
-.handrive-markdown pre .handrive-markdown-code-copy-btn:focus-visible {
-    border-color: var(--handrive-border-heavy);
-    background: var(--handrive-surface-muted);
-    color: var(--handrive-text-stronger);
-    outline: none;
-    translate: 0 var(--btn-template-hover-lift, -1px);
-}
+@media print {
+    .ui-markdown pre,
+    .handrive-markdown pre {
+        border: 1px solid #d0d7de;
+        background: #fff;
+        padding: 8px 10px;
+    }
 
-.ui-markdown pre .handrive-markdown-code-copy-btn:active,
-.handrive-markdown pre .handrive-markdown-code-copy-btn:active {
-    border-color: color-mix(in srgb, var(--handrive-success, #0f7b6c) 42%, var(--handrive-border-heavy));
-    background: color-mix(in srgb, var(--handrive-success, #0f7b6c) 12%, var(--handrive-surface-muted));
-    color: var(--handrive-success, #0f7b6c);
-    translate: 0 var(--btn-template-active-press-depth, 1px);
+    .ui-markdown pre .handrive-markdown-code-copy-btn,
+    .handrive-markdown pre .handrive-markdown-code-copy-btn {
+        display: none !important;
+    }
 }
 
 .ui-markdown img,
@@ -10168,6 +10177,9 @@ body.handrive-help-modal-resizing {
 }
 
 .handrive-help-markdown pre code {
+    display: block;
+    max-width: 100%;
+    min-width: 0;
     border: 0;
     border-radius: 0;
     background: transparent;
@@ -10175,6 +10187,9 @@ body.handrive-help-modal-resizing {
     padding: 0;
     font-size: var(--handrive-text-font-size, 16px);
     line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .handrive-help-markdown > :first-child {

@@ -2,6 +2,7 @@ import uuid
 
 from django.conf import settings
 from django.contrib.auth.models import Group
+from django.core.validators import MinValueValidator
 from django.db import models
 
 
@@ -317,6 +318,36 @@ class OnscripterAccessUser(models.Model):
         return str(self.user.get_username())
 
 
+DEFAULT_HANDRIVE_USER_QUOTA_BYTES = 50 * 1024 * 1024 * 1024
+
+
+class HandriveSiteSettings(models.Model):
+    singleton_key = models.PositiveSmallIntegerField(default=1, unique=True, editable=False)
+    default_quota_bytes = models.BigIntegerField(
+        "기본 저장 용량 (bytes)",
+        default=DEFAULT_HANDRIVE_USER_QUOTA_BYTES,
+        validators=[MinValueValidator(1)],
+        help_text="사용자별 저장 용량 설정이 없을 때 적용되는 기본 HanDrive 용량입니다.",
+    )
+    updated_at = models.DateTimeField("수정일", auto_now=True)
+
+    class Meta:
+        verbose_name = "HanDrive 기본 설정"
+        verbose_name_plural = "HanDrive 기본 설정"
+
+    def save(self, *args, **kwargs):
+        self.singleton_key = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls) -> "HandriveSiteSettings":
+        settings_obj, _ = cls.objects.get_or_create(singleton_key=1)
+        return settings_obj
+
+    def __str__(self):
+        return "HanDrive 기본 설정"
+
+
 class HandriveUserQuota(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -326,7 +357,8 @@ class HandriveUserQuota(models.Model):
     )
     quota_bytes = models.BigIntegerField(
         "저장 용량 (bytes)",
-        help_text="사용자별 최대 저장 용량. 예: 1GB = 1073741824, 5GB = 5368709120",
+        default=DEFAULT_HANDRIVE_USER_QUOTA_BYTES,
+        help_text="사용자별 최대 저장 용량. 예: 50GB = 53687091200",
     )
     hanharness_enabled = models.BooleanField(
         "HanHarness 사용 허용",

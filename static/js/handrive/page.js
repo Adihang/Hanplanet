@@ -19,6 +19,7 @@
     const handriveAdminUserParam = String(root.dataset.handriveAdminUserParam || "handrive_user").trim() || "handrive_user";
     const isAuthenticated = root.dataset.isAuthenticated === "1";
     const isDemoSaveMode = root.dataset.demoSaveMode === "1" && !isAuthenticated;
+    const isGuestDemoMode = root.dataset.guestDemoMode === "1";
     const isTutorialMode = root.dataset.tutorialMode === "1";
     const isTutorialForcedMode = root.dataset.tutorialForced === "1";
     const shouldAutostartTutorial = root.dataset.tutorialAutostart === "1";
@@ -922,6 +923,8 @@
             + "body.handrive-print-document{display:block;min-height:0;overflow:visible;padding:12mm;box-sizing:border-box;}"
             + ".handrive-print-rendered{display:block;width:100%;max-width:none;height:auto;min-height:0;max-height:none;overflow:visible;margin:0;padding:0;border:0;border-radius:0;background:#fff;color:#111;box-shadow:none;}"
             + ".handrive-print-rendered pre,.handrive-print-rendered code{white-space:pre-wrap;overflow:visible;}"
+            + ".handrive-print-rendered.ui-markdown pre,.handrive-print-rendered.handrive-markdown pre,.handrive-print-rendered .ui-markdown pre,.handrive-print-rendered .handrive-markdown pre{border:1px solid #d0d7de;background:#fff;padding:8px 10px;}"
+            + ".handrive-print-rendered .handrive-markdown-code-copy-btn{display:none!important;}"
             + ".handrive-print-rendered table{max-width:none;break-inside:auto;page-break-inside:auto;}"
             + ".handrive-print-rendered.ui-markdown table,.handrive-print-rendered.handrive-markdown table,.handrive-print-rendered .ui-markdown table,.handrive-print-rendered .handrive-markdown table{width:calc(100% - 1px);max-width:calc(100% - 1px);box-sizing:border-box;}"
             + ".handrive-print-rendered.ui-markdown th,.handrive-print-rendered.ui-markdown td,.handrive-print-rendered.handrive-markdown th,.handrive-print-rendered.handrive-markdown td,.handrive-print-rendered .ui-markdown th,.handrive-print-rendered .ui-markdown td,.handrive-print-rendered .handrive-markdown th,.handrive-print-rendered .handrive-markdown td{box-sizing:border-box;}"
@@ -1669,7 +1672,7 @@
         return uiLang === "en" ? enValue : koValue;
     }
 
-    const HANDRIVE_TUTORIAL_TOTAL_GROUPS = 17;
+    const HANDRIVE_TUTORIAL_TOTAL_GROUPS = 18;
     const HANDRIVE_TUTORIAL_STEP_PROGRESS = [
         [1, 1, 1],
         [2, 1, 2],
@@ -1682,11 +1685,12 @@
         [6, 1, 3],
         [6, 2, 3],
         [6, 3, 3],
-        [7, 1, 5],
-        [7, 2, 5],
-        [7, 3, 5],
-        [7, 4, 5],
-        [7, 5, 5],
+        [7, 1, 6],
+        [7, 2, 6],
+        [7, 3, 6],
+        [7, 4, 6],
+        [7, 5, 6],
+        [7, 6, 6],
         [8, 1, 2],
         [8, 2, 2],
         [9, 1, 4],
@@ -1700,20 +1704,22 @@
         [10, 5, 5],
         [11, 1, 2],
         [11, 2, 2],
-        [12, 1, 7],
-        [12, 2, 7],
-        [12, 3, 7],
-        [12, 4, 7],
-        [12, 5, 7],
-        [12, 6, 7],
-        [12, 7, 7],
+        [12, 1, 8],
+        [12, 2, 8],
+        [12, 3, 8],
+        [12, 4, 8],
+        [12, 5, 8],
+        [12, 6, 8],
+        [12, 7, 8],
+        [12, 8, 8],
         [13, 1, 1],
         [14, 1, 1],
-        [15, 1, 2],
-        [15, 2, 2],
+        [15, 1, 1],
         [16, 1, 2],
         [16, 2, 2],
-        [17, 1, 1],
+        [17, 1, 2],
+        [17, 2, 2],
+        [18, 1, 1],
     ];
     const HANDRIVE_TUTORIAL_TOTAL_STEPS = HANDRIVE_TUTORIAL_STEP_PROGRESS.length;
 
@@ -2037,6 +2043,7 @@
             completeLabel
         );
         const stepMeta = normalizeTutorialStepProgressMeta(stepIndex, settings.stepMeta || null);
+        const navigationStepIndex = getTutorialGroupFirstStepIndex(stepMeta.groupIndex);
         prevButton.hidden = stepMeta.groupIndex <= 1;
         nextButton.hidden = stepMeta.groupIndex >= HANDRIVE_TUTORIAL_TOTAL_GROUPS;
         completeButton.hidden = !isAuthenticated || stepMeta.groupIndex < HANDRIVE_TUTORIAL_TOTAL_GROUPS;
@@ -2051,10 +2058,10 @@
         }
 
         prevButton.addEventListener("click", function () {
-            navigateToStep(getTutorialAdjacentGroupStepIndex(stepIndex, -1));
+            navigateToStep(getTutorialAdjacentGroupStepIndex(navigationStepIndex, -1));
         });
         nextButton.addEventListener("click", function () {
-            navigateToStep(getTutorialAdjacentGroupStepIndex(stepIndex, 1));
+            navigateToStep(getTutorialAdjacentGroupStepIndex(navigationStepIndex, 1));
         });
         completeButton.addEventListener("click", function () {
             if (typeof settings.complete === "function") {
@@ -3248,7 +3255,7 @@
     document.addEventListener("dblclick", handleMarkdownInlineCodeDoubleClick, true);
     document.addEventListener("dragstart", handleMarkdownInlineCodeDragStart, true);
 
-    const HANDRIVE_MARKDOWN_CODE_COPY_ICON = '<svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M4 13H3a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>';
+    const HANDRIVE_MARKDOWN_CODE_COPY_ICON = '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"/></svg>';
 
     function writeHandriveClipboardText(text) {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
@@ -3310,7 +3317,7 @@
             pre.classList.add("handrive-markdown-code-copy-wrap");
             const button = document.createElement("button");
             button.type = "button";
-            button.className = "handrive-markdown-code-copy-btn";
+            button.className = "handrive-markdown-code-copy-btn handrive-inline-copy-action";
             button.innerHTML = HANDRIVE_MARKDOWN_CODE_COPY_ICON;
             const copyLabel = t("markdown_code_copy_button", textByLang("복사", "Copy"));
             button.setAttribute("aria-label", copyLabel);
@@ -5644,6 +5651,12 @@
 
         pageHelpBackdrop.addEventListener("click", function () {
             setPageHelpModalOpen(false);
+        });
+
+        document.addEventListener("handrive:tutorial-close-help-modal", function () {
+            if (!pageHelpModal.hidden) {
+                setPageHelpModalOpen(false);
+            }
         });
 
         document.addEventListener("keydown", function (event) {
@@ -19412,10 +19425,10 @@
             } catch (error) {}
         }
 
-        function getPreferredGuestDemoEntry() {
-            var preferredPath = "";
-            try {
-                preferredPath = normalizePath(demoTutorialPath || "", true);
+	        function getPreferredGuestDemoEntry() {
+	            var preferredPath = "";
+	            try {
+	                preferredPath = normalizePath(demoTutorialPath || "", true);
             } catch (error) {
                 preferredPath = "";
             }
@@ -19445,6 +19458,83 @@
                         return 1;
                     }
                     return 2;
+                }
+                var leftScore = score(left);
+                var rightScore = score(right);
+                if (leftScore !== rightScore) {
+                    return leftScore - rightScore;
+                }
+                return String(left.name || left.path || "").localeCompare(String(right.name || right.path || ""));
+            });
+            return candidates[0] || null;
+        }
+
+        function isGuestDemoVirtualOrSpecialEntry(entry) {
+            return Boolean(
+                entry &&
+                (
+                    entry.isCurrentFolder ||
+                    entry.is_archive ||
+                    entry.is_archive_member ||
+                    entry.google_drive ||
+                    entry.is_google_drive ||
+                    entry.git_repo ||
+                    entry.github_repo ||
+                    entry.git_branch_root ||
+                    entry.git_repo_branch ||
+                    entry.is_git_virtual ||
+                    entry.requires_commit_message
+                )
+            );
+        }
+
+        function isGuestDemoPlainFileEntry(entry) {
+            return Boolean(
+                entry &&
+                entry.path &&
+                entry.type === "file" &&
+                !isGuestDemoVirtualOrSpecialEntry(entry)
+            );
+        }
+
+        function getGuestDemoPreferredPlainFileEntry() {
+            var preferredEntry = getPreferredGuestDemoEntry();
+            if (isGuestDemoPlainFileEntry(preferredEntry)) {
+                return preferredEntry;
+            }
+
+            var preferredPath = "";
+            try {
+                preferredPath = normalizePath(demoTutorialPath || "", true);
+            } catch (error) {
+                preferredPath = "";
+            }
+            var entries = getCachedEntries(state.currentDir) || [];
+            var candidates = entries.filter(isGuestDemoPlainFileEntry);
+            if (!candidates.length) {
+                return null;
+            }
+            candidates.sort(function (left, right) {
+                function score(entry) {
+                    var entryPath = normalizePath(entry && entry.path || "", true);
+                    var text = String((entry && entry.name) || "") + " " + String((entry && entry.path) || "");
+                    text = text.toLowerCase();
+                    if (preferredPath && entryPath === preferredPath) {
+                        return 0;
+                    }
+                    if (text.indexOf("00-handrive") !== -1 || text.indexOf("튜토리얼") !== -1 || text.indexOf("tutorial") !== -1) {
+                        return 1;
+                    }
+                    if (canEditOrDemoEntry(entry) && isPreviewableFileEntry(entry)) {
+                        return 2;
+                    }
+                    if (isPreviewableFileEntry(entry)) {
+                        return 3;
+                    }
+                    if (canEditOrDemoEntry(entry)) {
+                        return 4;
+                    }
+                    return 5;
                 }
                 var leftScore = score(left);
                 var rightScore = score(right);
@@ -19895,6 +19985,40 @@
             return getGuestDemoEntryByNames(getGuestDemoAdvancedSampleNamesForKind(kind)) || getGuestDemoAdvancedSampleEntry();
         }
 
+        function isGuestDemoGitRepositoryView() {
+            var meta = getCurrentDirMeta() || {};
+            var currentPath = normalizePath(state.currentDir || "", true);
+            var tutorialRootPath = getGuestDemoTutorialRootPath();
+            return Boolean(
+                isTutorialMode &&
+                currentPath &&
+                currentPath !== tutorialRootPath &&
+                (
+                    meta.is_git_repo_root ||
+                    meta.git_branch_root ||
+                    meta.requires_commit_message ||
+                    meta.git_repo ||
+                    meta.is_git_virtual
+                )
+            );
+        }
+
+        function isGuestDemoGitContextTarget() {
+            var entry = state.contextTarget || null;
+            var entryName = entry && entry.name ? String(entry.name) : "";
+            return Boolean(
+                entry &&
+                (
+                    entry.git_repo ||
+                    entry.github_repo ||
+                    entry.git_branch_root ||
+                    entry.git_repo_branch ||
+                    entry.is_git_virtual ||
+                    getGuestDemoAdvancedSampleNamesForKind("git").indexOf(entryName) !== -1
+                )
+            );
+        }
+
         function isGuestDemoAudioContextTarget() {
             var entry = state.contextTarget || null;
             var extension = getPathFileExtension(entry && (entry.name || entry.path) ? String(entry.name || entry.path) : "");
@@ -19908,7 +20032,8 @@
             if (
                 isGuestDemoElementVisible(contextGitCreateRepoButton) ||
                 isGuestDemoElementVisible(contextGitManageRepoButton) ||
-                isGuestDemoElementVisible(contextGitCreateBranchButton)
+                isGuestDemoElementVisible(contextGitCreateBranchButton) ||
+                (isGuestDemoGitContextTarget() && isGuestDemoElementVisible(contextOpenButton))
             ) {
                 return "advanced_git_menu";
             }
@@ -19938,22 +20063,56 @@
             ].indexOf(String(stepId || "")) !== -1;
         }
 
-        function getGuestDemoCurrentDirRow() {
-            return listContainer ? listContainer.querySelector(".handrive-current-dir-row") : null;
+	        function getGuestDemoCurrentDirRow() {
+	            return listContainer ? listContainer.querySelector(".handrive-current-dir-row") : null;
+	        }
+
+        function getGuestDemoRowForEntry(entry, options) {
+            if (!entry || !entry.path) {
+                return null;
+            }
+            var entryPath = "";
+            try {
+                entryPath = normalizePath(entry.path || "", true);
+            } catch (error) {
+                entryPath = "";
+            }
+            if (!entryPath) {
+                return null;
+            }
+            if (!options || options.scroll !== false) {
+                scrollEntryRowIntoView(entryPath);
+            }
+            var row = state.entryRowByPath.get(entryPath) || null;
+            return isGuestDemoElementVisible(row) ? row : null;
+        }
+
+        function getGuestDemoVisibleEntryRow(predicate) {
+            var matchedRow = null;
+            state.entryRowByPath.forEach(function (row, entryPath) {
+                if (matchedRow || !isGuestDemoElementVisible(row)) {
+                    return;
+                }
+                var entry = state.entryByPath.get(normalizePath(entryPath || "", true)) || null;
+                if (!entry || (typeof predicate === "function" && !predicate(entry))) {
+                    return;
+                }
+                matchedRow = row;
+            });
+            return matchedRow;
         }
 
         function getGuestDemoPreferredRow() {
             var entry = getPreferredGuestDemoEntry();
-            var entryPath = "";
-            if (entry && entry.path) {
-                entryPath = normalizePath(entry.path || "", true);
-                scrollEntryRowIntoView(entryPath);
-            }
             return findFirstVisibleGuestDemoElement([
+                function () { return getGuestDemoRowForEntry(entry); },
+                function () { return getGuestDemoRowForEntry(getGuestDemoPreferredPlainFileEntry()); },
+                function () { return getGuestDemoVisibleEntryRow(isGuestDemoPlainFileEntry); },
                 function () {
-                    return entryPath ? state.entryRowByPath.get(entryPath) : null;
+                    return getGuestDemoVisibleEntryRow(function (rowEntry) {
+                        return Boolean(rowEntry && rowEntry.path && !rowEntry.isCurrentFolder);
+                    });
                 },
-                ".handrive-list-items .handrive-item-row:not(.is-empty)",
                 getGuestDemoCurrentDirRow,
                 listContainer,
             ]);
@@ -19961,8 +20120,9 @@
 
         function getGuestDemoFirstListRow() {
             return findFirstVisibleGuestDemoElement([
-                ".handrive-list-items .handrive-item-row:not(.is-empty):not(.handrive-current-dir-row)",
-                getGuestDemoPreferredRow,
+                function () { return getGuestDemoRowForEntry(getGuestDemoPreferredPlainFileEntry()); },
+                function () { return getGuestDemoVisibleEntryRow(isGuestDemoPlainFileEntry); },
+                listContainer,
             ]);
         }
 
@@ -20268,6 +20428,27 @@
             ]);
         }
 
+        function getGuestDemoShareLinkRowsTarget() {
+            return buildGuestDemoCompositeTarget([
+                ".handrive-url-share-link-group",
+                "#handrive-url-share-download-row",
+            ]) || findFirstVisibleGuestDemoElement([
+                ".handrive-url-share-link-group",
+                "#handrive-url-share-download-row",
+                "#handrive-url-share-modal .site-modal-dialog",
+            ]);
+        }
+
+        function isGuestDemoShareLinkRowsReady() {
+            return Boolean(
+                getGuestDemoShareModalTarget() &&
+                findFirstVisibleGuestDemoElement([
+                    ".handrive-url-share-link-group",
+                    "#handrive-url-share-download-row",
+                ])
+            );
+        }
+
         function getGuestDemoShareEditTarget() {
             return findFirstVisibleGuestDemoElement([
                 "#handrive-url-share-edit-toggle",
@@ -20354,6 +20535,15 @@
                 "#handrive-page-help-modal .handrive-help-modal",
                 "#handrive-page-help-modal .site-modal-dialog",
                 "#handrive-page-help-modal",
+            ]);
+        }
+
+        function getGuestDemoHelpTutorialButtonTarget() {
+            return findFirstVisibleGuestDemoElement([
+                ".handrive-help-modal-tutorial-btn",
+                ".handrive-help-modal-title-row",
+                ".handrive-help-modal-head",
+                getGuestDemoHelpModalTarget,
             ]);
         }
 
@@ -20685,7 +20875,9 @@
 
             guestDemoTourKicker.textContent = formatTutorialStepProgress(stepIndex, step);
             guestDemoTourTitle.textContent = t(step.titleKey, step.titleFallback);
-            guestDemoTourBody.textContent = t(step.bodyKey, step.bodyFallback);
+            var bodyKey = (isGuestDemoMode || !isAuthenticated) && step.guestBodyKey ? step.guestBodyKey : step.bodyKey;
+            var bodyFallback = (isGuestDemoMode || !isAuthenticated) && step.guestBodyFallback ? step.guestBodyFallback : step.bodyFallback;
+            guestDemoTourBody.textContent = t(bodyKey, bodyFallback);
             guestDemoTourAction.textContent = t(step.actionKey, step.actionFallback);
             var previousLabel = t("guest_demo_onboarding_previous", textByLang("이전", "Previous"));
             var nextLabel = t("guest_demo_onboarding_next", textByLang("다음", "Next"));
@@ -20900,9 +21092,11 @@
                 labelKey: settings.labelKey || ("guest_demo_onboarding_step_" + id),
                 titleKey: "guest_demo_tour_" + id + "_title",
                 bodyKey: "guest_demo_tour_" + id + "_body",
+                guestBodyKey: settings.guestBodyKey || "",
                 actionKey: "guest_demo_tour_" + id + "_action",
                 titleFallback: titleFallback,
                 bodyFallback: bodyFallback,
+                guestBodyFallback: settings.guestBodyFallback || "",
                 actionFallback: actionFallback,
                 placement: settings.placement || "",
                 allowTargetFallback: settings.allowTargetFallback !== false,
@@ -20930,11 +21124,13 @@
                     1,
                     1,
                     "overview",
-                    textByLang("HanDrive 전체 기능 투어", "HanDrive full feature tour"),
-                    textByLang("이 투어는 임시 드라이브에서 작동하며, 강조된 HanDrive 영역 안에서 기능 위치와 사용 순서를 말풍선으로 안내합니다.", "This tour runs inside a temporary drive and uses callouts in the highlighted HanDrive area to show where features live."),
-                    textByLang("튜토리얼 전용 임시 드라이브 영역을 확인한 뒤 다음 단계로 이동하세요.", "Review the temporary tutorial drive area, then move to the next step."),
+                    textByLang("HanDrive 전체 기능 튜토리얼", "HanDrive full feature tutorial"),
+                    textByLang("이 튜토리얼는 임시 드라이브에서 작동하며, 실제 사용자의 드라이브에 영향을 주지 않습니다.", "This tutorial runs inside a temporary drive and does not affect the user's real drive."),
+                    textByLang("튜토리얼 전용 임시 드라이브 영역을 확인해보세요.", "Review the temporary tutorial drive area."),
                     {
                         labelKey: "guest_demo_onboarding_step_overview",
+                        guestBodyKey: "guest_demo_tour_overview_guest_body",
+                        guestBodyFallback: textByLang("이 튜토리얼는 임시 드라이브에서 작동하며, 이후 삭제됩니다.", "This tutorial runs inside a temporary drive and will be deleted afterward."),
                         target: function () {
                             return findFirstVisibleGuestDemoElement([listLayout, listPane, listContainer, root]);
                         },
@@ -20947,7 +21143,7 @@
                     2,
                     "browse_list",
                     textByLang("파일 목록과 폴더 이동", "File list and folder navigation"),
-                    textByLang("파일 목록에는 현재 폴더의 파일과 폴더가 표시됩니다. 행을 선택하거나 드래그해서 기본 조작을 시작합니다.", "The file list shows files and folders in the current folder. Select rows or drag them to start common actions."),
+                    textByLang("파일 목록에는 현재 폴더의 파일과 폴더가 표시됩니다. 폴더를 클릭하면 트리 형태로 폴더가 열립니다.", "The file list shows files and folders in the current folder. Click a folder to open it as a tree."),
                     textByLang("목록의 튜토리얼 파일 행 위치를 확인하세요.", "Check where the tutorial file rows are in the list."),
                     {
                         labelKey: "guest_demo_onboarding_step_browse",
@@ -20986,7 +21182,7 @@
                     1,
                     "search",
                     textByLang("검색과 정렬", "Search and sorting"),
-                    textByLang("현재 폴더 행에서 검색창과 정렬 라벨을 함께 확인할 수 있습니다.", "The current-folder row contains both search and sort controls."),
+                    textByLang("현재 폴더에서 파일명을 검색하고, 수정일, 유형, 크기 등 컬럼을 클릭해 파일을 정렬할 수 있습니다.", "Search file names in the current folder and click columns such as modified date, type, and size to sort files."),
                     textByLang("현재 폴더 행의 검색과 정렬 영역을 확인하세요.", "Check the search and sort area in the current-folder row."),
                     {
                         labelKey: "guest_demo_onboarding_step_search",
@@ -21032,7 +21228,7 @@
                     "preview_panel",
                     textByLang("미리보기 영역", "Preview area"),
                     textByLang("선택한 파일 내용은 목록 오른쪽 또는 아래쪽의 미리보기 영역에 표시됩니다.", "The selected file appears in the preview area to the side or below the list."),
-                    textByLang("미리보기 내용을 확인한 뒤 다음 단계로 이동하세요.", "Review the preview content, then move to the next step."),
+                    textByLang("미리보기 내용을 확인해보세요.", "Review the preview content."),
                     {
                         labelKey: "guest_demo_onboarding_step_preview",
                         prepare: function () {
@@ -21050,7 +21246,7 @@
                     "preview_tools_actions",
                     textByLang("미리보기 도구", "Preview tools"),
                     textByLang("미리보기 상단에서 공유, 인쇄, 다운로드, 편집, 삭제 같은 파일 작업을 실행합니다.", "Use the preview header for sharing, printing, downloading, editing, deleting, and other file actions."),
-                    textByLang("상단 버튼들의 위치를 확인한 뒤 다음 단계로 이동하세요.", "Review the header buttons, then move to the next step."),
+                    textByLang("상단 버튼들의 위치를 확인해보세요.", "Review the header buttons."),
                     {
                         labelKey: "guest_demo_onboarding_step_preview_tools",
                         prepare: function () {
@@ -21185,7 +21381,7 @@
                 step(
                     7,
                     1,
-                    5,
+                    6,
                     "save_filename",
                     textByLang("저장과 파일명", "Save and filename"),
                     textByLang("편집기 상단에서 파일명을 확인하고 필요하면 이름을 바꿀 수 있습니다.", "Check the filename in the editor header and rename it if needed."),
@@ -21209,7 +21405,7 @@
                 step(
                     7,
                     2,
-                    5,
+                    6,
                     "save_action",
                     textByLang("저장과 파일명", "Save and filename"),
                     textByLang("저장 버튼을 누르면 현재 변경사항을 저장합니다. 공유/깃/데모 상태에 따라 저장 모달이나 커밋 메시지 입력이 추가될 수 있습니다.", "Press Save to store changes. Shared, Git, or demo contexts may show a save modal or commit message step."),
@@ -21230,14 +21426,14 @@
                         },
                     }
                 ),
-                step(
-                    7,
-                    3,
-                    5,
-                    "save_rename_row",
-                    textByLang("저장과 파일명", "Save and filename"),
-                    textByLang("에디터를 닫은 상태에서는 파일 행의 우클릭 메뉴로 이름을 바꿀 수 있습니다.", "When the editor is closed, rename from a file row context menu."),
-                    textByLang("첫 번째 파일 행을 우클릭하세요.", "Right-click the first file row."),
+	                step(
+	                    7,
+	                    3,
+	                    6,
+	                    "save_rename_row",
+	                    textByLang("저장과 파일명", "Save and filename"),
+	                    textByLang("에디터를 닫은 상태에서는 파일 행의 우클릭 메뉴로 이름을 바꿀 수 있습니다.", "When the editor is closed, rename from a file row context menu."),
+	                    textByLang("강조된 파일 행을 우클릭하세요.", "Right-click the highlighted file row."),
                     {
                         labelKey: "guest_demo_onboarding_step_save",
                         prepare: function () {
@@ -21256,10 +21452,10 @@
                 step(
                     7,
                     4,
-                    5,
+                    6,
                     "save_rename_menu",
                     textByLang("저장과 파일명", "Save and filename"),
-                    textByLang("우클릭 메뉴에서 파일 작업을 선택할 수 있습니다. 이름 바꾸기를 선택하면 파일명 변경 모달이 열립니다.", "The context menu contains file actions. Choose Rename to open the filename modal."),
+                    textByLang("우클릭 메뉴에서 파일 작업을 선택할 수 있습니다. 이름 바꾸기를 선택하면 이름 바꾸기 모달이 열립니다.", "The context menu contains file actions. Choose Rename to open the rename modal."),
                     textByLang("이름 바꾸기 버튼을 누르세요.", "Press Rename."),
                     {
                         labelKey: "guest_demo_onboarding_step_save",
@@ -21279,7 +21475,35 @@
                 step(
                     7,
                     5,
-                    5,
+                    6,
+                    "save_rename_modal_open",
+                    textByLang("이름 바꾸기 모달", "Rename modal"),
+                    textByLang("이름 바꾸기 모달이 열리면 새 이름 입력칸과 적용 버튼을 확인할 수 있습니다.", "When the rename modal opens, check the new-name field and Apply button."),
+                    textByLang("이름 바꾸기 모달을 확인해보세요.", "Review the rename modal."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_save",
+                        prepare: function () {
+                            openGuestDemoSaveRenameModal();
+                            bindGuestDemoStepAutoAdvance(renameInput, "focus", "save_rename_modal_open", {
+                                delayMs: 140,
+                            });
+                            bindGuestDemoStepAutoAdvance(renameInput, "click", "save_rename_modal_open", {
+                                delayMs: 140,
+                            });
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([
+                                "#handrive-rename-modal .site-modal-dialog",
+                                "#handrive-rename-modal",
+                                getGuestDemoRenameModalTarget,
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    7,
+                    6,
+                    6,
                     "save_rename_modal",
                     textByLang("저장과 파일명", "Save and filename"),
                     textByLang("이름 바꾸기 모달에서 새 이름을 입력하고 적용하면 파일 또는 폴더 이름이 변경됩니다.", "Enter a new name in the rename modal and apply it to rename the file or folder."),
@@ -21417,7 +21641,7 @@
                     "create_result",
                     textByLang("생성 화면", "Creation screen"),
                     textByLang("새 폴더 모달에서는 폴더명을 입력해 새 폴더를 생성할 수 있습니다.", "In the New folder modal, enter a folder name to create a new folder."),
-                    textByLang("현재 열린 생성 화면을 확인한 뒤 다음 단계로 이동하세요.", "Review the open creation surface, then move to the next step."),
+                    textByLang("현재 열린 생성 화면을 확인해보세요.", "Review the open creation surface."),
                     {
                         labelKey: "guest_demo_onboarding_step_create",
                         prepare: function () {
@@ -21498,7 +21722,8 @@
                                 filter: function (event) {
                                     return Boolean(event && event.detail && event.detail.enabled);
                                 },
-                                delayMs: 120,
+                                resolveCurrentUi: true,
+                                delayMs: 180,
                             });
                         },
                         target: function () {
@@ -21511,18 +21736,20 @@
                     4,
                     5,
                     "share_targets",
-                    textByLang("공유 대상", "Share targets"),
-                    textByLang("대상 사용자를 지정하지 않으면 링크를 아는 모든 사용자가 접근하고, 입력하면 지정 사용자만 접근합니다.", "Without target users, anyone with the link can access it. Add users to restrict access."),
-                    textByLang("대상 사용자 입력 영역을 확인하세요.", "Check the target user input area."),
+                    textByLang("공유 링크와 다운로드 링크", "Share and download links"),
+                    textByLang("URL 공유가 켜지면 대상 사용자 입력 영역, 공유 URL, 다운로드 링크를 한 곳에서 확인할 수 있습니다.", "When URL sharing is on, the target-user field, share URL, and download link are shown together."),
+                    textByLang("공유 링크 묶음과 다운로드 링크 행을 확인하세요.", "Check the share-link group and download-link row."),
                     {
                         labelKey: "guest_demo_onboarding_step_share",
                         prepare: function () {
                             if (!getGuestDemoShareModalTarget()) {
                                 openGuestDemoShareModal();
                             }
+                            scheduleGuestDemoTourPositionAfterLayoutChange();
+                            window.setTimeout(scheduleGuestDemoTourPositionAfterLayoutChange, 180);
                         },
                         target: function () {
-                            return findFirstVisibleGuestDemoElement([getGuestDemoShareTargetUserTarget, getGuestDemoShareModalTarget, previewUrlShareButton]);
+                            return findFirstVisibleGuestDemoElement([getGuestDemoShareLinkRowsTarget, getGuestDemoShareTargetUserTarget, getGuestDemoShareModalTarget, previewUrlShareButton]);
                         },
                     }
                 ),
@@ -21576,7 +21803,7 @@
                     "manage_menu",
                     textByLang("이름 변경, 삭제, 이동", "Rename, delete, and move"),
                     textByLang("우클릭 메뉴에서 이름 바꾸기, 삭제, 다운로드, 수정 등의 항목을 선택할 수 있습니다.", "The context menu provides actions such as Rename, Delete, Download, and Edit."),
-                    textByLang("우클릭 메뉴를 확인한 뒤 다음 단계로 이동하세요.", "Review the context menu, then move to the next step."),
+                    textByLang("우클릭 메뉴를 확인해보세요.", "Review the context menu."),
                     {
                         labelKey: "guest_demo_onboarding_step_manage",
                         prepare: function () {
@@ -21599,7 +21826,7 @@
                 step(
                     12,
                     1,
-                    7,
+                    8,
                     "advanced_samples",
                     textByLang("압축, Git, 지도, MP3 변환", "Archive, Git, maps, and MP3 conversion"),
                     textByLang("압축 해제, 공개 Git 레포 보기, 지도 생성, MP3 변환, 오디오 미리보기를 체험할 수 있도록 전용 샘플을 준비했습니다.", "Dedicated samples are prepared for archive extraction, public Git repo viewing, map creation, MP3 conversion, and audio preview."),
@@ -21622,23 +21849,23 @@
                             });
                             return getGuestDemoAdvancedSampleTarget() || getGuestDemoAdvancedSampleRow();
                         },
-                        target: function () {
-                            return findFirstVisibleGuestDemoElement([
-                                getGuestDemoAdvancedSampleTarget,
-                                ".handrive-list-items .handrive-item-row:not(.is-empty)",
-                                listContainer,
-                            ]);
-                        },
+	                        target: function () {
+	                            return findFirstVisibleGuestDemoElement([
+	                                getGuestDemoAdvancedSampleTarget,
+	                                getGuestDemoFirstListRow,
+	                                listContainer,
+	                            ]);
+	                        },
                     }
                 ),
                 step(
                     12,
                     2,
-                    7,
+                    8,
                     "advanced_archive_menu",
                     textByLang("압축 해제", "Archive extraction"),
                     textByLang("압축 파일을 우클릭하면 압축 해제 항목으로 압축 내용을 현재 드라이브에 풀 수 있습니다.", "Right-click an archive file to extract its contents into the current drive."),
-                    textByLang("압축 해제 항목을 확인한 뒤 다음 단계로 이동하세요.", "Check the Extract action, then move to the next step."),
+                    textByLang("압축 해제 항목을 확인해보세요.", "Check the Extract action."),
                     {
                         labelKey: "guest_demo_onboarding_step_advanced",
                         prepare: function () {
@@ -21662,14 +21889,22 @@
                 step(
                     12,
                     3,
-                    7,
+                    8,
                     "advanced_git_menu",
                     textByLang("Git 레포", "Git repository"),
                     textByLang("폴더나 공개 repo 샘플을 우클릭하면 Git 레포 생성, 관리, 브랜치 같은 Git 관련 항목을 확인할 수 있습니다.", "Right-click a folder or public repo sample to find Git repository, management, and branch actions."),
-                    textByLang("Git 관련 메뉴 항목을 확인한 뒤 다음 단계로 이동하세요.", "Check the Git menu action, then move to the next step."),
+                    textByLang("Git 관련 메뉴 항목을 확인해보세요.", "Check the Git menu action."),
                     {
                         labelKey: "guest_demo_onboarding_step_advanced",
                         prepare: function () {
+                            bindGuestDemoStepAutoAdvanceMany([
+                                contextGitManageRepoButton,
+                                contextGitCreateBranchButton,
+                            ], "click", "advanced_git_menu", {
+                                capture: true,
+                                resolveCurrentUi: true,
+                                delayMs: 360,
+                            });
                             if (
                                 !isGuestDemoElementVisible(contextGitCreateRepoButton) &&
                                 !isGuestDemoElementVisible(contextGitManageRepoButton) &&
@@ -21677,7 +21912,7 @@
                             ) {
                                 return openGuestDemoAdvancedContextMenu("git");
                             }
-                            return getGuestDemoContextActionsTarget(["git-create-repo", "git-manage-repo", "git-create-branch"]);
+                            return getGuestDemoContextActionsTarget(["open", "git-create-repo", "git-manage-repo", "git-create-branch"]);
                         },
                         target: function () {
                             if (
@@ -21688,7 +21923,8 @@
                                 openGuestDemoAdvancedContextMenu("git");
                             }
                             return findFirstVisibleGuestDemoElement([
-                                function () { return getGuestDemoContextActionsTarget(["git-create-repo", "git-manage-repo", "git-create-branch"]); },
+                                function () { return getGuestDemoContextActionsTarget(["open", "git-create-repo", "git-manage-repo", "git-create-branch"]); },
+                                contextOpenButton,
                                 contextGitCreateRepoButton,
                                 contextGitManageRepoButton,
                                 contextGitCreateBranchButton,
@@ -21701,11 +21937,31 @@
                 step(
                     12,
                     4,
-                    7,
+                    8,
+                    "advanced_git_opened",
+                    textByLang("Git 레포와 브랜치 보기", "Viewing Git repositories and branches"),
+                    textByLang("레포나 브랜치를 열면 목록에서 파일 구조와 브랜치 상태를 확인할 수 있습니다.", "After opening a repository or branch, the list shows its file tree and branch state."),
+                    textByLang("현재 열린 Git 목록을 확인해보세요.", "Review the open Git list."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_advanced",
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([
+                                function () { return buildGuestDemoCompositeTarget([getGuestDemoCurrentDirRow(), listItemsContainer]); },
+                                getGuestDemoCurrentDirRow,
+                                listItemsContainer,
+                                listContainer,
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    12,
+                    5,
+                    8,
                     "advanced_map_menu",
                     textByLang("지도 생성", "Map creation"),
                     textByLang("이미지나 SVG 파일을 우클릭하면 지도 생성 항목으로 맵 협업용 지도를 만들 수 있습니다.", "Right-click an image or SVG file to create a map for map collaboration."),
-                    textByLang("지도 생성 항목을 확인한 뒤 다음 단계로 이동하세요.", "Check the Create map action, then move to the next step."),
+                    textByLang("지도 생성 항목을 확인해보세요.", "Check the Create map action."),
                     {
                         labelKey: "guest_demo_onboarding_step_advanced",
                         prepare: function () {
@@ -21728,12 +21984,12 @@
                 ),
                 step(
                     12,
-                    5,
-                    7,
+                    6,
+                    8,
                     "advanced_mp3_menu",
                     textByLang("MP3 변환", "MP3 conversion"),
                     textByLang("동영상 파일을 우클릭하면 MP3 변환 항목으로 오디오 파일을 작업 내역에 추가합니다.", "Right-click a video file to add an MP3 conversion job."),
-                    textByLang("MP3 변환 항목을 확인한 뒤 다음 단계로 이동하세요.", "Check the Convert to MP3 action, then move to the next step."),
+                    textByLang("MP3 변환 항목을 확인해보세요.", "Check the Convert to MP3 action."),
                     {
                         labelKey: "guest_demo_onboarding_step_advanced",
                         prepare: function () {
@@ -21756,12 +22012,12 @@
                 ),
                 step(
                     12,
-                    6,
                     7,
+                    8,
                     "advanced_audio_menu",
                     textByLang("오디오 미리보기", "Audio preview"),
                     textByLang("오디오 파일은 열기나 다운로드 항목으로 재생 가능한 파일을 확인하고 저장할 수 있습니다.", "Audio files use Open and Download actions for playback and saving."),
-                    textByLang("열기와 다운로드 항목을 확인한 뒤 다음 단계로 이동하세요.", "Check the Open and Download actions, then move to the next step."),
+                    textByLang("열기와 다운로드 항목을 확인해보세요.", "Check the Open and Download actions."),
                     {
                         labelKey: "guest_demo_onboarding_step_advanced",
                         prepare: function () {
@@ -21786,12 +22042,12 @@
                 ),
                 step(
                     12,
-                    7,
-                    7,
+                    8,
+                    8,
                     "advanced_default_menu",
                     textByLang("선택한 항목의 메뉴", "Selected item menu"),
                     textByLang("선택한 행의 종류와 권한에 따라 가능한 작업만 우클릭 메뉴에 표시됩니다.", "The context menu only shows actions available for the selected row type and permissions."),
-                    textByLang("현재 열린 우클릭 메뉴를 확인한 뒤 다음 단계로 이동하세요.", "Review the open context menu, then move to the next step."),
+                    textByLang("현재 열린 우클릭 메뉴를 확인해보세요.", "Review the open context menu."),
                     {
                         labelKey: "guest_demo_onboarding_step_advanced",
                         prepare: function () {
@@ -21807,22 +22063,41 @@
                     1,
                     1,
                     "layout_splitter",
-                    textByLang("상세 영역과 확대/축소", "Detail layout and zoom"),
-                    textByLang("분할 막대로 목록과 미리보기/편집기 크기를 조절하고, 미리보기 영역에서는 Ctrl+스크롤 또는 모바일 핀치로 배율을 조절할 수 있습니다.", "Drag the splitter to resize the list and preview/editor, and use Ctrl+wheel or mobile pinch in the preview area to adjust zoom."),
-                    textByLang("분할 막대와 미리보기 영역을 확인하고 직접 조절해보세요.", "Check the splitter and preview area, then try resizing or zooming."),
+                    textByLang("상세 영역 크기 조절", "Detail pane resizing"),
+                    textByLang("분할 막대를 드래그하면 목록과 미리보기/편집기 영역의 크기를 조절할 수 있습니다.", "Drag the splitter to resize the list and preview/editor panes."),
+                    textByLang("강조된 분할 막대를 잡고 좌우 또는 상하로 움직여보세요.", "Drag the highlighted splitter horizontally or vertically."),
                     {
                         labelKey: "guest_demo_onboarding_step_layout",
                         prepare: function () {
                             startGuestDemoOnboarding();
                         },
                         target: function () {
-                            return buildGuestDemoCompositeTarget([previewBody, listSplitter]) ||
-                                findFirstVisibleGuestDemoElement([previewBody, listSplitter, previewPanel, listItemsContainer, listLayout]);
+                            return findFirstVisibleGuestDemoElement([listSplitter]);
                         },
+                        allowTargetFallback: false,
                     }
                 ),
                 step(
                     14,
+                    1,
+                    1,
+                    "layout_zoom",
+                    textByLang("목록과 문서 확대/축소", "List and document zoom"),
+                    textByLang("목록과 미리보기/문서 영역은 Ctrl+스크롤 또는 모바일 핀치로 배율을 조절할 수 있습니다.", "Use Ctrl+wheel or mobile pinch to zoom the list and preview/document areas."),
+                    textByLang("목록 또는 미리보기 영역에서 Ctrl+스크롤이나 핀치 줌을 해보세요.", "Try Ctrl+wheel or pinch zoom over the list or preview area."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_zoom",
+                        prepare: function () {
+                            startGuestDemoOnboarding();
+                        },
+                        target: function () {
+                            return buildGuestDemoCompositeTarget([listItemsContainer, previewBody]) ||
+                                findFirstVisibleGuestDemoElement([listItemsContainer, previewBody, previewPanel, listLayout]);
+                        },
+                    }
+                ),
+                step(
+                    15,
                     1,
                     1,
                     "preview_drag",
@@ -21841,13 +22116,13 @@
                     }
                 ),
                 step(
-                    15,
+                    16,
                     1,
                     2,
                     "jobs_panel",
                     textByLang("작업 내역", "Job history"),
                     textByLang("업로드, 이동, 삭제, 압축, YouTube 저장, MP3 변환 같은 비동기 작업은 이 패널에 진행률과 결과가 표시됩니다.", "Uploads, moves, deletes, archive jobs, YouTube saves, and MP3 conversions show progress and results in this panel."),
-                    textByLang("작업 내역 패널을 확인한 뒤 다음 단계로 이동하세요.", "Check the job history panel, then move to the next step."),
+                    textByLang("작업 내역 패널을 확인해보세요.", "Check the job history panel."),
                     {
                         labelKey: "guest_demo_onboarding_step_jobs",
                         prepare: showGuestDemoQueuePreview,
@@ -21858,7 +22133,7 @@
                     }
                 ),
                 step(
-                    15,
+                    16,
                     2,
                     2,
                     "jobs_item",
@@ -21875,7 +22150,7 @@
                     }
                 ),
                 step(
-                    16,
+                    17,
                     1,
                     2,
                     "help_button",
@@ -21896,7 +22171,7 @@
                     }
                 ),
                 step(
-                    16,
+                    17,
                     2,
                     2,
                     "help_modal",
@@ -21910,10 +22185,7 @@
                         },
                         target: function () {
                             return findFirstVisibleGuestDemoElement([
-                                ".handrive-help-modal-title-row",
-                                ".handrive-help-modal-tutorial-btn",
-                                ".handrive-help-modal-title",
-                                ".handrive-help-modal-head",
+                                getGuestDemoHelpTutorialButtonTarget,
                                 getGuestDemoHelpModalTarget,
                                 "#handrive-page-help-btn",
                             ]);
@@ -21921,15 +22193,15 @@
                     }
                 ),
                 step(
-                    17,
+                    18,
                     1,
                     1,
                     "practice",
                     textByLang("자유연습", "Free practice"),
                     textByLang("지금부터는 튜토리얼 임시 드라이브에서 파일 열기, 업로드, 새 파일 만들기, 공유 설정을 자유롭게 시도할 수 있습니다.", "You can now freely try opening files, uploading, creating files, and changing share settings inside the temporary tutorial drive."),
-                    isAuthenticated
-                        ? textByLang("강조된 HanDrive 영역 안에서 원하는 기능을 눌러 연습해보세요. 종료하면 임시 파일은 삭제됩니다.", "Use any feature inside the highlighted HanDrive area. Ending the tutorial removes the temporary files.")
-                        : textByLang("강조된 HanDrive 영역 안에서 원하는 기능을 눌러 연습해보세요. 로그인 시 개인 드라이브 이용이 가능합니다.", "Use any feature inside the highlighted HanDrive area. Log in to use your personal drive."),
+                    isGuestDemoMode || !isAuthenticated
+                        ? textByLang("강조된 HanDrive 영역 안에서 원하는 기능을 눌러 연습해보세요. 로그인 시 개인 드라이브 이용이 가능합니다.", "Use any feature inside the highlighted HanDrive area. Log in to use your personal drive.")
+                        : textByLang("강조된 HanDrive 영역 안에서 원하는 기능을 눌러 연습해보세요. 종료하면 임시 파일은 삭제됩니다.", "Use any feature inside the highlighted HanDrive area. Ending the tutorial removes the temporary files."),
                     {
                         labelKey: "guest_demo_onboarding_step_practice",
                         target: function () {
@@ -21982,7 +22254,7 @@
             }
             if (groupIndex === 7) {
                 if (getGuestDemoRenameModalTarget()) {
-                    return "save_rename_modal";
+                    return "save_rename_modal_open";
                 }
                 if (isGuestDemoElementVisible(contextRenameButton)) {
                     return "save_rename_menu";
@@ -22003,6 +22275,9 @@
             }
             if (groupIndex === 10) {
                 if (getGuestDemoShareModalTarget()) {
+                    if (isGuestDemoShareLinkRowsReady()) {
+                        return "share_targets";
+                    }
                     return "share_url";
                 }
                 if (getGuestDemoVisiblePreviewPanel()) {
@@ -22014,6 +22289,9 @@
                 return isGuestDemoElementVisible(contextRenameButton) ? "manage_menu" : "manage_row";
             }
             if (groupIndex === 12) {
+                if (isGuestDemoGitRepositoryView()) {
+                    return "advanced_git_opened";
+                }
                 var advancedMenuStepId = getGuestDemoAdvancedMenuStepId();
                 if (advancedMenuStepId) {
                     return advancedMenuStepId;
@@ -22021,12 +22299,15 @@
                 return "advanced_samples";
             }
             if (groupIndex === 14) {
-                return "preview_drag";
+                return "layout_zoom";
             }
             if (groupIndex === 15) {
-                return getGuestDemoJobItemTarget() ? "jobs_item" : "jobs_panel";
+                return "preview_drag";
             }
             if (groupIndex === 16) {
+                return getGuestDemoJobItemTarget() ? "jobs_item" : "jobs_panel";
+            }
+            if (groupIndex === 17) {
                 return getGuestDemoHelpModalTarget() ? "help_modal" : "help_button";
             }
             return "";
@@ -22067,6 +22348,7 @@
             var hasCreateModal = Boolean(getGuestDemoFolderCreateModalTarget());
             var hasShareModal = Boolean(getGuestDemoShareModalTarget());
             var advancedMenuStepId = getGuestDemoAdvancedMenuStepId();
+            var hasAdvancedGitView = isGuestDemoGitRepositoryView();
             var hasHelpModal = Boolean(getGuestDemoHelpModalTarget());
 
             switch (stepId) {
@@ -22090,6 +22372,7 @@
                     return !hasEditor && !hasRenameMenu && !hasRenameModal;
                 case "save_rename_menu":
                     return hasRenameMenu && !hasRenameModal;
+                case "save_rename_modal_open":
                 case "save_rename_modal":
                     return hasRenameModal;
                 case "upload_drop":
@@ -22116,11 +22399,13 @@
                 case "manage_menu":
                     return hasRenameMenu;
                 case "advanced_samples":
-                    return !advancedMenuStepId;
+                    return !advancedMenuStepId && !hasAdvancedGitView;
                 case "advanced_archive_menu":
                     return advancedMenuStepId === "advanced_archive_menu";
                 case "advanced_git_menu":
                     return advancedMenuStepId === "advanced_git_menu";
+                case "advanced_git_opened":
+                    return hasAdvancedGitView;
                 case "advanced_map_menu":
                     return advancedMenuStepId === "advanced_map_menu";
                 case "advanced_mp3_menu":
@@ -22292,9 +22577,38 @@
             return tutorialRootPath;
         }
 
+        function closeGuestDemoTransientModalsForStepChange() {
+            if (urlShareModal && typeof urlShareModal.close === "function") {
+                urlShareModal.close();
+            }
+            if (window.HandriveDemoSaveModal && typeof window.HandriveDemoSaveModal.close === "function") {
+                window.HandriveDemoSaveModal.close();
+            }
+            setListEditorPreviewModalOpen(false);
+            setFolderCreateModalOpen(false);
+            setArchiveExtractModalOpen(false);
+            setArchiveCreateModalOpen(false);
+            setRenameModalOpen(false);
+            setBranchCreateModalOpen(false);
+            closeGitRepoModal();
+            closeMapCreateModal();
+            setFolderIconModalOpen(false);
+            setSyncModalOpen(false);
+            closeListMarkdownSnippetMenu();
+            closeContextMenu();
+            document.dispatchEvent(new window.CustomEvent("handrive:tutorial-close-help-modal"));
+            syncHandriveModalBodyState();
+        }
+
         async function runGuestDemoExactStep(stepIndex) {
             var navigationToken = guestDemoStepNavigationToken + 1;
             guestDemoStepNavigationToken = navigationToken;
+            var exactSteps = getGuestDemoTourSteps(null);
+            var exactIndex = Math.max(0, Math.min(
+                exactSteps.length - 1,
+                Math.floor(Number(stepIndex) || 0)
+            ));
+            closeGuestDemoHelpModalForGroupChange(normalizeTutorialStepProgressMeta(exactIndex, exactSteps[exactIndex]).groupIndex);
             await ensureGuestDemoTutorialRootForStepChange();
             if (navigationToken !== guestDemoStepNavigationToken) {
                 return guestDemoTourCurrentIndex;
@@ -22305,15 +22619,30 @@
         async function runGuestDemoStep(stepIndex) {
             var navigationToken = guestDemoStepNavigationToken + 1;
             guestDemoStepNavigationToken = navigationToken;
+            var requestedSteps = getGuestDemoTourSteps(null);
+            var requestedIndex = Math.max(0, Math.min(
+                requestedSteps.length - 1,
+                Math.floor(Number(stepIndex) || 0)
+            ));
+            closeGuestDemoHelpModalForGroupChange(normalizeTutorialStepProgressMeta(requestedIndex, requestedSteps[requestedIndex]).groupIndex);
             await ensureGuestDemoTutorialRootForStepChange();
             if (navigationToken !== guestDemoStepNavigationToken) {
                 return guestDemoTourCurrentIndex;
             }
-            var steps = getGuestDemoTourSteps(null);
-            return showGuestDemoStep(null, resolveGuestDemoStepIndexForCurrentUi(steps, stepIndex));
+            return showGuestDemoStep(null, resolveGuestDemoStepIndexForCurrentUi(requestedSteps, stepIndex));
+        }
+
+        function closeGuestDemoHelpModalForGroupChange(groupIndex) {
+            var targetGroup = Math.max(1, Math.min(HANDRIVE_TUTORIAL_TOTAL_GROUPS, Math.floor(Number(groupIndex) || 1)));
+            if (targetGroup === 17 || getGuestDemoActiveGroupIndex() !== 17 || !getGuestDemoHelpModalTarget()) {
+                return;
+            }
+            document.dispatchEvent(new window.CustomEvent("handrive:tutorial-close-help-modal"));
         }
 
         async function runGuestDemoGroupStep(groupIndex) {
+            closeGuestDemoTransientModalsForStepChange();
+            closeGuestDemoHelpModalForGroupChange(groupIndex);
             var steps = getGuestDemoTourSteps(null);
             var stepIndex = getGuestDemoFirstGroupStepIndex(steps, groupIndex);
             return runGuestDemoStep(stepIndex);
@@ -23068,6 +23397,59 @@
         const isSuperuser = root.dataset.isSuperuser === "1";
         const handriveRootLabel = (root.dataset.handriveRootLabel || "HanDrive").trim() || "HanDrive";
         const effectiveRootLabel = handriveRootLabel;
+        const writeTutorialDisplayLabel = textByLang("튜토리얼", "Tutorial");
+
+        function isWriteTutorialTokenSegment(value) {
+            return /^[0-9a-f]{32}$/i.test(String(value || "").trim());
+        }
+
+        function getGuestTutorialRootPathForWrite(pathValue) {
+            const normalized = normalizePath(pathValue, true);
+            if (!normalized) {
+                return "";
+            }
+            const parts = normalized.split("/").filter(Boolean);
+            if (parts.length >= 2 && parts[0] === "guest-tutorial" && isWriteTutorialTokenSegment(parts[1])) {
+                return parts.slice(0, 2).join("/");
+            }
+            return "";
+        }
+
+        function buildGuestTutorialBreadcrumbItemsForWrite(pathValue) {
+            const normalized = normalizePath(pathValue, true);
+            const tutorialRootPath = getGuestTutorialRootPathForWrite(normalized);
+            if (!tutorialRootPath) {
+                return null;
+            }
+            const crumbs = [
+                {
+                    label: "guest",
+                    path: "guest",
+                    isCurrent: false,
+                },
+                {
+                    label: writeTutorialDisplayLabel,
+                    path: tutorialRootPath,
+                    isCurrent: normalized === tutorialRootPath,
+                },
+            ];
+            if (normalized === tutorialRootPath) {
+                return crumbs;
+            }
+            const tail = normalized.startsWith(tutorialRootPath + "/")
+                ? normalized.slice(tutorialRootPath.length + 1)
+                : "";
+            let accumulated = tutorialRootPath;
+            tail.split("/").filter(Boolean).forEach(function (part, index, parts) {
+                accumulated += "/" + part;
+                crumbs.push({
+                    label: decodeBreadcrumbLabel(part),
+                    path: accumulated,
+                    isCurrent: index === parts.length - 1,
+                });
+            });
+            return crumbs;
+        }
 
         function getWriteTutorialReturnUrl() {
             if (tutorialReturnUrl) {
@@ -25334,6 +25716,10 @@
         function buildWriteBreadcrumbItems(pathValue) {
             const normalized = normalizePath(pathValue, true);
             const targetPath = normalized || scopedHomeDir || "";
+            const guestTutorialCrumbs = buildGuestTutorialBreadcrumbItemsForWrite(targetPath);
+            if (guestTutorialCrumbs) {
+                return guestTutorialCrumbs;
+            }
             const renderedCrumbs = applySaveEntryBreadcrumbLabels(applyRenderedToolbarBreadcrumbLabels(buildNavigationBreadcrumbItems(targetPath, {
                 effectiveRootLabel: effectiveRootLabel,
                 isSuperuser: isSuperuser,
@@ -25374,6 +25760,20 @@
             }
 
             const currentPath = normalizePath(state.selectedDir || state.browserDir, true);
+            const guestTutorialCrumbs = buildGuestTutorialBreadcrumbItemsForWrite(currentPath);
+            if (guestTutorialCrumbs) {
+                guestTutorialCrumbs.forEach(function (crumb, index) {
+                    if (index > 0) {
+                        const separator = document.createElement("span");
+                        separator.className = "handrive-save-crumb-sep";
+                        separator.textContent = "/";
+                        fragment.appendChild(separator);
+                    }
+                    addCrumb(crumb.label, crumb.path, crumb.isCurrent);
+                });
+                saveBreadcrumb.appendChild(fragment);
+                return;
+            }
             if (scopedHomeDir && isPathInsideScopedHome(currentPath || scopedHomeDir)) {
                 buildWriteBreadcrumbItems(currentPath || scopedHomeDir).forEach(function (crumb, index) {
                     if (index > 0) {

@@ -13,40 +13,42 @@
             </div>
             {% include "popup/handrive/_popup_close_button.html" with button_id="handrive-url-share-close-btn" %}
         </header>
-        <div class="handrive-url-share-targets" id="handrive-url-share-targets" hidden>
-            <p class="handrive-url-share-target-empty">{{ handrive_text.url_share_targets_empty_label }}</p>
-            <input
-                type="text"
-                id="handrive-url-share-target-input"
-                autocomplete="off"
-                spellcheck="false"
-                aria-label="{{ handrive_text.url_share_targets_placeholder }}"
-                placeholder="{{ handrive_text.url_share_targets_placeholder }}"
-            >
-            <div class="handrive-url-share-target-list" id="handrive-url-share-target-list" aria-live="polite"></div>
-        </div>
-        <div id="handrive-url-share-url-row" class="handrive-field handrive-field-full" hidden>
-            <div class="handrive-url-share-read-head">
-                <span id="handrive-url-share-read-label">{{ handrive_text.url_share_label }}</span>
-                <label class="handrive-url-share-edit-toggle" id="handrive-url-share-edit-toggle">
-                    <span>{{ handrive_text.url_share_edit_label }}</span>
-                    <input
-                        type="checkbox"
-                        id="handrive-url-share-edit-checkbox"
-                        aria-label="{{ handrive_text.url_share_edit_label }}"
-                        title="{{ handrive_text.url_share_edit_label }}"
-                    >
-                </label>
+        <div class="handrive-url-share-link-group">
+            <div class="handrive-url-share-targets" id="handrive-url-share-targets" hidden>
+                <p class="handrive-url-share-target-empty">{{ handrive_text.url_share_targets_empty_label }}</p>
+                <input
+                    type="text"
+                    id="handrive-url-share-target-input"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label="{{ handrive_text.url_share_targets_placeholder }}"
+                    placeholder="{{ handrive_text.url_share_targets_placeholder }}"
+                >
+                <div class="handrive-url-share-target-list" id="handrive-url-share-target-list" aria-live="polite"></div>
             </div>
-            <div class="handrive-url-share-input-wrap handrive-inline-copy-field">
-                <input type="text" id="handrive-url-share-input" readonly>
-                <button
-                    type="button"
-                    class="handrive-url-share-inline-copy-btn handrive-inline-copy-action"
-                    id="handrive-url-share-copy-url-icon-btn"
-                    aria-label="{{ handrive_text.url_share_copy_button }}"
-                    title="{{ handrive_text.url_share_copy_button }}"
-                ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"/></svg></button>
+            <div id="handrive-url-share-url-row" class="handrive-field handrive-field-full" hidden>
+                <div class="handrive-url-share-read-head">
+                    <span id="handrive-url-share-read-label">{{ handrive_text.url_share_label }}</span>
+                    <label class="handrive-url-share-edit-toggle" id="handrive-url-share-edit-toggle">
+                        <span>{{ handrive_text.url_share_edit_label }}</span>
+                        <input
+                            type="checkbox"
+                            id="handrive-url-share-edit-checkbox"
+                            aria-label="{{ handrive_text.url_share_edit_label }}"
+                            title="{{ handrive_text.url_share_edit_label }}"
+                        >
+                    </label>
+                </div>
+                <div class="handrive-url-share-input-wrap handrive-inline-copy-field">
+                    <input type="text" id="handrive-url-share-input" readonly>
+                    <button
+                        type="button"
+                        class="handrive-url-share-inline-copy-btn handrive-inline-copy-action"
+                        id="handrive-url-share-copy-url-icon-btn"
+                        aria-label="{{ handrive_text.url_share_copy_button }}"
+                        title="{{ handrive_text.url_share_copy_button }}"
+                    ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"/></svg></button>
+                </div>
             </div>
         </div>
         <div id="handrive-url-share-download-row" class="handrive-field handrive-field-full" hidden>

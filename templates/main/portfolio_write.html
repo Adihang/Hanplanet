@@ -12,6 +12,100 @@
     margin-top: 12px;
 }
 
+.portfolio-write-editor-head {
+    justify-content: space-between;
+}
+
+.portfolio-write-editor-head strong {
+    min-width: 0;
+}
+
+.portfolio-write-section-preview-btn,
+.portfolio-write-floating-preview-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    border: 1px solid var(--handrive-border);
+    border-radius: var(--handrive-radius-sm);
+    background: var(--handrive-bg);
+    color: var(--handrive-text-secondary);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.12s, border-color 0.12s, color 0.12s, translate 0.12s, box-shadow 0.12s;
+}
+
+.portfolio-write-section-preview-btn {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 9px;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.portfolio-write-section-preview-btn:hover,
+.portfolio-write-section-preview-btn:focus-visible,
+.portfolio-write-floating-preview-btn:hover,
+.portfolio-write-floating-preview-btn:focus-visible {
+    border-color: var(--handrive-border-heavy);
+    background: var(--handrive-surface-muted);
+    color: var(--handrive-text-stronger);
+    outline: none;
+    translate: 0 var(--btn-template-hover-lift, -1px);
+}
+
+.portfolio-write-section-preview-btn:active,
+.portfolio-write-floating-preview-btn:active {
+    translate: 0 var(--btn-template-active-press-depth, 1px);
+}
+
+.portfolio-write-section-preview-btn svg,
+.portfolio-write-floating-preview-btn svg {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+}
+
+.portfolio-write-floating-preview-btn {
+    position: fixed;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom));
+    z-index: var(--site-z-floating-raised, 1230);
+    min-height: 42px;
+    padding: 0 14px;
+    border-radius: 999px;
+    background: var(--handrive-modal-surface-bg, var(--handrive-bg));
+    box-shadow: var(--site-shadow-md, 0 16px 34px rgba(0, 0, 0, 0.2));
+}
+
+.portfolio-write-rendered-preview-frame {
+    width: 100%;
+    height: min(78dvh, 900px);
+    min-height: 520px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: var(--handrive-radius-sm);
+    background: #ffffff;
+}
+
+.portfolio-write-preview-loading,
+.portfolio-write-preview-error {
+    min-height: 180px;
+    display: grid;
+    place-items: center;
+    color: var(--handrive-text-muted);
+    text-align: center;
+}
+
+#ui-preview-content.portfolio-write-preview-host {
+    display: block;
+    max-width: none;
+    padding: 0;
+}
+
 .portfolio-write-list-empty {
     margin: 0;
     padding: 10px 12px;
@@ -71,6 +165,19 @@
     font-size: 13px;
 }
 
+.portfolio-write-field-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+}
+
+.portfolio-write-field-label {
+    min-width: 0;
+    color: inherit;
+}
+
 .portfolio-write-field input,
 .portfolio-write-field textarea,
 .portfolio-write-field select {
@@ -84,9 +191,131 @@
     font-size: 14px;
 }
 
+.portfolio-write-field input[type="date"] {
+    color-scheme: light;
+    padding-right: 38px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23555555' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2v4'/%3E%3Cpath d='M16 2v4'/%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cpath d='M3 10h18'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 11px center;
+    background-size: 18px 18px;
+}
+
+body.portfolio-write-page .portfolio-write-field input[type="date"]::-webkit-calendar-picker-indicator {
+    width: 28px;
+    height: 100%;
+    margin-right: -4px;
+    opacity: 0;
+    cursor: pointer;
+}
+
+body.portfolio-write-page.theme-dark .portfolio-write-field input[type="date"] {
+    color-scheme: dark;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23eeeeee' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2v4'/%3E%3Cpath d='M16 2v4'/%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cpath d='M3 10h18'/%3E%3C/svg%3E");
+}
+
 .portfolio-write-field textarea {
     min-height: 110px;
+    overflow: hidden;
     resize: vertical;
+}
+
+.portfolio-write-editor-tools {
+    margin-left: auto;
+}
+
+.portfolio-write-markdown-editor-shell {
+    height: clamp(260px, 38vh, 540px);
+    min-height: 260px;
+    overflow: hidden;
+}
+
+.portfolio-write-markdown-editor-shell .handrive-list-editor-body {
+    padding: 0;
+}
+
+.portfolio-write-handrive-editor-surface {
+    width: 100%;
+    min-height: 100%;
+    cursor: text;
+}
+
+.portfolio-write-handrive-editor-surface > .handrive-editor-highlight,
+.portfolio-write-handrive-editor-surface > textarea[data-portfolio-markdown-editor] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-sizing: border-box;
+    padding:
+        var(--handrive-editor-pad-y)
+        var(--handrive-editor-pad-x)
+        calc(var(--handrive-editor-pad-y) + var(--handrive-editor-scroll-bottom-space));
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 16px;
+    line-height: var(--handrive-editor-line-height);
+    tab-size: 4;
+    white-space: pre;
+}
+
+.portfolio-write-handrive-editor-surface > .handrive-editor-highlight {
+    overflow: hidden;
+}
+
+.portfolio-write-handrive-editor-surface > textarea[data-portfolio-markdown-editor] {
+    background: transparent;
+    color: transparent;
+    caret-color: var(--handrive-text-stronger);
+    resize: none;
+    overflow: auto;
+    z-index: 1;
+    outline: none;
+    box-shadow: none;
+}
+
+.portfolio-write-handrive-editor-surface > textarea[data-portfolio-markdown-editor]::selection {
+    background: var(--handrive-selected-bg);
+}
+
+.portfolio-write-handrive-editor-surface > textarea[data-portfolio-markdown-editor]:focus {
+    outline: none;
+    border-color: transparent;
+    box-shadow: none;
+}
+
+body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .handrive-md-src-token-heading {
+    color: #8ab4f8;
+}
+
+body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .handrive-md-src-token-list {
+    color: #f6c177;
+}
+
+body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .handrive-md-src-token-quote {
+    color: #88d498;
+}
+
+body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .handrive-md-src-token-hr {
+    color: #9aa0a6;
+}
+
+body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .handrive-md-src-token-link {
+    color: #7dd3fc;
+}
+
+body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .handrive-md-src-token-strong {
+    color: #f0abfc;
+}
+
+body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .handrive-md-src-token-em {
+    color: #f9d65c;
+}
+
+body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .handrive-md-src-token-code,
+body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .handrive-md-src-token-codeblock {
+    color: #a7f3d0;
 }
 
 .portfolio-write-actions {
@@ -147,6 +376,16 @@
     .portfolio-write-form-grid {
         grid-template-columns: 1fr;
     }
+
+    .portfolio-write-floating-preview-btn span {
+        display: none;
+    }
+
+    .portfolio-write-floating-preview-btn {
+        width: 44px;
+        padding: 0;
+    }
+
 }
 </style>
 
@@ -168,7 +407,11 @@
     </div>
 </div>
 
-<main class="ui-shell ui-content portfolio-write-content">
+<main
+    class="ui-shell ui-content portfolio-write-content"
+    data-portfolio-markdown-preview-url="{% url 'main:portfolio_write_markdown_preview_lang' ui_lang=ui_lang %}"
+    data-portfolio-section-preview-url="{% url 'main:portfolio_write_section_preview_lang' ui_lang=ui_lang %}"
+>
     {% if write_status_message %}
     <div class="portfolio-write-status">{{ write_status_message }}</div>
     {% endif %}
@@ -183,8 +426,12 @@
             </div>
         </aside>
         <div class="handrive-list-editor">
-            <div class="handrive-list-editor-head">
+            <div class="handrive-list-editor-head portfolio-write-editor-head">
                 <strong>프로필 편집</strong>
+                <button class="portfolio-write-section-preview-btn" type="button" data-portfolio-preview-scope="profile" aria-label="프로필 미리보기">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    <span>{% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}</span>
+                </button>
             </div>
             <form method="post" enctype="multipart/form-data" class="portfolio-write-form">
                 {% csrf_token %}
@@ -226,8 +473,12 @@
             </div>
         </aside>
         <div class="handrive-list-editor">
-            <div class="handrive-list-editor-head">
+            <div class="handrive-list-editor-head portfolio-write-editor-head">
                 <strong>{% if career_mode == 'add' %}경력사항 추가{% else %}경력사항 수정{% endif %}</strong>
+                <button class="portfolio-write-section-preview-btn" type="button" data-portfolio-preview-scope="career" aria-label="경력사항 미리보기">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    <span>{% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}</span>
+                </button>
             </div>
             <form method="post" class="portfolio-write-form">
                 {% csrf_token %}
@@ -242,8 +493,38 @@
                     <label class="portfolio-write-field">company_en<input type="text" name="company_en" value="{% if selected_career %}{{ selected_career.company_en }}{% endif %}" /></label>
                     <label class="portfolio-write-field">join_date<input type="date" name="join_date" value="{% if selected_career %}{{ selected_career.join_date|date:'Y-m-d' }}{% endif %}" required /></label>
                     <label class="portfolio-write-field">leave_date<input type="date" name="leave_date" value="{% if selected_career %}{{ selected_career.leave_date|date:'Y-m-d' }}{% endif %}" /></label>
-                    <label class="portfolio-write-field full">content<textarea name="content" rows="3" required>{% if selected_career %}{{ selected_career.content }}{% endif %}</textarea></label>
-                    <label class="portfolio-write-field full">content_en<textarea name="content_en" rows="3">{% if selected_career %}{{ selected_career.content_en }}{% endif %}</textarea></label>
+                    <div class="portfolio-write-field portfolio-write-markdown-field full">
+                        <div class="portfolio-write-field-head">
+                            <label class="portfolio-write-field-label" for="portfolio-career-content">content</label>
+                            <div class="handrive-content-snippet-tools portfolio-write-editor-tools">
+                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">{{ handrive_text.preview_button }}</button>
+                            </div>
+                        </div>
+                        <div class="handrive-list-editor portfolio-write-markdown-editor-shell">
+                            <div class="handrive-list-editor-body site-loading-host">
+                                <div class="handrive-editor-surface portfolio-write-handrive-editor-surface" data-portfolio-editor-surface>
+                                    <pre class="handrive-editor-highlight handrive-editor-md" aria-hidden="true"><code></code></pre>
+                                    <textarea id="portfolio-career-content" name="content" required data-portfolio-markdown-editor spellcheck="false" wrap="off">{% if selected_career %}{{ selected_career.content }}{% endif %}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="portfolio-write-field portfolio-write-markdown-field full">
+                        <div class="portfolio-write-field-head">
+                            <label class="portfolio-write-field-label" for="portfolio-career-content-en">content_en</label>
+                            <div class="handrive-content-snippet-tools portfolio-write-editor-tools">
+                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content_en {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">{{ handrive_text.preview_button }}</button>
+                            </div>
+                        </div>
+                        <div class="handrive-list-editor portfolio-write-markdown-editor-shell">
+                            <div class="handrive-list-editor-body site-loading-host">
+                                <div class="handrive-editor-surface portfolio-write-handrive-editor-surface" data-portfolio-editor-surface>
+                                    <pre class="handrive-editor-highlight handrive-editor-md" aria-hidden="true"><code></code></pre>
+                                    <textarea id="portfolio-career-content-en" name="content_en" data-portfolio-markdown-editor spellcheck="false" wrap="off">{% if selected_career %}{{ selected_career.content_en }}{% endif %}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="portfolio-write-actions">
                     <button class="ui-btn ui-btn-primary" type="submit">{% if career_mode == 'add' %}경력 추가{% else %}경력 수정{% endif %}</button>
@@ -283,8 +564,12 @@
             </div>
         </aside>
         <div class="handrive-list-editor">
-            <div class="handrive-list-editor-head">
+            <div class="handrive-list-editor-head portfolio-write-editor-head">
                 <strong>{% if project_mode == 'add' %}프로젝트 추가{% else %}프로젝트 수정{% endif %}</strong>
+                <button class="portfolio-write-section-preview-btn" type="button" data-portfolio-preview-scope="project" aria-label="프로젝트 미리보기">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    <span>{% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}</span>
+                </button>
             </div>
             <form method="post" enctype="multipart/form-data" class="portfolio-write-form">
                 {% csrf_token %}
@@ -298,8 +583,38 @@
                     <label class="portfolio-write-field">title<input type="text" name="title" value="{% if selected_project %}{{ selected_project.title }}{% endif %}" required /></label>
                     <label class="portfolio-write-field">title_en<input type="text" name="title_en" value="{% if selected_project %}{{ selected_project.title_en }}{% endif %}" /></label>
                     <label class="portfolio-write-field full">banner_img<input type="file" name="banner_img" /></label>
-                    <label class="portfolio-write-field full">content<textarea name="content" rows="4" required>{% if selected_project %}{{ selected_project.content }}{% endif %}</textarea></label>
-                    <label class="portfolio-write-field full">content_en<textarea name="content_en" rows="4">{% if selected_project %}{{ selected_project.content_en }}{% endif %}</textarea></label>
+                    <div class="portfolio-write-field portfolio-write-markdown-field full">
+                        <div class="portfolio-write-field-head">
+                            <label class="portfolio-write-field-label" for="portfolio-project-content">content</label>
+                            <div class="handrive-content-snippet-tools portfolio-write-editor-tools">
+                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">{{ handrive_text.preview_button }}</button>
+                            </div>
+                        </div>
+                        <div class="handrive-list-editor portfolio-write-markdown-editor-shell">
+                            <div class="handrive-list-editor-body site-loading-host">
+                                <div class="handrive-editor-surface portfolio-write-handrive-editor-surface" data-portfolio-editor-surface>
+                                    <pre class="handrive-editor-highlight handrive-editor-md" aria-hidden="true"><code></code></pre>
+                                    <textarea id="portfolio-project-content" name="content" required data-portfolio-markdown-editor spellcheck="false" wrap="off">{% if selected_project %}{{ selected_project.content }}{% endif %}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="portfolio-write-field portfolio-write-markdown-field full">
+                        <div class="portfolio-write-field-head">
+                            <label class="portfolio-write-field-label" for="portfolio-project-content-en">content_en</label>
+                            <div class="handrive-content-snippet-tools portfolio-write-editor-tools">
+                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content_en {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">{{ handrive_text.preview_button }}</button>
+                            </div>
+                        </div>
+                        <div class="handrive-list-editor portfolio-write-markdown-editor-shell">
+                            <div class="handrive-list-editor-body site-loading-host">
+                                <div class="handrive-editor-surface portfolio-write-handrive-editor-surface" data-portfolio-editor-surface>
+                                    <pre class="handrive-editor-highlight handrive-editor-md" aria-hidden="true"><code></code></pre>
+                                    <textarea id="portfolio-project-content-en" name="content_en" data-portfolio-markdown-editor spellcheck="false" wrap="off">{% if selected_project %}{{ selected_project.content_en }}{% endif %}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <label class="portfolio-write-field full">tags (여러 개는 Ctrl/Cmd+클릭)
                         <select name="tags" multiple style="min-height: 88px;">
                             {% for tag in all_tags %}
@@ -346,8 +661,12 @@
             </div>
         </aside>
         <div class="handrive-list-editor">
-            <div class="handrive-list-editor-head">
+            <div class="handrive-list-editor-head portfolio-write-editor-head">
                 <strong>{% if cover_letter_mode == 'add' %}자기소개서 추가{% else %}자기소개서 수정{% endif %}</strong>
+                <button class="portfolio-write-section-preview-btn" type="button" data-portfolio-preview-scope="cover_letter" aria-label="자기소개서 미리보기">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    <span>{% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}</span>
+                </button>
             </div>
             <form method="post" class="portfolio-write-form">
                 {% csrf_token %}
@@ -358,7 +677,22 @@
                 <div class="portfolio-write-form-grid">
                     <label class="portfolio-write-field">company (URL)<input type="text" name="company" value="{% if selected_cover_letter %}{{ selected_cover_letter.company }}{% endif %}" maxlength="120" required /></label>
                     <label class="portfolio-write-field">name<input type="text" name="name" value="{% if selected_cover_letter %}{{ selected_cover_letter.name }}{% endif %}" maxlength="120" required /></label>
-                    <label class="portfolio-write-field full">content<textarea name="content" rows="8" required>{% if selected_cover_letter %}{{ selected_cover_letter.content }}{% endif %}</textarea></label>
+                    <div class="portfolio-write-field portfolio-write-markdown-field full">
+                        <div class="portfolio-write-field-head">
+                            <label class="portfolio-write-field-label" for="portfolio-cover-letter-content">content</label>
+                            <div class="handrive-content-snippet-tools portfolio-write-editor-tools">
+                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">{{ handrive_text.preview_button }}</button>
+                            </div>
+                        </div>
+                        <div class="handrive-list-editor portfolio-write-markdown-editor-shell">
+                            <div class="handrive-list-editor-body site-loading-host">
+                                <div class="handrive-editor-surface portfolio-write-handrive-editor-surface" data-portfolio-editor-surface>
+                                    <pre class="handrive-editor-highlight handrive-editor-md" aria-hidden="true"><code></code></pre>
+                                    <textarea id="portfolio-cover-letter-content" name="content" required data-portfolio-markdown-editor spellcheck="false" wrap="off">{% if selected_cover_letter %}{{ selected_cover_letter.content }}{% endif %}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="portfolio-write-actions">
                     <button class="ui-btn ui-btn-primary" type="submit">{% if cover_letter_mode == 'add' %}자기소개서 추가{% else %}자기소개서 수정{% endif %}</button>
@@ -405,8 +739,12 @@
             </div>
         </aside>
         <div class="handrive-list-editor">
-            <div class="handrive-list-editor-head">
+            <div class="handrive-list-editor-head portfolio-write-editor-head">
                 <strong>버튼 관리 (최대 3개)</strong>
+                <button class="portfolio-write-section-preview-btn" type="button" data-portfolio-preview-scope="buttons" aria-label="버튼 미리보기">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    <span>{% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}</span>
+                </button>
             </div>
             <div style="padding: 12px; display: grid; gap: 12px;">
                 {% for button in action_buttons %}
@@ -453,5 +791,873 @@
             </div>
         </div>
     </section>
+
+    <button class="portfolio-write-floating-preview-btn" type="button" data-portfolio-preview-scope="full" aria-label="전체 미리보기" title="전체 미리보기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        <span>{% if ui_lang == 'en' %}Full preview{% else %}전체 미리보기{% endif %}</span>
+    </button>
 </main>
+{% include "popup/handrive/markdown_snippet_menu.html" %}
+{% include "popup/handrive/preview_modal.html" %}
+{{ handrive_text|json_script:"handrive-i18n" }}
+<script>
+(function () {
+    var root = document.querySelector(".portfolio-write-content[data-portfolio-markdown-preview-url]");
+    if (!root) {
+        return;
+    }
+
+    var previewUrl = root.getAttribute("data-portfolio-markdown-preview-url") || "";
+    var sectionPreviewUrl = root.getAttribute("data-portfolio-section-preview-url") || "";
+    var previewLabel = "{% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}";
+    var loadingLabel = "{% if ui_lang == 'en' %}Rendering preview...{% else %}미리보기를 렌더링하는 중입니다...{% endif %}";
+    var emptyLabel = "{% if ui_lang == 'en' %}Nothing to preview.{% else %}미리볼 내용이 없습니다.{% endif %}";
+    var errorLabel = "{% if ui_lang == 'en' %}Preview failed.{% else %}미리보기를 불러오지 못했습니다.{% endif %}";
+    var fullPreviewLabel = "{% if ui_lang == 'en' %}Full preview{% else %}전체 미리보기{% endif %}";
+    var sectionPreviewTitleMap = {
+        profile: "{% if ui_lang == 'en' %}Profile preview{% else %}프로필 미리보기{% endif %}",
+        career: "{% if ui_lang == 'en' %}Career preview{% else %}경력사항 미리보기{% endif %}",
+        project: "{% if ui_lang == 'en' %}Project preview{% else %}프로젝트 미리보기{% endif %}",
+        cover_letter: "{% if ui_lang == 'en' %}Cover letter preview{% else %}자기소개서 미리보기{% endif %}",
+        buttons: "{% if ui_lang == 'en' %}Button preview{% else %}버튼 미리보기{% endif %}",
+        full: fullPreviewLabel
+    };
+    var uiLang = "{{ ui_lang|default:'ko' }}";
+    var previewModal = document.getElementById("ui-preview-modal");
+    var previewBackdrop = document.getElementById("ui-preview-backdrop");
+    var previewCloseBtn = document.getElementById("ui-preview-close-btn");
+    var previewTitle = document.getElementById("ui-preview-modal-title");
+    var previewContent = document.getElementById("ui-preview-content");
+    var markdownSnippetMenu = document.getElementById("ui-markdown-snippet-menu");
+    var markdownSnippetButtons = markdownSnippetMenu ? Array.prototype.slice.call(markdownSnippetMenu.querySelectorAll("[data-editor-snippet]")) : [];
+    var activeMarkdownTextarea = null;
+    var HANDRIVE_MARKDOWN_CODE_COPY_ICON = '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"/></svg>';
+
+    function getJsonScriptData(elementId, fallbackValue) {
+        var element = document.getElementById(elementId);
+        if (!element) {
+            return fallbackValue;
+        }
+        try {
+            return JSON.parse(element.textContent || "null") || fallbackValue;
+        } catch (error) {
+            return fallbackValue;
+        }
+    }
+
+    var i18n = getJsonScriptData("handrive-i18n", {});
+
+    function t(key, fallbackValue) {
+        if (Object.prototype.hasOwnProperty.call(i18n, key) && typeof i18n[key] === "string") {
+            return i18n[key];
+        }
+        return fallbackValue;
+    }
+
+    function textByLang(koValue, enValue) {
+        return uiLang === "en" ? enValue : koValue;
+    }
+
+    function escapeHtml(value) {
+        return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function makeSyntaxSpan(className, value) {
+        return '<span class="' + className + '">' + escapeHtml(value) + "</span>";
+    }
+
+    function setEditorHighlightCodeContent(codeElement, source, highlightedHtml, useHighlightedHtml) {
+        if (!codeElement) {
+            return;
+        }
+        var tail = String(source || "").endsWith("\n") ? "\u200b" : "";
+        if (useHighlightedHtml) {
+            codeElement.innerHTML = String(highlightedHtml || "") + tail;
+        } else {
+            codeElement.textContent = String(source || "") + tail;
+        }
+    }
+
+    function syncEditorMirrorScroll(textarea, mirror, mirrorCode) {
+        if (!textarea || !mirror) {
+            return;
+        }
+        var scrollTop = Number(textarea.scrollTop) || 0;
+        var scrollLeft = Number(textarea.scrollLeft) || 0;
+        if (mirrorCode && mirrorCode.style) {
+            mirrorCode.style.transform = "translate(" + (-scrollLeft) + "px, " + (-scrollTop) + "px)";
+        }
+        mirror.scrollTop = 0;
+        mirror.scrollLeft = 0;
+    }
+
+    function splitMarkdownSourceLines(source) {
+        var text = String(source || "");
+        if (!text) {
+            return [""];
+        }
+        var lines = [];
+        var index = 0;
+        while (index < text.length) {
+            var newlineIndex = text.indexOf("\n", index);
+            if (newlineIndex < 0) {
+                lines.push(text.slice(index));
+                break;
+            }
+            lines.push(text.slice(index, newlineIndex + 1));
+            index = newlineIndex + 1;
+        }
+        return lines;
+    }
+
+    function getMarkdownLineParts(line) {
+        var match = String(line || "").match(/(\r?\n|\r)$/);
+        if (!match) {
+            return {
+                body: String(line || ""),
+                lineBreak: ""
+            };
+        }
+        return {
+            body: String(line || "").slice(0, -match[0].length),
+            lineBreak: match[0]
+        };
+    }
+
+    function readMarkdownLinkToken(source, startIndex) {
+        var imagePrefix = source[startIndex] === "!" && source[startIndex + 1] === "[";
+        var labelStart = imagePrefix ? startIndex + 1 : startIndex;
+        if (source[labelStart] !== "[") {
+            return "";
+        }
+        var labelEnd = source.indexOf("]", labelStart + 1);
+        if (labelEnd < 0 || source[labelEnd + 1] !== "(") {
+            return "";
+        }
+        var urlEnd = source.indexOf(")", labelEnd + 2);
+        if (urlEnd < 0) {
+            return "";
+        }
+        return source.slice(startIndex, urlEnd + 1);
+    }
+
+    function highlightMarkdownInlineSource(source) {
+        var text = String(source || "");
+        var result = "";
+        var index = 0;
+        while (index < text.length) {
+            var char = text[index];
+            var next = text[index + 1] || "";
+
+            if (char === "`") {
+                var codeEndIndex = text.indexOf("`", index + 1);
+                if (codeEndIndex > index) {
+                    var codeToken = text.slice(index, codeEndIndex + 1);
+                    result += makeSyntaxSpan("handrive-md-src-token-code", codeToken);
+                    index = codeEndIndex + 1;
+                    continue;
+                }
+            }
+
+            if (char === "[" || (char === "!" && next === "[")) {
+                var linkToken = readMarkdownLinkToken(text, index);
+                if (linkToken) {
+                    result += makeSyntaxSpan("handrive-md-src-token-link", linkToken);
+                    index += linkToken.length;
+                    continue;
+                }
+            }
+
+            if ((char === "*" && next === "*") || (char === "_" && next === "_")) {
+                var delimiter = char + next;
+                var strongEndIndex = text.indexOf(delimiter, index + 2);
+                if (strongEndIndex > index + 2) {
+                    var strongToken = text.slice(index, strongEndIndex + 2);
+                    result += makeSyntaxSpan("handrive-md-src-token-strong", strongToken);
+                    index = strongEndIndex + 2;
+                    continue;
+                }
+            }
+
+            if ((char === "*" || char === "_") && next !== char) {
+                var emEndIndex = text.indexOf(char, index + 1);
+                if (emEndIndex > index + 1) {
+                    var emToken = text.slice(index, emEndIndex + 1);
+                    result += makeSyntaxSpan("handrive-md-src-token-em", emToken);
+                    index = emEndIndex + 1;
+                    continue;
+                }
+            }
+
+            result += escapeHtml(char);
+            index += 1;
+        }
+        return result;
+    }
+
+    function highlightMarkdownSourceCode(source) {
+        var lines = splitMarkdownSourceLines(source);
+        var result = "";
+        var inCodeFence = false;
+        var codeFenceMarker = "";
+        for (var index = 0; index < lines.length; index += 1) {
+            var parts = getMarkdownLineParts(lines[index]);
+            var body = parts.body;
+            var lineBreak = parts.lineBreak;
+            var fenceMatch = body.match(/^(\s{0,3})(`{3,}|~{3,})/);
+
+            if (fenceMatch) {
+                var marker = fenceMatch[2];
+                result += makeSyntaxSpan("handrive-md-src-token-codeblock", body) + escapeHtml(lineBreak);
+                if (!inCodeFence) {
+                    inCodeFence = true;
+                    codeFenceMarker = marker[0];
+                } else if (marker[0] === codeFenceMarker) {
+                    inCodeFence = false;
+                    codeFenceMarker = "";
+                }
+                continue;
+            }
+
+            if (inCodeFence) {
+                result += makeSyntaxSpan("handrive-md-src-token-codeblock", body) + escapeHtml(lineBreak);
+                continue;
+            }
+
+            var headingMatch = body.match(/^(\s{0,3}#{1,6}\s+)/);
+            if (headingMatch) {
+                result += makeSyntaxSpan("handrive-md-src-token-heading", headingMatch[1]);
+                result += highlightMarkdownInlineSource(body.slice(headingMatch[1].length)) + escapeHtml(lineBreak);
+                continue;
+            }
+
+            var quoteMatch = body.match(/^(\s{0,3}>\s?)/);
+            if (quoteMatch) {
+                result += makeSyntaxSpan("handrive-md-src-token-quote", quoteMatch[1]);
+                result += highlightMarkdownInlineSource(body.slice(quoteMatch[1].length)) + escapeHtml(lineBreak);
+                continue;
+            }
+
+            var listMatch = body.match(/^(\s{0,3}(?:[-*+]|\d+\.)\s+)/);
+            if (listMatch) {
+                result += makeSyntaxSpan("handrive-md-src-token-list", listMatch[1]);
+                result += highlightMarkdownInlineSource(body.slice(listMatch[1].length)) + escapeHtml(lineBreak);
+                continue;
+            }
+
+            if (/^\s{0,3}(?:[-*_])(?:\s*[-*_]){2,}\s*$/.test(body)) {
+                result += makeSyntaxSpan("handrive-md-src-token-hr", body) + escapeHtml(lineBreak);
+                continue;
+            }
+
+            result += highlightMarkdownInlineSource(body) + escapeHtml(lineBreak);
+        }
+        return result;
+    }
+
+    function getCsrfToken() {
+        var tokenInput = root.querySelector('input[name="csrfmiddlewaretoken"]');
+        if (tokenInput && tokenInput.value) {
+            return tokenInput.value;
+        }
+        var match = document.cookie.match(/(?:^|;)\s*csrftoken=([^;]+)/);
+        return match ? decodeURIComponent(match[1]) : "";
+    }
+
+    function getFirstFormByActions(actions) {
+        for (var index = 0; index < actions.length; index += 1) {
+            var actionInput = root.querySelector('input[name="action"][value="' + actions[index] + '"]');
+            if (actionInput && actionInput.form) {
+                return actionInput.form;
+            }
+        }
+        return null;
+    }
+
+    function getFormValues(form) {
+        var values = {};
+        if (!form) {
+            return values;
+        }
+        var formData = new FormData(form);
+        formData.forEach(function (value, key) {
+            if (key === "csrfmiddlewaretoken" || key === "action") {
+                return;
+            }
+            if (typeof File !== "undefined" && value instanceof File) {
+                return;
+            }
+            if (key === "tags") {
+                return;
+            }
+            values[key] = String(value || "");
+        });
+        var tagSelect = form.querySelector('select[name="tags"]');
+        if (tagSelect) {
+            values.tags = Array.prototype.slice.call(tagSelect.selectedOptions).map(function (option) {
+                return (option.textContent || "").trim();
+            }).filter(Boolean);
+        }
+        return values;
+    }
+
+    function collectPortfolioPreviewButtons() {
+        var buttons = [];
+        root.querySelectorAll('input[name="action"][value="update_button"], input[name="action"][value="add_button"]').forEach(function (actionInput) {
+            var form = actionInput.form;
+            var values = getFormValues(form);
+            if (!values.label && !values.url) {
+                return;
+            }
+            buttons.push({
+                order: values.order || "",
+                label: values.label || "",
+                url: values.url || "",
+                icon_url: values.icon_url || ""
+            });
+        });
+        buttons.sort(function (left, right) {
+            var leftOrder = parseInt(left.order || "999", 10);
+            var rightOrder = parseInt(right.order || "999", 10);
+            return leftOrder - rightOrder;
+        });
+        return buttons.slice(0, 3);
+    }
+
+    function collectPortfolioPreviewPayload(scope) {
+        return {
+            scope: scope || "full",
+            theme: document.body && document.body.classList.contains("theme-dark") ? "dark" : "light",
+            data: {
+                profile: getFormValues(getFirstFormByActions(["save_profile"])),
+                career: getFormValues(getFirstFormByActions(["update_career", "add_career"])),
+                project: getFormValues(getFirstFormByActions(["update_project", "add_project"])),
+                cover_letter: getFormValues(getFirstFormByActions(["update_cover_letter", "add_cover_letter"])),
+                buttons: collectPortfolioPreviewButtons()
+            }
+        };
+    }
+
+    function openPortfolioPreviewModal(title) {
+        if (!previewModal || !previewTitle || !previewContent) {
+            return false;
+        }
+        previewTitle.textContent = title || previewLabel;
+        previewModal.hidden = false;
+        if (window.SiteModalStack && typeof window.SiteModalStack.bringToFront === "function") {
+            window.SiteModalStack.bringToFront(previewModal);
+        }
+        var dialog = previewModal.querySelector(".site-modal-dialog");
+        if (dialog) {
+            window.setTimeout(function () {
+                dialog.focus();
+            }, 0);
+        }
+        return true;
+    }
+
+    function closePortfolioSectionPreview() {
+        if (previewModal) {
+            previewModal.hidden = true;
+        }
+    }
+
+    function setPreviewContentLoading(title) {
+        if (!openPortfolioPreviewModal(title)) {
+            return false;
+        }
+        previewContent.className = "portfolio-write-preview-host";
+        previewContent.innerHTML = '<div class="portfolio-write-preview-loading">' + escapeHtml(loadingLabel) + "</div>";
+        return true;
+    }
+
+    function setPreviewContentError() {
+        if (!previewContent) {
+            return;
+        }
+        previewContent.className = "portfolio-write-preview-host";
+        previewContent.innerHTML = '<div class="portfolio-write-preview-error">' + escapeHtml(errorLabel) + "</div>";
+    }
+
+    function renderPortfolioPreviewDocument(html, title) {
+        if (!openPortfolioPreviewModal(title) || !previewContent) {
+            return;
+        }
+        previewContent.className = "portfolio-write-preview-host";
+        previewContent.textContent = "";
+        var iframe = document.createElement("iframe");
+        iframe.className = "portfolio-write-rendered-preview-frame";
+        iframe.title = title || previewLabel;
+        iframe.setAttribute("sandbox", "allow-same-origin allow-popups allow-popups-to-escape-sandbox");
+        iframe.srcdoc = String(html || "");
+        previewContent.appendChild(iframe);
+    }
+
+    function openPortfolioSectionPreview(scope) {
+        if (!sectionPreviewUrl) {
+            return;
+        }
+        var normalizedScope = scope || "full";
+        var title = sectionPreviewTitleMap[normalizedScope] || previewLabel;
+        if (!setPreviewContentLoading(title)) {
+            return;
+        }
+        fetch(sectionPreviewUrl, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": getCsrfToken()
+            },
+            body: JSON.stringify(collectPortfolioPreviewPayload(normalizedScope))
+        }).then(function (response) {
+            if (!response.ok) {
+                throw new Error("section preview failed");
+            }
+            return response.json();
+        }).then(function (payload) {
+            renderPortfolioPreviewDocument(payload && typeof payload.html === "string" ? payload.html : "", title);
+        }).catch(function () {
+            setPreviewContentError();
+        });
+    }
+
+    function writeHandriveClipboardText(text) {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+            var textarea = document.createElement("textarea");
+            textarea.value = text;
+            textarea.setAttribute("readonly", "readonly");
+            textarea.style.position = "fixed";
+            textarea.style.left = "-9999px";
+            textarea.style.top = "0";
+            textarea.style.opacity = "0";
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            try {
+                if (!document.execCommand("copy")) {
+                    throw new Error("copy failed");
+                }
+                resolve();
+            } catch (error) {
+                reject(error);
+            } finally {
+                textarea.remove();
+            }
+        });
+    }
+
+    function hydrateMarkdownCodeBlockCopyButtons(container) {
+        if (!container || !container.querySelectorAll) {
+            return;
+        }
+        container.querySelectorAll("pre > code").forEach(function (codeNode) {
+            var pre = codeNode.closest("pre");
+            if (!pre || pre.dataset.handriveCodeCopyBound === "1") {
+                return;
+            }
+            pre.dataset.handriveCodeCopyBound = "1";
+            pre.classList.add("handrive-markdown-code-copy-wrap");
+            var button = document.createElement("button");
+            button.type = "button";
+            button.className = "handrive-markdown-code-copy-btn handrive-inline-copy-action";
+            button.innerHTML = HANDRIVE_MARKDOWN_CODE_COPY_ICON;
+            var copyLabel = t("markdown_code_copy_button", textByLang("코드 복사", "Copy code"));
+            button.setAttribute("aria-label", copyLabel);
+            button.setAttribute("title", copyLabel);
+            button.addEventListener("click", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                writeHandriveClipboardText(codeNode.textContent || "").then(function () {
+                    if (typeof window.showHandriveInlineCopyFeedback === "function") {
+                        window.showHandriveInlineCopyFeedback(button, t("markdown_code_copied", textByLang("복사됨!", "Copied!")));
+                    }
+                }).catch(function () {});
+            });
+            pre.appendChild(button);
+        });
+    }
+
+    function renderMarkdownPreview(textarea) {
+        if (!textarea || !previewUrl) {
+            return;
+        }
+        var field = textarea.closest(".portfolio-write-markdown-field");
+        var button = field ? field.querySelector("[data-portfolio-markdown-preview-toggle]") : null;
+        var title = (button && button.getAttribute("data-portfolio-preview-title")) || previewLabel;
+        if (!setPreviewContentLoading(title)) {
+            return;
+        }
+        var text = textarea.value || "";
+        if (!text.trim()) {
+            previewContent.className = "ui-markdown handrive-help-markdown";
+            previewContent.textContent = emptyLabel;
+            return;
+        }
+        fetch(previewUrl, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": getCsrfToken()
+            },
+            body: JSON.stringify({ text: text })
+        }).then(function (response) {
+            if (!response.ok) {
+                throw new Error("preview failed");
+            }
+            return response.json();
+        }).then(function (payload) {
+            previewContent.className = "ui-markdown handrive-help-markdown";
+            previewContent.innerHTML = payload && typeof payload.html === "string" ? payload.html : "";
+            hydrateMarkdownCodeBlockCopyButtons(previewContent);
+            if (window.HanplanetMarkdownMermaid && typeof window.HanplanetMarkdownMermaid.render === "function") {
+                window.HanplanetMarkdownMermaid.render(previewContent).catch(function () {});
+            }
+        }).catch(function () {
+            setPreviewContentError();
+        });
+    }
+
+    function closeMarkdownSnippetMenu() {
+        if (markdownSnippetMenu) {
+            markdownSnippetMenu.hidden = true;
+        }
+    }
+
+    function openMarkdownSnippetMenu(clientX, clientY) {
+        if (!markdownSnippetMenu) {
+            return;
+        }
+        markdownSnippetButtons.forEach(function (button) {
+            var rawExtensions = String(button.getAttribute("data-editor-extensions") || "").trim();
+            button.hidden = Boolean(rawExtensions && rawExtensions.split(",").map(function (value) {
+                return String(value || "").trim().toLowerCase();
+            }).filter(Boolean).indexOf(".md") < 0);
+        });
+        markdownSnippetMenu.hidden = false;
+        markdownSnippetMenu.style.left = "0px";
+        markdownSnippetMenu.style.top = "0px";
+        var rect = markdownSnippetMenu.getBoundingClientRect();
+        var viewportPadding = 8;
+        var maxLeft = Math.max(viewportPadding, window.innerWidth - rect.width - viewportPadding);
+        var maxTop = Math.max(viewportPadding, window.innerHeight - rect.height - viewportPadding);
+        var left = Math.min(Math.max(viewportPadding, clientX), maxLeft);
+        var top = Math.min(Math.max(viewportPadding, clientY), maxTop);
+        markdownSnippetMenu.style.left = left + "px";
+        markdownSnippetMenu.style.top = top + "px";
+    }
+
+    function clampMarkdownIndex(value, index) {
+        var length = String(value || "").length;
+        var number = Number(index);
+        if (!Number.isFinite(number)) {
+            return 0;
+        }
+        return Math.min(Math.max(0, number), length);
+    }
+
+    function getMarkdownSnippetSelection(textarea) {
+        var value = String(textarea ? textarea.value : "");
+        var selectionStart = clampMarkdownIndex(value, textarea ? textarea.selectionStart : 0);
+        var selectionEnd = clampMarkdownIndex(value, textarea ? textarea.selectionEnd : selectionStart);
+        var replaceStart = Math.min(selectionStart, selectionEnd);
+        var replaceEnd = Math.max(selectionStart, selectionEnd);
+        return {
+            body: value.slice(replaceStart, replaceEnd),
+            replaceStart: replaceStart,
+            replaceEnd: replaceEnd
+        };
+    }
+
+    function replaceTextareaSelection(textarea, insertText, selectionStartOffset, selectionEndOffset, replaceStartOffset, replaceEndOffset) {
+        if (!textarea) {
+            return;
+        }
+        var valueLength = String(textarea.value || "").length;
+        var selectedStart = textarea.selectionStart || 0;
+        var selectedEnd = textarea.selectionEnd || 0;
+        var start = Number.isFinite(Number(replaceStartOffset)) ? clampMarkdownIndex(textarea.value, replaceStartOffset) : clampMarkdownIndex(textarea.value, selectedStart);
+        var end = Number.isFinite(Number(replaceEndOffset)) ? clampMarkdownIndex(textarea.value, replaceEndOffset) : clampMarkdownIndex(textarea.value, selectedEnd);
+        var replaceStart = Math.min(start, end, valueLength);
+        var replaceEnd = Math.max(start, end);
+        textarea.focus();
+        textarea.setSelectionRange(replaceStart, replaceEnd);
+        textarea.setRangeText(insertText, replaceStart, replaceEnd, "end");
+        textarea.setSelectionRange(replaceStart + (selectionStartOffset || 0), replaceStart + (selectionEndOffset || insertText.length));
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    function buildWrappedSnippet(textarea, prefix, suffix, placeholder) {
+        var selection = getMarkdownSnippetSelection(textarea);
+        var selected = selection.body;
+        var body = selected || placeholder;
+        var text = prefix + body + suffix;
+        if (selected) {
+            return {
+                text: text,
+                selectStart: text.length,
+                selectEnd: text.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd
+            };
+        }
+        return {
+            text: text,
+            selectStart: prefix.length,
+            selectEnd: prefix.length + body.length,
+            replaceStart: selection.replaceStart,
+            replaceEnd: selection.replaceEnd
+        };
+    }
+
+    function buildPrefixedLinesSnippet(textarea, prefix, placeholder) {
+        var selection = getMarkdownSnippetSelection(textarea);
+        var selected = selection.body;
+        if (!selected) {
+            var body = prefix + placeholder;
+            return {
+                text: body,
+                selectStart: prefix.length,
+                selectEnd: body.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd
+            };
+        }
+        var transformed = selected.split(/\r?\n/).map(function (line) {
+            return line.trim() ? prefix + line : line;
+        }).join("\n");
+        return {
+            text: transformed,
+            selectStart: transformed.length,
+            selectEnd: transformed.length,
+            replaceStart: selection.replaceStart,
+            replaceEnd: selection.replaceEnd
+        };
+    }
+
+    function buildNumberedLinesSnippet(textarea, placeholder) {
+        var selection = getMarkdownSnippetSelection(textarea);
+        if (!selection.body) {
+            var body = "1. " + placeholder;
+            return {
+                text: body,
+                selectStart: 3,
+                selectEnd: body.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd
+            };
+        }
+        var order = 1;
+        var transformed = selection.body.split(/\r?\n/).map(function (line) {
+            if (!line.trim()) {
+                return line;
+            }
+            var row = order + ". " + line;
+            order += 1;
+            return row;
+        }).join("\n");
+        return {
+            text: transformed,
+            selectStart: transformed.length,
+            selectEnd: transformed.length,
+            replaceStart: selection.replaceStart,
+            replaceEnd: selection.replaceEnd
+        };
+    }
+
+    function buildTableSnippet(textarea) {
+        var selection = getMarkdownSnippetSelection(textarea);
+        var col1 = t("markdown_placeholder_table_col1", textByLang("항목", "Item"));
+        var col2 = t("markdown_placeholder_table_col2", textByLang("설명", "Description"));
+        var table = ["| " + col1 + " | " + col2 + " |", "| --- | --- |", "| Value 1 | Value 2 |"].join("\n");
+        return {
+            text: table,
+            selectStart: 2,
+            selectEnd: 2 + col1.length,
+            replaceStart: selection.replaceStart,
+            replaceEnd: selection.replaceEnd
+        };
+    }
+
+    function buildCodeBlockSnippet(textarea) {
+        var selection = getMarkdownSnippetSelection(textarea);
+        var lang = t("markdown_placeholder_code_lang", textByLang("언어", "lang"));
+        var body = selection.body || t("markdown_placeholder_code_body", textByLang("코드를 입력하세요", "type your code"));
+        var text = "```" + lang + "\n" + body + "\n```";
+        var bodyStart = ("```" + lang + "\n").length;
+        if (selection.body) {
+            return {
+                text: text,
+                selectStart: text.length,
+                selectEnd: text.length,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd
+            };
+        }
+        return {
+            text: text,
+            selectStart: bodyStart,
+            selectEnd: bodyStart + body.length,
+            replaceStart: selection.replaceStart,
+            replaceEnd: selection.replaceEnd
+        };
+    }
+
+    function insertMarkdownSnippet(textarea, snippetType) {
+        if (!textarea) {
+            return;
+        }
+        var snippet = null;
+        if (snippetType === "heading2") {
+            snippet = buildWrappedSnippet(textarea, "## ", "", t("markdown_placeholder_heading", textByLang("제목", "Heading")));
+        } else if (snippetType === "heading3") {
+            snippet = buildWrappedSnippet(textarea, "### ", "", t("markdown_placeholder_heading", textByLang("제목", "Heading")));
+        } else if (snippetType === "bold") {
+            snippet = buildWrappedSnippet(textarea, "**", "**", t("markdown_placeholder_bold", textByLang("강조 텍스트", "bold text")));
+        } else if (snippetType === "italic") {
+            snippet = buildWrappedSnippet(textarea, "*", "*", t("markdown_placeholder_italic", textByLang("기울임 텍스트", "italic text")));
+        } else if (snippetType === "link") {
+            snippet = buildWrappedSnippet(textarea, "[", "](https://)", t("markdown_placeholder_link_text", textByLang("링크 텍스트", "link text")));
+        } else if (snippetType === "image") {
+            snippet = buildWrappedSnippet(textarea, "![", "](https://)", t("markdown_placeholder_image_alt", textByLang("이미지 설명", "image description")));
+        } else if (snippetType === "code_inline") {
+            snippet = buildWrappedSnippet(textarea, "`", "`", t("markdown_placeholder_inline_code", textByLang("코드", "code")));
+        } else if (snippetType === "code_block") {
+            snippet = buildCodeBlockSnippet(textarea);
+        } else if (snippetType === "list_bullet") {
+            snippet = buildPrefixedLinesSnippet(textarea, "- ", t("markdown_placeholder_list_item", textByLang("항목", "item")));
+        } else if (snippetType === "list_numbered") {
+            snippet = buildNumberedLinesSnippet(textarea, t("markdown_placeholder_list_item", textByLang("항목", "item")));
+        } else if (snippetType === "list_check") {
+            snippet = buildPrefixedLinesSnippet(textarea, "- [ ] ", t("markdown_placeholder_list_item", textByLang("항목", "item")));
+        } else if (snippetType === "quote") {
+            snippet = buildPrefixedLinesSnippet(textarea, "> ", t("markdown_placeholder_quote", textByLang("인용문", "quote")));
+        } else if (snippetType === "divider") {
+            var selection = getMarkdownSnippetSelection(textarea);
+            snippet = {
+                text: "\n---\n",
+                selectStart: 5,
+                selectEnd: 5,
+                replaceStart: selection.replaceStart,
+                replaceEnd: selection.replaceEnd
+            };
+        } else if (snippetType === "table") {
+            snippet = buildTableSnippet(textarea);
+        }
+        if (snippet) {
+            replaceTextareaSelection(textarea, snippet.text, snippet.selectStart, snippet.selectEnd, snippet.replaceStart, snippet.replaceEnd);
+        }
+    }
+
+    function getMarkdownEditorParts(textarea) {
+        var surface = textarea ? textarea.closest("[data-portfolio-editor-surface]") : null;
+        var highlight = surface ? surface.querySelector(".handrive-editor-highlight") : null;
+        var code = highlight ? highlight.querySelector("code") : null;
+        return {
+            surface: surface,
+            highlight: highlight,
+            code: code
+        };
+    }
+
+    function refreshPortfolioMarkdownEditor(textarea) {
+        var parts = getMarkdownEditorParts(textarea);
+        if (!parts.code) {
+            return;
+        }
+        var source = textarea.value || "";
+        setEditorHighlightCodeContent(parts.code, source, highlightMarkdownSourceCode(source), true);
+        syncEditorMirrorScroll(textarea, parts.highlight, parts.code);
+    }
+
+    function initializePortfolioMarkdownEditor(textarea) {
+        var parts = getMarkdownEditorParts(textarea);
+        if (!parts.surface) {
+            return;
+        }
+        refreshPortfolioMarkdownEditor(textarea);
+        textarea.addEventListener("focus", function () {
+            activeMarkdownTextarea = textarea;
+        });
+        textarea.addEventListener("input", function () {
+            refreshPortfolioMarkdownEditor(textarea);
+        });
+        textarea.addEventListener("scroll", function () {
+            syncEditorMirrorScroll(textarea, parts.highlight, parts.code);
+        }, { passive: true });
+        parts.surface.addEventListener("mousedown", function () {
+            activeMarkdownTextarea = textarea;
+        });
+        parts.surface.addEventListener("click", function (event) {
+            if (event.target === parts.surface || event.target === parts.highlight || event.target === parts.code) {
+                textarea.focus();
+            }
+        });
+        parts.surface.addEventListener("contextmenu", function (event) {
+            event.preventDefault();
+            activeMarkdownTextarea = textarea;
+            textarea.focus();
+            openMarkdownSnippetMenu(event.clientX, event.clientY);
+        });
+        var field = textarea.closest(".portfolio-write-markdown-field");
+        var previewButton = field ? field.querySelector("[data-portfolio-markdown-preview-toggle]") : null;
+        if (previewButton) {
+            previewButton.addEventListener("click", function () {
+                activeMarkdownTextarea = textarea;
+                renderMarkdownPreview(textarea);
+            });
+        }
+    }
+
+    root.querySelectorAll("textarea[data-portfolio-markdown-editor]").forEach(initializePortfolioMarkdownEditor);
+
+    markdownSnippetButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+            var snippetType = button.getAttribute("data-editor-snippet") || "";
+            insertMarkdownSnippet(activeMarkdownTextarea, snippetType);
+            closeMarkdownSnippetMenu();
+        });
+    });
+
+    document.addEventListener("click", function (event) {
+        if (markdownSnippetMenu && !markdownSnippetMenu.hidden && !markdownSnippetMenu.contains(event.target)) {
+            closeMarkdownSnippetMenu();
+        }
+    });
+
+    root.querySelectorAll("[data-portfolio-preview-scope]").forEach(function (button) {
+        button.addEventListener("click", function () {
+            openPortfolioSectionPreview(button.getAttribute("data-portfolio-preview-scope") || "full");
+        });
+    });
+
+    [previewBackdrop, previewCloseBtn].forEach(function (button) {
+        if (button) {
+            button.addEventListener("click", closePortfolioSectionPreview);
+        }
+    });
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") {
+            return;
+        }
+        if (markdownSnippetMenu && !markdownSnippetMenu.hidden) {
+            closeMarkdownSnippetMenu();
+            return;
+        }
+        if (previewModal && !previewModal.hidden) {
+            closePortfolioSectionPreview();
+        }
+    });
+})();
+</script>
 {% endblock %}

@@ -443,7 +443,10 @@ GLOBAL_RATE_LIMIT_WINDOW_SECONDS = max(
     1, int(os.environ.get("DJANGO_GLOBAL_RATE_LIMIT_WINDOW_SECONDS", "60"))
 )
 GLOBAL_RATE_LIMIT_EXEMPT_PATH_PREFIXES = tuple(
-    env_list("DJANGO_GLOBAL_RATE_LIMIT_EXEMPT_PATH_PREFIXES", "/static/,/media/")
+    env_list(
+        "DJANGO_GLOBAL_RATE_LIMIT_EXEMPT_PATH_PREFIXES",
+        "/static/,/media/,/ko/sub/onscripter/assets/,/en/sub/onscripter/assets/",
+    )
 )
 
 # Static files (CSS, JavaScript, Images)
@@ -451,6 +454,15 @@ GLOBAL_RATE_LIMIT_EXEMPT_PATH_PREFIXES = tuple(
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = str(get_media_root(DISC))
+_default_onscripter_root = (
+    Path(MEDIA_ROOT).parent / "ONScripter"
+    if Path(MEDIA_ROOT).name == "media"
+    else Path(MEDIA_ROOT) / "ONScripter"
+)
+ONSCRIPTER_STORAGE_ROOT = load_optional_secret(
+    "HANPLANET_ONSCRIPTER_ROOT",
+    str(_default_onscripter_root),
+)
 HANDRIVE_HLS_CACHE_ROOT = load_optional_secret(
     "HANDRIVE_HLS_CACHE_ROOT",
     str(get_media_root("hdd") / "hls_cache"),

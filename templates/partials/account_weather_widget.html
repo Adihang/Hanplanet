@@ -1,0 +1,71 @@
+{% load template_utils %}
+{% if show_account_weather %}
+<div
+    class="ui-auth-account-weather"
+    data-auth-account-weather
+    data-weather-url="{{ account_weather_url }}"
+    data-weather-location-search-url="{{ account_weather_location_search_url }}"
+    data-weather-loading-label="{% include_trimmed 'partials/ui_i18n.html' key='account_weather_loading' %}"
+    data-weather-unset-label="{% include_trimmed 'partials/ui_i18n.html' key='account_weather_unset' %}"
+    data-weather-error-label="{% include_trimmed 'partials/ui_i18n.html' key='account_weather_error' %}"
+    data-weather-no-location-results-label="{% include_trimmed 'partials/ui_i18n.html' key='account_weather_location_no_results' %}"
+    hidden
+>
+    <button
+        type="button"
+        class="ui-auth-account-weather-trigger"
+        data-auth-account-weather-trigger
+        aria-haspopup="dialog"
+        aria-expanded="false"
+        aria-label="{% include_trimmed 'partials/ui_i18n.html' key='account_weather_label' %}"
+        title="{% include_trimmed 'partials/ui_i18n.html' key='account_weather_label' %}"
+    >
+        <span class="ui-auth-account-weather-chip-icons">
+            <span class="ui-auth-account-weather-chip-period">
+                <span class="ui-auth-account-weather-symbol is-unknown" data-auth-account-weather-am-icon aria-hidden="true"></span>
+            </span>
+            <span class="ui-auth-account-weather-chip-period">
+                <span class="ui-auth-account-weather-symbol is-unknown" data-auth-account-weather-pm-icon aria-hidden="true"></span>
+            </span>
+        </span>
+        <span class="ui-auth-account-weather-chip-range" data-auth-account-weather-range>
+            <span class="ui-auth-account-weather-chip-range-high" data-auth-account-weather-range-high>--°</span>
+            <span class="ui-auth-account-weather-chip-range-low" data-auth-account-weather-range-low>--°</span>
+        </span>
+    </button>
+    <div class="ui-auth-account-weather-popup site-dropdown-menu" data-auth-account-weather-popup data-popup-fit-bottom hidden>
+        <header class="ui-auth-account-weather-head">
+            <div class="ui-auth-account-weather-head-copy">
+                <strong class="ui-auth-account-weather-title" data-auth-account-weather-location>
+                    {% include_trimmed 'partials/ui_i18n.html' key='account_weather_location_title' %}
+                </strong>
+                <span class="ui-auth-account-weather-subtitle" data-auth-account-weather-card-day></span>
+            </div>
+            <div class="ui-auth-account-weather-head-actions">
+                <button
+                    type="button"
+                    class="ui-auth-account-weather-close"
+                    data-auth-account-weather-close
+                    aria-label="{% include_trimmed 'partials/ui_i18n.html' key='close' %}"
+                    title="{% include_trimmed 'partials/ui_i18n.html' key='close' %}"
+                >×</button>
+            </div>
+        </header>
+        <p class="ui-auth-account-weather-status" data-auth-account-weather-status hidden></p>
+        <section class="ui-auth-account-weather-card" data-auth-account-weather-card>
+            <div class="ui-auth-account-weather-card-main">
+                <span class="ui-auth-account-weather-card-symbol ui-auth-account-weather-symbol is-unknown" data-auth-account-weather-card-icon aria-hidden="true"></span>
+                <div class="ui-auth-account-weather-card-temp">
+                    <strong class="ui-auth-account-weather-card-range" data-auth-account-weather-card-range>--° / --°</strong>
+                    <span class="ui-auth-account-weather-card-condition" data-auth-account-weather-card-condition>
+                        {% include_trimmed 'partials/ui_i18n.html' key='account_weather_loading' %}
+                    </span>
+                </div>
+                <div class="ui-auth-account-weather-card-details" data-auth-account-weather-card-details></div>
+            </div>
+            <div class="ui-auth-account-weather-card-periods" data-auth-account-weather-periods></div>
+            <div class="ui-auth-account-weather-card-daily" data-auth-account-weather-daily></div>
+        </section>
+    </div>
+</div>
+{% endif %}

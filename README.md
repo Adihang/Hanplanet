@@ -86,6 +86,7 @@ flowchart TD
   GiteaDB["Gitea data volume (/data in gitea, /data/gitea in django)"]
   WargameDB["Wargame SQLite"]
   Media["/data/media"]
+  ONScripter["/data/ONScripter"]
   Static["/app/staticfiles"]
   RepoData["/data/forgejo-repos"]
   McData["Minecraft bind mount"]
@@ -98,6 +99,7 @@ flowchart TD
   Nginx --> Static
   Nginx --> Media
   Nginx --> BlueMap
+  Django --> ONScripter
   Django --> DjangoDB
   Django --> Media
   Django --> Static
@@ -952,17 +954,19 @@ chmod 600 config/secrets.json
 
 ### 4-1. 저장소 프로필 전환 (`DISC`, 네이티브 launchd)
 
-네이티브 launchd/venv 운영은 `config/secrets.json`의 `DISC` 값으로 저장소 위치를 전환합니다. Docker 운영은 `DISC` 대신 `.env`의 `HANPLANET_MEDIA_VOLUME`, `FORGEJO_REPOS_VOLUME`, `HANPLANET_GITHUB_CACHE_VOLUME` 같은 volume/bind mount 값을 사용합니다.
+네이티브 launchd/venv 운영은 `config/secrets.json`의 `DISC` 값으로 저장소 위치를 전환합니다. Docker 운영은 `DISC` 대신 `.env`의 `HANPLANET_MEDIA_VOLUME`, `HANPLANET_ONSCRIPTER_VOLUME`, `FORGEJO_REPOS_VOLUME`, `HANPLANET_GITHUB_CACHE_VOLUME` 같은 volume/bind mount 값을 사용합니다.
 
 - `DISC = "hdd"`
   - 운영 기본값
   - `MEDIA_ROOT` -> `/Volumes/HANPLANET_HDD/Hanplanet/media`
+  - `ONSCRIPTER_STORAGE_ROOT` -> `/Volumes/HANPLANET_HDD/Hanplanet/ONScripter`
   - `FORGEJO_REPOS_ROOT` -> `/Volumes/HANPLANET_HDD/Hanplanet/forgejo-repos`
   - `GITHUB_REPO_CACHE_ROOT` -> `/Volumes/HANPLANET_HDD/Hanplanet/github-repo-cache`
   - gunicorn / gitea / celery는 외장 스토리지를 기다린 뒤 실행
 - `DISC = "ssd"`
   - 외장 디스크 장애 시 임시 운영 모드
   - `MEDIA_ROOT` -> `/Users/imhanbyeol/temporary/hanplanet-ssd/media`
+  - `ONSCRIPTER_STORAGE_ROOT` -> `/Users/imhanbyeol/temporary/hanplanet-ssd/ONScripter`
   - `FORGEJO_REPOS_ROOT` -> `/Users/imhanbyeol/temporary/hanplanet-ssd/forgejo-repos`
   - `GITHUB_REPO_CACHE_ROOT` -> `/Users/imhanbyeol/temporary/hanplanet-ssd/github-repo-cache`
   - 외장 스토리지 대기 없이 바로 실행
@@ -1163,6 +1167,7 @@ sudo chown -R "$USER" /srv/hanplanet/data
 ```dotenv
 DJANGO_DATA_VOLUME=/srv/hanplanet/data/django
 HANPLANET_MEDIA_VOLUME=/srv/hanplanet/data/media
+HANPLANET_ONSCRIPTER_VOLUME=/srv/hanplanet/data/ONScripter
 HANPLANET_MAIL_VOLUME=/srv/hanplanet/data/mail
 HANPLANET_GITHUB_CACHE_VOLUME=/srv/hanplanet/data/github-repo-cache
 FORGEJO_REPOS_VOLUME=/srv/hanplanet/data/forgejo-repos
@@ -1179,6 +1184,7 @@ MINECRAFT_SERVER_VOLUME=/srv/hanplanet/data/minecraft
 | --- | --- |
 | Django SQLite DB | `/srv/hanplanet/data/django/db.sqlite3` |
 | `media/` / HanDrive 파일 | `/srv/hanplanet/data/media/` |
+| ONScripter web ports/runtime/saves | `/srv/hanplanet/data/ONScripter/` |
 | Forgejo bare repo root | `/srv/hanplanet/data/forgejo-repos/` |
 | Gitea DB/config/runtime data | `/srv/hanplanet/data/gitea/` (`gitea.db` 포함, Django에서는 `/data/gitea/gitea.db`) |
 | GitHub repo cache | `/srv/hanplanet/data/github-repo-cache/` |

@@ -14,6 +14,7 @@ from tempfile import TemporaryDirectory
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 from django.contrib.auth.signals import user_logged_in
 from django.conf import settings
 from django.core import signing
@@ -34,6 +35,7 @@ from .models import (
     HandriveAccessRule,
     HandriveLoginAttemptGuard,
     HandriveSharedLink,
+    HandriveSiteSettings,
     HandriveUserQuota,
     MinecraftAccountLink,
     MinecraftLinkCode,
@@ -70,6 +72,7 @@ from .handrive_views import (
     HANDRIVE_TUTORIAL_GIT_REPO_NAME,
     HANDRIVE_TUTORIAL_GIT_REPO_OWNER_USERNAME,
     HANDRIVE_TUTORIAL_MARKER,
+    HANDRIVE_TUTORIAL_SHARE_OWNER_USERNAME,
     HANDRIVE_TUTORIAL_WORKSPACE_MARKER_FILENAME,
     DOCS_PUBLIC_WRITE_GROUP_NAME,
     DOCS_USER_SCOPED_ENTRY_LIMIT,
@@ -92,6 +95,7 @@ from .handrive_views import (
     build_page_help_html,
     get_handrive_save_extension_options,
     get_handrive_text,
+    get_user_handrive_quota_bytes,
     get_handrive_upload_tmp_dir,
     get_handrive_public_write_group,
     prune_all_stale_handrive_tutorial_dirs,
@@ -1196,6 +1200,19 @@ class DockerComposeSourceTests(TestCase):
         self.assertIn('- "${GITEA_DATA_VOLUME:-gitea_data}:/data/gitea"', compose)
         self.assertIn("FORGEJO_DB_PATH=/data/gitea/gitea.db", env_example)
 
+    def test_django_services_mount_onscripter_outside_media_root(self):
+        base_dir = Path(settings.BASE_DIR)
+        compose = (base_dir / "docker-compose.yml").read_text(encoding="utf-8")
+        env_example = (base_dir / ".env.docker.example").read_text(encoding="utf-8")
+        settings_py = (base_dir / "config/settings.py").read_text(encoding="utf-8")
+
+        self.assertIn('HANPLANET_ONSCRIPTER_ROOT: "${HANPLANET_ONSCRIPTER_ROOT:-/data/ONScripter}"', compose)
+        self.assertIn('- "${HANPLANET_ONSCRIPTER_VOLUME:-onscripter_data}:/data/ONScripter"', compose)
+        self.assertIn("HANPLANET_ONSCRIPTER_ROOT=/data/ONScripter", env_example)
+        self.assertIn("HANPLANET_ONSCRIPTER_VOLUME=onscripter_data", env_example)
+        self.assertIn('"HANPLANET_ONSCRIPTER_ROOT"', settings_py)
+        self.assertIn('/ko/sub/onscripter/assets/', settings_py)
+
     def test_docker_health_watchdog_restarts_unhealthy_services_from_launchd(self):
         base_dir = Path(settings.BASE_DIR)
         script_path = base_dir / "scripts/docker_health_watchdog.sh"
@@ -1311,8 +1328,8 @@ class PwaMetadataTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         script = response.content.decode()
-        self.assertIn("hanplanet-static-v38", script)
-        self.assertIn("hanplanet-page-v10", script)
+        self.assertIn("hanplanet-static-v54", script)
+        self.assertIn("hanplanet-page-v15", script)
         self.assertIn("cacheControl.includes('no-store')", script)
         self.assertIn("cacheControl.includes('no-cache')", script)
         self.assertIn("if (cached) {", script)
@@ -1555,6 +1572,10 @@ class LanguageUrlRoutingTests(TestCase):
             reverse("main:onscripter_player_lang", kwargs={"ui_lang": "ko", "game_slug": "haruuru"}),
             reverse("main:onscripter_game_index_lang", kwargs={"ui_lang": "ko", "game_slug": "haruuru"}),
             reverse("main:onscripter_game_save_lang", kwargs={"ui_lang": "ko", "game_slug": "haruuru"}),
+            reverse(
+                "main:onscripter_asset_lang",
+                kwargs={"ui_lang": "ko", "asset_path": "_web_runtime/onsyuri/0.7.7beta/onsyuri.js"},
+            ),
         ]
         for url in urls:
             with self.subTest(url=url):
@@ -1569,8 +1590,11 @@ class LanguageUrlRoutingTests(TestCase):
         )
         self.client.force_login(admin_user)
 
-        with TemporaryDirectory() as tmpdir, override_settings(MEDIA_ROOT=tmpdir):
-            onscripter_root = Path(tmpdir) / "HanDrive" / "ONScripter"
+        with TemporaryDirectory() as tmpdir, override_settings(
+            MEDIA_ROOT=tmpdir,
+            ONSCRIPTER_STORAGE_ROOT=str(Path(tmpdir) / "ONScripter"),
+        ):
+            onscripter_root = Path(tmpdir) / "ONScripter"
             runtime_root = onscripter_root / "_web_runtime"
             (runtime_root / "onsyuri" / "0.7.7beta").mkdir(parents=True)
             (runtime_root / "jszip" / "3.10.1").mkdir(parents=True)
@@ -1598,6 +1622,8 @@ class LanguageUrlRoutingTests(TestCase):
                 self.assertEqual(response.context["meta_og_description"], expected_description)
                 self.assertContains(response, f"<title>{expected_title}</title>", html=False)
                 self.assertContains(response, f'var desiredTitle = "{expected_title}";', html=False)
+                self.assertContains(response, "/ko/sub/onscripter/assets/_web_runtime/onsyuri/0.7.7beta/onsyuri.js", html=False)
+                self.assertNotContains(response, "/media/HanDrive/ONScripter", html=False)
                 self.assertContains(response, "window.__onscripter_title_head_observer", html=False)
                 self.assertContains(
                     response,
@@ -1624,6 +1650,15 @@ class LanguageUrlRoutingTests(TestCase):
                     f'<meta property="og:description" content="{expected_description}">',
                     html=False,
                 )
+
+            asset_url = reverse(
+                "main:onscripter_asset_lang",
+                kwargs={"ui_lang": "ko", "asset_path": "_web_runtime/onsyuri/0.7.7beta/onsyuri.js"},
+            )
+            asset_response = self.client.get(asset_url)
+            self.assertEqual(asset_response.status_code, 200)
+            self.assertEqual(b"".join(asset_response.streaming_content), b"stub")
+            self.assertEqual(asset_response["Content-Type"], "application/javascript")
 
     @mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30")
     def test_minecraft_home_uses_server_image_metadata(self, mocked_bedrock_version):
@@ -4134,7 +4169,7 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("function toggleTutorialUploadQueuePreviewCollapse()", page_js)
         self.assertIn('uploadQueuePanel.classList.contains("is-tutorial-preview")', page_js)
         self.assertIn("if (toggleTutorialUploadQueuePreviewCollapse())", page_js)
-        self.assertIn("const HANDRIVE_TUTORIAL_TOTAL_GROUPS = 17;", page_js)
+        self.assertIn("const HANDRIVE_TUTORIAL_TOTAL_GROUPS = 18;", page_js)
         self.assertIn("const HANDRIVE_TUTORIAL_STEP_PROGRESS = [", page_js)
         self.assertIn("const HANDRIVE_TUTORIAL_TOTAL_STEPS = HANDRIVE_TUTORIAL_STEP_PROGRESS.length;", page_js)
         self.assertIn("function formatTutorialStepProgress(stepIndex, step)", page_js)
@@ -4175,11 +4210,12 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("positionStepTarget(attempt + 1);", show_step_block)
         self.assertIn("activeStepMeta.groupIndex === 5 && !getGuestDemoVisiblePreviewPanel()", page_js)
         self.assertIn("showGuestDemoStep(null, getGuestDemoFirstGroupStepIndex(tourSteps, 6));", page_js)
-        self.assertIn('step(\n                    7,\n                    1,\n                    5,\n                    "save_filename"', steps_block)
-        self.assertIn('step(\n                    7,\n                    2,\n                    5,\n                    "save_action"', steps_block)
-        self.assertIn('step(\n                    7,\n                    3,\n                    5,\n                    "save_rename_row"', steps_block)
-        self.assertIn('step(\n                    7,\n                    4,\n                    5,\n                    "save_rename_menu"', steps_block)
-        self.assertIn('step(\n                    7,\n                    5,\n                    5,\n                    "save_rename_modal"', steps_block)
+        self.assertIn('step(\n                    7,\n                    1,\n                    6,\n                    "save_filename"', steps_block)
+        self.assertIn('step(\n                    7,\n                    2,\n                    6,\n                    "save_action"', steps_block)
+        self.assertIn('step(\n                    7,\n                    3,\n                    6,\n                    "save_rename_row"', steps_block)
+        self.assertIn('step(\n                    7,\n                    4,\n                    6,\n                    "save_rename_menu"', steps_block)
+        self.assertIn('step(\n                    7,\n                    5,\n                    6,\n                    "save_rename_modal_open"', steps_block)
+        self.assertIn('step(\n                    7,\n                    6,\n                    6,\n                    "save_rename_modal"', steps_block)
         self.assertIn("function getGuestDemoFirstListRow()", page_js)
         self.assertIn("function openGuestDemoSaveRenameContextMenu()", page_js)
         self.assertIn("function openGuestDemoSaveRenameModal()", page_js)
@@ -4189,10 +4225,13 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("scheduleGuestDemoTourForRenameModalChange(true);", page_js)
         self.assertIn("document.body.classList.add(\"is-handrive-guest-demo-modal-step\");", page_js)
         self.assertIn("#handrive-rename-modal .handrive-popup-body", page_js)
+        self.assertIn('return "save_rename_modal_open";', page_js)
         self.assertIn("return isGuestDemoEditorVisible() ? \"save_filename\" : \"save_rename_row\";", page_js)
         self.assertIn('bindGuestDemoStepAutoAdvance(row, "contextmenu", "save_rename_row"', steps_block)
         self.assertIn('bindGuestDemoStepAutoAdvance(contextRenameButton, "click", "save_rename_menu"', steps_block)
+        self.assertIn('bindGuestDemoStepAutoAdvance(renameInput, "focus", "save_rename_modal_open"', steps_block)
         self.assertIn("return getGuestDemoRenameModalTarget();", steps_block)
+        self.assertIn("이름 바꾸기 모달을 확인해보세요.", steps_block)
         self.assertIn("입력칸에 새 이름을 입력하고 적용 버튼을 누르세요.", steps_block)
         self.assertIn("activeStepMeta.groupIndex === 7", page_js)
         self.assertIn('step(\n                    8,\n                    1,\n                    2,\n                    "upload_drop"', steps_block)
@@ -4208,40 +4247,64 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('step(\n                    10,\n                    3,\n                    5,\n                    "share_url"', steps_block)
         self.assertIn('bindGuestDemoStepAutoAdvance("#handrive-url-share-modal", "handrive:url-share-updated", "share_url"', steps_block)
         self.assertIn("event.detail.enabled", steps_block)
+        self.assertIn("function getGuestDemoShareLinkRowsTarget()", page_js)
+        self.assertIn("function isGuestDemoShareLinkRowsReady()", page_js)
+        self.assertIn('return "share_targets";', page_js)
+        self.assertIn("resolveCurrentUi: true,", steps_block)
+        self.assertIn('buildGuestDemoCompositeTarget([\n                ".handrive-url-share-link-group",\n                "#handrive-url-share-download-row",\n            ])', page_js)
+        self.assertIn("공유 링크 묶음과 다운로드 링크 행을 확인하세요.", steps_block)
+        self.assertIn("scheduleGuestDemoTourPositionAfterLayoutChange();", steps_block)
+        self.assertIn("return findFirstVisibleGuestDemoElement([getGuestDemoShareLinkRowsTarget, getGuestDemoShareTargetUserTarget, getGuestDemoShareModalTarget, previewUrlShareButton]);", steps_block)
+        self.assertIn("function closeGuestDemoTransientModalsForStepChange()", page_js)
+        self.assertIn("urlShareModal.close();", page_js)
+        self.assertIn("setFolderCreateModalOpen(false);", page_js)
+        self.assertIn("setRenameModalOpen(false);", page_js)
+        self.assertIn("closeGuestDemoTransientModalsForStepChange();\n            closeGuestDemoHelpModalForGroupChange(groupIndex);", page_js)
         self.assertIn('new window.CustomEvent("handrive:url-share-updated"', url_share_modal_js)
         self.assertIn("dispatchShareUpdated(result);", url_share_modal_js)
         self.assertIn('step(\n                    11,\n                    1,\n                    2,\n                    "manage_row"', steps_block)
         self.assertIn('step(\n                    11,\n                    2,\n                    2,\n                    "manage_menu"', steps_block)
         self.assertIn("우클릭 메뉴에서 이름 바꾸기, 삭제, 다운로드, 수정 등의 항목을 선택할 수 있습니다.", steps_block)
-        self.assertIn("우클릭 메뉴를 확인한 뒤 다음 단계로 이동하세요.", steps_block)
+        self.assertIn("우클릭 메뉴를 확인해보세요.", steps_block)
         self.assertNotIn("우클릭 메뉴에서 이름 변경, 삭제, 다운로드, 위치 열기 같은 항목을 선택할 수 있습니다.", steps_block)
         self.assertNotIn("이름 변경과 삭제 위치를 확인하세요.", steps_block)
-        self.assertIn('step(\n                    12,\n                    1,\n                    7,\n                    "advanced_samples"', steps_block)
-        self.assertIn('step(\n                    12,\n                    2,\n                    7,\n                    "advanced_archive_menu"', steps_block)
-        self.assertIn('step(\n                    12,\n                    3,\n                    7,\n                    "advanced_git_menu"', steps_block)
-        self.assertIn('step(\n                    12,\n                    4,\n                    7,\n                    "advanced_map_menu"', steps_block)
-        self.assertIn('step(\n                    12,\n                    5,\n                    7,\n                    "advanced_mp3_menu"', steps_block)
-        self.assertIn('step(\n                    12,\n                    6,\n                    7,\n                    "advanced_audio_menu"', steps_block)
-        self.assertIn('step(\n                    12,\n                    7,\n                    7,\n                    "advanced_default_menu"', steps_block)
+        self.assertIn('step(\n                    12,\n                    1,\n                    8,\n                    "advanced_samples"', steps_block)
+        self.assertIn('step(\n                    12,\n                    2,\n                    8,\n                    "advanced_archive_menu"', steps_block)
+        self.assertIn('step(\n                    12,\n                    3,\n                    8,\n                    "advanced_git_menu"', steps_block)
+        self.assertIn('step(\n                    12,\n                    4,\n                    8,\n                    "advanced_git_opened"', steps_block)
+        self.assertIn('step(\n                    12,\n                    5,\n                    8,\n                    "advanced_map_menu"', steps_block)
+        self.assertIn('step(\n                    12,\n                    6,\n                    8,\n                    "advanced_mp3_menu"', steps_block)
+        self.assertIn('step(\n                    12,\n                    7,\n                    8,\n                    "advanced_audio_menu"', steps_block)
+        self.assertIn('step(\n                    12,\n                    8,\n                    8,\n                    "advanced_default_menu"', steps_block)
         self.assertIn("function getGuestDemoAdvancedMenuStepId()", page_js)
+        self.assertIn("function isGuestDemoGitRepositoryView()", page_js)
+        self.assertIn("function isGuestDemoGitContextTarget()", page_js)
         self.assertIn("function isGuestDemoAdvancedMenuStepId(stepId)", page_js)
         self.assertIn("resolveCurrentUi: true,", steps_block)
         self.assertIn("if (!keepOpenContextMenu) {\n                closeContextMenu();\n            }", page_js)
         self.assertIn('return "advanced_git_menu";', page_js)
+        self.assertIn('return "advanced_git_opened";', page_js)
         self.assertIn('return "advanced_map_menu";', page_js)
         self.assertIn('return "advanced_mp3_menu";', page_js)
         self.assertIn('return "advanced_audio_menu";', page_js)
         self.assertNotIn('"advanced_menu"', steps_block)
         self.assertIn('step(\n                    13,\n                    1,\n                    1,\n                    "layout_splitter"', steps_block)
-        self.assertIn('step(\n                    14,\n                    1,\n                    1,\n                    "preview_drag"', steps_block)
-        self.assertIn('step(\n                    15,\n                    1,\n                    2,\n                    "jobs_panel"', steps_block)
-        self.assertIn('step(\n                    15,\n                    2,\n                    2,\n                    "jobs_item"', steps_block)
-        self.assertIn("작업 내역 패널을 확인한 뒤 다음 단계로 이동하세요.", steps_block)
+        self.assertIn('step(\n                    14,\n                    1,\n                    1,\n                    "layout_zoom"', steps_block)
+        self.assertIn('step(\n                    15,\n                    1,\n                    1,\n                    "preview_drag"', steps_block)
+        self.assertIn('step(\n                    16,\n                    1,\n                    2,\n                    "jobs_panel"', steps_block)
+        self.assertIn('step(\n                    16,\n                    2,\n                    2,\n                    "jobs_item"', steps_block)
+        self.assertIn("작업 내역 패널을 확인해보세요.", steps_block)
         self.assertNotIn("작업 내역 패널의 위치를 확인하세요.", steps_block)
-        self.assertIn('step(\n                    16,\n                    1,\n                    2,\n                    "help_button"', steps_block)
-        self.assertIn('step(\n                    16,\n                    2,\n                    2,\n                    "help_modal"', steps_block)
-        self.assertIn('step(\n                    17,\n                    1,\n                    1,\n                    "practice"', steps_block)
-        self.assertIn("buildGuestDemoCompositeTarget([previewBody, listSplitter])", steps_block)
+        self.assertIn('step(\n                    17,\n                    1,\n                    2,\n                    "help_button"', steps_block)
+        self.assertIn('step(\n                    17,\n                    2,\n                    2,\n                    "help_modal"', steps_block)
+        self.assertIn("function getGuestDemoHelpTutorialButtonTarget()", page_js)
+        self.assertIn("function closeGuestDemoHelpModalForGroupChange(groupIndex)", page_js)
+        self.assertIn('document.dispatchEvent(new window.CustomEvent("handrive:tutorial-close-help-modal"));', page_js)
+        self.assertIn('step(\n                    18,\n                    1,\n                    1,\n                    "practice"', steps_block)
+        self.assertIn("강조된 분할 막대를 잡고 좌우 또는 상하로 움직여보세요.", steps_block)
+        self.assertIn("return findFirstVisibleGuestDemoElement([listSplitter]);", steps_block)
+        self.assertNotIn("buildGuestDemoCompositeTarget([previewBody, listSplitter])", steps_block)
+        self.assertIn("buildGuestDemoCompositeTarget([listItemsContainer, previewBody])", steps_block)
         self.assertIn("미리보기 헤더를 드래그하면", steps_block)
         self.assertIn("function bindGuestDemoStepAutoAdvance(target, eventName, stepId, options)", page_js)
         self.assertIn("function scheduleGuestDemoStepAdvance(stepId, delayMs, options)", page_js)
@@ -4251,7 +4314,6 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('bindGuestDemoStepAutoAdvance(row, "contextmenu", "create_folder_row"', steps_block)
         self.assertIn('bindGuestDemoStepAutoAdvanceMany([contextNewFolderButton, contextNewDocButton], "click", "create_open_action"', steps_block)
         self.assertIn('bindGuestDemoStepAutoAdvanceMany([previewUrlShareButton, currentDirToolbarUrlShareButton], "click", "share_button"', steps_block)
-        self.assertNotIn('"layout_zoom"', steps_block)
         self.assertNotIn('bindGuestDemoStepAutoAdvance(listSplitter, "pointerdown", "layout_splitter"', steps_block)
         self.assertNotIn('bindGuestDemoZoomAutoAdvance("layout_zoom");', steps_block)
         self.assertIn("function getCurrentTutorialNavigationStepIndex()", page_js)
@@ -4275,6 +4337,9 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('contextMenu.classList.toggle("is-guest-demo-context-menu", isTutorialMode);', page_js)
         self.assertIn("var previousStateCollapsed = state.uploadQueueCollapsed;", queue_block)
         self.assertIn("state.uploadQueueCollapsed = previousStateCollapsed;", queue_block)
+        self.assertIn(".handrive-job-queue-panel.is-tutorial-preview {\n    display: flex;", handrive_css)
+        self.assertIn(".handrive-job-queue-list {\n    flex: 1 1 auto;\n    min-height: 0;", handrive_css)
+        self.assertIn("overflow-y: auto;", handrive_css)
         self.assertIn("--handrive-guest-demo-step-bg", steps_css_block)
         self.assertIn(".site-custom-select > select.handrive-guest-demo-steps.site-custom-select-native", steps_css_block)
         self.assertIn("position: absolute;", steps_css_block)
@@ -4322,6 +4387,12 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("function initializeStandaloneTutorialTour(options)", page_js)
         self.assertIn("function positionStandaloneTutorialTour(spotlight, tip, target, placement)", page_js)
         self.assertIn("function buildStandaloneTutorialCompositeTarget(elements)", page_js)
+        self.assertEqual(HANDRIVE_TUTORIAL_GIT_REPO_OWNER_USERNAME, "HanbyelLim")
+        self.assertIn("[7, 6, 6]", page_js)
+        self.assertIn("[12, 8, 8]", page_js)
+        self.assertIn("const navigationStepIndex = getTutorialGroupFirstStepIndex(stepMeta.groupIndex);", page_js)
+        self.assertIn("getTutorialAdjacentGroupStepIndex(navigationStepIndex, -1)", page_js)
+        self.assertIn("getTutorialAdjacentGroupStepIndex(navigationStepIndex, 1)", page_js)
         self.assertIn("returnUrl: getViewTutorialReturnUrl()", page_js)
         self.assertIn("returnUrl: getWriteTutorialReturnUrl()", page_js)
         self.assertIn("function getWriteTutorialOptionOverrides()", page_js)
@@ -4343,13 +4414,24 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('labelKey: "guest_demo_onboarding_step_practice"', steps_block)
         self.assertIn("종료하면 임시 파일은 삭제됩니다.", steps_block)
         self.assertIn("로그인 시 개인 드라이브 이용이 가능합니다.", steps_block)
-        self.assertIn('textByLang("튜토리얼 전용 임시 드라이브 영역을 확인한 뒤 다음 단계로 이동하세요."', overview_step_block)
+        self.assertLess(
+            steps_block.index("isGuestDemoMode || !isAuthenticated"),
+            steps_block.index("종료하면 임시 파일은 삭제됩니다."),
+        )
+        self.assertIn('textByLang("튜토리얼 전용 임시 드라이브 영역을 확인해보세요."', overview_step_block)
         self.assertIn("return findFirstVisibleGuestDemoElement([listLayout, listPane, listContainer, root]);", overview_step_block)
         self.assertEqual(
             get_handrive_text("ko")["guest_demo_tour_overview_action"],
-            "튜토리얼 전용 임시 드라이브 영역을 확인한 뒤 다음 단계로 이동하세요.",
+            "튜토리얼 전용 임시 드라이브 영역을 확인해보세요.",
         )
-        self.assertIn("highlighted HanDrive area", get_handrive_text("en")["guest_demo_tour_overview_body"])
+        self.assertIn("does not affect the user's real drive", get_handrive_text("en")["guest_demo_tour_overview_body"])
+        self.assertIn("guestBodyKey: \"guest_demo_tour_overview_guest_body\"", overview_step_block)
+        self.assertIn("이 튜토리얼는 임시 드라이브에서 작동하며, 이후 삭제됩니다.", overview_step_block)
+        self.assertEqual(
+            get_handrive_text("ko")["guest_demo_tour_overview_guest_body"],
+            "이 튜토리얼는 임시 드라이브에서 작동하며, 이후 삭제됩니다.",
+        )
+        self.assertIn("will be deleted afterward", get_handrive_text("en")["guest_demo_tour_overview_guest_body"])
         self.assertIn('document.getElementById("handrive-list-items")', browse_step_block)
         self.assertNotIn("target: getGuestDemoPreferredRow", browse_step_block)
         self.assertIn("function isGuestDemoCreateMenuReady()", page_js)
@@ -4618,14 +4700,32 @@ class HandriveStyleSourceTests(TestCase):
             url_share_template.index('class="handrive-url-share-target-empty"'),
             url_share_template.index('id="handrive-url-share-target-input"'),
         )
+        self.assertLess(
+            url_share_template.index('class="handrive-url-share-link-group"'),
+            url_share_template.index('id="handrive-url-share-targets"'),
+        )
+        self.assertLess(
+            url_share_template.index('id="handrive-url-share-targets"'),
+            url_share_template.index('id="handrive-url-share-url-row"'),
+        )
         self.assertNotIn(
             ".handrive-url-share-target-list:not(:empty) + .handrive-url-share-target-empty",
             handrive_css,
         )
         self.assertIn("shareTargetList.hidden = true;", url_share_js)
         self.assertIn("shareTargetList.hidden = currentAllowedUsers.length === 0;", url_share_js)
+        self.assertIn(".handrive-url-share-link-group {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;", handrive_css)
+        self.assertIn(".handrive-url-share-link-group:not(:has(> :not([hidden]))) {\n    display: none;\n}", handrive_css)
         self.assertIn(".handrive-url-share-target-list[hidden] {\n    display: none;\n}", handrive_css)
+        self.assertIn(".handrive-url-share-targets {\n    display: flex;\n    flex-direction: column;\n    gap: 7px;\n    margin: 0;", handrive_css)
+        self.assertIn(".handrive-url-share-target-card {\n    display: inline-flex;\n    align-items: center;\n    max-width: 100%;\n    min-width: 0;\n    gap: 0;", handrive_css)
+        self.assertIn(".handrive-url-share-target-remove {\n    display: inline-grid;\n    place-items: center;", handrive_css)
+        self.assertIn("border: 0;\n    border-radius: 50%;\n    background: transparent;", handrive_css)
+        self.assertIn("line-height: 20px;\n    text-align: center;", handrive_css)
+        self.assertIn(".handrive-url-share-target-remove:hover,\n.handrive-url-share-target-remove:focus-visible {\n    background: transparent;", handrive_css)
         self.assertIn(".handrive-url-share-read-head {\n    display: flex;\n    align-items: flex-end;", handrive_css)
+        self.assertIn("#handrive-url-share-read-label {\n    align-self: flex-end;", handrive_css)
+        self.assertIn("line-height: 1.2;", handrive_css)
         self.assertIn("#handrive-url-share-edit-checkbox {", handrive_css)
         self.assertIn("inline-size: 14px;", handrive_css)
         self.assertIn("min-width: 14px;", handrive_css)
@@ -5745,12 +5845,26 @@ class HandriveStyleSourceTests(TestCase):
         self.assertNotIn("#19324d", handrive_css[inline_code_start:inline_code_end])
         self.assertIn("margin: 8px 0;", handrive_css[pre_start:pre_end])
         self.assertIn("background: var(--handrive-markdown-code-block-bg);", handrive_css[pre_start:pre_end])
+        markdown_pre_code_start = handrive_css.index(".ui-markdown pre code,\n.handrive-markdown pre code")
+        markdown_pre_code_end = handrive_css.index(".ui-markdown pre .handrive-markdown-code-copy-btn", markdown_pre_code_start)
+        markdown_pre_code_block = handrive_css[markdown_pre_code_start:markdown_pre_code_end]
+        self.assertIn("display: block;", markdown_pre_code_block)
+        self.assertIn("max-width: 100%;", markdown_pre_code_block)
+        self.assertIn("white-space: pre-wrap;", markdown_pre_code_block)
+        self.assertIn("overflow-wrap: anywhere;", markdown_pre_code_block)
+        self.assertIn("word-break: break-word;", markdown_pre_code_block)
         self.assertIn("border-radius: var(--handrive-markdown-inline-code-radius);", handrive_css[help_code_start:help_code_end])
         self.assertIn("background: var(--handrive-markdown-inline-code-bg);", handrive_css[help_code_start:help_code_end])
         self.assertIn("margin: 8px 0;", handrive_css[help_pre_start:help_pre_end])
         self.assertIn("border-radius: 0;", handrive_css[help_pre_start:help_pre_end])
         self.assertIn("background: var(--handrive-markdown-code-block-bg);", handrive_css[help_pre_start:help_pre_end])
         self.assertIn("padding: 8px 46px 8px 10px;", handrive_css[help_pre_start:help_pre_end])
+        help_pre_code_start = handrive_css.index(".handrive-help-markdown pre code")
+        help_pre_code_end = handrive_css.index(".handrive-help-markdown > :first-child", help_pre_code_start)
+        help_pre_code_block = handrive_css[help_pre_code_start:help_pre_code_end]
+        self.assertIn("white-space: pre-wrap;", help_pre_code_block)
+        self.assertIn("overflow-wrap: anywhere;", help_pre_code_block)
+        self.assertIn("word-break: break-word;", help_pre_code_block)
 
     def test_markdown_inline_code_selects_all_on_double_click_drag_only_for_inline_code(self):
         page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
@@ -5779,7 +5893,10 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("function getMarkdownCodeBlockNodes(container)", page_js)
         self.assertIn('markdownRoot.querySelectorAll("pre > code")', page_js)
         self.assertIn('pre.dataset.handriveCodeCopyBound = "1";', page_js)
-        self.assertIn('button.className = "handrive-markdown-code-copy-btn";', page_js)
+        self.assertIn('button.className = "handrive-markdown-code-copy-btn handrive-inline-copy-action";', page_js)
+        self.assertIn('width="18" height="18"', page_js)
+        self.assertIn('width="9" height="9" rx="1.5"', page_js)
+        self.assertIn('d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"', page_js)
         self.assertIn('navigator.clipboard.writeText(text)', page_js)
         self.assertIn('document.execCommand("copy")', page_js)
         self.assertIn("writeHandriveClipboardText(text).then(function ()", page_js)
@@ -5791,6 +5908,12 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("padding: 8px 46px 8px 10px;", pre_block)
         self.assertIn(".ui-markdown pre .handrive-markdown-code-copy-btn", handrive_css)
         self.assertIn(".handrive-markdown pre .handrive-markdown-code-copy-btn", handrive_css)
+        self.assertIn("transform: none;", handrive_css)
+        self.assertIn("@media print {\n    .ui-markdown pre,\n    .handrive-markdown pre", handrive_css)
+        self.assertIn("border: 1px solid #d0d7de;", handrive_css)
+        self.assertIn("display: none !important;", handrive_css)
+        self.assertIn(".handrive-print-rendered .handrive-markdown-code-copy-btn{display:none!important;}", page_js)
+        self.assertIn(".handrive-print-rendered.ui-markdown pre", page_js)
         self.assertIn('"markdown_code_copy_button": "코드 복사"', handrive_views)
         self.assertIn('"markdown_code_copy_button": "Copy code"', handrive_views)
 
@@ -6285,6 +6408,118 @@ class PortfolioPerUserRoutingTests(TestCase):
         self.assertContains(response, '<span class="ui-path-current">write</span>', html=False)
         self.assertNotContains(response, '<span class="ui-path-current">/portfolio/write</span>', html=False)
         self.assertNotContains(response, '<a class="ui-btn" href="/ko/portfolio/HanbyelLim/">Portfolio</a>', html=False)
+        self.assertContains(response, '.portfolio-write-field input[type="date"]', html=False)
+        self.assertContains(response, "background-position: right 11px center;", html=False)
+        self.assertContains(response, 'body.portfolio-write-page .portfolio-write-field input[type="date"]::-webkit-calendar-picker-indicator', html=False)
+        self.assertContains(response, "opacity: 0;", html=False)
+        self.assertContains(response, 'body.portfolio-write-page.theme-dark .portfolio-write-field input[type="date"]', html=False)
+        self.assertContains(response, '::-webkit-calendar-picker-indicator', html=False)
+        self.assertContains(response, "color-scheme: dark;", html=False)
+        self.assertContains(response, "stroke='%23eeeeee'", html=False)
+        self.assertContains(response, 'data-portfolio-markdown-preview-url="/ko/portfolio/write/preview-markdown"', html=False)
+        self.assertContains(response, 'data-portfolio-section-preview-url="/ko/portfolio/write/preview-section"', html=False)
+        self.assertContains(response, 'data-portfolio-markdown-editor', html=False)
+        self.assertContains(response, 'data-portfolio-markdown-preview-toggle', html=False)
+        self.assertContains(response, 'data-portfolio-editor-surface', html=False)
+        self.assertContains(response, 'portfolio-write-markdown-editor-shell', html=False)
+        self.assertContains(response, 'handrive-editor-highlight handrive-editor-md', html=False)
+        self.assertContains(response, 'id="ui-markdown-snippet-menu"', html=False)
+        self.assertContains(response, 'id="ui-preview-modal"', html=False)
+        self.assertContains(response, 'data-portfolio-preview-scope="profile"', html=False)
+        self.assertContains(response, 'data-portfolio-preview-scope="career"', html=False)
+        self.assertContains(response, 'data-portfolio-preview-scope="project"', html=False)
+        self.assertContains(response, 'data-portfolio-preview-scope="cover_letter"', html=False)
+        self.assertContains(response, 'data-portfolio-preview-scope="buttons"', html=False)
+        self.assertContains(response, 'data-portfolio-preview-scope="full"', html=False)
+        self.assertContains(response, 'class="portfolio-write-floating-preview-btn"', html=False)
+        self.assertNotContains(response, 'toolbar.className = "portfolio-write-markdown-tools";', html=False)
+        self.assertNotContains(response, 'data-portfolio-markdown-preview="portfolio-career-content-preview"', html=False)
+        self.assertContains(response, "function highlightMarkdownSourceCode(source)", html=False)
+        self.assertContains(response, "function openMarkdownSnippetMenu(clientX, clientY)", html=False)
+        self.assertContains(response, "function insertMarkdownSnippet(textarea, snippetType)", html=False)
+        self.assertContains(response, "function renderMarkdownPreview(textarea)", html=False)
+        self.assertContains(response, "function collectPortfolioPreviewPayload(scope)", html=False)
+        self.assertContains(response, "function openPortfolioSectionPreview(scope)", html=False)
+        self.assertContains(response, "function renderPortfolioPreviewDocument(html, title)", html=False)
+        self.assertContains(response, 'id="portfolio-career-content"', html=False)
+        self.assertContains(response, 'id="portfolio-career-content-en"', html=False)
+        self.assertContains(response, 'id="portfolio-project-content"', html=False)
+        self.assertContains(response, 'id="portfolio-project-content-en"', html=False)
+        self.assertContains(response, 'id="portfolio-cover-letter-content"', html=False)
+
+    def test_portfolio_write_markdown_preview_renders_safe_markdown(self):
+        self.client.login(username="HanbyelLim", password="pw12345")
+
+        response = self.client.post(
+            reverse("main:portfolio_write_markdown_preview_lang", kwargs={"ui_lang": "ko"}),
+            data=json.dumps({"text": "**굵게**\n\n<script>alert(1)</script>"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("<strong>굵게</strong>", payload["html"])
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", payload["html"])
+        self.assertNotIn("<script>alert(1)</script>", payload["html"])
+
+    def test_portfolio_write_section_preview_renders_current_form_values(self):
+        self.client.login(username="HanbyelLim", password="pw12345")
+
+        response = self.client.post(
+            reverse("main:portfolio_write_section_preview_lang", kwargs={"ui_lang": "ko"}),
+            data=json.dumps(
+                {
+                    "scope": "full",
+                    "data": {
+                        "profile": {
+                            "main_title": "Preview **Title**",
+                            "phone": "010-3333-4444",
+                            "email": "preview@example.com",
+                            "main_subtitle": "Preview subtitle",
+                        },
+                        "career": {
+                            "company": "Preview Company",
+                            "position": "Preview Developer",
+                            "content": "Preview **career**<script>alert(1)</script>",
+                            "join_date": "2024-01-01",
+                            "leave_date": "",
+                        },
+                        "project": {
+                            "title": "Preview Project",
+                            "content": "Preview project content",
+                            "tags": ["Django", "Docker"],
+                        },
+                        "cover_letter": {
+                            "name": "Preview Applicant",
+                            "content": "Cover **preview**",
+                        },
+                        "buttons": [
+                            {
+                                "order": "1",
+                                "label": "GitHub",
+                                "url": "https://github.com/",
+                            }
+                        ],
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["render_mode"], "portfolio_page")
+        self.assertIn("<!doctype html>", payload["html"])
+        self.assertIn('<body class="portfolio-page', payload["html"])
+        self.assertIn("css/common/style.css", payload["html"])
+        self.assertIn("Preview <strong>Title</strong>", payload["html"])
+        self.assertIn("Preview Company", payload["html"])
+        self.assertIn("Preview <strong>career</strong>", payload["html"])
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", payload["html"])
+        self.assertNotIn("<script>alert(1)</script>", payload["html"])
+        self.assertIn("Preview Project", payload["html"])
+        self.assertIn("Preview Applicant", payload["html"])
+        self.assertIn("GitHub", payload["html"])
 
     @override_settings(PUBLIC_BASE_URL="https://www.hanplanet.com")
     def test_portfolio_write_public_url_includes_domain(self):
@@ -6414,6 +6649,18 @@ class PortfolioPerUserRoutingTests(TestCase):
         self.assertContains(response, 'data-auth-account-weather-am-icon', html=False)
         self.assertContains(response, 'data-auth-account-weather-pm-icon', html=False)
         self.assertContains(response, 'data-auth-account-weather-settings-toggle', html=False)
+
+    def test_root_page_shows_fixed_weather_for_anonymous_users(self):
+        response = self.client.get("/ko/", HTTP_HOST="localhost")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="root-shell-weather-fixed" data-root-weather-host', html=False)
+        self.assertContains(response, 'data-auth-account-weather', html=False)
+        self.assertContains(response, 'data-weather-url="/ko/api/account-weather/"', html=False)
+        self.assertContains(response, 'data-auth-account-weather-am-icon', html=False)
+        self.assertContains(response, 'data-auth-account-weather-pm-icon', html=False)
+        self.assertNotContains(response, 'data-auth-account-weather-settings-toggle', html=False)
+        self.assertNotContains(response, "data-root-nav-account-host", html=False)
 
     def test_non_root_page_does_not_render_root_account_widget(self):
         self.client.login(username="GuestUser", password="pw12345")
@@ -6688,6 +6935,33 @@ class AccountWeatherApiTests(TestCase):
             }
         )
 
+    def met_forecast_response(self):
+        start = datetime(2026, 6, 25, 0, 0)
+        symbols = ["clearsky_day", "partlycloudy_day", "cloudy", "lightrain", "rain", "heavyrain", "rainshowers_day"]
+        timeseries = []
+        for index in range(36):
+            current = start + timedelta(hours=index)
+            symbol = symbols[index % len(symbols)]
+            timeseries.append(
+                {
+                    "time": current.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "data": {
+                        "instant": {
+                            "details": {
+                                "air_temperature": 21.0 + index * 0.2,
+                                "relative_humidity": 60 + (index % 5),
+                                "wind_speed": 2.0 + (index % 4) * 0.1,
+                            }
+                        },
+                        "next_1_hours": {
+                            "summary": {"symbol_code": symbol},
+                            "details": {"precipitation_amount": 0.1 if "rain" in symbol else 0.0},
+                        },
+                    },
+                }
+            )
+        return self.FakeWeatherResponse({"properties": {"timeseries": timeseries}})
+
     @mock.patch("main.views.timezone.now", return_value=timezone.make_aware(datetime(2026, 6, 24, 23, 30)))
     @mock.patch("main.views.httpx.get")
     def test_account_weather_patch_saves_manual_location_and_returns_hourly_and_daily_forecast(self, mocked_get, mocked_now):
@@ -6935,6 +7209,94 @@ class AccountWeatherApiTests(TestCase):
         self.assertEqual(mocked_get.call_args_list[0].args[0], "https://ipapi.co/8.8.8.8/json/")
         self.assertEqual(mocked_get.call_args_list[1].args[0], "https://api.open-meteo.com/v1/forecast")
 
+    @mock.patch("main.views.timezone.now", return_value=timezone.make_aware(datetime(2026, 6, 24, 23, 30)))
+    @mock.patch("main.views.httpx.get")
+    def test_account_weather_get_uses_default_location_when_ip_location_unavailable(self, mocked_get, mocked_now):
+        mocked_get.side_effect = [
+            httpx.ConnectTimeout("ip lookup timed out"),
+            self.forecast_response(),
+        ]
+
+        response = self.client.get("/ko/api/account-weather/", HTTP_CF_CONNECTING_IP="8.8.8.8")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["location"]["source"], "default")
+        self.assertEqual(payload["location"]["city"], "서울")
+        self.assertEqual(payload["location_name"], "서울 · 대한민국")
+        self.assertEqual(mocked_get.call_args_list[0].args[0], "https://ipapi.co/8.8.8.8/json/")
+        self.assertEqual(mocked_get.call_args_list[1].args[0], "https://api.open-meteo.com/v1/forecast")
+        self.assertEqual(mocked_get.call_args_list[1].kwargs["params"]["latitude"], "37.5665")
+
+    @mock.patch("main.views.timezone.now", return_value=timezone.make_aware(datetime(2026, 6, 24, 23, 30)))
+    @mock.patch("main.views.httpx.get")
+    def test_account_weather_get_allows_anonymous_default_location(self, mocked_get, mocked_now):
+        self.client.logout()
+        mocked_get.side_effect = [
+            httpx.ConnectTimeout("ip lookup timed out"),
+            self.forecast_response(),
+        ]
+
+        response = self.client.get("/ko/api/account-weather/", HTTP_CF_CONNECTING_IP="8.8.8.8")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["location"]["source"], "default")
+        self.assertEqual(payload["location_name"], "서울 · 대한민국")
+
+    def test_account_weather_patch_still_requires_login(self):
+        self.client.logout()
+
+        response = self.client.patch(
+            "/ko/api/account-weather/",
+            data=json.dumps({"country": "대한민국", "city": "서울"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["error_messages"]["ko"], "로그인이 필요합니다.")
+
+    @mock.patch("main.views.timezone.now", return_value=timezone.make_aware(datetime(2026, 6, 25, 9, 30)))
+    @mock.patch("main.views.httpx.get")
+    def test_account_weather_falls_back_to_met_when_open_meteo_times_out(self, mocked_get, mocked_now):
+        profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        profile.weather_country = "대한민국"
+        profile.weather_city = "서울"
+        profile.weather_location_label = "서울 · 대한민국"
+        profile.weather_latitude = 37.5665
+        profile.weather_longitude = 126.9780
+        profile.weather_location_source = "manual"
+        profile.save(
+            update_fields=[
+                "weather_country",
+                "weather_city",
+                "weather_location_label",
+                "weather_latitude",
+                "weather_longitude",
+                "weather_location_source",
+            ]
+        )
+        mocked_get.side_effect = [
+            httpx.ConnectTimeout("_ssl.c:993: The handshake operation timed out"),
+            self.met_forecast_response(),
+        ]
+
+        response = self.client.get("/ko/api/account-weather/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["provider"], "MET Norway")
+        self.assertEqual(payload["current_forecast_hour"], 9)
+        self.assertEqual(payload["hourly_forecast"][0]["time"], "2026-06-25T09:00")
+        self.assertEqual(payload["hourly_forecast"][0]["label"], "09시")
+        self.assertEqual(payload["day"]["temperature_min"], 21)
+        self.assertIn(payload["day"]["icon_type"], {"rain", "cloudy", "partly-cloudy", "clear"})
+        self.assertEqual(mocked_get.call_args_list[0].args[0], "https://api.open-meteo.com/v1/forecast")
+        self.assertEqual(mocked_get.call_args_list[1].args[0], "https://api.met.no/weatherapi/locationforecast/2.0/compact")
+
 
 class SiteZIndexLayerTests(TestCase):
     def test_common_z_index_tokens_define_bounded_ranges(self):
@@ -7060,6 +7422,7 @@ class SiteZIndexLayerTests(TestCase):
         ]
 
         self.assertIn('class="root-shell-weather-fixed" data-root-weather-host', root_template)
+        self.assertIn('include "partials/account_weather_widget.html"', root_template)
         self.assertIn("display: grid;", root_controls_block)
         self.assertIn("grid-template-areas:", root_controls_block)
         self.assertIn('"account controls"', root_controls_block)
@@ -10576,6 +10939,43 @@ class HandriveAccessRuleTests(TestCase):
         user_home.mkdir(parents=True, exist_ok=True)
         return user
 
+    def test_default_handrive_user_quota_is_50gb(self):
+        user = self.create_scoped_handrive_user("default_quota_user")
+
+        self.assertFalse(HandriveUserQuota.objects.filter(user=user).exists())
+        self.assertEqual(DOCS_USER_SCOPED_QUOTA_BYTES, 50 * 1024 ** 3)
+        self.assertEqual(get_user_handrive_quota_bytes(user), 50 * 1024 ** 3)
+
+    def test_default_handrive_user_quota_uses_admin_site_settings(self):
+        user = self.create_scoped_handrive_user("default_quota_settings_user")
+        settings_obj = HandriveSiteSettings.get_solo()
+        settings_obj.default_quota_bytes = 75 * 1024 ** 3
+        settings_obj.save(update_fields=["default_quota_bytes", "updated_at"])
+
+        self.assertFalse(HandriveUserQuota.objects.filter(user=user).exists())
+        self.assertEqual(get_user_handrive_quota_bytes(user), 75 * 1024 ** 3)
+
+    def test_handrive_site_settings_admin_form_saves_gb_value(self):
+        from main.admin import HandriveSiteSettingsForm
+
+        settings_obj = HandriveSiteSettings.get_solo()
+        form = HandriveSiteSettingsForm(
+            data={"default_quota_gb": "64"},
+            instance=settings_obj,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        saved = form.save()
+        self.assertEqual(saved.default_quota_bytes, 64 * 1024 ** 3)
+
+    def test_sync_quota_check_uses_default_50gb(self):
+        from main.sync_views import _check_quota
+
+        user = self.create_scoped_handrive_user("default_sync_quota_user")
+
+        self.assertTrue(_check_quota(user, 50 * 1024 ** 3))
+        self.assertFalse(_check_quota(user, 50 * 1024 ** 3 + 1))
+
     def create_google_drive_mapping(self, user):
         return GoogleAccountMapping.objects.create(
             user=user,
@@ -10591,11 +10991,15 @@ class HandriveAccessRuleTests(TestCase):
         )
 
     def create_tutorial_public_git_repo(self):
-        owner = self.user_model.objects.create_user(
+        owner, created = self.user_model.objects.get_or_create(
             username=HANDRIVE_TUTORIAL_GIT_REPO_OWNER_USERNAME,
-            email=f"{HANDRIVE_TUTORIAL_GIT_REPO_OWNER_USERNAME}@example.com",
-            password="pw123456",
+            defaults={
+                "email": f"{HANDRIVE_TUTORIAL_GIT_REPO_OWNER_USERNAME}@example.com",
+            },
         )
+        if created:
+            owner.set_password("pw123456")
+            owner.save(update_fields=["password"])
         repo = GitRepository.objects.create(
             owner=owner,
             repo_name=HANDRIVE_TUTORIAL_GIT_REPO_NAME,
@@ -10907,6 +11311,55 @@ class HandriveAccessRuleTests(TestCase):
         self.assertTrue(response.context["handrive_tutorial_mode"])
         self.assertContains(response, 'data-tutorial-mode="1"', html=False)
         self.assertNotContains(response, 'handrive-guest-demo-onboarding', html=False)
+
+    def test_anonymous_tutorial_file_can_enable_url_share(self):
+        start_response = self.client.get(
+            reverse("main:handrive_list_lang", kwargs={"ui_lang": "ko", "folder_path": "guest"}),
+            {"tutorial": "1", "start": "1"},
+            follow=True,
+        )
+        guest_dir = start_response.context["current_dir"]
+        tutorial_path = f"{guest_dir}/{HANDRIVE_TUTORIAL_FILE_PREFIX}.md"
+
+        response = self.client.post(
+            reverse("main:handrive_api_url_share"),
+            data=json.dumps({"path": tutorial_path, "enabled": True, "can_edit": True}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["is_url_only"])
+        self.assertTrue(payload["share_can_edit"])
+        self.assertTrue(payload["share_can_manage"])
+        self.assertEqual(payload["owner_username"], HANDRIVE_TUTORIAL_SHARE_OWNER_USERNAME)
+        shared_link = HandriveSharedLink.objects.get(path=tutorial_path)
+        self.assertEqual(shared_link.owner.username, HANDRIVE_TUTORIAL_SHARE_OWNER_USERNAME)
+        self.assertTrue(shared_link.can_edit)
+
+        disable_response = self.client.post(
+            reverse("main:handrive_api_url_share"),
+            data=json.dumps({"path": tutorial_path, "enabled": False}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(disable_response.status_code, 200)
+        self.assertFalse(HandriveSharedLink.objects.filter(path=tutorial_path).exists())
+
+    def test_anonymous_non_tutorial_file_still_cannot_enable_url_share(self):
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
+        public_path = handrive_root / "guest" / "public.md"
+        public_path.parent.mkdir(parents=True, exist_ok=True)
+        public_path.write_text("# public", encoding="utf-8")
+
+        response = self.client.post(
+            reverse("main:handrive_api_url_share"),
+            data=json.dumps({"path": "guest/public.md", "enabled": True}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(HandriveSharedLink.objects.filter(path="guest/public.md").exists())
 
     def test_guest_breadcrumb_from_tutorial_returns_to_tutorial_workspace(self):
         list_response = self.client.get(
@@ -14389,7 +14842,7 @@ class HandriveAccessRuleTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("용량이 1GB를 초과", response.json().get("error", ""))
+        self.assertIn("용량이 50 GB를 초과", response.json().get("error", ""))
         self.assertFalse((scoped_root / "extra.txt").exists())
 
     def test_scoped_docs_api_save_blocks_when_entry_limit_would_be_exceeded(self):

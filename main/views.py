@@ -197,9 +197,18 @@ NETWORK_REVERSE_GEOCODE_TIMEOUT = 3.0
 NETWORK_REVERSE_GEOCODE_USER_AGENT = "Hanplanet network-info/1.0 (https://www.hanplanet.com/)"
 ACCOUNT_WEATHER_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 ACCOUNT_WEATHER_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+ACCOUNT_WEATHER_MET_FORECAST_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
 ACCOUNT_WEATHER_IPAPI_URL_TEMPLATE = "https://ipapi.co/{ip}/json/"
 ACCOUNT_WEATHER_TIMEOUT = 3.0
 ACCOUNT_WEATHER_USER_AGENT = "Hanplanet account-weather/1.0 (https://www.hanplanet.com/)"
+ACCOUNT_WEATHER_DEFAULT_LOCATION = {
+    "country": "대한민국",
+    "city": "서울",
+    "label": "서울 · 대한민국",
+    "latitude": 37.5665,
+    "longitude": 126.9780,
+    "source": "default",
+}
 IMAGE_COLOR_PICKER_MAX_URL_LENGTH = 2048
 IMAGE_COLOR_PICKER_MAX_BYTES = 12 * 1024 * 1024
 IMAGE_COLOR_PICKER_MAX_PIXELS = 80_000_000
@@ -5397,6 +5406,7 @@ def none(request, ui_lang=None):
     context["handrive_signup_url"] = f"{reverse('main:handrive_signup_lang', kwargs={'ui_lang': resolved_lang})}?next={encoded_current_path}"
     context["handrive_logout_url"] = reverse("main:handrive_logout_lang", kwargs={"ui_lang": resolved_lang})
     context["root_translate_api_url"] = reverse("main:translate_text_lang", kwargs={"ui_lang": resolved_lang})
+    context["show_account_weather"] = True
     if request.user.is_authenticated:
         portfolio_profile = PortfolioProfile.objects.filter(user=request.user).only("profile_img").first()
         context["handrive_my_portfolio_url"] = reverse(
@@ -5416,7 +5426,6 @@ def none(request, ui_lang=None):
         context["account_logout_form_id"] = "auth-logout-form-root"
         context["account_logout_next"] = reverse("main:none_lang", kwargs={"ui_lang": resolved_lang})
         context["account_logout_url"] = context["handrive_logout_url"]
-        context["show_account_weather"] = True
     return render(request, 'none.html', context)
 
 
@@ -6556,8 +6565,8 @@ def service_worker(request):
     """Serve the root-scope service worker used for Hanplanet page and static caching."""
     # Keep service worker script dynamic at root scope so it can control "/".
     script = """
-const STATIC_CACHE = 'hanplanet-static-v38';
-const PAGE_CACHE = 'hanplanet-page-v10';
+const STATIC_CACHE = 'hanplanet-static-v54';
+const PAGE_CACHE = 'hanplanet-page-v15';
 
 function isDownloadRequest(url) {
   return url.pathname.includes('/download/');
@@ -7143,6 +7152,8 @@ def portfolio_write(request, ui_lang=None):
         )
         selected_cover_letter_public_url = build_public_absolute_url(selected_cover_letter_path)
 
+    from .handrive_views import get_handrive_text
+
     context = {
         "write_status_message": status_map.get(status, ""),
         "profile": profile,
@@ -7161,10 +7172,435 @@ def portfolio_write(request, ui_lang=None):
         "selected_cover_letter_id": selected_cover_letter_id,
         "action_buttons": PortfolioActionButton.objects.filter(user=request.user).order_by("order", "id"),
         "all_tags": Project_Tag.objects.all(),
+        "handrive_text": get_handrive_text(resolved_lang),
     }
     apply_ui_context(request, context, resolved_lang)
     context["show_chat_widget"] = False
     return render(request, "main/portfolio_write.html", context)
+
+
+@require_http_methods(["POST"])
+def portfolio_write_markdown_preview(request, ui_lang=None):
+    """Render portfolio editor markdown previews with the same safe renderer used by public portfolio sections."""
+    resolve_ui_lang(request, ui_lang)
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required"}, status=403)
+
+    if request.content_type and request.content_type.split(";", 1)[0].strip().lower() == "application/json":
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            return JsonResponse({"error": "invalid_json"}, status=400)
+    else:
+        payload = request.POST
+
+    text = str(payload.get("text", "") or "")
+    return JsonResponse({"html": str(render_markdown_safely(text))})
+
+
+def _portfolio_write_preview_json_payload(request):
+    if request.content_type and request.content_type.split(";", 1)[0].strip().lower() == "application/json":
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        return payload if isinstance(payload, dict) else {}
+    return request.POST
+
+
+def _portfolio_preview_text(data, key, default=""):
+    value = data.get(key, default) if isinstance(data, dict) else default
+    if isinstance(value, list):
+        value = value[0] if value else default
+    return str(value or "").strip()
+
+
+def _portfolio_preview_escape(value):
+    return html.escape(str(value or "").strip(), quote=True)
+
+
+def _portfolio_preview_safe_url(value):
+    raw_value = str(value or "").strip()
+    parsed_url = urlparse(raw_value)
+    if parsed_url.scheme in {"http", "https"} and parsed_url.netloc:
+        return html.escape(raw_value, quote=True)
+    return "#"
+
+
+def _portfolio_preview_parse_date(value):
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        return datetime.strptime(raw_value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _portfolio_preview_period_text(join_date, leave_date, ui_lang):
+    if not join_date:
+        return ""
+    effective_leave_date = leave_date or timezone.localdate()
+    years, months = PortfolioCareer._calculate_rounded_month_period(join_date, effective_leave_date)
+    if ui_lang == "en":
+        parts = []
+        if years:
+            parts.append(f"{years} year")
+        if months:
+            parts.append(f"{months} month")
+        period = " ".join(parts) or "0 month"
+        return f"Current for {period}" if leave_date is None else period
+    parts = []
+    if years:
+        parts.append(f"{years}년")
+    if months:
+        parts.append(f"{months}개월")
+    period = " ".join(parts) or "0개월"
+    return f"{period} 재직중" if leave_date is None else period
+
+
+def _portfolio_preview_date_range(join_date, leave_date, ui_lang):
+    if not join_date:
+        return ""
+    effective_leave_date = leave_date or timezone.localdate()
+    if ui_lang == "en":
+        return f"{join_date:%Y-%m-%d} ~ {effective_leave_date:%Y-%m-%d}"
+    return f"{PortfolioCareer._format_korean_date(join_date)} ~ {PortfolioCareer._format_korean_date(effective_leave_date)}"
+
+
+def _portfolio_write_preview_profile_values(request, data, ui_lang):
+    profile_data = data.get("profile") if isinstance(data, dict) else {}
+    profile_data = profile_data if isinstance(profile_data, dict) else {}
+    saved_profile, _ = PortfolioProfile.objects.get_or_create(user=request.user)
+    title_source = _portfolio_preview_text(profile_data, "main_title_en" if ui_lang == "en" else "main_title")
+    if not title_source and ui_lang == "en":
+        title_source = _portfolio_preview_text(profile_data, "main_title")
+    if not title_source:
+        title_source = "Problem-solving full-stack developer, **Your Name**." if ui_lang == "en" else "문제를 해결하는 풀스택 개발자, **홍길동** 입니다."
+
+    subtitle_source = _portfolio_preview_text(profile_data, "main_subtitle_en" if ui_lang == "en" else "main_subtitle")
+    if not subtitle_source and ui_lang == "en":
+        subtitle_source = _portfolio_preview_text(profile_data, "main_subtitle")
+    if not subtitle_source:
+        subtitle_source = (
+            "I approach unfamiliar work by learning quickly and shipping practical results."
+            if ui_lang == "en"
+            else "낯선 과제도 빠르게 배우고 실용적인 결과를 만드는 개발자입니다."
+        )
+
+    phone = _portfolio_preview_text(profile_data, "phone") or "+82-10-0000-0000"
+    email = _portfolio_preview_text(profile_data, "email") or "your.email@example.com"
+    profile_image_url = saved_profile.profile_img.url if saved_profile.profile_img else static("media/icons/profile-placeholder.svg")
+    return {
+        "title_source": title_source,
+        "subtitle_source": subtitle_source,
+        "phone": phone,
+        "email": email,
+        "profile_image_url": profile_image_url,
+    }
+
+
+def _portfolio_write_preview_profile_banner_html(values):
+    return f"""
+<div class="main_banner">
+    <div class="main_text">
+        <div class="main_title">{render_markdown_safely(values["title_source"])}</div>
+        <div class="contact">
+            <div class="phone">Phone: {_portfolio_preview_escape(values["phone"])}</div>
+            <div class="email">Email: {_portfolio_preview_escape(values["email"])}</div>
+        </div>
+    </div>
+    <img class="profile_img" src="{html.escape(values["profile_image_url"], quote=True)}" alt="">
+</div>
+""".strip()
+
+
+def _portfolio_write_preview_profile_subtitle_html(values):
+    return f"""
+<hr>
+<div class="main_subtitle">{render_markdown_safely(values["subtitle_source"])}</div>
+<hr>
+""".strip()
+
+
+def _portfolio_write_preview_profile_html(request, data, ui_lang):
+    values = _portfolio_write_preview_profile_values(request, data, ui_lang)
+    return f"""
+{_portfolio_write_preview_profile_banner_html(values)}
+<div class="main_contents portfolio-write-preview-profile-subtitle">
+    {_portfolio_write_preview_profile_subtitle_html(values)}
+</div>
+""".strip()
+
+
+def _portfolio_write_preview_career_html(request, data, ui_lang):
+    career_data = data.get("career") if isinstance(data, dict) else {}
+    career_data = career_data if isinstance(career_data, dict) else {}
+    company = _portfolio_preview_text(career_data, "company_en" if ui_lang == "en" else "company")
+    if not company and ui_lang == "en":
+        company = _portfolio_preview_text(career_data, "company")
+    company = company or ("Sample Company" if ui_lang == "en" else "샘플 회사")
+    position = _portfolio_preview_text(career_data, "position") or ("Position" if ui_lang == "en" else "직책")
+    content = _portfolio_preview_text(career_data, "content_en" if ui_lang == "en" else "content")
+    if not content and ui_lang == "en":
+        content = _portfolio_preview_text(career_data, "content")
+    content = content or ("Career description preview." if ui_lang == "en" else "경력 설명 미리보기입니다.")
+    join_date = _portfolio_preview_parse_date(_portfolio_preview_text(career_data, "join_date"))
+    leave_date = _portfolio_preview_parse_date(_portfolio_preview_text(career_data, "leave_date"))
+    date_range = _portfolio_preview_date_range(join_date, leave_date, ui_lang)
+    period_text = _portfolio_preview_period_text(join_date, leave_date, ui_lang)
+    career = SimpleNamespace(
+        display_company=company,
+        display_date_range=date_range,
+        display_period_text=period_text,
+        position=position,
+        display_content=render_markdown_safely(content),
+    )
+    return render_to_string(
+        "main/Careers.html",
+        {
+            "careers": [career],
+            "ui_lang": ui_lang,
+        },
+        request=request,
+    ).strip()
+
+
+def _portfolio_write_preview_tags_html(tags):
+    safe_tags = []
+    if isinstance(tags, list):
+        safe_tags = [_portfolio_preview_escape(tag) for tag in tags if str(tag or "").strip()]
+    return "".join(f'<li class="tag">{tag}</li>' for tag in safe_tags)
+
+
+def _portfolio_write_preview_projects_html(request, data, ui_lang, *, include_detail=False):
+    project_data = data.get("project") if isinstance(data, dict) else {}
+    project_data = project_data if isinstance(project_data, dict) else {}
+    title = _portfolio_preview_text(project_data, "title_en" if ui_lang == "en" else "title")
+    if not title and ui_lang == "en":
+        title = _portfolio_preview_text(project_data, "title")
+    title = title or ("Project preview" if ui_lang == "en" else "프로젝트 미리보기")
+    content = _portfolio_preview_text(project_data, "content_en" if ui_lang == "en" else "content")
+    if not content and ui_lang == "en":
+        content = _portfolio_preview_text(project_data, "content")
+    content = content or ("Project detail preview." if ui_lang == "en" else "프로젝트 상세 미리보기입니다.")
+    tags = [str(tag or "").strip() for tag in project_data.get("tags", []) if str(tag or "").strip()]
+    project = SimpleNamespace(
+        is_dummy=True,
+        dummy_href="#",
+        banner_img=None,
+        dummy_banner_url="",
+        display_title=title,
+        tags=_DummyTagRelation(tags),
+    )
+    section_html = render_to_string(
+        "main/Projects.html",
+        {
+            "projects": [project],
+            "ui_lang": ui_lang,
+            "portfolio_owner": request.user,
+        },
+        request=request,
+    ).strip()
+    detail_html = ""
+    if include_detail:
+        tags_html = _portfolio_write_preview_tags_html(tags)
+        detail_html = f"""
+<div class="project_detail portfolio-write-preview-project-detail">
+    <h1 class="project_detail_title">{_portfolio_preview_escape(title)}</h1>
+    <ul class="tags">{tags_html}</ul>
+    <hr>
+    <div class="project_detail_content ui-markdown">{render_markdown_safely(content)}</div>
+</div>
+""".strip()
+    return f"{section_html}\n{detail_html}".strip()
+
+
+def _portfolio_write_preview_cover_letter_html(data):
+    cover_letter_data = data.get("cover_letter") if isinstance(data, dict) else {}
+    cover_letter_data = cover_letter_data if isinstance(cover_letter_data, dict) else {}
+    name = _portfolio_preview_text(cover_letter_data, "name") or "지원자"
+    content = _portfolio_preview_text(cover_letter_data, "content") or "자기소개서 내용 미리보기입니다."
+    return f"""
+<div class="main_coverletter">
+    <section class="coverletter_section">
+        <h2 class="coverletter_name">{_portfolio_preview_escape(name)}</h2>
+        <hr class="coverletter_divider">
+        <div class="coverletter_content">{render_markdown_safely(content)}</div>
+    </section>
+</div>
+""".strip()
+
+
+def _portfolio_write_preview_buttons_html(data, ui_lang):
+    buttons = data.get("buttons") if isinstance(data, dict) else []
+    buttons = buttons if isinstance(buttons, list) else []
+    items = []
+    for button in buttons[:3]:
+        if not isinstance(button, dict):
+            continue
+        label = _portfolio_preview_text(button, "label")
+        url = _portfolio_preview_safe_url(_portfolio_preview_text(button, "url"))
+        if not label:
+            continue
+        display_label = "Drive" if label == "HanDrive" else label
+        icon_url = _portfolio_preview_safe_url(_portfolio_preview_text(button, "icon_url"))
+        if label.lower() == "github":
+            content = (
+                '<svg class="portfolio-chat-link-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="currentColor">'
+                '<path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.01.08-2.11 0 0 .67-.21 2.2.82a7.53 7.53 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.91.08 2.11.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>'
+                "</svg>"
+            )
+        elif label.lower() == "thingiverse":
+            content = (
+                '<svg class="portfolio-chat-link-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+                '<path d="M12 2 3 7v10l9 5 9-5V7z"></path><path d="M3 7l9 5 9-5"></path><path d="M12 12v10"></path>'
+                "</svg>"
+            )
+        elif icon_url != "#":
+            content = f'<img class="portfolio-chat-link-icon" src="{icon_url}" alt="{_portfolio_preview_escape(display_label)}" style="width: 20px; height: 20px; object-fit: contain;">'
+        else:
+            content = f'<span style="font-size: 12px; font-weight: 600;">{_portfolio_preview_escape(display_label)}</span>'
+        items.append(
+            '<a class="portfolio-print-btn ui-nav-link portfolio-chat-link-btn" '
+            f'href="{url}" target="_blank" rel="noopener noreferrer" aria-label="{_portfolio_preview_escape(display_label)}">'
+            f"{content}</a>"
+        )
+    notice = ""
+    if not items:
+        notice_text = "No buttons to preview." if ui_lang == "en" else "미리볼 버튼이 없습니다."
+        notice = f'<div class="portfolio-write-preview-empty">{_portfolio_preview_escape(notice_text)}</div>'
+    return f"""
+{notice}
+<div class="portfolio-floating-actions" aria-hidden="true">
+        <button type="button" class="portfolio-print-btn ui-nav-link" aria-label="Print" title="Print">
+            <svg class="portfolio-print-btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 9V4h10v5"></path>
+                <rect x="4" y="9" width="16" height="8" rx="2"></rect>
+                <rect x="8" y="15" width="8" height="5"></rect>
+                <line x1="9" y1="18" x2="15" y2="18"></line>
+            </svg>
+        </button>
+        {"".join(items)}
+</div>
+""".strip()
+
+
+def _portfolio_write_preview_body_html(request, scope, data, ui_lang):
+    scope = scope if scope in {"profile", "career", "project", "cover_letter", "buttons", "full"} else "full"
+    if scope == "full":
+        profile_values = _portfolio_write_preview_profile_values(request, data, ui_lang)
+        main_contents = [
+            _portfolio_write_preview_profile_subtitle_html(profile_values),
+            f'<div class="main_careers">{_portfolio_write_preview_career_html(request, data, ui_lang)}</div>',
+            f'<div class="main_projects">{_portfolio_write_preview_projects_html(request, data, ui_lang)}</div>',
+            _portfolio_write_preview_cover_letter_html(data),
+        ]
+        return (
+            '<div class="main main-surface-layer" data-preview-scope="full">'
+            f'{_portfolio_write_preview_profile_banner_html(profile_values)}'
+            f'<div class="main_contents">{"".join(main_contents)}</div>'
+            f'{_portfolio_write_preview_buttons_html(data, ui_lang)}'
+            "</div>"
+        )
+
+    pieces = []
+    if scope == "profile":
+        pieces.append(_portfolio_write_preview_profile_html(request, data, ui_lang))
+    if scope == "career":
+        pieces.append(f'<div class="main_careers">{_portfolio_write_preview_career_html(request, data, ui_lang)}</div>')
+    if scope == "project":
+        pieces.append(
+            f'<div class="main_projects">{_portfolio_write_preview_projects_html(request, data, ui_lang, include_detail=scope == "project")}</div>'
+        )
+    if scope == "cover_letter":
+        pieces.append(_portfolio_write_preview_cover_letter_html(data))
+    if scope == "buttons":
+        pieces.append(_portfolio_write_preview_buttons_html(data, ui_lang))
+    return f'<div class="main main-surface-layer" data-preview-scope="{scope}"><div class="main_contents">{"".join(pieces)}</div></div>'
+
+
+def _portfolio_write_preview_document(request, scope, data, ui_lang, theme=""):
+    body_html = _portfolio_write_preview_body_html(request, scope, data, ui_lang)
+    theme_class = " theme-dark" if str(theme or "").strip().lower() == "dark" else ""
+    css_links = "\n".join(
+        f'<link rel="stylesheet" href="{_static_with_mtime_version(path)}">'
+        for path in [
+            "css/vendor/bootstrap.min.css",
+            "css/common/layout.css",
+            "css/common/style.css",
+        ]
+    )
+    return f"""<!doctype html>
+<html lang="{html.escape(ui_lang, quote=True)}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<base target="_blank">
+{css_links}
+<style data-surface-light="portfolio-write-preview">
+body {{
+    margin: 0;
+    min-height: 100vh;
+    overflow: auto;
+    background: #ffffff;
+    background-image: none;
+}}
+body.portfolio-page.theme-dark {{
+    background: #111111;
+}}
+.main.main-surface-layer {{
+    min-height: auto;
+    padding: 0 0 90px;
+    background-color: transparent;
+}}
+.main-surface-layer section {{
+    background: transparent;
+    background-color: transparent;
+}}
+.portfolio-dummy-notice,
+.own-portfolio-edit-widget,
+.footer-links,
+.chat-widget,
+.ui-nav {{
+    display: none;
+}}
+.project_card_link {{
+    pointer-events: none;
+}}
+.portfolio-write-preview-empty {{
+    width: min(100%, 1300px);
+    margin: 24px auto;
+    color: var(--theme-muted, #777777);
+}}
+</style>
+</head>
+<body class="portfolio-page{theme_class}">
+{body_html}
+</body>
+</html>"""
+
+
+@require_http_methods(["POST"])
+def portfolio_write_section_preview(request, ui_lang=None):
+    """Render a current unsaved portfolio editor section as a modal preview."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required"}, status=403)
+
+    payload = _portfolio_write_preview_json_payload(request)
+    if payload is None:
+        return JsonResponse({"error": "invalid_json"}, status=400)
+    scope = _portfolio_preview_text(payload, "scope", "full")
+    theme = _portfolio_preview_text(payload, "theme", "")
+    data = payload.get("data") if isinstance(payload, dict) else {}
+    data = data if isinstance(data, dict) else {}
+    return JsonResponse(
+        {
+            "html": _portfolio_write_preview_document(request, scope, data, resolved_lang, theme=theme),
+            "render_mode": "portfolio_page",
+        }
+    )
 
 
 def ProjectDetail(request, project_id, ui_lang=None):
@@ -7892,8 +8328,24 @@ def _account_weather_ip_location(request, ui_lang):
     return location
 
 
+def _account_weather_default_location(ui_lang):
+    location = dict(ACCOUNT_WEATHER_DEFAULT_LOCATION)
+    if _account_weather_language(ui_lang) == "en":
+        location["country"] = "South Korea"
+        location["city"] = "Seoul"
+        location["label"] = "Seoul · South Korea"
+    return location
+
+
 def _account_weather_resolve_location(profile, request, ui_lang):
-    return _account_weather_saved_location(profile) or _account_weather_ip_location(request, ui_lang)
+    saved_location = _account_weather_saved_location(profile)
+    if saved_location:
+        return saved_location
+    try:
+        ip_location = _account_weather_ip_location(request, ui_lang)
+    except (httpx.HTTPError, TypeError, KeyError, ValueError):
+        ip_location = None
+    return ip_location or _account_weather_default_location(ui_lang)
 
 
 def _account_weather_code_label(weather_code, ui_lang, *, daily_summary=False):
@@ -8279,31 +8731,207 @@ def _account_weather_daily_forecast_payloads(daily, hourly, ui_lang, start_index
     return forecasts
 
 
-def _account_weather_forecast(location, ui_lang):
+def _account_weather_estimated_utc_offset_seconds(location):
+    location_text = " ".join(
+        str((location or {}).get(key) or "")
+        for key in ("country", "city", "label")
+    ).lower()
+    if any(token in location_text for token in ("대한민국", "서울", "south korea", "korea", "seoul")):
+        return 9 * 60 * 60
+    longitude = _coerce_network_coordinate((location or {}).get("longitude"), -180, 180)
+    if longitude is None:
+        return 0
+    offset_hours = max(-12, min(14, int(round(longitude / 15))))
+    return offset_hours * 60 * 60
+
+
+def _account_weather_met_parse_time(raw_time, utc_offset_seconds):
+    time_text = str(raw_time or "").strip()
+    if not time_text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(time_text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if timezone.is_naive(parsed):
+        parsed = parsed.replace(tzinfo=datetime_timezone.utc)
+    utc_time = parsed.astimezone(datetime_timezone.utc).replace(tzinfo=None)
+    return utc_time + timedelta(seconds=utc_offset_seconds)
+
+
+def _account_weather_met_symbol(series_item):
+    data = series_item.get("data") if isinstance(series_item, dict) else {}
+    for period_key in ("next_1_hours", "next_6_hours", "next_12_hours"):
+        period = data.get(period_key) if isinstance(data, dict) else {}
+        summary = period.get("summary") if isinstance(period, dict) else {}
+        symbol = str((summary or {}).get("symbol_code") or "").strip().lower()
+        if symbol:
+            return symbol
+    return ""
+
+
+def _account_weather_met_code(symbol_code):
+    symbol = re.sub(r"_(day|night|polartwilight)$", "", str(symbol_code or "").strip().lower())
+    if "thunder" in symbol:
+        return 95
+    if "fog" in symbol:
+        return 45
+    if "snow" in symbol:
+        if "heavy" in symbol:
+            return 75
+        if "light" in symbol:
+            return 71
+        return 73
+    if "sleet" in symbol:
+        return 67
+    if "rain" in symbol:
+        if "showers" in symbol:
+            if "heavy" in symbol:
+                return 82
+            if "light" in symbol:
+                return 80
+            return 81
+        if "heavy" in symbol:
+            return 65
+        if "light" in symbol:
+            return 61
+        return 63
+    if symbol == "cloudy":
+        return 3
+    if symbol == "partlycloudy":
+        return 2
+    if symbol == "fair":
+        return 1
+    if symbol == "clearsky":
+        return 0
+    return 3
+
+
+def _account_weather_met_precipitation_amount(series_item):
+    data = series_item.get("data") if isinstance(series_item, dict) else {}
+    for period_key in ("next_1_hours", "next_6_hours", "next_12_hours"):
+        period = data.get(period_key) if isinstance(data, dict) else {}
+        details = period.get("details") if isinstance(period, dict) else {}
+        try:
+            return float((details or {}).get("precipitation_amount"))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _account_weather_met_display_code(items):
+    priority = {
+        95: 9,
+        82: 8,
+        81: 7,
+        80: 6,
+        65: 7,
+        63: 6,
+        61: 5,
+        75: 7,
+        73: 6,
+        71: 5,
+        67: 6,
+        45: 4,
+        3: 3,
+        2: 2,
+        1: 1,
+        0: 0,
+    }
+    selected_code = None
+    selected_priority = -1
+    for item in items:
+        code = item.get("weather_code")
+        item_priority = priority.get(code, 0)
+        if item_priority > selected_priority:
+            selected_code = code
+            selected_priority = item_priority
+    return selected_code if selected_code is not None else 3
+
+
+def _account_weather_met_to_open_meteo_payload(payload, location):
+    series = ((payload or {}).get("properties") or {}).get("timeseries")
+    if not isinstance(series, list) or not series:
+        raise ValueError("forecast_unavailable")
+    utc_offset_seconds = _account_weather_estimated_utc_offset_seconds(location)
+    hourly_items = []
+    for item in series:
+        local_time = _account_weather_met_parse_time(item.get("time"), utc_offset_seconds)
+        if not local_time:
+            continue
+        data = item.get("data") if isinstance(item, dict) else {}
+        instant = data.get("instant") if isinstance(data, dict) else {}
+        details = instant.get("details") if isinstance(instant, dict) else {}
+        try:
+            temperature = float((details or {}).get("air_temperature"))
+        except (TypeError, ValueError):
+            continue
+        try:
+            humidity = float((details or {}).get("relative_humidity"))
+        except (TypeError, ValueError):
+            humidity = None
+        try:
+            wind_speed = float((details or {}).get("wind_speed"))
+        except (TypeError, ValueError):
+            wind_speed = None
+        hourly_items.append({
+            "time": local_time.strftime("%Y-%m-%dT%H:%M"),
+            "weather_code": _account_weather_met_code(_account_weather_met_symbol(item)),
+            "temperature": temperature,
+            "humidity": humidity,
+            "wind_speed": wind_speed,
+            "precipitation_amount": _account_weather_met_precipitation_amount(item),
+        })
+    if not hourly_items:
+        raise ValueError("forecast_unavailable")
+
+    grouped_by_date = {}
+    for item in hourly_items:
+        forecast_date = item["time"].split("T", 1)[0]
+        grouped_by_date.setdefault(forecast_date, []).append(item)
+
+    daily_times = []
+    daily_codes = []
+    daily_min = []
+    daily_max = []
+    daily_precipitation_probability = []
+    for forecast_date, items in list(grouped_by_date.items())[:7]:
+        temperatures = [item["temperature"] for item in items if isinstance(item.get("temperature"), (int, float))]
+        daily_times.append(forecast_date)
+        daily_codes.append(_account_weather_met_display_code(items))
+        daily_min.append(min(temperatures) if temperatures else None)
+        daily_max.append(max(temperatures) if temperatures else None)
+        daily_precipitation_probability.append(None)
+
+    return {
+        "utc_offset_seconds": utc_offset_seconds,
+        "hourly": {
+            "time": [item["time"] for item in hourly_items],
+            "weather_code": [item["weather_code"] for item in hourly_items],
+            "temperature_2m": [item["temperature"] for item in hourly_items],
+            "relative_humidity_2m": [item["humidity"] for item in hourly_items],
+            "wind_speed_10m": [item["wind_speed"] for item in hourly_items],
+        },
+        "daily": {
+            "time": daily_times,
+            "weather_code": daily_codes,
+            "temperature_2m_min": daily_min,
+            "temperature_2m_max": daily_max,
+            "precipitation_probability_max": daily_precipitation_probability,
+        },
+    }
+
+
+def _account_weather_met_forecast_payload(location):
     latitude = _coerce_network_coordinate(location.get("latitude"), -90, 90)
     longitude = _coerce_network_coordinate(location.get("longitude"), -180, 180)
     if latitude is None or longitude is None:
         raise ValueError("invalid_location")
-    language = _account_weather_language(ui_lang)
-    cache_hour = timezone.now().astimezone(datetime_timezone.utc).strftime("%Y%m%d%H")
-    cache_key = f"account-weather-forecast:v6:{language}:{round(latitude, 4):.4f}:{round(longitude, 4):.4f}:{cache_hour}"
-    cached_forecast = cache.get(cache_key)
-    if cached_forecast:
-        forecast = dict(cached_forecast)
-        forecast["location"] = location
-        forecast["location_name"] = _account_weather_location_name(location)
-        return forecast
-
     response = httpx.get(
-        ACCOUNT_WEATHER_FORECAST_URL,
+        ACCOUNT_WEATHER_MET_FORECAST_URL,
         params={
-            "latitude": f"{latitude:.4f}",
-            "longitude": f"{longitude:.4f}",
-            "hourly": "temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m",
-            "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
-            "wind_speed_unit": "ms",
-            "timezone": "auto",
-            "forecast_days": "7",
+            "lat": f"{latitude:.4f}",
+            "lon": f"{longitude:.4f}",
         },
         headers={
             "Accept": "application/json",
@@ -8313,7 +8941,10 @@ def _account_weather_forecast(location, ui_lang):
         timeout=ACCOUNT_WEATHER_TIMEOUT,
     )
     response.raise_for_status()
-    payload = response.json()
+    return _account_weather_met_to_open_meteo_payload(response.json(), location)
+
+
+def _account_weather_build_forecast(payload, location, ui_lang, provider):
     hourly = payload.get("hourly") if isinstance(payload, dict) else {}
     daily = payload.get("daily") if isinstance(payload, dict) else {}
     current_forecast_datetime = _account_weather_current_forecast_datetime(payload if isinstance(payload, dict) else {})
@@ -8335,7 +8966,7 @@ def _account_weather_forecast(location, ui_lang):
     day = _account_weather_daily_payload(daily, hourly, hourly_forecast, ui_lang)
     forecast = {
         "ok": True,
-        "provider": "Open-Meteo",
+        "provider": provider,
         "day": day,
         "current_forecast_date": current_forecast_date,
         "current_forecast_hour": current_forecast_datetime.hour,
@@ -8353,10 +8984,58 @@ def _account_weather_forecast(location, ui_lang):
         ),
         "updated_at": timezone.now().isoformat(),
     }
-    cache.set(cache_key, forecast, 10 * 60)
     forecast = dict(forecast)
     forecast["location"] = location
     forecast["location_name"] = _account_weather_location_name(location)
+    return forecast
+
+
+def _account_weather_forecast(location, ui_lang):
+    latitude = _coerce_network_coordinate(location.get("latitude"), -90, 90)
+    longitude = _coerce_network_coordinate(location.get("longitude"), -180, 180)
+    if latitude is None or longitude is None:
+        raise ValueError("invalid_location")
+    language = _account_weather_language(ui_lang)
+    cache_hour = timezone.now().astimezone(datetime_timezone.utc).strftime("%Y%m%d%H")
+    cache_key = f"account-weather-forecast:v7:{language}:{round(latitude, 4):.4f}:{round(longitude, 4):.4f}:{cache_hour}"
+    cached_forecast = cache.get(cache_key)
+    if cached_forecast:
+        forecast = dict(cached_forecast)
+        forecast["location"] = location
+        forecast["location_name"] = _account_weather_location_name(location)
+        return forecast
+
+    provider = "Open-Meteo"
+    try:
+        response = httpx.get(
+            ACCOUNT_WEATHER_FORECAST_URL,
+            params={
+                "latitude": f"{latitude:.4f}",
+                "longitude": f"{longitude:.4f}",
+                "hourly": "temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m",
+                "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+                "wind_speed_unit": "ms",
+                "timezone": "auto",
+                "forecast_days": "7",
+            },
+            headers={
+                "Accept": "application/json",
+                "Referer": "https://www.hanplanet.com/",
+                "User-Agent": ACCOUNT_WEATHER_USER_AGENT,
+            },
+            timeout=ACCOUNT_WEATHER_TIMEOUT,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except httpx.HTTPError:
+        provider = "MET Norway"
+        payload = _account_weather_met_forecast_payload(location)
+
+    forecast = _account_weather_build_forecast(payload, location, ui_lang, provider)
+    cached_forecast = dict(forecast)
+    cached_forecast.pop("location", None)
+    cached_forecast.pop("location_name", None)
+    cache.set(cache_key, cached_forecast, 10 * 60)
     return forecast
 
 
@@ -8466,10 +9145,12 @@ def account_weather(request, ui_lang=None):
     """Expose the account weather summary and store a manually selected location."""
     resolved_lang = resolve_ui_lang(request, ui_lang)
 
-    if not request.user.is_authenticated:
+    if not request.user.is_authenticated and request.method != "GET":
         return _json_error_response(request, "로그인이 필요합니다.", "Login required.", status=401, ui_lang=resolved_lang)
 
-    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    profile = None
+    if request.user.is_authenticated:
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
 
     if request.method == "PATCH":
         try:

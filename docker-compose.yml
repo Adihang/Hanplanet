@@ -16,6 +16,7 @@ x-django-env: &django-env
   HANDRIVE_TUTORIAL_WORKSPACE_MAX_AGE_SECONDS: "${HANDRIVE_TUTORIAL_WORKSPACE_MAX_AGE_SECONDS:-86400}"
   HANDRIVE_TUTORIAL_WORKSPACE_CLEANUP_INTERVAL_SECONDS: "${HANDRIVE_TUTORIAL_WORKSPACE_CLEANUP_INTERVAL_SECONDS:-3600}"
   HANPLANET_MEDIA_ROOT: "${HANPLANET_MEDIA_ROOT:-/data/media}"
+  HANPLANET_ONSCRIPTER_ROOT: "${HANPLANET_ONSCRIPTER_ROOT:-/data/ONScripter}"
   HANPLANET_FORGEJO_REPOS_ROOT: "${HANPLANET_FORGEJO_REPOS_ROOT:-/data/forgejo-repos}"
   HANPLANET_GITHUB_REPO_CACHE_ROOT: "${HANPLANET_GITHUB_REPO_CACHE_ROOT:-/data/github-repo-cache}"
   HANDRIVE_HLS_CACHE_ROOT: "${HANDRIVE_HLS_CACHE_ROOT:-/data/media/hls_cache}"
@@ -50,6 +51,7 @@ x-django-env: &django-env
 x-django-volumes: &django-volumes
   - "${DJANGO_DATA_VOLUME:-django_data}:/data/django"
   - "${HANPLANET_MEDIA_VOLUME:-media_data}:/data/media"
+  - "${HANPLANET_ONSCRIPTER_VOLUME:-onscripter_data}:/data/ONScripter"
   - "${HANPLANET_MAIL_VOLUME:-mail_data}:/data/mail"
   - "${HANPLANET_GITHUB_CACHE_VOLUME:-github_cache_data}:/data/github-repo-cache"
   - "${FORGEJO_REPOS_VOLUME:-forgejo_repos_data}:/data/forgejo-repos"

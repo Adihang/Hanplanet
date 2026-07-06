@@ -3,10 +3,11 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import hmac
+import mimetypes
+import posixpath
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
@@ -138,7 +139,7 @@ def _require_onscripter_access(request) -> None:
 
 
 def _onscripter_storage_root() -> Path:
-    return Path(settings.MEDIA_ROOT) / "HanDrive" / "ONScripter"
+    return Path(settings.ONSCRIPTER_STORAGE_ROOT)
 
 
 def _game_root(game: OnscripterGame) -> Path:
@@ -149,21 +150,49 @@ def _runtime_file_path(relative_path: str) -> Path:
     return _onscripter_storage_root() / "_web_runtime" / relative_path
 
 
-def _media_url_for_path(path: Path) -> str:
-    relative = path.relative_to(settings.MEDIA_ROOT).as_posix()
+def _onscripter_relative_path_for(path: Path) -> str:
+    root = _onscripter_storage_root().resolve()
+    return path.resolve().relative_to(root).as_posix()
+
+
+def _onscripter_asset_url_for_path(path: Path, ui_lang: str | None = None) -> str:
+    relative = _onscripter_relative_path_for(path)
     stat = path.stat()
     cache_key = f"{stat.st_mtime_ns}-{stat.st_size}"
-    return f"{settings.MEDIA_URL.rstrip('/')}/{quote(relative, safe='/')}?v={cache_key}"
+    asset_url = reverse(
+        "main:onscripter_asset_lang",
+        kwargs={
+            "ui_lang": ui_lang or "ko",
+            "asset_path": relative,
+        },
+    )
+    return f"{asset_url}?v={cache_key}"
 
 
-def _game_thumbnail_url(game: OnscripterGame) -> str:
+def _resolve_onscripter_asset_path(relative_path: str) -> Path:
+    normalized = posixpath.normpath(str(relative_path or "").replace("\\", "/")).lstrip("/")
+    if not normalized or normalized == "." or normalized == ".." or normalized.startswith("../"):
+        raise Http404("ONScripter asset not found")
+    if normalized == "_web_saves" or normalized.startswith("_web_saves/"):
+        raise Http404("ONScripter asset not found")
+
+    root = _onscripter_storage_root().resolve()
+    path = (root / normalized).resolve()
+    if path != root and root not in path.parents:
+        raise Http404("ONScripter asset not found")
+    if not path.is_file():
+        raise Http404("ONScripter asset not found")
+    return path
+
+
+def _game_thumbnail_url(game: OnscripterGame, ui_lang: str | None = None) -> str:
     if not game.thumbnail_path:
         return ""
 
     thumbnail_path = _game_root(game) / game.thumbnail_path
     if not thumbnail_path.is_file():
         return ""
-    return _media_url_for_path(thumbnail_path)
+    return _onscripter_asset_url_for_path(thumbnail_path, ui_lang)
 
 
 def _game_meta_title(game: OnscripterGame) -> str:
@@ -222,7 +251,7 @@ def _build_onscripter_links(resolved_lang: str) -> list[dict[str, str]]:
             "title": _game_card_title(game),
             "site_name": "ONScripter",
             "description": game.description_en if is_english else game.description_ko,
-            "image": _game_thumbnail_url(game),
+            "image": _game_thumbnail_url(game, resolved_lang),
             "category": "game",
         })
 
@@ -327,7 +356,7 @@ def _build_game_index(request, game: OnscripterGame, ui_lang: str | None = None)
 
         files.append({
             "path": relative_path,
-            "url": _media_url_for_path(file_path),
+            "url": _onscripter_asset_url_for_path(file_path, ui_lang),
             "lazyload": True,
         })
 
@@ -378,16 +407,16 @@ def onscripter_player(request, ui_lang=None, game_slug="haruuru"):
         "page_title": game.title,
         "loading_label": "게임 리소스를 준비하고 있습니다...",
         "index_url": index_url,
-        "engine_js_url": _media_url_for_path(engine_js_path),
-        "engine_wasm_url": _media_url_for_path(engine_wasm_path),
-        "jszip_url": _media_url_for_path(jszip_path),
+        "engine_js_url": _onscripter_asset_url_for_path(engine_js_path, resolved_lang),
+        "engine_wasm_url": _onscripter_asset_url_for_path(engine_wasm_path, resolved_lang),
+        "jszip_url": _onscripter_asset_url_for_path(jszip_path, resolved_lang),
         "meta_title": _game_meta_title(game),
         "meta_og_title": _game_meta_title(game),
         "meta_description": game.description_en if resolved_lang == "en" else game.description_ko,
         "sub_category": "game",
     }
     context["meta_og_description"] = context["meta_description"]
-    thumbnail_url = _game_thumbnail_url(game)
+    thumbnail_url = _game_thumbnail_url(game, resolved_lang)
     meta_image_url = build_public_absolute_url(thumbnail_url) if thumbnail_url else ONSCRIPTER_META_IMAGE_URL
     context["meta_og_image"] = meta_image_url
     context["meta_twitter_image"] = meta_image_url
@@ -397,6 +426,16 @@ def onscripter_player(request, ui_lang=None, game_slug="haruuru"):
     _apply_onscripter_auth_context(request, context, resolved_lang)
     response = render(request, "fun/onscripter_player.html", context)
     response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
+
+
+@require_GET
+def onscripter_asset(request, ui_lang=None, asset_path=""):
+    _require_onscripter_access(request)
+    path = _resolve_onscripter_asset_path(asset_path)
+    content_type, _encoding = mimetypes.guess_type(path.name)
+    response = FileResponse(open(path, "rb"), content_type=content_type or "application/octet-stream")
+    response["Cache-Control"] = "private, max-age=604800"
     return response
 
 

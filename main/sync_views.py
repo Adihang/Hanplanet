@@ -31,7 +31,6 @@ from main.minio_client import (
     put_object_bytes,
 )
 from main.models import (
-    HandriveUserQuota,
     SyncChangeLog,
     SyncFile,
     SyncUploadSession,
@@ -142,12 +141,7 @@ def _get_sync_excluded_paths(user) -> list[str]:
 
 def _check_quota(user, additional_bytes: int) -> bool:
     """쿼터 초과 여부 확인. True = 허용, False = 초과."""
-    try:
-        quota = HandriveUserQuota.objects.get(user=user)
-    except HandriveUserQuota.DoesNotExist:
-        quota_bytes = 1024 ** 3  # 기본 1GB
-    else:
-        quota_bytes = quota.quota_bytes
+    quota_bytes = get_user_handrive_quota_bytes(user)
 
     used = (
         SyncFile.objects.filter(user=user, deleted=False)

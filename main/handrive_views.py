@@ -139,7 +139,15 @@ from .handrive.preview import (
     render_handrive_pdf_safely,
     render_handrive_spreadsheet_preview_shell,
 )
-from .models import HandriveAccessRule, HandriveLoginAttemptGuard, HandriveSharedLink, HandriveUserQuota, UserProfile
+from .models import (
+    DEFAULT_HANDRIVE_USER_QUOTA_BYTES,
+    HandriveAccessRule,
+    HandriveLoginAttemptGuard,
+    HandriveSharedLink,
+    HandriveSiteSettings,
+    HandriveUserQuota,
+    UserProfile,
+)
 from .middleware import (
     HANPLANET_ACCOUNT_ACTIVE_COOKIE_NAME,
     HANPLANET_SHARED_COOKIE_DOMAIN,
@@ -203,10 +211,11 @@ HANDRIVE_TUTORIAL_WORKSPACE_MARKER_FILENAME = ".handrive-tutorial-workspace"
 HANDRIVE_TUTORIAL_ASSET_DIR = Path(__file__).resolve().parent / "assets" / "handrive" / "tutorial"
 HANDRIVE_TUTORIAL_SAMPLE_VIDEO_ASSET = "sample-5s-360p.mp4"
 HANDRIVE_TUTORIAL_SAMPLE_AUDIO_ASSET = "sample-3s.mp3"
-HANDRIVE_TUTORIAL_GIT_REPO_OWNER_USERNAME = "codex_test"
+HANDRIVE_TUTORIAL_GIT_REPO_OWNER_USERNAME = "HanbyelLim"
 HANDRIVE_TUTORIAL_GIT_REPO_NAME = "handrive-tutorial-sample"
 HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_KO = "12-Git-공개-테스트-레포"
 HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_EN = "12-public-git-test-repo"
+HANDRIVE_TUTORIAL_SHARE_OWNER_USERNAME = "handrive_tutorial"
 HANDRIVE_TUTORIAL_SAMPLE_MP4_BASE64 = (
     "AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAA2ptb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAAPoAAAB9AABAAABAAAA"
     "AAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC"
@@ -281,7 +290,7 @@ DOCS_META_TITLE = "Handrive"
 DOCS_META_DESCRIPTION = "Hanplanet workspace"
 DOCS_LOGIN_CAPTCHA_THRESHOLD = 1
 DOCS_UPLOAD_RATE_LIMIT_BYTES_PER_SECOND = 10 * 1024 * 1024
-DOCS_USER_SCOPED_QUOTA_BYTES = 1024 * 1024 * 1024  # 기본값 1GB
+DOCS_USER_SCOPED_QUOTA_BYTES = DEFAULT_HANDRIVE_USER_QUOTA_BYTES  # 기본값 50GB
 DOCS_USER_SCOPED_ENTRY_LIMIT = 100
 
 
@@ -428,11 +437,14 @@ def _map_attachment_folder_name(raw_name: str | None) -> str:
 
 
 def get_user_handrive_quota_bytes(user) -> int:
-    """사용자별 저장 용량을 반환한다. 어드민에서 매핑이 없으면 기본값(1GB)."""
+    """사용자별 저장 용량을 반환한다. 사용자별 설정이 없으면 관리자 기본값을 쓴다."""
     try:
         return user.handrive_quota.quota_bytes
     except Exception:
-        return DOCS_USER_SCOPED_QUOTA_BYTES
+        try:
+            return int(HandriveSiteSettings.get_solo().default_quota_bytes)
+        except Exception:
+            return DOCS_USER_SCOPED_QUOTA_BYTES
 
 
 def get_user_handrive_entry_limit(user) -> int | None:
@@ -860,18 +872,20 @@ DOCS_TEXT = {
         "guest_demo_onboarding_step_manage": "관리",
         "guest_demo_onboarding_step_advanced": "고급 기능",
         "guest_demo_onboarding_step_layout": "레이아웃",
+        "guest_demo_onboarding_step_zoom": "확대/축소",
         "guest_demo_onboarding_step_jobs": "작업 내역",
         "guest_demo_onboarding_step_help": "도움말",
         "guest_demo_onboarding_step_practice": "자유연습",
         "guest_demo_tour_progress": "{current}/{total}",
-        "guest_demo_tour_overview_title": "HanDrive 전체 기능 투어",
-        "guest_demo_tour_overview_body": "이 투어는 임시 드라이브에서 작동하며, 강조된 HanDrive 영역 안에서 기능 위치와 사용 순서를 말풍선으로 안내합니다.",
-        "guest_demo_tour_overview_action": "튜토리얼 전용 임시 드라이브 영역을 확인한 뒤 다음 단계로 이동하세요.",
+        "guest_demo_tour_overview_title": "HanDrive 전체 기능 튜토리얼",
+        "guest_demo_tour_overview_body": "이 튜토리얼는 임시 드라이브에서 작동하며, 실제 사용자의 드라이브에 영향을 주지 않습니다.",
+        "guest_demo_tour_overview_guest_body": "이 튜토리얼는 임시 드라이브에서 작동하며, 이후 삭제됩니다.",
+        "guest_demo_tour_overview_action": "튜토리얼 전용 임시 드라이브 영역을 확인해보세요.",
         "guest_demo_tour_browse_title": "파일 목록과 폴더 이동",
-        "guest_demo_tour_browse_body": "한 번 클릭하면 선택/미리보기, 더블클릭하면 열기입니다. 폴더는 펼치거나 들어갈 수 있고 드래그로 이동도 할 수 있습니다.",
+        "guest_demo_tour_browse_body": "파일 목록에는 현재 폴더의 파일과 폴더가 표시됩니다. 폴더를 클릭하면 트리 형태로 폴더가 열립니다.",
         "guest_demo_tour_browse_action": "튜토리얼 파일 행을 클릭하거나 더블클릭해보세요.",
         "guest_demo_tour_search_title": "검색과 정렬",
-        "guest_demo_tour_search_body": "현재 폴더에서 파일명을 검색하고, 수정일/유형/크기/커밋/ID 컬럼을 눌러 정렬할 수 있습니다.",
+        "guest_demo_tour_search_body": "현재 폴더에서 파일명을 검색하고, 수정일, 유형, 크기 등 컬럼을 클릭해 파일을 정렬할 수 있습니다.",
         "guest_demo_tour_search_action": "검색창에 키워드를 입력하거나 컬럼 라벨을 눌러보세요.",
         "guest_demo_tour_preview_title": "미리보기",
         "guest_demo_tour_preview_body": "파일들을 클릭하면 탐색기에서 바로 미리보기가 열립니다.",
@@ -1383,18 +1397,20 @@ DOCS_TEXT = {
         "guest_demo_onboarding_step_manage": "Manage",
         "guest_demo_onboarding_step_advanced": "Advanced",
         "guest_demo_onboarding_step_layout": "Layout",
+        "guest_demo_onboarding_step_zoom": "Zoom",
         "guest_demo_onboarding_step_jobs": "Jobs",
         "guest_demo_onboarding_step_help": "Help",
         "guest_demo_onboarding_step_practice": "Free practice",
         "guest_demo_tour_progress": "{current}/{total}",
-        "guest_demo_tour_overview_title": "HanDrive full feature tour",
-        "guest_demo_tour_overview_body": "This tour runs inside a temporary drive and uses callouts in the highlighted HanDrive area to show where features live.",
-        "guest_demo_tour_overview_action": "Review the temporary tutorial drive area, then move to the next step.",
+        "guest_demo_tour_overview_title": "HanDrive full feature tutorial",
+        "guest_demo_tour_overview_body": "This tutorial runs inside a temporary drive and does not affect the user's real drive.",
+        "guest_demo_tour_overview_guest_body": "This tutorial runs inside a temporary drive and will be deleted afterward.",
+        "guest_demo_tour_overview_action": "Review the temporary tutorial drive area.",
         "guest_demo_tour_browse_title": "File list and folder navigation",
-        "guest_demo_tour_browse_body": "Single-click selects and previews. Double-click opens. Folders can be expanded or opened, and items can be moved by drag and drop.",
+        "guest_demo_tour_browse_body": "The file list shows files and folders in the current folder. Click a folder to open it as a tree.",
         "guest_demo_tour_browse_action": "Click or double-click the tutorial file row.",
         "guest_demo_tour_search_title": "Search and sorting",
-        "guest_demo_tour_search_body": "Search inside the current folder, then sort by modified time, type, size, commit, or ID columns.",
+        "guest_demo_tour_search_body": "Search file names in the current folder and click columns such as modified date, type, and size to sort files.",
         "guest_demo_tour_search_action": "Type a keyword or click a column label.",
         "guest_demo_tour_preview_title": "Preview",
         "guest_demo_tour_preview_body": "Click files to open previews directly in the file explorer.",
@@ -3688,9 +3704,23 @@ def get_handrive_share_allowed_users_for_request(request, shared_link: HandriveS
     return get_handrive_share_allowed_users(shared_link)
 
 
+def get_handrive_tutorial_share_owner():
+    UserModel = get_user_model()
+    user, created = UserModel.objects.get_or_create(
+        username=HANDRIVE_TUTORIAL_SHARE_OWNER_USERNAME,
+        defaults={"email": f"{HANDRIVE_TUTORIAL_SHARE_OWNER_USERNAME}@hanplanet.local"},
+    )
+    if created:
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
+    return user
+
+
 def can_manage_handrive_shared_link(request, shared_link: HandriveSharedLink | None) -> bool:
     if shared_link is None:
         return False
+    if request is not None and is_handrive_session_tutorial_path(request, shared_link.path):
+        return True
     user = getattr(request, "user", None)
     return bool(user and user.is_authenticated and user.pk == shared_link.owner_id)
 
@@ -6846,14 +6876,17 @@ def is_handrive_tutorial_autostart_requested(request) -> bool:
 
 
 def get_handrive_tutorial_token(request, *, create: bool = False) -> str:
-    token = str(request.session.get(HANDRIVE_GUEST_TUTORIAL_SESSION_KEY, "") or "").strip()
+    session = getattr(request, "session", None)
+    if session is None:
+        return ""
+    token = str(session.get(HANDRIVE_GUEST_TUTORIAL_SESSION_KEY, "") or "").strip()
     if token and re.fullmatch(r"[0-9a-f]{32}", token):
         return token
     if not create:
         return ""
     token = uuid.uuid4().hex
-    request.session[HANDRIVE_GUEST_TUTORIAL_SESSION_KEY] = token
-    request.session.modified = True
+    session[HANDRIVE_GUEST_TUTORIAL_SESSION_KEY] = token
+    session.modified = True
     return token
 
 
@@ -13709,13 +13742,20 @@ def handrive_api_url_share(request):
     except (ValueError, FileNotFoundError) as exc:
         return json_error(str(exc), status=400)
 
-    if not request.user.is_authenticated:
+    is_tutorial_share_request = is_handrive_session_tutorial_path(request, rel_path)
+    share_owner = request.user if request.user.is_authenticated else None
+    if not request.user.is_authenticated and is_tutorial_share_request:
+        share_owner = get_handrive_tutorial_share_owner()
+    if share_owner is None:
         return json_error("로그인한 사용자만 url공유를 설정할 수 있습니다.", status=403)
     shared_context = get_handrive_shared_access_context(request)
     if shared_context and not shared_context.get("can_manage"):
         return json_error("공유 설정은 소유자만 변경할 수 있습니다.", status=403)
     existing_shared_link = HandriveSharedLink.objects.select_related("owner").filter(path=rel_path).first()
-    if existing_shared_link is not None and not can_manage_handrive_shared_link(request, existing_shared_link):
+    if (
+        existing_shared_link is not None
+        and not can_manage_handrive_shared_link(request, existing_shared_link)
+    ):
         return json_error("공유 설정은 소유자만 변경할 수 있습니다.", status=403)
 
     if target_path_obj.is_dir():
@@ -13739,7 +13779,7 @@ def handrive_api_url_share(request):
 
     if enabled:
         rule.read_groups.add(url_only_group)
-        shared_link = ensure_handrive_shared_link(rel_path, request.user)
+        shared_link = ensure_handrive_shared_link(rel_path, share_owner)
         shared_link.allowed_usernames = allowed_usernames
         shared_link.can_edit = share_can_edit
         shared_link.save(update_fields=["allowed_usernames", "can_edit", "updated_at"])

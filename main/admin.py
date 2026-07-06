@@ -22,6 +22,7 @@ from .access_log_summary import BOT_UA_PATTERN, resolve_summary_dir, summary_mar
 from .models import (
     EmailTwoFactorBypassUser,
     HandriveAccessRule,
+    HandriveSiteSettings,
     HandriveUserQuota,
     MinecraftAccountLink,
     MinecraftLinkCode,
@@ -231,6 +232,47 @@ class HandriveUserQuotaForm(forms.ModelForm):
         if commit:
             instance.save()
         return instance
+
+
+class HandriveSiteSettingsForm(forms.ModelForm):
+    default_quota_gb = forms.FloatField(
+        label="기본 저장 용량 (GB)",
+        min_value=0.01,
+        help_text="사용자별 저장 용량 설정이 없는 계정에 적용됩니다. 예: 50 = 50GB",
+    )
+
+    class Meta:
+        model = HandriveSiteSettings
+        fields = ["default_quota_gb"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.fields["default_quota_gb"].initial = round(self.instance.default_quota_bytes / (1024 ** 3), 4)
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.default_quota_bytes = int(self.cleaned_data["default_quota_gb"] * (1024 ** 3))
+        if commit:
+            instance.save()
+        return instance
+
+
+@admin.register(HandriveSiteSettings)
+class HandriveSiteSettingsAdmin(admin.ModelAdmin):
+    form = HandriveSiteSettingsForm
+    list_display = ["__str__", "default_quota_display", "updated_at"]
+
+    def has_add_permission(self, request):
+        return not HandriveSiteSettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="기본 저장 용량")
+    def default_quota_display(self, obj):
+        gb = obj.default_quota_bytes / (1024 ** 3)
+        return f"{gb:.2f} GB"
 
 
 @admin.register(HandriveUserQuota)

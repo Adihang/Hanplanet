@@ -259,7 +259,7 @@ Key env vars:
 - `DJANGO_DEBUG=false`, `DJANGO_SECRET_KEY` or `DJANGO_SECRET_KEY_FILE`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`
 - `DJANGO_SQLITE_PATH=/data/django/db.sqlite3`, `RUN_MIGRATIONS`, `COLLECTSTATIC_ON_START`, `GUNICORN_WORKERS`, `GUNICORN_TIMEOUT`
 - `HANPLANET_MEDIA_ROOT=/data/media`, `HANPLANET_ONSCRIPTER_ROOT=/data/ONScripter`, `HANPLANET_FORGEJO_REPOS_ROOT=/data/forgejo-repos`, `HANPLANET_GITHUB_REPO_CACHE_ROOT=/data/github-repo-cache`, `HPMAIL_STORAGE_ROOT=/data/mail`, `DATA_BACKUP_ROOT=/data/backups`
-- `DJANGO_DATA_VOLUME`, `HANPLANET_MEDIA_VOLUME`, `HANPLANET_ONSCRIPTER_VOLUME`, `HANPLANET_MAIL_VOLUME`, `HANPLANET_GITHUB_CACHE_VOLUME`, `FORGEJO_REPOS_VOLUME`, `GITEA_DATA_VOLUME`, `REDIS_DATA_VOLUME`, `WARGAME_DATA_VOLUME`, `MINECRAFT_SERVER_VOLUME`
+- `DJANGO_DATA_VOLUME`, `HANPLANET_MEDIA_VOLUME`, `HANPLANET_ONSCRIPTER_VOLUME`, `HANPLANET_MAIL_VOLUME`, `HANPLANET_GITHUB_CACHE_VOLUME`, `FORGEJO_REPOS_VOLUME`, `HANPLANET_OFFICE_FONTS_VOLUME`, `GITEA_DATA_VOLUME`, `REDIS_DATA_VOLUME`, `WARGAME_DATA_VOLUME`, `MINECRAFT_SERVER_VOLUME`
 - `CELERY_BROKER_URL=redis://redis:6379/0`
 - `FORGEJO_BASE_URL=http://gitea:3000`, `FORGEJO_ADMIN_TOKEN` or `FORGEJO_ADMIN_TOKEN_FILE`, `PUBLIC_GIT_BASE_URL=https://git.hanplanet.com`, `GITEA_DOMAIN=git.hanplanet.com`, `GITEA_SSH_DOMAIN=git.hanplanet.com`
 - `GAME_JWT_SECRET` or `GAME_JWT_SECRET_FILE`, `GAME_WS_PUBLIC_URL=wss://game.hanplanet.com`, `GAME_WS_LOCAL_URL=ws://bumpercar-spiky-server:8080`, `GAME_ADMIN_URL=http://bumpercar-spiky-server:8082`
@@ -374,6 +374,7 @@ Docker production stores runtime data through Compose volumes or bind mounts. Fo
 | GitHub cache | `HANPLANET_GITHUB_CACHE_VOLUME` | `/data/github-repo-cache` | `/Volumes/HANPLANET_HDD/Hanplanet/github-repo-cache` |
 | Gitea bare repositories | `FORGEJO_REPOS_VOLUME` | `/data/forgejo-repos`, `/data/git/repositories` | `/Volumes/HANPLANET_HDD/Hanplanet/forgejo-repos` |
 | Gitea DB/config/runtime | `GITEA_DATA_VOLUME` | `/data` in `gitea`, `/data/gitea` in Django/Celery | `/Volumes/HANPLANET_HDD/Hanplanet/gitea` or named volume |
+| Office preview fonts | `HANPLANET_OFFICE_FONTS_VOLUME` | `/usr/local/share/fonts/hanplanet-office` | `/Volumes/HANPLANET_HDD/Hanplanet/office-preview-fonts` |
 | Backups | `HANPLANET_BACKUP_VOLUME` | `/data/backups` | `/Volumes/HANPLANET_HDD/Hanplanet/backups` |
 | Wargame SQLite/data | `WARGAME_DATA_VOLUME` | `/app/Wargame/data` | `/Volumes/HANPLANET_HDD/Hanplanet/wargame-data` or named volume |
 | Minecraft host server | `MINECRAFT_SERVER_VOLUME` | `/Users/imhanbyeol/Development/minecraft` | `/Users/imhanbyeol/Development/minecraft` |

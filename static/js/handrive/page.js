@@ -650,6 +650,7 @@
     }
 
     let videoPlayerStackPromise = null;
+    let spreadsheetPreviewStackPromise = null;
     let spreadsheetEditorStackPromise = null;
 
     function loadOptionalLazyScriptOnce(scriptUrl) {
@@ -725,24 +726,36 @@
         return videoPlayerStackPromise;
     }
 
-    function loadSpreadsheetEditorStack() {
+    function hasSpreadsheetPreviewStack() {
         if (
             window.HandriveSpreadsheetEditor &&
             window.Handsontable &&
-            window.XLSX &&
+            window.XLSX
+        ) {
+            return true;
+        }
+        return false;
+    }
+
+    function hasSpreadsheetEditorStack() {
+        return Boolean(
+            hasSpreadsheetPreviewStack() &&
             window.ExcelJS &&
             window.ExcelJS.Workbook
-        ) {
+        );
+    }
+
+    function loadSpreadsheetPreviewStack() {
+        if (hasSpreadsheetPreviewStack()) {
             return Promise.resolve(window.HandriveSpreadsheetEditor);
         }
-        if (spreadsheetEditorStackPromise) {
-            return spreadsheetEditorStackPromise;
+        if (spreadsheetPreviewStackPromise) {
+            return spreadsheetPreviewStackPromise;
         }
 
         const handsontableStyleUrl = root.dataset.handsontableStyleUrl || "";
         const handsontableScriptUrl = root.dataset.handsontableScriptUrl || "";
         const sheetjsScriptUrl = root.dataset.sheetjsScriptUrl || "";
-        const exceljsScriptUrl = root.dataset.exceljsScriptUrl || "";
         const spreadsheetEditorScriptUrl = root.dataset.spreadsheetEditorScriptUrl || "";
 
         const stylesheetPromise = loadLazyStylesheetOnce(handsontableStyleUrl);
@@ -751,15 +764,38 @@
                 return loadLazyScriptOnce(sheetjsScriptUrl, "XLSX");
             })
             .then(function () {
-                return loadLazyScriptOnce(exceljsScriptUrl, "ExcelJS");
-            })
-            .then(function () {
                 return loadLazyScriptOnce(spreadsheetEditorScriptUrl, "HandriveSpreadsheetEditor");
             });
 
-        spreadsheetEditorStackPromise = Promise.all([stylesheetPromise, scriptsPromise])
+        spreadsheetPreviewStackPromise = Promise.all([stylesheetPromise, scriptsPromise])
             .then(function (results) {
                 return results[1];
+            })
+            .catch(function (error) {
+                spreadsheetPreviewStackPromise = null;
+                throw error;
+            });
+        return spreadsheetPreviewStackPromise;
+    }
+
+    function loadSpreadsheetEditorStack() {
+        if (hasSpreadsheetEditorStack()) {
+            return Promise.resolve(window.HandriveSpreadsheetEditor);
+        }
+        if (spreadsheetEditorStackPromise) {
+            return spreadsheetEditorStackPromise;
+        }
+
+        const exceljsScriptUrl = root.dataset.exceljsScriptUrl || "";
+        spreadsheetEditorStackPromise = loadSpreadsheetPreviewStack()
+            .then(function () {
+                return loadLazyScriptOnce(exceljsScriptUrl, "ExcelJS");
+            })
+            .then(function () {
+                if (!hasSpreadsheetEditorStack()) {
+                    throw new Error(t("spreadsheet_editor_load_error", "스프레드시트 편집기를 불러오지 못했습니다."));
+                }
+                return window.HandriveSpreadsheetEditor;
             })
             .catch(function (error) {
                 spreadsheetEditorStackPromise = null;
@@ -782,7 +818,7 @@
         if (!shouldHydrateSpreadsheetPreviews(container)) {
             return Promise.resolve(null);
         }
-        return loadSpreadsheetEditorStack().then(function (editor) {
+        return loadSpreadsheetPreviewStack().then(function (editor) {
             if (editor && typeof editor.hydratePreviews === "function") {
                 editor.hydratePreviews(container);
             }
@@ -3235,7 +3271,8 @@
         if (!codeElement) {
             return;
         }
-        selectMarkdownInlineCode(codeElement);
+        const selectedText = selectMarkdownInlineCode(codeElement);
+        copyMarkdownInlineCodeText(codeElement, selectedText);
         event.preventDefault();
     }
 
@@ -3285,6 +3322,23 @@
         });
     }
 
+    function showMarkdownCodeCopiedFeedback(anchorElement) {
+        if (typeof window.showHandriveInlineCopyFeedback !== "function") {
+            return;
+        }
+        window.showHandriveInlineCopyFeedback(
+            anchorElement,
+            t("markdown_code_copied", textByLang("복사됨!", "Copied!"))
+        );
+    }
+
+    function copyMarkdownInlineCodeText(codeElement, text) {
+        writeHandriveClipboardText(text || "").then(function () {
+            selectMarkdownInlineCode(codeElement);
+            showMarkdownCodeCopiedFeedback(codeElement);
+        }).catch(function () {});
+    }
+
     function getMarkdownCodeBlockNodes(container) {
         if (!container || !(container instanceof Element)) {
             return [];
@@ -3327,12 +3381,7 @@
                 event.stopPropagation();
                 const text = codeNode.textContent || "";
                 writeHandriveClipboardText(text).then(function () {
-                    if (typeof window.showHandriveInlineCopyFeedback === "function") {
-                        window.showHandriveInlineCopyFeedback(
-                            button,
-                            t("markdown_code_copied", textByLang("복사됨!", "Copied!"))
-                        );
-                    }
+                    showMarkdownCodeCopiedFeedback(button);
                 }).catch(function () {});
             });
             pre.appendChild(button);
@@ -19425,48 +19474,32 @@
             } catch (error) {}
         }
 
-	        function getPreferredGuestDemoEntry() {
-	            var preferredPath = "";
-	            try {
-	                preferredPath = normalizePath(demoTutorialPath || "", true);
-            } catch (error) {
-                preferredPath = "";
-            }
-            if (preferredPath && state.entryByPath.has(preferredPath)) {
-                return state.entryByPath.get(preferredPath);
+        function getGuestDemoOrderedEntries() {
+            var entries = [];
+            var seenPaths = new Set();
+
+            function appendEntry(entry) {
+                if (!entry || !entry.path) {
+                    return;
+                }
+                var entryPath = "";
+                try {
+                    entryPath = normalizePath(entry.path || "", true);
+                } catch (error) {
+                    entryPath = "";
+                }
+                if (!entryPath || seenPaths.has(entryPath)) {
+                    return;
+                }
+                seenPaths.add(entryPath);
+                entries.push(entry);
             }
 
-            var entries = getCachedEntries(state.currentDir) || [];
-            var candidates = entries.filter(function (entry) {
-                return entry && entry.path;
+            (Array.isArray(state.visibleEntryPaths) ? state.visibleEntryPaths : []).forEach(function (pathValue) {
+                appendEntry(state.entryByPath.get(normalizePath(pathValue || "", true)));
             });
-            var files = candidates.filter(function (entry) {
-                return entry.type === "file";
-            });
-            candidates = files.length ? files : candidates;
-            if (!candidates.length) {
-                return null;
-            }
-            candidates.sort(function (left, right) {
-                function score(entry) {
-                    var text = String((entry && entry.name) || "") + " " + String((entry && entry.path) || "");
-                    text = text.toLowerCase();
-                    if (text.indexOf("튜토리얼") !== -1 || text.indexOf("튜도리얼") !== -1 || text.indexOf("tutorial") !== -1) {
-                        return 0;
-                    }
-                    if (text.indexOf("시작") !== -1 || text.indexOf("start") !== -1 || text.indexOf("guide") !== -1) {
-                        return 1;
-                    }
-                    return 2;
-                }
-                var leftScore = score(left);
-                var rightScore = score(right);
-                if (leftScore !== rightScore) {
-                    return leftScore - rightScore;
-                }
-                return String(left.name || left.path || "").localeCompare(String(right.name || right.path || ""));
-            });
-            return candidates[0] || null;
+            (getCachedEntries(state.currentDir) || []).forEach(appendEntry);
+            return entries;
         }
 
         function isGuestDemoVirtualOrSpecialEntry(entry) {
@@ -19497,53 +19530,55 @@
             );
         }
 
-        function getGuestDemoPreferredPlainFileEntry() {
-            var preferredEntry = getPreferredGuestDemoEntry();
-            if (isGuestDemoPlainFileEntry(preferredEntry)) {
-                return preferredEntry;
-            }
+        function isGuestDemoPreviewFileEntry(entry) {
+            return Boolean(isGuestDemoPlainFileEntry(entry) && entry.can_read !== false && isPreviewableFileEntry(entry));
+        }
 
-            var preferredPath = "";
-            try {
-                preferredPath = normalizePath(demoTutorialPath || "", true);
-            } catch (error) {
-                preferredPath = "";
-            }
-            var entries = getCachedEntries(state.currentDir) || [];
-            var candidates = entries.filter(isGuestDemoPlainFileEntry);
-            if (!candidates.length) {
-                return null;
-            }
-            candidates.sort(function (left, right) {
-                function score(entry) {
-                    var entryPath = normalizePath(entry && entry.path || "", true);
-                    var text = String((entry && entry.name) || "") + " " + String((entry && entry.path) || "");
-                    text = text.toLowerCase();
-                    if (preferredPath && entryPath === preferredPath) {
-                        return 0;
-                    }
-                    if (text.indexOf("00-handrive") !== -1 || text.indexOf("튜토리얼") !== -1 || text.indexOf("tutorial") !== -1) {
-                        return 1;
-                    }
-                    if (canEditOrDemoEntry(entry) && isPreviewableFileEntry(entry)) {
-                        return 2;
-                    }
-                    if (isPreviewableFileEntry(entry)) {
-                        return 3;
-                    }
-                    if (canEditOrDemoEntry(entry)) {
-                        return 4;
-                    }
-                    return 5;
-                }
-                var leftScore = score(left);
-                var rightScore = score(right);
-                if (leftScore !== rightScore) {
-                    return leftScore - rightScore;
-                }
-                return String(left.name || left.path || "").localeCompare(String(right.name || right.path || ""));
-            });
-            return candidates[0] || null;
+        function isGuestDemoEditableFileEntry(entry) {
+            return Boolean(isGuestDemoPreviewFileEntry(entry) && canEditOrDemoEntry(entry));
+        }
+
+        function isGuestDemoRenameableFileEntry(entry) {
+            return Boolean(isGuestDemoPlainFileEntry(entry) && canEditOrDemoEntry(entry) && entry.can_rename !== false);
+        }
+
+        function isGuestDemoShareableFileEntry(entry) {
+            return Boolean(isGuestDemoPreviewFileEntry(entry) && entry.can_edit && urlShareApiUrl);
+        }
+
+        function isGuestDemoManageableFileEntry(entry) {
+            return Boolean(
+                isGuestDemoPlainFileEntry(entry) &&
+                (
+                    isGuestDemoRenameableFileEntry(entry) ||
+                    isEntryDeletable(entry) ||
+                    canEditOrDemoEntry(entry)
+                )
+            );
+        }
+
+        function isGuestDemoDefaultFileEntry(entry) {
+            return Boolean(
+                isGuestDemoEditableFileEntry(entry) ||
+                isGuestDemoPreviewFileEntry(entry) ||
+                isGuestDemoShareableFileEntry(entry) ||
+                isGuestDemoManageableFileEntry(entry)
+            );
+        }
+
+        function getGuestDemoActionFileEntry(predicate) {
+            var matcher = typeof predicate === "function" ? predicate : isGuestDemoDefaultFileEntry;
+            return getGuestDemoOrderedEntries().find(function (entry) {
+                return Boolean(entry && matcher(entry));
+            }) || null;
+        }
+
+        function getPreferredGuestDemoEntry(predicate) {
+            return getGuestDemoActionFileEntry(predicate || isGuestDemoDefaultFileEntry);
+        }
+
+        function getGuestDemoPreferredPlainFileEntry(predicate) {
+            return getGuestDemoActionFileEntry(predicate || isGuestDemoDefaultFileEntry);
         }
 
         function scrollEntryRowIntoView(entryPath) {
@@ -19574,8 +19609,8 @@
             });
         }
 
-        function startGuestDemoOnboarding() {
-            var entry = getPreferredGuestDemoEntry();
+        function startGuestDemoOnboarding(predicate) {
+            var entry = getGuestDemoActionFileEntry(predicate || isGuestDemoPreviewFileEntry);
             if (!entry) {
                 return;
             }
@@ -19601,7 +19636,7 @@
         }
 
         function editGuestDemoOnboardingEntry() {
-            var entry = getPreferredGuestDemoEntry();
+            var entry = getGuestDemoActionFileEntry(isGuestDemoEditableFileEntry);
             if (!entry) {
                 return;
             }
@@ -19618,7 +19653,7 @@
             if (canEditOrDemoEntry(entry)) {
                 switchToEditor(entry);
             } else if (isPreviewableFileEntry(entry)) {
-                startGuestDemoOnboarding();
+                startGuestDemoOnboarding(isGuestDemoEditableFileEntry);
             } else {
                 openEntry(entry);
             }
@@ -19788,61 +19823,6 @@
             return null;
         }
 
-        function normalizeGuestDemoSampleName(name) {
-            return String(name || "").trim().toLowerCase();
-        }
-
-        function getGuestDemoEntryRowByNames(names) {
-            var wantedNames = (Array.isArray(names) ? names : [names])
-                .map(normalizeGuestDemoSampleName)
-                .filter(Boolean);
-            if (!wantedNames.length) {
-                return null;
-            }
-            var entries = getCachedEntries(state.currentDir) || [];
-            for (var index = 0; index < entries.length; index += 1) {
-                var entry = entries[index];
-                var leafName = String(entry && (entry.name || entry.path || "") || "").split("/").pop();
-                if (wantedNames.indexOf(normalizeGuestDemoSampleName(leafName)) === -1 || !entry || !entry.path) {
-                    continue;
-                }
-                var row = state.entryRowByPath.get(normalizePath(entry.path, true));
-                if (row) {
-                    return row;
-                }
-            }
-            return null;
-        }
-
-        function getGuestDemoEntryByNames(names) {
-            var wantedNames = (Array.isArray(names) ? names : [names])
-                .map(normalizeGuestDemoSampleName)
-                .filter(Boolean);
-            if (!wantedNames.length) {
-                return null;
-            }
-            var entries = getCachedEntries(state.currentDir) || [];
-            for (var index = 0; index < entries.length; index += 1) {
-                var entry = entries[index];
-                var leafName = String(entry && (entry.name || entry.path || "") || "").split("/").pop();
-                if (entry && entry.path && wantedNames.indexOf(normalizeGuestDemoSampleName(leafName)) !== -1) {
-                    return entry;
-                }
-            }
-            return null;
-        }
-
-        function getGuestDemoEntryRowsByNameGroups(nameGroups) {
-            var rows = [];
-            (Array.isArray(nameGroups) ? nameGroups : []).forEach(function (names) {
-                var row = getGuestDemoEntryRowByNames(names);
-                if (row && rows.indexOf(row) === -1) {
-                    rows.push(row);
-                }
-            });
-            return rows;
-        }
-
         function ensureGuestDemoCompositeTarget() {
             if (guestDemoTourCompositeTarget && document.documentElement.contains(guestDemoTourCompositeTarget)) {
                 return guestDemoTourCompositeTarget;
@@ -19931,38 +19911,80 @@
             return getGuestDemoContextActionButton("upload") || openedTarget;
         }
 
-        function getGuestDemoAdvancedSampleNameGroups() {
-            return [
-                ["11-압축-샘플.zip", "11-archive-sample.zip"],
-                ["12-Git-공개-테스트-레포", "12-public-git-test-repo"],
-                ["13-지도-샘플.svg", "13-map-sample.svg"],
-                ["14-MP3-변환-샘플.mp4", "14-mp3-conversion-sample.mp4"],
-                ["15-오디오-미리보기-샘플.mp3", "15-audio-preview-sample.mp3"],
-            ];
+        function isGuestDemoArchiveFileEntry(entry) {
+            return Boolean(isGuestDemoPlainFileEntry(entry) && archiveFileExtensions.has(getEntryFileExtension(entry)));
         }
 
-        function getGuestDemoAdvancedSampleNamesForKind(kind) {
+        function isGuestDemoGitEntry(entry) {
+            return Boolean(
+                entry &&
+                entry.path &&
+                entry.type === "dir" &&
+                (
+                    entry.git_repo ||
+                    entry.github_repo ||
+                    entry.git_branch_root ||
+                    entry.git_repo_branch ||
+                    entry.is_git_virtual
+                )
+            );
+        }
+
+        function isGuestDemoMapSourceFileEntry(entry) {
+            return Boolean(
+                isGuestDemoPlainFileEntry(entry) &&
+                canEditOrDemoEntry(entry) &&
+                [".svg", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif"].indexOf(getEntryFileExtension(entry)) !== -1
+            );
+        }
+
+        function isGuestDemoMp3SourceFileEntry(entry) {
+            return Boolean(isGuestDemoPlainFileEntry(entry) && canEditOrDemoEntry(entry) && videoEditorExtensions.has(getEntryFileExtension(entry)));
+        }
+
+        function isGuestDemoAudioFileEntry(entry) {
+            return Boolean(isGuestDemoPlainFileEntry(entry) && audioEditorExtensions.has(getEntryFileExtension(entry)));
+        }
+
+        function getGuestDemoAdvancedPredicateForKind(kind) {
             var normalizedKind = String(kind || "").trim();
             if (normalizedKind === "archive") {
-                return ["11-압축-샘플.zip", "11-archive-sample.zip"];
+                return isGuestDemoArchiveFileEntry;
             }
             if (normalizedKind === "git") {
-                return ["12-Git-공개-테스트-레포", "12-public-git-test-repo"];
+                return isGuestDemoGitEntry;
             }
             if (normalizedKind === "map") {
-                return ["13-지도-샘플.svg", "13-map-sample.svg"];
+                return isGuestDemoMapSourceFileEntry;
             }
             if (normalizedKind === "mp3") {
-                return ["14-MP3-변환-샘플.mp4", "14-mp3-conversion-sample.mp4"];
+                return isGuestDemoMp3SourceFileEntry;
             }
             if (normalizedKind === "audio") {
-                return ["15-오디오-미리보기-샘플.mp3", "15-audio-preview-sample.mp3"];
+                return isGuestDemoAudioFileEntry;
             }
-            return [];
+            return null;
+        }
+
+        function getGuestDemoEntryByPredicate(predicate) {
+            if (typeof predicate !== "function") {
+                return null;
+            }
+            return getGuestDemoOrderedEntries().find(function (entry) {
+                return Boolean(entry && predicate(entry));
+            }) || null;
+        }
+
+        function getGuestDemoRowByPredicate(predicate) {
+            return getGuestDemoRowForEntry(getGuestDemoEntryByPredicate(predicate), { scroll: false });
         }
 
         function getGuestDemoAdvancedSampleRows() {
-            return getGuestDemoEntryRowsByNameGroups(getGuestDemoAdvancedSampleNameGroups());
+            return ["archive", "git", "map", "mp3", "audio"].map(function (kind) {
+                return getGuestDemoRowByPredicate(getGuestDemoAdvancedPredicateForKind(kind));
+            }).filter(function (row, index, rows) {
+                return Boolean(row && rows.indexOf(row) === index);
+            });
         }
 
         function getGuestDemoAdvancedSampleTarget() {
@@ -19970,19 +19992,27 @@
         }
 
         function getGuestDemoAdvancedSampleRow() {
-            return getGuestDemoAdvancedSampleRows()[0] || getGuestDemoPreferredRow();
+            return getGuestDemoAdvancedSampleRows()[0] || null;
         }
 
         function getGuestDemoAdvancedSampleRowForKind(kind) {
-            return getGuestDemoEntryRowByNames(getGuestDemoAdvancedSampleNamesForKind(kind)) || getGuestDemoAdvancedSampleRow();
+            return getGuestDemoRowByPredicate(getGuestDemoAdvancedPredicateForKind(kind));
         }
 
         function getGuestDemoAdvancedSampleEntry() {
-            return getGuestDemoEntryByNames(getGuestDemoAdvancedSampleNameGroups().flat()) || getPreferredGuestDemoEntry();
+            return getGuestDemoEntryByPredicate(function (entry) {
+                return Boolean(
+                    isGuestDemoArchiveFileEntry(entry) ||
+                    isGuestDemoGitEntry(entry) ||
+                    isGuestDemoMapSourceFileEntry(entry) ||
+                    isGuestDemoMp3SourceFileEntry(entry) ||
+                    isGuestDemoAudioFileEntry(entry)
+                );
+            });
         }
 
         function getGuestDemoAdvancedSampleEntryForKind(kind) {
-            return getGuestDemoEntryByNames(getGuestDemoAdvancedSampleNamesForKind(kind)) || getGuestDemoAdvancedSampleEntry();
+            return getGuestDemoEntryByPredicate(getGuestDemoAdvancedPredicateForKind(kind));
         }
 
         function isGuestDemoGitRepositoryView() {
@@ -20005,18 +20035,7 @@
 
         function isGuestDemoGitContextTarget() {
             var entry = state.contextTarget || null;
-            var entryName = entry && entry.name ? String(entry.name) : "";
-            return Boolean(
-                entry &&
-                (
-                    entry.git_repo ||
-                    entry.github_repo ||
-                    entry.git_branch_root ||
-                    entry.git_repo_branch ||
-                    entry.is_git_virtual ||
-                    getGuestDemoAdvancedSampleNamesForKind("git").indexOf(entryName) !== -1
-                )
-            );
+            return isGuestDemoGitEntry(entry);
         }
 
         function isGuestDemoAudioContextTarget() {
@@ -20063,9 +20082,9 @@
             ].indexOf(String(stepId || "")) !== -1;
         }
 
-	        function getGuestDemoCurrentDirRow() {
-	            return listContainer ? listContainer.querySelector(".handrive-current-dir-row") : null;
-	        }
+        function getGuestDemoCurrentDirRow() {
+            return listContainer ? listContainer.querySelector(".handrive-current-dir-row") : null;
+        }
 
         function getGuestDemoRowForEntry(entry, options) {
             if (!entry || !entry.path) {
@@ -20102,26 +20121,11 @@
             return matchedRow;
         }
 
-        function getGuestDemoPreferredRow() {
-            var entry = getPreferredGuestDemoEntry();
+        function getGuestDemoFirstListRow(predicate) {
+            var matcher = typeof predicate === "function" ? predicate : isGuestDemoDefaultFileEntry;
             return findFirstVisibleGuestDemoElement([
-                function () { return getGuestDemoRowForEntry(entry); },
-                function () { return getGuestDemoRowForEntry(getGuestDemoPreferredPlainFileEntry()); },
-                function () { return getGuestDemoVisibleEntryRow(isGuestDemoPlainFileEntry); },
-                function () {
-                    return getGuestDemoVisibleEntryRow(function (rowEntry) {
-                        return Boolean(rowEntry && rowEntry.path && !rowEntry.isCurrentFolder);
-                    });
-                },
-                getGuestDemoCurrentDirRow,
-                listContainer,
-            ]);
-        }
-
-        function getGuestDemoFirstListRow() {
-            return findFirstVisibleGuestDemoElement([
-                function () { return getGuestDemoRowForEntry(getGuestDemoPreferredPlainFileEntry()); },
-                function () { return getGuestDemoVisibleEntryRow(isGuestDemoPlainFileEntry); },
+                function () { return getGuestDemoRowForEntry(getGuestDemoPreferredPlainFileEntry(matcher)); },
+                function () { return getGuestDemoVisibleEntryRow(matcher); },
                 listContainer,
             ]);
         }
@@ -20139,13 +20143,8 @@
             return matchedPath ? state.entryByPath.get(matchedPath) || null : null;
         }
 
-        function getGuestDemoFirstListEntry() {
-            var row = getGuestDemoFirstListRow();
-            var entry = getGuestDemoEntryForRow(row);
-            if (entry && entry.path && entry.can_rename !== false) {
-                return entry;
-            }
-            return getPreferredGuestDemoEntry();
+        function getGuestDemoFirstListEntry(predicate) {
+            return getGuestDemoActionFileEntry(predicate || isGuestDemoDefaultFileEntry);
         }
 
         function getGuestDemoContextActionButton(action) {
@@ -20169,8 +20168,9 @@
             if (!contextMenu) {
                 return null;
             }
-            var anchor = useCurrentDirectory ? getGuestDemoCurrentDirRow() : getGuestDemoPreferredRow();
-            var entry = useCurrentDirectory ? buildCurrentDirectoryEntry() : getPreferredGuestDemoEntry();
+            var matcher = preferredAction === "rename" ? isGuestDemoRenameableFileEntry : isGuestDemoManageableFileEntry;
+            var entry = useCurrentDirectory ? buildCurrentDirectoryEntry() : getPreferredGuestDemoEntry(matcher);
+            var anchor = useCurrentDirectory ? getGuestDemoCurrentDirRow() : getGuestDemoRowForEntry(entry);
             if (!entry || !entry.path) {
                 entry = buildCurrentDirectoryEntry();
             }
@@ -20203,8 +20203,8 @@
             if (!contextMenu) {
                 return null;
             }
-            var anchor = getGuestDemoFirstListRow();
-            var entry = getGuestDemoEntryForRow(anchor) || getGuestDemoFirstListEntry();
+            var anchor = getGuestDemoFirstListRow(isGuestDemoRenameableFileEntry);
+            var entry = getGuestDemoEntryForRow(anchor) || getGuestDemoFirstListEntry(isGuestDemoRenameableFileEntry);
             if (!anchor || !entry || !entry.path) {
                 return null;
             }
@@ -20272,7 +20272,7 @@
             if (target) {
                 return target;
             }
-            var entry = getGuestDemoFirstListEntry();
+            var entry = getGuestDemoFirstListEntry(isGuestDemoRenameableFileEntry);
             if (entry && entry.path) {
                 setRenameModalOpen(true, entry);
             }
@@ -20287,7 +20287,7 @@
             var entry = normalizedKind ? getGuestDemoAdvancedSampleEntryForKind(normalizedKind) : getGuestDemoAdvancedSampleEntry();
             var anchor = normalizedKind ? getGuestDemoAdvancedSampleRowForKind(normalizedKind) : getGuestDemoAdvancedSampleRow();
             if (!entry || !entry.path || !anchor) {
-                return openGuestDemoContextMenu(false, "extract-archive");
+                return null;
             }
             if (typeof anchor.scrollIntoView === "function") {
                 anchor.scrollIntoView({ block: "center", inline: "nearest" });
@@ -20513,8 +20513,8 @@
             var entry = state.activePreviewPath
                 ? state.entryByPath.get(state.activePreviewPath) || null
                 : null;
-            if (!entry) {
-                entry = getPreferredGuestDemoEntry();
+            if (!isGuestDemoShareableFileEntry(entry)) {
+                entry = getGuestDemoActionFileEntry(isGuestDemoShareableFileEntry);
             }
             if (entry && entry.path) {
                 openUrlShareDialogForEntry(entry);
@@ -21158,23 +21158,23 @@
                     textByLang("파일 열기와 폴더 이동", "Opening files and folders"),
                     textByLang("한 번 클릭하면 선택/미리보기, 더블클릭하면 열기입니다. 폴더는 펼치거나 들어갈 수 있고 드래그로 이동도 할 수 있습니다.", "Single-click selects and previews. Double-click opens. Folders can be expanded or opened, and items can be moved by drag and drop."),
                     textByLang("강조된 파일 행을 더블클릭해 읽기 화면으로 들어가도 튜토리얼은 계속됩니다.", "Double-click the highlighted file row. The tutorial continues even on the read page."),
-                    {
-                        labelKey: "guest_demo_onboarding_step_browse",
-                        prepare: function () {
-                            var row = getGuestDemoPreferredRow();
-                            bindGuestDemoStepAutoAdvance(row, "click", "browse_open", {
+	                    {
+	                        labelKey: "guest_demo_onboarding_step_browse",
+	                        prepare: function () {
+	                            var row = getGuestDemoFirstListRow(isGuestDemoPreviewFileEntry);
+	                            bindGuestDemoStepAutoAdvance(row, "click", "browse_open", {
                                 capture: true,
                                 filter: function (event) {
                                     return !event || event.detail >= 2;
                                 },
                                 delayMs: 220,
                             });
-                            return row;
-                        },
-                        target: function () {
-                            return getGuestDemoPreferredRow();
-                        },
-                    }
+	                            return row;
+	                        },
+	                        target: function () {
+	                            return getGuestDemoFirstListRow(isGuestDemoPreviewFileEntry);
+	                        },
+	                    }
                 ),
                 step(
                     3,
@@ -21203,23 +21203,23 @@
                     textByLang("미리보기 파일 선택", "Select a file to preview"),
                     textByLang("파일들을 클릭하면 탐색기에서 바로 미리보기가 열립니다.", "Click files to open previews directly in the file explorer."),
                     textByLang("강조된 파일 행을 좌클릭해 미리보기를 여세요.", "Left-click the highlighted file row to open the preview."),
-                    {
-                        labelKey: "guest_demo_onboarding_step_preview",
-                        prepare: function () {
-                            var row = getGuestDemoPreferredRow();
-                            bindGuestDemoStepAutoAdvance(row, "click", "preview_select", {
+	                    {
+	                        labelKey: "guest_demo_onboarding_step_preview",
+	                        prepare: function () {
+	                            var row = getGuestDemoFirstListRow(isGuestDemoPreviewFileEntry);
+	                            bindGuestDemoStepAutoAdvance(row, "click", "preview_select", {
                                 capture: true,
                                 filter: function (event) {
                                     return !event || event.button === 0 || event.button === undefined;
                                 },
                                 delayMs: 360,
                             });
-                            return row;
-                        },
-                        target: function () {
-                            return getGuestDemoPreferredRow();
-                        },
-                    }
+	                            return row;
+	                        },
+	                        target: function () {
+	                            return getGuestDemoFirstListRow(isGuestDemoPreviewFileEntry);
+	                        },
+	                    }
                 ),
                 step(
                     4,
@@ -21229,15 +21229,15 @@
                     textByLang("미리보기 영역", "Preview area"),
                     textByLang("선택한 파일 내용은 목록 오른쪽 또는 아래쪽의 미리보기 영역에 표시됩니다.", "The selected file appears in the preview area to the side or below the list."),
                     textByLang("미리보기 내용을 확인해보세요.", "Review the preview content."),
-                    {
-                        labelKey: "guest_demo_onboarding_step_preview",
-                        prepare: function () {
-                            startGuestDemoOnboarding();
-                        },
-                        target: function () {
-                            return findFirstVisibleGuestDemoElement([getGuestDemoVisiblePreviewPanel, previewPanel, getGuestDemoPreferredRow]);
-                        },
-                    }
+	                    {
+	                        labelKey: "guest_demo_onboarding_step_preview",
+	                        prepare: function () {
+	                            startGuestDemoOnboarding(isGuestDemoPreviewFileEntry);
+	                        },
+	                        target: function () {
+	                            return findFirstVisibleGuestDemoElement([getGuestDemoVisiblePreviewPanel, previewPanel, function () { return getGuestDemoFirstListRow(isGuestDemoPreviewFileEntry); }]);
+	                        },
+	                    }
                 ),
                 step(
                     5,
@@ -21247,11 +21247,11 @@
                     textByLang("미리보기 도구", "Preview tools"),
                     textByLang("미리보기 상단에서 공유, 인쇄, 다운로드, 편집, 삭제 같은 파일 작업을 실행합니다.", "Use the preview header for sharing, printing, downloading, editing, deleting, and other file actions."),
                     textByLang("상단 버튼들의 위치를 확인해보세요.", "Review the header buttons."),
-                    {
-                        labelKey: "guest_demo_onboarding_step_preview_tools",
-                        prepare: function () {
-                            startGuestDemoOnboarding();
-                        },
+	                    {
+	                        labelKey: "guest_demo_onboarding_step_preview_tools",
+	                        prepare: function () {
+	                            startGuestDemoOnboarding(isGuestDemoPreviewFileEntry);
+	                        },
                         target: function () {
                             return getGuestDemoPreviewActionsTarget();
                         },
@@ -21265,11 +21265,11 @@
                     textByLang("미리보기 도구", "Preview tools"),
                     textByLang("이미지와 문서 미리보기는 확대/축소 버튼이나 Ctrl+스크롤, 모바일 핀치로 배율을 조절할 수 있습니다.", "Image and document previews can be zoomed with buttons, Ctrl+wheel, or mobile pinch."),
                     textByLang("확대/축소 컨트롤 또는 미리보기 영역을 확인하세요.", "Check the zoom controls or preview area."),
-                    {
-                        labelKey: "guest_demo_onboarding_step_preview_tools",
-                        prepare: function () {
-                            startGuestDemoOnboarding();
-                        },
+	                    {
+	                        labelKey: "guest_demo_onboarding_step_preview_tools",
+	                        prepare: function () {
+	                            startGuestDemoOnboarding(isGuestDemoPreviewFileEntry);
+	                        },
                         target: function () {
                             return getGuestDemoPreviewZoomTarget();
                         },
@@ -21292,8 +21292,8 @@
                             if (getGuestDemoVisiblePreviewPanel()) {
                                 return getGuestDemoPreviewEditTarget();
                             }
-                            var row = getGuestDemoPreferredRow();
-                            bindGuestDemoStepAutoAdvance(row, "click", "edit_select_file", {
+	                            var row = getGuestDemoFirstListRow(isGuestDemoEditableFileEntry);
+	                            bindGuestDemoStepAutoAdvance(row, "click", "edit_select_file", {
                                 capture: true,
                                 filter: function (event) {
                                     return !event || event.button === 0 || event.button === undefined;
@@ -21309,9 +21309,9 @@
                             if (getGuestDemoVisiblePreviewPanel()) {
                                 return getGuestDemoPreviewEditTarget();
                             }
-                            return getGuestDemoPreferredRow();
-                        },
-                    }
+	                            return getGuestDemoFirstListRow(isGuestDemoEditableFileEntry);
+	                        },
+	                    }
                 ),
                 step(
                     6,
@@ -21328,9 +21328,9 @@
                                 scheduleGuestDemoStepAdvance("edit_open", 160);
                                 return getGuestDemoEditorTarget();
                             }
-                            if (!getGuestDemoVisiblePreviewPanel()) {
-                                return getGuestDemoPreferredRow();
-                            }
+	                            if (!getGuestDemoVisiblePreviewPanel()) {
+	                                return getGuestDemoFirstListRow(isGuestDemoEditableFileEntry);
+	                            }
                             bindGuestDemoStepAutoAdvance(previewPanel, "click", "edit_open", {
                                 capture: true,
                                 filter: function (event) {
@@ -21389,15 +21389,15 @@
                     {
                         labelKey: "guest_demo_onboarding_step_save",
                         prepare: function () {
-                            if (!isGuestDemoEditorVisible()) {
-                                return getGuestDemoFirstListRow();
-                            }
+	                            if (!isGuestDemoEditorVisible()) {
+	                                return getGuestDemoFirstListRow(isGuestDemoEditableFileEntry);
+	                            }
                             editGuestDemoOnboardingEntry();
                         },
                         target: function () {
-                            if (!isGuestDemoEditorVisible()) {
-                                return getGuestDemoFirstListRow();
-                            }
+	                            if (!isGuestDemoEditorVisible()) {
+	                                return getGuestDemoFirstListRow(isGuestDemoEditableFileEntry);
+	                            }
                             return findFirstVisibleGuestDemoElement([editorFilenameInput, editorHead, editorPanel]);
                         },
                     }
@@ -21413,15 +21413,15 @@
                     {
                         labelKey: "guest_demo_onboarding_step_save",
                         prepare: function () {
-                            if (!isGuestDemoEditorVisible()) {
-                                return getGuestDemoFirstListRow();
-                            }
+	                            if (!isGuestDemoEditorVisible()) {
+	                                return getGuestDemoFirstListRow(isGuestDemoEditableFileEntry);
+	                            }
                             editGuestDemoOnboardingEntry();
                         },
                         target: function () {
-                            if (!isGuestDemoEditorVisible()) {
-                                return getGuestDemoFirstListRow();
-                            }
+	                            if (!isGuestDemoEditorVisible()) {
+	                                return getGuestDemoFirstListRow(isGuestDemoEditableFileEntry);
+	                            }
                             return getGuestDemoEditorSaveTarget();
                         },
                     }
@@ -21437,16 +21437,16 @@
                     {
                         labelKey: "guest_demo_onboarding_step_save",
                         prepare: function () {
-                            var row = getGuestDemoFirstListRow();
+	                            var row = getGuestDemoFirstListRow(isGuestDemoRenameableFileEntry);
                             bindGuestDemoStepAutoAdvance(row, "contextmenu", "save_rename_row", {
                                 capture: true,
                                 delayMs: 220,
                             });
                             return row;
                         },
-                        target: function () {
-                            return getGuestDemoFirstListRow();
-                        },
+	                        target: function () {
+	                            return getGuestDemoFirstListRow(isGuestDemoRenameableFileEntry);
+	                        },
                     }
                 ),
                 step(
@@ -21467,9 +21467,9 @@
                             });
                             return target;
                         },
-                        target: function () {
-                            return findFirstVisibleGuestDemoElement([contextRenameButton, contextMenu, getGuestDemoFirstListRow]);
-                        },
+	                        target: function () {
+	                            return findFirstVisibleGuestDemoElement([contextRenameButton, contextMenu, function () { return getGuestDemoFirstListRow(isGuestDemoRenameableFileEntry); }]);
+	                        },
                     }
                 ),
                 step(
@@ -21660,27 +21660,27 @@
                     textByLang("URL 공유와 편집권한", "URL sharing and edit permission"),
                     textByLang("파일이나 폴더의 공유 링크를 만들고, 전체 공개/대상 사용자/편집권한을 설정할 수 있습니다.", "Create share links for files or folders and control public access, target users, and edit permission."),
                     textByLang("먼저 공유할 파일 행을 좌클릭하세요.", "First left-click the file row to share."),
-                    {
-                        labelKey: "guest_demo_onboarding_step_share",
-                        prepare: function () {
-                            if (state.activePreviewPath && getGuestDemoVisiblePreviewPanel()) {
-                                scheduleGuestDemoStepAdvance("share_select_file", 180);
-                                return getGuestDemoVisiblePreviewPanel();
-                            }
-                            var row = getGuestDemoPreferredRow();
-                            bindGuestDemoStepAutoAdvance(row, "click", "share_select_file", {
+	                    {
+	                        labelKey: "guest_demo_onboarding_step_share",
+	                        prepare: function () {
+	                            if (state.activePreviewPath && getGuestDemoVisiblePreviewPanel()) {
+	                                scheduleGuestDemoStepAdvance("share_select_file", 180);
+	                                return getGuestDemoVisiblePreviewPanel();
+	                            }
+	                            var row = getGuestDemoFirstListRow(isGuestDemoShareableFileEntry);
+	                            bindGuestDemoStepAutoAdvance(row, "click", "share_select_file", {
                                 capture: true,
                                 filter: function (event) {
                                     return !event || event.button === 0 || event.button === undefined;
                                 },
                                 delayMs: 360,
                             });
-                            return row;
-                        },
-                        target: function () {
-                            return findFirstVisibleGuestDemoElement([getGuestDemoPreferredRow, getGuestDemoVisiblePreviewPanel, listContainer]);
-                        },
-                    }
+	                            return row;
+	                        },
+	                        target: function () {
+	                            return findFirstVisibleGuestDemoElement([function () { return getGuestDemoFirstListRow(isGuestDemoShareableFileEntry); }, getGuestDemoVisiblePreviewPanel, listContainer]);
+	                        },
+	                    }
                 ),
                 step(
                     10,
@@ -21690,19 +21690,19 @@
                     textByLang("공유 버튼", "Share button"),
                     textByLang("미리보기 상단의 공유 버튼으로 선택한 파일의 공유 모달을 엽니다.", "Use the share button in the preview header to open sharing for the selected file."),
                     textByLang("공유 아이콘을 누르세요.", "Press the share icon."),
-                    {
-                        labelKey: "guest_demo_onboarding_step_share",
-                        prepare: function () {
-                            startGuestDemoOnboarding();
-                            bindGuestDemoStepAutoAdvanceMany([previewUrlShareButton, currentDirToolbarUrlShareButton], "click", "share_button", {
+	                    {
+	                        labelKey: "guest_demo_onboarding_step_share",
+	                        prepare: function () {
+	                            startGuestDemoOnboarding(isGuestDemoShareableFileEntry);
+	                            bindGuestDemoStepAutoAdvanceMany([previewUrlShareButton, currentDirToolbarUrlShareButton], "click", "share_button", {
                                 capture: true,
                                 delayMs: 260,
                             });
-                        },
-                        target: function () {
-                            return findFirstVisibleGuestDemoElement([previewUrlShareButton, currentDirToolbarUrlShareButton, ".handrive-item-url-share-indicator", previewHead, getGuestDemoPreferredRow]);
-                        },
-                    }
+	                        },
+	                        target: function () {
+	                            return findFirstVisibleGuestDemoElement([previewUrlShareButton, currentDirToolbarUrlShareButton, ".handrive-item-url-share-indicator", previewHead, function () { return getGuestDemoFirstListRow(isGuestDemoShareableFileEntry); }]);
+	                        },
+	                    }
                 ),
                 step(
                     10,
@@ -21781,20 +21781,20 @@
                     textByLang("이름 변경, 삭제, 이동", "Rename, delete, and move"),
                     textByLang("파일 행에서 우클릭 메뉴와 키보드 Delete/Backspace로 이름 변경, 삭제, 다운로드, 위치 열기, 드래그 이동을 수행합니다.", "Use a file row context menu and Delete/Backspace for rename, delete, download, open location, and drag-to-move operations."),
                     textByLang("강조된 파일 행을 우클릭하세요.", "Right-click the highlighted file row."),
-                    {
-                        labelKey: "guest_demo_onboarding_step_manage",
-                        prepare: function () {
-                            var row = getGuestDemoPreferredRow();
-                            bindGuestDemoStepAutoAdvance(row, "contextmenu", "manage_row", {
+	                    {
+	                        labelKey: "guest_demo_onboarding_step_manage",
+	                        prepare: function () {
+	                            var row = getGuestDemoFirstListRow(isGuestDemoManageableFileEntry);
+	                            bindGuestDemoStepAutoAdvance(row, "contextmenu", "manage_row", {
                                 capture: true,
                                 delayMs: 240,
                             });
-                            return row;
-                        },
-                        target: function () {
-                            return getGuestDemoPreferredRow();
-                        },
-                    }
+	                            return row;
+	                        },
+	                        target: function () {
+	                            return getGuestDemoFirstListRow(isGuestDemoManageableFileEntry);
+	                        },
+	                    }
                 ),
                 step(
                     11,
@@ -21815,12 +21815,12 @@
                             }
                             return findFirstVisibleGuestDemoElement([
                                 function () { return getGuestDemoContextActionsTarget(["rename", "delete", "download"]); },
-                                contextRenameButton,
-                                contextDeleteButton,
-                                contextMenu,
-                                getGuestDemoPreferredRow,
-                            ]);
-                        },
+	                                contextRenameButton,
+	                                contextDeleteButton,
+	                                contextMenu,
+	                                function () { return getGuestDemoFirstListRow(isGuestDemoManageableFileEntry); },
+	                            ]);
+	                        },
                     }
                 ),
                 step(
@@ -22067,10 +22067,10 @@
                     textByLang("분할 막대를 드래그하면 목록과 미리보기/편집기 영역의 크기를 조절할 수 있습니다.", "Drag the splitter to resize the list and preview/editor panes."),
                     textByLang("강조된 분할 막대를 잡고 좌우 또는 상하로 움직여보세요.", "Drag the highlighted splitter horizontally or vertically."),
                     {
-                        labelKey: "guest_demo_onboarding_step_layout",
-                        prepare: function () {
-                            startGuestDemoOnboarding();
-                        },
+	                        labelKey: "guest_demo_onboarding_step_layout",
+	                        prepare: function () {
+	                            startGuestDemoOnboarding(isGuestDemoPreviewFileEntry);
+	                        },
                         target: function () {
                             return findFirstVisibleGuestDemoElement([listSplitter]);
                         },
@@ -22086,10 +22086,10 @@
                     textByLang("목록과 미리보기/문서 영역은 Ctrl+스크롤 또는 모바일 핀치로 배율을 조절할 수 있습니다.", "Use Ctrl+wheel or mobile pinch to zoom the list and preview/document areas."),
                     textByLang("목록 또는 미리보기 영역에서 Ctrl+스크롤이나 핀치 줌을 해보세요.", "Try Ctrl+wheel or pinch zoom over the list or preview area."),
                     {
-                        labelKey: "guest_demo_onboarding_step_zoom",
-                        prepare: function () {
-                            startGuestDemoOnboarding();
-                        },
+	                        labelKey: "guest_demo_onboarding_step_zoom",
+	                        prepare: function () {
+	                            startGuestDemoOnboarding(isGuestDemoPreviewFileEntry);
+	                        },
                         target: function () {
                             return buildGuestDemoCompositeTarget([listItemsContainer, previewBody]) ||
                                 findFirstVisibleGuestDemoElement([listItemsContainer, previewBody, previewPanel, listLayout]);
@@ -22105,10 +22105,10 @@
                     textByLang("미리보기 헤더를 드래그하면 미리보기를 모달처럼 띄우거나 화면의 상하좌우 위치로 옮길 수 있습니다.", "Drag the preview header to float the preview like a modal or move it to any side of the screen."),
                     textByLang("미리보기 헤더를 잡고 원하는 위치로 드래그해보세요.", "Drag the preview header to the position you want."),
                     {
-                        labelKey: "guest_demo_onboarding_step_preview_drag",
-                        prepare: function () {
-                            startGuestDemoOnboarding();
-                        },
+	                        labelKey: "guest_demo_onboarding_step_preview_drag",
+	                        prepare: function () {
+	                            startGuestDemoOnboarding(isGuestDemoPreviewFileEntry);
+	                        },
                         target: function () {
                             return findFirstVisibleGuestDemoElement([previewHead, previewPanel, previewBody, listLayout]);
                         },

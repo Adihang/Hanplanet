@@ -1908,16 +1908,39 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertIn(".handrive-inline-copy-action,", handrive_css)
         self.assertIn(".handrive-inline-copy-action:active,", handrive_css)
         self.assertIn(".handrive-inline-copy-feedback", handrive_css)
+        inline_copy_feedback_start = handrive_css.index(".handrive-inline-copy-feedback {")
+        inline_copy_feedback_arrow_start = handrive_css.index(
+            ".handrive-inline-copy-feedback::after",
+            inline_copy_feedback_start,
+        )
+        inline_copy_feedback_visible_start = handrive_css.index(
+            ".handrive-inline-copy-feedback.is-visible",
+            inline_copy_feedback_start,
+        )
+        inline_copy_feedback_block = handrive_css[
+            inline_copy_feedback_start:inline_copy_feedback_arrow_start
+        ]
+        inline_copy_feedback_arrow_block = handrive_css[
+            inline_copy_feedback_arrow_start:inline_copy_feedback_visible_start
+        ]
         self.assertIn("display: inline-flex;", handrive_css)
         self.assertIn("align-items: center;", handrive_css)
+        self.assertIn("min-width: 58px;", inline_copy_feedback_block)
         self.assertIn("min-height: 28px;", handrive_css)
-        self.assertIn("padding: 5px 8px 7px;", handrive_css)
+        self.assertIn("padding: 5px 6px 7px;", inline_copy_feedback_block)
+        self.assertIn("border: 0;", inline_copy_feedback_block)
+        self.assertIn("--handrive-inline-copy-feedback-bg: color-mix(", inline_copy_feedback_block)
+        self.assertIn("background: var(--handrive-inline-copy-feedback-bg);", inline_copy_feedback_block)
+        self.assertIn("box-shadow: var(--site-dropdown-menu-shadow", inline_copy_feedback_block)
         self.assertIn("line-height: 1;", handrive_css)
-        self.assertIn(".handrive-inline-copy-feedback::before,", handrive_css)
-        self.assertIn(".handrive-inline-copy-feedback.is-placement-top::before", handrive_css)
-        self.assertIn(".handrive-inline-copy-feedback.is-placement-bottom::before", handrive_css)
-        self.assertIn(".handrive-inline-copy-feedback.is-placement-left::before", handrive_css)
-        self.assertIn(".handrive-inline-copy-feedback.is-placement-right::before", handrive_css)
+        self.assertIn(".handrive-inline-copy-feedback::after", handrive_css)
+        self.assertNotIn(".handrive-inline-copy-feedback::before", inline_copy_feedback_arrow_block)
+        self.assertNotIn("solid var(--handrive-border-soft)", inline_copy_feedback_arrow_block)
+        self.assertIn("solid var(--handrive-inline-copy-feedback-bg)", inline_copy_feedback_arrow_block)
+        self.assertIn(".handrive-inline-copy-feedback.is-placement-top::after", handrive_css)
+        self.assertIn(".handrive-inline-copy-feedback.is-placement-bottom::after", handrive_css)
+        self.assertIn(".handrive-inline-copy-feedback.is-placement-left::after", handrive_css)
+        self.assertIn(".handrive-inline-copy-feedback.is-placement-right::after", handrive_css)
         self.assertIn("--handrive-inline-copy-arrow-x", handrive_css)
         self.assertIn("--handrive-inline-copy-arrow-y", handrive_css)
         self.assertNotIn(".handrive-inline-copy-action.is-copied", handrive_css)
@@ -4642,6 +4665,7 @@ class HandriveStyleSourceTests(TestCase):
         view_template = (base_dir / "templates/handrive/view.html").read_text(encoding="utf-8")
         write_template = (base_dir / "templates/handrive/write.html").read_text(encoding="utf-8")
         page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        preview_helpers_js = (base_dir / "static/js/handrive/preview_helpers.js").read_text(encoding="utf-8")
 
         self.assertNotIn("vendor/handsontable/handsontable.full.min.css", assets_head)
         self.assertNotIn("vendor/handsontable/handsontable.full.min.js", assets_script)
@@ -4654,9 +4678,18 @@ class HandriveStyleSourceTests(TestCase):
             self.assertIn("data-sheetjs-script-url", template_source)
             self.assertIn("data-exceljs-script-url", template_source)
             self.assertIn("data-spreadsheet-editor-script-url", template_source)
+        self.assertIn("function loadSpreadsheetPreviewStack()", page_js)
         self.assertIn("function loadSpreadsheetEditorStack()", page_js)
+        self.assertIn("return loadSpreadsheetPreviewStack().then(function (editor)", page_js)
+        self.assertIn('return loadLazyScriptOnce(exceljsScriptUrl, "ExcelJS");', page_js)
         self.assertIn("await loadSpreadsheetEditorStack();", page_js)
         self.assertIn("hydrateSpreadsheetPreviews(previewContent).catch(alertError);", page_js)
+        self.assertNotIn('id="handrive-list-preview-spreadsheet-save-btn"', list_template)
+        self.assertNotIn("handrive-view-spreadsheet-save-btn", view_template)
+        self.assertIn("{% if doc_can_show_edit %}", view_template)
+        self.assertNotIn("doc_can_show_edit and not doc_is_spreadsheet_file", view_template)
+        self.assertNotIn("!isSpreadsheetPreview", preview_helpers_js)
+        self.assertIn("previewSpreadsheetSaveButton.hidden = true;", preview_helpers_js)
 
     def test_map_viewer_reuses_handrive_url_share_modal(self):
         base_dir = Path(settings.BASE_DIR)
@@ -5873,6 +5906,12 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("function isMarkdownInlineCodeElement(codeElement)", page_js)
         self.assertIn('return !codeElement.closest("pre") && Boolean(codeElement.closest(".ui-markdown, .handrive-markdown"));', page_js)
         self.assertIn("range.selectNodeContents(codeElement);", page_js)
+        self.assertIn("copyMarkdownInlineCodeText(codeElement, selectedText);", page_js)
+        self.assertIn("function copyMarkdownInlineCodeText(codeElement, text)", page_js)
+        self.assertIn('writeHandriveClipboardText(text || "").then(function ()', page_js)
+        self.assertIn("showMarkdownCodeCopiedFeedback(codeElement);", page_js)
+        self.assertIn("function showMarkdownCodeCopiedFeedback(anchorElement)", page_js)
+        self.assertIn("window.showHandriveInlineCopyFeedback(", page_js)
         self.assertIn('event.dataTransfer.setData("text/plain", selectedText);', page_js)
         self.assertIn('document.addEventListener("mousedown", handleMarkdownInlineCodeMouseDown, true);', page_js)
         self.assertIn('document.addEventListener("dblclick", handleMarkdownInlineCodeDoubleClick, true);', page_js)
@@ -6007,6 +6046,10 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('toolbar.classList.toggle("is-visible", hasSheetSelect || hasStatus);', spreadsheet_js)
         self.assertIn("sheetSelect.hidden = state.sheets.length <= 1;", spreadsheet_js)
         self.assertIn("syncPreviewToolbarVisibility(shell);", spreadsheet_js)
+        self.assertIn("var PREVIEW_MAX_ROWS = 500;", spreadsheet_js)
+        self.assertIn("var PREVIEW_MAX_COLS = 100;", spreadsheet_js)
+        self.assertIn("parseWorkbook(arrayBuffer, extension, { preview: true })", spreadsheet_js)
+        self.assertIn("var editable = false;", spreadsheet_js)
         self.assertIn(".handrive-spreadsheet-preview-toolbar {\n    display: none;", handrive_css)
         self.assertIn(".handrive-spreadsheet-preview-toolbar.is-visible", handrive_css)
 
@@ -15142,15 +15185,16 @@ class HandriveAccessRuleTests(TestCase):
         self.assertIn("**bold**", payload.get("html", ""))
         self.assertNotIn("<strong>bold</strong>", payload.get("html", ""))
 
-    def test_docs_api_preview_renders_csv_as_editable_sheet(self):
-        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+    def test_docs_api_preview_renders_csv_as_read_only_sheet(self):
+        editor = self.create_scoped_handrive_user("csv_preview_editor")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
+        relative_path = f"users/{editor.username}/data.csv"
         (handrive_root / "data.csv").write_text("name,score\nAlice,10\nBob,20\n", encoding="utf-8")
-        editor = self.create_handrive_superuser("csv_preview_editor")
         self.client.force_login(editor)
 
         response = self.client.post(
             reverse("main:handrive_api_preview"),
-            data=json.dumps({"path": "data.csv"}),
+            data=json.dumps({"path": relative_path}),
             content_type="application/json",
         )
 
@@ -15159,8 +15203,8 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(payload.get("render_mode"), "office")
         self.assertIn("handrive-office-sheet", payload.get("render_class", ""))
         self.assertIn('data-handrive-spreadsheet-preview="1"', payload.get("html", ""))
-        self.assertIn('data-path="data.csv"', payload.get("html", ""))
-        self.assertIn('data-editable="1"', payload.get("html", ""))
+        self.assertIn(f'data-path="{relative_path}"', payload.get("html", ""))
+        self.assertIn('data-editable="0"', payload.get("html", ""))
         self.assertNotIn('data-handrive-spreadsheet-preview-save', payload.get("html", ""))
         self.assertIn('data-handrive-spreadsheet-preview-hot', payload.get("html", ""))
         self.assertLess(
@@ -15168,33 +15212,33 @@ class HandriveAccessRuleTests(TestCase):
             payload.get("html", "").index('data-handrive-spreadsheet-preview-hot'),
         )
 
-        view_response = self.client.get("/ko/handrive/data.csv/")
+        view_response = self.client.get(f"/ko/handrive/{relative_path}")
         self.assertEqual(view_response.status_code, 200)
         view_html = view_response.content.decode("utf-8")
         self.assertIn('data-handrive-spreadsheet-preview="1"', view_html)
         self.assertIn('data-download-api-url=', view_html)
         self.assertIn('data-spreadsheet-save-api-url=', view_html)
-        self.assertIn('id="handrive-view-spreadsheet-save-btn"', view_html)
-        self.assertIn('data-handrive-spreadsheet-preview-save', view_html)
-        self.assertNotIn(f'href="/ko/handrive/list?edit=data.csv"', view_html)
+        self.assertNotIn('id="handrive-view-spreadsheet-save-btn"', view_html)
+        self.assertNotIn('data-handrive-spreadsheet-preview-save', view_html)
         self.assertIn('data-doc-is-spreadsheet="1"', view_html)
         self.assertIn("data.csv", view_html)
 
-        edit_response = self.client.get("/ko/handrive/list", data={"edit": "data.csv"})
+        edit_response = self.client.get(f"/ko/handrive/users/{editor.username}/list", data={"edit": relative_path})
         self.assertEqual(edit_response.status_code, 200)
         self.assertContains(edit_response, 'data-spreadsheet-save-api-url=')
-        self.assertContains(edit_response, 'id="handrive-list-preview-spreadsheet-save-btn"')
+        self.assertNotContains(edit_response, 'id="handrive-list-preview-spreadsheet-save-btn"')
         self.assertContains(edit_response, 'id="handrive-spreadsheet-editor-surface"')
 
     def test_docs_api_preview_renders_xlsx_as_handsontable_shell(self):
-        handrive_root = Path(settings.MEDIA_ROOT) / "docs"
+        editor = self.create_scoped_handrive_user("xlsx_preview_editor")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
+        relative_path = f"users/{editor.username}/data.xlsx"
         (handrive_root / "data.xlsx").write_bytes(b"fake-xlsx")
-        editor = self.create_handrive_superuser("xlsx_preview_editor")
         self.client.force_login(editor)
 
         response = self.client.post(
             reverse("main:handrive_api_preview"),
-            data=json.dumps({"path": "data.xlsx"}),
+            data=json.dumps({"path": relative_path}),
             content_type="application/json",
         )
 
@@ -15203,9 +15247,34 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(payload.get("render_mode"), "office")
         self.assertIn("handrive-office-sheet", payload.get("render_class", ""))
         self.assertIn('data-handrive-spreadsheet-preview="1"', payload.get("html", ""))
-        self.assertIn('data-path="data.xlsx"', payload.get("html", ""))
-        self.assertIn('data-editable="1"', payload.get("html", ""))
+        self.assertIn(f'data-path="{relative_path}"', payload.get("html", ""))
+        self.assertIn('data-editable="0"', payload.get("html", ""))
         self.assertNotIn('data-handrive-spreadsheet-preview-save', payload.get("html", ""))
+
+    def test_docs_api_preview_renders_pptx_as_pdf_preview_frame(self):
+        editor = self.create_scoped_handrive_user("pptx_preview_editor")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
+        (handrive_root / "deck.pptx").write_bytes(b"fake-pptx")
+        self.client.force_login(editor)
+
+        with mock.patch("main.handrive_views.convert_office_bytes_to_pdf") as convert_mock:
+            response = self.client.post(
+                reverse("main:handrive_api_preview"),
+                data=json.dumps({"path": f"users/{editor.username}/deck.pptx"}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("render_mode"), "office")
+        self.assertIn("handrive-office-presentation", payload.get("render_class", ""))
+        self.assertIn(
+            f"/handrive/api/pdf-preview?path=users%2F{editor.username}%2Fdeck.pptx&amp;viewer=1",
+            payload.get("html", ""),
+        )
+        self.assertIn('data-handrive-pdf-viewer="1"', payload.get("html", ""))
+        self.assertNotIn("data:application/pdf;base64", payload.get("html", ""))
+        convert_mock.assert_not_called()
 
     def test_xlsx_fallback_preview_renders_all_sheets_rows_and_columns(self):
         from main.handrive import preview as handrive_preview
@@ -15311,6 +15380,35 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(response.content, pdf_bytes)
         convert_mock.assert_called_once_with(".docx", b"office-bytes", "report.docx")
 
+    def test_pdf_preview_reuses_cached_office_conversion_for_viewer_pages(self):
+        from main import handrive_views
+
+        editor = self.create_scoped_handrive_user("office_pdf_cache_editor")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
+        (handrive_root / "deck.pptx").write_bytes(b"fake-pptx")
+        fitz = handrive_views._load_pymupdf()
+        doc = fitz.open()
+        page = doc.new_page(width=240, height=140)
+        page.insert_text((32, 72), "Cached Office PDF")
+        pdf_bytes = doc.tobytes()
+        doc.close()
+        self.client.force_login(editor)
+
+        with mock.patch("main.handrive_views.convert_office_bytes_to_pdf", return_value=pdf_bytes) as convert_mock:
+            viewer_response = self.client.get(
+                reverse("main:handrive_api_pdf_preview"),
+                data={"path": f"users/{editor.username}/deck.pptx", "viewer": "1"},
+            )
+            page_response = self.client.get(
+                reverse("main:handrive_api_pdf_preview"),
+                data={"path": f"users/{editor.username}/deck.pptx", "viewer": "page", "page": "0"},
+            )
+
+        self.assertEqual(viewer_response.status_code, 200)
+        self.assertEqual(page_response.status_code, 200)
+        self.assertEqual(page_response["Content-Type"], "image/png")
+        convert_mock.assert_called_once_with(".pptx", b"fake-pptx", "deck.pptx")
+
     def test_pdf_preview_viewer_returns_theme_aware_html_and_png_page(self):
         from main import handrive_views
 
@@ -15348,6 +15446,13 @@ class HandriveAccessRuleTests(TestCase):
             self.assertIn('data-src=', viewer_html)
             self.assertIn("function initLazyPdfPreviewImages()", viewer_html)
             self.assertIn("new IntersectionObserver", viewer_html)
+            self.assertIn('data-handrive-pdf-page-width="240.000"', viewer_html)
+            self.assertIn("data-handrive-pdf-page-url=", viewer_html)
+            self.assertIn("--handrive-pdf-preview-zoom: 1;", viewer_html)
+            self.assertIn("function initPdfPreviewZoomGesture()", viewer_html)
+            self.assertIn('window.addEventListener("wheel"', viewer_html)
+            self.assertIn('window.addEventListener("touchmove"', viewer_html)
+            self.assertIn('parsed.searchParams.set("scale", String(scale));', viewer_html)
 
             page_response = self.client.get(
                 reverse("main:handrive_api_pdf_preview"),
@@ -15976,20 +16081,20 @@ class HandriveAccessRuleTests(TestCase):
         self.assertIn("확장자 형식이 올바르지 않습니다", response.json().get("error", ""))
 
     def test_handrive_spreadsheet_save_updates_local_binary_file(self):
-        editor = self.create_handrive_superuser("spreadsheet_editor")
+        editor = self.create_scoped_handrive_user("spreadsheet_editor")
         self.client.force_login(editor)
-        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
-        handrive_root.mkdir(parents=True, exist_ok=True)
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
         workbook_path = handrive_root / "budget.xlsx"
         workbook_path.write_bytes(b"old-workbook")
         updated_bytes = b"updated-workbook-bytes"
+        relative_path = f"users/{editor.username}/budget.xlsx"
 
         response = self.client.post(
             reverse("main:handrive_api_spreadsheet_save"),
             data=json.dumps(
                 {
-                    "original_path": "budget.xlsx",
-                    "target_dir": "",
+                    "original_path": relative_path,
+                    "target_dir": f"users/{editor.username}",
                     "filename": "budget",
                     "extension": ".xlsx",
                     "data_base64": base64.b64encode(updated_bytes).decode("ascii"),
@@ -16000,7 +16105,7 @@ class HandriveAccessRuleTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload.get("path"), "budget.xlsx")
+        self.assertEqual(payload.get("path"), relative_path)
         self.assertEqual(workbook_path.read_bytes(), updated_bytes)
 
     def test_handrive_spreadsheet_save_rejects_unsupported_extension(self):

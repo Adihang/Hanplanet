@@ -7,6 +7,8 @@
     var ROW_HEADER_WIDTH = 38;
     var PREVIEW_HOT_MIN_HEIGHT = 320;
     var PREVIEW_HOT_MAX_HEIGHT = 620;
+    var PREVIEW_MAX_ROWS = 500;
+    var PREVIEW_MAX_COLS = 100;
     var activeState = null;
     var previewStates = [];
     var previewSaveShortcutInstalled = false;
@@ -548,40 +550,130 @@
         });
     }
 
-    function parseWorkbookWithSheetJs(arrayBuffer, extension) {
+    function resolvePositiveInteger(value, fallback) {
+        var numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric <= 0) {
+            return fallback;
+        }
+        return Math.max(1, Math.floor(numeric));
+    }
+
+    function resolveSpreadsheetParseOptions(options) {
+        var settings = options || {};
+        return {
+            preview: Boolean(settings.preview),
+            maxRows: resolvePositiveInteger(settings.maxRows, PREVIEW_MAX_ROWS),
+            maxCols: resolvePositiveInteger(settings.maxCols, PREVIEW_MAX_COLS),
+        };
+    }
+
+    function getWorksheetFullRange(worksheet) {
+        return String((worksheet && (worksheet["!fullref"] || worksheet["!ref"])) || "");
+    }
+
+    function getLimitedWorksheetRange(worksheet, parseOptions) {
+        if (!worksheet || !parseOptions.preview) {
+            return null;
+        }
+        var decoded = decodeExcelRange(getWorksheetFullRange(worksheet));
+        if (!decoded) {
+            return null;
+        }
+        return {
+            s: {
+                r: decoded.s.r,
+                c: decoded.s.c,
+            },
+            e: {
+                r: Math.min(decoded.e.r, decoded.s.r + parseOptions.maxRows - 1),
+                c: Math.min(decoded.e.c, decoded.s.c + parseOptions.maxCols - 1),
+            },
+        };
+    }
+
+    function isWorksheetRangeLimited(worksheet, limitedRange) {
+        if (!worksheet || !limitedRange) {
+            return false;
+        }
+        var fullRange = decodeExcelRange(getWorksheetFullRange(worksheet));
+        if (!fullRange) {
+            return false;
+        }
+        return fullRange.e.r > limitedRange.e.r || fullRange.e.c > limitedRange.e.c;
+    }
+
+    function limitPreviewColumns(data, parseOptions) {
+        if (!parseOptions.preview || !Array.isArray(data)) {
+            return data;
+        }
+        return data.slice(0, parseOptions.maxRows).map(function (row) {
+            return Array.isArray(row) ? row.slice(0, parseOptions.maxCols) : [];
+        });
+    }
+
+    function getPreviewLimitStatus(sheet) {
+        if (!sheet || !sheet.previewLimited) {
+            return "";
+        }
+        return "미리보기는 최대 "
+            + String(sheet.previewRowLimit || PREVIEW_MAX_ROWS)
+            + "행, "
+            + String(sheet.previewColumnLimit || PREVIEW_MAX_COLS)
+            + "열까지 표시합니다. 전체 편집은 편집기에서 열어주세요.";
+    }
+
+    function parseWorkbookWithSheetJs(arrayBuffer, extension, options) {
+        var parseOptions = resolveSpreadsheetParseOptions(options);
         var workbook;
         if (extension === ".csv") {
             var decoder = window.TextDecoder ? new TextDecoder("utf-8") : null;
             var csvText = decoder
                 ? decoder.decode(new Uint8Array(arrayBuffer))
                 : String.fromCharCode.apply(null, Array.from(new Uint8Array(arrayBuffer)));
-            workbook = window.XLSX.read(csvText, { type: "string", raw: false });
+            var csvReadOptions = { type: "string", raw: false };
+            if (parseOptions.preview) {
+                csvReadOptions.sheetRows = parseOptions.maxRows;
+            }
+            workbook = window.XLSX.read(csvText, csvReadOptions);
         } else {
-            workbook = window.XLSX.read(arrayBuffer, {
+            var readOptions = {
                 type: "array",
                 cellDates: true,
                 cellFormula: true,
                 cellText: false,
-            });
+            };
+            if (parseOptions.preview) {
+                readOptions.sheetRows = parseOptions.maxRows;
+            }
+            workbook = window.XLSX.read(arrayBuffer, readOptions);
         }
 
         var sheetNames = Array.isArray(workbook.SheetNames) ? workbook.SheetNames : [];
         var sheets = sheetNames.map(function (sheetName, index) {
             var worksheet = workbook.Sheets[sheetName];
+            var limitedRange = getLimitedWorksheetRange(worksheet, parseOptions);
+            var sheetToJsonOptions = {
+                header: 1,
+                defval: "",
+                raw: false,
+                blankrows: true,
+            };
+            if (limitedRange && window.XLSX.utils.encode_range) {
+                sheetToJsonOptions.range = window.XLSX.utils.encode_range(limitedRange);
+            }
             var data = worksheet
-                ? window.XLSX.utils.sheet_to_json(worksheet, {
-                    header: 1,
-                    defval: "",
-                    raw: false,
-                    blankrows: true,
-                })
+                ? window.XLSX.utils.sheet_to_json(worksheet, sheetToJsonOptions)
                 : [];
+            data = limitPreviewColumns(data, parseOptions);
             var normalizedData = normalizeSheetData(data);
             return {
                 name: sanitizeSheetName(sheetName, "Sheet" + String(index + 1)),
                 data: normalizedData,
                 originalRowCount: normalizedData.length,
                 originalColCount: getSheetMaxColumnCount(normalizedData),
+                previewLimited: parseOptions.preview && isWorksheetRangeLimited(worksheet, limitedRange),
+                previewRowLimit: parseOptions.maxRows,
+                previewColumnLimit: parseOptions.maxCols,
             };
         });
         if (!sheets.length) {
@@ -596,13 +688,14 @@
         return { sheets: sheets, sourceWorkbook: null, sourceArrayBuffer: null };
     }
 
-    function parseWorkbook(arrayBuffer, extension) {
-        if (extension === ".xlsx" && window.ExcelJS && window.ExcelJS.Workbook) {
+    function parseWorkbook(arrayBuffer, extension, options) {
+        var parseOptions = resolveSpreadsheetParseOptions(options);
+        if (!parseOptions.preview && extension === ".xlsx" && window.ExcelJS && window.ExcelJS.Workbook) {
             return parseWorkbookWithExcelJs(arrayBuffer).catch(function () {
-                return parseWorkbookWithSheetJs(arrayBuffer, extension);
+                return parseWorkbookWithSheetJs(arrayBuffer, extension, parseOptions);
             });
         }
-        return Promise.resolve(parseWorkbookWithSheetJs(arrayBuffer, extension));
+        return Promise.resolve(parseWorkbookWithSheetJs(arrayBuffer, extension, parseOptions));
     }
 
     function encodeUtf8Base64(text) {
@@ -1980,7 +2073,7 @@
         }
         var sheets = parsedWorkbook && Array.isArray(parsedWorkbook.sheets) ? parsedWorkbook.sheets : [];
         var saveUrl = getPreviewSaveUrl();
-        var editable = shell.getAttribute("data-editable") === "1" && Boolean(saveUrl);
+        var editable = false;
         var state = {
             shell: shell,
             hotContainer: hotContainer,
@@ -1995,6 +2088,7 @@
             disabled: false,
             dirty: false,
             rendering: false,
+            previewStatusMessage: "",
             currentIndex: 0,
             sheets: sheets.length ? sheets : [{ name: "Sheet1", data: normalizeSheetData([[""]]) }],
             sourceWorkbook: parsedWorkbook && editable ? parsedWorkbook.sourceWorkbook : null,
@@ -2022,6 +2116,8 @@
             if (sheetSelect) {
                 sheetSelect.value = String(state.currentIndex);
             }
+            state.previewStatusMessage = getPreviewLimitStatus(sheet);
+            setPreviewStatus(state.shell, state.previewStatusMessage, false, false);
             if (state.hot) {
                 state.hot.destroy();
                 state.hot = null;
@@ -2041,14 +2137,14 @@
                 stretchH: "none",
                 manualColumnResize: true,
                 manualRowResize: true,
-                contextMenu: state.editable,
-                filters: true,
-                dropdownMenu: true,
+                contextMenu: false,
+                filters: false,
+                dropdownMenu: false,
                 copyPaste: true,
-                undo: true,
+                undo: false,
                 readOnly: !state.editable || state.disabled,
                 licenseKey: licenseKey,
-                exportFile: true,
+                exportFile: false,
                 afterChange: function (_changes, source) {
                     if (!state.editable || state.rendering || source === "loadData") {
                         return;
@@ -2099,6 +2195,7 @@
         installPreviewLayoutListeners();
         installPreviewLayoutObserver(state);
         renderSheet(0);
+        return state;
     }
 
     function hydrateDirectPreviewShells(root) {
@@ -2128,9 +2225,8 @@
                     return response.arrayBuffer();
                 })
                 .then(function (arrayBuffer) {
-                    return parseWorkbook(arrayBuffer, extension).then(function (parsedWorkbook) {
+                    return parseWorkbook(arrayBuffer, extension, { preview: true }).then(function (parsedWorkbook) {
                         createPreviewHot(shell, parsedWorkbook, getLicenseKey(""));
-                        setPreviewStatus(shell, "", false, false);
                     });
                 })
                 .catch(function (error) {

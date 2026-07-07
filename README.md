@@ -1172,10 +1172,19 @@ HANPLANET_MAIL_VOLUME=/srv/hanplanet/data/mail
 HANPLANET_GITHUB_CACHE_VOLUME=/srv/hanplanet/data/github-repo-cache
 FORGEJO_REPOS_VOLUME=/srv/hanplanet/data/forgejo-repos
 HANPLANET_BACKUP_VOLUME=/srv/hanplanet/data/backups
+HANPLANET_OFFICE_FONTS_VOLUME=/srv/hanplanet/data/office-preview-fonts
 GITEA_DATA_VOLUME=/srv/hanplanet/data/gitea
 REDIS_DATA_VOLUME=/srv/hanplanet/data/redis
 WARGAME_DATA_VOLUME=/srv/hanplanet/data/wargame
 MINECRAFT_SERVER_VOLUME=/srv/hanplanet/data/minecraft
+```
+
+Office/PPTX 미리보기는 LibreOffice가 컨테이너 안에서 PDF로 변환하므로 원본 문서에 쓰인 폰트가 컨테이너에 있어야 텍스트박스 개행과 여백이 덜 깨집니다. 운영 서버에서는 다음 명령으로 공개 폰트를 폰트 볼륨에 설치합니다.
+
+```bash
+HANPLANET_OFFICE_FONTS_VOLUME=/srv/hanplanet/data/office-preview-fonts ./scripts/install_office_preview_fonts.sh
+docker compose up -d --build django celery celery-beat nginx
+docker compose exec -T django rm -rf /data/media/.handrive-office-pdf-cache
 ```
 
 기존 운영 서버에서 복원해야 하는 최소 데이터:
@@ -1188,6 +1197,7 @@ MINECRAFT_SERVER_VOLUME=/srv/hanplanet/data/minecraft
 | Forgejo bare repo root | `/srv/hanplanet/data/forgejo-repos/` |
 | Gitea DB/config/runtime data | `/srv/hanplanet/data/gitea/` (`gitea.db` 포함, Django에서는 `/data/gitea/gitea.db`) |
 | GitHub repo cache | `/srv/hanplanet/data/github-repo-cache/` |
+| Office/PPTX 미리보기 폰트 | `/srv/hanplanet/data/office-preview-fonts/` |
 | HPmail storage | `/srv/hanplanet/data/mail/` |
 | Wargame SQLite DB | `/srv/hanplanet/data/wargame/wargame.sqlite3` |
 | Minecraft server dir | `/srv/hanplanet/data/minecraft/` |

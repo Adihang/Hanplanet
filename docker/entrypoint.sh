@@ -19,6 +19,12 @@ if [ -n "${BUMPERCAR_SPIKY_SETTINGS_PATH:-}" ] \
     cp /app/config/bumpercar_spiky_settings.json "$BUMPERCAR_SPIKY_SETTINGS_PATH"
 fi
 
+OFFICE_FONTS_ROOT="${HANPLANET_OFFICE_FONTS_ROOT:-/usr/local/share/fonts/hanplanet-office}"
+if [ -d "$OFFICE_FONTS_ROOT" ] \
+    && find "$OFFICE_FONTS_ROOT" -type f \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' \) -print -quit | grep -q .; then
+    fc-cache -f "$OFFICE_FONTS_ROOT" >/dev/null 2>&1 || true
+fi
+
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
     python manage.py migrate --noinput
 fi

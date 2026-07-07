@@ -818,7 +818,8 @@ def render_handrive_spreadsheet_preview_shell(
     can_edit: bool = False,
 ) -> str:
     """Handsontable이 브라우저에서 원본 파일을 직접 읽어 렌더링할 shell."""
-    editable_flag = "1" if can_edit else "0"
+    del can_edit
+    editable_flag = "0"
     return mark_safe(
         '<section class="handrive-spreadsheet-preview is-loading" data-handrive-spreadsheet-preview="1"'
         f' data-path="{escape(relative_path)}"'

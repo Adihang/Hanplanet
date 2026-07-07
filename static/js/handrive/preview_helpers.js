@@ -179,7 +179,6 @@
         var urlShareApiUrl = settings.urlShareApiUrl || "";
         var isPreviewableFileEntry = settings.isPreviewableFileEntry || function () { return false; };
         var isEditableHandriveFileEntry = settings.isEditableHandriveFileEntry || function () { return false; };
-        var isSpreadsheetPreviewEntry = settings.isSpreadsheetPreviewEntry || function () { return false; };
         var buildDownloadUrl = settings.buildDownloadUrl || function () { return ""; };
         var onEdit = settings.onEdit || function () {};
         var previewRenderMode = String(settings.previewRenderMode || "").trim();
@@ -191,8 +190,6 @@
         var canOpenEditor = Boolean(entry && (entry.can_edit || entry.can_demo_edit));
         var canEditPreview = previewRenderMode !== "unsupported";
         var canPrintPreview = previewRenderMode !== "unsupported" && previewRenderMode !== "media_video";
-        var isSpreadsheetPreview = Boolean(isSpreadsheetPreviewEntry(entry));
-
         if (previewDownloadButton) {
             if (!isFileEntry) {
                 previewDownloadButton.hidden = true;
@@ -217,7 +214,6 @@
                 isFileEntry &&
                 canOpenEditor &&
                 canEditPreview &&
-                !isSpreadsheetPreview &&
                 isEditableHandriveFileEntry(entry)
             );
             if (!previewEditButton.hidden) {
@@ -232,11 +228,9 @@
         }
 
         if (previewSpreadsheetSaveButton) {
-            previewSpreadsheetSaveButton.hidden = !(isFileEntry && canOpenEditor && isSpreadsheetPreview);
+            previewSpreadsheetSaveButton.hidden = true;
             previewSpreadsheetSaveButton.disabled = true;
-            if (previewSpreadsheetSaveButton.hidden) {
-                previewSpreadsheetSaveButton.onclick = null;
-            }
+            previewSpreadsheetSaveButton.onclick = null;
         }
 
         if (previewDeleteButton) {

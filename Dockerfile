@@ -11,6 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
     fontconfig \
+    fonts-croscore \
+    fonts-crosextra-caladea \
+    fonts-crosextra-carlito \
+    fonts-liberation \
+    fonts-liberation-sans-narrow \
+    fonts-nanum \
+    fonts-nanum-extra \
     fonts-noto-cjk \
     git \
     golang-go \
@@ -21,6 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rsync \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
+
+COPY docker/fonts/hanplanet-office-fontconfig.conf /etc/fonts/conf.d/69-hanplanet-office-fonts.conf
 
 COPY requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip && pip install -r /app/requirements.txt

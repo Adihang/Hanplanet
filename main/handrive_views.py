@@ -643,6 +643,8 @@ HANDRIVE_OFFICE_PDF_EXTENSIONS = frozenset({
     ".ppt",
     ".pptx",
 })
+HANDRIVE_OFFICE_PDF_CACHE_VERSION = "v1"
+HANDRIVE_OFFICE_PDF_CACHE_DIR_NAME = ".handrive-office-pdf-cache"
 GOOGLE_DRIVE_DOCS_EDITOR_KIND_BY_MIME = {
     "application/vnd.google-apps.document": "document",
     "application/vnd.google-apps.spreadsheet": "spreadsheets",
@@ -3414,6 +3416,16 @@ def render_handrive_content(
         if shared_context:
             share_owner = shared_context["owner_username"]
             share_slug = shared_context["share_slug"]
+
+    def build_pdf_preview_url() -> str:
+        if not relative_path:
+            return ""
+        encoded_path = quote(relative_path)
+        url = f"{reverse('main:handrive_api_pdf_preview')}?path={encoded_path}"
+        if share_owner and share_slug:
+            url += f"&share_owner={quote(share_owner)}&share_slug={quote(share_slug)}"
+        return append_handrive_admin_switch_query(request, url)
+
     profile = resolve_handrive_render_profile(file_extension)
     if profile["extension"] in {".csv", ".xls", ".xlsx"} and relative_path:
         file_name = source_path.name if source_path is not None else Path(relative_path).name
@@ -3435,14 +3447,7 @@ def render_handrive_content(
         )
     elif profile["mode"] == DOCS_RENDER_MODE_PDF:
         file_name = source_path.name if source_path is not None else "preview.pdf"
-        if relative_path:
-            encoded_path = quote(relative_path)
-            pdf_url = f"{reverse('main:handrive_api_pdf_preview')}?path={encoded_path}"
-            if share_owner and share_slug:
-                pdf_url += f"&share_owner={quote(share_owner)}&share_slug={quote(share_slug)}"
-            pdf_url = append_handrive_admin_switch_query(request, pdf_url)
-        else:
-            pdf_url = ""
+        pdf_url = build_pdf_preview_url()
         rendered = render_handrive_pdf_safely(
             b"",
             file_name=file_name,
@@ -3453,13 +3458,25 @@ def render_handrive_content(
         file_name = source_path.name if source_path is not None else "CSV"
         rendered = render_handrive_csv_preview_safely(content, file_name=file_name)
     elif profile["mode"] == DOCS_RENDER_MODE_OFFICE:
-        office_bytes = source_bytes
-        if office_bytes is None and source_path is not None:
-            try:
-                office_bytes = source_path.read_bytes()
-            except OSError:
-                office_bytes = b""
-        rendered = render_handrive_office_preview_safely(profile["extension"], office_bytes or b"")
+        file_name = source_path.name if source_path is not None else (Path(relative_path).name or "preview")
+        pdf_url = ""
+        if profile["extension"] in HANDRIVE_OFFICE_PDF_EXTENSIONS and profile["extension"] not in {".xls", ".xlsx"}:
+            pdf_url = build_pdf_preview_url()
+        if pdf_url:
+            rendered = render_handrive_pdf_safely(
+                b"",
+                file_name=file_name,
+                pdf_url=pdf_url,
+                viewer_theme=resolve_handrive_request_theme_mode(request),
+            )
+        else:
+            office_bytes = source_bytes
+            if office_bytes is None and source_path is not None:
+                try:
+                    office_bytes = source_path.read_bytes()
+                except OSError:
+                    office_bytes = b""
+            rendered = render_handrive_office_preview_safely(profile["extension"], office_bytes or b"")
     elif profile["mode"] == DOCS_RENDER_MODE_MARKDOWN:
         rendered = render_handrive_markdown_safely(content)
     elif profile["mode"] in {
@@ -5008,27 +5025,32 @@ def sort_guest_demo_list_entries(entries: list[dict]) -> list[dict]:
 
 
 def resolve_demo_tutorial_entry_path(entries: list[dict]) -> str:
-    """비로그인 데모 안내가 열 첫 파일 경로를 고른다."""
+    """비로그인 데모 안내가 열 파일 경로를 기능 가능 여부 기준으로 고른다."""
     if not entries:
         return ""
 
     def is_file_entry(item: dict) -> bool:
-        return str(item.get("type") or "").lower() == "file" and bool(item.get("path"))
+        return (
+            str(item.get("type") or "").lower() == "file"
+            and bool(item.get("path"))
+            and not item.get("is_archive")
+            and not item.get("is_archive_member")
+            and not item.get("google_drive")
+            and not item.get("is_google_drive")
+            and not item.get("git_repo")
+            and not item.get("github_repo")
+            and not item.get("git_branch_root")
+            and not item.get("git_repo_branch")
+            and not item.get("is_git_virtual")
+            and not item.get("requires_commit_message")
+            and item.get("can_read") is not False
+        )
 
-    file_entries = [entry for entry in entries if is_file_entry(entry)]
-    candidates = file_entries or [entry for entry in entries if entry.get("path")]
+    candidates = [entry for entry in entries if is_file_entry(entry)]
     if not candidates:
         return ""
 
-    def score(entry: dict) -> tuple[int, str]:
-        text = f"{entry.get('name') or ''} {entry.get('path') or ''}".casefold()
-        if "튜토리얼" in text or "튜도리얼" in text or "tutorial" in text:
-            return (0, str(entry.get("name") or entry.get("path") or "").casefold())
-        if "시작" in text or "start" in text or "guide" in text:
-            return (1, str(entry.get("name") or entry.get("path") or "").casefold())
-        return (2, str(entry.get("name") or entry.get("path") or "").casefold())
-
-    return str(sorted(candidates, key=score)[0].get("path") or "")
+    return str(candidates[0].get("path") or "")
 
 
 def _get_current_dir_git_repo(request, current_dir: str):
@@ -13104,7 +13126,7 @@ def handrive_view(request, doc_path, ui_lang=None):
             "doc_can_edit": doc_can_edit,
             "doc_can_delete": doc_can_delete,
             "doc_can_demo_edit": doc_can_demo_edit,
-            "doc_can_save_spreadsheet": doc_can_edit or doc_can_demo_edit,
+            "doc_can_save_spreadsheet": False,
             "doc_can_show_edit": doc_can_show_edit,
             "doc_edit_url": doc_edit_url,
             "doc_is_url_only": doc_is_url_only,
@@ -13225,7 +13247,14 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
             or is_handrive_media_editor_extension(file_extension)
         )
     )
-    doc_edit_url = context["handrive_write_url"] + "?" + urlencode({"path": relative_path})
+    if doc_is_spreadsheet_file:
+        parent_dir = str(Path(relative_path).parent).replace("\\", "/")
+        if parent_dir == ".":
+            parent_dir = ""
+        doc_edit_url = build_handrive_list_url(context["handrive_base_url"], parent_dir, request=request)
+        doc_edit_url += ("&" if "?" in doc_edit_url else "?") + urlencode({"edit": relative_path})
+    else:
+        doc_edit_url = context["handrive_write_url"] + "?" + urlencode({"path": relative_path})
     doc_edit_url = append_handrive_share_query(doc_edit_url, owner_username, share_slug)
     doc_edit_url = append_handrive_admin_switch_query(request, doc_edit_url)
 
@@ -13244,7 +13273,7 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
             "doc_can_edit": doc_can_edit,
             "doc_can_delete": doc_can_delete,
             "doc_can_demo_edit": False,
-            "doc_can_save_spreadsheet": doc_can_edit,
+            "doc_can_save_spreadsheet": False,
             "doc_can_show_edit": doc_can_show_edit,
             "doc_edit_url": doc_edit_url,
             "doc_is_excel_file": file_extension in {".xls", ".xlsx"},
@@ -17063,12 +17092,12 @@ def handrive_api_pdf_preview(request):
     if extension not in HANDRIVE_OFFICE_PDF_EXTENSIONS:
         raise Http404("PDF로 변환할 수 없는 파일입니다.")
 
-    if source_bytes is None:
-        try:
-            source_bytes = file_path.read_bytes() if file_path is not None else b""
-        except OSError:
-            source_bytes = b""
-    pdf_bytes = convert_office_bytes_to_pdf(extension, source_bytes or b"", filename)
+    pdf_bytes = _get_handrive_office_pdf_preview_bytes(
+        extension,
+        filename=filename,
+        source_bytes=source_bytes,
+        source_path=file_path,
+    )
     if not pdf_bytes:
         return HttpResponse("PDF 변환에 실패했습니다.", status=502, content_type="text/plain; charset=utf-8")
 
@@ -17105,6 +17134,128 @@ def _open_handrive_pdf_preview_document(*, pdf_path: Path | None = None, pdf_byt
     return fitz.open(stream=pdf_bytes or b"", filetype="pdf")
 
 
+def _get_handrive_office_pdf_cache_root() -> Path:
+    configured_root = str(getattr(settings, "HANDRIVE_OFFICE_PDF_CACHE_ROOT", "") or "").strip()
+    if configured_root:
+        return Path(configured_root)
+    return Path(settings.MEDIA_ROOT) / HANDRIVE_OFFICE_PDF_CACHE_DIR_NAME
+
+
+def _build_handrive_office_pdf_cache_key(
+    extension: str,
+    *,
+    filename: str = "",
+    source_bytes: bytes | None = None,
+    source_path: Path | None = None,
+) -> str:
+    normalized_extension = str(extension or "").strip().lower()
+    if source_path is not None:
+        try:
+            source_stat = source_path.stat()
+            source_identity = "\0".join([
+                str(source_path.resolve(strict=False)),
+                str(source_stat.st_mtime_ns),
+                str(source_stat.st_size),
+            ])
+        except OSError:
+            source_identity = str(source_path)
+    else:
+        source_data = source_bytes or b""
+        source_identity = "\0".join([
+            str(filename or ""),
+            str(len(source_data)),
+            hashlib.sha256(source_data).hexdigest(),
+        ])
+    raw_key = "\0".join([
+        HANDRIVE_OFFICE_PDF_CACHE_VERSION,
+        normalized_extension,
+        source_identity,
+    ])
+    return hashlib.sha256(raw_key.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _read_handrive_office_pdf_cache(cache_path: Path) -> bytes | None:
+    try:
+        if cache_path.is_file():
+            cached_bytes = cache_path.read_bytes()
+            if cached_bytes:
+                return cached_bytes
+    except OSError:
+        return None
+    return None
+
+
+def _get_handrive_office_pdf_preview_bytes(
+    extension: str,
+    *,
+    filename: str,
+    source_bytes: bytes | None = None,
+    source_path: Path | None = None,
+) -> bytes | None:
+    cache_key = _build_handrive_office_pdf_cache_key(
+        extension,
+        filename=filename,
+        source_bytes=source_bytes,
+        source_path=source_path,
+    )
+    cache_root = _get_handrive_office_pdf_cache_root()
+    cache_path = cache_root / f"{cache_key}.pdf"
+    cached_bytes = _read_handrive_office_pdf_cache(cache_path)
+    if cached_bytes is not None:
+        return cached_bytes
+
+    try:
+        cache_root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        source_data = source_bytes
+        if source_data is None and source_path is not None:
+            try:
+                source_data = source_path.read_bytes()
+            except OSError:
+                source_data = b""
+        return convert_office_bytes_to_pdf(extension, source_data or b"", filename)
+
+    lock_path = cache_root / f"{cache_key}.lock"
+    try:
+        with lock_path.open("w", encoding="utf-8") as lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            except OSError:
+                pass
+            cached_bytes = _read_handrive_office_pdf_cache(cache_path)
+            if cached_bytes is not None:
+                return cached_bytes
+
+            source_data = source_bytes
+            if source_data is None and source_path is not None:
+                try:
+                    source_data = source_path.read_bytes()
+                except OSError:
+                    source_data = b""
+            pdf_bytes = convert_office_bytes_to_pdf(extension, source_data or b"", filename)
+            if not pdf_bytes:
+                return None
+            tmp_path = cache_root / f"{cache_key}.{uuid.uuid4().hex}.tmp"
+            try:
+                tmp_path.write_bytes(pdf_bytes)
+                os.replace(tmp_path, cache_path)
+            finally:
+                try:
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+                except OSError:
+                    pass
+            return pdf_bytes
+    except OSError:
+        source_data = source_bytes
+        if source_data is None and source_path is not None:
+            try:
+                source_data = source_path.read_bytes()
+            except OSError:
+                source_data = b""
+        return convert_office_bytes_to_pdf(extension, source_data or b"", filename)
+
+
 def _render_handrive_pdf_preview_viewer_response(
     request,
     filename: str,
@@ -17137,8 +17288,11 @@ def _render_handrive_pdf_preview_viewer_response(
                 image_source_attrs = f'src="{lazy_placeholder_src}" data-src="{page_url}" loading="lazy"'
             page_items.append(
                 '<figure class="handrive-pdf-preview-page" '
+                f'data-handrive-pdf-page-index="{page_index}" '
+                f'data-handrive-pdf-page-width="{page_width:.3f}" '
                 f'style="--handrive-pdf-preview-page-width:{page_width:.3f}px">'
                 f'<img class="handrive-pdf-preview-page-image" {image_source_attrs} '
+                f'data-handrive-pdf-page-url="{page_url}" data-handrive-pdf-render-scale="1.65" '
                 f'width="{int(round(page_width))}" height="{int(round(page_height))}" '
                 f'alt="{escape(filename)} {page_index + 1}" decoding="async">'
                 "</figure>"
@@ -17159,6 +17313,7 @@ def _render_handrive_pdf_preview_viewer_response(
     --handrive-pdf-preview-page-bg: #ffffff;
     --handrive-pdf-preview-page-filter: none;
     --handrive-pdf-preview-page-shadow: 0 6px 20px rgba(15, 23, 42, 0.18);
+    --handrive-pdf-preview-zoom: 1;
 }}
 :root.theme-dark {{
     color-scheme: dark;
@@ -17181,13 +17336,15 @@ body {{
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     gap: 16px;
     padding: 16px;
+    touch-action: pan-x pan-y;
 }}
 .handrive-pdf-preview-page {{
     width: min(100%, var(--handrive-pdf-preview-page-width, 900px));
-    margin: 0;
+    flex: 0 0 auto;
+    margin: 0 auto;
     background: var(--handrive-pdf-preview-page-bg);
     box-shadow: var(--handrive-pdf-preview-page-shadow);
 }}
@@ -17228,6 +17385,181 @@ body {{
 </main>
 <script>
 (function () {{
+    var DEFAULT_RENDER_SCALE = 1.65;
+    var MIN_ZOOM = 0.5;
+    var MAX_ZOOM = 3;
+    var viewerZoom = 1;
+    var imageRefreshTimer = 0;
+    var pinchState = {{
+        active: false,
+        startDistance: 0,
+        startZoom: 1
+    }};
+
+    function clampNumber(value, fallback, min, max) {{
+        var numeric = Number(value);
+        if (!Number.isFinite(numeric)) {{
+            numeric = fallback;
+        }}
+        return Math.max(min, Math.min(max, numeric));
+    }}
+
+    function readViewerContentWidth() {{
+        var viewer = document.querySelector(".handrive-pdf-preview-viewer");
+        if (!viewer) {{
+            return Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+        }}
+        var styles = window.getComputedStyle(viewer);
+        var paddingX = (parseFloat(styles.paddingLeft) || 0) + (parseFloat(styles.paddingRight) || 0);
+        return Math.max(1, viewer.clientWidth - paddingX);
+    }}
+
+    function resolvePageBaseWidth(page, contentWidth) {{
+        var pageWidth = Number(page && page.dataset ? page.dataset.handrivePdfPageWidth : 0) || contentWidth;
+        return Math.max(1, Math.min(contentWidth, pageWidth));
+    }}
+
+    function applyPageWidths() {{
+        var contentWidth = readViewerContentWidth();
+        Array.prototype.slice.call(document.querySelectorAll(".handrive-pdf-preview-page")).forEach(function (page) {{
+            var baseWidth = resolvePageBaseWidth(page, contentWidth);
+            page.style.width = Math.max(1, Math.round(baseWidth * viewerZoom)) + "px";
+        }});
+        document.documentElement.style.setProperty("--handrive-pdf-preview-zoom", viewerZoom.toFixed(3));
+    }}
+
+    function getTouchDistance(touchList) {{
+        if (!touchList || touchList.length < 2) {{
+            return 0;
+        }}
+        var first = touchList[0];
+        var second = touchList[1];
+        var dx = Number(second.clientX) - Number(first.clientX);
+        var dy = Number(second.clientY) - Number(first.clientY);
+        return Math.sqrt((dx * dx) + (dy * dy));
+    }}
+
+    function getTouchMidpoint(touchList) {{
+        if (!touchList || touchList.length < 2) {{
+            return {{ clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }};
+        }}
+        return {{
+            clientX: (Number(touchList[0].clientX) + Number(touchList[1].clientX)) / 2,
+            clientY: (Number(touchList[0].clientY) + Number(touchList[1].clientY)) / 2
+        }};
+    }}
+
+    function captureZoomAnchor(clientX, clientY) {{
+        var fallbackX = Number.isFinite(Number(clientX)) ? Number(clientX) : window.innerWidth / 2;
+        var fallbackY = Number.isFinite(Number(clientY)) ? Number(clientY) : window.innerHeight / 2;
+        var element = document.elementFromPoint(fallbackX, fallbackY);
+        var page = element && element.closest ? element.closest(".handrive-pdf-preview-page") : null;
+        if (page) {{
+            var rect = page.getBoundingClientRect();
+            return {{
+                clientX: fallbackX,
+                clientY: fallbackY,
+                pageIndex: page.getAttribute("data-handrive-pdf-page-index") || "",
+                ratioX: rect.width ? (fallbackX - rect.left) / rect.width : 0.5,
+                ratioY: rect.height ? (fallbackY - rect.top) / rect.height : 0.5
+            }};
+        }}
+        return {{
+            clientX: fallbackX,
+            clientY: fallbackY,
+            documentX: window.scrollX + fallbackX,
+            documentY: window.scrollY + fallbackY
+        }};
+    }}
+
+    function restoreZoomAnchor(anchor) {{
+        if (!anchor) {{
+            return;
+        }}
+        if (anchor.pageIndex !== undefined) {{
+            var page = document.querySelector('.handrive-pdf-preview-page[data-handrive-pdf-page-index="' + anchor.pageIndex + '"]');
+            if (page) {{
+                var rect = page.getBoundingClientRect();
+                window.scrollBy(
+                    rect.left + (rect.width * anchor.ratioX) - anchor.clientX,
+                    rect.top + (rect.height * anchor.ratioY) - anchor.clientY
+                );
+                return;
+            }}
+        }}
+        window.scrollTo(
+            Math.max(0, (Number(anchor.documentX) || 0) - anchor.clientX),
+            Math.max(0, (Number(anchor.documentY) || 0) - anchor.clientY)
+        );
+    }}
+
+    function buildScaledPageUrl(url, scale) {{
+        try {{
+            var parsed = new URL(url, window.location.href);
+            parsed.searchParams.set("scale", String(scale));
+            return parsed.pathname + parsed.search + parsed.hash;
+        }} catch (error) {{
+            var separator = String(url || "").indexOf("?") === -1 ? "?" : "&";
+            return String(url || "") + separator + "scale=" + encodeURIComponent(String(scale));
+        }}
+    }}
+
+    function resolveRenderScale() {{
+        if (viewerZoom >= 1.55) {{
+            return 3;
+        }}
+        if (viewerZoom >= 1.15) {{
+            return 2.25;
+        }}
+        return DEFAULT_RENDER_SCALE;
+    }}
+
+    function refreshPageImageRenderScales() {{
+        imageRefreshTimer = 0;
+        var renderScale = resolveRenderScale();
+        Array.prototype.slice.call(document.querySelectorAll(".handrive-pdf-preview-page-image")).forEach(function (image) {{
+            var currentScale = Number(image.dataset.handrivePdfRenderScale) || DEFAULT_RENDER_SCALE;
+            if (Math.abs(currentScale - renderScale) < 0.05) {{
+                return;
+            }}
+            var baseUrl = image.getAttribute("data-handrive-pdf-page-url") || image.getAttribute("data-src") || image.getAttribute("src") || "";
+            if (!baseUrl) {{
+                return;
+            }}
+            var scaledUrl = buildScaledPageUrl(baseUrl, renderScale);
+            image.dataset.handrivePdfRenderScale = String(renderScale);
+            if (image.dataset.handrivePdfLoaded === "1") {{
+                image.src = scaledUrl;
+            }} else {{
+                image.setAttribute("data-src", scaledUrl);
+            }}
+        }});
+    }}
+
+    function schedulePageImageRenderScaleRefresh() {{
+        if (imageRefreshTimer) {{
+            window.clearTimeout(imageRefreshTimer);
+        }}
+        imageRefreshTimer = window.setTimeout(refreshPageImageRenderScales, 140);
+    }}
+
+    function setViewerZoom(nextZoom, clientX, clientY, options) {{
+        var settings = options || {{}};
+        var normalizedZoom = clampNumber(nextZoom, viewerZoom, MIN_ZOOM, MAX_ZOOM);
+        if (Math.abs(normalizedZoom - viewerZoom) < 0.001) {{
+            return;
+        }}
+        var anchor = captureZoomAnchor(clientX, clientY);
+        viewerZoom = normalizedZoom;
+        applyPageWidths();
+        restoreZoomAnchor(anchor);
+        if (settings.refreshImages === false) {{
+            schedulePageImageRenderScaleRefresh();
+        }} else {{
+            refreshPageImageRenderScales();
+        }}
+    }}
+
     function loadPdfPreviewImage(image) {{
         if (!image || image.dataset.handrivePdfLoaded === "1") {{
             return;
@@ -17268,7 +17600,77 @@ body {{
         document.documentElement.classList.toggle("theme-dark", useDark);
         document.documentElement.classList.toggle("theme-light", !useDark);
     }}
+    function initPdfPreviewZoomGesture() {{
+        window.addEventListener("wheel", function (event) {{
+            if (!event || event.defaultPrevented || !(event.ctrlKey || event.metaKey) || event.altKey) {{
+                return;
+            }}
+            var deltaY = Number(event.deltaY) || 0;
+            if (Math.abs(deltaY) < 0.01) {{
+                return;
+            }}
+            event.preventDefault();
+            var normalizedDelta = deltaY;
+            if (event.deltaMode === 1) {{
+                normalizedDelta *= 16;
+            }} else if (event.deltaMode === 2) {{
+                normalizedDelta *= window.innerHeight || 800;
+            }}
+            var nextZoom = viewerZoom * Math.exp(-normalizedDelta * 0.0025);
+            setViewerZoom(nextZoom, event.clientX, event.clientY, {{ refreshImages: false }});
+        }}, {{ passive: false }});
+
+        window.addEventListener("touchstart", function (event) {{
+            if (!event || !event.touches || event.touches.length < 2) {{
+                return;
+            }}
+            pinchState.active = true;
+            pinchState.startDistance = getTouchDistance(event.touches) || 1;
+            pinchState.startZoom = viewerZoom;
+        }}, {{ passive: false }});
+
+        window.addEventListener("touchmove", function (event) {{
+            if (!pinchState.active || !event || !event.touches || event.touches.length < 2) {{
+                return;
+            }}
+            var distance = getTouchDistance(event.touches);
+            if (!distance || !pinchState.startDistance) {{
+                return;
+            }}
+            event.preventDefault();
+            var midpoint = getTouchMidpoint(event.touches);
+            setViewerZoom(
+                pinchState.startZoom * (distance / pinchState.startDistance),
+                midpoint.clientX,
+                midpoint.clientY,
+                {{ refreshImages: false }}
+            );
+        }}, {{ passive: false }});
+
+        window.addEventListener("touchend", function (event) {{
+            if (!pinchState.active) {{
+                return;
+            }}
+            if (event && event.touches && event.touches.length >= 2) {{
+                return;
+            }}
+            pinchState.active = false;
+            pinchState.startDistance = 0;
+            pinchState.startZoom = viewerZoom;
+            refreshPageImageRenderScales();
+        }}, {{ passive: true }});
+
+        window.addEventListener("touchcancel", function () {{
+            pinchState.active = false;
+            pinchState.startDistance = 0;
+            pinchState.startZoom = viewerZoom;
+            refreshPageImageRenderScales();
+        }}, {{ passive: true }});
+    }}
     initLazyPdfPreviewImages();
+    applyPageWidths();
+    initPdfPreviewZoomGesture();
+    window.addEventListener("resize", applyPageWidths);
     window.addEventListener("beforeprint", loadAllPdfPreviewImages);
     window.addEventListener("message", function (event) {{
         if (event.origin && event.origin !== window.location.origin) {{

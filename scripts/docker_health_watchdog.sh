@@ -3,6 +3,8 @@ set -euo pipefail
 
 APP_DIR="${HANPLANET_APP_DIR:-/Users/imhanbyeol/Development/Hanplanet}"
 DOCKER_BIN="${DOCKER_BIN:-/opt/homebrew/bin/docker}"
+LAUNCHCTL_BIN="${LAUNCHCTL_BIN:-/bin/launchctl}"
+DOCKER_STACK_LABEL="${HANPLANET_DOCKER_STACK_LABEL:-com.hanplanet.docker-stack}"
 LOCK_DIR="${HANPLANET_DOCKER_WATCHDOG_LOCK_DIR:-/tmp/hanplanet-docker-health-watchdog.lock}"
 
 timestamp() {
@@ -40,7 +42,11 @@ if [ -z "$DOCKER_BIN" ]; then
 fi
 
 if ! "$DOCKER_BIN" compose ps >/dev/null 2>&1; then
-  log "docker compose ps is unavailable; stack may not be started yet"
+  launch_domain="gui/$(id -u)"
+  log "docker compose ps is unavailable; requesting Docker stack startup"
+  if ! "$LAUNCHCTL_BIN" kickstart "$launch_domain/$DOCKER_STACK_LABEL"; then
+    log "failed to request Docker stack startup"
+  fi
   exit 0
 fi
 

@@ -1401,7 +1401,7 @@ def apply_ui_context(request, context, ui_lang):
     context["lang_switch_ko_url"] = build_lang_switch_url(request, "ko")
     context["lang_switch_en_url"] = build_lang_switch_url(request, "en")
     canonical_url = build_public_absolute_url(request.path)
-    default_meta_image = "https://www.hanplanet.com/static/media/icons/hanplanet-og-1200-v3.png"
+    default_meta_image = "https://www.hanplanet.com/static/media/icons/pwa-512.png"
     context["meta_robots"] = context.get("meta_robots") or get_default_meta_robots_for_path(request.path)
     context["meta_site_name"] = context.get("meta_site_name", "Hanplanet")
     context["meta_canonical_url"] = context.get("meta_canonical_url", canonical_url)

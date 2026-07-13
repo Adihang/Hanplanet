@@ -1221,6 +1221,12 @@ class DockerComposeSourceTests(TestCase):
 
         self.assertIn('FORGEJO_DB_PATH: "${FORGEJO_DB_PATH:-/data/gitea/gitea.db}"', compose)
         self.assertIn('- "${GITEA_DATA_VOLUME:-gitea_data}:/data/gitea"', compose)
+        self.assertIn('GITEA__session__PROVIDER: "db"', compose)
+        self.assertIn('GITEA__session__DOMAIN: ".hanplanet.com"', compose)
+        self.assertIn('GITEA__session__COOKIE_NAME: "hp_gitea_session"', compose)
+        self.assertIn('GITEA____APP_NAME: "Hanplanet"', compose)
+        self.assertIn('GITEA__UI_0x2E_META__AUTHOR: "Hanplanet"', compose)
+        self.assertIn('GITEA__UI_0x2E_META__DESCRIPTION: "Hanplanet Git service"', compose)
         self.assertIn("FORGEJO_DB_PATH=/data/gitea/gitea.db", env_example)
 
     def test_django_services_mount_onscripter_outside_media_root(self):
@@ -1314,7 +1320,58 @@ class ChatLanguageHelperTests(TestCase):
         self.assertTrue(should_return_github_link("Can you explain your code design style?"))
 
 
+class BrandWordmarkSourceTests(TestCase):
+    def test_wordmark_is_vector_and_theme_color_driven(self):
+        base_dir = Path(settings.BASE_DIR)
+        static_wordmark = base_dir / "static/media/icons/hanplanet-wordmark-v4.svg"
+        forgejo_wordmark = base_dir / "forgejo/custom/public/assets/img/hanplanet-wordmark-v4.svg"
+        svg = static_wordmark.read_text(encoding="utf-8")
+
+        self.assertEqual(svg, forgejo_wordmark.read_text(encoding="utf-8"))
+        self.assertIn('viewBox="0 0 1881 579"', svg)
+        self.assertIn('fill="currentColor"', svg)
+        self.assertIn('data-source="admin/title.png"', svg)
+        self.assertEqual(svg.count('<path '), 2)
+        self.assertIn('stroke-width="40"', svg)
+        self.assertNotIn('<text', svg)
+        self.assertNotIn("<image", svg)
+        self.assertNotIn("data:image", svg)
+
+    def test_wordmark_masks_replace_root_and_nav_brand_text(self):
+        base_dir = Path(settings.BASE_DIR)
+        site_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
+        forgejo_css = (base_dir / "forgejo/custom/public/assets/css/style.css").read_text(encoding="utf-8")
+        forgejo_home = (base_dir / "forgejo/custom/templates/home.tmpl").read_text(encoding="utf-8")
+
+        self.assertIn(".root-search-title::before", site_css)
+        self.assertIn(".ui-brand-text::before", site_css)
+        self.assertIn('../../media/icons/hanplanet-wordmark-v4.svg', site_css)
+        self.assertIn("background-color: currentColor", site_css)
+        self.assertIn("width: min(500px, 90vw)", site_css)
+        self.assertNotIn("width: min(400px, 94vw)", site_css)
+        self.assertIn("width: auto", site_css)
+        self.assertIn("height: 50px", site_css)
+        self.assertEqual(site_css.count("aspect-ratio: 1881 / 579"), 2)
+        self.assertIn(".navbar-brand.ui-brand", site_css)
+        self.assertIn(".ui-brand-group {", site_css)
+        self.assertIn("height: 0", site_css)
+        self.assertIn('../img/hanplanet-wordmark-v4.svg', forgejo_css)
+        self.assertIn('class="ui header title root-search-title forgejo-home-wordmark"', forgejo_home)
+        self.assertIn('aria-label="Hanplanet"', forgejo_home)
+        self.assertNotIn("{{AppName}}", forgejo_home)
+        self.assertIn(".page-content.home .hero .forgejo-home-wordmark", forgejo_css)
+
+
 class PwaMetadataTests(TestCase):
+    def test_default_social_metadata_uses_app_icon(self):
+        response = self.client.get("/ko/")
+
+        self.assertEqual(response.status_code, 200)
+        icon_url = "https://www.hanplanet.com/static/media/icons/pwa-512.png"
+        self.assertContains(response, f'<meta property="og:image" content="{icon_url}">', html=False)
+        self.assertContains(response, f'<meta name="twitter:image" content="{icon_url}">', html=False)
+        self.assertNotContains(response, "hanplanet-og-1200-v3.png", html=False)
+
     def test_base_template_uses_cache_busted_app_icon_links(self):
         response = self.client.get("/en/sub/")
 
@@ -4113,6 +4170,28 @@ class HandriveWriteFilenameExtensionSourceTests(TestCase):
 
 
 class HandriveStyleSourceTests(TestCase):
+    def test_rename_remaps_and_refreshes_open_preview(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        submit_rename_start = page_js.index("async function submitRename()")
+        submit_rename_end = page_js.index("async function submitFolderCreate()", submit_rename_start)
+        submit_rename_block = page_js[submit_rename_start:submit_rename_end]
+
+        self.assertIn("function remapPathForRename(pathValue, fromPath, toPath)", page_js)
+        self.assertIn("function remapActivePreviewForRename(fromPath, toPath)", page_js)
+        self.assertIn("state.previewAbortController.abort();", page_js)
+        self.assertIn("state.previewCache.delete(previousPreviewPath);", page_js)
+        self.assertIn("state.activePreviewPath = remappedPreviewPath;", page_js)
+        self.assertIn("async function refreshRenamedActivePreview(remappedPreview)", page_js)
+        self.assertIn("await loadPreviewForEntry(previewEntry);", page_js)
+        self.assertLess(
+            submit_rename_block.index("remapActivePreviewForRename(entry.path, renamedPath)"),
+            submit_rename_block.index("return refreshCurrentDirectory();"),
+        )
+        self.assertGreater(
+            submit_rename_block.index("await refreshRenamedActivePreview(remappedPreview);"),
+            submit_rename_block.index("return refreshCurrentDirectory();"),
+        )
+
     def test_sql_syntax_highlighting_is_registered(self):
         base_dir = Path(settings.BASE_DIR)
         page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
@@ -6702,7 +6781,7 @@ class HandriveSignupAutoLoginTests(TestCase):
             str(get_user_model().objects.get(username="autologin_user").pk),
         )
         mock_prepare_session.assert_called_once()
-        self.assertIn("i_like_gitea", response.cookies)
+        self.assertIn("hp_gitea_session", response.cookies)
 
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
     @mock.patch("django.core.mail.send_mail")
@@ -6733,7 +6812,7 @@ class HandriveSignupAutoLoginTests(TestCase):
             self.client.session["_auth_user_id"],
             str(get_user_model().objects.get(username="modal_signup_user").pk),
         )
-        self.assertIn("i_like_gitea", response.cookies)
+        self.assertIn("hp_gitea_session", response.cookies)
         mock_prepare_session.assert_called_once()
 
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=(None, "FORGEJO"))
@@ -6766,7 +6845,7 @@ class HandriveSignupAutoLoginTests(TestCase):
             "&redirect_uri=https%3A%2F%2Fgit.hanplanet.com%2Fuser%2Foauth2%2Fhanplanet%2Fcallback"
             "&response_type=code&scope=openid+profile+email&state=signup-oauth-state"
         )
-        self.client.cookies["i_like_gitea"] = "existing-oauth-session"
+        self.client.cookies["hp_gitea_session"] = "existing-oauth-session"
 
         response = self.client.post(
             reverse("main:handrive_signup_lang", kwargs={"ui_lang": "ko"}),
@@ -6785,7 +6864,7 @@ class HandriveSignupAutoLoginTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], next_url)
         self.assertTrue("_auth_user_id" in self.client.session)
-        self.assertNotIn("i_like_gitea", response.cookies)
+        self.assertNotIn("hp_gitea_session", response.cookies)
         mock_prepare_session.assert_not_called()
 
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
@@ -7738,7 +7817,7 @@ class PortfolioPerUserRoutingTests(TestCase):
         self.assertContains(response, "+82-10-0000-0000")
         self.assertContains(response, "your.email@example.com")
         self.assertContains(response, "/static/media/icons/hanplanet.svg", html=False)
-        self.assertContains(response, "/static/media/icons/hanplanet-og-1200-v3.png", html=False)
+        self.assertContains(response, "/static/media/icons/pwa-512.png", html=False)
 
 
 class HandriveScopedAccessTests(TestCase):
@@ -9235,7 +9314,7 @@ class HandriveAuthFlowTests(TestCase):
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("N3wHanplanetPass"))
         self.assertFalse(self.user.profile.force_password_change)
-        self.assertIn("i_like_gitea", response.cookies)
+        self.assertIn("hp_gitea_session", response.cookies)
         mock_prepare_session.assert_called_once()
 
     def test_site_auth_modal_host_selector_is_separate_from_trigger_links(self):
@@ -10471,7 +10550,7 @@ class HandriveAuthFlowTests(TestCase):
         mock_persist_external_link.assert_called_once_with(self.user, mock_ensure_mapping.return_value)
         mock_build_blob.assert_called_once_with(123, "handrive_login_user", False)
         mock_persist_session.assert_called_once()
-        self.assertIn("i_like_gitea", attached.cookies)
+        self.assertIn("hp_gitea_session", attached.cookies)
 
     @mock.patch("main.handrive_views._attach_forgejo_login_session")
     def test_build_forgejo_authenticated_redirect_clears_sync_cookies_before_attach(self, mock_attach_session):
@@ -10496,7 +10575,7 @@ class HandriveAuthFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], "/ko/handrive/list/")
-        self.assertIn("i_like_gitea", response.cookies)
+        self.assertIn("hp_gitea_session", response.cookies)
         self.assertIn("_csrf", response.cookies)
         self.assertIn("redirect_to", response.cookies)
         self.assertIn("gitea_flash", response.cookies)
@@ -10511,13 +10590,13 @@ class HandriveAuthFlowTests(TestCase):
 
         attached = _attach_forgejo_login_session(response, self.user)
 
-        self.assertEqual(attached.cookies["i_like_gitea"].value, "")
-        self.assertEqual(str(attached.cookies["i_like_gitea"]["max-age"]), "0")
+        self.assertEqual(attached.cookies["hp_gitea_session"].value, "")
+        self.assertEqual(str(attached.cookies["hp_gitea_session"]["max-age"]), "0")
 
         refreshed = _apply_forgejo_session_cookie(attached, "fresh-session-key")
 
-        self.assertEqual(refreshed.cookies["i_like_gitea"].value, "fresh-session-key")
-        self.assertEqual(refreshed.cookies["i_like_gitea"]["max-age"], "")
+        self.assertEqual(refreshed.cookies["hp_gitea_session"].value, "fresh-session-key")
+        self.assertEqual(refreshed.cookies["hp_gitea_session"]["max-age"], "")
 
     @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
     def test_docs_login_authenticates_non_staff_user(self, mock_prepare_session):
@@ -10533,7 +10612,7 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], "/ko/handrive")
         self.assertTrue("_auth_user_id" in self.client.session)
-        self.assertIn("i_like_gitea", response.cookies)
+        self.assertIn("hp_gitea_session", response.cookies)
         mock_prepare_session.assert_called_once()
 
     @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
@@ -10556,8 +10635,8 @@ class HandriveAuthFlowTests(TestCase):
         self.assertTrue(payload["reload"])
         self.assertEqual(payload["redirect_url"], "/ko/handrive")
         self.assertEqual(self.client.session.get("_auth_user_id"), str(self.user.pk))
-        self.assertIn("i_like_gitea", response.cookies)
-        self.assertEqual(response.cookies["i_like_gitea"].value, "forgejo-session-key")
+        self.assertIn("hp_gitea_session", response.cookies)
+        self.assertEqual(response.cookies["hp_gitea_session"].value, "forgejo-session-key")
         self.assertNotIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
         mock_prepare_session.assert_called_once()
         mock_send_2fa.assert_not_called()
@@ -10578,7 +10657,7 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(response["Location"], "/ko/handrive")
         self.assertEqual(self.client.session.get("_auth_user_id"), str(self.user.pk))
         self.assertNotIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
-        self.assertIn("i_like_gitea", response.cookies)
+        self.assertIn("hp_gitea_session", response.cookies)
         mock_prepare_session.assert_called_once()
         mock_send_2fa.assert_not_called()
 
@@ -10710,7 +10789,7 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(second_login.status_code, 302)
         self.assertEqual(second_login["Location"], "/ko/handrive")
         self.assertEqual(self.client.session["_auth_user_id"], str(other_user.pk))
-        self.assertIn("i_like_gitea", second_login.cookies)
+        self.assertIn("hp_gitea_session", second_login.cookies)
         self.assertEqual(mock_prepare_session.call_count, 2)
 
     @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
@@ -10878,7 +10957,7 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(self.client.session.get("_auth_user_id"), str(self.user.pk))
         self.assertTrue(self.client.session.get("_hp_session_token"))
         self.assertNotIn(HANDRIVE_2FA_PENDING_USER_ID_SESSION_KEY, self.client.session)
-        self.assertIn("i_like_gitea", verify_response.cookies)
+        self.assertIn("hp_gitea_session", verify_response.cookies)
 
     @mock.patch("main.handrive_views._verify_handrive_turnstile_token", return_value=True)
     @mock.patch("main.handrive_views._send_2fa_email", return_value=True)
@@ -10955,7 +11034,7 @@ class HandriveAuthFlowTests(TestCase):
             "&redirect_uri=https%3A%2F%2Fgit.hanplanet.com%2Fuser%2Foauth2%2Fhanplanet%2Fcallback"
             "&response_type=code&scope=openid+profile+email&state=oauth-state"
         )
-        self.client.cookies["i_like_gitea"] = "existing-oauth-session"
+        self.client.cookies["hp_gitea_session"] = "existing-oauth-session"
 
         response = self.client.post(
             "/ko/login/",
@@ -10965,7 +11044,7 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], next_url)
         self.assertTrue("_auth_user_id" in self.client.session)
-        self.assertNotIn("i_like_gitea", response.cookies)
+        self.assertNotIn("hp_gitea_session", response.cookies)
         mock_prepare_session.assert_not_called()
 
     @mock.patch("main.handrive_views._attach_forgejo_login_session")
@@ -11002,7 +11081,7 @@ class HandriveAuthFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], next_url)
-        self.assertNotIn("i_like_gitea", response.cookies)
+        self.assertNotIn("hp_gitea_session", response.cookies)
         mock_attach_session.assert_not_called()
 
     def test_resolve_handrive_post_login_url_keeps_portfolio_next(self):
@@ -11047,7 +11126,7 @@ class HandriveAuthFlowTests(TestCase):
     @mock.patch("main.handrive_views._forgejo_server_logout")
     def test_docs_logout_stays_on_hanplanet_and_clears_forgejo_sync_cookies(self, mock_forgejo_server_logout):
         self.client.force_login(self.user)
-        self.client.cookies["i_like_gitea"] = "forgejo-session-key"
+        self.client.cookies["hp_gitea_session"] = "forgejo-session-key"
         self.client.cookies["hp_logout"] = "1"
         self.client.cookies["hp_logout_return"] = "https://www.hanplanet.com/ko/handrive/list/"
         self.client.cookies["hp_relogin"] = "1"
@@ -11062,7 +11141,7 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(response["Location"], "/ko/handrive/list/")
         mock_forgejo_server_logout.assert_called_once_with(self.user, forgejo_session_key="forgejo-session-key")
 
-        self.assertIn("i_like_gitea", response.cookies)
+        self.assertIn("hp_gitea_session", response.cookies)
         self.assertIn("hp_logout", response.cookies)
         self.assertIn("hp_logout_return", response.cookies)
         self.assertIn("hp_relogin", response.cookies)

@@ -1210,7 +1210,7 @@ docker compose ps
 docker compose logs -f django nginx
 ```
 
-macOS 운영 서버에서 재부팅 후에도 Docker 스택을 자동 기동하려면 Docker용 launchd 항목을 설치합니다. `com.hanplanet.docker-stack`은 Colima를 먼저 켜고 `docker compose up -d --remove-orphans`를 실행합니다. `com.hanplanet.docker-health-watchdog`는 60초마다 Compose 서비스의 Docker health 상태를 확인하고, `unhealthy`인 서비스가 있으면 `docker compose restart <service>`를 실행합니다.
+macOS 운영 서버에서 재부팅 후에도 Docker 스택을 자동 기동하려면 Docker용 launchd 항목을 설치합니다. `com.hanplanet.docker-stack`은 Colima를 먼저 켜고, 시작 실패 시 남은 VM 런타임 상태를 정리해 재시도한 다음 `docker compose up -d --remove-orphans`를 실행합니다. `com.hanplanet.docker-health-watchdog`는 60초마다 Docker 접근 상태와 Compose 서비스 health를 확인합니다. Docker에 접근할 수 없으면 스택 시작을 다시 요청하고, `unhealthy`인 서비스가 있으면 `docker compose restart <service>`를 실행합니다.
 
 ```bash
 chmod +x scripts/start_docker_stack.sh scripts/docker_health_watchdog.sh
@@ -1413,7 +1413,7 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.minecraft-status
 | --- | --- |
 | [`scripts/start_docker_stack.sh`](./scripts/start_docker_stack.sh) | macOS Docker 운영에서 Colima 시작 후 `docker compose up -d --remove-orphans` 실행 |
 | [`deploy/launchd/com.hanplanet.docker-stack.plist`](./deploy/launchd/com.hanplanet.docker-stack.plist) | Docker stack 자동 기동 launchd 항목 |
-| [`scripts/docker_health_watchdog.sh`](./scripts/docker_health_watchdog.sh) | Docker healthcheck가 `unhealthy`인 Compose 서비스를 재시작 |
+| [`scripts/docker_health_watchdog.sh`](./scripts/docker_health_watchdog.sh) | Docker 접근 실패 시 스택 시작을 다시 요청하고 `unhealthy`인 Compose 서비스를 재시작 |
 | [`deploy/launchd/com.hanplanet.docker-health-watchdog.plist`](./deploy/launchd/com.hanplanet.docker-health-watchdog.plist) | Docker health watchdog 60초 주기 launchd 항목 |
 | [`deploy/scripts/git-credential-hanplanet`](./deploy/scripts/git-credential-hanplanet) | Git credential helper. OAuth2 device flow로 Git clone/push 인증 |
 | [`scripts/launch_service_by_disc.py`](./scripts/launch_service_by_disc.py) | `DISC` 값에 맞춰 gunicorn/gitea/celery/nginx 실행 전 storage profile 적용 |

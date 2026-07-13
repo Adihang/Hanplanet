@@ -226,6 +226,7 @@ services:
     environment:
       USER_UID: "${GITEA_USER_UID:-1000}"
       USER_GID: "${GITEA_USER_GID:-1000}"
+      GITEA____APP_NAME: "Hanplanet"
       GITEA__database__DB_TYPE: "sqlite3"
       GITEA__database__PATH: "${GITEA_DB_PATH:-/data/gitea.db}"
       GITEA__repository__ROOT: "/data/git/repositories"
@@ -234,6 +235,12 @@ services:
       GITEA__server__HTTP_PORT: "3000"
       GITEA__server__ROOT_URL: "${PUBLIC_GIT_BASE_URL:-http://localhost:3000}/"
       GITEA__server__DISABLE_SSH: "${GITEA_DISABLE_SSH:-true}"
+      GITEA__session__PROVIDER: "db"
+      GITEA__session__DOMAIN: ".hanplanet.com"
+      GITEA__session__COOKIE_NAME: "hp_gitea_session"
+      GITEA__UI_0x2E_META__AUTHOR: "Hanplanet"
+      GITEA__UI_0x2E_META__DESCRIPTION: "Hanplanet Git service"
+      GITEA__UI_0x2E_META__KEYWORDS: "git,hanplanet"
       GITEA__service__DISABLE_REGISTRATION: "${GITEA_DISABLE_REGISTRATION:-true}"
       GITEA__security__INSTALL_LOCK: "true"
     volumes:

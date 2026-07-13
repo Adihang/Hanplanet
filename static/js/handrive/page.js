@@ -13982,6 +13982,75 @@
             };
         }
 
+        function remapPathForRename(pathValue, fromPath, toPath) {
+            const normalizedPath = normalizePath(pathValue, true);
+            const normalizedFromPath = normalizePath(fromPath, true);
+            const normalizedToPath = normalizePath(toPath, true);
+            if (
+                !normalizedPath ||
+                !normalizedFromPath ||
+                !normalizedToPath ||
+                normalizedFromPath === normalizedToPath
+            ) {
+                return normalizedPath;
+            }
+            if (normalizedPath === normalizedFromPath) {
+                return normalizedToPath;
+            }
+            if (normalizedPath.startsWith(normalizedFromPath + "/")) {
+                return normalizedToPath + normalizedPath.slice(normalizedFromPath.length);
+            }
+            return normalizedPath;
+        }
+
+        function remapActivePreviewForRename(fromPath, toPath) {
+            const previousPreviewPath = normalizePath(state.activePreviewPath, true);
+            const remappedPreviewPath = remapPathForRename(previousPreviewPath, fromPath, toPath);
+            if (!previousPreviewPath || remappedPreviewPath === previousPreviewPath) {
+                return null;
+            }
+
+            const previousEntry = state.entryByPath.get(previousPreviewPath) || null;
+            state.previewRequestToken += 1;
+            if (state.previewAbortController && typeof state.previewAbortController.abort === "function") {
+                try {
+                    state.previewAbortController.abort();
+                } catch (error) {}
+            }
+            state.previewAbortController = null;
+            state.previewCache.delete(previousPreviewPath);
+            state.previewCache.delete(remappedPreviewPath);
+            state.activePreviewPath = remappedPreviewPath;
+            state.activeRenderedPreviewPath = "";
+            state.activePreviewSource = "";
+            state.activePreviewSourceExtension = "";
+            state.activePreviewSourceRenderClass = "";
+            state.previewCodeViewActive = false;
+            syncEntryRowSelectedStates([previousPreviewPath, remappedPreviewPath]);
+
+            return {
+                path: remappedPreviewPath,
+                fallbackEntry: Object.assign({}, previousEntry || {}, {
+                    path: remappedPreviewPath,
+                    name: remappedPreviewPath.split("/").pop() || (previousEntry && previousEntry.name) || "",
+                    type: (previousEntry && previousEntry.type) || "file",
+                }),
+            };
+        }
+
+        async function refreshRenamedActivePreview(remappedPreview) {
+            if (!remappedPreview || !remappedPreview.path) {
+                return;
+            }
+            const previewEntry = state.entryByPath.get(remappedPreview.path) || remappedPreview.fallbackEntry;
+            if (!isPreviewableFileEntry(previewEntry)) {
+                clearPreviewPane();
+                return;
+            }
+            await loadPreviewForEntry(previewEntry);
+            await updatePreviewNavButtons(previewEntry);
+        }
+
         function remapExpandedFoldersForRename(fromPath, toPath) {
             const normalizedFromPath = normalizePath(fromPath, true);
             const normalizedToPath = normalizePath(toPath, true);
@@ -13994,15 +14063,7 @@
                 if (!normalizedFolderPath) {
                     return;
                 }
-                if (normalizedFolderPath === normalizedFromPath) {
-                    remapped.add(normalizedToPath);
-                    return;
-                }
-                if (normalizedFolderPath.startsWith(normalizedFromPath + "/")) {
-                    remapped.add(normalizedToPath + normalizedFolderPath.slice(normalizedFromPath.length));
-                    return;
-                }
-                remapped.add(normalizedFolderPath);
+                remapped.add(remapPathForRename(normalizedFolderPath, normalizedFromPath, normalizedToPath));
             });
             state.expandedFolders = remapped;
         }
@@ -17610,6 +17671,9 @@
                     t("js_rename_timeout", "이름 변경 응답이 지연되었습니다. 잠시 후 다시 시도해주세요.")
                 );
                 const renamedPath = data && data.path ? data.path : "";
+                const remappedPreview = renamedPath
+                    ? remapActivePreviewForRename(entry.path, renamedPath)
+                    : null;
                 if (entry.type === "dir" && renamedPath) {
                     remapExpandedFoldersForRename(entry.path, renamedPath);
                 }
@@ -17628,6 +17692,7 @@
                     60000,
                     t("js_rename_refresh_timeout", "목록 갱신 응답이 지연되었습니다. 잠시 후 다시 시도해주세요.")
                 );
+                await refreshRenamedActivePreview(remappedPreview);
                 setRenameModalOpen(false);
             } finally {
                 setRenameModalSubmitting(false);

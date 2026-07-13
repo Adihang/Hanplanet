@@ -59,7 +59,6 @@
         copyButton.disabled = !hasText;
         copyButton.setAttribute('aria-label', copyLabel);
         copyButton.setAttribute('title', copyLabel);
-        copyButton.classList.remove('is-copied');
     };
 
     const getCopyText = function () {
@@ -103,15 +102,16 @@
         if (copyResetTimer) {
             window.clearTimeout(copyResetTimer);
         }
-        copyButton.classList.add('is-copied');
         copyButton.setAttribute('aria-label', copiedLabel);
         copyButton.setAttribute('title', copiedLabel);
+        if (typeof window.showHandriveInlineCopyFeedback === 'function') {
+            window.showHandriveInlineCopyFeedback(copyButton, copiedLabel);
+        }
         copyResetTimer = window.setTimeout(function () {
             copyResetTimer = 0;
-            copyButton.classList.remove('is-copied');
             copyButton.setAttribute('aria-label', copyLabel);
             copyButton.setAttribute('title', copyLabel);
-        }, 1200);
+        }, 1400);
     };
 
     const highlightJavaScriptCode = function (source) {
@@ -415,16 +415,24 @@
     let targetLang = 'en';
     let activeRequestId = 0;
 
-    const getTextareaNaturalHeight = function (element) {
+    const getElementSingleLineHeight = function (element) {
         const style = window.getComputedStyle(element);
         const minHeight = parseFloat(style.minHeight) || 0;
         const lineHeight = parseFloat(style.lineHeight) || ((parseFloat(style.fontSize) || 14) * 1.45);
         const paddingY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
         const borderY = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
         const singleLineHeight = Math.ceil(lineHeight + paddingY + borderY);
+        return Math.max(singleLineHeight, minHeight);
+    };
+
+    const getTextareaNaturalHeight = function (element) {
+        const style = window.getComputedStyle(element);
+        const minHeight = parseFloat(style.minHeight) || 0;
+        const borderY = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+        const singleLineHeight = getElementSingleLineHeight(element);
 
         if (!String(element.value || '').length) {
-            return Math.max(singleLineHeight, minHeight);
+            return singleLineHeight;
         }
 
         element.style.height = 'auto';
@@ -435,12 +443,10 @@
     const getRenderedOutputNaturalHeight = function (element) {
         const style = window.getComputedStyle(element);
         const minHeight = parseFloat(style.minHeight) || 0;
-        const lineHeight = parseFloat(style.lineHeight) || ((parseFloat(style.fontSize) || 14) * 1.45);
-        const paddingY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
         const borderY = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
-        const singleLineHeight = Math.ceil(lineHeight + paddingY + borderY);
+        const singleLineHeight = getElementSingleLineHeight(element);
         if (element.dataset.empty === '1') {
-            return Math.max(singleLineHeight, minHeight);
+            return singleLineHeight;
         }
         const naturalHeight = Math.ceil(element.scrollHeight + borderY);
         return Math.max(singleLineHeight, naturalHeight, minHeight);
@@ -448,12 +454,23 @@
 
     const syncTextareaHeights = function () {
         sourceInput.style.height = 'auto';
+        targetOutput.style.height = 'auto';
+        const singleLineHeight = Math.max(
+            36,
+            getElementSingleLineHeight(sourceInput) - 3,
+            getElementSingleLineHeight(targetOutput) - 3
+        );
         const sourceHeight = Math.max(36, getTextareaNaturalHeight(sourceInput) - 3);
         const outputHeight = Math.max(36, getRenderedOutputNaturalHeight(targetOutput) - 3);
         const sharedHeight = Math.max(sourceHeight, outputHeight);
+        const expandedState = sharedHeight > singleLineHeight + 0.5 ? '1' : '0';
         sourceInputShell.style.height = '';
         sourceInput.style.height = String(sharedHeight) + 'px';
         targetOutput.style.height = String(sharedHeight) + 'px';
+        sourceInputShell.setAttribute('data-expanded', expandedState);
+        if (targetOutputShell) {
+            targetOutputShell.setAttribute('data-expanded', expandedState);
+        }
         sourceInputShell.setAttribute(
             'data-compact-border',
             sourceInputShell.getAttribute('data-empty') === '1' && sharedHeight <= sourceHeight + 0.5 ? '1' : '0'

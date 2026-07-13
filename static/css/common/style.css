@@ -1727,14 +1727,25 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
 
 .root-search-title {
     margin: 0;
-    font-family: var(--site-font-default);
-    font-size: 70px;
-    letter-spacing: 0.02em;
-    font-weight: var(--site-weight-title-strong);
+    width: min(500px, 90vw);
+    aspect-ratio: 1881 / 579;
+    flex: 0 0 auto;
+    font-size: 0;
+    line-height: 0;
     color: var(--theme-ink);
     user-select: none;
     -webkit-user-select: none;
     -webkit-user-drag: none;
+}
+
+.root-search-title::before {
+    content: "";
+    display: block;
+    width: 100%;
+    height: 100%;
+    background-color: currentColor;
+    -webkit-mask: url("../../media/icons/hanplanet-wordmark-v4.svg?v=d9e251da") center / contain no-repeat;
+    mask: url("../../media/icons/hanplanet-wordmark-v4.svg?v=d9e251da") center / contain no-repeat;
 }
 
 .ui-search-form {
@@ -2087,9 +2098,15 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
 
 .root-translate-source-clear {
     position: absolute;
-    top: 2px;
+    top: 50%;
     right: 4px;
     z-index: 2;
+    transform: translateY(-50%);
+}
+
+.root-translate-input-shell[data-expanded="1"] .root-translate-source-clear {
+    top: 4px;
+    transform: none;
 }
 
 .root-translate-output-shell {
@@ -2196,35 +2213,154 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
 
 .root-translate-copy {
     position: absolute;
-    top: 4px;
-    right: 14px;
-    width: 28px;
-    height: 28px;
-    border: 0;
-    border-radius: 999px;
+    right: 6px;
+    top: 50%;
+    width: 32px;
+    height: 32px;
+    border: 1px solid transparent;
+    border-radius: var(--handrive-radius-sm, 6px);
     background: transparent;
-    color: var(--site-text-muted);
+    color: var(--handrive-text-secondary, var(--site-text-muted));
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 0;
     cursor: pointer;
-    transition: background-color var(--motion-fast), color var(--motion-fast), opacity var(--motion-fast);
+    transform: translateY(-50%);
+    translate: 0 0;
+    transition: background 0.12s, border-color 0.12s, color 0.12s, translate 0.12s;
+}
+
+.root-translate-copy svg {
+    width: 22px;
+    height: 22px;
+}
+
+.root-translate-output-shell[data-expanded="1"] .root-translate-copy {
+    top: 4px;
+    transform: none;
 }
 
 .root-translate-copy:hover,
 .root-translate-copy:focus-visible {
-    background: var(--site-hover-soft);
-    color: var(--site-text-strong);
+    border-color: var(--handrive-border-heavy, var(--site-border));
+    background: var(--handrive-surface-muted, var(--site-hover-soft));
+    color: var(--handrive-text-stronger, var(--site-text-strong));
+    translate: 0 var(--btn-template-hover-lift, -1px);
 }
 
-.root-translate-copy.is-copied {
-    color: var(--site-link, #2d6cdf);
+.root-translate-copy:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--handrive-search-border-focus, var(--site-text-muted)) 22%, transparent);
+}
+
+.root-translate-copy:active {
+    border-color: color-mix(in srgb, var(--handrive-success, #0f7b6c) 42%, var(--handrive-border-heavy, var(--site-border)));
+    background: color-mix(in srgb, var(--handrive-success, #0f7b6c) 12%, transparent);
+    color: var(--handrive-success, #0f7b6c);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .root-translate-copy:disabled {
+    cursor: default;
     opacity: 0;
     pointer-events: none;
+}
+
+.handrive-inline-copy-feedback {
+    --handrive-inline-copy-arrow-size: 8px;
+    --handrive-inline-copy-arrow-x: 50%;
+    --handrive-inline-copy-arrow-y: 50%;
+    --handrive-inline-copy-feedback-bg: color-mix(in srgb, var(--shared-card-bg, var(--site-surface)) 82%, var(--handrive-text-stronger, var(--site-text-strong)) 18%);
+    position: fixed;
+    z-index: calc(var(--site-modal-base-z-index, 4000) + 50);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 58px;
+    min-height: 28px;
+    padding: 5px 6px 7px;
+    border: 0;
+    border-radius: var(--handrive-radius-sm, 6px);
+    background: var(--handrive-inline-copy-feedback-bg);
+    color: var(--handrive-text-stronger, var(--site-text-strong));
+    box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 10px 24px rgba(0, 0, 0, 0.22)));
+    font-size: 12px;
+    font-weight: var(--site-weight-body);
+    line-height: 1;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(2px);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    will-change: opacity, transform;
+}
+
+.handrive-inline-copy-feedback::after {
+    content: "";
+    position: absolute;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+}
+
+.handrive-inline-copy-feedback.is-placement-top::after {
+    left: var(--handrive-inline-copy-arrow-x);
+    bottom: calc(0px - var(--handrive-inline-copy-arrow-size));
+    border-top: var(--handrive-inline-copy-arrow-size) solid var(--handrive-inline-copy-feedback-bg);
+    border-right: var(--handrive-inline-copy-arrow-size) solid transparent;
+    border-left: var(--handrive-inline-copy-arrow-size) solid transparent;
+    transform: translateX(-50%);
+}
+
+.handrive-inline-copy-feedback.is-placement-bottom {
+    transform: translateY(-2px);
+}
+
+.handrive-inline-copy-feedback.is-placement-bottom::after {
+    left: var(--handrive-inline-copy-arrow-x);
+    top: calc(0px - var(--handrive-inline-copy-arrow-size));
+    border-right: var(--handrive-inline-copy-arrow-size) solid transparent;
+    border-bottom: var(--handrive-inline-copy-arrow-size) solid var(--handrive-inline-copy-feedback-bg);
+    border-left: var(--handrive-inline-copy-arrow-size) solid transparent;
+    transform: translateX(-50%);
+}
+
+.handrive-inline-copy-feedback.is-placement-left {
+    transform: translateX(2px);
+}
+
+.handrive-inline-copy-feedback.is-placement-left::after {
+    top: var(--handrive-inline-copy-arrow-y);
+    right: calc(0px - var(--handrive-inline-copy-arrow-size));
+    border-top: var(--handrive-inline-copy-arrow-size) solid transparent;
+    border-bottom: var(--handrive-inline-copy-arrow-size) solid transparent;
+    border-left: var(--handrive-inline-copy-arrow-size) solid var(--handrive-inline-copy-feedback-bg);
+    transform: translateY(-50%);
+}
+
+.handrive-inline-copy-feedback.is-placement-right {
+    transform: translateX(-2px);
+}
+
+.handrive-inline-copy-feedback.is-placement-right::after {
+    top: var(--handrive-inline-copy-arrow-y);
+    left: calc(0px - var(--handrive-inline-copy-arrow-size));
+    border-top: var(--handrive-inline-copy-arrow-size) solid transparent;
+    border-right: var(--handrive-inline-copy-arrow-size) solid var(--handrive-inline-copy-feedback-bg);
+    border-bottom: var(--handrive-inline-copy-arrow-size) solid transparent;
+    transform: translateY(-50%);
+}
+
+.handrive-inline-copy-feedback.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.handrive-inline-copy-feedback.is-visible.is-placement-left,
+.handrive-inline-copy-feedback.is-visible.is-placement-right {
+    transform: translateX(0);
 }
 
 .root-translate-textarea-output:empty::before {
@@ -3198,12 +3334,6 @@ body.theme-dark .root-shortcuts-context-item:focus-visible {
 
 }
 
-@media (max-width: 550px) {
-    .root-search-title {
-        font-size: 60px;
-    }
-}
-
 body.portfolio-page .main_banner,
 body.portfolio-page .main_contents,
 body.portfolio-page .foot {
@@ -3518,6 +3648,7 @@ body.theme-dark .ui-nav::after {
     align-items: center;
     gap: 0;
     margin-right: 0;
+    height: 0;
     min-width: 0;
 }
 
@@ -3534,12 +3665,31 @@ body.theme-dark .ui-nav::after {
     text-decoration: none;
 }
 
+.navbar-brand.ui-brand {
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
 .ui-brand-text {
-    font-family: var(--site-font-default);
-    font-size: 28px;
-    display: inline-block;
-    padding-inline: 0.08em;
+    display: block;
+    width: auto;
+    height: 50px;
+    aspect-ratio: 1881 / 579;
+    flex: 0 0 auto;
+    padding: 0;
+    font-size: 0;
+    line-height: 0;
     transition: transform 0.2s ease;
+}
+
+.ui-brand-text::before {
+    content: "";
+    display: block;
+    width: 100%;
+    height: 100%;
+    background-color: currentColor;
+    -webkit-mask: url("../../media/icons/hanplanet-wordmark-v4.svg?v=d9e251da") center / contain no-repeat;
+    mask: url("../../media/icons/hanplanet-wordmark-v4.svg?v=d9e251da") center / contain no-repeat;
 }
 
 .ui-brand:visited,

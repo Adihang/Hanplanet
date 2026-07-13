@@ -62,7 +62,7 @@ Docker services:
 
 Host services that still remain outside Docker: HPmail Postfix/Dovecot, Minecraft/Paper/BlueMap, Ollama, Cloudflare Tunnel, external HDD mount/cleanup, and host SSH.
 
-macOS Docker production uses `deploy/launchd/com.hanplanet.docker-stack.plist` plus `scripts/start_docker_stack.sh`. The script starts Colima, mounts `$HOME` and `/Volumes/HANPLANET_HDD` when present, waits for the HDD if `.env` references it, then runs `docker compose up -d --remove-orphans`. It also uses `deploy/launchd/com.hanplanet.docker-health-watchdog.plist` plus `scripts/docker_health_watchdog.sh` every 60 seconds to inspect Docker healthchecks and run `docker compose restart <service>` for services whose health is `unhealthy`.
+macOS Docker production uses `deploy/launchd/com.hanplanet.docker-stack.plist` plus `scripts/start_docker_stack.sh`. The script starts Colima, mounts `$HOME` and `/Volumes/HANPLANET_HDD` when present, waits for the HDD if `.env` references it, recovers stale Colima VM runtime state and retries startup when necessary, then runs `docker compose up -d --remove-orphans`. It also uses `deploy/launchd/com.hanplanet.docker-health-watchdog.plist` plus `scripts/docker_health_watchdog.sh` every 60 seconds to request stack startup when Docker is unavailable, inspect Docker healthchecks, and run `docker compose restart <service>` for services whose health is `unhealthy`.
 
 While Docker owns web traffic, keep these native web launchd labels disabled: `com.hanplanet.gunicorn`, `com.hanplanet.nginx`, `com.hanplanet.gitea`, `com.hanplanet.celery`, `com.hanplanet.bumpercar-spiky-server`, `com.hanplanet.map-collab-server`, `com.hanplanet.wargame-apache`, `com.hanplanet.healthcheck`, and `homebrew.mxcl.nginx`.
 
@@ -319,6 +319,7 @@ Do not commit `.env`, API keys, private keys, OAuth client secrets, generated Gi
   - 설정/템플릿: `forgejo/custom/conf/app.ini`, `forgejo/custom/templates/`
   - 컨테이너 runtime data: `gitea` 컨테이너 `/data`, `django`/`celery` 컨테이너 `/data/gitea` via `GITEA_DATA_VOLUME`
   - Django의 Forgejo direct session DB path: `FORGEJO_DB_PATH=/data/gitea/gitea.db`
+  - Compose must set `GITEA__session__PROVIDER=db`, `GITEA__session__DOMAIN=.hanplanet.com`, and `GITEA__session__COOKIE_NAME=hp_gitea_session`; Django writes Forgejo login sessions directly to the shared DB and the browser carries the dedicated session cookie across Hanplanet subdomains.
   - bare repositories: `/data/git/repositories` via `FORGEJO_REPOS_VOLUME`
   - Docker internal URL: `FORGEJO_BASE_URL=http://gitea:3000`
   - Public URL: `PUBLIC_GIT_BASE_URL=https://git.hanplanet.com`

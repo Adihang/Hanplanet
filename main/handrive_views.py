@@ -162,6 +162,7 @@ logger = logging.getLogger(__name__)
 GIT_BIN = "/usr/bin/git"
 FORGEJO_SESSION_HELPER_BINARY_NAME = "hanplanet_forgejo_session_blob"
 FORGEJO_AUTH_ERROR_CODE = "FORGEJO"
+FORGEJO_SESSION_COOKIE_NAME = "hp_gitea_session"
 HANDRIVE_GITHUB_AUTH_STATE_SESSION_KEY = "handrive_github_auth_state"
 HANDRIVE_GITHUB_PENDING_AUTH_SESSION_KEY = "handrive_github_pending_auth"
 HANDRIVE_GOOGLE_AUTH_STATE_SESSION_KEY = "handrive_google_auth_state"
@@ -10847,9 +10848,9 @@ def _apply_forgejo_session_cookie(response, session_key: str):
     """준비된 Forgejo session key 를 응답 쿠키에 반영한다."""
     _secure = bool(getattr(settings, "DEFAULT_SECURE_TRANSPORT", True))
     shared_cookie_kwargs = dict(domain=".hanplanet.com", path="/", secure=_secure, samesite="Lax")
-    if "i_like_gitea" in response.cookies:
-        del response.cookies["i_like_gitea"]
-    response.set_cookie("i_like_gitea", session_key, httponly=True, **shared_cookie_kwargs)
+    if FORGEJO_SESSION_COOKIE_NAME in response.cookies:
+        del response.cookies[FORGEJO_SESSION_COOKIE_NAME]
+    response.set_cookie(FORGEJO_SESSION_COOKIE_NAME, session_key, httponly=True, **shared_cookie_kwargs)
     response.delete_cookie(HANPLANET_SSO_PROBE_ATTEMPTED_COOKIE_NAME, domain=".hanplanet.com", path="/")
     response.delete_cookie(HANPLANET_SSO_PROBE_FAILED_COOKIE_NAME, domain=".hanplanet.com", path="/")
     response.delete_cookie("hp_relogin", domain=".hanplanet.com", path="/")
@@ -10858,7 +10859,7 @@ def _apply_forgejo_session_cookie(response, session_key: str):
 
 
 def _attach_forgejo_login_session(response, user):
-    """Forgejo 웹 세션을 생성하고 i_like_gitea 쿠키를 응답에 심는다."""
+    """Forgejo 웹 세션을 생성하고 공유 세션 쿠키를 응답에 심는다."""
     session_key, error_code = _prepare_forgejo_login_session(user)
     if error_code or not session_key:
         return response
@@ -10867,8 +10868,8 @@ def _attach_forgejo_login_session(response, user):
 
 def _clear_forgejo_sync_cookies(response):
     """Hanplanet/Forgejo 연동에 쓰는 공유 쿠키들을 응답에서 정리한다."""
-    response.delete_cookie("i_like_gitea", domain=".hanplanet.com", path="/")
-    response.delete_cookie("i_like_gitea", path="/")
+    response.delete_cookie(FORGEJO_SESSION_COOKIE_NAME, domain=".hanplanet.com", path="/")
+    response.delete_cookie(FORGEJO_SESSION_COOKIE_NAME, path="/")
     response.delete_cookie("hp_logout", domain=".hanplanet.com", path="/")
     response.delete_cookie("hp_logout_return", domain=".hanplanet.com", path="/")
     response.delete_cookie("hp_relogin", domain=".hanplanet.com", path="/")
@@ -13299,7 +13300,7 @@ def handrive_logout(request, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
     next_url = resolve_next_url(request, context["handrive_base_url"])
-    forgejo_session_key = str(request.COOKIES.get("i_like_gitea", "") or "").strip()
+    forgejo_session_key = str(request.COOKIES.get(FORGEJO_SESSION_COOKIE_NAME, "") or "").strip()
     # Forgejo 세션/토큰 서버사이드 선제 삭제 (로그아웃 전에 user 정보 참조)
     _forgejo_server_logout(request.user, forgejo_session_key=forgejo_session_key)
     # session_token 무효화 → 기존 세션이 남아있어도 OAuth dispatch에서 차단

@@ -7,8 +7,18 @@ DOCKER_BIN="${DOCKER_BIN:-/opt/homebrew/bin/docker}"
 COLIMA_CPU="${COLIMA_CPU:-4}"
 COLIMA_MEMORY="${COLIMA_MEMORY:-8}"
 COLIMA_DISK="${COLIMA_DISK:-80}"
+COLIMA_START_ATTEMPTS="${COLIMA_START_ATTEMPTS:-3}"
+COLIMA_RETRY_DELAY_SECONDS="${COLIMA_RETRY_DELAY_SECONDS:-10}"
 HDD_MOUNT="${HANPLANET_HDD_MOUNT:-/Volumes/HANPLANET_HDD}"
 HDD_WAIT_SECONDS="${HANPLANET_HDD_WAIT_SECONDS:-180}"
+
+timestamp() {
+  date "+%Y-%m-%dT%H:%M:%S%z"
+}
+
+log() {
+  printf '[%s] %s\n' "$(timestamp)" "$*"
+}
 
 wait_for_path() {
   local path="$1"
@@ -23,14 +33,9 @@ wait_for_path() {
   [ -d "$path" ]
 }
 
-cd "$APP_DIR"
-
-if [ -f .env ] && grep -q "$HDD_MOUNT" .env; then
-  wait_for_path "$HDD_MOUNT" "$HDD_WAIT_SECONDS"
-fi
-
-if ! "$COLIMA_BIN" status >/dev/null 2>&1; then
-  colima_args=(
+start_colima() {
+  local attempt
+  local colima_args=(
     start
     --cpu "$COLIMA_CPU"
     --memory "$COLIMA_MEMORY"
@@ -42,8 +47,44 @@ if ! "$COLIMA_BIN" status >/dev/null 2>&1; then
     colima_args+=(--mount "$HDD_MOUNT:w")
   fi
 
-  "$COLIMA_BIN" "${colima_args[@]}"
+  for ((attempt = 1; attempt <= COLIMA_START_ATTEMPTS; attempt += 1)); do
+    log "starting Colima attempt=$attempt/$COLIMA_START_ATTEMPTS"
+    if "$COLIMA_BIN" "${colima_args[@]}"; then
+      return 0
+    fi
+
+    if "$COLIMA_BIN" status >/dev/null 2>&1; then
+      log "Colima became available after the failed start command"
+      return 0
+    fi
+
+    log "Colima start failed; clearing stale VM runtime state"
+    "$COLIMA_BIN" stop --force || true
+
+    if [ "$attempt" -lt "$COLIMA_START_ATTEMPTS" ]; then
+      sleep "$COLIMA_RETRY_DELAY_SECONDS"
+    fi
+  done
+
+  log "Colima failed to start after $COLIMA_START_ATTEMPTS attempts"
+  return 1
+}
+
+cd "$APP_DIR"
+
+if [ -f .env ] && grep -q "$HDD_MOUNT" .env; then
+  log "waiting for required mount: $HDD_MOUNT"
+  if ! wait_for_path "$HDD_MOUNT" "$HDD_WAIT_SECONDS"; then
+    log "required mount did not appear within ${HDD_WAIT_SECONDS}s: $HDD_MOUNT"
+    exit 1
+  fi
 fi
 
+if ! "$COLIMA_BIN" status >/dev/null 2>&1; then
+  start_colima
+fi
+
+log "starting Docker Compose services"
 "$DOCKER_BIN" compose up -d --remove-orphans
 "$DOCKER_BIN" compose ps
+log "Docker Compose services started"

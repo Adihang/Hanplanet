@@ -160,15 +160,13 @@ document.addEventListener('DOMContentLoaded', function() {
             currentLeft += (buttonWidths[index] || 0) + anchorButtonsSpacing;
         });
 
-        if (ownPortfolioEditWidget && printButton) {
+        if (ownPortfolioEditWidget) {
             ownPortfolioEditWidget.classList.add('is-chat-widget-anchor');
 
-            const printRect = printButton.getBoundingClientRect();
             const editRect = ownPortfolioEditWidget.getBoundingClientRect();
-            const centeredLeft = printRect.left + ((printRect.width - editRect.width) / 2);
             const maxEditLeft = Math.max(minViewportInset, window.innerWidth - editRect.width - minViewportInset);
-            const editLeft = Math.min(Math.max(minViewportInset, centeredLeft), maxEditLeft);
-            const editTop = Math.max(minViewportInset, printRect.top - editRect.height - anchorButtonsSpacing);
+            const editLeft = Math.min(Math.max(minViewportInset, widgetRect.right - editRect.width), maxEditLeft);
+            const editTop = Math.max(minViewportInset, widgetRect.top - editRect.height - anchorButtonsSpacing);
 
             ownPortfolioEditWidget.style.left = `${Math.round(editLeft)}px`;
             ownPortfolioEditWidget.style.top = `${Math.round(editTop)}px`;

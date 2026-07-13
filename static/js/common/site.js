@@ -1497,6 +1497,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const normalizeProjectPrintMediaLayout = typeof printContentHelpers.normalizeProjectPrintMediaLayout === 'function'
         ? printContentHelpers.normalizeProjectPrintMediaLayout
         : function () {};
+    const renderMermaidDiagramsForPrint = typeof printContentHelpers.renderMermaidDiagramsForPrint === 'function'
+        ? printContentHelpers.renderMermaidDiagramsForPrint
+        : function () { return Promise.resolve([]); };
     const waitForImagesReady = typeof printContentHelpers.waitForImagesReady === 'function'
         ? printContentHelpers.waitForImagesReady
         : function () { return Promise.resolve(); };
@@ -1539,7 +1542,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     };
 
-    const buildSummaryPrintHtml = function () {
+    const buildSummaryPrintHtml = async function () {
         const container = document.createElement('section');
         container.className = 'print-summary';
 
@@ -1564,6 +1567,7 @@ document.addEventListener('DOMContentLoaded', function () {
             container.appendChild(contentsClone);
         }
 
+        await renderMermaidDiagramsForPrint(container);
         return container.outerHTML;
     };
 
@@ -1585,6 +1589,7 @@ document.addEventListener('DOMContentLoaded', function () {
         contentNode.querySelectorAll('script').forEach(function (scriptNode) {
             scriptNode.remove();
         });
+        await renderMermaidDiagramsForPrint(contentNode);
         normalizeProjectPrintMediaLayout(contentNode, projectTitle);
         absolutizeResourceUrls(contentNode, response.url || projectUrl);
 
@@ -1614,6 +1619,57 @@ document.addEventListener('DOMContentLoaded', function () {
             waitForImagesReady: waitForImagesReady
         });
     };
+
+    const handlePortfolioProjectImageStripWheel = function (event) {
+        if (event.defaultPrevented || event.ctrlKey) {
+            return;
+        }
+
+        const eventTarget = event.target;
+        if (!(eventTarget instanceof Element)) {
+            return;
+        }
+
+        const strip = eventTarget.closest('.portfolio-project-image-strip');
+        if (!(strip instanceof HTMLElement)) {
+            return;
+        }
+
+        const maxScrollLeft = Math.max(0, strip.scrollWidth - strip.clientWidth);
+        if (maxScrollLeft <= 0) {
+            return;
+        }
+
+        const normalizeWheelDelta = function (delta, deltaMode) {
+            if (deltaMode === 1) {
+                return delta * 16;
+            }
+
+            if (deltaMode === 2) {
+                return delta * window.innerHeight;
+            }
+
+            return delta;
+        };
+        const deltaX = normalizeWheelDelta(event.deltaX, event.deltaMode);
+        const deltaY = normalizeWheelDelta(event.deltaY, event.deltaMode);
+        const primaryDelta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
+        if (!primaryDelta) {
+            return;
+        }
+
+        const currentLeft = strip.scrollLeft;
+        const nextLeft = Math.max(0, Math.min(maxScrollLeft, currentLeft + primaryDelta));
+        if (nextLeft === currentLeft) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        strip.scrollLeft = nextLeft;
+    };
+
+    document.addEventListener('wheel', handlePortfolioProjectImageStripWheel, { passive: false, capture: true });
 
     const printButton = document.querySelector('[data-portfolio-print]');
     if (printButton) {

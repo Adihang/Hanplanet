@@ -50,6 +50,7 @@
         var shareModal = documentRef.getElementById("handrive-url-share-modal");
         var shareBackdrop = documentRef.getElementById("handrive-url-share-modal-backdrop");
         var shareCheckbox = documentRef.getElementById("handrive-url-share-enabled-checkbox");
+        var shareLinkGroup = shareModal ? shareModal.querySelector(".handrive-url-share-link-group") : null;
         var shareTargets = documentRef.getElementById("handrive-url-share-targets");
         var shareTargetInput = documentRef.getElementById("handrive-url-share-target-input");
         var shareTargetList = documentRef.getElementById("handrive-url-share-target-list");
@@ -69,6 +70,7 @@
             !shareModal ||
             !shareBackdrop ||
             !shareCheckbox ||
+            !shareLinkGroup ||
             !shareTargets ||
             !shareTargetInput ||
             !shareTargetList ||
@@ -92,9 +94,31 @@
         var isToggling = false;
         var currentShareUrl = "";
         var currentShareDownloadUrl = "";
+        var currentClipboardLabel = "";
         var currentAllowedUsers = [];
         var currentReadOnly = false;
         var currentShareCanEdit = false;
+
+        function removeLanguagePrefixFromShareUrl(url) {
+            var rawUrl = String(url || "").trim();
+            if (!rawUrl) {
+                return "";
+            }
+            var languagePrefixPattern = /^([a-z][a-z0-9+.-]*:\/\/[^/]+)?\/(?:ko|en)(?=\/handrive(?:\/|$))/i;
+            if (!languagePrefixPattern.test(rawUrl)) {
+                return rawUrl;
+            }
+            try {
+                var parsedUrl = new URL(rawUrl, window.location.href);
+                parsedUrl.pathname = parsedUrl.pathname.replace(/^\/(?:ko|en)(?=\/handrive(?:\/|$))/i, "");
+                if (/^[a-z][a-z0-9+.-]*:\/\//i.test(rawUrl)) {
+                    return parsedUrl.href;
+                }
+                return parsedUrl.pathname + parsedUrl.search + parsedUrl.hash;
+            } catch (error) {
+                return rawUrl.replace(languagePrefixPattern, "$1");
+            }
+        }
 
         function decodeUrlForDisplay(url) {
             var rawUrl = String(url || "");
@@ -106,6 +130,56 @@
             } catch (error) {
                 return rawUrl;
             }
+        }
+
+        function getUrlPageName(url) {
+            var rawUrl = String(url || "").trim();
+            if (!rawUrl) {
+                return "";
+            }
+            try {
+                var parsedUrl = new URL(rawUrl, window.location.href);
+                var pathParts = parsedUrl.pathname.split("/").filter(Boolean);
+                var pageName = pathParts.length ? pathParts[pathParts.length - 1] : parsedUrl.hostname;
+                return decodeURIComponent(pageName || "").trim();
+            } catch (error) {
+                return rawUrl;
+            }
+        }
+
+        function getClipboardLinkLabel(value) {
+            return currentClipboardLabel || getUrlPageName(value) || value;
+        }
+
+        function createClipboardLinkHtml(value, label) {
+            var anchor = documentRef.createElement("a");
+            anchor.href = value;
+            anchor.textContent = label;
+            return anchor.outerHTML;
+        }
+
+        async function writeMultiFormatUrlToClipboard(value) {
+            var clipboard = navigator.clipboard;
+            var ClipboardItemConstructor = window.ClipboardItem;
+            if (clipboard && typeof clipboard.write === "function" && typeof ClipboardItemConstructor === "function") {
+                try {
+                    var label = getClipboardLinkLabel(value);
+                    var html = createClipboardLinkHtml(value, label);
+                    var item = new ClipboardItemConstructor({
+                        "text/plain": new Blob([value], { type: "text/plain" }),
+                        "text/html": new Blob([html], { type: "text/html" }),
+                    });
+                    await clipboard.write([item]);
+                    return;
+                } catch (error) {
+                    // Some browsers expose ClipboardItem but reject HTML clipboard writes.
+                }
+            }
+            if (clipboard && typeof clipboard.writeText === "function") {
+                await clipboard.writeText(value);
+                return;
+            }
+            throw new Error("Clipboard API is unavailable");
         }
 
         function setCopyButtonLabel(button, key, fallbackLabel) {
@@ -120,8 +194,9 @@
         }
 
         function setUrlRowVisible(visible, url, downloadUrl) {
-            currentShareUrl = visible ? String(url || "") : "";
-            currentShareDownloadUrl = visible ? String(downloadUrl || "") : "";
+            currentShareUrl = visible ? removeLanguagePrefixFromShareUrl(url) : "";
+            currentShareDownloadUrl = visible ? removeLanguagePrefixFromShareUrl(downloadUrl) : "";
+            shareLinkGroup.hidden = !visible;
             shareTargets.hidden = !visible || currentReadOnly;
             shareUrlRow.hidden = !visible;
             shareEditToggle.hidden = !visible || currentReadOnly;
@@ -354,6 +429,7 @@
             isToggling = false;
             currentReadOnly = false;
             currentShareCanEdit = false;
+            currentClipboardLabel = "";
             currentAllowedUsers = [];
             shareCheckbox.disabled = false;
             shareCheckbox.hidden = false;
@@ -377,9 +453,9 @@
                 return;
             }
             try {
-                if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-                    await navigator.clipboard.writeText(value);
-                } else {
+                try {
+                    await writeMultiFormatUrlToClipboard(value);
+                } catch (error) {
                     input.focus();
                     input.select();
                     documentRef.execCommand("copy");
@@ -422,6 +498,7 @@
             var shareUrl = (options && options.shareUrl) || "";
             var downloadUrl = (options && options.downloadUrl) || "";
             var readOnly = Boolean(options && options.readOnly);
+            currentClipboardLabel = String((options && options.clipboardLabel) || "").trim();
             currentReadOnly = readOnly;
             currentOnToggle = (!readOnly && options && typeof options.onToggle === "function") ? options.onToggle : null;
             currentAllowedUsers = readOnly ? [] : normalizeAllowedUsers((options && options.allowedUsers) || []);

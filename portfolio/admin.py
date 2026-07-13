@@ -8,6 +8,7 @@ from .models import (
     PortfolioCoverLetter,
     PortfolioProfile,
     PortfolioProject,
+    PortfolioProjectImage,
     Project,
     Project_Tag,
 )
@@ -54,10 +55,18 @@ class PortfolioCareerAdmin(admin.ModelAdmin):
 
 @admin.register(PortfolioProject)
 class PortfolioProjectAdmin(admin.ModelAdmin):
-    list_display = ["user", "number", "title", "create_date", "order"]
-    search_fields = ["user__username", "title", "title_en"]
+    list_display = ["user", "number", "title", "organization", "position", "create_date", "order"]
+    search_fields = ["user__username", "title", "title_en", "organization", "position"]
     list_filter = ["user"]
     ordering = ["user__username", "-create_date", "-id"]
+
+
+@admin.register(PortfolioProjectImage)
+class PortfolioProjectImageAdmin(admin.ModelAdmin):
+    list_display = ["project", "order", "image", "external_url", "alt_text"]
+    search_fields = ["project__user__username", "project__title", "alt_text", "external_url"]
+    list_filter = ["project__user"]
+    ordering = ["project__user__username", "project__number", "order", "id"]
 
 
 @admin.register(PortfolioActionButton)

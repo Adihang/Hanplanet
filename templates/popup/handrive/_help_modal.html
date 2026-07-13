@@ -1,6 +1,6 @@
 <div id="{{ modal_id }}" class="handrive-help-modal" hidden>
     <div class="handrive-help-modal-backdrop site-modal-backdrop" id="{{ backdrop_id }}"></div>
-    <div class="handrive-help-modal-dialog site-modal-dialog" data-popup-fit-bottom data-handrive-help-initial-width role="dialog" aria-modal="true" aria-labelledby="{{ modal_id }}-title">
+    <div class="handrive-help-modal-dialog site-modal-dialog site-loading-host" data-popup-fit-bottom data-handrive-help-initial-width role="dialog" aria-modal="true" aria-labelledby="{{ modal_id }}-title">
         <header class="handrive-help-modal-head site-modal-head">
             <div class="handrive-help-modal-title-row">
                 <h2 id="{{ modal_id }}-title" class="handrive-popup-title handrive-help-modal-title">{{ aria_label }}</h2>
@@ -20,6 +20,9 @@
             {% else %}
             <article class="ui-markdown handrive-help-markdown">{{ article_html|default:'' }}</article>
             {% endif %}
+        </div>
+        <div class="site-modal-loading site-loading-overlay" role="status" aria-live="polite" hidden>
+            <span class="site-modal-loading-spinner site-loading-spinner" aria-hidden="true"></span>
         </div>
         <div class="handrive-help-modal-resize-handle handrive-help-modal-resize-handle-n" data-handrive-help-modal-resize-handle="n" aria-hidden="true"></div>
         <div class="handrive-help-modal-resize-handle handrive-help-modal-resize-handle-ne" data-handrive-help-modal-resize-handle="ne" aria-hidden="true"></div>

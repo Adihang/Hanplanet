@@ -4,16 +4,33 @@
 {% include 'handrive/_assets_head.html' %}
 
 <style>
+body.portfolio-write-page {
+    --portfolio-write-calendar-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='40' viewBox='0 0 36 40' fill='none'%3E%3Cpath d='M32 36H4V14H32M32 4H30V2C30 0.895431 29.1046 0 28 0C26.8954 0 26 0.895431 26 2V4H10V2C10 0.895431 9.10457 0 8 0C6.89543 0 6 0.895431 6 2V4H4C2.93913 4 1.92172 4.42143 1.17157 5.17157C0.421427 5.92172 0 6.93913 0 8V36C0 37.0609 0.421427 38.0783 1.17157 38.8284C1.92172 39.5786 2.93913 40 4 40H32C33.0609 40 34.0783 39.5786 34.8284 38.8284C35.5786 38.0783 36 37.0609 36 36V8C36 6.93913 35.5786 5.92172 34.8284 5.17157C34.0783 4.42143 33.0609 4 32 4Z' fill='%233D3D3D'/%3E%3C/svg%3E");
+}
+
 .portfolio-write-content {
     padding-bottom: 40px;
 }
 
 .portfolio-write-section {
+    --portfolio-write-section-head-height: 48px;
     margin-top: 12px;
+}
+
+.portfolio-write-section.handrive-list-layout.is-landscape.has-editor > .handrive-list-pane {
+    border-right: 1px solid var(--handrive-border-soft);
+}
+
+.portfolio-write-section > .handrive-list-pane > .handrive-list-preview-head,
+.portfolio-write-section > .handrive-list-editor > .handrive-list-editor-head {
+    height: var(--portfolio-write-section-head-height);
+    min-height: var(--portfolio-write-section-head-height);
+    padding: var(--handrive-list-head-pad-y) var(--handrive-list-head-pad-x);
 }
 
 .portfolio-write-editor-head {
     justify-content: space-between;
+    flex-wrap: nowrap;
 }
 
 .portfolio-write-editor-head strong {
@@ -21,6 +38,7 @@
 }
 
 .portfolio-write-section-preview-btn,
+.portfolio-write-markdown-preview-btn,
 .portfolio-write-floating-preview-btn {
     display: inline-flex;
     align-items: center;
@@ -39,7 +57,8 @@
     transition: background 0.12s, border-color 0.12s, color 0.12s, translate 0.12s, box-shadow 0.12s;
 }
 
-.portfolio-write-section-preview-btn {
+.portfolio-write-section-preview-btn,
+.portfolio-write-markdown-preview-btn {
     flex: 0 0 auto;
     height: 30px;
     padding: 0 9px;
@@ -49,6 +68,8 @@
 
 .portfolio-write-section-preview-btn:hover,
 .portfolio-write-section-preview-btn:focus-visible,
+.portfolio-write-markdown-preview-btn:hover,
+.portfolio-write-markdown-preview-btn:focus-visible,
 .portfolio-write-floating-preview-btn:hover,
 .portfolio-write-floating-preview-btn:focus-visible {
     border-color: var(--handrive-border-heavy);
@@ -59,11 +80,13 @@
 }
 
 .portfolio-write-section-preview-btn:active,
+.portfolio-write-markdown-preview-btn:active,
 .portfolio-write-floating-preview-btn:active {
     translate: 0 var(--btn-template-active-press-depth, 1px);
 }
 
 .portfolio-write-section-preview-btn svg,
+.portfolio-write-markdown-preview-btn svg,
 .portfolio-write-floating-preview-btn svg {
     flex: 0 0 auto;
     width: 16px;
@@ -178,6 +201,141 @@
     color: inherit;
 }
 
+.portfolio-write-project-images-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.portfolio-write-project-images {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 8px;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: var(--handrive-radius-sm);
+    background: var(--handrive-surface-muted);
+}
+
+.portfolio-write-project-image-option {
+    flex: 0 0 132px;
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    color: var(--handrive-text);
+    font-size: 12px;
+    cursor: context-menu;
+    position: relative;
+    user-select: none;
+}
+
+.portfolio-write-project-image-option img {
+    width: 132px;
+    height: 88px;
+    object-fit: cover;
+    border: 1px solid var(--handrive-border-soft);
+    border-radius: var(--handrive-radius-sm);
+    background: var(--handrive-bg);
+    display: block;
+    transition: border-color 0.1s ease, filter 0.1s ease, opacity 0.1s ease;
+}
+
+.portfolio-write-project-image-option:hover img {
+    border-color: var(--handrive-border-heavy);
+}
+
+.portfolio-write-project-image-delete-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.portfolio-write-project-image-option.is-delete-pending img {
+    border-color: var(--handrive-danger, #dc2626);
+    filter: grayscale(1);
+    opacity: 0.52;
+}
+
+.portfolio-write-project-image-menu {
+    position: fixed;
+    z-index: var(--site-z-popup-raised, 1125);
+    min-width: 112px;
+    padding: 5px;
+    display: grid;
+    gap: 2px;
+}
+
+.portfolio-write-project-image-menu[hidden] {
+    display: none;
+}
+
+.portfolio-write-project-image-menu button {
+    width: 100%;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--handrive-text);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1.2;
+    padding: 8px 10px;
+    text-align: left;
+}
+
+.portfolio-write-project-image-menu button:hover,
+.portfolio-write-project-image-menu button:focus-visible {
+    background: var(--handrive-icon-action-hover-bg);
+    color: var(--handrive-text-stronger);
+    outline: 0;
+}
+
+.portfolio-write-project-image-upload-card {
+    flex: 0 0 132px;
+    width: 132px;
+    min-height: 88px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: start;
+    margin: 0;
+    border: 1px dashed var(--handrive-border);
+    border-radius: var(--handrive-radius-sm);
+    background: var(--handrive-bg);
+    color: var(--handrive-text-secondary);
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease, translate 0.1s ease;
+}
+
+.portfolio-write-project-image-upload-card:hover,
+.portfolio-write-project-image-upload-card:focus-visible,
+.portfolio-write-project-images-input:focus-visible + .portfolio-write-project-images .portfolio-write-project-image-upload-card {
+    border-color: var(--handrive-border-heavy);
+    background: var(--handrive-icon-action-hover-bg);
+    color: var(--handrive-text-stronger);
+    outline: 0;
+    translate: 0 var(--btn-template-hover-lift, -1px);
+}
+
+.portfolio-write-project-image-upload-card:active {
+    background: var(--handrive-icon-action-active-bg);
+    translate: 0 var(--btn-template-active-press-depth, 1px);
+}
+
+.portfolio-write-project-image-upload-card svg {
+    width: 28px;
+    height: 28px;
+    display: block;
+}
+
 .portfolio-write-field input,
 .portfolio-write-field textarea,
 .portfolio-write-field select {
@@ -194,10 +352,10 @@
 .portfolio-write-field input[type="date"] {
     color-scheme: light;
     padding-right: 38px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23555555' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2v4'/%3E%3Cpath d='M16 2v4'/%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cpath d='M3 10h18'/%3E%3C/svg%3E");
+    background-image: var(--portfolio-write-calendar-icon);
     background-repeat: no-repeat;
     background-position: right 11px center;
-    background-size: 18px 18px;
+    background-size: 18px 20px;
 }
 
 body.portfolio-write-page .portfolio-write-field input[type="date"]::-webkit-calendar-picker-indicator {
@@ -209,8 +367,8 @@ body.portfolio-write-page .portfolio-write-field input[type="date"]::-webkit-cal
 }
 
 body.portfolio-write-page.theme-dark .portfolio-write-field input[type="date"] {
+    --portfolio-write-calendar-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='40' viewBox='0 0 36 40' fill='none'%3E%3Cpath d='M32 36H4V14H32M32 4H30V2C30 0.895431 29.1046 0 28 0C26.8954 0 26 0.895431 26 2V4H10V2C10 0.895431 9.10457 0 8 0C6.89543 0 6 0.895431 6 2V4H4C2.93913 4 1.92172 4.42143 1.17157 5.17157C0.421427 5.92172 0 6.93913 0 8V36C0 37.0609 0.421427 38.0783 1.17157 38.8284C1.92172 39.5786 2.93913 40 4 40H32C33.0609 40 34.0783 39.5786 34.8284 38.8284C35.5786 38.0783 36 37.0609 36 36V8C36 6.93913 35.5786 5.92172 34.8284 5.17157C34.0783 4.42143 33.0609 4 32 4Z' fill='%23eeeeee'/%3E%3C/svg%3E");
     color-scheme: dark;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23eeeeee' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2v4'/%3E%3Cpath d='M16 2v4'/%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cpath d='M3 10h18'/%3E%3C/svg%3E");
 }
 
 .portfolio-write-field textarea {
@@ -320,8 +478,44 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
 
 .portfolio-write-actions {
     display: flex;
+    justify-content: flex-end;
     gap: 8px;
     flex-wrap: wrap;
+}
+
+.portfolio-write-form-actions {
+    padding: 0 12px 12px;
+}
+
+.portfolio-write-split-actions,
+.portfolio-write-button-item-actions {
+    align-items: center;
+    flex-wrap: nowrap;
+}
+
+.portfolio-write-split-actions .ui-btn,
+.portfolio-write-button-item-actions .ui-btn {
+    flex: 0 0 auto;
+    min-width: 72px;
+}
+
+.portfolio-write-hidden-submit-form {
+    display: none;
+}
+
+.portfolio-write-button-items {
+    padding: 12px;
+    display: grid;
+    gap: 12px;
+}
+
+.portfolio-write-button-item {
+    display: grid;
+    gap: 8px;
+}
+
+.portfolio-write-button-item-actions {
+    justify-content: flex-end;
 }
 
 .portfolio-write-public-url {
@@ -342,25 +536,6 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
 
 .portfolio-write-public-url a {
     color: var(--handrive-link);
-}
-
-.portfolio-write-public-url-delete-form {
-    display: flex;
-    justify-content: flex-end;
-    flex: 0 0 auto;
-    margin: 0 0 0 auto;
-    padding: 0;
-}
-
-.portfolio-write-cover-delete-btn {
-    --handrive-icon-btn-size: 34px;
-    --handrive-icon-btn-icon-size: 18px;
-    color: var(--handrive-danger);
-}
-
-.portfolio-write-cover-delete-btn:hover,
-.portfolio-write-cover-delete-btn:focus-visible {
-    color: var(--handrive-danger);
 }
 
 .portfolio-write-status {
@@ -446,7 +621,7 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                     <label class="portfolio-write-field full">main_subtitle_en<textarea name="main_subtitle_en" rows="4">{{ profile.main_subtitle_en }}</textarea></label>
                 </div>
                 <div class="portfolio-write-actions">
-                    <button class="ui-btn ui-btn-primary" type="submit">프로필 저장</button>
+                    <button class="ui-btn ui-btn-primary" type="submit">저장</button>
                 </div>
             </form>
         </div>
@@ -480,7 +655,7 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                     <span>{% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}</span>
                 </button>
             </div>
-            <form method="post" class="portfolio-write-form">
+            <form method="post" class="portfolio-write-form" id="portfolio-career-form">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="{% if career_mode == 'add' %}add_career{% else %}update_career{% endif %}" />
                 {% if selected_career and career_mode != 'add' %}
@@ -497,7 +672,10 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                         <div class="portfolio-write-field-head">
                             <label class="portfolio-write-field-label" for="portfolio-career-content">content</label>
                             <div class="handrive-content-snippet-tools portfolio-write-editor-tools">
-                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">{{ handrive_text.preview_button }}</button>
+                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                    <span>{{ handrive_text.preview_button }}</span>
+                                </button>
                             </div>
                         </div>
                         <div class="handrive-list-editor portfolio-write-markdown-editor-shell">
@@ -513,7 +691,10 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                         <div class="portfolio-write-field-head">
                             <label class="portfolio-write-field-label" for="portfolio-career-content-en">content_en</label>
                             <div class="handrive-content-snippet-tools portfolio-write-editor-tools">
-                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content_en {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">{{ handrive_text.preview_button }}</button>
+                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content_en {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                    <span>{{ handrive_text.preview_button }}</span>
+                                </button>
                             </div>
                         </div>
                         <div class="handrive-list-editor portfolio-write-markdown-editor-shell">
@@ -526,19 +707,22 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                         </div>
                     </div>
                 </div>
+                {% if career_mode == 'add' %}
                 <div class="portfolio-write-actions">
-                    <button class="ui-btn ui-btn-primary" type="submit">{% if career_mode == 'add' %}경력 추가{% else %}경력 수정{% endif %}</button>
+                    <button class="ui-btn ui-btn-primary" type="submit">경력 추가</button>
                 </div>
+                {% endif %}
             </form>
             {% if selected_career and career_mode != 'add' %}
-            <form method="post" class="portfolio-write-form" style="padding-top: 0;">
+            <form method="post" class="portfolio-write-hidden-submit-form" id="portfolio-career-delete-form">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="delete_career" />
                 <input type="hidden" name="career_id" value="{{ selected_career.id }}" />
-                <div class="portfolio-write-actions">
-                    <button class="ui-btn" type="submit">선택 경력 삭제</button>
-                </div>
             </form>
+            <div class="portfolio-write-actions portfolio-write-split-actions portfolio-write-form-actions">
+                <button class="ui-btn" type="submit" form="portfolio-career-delete-form">삭제</button>
+                <button class="ui-btn ui-btn-primary" type="submit" form="portfolio-career-form">저장</button>
+            </div>
             {% endif %}
         </div>
     </section>
@@ -571,7 +755,7 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                     <span>{% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}</span>
                 </button>
             </div>
-            <form method="post" enctype="multipart/form-data" class="portfolio-write-form">
+            <form method="post" enctype="multipart/form-data" class="portfolio-write-form" id="portfolio-project-form">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="{% if project_mode == 'add' %}add_project{% else %}update_project{% endif %}" />
                 {% if selected_project and project_mode != 'add' %}
@@ -583,11 +767,39 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                     <label class="portfolio-write-field">title<input type="text" name="title" value="{% if selected_project %}{{ selected_project.title }}{% endif %}" required /></label>
                     <label class="portfolio-write-field">title_en<input type="text" name="title_en" value="{% if selected_project %}{{ selected_project.title_en }}{% endif %}" /></label>
                     <label class="portfolio-write-field full">banner_img<input type="file" name="banner_img" /></label>
+                    <label class="portfolio-write-field">소속<input type="text" name="organization" value="{% if selected_project %}{{ selected_project.organization }}{% endif %}" maxlength="160" /></label>
+                    <label class="portfolio-write-field">url<input type="url" name="organization_url" value="{% if selected_project %}{{ selected_project.organization_url }}{% endif %}" maxlength="500" /></label>
+                    <label class="portfolio-write-field">직책<input type="text" name="position" value="{% if selected_project %}{{ selected_project.position }}{% endif %}" maxlength="160" /></label>
+                    <label class="portfolio-write-field">project_url_name<input type="text" name="project_url_name" value="{% if selected_project %}{{ selected_project.project_url_name }}{% endif %}" maxlength="120" /></label>
+                    <label class="portfolio-write-field">project_url<input type="url" name="project_url" value="{% if selected_project %}{{ selected_project.project_url }}{% endif %}" maxlength="500" /></label>
+                    <div class="portfolio-write-field full portfolio-write-project-image-field">
+                        <label class="portfolio-write-field-label" for="portfolio-project-images">project_images</label>
+                        <input id="portfolio-project-images" class="portfolio-write-project-images-input" type="file" name="project_images" accept="image/*" multiple />
+                        <div class="portfolio-write-project-images">
+                            {% if selected_project_images %}
+                            {% for project_image in selected_project_images %}
+                            <div class="portfolio-write-project-image-option" data-portfolio-project-image-option>
+                                <img src="{{ project_image.display_url }}" alt="{{ project_image.alt_text|default:selected_project.title }}" loading="lazy" />
+                                <input class="portfolio-write-project-image-delete-input" type="checkbox" name="delete_project_images" value="{{ project_image.id }}" />
+                            </div>
+                            {% endfor %}
+                            {% endif %}
+                            <label class="portfolio-write-project-image-upload-card" for="portfolio-project-images" aria-label="프로젝트 이미지 업로드" title="프로젝트 이미지 업로드">
+                                <svg viewBox="0 0 20 20" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                    <line x1="10" y1="4" x2="10" y2="16"/>
+                                    <line x1="4" y1="10" x2="16" y2="10"/>
+                                </svg>
+                            </label>
+                        </div>
+                    </div>
                     <div class="portfolio-write-field portfolio-write-markdown-field full">
                         <div class="portfolio-write-field-head">
                             <label class="portfolio-write-field-label" for="portfolio-project-content">content</label>
                             <div class="handrive-content-snippet-tools portfolio-write-editor-tools">
-                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">{{ handrive_text.preview_button }}</button>
+                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                    <span>{{ handrive_text.preview_button }}</span>
+                                </button>
                             </div>
                         </div>
                         <div class="handrive-list-editor portfolio-write-markdown-editor-shell">
@@ -603,7 +815,10 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                         <div class="portfolio-write-field-head">
                             <label class="portfolio-write-field-label" for="portfolio-project-content-en">content_en</label>
                             <div class="handrive-content-snippet-tools portfolio-write-editor-tools">
-                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content_en {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">{{ handrive_text.preview_button }}</button>
+                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content_en {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                    <span>{{ handrive_text.preview_button }}</span>
+                                </button>
                             </div>
                         </div>
                         <div class="handrive-list-editor portfolio-write-markdown-editor-shell">
@@ -623,19 +838,22 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                         </select>
                     </label>
                 </div>
+                {% if project_mode == 'add' %}
                 <div class="portfolio-write-actions">
-                    <button class="ui-btn ui-btn-primary" type="submit">{% if project_mode == 'add' %}프로젝트 추가{% else %}프로젝트 수정{% endif %}</button>
+                    <button class="ui-btn ui-btn-primary" type="submit">프로젝트 추가</button>
                 </div>
+                {% endif %}
             </form>
             {% if selected_project and project_mode != 'add' %}
-            <form method="post" class="portfolio-write-form" style="padding-top: 0;">
+            <form method="post" class="portfolio-write-hidden-submit-form" id="portfolio-project-delete-form">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="delete_project" />
                 <input type="hidden" name="project_id" value="{{ selected_project.id }}" />
-                <div class="portfolio-write-actions">
-                    <button class="ui-btn" type="submit">선택 프로젝트 삭제</button>
-                </div>
             </form>
+            <div class="portfolio-write-actions portfolio-write-split-actions portfolio-write-form-actions">
+                <button class="ui-btn" type="submit" form="portfolio-project-delete-form">삭제</button>
+                <button class="ui-btn ui-btn-primary" type="submit" form="portfolio-project-form">저장</button>
+            </div>
             {% endif %}
         </div>
     </section>
@@ -668,7 +886,7 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                     <span>{% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}</span>
                 </button>
             </div>
-            <form method="post" class="portfolio-write-form">
+            <form method="post" class="portfolio-write-form" id="portfolio-cover-letter-form">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="{% if cover_letter_mode == 'add' %}add_cover_letter{% else %}update_cover_letter{% endif %}" />
                 {% if selected_cover_letter and cover_letter_mode != 'add' %}
@@ -681,7 +899,10 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                         <div class="portfolio-write-field-head">
                             <label class="portfolio-write-field-label" for="portfolio-cover-letter-content">content</label>
                             <div class="handrive-content-snippet-tools portfolio-write-editor-tools">
-                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">{{ handrive_text.preview_button }}</button>
+                                <button class="ui-btn portfolio-write-markdown-preview-btn" type="button" data-portfolio-markdown-preview-toggle data-portfolio-preview-title="content {% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}" aria-controls="ui-preview-modal">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                    <span>{{ handrive_text.preview_button }}</span>
+                                </button>
                             </div>
                         </div>
                         <div class="handrive-list-editor portfolio-write-markdown-editor-shell">
@@ -694,9 +915,11 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                         </div>
                     </div>
                 </div>
+                {% if cover_letter_mode == 'add' %}
                 <div class="portfolio-write-actions">
-                    <button class="ui-btn ui-btn-primary" type="submit">{% if cover_letter_mode == 'add' %}자기소개서 추가{% else %}자기소개서 수정{% endif %}</button>
+                    <button class="ui-btn ui-btn-primary" type="submit">자기소개서 추가</button>
                 </div>
+                {% endif %}
             </form>
             {% if selected_cover_letter and cover_letter_mode != 'add' %}
             <div class="portfolio-write-public-url">
@@ -706,20 +929,15 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                         {{ selected_cover_letter_public_url }}
                     </a>
                 </div>
-                <form method="post" class="portfolio-write-public-url-delete-form">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="delete_cover_letter" />
-                    <input type="hidden" name="cover_letter_id" value="{{ selected_cover_letter.id }}" />
-                    <button class="handrive-icon-btn portfolio-write-cover-delete-btn" type="submit" aria-label="선택 자기소개서 삭제" title="선택 자기소개서 삭제">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                            <path d="M3 6h18"></path>
-                            <path d="M8 6V4h8v2"></path>
-                            <path d="M19 6l-1 14H6L5 6"></path>
-                            <path d="M10 11v6"></path>
-                            <path d="M14 11v6"></path>
-                        </svg>
-                    </button>
-                </form>
+            </div>
+            <form method="post" class="portfolio-write-hidden-submit-form" id="portfolio-cover-letter-delete-form">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete_cover_letter" />
+                <input type="hidden" name="cover_letter_id" value="{{ selected_cover_letter.id }}" />
+            </form>
+            <div class="portfolio-write-actions portfolio-write-split-actions portfolio-write-form-actions">
+                <button class="ui-btn" type="submit" form="portfolio-cover-letter-delete-form">삭제</button>
+                <button class="ui-btn ui-btn-primary" type="submit" form="portfolio-cover-letter-form">저장</button>
             </div>
             {% endif %}
         </div>
@@ -746,30 +964,30 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                     <span>{% if ui_lang == 'en' %}Preview{% else %}미리보기{% endif %}</span>
                 </button>
             </div>
-            <div style="padding: 12px; display: grid; gap: 12px;">
+            <div class="portfolio-write-button-items">
                 {% for button in action_buttons %}
-                <form method="post" class="portfolio-write-form" style="padding: 0;">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="update_button" />
-                    <input type="hidden" name="button_id" value="{{ button.id }}" />
-                    <div class="portfolio-write-form-grid">
-                        <label class="portfolio-write-field">order (1~3)<input type="number" min="1" max="3" name="order" value="{{ button.order }}" required /></label>
-                        <label class="portfolio-write-field">label<input type="text" name="label" value="{{ button.label }}" required /></label>
-                        <label class="portfolio-write-field full">url<input type="url" name="url" value="{{ button.url }}" required /></label>
-                        <label class="portfolio-write-field full">icon_url (선택)<input type="url" name="icon_url" value="{{ button.icon_url }}" /></label>
+                <div class="portfolio-write-button-item">
+                    <form method="post" class="portfolio-write-form" style="padding: 0;" id="portfolio-button-update-form-{{ button.id }}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="update_button" />
+                        <input type="hidden" name="button_id" value="{{ button.id }}" />
+                        <div class="portfolio-write-form-grid">
+                            <label class="portfolio-write-field">order (1~3)<input type="number" min="1" max="3" name="order" value="{{ button.order }}" required /></label>
+                            <label class="portfolio-write-field">label<input type="text" name="label" value="{{ button.label }}" required /></label>
+                            <label class="portfolio-write-field full">url<input type="url" name="url" value="{{ button.url }}" required /></label>
+                            <label class="portfolio-write-field full">icon_url (선택)<input type="url" name="icon_url" value="{{ button.icon_url }}" /></label>
+                        </div>
+                    </form>
+                    <form method="post" class="portfolio-write-hidden-submit-form" id="portfolio-button-delete-form-{{ button.id }}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="delete_button" />
+                        <input type="hidden" name="button_id" value="{{ button.id }}" />
+                    </form>
+                    <div class="portfolio-write-actions portfolio-write-button-item-actions">
+                        <button class="ui-btn" type="submit" form="portfolio-button-delete-form-{{ button.id }}">삭제</button>
+                        <button class="ui-btn ui-btn-primary" type="submit" form="portfolio-button-update-form-{{ button.id }}">저장</button>
                     </div>
-                    <div class="portfolio-write-actions">
-                        <button class="ui-btn ui-btn-primary" type="submit">수정</button>
-                    </div>
-                </form>
-                <form method="post" class="portfolio-write-form" style="padding: 0;">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="delete_button" />
-                    <input type="hidden" name="button_id" value="{{ button.id }}" />
-                    <div class="portfolio-write-actions">
-                        <button class="ui-btn" type="submit">삭제</button>
-                    </div>
-                </form>
+                </div>
                 <hr style="margin: 0; border-color: var(--handrive-border-soft);">
                 {% endfor %}
 
@@ -797,6 +1015,9 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
         <span>{% if ui_lang == 'en' %}Full preview{% else %}전체 미리보기{% endif %}</span>
     </button>
 </main>
+<div class="portfolio-write-project-image-menu site-dropdown-menu" data-portfolio-project-image-menu role="menu" hidden>
+    <button type="button" data-portfolio-project-image-delete role="menuitem">삭제</button>
+</div>
 {% include "popup/handrive/markdown_snippet_menu.html" %}
 {% include "popup/handrive/preview_modal.html" %}
 {{ handrive_text|json_script:"handrive-i18n" }}
@@ -831,6 +1052,11 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
     var markdownSnippetMenu = document.getElementById("ui-markdown-snippet-menu");
     var markdownSnippetButtons = markdownSnippetMenu ? Array.prototype.slice.call(markdownSnippetMenu.querySelectorAll("[data-editor-snippet]")) : [];
     var activeMarkdownTextarea = null;
+    var portfolioProjectImageMenu = document.querySelector("[data-portfolio-project-image-menu]");
+    var activePortfolioProjectImageOption = null;
+    var portfolioPreviewObjectUrls = [];
+    var portfolioWriteSelectionRequestToken = 0;
+    var portfolioWriteSubmitRequestToken = 0;
     var HANDRIVE_MARKDOWN_CODE_COPY_ICON = '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"/></svg>';
 
     function getJsonScriptData(elementId, fallbackValue) {
@@ -856,6 +1082,76 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
 
     function textByLang(koValue, enValue) {
         return uiLang === "en" ? enValue : koValue;
+    }
+
+    function closePortfolioProjectImageMenu() {
+        if (!portfolioProjectImageMenu) {
+            return;
+        }
+        portfolioProjectImageMenu.hidden = true;
+        portfolioProjectImageMenu.style.left = "";
+        portfolioProjectImageMenu.style.top = "";
+        activePortfolioProjectImageOption = null;
+    }
+
+    function positionPortfolioProjectImageMenu(clientX, clientY) {
+        if (!portfolioProjectImageMenu) {
+            return;
+        }
+        var viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+        var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        var margin = 8;
+        portfolioProjectImageMenu.hidden = false;
+        portfolioProjectImageMenu.style.left = "0px";
+        portfolioProjectImageMenu.style.top = "0px";
+        var rect = portfolioProjectImageMenu.getBoundingClientRect();
+        var maxLeft = Math.max(margin, viewportWidth - rect.width - margin);
+        var maxTop = Math.max(margin, viewportHeight - rect.height - margin);
+        var left = Math.min(Math.max(margin, clientX), maxLeft);
+        var top = Math.min(Math.max(margin, clientY), maxTop);
+        portfolioProjectImageMenu.style.left = Math.round(left) + "px";
+        portfolioProjectImageMenu.style.top = Math.round(top) + "px";
+    }
+
+    function openPortfolioProjectImageMenu(event, option) {
+        if (!portfolioProjectImageMenu || !option) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        activePortfolioProjectImageOption = option;
+        positionPortfolioProjectImageMenu(event.clientX || 0, event.clientY || 0);
+        var firstButton = portfolioProjectImageMenu.querySelector("button");
+        if (firstButton && typeof firstButton.focus === "function") {
+            firstButton.focus({ preventScroll: true });
+        }
+    }
+
+    function markPortfolioProjectImageDeleted(option) {
+        if (!option) {
+            closePortfolioProjectImageMenu();
+            return;
+        }
+        var checkbox = option.querySelector('input[name="delete_project_images"]');
+        if (checkbox) {
+            checkbox.checked = true;
+        }
+        option.classList.add("is-delete-pending");
+        option.hidden = true;
+        closePortfolioProjectImageMenu();
+    }
+
+    function initializePortfolioProjectImageOptions(container) {
+        var scope = container || root;
+        scope.querySelectorAll("[data-portfolio-project-image-option]").forEach(function (option) {
+            if (option.dataset.portfolioProjectImageBound === "1") {
+                return;
+            }
+            option.dataset.portfolioProjectImageBound = "1";
+            option.addEventListener("contextmenu", function (event) {
+                openPortfolioProjectImageMenu(event, option);
+            });
+        });
     }
 
     function escapeHtml(value) {
@@ -1090,9 +1386,47 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                 return;
             }
             if (typeof File !== "undefined" && value instanceof File) {
+                if (key === "banner_img") {
+                    var fileName = String(value.name || "");
+                    var fileType = String(value.type || "");
+                    var isImage = value.size > 0 && (
+                        fileType.indexOf("image/") === 0 ||
+                        /\.(png|jpe?g|gif|webp|avif)$/i.test(fileName)
+                    );
+                    if (isImage && window.URL && typeof window.URL.createObjectURL === "function") {
+                        var objectUrl = window.URL.createObjectURL(value);
+                        portfolioPreviewObjectUrls.push(objectUrl);
+                        while (portfolioPreviewObjectUrls.length > 8) {
+                            window.URL.revokeObjectURL(portfolioPreviewObjectUrls.shift());
+                        }
+                        values.banner_preview_url = objectUrl;
+                    }
+                }
+                if (key === "project_images") {
+                    var projectImageName = String(value.name || "");
+                    var projectImageType = String(value.type || "");
+                    var isProjectImage = value.size > 0 && (
+                        projectImageType.indexOf("image/") === 0 ||
+                        /\.(png|jpe?g|gif|webp|avif)$/i.test(projectImageName)
+                    );
+                    if (isProjectImage && window.URL && typeof window.URL.createObjectURL === "function") {
+                        values.project_image_preview_urls = values.project_image_preview_urls || [];
+                        var projectImageObjectUrl = window.URL.createObjectURL(value);
+                        portfolioPreviewObjectUrls.push(projectImageObjectUrl);
+                        while (portfolioPreviewObjectUrls.length > 16) {
+                            window.URL.revokeObjectURL(portfolioPreviewObjectUrls.shift());
+                        }
+                        values.project_image_preview_urls.push(projectImageObjectUrl);
+                    }
+                }
                 return;
             }
             if (key === "tags") {
+                return;
+            }
+            if (key === "delete_project_images") {
+                values.delete_project_images = values.delete_project_images || [];
+                values.delete_project_images.push(String(value || ""));
                 return;
             }
             values[key] = String(value || "");
@@ -1105,6 +1439,13 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
         }
         return values;
     }
+
+    window.addEventListener("beforeunload", function () {
+        portfolioPreviewObjectUrls.forEach(function (objectUrl) {
+            window.URL.revokeObjectURL(objectUrl);
+        });
+        portfolioPreviewObjectUrls = [];
+    });
 
     function collectPortfolioPreviewButtons() {
         var buttons = [];
@@ -1580,10 +1921,14 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
     }
 
     function initializePortfolioMarkdownEditor(textarea) {
+        if (!textarea || textarea.dataset.portfolioMarkdownEditorBound === "1") {
+            return;
+        }
         var parts = getMarkdownEditorParts(textarea);
         if (!parts.surface) {
             return;
         }
+        textarea.dataset.portfolioMarkdownEditorBound = "1";
         refreshPortfolioMarkdownEditor(textarea);
         textarea.addEventListener("focus", function () {
             activeMarkdownTextarea = textarea;
@@ -1618,7 +1963,281 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
         }
     }
 
-    root.querySelectorAll("textarea[data-portfolio-markdown-editor]").forEach(initializePortfolioMarkdownEditor);
+    function initializePortfolioMarkdownEditors(container) {
+        var scope = container || root;
+        scope.querySelectorAll("textarea[data-portfolio-markdown-editor]").forEach(initializePortfolioMarkdownEditor);
+    }
+
+    function initializePortfolioPreviewButtons(container) {
+        var scope = container || root;
+        scope.querySelectorAll("[data-portfolio-preview-scope]").forEach(function (button) {
+            if (button.dataset.portfolioPreviewScopeBound === "1") {
+                return;
+            }
+            button.dataset.portfolioPreviewScopeBound = "1";
+            button.addEventListener("click", function () {
+                openPortfolioSectionPreview(button.getAttribute("data-portfolio-preview-scope") || "full");
+            });
+        });
+    }
+
+    function getPortfolioWriteSectionIndex(section) {
+        return Array.prototype.indexOf.call(root.querySelectorAll(".portfolio-write-section"), section);
+    }
+
+    function parsePortfolioWriteDocument(html) {
+        if (!window.DOMParser) {
+            return null;
+        }
+        return new window.DOMParser().parseFromString(String(html || ""), "text/html");
+    }
+
+    function restorePortfolioWriteScroll(scrollX, scrollY) {
+        var left = Math.max(0, Number(scrollX) || 0);
+        var top = Math.max(0, Number(scrollY) || 0);
+        window.requestAnimationFrame(function () {
+            window.scrollTo(left, top);
+            window.requestAnimationFrame(function () {
+                window.scrollTo(left, top);
+            });
+        });
+    }
+
+    function replacePortfolioWriteSectionFromDocument(section, nextDocument) {
+        if (!section || !nextDocument) {
+            return null;
+        }
+        var sectionIndex = getPortfolioWriteSectionIndex(section);
+        if (sectionIndex < 0) {
+            return null;
+        }
+        var nextRoot = nextDocument.querySelector(".portfolio-write-content[data-portfolio-markdown-preview-url]");
+        var nextSection = nextRoot ? nextRoot.querySelectorAll(".portfolio-write-section")[sectionIndex] : null;
+        if (!nextSection) {
+            return null;
+        }
+        closePortfolioProjectImageMenu();
+        section.innerHTML = nextSection.innerHTML;
+        syncPortfolioWriteListPanesFromDocument(nextDocument);
+        initializePortfolioMarkdownEditors(section);
+        initializePortfolioPreviewButtons(section);
+        initializePortfolioProjectImageOptions(section);
+        return section;
+    }
+
+    function syncPortfolioWriteListPanesFromDocument(nextDocument) {
+        var nextRoot = nextDocument ? nextDocument.querySelector(".portfolio-write-content[data-portfolio-markdown-preview-url]") : null;
+        if (!nextRoot) {
+            return;
+        }
+        var currentSections = root.querySelectorAll(".portfolio-write-section");
+        var nextSections = nextRoot.querySelectorAll(".portfolio-write-section");
+        currentSections.forEach(function (section, index) {
+            var currentPane = section.querySelector(".handrive-list-pane");
+            var nextPane = nextSections[index] ? nextSections[index].querySelector(".handrive-list-pane") : null;
+            if (currentPane && nextPane) {
+                currentPane.innerHTML = nextPane.innerHTML;
+            }
+        });
+    }
+
+    function replacePortfolioWriteContentFromDocument(nextDocument) {
+        var nextRoot = nextDocument ? nextDocument.querySelector(".portfolio-write-content[data-portfolio-markdown-preview-url]") : null;
+        if (!nextRoot) {
+            return false;
+        }
+        closePortfolioProjectImageMenu();
+        root.innerHTML = nextRoot.innerHTML;
+        initializePortfolioMarkdownEditors(root);
+        initializePortfolioPreviewButtons(root);
+        initializePortfolioProjectImageOptions(root);
+        return true;
+    }
+
+    function loadPortfolioWriteSelection(url, section, options) {
+        var settings = options || {};
+        var scrollX = window.scrollX || window.pageXOffset || 0;
+        var scrollY = window.scrollY || window.pageYOffset || 0;
+        var requestToken = portfolioWriteSelectionRequestToken + 1;
+        portfolioWriteSelectionRequestToken = requestToken;
+        root.dataset.portfolioWriteSelectionLoading = "1";
+        return fetch(url.href, {
+            method: "GET",
+            credentials: "same-origin",
+            headers: {
+                "X-Requested-With": "XMLHttpRequest"
+            }
+        }).then(function (response) {
+            if (!response.ok) {
+                throw new Error("portfolio write selection failed");
+            }
+            return response.text();
+        }).then(function (html) {
+            if (requestToken !== portfolioWriteSelectionRequestToken) {
+                return;
+            }
+            var nextDocument = parsePortfolioWriteDocument(html);
+            var replaced = section
+                ? replacePortfolioWriteSectionFromDocument(section, nextDocument)
+                : replacePortfolioWriteContentFromDocument(nextDocument);
+            if (!replaced) {
+                throw new Error("portfolio write selection parse failed");
+            }
+            if (settings.updateHistory !== false && window.history && typeof window.history.pushState === "function") {
+                window.history.pushState({ portfolioWriteSelection: true }, "", url.href);
+            }
+            restorePortfolioWriteScroll(scrollX, scrollY);
+        }).catch(function () {
+            if (requestToken !== portfolioWriteSelectionRequestToken) {
+                return;
+            }
+            window.location.href = url.href;
+        }).finally(function () {
+            if (requestToken === portfolioWriteSelectionRequestToken) {
+                delete root.dataset.portfolioWriteSelectionLoading;
+            }
+        });
+    }
+
+    function getPortfolioWriteFormSubmitUrl(form) {
+        var rawAction = form ? (form.getAttribute("action") || "") : "";
+        try {
+            return new URL(rawAction || window.location.href, window.location.href);
+        } catch (error) {
+            return new URL(window.location.href);
+        }
+    }
+
+    function getPortfolioWriteFormData(form, submitter) {
+        if (typeof FormData === "undefined") {
+            return null;
+        }
+        try {
+            if (submitter) {
+                return new FormData(form, submitter);
+            }
+        } catch (error) {}
+        return new FormData(form);
+    }
+
+    function setPortfolioWriteSubmitting(form, submitter, submitting) {
+        if (form) {
+            form.classList.toggle("is-submitting", submitting);
+            form.setAttribute("aria-busy", submitting ? "true" : "false");
+        }
+        if (submitter && "disabled" in submitter) {
+            submitter.disabled = Boolean(submitting);
+        }
+    }
+
+    function handlePortfolioWriteFormSubmit(event) {
+        var form = event.target;
+        if (!form || !root.contains(form) || String(form.method || "").toLowerCase() !== "post") {
+            return;
+        }
+        if (form.dataset.portfolioWriteNativeSubmit === "1") {
+            return;
+        }
+        var formData = getPortfolioWriteFormData(form, event.submitter);
+        if (!formData) {
+            return;
+        }
+
+        event.preventDefault();
+        closeMarkdownSnippetMenu();
+        closePortfolioProjectImageMenu();
+
+        var submitUrl = getPortfolioWriteFormSubmitUrl(form);
+        var scrollX = window.scrollX || window.pageXOffset || 0;
+        var scrollY = window.scrollY || window.pageYOffset || 0;
+        var requestToken = portfolioWriteSubmitRequestToken + 1;
+        portfolioWriteSubmitRequestToken = requestToken;
+        root.dataset.portfolioWriteSubmitting = "1";
+        setPortfolioWriteSubmitting(form, event.submitter, true);
+
+        fetch(submitUrl.href, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+                "X-Requested-With": "XMLHttpRequest"
+            },
+            body: formData
+        }).then(function (response) {
+            if (!response.ok) {
+                throw new Error("portfolio write submit failed");
+            }
+            return response.text().then(function (html) {
+                return {
+                    html: html,
+                    url: response.url || submitUrl.href
+                };
+            });
+        }).then(function (payload) {
+            if (requestToken !== portfolioWriteSubmitRequestToken) {
+                return;
+            }
+            var nextDocument = parsePortfolioWriteDocument(payload.html);
+            if (!replacePortfolioWriteContentFromDocument(nextDocument)) {
+                throw new Error("portfolio write submit parse failed");
+            }
+            if (payload.url && window.history && typeof window.history.replaceState === "function") {
+                window.history.replaceState({ portfolioWriteSelection: true }, "", payload.url);
+            }
+            restorePortfolioWriteScroll(scrollX, scrollY);
+        }).catch(function () {
+            if (requestToken !== portfolioWriteSubmitRequestToken) {
+                return;
+            }
+            form.dataset.portfolioWriteNativeSubmit = "1";
+            setPortfolioWriteSubmitting(form, event.submitter, false);
+            form.submit();
+        }).finally(function () {
+            if (requestToken !== portfolioWriteSubmitRequestToken) {
+                return;
+            }
+            delete root.dataset.portfolioWriteSubmitting;
+            setPortfolioWriteSubmitting(form, event.submitter, false);
+        });
+    }
+
+    function handlePortfolioWriteListNavigation(event) {
+        var link = event.target && event.target.closest ? event.target.closest("a.portfolio-write-list-item[href]") : null;
+        if (!link || !root.contains(link)) {
+            return;
+        }
+        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+            return;
+        }
+        var url = new URL(link.href, window.location.href);
+        if (url.origin !== window.location.origin || url.pathname !== window.location.pathname) {
+            return;
+        }
+        event.preventDefault();
+        loadPortfolioWriteSelection(url, link.closest(".portfolio-write-section"));
+    }
+
+    initializePortfolioMarkdownEditors(root);
+    initializePortfolioProjectImageOptions(root);
+
+    if (portfolioProjectImageMenu) {
+        var portfolioProjectImageDeleteButton = portfolioProjectImageMenu.querySelector("[data-portfolio-project-image-delete]");
+        portfolioProjectImageMenu.addEventListener("click", function (event) {
+            event.stopPropagation();
+        });
+        if (portfolioProjectImageDeleteButton) {
+            portfolioProjectImageDeleteButton.addEventListener("click", function () {
+                markPortfolioProjectImageDeleted(activePortfolioProjectImageOption);
+            });
+        }
+        document.addEventListener("click", closePortfolioProjectImageMenu);
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") {
+                closePortfolioProjectImageMenu();
+            }
+        });
+        window.addEventListener("resize", closePortfolioProjectImageMenu);
+        window.addEventListener("scroll", closePortfolioProjectImageMenu, true);
+    }
 
     markdownSnippetButtons.forEach(function (button) {
         button.addEventListener("click", function () {
@@ -1634,10 +2253,11 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
         }
     });
 
-    root.querySelectorAll("[data-portfolio-preview-scope]").forEach(function (button) {
-        button.addEventListener("click", function () {
-            openPortfolioSectionPreview(button.getAttribute("data-portfolio-preview-scope") || "full");
-        });
+    initializePortfolioPreviewButtons(root);
+    root.addEventListener("click", handlePortfolioWriteListNavigation);
+    root.addEventListener("submit", handlePortfolioWriteFormSubmit);
+    window.addEventListener("popstate", function () {
+        loadPortfolioWriteSelection(new URL(window.location.href), null, { updateHistory: false });
     });
 
     [previewBackdrop, previewCloseBtn].forEach(function (button) {

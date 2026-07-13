@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="580" viewBox="0 0 960 580" role="img" aria-labelledby="title desc">
+  <title id="title">JWT, SSRF, 최종 연쇄 공격의 서버 신뢰 경계</title>
+  <desc id="desc">JWT claim과 서명 검증, 서버 측 URL fetch가 내부 metadata에 도달하는 과정, IDOR에서 Path Traversal과 JWT 권한 상승으로 이어지는 최종 공격 체인을 세 구역으로 나타낸다.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071528"/><stop offset="1" stop-color="#1d1530"/></linearGradient>
+    <marker id="cyanArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#62d8ff"/></marker>
+    <marker id="violetArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ad92ff"/></marker>
+    <marker id="orangeArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ffad62"/></marker>
+    <style>
+      .title{font:700 24px system-ui,sans-serif;fill:#f8fbff}.sub{font:500 13px system-ui,sans-serif;fill:#a8b9cf}.head{font:700 16px system-ui,sans-serif;fill:#f8fbff}.body{font:500 12px system-ui,sans-serif;fill:#c9d7e7}.mono{font:600 11px ui-monospace,SFMono-Regular,monospace;fill:#d7e8fa}.lane{fill:#111f35;stroke:#435b7d;stroke-width:1.4}.box{fill:#17263d;stroke:#526b91;stroke-width:1.4}.jwt1{fill:#173044;stroke:#55b4dc}.jwt2{fill:#30254a;stroke:#a38aeb}.jwt3{fill:#39241e;stroke:#f0a05f}.internal{fill:#2b203e;stroke:#a283e1}.success{fill:#123328;stroke:#4bd99d}.badge{font:700 11px system-ui,sans-serif;fill:#081522}
+    </style>
+  </defs>
+  <rect width="960" height="580" rx="24" fill="url(#bg)"/>
+  <text class="title" x="42" y="48">서버가 무엇을 신뢰하는지 따라가세요</text>
+  <text class="sub" x="42" y="73">토큰, URL, 객체 ID는 모두 입력입니다. 검증이 빠진 경계는 다음 경계의 열쇠가 됩니다.</text>
+
+  <rect class="lane" x="42" y="102" width="876" height="126" rx="17"/>
+  <rect x="58" y="116" width="50" height="24" rx="8" fill="#62d8ff"/><text class="badge" x="72" y="132">JWT</text>
+  <rect class="jwt1" x="70" y="158" width="158" height="47" rx="11"/><text class="head" x="119" y="187">Header</text>
+  <rect class="jwt2" x="249" y="158" width="220" height="47" rx="11"/><text class="head" x="326" y="179">Payload</text><text class="mono" x="294" y="197">role · aud · scope</text>
+  <rect class="jwt3" x="490" y="158" width="158" height="47" rx="11"/><text class="head" x="526" y="187">Signature</text>
+  <text class="head" x="665" y="178">Verifier policy</text>
+  <text class="body" x="665" y="199">허용 alg · 키 · aud · exp 확인</text>
+  <path d="M228 181H239M469 181H480M648 181H655" stroke="#62d8ff" stroke-width="3" marker-end="url(#cyanArrow)"/>
+
+  <rect class="lane" x="42" y="248" width="876" height="126" rx="17"/>
+  <rect x="58" y="262" width="54" height="24" rx="8" fill="#ad92ff"/><text class="badge" x="70" y="278">SSRF</text>
+  <rect class="box" x="70" y="304" width="160" height="48" rx="11"/><text class="head" x="109" y="333">사용자 URL</text>
+  <path d="M240 328H310" stroke="#ad92ff" stroke-width="3" marker-end="url(#violetArrow)"/>
+  <rect class="box" x="321" y="294" width="218" height="68" rx="11"/><text class="head" x="367" y="321">Preview worker</text><text class="body" x="347" y="344">서버 위치에서 대신 fetch</text>
+  <path d="M549 328H619" stroke="#ad92ff" stroke-width="3" marker-end="url(#violetArrow)"/>
+  <rect class="internal" x="630" y="294" width="258" height="68" rx="11"/><text class="head" x="692" y="321">metadata.training</text><text class="body" x="675" y="344">외부에서는 보이지 않는 내부 응답</text>
+
+  <rect class="lane" x="42" y="394" width="876" height="148" rx="17"/>
+  <rect x="58" y="408" width="82" height="24" rx="8" fill="#ffad62"/><text class="badge" x="70" y="424">FINAL CHAIN</text>
+  <rect class="box" x="70" y="458" width="170" height="58" rx="11"/><text class="head" x="122" y="481">IDOR</text><text class="body" x="88" y="502">다른 보고서와 파일 단서</text>
+  <path d="M250 487H315" stroke="#ffad62" stroke-width="3" marker-end="url(#orangeArrow)"/>
+  <rect class="box" x="326" y="458" width="190" height="58" rx="11"/><text class="head" x="366" y="481">Path Traversal</text><text class="body" x="349" y="502">verifier 설정 확인</text>
+  <path d="M526 487H591" stroke="#ffad62" stroke-width="3" marker-end="url(#orangeArrow)"/>
+  <rect class="box" x="602" y="458" width="134" height="58" rx="11"/><text class="head" x="641" y="481">JWT</text><text class="body" x="621" y="502">admin claim</text>
+  <path d="M746 487H789" stroke="#ffad62" stroke-width="3" marker-end="url(#orangeArrow)"/>
+  <rect class="success" x="800" y="458" width="88" height="58" rx="11"/><text class="head" x="823" y="481">Vault</text><text class="body" x="816" y="502">3 events</text>
+  <text class="sub" x="605" y="557">각 단계의 출력이 다음 단계의 입력이 됩니다.</text>
+</svg>

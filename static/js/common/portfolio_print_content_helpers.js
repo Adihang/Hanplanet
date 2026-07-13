@@ -338,19 +338,42 @@
             applyPrintImageSizeConstraints(image);
         });
 
-        container.querySelectorAll('[style*="overflow-x: auto"],[style*="overflow-x:auto"]').forEach(function (node) {
+        container.querySelectorAll('.portfolio-project-image-strip,[style*="overflow-x: auto"],[style*="overflow-x:auto"]').forEach(function (node) {
             node.style.overflowX = 'visible';
             node.style.overflow = 'visible';
             node.style.whiteSpace = 'normal';
 
+            const isProjectImageStrip = node.classList && node.classList.contains('portfolio-project-image-strip');
             const displayValue = (node.style.display || '').toLowerCase();
-            if (displayValue === 'flex' || displayValue === 'inline-flex') {
+            if (isProjectImageStrip || displayValue === 'flex' || displayValue === 'inline-flex') {
                 node.style.flexWrap = 'wrap';
                 if (!node.style.justifyContent) {
                     node.style.justifyContent = 'center';
                 }
             }
         });
+    };
+
+    const renderMermaidDiagramsForPrint = function (container) {
+        // Project pages fetched for print are parsed in a detached document, so their scripts never run.
+        // Render Mermaid in the parent page first, then pass static SVG markup into the print popup.
+        if (
+            !container ||
+            !container.querySelector ||
+            !container.querySelector('.handrive-mermaid[data-handrive-mermaid-diagram]')
+        ) {
+            return Promise.resolve([]);
+        }
+
+        const renderer = window.HanplanetMarkdownMermaid;
+        if (!renderer || typeof renderer.render !== 'function') {
+            return Promise.resolve([]);
+        }
+
+        return Promise.resolve(renderer.render(container, { force: true }))
+            .catch(function () {
+                return [];
+            });
     };
 
     const waitForImagesReady = function (doc, timeoutMs) {
@@ -421,6 +444,7 @@
         escapeHtml: escapeHtml,
         absolutizeResourceUrls: absolutizeResourceUrls,
         normalizeProjectPrintMediaLayout: normalizeProjectPrintMediaLayout,
+        renderMermaidDiagramsForPrint: renderMermaidDiagramsForPrint,
         waitForImagesReady: waitForImagesReady,
         PRINT_IMAGE_LAYOUT: PRINT_IMAGE_LAYOUT
     };

@@ -104,21 +104,40 @@
         return resolved;
     }
 
-    function resolveThemeColor(name, fallback) {
-        return resolveCssColor("var(" + name + ", " + fallback + ")", fallback);
+    function resolveThemeColorChain(names, fallback) {
+        const fallbackValue = String(fallback || "currentColor").trim() || "currentColor";
+        const expression = names.reduceRight(function (accumulator, name) {
+            return "var(" + name + ", " + accumulator + ")";
+        }, fallbackValue);
+        return resolveCssColor(expression, fallbackValue);
     }
 
     function buildMermaidConfig() {
         const dark = isDarkTheme();
-        const pageBg = resolveThemeColor("--handrive-bg", dark ? "#222222" : "#ffffff");
-        const surface = resolveThemeColor("--handrive-surface", dark ? "#2c2c2c" : "#ffffff");
-        const surfaceMuted = resolveThemeColor("--handrive-surface-muted", dark ? "#303030" : "#f5f5f5");
-        const surfaceSubtle = resolveThemeColor("--handrive-surface-subtle", dark ? "#363636" : "#f5f5f5");
-        const border = resolveThemeColor("--handrive-border", dark ? "#7a7a7a" : "#b6b6b6");
-        const text = resolveThemeColor("--handrive-text", dark ? "#f2f2f2" : "#222222");
-        const textStrong = resolveThemeColor("--handrive-text-stronger", dark ? "#fafafa" : "#111111");
-        const textMuted = resolveThemeColor("--handrive-text-muted", dark ? "#d6d6d6" : "#535353");
-        const accent = resolveThemeColor("--handrive-drop-target-border", dark ? "#60a5fa" : "#2563eb");
+        const pageBg = resolveThemeColorChain(["--handrive-bg", "--site-bg"], dark ? "#222222" : "#ffffff");
+        const surface = resolveThemeColorChain(
+            ["--handrive-surface", "--site-elevated-bg", "--shared-card-bg", "--site-bg"],
+            dark ? "#2c2c2c" : "#ffffff"
+        );
+        const surfaceMuted = resolveThemeColorChain(
+            ["--handrive-markdown-code-block-bg", "--color-hover-bg", "--handrive-surface-muted", "--site-surface-muted"],
+            dark ? "rgba(255, 255, 255, 0.13)" : "rgba(0, 0, 0, 0.12)"
+        );
+        const surfaceSubtle = resolveThemeColorChain(
+            ["--handrive-surface-subtle", "--site-surface-muted", "--shared-card-bg"],
+            dark ? "#363636" : "#f5f5f5"
+        );
+        const border = resolveThemeColorChain(["--handrive-border", "--site-border", "--site-border-mid"], dark ? "#7a7a7a" : "#b6b6b6");
+        const text = resolveThemeColorChain(["--handrive-text", "--site-text"], dark ? "#f2f2f2" : "#222222");
+        const textStrong = resolveThemeColorChain(
+            ["--handrive-text-stronger", "--site-text-stronger", "--site-text-strong"],
+            dark ? "#fafafa" : "#111111"
+        );
+        const textMuted = resolveThemeColorChain(["--handrive-text-muted", "--site-text-muted"], dark ? "#d6d6d6" : "#535353");
+        const accent = resolveThemeColorChain(
+            ["--handrive-drop-target-border", "--theme-accent-strong", "--site-link"],
+            dark ? "#60a5fa" : "#2563eb"
+        );
         const line = dark ? textStrong : textMuted;
 
         return {
@@ -141,7 +160,7 @@
                 lineColor: line,
                 textColor: text,
                 titleColor: textStrong,
-                edgeLabelBackground: pageBg,
+                edgeLabelBackground: surfaceMuted,
                 clusterBkg: surfaceMuted,
                 clusterBorder: border,
                 nodeBorder: border,

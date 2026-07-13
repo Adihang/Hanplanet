@@ -1,1 +1,34 @@
-{% include "popup/handrive/_text_input_modal.html" with modal_id="handrive-folder-create-modal" backdrop_id="handrive-folder-create-modal-backdrop" title_id="handrive-folder-create-title" title_text=handrive_text.menu_new_folder target_id="handrive-folder-create-target" field_label_text=handrive_text.folder_name_label input_id="handrive-folder-create-input" input_placeholder_text=handrive_text.folder_name_placeholder cancel_button_id="handrive-folder-create-cancel-btn" cancel_text=handrive_text.cancel confirm_button_id="handrive-folder-create-confirm-btn" confirm_text=handrive_text.create_button %}
+<div id="handrive-folder-create-modal" class="handrive-popup-modal" hidden>
+    <div class="handrive-popup-modal-backdrop site-modal-backdrop" id="handrive-folder-create-modal-backdrop"></div>
+    <div class="handrive-popup-modal-dialog site-modal-dialog site-loading-host" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-folder-create-title">
+        <header class="handrive-popup-head site-modal-head">
+            <div class="handrive-folder-create-title-row">
+                <h2 id="handrive-folder-create-title" class="handrive-popup-title">{{ handrive_text.menu_new_folder }}</h2>
+                <label class="handrive-url-share-edit-toggle handrive-folder-create-web-toggle" id="handrive-folder-create-web-toggle">
+                    <input
+                        type="checkbox"
+                        id="handrive-folder-create-web-checkbox"
+                        aria-label="Web"
+                        title="Web"
+                    >
+                    <span>Web</span>
+                </label>
+            </div>
+            {% include "popup/handrive/_popup_close_button.html" with click_target_id="handrive-folder-create-cancel-btn" %}
+        </header>
+        <div class="handrive-popup-body site-modal-body">
+            <div class="handrive-popup-target" id="handrive-folder-create-target"></div>
+            <label class="handrive-field handrive-field-full">
+                <span>{{ handrive_text.folder_name_label }}</span>
+                <input type="text" id="handrive-folder-create-input" placeholder="{{ handrive_text.folder_name_placeholder }}">
+            </label>
+            <div class="handrive-popup-actions">
+                <button type="button" class="ui-btn" id="handrive-folder-create-cancel-btn">{{ handrive_text.cancel }}</button>
+                <button type="button" class="ui-btn ui-btn-primary" id="handrive-folder-create-confirm-btn">{{ handrive_text.create_button }}</button>
+            </div>
+        </div>
+        <div class="site-modal-loading site-loading-overlay" role="status" aria-live="polite" hidden>
+            <span class="site-modal-loading-spinner site-loading-spinner" aria-hidden="true"></span>
+        </div>
+    </div>
+</div>

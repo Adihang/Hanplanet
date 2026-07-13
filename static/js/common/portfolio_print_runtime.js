@@ -89,6 +89,8 @@
             '.print-summary .tag,.print-project .tag{box-shadow:none;background:#d6d6d6;color:#111;border:1px solid #bdbdbd;}' +
             '.print-summary .tag *,.print-project .tag *{color:inherit;}' +
             '.print-project .project_detail_content{padding-left:4px;padding-right:4px;}' +
+            '.print-project .portfolio-project-image-strip{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;overflow:visible;white-space:normal;break-inside:auto;page-break-inside:auto;}' +
+            '.print-project .portfolio-project-image-item{margin:0;break-inside:avoid;page-break-inside:avoid;}' +
             '.print-project .project_detail_content [style*="overflow-x: auto"],.print-project .project_detail_content [style*="overflow-x:auto"]{overflow:visible;white-space:normal;}' +
             '.print-project .project_detail_content img{display:block;margin:6px auto 10px;max-width:min(100%,' + imageWidthMm + 'mm);max-height:136mm;width:auto;height:auto;break-inside:avoid;page-break-inside:avoid;}' +
             '.print-project .responsive-iframe{position:static;width:100%;padding-bottom:0;}' +
@@ -124,7 +126,7 @@
         printWindow.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Preparing...</title></head><body style="font-family:KakaoSmallFont,Inter,\'Helvetica Neue\',Arial,sans-serif;padding:24px;">' + options.escapeHtml(options.printText.loading) + '</body></html>');
         printWindow.document.close();
 
-        const summaryHtml = options.buildSummaryPrintHtml();
+        const summaryHtml = await Promise.resolve(options.buildSummaryPrintHtml());
         const projectSectionHtmlList = [];
         for (const project of options.selectedProjects) {
             try {

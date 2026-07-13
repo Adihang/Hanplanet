@@ -34,6 +34,226 @@ LIBREOFFICE_CANDIDATE_BINS = (
     "/usr/bin/soffice",
 )
 
+HANDRIVE_HTML_LIVE_ZOOM_BRIDGE_SCRIPT = r"""
+(function () {
+    var pinchStartDistance = 0;
+    function emit(detail) {
+        try {
+            parent.postMessage(Object.assign({
+                type: "handrive-preview-frame-zoom-gesture"
+            }, detail || {}), "*");
+        } catch (error) {}
+    }
+    function stop(event) {
+        if (!event) return;
+        if (event.cancelable !== false) event.preventDefault();
+        event.stopPropagation();
+    }
+    function wheelDelta(event) {
+        var deltaY = Number(event && event.deltaY) || 0;
+        if (Math.abs(deltaY) > 0.01) return deltaY;
+        return Number(event && event.deltaX) || 0;
+    }
+    function touchDistance(touches) {
+        if (!touches || touches.length < 2) return 0;
+        var first = touches[0];
+        var second = touches[1];
+        var dx = (Number(first.clientX) || 0) - (Number(second.clientX) || 0);
+        var dy = (Number(first.clientY) || 0) - (Number(second.clientY) || 0);
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    function applyZoom(value) {
+        var zoom = Math.max(0.25, Math.min(4, Number(value) || 1));
+        if (
+            window.HandriveHtmlPreviewFit &&
+            typeof window.HandriveHtmlPreviewFit.setUserZoom === "function"
+        ) {
+            window.HandriveHtmlPreviewFit.setUserZoom(zoom);
+            return;
+        }
+        document.documentElement.style.zoom = String(zoom);
+        document.documentElement.style.setProperty("--handrive-preview-frame-zoom", String(zoom));
+        if (document.body) {
+            document.body.style.setProperty("--handrive-preview-frame-zoom", String(zoom));
+        }
+    }
+    window.addEventListener("message", function (event) {
+        var data = event && event.data && typeof event.data === "object" ? event.data : null;
+        if (!data || data.type !== "handrive-preview-frame-zoom-apply") return;
+        applyZoom(data.zoom);
+    });
+    window.addEventListener("wheel", function (event) {
+        var delta = wheelDelta(event);
+        if (!(event.ctrlKey || event.metaKey) || event.altKey || Math.abs(delta) < 0.01) return;
+        stop(event);
+        emit({
+            inputType: "wheel",
+            deltaY: Number(event.deltaY) || 0,
+            deltaX: Number(event.deltaX) || 0,
+            deltaMode: Number(event.deltaMode) || 0
+        });
+    }, { passive: false, capture: true });
+    window.addEventListener("touchstart", function (event) {
+        if (!event.touches || event.touches.length < 2) return;
+        pinchStartDistance = touchDistance(event.touches);
+        if (!pinchStartDistance) return;
+        stop(event);
+        emit({ inputType: "pinch-start" });
+    }, { passive: false, capture: true });
+    window.addEventListener("touchmove", function (event) {
+        if (!pinchStartDistance || !event.touches || event.touches.length < 2) return;
+        var distance = touchDistance(event.touches);
+        if (!distance) return;
+        stop(event);
+        emit({ inputType: "pinch", ratio: distance / pinchStartDistance });
+    }, { passive: false, capture: true });
+    window.addEventListener("touchend", function (event) {
+        if (event.touches && event.touches.length >= 2) {
+            pinchStartDistance = touchDistance(event.touches);
+            emit({ inputType: "pinch-start" });
+            return;
+        }
+        pinchStartDistance = 0;
+    }, { passive: false, capture: true });
+    window.addEventListener("touchcancel", function () {
+        pinchStartDistance = 0;
+    }, { passive: false, capture: true });
+    window.addEventListener("gesturestart", function (event) {
+        stop(event);
+        emit({ inputType: "gesture-start" });
+    }, { passive: false, capture: true });
+    window.addEventListener("gesturechange", function (event) {
+        stop(event);
+        emit({ inputType: "gesture", ratio: Number(event.scale) || 1 });
+    }, { passive: false, capture: true });
+}());
+"""
+
+HANDRIVE_HTML_LIVE_FIT_BRIDGE_SCRIPT = r"""
+(function () {
+    var viewportWidth = 0;
+    var userZoom = 1;
+    var fitZoom = 1;
+    var scheduled = false;
+    var emittingResize = false;
+    var MIN_ZOOM = 0.25;
+    var MAX_ZOOM = 4;
+    function readPositiveNumber(value) {
+        var numeric = Number(value);
+        return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+    }
+    function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, Number(value) || 1));
+    }
+    function dispatchResize(width) {
+        emittingResize = true;
+        try {
+            window.dispatchEvent(new Event("resize"));
+        } catch (error) {}
+        emittingResize = false;
+        try {
+            window.dispatchEvent(new CustomEvent("handrive-html-preview-resize", {
+                detail: { width: width }
+            }));
+        } catch (error) {}
+    }
+    function setZoomProperties(appliedZoom) {
+        document.documentElement.style.zoom = String(appliedZoom);
+        document.documentElement.style.setProperty("--handrive-preview-frame-zoom", String(userZoom));
+        document.documentElement.style.setProperty("--handrive-html-preview-fit-zoom", String(fitZoom));
+        document.documentElement.style.setProperty("--handrive-html-preview-applied-zoom", String(appliedZoom));
+        if (document.body) {
+            document.body.style.setProperty("--handrive-preview-frame-zoom", String(userZoom));
+            document.body.style.setProperty("--handrive-html-preview-fit-zoom", String(fitZoom));
+            document.body.style.setProperty("--handrive-html-preview-applied-zoom", String(appliedZoom));
+        }
+    }
+    function readNaturalContentWidth() {
+        var html = document.documentElement;
+        var body = document.body;
+        var previousZoom = html.style.zoom;
+        html.style.zoom = "1";
+        var width = Math.max(
+            viewportWidth || 0,
+            html ? (html.scrollWidth || html.offsetWidth || html.clientWidth || 0) : 0,
+            body ? (body.scrollWidth || body.offsetWidth || body.clientWidth || 0) : 0
+        );
+        html.style.zoom = previousZoom;
+        return Math.max(1, width);
+    }
+    function applyFit() {
+        var width = Math.max(1, Math.round(viewportWidth || window.innerWidth || document.documentElement.clientWidth || 0));
+        var contentWidth = readNaturalContentWidth();
+        fitZoom = contentWidth > width + 1 ? clamp(width / contentWidth, MIN_ZOOM, 1) : 1;
+        var appliedZoom = clamp(fitZoom * userZoom, MIN_ZOOM, MAX_ZOOM);
+        document.documentElement.style.setProperty("--handrive-html-preview-viewport-width", width + "px");
+        if (document.body) {
+            document.body.style.setProperty("--handrive-html-preview-viewport-width", width + "px");
+        }
+        setZoomProperties(appliedZoom);
+        dispatchResize(width);
+    }
+    function scheduleFit() {
+        if (scheduled) {
+            return;
+        }
+        scheduled = true;
+        window.requestAnimationFrame(function () {
+            scheduled = false;
+            applyFit();
+        });
+    }
+    function applyViewport(data) {
+        var width = Math.max(1, Math.round(readPositiveNumber(data && data.width)));
+        if (!width) {
+            return;
+        }
+        viewportWidth = width;
+        scheduleFit();
+    }
+    function setUserZoom(value) {
+        userZoom = clamp(value, MIN_ZOOM, MAX_ZOOM);
+        scheduleFit();
+    }
+    function emitReady() {
+        try {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: "handrive-html-preview-ready" }, "*");
+            }
+        } catch (error) {}
+    }
+    window.addEventListener("message", function (event) {
+        var data = event && event.data && typeof event.data === "object" ? event.data : null;
+        if (!data || data.type !== "handrive-html-preview-viewport") {
+            return;
+        }
+        applyViewport(data);
+    });
+    window.addEventListener("resize", function () {
+        if (!emittingResize) {
+            scheduleFit();
+        }
+    }, { passive: true });
+    window.HandriveHtmlPreviewFit = {
+        setUserZoom: setUserZoom,
+        sync: scheduleFit
+    };
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", function () {
+            scheduleFit();
+            emitReady();
+        }, { once: true });
+    } else {
+        scheduleFit();
+        emitReady();
+    }
+    window.addEventListener("load", function () {
+        scheduleFit();
+        emitReady();
+    }, { once: true });
+}());
+"""
+
 
 def _normalize_file_extension(extension: str | None, *, allow_empty: bool = False) -> str:
     """Normalize preview extension handling so converter helpers can accept '.ext' or 'ext' inputs."""
@@ -258,6 +478,21 @@ def build_handrive_html_live_document(html_source: str, *, companion_css: str = 
             document = _inject_before_first_closing_tag(document, "</body>", js_block)
         else:
             document = f"{document}{js_block}"
+
+    safe_fit_bridge_script = HANDRIVE_HTML_LIVE_FIT_BRIDGE_SCRIPT.replace("</script", "<\\/script")
+    safe_zoom_bridge_script = HANDRIVE_HTML_LIVE_ZOOM_BRIDGE_SCRIPT.replace("</script", "<\\/script")
+    preview_bridge_block = (
+        "\n<script data-handrive-preview-fit-bridge>\n"
+        f"{safe_fit_bridge_script}"
+        "\n</script>\n"
+        "\n<script data-handrive-preview-zoom-bridge>\n"
+        f"{safe_zoom_bridge_script}"
+        "\n</script>\n"
+    )
+    if re.search(r"</body\s*>", document, flags=re.IGNORECASE):
+        document = _inject_before_first_closing_tag(document, "</body>", preview_bridge_block)
+    else:
+        document = f"{document}{preview_bridge_block}"
 
     return document
 

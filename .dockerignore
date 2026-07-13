@@ -40,8 +40,8 @@ forgejo/data
 forgejo/log
 deploy/hpmail/generated
 deploy/hpmail/backups
-Wargame/data/*.sqlite3
-Wargame/data/*.log
+Wargame/data/**
+!Wargame/data/.gitignore
 config/secrets.json
 .env
 .env.docker

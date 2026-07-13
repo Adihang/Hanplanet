@@ -9,10 +9,10 @@
         {% for project in projects %}
         <li class="project_card">
             <a class="project_card_link" href="{% if project.is_dummy %}{{ project.dummy_href }}{% else %}{% url 'main:ProjectDetail_user_lang' ui_lang=ui_lang user_id=portfolio_owner.username project_number=project.number %}{% endif %}">
-                {% if project.banner_img %}
-                <img class="project_card_img" src="{{ project.banner_img.url }}"/>
-                {% elif project.is_dummy and project.dummy_banner_url %}
+                {% if project.dummy_banner_url %}
                 <img class="project_card_img" src="{{ project.dummy_banner_url }}"/>
+                {% elif project.banner_img %}
+                <img class="project_card_img" src="{{ project.banner_img.url }}"/>
                 {% endif %}
                 <div class="project_card_text">
                     <hr>

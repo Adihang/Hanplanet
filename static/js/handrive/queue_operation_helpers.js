@@ -77,6 +77,16 @@
         var entries = Array.isArray(item.entries) ? item.entries.slice() : [];
         var totalCount = entries.length;
         var deletedPaths = [];
+        item.resultEntries = entries.map(function (entry) {
+            return {
+                path: entry.path,
+                sourcePath: entry.path,
+                name: entry.name || "",
+                type: entry.type || "",
+                size_display: entry.size_display || "",
+                status: "queued",
+            };
+        });
 
         for (var index = 0; index < entries.length; index += 1) {
             if (item.abortRequested) {
@@ -95,6 +105,11 @@
             ));
             onEntryDeleted(entry.path);
             deletedPaths.push(entry.path);
+            item.resultEntries[index] = Object.assign({}, item.resultEntries[index] || {}, {
+                path: entry.path,
+                sourcePath: entry.path,
+                status: "done",
+            });
             item.progress = ((index + 1) / totalCount) * 100;
             item.savedPath = entry.path;
             item.abortController = null;
@@ -122,6 +137,16 @@
         var entries = Array.isArray(item.entries) ? item.entries.slice() : [];
         var totalCount = entries.length;
         var movedPaths = [];
+        item.resultEntries = entries.map(function (entry) {
+            return {
+                path: "",
+                sourcePath: entry.path,
+                name: entry.name || "",
+                type: entry.type || "",
+                size_display: entry.size_display || "",
+                status: "queued",
+            };
+        });
 
         for (var index = 0; index < entries.length; index += 1) {
             if (item.abortRequested) {
@@ -143,6 +168,12 @@
                 onEntryMoved(entry.path, movedPath);
             }
             movedPaths.push(movedPath);
+            item.resultEntries[index] = Object.assign({}, item.resultEntries[index] || {}, {
+                path: movedPath,
+                slug_path: data && data.slug_path ? data.slug_path : "",
+                sourcePath: entry.path,
+                status: "done",
+            });
             item.progress = ((index + 1) / totalCount) * 100;
             item.savedPath = movedPath;
             item.savedSlugPath = data && data.slug_path ? data.slug_path : "";
@@ -374,6 +405,14 @@
         }
     }
 
+    function isDirectoryLikeUploadFile(file) {
+        if (!file) {
+            return false;
+        }
+        var relativePath = String(file.webkitRelativePath || "");
+        return Boolean(relativePath && relativePath.indexOf("/") >= 0);
+    }
+
     async function enqueueUploadFiles(files, targetDirPath, options) {
         // Queue raw File objects first, then let the worker handle transport so drag/drop
         // and picker uploads can reuse the same status UI and commit-message flow.
@@ -386,10 +425,20 @@
         var renderUploadQueue = settings.renderUploadQueue || function () {};
         var processUploadQueue = settings.processUploadQueue || function () { return Promise.resolve(); };
         var alertError = settings.alertError || function () {};
+        var folderUploadErrorMessage = settings.folderUploadErrorMessage || "폴더는 업로드할 수 없습니다. 파일만 업로드해주세요.";
+        var hasDirectoryLikeFile = false;
 
         var fileList = Array.from(files || []).filter(function (file) {
+            if (isDirectoryLikeUploadFile(file)) {
+                hasDirectoryLikeFile = true;
+                return false;
+            }
             return Boolean(file);
         });
+        if (hasDirectoryLikeFile) {
+            alertError(new Error(folderUploadErrorMessage));
+            return;
+        }
         if (!uploadApiUrl || fileList.length === 0) {
             return;
         }

@@ -3507,6 +3507,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
                 isUrlOnly: mapIsUrlOnly || Boolean(mapShareUrl),
                 shareUrl: mapShareUrl,
                 downloadUrl: "",
+                clipboardLabel: mapPathForShare.split("/").pop(),
                 allowedUsers: mapShareAllowedUsers,
                 canEdit: mapShareCanEdit,
                 readOnly: !urlShareApi || !mapShareCanManage,

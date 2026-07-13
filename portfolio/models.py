@@ -35,6 +35,12 @@ def upload_to_portfolio_project(instance, filename):
     return build_model_field_upload_path(username, "portfolioproject", "banner_img", filename)
 
 
+def upload_to_portfolio_project_image(instance, filename):
+    project = getattr(instance, "project", None)
+    username = getattr(getattr(project, "user", None), "username", "") or "anon"
+    return build_model_field_upload_path(username, "portfolioproject", "project_images", filename)
+
+
 class Project_Tag(models.Model):
     tag = models.CharField("태그", max_length=128)
 
@@ -339,6 +345,11 @@ class PortfolioProject(models.Model):
     title_en = models.CharField("영문 제목", max_length=200, blank=True, default="")
     banner_img = models.ImageField("대표 이미지", upload_to=upload_to_portfolio_project, blank=True, null=True)
     tags = models.ManyToManyField(Project_Tag, verbose_name="태그", blank=True)
+    organization = models.CharField("소속", max_length=160, blank=True, default="")
+    organization_url = models.URLField("소속 URL", max_length=500, blank=True, default="")
+    position = models.CharField("직책", max_length=160, blank=True, default="")
+    project_url_name = models.CharField("URL 이름", max_length=120, blank=True, default="")
+    project_url = models.URLField("URL", max_length=500, blank=True, default="")
     content = models.TextField("내용")
     content_en = models.TextField("영문 내용", blank=True, default="")
     create_date = models.DateField("날짜")
@@ -365,6 +376,37 @@ class PortfolioProject(models.Model):
 
     def __str__(self):
         return f"{self.user} - #{self.number} {self.title}"
+
+
+class PortfolioProjectImage(models.Model):
+    project = models.ForeignKey(
+        PortfolioProject,
+        on_delete=models.CASCADE,
+        related_name="project_images",
+        verbose_name="프로젝트",
+    )
+    image = models.ImageField("프로젝트 이미지", upload_to=upload_to_portfolio_project_image, blank=True, default="")
+    external_url = models.URLField("외부 이미지 URL", max_length=800, blank=True, default="")
+    order = models.PositiveIntegerField("순서", default=0)
+    alt_text = models.CharField("대체 텍스트", max_length=255, blank=True, default="")
+    created_at = models.DateTimeField("생성일", auto_now_add=True)
+
+    class Meta:
+        db_table = "main_portfolioprojectimage"
+        ordering = ["order", "id"]
+        verbose_name = "포트폴리오 프로젝트 이미지"
+        verbose_name_plural = "포트폴리오 프로젝트 이미지"
+
+    def __str__(self):
+        return f"{self.project} image #{self.order or self.id}"
+
+    @property
+    def display_url(self):
+        if self.external_url:
+            return self.external_url
+        if self.image:
+            return self.image.url
+        return ""
 
 
 class PortfolioActionButton(models.Model):

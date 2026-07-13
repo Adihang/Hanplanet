@@ -1,132 +1,140 @@
 <?php
 declare(strict_types=1);
 
-const WARGAME_ROOT = __DIR__ . '/..';
-const WARGAME_DB_PATH = WARGAME_ROOT . '/data/wargame.sqlite3';
-const WARGAME_SCHEMA_PATH = WARGAME_ROOT . '/database/schema.sql';
-const WARGAME_DJANGO_DEFAULT_BASE_URL = 'https://www.hanplanet.com';
+require_once __DIR__ . '/runtime.php';
 
-ini_set('display_errors', '0');
-ini_set('log_errors', '1');
-ini_set('error_log', WARGAME_ROOT . '/data/php-error.log');
+ini_set('session.save_handler', 'files');
+ini_set('session.save_path', WARGAME_SESSION_DIR);
+ini_set('session.use_only_cookies', '1');
+ini_set('session.use_strict_mode', '1');
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_samesite', 'Lax');
+ini_set('session.gc_maxlifetime', '7200');
 
-session_name('wargame_session');
+function wargame_is_https(): bool
+{
+    if ((string) getenv('WARGAME_FORCE_SECURE_COOKIE') === '1') {
+        return true;
+    }
+    if (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off') {
+        return true;
+    }
+    return (string) getenv('WARGAME_TRUST_PROXY') === '1'
+        && strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))) === 'https';
+}
+
+session_name('wargame_portal');
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',
     'domain' => '',
-    'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https'),
+    'secure' => wargame_is_https(),
     'httponly' => true,
     'samesite' => 'Lax',
 ]);
-session_start();
-
-function db(): PDO
-{
-    static $pdo = null;
-
-    if ($pdo instanceof PDO) {
-        return $pdo;
-    }
-
-    $dataDir = dirname(WARGAME_DB_PATH);
-    if (!is_dir($dataDir)) {
-        mkdir($dataDir, 0770, true);
-    }
-
-    $pdo = new PDO('sqlite:' . WARGAME_DB_PATH, null, null, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        PDO::ATTR_EMULATE_PREPARES => false,
-    ]);
-    $pdo->exec('PRAGMA foreign_keys = ON');
-    $pdo->exec('PRAGMA journal_mode = WAL');
-    $pdo->exec('PRAGMA busy_timeout = 3000');
-
-    if (!has_schema($pdo)) {
-        initialize_database($pdo);
-    }
-
-    return $pdo;
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
 }
 
-function has_schema(PDO $pdo): bool
+function wargame_portal_headers(): void
 {
-    $stmt = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'level2_users'");
-    return (bool) $stmt->fetchColumn();
-}
-
-function initialize_database(PDO $pdo): void
-{
-    $schema = file_get_contents(WARGAME_SCHEMA_PATH);
-    if ($schema === false) {
-        throw new RuntimeException('Schema file not found.');
-    }
-
-    $pdo->exec($schema);
-}
-
-function h(?string $value): string
-{
-    return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-}
-
-function redirect_to(string $path): never
-{
-    header('Location: ' . $path, true, 303);
-    exit;
+    $djangoParts = parse_url(django_base_url());
+    $djangoOrigin = is_array($djangoParts) && isset($djangoParts['scheme'], $djangoParts['host'])
+        ? $djangoParts['scheme'] . '://' . $djangoParts['host'] . (isset($djangoParts['port']) ? ':' . $djangoParts['port'] : '')
+        : WARGAME_DJANGO_DEFAULT_BASE_URL;
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-store, private');
+    header('Pragma: no-cache');
+    header('Referrer-Policy: no-referrer');
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: DENY');
+    header('Cross-Origin-Opener-Policy: same-origin');
+    header('Cross-Origin-Resource-Policy: same-origin');
+    header('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+    $upgrade = wargame_is_https() ? '; upgrade-insecure-requests' : '';
+    header("Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' " . $djangoOrigin . "; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" . $upgrade);
 }
 
 function csrf_token(): string
 {
-    if (empty($_SESSION['csrf_token'])) {
+    if (!isset($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token']) || strlen($_SESSION['csrf_token']) < 64) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
-
     return $_SESSION['csrf_token'];
 }
 
 function require_csrf(): void
 {
-    $token = $_POST['csrf_token'] ?? '';
-    if (!is_string($token) || !hash_equals(csrf_token(), $token)) {
-        http_response_code(400);
-        exit('Bad request.');
+    $submitted = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+    if (!is_string($submitted) || !hash_equals(csrf_token(), $submitted)) {
+        throw new InvalidArgumentException('요청이 만료되었습니다. 페이지를 새로고침해 다시 시도해 주세요.');
     }
+}
+
+function redirect_to(string $path): never
+{
+    if (!str_starts_with($path, '/') || str_starts_with($path, '//') || preg_match('/[\r\n]/', $path)) {
+        $path = '/';
+    }
+    header('Location: ' . $path, true, 303);
+    exit;
+}
+
+function flash_message(string $type, string $message): void
+{
+    $_SESSION['flash'] = ['type' => $type, 'message' => $message];
+}
+
+function take_flash_message(): ?array
+{
+    $flash = $_SESSION['flash'] ?? null;
+    unset($_SESSION['flash']);
+    return is_array($flash) ? $flash : null;
 }
 
 function django_base_url(): string
 {
-    $baseUrl = getenv('WARGAME_DJANGO_BASE_URL') ?: WARGAME_DJANGO_DEFAULT_BASE_URL;
-    return rtrim($baseUrl, '/');
+    $configured = trim((string) getenv('WARGAME_DJANGO_BASE_URL'));
+    return rtrim($configured !== '' ? $configured : WARGAME_DJANGO_DEFAULT_BASE_URL, '/');
 }
 
-function django_api_url(string $path): string
+function django_api_url(string $endpoint): string
 {
-    return django_base_url() . '/ko/api/wargame/' . ltrim($path, '/');
+    $allowed = ['session/', 'solves/', 'preferences/', 'navbar/'];
+    $normalized = ltrim($endpoint, '/');
+    if (!in_array($normalized, $allowed, true)) {
+        throw new InvalidArgumentException('허용되지 않은 Django API 경로입니다.');
+    }
+    return django_base_url() . '/ko/api/wargame/' . $normalized;
+}
+
+function django_internal_api_url(string $endpoint): string
+{
+    $allowed = ['session/', 'solves/', 'preferences/', 'navbar/'];
+    $normalized = ltrim($endpoint, '/');
+    if (!in_array($normalized, $allowed, true)) {
+        throw new InvalidArgumentException('허용되지 않은 Django API 경로입니다.');
+    }
+    $configured = trim((string) getenv('WARGAME_DJANGO_INTERNAL_BASE_URL'));
+    $base = $configured !== '' ? rtrim($configured, '/') : django_base_url();
+    return $base . '/ko/api/wargame/' . $normalized;
 }
 
 function django_login_url(): string
 {
-    return django_base_url() . '/ko/login/?next=' . rawurlencode('https://wargame.hanplanet.com/');
+    $returnUrl = trim((string) getenv('WARGAME_PUBLIC_URL')) ?: 'https://wargame.hanplanet.com/';
+    return django_base_url() . '/ko/login/?next=' . rawurlencode($returnUrl);
 }
 
-function django_static_url(string $path): string
+function django_api_request(string $method, string $endpoint, ?string $token = null, ?array $payload = null): array
 {
-    return django_base_url() . '/static/' . ltrim($path, '/');
-}
-
-function django_api_request(string $method, string $path, ?string $token = null, ?array $payload = null): array
-{
-    $headers = [
-        'Accept: application/json',
-    ];
-    $content = null;
-    if ($token) {
+    $headers = ['Accept: application/json', 'User-Agent: Hanplanet-Wargame-Portal/1.0'];
+    $body = '';
+    if (is_string($token) && $token !== '') {
         $headers[] = 'Authorization: Bearer ' . $token;
     }
     if ($payload !== null) {
-        $content = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $body = wargame_json($payload);
         $headers[] = 'Content-Type: application/json';
     }
 
@@ -134,94 +142,203 @@ function django_api_request(string $method, string $path, ?string $token = null,
         'http' => [
             'method' => strtoupper($method),
             'header' => implode("\r\n", $headers),
-            'content' => $content ?? '',
+            'content' => $body,
             'ignore_errors' => true,
             'timeout' => 5,
+            'max_redirects' => 0,
+        ],
+        'ssl' => [
+            'verify_peer' => true,
+            'verify_peer_name' => true,
         ],
     ]);
 
-    $responseBody = @file_get_contents(django_api_url($path), false, $context);
+    $http_response_header = [];
+    $responseBody = @file_get_contents(django_internal_api_url($endpoint), false, $context);
     $status = 0;
-    foreach (($http_response_header ?? []) as $header) {
-        if (preg_match('/^HTTP\/\S+\s+(\d+)/', $header, $matches)) {
-            $status = (int) $matches[1];
+    foreach ($http_response_header as $headerLine) {
+        if (preg_match('/^HTTP\/\S+\s+(\d{3})/', $headerLine, $match)) {
+            $status = (int) $match[1];
             break;
         }
     }
 
-    if ($responseBody === false) {
+    if (!is_string($responseBody) || strlen($responseBody) > 1048576) {
         return ['status' => $status, 'data' => null];
     }
-
-    $data = json_decode($responseBody, true);
-    return ['status' => $status, 'data' => is_array($data) ? $data : null];
+    $decoded = json_decode($responseBody, true);
+    return ['status' => $status, 'data' => is_array($decoded) ? $decoded : null];
 }
 
-function current_django_user(): ?array
+function token_expiry(string $token): int
 {
-    $token = $_SESSION['django_token'] ?? '';
-    if (!is_string($token) || $token === '') {
-        return null;
+    $parts = explode('.', $token);
+    if (count($parts) !== 3) {
+        return 0;
+    }
+    $payload = wargame_base64url_decode($parts[1]);
+    $decoded = is_string($payload) ? json_decode($payload, true) : null;
+    return is_array($decoded) ? (int) ($decoded['exp'] ?? 0) : 0;
+}
+
+function accept_django_token(string $token): array
+{
+    $token = trim($token);
+    if ($token === '' || strlen($token) > 8192) {
+        throw new InvalidArgumentException('로그인 토큰이 올바르지 않습니다.');
     }
 
     $response = django_api_request('GET', 'solves/', $token);
     if ($response['status'] !== 200 || !is_array($response['data'])) {
-        unset($_SESSION['django_token']);
+        throw new InvalidArgumentException('Hanplanet 로그인을 확인하지 못했습니다.');
+    }
+
+    $data = $response['data'];
+    $username = trim((string) ($data['username'] ?? ''));
+    if ($username === '') {
+        throw new InvalidArgumentException('로그인 사용자 정보가 비어 있습니다.');
+    }
+
+    session_regenerate_id(true);
+    $_SESSION['django_auth'] = [
+        'token' => $token,
+        'expires_at' => token_expiry($token),
+        'username' => $username,
+        'display_name' => trim((string) ($data['display_name'] ?? $username)),
+        'email' => trim((string) ($data['email'] ?? '')),
+        'solves' => array_values(array_filter((array) ($data['solves'] ?? []), 'is_string')),
+        'checked_at' => time(),
+    ];
+    unset($_SESSION['csrf_token']);
+
+    return current_django_user(false) ?? throw new RuntimeException('로그인 세션을 만들지 못했습니다.');
+}
+
+function current_django_user(bool $refresh = true): ?array
+{
+    $auth = $_SESSION['django_auth'] ?? null;
+    if (!is_array($auth) || !is_string($auth['token'] ?? null) || (string) $auth['token'] === '') {
         return null;
     }
 
-    return [
-        'username' => (string) ($response['data']['username'] ?? ''),
-        'display_name' => (string) ($response['data']['display_name'] ?? ''),
-        'solves' => array_values(array_filter((array) ($response['data']['solves'] ?? []), 'is_string')),
-        'preferences' => current_django_preferences($token),
-        'token' => $token,
-    ];
-}
+    $expiresAt = (int) ($auth['expires_at'] ?? 0);
+    if ($expiresAt > 0 && $expiresAt <= time()) {
+        unset($_SESSION['django_auth']);
+        return null;
+    }
 
-function current_django_preferences(string $token): array
-{
-    $response = django_api_request('GET', 'preferences/', $token);
-    if ($response['status'] !== 200 || !is_array($response['data'])) {
-        return [
-            'theme_mode' => null,
-            'ui_lang' => null,
-            'root_search_engine' => null,
-        ];
+    if ($refresh && time() - (int) ($auth['checked_at'] ?? 0) >= 30) {
+        $response = django_api_request('GET', 'solves/', (string) $auth['token']);
+        if ($response['status'] !== 200 || !is_array($response['data'])) {
+            unset($_SESSION['django_auth']);
+            return null;
+        }
+        $data = $response['data'];
+        $auth['username'] = trim((string) ($data['username'] ?? $auth['username'] ?? ''));
+        $auth['display_name'] = trim((string) ($data['display_name'] ?? $auth['display_name'] ?? $auth['username']));
+        $auth['email'] = trim((string) ($data['email'] ?? $auth['email'] ?? ''));
+        $auth['solves'] = array_values(array_filter((array) ($data['solves'] ?? []), 'is_string'));
+        $auth['checked_at'] = time();
+        $_SESSION['django_auth'] = $auth;
     }
 
     return [
-        'theme_mode' => $response['data']['theme_mode'] ?? null,
-        'ui_lang' => $response['data']['ui_lang'] ?? null,
-        'root_search_engine' => $response['data']['root_search_engine'] ?? null,
+        'username' => (string) ($auth['username'] ?? ''),
+        'display_name' => (string) ($auth['display_name'] ?? ''),
+        'email' => (string) ($auth['email'] ?? ''),
+        'solves' => (array) ($auth['solves'] ?? []),
+        'expires_at' => (int) ($auth['expires_at'] ?? 0),
     ];
 }
 
-function mark_solved_with_django(string $token, string $challengeId): array
+function django_token(): ?string
 {
-    $response = django_api_request('POST', 'solves/', $token, ['challenge_id' => $challengeId]);
-    if ($response['status'] !== 200 || !is_array($response['data'])) {
-        throw new RuntimeException('Django 워게임 API에 해결 기록을 저장하지 못했습니다.');
+    $token = $_SESSION['django_auth']['token'] ?? null;
+    return is_string($token) && $token !== '' ? $token : null;
+}
+
+function auth_refresh_needed(): bool
+{
+    $expiresAt = (int) ($_SESSION['django_auth']['expires_at'] ?? 0);
+    return $expiresAt === 0 || $expiresAt - time() < 90;
+}
+
+function forget_django_user(): void
+{
+    unset($_SESSION['django_auth']);
+    session_regenerate_id(true);
+    unset($_SESSION['csrf_token']);
+}
+
+function django_completion_payload(string $username, string $challengeId, string $ticketHash): array
+{
+    $payload = ['challenge_id' => $challengeId];
+    $secret = trim((string) getenv('WARGAME_COMPLETION_SECRET'));
+    if ($secret === '') {
+        return $payload;
     }
 
+    $timestamp = time();
+    $nonce = bin2hex(random_bytes(16));
+    $message = implode("\n", [$username, $challengeId, $ticketHash, (string) $timestamp, $nonce]);
+    return $payload + [
+        'ticket_hash' => $ticketHash,
+        'timestamp' => $timestamp,
+        'nonce' => $nonce,
+        'receipt' => hash_hmac('sha256', $message, $secret),
+    ];
+}
+
+function mark_solved_with_django(array $user, string $challengeId, string $ticketHash): array
+{
+    $token = django_token();
+    if ($token === null) {
+        throw new RuntimeException('로그인이 만료되었습니다. 다시 연결해 주세요.');
+    }
+    $payload = django_completion_payload((string) $user['username'], $challengeId, $ticketHash);
+    $response = django_api_request('POST', 'solves/', $token, $payload);
+    if ($response['status'] !== 200 || !is_array($response['data'])) {
+        throw new RuntimeException('진행 기록을 Hanplanet 계정에 저장하지 못했습니다.');
+    }
+    $_SESSION['django_auth']['solves'] = array_values(array_filter((array) ($response['data']['solves'] ?? []), 'is_string'));
+    $_SESSION['django_auth']['checked_at'] = time();
     return $response['data'];
 }
 
-function wargame_slug(string $value): string
+function wargame_progress(array $solves): array
 {
-    $slug = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '_', $value) ?? '');
-    return trim($slug, '_') ?: 'challenge';
+    $missions = wargame_missions();
+    $solved = array_fill_keys(array_values(array_intersect(array_keys($missions), $solves)), true);
+    $states = [];
+    $currentId = null;
+    $priorMissionIds = [];
+    foreach ($missions as $missionId => $mission) {
+        $completed = isset($solved[$missionId]);
+        $prerequisites = array_values(array_filter((array) ($mission['prerequisites'] ?? []), 'is_string'));
+        $requiredIds = array_values(array_unique(array_merge($priorMissionIds, $prerequisites)));
+        $locked = !$completed && count(array_diff($requiredIds, array_keys($solved))) > 0;
+        if ($currentId === null && !$completed && !$locked) {
+            $currentId = $missionId;
+        }
+        $states[$missionId] = $completed ? 'completed' : ($locked ? 'locked' : 'available');
+        $priorMissionIds[] = $missionId;
+    }
+
+    $total = count($missions);
+    $completedCount = count($solved);
+    return [
+        'states' => $states,
+        'current_id' => $currentId,
+        'completed' => $completedCount,
+        'total' => $total,
+        'percent' => $total > 0 ? (int) floor($completedCount / $total * 100) : 0,
+        'finished' => $total > 0 && $completedCount === $total,
+    ];
 }
 
-function wargame_css_class(string $value): string
+function campaign_started(string $ownerKey): bool
 {
-    $className = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '-', $value) ?? '');
-    return trim($className, '-') ?: 'tag';
-}
-
-require_once __DIR__ . '/curriculum.php';
-
-function list_challenges(): array
-{
-    return wargame_v2_list_challenges();
+    $statement = wargame_db()->prepare('SELECT 1 FROM mission_dispatches WHERE owner_key_hash = :owner LIMIT 1');
+    $statement->execute(['owner' => $ownerKey]);
+    return (bool) $statement->fetchColumn();
 }

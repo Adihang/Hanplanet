@@ -129,7 +129,10 @@
                 <div class="handrive-content-snippet-tools">
                     {% if write_editor_kind == "text" %}
                     <button class="ui-btn" type="button" id="ui-markdown-help-btn"{% if not write_is_markdown %} hidden disabled{% endif %}>{{ handrive_text.markdown_guide_button }}</button>
-                    <button class="ui-btn" type="button" id="ui-preview-btn"{% if not write_has_preview %} hidden disabled{% endif %}>{{ handrive_text.preview_button }}</button>
+                    <button class="ui-btn handrive-preview-action-btn" type="button" id="ui-preview-btn"{% if not write_has_preview %} hidden disabled{% endif %}>
+                        <svg class="handrive-preview-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        <span>{{ handrive_text.preview_button }}</span>
+                    </button>
                     {% endif %}
                 </div>
             </div>

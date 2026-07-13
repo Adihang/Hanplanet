@@ -407,6 +407,24 @@ body.handrive-write-page .handrive-toolbar {
     outline-offset: 1px;
 }
 
+.handrive-preview-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.handrive-preview-action-btn[hidden] {
+    display: none !important;
+}
+
+.handrive-preview-action-btn svg,
+.handrive-preview-action-icon {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+}
+
 .handrive-list-search-form {
     width: 100%;
     max-width: 1300px;
@@ -1609,6 +1627,10 @@ body:not(.theme-dark) .site-custom-select-menu.handrive-guest-demo-steps-menu {
     transition: left 140ms ease, top 140ms ease, width 140ms ease, height 140ms ease;
 }
 
+.handrive-guest-demo-spotlight.is-multi-target {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--theme-accent, #2563eb) 16%, transparent);
+}
+
 .handrive-guest-demo-spotlight.is-following-moving-target {
     transition: left 80ms linear, top 80ms linear, width 80ms ease, height 80ms ease;
 }
@@ -2453,6 +2475,29 @@ body.handrive-list-split-resizing-portrait * {
     border-color: color-mix(in srgb, var(--ui-btn-current-bg) 28%, var(--handrive-border-soft));
 }
 
+.handrive-job-queue-item.has-child-items {
+    cursor: pointer;
+}
+
+.handrive-job-queue-item.has-child-items .handrive-job-queue-item-name::after {
+    content: "";
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin-left: 6px;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 5px solid var(--handrive-text-muted);
+    transform: translateY(-1px);
+}
+
+.handrive-job-queue-item.has-child-items.is-expanded .handrive-job-queue-item-name::after {
+    border-top: 5px solid var(--handrive-text-muted);
+    border-right: 4px solid transparent;
+    border-bottom: 0;
+    border-left: 4px solid transparent;
+}
+
 .handrive-job-queue-item-head {
     display: flex;
     align-items: center;
@@ -2520,6 +2565,83 @@ body.handrive-list-split-resizing-portrait * {
 
 body.theme-dark .handrive-job-queue-item-reason {
     color: #facc15;
+}
+
+.handrive-job-queue-child-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 2px 0 0;
+    padding: 6px 0 0;
+    border-top: 1px solid color-mix(in srgb, var(--handrive-border-soft) 76%, transparent);
+    list-style: none;
+}
+
+.handrive-job-queue-child-list[hidden] {
+    display: none;
+}
+
+.handrive-job-queue-child-row {
+    min-width: 0;
+}
+
+.handrive-job-queue-child-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 8px;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 5px 6px;
+    border: 0;
+    border-radius: var(--handrive-radius-sm);
+    background: color-mix(in srgb, var(--handrive-surface-muted) 78%, var(--handrive-bg));
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    box-sizing: border-box;
+}
+
+button.handrive-job-queue-child-item {
+    cursor: pointer;
+}
+
+button.handrive-job-queue-child-item:hover,
+button.handrive-job-queue-child-item:focus-visible {
+    background: color-mix(in srgb, var(--ui-btn-current-bg) 14%, var(--handrive-surface-muted));
+}
+
+button.handrive-job-queue-child-item:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--handrive-search-border-focus) 22%, transparent);
+}
+
+.handrive-job-queue-child-name,
+.handrive-job-queue-child-meta {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.handrive-job-queue-child-name {
+    grid-column: 1;
+    color: var(--handrive-text-strong);
+    font-size: 12px;
+}
+
+.handrive-job-queue-child-meta {
+    grid-column: 1 / -1;
+    color: var(--handrive-text-muted);
+    font-size: 11px;
+}
+
+.handrive-job-queue-child-status {
+    grid-column: 2;
+    grid-row: 1;
+    color: var(--handrive-text-muted);
+    font-size: 11px;
+    white-space: nowrap;
 }
 
 .handrive-job-queue-progress {
@@ -3018,6 +3140,7 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
 .handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-sql),
 .handrive-list-preview-body:has(> .handrive-list-preview-content.ui-markdown),
 .handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-markdown),
+.handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-source-code-view),
 .handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-plain-text) {
     overflow: auto;
 }
@@ -5454,6 +5577,7 @@ body.handrive-popup-dragging {
     padding-right: 0;
 }
 
+.handrive-folder-create-title-row,
 .handrive-url-share-title-row {
     display: flex;
     align-items: center;
@@ -5462,15 +5586,20 @@ body.handrive-popup-dragging {
     min-width: 0;
 }
 
+.handrive-folder-create-title-row .handrive-popup-title,
 .handrive-url-share-title-row .handrive-popup-title {
     min-width: 0;
     padding-right: 0;
 }
 
+.handrive-folder-create-web-toggle {
+    align-self: center;
+}
+
 #handrive-url-share-enabled-checkbox {
     flex: 0 0 auto;
-    width: 18px;
-    height: 18px;
+    width: 25px;
+    height: 25px;
     margin: 0;
     cursor: pointer;
 }
@@ -5774,6 +5903,7 @@ body.handrive-popup-dragging {
 }
 
 .handrive-url-share-edit-toggle span {
+    font-weight: var(--site-weight-body);
     white-space: nowrap;
     word-break: keep-all;
     overflow-wrap: normal;
@@ -5896,7 +6026,7 @@ body.handrive-popup-dragging {
     color: var(--handrive-text-stronger);
     box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 10px 24px rgba(0, 0, 0, 0.22)));
     font-size: 12px;
-    font-weight: 500;
+    font-weight: var(--site-weight-body);
     line-height: 1;
     text-align: center;
     pointer-events: none;
@@ -6000,6 +6130,10 @@ body.handrive-popup-dragging {
     background: var(--handrive-icon-btn-active-bg, var(--handrive-icon-action-active-bg));
     color: var(--handrive-icon-btn-hover-color, var(--handrive-text-stronger));
     translate: 0 var(--btn-template-active-press-depth, 1px);
+}
+.handrive-icon-btn[aria-pressed="true"] {
+    background: var(--handrive-icon-btn-active-bg, var(--handrive-icon-action-active-bg));
+    color: var(--handrive-icon-btn-hover-color, var(--handrive-text-stronger));
 }
 .handrive-icon-btn:disabled,
 .handrive-icon-btn[aria-disabled="true"] {
@@ -6866,6 +7000,10 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     overflow: hidden;
 }
 
+.handrive-html .handrive-html-live-wrap {
+    height: 100%;
+}
+
 .handrive-html .handrive-html-live-frame,
 .handrive-office .handrive-html-live-frame {
     width: 100%;
@@ -6878,6 +7016,10 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     border: 0;
     display: block;
     background: #ffffff;
+}
+
+.handrive-html .handrive-html-live-frame {
+    min-height: 0;
 }
 
 .handrive-list-preview-content.handrive-html .handrive-html-live-wrap,
@@ -6935,6 +7077,44 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     overflow: visible;
 }
 
+.handrive-list-preview-content.handrive-source-code-view.ui-markdown,
+.handrive-list-preview-content.handrive-source-code-view.handrive-markdown,
+.ui-content[data-handrive-page="view"] > article.handrive-source-code-view.ui-markdown,
+.ui-content[data-handrive-page="view"] > article.handrive-source-code-view.handrive-markdown {
+    background: transparent;
+}
+
+.handrive-list-preview-content.handrive-source-code-view.ui-markdown pre,
+.handrive-list-preview-content.handrive-source-code-view.handrive-markdown pre,
+.ui-content[data-handrive-page="view"] > article.handrive-source-code-view.ui-markdown pre,
+.ui-content[data-handrive-page="view"] > article.handrive-source-code-view.handrive-markdown pre {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    overflow: visible;
+}
+
+.handrive-list-preview-content.handrive-source-code-view.ui-markdown pre code,
+.handrive-list-preview-content.handrive-source-code-view.handrive-markdown pre code,
+.ui-content[data-handrive-page="view"] > article.handrive-source-code-view.ui-markdown pre code,
+.ui-content[data-handrive-page="view"] > article.handrive-source-code-view.handrive-markdown pre code {
+    display: block;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: var(--handrive-text-font-size, 16px);
+    line-height: 1.45;
+    white-space: pre;
+}
+
 .handrive-list-preview-content.handrive-html,
 .handrive-list-preview-content.handrive-office {
     display: flex;
@@ -6943,6 +7123,16 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     max-width: 100%;
     overflow: auto;
     touch-action: pan-x pan-y;
+}
+
+.handrive-list-preview-content.handrive-html {
+    overflow: hidden;
+}
+
+.handrive-list-preview-content.handrive-source-code-view.handrive-html {
+    display: block;
+    overflow: visible;
+    touch-action: auto;
 }
 
 .handrive-list-preview-content.handrive-html .handrive-html-live-wrap,
@@ -6956,6 +7146,10 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
 .handrive-list-preview-content.handrive-office .handrive-html-live-frame {
     height: 100%;
     min-height: max(720px, calc(100vh - 220px));
+}
+
+.handrive-list-preview-content.handrive-html .handrive-html-live-frame {
+    min-height: 0;
 }
 
 .ui-content[data-handrive-page="view"] {
@@ -7044,6 +7238,16 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
     touch-action: pan-x pan-y;
 }
 
+.ui-content[data-handrive-page="view"] > article.handrive-html {
+    overflow: hidden;
+}
+
+.ui-content[data-handrive-page="view"] > article.handrive-source-code-view.handrive-html {
+    display: block;
+    overflow: auto;
+    touch-action: auto;
+}
+
 .ui-content[data-handrive-page="view"] > article.handrive-html .handrive-html-live-wrap,
 .ui-content[data-handrive-page="view"] > article.handrive-office .handrive-html-live-wrap {
     flex: 1 1 auto;
@@ -7055,6 +7259,10 @@ body.handrive-page.theme-dark .handrive-md-src-token-codeblock {
 .ui-content[data-handrive-page="view"] > article.handrive-office .handrive-html-live-frame {
     height: 100%;
     min-height: max(720px, calc(100vh - 180px));
+}
+
+.ui-content[data-handrive-page="view"] > article.handrive-html .handrive-html-live-frame {
+    min-height: 0;
 }
 
 .handrive-unsupported-file {
@@ -9101,6 +9309,11 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 }
 
 .auth-form {
+    --site-auth-dialog-text: var(--handrive-text, var(--site-text, var(--theme-ink, #1f1f1f)));
+    --site-auth-dialog-text-strong: var(--handrive-text-stronger, var(--site-text-stronger, var(--theme-ink, #1f1f1f)));
+    --site-auth-input-bg: var(--handrive-bg, var(--site-input-bg, #ffffff));
+    --site-auth-input-border: var(--handrive-border-mid, var(--color-section-border, var(--site-border, rgba(0, 0, 0, 0.18))));
+    --site-auth-input-focus: var(--handrive-search-border-focus, color-mix(in srgb, var(--site-text-muted, #555555) 72%, var(--color-section-border, var(--site-border, #b6b6b6))));
     --site-loading-overlay-bg: color-mix(in srgb, var(--shared-card-bg, var(--handrive-surface-muted)) 72%, transparent);
     --site-loading-spinner-track: var(--handrive-border-heavy);
     --site-loading-spinner-accent: var(--theme-accent-strong, #3b82f6);
@@ -9116,6 +9329,30 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     box-sizing: border-box;
     display: grid;
     gap: 10px;
+}
+
+body.handrive-page.theme-dark .auth-form {
+    --site-auth-dialog-text: var(--handrive-text, var(--site-text, #f2f2f2));
+    --site-auth-dialog-text-strong: var(--handrive-text-stronger, var(--site-text-stronger, #fafafa));
+    --site-auth-input-bg: var(--handrive-surface-muted-strong, var(--site-surface-muted-strong, rgba(46, 46, 46, 0.96)));
+    --site-auth-input-border: var(--handrive-border-mid, var(--theme-border, var(--site-border-strong, var(--site-border, rgba(255, 255, 255, 0.28)))));
+    --site-auth-input-focus: var(--handrive-search-border-focus, color-mix(in srgb, var(--site-text-subtle, #c8c8c8) 74%, var(--theme-border, var(--site-border-strong, rgba(255, 255, 255, 0.28)))));
+}
+
+.auth-form .auth-field input:not([type="checkbox"]):not([type="radio"]),
+.auth-form .auth-field select,
+.auth-form .auth-field textarea {
+    border: 1px solid var(--site-auth-input-border);
+    background: var(--site-auth-input-bg);
+    color: var(--site-auth-dialog-text-strong);
+    caret-color: currentColor;
+}
+
+.auth-form .auth-field input:not([type="checkbox"]):not([type="radio"]):focus,
+.auth-form .auth-field select:focus,
+.auth-form .auth-field textarea:focus {
+    border-color: var(--site-auth-input-focus);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--site-auth-input-focus) 22%, transparent);
 }
 
 .auth-form .ui-subtitle {

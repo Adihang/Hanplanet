@@ -1,12 +1,20 @@
 #!/bin/sh
 set -eu
 
+umask 007
 cd /app/Wargame
 
-mkdir -p data
+for runtime_dir in data data/sessions data/instances data/mail; do
+    mkdir -p "$runtime_dir"
+    if [ ! -w "$runtime_dir" ]; then
+        echo "Wargame runtime directory is not writable: $runtime_dir" >&2
+        exit 1
+    fi
+done
 
-if [ ! -f data/wargame.sqlite3 ]; then
-    php scripts/init_db.php
-fi
+chmod 700 data/sessions
+chmod 770 data data/instances data/mail
 
-exec php -S 0.0.0.0:8090 -t public
+php scripts/init_db.php
+
+exec "$@"

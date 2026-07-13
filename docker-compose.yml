@@ -4,7 +4,7 @@ x-django-env: &django-env
   DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY:-docker-dev-insecure-secret-key-change-for-production}"
   DJANGO_SECRET_KEY_FILE: "${DJANGO_SECRET_KEY_FILE:-}"
   DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-hanplanet.com,www.hanplanet.com,mc.hanplanet.com,git.hanplanet.com,game.hanplanet.com,map-collab.hanplanet.com,wargame.hanplanet.com,localhost,127.0.0.1,django,nginx}"
-  DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080,http://localhost:8000,http://127.0.0.1:8000,https://hanplanet.com,https://www.hanplanet.com,https://mc.hanplanet.com,https://git.hanplanet.com,https://game.hanplanet.com,https://map-collab.hanplanet.com,https://wargame.hanplanet.com}"
+  DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080,http://localhost:8000,http://127.0.0.1:8000,https://hanplanet.com,https://www.hanplanet.com,https://mc.hanplanet.com,https://git.hanplanet.com,https://game.hanplanet.com,https://map-collab.hanplanet.com}"
   DJANGO_SERVE_FILES: "${DJANGO_SERVE_FILES:-false}"
   DJANGO_SECURE_SSL_REDIRECT: "${DJANGO_SECURE_SSL_REDIRECT:-false}"
   DJANGO_SESSION_COOKIE_SECURE: "${DJANGO_SESSION_COOKIE_SECURE:-false}"
@@ -17,6 +17,7 @@ x-django-env: &django-env
   HANDRIVE_TUTORIAL_WORKSPACE_CLEANUP_INTERVAL_SECONDS: "${HANDRIVE_TUTORIAL_WORKSPACE_CLEANUP_INTERVAL_SECONDS:-3600}"
   HANPLANET_MEDIA_ROOT: "${HANPLANET_MEDIA_ROOT:-/data/media}"
   HANPLANET_ONSCRIPTER_ROOT: "${HANPLANET_ONSCRIPTER_ROOT:-/data/ONScripter}"
+  HANPLANET_CLI_ROOT: "${HANPLANET_CLI_ROOT:-/data/HanPlanet-CLI}"
   HANPLANET_FORGEJO_REPOS_ROOT: "${HANPLANET_FORGEJO_REPOS_ROOT:-/data/forgejo-repos}"
   HANPLANET_GITHUB_REPO_CACHE_ROOT: "${HANPLANET_GITHUB_REPO_CACHE_ROOT:-/data/github-repo-cache}"
   HANDRIVE_HLS_CACHE_ROOT: "${HANDRIVE_HLS_CACHE_ROOT:-/data/media/hls_cache}"
@@ -37,6 +38,7 @@ x-django-env: &django-env
   BUMPERCAR_SPIKY_SETTINGS_PATH: "${BUMPERCAR_SPIKY_SETTINGS_PATH:-/data/django/bumpercar_spiky_settings.json}"
   GAME_JWT_SECRET: "${GAME_JWT_SECRET:-docker-dev-game-secret-change-for-production}"
   GAME_JWT_SECRET_FILE: "${GAME_JWT_SECRET_FILE:-}"
+  WARGAME_COMPLETION_SECRET: "${WARGAME_COMPLETION_SECRET:-}"
   BUMPERCAR_SPIKY_INTERNAL_SECRET: "${BUMPERCAR_SPIKY_INTERNAL_SECRET:-${GAME_JWT_SECRET:-docker-dev-game-secret-change-for-production}}"
   BUMPERCAR_SPIKY_INTERNAL_SECRET_FILE: "${BUMPERCAR_SPIKY_INTERNAL_SECRET_FILE:-}"
   MAP_COLLAB_WS_PUBLIC_URL: "${MAP_COLLAB_WS_PUBLIC_URL:-ws://localhost:8083}"
@@ -53,6 +55,7 @@ x-django-volumes: &django-volumes
   - "${DJANGO_DATA_VOLUME:-django_data}:/data/django"
   - "${HANPLANET_MEDIA_VOLUME:-media_data}:/data/media"
   - "${HANPLANET_ONSCRIPTER_VOLUME:-onscripter_data}:/data/ONScripter"
+  - "${HANPLANET_CLI_VOLUME:-hanplanet_cli_data}:${HANPLANET_CLI_ROOT:-/data/HanPlanet-CLI}:ro"
   - "${HANPLANET_MAIL_VOLUME:-mail_data}:/data/mail"
   - "${HANPLANET_GITHUB_CACHE_VOLUME:-github_cache_data}:/data/github-repo-cache"
   - "${FORGEJO_REPOS_VOLUME:-forgejo_repos_data}:/data/forgejo-repos"
@@ -244,10 +247,26 @@ services:
       context: .
       dockerfile: Wargame/Dockerfile
     restart: unless-stopped
+    environment:
+      WARGAME_DJANGO_BASE_URL: "${WARGAME_DJANGO_BASE_URL:-https://www.hanplanet.com}"
+      WARGAME_DJANGO_INTERNAL_BASE_URL: "http://django:8000"
+      WARGAME_PUBLIC_URL: "${WARGAME_PUBLIC_URL:-https://wargame.hanplanet.com/}"
+      WARGAME_COMPLETION_SECRET: "${WARGAME_COMPLETION_SECRET:-}"
+      WARGAME_TRUST_PROXY: "1"
+      WARGAME_MAIL_TRANSPORT: "${WARGAME_MAIL_TRANSPORT:-smtp}"
+      WARGAME_MAIL_FROM: "${WARGAME_MAIL_FROM:-operations@wargame.hanplanet.com}"
+      WARGAME_SMTP_HOST: "${WARGAME_SMTP_HOST:-${HPMAIL_SMTP_HOST:-host.docker.internal}}"
+      WARGAME_SMTP_PORT: "${WARGAME_SMTP_PORT:-${HPMAIL_SMTP_PORT:-25}}"
+      WARGAME_SMTP_SECURITY: "${WARGAME_SMTP_SECURITY:-none}"
+      WARGAME_SMTP_USERNAME: "${WARGAME_SMTP_USERNAME:-}"
+      WARGAME_SMTP_PASSWORD: "${WARGAME_SMTP_PASSWORD:-}"
+      WARGAME_SMTP_TIMEOUT: "${WARGAME_SMTP_TIMEOUT:-5}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - "${WARGAME_DATA_VOLUME:-wargame_data}:/app/Wargame/data"
     ports:
-      - "${WARGAME_PORT:-8090}:8090"
+      - "127.0.0.1:${WARGAME_PORT:-8090}:8090"
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -264,6 +283,7 @@ volumes:
   django_data:
   staticfiles_data:
   media_data:
+  hanplanet_cli_data:
   mail_data:
   github_cache_data:
   forgejo_repos_data:

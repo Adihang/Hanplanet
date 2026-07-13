@@ -218,6 +218,7 @@ GAME_JWT_SECRET = load_optional_secret("GAME_JWT_SECRET", SECRET_KEY)
 GAME_JWT_ISSUER = load_optional_secret("GAME_JWT_ISSUER", PUBLIC_BASE_URL).rstrip("/")
 GAME_JWT_AUDIENCE = load_optional_secret("GAME_JWT_AUDIENCE", "hanplanet-game")
 GAME_JWT_EXP_SECONDS = max(30, load_optional_int_secret("GAME_JWT_EXP_SECONDS", 300))
+WARGAME_COMPLETION_SECRET = load_optional_secret("WARGAME_COMPLETION_SECRET", "")
 MINECRAFT_LINK_SHARED_SECRET = load_optional_secret("MINECRAFT_LINK_SHARED_SECRET", "")
 MINECRAFT_LINK_CODE_TTL_SECONDS = max(60, load_optional_int_secret("MINECRAFT_LINK_CODE_TTL_SECONDS", 600))
 MINECRAFT_LINK_HMAC_SKEW_SECONDS = max(30, load_optional_int_secret("MINECRAFT_LINK_HMAC_SKEW_SECONDS", 300))
@@ -463,6 +464,10 @@ ONSCRIPTER_STORAGE_ROOT = load_optional_secret(
     "HANPLANET_ONSCRIPTER_ROOT",
     str(_default_onscripter_root),
 )
+HANPLANET_CLI_ROOT = load_optional_secret(
+    "HANPLANET_CLI_ROOT",
+    str(Path(MEDIA_ROOT).parent / "HanPlanet-CLI"),
+)
 HANDRIVE_HLS_CACHE_ROOT = load_optional_secret(
     "HANDRIVE_HLS_CACHE_ROOT",
     str(get_media_root("hdd") / "hls_cache"),
@@ -534,14 +539,17 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 SHARED_COOKIE_DOMAIN = env_cookie_domain(
     "DJANGO_COOKIE_DOMAIN",
-    ".hanplanet.com" if DEFAULT_SECURE_TRANSPORT else None,
+    None,
 )
-SESSION_COOKIE_DOMAIN = env_cookie_domain("DJANGO_SESSION_COOKIE_DOMAIN", SHARED_COOKIE_DOMAIN)
+# Authentication cookies stay host-only so intentionally vulnerable training
+# origins can never receive the main site's session, even if a legacy env file
+# still contains the former shared-domain setting.
+SESSION_COOKIE_DOMAIN = None
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 3  # 3일
 SESSION_ENGINE = "django.contrib.sessions.backends.db"  # LocMemCache 세션 방지
 CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", default=DEFAULT_SECURE_TRANSPORT) if not DEBUG else False
 CSRF_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_DOMAIN = env_cookie_domain("DJANGO_CSRF_COOKIE_DOMAIN", SHARED_COOKIE_DOMAIN)
+CSRF_COOKIE_DOMAIN = None
 SECURE_HSTS_SECONDS = int(
     os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "31536000" if DEFAULT_SECURE_TRANSPORT else "0")
 )
@@ -551,7 +559,7 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool(
 )
 SECURE_HSTS_PRELOAD = env_bool("DJANGO_SECURE_HSTS_PRELOAD", default=False)
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_REFERRER_POLICY = os.environ.get("DJANGO_SECURE_REFERRER_POLICY", "same-origin")
+SECURE_REFERRER_POLICY = os.environ.get("DJANGO_SECURE_REFERRER_POLICY", "strict-origin-when-cross-origin")
 X_FRAME_OPTIONS = "DENY"
 CSRF_FAILURE_VIEW = "main.handrive_views.handrive_csrf_failure"
 
@@ -565,6 +573,10 @@ CSRF_TRUSTED_ORIGINS = env_list(
     "DJANGO_CSRF_TRUSTED_ORIGINS",
     "https://hanplanet.com,https://www.hanplanet.com,https://mc.hanplanet.com",
 )
+CSRF_TRUSTED_ORIGINS = [
+    origin for origin in CSRF_TRUSTED_ORIGINS
+    if origin.rstrip("/") != "https://wargame.hanplanet.com"
+]
 if "https://mc.hanplanet.com" not in CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS.append("https://mc.hanplanet.com")
 

@@ -906,7 +906,7 @@
 
         const precipitation = document.createElement('span');
         precipitation.className = 'ui-auth-account-weather-card-day-precipitation';
-        precipitation.textContent = String(day.precipitation_probability_label || '').trim();
+        precipitation.textContent = String(day.humidity_label || '').trim();
 
         const range = document.createElement('strong');
         range.className = 'ui-auth-account-weather-card-day-range';
@@ -917,7 +917,7 @@
             monthDayLabel,
             day.weekday || day.weekday_short,
             day.weather_label,
-            day.precipitation_probability_label,
+            day.humidity_label,
             dailyRangeLabel
         ].filter(Boolean).join(' '));
         item.addEventListener('click', function () {

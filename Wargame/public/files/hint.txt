@@ -1,5 +1,0 @@
-Hint for Level 4:
-The server loads files from the "files/" directory.
-Try traversing directory structures using dots and slashes.
-The target file to read is: ../../data/flag4.txt
-Can you bypass the path restriction?

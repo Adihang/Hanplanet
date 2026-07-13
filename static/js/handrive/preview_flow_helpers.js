@@ -174,7 +174,11 @@
                 return;
             }
             if (cached && typeof cached === "object") {
-                renderPreviewHtml(entry, cached.html, cached.renderMode, cached.renderClass);
+                renderPreviewHtml(entry, cached.html, cached.renderMode, cached.renderClass, {
+                    source: cached.source,
+                    sourceExtension: cached.sourceExtension,
+                    sourceRenderClass: cached.sourceRenderClass,
+                });
                 state.activeRenderedPreviewPath = pathValue;
                 setPreviewActionTargets(entry);
                 scrollPreviewIntoViewIfPortrait();
@@ -219,17 +223,27 @@
             var html = data && typeof data.html === "string" ? data.html : "";
             var renderMode = data && typeof data.render_mode === "string" ? data.render_mode : "plain_text";
             var renderClass = data && typeof data.render_class === "string" ? data.render_class : "";
+            var source = data && typeof data.source === "string" ? data.source : "";
+            var sourceExtension = data && typeof data.source_extension === "string" ? data.source_extension : "";
+            var sourceRenderClass = data && typeof data.source_render_class === "string" ? data.source_render_class : "";
             state.previewCache.set(pathValue, {
                 html: html,
                 renderMode: renderMode,
                 renderClass: renderClass,
+                source: source,
+                sourceExtension: sourceExtension,
+                sourceRenderClass: sourceRenderClass,
             });
             trimPreviewCache(state, pathValue);
             if (previewTitle && data && typeof data.title === "string" && data.title.trim()) {
                 var previewTitleText2 = previewTitle.querySelector(".handrive-list-preview-title-text") || previewTitle;
                 previewTitleText2.textContent = data.title;
             }
-            renderPreviewHtml(entry, html, renderMode, renderClass);
+            renderPreviewHtml(entry, html, renderMode, renderClass, {
+                source: source,
+                sourceExtension: sourceExtension,
+                sourceRenderClass: sourceRenderClass,
+            });
             state.activeRenderedPreviewPath = pathValue;
             setPreviewActionTargets(entry);
             scrollPreviewIntoViewIfPortrait();

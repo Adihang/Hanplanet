@@ -24,16 +24,6 @@
         {% include 'partials/ui_i18n.html' with key='dummy_notice' %}
     </a>
     {% endif %}
-    {% if is_own_portfolio and portfolio_write_url %}
-    <a
-        class="own-portfolio-edit-widget ui-nav-link"
-        href="{{ portfolio_write_url }}"
-        aria-label="{% include_trimmed 'partials/ui_i18n.html' key='edit_portfolio' %}"
-        title="{% include_trimmed 'partials/ui_i18n.html' key='edit_portfolio' %}"
-    >
-        {% include 'partials/ui_i18n.html' with key='edit' %}
-    </a>
-    {% endif %}
     <div class = 'main_banner'>
         <div class = "main_text">
             <div class="main_title">{{ profile_main_title_html }}</div>
@@ -116,6 +106,20 @@
         </a>
         {% endfor %}
     </div>
+    {% if is_own_portfolio and portfolio_write_url %}
+    <a
+        class="own-portfolio-edit-widget ui-nav-link"
+        href="{{ portfolio_write_url }}"
+        aria-label="{% include_trimmed 'partials/ui_i18n.html' key='edit_portfolio' %}"
+        title="{% include_trimmed 'partials/ui_i18n.html' key='edit_portfolio' %}"
+    >
+        <svg class="own-portfolio-edit-icon" viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true" focusable="false">
+            <path d="M3 17l1-4L13 3l3 3L7 16l-4 1z"/>
+            <line x1="11" y1="5" x2="14" y2="8"/>
+            <line x1="4" y1="13" x2="7" y2="16"/>
+        </svg>
+    </a>
+    {% endif %}
     {% include "partials/site_footer_links.html" %}
 </div>
 {% include "popup/portfolio/print_selector_template.html" %}

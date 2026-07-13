@@ -3,6 +3,7 @@
     // Keep a small inset so popups never touch the viewport edge.
     const viewportPadding = 10;
     const inlineCopyFeedbackFadeMs = 190;
+    const inlineCopyFeedbackMinVisibleMs = 700;
     const popupSelector = ".site-dropdown-menu:not(.site-custom-select-menu), [data-popup-fit-bottom], [data-popup-fit-top]";
     const modalRootSelector = [
         ".root-auth-modal",
@@ -197,6 +198,9 @@
         if (state.fallbackTimer) {
             window.clearTimeout(state.fallbackTimer);
         }
+        if (state.hideTimer) {
+            window.clearTimeout(state.hideTimer);
+        }
     }
 
     function getInlineCopyDefaultMessage() {
@@ -319,12 +323,29 @@
             button: button,
             element: element,
             hide: null,
-            fallbackTimer: 0
+            fallbackTimer: 0,
+            hideTimer: 0,
+            shownAt: Date.now()
         };
         state.hide = function () {
-            if (activeInlineCopyFeedback === state) {
-                hideInlineCopyFeedback();
+            if (activeInlineCopyFeedback !== state) {
+                return;
             }
+            const elapsed = Date.now() - state.shownAt;
+            const remainingMs = inlineCopyFeedbackMinVisibleMs - elapsed;
+            if (remainingMs > 0) {
+                if (state.hideTimer) {
+                    window.clearTimeout(state.hideTimer);
+                }
+                state.hideTimer = window.setTimeout(function () {
+                    state.hideTimer = 0;
+                    if (activeInlineCopyFeedback === state) {
+                        hideInlineCopyFeedback();
+                    }
+                }, remainingMs);
+                return;
+            }
+            hideInlineCopyFeedback();
         };
 
         activeInlineCopyFeedback = state;

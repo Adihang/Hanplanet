@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="500" viewBox="0 0 960 500" role="img" aria-labelledby="title desc">
+  <title id="title">SQL Injection과 UNION 데이터 흐름</title>
+  <desc id="desc">사용자 입력을 SQL 문자열에 결합해 문법 경계가 무너지는 과정, UNION이 같은 열 모양의 결과를 합치는 과정, prepared statement가 코드와 데이터를 분리하는 방어를 보여 준다.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#081526"/><stop offset="1" stop-color="#18152f"/></linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ffbb63"/></marker>
+    <style>
+      .title{font:700 24px system-ui,sans-serif;fill:#f8fbff}.sub{font:500 13px system-ui,sans-serif;fill:#9fb3cb}.head{font:700 16px system-ui,sans-serif;fill:#f8fbff}.body{font:500 12px system-ui,sans-serif;fill:#c8d5e5}.mono{font:600 12px ui-monospace,SFMono-Regular,monospace;fill:#f4d7ac}.box{fill:#17243a;stroke:#4a6388;stroke-width:1.5}.warn{fill:#35231d;stroke:#ff9f58;stroke-width:1.7}.safe{fill:#113329;stroke:#4adca0;stroke-width:1.7}.col{fill:#24213d;stroke:#8d7ac6}.col2{fill:#1b3040;stroke:#5aaed0}
+    </style>
+  </defs>
+  <rect width="960" height="500" rx="24" fill="url(#bg)"/>
+  <text class="title" x="42" y="48">데이터가 SQL 코드로 해석되는 순간</text>
+  <text class="sub" x="42" y="73">문자열 연결은 경계를 없애고, parameter binding은 SQL 구조와 값을 분리합니다.</text>
+
+  <text class="head" x="52" y="112">1 · 취약한 로그인 쿼리</text>
+  <rect class="box" x="52" y="130" width="205" height="74" rx="13"/>
+  <text class="body" x="70" y="154">사용자 입력</text>
+  <text class="mono" x="70" y="180">manager' OR 1=1 --</text>
+  <path d="M267 167H330" stroke="#ffbb63" stroke-width="3" marker-end="url(#arrow)"/>
+  <rect class="warn" x="341" y="120" width="357" height="94" rx="13"/>
+  <text class="body" x="359" y="145">문자열에 직접 결합</text>
+  <text class="mono" x="359" y="170">WHERE username='manager'</text>
+  <text class="mono" x="359" y="191">OR 1=1 -- ' AND password='...'</text>
+  <path d="M708 167H760" stroke="#ffbb63" stroke-width="3" marker-end="url(#arrow)"/>
+  <rect class="warn" x="771" y="130" width="137" height="74" rx="13"/>
+  <text class="body" x="790" y="157">조건이 항상 참</text>
+  <text class="mono" x="790" y="181">manager row</text>
+
+  <text class="head" x="52" y="254">2 · UNION은 같은 폭의 결과를 합칩니다</text>
+  <rect class="box" x="52" y="274" width="386" height="92" rx="14"/>
+  <text class="body" x="70" y="298">원래 상품 SELECT</text>
+  <rect class="col2" x="70" y="313" width="164" height="35" rx="8"/><text class="mono" x="119" y="335">name</text>
+  <rect class="col2" x="248" y="313" width="164" height="35" rx="8"/><text class="mono" x="300" y="335">price</text>
+  <text class="head" x="458" y="329">UNION</text>
+  <rect class="box" x="522" y="274" width="386" height="92" rx="14"/>
+  <text class="body" x="540" y="298">훈련 메모 SELECT</text>
+  <rect class="col" x="540" y="313" width="164" height="35" rx="8"/><text class="mono" x="572" y="335">note_title</text>
+  <rect class="col" x="718" y="313" width="164" height="35" rx="8"/><text class="mono" x="754" y="335">note_body</text>
+
+  <rect class="safe" x="52" y="404" width="856" height="60" rx="14"/>
+  <text class="head" x="72" y="430">Prepared statement</text>
+  <text class="mono" x="244" y="430">WHERE username = :username</text>
+  <text class="body" x="510" y="430">SQL 구조를 먼저 확정</text>
+  <text class="body" x="510" y="451">입력은 문법이 아닌 하나의 값으로 바인딩</text>
+  <path d="M445 436H493" stroke="#4adca0" stroke-width="3" marker-end="url(#arrow)"/>
+</svg>

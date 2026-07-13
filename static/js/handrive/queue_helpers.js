@@ -245,10 +245,17 @@
         var settings = options || {};
         var documentRef = settings.documentRef || document;
         var onActivate = settings.onActivate || function () {};
+        var onChildActivate = settings.onChildActivate || function () {};
+        var onChildOpen = settings.onChildOpen || function () {};
         var onOpen = settings.onOpen || function () {};
         var onOpenContextMenu = settings.onOpenContextMenu || function () {};
+        var onToggleDetails = settings.onToggleDetails || function () {};
         var getStatusLabel = settings.getStatusLabel || function () { return ""; };
         var getMetaLabel = settings.getMetaLabel || function () { return ""; };
+        var getChildItems = settings.getChildItems || function () { return []; };
+        var getChildMetaLabel = settings.getChildMetaLabel || getMetaLabel;
+        var getChildStatusLabel = settings.getChildStatusLabel || getStatusLabel;
+        var childItems = getChildItems(item).filter(Boolean);
 
         var isFileUpload = item.kind !== "operation";
         var isUploading = item.status === "uploading";
@@ -256,6 +263,11 @@
         var listItem = documentRef.createElement("li");
         listItem.className = "handrive-job-queue-item";
         listItem.dataset.status = item.status;
+        if (childItems.length > 0) {
+            listItem.classList.add("has-child-items");
+            listItem.classList.toggle("is-expanded", Boolean(item.detailsExpanded));
+            listItem.setAttribute("aria-expanded", item.detailsExpanded ? "true" : "false");
+        }
 
         // ── 행 1: 파일명(좌) + 파일 용량(우) ───────────────────────────
         var head = documentRef.createElement("div");
@@ -313,6 +325,66 @@
             listItem.appendChild(reason);
         }
 
+        if (childItems.length > 0) {
+            var childList = documentRef.createElement("ul");
+            childList.className = "handrive-job-queue-child-list";
+            childList.hidden = !item.detailsExpanded;
+            childItems.forEach(function (childItem) {
+                var childRow = documentRef.createElement("li");
+                childRow.className = "handrive-job-queue-child-row";
+                var childAction = documentRef.createElement(childItem.canOpen ? "button" : "div");
+                childAction.className = "handrive-job-queue-child-item";
+                if (childItem.canOpen) {
+                    childAction.type = "button";
+                    childAction.addEventListener("click", function (event) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onChildActivate(childItem, item, event);
+                    });
+                    childAction.addEventListener("dblclick", function (event) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onChildOpen(childItem, item, event);
+                    });
+                } else {
+                    childAction.addEventListener("click", function (event) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    });
+                }
+
+                var childName = documentRef.createElement("span");
+                childName.className = "handrive-job-queue-child-name";
+                childName.textContent = childItem.fileName || "";
+                childAction.appendChild(childName);
+
+                var childMetaText = getChildMetaLabel(childItem, item);
+                if (childMetaText) {
+                    var childMeta = documentRef.createElement("span");
+                    childMeta.className = "handrive-job-queue-child-meta";
+                    childMeta.textContent = childMetaText;
+                    childAction.appendChild(childMeta);
+                }
+
+                var childStatusText = getChildStatusLabel(childItem, item);
+                var childSizeText = String(childItem.sizeDisplay || childItem.size_display || "").trim();
+                if (childStatusText && childSizeText) {
+                    childStatusText += " · " + childSizeText;
+                } else if (childSizeText) {
+                    childStatusText = childSizeText;
+                }
+                if (childStatusText) {
+                    var childStatus = documentRef.createElement("span");
+                    childStatus.className = "handrive-job-queue-child-status";
+                    childStatus.textContent = childStatusText;
+                    childAction.appendChild(childStatus);
+                }
+                childRow.appendChild(childAction);
+                childList.appendChild(childRow);
+            });
+            listItem.appendChild(childList);
+        }
+
         var progress = documentRef.createElement("div");
         progress.className = "handrive-job-queue-progress";
         var progressBar = documentRef.createElement("span");
@@ -324,11 +396,19 @@
         listItem.addEventListener("click", function (event) {
             event.preventDefault();
             event.stopPropagation();
+            if (childItems.length > 0) {
+                item.detailsExpanded = !item.detailsExpanded;
+                onToggleDetails(item, event);
+                return;
+            }
             onActivate(item, event);
         });
         listItem.addEventListener("dblclick", function (event) {
             event.preventDefault();
             event.stopPropagation();
+            if (childItems.length > 0) {
+                return;
+            }
             onOpen(item, event);
         });
         listItem.addEventListener("contextmenu", function (event) {

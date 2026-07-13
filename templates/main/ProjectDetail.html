@@ -4,6 +4,17 @@
 {% load static static_versioned %}
 <link rel="stylesheet" type="text/css" href="{% static_v 'css/common/style.css' %}">
 <div class="project_detail_page">
+    <a
+        class="project-detail-back-btn"
+        href="{% if portfolio_owner_username %}{% url 'main:portfolio_user_lang' ui_lang=ui_lang user_id=portfolio_owner_username %}{% else %}{% url 'main:main_lang' ui_lang=ui_lang %}{% endif %}"
+        aria-label="{% if ui_lang == 'en' %}Back to portfolio{% else %}포트폴리오로 돌아가기{% endif %}"
+        title="{% if ui_lang == 'en' %}Back to portfolio{% else %}포트폴리오로 돌아가기{% endif %}"
+    >
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M19 12H5"></path>
+            <path d="M12 19l-7-7 7-7"></path>
+        </svg>
+    </a>
     <div class="project_detail">
         <h1 class="project_detail_title">{{ project.display_title }}</h1>
         <ul class="tags">
@@ -16,7 +27,6 @@
             {{ project.content }}
         </div>
     </div>
-    <hr>
     <!--
     <h5>댓글 {{ project.project_comment_set.count }}</h5>
     <div>

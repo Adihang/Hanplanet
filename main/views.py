@@ -17,6 +17,7 @@ from portfolio.models import (
     PortfolioCoverLetter,
     PortfolioProfile,
     PortfolioProject,
+    PortfolioProjectImage,
     Project,
     Project_Tag,
     upload_to_portfolio_profile,
@@ -191,7 +192,14 @@ IDENTITY_IMPERSONATION_PATTERNS = [
     re.compile(r"\b(i am|i'm|my name is|this is)\s+(lim\s+hanbyeol|hanbyeol)\b", re.IGNORECASE),
 ]
 WARGAME_ALLOWED_ORIGIN = "https://wargame.hanplanet.com"
-WARGAME_CHALLENGE_ID_PATTERN = re.compile(r"^level\d{1,3}$")
+WARGAME_PUBLIC_URL = "https://wargame.hanplanet.com/"
+WARGAME_META_TITLE = "Hanplanet Wargame"
+WARGAME_META_DESCRIPTION_KO = "실전 의뢰를 수행하며 웹 보안의 원리와 공격·방어 과정을 익히는 Wargame 학습 플랫폼입니다."
+WARGAME_META_DESCRIPTION_EN = "A Wargame learning platform for practicing web security concepts through field-style missions."
+WARGAME_META_IMAGE_URL = urljoin(WARGAME_PUBLIC_URL, "assets/operations-map.svg")
+WARGAME_CHALLENGE_ID_PATTERN = re.compile(r"^web-v\d+-\d{2}-[a-z0-9-]{2,56}$")
+WARGAME_COMPLETION_TICKET_PATTERN = re.compile(r"^[a-f0-9]{64}$")
+WARGAME_COMPLETION_NONCE_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 NETWORK_REVERSE_GEOCODE_URL = "https://nominatim.openstreetmap.org/reverse"
 NETWORK_REVERSE_GEOCODE_TIMEOUT = 3.0
 NETWORK_REVERSE_GEOCODE_USER_AGENT = "Hanplanet network-info/1.0 (https://www.hanplanet.com/)"
@@ -204,7 +212,7 @@ ACCOUNT_WEATHER_USER_AGENT = "Hanplanet account-weather/1.0 (https://www.hanplan
 ACCOUNT_WEATHER_DEFAULT_LOCATION = {
     "country": "대한민국",
     "city": "서울",
-    "label": "서울 · 대한민국",
+    "label": "대한민국 · 서울",
     "latitude": 37.5665,
     "longitude": 126.9780,
     "source": "default",
@@ -2137,6 +2145,38 @@ def _wargame_user_from_request(request):
     return get_user_model().objects.get(username=username)
 
 
+def _wargame_completion_receipt_valid(user, payload):
+    secret = str(getattr(settings, "WARGAME_COMPLETION_SECRET", "") or "").strip()
+    if not secret:
+        return False, "completion_secret_not_configured"
+
+    challenge_id = str(payload.get("challenge_id") or "").strip()
+    ticket_hash = str(payload.get("ticket_hash") or "").strip().lower()
+    nonce = str(payload.get("nonce") or "").strip().lower()
+    receipt = str(payload.get("receipt") or "").strip().lower()
+    try:
+        timestamp = int(payload.get("timestamp") or 0)
+    except (TypeError, ValueError):
+        timestamp = 0
+
+    if not WARGAME_CHALLENGE_ID_PATTERN.fullmatch(challenge_id):
+        return False, "invalid_challenge_id"
+    if not WARGAME_COMPLETION_TICKET_PATTERN.fullmatch(ticket_hash):
+        return False, "invalid_ticket_hash"
+    if not WARGAME_COMPLETION_NONCE_PATTERN.fullmatch(nonce):
+        return False, "invalid_nonce"
+    if not re.fullmatch(r"[a-f0-9]{64}", receipt):
+        return False, "invalid_receipt"
+    if abs(int(time.time()) - timestamp) > 90:
+        return False, "expired_receipt"
+
+    message = "\n".join([user.username, challenge_id, ticket_hash, str(timestamp), nonce])
+    expected = hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, receipt):
+        return False, "invalid_receipt"
+    return True, ""
+
+
 def _wargame_login_url(ui_lang):
     resolved_lang = ui_lang if ui_lang in SUPPORTED_UI_LANGS else "ko"
     next_url = quote("https://wargame.hanplanet.com/", safe="")
@@ -2163,6 +2203,7 @@ def wargame_session(request, ui_lang=None):
                 "authenticated": True,
                 "username": request.user.username,
                 "display_name": get_account_display_name(request.user),
+                "email": str(request.user.email or "").strip(),
                 "token": token,
                 "expires_in": int(getattr(settings, "GAME_JWT_EXP_SECONDS", 300) or 300),
             }
@@ -2198,9 +2239,11 @@ def wargame_solves(request, ui_lang=None):
             payload = json.loads(request.body.decode("utf-8") or "{}")
         except json.JSONDecodeError:
             return _wargame_cors_response(request, JsonResponse({"error": "invalid_json"}, status=400))
+        valid_receipt, receipt_error = _wargame_completion_receipt_valid(user, payload)
+        if not valid_receipt:
+            status = 503 if receipt_error == "completion_secret_not_configured" else 403
+            return _wargame_cors_response(request, JsonResponse({"error": receipt_error}, status=status))
         challenge_id = str(payload.get("challenge_id") or "").strip()
-        if not WARGAME_CHALLENGE_ID_PATTERN.match(challenge_id):
-            return _wargame_cors_response(request, JsonResponse({"error": "invalid_challenge_id"}, status=400))
         WargameSolve.objects.get_or_create(user=user, challenge_id=challenge_id)
 
     solves = list(
@@ -2215,6 +2258,7 @@ def wargame_solves(request, ui_lang=None):
                 "authenticated": True,
                 "username": user.username,
                 "display_name": get_account_display_name(user),
+                "email": str(user.email or "").strip(),
                 "solves": solves,
             }
         ),
@@ -2353,6 +2397,12 @@ def _build_sub_links(resolved_lang, request=None):
     links = []
     seen_urls = set()
     is_english = resolved_lang == "en"
+    game_priority = {
+        "minecraft": 0,
+        "bumpercar-spiky": 1,
+        "raise-speaki": 2,
+        "wargame": 3,
+    }
 
     for pattern in _iter_urlconf_patterns(get_resolver().url_patterns):
         route_name = getattr(pattern, "name", "") or ""
@@ -2378,24 +2428,57 @@ def _build_sub_links(resolved_lang, request=None):
         if slug == "onscripter" and not is_onscripter_user_allowed(getattr(request, "user", None)):
             continue
 
-        links.append({
+        item = {
             "slug": slug,
             "url": url,
-        })
+            "source_index": len(links),
+        }
+        if slug == "youtube-downloader":
+            item.update({
+                "title": "YouTube Downloader | Hanplanet" if is_english else "유튜브 다운로더 | Hanplanet",
+                "description": (
+                    "Paste a YouTube URL and export it as an MP4 or MP3 file."
+                    if is_english
+                    else "유튜브 URL을 붙여넣고 MP4 또는 MP3 파일로 저장하는 도구입니다."
+                ),
+                "image": build_public_absolute_url(static("media/icons/youtube-downloader-og-1200.png")),
+                "category": "tool",
+            })
+        links.append(item)
 
-    links.insert(0, {
-        "slug": "minecraft",
-        "url": "https://mc.hanplanet.com/",
-        "title": MINECRAFT_META_TITLE,
-        "site_name": "mc.hanplanet.com",
-        "description": (
-            MINECRAFT_META_DESCRIPTION_EN
-            if is_english
-            else MINECRAFT_META_DESCRIPTION_KO
-        ),
-        "image": MINECRAFT_SERVER_IMAGE_URL,
-        "category": "game",
-    })
+    links.extend([
+        {
+            "slug": "minecraft",
+            "url": "https://mc.hanplanet.com/",
+            "title": MINECRAFT_META_TITLE,
+            "site_name": "mc.hanplanet.com",
+            "description": (
+                MINECRAFT_META_DESCRIPTION_EN
+                if is_english
+                else MINECRAFT_META_DESCRIPTION_KO
+            ),
+            "image": MINECRAFT_SERVER_IMAGE_URL,
+            "category": "game",
+        },
+        {
+            "slug": "wargame",
+            "url": WARGAME_PUBLIC_URL,
+            "title": WARGAME_META_TITLE,
+            "site_name": "wargame.hanplanet.com",
+            "description": (
+                WARGAME_META_DESCRIPTION_EN
+                if is_english
+                else WARGAME_META_DESCRIPTION_KO
+            ),
+            "image": WARGAME_META_IMAGE_URL,
+            "category": "game",
+        },
+    ])
+
+    links.sort(key=lambda item: game_priority.get(item.get("slug"), len(game_priority) + int(item.get("source_index", 0) or 0)))
+
+    for index, item in enumerate(links):
+        item["source_index"] = index
 
     return links
 
@@ -6852,6 +6935,188 @@ def _ensure_authenticated_for_write(request):
     return _redirect_to_handrive_login_with_next(request)
 
 
+def _portfolio_project_image_items(project, *, exclude_ids=None):
+    """Return saved project image display data for detail pages and write previews."""
+    if not project or not hasattr(project, "project_images"):
+        return []
+    excluded = {int(value) for value in (exclude_ids or []) if str(value or "").strip().isdigit()}
+    items = []
+    for image in project.project_images.all():
+        image_url = str(getattr(image, "display_url", "") or "").strip()
+        if image.id in excluded or not image_url:
+            continue
+        items.append(
+            {
+                "id": image.id,
+                "url": image_url,
+                "alt": str(image.alt_text or getattr(project, "display_title", "") or getattr(project, "title", "") or "").strip(),
+            }
+        )
+    return items
+
+
+def _portfolio_project_image_strip_html(image_items, *, label=""):
+    """Build the horizontal project image strip appended to project detail content."""
+    safe_items = []
+    for item in image_items or []:
+        url = str(item.get("url") if isinstance(item, dict) else getattr(item, "url", "") or "").strip()
+        if not url:
+            continue
+        alt = str(item.get("alt") if isinstance(item, dict) else getattr(item, "alt", "") or "").strip()
+        safe_items.append((url, alt))
+    if not safe_items:
+        return ""
+    safe_label = html.escape(str(label or "프로젝트 이미지").strip() or "프로젝트 이미지", quote=True)
+    figures = "".join(
+        '<figure class="portfolio-project-image-item">'
+        f'<img src="{html.escape(url, quote=True)}" alt="{html.escape(alt, quote=True)}" loading="lazy">'
+        "</figure>"
+        for url, alt in safe_items
+    )
+    return mark_safe(
+        f'<div class="portfolio-project-image-strip" role="group" aria-label="{safe_label}">'
+        f"{figures}"
+        "</div>"
+    )
+
+
+def _portfolio_project_url_html(project, *, ui_lang="ko", project_url_name=None, project_url=None):
+    """Build the project URL line that used to be hand-written at the top of content."""
+    raw_url = str(
+        project_url if project_url is not None else getattr(project, "project_url", "")
+    ).strip()
+    safe_url = _portfolio_preview_safe_url(raw_url)
+    if safe_url == "#":
+        return ""
+    label = str(
+        project_url_name if project_url_name is not None else getattr(project, "project_url_name", "")
+    ).strip()
+    if not label:
+        label = "Service URL" if str(ui_lang or "").lower().startswith("en") else "서비스 URL"
+    return mark_safe(
+        '<p class="portfolio-project-url">'
+        f"<strong>{html.escape(label, quote=True)}</strong> : "
+        f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_url}</a>'
+        "</p>"
+    )
+
+
+def _portfolio_project_affiliation_html(
+    project,
+    *,
+    ui_lang="ko",
+    organization=None,
+    organization_url=None,
+    position=None,
+):
+    """Build the project organization and position block."""
+    raw_organization = str(
+        organization if organization is not None else getattr(project, "organization", "")
+    ).strip()
+    raw_organization_url = str(
+        organization_url if organization_url is not None else getattr(project, "organization_url", "")
+    ).strip()
+    raw_position = str(
+        position if position is not None else getattr(project, "position", "")
+    ).strip()
+    rows = []
+    is_english = str(ui_lang or "").lower().startswith("en")
+
+    if raw_organization:
+        organization_label = "Organization" if is_english else "소속"
+        organization_text = html.escape(raw_organization, quote=True)
+        safe_organization_url = _portfolio_preview_safe_url(raw_organization_url)
+        if safe_organization_url != "#":
+            organization_text = (
+                f'<a href="{safe_organization_url}" target="_blank" rel="noopener noreferrer">'
+                f"{organization_text}"
+                "</a>"
+            )
+        rows.append(
+            '<p class="portfolio-project-organization">'
+            f"<strong>{html.escape(organization_label, quote=True)}</strong> : {organization_text}"
+            "</p>"
+        )
+
+    if raw_position:
+        position_label = "Position" if is_english else "직책"
+        rows.append(
+            '<p class="portfolio-project-position">'
+            f"<strong>{html.escape(position_label, quote=True)}</strong> : "
+            f"{html.escape(raw_position, quote=True)}"
+            "</p>"
+        )
+
+    if not rows:
+        return ""
+    return mark_safe(f'<div class="portfolio-project-affiliation">{"".join(rows)}</div>')
+
+
+def _portfolio_project_content_html(
+    project,
+    content_source,
+    *,
+    image_items=None,
+    ui_lang="ko",
+    project_url_name=None,
+    project_url=None,
+    organization=None,
+    organization_url=None,
+    position=None,
+):
+    """Render trusted project markdown plus optional URL and uploaded images as one safe content block."""
+    affiliation_html = _portfolio_project_affiliation_html(
+        project,
+        ui_lang=ui_lang,
+        organization=organization,
+        organization_url=organization_url,
+        position=position,
+    )
+    url_html = _portfolio_project_url_html(
+        project,
+        ui_lang=ui_lang,
+        project_url_name=project_url_name,
+        project_url=project_url,
+    )
+    content_html = render_markdown_with_raw_html(content_source)
+    if image_items is None:
+        image_items = _portfolio_project_image_items(project)
+    image_strip_html = _portfolio_project_image_strip_html(
+        image_items,
+        label=getattr(project, "display_title", "") or getattr(project, "title", "") or "프로젝트 이미지",
+    )
+    content_parts = [part for part in (affiliation_html, url_html, image_strip_html, content_html) if str(part or "").strip()]
+    separator_html = '<hr class="portfolio-project-content-separator">'
+    return mark_safe(separator_html.join(str(part) for part in content_parts))
+
+
+def _save_portfolio_project_images(project, image_files):
+    """Append newly uploaded project images after the current last image order."""
+    files = [file for file in (image_files or []) if file]
+    if not project or not files:
+        return
+    max_order = project.project_images.aggregate(max_value=Max("order")).get("max_value") or 0
+    for index, image_file in enumerate(files, start=1):
+        PortfolioProjectImage.objects.create(
+            project=project,
+            image=image_file,
+            order=max_order + index,
+        )
+
+
+def _delete_portfolio_project_images(project, image_ids):
+    """Delete selected saved project images owned by the project."""
+    if not project:
+        return
+    ids = [int(value) for value in (image_ids or []) if str(value or "").strip().isdigit()]
+    if not ids:
+        return
+    for project_image in project.project_images.filter(id__in=ids):
+        if project_image.image:
+            project_image.image.delete(save=False)
+        project_image.delete()
+
+
 @require_http_methods(["POST"])
 @csrf_protect
 def account_profile_image_upload(request, ui_lang=None):
@@ -7014,6 +7279,9 @@ def portfolio_write(request, ui_lang=None):
                     project.order = max_order + 1
                 project.save()
                 project_form.save_m2m()
+                if action == "update_project":
+                    _delete_portfolio_project_images(project, request.POST.getlist("delete_project_images"))
+                _save_portfolio_project_images(project, project_form.cleaned_data.get("project_images"))
                 return _portfolio_write_redirect_with_status(request, "project_saved")
             return _portfolio_write_redirect_with_status(request, "project_invalid")
 
@@ -7165,6 +7433,7 @@ def portfolio_write(request, ui_lang=None):
         "cover_letter_mode": cover_letter_mode,
         "selected_career": selected_career,
         "selected_project": selected_project,
+        "selected_project_images": selected_project.project_images.all() if selected_project is not None else [],
         "selected_cover_letter": selected_cover_letter,
         "selected_cover_letter_public_url": selected_cover_letter_public_url,
         "selected_career_id": selected_career_id,
@@ -7227,6 +7496,30 @@ def _portfolio_preview_safe_url(value):
     return "#"
 
 
+def _portfolio_preview_safe_image_url(value):
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return "#"
+    parsed_url = urlparse(raw_value)
+    if parsed_url.scheme in {"http", "https"} and parsed_url.netloc:
+        return html.escape(raw_value, quote=True)
+    if parsed_url.scheme == "blob" and raw_value.startswith("blob:"):
+        return html.escape(raw_value, quote=True)
+    if not parsed_url.scheme and not parsed_url.netloc and raw_value.startswith("/") and not raw_value.startswith("//"):
+        return html.escape(raw_value, quote=True)
+    data_prefixes = (
+        "data:image/png;",
+        "data:image/jpeg;",
+        "data:image/jpg;",
+        "data:image/gif;",
+        "data:image/webp;",
+        "data:image/avif;",
+    )
+    if raw_value.lower().startswith(data_prefixes):
+        return html.escape(raw_value, quote=True)
+    return "#"
+
+
 def _portfolio_preview_parse_date(value):
     raw_value = str(value or "").strip()
     if not raw_value:
@@ -7268,6 +7561,30 @@ def _portfolio_preview_date_range(join_date, leave_date, ui_lang):
     return f"{PortfolioCareer._format_korean_date(join_date)} ~ {PortfolioCareer._format_korean_date(effective_leave_date)}"
 
 
+def _portfolio_preview_int(data, key, default=None):
+    raw_value = _portfolio_preview_text(data, key, "")
+    if not raw_value:
+        return default
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _portfolio_preview_has_any_value(data, keys):
+    if not isinstance(data, dict):
+        return False
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, list):
+            if any(str(item or "").strip() for item in value):
+                return True
+            continue
+        if str(value or "").strip():
+            return True
+    return False
+
+
 def _portfolio_write_preview_profile_values(request, data, ui_lang):
     profile_data = data.get("profile") if isinstance(data, dict) else {}
     profile_data = profile_data if isinstance(profile_data, dict) else {}
@@ -7300,11 +7617,20 @@ def _portfolio_write_preview_profile_values(request, data, ui_lang):
     }
 
 
+def _portfolio_write_preview_apply_profile_context(context, request, data, ui_lang):
+    values = _portfolio_write_preview_profile_values(request, data, ui_lang)
+    context["profile_image_url"] = values["profile_image_url"]
+    context["profile_main_title_html"] = render_markdown_with_raw_html(values["title_source"])
+    context["profile_main_subtitle_html"] = render_markdown_with_raw_html(values["subtitle_source"])
+    context["profile_phone_display"] = values["phone"]
+    context["profile_email_display"] = values["email"]
+
+
 def _portfolio_write_preview_profile_banner_html(values):
     return f"""
 <div class="main_banner">
     <div class="main_text">
-        <div class="main_title">{render_markdown_safely(values["title_source"])}</div>
+        <div class="main_title">{render_markdown_with_raw_html(values["title_source"])}</div>
         <div class="contact">
             <div class="phone">Phone: {_portfolio_preview_escape(values["phone"])}</div>
             <div class="email">Email: {_portfolio_preview_escape(values["email"])}</div>
@@ -7318,7 +7644,7 @@ def _portfolio_write_preview_profile_banner_html(values):
 def _portfolio_write_preview_profile_subtitle_html(values):
     return f"""
 <hr>
-<div class="main_subtitle">{render_markdown_safely(values["subtitle_source"])}</div>
+<div class="main_subtitle">{render_markdown_with_raw_html(values["subtitle_source"])}</div>
 <hr>
 """.strip()
 
@@ -7336,34 +7662,101 @@ def _portfolio_write_preview_profile_html(request, data, ui_lang):
 def _portfolio_write_preview_career_html(request, data, ui_lang):
     career_data = data.get("career") if isinstance(data, dict) else {}
     career_data = career_data if isinstance(career_data, dict) else {}
+    careers = _portfolio_write_preview_careers(request, data, ui_lang)
+    if not careers:
+        careers = [_portfolio_write_preview_career_from_data(career_data, ui_lang, placeholder=True)]
+    return render_to_string(
+        "main/Careers.html",
+        {
+            "careers": careers,
+            "ui_lang": ui_lang,
+        },
+        request=request,
+    ).strip()
+
+
+def _portfolio_write_preview_career_from_model(career, ui_lang):
+    use_english_content = ui_lang == "en" and bool((career.content_en or "").strip())
+    use_english_company = ui_lang == "en" and bool((career.company_en or "").strip())
+    rounded_period_text = career.display_period_en_rounded if ui_lang == "en" else career.display_period_rounded
+    if career.is_currently_employed:
+        display_period_text = f"Current for {rounded_period_text}" if ui_lang == "en" else f"{rounded_period_text} 재직중"
+    else:
+        display_period_text = rounded_period_text
+    if ui_lang == "en":
+        effective_leave_date = career.effective_leave_date
+        display_date_range = f"{career.join_date:%Y-%m-%d} ~ {effective_leave_date:%Y-%m-%d}"
+    else:
+        display_date_range = career.formatted_date_range
+    return SimpleNamespace(
+        id=career.id,
+        order=career.order or 0,
+        display_company=career.company_en if use_english_company else career.company,
+        display_date_range=display_date_range,
+        display_period_text=display_period_text,
+        position=career.position,
+        display_content=render_markdown_safely(career.content_en if use_english_content else career.content),
+    )
+
+
+def _portfolio_write_preview_career_from_data(career_data, ui_lang, *, fallback=None, placeholder=False):
+    career_data = career_data if isinstance(career_data, dict) else {}
+    fallback = fallback or SimpleNamespace()
     company = _portfolio_preview_text(career_data, "company_en" if ui_lang == "en" else "company")
     if not company and ui_lang == "en":
         company = _portfolio_preview_text(career_data, "company")
-    company = company or ("Sample Company" if ui_lang == "en" else "샘플 회사")
-    position = _portfolio_preview_text(career_data, "position") or ("Position" if ui_lang == "en" else "직책")
+    if not company:
+        company = getattr(fallback, "company_en" if ui_lang == "en" else "company", "") or getattr(fallback, "company", "")
+    company = company or (("Sample Company" if ui_lang == "en" else "샘플 회사") if placeholder else "")
+    position = _portfolio_preview_text(career_data, "position") or getattr(fallback, "position", "")
+    position = position or (("Position" if ui_lang == "en" else "직책") if placeholder else "")
     content = _portfolio_preview_text(career_data, "content_en" if ui_lang == "en" else "content")
     if not content and ui_lang == "en":
         content = _portfolio_preview_text(career_data, "content")
-    content = content or ("Career description preview." if ui_lang == "en" else "경력 설명 미리보기입니다.")
-    join_date = _portfolio_preview_parse_date(_portfolio_preview_text(career_data, "join_date"))
-    leave_date = _portfolio_preview_parse_date(_portfolio_preview_text(career_data, "leave_date"))
+    if not content:
+        content = getattr(fallback, "content_en" if ui_lang == "en" else "content", "") or getattr(fallback, "content", "")
+    content = content or (("Career description preview." if ui_lang == "en" else "경력 설명 미리보기입니다.") if placeholder else "")
+    join_date = _portfolio_preview_parse_date(_portfolio_preview_text(career_data, "join_date")) or getattr(fallback, "join_date", None)
+    if "leave_date" in career_data:
+        leave_date = _portfolio_preview_parse_date(_portfolio_preview_text(career_data, "leave_date"))
+    else:
+        leave_date = getattr(fallback, "leave_date", None)
     date_range = _portfolio_preview_date_range(join_date, leave_date, ui_lang)
     period_text = _portfolio_preview_period_text(join_date, leave_date, ui_lang)
-    career = SimpleNamespace(
+    return SimpleNamespace(
+        id=_portfolio_preview_int(career_data, "career_id", getattr(fallback, "id", None)),
+        order=_portfolio_preview_int(career_data, "order", getattr(fallback, "order", 0) or 0),
         display_company=company,
         display_date_range=date_range,
         display_period_text=period_text,
         position=position,
         display_content=render_markdown_safely(content),
     )
-    return render_to_string(
-        "main/Careers.html",
-        {
-            "careers": [career],
-            "ui_lang": ui_lang,
-        },
-        request=request,
-    ).strip()
+
+
+def _portfolio_write_preview_careers(request, data, ui_lang, *, single_current=False):
+    career_data = data.get("career") if isinstance(data, dict) else {}
+    career_data = career_data if isinstance(career_data, dict) else {}
+    current_id = _portfolio_preview_int(career_data, "career_id")
+    saved_careers = list(PortfolioCareer.objects.filter(user=request.user).order_by("-order", "-id"))
+    if single_current:
+        fallback = next((career for career in saved_careers if career.id == current_id), None)
+        return [_portfolio_write_preview_career_from_data(career_data, ui_lang, fallback=fallback, placeholder=True)]
+
+    preview_careers = []
+    replaced = False
+    for career in saved_careers:
+        if current_id and career.id == current_id:
+            preview_careers.append(_portfolio_write_preview_career_from_data(career_data, ui_lang, fallback=career))
+            replaced = True
+        else:
+            preview_careers.append(_portfolio_write_preview_career_from_model(career, ui_lang))
+
+    if not replaced and _portfolio_preview_has_any_value(career_data, ("company", "company_en", "position", "content", "content_en", "join_date")):
+        preview_careers.append(_portfolio_write_preview_career_from_data(career_data, ui_lang, placeholder=True))
+
+    preview_careers.sort(key=lambda career: (getattr(career, "order", 0) or 0, getattr(career, "id", 0) or 0), reverse=True)
+    return preview_careers
 
 
 def _portfolio_write_preview_tags_html(tags):
@@ -7376,27 +7769,21 @@ def _portfolio_write_preview_tags_html(tags):
 def _portfolio_write_preview_projects_html(request, data, ui_lang, *, include_detail=False):
     project_data = data.get("project") if isinstance(data, dict) else {}
     project_data = project_data if isinstance(project_data, dict) else {}
-    title = _portfolio_preview_text(project_data, "title_en" if ui_lang == "en" else "title")
-    if not title and ui_lang == "en":
-        title = _portfolio_preview_text(project_data, "title")
-    title = title or ("Project preview" if ui_lang == "en" else "프로젝트 미리보기")
-    content = _portfolio_preview_text(project_data, "content_en" if ui_lang == "en" else "content")
-    if not content and ui_lang == "en":
-        content = _portfolio_preview_text(project_data, "content")
-    content = content or ("Project detail preview." if ui_lang == "en" else "프로젝트 상세 미리보기입니다.")
-    tags = [str(tag or "").strip() for tag in project_data.get("tags", []) if str(tag or "").strip()]
-    project = SimpleNamespace(
-        is_dummy=True,
-        dummy_href="#",
-        banner_img=None,
-        dummy_banner_url="",
-        display_title=title,
-        tags=_DummyTagRelation(tags),
-    )
+    current_id = _portfolio_preview_int(project_data, "project_id")
+    projects = _portfolio_write_preview_projects(request, data, ui_lang)
+    if not projects:
+        projects = [_portfolio_write_preview_project_from_data(project_data, ui_lang, placeholder=True)]
+    detail_project = None
+    if current_id:
+        detail_project = next((project for project in projects if getattr(project, "id", None) == current_id), None)
+    if detail_project is None and _portfolio_preview_has_any_value(project_data, ("title", "title_en", "content", "content_en", "create_date")):
+        detail_project = next((project for project in projects if getattr(project, "is_dummy", False)), None)
+    if detail_project is None:
+        detail_project = projects[0] if projects else _portfolio_write_preview_project_from_data(project_data, ui_lang, placeholder=True)
     section_html = render_to_string(
         "main/Projects.html",
         {
-            "projects": [project],
+            "projects": projects,
             "ui_lang": ui_lang,
             "portfolio_owner": request.user,
         },
@@ -7404,16 +7791,127 @@ def _portfolio_write_preview_projects_html(request, data, ui_lang, *, include_de
     ).strip()
     detail_html = ""
     if include_detail:
-        tags_html = _portfolio_write_preview_tags_html(tags)
+        tags_html = "".join(
+            f'<li class="tag">{_portfolio_preview_escape(getattr(tag, "tag", ""))}</li>'
+            for tag in getattr(getattr(detail_project, "tags", None), "all", lambda: [])()
+        )
         detail_html = f"""
 <div class="project_detail portfolio-write-preview-project-detail">
-    <h1 class="project_detail_title">{_portfolio_preview_escape(title)}</h1>
+    <h1 class="project_detail_title">{_portfolio_preview_escape(getattr(detail_project, "display_title", ""))}</h1>
     <ul class="tags">{tags_html}</ul>
     <hr>
-    <div class="project_detail_content ui-markdown">{render_markdown_safely(content)}</div>
+    <div class="project_detail_content">{_portfolio_project_content_html(detail_project, getattr(detail_project, "content_source", ""), image_items=getattr(detail_project, "project_image_items", []), ui_lang=ui_lang)}</div>
 </div>
 """.strip()
     return f"{section_html}\n{detail_html}".strip()
+
+
+def _portfolio_write_preview_project_from_model(project, ui_lang):
+    use_english_title = ui_lang == "en" and bool((project.title_en or "").strip())
+    use_english_content = ui_lang == "en" and bool((project.content_en or "").strip())
+    return SimpleNamespace(
+        id=project.id,
+        number=project.number,
+        order=project.order or 0,
+        create_date=project.create_date,
+        is_dummy=False,
+        dummy_href="",
+        banner_img=project.banner_img,
+        dummy_banner_url="",
+        display_title=project.title_en if use_english_title else project.title,
+        tags=project.tags,
+        content_source=project.content_en if use_english_content else project.content,
+        organization=project.organization,
+        organization_url=project.organization_url,
+        position=project.position,
+        project_url_name=project.project_url_name,
+        project_url=project.project_url,
+        project_image_items=_portfolio_project_image_items(project),
+    )
+
+
+def _portfolio_write_preview_project_from_data(project_data, ui_lang, *, fallback=None, placeholder=False):
+    project_data = project_data if isinstance(project_data, dict) else {}
+    fallback = fallback or SimpleNamespace()
+    title = _portfolio_preview_text(project_data, "title_en" if ui_lang == "en" else "title")
+    if not title and ui_lang == "en":
+        title = _portfolio_preview_text(project_data, "title")
+    if not title:
+        title = getattr(fallback, "title_en" if ui_lang == "en" else "title", "") or getattr(fallback, "title", "")
+    title = title or (("Project preview" if ui_lang == "en" else "프로젝트 미리보기") if placeholder else "")
+    content = _portfolio_preview_text(project_data, "content_en" if ui_lang == "en" else "content")
+    if not content and ui_lang == "en":
+        content = _portfolio_preview_text(project_data, "content")
+    if not content:
+        content = getattr(fallback, "content_en" if ui_lang == "en" else "content", "") or getattr(fallback, "content", "")
+    content = content or (("Project detail preview." if ui_lang == "en" else "프로젝트 상세 미리보기입니다.") if placeholder else "")
+    organization = _portfolio_preview_text(project_data, "organization", getattr(fallback, "organization", ""))
+    organization_url = _portfolio_preview_text(project_data, "organization_url", getattr(fallback, "organization_url", ""))
+    position = _portfolio_preview_text(project_data, "position", getattr(fallback, "position", ""))
+    project_url_name = _portfolio_preview_text(project_data, "project_url_name", getattr(fallback, "project_url_name", ""))
+    project_url = _portfolio_preview_text(project_data, "project_url", getattr(fallback, "project_url", ""))
+    tags = [str(tag or "").strip() for tag in project_data.get("tags", []) if str(tag or "").strip()] if isinstance(project_data.get("tags"), list) else []
+    banner_preview_url = _portfolio_preview_safe_image_url(_portfolio_preview_text(project_data, "banner_preview_url"))
+    banner_img = getattr(fallback, "banner_img", None)
+    is_saved_project = bool(getattr(fallback, "id", None))
+    deleted_image_ids = project_data.get("delete_project_images", []) if isinstance(project_data.get("delete_project_images"), list) else []
+    project_image_items = _portfolio_project_image_items(fallback, exclude_ids=deleted_image_ids)
+    preview_image_urls = project_data.get("project_image_preview_urls", [])
+    if isinstance(preview_image_urls, list):
+        for preview_url in preview_image_urls:
+            safe_preview_url = _portfolio_preview_safe_image_url(preview_url)
+            if safe_preview_url != "#":
+                project_image_items.append({"url": safe_preview_url, "alt": title})
+    return SimpleNamespace(
+        id=_portfolio_preview_int(project_data, "project_id", getattr(fallback, "id", None)),
+        number=getattr(fallback, "number", None),
+        order=_portfolio_preview_int(project_data, "order", getattr(fallback, "order", 0) or 0),
+        create_date=_portfolio_preview_parse_date(_portfolio_preview_text(project_data, "create_date")) or getattr(fallback, "create_date", None),
+        is_dummy=not is_saved_project,
+        dummy_href="#" if not is_saved_project else "",
+        banner_img=banner_img,
+        dummy_banner_url=banner_preview_url if banner_preview_url != "#" else "",
+        display_title=title,
+        tags=_DummyTagRelation(tags) if tags else getattr(fallback, "tags", _DummyTagRelation([])),
+        content_source=content,
+        organization=organization,
+        organization_url=organization_url,
+        position=position,
+        project_url_name=project_url_name,
+        project_url=project_url,
+        project_image_items=project_image_items,
+    )
+
+
+def _portfolio_write_preview_projects(request, data, ui_lang, *, single_current=False):
+    project_data = data.get("project") if isinstance(data, dict) else {}
+    project_data = project_data if isinstance(project_data, dict) else {}
+    current_id = _portfolio_preview_int(project_data, "project_id")
+    saved_projects = list(PortfolioProject.objects.filter(user=request.user).order_by("-create_date", "-id"))
+    if single_current:
+        fallback = next((project for project in saved_projects if project.id == current_id), None)
+        return [_portfolio_write_preview_project_from_data(project_data, ui_lang, fallback=fallback, placeholder=True)]
+
+    preview_projects = []
+    replaced = False
+    for project in saved_projects:
+        if current_id and project.id == current_id:
+            preview_projects.append(_portfolio_write_preview_project_from_data(project_data, ui_lang, fallback=project))
+            replaced = True
+        else:
+            preview_projects.append(_portfolio_write_preview_project_from_model(project, ui_lang))
+
+    if not replaced and _portfolio_preview_has_any_value(project_data, ("title", "title_en", "content", "content_en", "create_date")):
+        preview_projects.append(_portfolio_write_preview_project_from_data(project_data, ui_lang, placeholder=True))
+
+    preview_projects.sort(
+        key=lambda project: (
+            getattr(project, "create_date", None) or datetime.min.date(),
+            getattr(project, "id", 0) or 0,
+        ),
+        reverse=True,
+    )
+    return preview_projects
 
 
 def _portfolio_write_preview_cover_letter_html(data):
@@ -7486,6 +7984,75 @@ def _portfolio_write_preview_buttons_html(data, ui_lang):
 """.strip()
 
 
+def _portfolio_write_preview_action_buttons(request, data):
+    buttons = data.get("buttons") if isinstance(data, dict) else None
+    if not isinstance(buttons, list):
+        return list(PortfolioActionButton.objects.filter(user=request.user).order_by("order", "id")[:3])
+    preview_buttons = []
+    for button in buttons:
+        if not isinstance(button, dict):
+            continue
+        label = _portfolio_preview_text(button, "label")
+        url = _portfolio_preview_safe_url(_portfolio_preview_text(button, "url"))
+        if not label or url == "#":
+            continue
+        icon_url = _portfolio_preview_safe_url(_portfolio_preview_text(button, "icon_url"))
+        preview_buttons.append(
+            SimpleNamespace(
+                order=_portfolio_preview_int(button, "order", 999) or 999,
+                label=label,
+                url=url,
+                icon_url="" if icon_url == "#" else icon_url,
+            )
+        )
+    preview_buttons.sort(key=lambda button: (button.order, button.label))
+    return preview_buttons[:3]
+
+
+def _portfolio_write_preview_full_document(request, data, ui_lang, theme=""):
+    context = _build_portfolio_view_context(request, ui_lang, request.user)
+    _portfolio_write_preview_apply_profile_context(context, request, data, ui_lang)
+
+    preview_careers = _portfolio_write_preview_careers(request, data, ui_lang)
+    if preview_careers:
+        context["careers"] = preview_careers
+
+    preview_projects = _portfolio_write_preview_projects(request, data, ui_lang)
+    if preview_projects:
+        context["projects"] = preview_projects
+
+    context["portfolio_action_buttons"] = _portfolio_write_preview_action_buttons(request, data)
+    context["portfolio_cover_letter"] = None
+    context["portfolio_cover_letter_content_html"] = ""
+    context["is_own_portfolio"] = False
+    context["portfolio_write_url"] = ""
+    context["is_dummy_portfolio"] = False
+    context["hide_global_nav"] = True
+    context["show_chat_widget"] = False
+    context["meta_robots"] = SEO_NOINDEX_ROBOTS
+    context["account_theme_mode"] = "dark" if str(theme or "").strip().lower() == "dark" else "light"
+    html_document = render_to_string("main.html", context, request=request)
+    preview_style = """
+<style data-portfolio-write-preview-overrides>
+.portfolio-dummy-notice,
+.own-portfolio-edit-widget,
+.footer-links,
+.chat-widget,
+.ui-nav {
+    display: none !important;
+}
+.project_card_link {
+    pointer-events: none;
+}
+</style>
+""".strip()
+    if "<head>" in html_document:
+        html_document = html_document.replace("<head>", "<head>\n<base target=\"_blank\">", 1)
+    if "</head>" in html_document:
+        html_document = html_document.replace("</head>", f"{preview_style}\n</head>", 1)
+    return html_document
+
+
 def _portfolio_write_preview_body_html(request, scope, data, ui_lang):
     scope = scope if scope in {"profile", "career", "project", "cover_letter", "buttons", "full"} else "full"
     if scope == "full":
@@ -7521,6 +8088,9 @@ def _portfolio_write_preview_body_html(request, scope, data, ui_lang):
 
 
 def _portfolio_write_preview_document(request, scope, data, ui_lang, theme=""):
+    if scope == "full":
+        return _portfolio_write_preview_full_document(request, data, ui_lang, theme=theme)
+
     body_html = _portfolio_write_preview_body_html(request, scope, data, ui_lang)
     theme_class = " theme-dark" if str(theme or "").strip().lower() == "dark" else ""
     css_links = "\n".join(
@@ -7567,6 +8137,16 @@ body.portfolio-page.theme-dark {{
 }}
 .project_card_link {{
     pointer-events: none;
+}}
+.portfolio-write-preview-project-detail {{
+    width: min(100%, 1300px);
+    margin: 30px auto 0;
+    text-align: left;
+}}
+.portfolio-write-preview-project-detail .project_detail_title,
+.portfolio-write-preview-project-detail .tags,
+.portfolio-write-preview-project-detail .project_detail_content {{
+    text-align: left;
 }}
 .portfolio-write-preview-empty {{
     width: min(100%, 1300px);
@@ -7631,7 +8211,7 @@ def ProjectDetailByUser(request, user_id, project_number, ui_lang=None):
     use_english_content = resolved_lang == "en" and bool((project.content_en or "").strip())
     project.display_title = project.title_en if use_english_title else project.title
     content_md = project.content_en if use_english_content else project.content
-    project.content = render_markdown_with_raw_html(content_md)
+    project.content = _portfolio_project_content_html(project, content_md, ui_lang=resolved_lang)
     context["project"] = project
     context["portfolio_owner"] = owner
     context["portfolio_owner_username"] = owner.username
@@ -8155,6 +8735,217 @@ def _normalize_account_weather_text(raw_value, max_length):
     return value
 
 
+def _normalize_account_weather_location_part(raw_value):
+    return re.sub(r"[\s._·,()]+", "", str(raw_value or "").strip()).lower()
+
+
+def _account_weather_location_part_looks_administrative(raw_value):
+    value = str(raw_value or "").strip()
+    if not value:
+        return False
+    lowered = value.lower()
+    administrative_suffixes = (
+        "동",
+        "읍",
+        "면",
+        "리",
+        "구",
+        "시",
+        "군",
+        "도",
+        "-dong",
+        " dong",
+        "-eup",
+        " eup",
+        "-myeon",
+        " myeon",
+        "-ri",
+        " ri",
+        "-gu",
+        " gu",
+        "-si",
+        " si",
+        "-gun",
+        " gun",
+        "-do",
+        " do",
+        " district",
+        " borough",
+        " county",
+        " city",
+        " province",
+        " prefecture",
+        " municipality",
+    )
+    return lowered.endswith(administrative_suffixes)
+
+
+def _account_weather_location_part_looks_poi(raw_value):
+    value = str(raw_value or "").strip().lower()
+    if not value:
+        return False
+    poi_markers = (
+        "park",
+        "station",
+        "airport",
+        "terminal",
+        "museum",
+        "school",
+        "university",
+        "hospital",
+        "mall",
+        "market",
+        "hotel",
+        "palace",
+        "bridge",
+        "library",
+        "공원",
+        "역",
+        "공항",
+        "터미널",
+        "박물관",
+        "미술관",
+        "학교",
+        "대학교",
+        "병원",
+        "시장",
+        "백화점",
+        "호텔",
+        "궁",
+        "대교",
+        "도서관",
+    )
+    return any(marker in value for marker in poi_markers)
+
+
+def _account_weather_geocode_feature_code(match):
+    if not isinstance(match, dict):
+        return ""
+    return str(match.get("feature_code") or match.get("featureCode") or "").strip().upper()
+
+
+def _account_weather_geocode_feature_is_poi(match):
+    feature_code = _account_weather_geocode_feature_code(match)
+    if not feature_code:
+        return False
+    administrative_prefixes = ("ADM", "PPL")
+    return not feature_code.startswith(administrative_prefixes)
+
+
+def _account_weather_geocode_admin_parts(match, resolved_country):
+    match = match if isinstance(match, dict) else {}
+    return [
+        match.get("admin4"),
+        match.get("admin3"),
+        match.get("admin2"),
+        match.get("admin1"),
+        resolved_country,
+    ]
+
+
+def _account_weather_should_use_admin_area_label(match, resolved_city, admin_parts):
+    specific_admin_parts = [part for part in admin_parts[:-1] if str(part or "").strip()]
+    if not specific_admin_parts:
+        return False
+    city_key = _normalize_account_weather_location_part(resolved_city)
+    admin_keys = {
+        _normalize_account_weather_location_part(part)
+        for part in specific_admin_parts
+        if str(part or "").strip()
+    }
+    if city_key and city_key in admin_keys:
+        return False
+    if _account_weather_location_part_looks_administrative(resolved_city):
+        return False
+    if _account_weather_geocode_feature_is_poi(match):
+        return True
+    return _account_weather_location_part_looks_poi(resolved_city)
+
+
+def _account_weather_reverse_geocode_language(ui_lang):
+    return "en,ko" if _account_weather_language(ui_lang) == "en" else "ko,en"
+
+
+def _account_weather_location_label_from_parts_for_language(ui_lang, *parts):
+    labels = []
+    for value in parts:
+        text = str(value or "").strip()
+        if text and text not in labels:
+            labels.append(text)
+    if len(labels) > 2:
+        labels = [labels[0], labels[-1]]
+    if _account_weather_language(ui_lang) == "ko":
+        labels.reverse()
+    return " · ".join(labels)
+
+
+def _account_weather_location_label_part_count(label):
+    return len([part for part in str(label or "").split("·") if part.strip()])
+
+
+def _account_weather_compact_location_label_for_language(location, ui_lang):
+    if not isinstance(location, dict):
+        return location
+    label = str(location.get("label") or "").strip()
+    if _account_weather_location_label_part_count(label) <= 2:
+        return location
+    country = str(location.get("country") or "").strip()
+    city = str(location.get("city") or "").strip()
+    compact_label = _account_weather_location_label_from_parts_for_language(ui_lang, city, country)
+    if not compact_label or compact_label == label:
+        return location
+    return dict(location, label=compact_label)
+
+
+def _account_weather_reverse_admin_location(location, ui_lang):
+    latitude = _coerce_network_coordinate(location.get("latitude"), -90, 90)
+    longitude = _coerce_network_coordinate(location.get("longitude"), -180, 180)
+    if latitude is None or longitude is None:
+        return None
+    response = httpx.get(
+        NETWORK_REVERSE_GEOCODE_URL,
+        params={
+            "format": "jsonv2",
+            "lat": f"{latitude:.5f}",
+            "lon": f"{longitude:.5f}",
+            "zoom": "16",
+            "addressdetails": "1",
+            "accept-language": _account_weather_reverse_geocode_language(ui_lang),
+        },
+        headers={
+            "Accept": "application/json",
+            "Referer": "https://www.hanplanet.com/",
+            "User-Agent": ACCOUNT_WEATHER_USER_AGENT,
+        },
+        timeout=ACCOUNT_WEATHER_TIMEOUT,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    address = payload.get("address") if isinstance(payload, dict) else {}
+    if not isinstance(address, dict):
+        return None
+    country = str(address.get("country") or address.get("country_code") or location.get("country") or "").strip()
+    smallest_area = ""
+    for key in ("suburb", "quarter", "neighbourhood", "village", "hamlet", "town"):
+        candidate = str(address.get(key) or "").strip()
+        if candidate:
+            smallest_area = candidate
+            break
+    higher_areas = []
+    for key in ("city_district", "district", "borough", "municipality", "county", "city", "state_district", "state", "region"):
+        candidate = str(address.get(key) or "").strip()
+        if candidate:
+            higher_areas.append(candidate)
+    label = _account_weather_location_label_from_parts_for_language(ui_lang, smallest_area, *higher_areas, country)
+    if not label:
+        return None
+    return {
+        "country": country,
+        "city": smallest_area or (higher_areas[0] if higher_areas else str(location.get("city") or "").strip()),
+        "label": label,
+    }
+
+
 def _account_weather_public_client_ip(request):
     x_forwarded_for = _network_meta_value(request, "HTTP_X_FORWARDED_FOR")
     forwarded_chain = [part.strip() for part in x_forwarded_for.split(",") if part.strip()]
@@ -8212,7 +9003,6 @@ def _account_weather_location_label_from_parts(*parts):
 
 
 def _account_weather_location_from_geocode_match(match, ui_lang, *, source="manual", country="", city=""):
-    del ui_lang
     match = match if isinstance(match, dict) else {}
     latitude = _coerce_network_coordinate(match.get("latitude"), -90, 90)
     longitude = _coerce_network_coordinate(match.get("longitude"), -180, 180)
@@ -8220,17 +9010,16 @@ def _account_weather_location_from_geocode_match(match, ui_lang, *, source="manu
         return None
     resolved_country = str(match.get("country") or match.get("country_code") or "").strip()
     resolved_city = str(match.get("name") or "").strip()
-    admin_parts = [
-        match.get("admin4"),
-        match.get("admin3"),
-        match.get("admin2"),
-        match.get("admin1"),
-        resolved_country,
-    ]
-    label = _account_weather_location_label_from_parts(resolved_city, *admin_parts)
+    admin_parts = _account_weather_geocode_admin_parts(match, resolved_country)
+    use_admin_area_label = _account_weather_should_use_admin_area_label(match, resolved_city, admin_parts)
+    label = _account_weather_location_label_from_parts_for_language(
+        ui_lang,
+        *(admin_parts if use_admin_area_label else [resolved_city, *admin_parts])
+    )
+    resolved_display_city = next((str(part or "").strip() for part in admin_parts[:-1] if str(part or "").strip()), "")
     return {
         "country": country or resolved_country,
-        "city": city or resolved_city,
+        "city": city or (resolved_display_city if use_admin_area_label else resolved_city),
         "label": label or _account_weather_location_label_from_parts(city, country),
         "latitude": latitude,
         "longitude": longitude,
@@ -8238,6 +9027,70 @@ def _account_weather_location_from_geocode_match(match, ui_lang, *, source="manu
         "resolved_country": resolved_country,
         "resolved_city": resolved_city,
     }
+
+
+def _account_weather_location_needs_admin_label(location):
+    if not isinstance(location, dict):
+        return False
+    label = str(location.get("label") or "").strip()
+    city = str(location.get("city") or "").strip()
+    country = str(location.get("country") or "").strip()
+    if not city or not country:
+        return False
+    if len([part for part in label.split("·") if part.strip()]) >= 3:
+        return False
+    if _account_weather_location_part_looks_administrative(city):
+        return False
+    return _account_weather_location_part_looks_poi(city) or _account_weather_location_part_looks_poi(label)
+
+
+def _account_weather_enrich_location_admin_label(location, ui_lang):
+    location = _account_weather_compact_location_label_for_language(location, ui_lang)
+    if not _account_weather_location_needs_admin_label(location):
+        return location
+    language = _account_weather_language(ui_lang)
+    city = str(location.get("city") or "").strip()
+    country = str(location.get("country") or "").strip()
+    cache_fingerprint = hashlib.sha256(f"{language}\0{city}\0{country}".encode("utf-8")).hexdigest()[:24]
+    cache_key = f"account-weather-location-enrich:v3:{cache_fingerprint}"
+    cache_miss = object()
+    cached_location = cache.get(cache_key, cache_miss)
+    if cached_location is not cache_miss:
+        return dict(location, **cached_location) if cached_location else location
+    try:
+        reverse_location = _account_weather_reverse_admin_location(location, ui_lang)
+    except (httpx.HTTPError, TypeError, KeyError, ValueError):
+        reverse_location = None
+    if reverse_location:
+        cache.set(cache_key, reverse_location, 7 * 24 * 60 * 60)
+        return dict(location, **reverse_location)
+
+    query = ", ".join(part for part in (city, country) if part)
+    languages = []
+    for candidate_lang in (ui_lang, language, "en", "ko"):
+        resolved_language = _account_weather_language(candidate_lang)
+        if resolved_language not in languages:
+            languages.append(resolved_language)
+    try:
+        matches = []
+        for candidate_lang in languages:
+            matches = _account_weather_geocode_query(query, candidate_lang, count=1)
+            if matches:
+                break
+    except (httpx.HTTPError, TypeError, KeyError, ValueError):
+        cache.set(cache_key, None, 60 * 60)
+        return location
+    if not matches:
+        cache.set(cache_key, None, 60 * 60)
+        return location
+    match = matches[0]
+    enriched = {
+        "country": str(match.get("country") or location.get("country") or "").strip(),
+        "city": str(match.get("city") or location.get("city") or "").strip(),
+        "label": str(match.get("label") or location.get("label") or "").strip(),
+    }
+    cache.set(cache_key, enriched, 7 * 24 * 60 * 60)
+    return dict(location, **enriched)
 
 
 def _account_weather_geocode_query(query, ui_lang, *, count=8):
@@ -8294,7 +9147,7 @@ def _account_weather_ip_location(request, ui_lang):
     if not client_ip:
         return None
     language = _account_weather_language(ui_lang)
-    cache_key = f"account-weather-ip-location:v1:{language}:{client_ip}"
+    cache_key = f"account-weather-ip-location:v4:{language}:{client_ip}"
     cached_location = cache.get(cache_key)
     if cached_location:
         return cached_location
@@ -8324,6 +9177,7 @@ def _account_weather_ip_location(request, ui_lang):
         "source": "ip",
     }
     location["label"] = _account_weather_location_name(location)
+    location = _account_weather_enrich_location_admin_label(location, ui_lang)
     cache.set(cache_key, location, 24 * 60 * 60)
     return location
 
@@ -8340,7 +9194,10 @@ def _account_weather_default_location(ui_lang):
 def _account_weather_resolve_location(profile, request, ui_lang):
     saved_location = _account_weather_saved_location(profile)
     if saved_location:
-        return saved_location
+        enriched_location = _account_weather_enrich_location_admin_label(saved_location, ui_lang)
+        if profile and enriched_location != saved_location:
+            _account_weather_save_location(profile, enriched_location)
+        return enriched_location
     try:
         ip_location = _account_weather_ip_location(request, ui_lang)
     except (httpx.HTTPError, TypeError, KeyError, ValueError):
@@ -11145,7 +12002,7 @@ def hanharness_page(request, ui_lang=None):
     return render(request, "main/hanharness.html", context)
 
 
-_CLI_DIR = Path("/Volumes/HANPLANET_HDD/Hanplanet/HanPlanet-CLI")
+_CLI_DIR = Path(getattr(settings, "HANPLANET_CLI_ROOT", Path(settings.MEDIA_ROOT).parent / "HanPlanet-CLI"))
 _CLI_FILES = {
     "macos": ("HanPlanet-CLI-macos-arm64", "HanPlanet-CLI-macos-arm64.zip"),
     "windows": ("HanPlanet-CLI-windows-x64", "HanPlanet-CLI-windows-x64.zip"),

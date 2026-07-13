@@ -123,3 +123,541 @@ body.theme-dark [data-tippy-root] {
 body.theme-dark [data-tippy-root][id^='tippy-'] {
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
 }
+
+main.page-content.django .page-content:not(.home) {
+  width: 100%;
+  flex: 1 1 auto;
+  padding: 24px 0 42px;
+  background: var(--forgejo-main-bg, var(--site-bg));
+  color: var(--forgejo-main-text, var(--site-text));
+}
+
+main.page-content.django .page-content.explore,
+main.page-content.django .page-content.repository {
+  --hp-gitea-panel-bg: var(--forgejo-main-surface, var(--site-surface-muted));
+  --hp-gitea-panel-bg-strong: var(--forgejo-main-surface-strong, var(--site-surface-muted-strong));
+  --hp-gitea-border: var(--forgejo-main-border, var(--site-border));
+  --hp-gitea-border-strong: var(--forgejo-main-border-strong, var(--site-border-strong));
+  --hp-gitea-hover: var(--forgejo-main-hover-soft, var(--site-hover-soft));
+  --hp-gitea-hover-strong: var(--forgejo-main-hover, var(--site-hover));
+  --hp-gitea-selected: var(--forgejo-main-selected, var(--site-selected-bg));
+  --hp-gitea-text: var(--forgejo-main-text, var(--site-text));
+  --hp-gitea-text-strong: var(--forgejo-main-text-strong, var(--site-text-strong));
+  --hp-gitea-text-muted: var(--forgejo-main-text-muted, var(--site-text-subtle));
+  --hp-gitea-link: var(--forgejo-main-link, var(--site-link));
+}
+
+main.page-content.django .page-content.explore > .ui.container,
+main.page-content.django .page-content.repository > .ui.container,
+main.page-content.django .page-content.repository > .secondary-nav > .ui.container {
+  width: min(1180px, calc(100% - 48px));
+  max-width: none !important;
+  margin-right: auto !important;
+  margin-left: auto !important;
+}
+
+main.page-content.django .page-content.explore > .ui.container,
+main.page-content.django .page-content.repository > .ui.container {
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+}
+
+main.page-content.django .secondary-nav {
+  margin: -24px 0 24px;
+  padding: 0;
+  background: var(--forgejo-main-bg, var(--site-bg));
+  border-bottom: 1px solid var(--hp-gitea-border, var(--site-border));
+  box-shadow: none;
+}
+
+main.page-content.django .secondary-nav .ui.menu,
+main.page-content.django .page-content.explore > .ui.secondary.menu,
+main.page-content.django .page-content.explore > overflow-menu.ui.menu {
+  min-height: 46px;
+  margin: 0;
+  background: transparent !important;
+  border: 0;
+  box-shadow: none;
+}
+
+main.page-content.django .secondary-nav .overflow-menu-items,
+main.page-content.django .page-content.explore > overflow-menu.ui.menu .overflow-menu-items {
+  gap: 4px;
+}
+
+main.page-content.django .secondary-nav .ui.menu .item,
+main.page-content.django .page-content.explore > overflow-menu.ui.menu .item {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 6px;
+  margin: 0 2px;
+  padding: 0 12px;
+  color: var(--hp-gitea-text-muted, var(--site-text-subtle)) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  border-radius: 0;
+  box-shadow: inset 0 -2px 0 transparent;
+  font-weight: 700;
+  line-height: 1;
+}
+
+main.page-content.django .secondary-nav .ui.menu .item:hover,
+main.page-content.django .secondary-nav .ui.menu .item:focus-visible,
+main.page-content.django .page-content.explore > overflow-menu.ui.menu .item:hover,
+main.page-content.django .page-content.explore > overflow-menu.ui.menu .item:focus-visible {
+  color: var(--hp-gitea-text-strong, var(--site-text-strong)) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: inset 0 -2px 0 var(--hp-gitea-border-strong, var(--site-border-strong));
+}
+
+main.page-content.django .secondary-nav .ui.menu .item.active,
+main.page-content.django .secondary-nav .ui.menu .item.active:hover,
+main.page-content.django .page-content.explore > overflow-menu.ui.menu .item.active,
+main.page-content.django .page-content.explore > overflow-menu.ui.menu .item.active:hover {
+  color: var(--hp-gitea-text-strong, var(--site-text-strong)) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: inset 0 -2px 0 currentColor;
+}
+
+main.page-content.django .page-content.explore .filter.menu {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px !important;
+  padding: 12px;
+  background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
+  border: 1px solid var(--hp-gitea-border, var(--site-border));
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+main.page-content.django .page-content.explore .filter.menu .ui.form,
+main.page-content.django .page-content.explore .filter.menu form {
+  margin: 0;
+  background: transparent;
+  border: 0;
+}
+
+main.page-content.django .ui.input > input,
+main.page-content.django .ui.form input,
+main.page-content.django input[type="search"],
+main.page-content.django input[type="text"],
+main.page-content.django input[type="password"],
+main.page-content.django textarea {
+  min-height: 36px;
+  background: var(--hp-gitea-panel-bg-strong, var(--site-surface-muted-strong));
+  border: 1px solid var(--hp-gitea-border, var(--site-border));
+  border-radius: 7px;
+  box-shadow: none;
+  color: var(--hp-gitea-text, var(--site-text));
+}
+
+main.page-content.django .ui.action.input > input {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+main.page-content.django .ui.action.input > .button,
+main.page-content.django .ui.action.input > button {
+  min-height: 36px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+main.page-content.django .ui.button,
+main.page-content.django button.ui.button,
+main.page-content.django a.ui.button,
+main.page-content.django .ui.basic.button,
+main.page-content.django .ui.compact.button,
+main.page-content.django .ui.labeled.button > .ui.button,
+main.page-content.django .btn-octicon {
+  border-radius: 7px;
+  border-color: var(--hp-gitea-border, var(--site-border));
+  background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
+  box-shadow: none;
+  color: var(--hp-gitea-text, var(--site-text));
+}
+
+main.page-content.django .ui.button:hover,
+main.page-content.django button.ui.button:hover,
+main.page-content.django a.ui.button:hover,
+main.page-content.django .ui.basic.button:hover,
+main.page-content.django .ui.compact.button:hover,
+main.page-content.django .btn-octicon:hover,
+main.page-content.django .ui.button:focus-visible,
+main.page-content.django button.ui.button:focus-visible,
+main.page-content.django a.ui.button:focus-visible,
+main.page-content.django .btn-octicon:focus-visible {
+  background: var(--hp-gitea-hover, var(--site-hover-soft));
+  border-color: var(--hp-gitea-border-strong, var(--site-border-strong));
+  color: var(--hp-gitea-text-strong, var(--site-text-strong));
+}
+
+main.page-content.django .ui.primary.button {
+  background: var(--hp-gitea-text-strong, var(--site-text-strong));
+  border-color: var(--hp-gitea-text-strong, var(--site-text-strong));
+  color: var(--forgejo-main-bg, var(--site-bg));
+}
+
+main.page-content.django .ui.primary.button:hover,
+main.page-content.django .ui.primary.button:focus-visible {
+  background: var(--hp-gitea-text, var(--site-text));
+  border-color: var(--hp-gitea-text, var(--site-text));
+  color: var(--forgejo-main-bg, var(--site-bg));
+}
+
+main.page-content.django .ui.basic.label,
+main.page-content.django .ui.label,
+main.page-content.django .label {
+  border-radius: 999px;
+  border-color: var(--hp-gitea-border, var(--site-border));
+  background: var(--hp-gitea-panel-bg-strong, var(--site-surface-muted-strong));
+  color: var(--hp-gitea-text-muted, var(--site-text-subtle));
+}
+
+main.page-content.django .ui.dropdown .menu {
+  padding: 6px;
+  border: 1px solid var(--hp-gitea-border, var(--site-border));
+  border-radius: 8px;
+  background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
+  box-shadow: var(--site-shadow-md, 0 16px 34px rgba(0, 0, 0, 0.18));
+}
+
+main.page-content.django .ui.dropdown .menu > .item {
+  border-radius: 6px;
+}
+
+main.page-content.django .divider,
+main.page-content.django .ui.divider,
+main.page-content.django .ui.tabs.divider {
+  border-color: var(--hp-gitea-border, var(--site-border));
+}
+
+main.page-content.django .page-content.explore > .ui.container > .divider {
+  display: none;
+}
+
+main.page-content.django .flex-list {
+  overflow: hidden;
+  border: 1px solid var(--hp-gitea-border, var(--site-border));
+  border-radius: 8px;
+  background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
+}
+
+main.page-content.django .flex-list > .flex-item {
+  margin: 0;
+  padding: 17px 18px;
+  border-top: 1px solid var(--hp-gitea-border, var(--site-border));
+  background: transparent;
+}
+
+main.page-content.django .flex-list > .flex-item:first-child {
+  border-top: 0;
+}
+
+main.page-content.django .flex-list > .flex-item:hover {
+  background: var(--hp-gitea-hover, var(--site-hover-soft));
+}
+
+main.page-content.django .flex-item-leading {
+  color: var(--hp-gitea-text-muted, var(--site-text-subtle));
+}
+
+main.page-content.django .flex-item-title,
+main.page-content.django .flex-item-header {
+  color: var(--hp-gitea-text-strong, var(--site-text-strong));
+}
+
+main.page-content.django .flex-item-title a,
+main.page-content.django .flex-item-header a,
+main.page-content.django .repo-header a,
+main.page-content.django #repo-files-table a.entry-name,
+main.page-content.django .breadcrumb a.section {
+  color: var(--hp-gitea-text-strong, var(--site-text-strong)) !important;
+  text-decoration: none;
+}
+
+main.page-content.django .flex-item-title a:hover,
+main.page-content.django .flex-item-header a:hover,
+main.page-content.django .repo-header a:hover,
+main.page-content.django #repo-files-table a.entry-name:hover,
+main.page-content.django .breadcrumb a.section:hover {
+  color: var(--hp-gitea-link, var(--site-link)) !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+main.page-content.django .page-content.explore .flex-item-title a.text.primary,
+main.page-content.django .page-content.explore .flex-item-title a.name,
+main.page-content.django .page-content.explore .flex-item-title .text.primary {
+  color: var(--hp-gitea-text-strong, var(--site-text-strong)) !important;
+}
+
+main.page-content.django .flex-item-body,
+main.page-content.django .flex-item-trailing,
+main.page-content.django .muted,
+main.page-content.django .muted-links,
+main.page-content.django .grey {
+  color: var(--hp-gitea-text-muted, var(--site-text-subtle)) !important;
+}
+
+main.page-content.django .color-icon {
+  border: 1px solid var(--hp-gitea-border, var(--site-border));
+}
+
+main.page-content.django .repo-header {
+  margin: 0;
+  padding: 22px 0 16px;
+  color: var(--hp-gitea-text, var(--site-text));
+}
+
+main.page-content.django .repo-header .flex-item {
+  gap: 12px;
+}
+
+main.page-content.django .repo-header .flex-item-title {
+  font-size: 1.08rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+main.page-content.django .repo-header .flex-text-block {
+  gap: 6px;
+}
+
+main.page-content.django .repository > .ui.tabs.divider {
+  display: none;
+}
+
+main.page-content.django .repository .repository-summary,
+main.page-content.django .repo-home-filelist,
+main.page-content.django .non-diff-file-content,
+main.page-content.django .ui.segments,
+main.page-content.django .ui.segment,
+main.page-content.django .ui.attached.segment,
+main.page-content.django .ui.table {
+  border-color: var(--hp-gitea-border, var(--site-border));
+  border-radius: 8px;
+  background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
+  box-shadow: none;
+}
+
+main.page-content.django .repo-home-filelist {
+  overflow: hidden;
+}
+
+main.page-content.django .repository .repository-summary {
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+main.page-content.django .repository .repository-summary .repository-menu,
+main.page-content.django .repository .repository-summary .segment.sub-menu {
+  min-height: 42px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--hp-gitea-border, var(--site-border));
+  border-radius: 8px 8px 0 0;
+  background: var(--hp-gitea-panel-bg-strong, var(--site-surface-muted-strong));
+}
+
+main.page-content.django .repository .repository-summary .repository-menu .item {
+  min-height: 42px;
+  padding: 0 10px;
+  color: var(--hp-gitea-text-muted, var(--site-text-subtle));
+  background: transparent;
+}
+
+main.page-content.django .repository .repository-summary .repository-menu .item:hover {
+  color: var(--hp-gitea-text-strong, var(--site-text-strong));
+  background: var(--hp-gitea-hover, var(--site-hover-soft));
+}
+
+main.page-content.django .repo-button-row,
+main.page-content.django .flex-text-block.repo-button-row {
+  gap: 8px;
+  margin: 14px 0;
+}
+
+main.page-content.django .repo-button-row-left,
+main.page-content.django .repo-button-row-right {
+  gap: 6px;
+}
+
+main.page-content.django .repo-button-row-left {
+  border-color: var(--hp-gitea-border, var(--site-border));
+}
+
+main.page-content.django .branch-selector-dropdown .branch-dropdown-button,
+main.page-content.django .branch-selector-dropdown .ui.button {
+  max-width: 260px;
+}
+
+main.page-content.django #repo-files-table {
+  background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
+  color: var(--hp-gitea-text, var(--site-text));
+}
+
+main.page-content.django #repo-files-table .repo-file-line,
+main.page-content.django #repo-files-table .repo-file-item {
+  border-top: 1px solid var(--hp-gitea-border, var(--site-border));
+}
+
+main.page-content.django #repo-files-table .repo-file-last-commit {
+  background: var(--hp-gitea-panel-bg-strong, var(--site-surface-muted-strong));
+}
+
+main.page-content.django #repo-files-table .repo-file-cell {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  color: var(--hp-gitea-text, var(--site-text));
+}
+
+main.page-content.django #repo-files-table .repo-file-item:hover .repo-file-cell,
+main.page-content.django #repo-files-table .repo-file-item:hover {
+  background: var(--hp-gitea-hover, var(--site-hover-soft));
+}
+
+main.page-content.django .latest-commit,
+main.page-content.django .commit-summary,
+main.page-content.django relative-time,
+main.page-content.django absolute-date {
+  color: var(--hp-gitea-text-muted, var(--site-text-subtle));
+}
+
+main.page-content.django .commit-id-short,
+main.page-content.django .sha.label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  border-radius: 6px;
+}
+
+main.page-content.django .file-header.ui.header {
+  margin-top: 18px;
+  margin-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: var(--hp-gitea-panel-bg-strong, var(--site-surface-muted-strong));
+  border: 1px solid var(--hp-gitea-border, var(--site-border));
+  color: var(--hp-gitea-text-strong, var(--site-text-strong));
+}
+
+main.page-content.django .file-header + .ui.attached.segment,
+main.page-content.django .file-header + .ui.table.segment,
+main.page-content.django .non-diff-file-content > .ui.bottom.attached.segment {
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+}
+
+main.page-content.django .markup.markdown {
+  padding: 22px;
+  color: var(--hp-gitea-text, var(--site-text));
+}
+
+main.page-content.django .markup.markdown h1,
+main.page-content.django .markup.markdown h2,
+main.page-content.django .markup.markdown h3 {
+  color: var(--hp-gitea-text-strong, var(--site-text-strong));
+  border-color: var(--hp-gitea-border, var(--site-border));
+}
+
+main.page-content.django .breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--hp-gitea-border, var(--site-border));
+  border-radius: 8px;
+  background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
+}
+
+main.page-content.django .breadcrumb .active.section {
+  color: var(--hp-gitea-text-muted, var(--site-text-subtle));
+}
+
+main.page-content.django table.commit-list,
+main.page-content.django .commit-list {
+  background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
+}
+
+main.page-content.django table.commit-list tr,
+main.page-content.django .commit-list tr {
+  border-color: var(--hp-gitea-border, var(--site-border));
+}
+
+main.page-content.django .ui.avatar,
+main.page-content.django img.avatar {
+  border: 1px solid var(--hp-gitea-border, var(--site-border));
+  background: var(--hp-gitea-panel-bg-strong, var(--site-surface-muted-strong));
+}
+
+main.page-content.django .ui.message {
+  border-radius: 8px;
+  border-color: var(--hp-gitea-border, var(--site-border));
+  background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
+}
+
+body.theme-dark main.page-content.django .ui.primary.button {
+  background: var(--hp-gitea-text-strong, var(--site-text-strong));
+  border-color: var(--hp-gitea-text-strong, var(--site-text-strong));
+  color: var(--forgejo-main-bg, var(--site-bg));
+}
+
+@media (max-width: 767px) {
+  main.page-content.django .page-content:not(.home) {
+    padding-top: 18px;
+  }
+
+  main.page-content.django .secondary-nav {
+    margin-top: -18px;
+  }
+
+  main.page-content.django .page-content.explore > .ui.container,
+  main.page-content.django .page-content.repository > .ui.container,
+  main.page-content.django .page-content.repository > .secondary-nav > .ui.container {
+    width: min(100% - 24px, 1180px);
+  }
+
+  main.page-content.django .page-content.explore .filter.menu {
+    flex-wrap: wrap !important;
+    align-items: stretch;
+    padding: 10px;
+  }
+
+  main.page-content.django .page-content.explore .filter.menu form {
+    flex: 0 0 100% !important;
+    width: 100% !important;
+    max-width: 100%;
+  }
+
+  main.page-content.django .page-content.explore .filter.menu .ui.action.input,
+  main.page-content.django .page-content.explore .filter.menu .ui.fluid.input {
+    width: 100%;
+  }
+
+  main.page-content.django .page-content.explore .filter.menu > .item,
+  main.page-content.django .page-content.explore .filter.menu > .dropdown {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  main.page-content.django .flex-list > .flex-item {
+    padding: 14px;
+  }
+
+  main.page-content.django .repo-header {
+    padding-top: 16px;
+  }
+
+  main.page-content.django .repo-button-row,
+  main.page-content.django .flex-text-block.repo-button-row {
+    flex-wrap: wrap;
+  }
+
+  main.page-content.django .markup.markdown {
+    padding: 16px;
+  }
+}

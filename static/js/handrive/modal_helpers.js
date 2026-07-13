@@ -397,6 +397,41 @@
         window.addEventListener("resize", scheduleClampDraggedElementsToViewport);
     }
 
+    function getRenameInputSelectionEnd(entry, value) {
+        const text = String(value || "");
+        if (!entry || entry.type !== "file") {
+            return text.length;
+        }
+        const dotIndex = text.lastIndexOf(".");
+        if (dotIndex > 0 && dotIndex < text.length - 1) {
+            return dotIndex;
+        }
+        return text.length;
+    }
+
+    function focusRenameInput(renameInput, entry) {
+        if (!renameInput) {
+            return;
+        }
+        const selectionEnd = getRenameInputSelectionEnd(entry, renameInput.value);
+        renameInput.focus();
+        try {
+            renameInput.setSelectionRange(0, selectionEnd);
+        } catch (error) {
+            renameInput.select();
+        }
+        try {
+            renameInput.scrollLeft = 0;
+        } catch (error) {}
+        if (typeof window.requestAnimationFrame === "function") {
+            window.requestAnimationFrame(function () {
+                try {
+                    renameInput.scrollLeft = 0;
+                } catch (error) {}
+            });
+        }
+    }
+
     function setRenameModalOpen(modal, renameTarget, renameInput, syncModalBodyState, opened, entry, getEntryEditableName, targetLabel) {
         if (!modal) {
             return;
@@ -413,8 +448,7 @@
         }
         if (renameInput) {
             renameInput.value = typeof getEntryEditableName === "function" ? getEntryEditableName(entry) : "";
-            renameInput.focus();
-            renameInput.select();
+            focusRenameInput(renameInput, entry);
         }
     }
 

@@ -42,7 +42,27 @@ class PortfolioCareerForm(forms.ModelForm):
         }
 
 
+class MultipleImageInput(forms.ClearableFileInput):
+    allow_multiple_selected = True
+
+
+class MultipleImageField(forms.ImageField):
+    widget = MultipleImageInput
+
+    def clean(self, data, initial=None):
+        if not data:
+            return []
+        files = data if isinstance(data, (list, tuple)) else [data]
+        return [super(MultipleImageField, self).clean(file, initial) for file in files if file]
+
+
 class PortfolioProjectForm(forms.ModelForm):
+    project_images = MultipleImageField(
+        required=False,
+        label="프로젝트 이미지",
+        help_text="여러 장을 선택하면 프로젝트 본문 아래 가로 스크롤 이미지 영역에 표시됩니다.",
+    )
+
     class Meta:
         model = PortfolioProject
         fields = [
@@ -50,10 +70,16 @@ class PortfolioProjectForm(forms.ModelForm):
             "title",
             "title_en",
             "banner_img",
+            "organization",
+            "organization_url",
+            "position",
+            "project_url_name",
+            "project_url",
             "content",
             "content_en",
             "create_date",
             "tags",
+            "project_images",
         ]
         widgets = {
             "create_date": forms.DateInput(attrs={"type": "date"}),

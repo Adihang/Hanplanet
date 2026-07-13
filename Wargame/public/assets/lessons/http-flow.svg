@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="430" viewBox="0 0 960 430" role="img" aria-labelledby="title desc">
+  <title id="title">HTTP 요청과 응답의 흐름</title>
+  <desc id="desc">브라우저가 메서드, 경로, 헤더, 본문으로 요청을 만들고 Apache와 PHP, SQLite를 거쳐 상태 코드, 헤더, 본문 응답을 받는 과정을 나타낸다.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#081223"/>
+      <stop offset="1" stop-color="#111a35"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#63d8ff"/>
+    </marker>
+    <marker id="arrowBack" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#b59cff"/>
+    </marker>
+    <style>
+      .title{font:700 24px system-ui,sans-serif;fill:#f7fbff}.subtitle{font:500 13px system-ui,sans-serif;fill:#9fb3cc}.label{font:700 16px system-ui,sans-serif;fill:#f7fbff}.small{font:500 12px ui-monospace,SFMono-Regular,monospace;fill:#bad0e8}.request{fill:#0d2638;stroke:#31c9f5;stroke-width:2}.response{fill:#231d45;stroke:#a98fff;stroke-width:2}.node{fill:#151f35;stroke:#40577a;stroke-width:1.5}.chip{fill:#102b3e;stroke:#2f9ebe}.chipText{font:600 11px ui-monospace,SFMono-Regular,monospace;fill:#bfefff}
+    </style>
+  </defs>
+  <rect width="960" height="430" rx="24" fill="url(#bg)"/>
+  <text class="title" x="42" y="48">화면 뒤에서 오가는 HTTP 메시지</text>
+  <text class="subtitle" x="42" y="73">Elements는 결과를, Network는 결과가 만들어진 요청과 응답을 보여 줍니다.</text>
+
+  <rect class="node" x="42" y="120" width="142" height="118" rx="16"/>
+  <circle cx="80" cy="157" r="20" fill="#1d4960" stroke="#63d8ff"/>
+  <path d="M69 157h22M80 146v22" stroke="#d8f6ff" stroke-width="2"/>
+  <text class="label" x="69" y="201">브라우저</text>
+  <text class="small" x="57" y="220">사용자 입력</text>
+
+  <rect class="request" x="232" y="102" width="245" height="154" rx="16"/>
+  <text class="label" x="252" y="130">요청 Request</text>
+  <rect class="chip" x="252" y="146" width="55" height="24" rx="8"/><text class="chipText" x="264" y="162">METHOD</text>
+  <text class="small" x="321" y="163">GET /coupon?code=...</text>
+  <rect class="chip" x="252" y="180" width="55" height="24" rx="8"/><text class="chipText" x="263" y="196">HEADER</text>
+  <text class="small" x="321" y="197">Cookie, X-Debug-Mode</text>
+  <rect class="chip" x="252" y="214" width="55" height="24" rx="8"/><text class="chipText" x="269" y="230">BODY</text>
+  <text class="small" x="321" y="231">폼 또는 JSON 데이터</text>
+
+  <rect class="node" x="526" y="120" width="112" height="118" rx="16"/>
+  <text class="label" x="551" y="158">Apache</text>
+  <text class="small" x="547" y="184">route</text>
+  <text class="small" x="547" y="204">headers</text>
+  <rect class="node" x="674" y="120" width="112" height="118" rx="16"/>
+  <text class="label" x="707" y="158">PHP</text>
+  <text class="small" x="696" y="184">validate</text>
+  <text class="small" x="696" y="204">render</text>
+  <rect class="node" x="822" y="120" width="96" height="118" rx="16"/>
+  <ellipse cx="870" cy="153" rx="26" ry="10" fill="#29405f" stroke="#7c9ac3"/>
+  <path d="M844 153v42c0 6 12 10 26 10s26-4 26-10v-42" fill="#1c2c46" stroke="#7c9ac3"/>
+  <text class="label" x="843" y="228">SQLite</text>
+
+  <path d="M184 158H222" stroke="#63d8ff" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M477 158H516" stroke="#63d8ff" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M638 158H664" stroke="#63d8ff" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M786 158H812" stroke="#63d8ff" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect class="response" x="232" y="292" width="554" height="96" rx="16"/>
+  <text class="label" x="252" y="321">응답 Response</text>
+  <text class="small" x="252" y="347">STATUS  200 OK · 302 Found · 403 Forbidden</text>
+  <text class="small" x="252" y="369">HEADER  Content-Type · Location · X-Lab-Next     BODY  HTML · JSON</text>
+  <path d="M730 248V282H194V221" fill="none" stroke="#b59cff" stroke-width="3" marker-end="url(#arrowBack)"/>
+  <text class="subtitle" x="800" y="331">화면에 보이지 않는</text>
+  <text class="subtitle" x="800" y="350">헤더도 중요한 단서</text>
+</svg>

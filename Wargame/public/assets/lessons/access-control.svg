@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="470" viewBox="0 0 960 470" role="img" aria-labelledby="title desc">
+  <title id="title">클라이언트 신뢰와 서버 인가 비교</title>
+  <desc id="desc">사용자가 바꿀 수 있는 역할 쿠키와 객체 ID를 서버가 그대로 신뢰하는 취약한 흐름, 서버 세션과 소유권을 확인하는 안전한 흐름을 비교한다.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#091426"/><stop offset="1" stop-color="#171530"/></linearGradient>
+    <marker id="redArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ff718c"/></marker>
+    <marker id="greenArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#54e6a5"/></marker>
+    <style>
+      .title{font:700 24px system-ui,sans-serif;fill:#f7fbff}.sub{font:500 13px system-ui,sans-serif;fill:#a8bad0}.heading{font:700 17px system-ui,sans-serif;fill:#f7fbff}.body{font:500 13px system-ui,sans-serif;fill:#c7d5e6}.mono{font:600 12px ui-monospace,SFMono-Regular,monospace;fill:#d9e7f7}.bad{fill:#321a2a;stroke:#f05e7a;stroke-width:1.8}.good{fill:#123128;stroke:#47d89a;stroke-width:1.8}.neutral{fill:#16233a;stroke:#4b658b;stroke-width:1.4}.tagBad{fill:#5a2032}.tagGood{fill:#164936}
+    </style>
+  </defs>
+  <rect width="960" height="470" rx="24" fill="url(#bg)"/>
+  <text class="title" x="42" y="48">식별자와 쿠키는 입력값이지 권한 증명이 아닙니다</text>
+  <text class="sub" x="42" y="73">인증은 누구인지, 인가는 그 사용자가 이 자원에 무엇을 할 수 있는지 판단합니다.</text>
+
+  <rect class="bad" x="42" y="103" width="876" height="142" rx="18"/>
+  <rect class="tagBad" x="60" y="119" width="118" height="28" rx="9"/>
+  <text class="heading" x="76" y="139">취약한 흐름</text>
+  <rect class="neutral" x="68" y="165" width="190" height="55" rx="12"/>
+  <text class="mono" x="84" y="187">Cookie: role=admin</text>
+  <text class="mono" x="84" y="207">GET ?id=1002</text>
+  <path d="M268 193H345" stroke="#ff718c" stroke-width="3" marker-end="url(#redArrow)"/>
+  <rect class="neutral" x="356" y="165" width="218" height="55" rx="12"/>
+  <text class="body" x="374" y="187">클라이언트 값을 그대로 신뢰</text>
+  <text class="mono" x="374" y="207">WHERE id = :id</text>
+  <path d="M584 193H661" stroke="#ff718c" stroke-width="3" marker-end="url(#redArrow)"/>
+  <rect class="neutral" x="672" y="165" width="218" height="55" rx="12"/>
+  <text class="body" x="691" y="187">다른 사용자의 보호 자원</text>
+  <text class="mono" x="691" y="207">200 OK · data leaked</text>
+
+  <rect class="good" x="42" y="270" width="876" height="158" rx="18"/>
+  <rect class="tagGood" x="60" y="286" width="118" height="28" rx="9"/>
+  <text class="heading" x="75" y="306">안전한 흐름</text>
+  <rect class="neutral" x="68" y="334" width="190" height="66" rx="12"/>
+  <text class="body" x="84" y="357">서버 세션에서 사용자 확인</text>
+  <text class="mono" x="84" y="380">viewer_id = 41</text>
+  <path d="M268 366H345" stroke="#54e6a5" stroke-width="3" marker-end="url(#greenArrow)"/>
+  <rect class="neutral" x="356" y="334" width="218" height="66" rx="12"/>
+  <text class="body" x="374" y="357">객체와 사용자 관계 확인</text>
+  <text class="mono" x="374" y="380">id=:id AND owner=:viewer</text>
+  <path d="M584 366H661" stroke="#54e6a5" stroke-width="3" marker-end="url(#greenArrow)"/>
+  <rect class="neutral" x="672" y="334" width="218" height="66" rx="12"/>
+  <text class="body" x="691" y="357">허용된 자원만 반환</text>
+  <text class="mono" x="691" y="380">200 OK / 403 Forbidden</text>
+  <text class="sub" x="670" y="447">복잡한 ID는 보조 수단이며 소유권 검사를 대신하지 않습니다.</text>
+</svg>

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img" aria-labelledby="title desc">
+  <title id="title">Path Traversal과 파일 업로드의 파일시스템 경계</title>
+  <desc id="desc">훈련 instance 안의 public, private, uploads 디렉터리 관계와 상대 경로 이동, 업로드 검증과 비실행 저장 흐름을 함께 보여 준다.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071727"/><stop offset="1" stop-color="#161a31"/></linearGradient>
+    <marker id="orangeArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ffad61"/></marker>
+    <marker id="greenArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#4ce0a2"/></marker>
+    <style>
+      .title{font:700 24px system-ui,sans-serif;fill:#f8fbff}.sub{font:500 13px system-ui,sans-serif;fill:#a7b9ce}.head{font:700 16px system-ui,sans-serif;fill:#f8fbff}.body{font:500 12px system-ui,sans-serif;fill:#c9d7e7}.mono{font:600 12px ui-monospace,SFMono-Regular,monospace;fill:#ffe0b8}.root{fill:#111f35;stroke:#52698a;stroke-width:1.7}.folder{fill:#152b3f;stroke:#4b93b3;stroke-width:1.5}.private{fill:#35241e;stroke:#ef9a58;stroke-width:1.5}.upload{fill:#173126;stroke:#4bd497;stroke-width:1.5}.step{fill:#17243a;stroke:#536a8d;stroke-width:1.4}.blocked{fill:#321e2b;stroke:#f36d8b;stroke-width:1.5}
+    </style>
+  </defs>
+  <rect width="960" height="520" rx="24" fill="url(#bg)"/>
+  <text class="title" x="42" y="48">허용된 instance 안에서도 공개 경계는 따로 지켜야 합니다</text>
+  <text class="sub" x="42" y="73">Traversal은 파일 선택 경계를, upload는 검증·저장·실행 경계를 시험합니다.</text>
+
+  <rect class="root" x="42" y="103" width="438" height="302" rx="18"/>
+  <text class="head" x="62" y="132">data/instances/&lt;random-id&gt;/</text>
+  <rect class="folder" x="72" y="158" width="170" height="92" rx="13"/>
+  <path d="M91 178h44l10 10h72v43H91Z" fill="#1e5269" stroke="#69c3e8"/>
+  <text class="head" x="109" y="207">public/</text>
+  <text class="body" x="89" y="237">guide.txt · manual/</text>
+  <rect class="private" x="282" y="158" width="170" height="92" rx="13"/>
+  <path d="M301 178h44l10 10h72v43H301Z" fill="#5b3724" stroke="#ffb677"/>
+  <text class="head" x="314" y="207">private/</text>
+  <text class="body" x="304" y="237">proof.txt · config/</text>
+  <path d="M195 263C206 314 306 314 327 263" fill="none" stroke="#ffad61" stroke-width="3" marker-end="url(#orangeArrow)"/>
+  <text class="mono" x="129" y="340">../private/proof.txt</text>
+  <rect class="blocked" x="72" y="360" width="380" height="28" rx="9"/>
+  <text class="body" x="88" y="379">../../outside.txt → canonical path가 instance root 밖이면 차단</text>
+
+  <text class="head" x="525" y="120">업로드 방어는 한 번의 확장자 검사로 끝나지 않습니다</text>
+  <rect class="step" x="525" y="146" width="175" height="68" rx="13"/>
+  <text class="head" x="545" y="171">1 · 요청 신호</text>
+  <text class="body" x="545" y="194">filename · 신고 MIME</text>
+  <path d="M710 180H750" stroke="#4ce0a2" stroke-width="3" marker-end="url(#greenArrow)"/>
+  <rect class="step" x="760" y="146" width="158" height="68" rx="13"/>
+  <text class="head" x="780" y="171">2 · 서버 검증</text>
+  <text class="body" x="780" y="194">크기 · magic bytes</text>
+
+  <rect class="step" x="525" y="252" width="175" height="68" rx="13"/>
+  <text class="head" x="545" y="277">3 · 이름 재생성</text>
+  <text class="body" x="545" y="300">random-id.bin</text>
+  <path d="M710 286H750" stroke="#4ce0a2" stroke-width="3" marker-end="url(#greenArrow)"/>
+  <rect class="upload" x="760" y="242" width="158" height="88" rx="13"/>
+  <text class="head" x="787" y="270">uploads/</text>
+  <text class="body" x="778" y="294">public 밖 · 실행 금지</text>
+  <text class="body" x="778" y="313">직접 URL 서비스 금지</text>
+  <path d="M839 224V232" stroke="#4ce0a2" stroke-width="3" marker-end="url(#greenArrow)"/>
+
+  <rect class="blocked" x="525" y="365" width="393" height="40" rx="11"/>
+  <text class="body" x="545" y="390">Content-Type: image/png만 보고 training.php를 수락하면 취약</text>
+  <rect x="42" y="443" width="876" height="42" rx="12" fill="#12263b" stroke="#385b7b"/>
+  <text class="body" x="62" y="469">핵심: 최종 경로를 검증하고, 업로드 파일은 검증에 실패하더라도 실행될 수 없는 위치와 권한으로 저장합니다.</text>
+</svg>

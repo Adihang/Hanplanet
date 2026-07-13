@@ -3,13 +3,13 @@
     <div class="handrive-popup-modal-dialog site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-url-share-title">
         <header class="handrive-popup-head site-modal-head">
             <div class="handrive-url-share-title-row">
-                <h2 id="handrive-url-share-title" class="handrive-popup-title">{{ handrive_text.url_share_title }}</h2>
                 <input
                     type="checkbox"
                     id="handrive-url-share-enabled-checkbox"
                     aria-label="{{ handrive_text.url_share_enabled_label }}"
                     title="{{ handrive_text.url_share_enabled_label }}"
                 >
+                <h2 id="handrive-url-share-title" class="handrive-popup-title">{{ handrive_text.url_share_title }}</h2>
             </div>
             {% include "popup/handrive/_popup_close_button.html" with button_id="handrive-url-share-close-btn" %}
         </header>
@@ -30,13 +30,13 @@
                 <div class="handrive-url-share-read-head">
                     <span id="handrive-url-share-read-label">{{ handrive_text.url_share_label }}</span>
                     <label class="handrive-url-share-edit-toggle" id="handrive-url-share-edit-toggle">
-                        <span>{{ handrive_text.url_share_edit_label }}</span>
                         <input
                             type="checkbox"
                             id="handrive-url-share-edit-checkbox"
                             aria-label="{{ handrive_text.url_share_edit_label }}"
                             title="{{ handrive_text.url_share_edit_label }}"
                         >
+                        <span>{{ handrive_text.url_share_edit_label }}</span>
                     </label>
                 </div>
                 <div class="handrive-url-share-input-wrap handrive-inline-copy-field">

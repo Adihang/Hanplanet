@@ -179,6 +179,7 @@ class HandriveSharedLink(models.Model):
     )
     can_edit = models.BooleanField("편집 권한 허용", default=False)
     share_slug = models.CharField("공유 슬러그", max_length=255)
+    uses_opaque_tokens = models.BooleanField("난수 공유 경로 사용", default=False)
     created_at = models.DateTimeField("생성일", auto_now_add=True)
     updated_at = models.DateTimeField("수정일", auto_now=True)
 
@@ -196,6 +197,32 @@ class HandriveSharedLink(models.Model):
 
     def __str__(self):
         return f"{self.owner.username}/{self.share_slug}"
+
+
+class HandriveSharedPathToken(models.Model):
+    shared_link = models.ForeignKey(
+        HandriveSharedLink,
+        on_delete=models.CASCADE,
+        related_name="path_tokens",
+        verbose_name="공유 링크",
+    )
+    relative_path = models.CharField("공유 루트 기준 상대 경로", max_length=1024)
+    token = models.CharField("난수 경로 토큰", max_length=255, unique=True)
+    created_at = models.DateTimeField("생성일", auto_now_add=True)
+
+    class Meta:
+        ordering = ["shared_link_id", "relative_path"]
+        verbose_name = "문서 공유 경로 토큰"
+        verbose_name_plural = "문서 공유 경로 토큰"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["shared_link", "relative_path"],
+                name="unique_handrive_shared_link_relative_path",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.shared_link_id}/{self.token}"
 
 
 class HandriveLoginAttemptGuard(models.Model):
@@ -253,9 +280,6 @@ class WargameSolve(models.Model):
 
     def __str__(self):
         return f"{self.user_id}:{self.challenge_id}"
-
-    def __str__(self):
-        return f"{self.user.username} — {self.code} (used={self.used})"
 
 
 class TrustedDevice(models.Model):

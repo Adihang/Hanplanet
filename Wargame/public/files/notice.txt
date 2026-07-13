@@ -1,4 +1,0 @@
-Welcome to Hanplanet Wargame!
-This is a standard notice file. Nothing interesting here. Or is there?
-To read files, we use a PHP include/file_get_contents function.
-Maybe you can read other files on the system?

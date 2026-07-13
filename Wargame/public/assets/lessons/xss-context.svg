@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="450" viewBox="0 0 960 450" role="img" aria-labelledby="title desc">
+  <title id="title">Reflected XSS의 브라우저 파싱 흐름</title>
+  <desc id="desc">검색어가 HTML 문자열에 합쳐지고 브라우저 파서가 DOM 요소와 이벤트 핸들러로 해석하는 과정을 opaque-origin sandbox 경계 안에서 보여 준다.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#081426"/><stop offset="1" stop-color="#20142d"/></linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ff7eae"/></marker>
+    <style>
+      .title{font:700 24px system-ui,sans-serif;fill:#f8fbff}.sub{font:500 13px system-ui,sans-serif;fill:#a8b9cf}.head{font:700 16px system-ui,sans-serif;fill:#f8fbff}.body{font:500 12px system-ui,sans-serif;fill:#c9d6e6}.mono{font:600 12px ui-monospace,SFMono-Regular,monospace;fill:#ffd2e3}.box{fill:#17243a;stroke:#536a8d;stroke-width:1.5}.danger{fill:#351c32;stroke:#ed6fa7;stroke-width:1.7}.sandbox{fill:none;stroke:#7b83ff;stroke-width:2;stroke-dasharray:9 7}.safe{fill:#12352a;stroke:#49dba0;stroke-width:1.7}
+    </style>
+  </defs>
+  <rect width="960" height="450" rx="24" fill="url(#bg)"/>
+  <text class="title" x="42" y="48">문자열 → HTML 파서 → 실행 가능한 DOM</text>
+  <text class="sub" x="42" y="73">출력 문맥을 모르면 데이터가 브라우저 코드로 바뀔 수 있습니다.</text>
+
+  <rect class="sandbox" x="34" y="96" width="892" height="248" rx="20"/>
+  <rect x="54" y="82" width="278" height="28" rx="9" fill="#272753"/>
+  <text class="body" x="70" y="101">sandbox="allow-scripts" · opaque origin</text>
+
+  <rect class="box" x="62" y="142" width="176" height="96" rx="14"/>
+  <text class="head" x="80" y="169">1 · 검색 입력</text>
+  <text class="mono" x="80" y="195">&lt;img src=x</text>
+  <text class="mono" x="80" y="216">onerror=...&gt;</text>
+  <path d="M248 190H304" stroke="#ff7eae" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect class="danger" x="315" y="128" width="224" height="124" rx="14"/>
+  <text class="head" x="333" y="155">2 · HTML 문자열 결합</text>
+  <text class="mono" x="333" y="182">&lt;div&gt;검색 결과:</text>
+  <text class="mono" x="333" y="204">  사용자 입력</text>
+  <text class="mono" x="333" y="226">&lt;/div&gt;</text>
+  <path d="M549 190H605" stroke="#ff7eae" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect class="danger" x="616" y="128" width="280" height="124" rx="14"/>
+  <text class="head" x="634" y="155">3 · HTML 파서와 DOM</text>
+  <text class="body" x="634" y="181">문자열을 img 요소로 생성</text>
+  <text class="body" x="634" y="202">이미지 실패 → error 이벤트</text>
+  <text class="mono" x="634" y="228">completeLab(nonce)</text>
+
+  <path d="M756 262V294H506" fill="none" stroke="#7b83ff" stroke-width="3" marker-end="url(#arrow)"/>
+  <text class="body" x="529" y="319">부모에는 nonce 완료 신호만 postMessage</text>
+
+  <rect class="safe" x="62" y="372" width="834" height="48" rx="13"/>
+  <text class="head" x="80" y="402">방어</text>
+  <text class="body" x="149" y="402">textContent · 문맥별 출력 인코딩 · 안전한 템플릿 · 엄격한 CSP를 함께 사용</text>
+</svg>

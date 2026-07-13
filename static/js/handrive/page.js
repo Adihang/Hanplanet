@@ -122,6 +122,164 @@
         }
     }
 
+    const HANDRIVE_HTML_LIVE_FRAME_SELECTOR = ".handrive-html .handrive-html-live-frame";
+    const handriveHtmlLiveObservedWraps = typeof WeakSet !== "undefined" ? new WeakSet() : null;
+    let handriveHtmlLiveResizeObserver = null;
+    let handriveHtmlLiveSyncRafId = null;
+    let handriveHtmlLivePendingSyncRoot = null;
+
+    function getHandriveHtmlLiveFrames(targetRoot) {
+        const searchRoot = targetRoot && typeof targetRoot.querySelectorAll === "function"
+            ? targetRoot
+            : document;
+        const frames = Array.prototype.slice.call(searchRoot.querySelectorAll(HANDRIVE_HTML_LIVE_FRAME_SELECTOR));
+        if (
+            searchRoot instanceof Element &&
+            searchRoot.matches(HANDRIVE_HTML_LIVE_FRAME_SELECTOR) &&
+            frames.indexOf(searchRoot) === -1
+        ) {
+            frames.unshift(searchRoot);
+        }
+        return frames;
+    }
+
+    function readHandriveHtmlLiveViewport(frame) {
+        if (!frame) {
+            return null;
+        }
+        const wrap = frame.closest(".handrive-html-live-wrap") || frame;
+        const rect = wrap.getBoundingClientRect ? wrap.getBoundingClientRect() : null;
+        const width = Math.max(
+            1,
+            Math.round(
+                (rect && rect.width) ||
+                wrap.clientWidth ||
+                frame.clientWidth ||
+                frame.offsetWidth ||
+                0
+            )
+        );
+        return { width: width };
+    }
+
+    function postHandriveHtmlLiveViewport(frame) {
+        const viewport = readHandriveHtmlLiveViewport(frame);
+        if (!frame || !viewport) {
+            return;
+        }
+        try {
+            if (frame.contentWindow && typeof frame.contentWindow.postMessage === "function") {
+                frame.contentWindow.postMessage({
+                    type: "handrive-html-preview-viewport",
+                    width: viewport.width,
+                }, "*");
+            }
+        } catch (error) {}
+    }
+
+    function ensureHandriveHtmlLiveResizeObserver() {
+        if (!window.ResizeObserver) {
+            return null;
+        }
+        if (!handriveHtmlLiveResizeObserver) {
+            handriveHtmlLiveResizeObserver = new ResizeObserver(function (entries) {
+                entries.forEach(function (entry) {
+                    const target = entry && entry.target ? entry.target : null;
+                    if (!target || typeof target.querySelectorAll !== "function") {
+                        return;
+                    }
+                    getHandriveHtmlLiveFrames(target).forEach(postHandriveHtmlLiveViewport);
+                });
+            });
+        }
+        return handriveHtmlLiveResizeObserver;
+    }
+
+    function bindHandriveHtmlLiveFrame(frame) {
+        if (!frame || frame._handriveHtmlLiveFitBound) {
+            return;
+        }
+        frame._handriveHtmlLiveFitBound = true;
+        frame.addEventListener("load", function () {
+            scheduleHandriveHtmlLiveFramesSync(frame);
+        });
+        const wrap = frame.closest(".handrive-html-live-wrap") || frame;
+        const resizeObserver = ensureHandriveHtmlLiveResizeObserver();
+        if (resizeObserver && wrap && (!handriveHtmlLiveObservedWraps || !handriveHtmlLiveObservedWraps.has(wrap))) {
+            resizeObserver.observe(wrap);
+            if (handriveHtmlLiveObservedWraps) {
+                handriveHtmlLiveObservedWraps.add(wrap);
+            }
+        }
+    }
+
+    function syncHandriveHtmlLiveFrames(targetRoot) {
+        getHandriveHtmlLiveFrames(targetRoot).forEach(function (frame) {
+            bindHandriveHtmlLiveFrame(frame);
+            postHandriveHtmlLiveViewport(frame);
+        });
+    }
+
+    function scheduleHandriveHtmlLiveFramesSync(targetRoot) {
+        const nextRoot = targetRoot || document;
+        handriveHtmlLivePendingSyncRoot = !handriveHtmlLivePendingSyncRoot || handriveHtmlLivePendingSyncRoot === nextRoot
+            ? nextRoot
+            : document;
+        if (handriveHtmlLiveSyncRafId !== null) {
+            return;
+        }
+        handriveHtmlLiveSyncRafId = window.requestAnimationFrame(function () {
+            const syncRoot = handriveHtmlLivePendingSyncRoot || document;
+            handriveHtmlLiveSyncRafId = null;
+            handriveHtmlLivePendingSyncRoot = null;
+            syncHandriveHtmlLiveFrames(syncRoot);
+        });
+    }
+
+    window.HandriveHtmlLivePreview = {
+        schedule: scheduleHandriveHtmlLiveFramesSync,
+        sync: syncHandriveHtmlLiveFrames,
+    };
+
+    window.addEventListener("resize", function () {
+        scheduleHandriveHtmlLiveFramesSync(document);
+    }, { passive: true });
+    window.addEventListener("orientationchange", function () {
+        scheduleHandriveHtmlLiveFramesSync(document);
+    }, { passive: true });
+    window.addEventListener("message", function (event) {
+        const data = event && event.data && typeof event.data === "object" ? event.data : null;
+        if (!data || data.type !== "handrive-html-preview-ready") {
+            return;
+        }
+        const frame = getHandriveHtmlLiveFrames(document).find(function (candidate) {
+            return candidate && candidate.contentWindow === event.source;
+        });
+        if (frame) {
+            scheduleHandriveHtmlLiveFramesSync(frame);
+        }
+    });
+    if (window.MutationObserver) {
+        const handriveHtmlLiveMutationObserver = new MutationObserver(function (mutations) {
+            const hasHtmlLiveFrame = mutations.some(function (mutation) {
+                return Array.prototype.slice.call(mutation.addedNodes || []).some(function (node) {
+                    return (
+                        node instanceof Element &&
+                        (
+                            node.matches(HANDRIVE_HTML_LIVE_FRAME_SELECTOR) ||
+                            Boolean(node.querySelector(HANDRIVE_HTML_LIVE_FRAME_SELECTOR))
+                        )
+                    );
+                });
+            });
+            if (hasHtmlLiveFrame) {
+                scheduleHandriveHtmlLiveFramesSync(document);
+            }
+        });
+        handriveHtmlLiveMutationObserver.observe(root, { childList: true, subtree: true });
+    }
+    scheduleHandriveHtmlLiveFramesSync(document);
+
     document.addEventListener("click", function (event) {
         if (event.defaultPrevented) {
             return;
@@ -1441,6 +1599,42 @@
         });
     }
 
+    function runHandriveTaskWithTimeout(taskFactory, timeoutMs, timeoutMessage) {
+        const duration = Number(timeoutMs) || 0;
+        if (duration <= 0) {
+            return Promise.resolve().then(function () {
+                return taskFactory(null);
+            });
+        }
+
+        const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+        let timeoutId = null;
+        const timeoutPromise = new Promise(function (_resolve, reject) {
+            timeoutId = window.setTimeout(function () {
+                const error = new Error(timeoutMessage || t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다."));
+                error.name = "TimeoutError";
+                reject(error);
+                if (controller && typeof controller.abort === "function") {
+                    try {
+                        controller.abort();
+                    } catch (error) {
+                        // The timeout error above is the message shown to the user.
+                    }
+                }
+            }, duration);
+        });
+
+        const taskPromise = Promise.resolve().then(function () {
+            return taskFactory(controller ? controller.signal : null);
+        });
+
+        return Promise.race([taskPromise, timeoutPromise]).finally(function () {
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+        });
+    }
+
     // JSON 요청을 보내는 비동기 함수
     async function requestJson(url, options) {
         // Centralize JSON error normalization so every API caller gets the same
@@ -1708,7 +1902,7 @@
         return uiLang === "en" ? enValue : koValue;
     }
 
-    const HANDRIVE_TUTORIAL_TOTAL_GROUPS = 18;
+    const HANDRIVE_TUTORIAL_TOTAL_GROUPS = 19;
     const HANDRIVE_TUTORIAL_STEP_PROGRESS = [
         [1, 1, 1],
         [2, 1, 2],
@@ -1740,22 +1934,27 @@
         [10, 5, 5],
         [11, 1, 2],
         [11, 2, 2],
-        [12, 1, 8],
-        [12, 2, 8],
-        [12, 3, 8],
-        [12, 4, 8],
-        [12, 5, 8],
-        [12, 6, 8],
-        [12, 7, 8],
-        [12, 8, 8],
-        [13, 1, 1],
+        [12, 1, 5],
+        [12, 2, 5],
+        [12, 3, 5],
+        [12, 4, 5],
+        [12, 5, 5],
+        [13, 1, 8],
+        [13, 2, 8],
+        [13, 3, 8],
+        [13, 4, 8],
+        [13, 5, 8],
+        [13, 6, 8],
+        [13, 7, 8],
+        [13, 8, 8],
         [14, 1, 1],
         [15, 1, 1],
-        [16, 1, 2],
-        [16, 2, 2],
+        [16, 1, 1],
         [17, 1, 2],
         [17, 2, 2],
-        [18, 1, 1],
+        [18, 1, 2],
+        [18, 2, 2],
+        [19, 1, 1],
     ];
     const HANDRIVE_TUTORIAL_TOTAL_STEPS = HANDRIVE_TUTORIAL_STEP_PROGRESS.length;
 
@@ -2250,6 +2449,7 @@
     const previewSetPlaceholder = handrivePreviewHelpers.setPreviewPlaceholder || function () {};
     const previewSetVisibility = handrivePreviewHelpers.setPreviewVisibility || function () {};
     const previewSyncImageZoom = handrivePreviewHelpers.syncPreviewImageZoom || function () {};
+    const handrivePreviewModalZoom = window.HanplanetPreviewModalZoom || {};
     const handriveModalHelpers = window.HandriveModalHelpers || {};
     const modalSetFolderCreateModalOpen = handriveModalHelpers.setFolderCreateModalOpen || function () {};
     const modalSetFolderIconModalOpen = handriveModalHelpers.setFolderIconModalOpen || function () {};
@@ -3413,7 +3613,8 @@
             "handrive-media-video",
             "handrive-media-audio",
             "handrive-media-pdf",
-            "handrive-unsupported"
+            "handrive-unsupported",
+            "handrive-source-code-view"
         );
         const renderClasses = String(renderClass || "")
             .split(/\s+/)
@@ -4986,7 +5187,13 @@
         });
         const languageValue = languageClass ? languageClass.replace(/^language-/i, "") : "";
         const normalized = String(languageValue || "").toLowerCase();
-        if (normalized === "js" || normalized === "javascript" || normalized === "mjs" || normalized === "cjs") {
+        if (
+            normalized === "js" ||
+            normalized === "jsx" ||
+            normalized === "javascript" ||
+            normalized === "mjs" ||
+            normalized === "cjs"
+        ) {
             return "handrive-js";
         }
         if (normalized === "css") {
@@ -5082,6 +5289,91 @@
         if (requestedRenderClass === "ui-markdown") {
             hydrateMarkdownCodeBlockCopyButtons(targetElement);
         }
+    }
+
+    const HANDRIVE_CODE_VIEW_TOGGLE_EXTENSIONS = new Set([".md", ".html", ".htm"]);
+
+    function normalizeHandriveSourceViewExtension(extension) {
+        const normalized = String(extension || "").trim().toLowerCase();
+        return normalized && normalized.charAt(0) === "." ? normalized : (normalized ? "." + normalized : "");
+    }
+
+    function isHandriveCodeViewToggleExtension(extension) {
+        return HANDRIVE_CODE_VIEW_TOGGLE_EXTENSIONS.has(normalizeHandriveSourceViewExtension(extension));
+    }
+
+    function getHandriveSourceViewRenderClass(extension, fallbackRenderClass) {
+        const normalizedExtension = normalizeHandriveSourceViewExtension(extension);
+        if (normalizedExtension === ".md") {
+            return "ui-markdown";
+        }
+        if (normalizedExtension === ".html" || normalizedExtension === ".htm") {
+            return "handrive-html";
+        }
+        return String(fallbackRenderClass || "").trim() || "handrive-plain-text";
+    }
+
+    function highlightHandriveSourceCode(source, renderClass) {
+        const sourceText = String(source || "");
+        const normalizedRenderClass = String(renderClass || "").trim();
+        if (normalizedRenderClass === "ui-markdown" || normalizedRenderClass === "handrive-markdown") {
+            return highlightMarkdownSourceCode(sourceText);
+        }
+        if (normalizedRenderClass === "handrive-html") {
+            return highlightHtmlCode(sourceText);
+        }
+        if (normalizedRenderClass === "handrive-js") {
+            return highlightJavaScriptCode(sourceText);
+        }
+        if (normalizedRenderClass === "handrive-css") {
+            return highlightCssCode(sourceText);
+        }
+        if (normalizedRenderClass === "handrive-json") {
+            return highlightJsonCode(sourceText);
+        }
+        if (normalizedRenderClass === "handrive-py") {
+            return highlightPythonCode(sourceText);
+        }
+        if (normalizedRenderClass === "handrive-sql") {
+            return highlightSqlCode(sourceText);
+        }
+        return escapeHtml(sourceText);
+    }
+
+    function renderHandriveSourceCodeView(targetElement, source, extension, renderClass) {
+        if (!targetElement || !(targetElement instanceof Element)) {
+            return "";
+        }
+        const sourceRenderClass = getHandriveSourceViewRenderClass(extension, renderClass);
+        const sourceRenderMode = sourceRenderClass === "ui-markdown" ? "markdown" : "plain_text";
+        applyHandriveRenderedContentModeClass(targetElement, sourceRenderMode, sourceRenderClass);
+        targetElement.classList.add("handrive-source-code-view");
+        const pre = document.createElement("pre");
+        const code = document.createElement("code");
+        code.innerHTML = highlightHandriveSourceCode(source, sourceRenderClass);
+        code.dataset.handriveCodeHighlighted = "1";
+        pre.appendChild(code);
+        targetElement.replaceChildren(pre);
+        return sourceRenderClass;
+    }
+
+    function getHandriveCodeToggleLabel(isCodeView) {
+        return isCodeView
+            ? t("rendered_view_button", textByLang("미리보기", "Preview"))
+            : t("code_view_button", textByLang("코드 보기", "View code"));
+    }
+
+    function syncHandriveCodeToggleButton(button, available, isCodeView) {
+        if (!button) {
+            return;
+        }
+        const isAvailable = Boolean(available);
+        button.hidden = !isAvailable;
+        button.disabled = !isAvailable;
+        button.setAttribute("aria-pressed", isAvailable && isCodeView ? "true" : "false");
+        const label = getHandriveCodeToggleLabel(Boolean(isAvailable && isCodeView));
+        button.setAttribute("aria-label", label);
+        button.setAttribute("title", label);
     }
 
     // 열린 문서 모달이 있는지 확인하는 함수
@@ -5350,6 +5642,22 @@
     }
 
     const requestCommitMessageDialog = createHandriveCommitMessageDialog();
+
+    function setHandriveHelpModalLoading(modal, loading) {
+        if (!modal) {
+            return;
+        }
+        const isLoading = Boolean(loading);
+        const dialog = modal.querySelector(".handrive-help-modal-dialog");
+        const loadingOverlay = modal.querySelector(".site-modal-loading");
+        if (dialog) {
+            dialog.classList.toggle("is-loading", isLoading);
+            dialog.setAttribute("aria-busy", isLoading ? "true" : "false");
+        }
+        if (loadingOverlay) {
+            loadingOverlay.hidden = !isLoading;
+        }
+    }
 
     function createHandriveAdminUserDialog() {
         const modal = document.getElementById("handrive-admin-user-modal");
@@ -6096,6 +6404,7 @@
         const previewNavBgNext = previewNavBg ? previewNavBg.querySelector("span:last-child") : null;
         const previewDownloadButton = document.getElementById("handrive-list-preview-download-btn");
         const previewPrintButton = document.getElementById("handrive-list-preview-print-btn");
+        const previewCodeToggleButton = document.getElementById("handrive-list-preview-code-toggle-btn");
         const previewEditButton = document.getElementById("handrive-list-preview-edit-btn");
         const previewSpreadsheetSaveButton = document.getElementById("handrive-list-preview-spreadsheet-save-btn");
         const previewDeleteButton = document.getElementById("handrive-list-preview-delete-btn");
@@ -6191,6 +6500,8 @@
         const renameTarget = document.getElementById("handrive-rename-target");
         const renameCancelButton = document.getElementById("handrive-rename-cancel-btn");
         const renameConfirmButton = document.getElementById("handrive-rename-confirm-btn");
+        const renameModalDialog = renameModal ? renameModal.querySelector(".site-modal-dialog") : null;
+        const renameModalLoading = renameModal ? renameModal.querySelector(".site-modal-loading") : null;
         const archiveExtractModal = document.getElementById("handrive-archive-extract-modal");
         const archiveExtractModalBackdrop = document.getElementById("handrive-archive-extract-modal-backdrop");
         const archiveExtractTarget = document.getElementById("handrive-archive-extract-target");
@@ -6207,6 +6518,7 @@
         const folderCreateModalBackdrop = document.getElementById("handrive-folder-create-modal-backdrop");
         const folderCreateTarget = document.getElementById("handrive-folder-create-target");
         const folderCreateInput = document.getElementById("handrive-folder-create-input");
+        const folderCreateWebCheckbox = document.getElementById("handrive-folder-create-web-checkbox");
         const folderCreateCancelButton = document.getElementById("handrive-folder-create-cancel-btn");
         const folderCreateConfirmButton = document.getElementById("handrive-folder-create-confirm-btn");
         const gitRepoModal = document.getElementById("handrive-git-repo-modal");
@@ -6638,7 +6950,13 @@
             previewAbortController: null,
             activePreviewPath: "",
             activeRenderedPreviewPath: "",
+            activePreviewSource: "",
+            activePreviewSourceExtension: "",
+            activePreviewSourceRenderClass: "",
+            previewCodeViewActive: false,
             previewImageZoom: 1,
+            previewFrameZoom: 1,
+            renameSubmitting: false,
             uploadQueueItems: [],
             uploadQueueSequence: 0,
             uploadWorkerActive: false,
@@ -6670,6 +6988,7 @@
         const googleDriveLabelByPath = new Map();
         let adjacentSelectedRowCornerFrame = 0;
         let listPreviewFontSize = 16;
+        let previewFrameGestureStartZoom = 1;
 
         function setHandriveItemRowDepth(item, row, depthValue) {
             const depth = Math.max(0, Number(depthValue) || 0);
@@ -7461,7 +7780,7 @@
         let listMarkdownSnippetEventsBound = false;
         let listMarkdownImageEventsBound = false;
         let listMarkdownUploadedImagePaths = [];
-        const LIST_EDITOR_PREVIEW_EXTENSIONS = new Set([".md", ".html"]);
+        const LIST_EDITOR_PREVIEW_EXTENSIONS = new Set([".md", ".html", ".jsx"]);
         const listMarkdownImageInput = createMarkdownImageInputHandler({
             textarea: editorContentInput,
             uploadApiUrl: appendSharedQuery(markdownImageUploadApiUrl),
@@ -7530,12 +7849,35 @@
             editorPreviewButton.disabled = !isAvailable;
         }
 
+        let editorPreviewModalZoomController = null;
+
+        function syncEditorPreviewModalZoom(reset) {
+            if (!editorPreviewModal || typeof handrivePreviewModalZoom.bind !== "function") {
+                return;
+            }
+            editorPreviewModalZoomController = editorPreviewModalZoomController || handrivePreviewModalZoom.bind(editorPreviewModal);
+            if (!editorPreviewModalZoomController) {
+                return;
+            }
+            if (reset && typeof editorPreviewModalZoomController.reset === "function") {
+                editorPreviewModalZoomController.reset();
+            } else if (typeof editorPreviewModalZoomController.apply === "function") {
+                editorPreviewModalZoomController.apply();
+            }
+        }
+
         function setListEditorPreviewModalOpen(opened) {
             if (!editorPreviewModal) {
                 return;
             }
             editorPreviewModal.hidden = !opened;
+            if (!opened) {
+                setHandriveHelpModalLoading(editorPreviewModal, false);
+            }
             syncModalBodyState();
+            if (opened) {
+                syncEditorPreviewModalZoom(true);
+            }
         }
 
         function getListEditorPreviewSourceContent() {
@@ -7565,10 +7907,13 @@
             }
 
             applyHandriveRenderedContentModeClass(editorPreviewModalContent, "plain_text", "handrive-plain-text");
-            editorPreviewModalContent.innerHTML = "<p>" + t("preview_loading", "Loading preview...") + "</p>";
+            editorPreviewModalContent.innerHTML = "";
+            setHandriveHelpModalLoading(editorPreviewModal, true);
+            syncEditorPreviewModalZoom(false);
             setListEditorPreviewModalOpen(true);
 
             if (!previewApiUrl) {
+                setHandriveHelpModalLoading(editorPreviewModal, false);
                 editorPreviewModalContent.innerHTML = "<p>" + t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다.") + "</p>";
                 return;
             }
@@ -7591,6 +7936,8 @@
                 applyHandriveRenderedContentModeClass(editorPreviewModalContent, renderMode, renderClass);
                 editorPreviewModalContent.innerHTML = data && typeof data.html === "string" ? data.html : "";
                 applyHandriveCodeHighlighting(editorPreviewModalContent, renderClass || "ui-markdown");
+                scheduleHandriveHtmlLiveFramesSync(editorPreviewModalContent);
+                syncEditorPreviewModalZoom(false);
                 renderHandriveMermaidDiagrams(editorPreviewModalContent).catch(alertError);
             } catch (error) {
                 applyHandriveRenderedContentModeClass(editorPreviewModalContent, "plain_text", "handrive-plain-text");
@@ -7598,6 +7945,9 @@
                     "<p>" +
                     (error && error.message ? error.message : t("js_error_processing_failed", "처리 중 오류가 발생했습니다.")) +
                     "</p>";
+                syncEditorPreviewModalZoom(false);
+            } finally {
+                setHandriveHelpModalLoading(editorPreviewModal, false);
             }
         }
 
@@ -7731,6 +8081,7 @@
                 applyHandriveCodeHighlighting(previewContent, renderClass || "ui-markdown");
                 renderHandriveMermaidDiagrams(previewContent).catch(alertError);
                 restorePreviewZoomForEntry(entry, renderMode);
+                scheduleHandriveHtmlLiveFramesSync(previewContent);
             } catch (error) {
                 applyHandriveRenderedContentModeClass(previewContent, "plain_text", "handrive-plain-text");
                 previewContent.innerHTML =
@@ -8113,7 +8464,7 @@
             let highlightedHtml = "";
             let useHighlightedHtml = false;
 
-            if (useSyntaxHighlight && extension === ".js") {
+            if (useSyntaxHighlight && (extension === ".js" || extension === ".jsx")) {
                 renderClass = "handrive-js";
                 highlightedHtml = highlightJavaScriptCode(source);
                 useHighlightedHtml = true;
@@ -11078,6 +11429,91 @@
                 buildDownloadUrl: buildDownloadUrl,
                 onEdit: handlePreviewEditAction,
             });
+            syncPreviewCodeToggleButton();
+        }
+
+        function setActivePreviewSourceInfo(sourceInfo) {
+            const info = sourceInfo || {};
+            const sourceExtension = normalizeHandriveSourceViewExtension(info.sourceExtension || "");
+            if (!isHandriveCodeViewToggleExtension(sourceExtension)) {
+                state.activePreviewSource = "";
+                state.activePreviewSourceExtension = "";
+                state.activePreviewSourceRenderClass = "";
+                return;
+            }
+            state.activePreviewSource = typeof info.source === "string" ? info.source : "";
+            state.activePreviewSourceExtension = sourceExtension;
+            state.activePreviewSourceRenderClass = getHandriveSourceViewRenderClass(
+                sourceExtension,
+                info.sourceRenderClass || ""
+            );
+        }
+
+        function hasActivePreviewSourceView() {
+            return Boolean(state.activePreviewSourceExtension && isHandriveCodeViewToggleExtension(state.activePreviewSourceExtension));
+        }
+
+        function syncPreviewCodeToggleButton() {
+            syncHandriveCodeToggleButton(
+                previewCodeToggleButton,
+                hasActivePreviewSourceView() && state.activeRenderedPreviewPath === state.activePreviewPath,
+                state.previewCodeViewActive
+            );
+        }
+
+        function renderActivePreviewCodeView() {
+            if (!previewContent || !hasActivePreviewSourceView()) {
+                return;
+            }
+            const entry = state.activePreviewPath ? state.entryByPath.get(state.activePreviewPath) || null : null;
+            void releasePreviewVideoPlayers(previewContent);
+            destroyModelPreviews(previewContent);
+            state.previewCodeViewActive = true;
+            state.activePreviewRenderMode = "plain_text";
+            renderHandriveSourceCodeView(
+                previewContent,
+                state.activePreviewSource,
+                state.activePreviewSourceExtension,
+                state.activePreviewSourceRenderClass
+            );
+            setPreviewActionTargets(entry);
+            restorePreviewZoomForEntry(entry, "plain_text");
+            if (previewContent) {
+                previewContent.scrollTop = 0;
+                previewContent.scrollLeft = 0;
+            }
+            scheduleSyncCurrentDirRowHeightWithSideHead();
+        }
+
+        function restoreActivePreviewRenderedView() {
+            const pathValue = normalizePath(state.activePreviewPath, true);
+            if (!pathValue || !state.previewCache.has(pathValue)) {
+                return;
+            }
+            const entry = state.entryByPath.get(pathValue) || null;
+            const cached = state.previewCache.get(pathValue);
+            if (!cached || typeof cached !== "object") {
+                return;
+            }
+            state.previewCodeViewActive = false;
+            renderPreviewHtml(entry, cached.html, cached.renderMode, cached.renderClass, {
+                source: cached.source,
+                sourceExtension: cached.sourceExtension,
+                sourceRenderClass: cached.sourceRenderClass,
+            });
+            state.activeRenderedPreviewPath = pathValue;
+            if (previewContent) {
+                previewContent.scrollTop = 0;
+                previewContent.scrollLeft = 0;
+            }
+        }
+
+        function toggleActivePreviewCodeView() {
+            if (state.previewCodeViewActive) {
+                restoreActivePreviewRenderedView();
+                return;
+            }
+            renderActivePreviewCodeView();
         }
 
         function setPreviewPlaceholder(message) {
@@ -12563,6 +12999,7 @@
             });
         }
         window.addEventListener("handrive:media-play-next-request", handlePreviewMediaPlayNextRequest);
+        window.addEventListener("message", handlePreviewFrameZoomGestureMessage);
 
         function clearPreviewPane() {
             const previousActivePreviewPath = state.activePreviewPath;
@@ -12572,6 +13009,10 @@
             state.activePreviewPath = "";
             state.activeRenderedPreviewPath = "";
             state.activePreviewRenderMode = "";
+            state.activePreviewSource = "";
+            state.activePreviewSourceExtension = "";
+            state.activePreviewSourceRenderClass = "";
+            state.previewCodeViewActive = false;
             state.previewRequestToken += 1;
             if (state.previewAbortController && typeof state.previewAbortController.abort === "function") {
                 try {
@@ -12582,6 +13023,7 @@
             }
             state.previewAbortController = null;
             state.previewImageZoom = 1;
+            state.previewFrameZoom = 1;
             syncEntryRowSelectedStates([previousActivePreviewPath]);
             setPreviewVisibility(false);
             if (previewNavBgPrev) previewNavBgPrev.hidden = true;
@@ -12604,6 +13046,7 @@
             );
             setListPreviewFontSize(16, { skipPersist: true });
             syncPreviewImageZoom();
+            syncPreviewFrameZoom();
             void updatePreviewNavButtons(null);
             if (isTutorialMode) {
                 window.setTimeout(scheduleGuestDemoTourPositionAfterLayoutChange, 0);
@@ -12616,6 +13059,21 @@
             }
             clearPreviewPane();
             return true;
+        }
+
+        function deletedPathContainsActivePreview(pathValue) {
+            const deletedPath = normalizePath(pathValue, true);
+            const previewPath = normalizePath(state.activePreviewPath, true);
+            if (!deletedPath || !previewPath) {
+                return false;
+            }
+            return previewPath === deletedPath || previewPath.indexOf(deletedPath + "/") === 0;
+        }
+
+        function closePreviewPaneIfDeleted(pathValue) {
+            if (deletedPathContainsActivePreview(pathValue)) {
+                clearPreviewPane();
+            }
         }
 
         function getPreviewImageMinZoom() {
@@ -12632,6 +13090,210 @@
 
         function syncPreviewImageZoom() {
             previewSyncImageZoom(previewContent, previewZoomWrap, state.previewImageZoom);
+        }
+
+        function getPreviewFrameElements() {
+            return previewContent ? Array.prototype.slice.call(previewContent.querySelectorAll("iframe")) : [];
+        }
+
+        function isListPreviewFrameZoomContent() {
+            return Boolean(
+                previewContent &&
+                previewContent.classList.contains("handrive-html") &&
+                getPreviewFrameElements().length > 0
+            );
+        }
+
+        function isListPreviewImageZoomContent() {
+            return Boolean(previewContent && previewContent.querySelector(".handrive-media-image-wrap"));
+        }
+
+        function getListPreviewZoomKind() {
+            if (isListPreviewFrameZoomContent()) {
+                return "frame";
+            }
+            if (isListPreviewImageZoomContent()) {
+                return "image";
+            }
+            if (previewContent && previewContent.classList.contains("handrive-media")) {
+                return "none";
+            }
+            return "text";
+        }
+
+        function applyPreviewFrameZoom(frame, zoomValue) {
+            if (!frame) {
+                return;
+            }
+            const scale = Math.max(0.25, Math.min(4, Number(zoomValue) || 1));
+            try {
+                if (frame.contentWindow && typeof frame.contentWindow.postMessage === "function") {
+                    frame.contentWindow.postMessage({
+                        type: "handrive-preview-frame-zoom-apply",
+                        zoom: scale,
+                    }, "*");
+                }
+            } catch (error) {}
+            let appliedInsideFrame = false;
+            try {
+                const frameDocument = frame.contentDocument || (frame.contentWindow ? frame.contentWindow.document : null);
+                if (frameDocument && frameDocument.documentElement) {
+                    frameDocument.documentElement.style.zoom = String(scale);
+                    frameDocument.documentElement.style.setProperty("--handrive-preview-frame-zoom", String(scale));
+                    if (frameDocument.body) {
+                        frameDocument.body.style.setProperty("--handrive-preview-frame-zoom", String(scale));
+                    }
+                    appliedInsideFrame = true;
+                }
+            } catch (error) {
+                appliedInsideFrame = false;
+            }
+            if (appliedInsideFrame) {
+                frame.style.removeProperty("transform");
+                frame.style.removeProperty("transform-origin");
+                return;
+            }
+            frame.style.removeProperty("transform");
+            frame.style.removeProperty("transform-origin");
+        }
+
+        function getListPreviewZoomGestureOptions() {
+            return {
+                min: function () {
+                    const kind = getListPreviewZoomKind();
+                    if (kind === "image") {
+                        return getPreviewImageMinZoom();
+                    }
+                    if (kind === "frame") {
+                        return 0.25;
+                    }
+                    if (kind === "none") {
+                        return 1;
+                    }
+                    return 8;
+                },
+                max: function () {
+                    const kind = getListPreviewZoomKind();
+                    if (kind === "image" || kind === "frame") {
+                        return 4;
+                    }
+                    if (kind === "none") {
+                        return 1;
+                    }
+                    return 40;
+                },
+                wheelStep: function () {
+                    const kind = getListPreviewZoomKind();
+                    return kind === "image" || kind === "frame" ? 0.15 : 2;
+                },
+                getValue: function () {
+                    const kind = getListPreviewZoomKind();
+                    if (kind === "image") {
+                        return state.previewImageZoom;
+                    }
+                    if (kind === "frame") {
+                        return state.previewFrameZoom;
+                    }
+                    if (kind === "none") {
+                        return 1;
+                    }
+                    return listPreviewFontSize;
+                },
+                setValue: function (value) {
+                    const kind = getListPreviewZoomKind();
+                    if (kind === "image") {
+                        setPreviewImageZoom(value);
+                        return;
+                    }
+                    if (kind === "frame") {
+                        setPreviewFrameZoom(value);
+                        return;
+                    }
+                    if (kind === "none") {
+                        return;
+                    }
+                    setListPreviewFontSize(value);
+                },
+            };
+        }
+
+        function bindPreviewFrameZoomGesture(frame) {
+            if (!frame) {
+                return;
+            }
+            let frameDocument = null;
+            try {
+                frameDocument = frame.contentDocument || (frame.contentWindow ? frame.contentWindow.document : null);
+            } catch (error) {
+                frameDocument = null;
+            }
+            const surface = frameDocument ? (frameDocument.documentElement || frameDocument.body) : null;
+            if (!surface || surface._handriveListPreviewFrameZoomBound) {
+                return;
+            }
+            surface._handriveListPreviewFrameZoomBound = true;
+            bindHanplanetZoomGesture(surface, getListPreviewZoomGestureOptions());
+        }
+
+        function syncPreviewFrameZoom() {
+            if (!previewContent) {
+                return;
+            }
+            getPreviewFrameElements().forEach(function (frame) {
+                applyPreviewFrameZoom(frame, state.previewFrameZoom);
+                if (!frame._handriveListPreviewFrameZoomLoadBound) {
+                    frame._handriveListPreviewFrameZoomLoadBound = true;
+                    frame.addEventListener("load", function () {
+                        applyPreviewFrameZoom(frame, state.previewFrameZoom);
+                        bindPreviewFrameZoomGesture(frame);
+                    });
+                }
+                bindPreviewFrameZoomGesture(frame);
+            });
+        }
+
+        function setPreviewFrameZoom(nextZoom) {
+            state.previewFrameZoom = Math.max(0.25, Math.min(4, Number(nextZoom) || 1));
+            syncPreviewFrameZoom();
+        }
+
+        function findPreviewFrameByWindow(sourceWindow) {
+            if (!sourceWindow) {
+                return null;
+            }
+            return getPreviewFrameElements().find(function (frame) {
+                return frame && frame.contentWindow === sourceWindow;
+            }) || null;
+        }
+
+        function handlePreviewFrameZoomGestureMessage(event) {
+            const data = event && event.data && typeof event.data === "object" ? event.data : null;
+            if (!data || data.type !== "handrive-preview-frame-zoom-gesture") {
+                return;
+            }
+            if (!isListPreviewFrameZoomContent() || !findPreviewFrameByWindow(event.source)) {
+                return;
+            }
+            const inputType = String(data.inputType || "");
+            if (inputType === "pinch-start" || inputType === "gesture-start") {
+                previewFrameGestureStartZoom = state.previewFrameZoom;
+                return;
+            }
+            if (inputType === "pinch" || inputType === "gesture") {
+                setPreviewFrameZoom(previewFrameGestureStartZoom * (Number(data.ratio) || 1));
+                return;
+            }
+            let delta = Number(data.deltaY) || Number(data.deltaX) || 0;
+            const deltaMode = Number(data.deltaMode) || 0;
+            if (deltaMode === 1) {
+                delta *= 16;
+            } else if (deltaMode === 2) {
+                delta *= window.innerHeight || 800;
+            }
+            if (Math.abs(delta) < 0.01) {
+                return;
+            }
+            setPreviewFrameZoom(state.previewFrameZoom + ((delta < 0 ? 1 : -1) * 0.15));
         }
 
         function setPreviewImageZoom(nextZoom) {
@@ -12657,6 +13319,12 @@
             if (String(renderMode || "") === "media_image") {
                 state.previewImageZoom = 1;
                 syncPreviewImageZoom();
+                return;
+            }
+            if (isListPreviewFrameZoomContent()) {
+                state.previewFrameZoom = 1;
+                syncPreviewFrameZoom();
+                setListPreviewFontSize(16, { skipPersist: true });
                 return;
             }
             if (!isHandriveTextCodeZoomExtension(extension)) {
@@ -12715,8 +13383,10 @@
             imageElement.addEventListener("error", releaseOnce);
         }
 
-        function renderPreviewHtml(entry, html, renderMode, renderClass) {
+        function renderPreviewHtml(entry, html, renderMode, renderClass, sourceInfo) {
             setPreviewBodyLoading(false);
+            state.previewCodeViewActive = false;
+            setActivePreviewSourceInfo(sourceInfo);
             renderPreviewHtmlFlow({
                 applyHandriveCodeHighlighting: applyHandriveCodeHighlighting,
                 applyRenderedContentModeClass: applyRenderedContentModeClass,
@@ -12736,6 +13406,7 @@
                 t: t,
             });
             restorePreviewZoomForEntry(entry, renderMode);
+            scheduleHandriveHtmlLiveFramesSync(previewContent);
             hydrateSpreadsheetPreviews(previewContent).catch(alertError);
             renderHandriveMermaidDiagrams(previewContent)
                 .then(scheduleSyncCurrentDirRowHeightWithSideHead)
@@ -12775,6 +13446,16 @@
                 switchToPreview: switchToPreview,
                 t: t,
             });
+            if (isTutorialMode) {
+                scheduleGuestDemoTourPositionAfterLayoutChange();
+                if (
+                    guestDemoTourActiveStep &&
+                    guestDemoTourActiveStep.id === "html_preview" &&
+                    isGuestDemoHtmlUsagePreviewRendered()
+                ) {
+                    scheduleGuestDemoStepAdvance("html_preview", 160, { resolveCurrentUi: true });
+                }
+            }
         }
 
         function syncPreviewFromSelection() {
@@ -13358,13 +14039,6 @@
             if (!entry) {
                 return "";
             }
-            if (entry.type === "file") {
-                const fileName = String(entry.name || "");
-                const dotIndex = fileName.lastIndexOf(".");
-                if (dotIndex > 0) {
-                    return fileName.slice(0, dotIndex);
-                }
-            }
             return entry.name;
         }
 
@@ -13422,6 +14096,46 @@
                 return false;
             }
             return Array.from(dataTransfer.types).includes("Files");
+        }
+
+        function getDataTransferDirectoryNames(dataTransfer) {
+            if (!dataTransfer || !dataTransfer.items) {
+                return [];
+            }
+            return Array.from(dataTransfer.items).reduce(function (names, item) {
+                if (!item || item.kind !== "file" || typeof item.webkitGetAsEntry !== "function") {
+                    return names;
+                }
+                let entry = null;
+                try {
+                    entry = item.webkitGetAsEntry();
+                } catch (error) {
+                    entry = null;
+                }
+                if (entry && entry.isDirectory) {
+                    const name = String(entry.name || "").trim();
+                    names.push(name || t("list_type_folder", "폴더"));
+                }
+                return names;
+            }, []);
+        }
+
+        function getDroppedUploadFiles(dataTransfer) {
+            const directoryNames = getDataTransferDirectoryNames(dataTransfer);
+            if (directoryNames.length > 0) {
+                return {
+                    files: [],
+                    directoryNames: directoryNames,
+                };
+            }
+            return {
+                files: Array.from(dataTransfer && dataTransfer.files ? dataTransfer.files : []).filter(Boolean),
+                directoryNames: [],
+            };
+        }
+
+        function getFolderUploadNotSupportedMessage() {
+            return t("upload_error_folder_not_supported", "폴더는 업로드할 수 없습니다. 파일만 업로드해주세요.");
         }
 
         function setFileDropTarget(active, sourceKind) {
@@ -13836,17 +14550,33 @@
                         getMetaLabel: function (nextItem) {
                             return getQueueItemMetaLabel(nextItem, getHandrivePathLabel);
                         },
+                        getChildItems: getQueueOperationChildItems,
+                        getChildMetaLabel: function (childItem) {
+                            return getQueueItemMetaLabel(childItem, getHandrivePathLabel);
+                        },
+                        getChildStatusLabel: function (childItem) {
+                            return getQueueItemStatusLabel(childItem, t);
+                        },
                         getStatusLabel: function (nextItem) {
                             return getQueueItemStatusLabel(nextItem, t);
                         },
                         onActivate: function (nextItem) {
                             openUploadQueueItemPreview(nextItem).catch(alertError);
                         },
+                        onChildActivate: function (childItem) {
+                            openUploadQueueItemPreview(childItem).catch(alertError);
+                        },
+                        onChildOpen: function (childItem) {
+                            openUploadQueueItem(childItem).catch(alertError);
+                        },
                         onOpen: function (nextItem) {
                             openUploadQueueItem(nextItem).catch(alertError);
                         },
                         onOpenContextMenu: function (nextItem, x, y) {
                             openUploadQueueContextMenu(nextItem, x, y).catch(alertError);
+                        },
+                        onToggleDetails: function () {
+                            renderUploadQueue();
                         },
                     });
                 },
@@ -13976,6 +14706,54 @@
             return "";
         }
 
+        function getQueueOperationChildItems(item) {
+            if (
+                !item ||
+                item.kind !== "operation" ||
+                (item.operationType !== "move" && item.operationType !== "delete")
+            ) {
+                return [];
+            }
+            const entries = Array.isArray(item.entries) ? item.entries.filter(Boolean) : [];
+            const hasSingleFolderEntry = entries.length === 1 && entries[0] && entries[0].type === "dir";
+            if (entries.length <= 1 && !hasSingleFolderEntry) {
+                return [];
+            }
+            const resultEntries = Array.isArray(item.resultEntries) ? item.resultEntries : [];
+            return entries.map(function (entry, index) {
+                const resultEntry = resultEntries[index] || {};
+                const sourcePath = normalizePath(resultEntry.sourcePath || entry.path || "", true);
+                const resultPath = normalizePath(resultEntry.path || "", true);
+                const isMove = item.operationType === "move";
+                const savedPath = isMove && resultPath ? resultPath : "";
+                const displayPath = savedPath || sourcePath;
+                const childName = String(
+                    (savedPath ? getPathLeafLabel(savedPath, "") : "") ||
+                    resultEntry.name ||
+                    entry.name ||
+                    getPathLeafLabel(displayPath, displayPath || item.fileName || "")
+                ).trim();
+                const childStatus = resultEntry.status || (item.status === "done" ? "done" : item.status);
+                return {
+                    id: String(item.id) + ":child:" + String(index),
+                    kind: "operation",
+                    operationType: item.operationType,
+                    entries: [entry],
+                    fileName: childName || displayPath || item.fileName || "",
+                    sourcePath: sourcePath,
+                    targetDirPath: savedPath ? getParentDirectory(savedPath) : item.targetDirPath,
+                    status: childStatus,
+                    progress: childStatus === "done" ? 100 : 0,
+                    errorMessage: "",
+                    savedPath: savedPath,
+                    savedSlugPath: resultEntry.slug_path || "",
+                    sizeDisplay: resultEntry.size_display || entry.size_display || "",
+                    canOpen: Boolean(isMove && savedPath && childStatus === "done"),
+                    parentQueueItemId: item.id,
+                };
+            });
+        }
+
         function findCachedEntryByPath(pathValue) {
             const normalizedPath = normalizePath(pathValue || "", true);
             if (!normalizedPath) {
@@ -14036,7 +14814,9 @@
                 path: normalizedPath,
                 slug_path: item.savedSlugPath || "",
                 name: fileName,
-                type: "file",
+                type: item.entries && item.entries[0] && item.entries[0].type
+                    ? item.entries[0].type
+                    : "file",
                 can_read: true,
                 can_edit: false,
                 can_demo_edit: false,
@@ -14059,10 +14839,31 @@
             return buildUploadQueueFallbackPreviewEntry(item, targetPath);
         }
 
+        async function resolveUploadQueueOpenEntry(item) {
+            if (!item || item.status !== "done") {
+                return null;
+            }
+            const targetPath = getUploadQueueItemTargetPath(item);
+            if (!targetPath) {
+                return null;
+            }
+            const cachedEntry = await resolveUploadQueueContextEntry(item);
+            if (cachedEntry) {
+                return cachedEntry;
+            }
+            return buildUploadQueueFallbackPreviewEntry(item, targetPath);
+        }
+
         async function openUploadQueueItemPreview(item) {
             closeContextMenu();
-            const previewEntry = await resolveUploadQueuePreviewEntry(item);
+            const previewEntry = await resolveUploadQueueOpenEntry(item);
+            if (!previewEntry) {
+                return;
+            }
             if (!isPreviewableFileEntry(previewEntry)) {
+                if (item && item.parentQueueItemId && previewEntry.type === "dir") {
+                    openEntry(previewEntry);
+                }
                 return;
             }
             const previewPath = normalizePath(previewEntry.path, true);
@@ -14077,8 +14878,8 @@
 
         async function openUploadQueueItem(item) {
             closeContextMenu();
-            const entry = await resolveUploadQueuePreviewEntry(item);
-            if (!isPreviewableFileEntry(entry)) {
+            const entry = await resolveUploadQueueOpenEntry(item);
+            if (!entry) {
                 return;
             }
             openEntry(entry);
@@ -14342,7 +15143,7 @@
                 applySelection: applySelection,
                 buildPostOptions: buildPostOptions,
                 deleteApiUrl: appendSharedQuery(deleteApiUrl),
-                onEntryDeleted: removeSyncExcludedStateForDelete,
+                onEntryDeleted: handleEntryDeleted,
                 queueNeedsRefresh: queueNeedsRefresh,
                 removeExpandedFoldersByDeletedPaths: removeExpandedFoldersByDeletedPaths,
                 renderUploadQueue: renderUploadQueue,
@@ -14470,6 +15271,7 @@
                 requiresCommitMessageForDirectory: requiresCommitMessageForDirectory,
                 state: state,
                 uploadApiUrl: appendSharedQuery(uploadApiUrl),
+                folderUploadErrorMessage: getFolderUploadNotSupportedMessage(),
             });
         }
 
@@ -15566,6 +16368,7 @@
                 isUrlOnly: Boolean(entry.is_url_only || entry.share_url || entry.share_is_inherited),
                 shareUrl: entry.share_url || "",
                 downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(entry.share_download_url || "") : "",
+                clipboardLabel: entry.name || String(entry.path || "").split("/").pop(),
                 allowedUsers: entry.share_allowed_users || [],
                 canEdit: Boolean(entry.share_can_edit),
                 readOnly: !canToggleShare,
@@ -16173,6 +16976,11 @@
             );
         }
 
+        function handleEntryDeleted(pathValue) {
+            removeSyncExcludedStateForDelete(pathValue);
+            closePreviewPaneIfDeleted(pathValue);
+        }
+
         async function collectSyncDescendantPaths(dirPath, visitedDirs) {
             const normalizedDir = normalizePath(dirPath, true);
             if (visitedDirs.has(normalizedDir)) {
@@ -16492,16 +17300,38 @@
             setSyncModalOpen(false);
         }
 
+        function setRenameModalSubmitting(isSubmitting) {
+            state.renameSubmitting = Boolean(isSubmitting);
+            if (renameConfirmButton) {
+                renameConfirmButton.disabled = state.renameSubmitting;
+            }
+            if (renameCancelButton) {
+                renameCancelButton.disabled = state.renameSubmitting;
+            }
+            if (renameInput) {
+                renameInput.readOnly = state.renameSubmitting;
+            }
+            if (renameModalDialog) {
+                renameModalDialog.classList.toggle("is-loading", state.renameSubmitting);
+                renameModalDialog.setAttribute("aria-busy", state.renameSubmitting ? "true" : "false");
+            }
+            if (renameModalLoading) {
+                renameModalLoading.hidden = !state.renameSubmitting;
+            }
+        }
+
         function setRenameModalOpen(opened, entry) {
             if (!renameModal) {
                 return;
             }
             if (!opened) {
+                setRenameModalSubmitting(false);
                 modalSetRenameModalOpen(renameModal, renameTarget, renameInput, syncModalBodyState, false, null, getEntryEditableName);
                 state.renameTargetEntry = null;
                 scheduleGuestDemoTourForRenameModalChange(false);
                 return;
             }
+            setRenameModalSubmitting(false);
             state.renameTargetEntry = entry || null;
             modalSetRenameModalOpen(
                 renameModal,
@@ -16627,6 +17457,9 @@
             }
             if (!opened) {
                 modalSetFolderCreateModalOpen(folderCreateModal, folderCreateTarget, folderCreateInput, syncModalBodyState, false, null, "");
+                if (folderCreateWebCheckbox) {
+                    folderCreateWebCheckbox.checked = false;
+                }
                 state.folderCreateParentEntry = null;
                 return;
             }
@@ -16634,6 +17467,9 @@
             const parentPath = entry && entry.path ? entry.path : "";
             const targetLabel = getHandrivePathLabel(parentPath);
             modalSetFolderCreateModalOpen(folderCreateModal, folderCreateTarget, folderCreateInput, syncModalBodyState, true, state.folderCreateParentEntry, targetLabel);
+            if (folderCreateWebCheckbox) {
+                folderCreateWebCheckbox.checked = false;
+            }
         }
 
         function syncFolderIconFileName() {
@@ -16734,6 +17570,9 @@
         }
 
         async function submitRename() {
+            if (state.renameSubmitting) {
+                return;
+            }
             const entry = state.renameTargetEntry;
             if (!entry) {
                 return;
@@ -16754,25 +17593,45 @@
                 }
             }
 
-            const data = await requestJson(appendSharedQuery(renameApiUrl), buildPostOptions({
-                path: entry.path,
-                new_name: trimmed,
-                commit_message: commitMessage
-            }));
-            const renamedPath = data && data.path ? data.path : "";
-            if (entry.type === "dir" && renamedPath) {
-                remapExpandedFoldersForRename(entry.path, renamedPath);
+            setRenameModalSubmitting(true);
+            try {
+                const data = await runHandriveTaskWithTimeout(
+                    function (signal) {
+                        return requestJson(appendSharedQuery(renameApiUrl), Object.assign(
+                            buildPostOptions({
+                                path: entry.path,
+                                new_name: trimmed,
+                                commit_message: commitMessage
+                            }),
+                            signal ? { signal: signal } : {}
+                        ));
+                    },
+                    60000,
+                    t("js_rename_timeout", "이름 변경 응답이 지연되었습니다. 잠시 후 다시 시도해주세요.")
+                );
+                const renamedPath = data && data.path ? data.path : "";
+                if (entry.type === "dir" && renamedPath) {
+                    remapExpandedFoldersForRename(entry.path, renamedPath);
+                }
+                if (renamedPath) {
+                    remapSyncExcludedStateForMove(entry.path, renamedPath);
+                }
+                applySelection([data && data.path ? data.path : ""], {
+                    primaryPath: data && data.path ? data.path : "",
+                    anchorPath: data && data.path ? data.path : "",
+                    render: false,
+                });
+                await runHandriveTaskWithTimeout(
+                    function () {
+                        return refreshCurrentDirectory();
+                    },
+                    60000,
+                    t("js_rename_refresh_timeout", "목록 갱신 응답이 지연되었습니다. 잠시 후 다시 시도해주세요.")
+                );
+                setRenameModalOpen(false);
+            } finally {
+                setRenameModalSubmitting(false);
             }
-            if (renamedPath) {
-                remapSyncExcludedStateForMove(entry.path, renamedPath);
-            }
-            applySelection([data && data.path ? data.path : ""], {
-                primaryPath: data && data.path ? data.path : "",
-                anchorPath: data && data.path ? data.path : "",
-                render: false,
-            });
-            setRenameModalOpen(false);
-            await refreshCurrentDirectory();
         }
 
         async function submitFolderCreate() {
@@ -16801,6 +17660,7 @@
                 buildPostOptions({
                     parent_dir: parentEntry.path,
                     folder_name: folderName,
+                    create_web_sample: Boolean(folderCreateWebCheckbox && folderCreateWebCheckbox.checked),
                     commit_message: commitMessage
                 })
             );
@@ -16883,6 +17743,7 @@
                 state.expandedFolders.delete(folderPath);
                 renderList();
                 scheduleListColumnVisibilityAfterTreeToggle();
+                scheduleGuestDemoTourPositionAfterLayoutChange();
                 return;
             }
 
@@ -16893,6 +17754,15 @@
             state.openingFolderPath = folderPath;
             renderList();
             scheduleListColumnVisibilityAfterTreeToggle();
+            scheduleGuestDemoTourPositionAfterLayoutChange();
+            if (
+                isTutorialMode &&
+                guestDemoTourActiveStep &&
+                guestDemoTourActiveStep.id === "html_structure" &&
+                folderPath === getGuestDemoHtmlUsageDirectoryPath()
+            ) {
+                scheduleGuestDemoStepAdvance("html_structure", 260, { resolveCurrentUi: true });
+            }
         }
 
         async function toggleArchiveExpansion(entry) {
@@ -16961,11 +17831,38 @@
             );
         }
 
+        function shouldHandleGuestDemoHtmlUsageTreeClick(entry) {
+            return Boolean(
+                isTutorialMode &&
+                guestDemoTourActiveStep &&
+                guestDemoTourActiveStep.id === "html_structure" &&
+                isGuestDemoHtmlUsageDirectoryEntry(entry)
+            );
+        }
+
+        function expandGuestDemoHtmlUsageTreeForTutorial(entry) {
+            const folderPath = normalizePath(entry && entry.path || "", true);
+            if (!folderPath) {
+                return;
+            }
+            cancelPendingEntrySingleClick();
+            if (state.expandedFolders.has(folderPath)) {
+                scheduleGuestDemoTourPositionAfterLayoutChange();
+                scheduleGuestDemoStepAdvance("html_structure", 80, { resolveCurrentUi: true });
+                return;
+            }
+            toggleFolderExpansion(entry).catch(alertError);
+        }
+
         function openEntry(entry) {
             if (!entry) {
                 return;
             }
             cancelPendingEntrySingleClick();
+            if (hasSharedContext() && entry.share_url) {
+                window.location.href = entry.share_url;
+                return;
+            }
             if (isArchiveEntry(entry)) {
                 navigateToDirectory(entry.archive_virtual_path, { sourceEntry: entry }).catch(alertError);
                 return;
@@ -17002,7 +17899,9 @@
                 return;
             }
             entries.forEach(function (entry) {
-                const targetUrl = isArchiveEntry(entry)
+                const targetUrl = hasSharedContext() && entry.share_url
+                    ? entry.share_url
+                    : isArchiveEntry(entry)
                     ? buildListUrl(handriveBaseUrl, entry.archive_virtual_path, handriveRootUrl)
                     : (
                         entry.type === "dir"
@@ -17016,6 +17915,12 @@
         function buildDownloadUrl(pathValue) {
             if (!downloadApiUrl) {
                 return "";
+            }
+            if (hasSharedContext()) {
+                const sharedEntry = state.entryByPath.get(normalizePath(pathValue, true));
+                if (sharedEntry && sharedEntry.share_download_url) {
+                    return sharedEntry.share_download_url;
+                }
             }
             const query = new URLSearchParams({ path: pathValue || "" }).toString();
             return appendSharedQuery(query ? downloadApiUrl + "?" + query : downloadApiUrl);
@@ -17059,7 +17964,9 @@
                     !entry.isCurrentFolder;
             });
             downloadableEntries.forEach(function (entry) {
-                const targetUrl = buildDownloadUrl(entry.path);
+                const targetUrl = hasSharedContext() && entry.share_download_url
+                    ? entry.share_download_url
+                    : buildDownloadUrl(entry.path);
                 if (!targetUrl) {
                     return;
                 }
@@ -17491,6 +18398,18 @@
                 event.preventDefault();
                 closeContextMenu();
                 selectEntriesByRowClick(entry, event);
+                if (
+                    shouldHandleGuestDemoHtmlUsageTreeClick(entry) &&
+                    event.detail === 1 &&
+                    !event.metaKey &&
+                    !event.ctrlKey &&
+                    !event.shiftKey
+                ) {
+                    scheduleEntrySingleClick(entry, function () {
+                        expandGuestDemoHtmlUsageTreeForTutorial(entry);
+                    });
+                    return;
+                }
                 if (event.detail >= 2) {
                     cancelPendingEntrySingleClick();
                     openEntry(entry);
@@ -18054,18 +18973,27 @@
 
         if (renameModalBackdrop) {
             renameModalBackdrop.addEventListener("click", function () {
+                if (state.renameSubmitting) {
+                    return;
+                }
                 setRenameModalOpen(false);
             });
         }
 
         if (renameCancelButton) {
             renameCancelButton.addEventListener("click", function () {
+                if (state.renameSubmitting) {
+                    return;
+                }
                 setRenameModalOpen(false);
             });
         }
 
         if (renameConfirmButton) {
             renameConfirmButton.addEventListener("click", function () {
+                if (state.renameSubmitting) {
+                    return;
+                }
                 submitRename().catch(alertError);
             });
         }
@@ -18074,6 +19002,9 @@
             renameInput.addEventListener("keydown", function (event) {
                 if (event.key === "Enter") {
                     event.preventDefault();
+                    if (state.renameSubmitting) {
+                        return;
+                    }
                     submitRename().catch(alertError);
                 }
             });
@@ -18558,6 +19489,12 @@
             });
         }
 
+        if (previewCodeToggleButton) {
+            previewCodeToggleButton.addEventListener("click", function () {
+                toggleActivePreviewCodeView();
+            });
+        }
+
         document.addEventListener("keydown", function (event) {
             const loweredKey = String(event.key || "").toLowerCase();
             if (!(event.metaKey || event.ctrlKey) || event.altKey || loweredKey !== "s") {
@@ -18661,32 +19598,11 @@
         if (previewContent) {
             previewContent.addEventListener("click", openClickedImagePictureInPicture);
 
-            bindHanplanetZoomGesture(previewContent, {
-                min: function () {
-                    return previewContent.classList.contains("handrive-media") ? getPreviewImageMinZoom() : 8;
-                },
-                max: function () {
-                    return previewContent.classList.contains("handrive-media") ? 3 : 40;
-                },
-                wheelStep: function () {
-                    return previewContent.classList.contains("handrive-media") ? 0.15 : 2;
-                },
-                getValue: function () {
-                    return previewContent.classList.contains("handrive-media")
-                        ? state.previewImageZoom
-                        : listPreviewFontSize;
-                },
-                setValue: function (value) {
-                    if (previewContent.classList.contains("handrive-media")) {
-                        setPreviewImageZoom(value);
-                        return;
-                    }
-                    setListPreviewFontSize(value);
-                },
-            });
+            bindHanplanetZoomGesture(previewContent, getListPreviewZoomGestureOptions());
         }
 
         if (previewBody) {
+            bindHanplanetZoomGesture(previewBody, getListPreviewZoomGestureOptions());
             previewBody.addEventListener("wheel", handleListPreviewBodyWheel, { passive: false });
         }
 
@@ -18705,6 +19621,7 @@
                     isUrlOnly: Boolean(selectedEntry.is_url_only),
                     shareUrl: selectedEntry.share_url || "",
                     downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(selectedEntry.share_download_url || "") : "",
+                    clipboardLabel: selectedEntry.name || String(selectedEntry.path || "").split("/").pop(),
                     allowedUsers: selectedEntry.share_allowed_users || [],
                     canEdit: Boolean(selectedEntry.share_can_edit),
                     readOnly: !canManageShare,
@@ -18876,7 +19793,7 @@
                     setArchiveCreateModalOpen(false);
                     return;
                 }
-                if (renameModal && !renameModal.hidden) {
+                if (renameModal && !renameModal.hidden && !state.renameSubmitting) {
                     setRenameModalOpen(false);
                     return;
                 }
@@ -18976,11 +19893,13 @@
                             ? state.fileDropGroupPath
                             : state.currentDir
                     );
+                const droppedUpload = getDroppedUploadFiles(event.dataTransfer);
                 clearFileDragUiState();
-                enqueueUploadFiles(
-                    event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files : [],
-                    targetDirPath
-                ).catch(alertError);
+                if (droppedUpload.directoryNames.length > 0) {
+                    alertError(new Error(getFolderUploadNotSupportedMessage()));
+                    return;
+                }
+                enqueueUploadFiles(droppedUpload.files, targetDirPath).catch(alertError);
             });
         }
 
@@ -19679,6 +20598,7 @@
         }
 
         var guestDemoTourSpotlight = null;
+        var guestDemoTourSpotlights = [];
         var guestDemoTourTip = null;
         var guestDemoTourKicker = null;
         var guestDemoTourTitle = null;
@@ -19723,6 +20643,41 @@
                 .replace("{total}", String(total));
         }
 
+        function ensureGuestDemoTourSpotlight(index) {
+            var spotlightIndex = Math.max(0, Math.floor(Number(index) || 0));
+            var existingSpotlight = guestDemoTourSpotlights[spotlightIndex] || null;
+            if (spotlightIndex === 0 && guestDemoTourSpotlight && document.documentElement.contains(guestDemoTourSpotlight)) {
+                guestDemoTourSpotlights[0] = guestDemoTourSpotlight;
+                return guestDemoTourSpotlight;
+            }
+            if (existingSpotlight && document.documentElement.contains(existingSpotlight)) {
+                if (spotlightIndex === 0) {
+                    guestDemoTourSpotlight = existingSpotlight;
+                }
+                return existingSpotlight;
+            }
+            var spotlight = document.createElement("div");
+            spotlight.className = "handrive-guest-demo-spotlight";
+            spotlight.hidden = true;
+            document.body.appendChild(spotlight);
+            guestDemoTourSpotlights[spotlightIndex] = spotlight;
+            if (spotlightIndex === 0) {
+                guestDemoTourSpotlight = spotlight;
+            }
+            return spotlight;
+        }
+
+        function hideGuestDemoSpotlightsFrom(startIndex) {
+            var firstHiddenIndex = Math.max(0, Math.floor(Number(startIndex) || 0));
+            guestDemoTourSpotlights.forEach(function (spotlight, index) {
+                if (!spotlight || index < firstHiddenIndex) {
+                    return;
+                }
+                spotlight.hidden = true;
+                spotlight.classList.remove("is-following-moving-target", "is-multi-target");
+            });
+        }
+
         function ensureGuestDemoTourElements() {
             if (guestDemoTourSpotlight && guestDemoTourTip) {
                 return;
@@ -19734,6 +20689,7 @@
                 guestDemoTourSpotlight.hidden = true;
                 document.body.appendChild(guestDemoTourSpotlight);
             }
+            guestDemoTourSpotlights[0] = guestDemoTourSpotlight;
 
             if (!guestDemoTourTip) {
                 guestDemoTourTip = document.createElement("aside");
@@ -19977,6 +20933,279 @@
 
         function getGuestDemoRowByPredicate(predicate) {
             return getGuestDemoRowForEntry(getGuestDemoEntryByPredicate(predicate), { scroll: false });
+        }
+
+        var HANDRIVE_TUTORIAL_HTML_USAGE_DIR_NAMES = ["09-HTML-사용방법", "09-html-usage"];
+
+        function isGuestDemoHtmlUsageDirectoryName(name) {
+            var normalizedName = String(name || "").trim().toLowerCase();
+            return Boolean(
+                normalizedName &&
+                HANDRIVE_TUTORIAL_HTML_USAGE_DIR_NAMES.some(function (directoryName) {
+                    return String(directoryName || "").trim().toLowerCase() === normalizedName;
+                })
+            );
+        }
+
+        function isGuestDemoHtmlUsageDirectoryEntry(entry) {
+            return Boolean(
+                entry &&
+                entry.path &&
+                entry.type === "dir" &&
+                !isGuestDemoVirtualOrSpecialEntry(entry) &&
+                isGuestDemoHtmlUsageDirectoryName(entry.name)
+            );
+        }
+
+        function getGuestDemoHtmlUsageDirectoryEntry() {
+            return getGuestDemoEntryByPredicate(isGuestDemoHtmlUsageDirectoryEntry);
+        }
+
+        function getGuestDemoHtmlUsageDirectoryRow() {
+            return getGuestDemoRowForEntry(getGuestDemoHtmlUsageDirectoryEntry(), { scroll: false });
+        }
+
+        function addGuestDemoHtmlUsageTreeRow(rows, row) {
+            if (row && rows.indexOf(row) === -1 && isGuestDemoElementVisible(row)) {
+                rows.push(row);
+            }
+        }
+
+        function getGuestDemoHtmlUsageDirectoryPath() {
+            var currentPath = normalizePath(state.currentDir || "", true);
+            var currentLeaf = currentPath ? currentPath.split("/").pop() : "";
+            if (isGuestDemoHtmlUsageDirectoryName(currentLeaf)) {
+                return currentPath;
+            }
+            var entry = getGuestDemoHtmlUsageDirectoryEntry();
+            if (entry && entry.path) {
+                return normalizePath(entry.path || "", true);
+            }
+            var tutorialRootPath = getGuestDemoTutorialRootPath();
+            if (!tutorialRootPath) {
+                return "";
+            }
+            return normalizePath(tutorialRootPath + "/" + textByLang("09-HTML-사용방법", "09-html-usage"), true);
+        }
+
+        function isGuestDemoHtmlUsageDirectoryOpen() {
+            var htmlUsagePath = getGuestDemoHtmlUsageDirectoryPath();
+            var currentPath = normalizePath(state.currentDir || "", true);
+            return Boolean(htmlUsagePath && currentPath === htmlUsagePath);
+        }
+
+        function isGuestDemoHtmlUsageTreeExpanded() {
+            var htmlUsagePath = getGuestDemoHtmlUsageDirectoryPath();
+            return Boolean(htmlUsagePath && state.expandedFolders.has(htmlUsagePath));
+        }
+
+        function ensureGuestDemoHtmlUsageDirectory() {
+            var htmlUsagePath = getGuestDemoHtmlUsageDirectoryPath();
+            if (!htmlUsagePath || isGuestDemoHtmlUsageDirectoryOpen()) {
+                return Promise.resolve(htmlUsagePath);
+            }
+            return navigateToDirectory(htmlUsagePath, { historyMode: "replace" });
+        }
+
+        function getGuestDemoHtmlUsageTreeRows() {
+            var htmlUsagePath = getGuestDemoHtmlUsageDirectoryPath();
+            var rows = [];
+            if (!htmlUsagePath) {
+                return rows;
+            }
+            addGuestDemoHtmlUsageTreeRow(rows, state.entryRowByPath.get(htmlUsagePath) || getGuestDemoHtmlUsageDirectoryRow());
+
+            var currentPath = normalizePath(state.currentDir || "", true);
+            var includesVisibleDescendants = isGuestDemoHtmlUsageTreeExpanded() || currentPath === htmlUsagePath;
+            if (!includesVisibleDescendants) {
+                return rows;
+            }
+
+            var visiblePaths = Array.isArray(state.visibleEntryPaths) ? state.visibleEntryPaths : [];
+            visiblePaths.forEach(function (pathValue) {
+                var visiblePath = normalizePath(pathValue || "", true);
+                if (!visiblePath || visiblePath === htmlUsagePath || !visiblePath.startsWith(htmlUsagePath + "/")) {
+                    return;
+                }
+                addGuestDemoHtmlUsageTreeRow(rows, state.entryRowByPath.get(visiblePath));
+            });
+
+            if (rows.length <= 1) {
+                state.entryRowByPath.forEach(function (row, pathValue) {
+                    var rowPath = normalizePath(pathValue || "", true);
+                    if (!rowPath || rowPath === htmlUsagePath || !rowPath.startsWith(htmlUsagePath + "/")) {
+                        return;
+                    }
+                    addGuestDemoHtmlUsageTreeRow(rows, row);
+                });
+            }
+            return rows;
+        }
+
+        function getGuestDemoHtmlUsageTreeTarget() {
+            return buildGuestDemoCompositeTarget(getGuestDemoHtmlUsageTreeRows());
+        }
+
+        function isGuestDemoHtmlUsageEntryName(entry, wantedName) {
+            return Boolean(
+                entry &&
+                String(entry.name || "").toLowerCase() === String(wantedName || "").toLowerCase()
+            );
+        }
+
+        function getGuestDemoHtmlUsageEntryByName(name) {
+            var htmlUsagePath = getGuestDemoHtmlUsageDirectoryPath();
+            if (!isGuestDemoHtmlUsageDirectoryOpen() && !isGuestDemoHtmlUsageTreeExpanded()) {
+                return null;
+            }
+            if (htmlUsagePath) {
+                var directPath = normalizePath(htmlUsagePath + "/" + String(name || "").trim(), true);
+                var directEntry = state.entryByPath.get(directPath) || null;
+                if (directEntry && isGuestDemoHtmlUsageEntryName(directEntry, name)) {
+                    return directEntry;
+                }
+            }
+            return getGuestDemoEntryByPredicate(function (entry) {
+                return Boolean(
+                    entry &&
+                    entry.path &&
+                    (
+                        isGuestDemoPlainFileEntry(entry) ||
+                        (
+                            entry.type === "dir" &&
+                            !isGuestDemoVirtualOrSpecialEntry(entry)
+                        )
+                    ) &&
+                    isGuestDemoHtmlUsageEntryName(entry, name)
+                );
+            });
+        }
+
+        function getGuestDemoHtmlUsageRowByName(name) {
+            return getGuestDemoRowForEntry(getGuestDemoHtmlUsageEntryByName(name), { scroll: false });
+        }
+
+        function getGuestDemoHtmlUsageRows(names) {
+            return (Array.isArray(names) ? names : [names]).map(getGuestDemoHtmlUsageRowByName).filter(function (row, index, rows) {
+                return Boolean(row && rows.indexOf(row) === index);
+            });
+        }
+
+        function getGuestDemoHtmlUsageTarget(names) {
+            return buildGuestDemoCompositeTarget(getGuestDemoHtmlUsageRows(names));
+        }
+
+        function getGuestDemoHtmlUsageAssetTreeRows(names) {
+            var rows = [];
+            (Array.isArray(names) ? names : [names]).forEach(function (name) {
+                var entry = getGuestDemoHtmlUsageEntryByName(name);
+                var entryPath = normalizePath(entry && entry.path || "", true);
+                addGuestDemoHtmlUsageTreeRow(rows, getGuestDemoRowForEntry(entry, { scroll: false }));
+                if (!entry || entry.type !== "dir" || !entryPath || !state.expandedFolders.has(entryPath)) {
+                    return;
+                }
+                var visiblePaths = Array.isArray(state.visibleEntryPaths) ? state.visibleEntryPaths : [];
+                visiblePaths.forEach(function (pathValue) {
+                    var visiblePath = normalizePath(pathValue || "", true);
+                    if (!visiblePath || visiblePath === entryPath || !visiblePath.startsWith(entryPath + "/")) {
+                        return;
+                    }
+                    addGuestDemoHtmlUsageTreeRow(rows, state.entryRowByPath.get(visiblePath));
+                });
+            });
+            return rows;
+        }
+
+        function getGuestDemoHtmlUsageAssetTreeTarget(names) {
+            return buildGuestDemoCompositeTarget(getGuestDemoHtmlUsageAssetTreeRows(names));
+        }
+
+        function ensureGuestDemoHtmlUsageStructureVisible() {
+            if (isGuestDemoHtmlUsageDirectoryOpen() || isGuestDemoHtmlUsageTreeExpanded()) {
+                return Promise.resolve(getGuestDemoHtmlUsageDirectoryPath());
+            }
+            var entry = getGuestDemoHtmlUsageDirectoryEntry();
+            if (entry && entry.type === "dir") {
+                return toggleFolderExpansion(entry).then(function () {
+                    return getGuestDemoHtmlUsageDirectoryPath();
+                });
+            }
+            return ensureGuestDemoHtmlUsageDirectory();
+        }
+
+        function ensureGuestDemoHtmlUsageAssetRowsVisible() {
+            return ensureGuestDemoHtmlUsageStructureVisible()
+                .then(function () {
+                    scheduleGuestDemoTourPositionAfterLayoutChange();
+                    return null;
+                });
+        }
+
+        function getGuestDemoHtmlUsageCommonAssetTarget() {
+            return getGuestDemoHtmlUsageTarget(["css", "js", "globals.css", "styleguide.css", "common.js"]) ||
+                getGuestDemoHtmlUsageAssetTreeTarget(["css", "js"]);
+        }
+
+        function getGuestDemoHtmlUsageStructureTarget() {
+            if (!isGuestDemoHtmlUsageDirectoryOpen()) {
+                return getGuestDemoHtmlUsageTreeTarget();
+            }
+            return getGuestDemoHtmlUsageTreeTarget() || getGuestDemoHtmlUsageTarget(["index.html", "login.html", "css", "js"]);
+        }
+
+        function getGuestDemoHtmlUsagePageAssetTarget() {
+            return getGuestDemoHtmlUsageTarget(["index.html", "login.html", "css", "js", "index.css", "login.css", "index.js", "login.js"]) ||
+                getGuestDemoHtmlUsageTarget(["index.html", "login.html", "css", "js"]);
+        }
+
+        function getGuestDemoHtmlUsagePreviewEntry() {
+            return getGuestDemoHtmlUsageEntryByName("index.html");
+        }
+
+        function getGuestDemoHtmlUsagePreviewEntryPath() {
+            var entry = getGuestDemoHtmlUsagePreviewEntry();
+            return normalizePath(entry && entry.path || "", true);
+        }
+
+        function isGuestDemoHtmlUsagePreviewRendered() {
+            var entryPath = getGuestDemoHtmlUsagePreviewEntryPath();
+            return Boolean(
+                entryPath &&
+                normalizePath(state.activePreviewPath || "", true) === entryPath &&
+                normalizePath(state.activeRenderedPreviewPath || "", true) === entryPath &&
+                getGuestDemoVisiblePreviewPanel()
+            );
+        }
+
+        function getGuestDemoHtmlUsagePreviewTarget() {
+            if (isGuestDemoHtmlUsagePreviewRendered()) {
+                return getGuestDemoVisiblePreviewPanel();
+            }
+            return getGuestDemoRowForEntry(getGuestDemoHtmlUsagePreviewEntry());
+        }
+
+        function startGuestDemoHtmlUsagePreview() {
+            if (!isGuestDemoHtmlUsageDirectoryOpen()) {
+                ensureGuestDemoHtmlUsageDirectory().then(function () {
+                    window.setTimeout(startGuestDemoHtmlUsagePreview, 80);
+                }).catch(alertError);
+                return;
+            }
+            var entry = getGuestDemoHtmlUsagePreviewEntry();
+            if (!entry || !entry.path || !isPreviewableFileEntry(entry)) {
+                return;
+            }
+            var entryPath = normalizePath(entry.path || "", true);
+            if (state.activePreviewPath !== entryPath) {
+                applySelection([entryPath], {
+                    primaryPath: entryPath,
+                    anchorPath: entryPath,
+                    openPreview: true,
+                });
+            } else {
+                syncEntryRowSelectedStates([entryPath]);
+            }
+            scrollEntryRowIntoView(entryPath);
         }
 
         function getGuestDemoAdvancedSampleRows() {
@@ -20612,8 +21841,8 @@
                     kind: "operation",
                     operationType: "convert-mp3",
                     entries: [],
-                    fileName: textByLang("14-MP3-변환-샘플.mp4", "14-mp3-conversion-sample.mp4"),
-                    sourcePath: buildPath(textByLang("14-MP3-변환-샘플.mp4", "14-mp3-conversion-sample.mp4")),
+                    fileName: textByLang("15-MP3-변환-샘플.mp4", "15-mp3-conversion-sample.mp4"),
+                    sourcePath: buildPath(textByLang("15-MP3-변환-샘플.mp4", "15-mp3-conversion-sample.mp4")),
                     targetDirPath: currentPath,
                     status: "queued",
                     progress: 0,
@@ -20627,13 +21856,13 @@
                     kind: "operation",
                     operationType: "extract",
                     entries: [],
-                    fileName: textByLang("11-압축-샘플.zip", "11-archive-sample.zip"),
-                    sourcePath: buildPath(textByLang("11-압축-샘플.zip", "11-archive-sample.zip")),
+                    fileName: textByLang("12-압축-샘플.zip", "12-archive-sample.zip"),
+                    sourcePath: buildPath(textByLang("12-압축-샘플.zip", "12-archive-sample.zip")),
                     targetDirPath: currentPath,
                     status: "done",
                     progress: 100,
                     errorMessage: "",
-                    savedPath: buildPath(textByLang("11-압축-샘플", "11-archive-sample")),
+                    savedPath: buildPath(textByLang("12-압축-샘플", "12-archive-sample")),
                     savedSlugPath: "",
                     sizeDisplay: "1.8 MB",
                 },
@@ -20782,6 +22011,39 @@
             return true;
         }
 
+        function getGuestDemoSpotlightTargets(step, fallbackTarget) {
+            var targetSource = step && step.spotlightTargets ? step.spotlightTargets : null;
+            var targetValues = [];
+            if (typeof targetSource === "function") {
+                targetValues = targetSource(fallbackTarget);
+            } else if (Array.isArray(targetSource)) {
+                targetValues = targetSource;
+            }
+            var targets = (Array.isArray(targetValues) ? targetValues : [targetValues])
+                .map(resolveGuestDemoElement)
+                .filter(isGuestDemoElementVisible);
+            if (targets.length) {
+                return targets;
+            }
+            return isGuestDemoElementVisible(fallbackTarget) ? [fallbackTarget] : [];
+        }
+
+        function updateGuestDemoSpotlightFrames(step, target, targetPad) {
+            var targets = getGuestDemoSpotlightTargets(step, target);
+            var hasMultipleTargets = targets.length > 1;
+            if (!targets.length) {
+                hideGuestDemoSpotlightsFrom(0);
+                return false;
+            }
+            targets.forEach(function (spotlightTarget, index) {
+                var spotlight = ensureGuestDemoTourSpotlight(index);
+                spotlight.classList.toggle("is-multi-target", hasMultipleTargets);
+                updateGuestDemoSpotlightFrame(spotlight, spotlightTarget, targetPad);
+            });
+            hideGuestDemoSpotlightsFrom(targets.length);
+            return true;
+        }
+
         function getGuestDemoMovingTargetRoot(target) {
             if (!target || !target.closest) {
                 return null;
@@ -20808,10 +22070,13 @@
         }
 
         function setGuestDemoSpotlightMovingTargetActive(active) {
-            if (!guestDemoTourSpotlight) {
-                return;
-            }
-            guestDemoTourSpotlight.classList.toggle("is-following-moving-target", Boolean(active));
+            var spotlights = guestDemoTourSpotlights.length ? guestDemoTourSpotlights : [guestDemoTourSpotlight];
+            spotlights.forEach(function (spotlight) {
+                if (!spotlight) {
+                    return;
+                }
+                spotlight.classList.toggle("is-following-moving-target", Boolean(active));
+            });
         }
 
         function scheduleGuestDemoMovingTargetPosition() {
@@ -20831,10 +22096,7 @@
         }
 
         function hideGuestDemoSpotlight() {
-            if (guestDemoTourSpotlight) {
-                guestDemoTourSpotlight.hidden = true;
-                guestDemoTourSpotlight.classList.remove("is-following-moving-target");
-            }
+            hideGuestDemoSpotlightsFrom(0);
             document.body.classList.remove("is-handrive-guest-demo-modal-step");
         }
 
@@ -20871,7 +22133,7 @@
 
             var rect = target.getBoundingClientRect();
             var pad = 8;
-            updateGuestDemoSpotlightFrame(guestDemoTourSpotlight, target, 6);
+            updateGuestDemoSpotlightFrames(step, target, 6);
 
             guestDemoTourKicker.textContent = formatTutorialStepProgress(stepIndex, step);
             guestDemoTourTitle.textContent = t(step.titleKey, step.titleFallback);
@@ -21281,7 +22543,7 @@
                     3,
                     "edit_select_file",
                     textByLang("편집기", "Editor"),
-                    textByLang("에디터와 미리보기가 닫혀 있으면 먼저 파일을 선택해 미리보기를 열어야 합니다.", "If both the editor and preview are closed, select a file first to open its preview."),
+                    textByLang("편집기와 미리보기가 닫혀 있으면 먼저 파일을 선택해 미리보기를 열어야 합니다.", "If both the editor and preview are closed, select a file first to open its preview."),
                     textByLang("강조된 파일 행을 좌클릭해 미리보기를 여세요.", "Left-click the highlighted file row to open the preview."),
                     {
                         labelKey: "guest_demo_onboarding_step_edit",
@@ -21320,7 +22582,7 @@
                     "edit_open",
                     textByLang("편집기", "Editor"),
                     textByLang("미리보기 상단의 편집 버튼으로 현재 파일을 편집 모드로 전환합니다.", "Use the edit button in the preview header to switch the current file into edit mode."),
-                    textByLang("편집 아이콘을 누르세요.", "Press the edit icon."),
+                    textByLang("편집 아이콘을 클릭하세요.", "Click the edit icon."),
                     {
                         labelKey: "guest_demo_onboarding_step_edit",
                         prepare: function () {
@@ -21408,7 +22670,7 @@
                     6,
                     "save_action",
                     textByLang("저장과 파일명", "Save and filename"),
-                    textByLang("저장 버튼을 누르면 현재 변경사항을 저장합니다. 공유/깃/데모 상태에 따라 저장 모달이나 커밋 메시지 입력이 추가될 수 있습니다.", "Press Save to store changes. Shared, Git, or demo contexts may show a save modal or commit message step."),
+                    textByLang("저장 버튼을 클릭하면 현재 변경사항을 저장합니다. 공유/깃/데모 상태에 따라 저장 모달이나 커밋 메시지 입력이 추가될 수 있습니다.", "Click Save to store changes. Shared, Git, or demo contexts may show a save modal or commit message step."),
                     textByLang("저장 아이콘 위치를 확인하세요.", "Check the save icon location."),
                     {
                         labelKey: "guest_demo_onboarding_step_save",
@@ -21426,27 +22688,27 @@
                         },
                     }
                 ),
-	                step(
-	                    7,
-	                    3,
-	                    6,
-	                    "save_rename_row",
-	                    textByLang("저장과 파일명", "Save and filename"),
-	                    textByLang("에디터를 닫은 상태에서는 파일 행의 우클릭 메뉴로 이름을 바꿀 수 있습니다.", "When the editor is closed, rename from a file row context menu."),
-	                    textByLang("강조된 파일 행을 우클릭하세요.", "Right-click the highlighted file row."),
+                step(
+                    7,
+                    3,
+                    6,
+                    "save_rename_row",
+                    textByLang("저장과 파일명", "Save and filename"),
+                    textByLang("편집기를 닫은 상태에서는 파일 행의 우클릭 메뉴로 이름을 바꿀 수 있습니다.", "When the editor is closed, rename from a file row context menu."),
+                    textByLang("강조된 파일 행을 우클릭하세요.", "Right-click the highlighted file row."),
                     {
                         labelKey: "guest_demo_onboarding_step_save",
                         prepare: function () {
-	                            var row = getGuestDemoFirstListRow(isGuestDemoRenameableFileEntry);
+                            var row = getGuestDemoFirstListRow(isGuestDemoRenameableFileEntry);
                             bindGuestDemoStepAutoAdvance(row, "contextmenu", "save_rename_row", {
                                 capture: true,
                                 delayMs: 220,
                             });
                             return row;
                         },
-	                        target: function () {
-	                            return getGuestDemoFirstListRow(isGuestDemoRenameableFileEntry);
-	                        },
+                        target: function () {
+                            return getGuestDemoFirstListRow(isGuestDemoRenameableFileEntry);
+                        },
                     }
                 ),
                 step(
@@ -21456,7 +22718,7 @@
                     "save_rename_menu",
                     textByLang("저장과 파일명", "Save and filename"),
                     textByLang("우클릭 메뉴에서 파일 작업을 선택할 수 있습니다. 이름 바꾸기를 선택하면 이름 바꾸기 모달이 열립니다.", "The context menu contains file actions. Choose Rename to open the rename modal."),
-                    textByLang("이름 바꾸기 버튼을 누르세요.", "Press Rename."),
+                    textByLang("이름 바꾸기 버튼을 클릭하세요.", "Click Rename."),
                     {
                         labelKey: "guest_demo_onboarding_step_save",
                         prepare: function () {
@@ -21507,7 +22769,7 @@
                     "save_rename_modal",
                     textByLang("저장과 파일명", "Save and filename"),
                     textByLang("이름 바꾸기 모달에서 새 이름을 입력하고 적용하면 파일 또는 폴더 이름이 변경됩니다.", "Enter a new name in the rename modal and apply it to rename the file or folder."),
-                    textByLang("입력칸에 새 이름을 입력하고 적용 버튼을 누르세요.", "Enter a new name, then press Apply."),
+                    textByLang("입력칸에 새 이름을 입력하고 적용 버튼을 클릭하세요.", "Enter a new name, then click Apply."),
                     {
                         labelKey: "guest_demo_onboarding_step_save",
                         prepare: function () {
@@ -21689,7 +22951,7 @@
                     "share_button",
                     textByLang("공유 버튼", "Share button"),
                     textByLang("미리보기 상단의 공유 버튼으로 선택한 파일의 공유 모달을 엽니다.", "Use the share button in the preview header to open sharing for the selected file."),
-                    textByLang("공유 아이콘을 누르세요.", "Press the share icon."),
+                    textByLang("공유 아이콘을 클릭하세요.", "Click the share icon."),
 	                    {
 	                        labelKey: "guest_demo_onboarding_step_share",
 	                        prepare: function () {
@@ -21820,11 +23082,128 @@
 	                                contextMenu,
 	                                function () { return getGuestDemoFirstListRow(isGuestDemoManageableFileEntry); },
 	                            ]);
-	                        },
+                        },
                     }
                 ),
                 step(
                     12,
+                    1,
+                    5,
+                    "html_structure",
+                    textByLang("HTML 파일 구조", "HTML file structure"),
+                    textByLang("HTML 사용방법 샘플은 09-HTML-사용방법 폴더에 모아두었습니다. 이 폴더 안을 사이트 루트로 보고 index.html, login.html, css/, js/ 구조를 사용합니다.", "The HTML usage sample is grouped in the 09-html-usage folder. HanDrive treats that folder as the site root and uses index.html, login.html, css/, and js/."),
+                    textByLang("09-HTML-사용방법 폴더를 열어 구조를 확인하세요.", "Open the 09-html-usage folder to inspect the structure."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_html",
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([getGuestDemoHtmlUsageDirectoryRow, getGuestDemoHtmlUsageStructureTarget, listContainer]);
+                        },
+                    }
+                ),
+                step(
+                    12,
+                    2,
+                    5,
+                    "html_common_assets",
+                    textByLang("공통 CSS/JS", "Common CSS/JS"),
+                    textByLang("css/globals.css, css/styleguide.css, js/common.js는 모든 HTML 파일에 먼저 자동 적용됩니다.", "css/globals.css, css/styleguide.css, and js/common.js are automatically applied to every HTML file first."),
+                    textByLang("공통 asset이 들어가는 css와 js 폴더 위치를 확인합니다.", "Review where the css and js folders for common assets live."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_html",
+                        allowTargetFallback: false,
+                        placement: "top",
+                        prepare: function () {
+                            ensureGuestDemoHtmlUsageAssetRowsVisible()
+                                .then(function () {
+                                    scheduleGuestDemoStepAdvance("html_common_assets", 1800);
+                                })
+                                .catch(alertError);
+                            return null;
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([
+                                getGuestDemoHtmlUsageCommonAssetTarget,
+                                listContainer,
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    12,
+                    3,
+                    5,
+                    "html_page_assets",
+                    textByLang("파일명별 CSS/JS", "Page-specific CSS/JS"),
+                    textByLang("index.html은 css/index.css와 js/index.js를, login.html은 css/login.css와 js/login.js를 자동 적용합니다.", "index.html receives css/index.css and js/index.js; login.html receives css/login.css and js/login.js."),
+                    textByLang("index.html, login.html과 같은 이름의 CSS/JS 파일을 함께 확인합니다.", "Review each HTML file with the CSS/JS files that share its name."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_html",
+                        allowTargetFallback: false,
+                        prepare: function () {
+                            ensureGuestDemoHtmlUsageAssetRowsVisible()
+                                .then(function () {
+                                    scheduleGuestDemoStepAdvance("html_page_assets", 1800);
+                                })
+                                .catch(alertError);
+                            return null;
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([getGuestDemoHtmlUsagePageAssetTarget, listContainer]);
+                        },
+                    }
+                ),
+                step(
+                    12,
+                    4,
+                    5,
+                    "html_preview",
+                    textByLang("HTML 미리보기 적용", "HTML preview application"),
+                    textByLang("HTML 안에 link/script 태그를 쓰지 않아도 HanDrive 미리보기가 공통 asset과 파일명별 asset을 주입합니다.", "Even without link/script tags in the HTML, HanDrive preview injects common assets and same-name page assets."),
+                    textByLang("index.html을 클릭해 적용된 화면을 미리보세요.", "Click index.html to preview the applied page."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_html",
+                        allowTargetFallback: false,
+                        prepare: function () {
+                            ensureGuestDemoHtmlUsageAssetRowsVisible().catch(alertError);
+                            bindGuestDemoStepAutoAdvance(listContainer, "click", "html_preview", {
+                                capture: true,
+                                delayMs: 260,
+                                resolveCurrentUi: true,
+                                filter: function (event) {
+                                    var row = event && event.target && event.target.closest
+                                        ? event.target.closest(".handrive-item-row")
+                                        : null;
+                                    var rowPath = normalizePath(row && row.getAttribute("data-entry-path") || "", true);
+                                    return Boolean(rowPath && rowPath === getGuestDemoHtmlUsagePreviewEntryPath());
+                                },
+                            });
+                        },
+                        target: function () {
+                            return findFirstVisibleGuestDemoElement([
+                                getGuestDemoHtmlUsagePreviewTarget,
+                                listContainer,
+                            ]);
+                        },
+                    }
+                ),
+                step(
+                    12,
+                    5,
+                    5,
+                    "html_preview_opened",
+                    textByLang("적용 결과 확인", "Review applied preview"),
+                    textByLang("미리보기 패널에는 공통 asset과 index.html 전용 asset이 적용된 결과가 표시됩니다.", "The preview panel now shows the result with common assets and index.html-specific assets applied."),
+                    textByLang("열린 미리보기에서 적용된 화면을 확인하세요.", "Review the applied page in the open preview."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_html",
+                        allowTargetFallback: false,
+                        target: function () {
+                            return getGuestDemoVisiblePreviewPanel();
+                        },
+                    }
+                ),
+                step(
+                    13,
                     1,
                     8,
                     "advanced_samples",
@@ -21859,7 +23238,7 @@
                     }
                 ),
                 step(
-                    12,
+                    13,
                     2,
                     8,
                     "advanced_archive_menu",
@@ -21887,7 +23266,7 @@
                     }
                 ),
                 step(
-                    12,
+                    13,
                     3,
                     8,
                     "advanced_git_menu",
@@ -21935,7 +23314,7 @@
                     }
                 ),
                 step(
-                    12,
+                    13,
                     4,
                     8,
                     "advanced_git_opened",
@@ -21955,7 +23334,7 @@
                     }
                 ),
                 step(
-                    12,
+                    13,
                     5,
                     8,
                     "advanced_map_menu",
@@ -21983,7 +23362,7 @@
                     }
                 ),
                 step(
-                    12,
+                    13,
                     6,
                     8,
                     "advanced_mp3_menu",
@@ -22011,7 +23390,7 @@
                     }
                 ),
                 step(
-                    12,
+                    13,
                     7,
                     8,
                     "advanced_audio_menu",
@@ -22041,7 +23420,7 @@
                     }
                 ),
                 step(
-                    12,
+                    13,
                     8,
                     8,
                     "advanced_default_menu",
@@ -22059,7 +23438,7 @@
                     }
                 ),
                 step(
-                    13,
+                    14,
                     1,
                     1,
                     "layout_splitter",
@@ -22078,7 +23457,7 @@
                     }
                 ),
                 step(
-                    14,
+                    15,
                     1,
                     1,
                     "layout_zoom",
@@ -22094,10 +23473,13 @@
                             return buildGuestDemoCompositeTarget([listItemsContainer, previewBody]) ||
                                 findFirstVisibleGuestDemoElement([listItemsContainer, previewBody, previewPanel, listLayout]);
                         },
+                        spotlightTargets: function () {
+                            return [listItemsContainer, previewBody];
+                        },
                     }
                 ),
                 step(
-                    15,
+                    16,
                     1,
                     1,
                     "preview_drag",
@@ -22116,7 +23498,7 @@
                     }
                 ),
                 step(
-                    16,
+                    17,
                     1,
                     2,
                     "jobs_panel",
@@ -22133,7 +23515,7 @@
                     }
                 ),
                 step(
-                    16,
+                    17,
                     2,
                     2,
                     "jobs_item",
@@ -22150,13 +23532,13 @@
                     }
                 ),
                 step(
-                    17,
+                    18,
                     1,
                     2,
                     "help_button",
                     textByLang("도움말과 튜토리얼 재실행", "Help and restarting the tutorial"),
                     textByLang("상단 도움말에서 기능 설명을 다시 볼 수 있습니다.", "Open Help to review feature docs."),
-                    textByLang("도움말 아이콘을 누르면 도움말 모달이 열립니다.", "Press the help icon to open the help modal."),
+                    textByLang("도움말 아이콘을 클릭하면 도움말 모달이 열립니다.", "Click the help icon to open the help modal."),
                     {
                         labelKey: "guest_demo_onboarding_step_help",
                         prepare: function () {
@@ -22171,7 +23553,7 @@
                     }
                 ),
                 step(
-                    17,
+                    18,
                     2,
                     2,
                     "help_modal",
@@ -22193,15 +23575,15 @@
                     }
                 ),
                 step(
-                    18,
+                    19,
                     1,
                     1,
                     "practice",
                     textByLang("자유연습", "Free practice"),
                     textByLang("지금부터는 튜토리얼 임시 드라이브에서 파일 열기, 업로드, 새 파일 만들기, 공유 설정을 자유롭게 시도할 수 있습니다.", "You can now freely try opening files, uploading, creating files, and changing share settings inside the temporary tutorial drive."),
                     isGuestDemoMode || !isAuthenticated
-                        ? textByLang("강조된 HanDrive 영역 안에서 원하는 기능을 눌러 연습해보세요. 로그인 시 개인 드라이브 이용이 가능합니다.", "Use any feature inside the highlighted HanDrive area. Log in to use your personal drive.")
-                        : textByLang("강조된 HanDrive 영역 안에서 원하는 기능을 눌러 연습해보세요. 종료하면 임시 파일은 삭제됩니다.", "Use any feature inside the highlighted HanDrive area. Ending the tutorial removes the temporary files."),
+                        ? textByLang("강조된 HanDrive 영역 안에서 원하는 기능을 클릭해 연습해보세요. 로그인 시 개인 드라이브 이용이 가능합니다.", "Use any feature inside the highlighted HanDrive area. Log in to use your personal drive.")
+                        : textByLang("강조된 HanDrive 영역 안에서 원하는 기능을 클릭해 연습해보세요. 종료하면 임시 파일은 삭제됩니다.", "Use any feature inside the highlighted HanDrive area. Ending the tutorial removes the temporary files."),
                     {
                         labelKey: "guest_demo_onboarding_step_practice",
                         target: function () {
@@ -22289,6 +23671,15 @@
                 return isGuestDemoElementVisible(contextRenameButton) ? "manage_menu" : "manage_row";
             }
             if (groupIndex === 12) {
+                if (isGuestDemoHtmlUsagePreviewRendered()) {
+                    return "html_preview_opened";
+                }
+                if (getGuestDemoVisiblePreviewPanel()) {
+                    return "html_preview";
+                }
+                return (isGuestDemoHtmlUsageDirectoryOpen() || isGuestDemoHtmlUsageTreeExpanded()) ? "html_common_assets" : "html_structure";
+            }
+            if (groupIndex === 13) {
                 if (isGuestDemoGitRepositoryView()) {
                     return "advanced_git_opened";
                 }
@@ -22298,16 +23689,16 @@
                 }
                 return "advanced_samples";
             }
-            if (groupIndex === 14) {
+            if (groupIndex === 15) {
                 return "layout_zoom";
             }
-            if (groupIndex === 15) {
+            if (groupIndex === 16) {
                 return "preview_drag";
             }
-            if (groupIndex === 16) {
+            if (groupIndex === 17) {
                 return getGuestDemoJobItemTarget() ? "jobs_item" : "jobs_panel";
             }
-            if (groupIndex === 17) {
+            if (groupIndex === 18) {
                 return getGuestDemoHelpModalTarget() ? "help_modal" : "help_button";
             }
             return "";
@@ -22398,6 +23789,15 @@
                     return !hasRenameMenu;
                 case "manage_menu":
                     return hasRenameMenu;
+                case "html_structure":
+                    return !isGuestDemoHtmlUsageDirectoryOpen() && !isGuestDemoHtmlUsageTreeExpanded();
+                case "html_common_assets":
+                case "html_page_assets":
+                    return isGuestDemoHtmlUsageDirectoryOpen() || isGuestDemoHtmlUsageTreeExpanded();
+                case "html_preview":
+                    return !isGuestDemoHtmlUsagePreviewRendered() && (hasPreview || isGuestDemoHtmlUsageDirectoryOpen() || isGuestDemoHtmlUsageTreeExpanded());
+                case "html_preview_opened":
+                    return isGuestDemoHtmlUsagePreviewRendered();
                 case "advanced_samples":
                     return !advancedMenuStepId && !hasAdvancedGitView;
                 case "advanced_archive_menu":
@@ -22634,7 +24034,7 @@
 
         function closeGuestDemoHelpModalForGroupChange(groupIndex) {
             var targetGroup = Math.max(1, Math.min(HANDRIVE_TUTORIAL_TOTAL_GROUPS, Math.floor(Number(groupIndex) || 1)));
-            if (targetGroup === 17 || getGuestDemoActiveGroupIndex() !== 17 || !getGuestDemoHelpModalTarget()) {
+            if (targetGroup === 18 || getGuestDemoActiveGroupIndex() !== 18 || !getGuestDemoHelpModalTarget()) {
                 return;
             }
             document.dispatchEvent(new window.CustomEvent("handrive:tutorial-close-help-modal"));
@@ -22776,6 +24176,7 @@
         const parentDir = root.dataset.parentDir || "";
         const deleteButton = document.getElementById("handrive-delete-btn");
         const printButton = document.getElementById("handrive-print-btn");
+        const codeToggleButton = document.getElementById("handrive-code-toggle-btn");
         const urlShareButton = document.getElementById("handrive-url-share-btn");
         const contentArticle = document.querySelector(".ui-content[data-handrive-page] > article");
         const viewZoomWrap = document.getElementById("handrive-view-zoom");
@@ -22788,6 +24189,9 @@
         const viewNavBgNext = viewNavBg ? viewNavBg.querySelector("span:last-child") : null;
         let viewImageZoom = 1;
         let viewTextFontSize = 16;
+        let viewCodeViewActive = false;
+        const viewRenderedCache = new Map();
+        const viewSourceCache = new Map();
 
         const viewMediaNavExtensions = new Set([
             ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif", ".ico",
@@ -22865,6 +24269,152 @@
 
         function getViewZoomExtension(pathValue) {
             return getPathZoomExtension(pathValue || currentDocPath, root.dataset.docExtension || "");
+        }
+
+        function getViewPathKey(pathValue) {
+            return normalizePath(pathValue || currentDocPath, true);
+        }
+
+        function getCurrentViewSourceExtension() {
+            return getPathFileExtension(currentDocPath) || root.dataset.docExtension || "";
+        }
+
+        function cacheViewRenderedPayload(pathValue, html, renderClass, renderMode) {
+            const pathKey = getViewPathKey(pathValue);
+            if (!pathKey) {
+                return;
+            }
+            viewRenderedCache.set(pathKey, {
+                html: typeof html === "string" ? html : "",
+                renderClass: String(renderClass || "").trim(),
+                renderMode: String(renderMode || "").trim() || "plain_text",
+            });
+        }
+
+        function cacheViewSourcePayload(pathValue, payload) {
+            const pathKey = getViewPathKey(pathValue);
+            const sourceExtension = normalizeHandriveSourceViewExtension(payload && payload.source_extension);
+            if (!pathKey || !isHandriveCodeViewToggleExtension(sourceExtension)) {
+                return null;
+            }
+            const sourcePayload = {
+                source: typeof payload.source === "string" ? payload.source : "",
+                sourceExtension: sourceExtension,
+                sourceRenderClass: getHandriveSourceViewRenderClass(
+                    sourceExtension,
+                    payload.source_render_class || ""
+                ),
+            };
+            viewSourceCache.set(pathKey, sourcePayload);
+            return sourcePayload;
+        }
+
+        function hasCurrentViewCodeToggleTarget() {
+            return Boolean(contentArticle && isHandriveCodeViewToggleExtension(getCurrentViewSourceExtension()));
+        }
+
+        function syncViewCodeToggleButton() {
+            syncHandriveCodeToggleButton(
+                codeToggleButton,
+                hasCurrentViewCodeToggleTarget(),
+                viewCodeViewActive
+            );
+        }
+
+        function hydrateViewRenderedContent(renderClass) {
+            if (!contentArticle) {
+                return Promise.resolve();
+            }
+            renderHandriveMermaidDiagrams(contentArticle).catch(alertError);
+            hydrateMediaAudioElements(contentArticle);
+            bindHandrivePdfFrameLoading(contentArticle);
+            applyHandriveCodeHighlighting(contentArticle, renderClass || contentArticle.className || "");
+            scheduleHandriveHtmlLiveFramesSync(contentArticle);
+            hydrateModelPreviews(contentArticle);
+            return initializePreviewVideoPlayers(contentArticle);
+        }
+
+        async function fetchCurrentViewPreviewPayload() {
+            const pathKey = getViewPathKey(currentDocPath);
+            if (!pathKey || !previewApiUrl) {
+                return null;
+            }
+            const data = await requestJson(
+                appendSharedQuery(previewApiUrl),
+                buildPostOptions({ path: currentDocPath })
+            );
+            cacheViewRenderedPayload(
+                currentDocPath,
+                data && typeof data.html === "string" ? data.html : "",
+                data && typeof data.render_class === "string" ? data.render_class : "",
+                data && typeof data.render_mode === "string" ? data.render_mode : "plain_text"
+            );
+            cacheViewSourcePayload(currentDocPath, data || {});
+            return data || null;
+        }
+
+        async function getCurrentViewSourcePayload() {
+            const pathKey = getViewPathKey(currentDocPath);
+            if (!pathKey) {
+                return null;
+            }
+            if (viewSourceCache.has(pathKey)) {
+                return viewSourceCache.get(pathKey);
+            }
+            await fetchCurrentViewPreviewPayload();
+            return viewSourceCache.get(pathKey) || null;
+        }
+
+        function renderCurrentViewCodeSource(sourcePayload) {
+            if (!contentArticle || !sourcePayload) {
+                return;
+            }
+            void releasePreviewVideoPlayers(contentArticle);
+            destroyModelPreviews(contentArticle);
+            viewCodeViewActive = true;
+            renderHandriveSourceCodeView(
+                contentArticle,
+                sourcePayload.source,
+                sourcePayload.sourceExtension,
+                sourcePayload.sourceRenderClass
+            );
+            restoreViewZoomForPath(currentDocPath);
+            contentArticle.scrollTop = 0;
+            contentArticle.scrollLeft = 0;
+            syncViewCodeToggleButton();
+        }
+
+        function restoreCurrentViewRenderedContent() {
+            const pathKey = getViewPathKey(currentDocPath);
+            const renderedPayload = pathKey ? viewRenderedCache.get(pathKey) : null;
+            if (!contentArticle || !renderedPayload) {
+                return;
+            }
+            viewCodeViewActive = false;
+            contentArticle.className = renderedPayload.renderClass;
+            contentArticle.innerHTML = renderedPayload.html;
+            hydrateViewRenderedContent(renderedPayload.renderClass).catch(alertError);
+            restoreViewZoomForPath(currentDocPath);
+            contentArticle.scrollTop = 0;
+            contentArticle.scrollLeft = 0;
+            syncViewCodeToggleButton();
+        }
+
+        async function toggleCurrentViewCodeSource() {
+            if (viewCodeViewActive) {
+                restoreCurrentViewRenderedContent();
+                return;
+            }
+            if (!hasCurrentViewCodeToggleTarget()) {
+                syncViewCodeToggleButton();
+                return;
+            }
+            const sourcePayload = await getCurrentViewSourcePayload();
+            if (!sourcePayload) {
+                syncViewCodeToggleButton();
+                return;
+            }
+            renderCurrentViewCodeSource(sourcePayload);
         }
 
         function syncViewImageZoom() {
@@ -23054,20 +24604,19 @@
                 }
                 const newHtml = data.html || "";
                 const newClass = data.render_class || "";
+                const newRenderMode = data.render_mode || "plain_text";
 
                 if (requestToken !== viewNavRequestToken) {
                     return;
                 }
 
+                viewCodeViewActive = false;
                 contentArticle.className = newClass;
                 contentArticle.innerHTML = newHtml;
+                cacheViewRenderedPayload(entry.path, newHtml, newClass, newRenderMode);
+                cacheViewSourcePayload(entry.path, data || {});
 
-                renderHandriveMermaidDiagrams(contentArticle).catch(alertError);
-                hydrateMediaAudioElements(contentArticle);
-                bindHandrivePdfFrameLoading(contentArticle);
-                applyHandriveCodeHighlighting(contentArticle, newClass);
-                hydrateModelPreviews(contentArticle);
-                await initializePreviewVideoPlayers(contentArticle);
+                await hydrateViewRenderedContent(newClass);
 
                 restoreViewZoomForPath(entry.path);
 
@@ -23085,6 +24634,7 @@
                 window.history.pushState({ handriveViewPath: currentDocPath }, "", newUrl);
 
                 updateViewNavButtons(viewNavSiblings, currentDocPath);
+                syncViewCodeToggleButton();
                 if (navOptions.autoplay) {
                     playFirstPreviewMediaElement(contentArticle);
                 }
@@ -23130,7 +24680,22 @@
                 navigateViewToEntry(viewNavNextBtn._navTarget);
             });
         }
+        if (codeToggleButton) {
+            codeToggleButton.addEventListener("click", function () {
+                toggleCurrentViewCodeSource().catch(alertError);
+            });
+        }
         window.addEventListener("handrive:media-play-next-request", handleViewMediaPlayNextRequest);
+
+        if (contentArticle) {
+            cacheViewRenderedPayload(
+                currentDocPath,
+                contentArticle.innerHTML,
+                contentArticle.className,
+                root.dataset.docRenderMode || ""
+            );
+        }
+        syncViewCodeToggleButton();
 
         if (contentArticle && contentArticle.classList.contains("handrive-js")) {
             applyHandriveCodeHighlighting(contentArticle, "handrive-js");
@@ -23156,6 +24721,7 @@
         initializePreviewVideoPlayers(contentArticle).catch(alertError);
 
         restoreViewZoomForPath(currentDocPath);
+        scheduleHandriveHtmlLiveFramesSync(contentArticle);
 
         loadViewNavSiblings();
 
@@ -23225,6 +24791,7 @@
                     isUrlOnly: docIsUrlOnly,
                     shareUrl: initialShareUrl,
                     downloadUrl: shouldShowDownloadUrl ? toAbsoluteUrl(root.dataset.docShareDownloadUrl || "") : "",
+                    clipboardLabel: String(currentDocPath || "").split("/").pop(),
                     allowedUsers: initialDocShareAllowedUsers,
                     canEdit: docShareCanEdit,
                     readOnly: root.dataset.docShareIsInherited === "1" || !docShareCanManage,
@@ -23946,7 +25513,7 @@
                     title: t("unsaved_changes_title", "저장"),
                     message: t("unsaved_changes_message", "저장되지 않은 변경 사항이 있습니다. 이동 전에 저장할까요?"),
                     cancelText: t("cancel", "취소"),
-                    confirmText: t("unsaved_changes_leave_button", "확인")
+                    confirmText: t("unsaved_changes_leave_button", "저장안함")
                 }).then(function (confirmed) {
                     return confirmed ? "leave" : "cancel";
                 });
@@ -24076,7 +25643,7 @@
 
         function isWritePreviewExtension(extension) {
             const currentExtension = String(extension || "").trim().toLowerCase();
-            return currentExtension === DOCS_DEFAULT_EXTENSION || currentExtension === DOCS_HTML_PREVIEW_EXTENSION;
+            return currentExtension === DOCS_DEFAULT_EXTENSION || currentExtension === DOCS_HTML_PREVIEW_EXTENSION || currentExtension === ".jsx";
         }
 
         function syncSnippetMenuItemsByExtension(extension) {
@@ -24341,7 +25908,7 @@
                 } else if (snippetType === "py_comment") {
                     snippet = buildPrefixedLinesSnippet("# ", t("markdown_placeholder_list_item", "item"));
                 }
-            } else if (extension === ".js") {
+            } else if (extension === ".js" || extension === ".jsx") {
                 if (snippetType === "js_function") {
                     const body = "function functionName(params) {\n    \n}";
                     snippet = { text: body, selectStart: 9, selectEnd: 21 };
@@ -24878,7 +26445,7 @@
             if (extension === ".md") {
                 return "handrive-editor-md";
             }
-            if (extension === ".js") {
+            if (extension === ".js" || extension === ".jsx") {
                 return "handrive-js";
             }
             if (extension === ".css") {
@@ -26112,12 +27679,35 @@
             syncModalBodyState();
         }
 
+        let writePreviewModalZoomController = null;
+
+        function syncWritePreviewModalZoom(reset) {
+            if (!previewModal || typeof handrivePreviewModalZoom.bind !== "function") {
+                return;
+            }
+            writePreviewModalZoomController = writePreviewModalZoomController || handrivePreviewModalZoom.bind(previewModal);
+            if (!writePreviewModalZoomController) {
+                return;
+            }
+            if (reset && typeof writePreviewModalZoomController.reset === "function") {
+                writePreviewModalZoomController.reset();
+            } else if (typeof writePreviewModalZoomController.apply === "function") {
+                writePreviewModalZoomController.apply();
+            }
+        }
+
         function setPreviewModalOpen(opened) {
             if (!previewModal) {
                 return;
             }
             previewModal.hidden = !opened;
+            if (!opened) {
+                setHandriveHelpModalLoading(previewModal, false);
+            }
             syncModalBodyState();
+            if (opened) {
+                syncWritePreviewModalZoom(true);
+            }
         }
 
         function getPreviewSourceContent() {
@@ -26144,10 +27734,13 @@
             const previewContentSource = getPreviewSourceContent();
 
             applyHandriveRenderedContentModeClass(previewContent, "plain_text", "handrive-plain-text");
-            previewContent.innerHTML = "<p>" + t("preview_loading", "Loading preview...") + "</p>";
+            previewContent.innerHTML = "";
+            setHandriveHelpModalLoading(previewModal, true);
+            syncWritePreviewModalZoom(false);
             setPreviewModalOpen(true);
 
             if (!previewApiUrl) {
+                setHandriveHelpModalLoading(previewModal, false);
                 previewContent.innerHTML = "<p>" + t("js_error_request_failed", "요청 처리 중 오류가 발생했습니다.") + "</p>";
                 return;
             }
@@ -26165,6 +27758,7 @@
                     buildPostOptions({
                         original_path: originalPath,
                         target_dir: normalizePath(initialDir, true),
+                        filename: String(filenameInput ? filenameInput.value : "").trim(),
                         extension: previewExtension,
                         content: previewContentSource,
                     })
@@ -26176,6 +27770,8 @@
                 applyHandriveRenderedContentModeClass(previewContent, renderMode, renderClass);
                 previewContent.innerHTML = data && typeof data.html === "string" ? data.html : "";
                 applyHandriveCodeHighlighting(previewContent, renderClass || "ui-markdown");
+                scheduleHandriveHtmlLiveFramesSync(previewContent);
+                syncWritePreviewModalZoom(false);
                 hydrateSpreadsheetPreviews(previewContent).catch(alertError);
                 renderHandriveMermaidDiagrams(previewContent).catch(alertError);
             } catch (error) {
@@ -26184,6 +27780,9 @@
                     "<p>" +
                     (error && error.message ? error.message : t("js_error_processing_failed", "처리 중 오류가 발생했습니다.")) +
                     "</p>";
+                syncWritePreviewModalZoom(false);
+            } finally {
+                setHandriveHelpModalLoading(previewModal, false);
             }
         }
 

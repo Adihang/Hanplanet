@@ -5,7 +5,7 @@ from __future__ import annotations
 역할 구분:
 - 이 파일: 경로 해석, 권한 검사, 템플릿 context 조합, JSON API 입출력
 - ``main.handrive.preview``: 파일 내용을 브라우저 미리보기 HTML로 변환
-- ``main.handrive.html_assets``: HTML 파일의 같은 이름 css/js companion asset 로드
+- ``main.handrive.html_assets``: HTML 파일의 css/js companion asset 로드
 
 핵심 난점은 일반 파일 경로와 git virtual path를 같은 UI에서 다뤄야 한다는 점이다.
 그래서 대부분의 API는 먼저 일반 경로인지 repo/branch 가상 경로인지 판별한 뒤,
@@ -144,6 +144,7 @@ from .models import (
     HandriveAccessRule,
     HandriveLoginAttemptGuard,
     HandriveSharedLink,
+    HandriveSharedPathToken,
     HandriveSiteSettings,
     HandriveUserQuota,
     UserProfile,
@@ -151,6 +152,7 @@ from .models import (
 from .middleware import (
     HANPLANET_ACCOUNT_ACTIVE_COOKIE_NAME,
     HANPLANET_SHARED_COOKIE_DOMAIN,
+    HANPLANET_SSO_PROBE_ATTEMPTED_COOKIE_NAME,
     HANPLANET_SSO_PROBE_FAILED_COOKIE_NAME,
 )
 from git.models import GitHubAccountMapping, GitUserMapping, GoogleAccountMapping
@@ -169,11 +171,15 @@ HANDRIVE_GITHUB_URL_PREFIX = "github"
 HANDRIVE_GOOGLE_DRIVE_URL_PREFIX = "google-drive"
 HANDRIVE_URL_ID_SEPARATOR = "~"
 GOOGLE_DRIVE_SELECTED_ITEM_LIMIT = 300
+HANDRIVE_SHARE_TOKEN_BYTES = 32
+HANDRIVE_SHARE_ITEM_QUERY_PARAM = "share_item"
+HANDRIVE_SHARE_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
 DOCS_FILE_EXTENSION = ".md"
 DOCS_ALLOWED_FILE_EXTENSIONS = (
     ".md",
     ".txt",
+    ".jsx",
     ".json",
     ".py",
     ".sql",
@@ -184,6 +190,7 @@ DOCS_TEXT_CODE_FILE_EXTENSION_OPTIONS = (
     ".css",
     ".html",
     ".js",
+    ".jsx",
     ".json",
     ".py",
     ".sql",
@@ -213,8 +220,10 @@ HANDRIVE_TUTORIAL_SAMPLE_VIDEO_ASSET = "sample-5s-360p.mp4"
 HANDRIVE_TUTORIAL_SAMPLE_AUDIO_ASSET = "sample-3s.mp3"
 HANDRIVE_TUTORIAL_GIT_REPO_OWNER_USERNAME = "HanbyelLim"
 HANDRIVE_TUTORIAL_GIT_REPO_NAME = "handrive-tutorial-sample"
-HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_KO = "12-Git-공개-테스트-레포"
-HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_EN = "12-public-git-test-repo"
+HANDRIVE_TUTORIAL_HTML_USAGE_DIR_NAME_KO = "09-HTML-사용방법"
+HANDRIVE_TUTORIAL_HTML_USAGE_DIR_NAME_EN = "09-html-usage"
+HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_KO = "13-Git-공개-테스트-레포"
+HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_EN = "13-public-git-test-repo"
 HANDRIVE_TUTORIAL_SHARE_OWNER_USERNAME = "handrive_tutorial"
 HANDRIVE_TUTORIAL_SAMPLE_MP4_BASE64 = (
     "AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAA2ptb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAAPoAAAB9AABAAABAAAA"
@@ -635,6 +644,7 @@ DOCS_RENDER_MODE_MEDIA_3D = "media_3d"
 DOCS_RENDER_MODE_OFFICE = "office"
 DOCS_RENDER_MODE_PDF = "pdf"
 DOCS_RENDER_MODE_UNSUPPORTED = "unsupported"
+HANDRIVE_CODE_VIEW_TOGGLE_EXTENSIONS = frozenset({DOCS_FILE_EXTENSION, ".html"})
 HANDRIVE_OFFICE_PDF_EXTENSIONS = frozenset({
     ".doc",
     ".docx",
@@ -690,6 +700,10 @@ DOCS_RENDER_PROFILES_BY_EXTENSION = {
         "css_class": "handrive-css",
     },
     ".js": {
+        "mode": DOCS_RENDER_MODE_PLAIN_TEXT,
+        "css_class": "handrive-js",
+    },
+    ".jsx": {
         "mode": DOCS_RENDER_MODE_PLAIN_TEXT,
         "css_class": "handrive-js",
     },
@@ -872,6 +886,7 @@ DOCS_TEXT = {
         "guest_demo_onboarding_step_create": "새 항목",
         "guest_demo_onboarding_step_share": "공유",
         "guest_demo_onboarding_step_manage": "관리",
+        "guest_demo_onboarding_step_html": "HTML 사용방법",
         "guest_demo_onboarding_step_advanced": "고급 기능",
         "guest_demo_onboarding_step_layout": "레이아웃",
         "guest_demo_onboarding_step_zoom": "확대/축소",
@@ -888,7 +903,7 @@ DOCS_TEXT = {
         "guest_demo_tour_browse_action": "튜토리얼 파일 행을 클릭하거나 더블클릭해보세요.",
         "guest_demo_tour_search_title": "검색과 정렬",
         "guest_demo_tour_search_body": "현재 폴더에서 파일명을 검색하고, 수정일, 유형, 크기 등 컬럼을 클릭해 파일을 정렬할 수 있습니다.",
-        "guest_demo_tour_search_action": "검색창에 키워드를 입력하거나 컬럼 라벨을 눌러보세요.",
+        "guest_demo_tour_search_action": "검색창에 키워드를 입력하거나 컬럼 라벨을 클릭해보세요.",
         "guest_demo_tour_preview_title": "미리보기",
         "guest_demo_tour_preview_body": "파일들을 클릭하면 탐색기에서 바로 미리보기가 열립니다.",
         "guest_demo_tour_preview_action": "지금은 튜토리얼 파일을 자동으로 열어 미리보기 위치를 보여줍니다.",
@@ -900,7 +915,7 @@ DOCS_TEXT = {
         "guest_demo_tour_edit_action": "튜토리얼 파일을 편집 모드로 열었습니다. 내용을 바꿔볼 수 있습니다.",
         "guest_demo_tour_save_title": "저장과 파일명",
         "guest_demo_tour_save_body": "파일명을 바꾸고 저장할 수 있으며, 공유/깃/데모 상태에 따라 저장 모달이나 커밋 메시지 입력이 추가로 뜰 수 있습니다.",
-        "guest_demo_tour_save_action": "저장 아이콘을 누르면 현재 변경사항을 저장합니다.",
+        "guest_demo_tour_save_action": "저장 아이콘을 클릭하면 현재 변경사항을 저장합니다.",
         "guest_demo_tour_upload_title": "업로드",
         "guest_demo_tour_upload_body": "파일을 목록으로 드래그 앤 드롭하거나 붙여넣기, 우클릭 메뉴의 업로드로 현재 폴더에 추가할 수 있습니다.",
         "guest_demo_tour_upload_action": "목록 영역 또는 현재 폴더 행에 파일을 끌어다 놓으세요.",
@@ -909,13 +924,28 @@ DOCS_TEXT = {
         "guest_demo_tour_create_action": "강조된 새 폴더와 새 파일 위치를 확인하세요.",
         "guest_demo_tour_share_title": "URL 공유와 편집권한",
         "guest_demo_tour_share_body": "파일이나 폴더의 공유 링크를 만들고, 전체 공개/대상 사용자/편집권한을 설정할 수 있습니다.",
-        "guest_demo_tour_share_action": "공유 아이콘을 누르면 공유 모달이 열립니다.",
+        "guest_demo_tour_share_action": "공유 아이콘을 클릭하면 공유 모달이 열립니다.",
         "guest_demo_tour_manage_title": "이름 변경, 삭제, 이동",
         "guest_demo_tour_manage_body": "우클릭 메뉴와 키보드 Delete/Backspace로 이름 변경, 삭제, 다운로드, 위치 열기, 드래그 이동을 수행합니다.",
         "guest_demo_tour_manage_action": "우클릭 메뉴에서 이름 바꾸기 또는 삭제 위치를 확인하세요.",
+        "guest_demo_tour_html_structure_title": "HTML 파일 구조",
+        "guest_demo_tour_html_structure_body": "HTML 사용방법 샘플은 09-HTML-사용방법 폴더에 모아두었습니다. 이 폴더 안을 사이트 루트로 보고 index.html, login.html, css/, js/ 구조를 사용합니다.",
+        "guest_demo_tour_html_structure_action": "09-HTML-사용방법 폴더를 열어 구조를 확인하세요.",
+        "guest_demo_tour_html_common_assets_title": "공통 CSS/JS",
+        "guest_demo_tour_html_common_assets_body": "css/globals.css, css/styleguide.css, js/common.js는 모든 HTML 파일에 먼저 자동 적용됩니다.",
+        "guest_demo_tour_html_common_assets_action": "css와 js 폴더가 공통 asset 위치입니다.",
+        "guest_demo_tour_html_page_assets_title": "파일명별 CSS/JS",
+        "guest_demo_tour_html_page_assets_body": "index.html은 css/index.css와 js/index.js를, login.html은 css/login.css와 js/login.js를 자동 적용합니다.",
+        "guest_demo_tour_html_page_assets_action": "HTML 파일명과 같은 CSS/JS 파일을 확인하세요.",
+        "guest_demo_tour_html_preview_title": "HTML 미리보기 적용",
+        "guest_demo_tour_html_preview_body": "HTML 안에 link/script 태그를 쓰지 않아도 HanDrive 미리보기가 공통 asset과 파일명별 asset을 주입합니다.",
+        "guest_demo_tour_html_preview_action": "index.html을 클릭해 적용된 화면을 미리보세요.",
+        "guest_demo_tour_html_preview_opened_title": "적용 결과 확인",
+        "guest_demo_tour_html_preview_opened_body": "미리보기 패널에는 공통 asset과 index.html 전용 asset이 적용된 결과가 표시됩니다.",
+        "guest_demo_tour_html_preview_opened_action": "열린 미리보기에서 적용된 화면을 확인하세요.",
         "guest_demo_tour_advanced_title": "압축, Git, 지도, MP3 변환",
         "guest_demo_tour_advanced_body": "압축 해제, 공개 Git 레포 보기, 지도 생성, MP3 변환, 오디오 미리보기를 체험할 수 있도록 전용 샘플을 준비했습니다.",
-        "guest_demo_tour_advanced_action": "강조된 11~15 샘플을 우클릭해 고급 작업 위치를 확인하세요.",
+        "guest_demo_tour_advanced_action": "강조된 12~16 샘플을 우클릭해 고급 작업 위치를 확인하세요.",
         "guest_demo_tour_layout_title": "상세 영역과 확대/축소",
         "guest_demo_tour_layout_body": "분할 막대로 목록과 미리보기/편집기 크기를 조절하고, Ctrl+스크롤 또는 모바일 핀치로 목록과 문서 배율을 조절할 수 있습니다.",
         "guest_demo_tour_layout_action": "분할 막대를 드래그하거나 목록에서 Ctrl+스크롤을 해보세요.",
@@ -925,10 +955,10 @@ DOCS_TEXT = {
         "guest_demo_tour_jobs_sample": "튜토리얼 샘플 작업 4개",
         "guest_demo_tour_help_title": "도움말과 튜토리얼 재실행",
         "guest_demo_tour_help_body": "상단 도움말에서 기능 설명을 다시 보고, 튜토리얼 버튼으로 이 투어를 언제든 다시 시작할 수 있습니다.",
-        "guest_demo_tour_help_action": "도움말 아이콘을 누르면 도움말 모달이 열립니다.",
+        "guest_demo_tour_help_action": "도움말 아이콘을 클릭하면 도움말 모달이 열립니다.",
         "guest_demo_tour_practice_title": "자유연습",
         "guest_demo_tour_practice_body": "지금부터는 튜토리얼 임시 드라이브에서 파일 열기, 업로드, 새 파일 만들기, 공유 설정을 자유롭게 시도할 수 있습니다.",
-        "guest_demo_tour_practice_action": "강조된 HanDrive 영역 안에서 원하는 기능을 눌러 연습해보세요. 종료하면 임시 파일은 삭제됩니다.",
+        "guest_demo_tour_practice_action": "강조된 HanDrive 영역 안에서 원하는 기능을 클릭해 연습해보세요. 종료하면 임시 파일은 삭제됩니다.",
         "menu_open": "열기",
         "menu_open_location": "파일 위치 열기",
         "menu_download": "다운로드",
@@ -1053,6 +1083,8 @@ DOCS_TEXT = {
         "delete_repo_button": "Repo 삭제",
         "download_button": "다운로드",
         "print_button": "인쇄",
+        "code_view_button": "코드 보기",
+        "rendered_view_button": "미리보기",
         "print_popup_blocked": "인쇄 창을 열 수 없습니다. 팝업 차단을 해제해주세요.",
         "write_title_edit": "수정",
         "write_title_create": "새 파일",
@@ -1102,7 +1134,7 @@ DOCS_TEXT = {
         "save_button": "저장",
         "unsaved_changes_title": "저장",
         "unsaved_changes_message": "저장되지 않은 변경 사항이 있습니다. 이동 전에 저장할까요?",
-        "unsaved_changes_leave_button": "확인",
+        "unsaved_changes_leave_button": "저장안함",
         "unsaved_changes_save_button": "저장",
         "list_preview_title": "파일 미리보기",
         "list_preview_empty": "파일을 선택하면 미리보기가 표시됩니다.",
@@ -1233,6 +1265,7 @@ DOCS_TEXT = {
         "upload_error_file_too_large": "단일 용량 초과",
         "upload_error_timeout": "대기시간 초과",
         "upload_error_file_type_not_allowed": "업로드 불가능한 파일 형식",
+        "upload_error_folder_not_supported": "폴더는 업로드할 수 없습니다. 파일만 업로드해주세요.",
         "repository_badge": "Repository",
         "branch_badge": "Branch",
         "list_type_folder": "폴더",
@@ -1397,6 +1430,7 @@ DOCS_TEXT = {
         "guest_demo_onboarding_step_create": "Create",
         "guest_demo_onboarding_step_share": "Share",
         "guest_demo_onboarding_step_manage": "Manage",
+        "guest_demo_onboarding_step_html": "HTML usage",
         "guest_demo_onboarding_step_advanced": "Advanced",
         "guest_demo_onboarding_step_layout": "Layout",
         "guest_demo_onboarding_step_zoom": "Zoom",
@@ -1425,7 +1459,7 @@ DOCS_TEXT = {
         "guest_demo_tour_edit_action": "The tutorial file is opened in edit mode so you can try changing it.",
         "guest_demo_tour_save_title": "Save and filename",
         "guest_demo_tour_save_body": "Rename the file and save changes. Shared, Git, or demo contexts may show a save modal or commit message step.",
-        "guest_demo_tour_save_action": "Press the save icon to store changes.",
+        "guest_demo_tour_save_action": "Click the save icon to store changes.",
         "guest_demo_tour_upload_title": "Upload",
         "guest_demo_tour_upload_body": "Drag files into the list, paste files from the clipboard, or use Upload in the context menu to add them to the current folder.",
         "guest_demo_tour_upload_action": "Drop files onto the list or current-folder row.",
@@ -1434,13 +1468,28 @@ DOCS_TEXT = {
         "guest_demo_tour_create_action": "Check the highlighted New folder and New file actions.",
         "guest_demo_tour_share_title": "URL sharing and edit permission",
         "guest_demo_tour_share_body": "Create share links for files or folders and control public access, target users, and edit permission.",
-        "guest_demo_tour_share_action": "Press the share icon to open the sharing modal.",
+        "guest_demo_tour_share_action": "Click the share icon to open the sharing modal.",
         "guest_demo_tour_manage_title": "Rename, delete, and move",
         "guest_demo_tour_manage_body": "Use the context menu and Delete/Backspace keys for rename, delete, download, open location, and drag-to-move operations.",
         "guest_demo_tour_manage_action": "Check Rename and Delete in the context menu.",
+        "guest_demo_tour_html_structure_title": "HTML file structure",
+        "guest_demo_tour_html_structure_body": "The HTML usage sample is grouped in the 09-html-usage folder. HanDrive treats that folder as the site root and uses index.html, login.html, css/, and js/.",
+        "guest_demo_tour_html_structure_action": "Open the 09-html-usage folder to inspect the structure.",
+        "guest_demo_tour_html_common_assets_title": "Common CSS/JS",
+        "guest_demo_tour_html_common_assets_body": "css/globals.css, css/styleguide.css, and js/common.js are automatically applied to every HTML file first.",
+        "guest_demo_tour_html_common_assets_action": "The css and js folders hold the common assets.",
+        "guest_demo_tour_html_page_assets_title": "Page-specific CSS/JS",
+        "guest_demo_tour_html_page_assets_body": "index.html receives css/index.css and js/index.js; login.html receives css/login.css and js/login.js.",
+        "guest_demo_tour_html_page_assets_action": "Check the CSS/JS files that match each HTML filename.",
+        "guest_demo_tour_html_preview_title": "HTML preview application",
+        "guest_demo_tour_html_preview_body": "Even without link/script tags in the HTML, HanDrive preview injects common assets and same-name page assets.",
+        "guest_demo_tour_html_preview_action": "Click index.html to preview the applied page.",
+        "guest_demo_tour_html_preview_opened_title": "Review applied preview",
+        "guest_demo_tour_html_preview_opened_body": "The preview panel now shows the result with common assets and index.html-specific assets applied.",
+        "guest_demo_tour_html_preview_opened_action": "Review the applied page in the open preview.",
         "guest_demo_tour_advanced_title": "Archive, Git, maps, and MP3 conversion",
         "guest_demo_tour_advanced_body": "Dedicated samples are prepared for archive extraction, public Git repo viewing, map creation, MP3 conversion, and audio preview.",
-        "guest_demo_tour_advanced_action": "Right-click the highlighted 11-15 samples to find advanced actions.",
+        "guest_demo_tour_advanced_action": "Right-click the highlighted 12-16 samples to find advanced actions.",
         "guest_demo_tour_layout_title": "Detail layout and zoom",
         "guest_demo_tour_layout_body": "Drag the splitter to resize the list and preview/editor. Use Ctrl+wheel or mobile pinch to zoom lists and document content.",
         "guest_demo_tour_layout_action": "Drag the splitter or Ctrl+wheel over the list.",
@@ -1450,7 +1499,7 @@ DOCS_TEXT = {
         "guest_demo_tour_jobs_sample": "4 tutorial sample jobs",
         "guest_demo_tour_help_title": "Help and restarting the tutorial",
         "guest_demo_tour_help_body": "Open Help to review feature docs, then use the Tutorial button there to run this tour again.",
-        "guest_demo_tour_help_action": "Press the help icon to open the help modal.",
+        "guest_demo_tour_help_action": "Click the help icon to open the help modal.",
         "guest_demo_tour_practice_title": "Free practice",
         "guest_demo_tour_practice_body": "You can now freely try opening files, uploading, creating files, and changing share settings inside the temporary tutorial drive.",
         "guest_demo_tour_practice_action": "Use any feature inside the highlighted HanDrive area. Ending the tutorial removes the temporary files.",
@@ -1559,6 +1608,8 @@ DOCS_TEXT = {
         "delete_repo_button": "Delete Repo",
         "download_button": "Download",
         "print_button": "Print",
+        "code_view_button": "View code",
+        "rendered_view_button": "Preview",
         "print_popup_blocked": "Could not open the print window. Please allow pop-ups and try again.",
         "write_title_edit": "Edit File",
         "write_title_create": "New File",
@@ -1608,7 +1659,7 @@ DOCS_TEXT = {
         "save_button": "Save",
         "unsaved_changes_title": "Unsaved Changes",
         "unsaved_changes_message": "You have unsaved changes. Save before leaving?",
-        "unsaved_changes_leave_button": "Continue",
+        "unsaved_changes_leave_button": "Don't save",
         "unsaved_changes_save_button": "Save",
         "list_preview_title": "File Preview",
         "list_preview_empty": "Select a file to preview.",
@@ -1758,6 +1809,7 @@ DOCS_TEXT = {
         "upload_error_file_too_large": "File too large",
         "upload_error_timeout": "Upload timed out",
         "upload_error_file_type_not_allowed": "Unsupported file type",
+        "upload_error_folder_not_supported": "Folders cannot be uploaded. Please upload files only.",
         "repository_badge": "Repository",
         "branch_badge": "Branch",
         "list_type_folder": "Folder",
@@ -3170,6 +3222,15 @@ def resolve_handrive_tutorial_return_url(request, fallback_url: str) -> str:
 
 def build_handrive_download_url(relative_path: str, share_owner: str = "", share_slug: str = "", *, request=None) -> str:
     """문서/공유문서 다운로드 API URL 을 생성한다."""
+    if request is not None and share_owner and share_slug:
+        shared_url = build_handrive_shared_download_url(
+            request,
+            relative_path,
+            share_owner,
+            share_slug,
+        )
+        if shared_url:
+            return append_handrive_admin_switch_query(request, shared_url)
     encoded_path = quote(relative_path or "")
     url = f"{reverse('main:handrive_api_download')}?path={encoded_path}"
     if share_owner and share_slug:
@@ -3302,7 +3363,7 @@ def render_handrive_media_safely(source_path: Path, relative_path: str, share_ow
 
 
 def load_handrive_html_companion_assets(source_path: Path, request=None) -> tuple[str, str]:
-    """일반 HTML 파일과 같은 이름의 css/js companion asset 을 읽는다."""
+    """일반 HTML 파일의 ``css/``/``js/`` companion asset 을 읽는다."""
     def _can_read(asset_path: Path) -> bool:
         if request is None:
             return True
@@ -3316,7 +3377,7 @@ def load_handrive_html_companion_assets(source_path: Path, request=None) -> tupl
 
 
 def load_git_repo_html_companion_assets(request, repo, branch_name: str, repo_relative_path: str) -> tuple[str, str]:
-    """repo branch 내부 HTML 파일의 companion css/js asset 을 읽는다."""
+    """repo branch 내부 HTML 파일의 ``css/``/``js/`` companion asset 을 읽는다."""
     normalized_relative = normalize_relative_path(repo_relative_path, allow_empty=False)
     del request
 
@@ -3334,6 +3395,199 @@ def load_git_repo_html_companion_assets(request, repo, branch_name: str, repo_re
         path_exists=_path_exists,
         read_text_file=_read_text,
     )
+
+
+HANDRIVE_WEB_STARTER_SAMPLE_DIRS = (
+    Path("css"),
+    Path("js"),
+)
+HANDRIVE_WEB_STARTER_SAMPLE_FILES = (
+    (
+        Path("index.html"),
+        """<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HanDrive Web Starter</title>
+</head>
+<body>
+  <main class="app-shell">
+    <p class="eyebrow">index.html</p>
+    <h1>HanDrive Web Starter</h1>
+    <p>css/globals.css, css/styleguide.css, css/index.css, js/common.js, js/index.js are applied automatically in HanDrive preview.</p>
+    <button class="primary-action" id="starter-action" type="button">Run</button>
+    <p class="status" id="starter-status">Ready</p>
+  </main>
+</body>
+</html>
+""",
+    ),
+    (
+        Path("css/globals.css"),
+        """html {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+
+body {
+  min-width: 860px;
+  margin: 0;
+  background: #ffffff;
+  color: #101010;
+}
+
+button {
+  font: inherit;
+}
+""",
+    ),
+    (
+        Path("css/styleguide.css"),
+        """:root {
+  --surface: #ffffff;
+  --surface-muted: #f8f8f8;
+  --line: #b6b6b6;
+  --muted: #545454;
+  --accent: #161616;
+}
+
+.app-shell {
+  width: 860px;
+  min-height: 520px;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 48px;
+  display: grid;
+  align-content: center;
+  gap: 16px;
+}
+
+.eyebrow,
+.status,
+h1,
+p,
+h2,
+h3 {
+  margin: 0;
+}
+
+.eyebrow {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.primary-action {
+  width: fit-content;
+  border: 0;
+  border-radius: 6px;
+  padding: 10px 14px;
+  background: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.status {
+  color: var(--muted);
+  font-size: 14px;
+}
+""",
+    ),
+    (
+        Path("css/index.css"),
+        """.app-shell {
+  background: #ffffff;
+}
+
+.app-shell h1 {
+  color: #101010;
+}
+""",
+    ),
+    (
+        Path("js/common.js"),
+        """(function () {
+  window.HanDriveWebStarter = {
+    setStatus: function (text) {
+      var target = document.getElementById("starter-status");
+      if (target) {
+        target.textContent = text;
+      }
+    }
+  };
+}());
+""",
+    ),
+    (
+        Path("js/index.js"),
+        """(function () {
+  function init() {
+    var button = document.getElementById("starter-action");
+    if (!button || !window.HanDriveWebStarter) {
+      return;
+    }
+    window.HanDriveWebStarter.setStatus("common.js + index.js loaded");
+    button.addEventListener("click", function () {
+      window.HanDriveWebStarter.setStatus("Web starter is running");
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
+}());
+""",
+    ),
+)
+
+
+def get_handrive_web_starter_sample_entry_count(*, include_root_folder: bool = True) -> int:
+    count = len(HANDRIVE_WEB_STARTER_SAMPLE_DIRS) + len(HANDRIVE_WEB_STARTER_SAMPLE_FILES)
+    if include_root_folder:
+        count += 1
+    return count
+
+
+def get_handrive_web_starter_sample_total_bytes() -> int:
+    return sum(len(content.encode("utf-8")) for _relative_path, content in HANDRIVE_WEB_STARTER_SAMPLE_FILES)
+
+
+def write_handrive_web_starter_samples(target_dir: Path) -> None:
+    for relative_dir in HANDRIVE_WEB_STARTER_SAMPLE_DIRS:
+        (target_dir / relative_dir).mkdir(parents=True, exist_ok=True)
+    for relative_path, content in HANDRIVE_WEB_STARTER_SAMPLE_FILES:
+        target_file = target_dir / relative_path
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_text(content.rstrip() + "\n", encoding="utf-8")
+
+
+def create_google_drive_web_starter_samples(mapping, parent_id: str) -> None:
+    created_dirs: dict[str, str] = {"": str(parent_id or "root")}
+    for relative_dir in HANDRIVE_WEB_STARTER_SAMPLE_DIRS:
+        parent_key = relative_dir.parent.as_posix()
+        if parent_key == ".":
+            parent_key = ""
+        created = create_google_drive_folder(mapping, created_dirs[parent_key], relative_dir.name)
+        created_id = str(created.get("id") or "").strip()
+        if not created_id:
+            raise GoogleDriveError("Google Drive 폴더를 생성할 수 없습니다.", status_code=500)
+        created_dirs[relative_dir.as_posix()] = created_id
+
+    for relative_path, content in HANDRIVE_WEB_STARTER_SAMPLE_FILES:
+        parent_key = relative_path.parent.as_posix()
+        if parent_key == ".":
+            parent_key = ""
+        create_google_drive_file(
+            mapping,
+            created_dirs[parent_key],
+            relative_path.name,
+            (content.rstrip() + "\n").encode("utf-8"),
+            google_drive_guess_mime_type(relative_path.name),
+        )
 
 
 def resolve_handrive_render_profile(file_extension: str | None) -> dict[str, str]:
@@ -3371,6 +3625,21 @@ def get_handrive_save_extension_options() -> list[str]:
 def render_handrive_markdown_safely(content: str):
     """Render HanDrive markdown consistently across previews, reads, and help modals."""
     return render_markdown_safely(content, preserve_blank_lines=True)
+
+
+def build_handrive_code_view_payload(content: str, render_profile: dict[str, str]) -> dict[str, str]:
+    """Return raw-source payload for renderable source files that can toggle to code view."""
+    source_extension = str(render_profile.get("extension") or "").strip().lower()
+    if source_extension not in HANDRIVE_CODE_VIEW_TOGGLE_EXTENSIONS:
+        return {}
+    if render_profile.get("mode") not in {DOCS_RENDER_MODE_MARKDOWN, DOCS_RENDER_MODE_PLAIN_TEXT}:
+        return {}
+    source_render_class = "ui-markdown" if source_extension == DOCS_FILE_EXTENSION else "handrive-html"
+    return {
+        "source": content if isinstance(content, str) else "",
+        "source_extension": source_extension,
+        "source_render_class": source_render_class,
+    }
 
 
 def resolve_handrive_request_theme_mode(request) -> str:
@@ -5338,6 +5607,10 @@ def get_handrive_tutorial_git_entry_names() -> tuple[str, str]:
     return (HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_KO, HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_EN)
 
 
+def get_handrive_tutorial_html_usage_dir_name(ui_lang: str | None = None) -> str:
+    return HANDRIVE_TUTORIAL_HTML_USAGE_DIR_NAME_EN if ui_lang == "en" else HANDRIVE_TUTORIAL_HTML_USAGE_DIR_NAME_KO
+
+
 def get_handrive_tutorial_git_repository():
     from git.models import GitRepository
 
@@ -6936,6 +7209,52 @@ def build_handrive_authenticated_tutorial_dir(scoped_home_dir: str, token: str) 
     return f"{home_dir}/{HANDRIVE_USER_TUTORIAL_DIR_NAME}/{safe_token}"
 
 
+def is_handrive_guest_tutorial_storage_path(path_value: str | None) -> bool:
+    try:
+        normalized_path = normalize_relative_path(path_value, allow_empty=False)
+    except ValueError:
+        return False
+    parts = [part for part in normalized_path.split("/") if part]
+    return (
+        len(parts) >= 2
+        and parts[0] == HANDRIVE_GUEST_TUTORIAL_ROOT
+        and re.fullmatch(r"[0-9a-f]{32}", parts[1]) is not None
+    )
+
+
+def is_handrive_guest_tutorial_route_url(url_value: str | None) -> bool:
+    parsed = urlparse(str(url_value or "").strip())
+    path = unquote(parsed.path or "")
+    match = re.match(r"^/(?:(?:ko|en)/)?handrive/(?P<tail>.+)$", path)
+    if not match:
+        return False
+    return is_handrive_guest_tutorial_storage_path(match.group("tail"))
+
+
+def get_handrive_home_dir_for_user(user) -> str:
+    if not (user and getattr(user, "is_authenticated", False)):
+        return ""
+    username = str(user.get_username() or "").strip()
+    if not username:
+        return ""
+    try:
+        return normalize_relative_path(f"users/{username}", allow_empty=False)
+    except ValueError:
+        return ""
+
+
+def build_handrive_home_url_for_user(request, ui_lang: str | None, user) -> str:
+    landing_dir = get_handrive_home_dir_for_user(user)
+    if not landing_dir:
+        if ui_lang in SUPPORTED_UI_LANGS:
+            return reverse("main:handrive_root_lang", kwargs={"ui_lang": ui_lang})
+        return reverse("main:handrive_root")
+    ensure_scoped_home_dir(landing_dir)
+    if ui_lang in SUPPORTED_UI_LANGS:
+        return reverse("main:handrive_list_lang", kwargs={"ui_lang": ui_lang, "folder_path": landing_dir})
+    return reverse("main:handrive_list", kwargs={"folder_path": landing_dir})
+
+
 def build_handrive_session_tutorial_dir(request, token: str) -> str:
     user = getattr(request, "user", None)
     if user and user.is_authenticated:
@@ -7147,12 +7466,13 @@ def build_handrive_tutorial_file_content(ui_lang: str) -> str:
             "1. Browse folders and open files.\n"
             "2. Search and sort the current folder.\n"
             "3. Preview documents, images, media, PDFs, and 3D files.\n"
-            "4. Edit text, Markdown, spreadsheets, images, audio, video, and PDFs with the matching editor.\n"
-            "5. Rename files and save changes.\n"
-            "6. Upload by drag and drop, paste, or the context menu.\n"
-            "7. Create folders, files, archives, maps, and Git repositories from the context menu.\n"
-            "8. Share files and folders with optional target users and edit permission.\n"
-            "9. Manage downloads, moves, deletes, archive extraction, MP3 conversion, and job history.\n\n"
+            "4. Open `09-html-usage/` to build HTML pages with `index.html`, `login.html`, `css/`, and `js/`; common assets and same-name page assets are applied automatically.\n"
+            "5. Edit text, Markdown, spreadsheets, images, audio, video, and PDFs with the matching editor.\n"
+            "6. Rename files and save changes.\n"
+            "7. Upload by drag and drop, paste, or the context menu.\n"
+            "8. Create folders, files, archives, maps, and Git repositories from the context menu.\n"
+            "9. Share files and folders with optional target users and edit permission.\n"
+            "10. Manage downloads, moves, deletes, archive extraction, MP3 conversion, and job history.\n\n"
             "When you end the tutorial, this file is removed automatically.\n"
         )
     return (
@@ -7162,12 +7482,13 @@ def build_handrive_tutorial_file_content(ui_lang: str) -> str:
         "1. 폴더를 탐색하고 파일을 엽니다.\n"
         "2. 현재 폴더에서 검색하고 컬럼별로 정렬합니다.\n"
         "3. 문서, 이미지, 미디어, PDF, 3D 파일을 미리봅니다.\n"
-        "4. 텍스트, Markdown, 스프레드시트, 이미지, 오디오, 영상, PDF를 전용 편집기로 수정합니다.\n"
-        "5. 파일명을 바꾸고 변경사항을 저장합니다.\n"
-        "6. 드래그 앤 드롭, 붙여넣기, 우클릭 메뉴로 업로드합니다.\n"
-        "7. 우클릭 메뉴에서 폴더, 파일, 압축, 지도, Git 저장소를 만듭니다.\n"
-        "8. 파일과 폴더를 URL로 공유하고 대상 사용자와 편집권한을 설정합니다.\n"
-        "9. 다운로드, 이동, 삭제, 압축해제, MP3 변환, 작업 내역을 확인합니다.\n\n"
+        "4. `09-HTML-사용방법/` 폴더에서 `index.html`, `login.html`, `css/`, `js/` 구조로 HTML 페이지를 만들고 공통 asset 과 파일명별 asset 자동 적용을 확인합니다.\n"
+        "5. 텍스트, Markdown, 스프레드시트, 이미지, 오디오, 영상, PDF를 전용 편집기로 수정합니다.\n"
+        "6. 파일명을 바꾸고 변경사항을 저장합니다.\n"
+        "7. 드래그 앤 드롭, 붙여넣기, 우클릭 메뉴로 업로드합니다.\n"
+        "8. 우클릭 메뉴에서 폴더, 파일, 압축, 지도, Git 저장소를 만듭니다.\n"
+        "9. 파일과 폴더를 URL로 공유하고 대상 사용자와 편집권한을 설정합니다.\n"
+        "10. 다운로드, 이동, 삭제, 압축해제, MP3 변환, 작업 내역을 확인합니다.\n\n"
         "튜토리얼을 종료하면 이 파일은 자동 삭제됩니다.\n"
     )
 
@@ -7392,6 +7713,398 @@ ORDER BY file_count DESC;
     ]
 
 
+def build_handrive_tutorial_html_usage_samples(ui_lang: str) -> list[tuple[str, str]]:
+    """HTML 미리보기의 자동 CSS/JS 적용 규칙을 보여주는 작은 사이트 샘플."""
+    sample_dir = get_handrive_tutorial_html_usage_dir_name(ui_lang)
+    if ui_lang == "en":
+        index_title = "HanDrive HTML usage"
+        index_body = "This page automatically receives common CSS/JS and css/index.css + js/index.js."
+        guide_title = "Automatic asset tree"
+        guide_body = "HanDrive treats the folder containing the HTML file as the site root, then applies common assets first and page-specific assets second."
+        load_order_title = "Load order"
+        load_order_items = (
+            "<li>Common CSS: css/globals.css, css/styleguide.css</li>"
+            "<li>Page CSS: css/&lt;html filename&gt;.css</li>"
+            "<li>Common JS: js/common.js</li>"
+            "<li>Page JS: js/&lt;html filename&gt;.js</li>"
+        )
+        asset_tree = """09-html-usage/
+├── index.html
+│   ├── css/globals.css      common CSS
+│   ├── css/styleguide.css   common CSS
+│   ├── css/index.css        index.html only
+│   ├── js/common.js         common JS
+│   └── js/index.js          index.html only
+│
+├── login.html
+│   ├── css/globals.css      common CSS
+│   ├── css/styleguide.css   common CSS
+│   ├── css/login.css        login.html only
+│   ├── js/common.js         common JS
+│   └── js/login.js          login.html only
+│
+├── css/
+└── js/"""
+        login_title = "Login page sample"
+        login_body = "This page automatically receives common CSS/JS and css/login.css + js/login.js."
+        button_label = "Update status"
+        status_ready = "ready"
+    else:
+        index_title = "HanDrive HTML 사용방법"
+        index_body = "이 페이지에는 공통 CSS/JS와 css/index.css, js/index.js가 자동 적용됩니다."
+        guide_title = "자동 적용 트리"
+        guide_body = "HanDrive는 HTML 파일이 있는 폴더를 사이트 루트로 보고, 공통 asset을 먼저 적용한 뒤 HTML 파일명과 같은 전용 asset을 이어서 적용합니다."
+        load_order_title = "적용 순서"
+        load_order_items = (
+            "<li>공통 CSS: css/globals.css, css/styleguide.css</li>"
+            "<li>파일명별 CSS: css/&lt;HTML 파일명&gt;.css</li>"
+            "<li>공통 JS: js/common.js</li>"
+            "<li>파일명별 JS: js/&lt;HTML 파일명&gt;.js</li>"
+        )
+        asset_tree = """09-HTML-사용방법/
+├── index.html
+│   ├── css/globals.css      공통 CSS
+│   ├── css/styleguide.css   공통 CSS
+│   ├── css/index.css        index.html 전용
+│   ├── js/common.js         공통 JS
+│   └── js/index.js          index.html 전용
+│
+├── login.html
+│   ├── css/globals.css      공통 CSS
+│   ├── css/styleguide.css   공통 CSS
+│   ├── css/login.css        login.html 전용
+│   ├── js/common.js         공통 JS
+│   └── js/login.js          login.html 전용
+│
+├── css/
+└── js/"""
+        login_title = "로그인 페이지 샘플"
+        login_body = "이 페이지에는 공통 CSS/JS와 css/login.css, js/login.js가 자동 적용됩니다."
+        button_label = "상태 변경"
+        status_ready = "준비됨"
+
+    index_html = f"""<!doctype html>
+<html lang="{ui_lang if ui_lang == 'en' else 'ko'}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{index_title}</title>
+</head>
+<body>
+  <main class="page-shell index-page">
+    <p class="eyebrow">index.html</p>
+    <h1>{index_title}</h1>
+    <p>{index_body}</p>
+    <section class="usage-guide" aria-labelledby="asset-tree-title">
+      <div class="usage-copy">
+        <h2 id="asset-tree-title">{guide_title}</h2>
+        <p>{guide_body}</p>
+        <h3>{load_order_title}</h3>
+        <ol class="load-order">
+          {load_order_items}
+        </ol>
+      </div>
+      <pre class="asset-tree"><code>{asset_tree}</code></pre>
+    </section>
+    <button class="primary-action" id="index-action" type="button">{button_label}</button>
+    <p class="status" id="index-status" data-page-status>{status_ready}</p>
+  </main>
+</body>
+</html>
+"""
+    login_html = f"""<!doctype html>
+<html lang="{ui_lang if ui_lang == 'en' else 'ko'}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{login_title}</title>
+</head>
+<body>
+  <main class="page-shell login-page">
+    <p class="eyebrow">login.html</p>
+    <h1>{login_title}</h1>
+    <p>{login_body}</p>
+    <label class="field">
+      <span>ID</span>
+      <input type="text" value="hanplanet">
+    </label>
+    <button class="primary-action" id="login-action" type="button">{button_label}</button>
+    <p class="status" id="login-status" data-page-status>{status_ready}</p>
+  </main>
+</body>
+</html>
+"""
+    globals_css = """html {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  min-width: 860px;
+  margin: 0;
+  background: #ffffff;
+  color: #101010;
+}
+
+button,
+input {
+  font: inherit;
+}
+"""
+    styleguide_css = """:root {
+  --surface: #ffffff;
+  --surface-muted: #f8f8f8;
+  --surface-subtle: #f3f3f3;
+  --line: #b6b6b6;
+  --line-soft: rgba(0, 0, 0, 0.08);
+  --text: #101010;
+  --text-strong: #131313;
+  --text-muted: #545454;
+  --accent: #161616;
+  --success: #418d41;
+}
+
+.page-shell {
+  width: 860px;
+  min-height: 520px;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 48px;
+  display: grid;
+  align-content: center;
+  gap: 16px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+.primary-action {
+  width: fit-content;
+  border: 0;
+  border-radius: 6px;
+  padding: 10px 14px;
+  background: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.status {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.usage-guide {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
+  gap: 20px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: var(--surface-muted);
+}
+
+.usage-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.usage-copy h2 {
+  color: var(--text-strong);
+  font-size: 20px;
+}
+
+.usage-copy h3 {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.load-order {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.asset-tree {
+  margin: 0;
+  overflow-x: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.asset-tree code {
+  font: inherit;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  width: 280px;
+}
+
+.field input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 9px 10px;
+}
+"""
+    index_css = """.index-page {
+  background: #ffffff;
+  align-content: start;
+}
+
+.index-page h1 {
+  color: var(--text-strong);
+}
+"""
+    login_css = """.login-page {
+  background: #ffffff;
+}
+
+.login-page h1 {
+  color: var(--text-strong);
+}
+
+.login-page .primary-action {
+  background: var(--accent);
+}
+"""
+    common_js = """(function () {
+  function ready(callback) {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", callback, { once: true });
+    } else {
+      callback();
+    }
+  }
+
+  window.HanDriveTutorialSite = {
+    setStatus: function (selector, text) {
+      var target = document.querySelector(selector);
+      if (target) {
+        target.textContent = text;
+      }
+    }
+  };
+
+  ready(function () {
+    document.body.dataset.commonJs = "loaded";
+  });
+}());
+"""
+    index_js = """(function () {
+  function init() {
+    var button = document.getElementById("index-action");
+    if (!button || !window.HanDriveTutorialSite) {
+      return;
+    }
+    window.HanDriveTutorialSite.setStatus("#index-status", "common.js + index.js loaded");
+    button.addEventListener("click", function () {
+      window.HanDriveTutorialSite.setStatus("#index-status", "index.js clicked");
+    });
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
+}());
+"""
+    login_js = """(function () {
+  function init() {
+    var button = document.getElementById("login-action");
+    if (!button || !window.HanDriveTutorialSite) {
+      return;
+    }
+    window.HanDriveTutorialSite.setStatus("#login-status", "common.js + login.js loaded");
+    button.addEventListener("click", function () {
+      window.HanDriveTutorialSite.setStatus("#login-status", "login.js clicked");
+    });
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
+}());
+"""
+    return [
+        (f"{sample_dir}/index.html", index_html),
+        (f"{sample_dir}/login.html", login_html),
+        (f"{sample_dir}/css/globals.css", globals_css),
+        (f"{sample_dir}/css/styleguide.css", styleguide_css),
+        (f"{sample_dir}/css/index.css", index_css),
+        (f"{sample_dir}/css/login.css", login_css),
+        (f"{sample_dir}/js/common.js", common_js),
+        (f"{sample_dir}/js/index.js", index_js),
+        (f"{sample_dir}/js/login.js", login_js),
+    ]
+
+
+def get_handrive_tutorial_workspace_root_entry_names() -> set[str]:
+    names = {
+        HANDRIVE_TUTORIAL_WORKSPACE_MARKER_FILENAME,
+        f"{HANDRIVE_TUTORIAL_FILE_PREFIX}{HANDRIVE_TUTORIAL_FILE_EXTENSION}",
+        HANDRIVE_TUTORIAL_HTML_USAGE_DIR_NAME_KO,
+        HANDRIVE_TUTORIAL_HTML_USAGE_DIR_NAME_EN,
+        HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_KO,
+        HANDRIVE_TUTORIAL_GIT_ENTRY_NAME_EN,
+        "10-샘플-데이터.csv",
+        "10-sample-data.csv",
+        "11-샘플-폴더",
+        "11-sample-folder",
+        "12-압축-샘플.zip",
+        "12-archive-sample.zip",
+        "14-지도-샘플.svg",
+        "14-map-sample.svg",
+        "15-MP3-변환-샘플.mp4",
+        "15-mp3-conversion-sample.mp4",
+        "16-오디오-미리보기-샘플.mp3",
+        "16-audio-preview-sample.mp3",
+    }
+    for lang in ("ko", "en"):
+        names.update(filename.split("/", 1)[0] for filename, _content in build_handrive_tutorial_text_code_samples(lang))
+    return names
+
+
+def remove_handrive_tutorial_nested_workspace_entries(workspace_root: Path) -> None:
+    """Remove tutorial root files that were accidentally generated inside the HTML sample folder."""
+    root_entry_names = get_handrive_tutorial_workspace_root_entry_names()
+    for html_usage_dir_name in (HANDRIVE_TUTORIAL_HTML_USAGE_DIR_NAME_KO, HANDRIVE_TUTORIAL_HTML_USAGE_DIR_NAME_EN):
+        html_usage_dir = workspace_root / html_usage_dir_name
+        if not html_usage_dir.is_dir():
+            continue
+        for entry_name in root_entry_names:
+            nested_path = html_usage_dir / entry_name
+            try:
+                if nested_path.is_dir():
+                    shutil.rmtree(nested_path)
+                elif nested_path.exists() or nested_path.is_symlink():
+                    nested_path.unlink()
+            except OSError:
+                continue
+
+
 def remove_handrive_tutorial_legacy_sample_entries(workspace_root: Path) -> None:
     legacy_names = {
         "01-sample-note.md",
@@ -7408,6 +8121,24 @@ def remove_handrive_tutorial_legacy_sample_entries(workspace_root: Path) -> None
         "06-지도-샘플.svg",
         "07-mp3-conversion-sample.mp4",
         "07-MP3-변환-샘플.mp4",
+        "index.html",
+        "login.html",
+        "css",
+        "js",
+        "09-sample-data.csv",
+        "09-샘플-데이터.csv",
+        "10-sample-folder",
+        "10-샘플-폴더",
+        "11-archive-sample.zip",
+        "11-압축-샘플.zip",
+        "12-public-git-test-repo",
+        "12-Git-공개-테스트-레포",
+        "13-map-sample.svg",
+        "13-지도-샘플.svg",
+        "14-mp3-conversion-sample.mp4",
+        "14-MP3-변환-샘플.mp4",
+        "15-audio-preview-sample.mp3",
+        "15-오디오-미리보기-샘플.mp3",
     }
     for legacy_name in legacy_names:
         legacy_path = workspace_root / legacy_name
@@ -7420,8 +8151,9 @@ def remove_handrive_tutorial_legacy_sample_entries(workspace_root: Path) -> None
             continue
 
 
-def write_handrive_tutorial_text_file(path_obj: Path, content: str) -> None:
-    if not path_obj.exists():
+def write_handrive_tutorial_text_file(path_obj: Path, content: str, *, overwrite: bool = False) -> None:
+    if overwrite or not path_obj.exists():
+        path_obj.parent.mkdir(parents=True, exist_ok=True)
         path_obj.write_text(content.rstrip() + "\n", encoding="utf-8")
 
 
@@ -7440,6 +8172,7 @@ def copy_handrive_tutorial_asset(asset_filename: str, destination: Path) -> None
 def populate_handrive_tutorial_workspace(workspace_root: Path, ui_lang: str) -> None:
     write_handrive_tutorial_workspace_marker(workspace_root)
     remove_handrive_tutorial_legacy_sample_entries(workspace_root)
+    remove_handrive_tutorial_nested_workspace_entries(workspace_root)
     tutorial_file = workspace_root / f"{HANDRIVE_TUTORIAL_FILE_PREFIX}{HANDRIVE_TUTORIAL_FILE_EXTENSION}"
     if tutorial_file.exists():
         strip_handrive_tutorial_marker_from_file(tutorial_file)
@@ -7447,12 +8180,14 @@ def populate_handrive_tutorial_workspace(workspace_root: Path, ui_lang: str) -> 
         tutorial_file.write_text(build_handrive_tutorial_file_content(ui_lang), encoding="utf-8")
     for filename, content in build_handrive_tutorial_text_code_samples(ui_lang):
         write_handrive_tutorial_text_file(workspace_root / filename, content)
-    sample_csv = workspace_root / ("09-sample-data.csv" if ui_lang == "en" else "09-샘플-데이터.csv")
+    for filename, content in build_handrive_tutorial_html_usage_samples(ui_lang):
+        write_handrive_tutorial_text_file(workspace_root / filename, content, overwrite=True)
+    sample_csv = workspace_root / ("10-sample-data.csv" if ui_lang == "en" else "10-샘플-데이터.csv")
     write_handrive_tutorial_text_file(
         sample_csv,
         "name,type,status\nHanDrive,tutorial,ready\nUpload,feature,try\nShare,feature,try\n",
     )
-    sample_folder = workspace_root / ("10-sample-folder" if ui_lang == "en" else "10-샘플-폴더")
+    sample_folder = workspace_root / ("11-sample-folder" if ui_lang == "en" else "11-샘플-폴더")
     sample_folder.mkdir(exist_ok=True)
     folder_guide = sample_folder / ("guide.txt" if ui_lang == "en" else "안내.txt")
     write_handrive_tutorial_text_file(
@@ -7461,7 +8196,7 @@ def populate_handrive_tutorial_workspace(workspace_root: Path, ui_lang: str) -> 
         if ui_lang == "en"
         else "폴더 샘플\n\n이 폴더에 파일을 끌어놓거나 우클릭 메뉴에서 새 파일을 만들어보세요.\n",
     )
-    archive_sample = workspace_root / ("11-archive-sample.zip" if ui_lang == "en" else "11-압축-샘플.zip")
+    archive_sample = workspace_root / ("12-archive-sample.zip" if ui_lang == "en" else "12-압축-샘플.zip")
     if not archive_sample.exists():
         with zipfile.ZipFile(archive_sample, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr(
@@ -7474,7 +8209,7 @@ def populate_handrive_tutorial_workspace(workspace_root: Path, ui_lang: str) -> 
                 "sample.json",
                 '{"feature":"archive extraction","ready":true}\n',
             )
-    map_sample = workspace_root / ("13-map-sample.svg" if ui_lang == "en" else "13-지도-샘플.svg")
+    map_sample = workspace_root / ("14-map-sample.svg" if ui_lang == "en" else "14-지도-샘플.svg")
     if not map_sample.exists():
         map_sample.write_text(
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160" role="img" aria-label="HanDrive map sample">'
@@ -7484,9 +8219,9 @@ def populate_handrive_tutorial_workspace(workspace_root: Path, ui_lang: str) -> 
             '</svg>\n',
             encoding="utf-8",
         )
-    video_sample = workspace_root / ("14-mp3-conversion-sample.mp4" if ui_lang == "en" else "14-MP3-변환-샘플.mp4")
+    video_sample = workspace_root / ("15-mp3-conversion-sample.mp4" if ui_lang == "en" else "15-MP3-변환-샘플.mp4")
     copy_handrive_tutorial_asset(HANDRIVE_TUTORIAL_SAMPLE_VIDEO_ASSET, video_sample)
-    audio_sample = workspace_root / ("15-audio-preview-sample.mp3" if ui_lang == "en" else "15-오디오-미리보기-샘플.mp3")
+    audio_sample = workspace_root / ("16-audio-preview-sample.mp3" if ui_lang == "en" else "16-오디오-미리보기-샘플.mp3")
     copy_handrive_tutorial_asset(HANDRIVE_TUTORIAL_SAMPLE_AUDIO_ASSET, audio_sample)
 
 
@@ -7538,6 +8273,9 @@ def delete_handrive_tutorial_workspace(request) -> list[str]:
         tutorial_root, normalized = resolve_path(tutorial_dir, must_exist=False)
         if tutorial_root.exists() and tutorial_root.is_dir():
             shutil.rmtree(tutorial_root)
+        delete_handrive_acl_rules_for_path(normalized)
+        delete_handrive_shared_links_for_path(normalized)
+        delete_handrive_sync_excluded_paths_for_path(normalized)
         request.session.pop(HANDRIVE_GUEST_TUTORIAL_SESSION_KEY, None)
         request.session.modified = True
         return [normalized]
@@ -7742,7 +8480,7 @@ _DOCS_QUOTA_TYPE_EXTS: dict[str, frozenset[str]] = {
     "document": frozenset({
         ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
         ".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm",
-        ".py", ".js", ".ts", ".css", ".rb", ".go", ".java", ".c", ".cpp",
+        ".py", ".js", ".jsx", ".ts", ".tsx", ".css", ".rb", ".go", ".java", ".c", ".cpp",
         ".h", ".rs", ".sh", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".log",
     }),
     "audio": frozenset({
@@ -8259,11 +8997,21 @@ def build_handrive_shared_view_child_url(
     owner_username: str,
     share_slug: str,
     child_path: str = "",
+    *,
+    shared_link: HandriveSharedLink | None = None,
 ) -> str:
     base_url = build_handrive_shared_view_url(ui_lang, owner_username, share_slug)
     normalized_child_path = normalize_relative_path(child_path, allow_empty=True)
     if not normalized_child_path:
         return base_url
+    if shared_link is None:
+        shared_link = HandriveSharedLink.objects.filter(
+            owner__username=owner_username,
+            share_slug=share_slug,
+        ).first()
+    if shared_link is not None and shared_link.uses_opaque_tokens:
+        path_token = ensure_handrive_shared_path_token(shared_link, normalized_child_path)
+        return f"{base_url.rstrip('/')}/{path_token.token}"
     return f"{base_url.rstrip('/')}/{quote(normalized_child_path)}"
 
 
@@ -8309,7 +9057,13 @@ def build_handrive_shared_breadcrumbs(
         breadcrumbs.append(
             {
                 "label": _decode_breadcrumb_label(part),
-                "url": build_handrive_shared_view_child_url(ui_lang, owner_username, share_slug, child_path),
+                "url": build_handrive_shared_view_child_url(
+                    ui_lang,
+                    owner_username,
+                    share_slug,
+                    child_path,
+                    shared_link=shared_context.get("shared_link"),
+                ),
                 "is_current": index == len(child_parts) - 1,
                 "path": absolute_path,
             }
@@ -8331,33 +9085,83 @@ def build_handrive_shared_download_url(request, path_value: str, owner_username:
         normalized_path = normalize_relative_path(path_value, allow_empty=False)
     except ValueError:
         return ""
-    query = urlencode(
-        {
-            "path": normalized_path,
-            "share_owner": owner_username,
-            "share_slug": share_slug,
-        }
-    )
+    shared_link = HandriveSharedLink.objects.filter(
+        owner__username=owner_username,
+        share_slug=share_slug,
+    ).first()
+    params = {
+        "share_owner": owner_username,
+        "share_slug": share_slug,
+    }
+    if shared_link is not None and shared_link.uses_opaque_tokens:
+        shared_root = normalize_relative_path(shared_link.path, allow_empty=False)
+        if normalized_path == shared_root:
+            pass
+        elif normalized_path.startswith(shared_root + "/"):
+            child_path = normalized_path[len(shared_root) + 1:]
+            params[HANDRIVE_SHARE_ITEM_QUERY_PARAM] = ensure_handrive_shared_path_token(
+                shared_link,
+                child_path,
+            ).token
+        else:
+            return ""
+    else:
+        params["path"] = normalized_path
+    query = urlencode(params)
     return request.build_absolute_uri(f"{reverse('main:handrive_api_download')}?{query}")
 
 
 def build_handrive_share_slug(relative_path: str) -> str:
-    base_name = Path(markdown_slug_from_relative(relative_path)).name.strip()
-    return base_name or "document"
+    """Return an opaque public identifier that reveals nothing about the shared path."""
+    normalize_relative_path(relative_path, allow_empty=False)
+    return secrets.token_urlsafe(HANDRIVE_SHARE_TOKEN_BYTES)
+
+
+def ensure_handrive_shared_path_token(
+    shared_link: HandriveSharedLink,
+    relative_path: str,
+) -> HandriveSharedPathToken:
+    normalized_path = normalize_relative_path(relative_path, allow_empty=False)
+    existing = HandriveSharedPathToken.objects.filter(
+        shared_link=shared_link,
+        relative_path=normalized_path,
+    ).first()
+    if existing is not None:
+        return existing
+    for _ in range(10):
+        candidate = secrets.token_urlsafe(HANDRIVE_SHARE_TOKEN_BYTES)
+        if HandriveSharedPathToken.objects.filter(token=candidate).exists():
+            continue
+        return HandriveSharedPathToken.objects.create(
+            shared_link=shared_link,
+            relative_path=normalized_path,
+            token=candidate,
+        )
+    raise RuntimeError("공유 경로 보안 토큰을 생성할 수 없습니다.")
+
+
+def resolve_handrive_shared_path_token(
+    shared_link: HandriveSharedLink,
+    token: str,
+) -> str | None:
+    normalized_token = str(token or "").strip()
+    if not HANDRIVE_SHARE_TOKEN_PATTERN.fullmatch(normalized_token):
+        return None
+    return HandriveSharedPathToken.objects.filter(
+        shared_link=shared_link,
+        token=normalized_token,
+    ).values_list("relative_path", flat=True).first()
 
 
 def get_unique_handrive_share_slug(owner, relative_path: str, *, exclude_path: str | None = None) -> str:
-    base_slug = build_handrive_share_slug(relative_path)
-    candidate = base_slug
-    suffix = 2
     queryset = HandriveSharedLink.objects.filter(owner=owner)
     if exclude_path:
         queryset = queryset.exclude(path=exclude_path)
-    existing_slugs = set(queryset.values_list("share_slug", flat=True))
-    while candidate in existing_slugs:
-        candidate = f"{base_slug}-{suffix}"
-        suffix += 1
-    return candidate
+    for _ in range(10):
+        candidate = build_handrive_share_slug(relative_path)
+        if not queryset.filter(share_slug=candidate).exists():
+            return candidate
+    raise RuntimeError("공유 URL 보안 토큰을 생성할 수 없습니다.")
 
 
 def ensure_handrive_shared_link(path_value: str, owner) -> HandriveSharedLink:
@@ -8365,7 +9169,12 @@ def ensure_handrive_shared_link(path_value: str, owner) -> HandriveSharedLink:
     if shared_link:
         return shared_link
     share_slug = get_unique_handrive_share_slug(owner, path_value)
-    return HandriveSharedLink.objects.create(path=path_value, owner=owner, share_slug=share_slug)
+    return HandriveSharedLink.objects.create(
+        path=path_value,
+        owner=owner,
+        share_slug=share_slug,
+        uses_opaque_tokens=True,
+    )
 
 
 def build_handrive_empty_share_info() -> dict:
@@ -8402,6 +9211,7 @@ def build_handrive_existing_share_info(request, path_value: str) -> dict:
                         shared_context["owner_username"],
                         shared_context["share_slug"],
                         child_path,
+                        shared_link=shared_context["shared_link"],
                     )
                 ),
                 "share_download_url": build_handrive_shared_download_url(
@@ -8442,7 +9252,13 @@ def build_handrive_existing_share_info(request, path_value: str) -> dict:
     child_path = "" if shared_link.path == normalized_path else normalized_path[len(shared_link.path) + 1:]
     return {
         "share_url": request.build_absolute_uri(
-            build_handrive_shared_view_child_url(ui_lang, shared_link.owner.username, shared_link.share_slug, child_path)
+            build_handrive_shared_view_child_url(
+                ui_lang,
+                shared_link.owner.username,
+                shared_link.share_slug,
+                child_path,
+                shared_link=shared_link,
+            )
         ),
         "share_download_url": build_handrive_shared_download_url(
             request,
@@ -8689,7 +9505,7 @@ def handrive_root(request, ui_lang=None):
                     {"tutorial": "1", "start": "1"},
                 )
             )
-    landing_dir = get_handrive_initial_landing_dir(request)
+    landing_dir = get_handrive_home_dir_for_user(user) if user and user.is_authenticated else get_handrive_initial_landing_dir(request)
     if landing_dir:
         ensure_scoped_home_dir(landing_dir)
         if resolved_lang in SUPPORTED_UI_LANGS:
@@ -9521,6 +10337,9 @@ def _resolve_handrive_post_login_url(request, ui_lang: str | None, fallback_next
     else:
         lang_base = reverse("main:handrive_root")
 
+    if is_handrive_guest_tutorial_route_url(fallback_next_url):
+        return build_handrive_home_url_for_user(request, ui_lang, user)
+
     if re.match(r"^/(?:(ko|en)/)?handrive/(?:all|guest)/list/?$", fallback_path):
         return lang_base
 
@@ -10031,6 +10850,7 @@ def _apply_forgejo_session_cookie(response, session_key: str):
     if "i_like_gitea" in response.cookies:
         del response.cookies["i_like_gitea"]
     response.set_cookie("i_like_gitea", session_key, httponly=True, **shared_cookie_kwargs)
+    response.delete_cookie(HANPLANET_SSO_PROBE_ATTEMPTED_COOKIE_NAME, domain=".hanplanet.com", path="/")
     response.delete_cookie(HANPLANET_SSO_PROBE_FAILED_COOKIE_NAME, domain=".hanplanet.com", path="/")
     response.delete_cookie("hp_relogin", domain=".hanplanet.com", path="/")
     response.delete_cookie("hp_sso_return", domain=".hanplanet.com", path="/")
@@ -10053,6 +10873,7 @@ def _clear_forgejo_sync_cookies(response):
     response.delete_cookie("hp_logout_return", domain=".hanplanet.com", path="/")
     response.delete_cookie("hp_relogin", domain=".hanplanet.com", path="/")
     response.delete_cookie("hp_sso_return", domain=".hanplanet.com", path="/")
+    response.delete_cookie(HANPLANET_SSO_PROBE_ATTEMPTED_COOKIE_NAME, domain=".hanplanet.com", path="/")
     response.delete_cookie(HANPLANET_SSO_PROBE_FAILED_COOKIE_NAME, domain=".hanplanet.com", path="/")
     return response
 
@@ -11567,8 +12388,9 @@ def handrive_gitea_sso_relay(request):
     """
     next_url = resolve_next_url(request, "/")
     resolved_lang = resolve_ui_lang(request)
+    is_probe = str(request.GET.get("probe") or "").strip() == "1"
     if not _get_valid_hanplanet_session_token(request):
-        if str(request.GET.get("probe") or "").strip() == "1":
+        if is_probe:
             response = _build_forgejo_redirect_base(next_url)
             response.set_cookie(
                 HANPLANET_SSO_PROBE_FAILED_COOKIE_NAME,
@@ -11582,7 +12404,18 @@ def handrive_gitea_sso_relay(request):
             return response
         login_url = reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang})
         return redirect(f"{login_url}?{urlencode({'next': next_url})}")
-    return _build_forgejo_authenticated_redirect(next_url, request.user)
+    response = _build_forgejo_authenticated_redirect(next_url, request.user)
+    if is_probe:
+        response.set_cookie(
+            HANPLANET_SSO_PROBE_ATTEMPTED_COOKIE_NAME,
+            "1",
+            max_age=10,
+            domain=HANPLANET_SHARED_COOKIE_DOMAIN,
+            path="/",
+            secure=bool(getattr(settings, "DEFAULT_SECURE_TRANSPORT", True)),
+            samesite="Lax",
+        )
+    return response
 
 
 @require_http_methods(["GET"])
@@ -12535,6 +13368,14 @@ def handrive_list(request, folder_path="", ui_lang=None):
         and is_handrive_session_tutorial_path(request, requested_scope_dir)
     )
     if (
+        request.user.is_authenticated
+        and not shared_context
+        and get_handrive_admin_switch_user(request) is None
+        and requested_archive_virtual is None
+        and is_handrive_guest_tutorial_storage_path(requested_scope_dir)
+    ):
+        return redirect(build_handrive_home_url_for_user(request, resolved_lang, request.user))
+    if (
         not request.user.is_authenticated
         and not shared_context
         and requested_archive_virtual is None
@@ -12642,7 +13483,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
             raise Http404("폴더를 찾을 수 없습니다.")
         if not directory.is_dir():
             raise Http404("폴더를 찾을 수 없습니다.")
-        if not shared_context and is_handrive_session_tutorial_path(request, current_dir):
+        if not shared_context and is_handrive_session_tutorial_root_path(request, current_dir):
             populate_handrive_tutorial_workspace(directory, resolved_lang)
         initial_entries = list_directory_entries(directory, request=request)
         if not shared_context and (
@@ -12820,6 +13661,13 @@ def handrive_view(request, doc_path, ui_lang=None):
         relative_file_path = normalize_relative_path(route_doc_path, allow_empty=False)
     except ValueError:
         raise Http404("파일을 찾을 수 없습니다.")
+    if (
+        request.user.is_authenticated
+        and not shared_context
+        and get_handrive_admin_switch_user(request) is None
+        and is_handrive_guest_tutorial_storage_path(relative_file_path)
+    ):
+        return redirect(build_handrive_home_url_for_user(request, resolved_lang, request.user))
     google_drive = _parse_google_drive_virtual_path(request, relative_file_path)
     google_drive_file_metadata = None
     git_virtual = None if google_drive is not None else _get_git_virtual_context(request, relative_file_path)
@@ -13191,7 +14039,13 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
         if not target_path.is_dir():
             raise Http404("공유 문서를 찾을 수 없습니다.")
         try:
-            normalized_subpath = normalize_relative_path(shared_subpath, allow_empty=False)
+            if shared_link.uses_opaque_tokens:
+                resolved_subpath = resolve_handrive_shared_path_token(shared_link, shared_subpath)
+                if not resolved_subpath:
+                    raise ValueError("공유 경로 토큰이 올바르지 않습니다.")
+                normalized_subpath = normalize_relative_path(resolved_subpath, allow_empty=False)
+            else:
+                normalized_subpath = normalize_relative_path(shared_subpath, allow_empty=False)
             requested_relative_path = normalize_relative_path(f"{relative_path}/{normalized_subpath}", allow_empty=False)
             target_path, relative_path = resolve_path(requested_relative_path, must_exist=True)
         except (ValueError, FileNotFoundError):
@@ -13541,7 +14395,7 @@ def handrive_write(request, ui_lang=None):
             "initial_filename": initial_filename,
             "initial_extension": initial_extension,
             "write_is_markdown": write_editor_kind == "text" and initial_extension == DOCS_FILE_EXTENSION,
-            "write_has_preview": write_editor_kind == "text" and initial_extension in {DOCS_FILE_EXTENSION, ".html"},
+            "write_has_preview": write_editor_kind == "text" and initial_extension in {DOCS_FILE_EXTENSION, ".html", ".jsx"},
             "write_editor_kind": write_editor_kind,
             "initial_filename_input": initial_filename_input,
             "initial_dir": initial_dir,
@@ -15024,13 +15878,25 @@ def handrive_api_mkdir(request):
         parent_dir = normalize_relative_path(payload.get("parent_dir"), allow_empty=True)
         folder_name = validate_name(payload.get("folder_name"), for_file=False)
         commit_message = str(payload.get("commit_message") or "").strip()
+        create_web_sample = _parse_boolean_payload_value(payload.get("create_web_sample"))
         google_drive_parent = _parse_google_drive_virtual_path(request, parent_dir)
         git_virtual_parent = None if google_drive_parent is not None else _get_git_virtual_context(request, parent_dir)
         if google_drive_parent is not None:
             parent_path = None
         elif git_virtual_parent is None:
             parent_path, _ = resolve_path(parent_dir, must_exist=True)
-            enforce_handrive_scoped_quota(request, quota_path=parent_dir, extra_entries=1)
+            quota_extra_entries = (
+                get_handrive_web_starter_sample_entry_count()
+                if create_web_sample
+                else 1
+            )
+            quota_extra_bytes = get_handrive_web_starter_sample_total_bytes() if create_web_sample else 0
+            enforce_handrive_scoped_quota(
+                request,
+                quota_path=parent_dir,
+                extra_entries=quota_extra_entries,
+                extra_bytes=quota_extra_bytes,
+            )
         else:
             parent_path = None
     except (ValueError, FileNotFoundError) as exc:
@@ -15057,6 +15923,11 @@ def handrive_api_mkdir(request):
                 google_drive_parent["folder_id"],
                 folder_name,
             )
+            if create_web_sample:
+                created_id_for_samples = str(created.get("id") or "").strip()
+                if not created_id_for_samples:
+                    raise GoogleDriveError("Google Drive 폴더를 생성할 수 없습니다.", status_code=500)
+                create_google_drive_web_starter_samples(google_drive_parent["mapping"], created_id_for_samples)
         except GoogleDriveError as exc:
             return json_error(str(exc), status=exc.status_code)
         created_id = str(created.get("id") or "").strip()
@@ -15080,7 +15951,10 @@ def handrive_api_mkdir(request):
         def _mutate(worktree_dir: Path) -> None:
             target_path = _resolve_git_worktree_path(worktree_dir, repo_relative_path)
             target_path.mkdir(parents=True, exist_ok=False)
-            (target_path / ".gitkeep").write_text("", encoding="utf-8")
+            if create_web_sample:
+                write_handrive_web_starter_samples(target_path)
+            else:
+                (target_path / ".gitkeep").write_text("", encoding="utf-8")
 
         try:
             _commit_git_branch_mutation(git_virtual_parent["repo"], git_virtual_parent["branch_name"], commit_message, request.user, _mutate)
@@ -15093,6 +15967,8 @@ def handrive_api_mkdir(request):
         return json_error("같은 이름의 폴더가 이미 존재합니다.", status=409)
 
     target_path.mkdir(parents=False, exist_ok=False)
+    if create_web_sample:
+        write_handrive_web_starter_samples(target_path)
     return JsonResponse({"ok": True, "path": relative_from_root(target_path)})
 
 
@@ -15989,6 +16865,7 @@ def handrive_api_preview(request):
         preview_relative_path = normalize_relative_path(payload.get("path"), allow_empty=True)
         preview_target_dir = normalize_relative_path(payload.get("target_dir"), allow_empty=True)
         if preview_relative_path:
+            source_content_for_toggle = ""
             google_drive = _parse_google_drive_virtual_path(request, preview_relative_path)
             git_virtual = None if google_drive is not None else _get_git_virtual_context(request, preview_relative_path)
             if google_drive is not None:
@@ -16045,6 +16922,7 @@ def handrive_api_preview(request):
                                     request=request,
                                     relative_path=relative_file_path,
                                 )
+                                source_content_for_toggle = content
                             rendered_html, render_profile = render_handrive_content(
                                 content,
                                 file_extension,
@@ -16095,6 +16973,7 @@ def handrive_api_preview(request):
                 else:
                     try:
                         content = load_handrive_source_content(file_path, request=request, relative_path=relative_file_path)
+                        source_content_for_toggle = content
                         rendered_html, render_profile = render_handrive_content(
                             content,
                             file_extension,
@@ -16144,6 +17023,7 @@ def handrive_api_preview(request):
                                 request=request,
                                 relative_path=relative_file_path,
                             )
+                            source_content_for_toggle = content
                         companion_css, companion_js = load_git_repo_html_companion_assets(
                             request,
                             git_virtual["repo"],
@@ -16168,20 +17048,21 @@ def handrive_api_preview(request):
                             message=get_handrive_text(resolve_ui_lang(request)).get("list_preview_unsupported", "미리보기 미지원"),
                         )
                         render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
-            return JsonResponse(
-                {
-                    "ok": True,
-                    "html": rendered_html,
-                    "path": relative_file_path,
-                    "slug_path": build_handrive_public_url_path(request, relative_file_path) if (git_virtual is not None or google_drive is not None) else markdown_slug_from_relative(relative_file_path),
-                    "title": title,
-                    "render_mode": render_profile["mode"],
-                    "render_class": render_profile["css_class"],
-                }
-            )
+            response_payload = {
+                "ok": True,
+                "html": rendered_html,
+                "path": relative_file_path,
+                "slug_path": build_handrive_public_url_path(request, relative_file_path) if (git_virtual is not None or google_drive is not None) else markdown_slug_from_relative(relative_file_path),
+                "title": title,
+                "render_mode": render_profile["mode"],
+                "render_class": render_profile["css_class"],
+            }
+            response_payload.update(build_handrive_code_view_payload(source_content_for_toggle, render_profile))
+            return JsonResponse(response_payload)
 
         original_relative_path = normalize_relative_path(payload.get("original_path"), allow_empty=True)
         preview_extension = normalize_file_extension(payload.get("extension"), allow_empty=True)
+        preview_filename = str(payload.get("filename") or "").strip()
         content = payload.get("content", "")
         if not isinstance(content, str):
             raise ValueError("내용 형식이 올바르지 않습니다.")
@@ -16223,6 +17104,42 @@ def handrive_api_preview(request):
     companion_css = ""
     companion_js = ""
     source_bytes = None
+    source_relative = ""
+    if not original_relative_path and preview_filename:
+        try:
+            preview_base_name, preview_name_extension = resolve_file_name_and_extension(
+                preview_filename,
+                fallback_extension=source_extension,
+            )
+            source_extension = preview_name_extension
+            preview_file_name = f"{preview_base_name}{source_extension}"
+            preview_target_google_drive = _parse_google_drive_virtual_path(request, preview_target_dir)
+            preview_target_git_virtual = None if preview_target_google_drive is not None else _get_git_virtual_context(request, preview_target_dir)
+            if preview_target_git_virtual is not None:
+                if preview_target_git_virtual["kind"] != "branch_dir":
+                    return json_error("저장 위치가 폴더가 아닙니다.", status=400)
+                preview_repo_relative = (
+                    f"{preview_target_git_virtual['repo_relative_path']}/{preview_file_name}"
+                    if preview_target_git_virtual["repo_relative_path"]
+                    else preview_file_name
+                )
+                companion_css, companion_js = load_git_repo_html_companion_assets(
+                    request,
+                    preview_target_git_virtual["repo"],
+                    preview_target_git_virtual["branch_name"],
+                    preview_repo_relative,
+                )
+            elif preview_target_google_drive is None:
+                preview_target_path, preview_target_relative = resolve_path(preview_target_dir, must_exist=True)
+                if not preview_target_path.is_dir():
+                    return json_error("저장 위치가 폴더가 아닙니다.", status=400)
+                source_path = preview_target_path / preview_file_name
+                source_relative = normalize_relative_path(
+                    f"{preview_target_relative}/{preview_file_name}" if preview_target_relative else preview_file_name,
+                    allow_empty=False,
+                )
+        except (ValueError, FileNotFoundError) as exc:
+            return json_error(str(exc), status=400)
     if original_relative_path and git_virtual is not None:
         companion_css, companion_js = load_git_repo_html_companion_assets(
             request,
@@ -16248,16 +17165,17 @@ def handrive_api_preview(request):
         source_bytes=source_bytes,
         companion_css=companion_css,
         companion_js=companion_js,
+        relative_path=source_relative,
         request=request,
     )
-    return JsonResponse(
-        {
-            "ok": True,
-            "html": rendered_html,
-            "render_mode": render_profile["mode"],
-            "render_class": render_profile["css_class"],
-        }
-    )
+    response_payload = {
+        "ok": True,
+        "html": rendered_html,
+        "render_mode": render_profile["mode"],
+        "render_class": render_profile["css_class"],
+    }
+    response_payload.update(build_handrive_code_view_payload(content, render_profile))
+    return JsonResponse(response_payload)
 
 
 @require_http_methods(["POST"])
@@ -16646,8 +17564,36 @@ def _stream_response(request, fh, file_size: int, content_type: str, filename: s
 @with_request_handrive_root
 def handrive_api_download(request):
     """일반 파일과 repo virtual file을 공통 다운로드 엔드포인트로 제공한다."""
+    hinted_owner = str(request.GET.get("share_owner") or "").strip()
+    hinted_slug = str(request.GET.get("share_slug") or "").strip()
+    hinted_shared_link = None
+    if hinted_owner and hinted_slug:
+        hinted_shared_link = HandriveSharedLink.objects.select_related("owner").filter(
+            owner__username=hinted_owner,
+            share_slug=hinted_slug,
+        ).first()
+    if hinted_shared_link is not None and hinted_shared_link.uses_opaque_tokens:
+        if not is_handrive_url_only_enabled(request, hinted_shared_link.path):
+            raise Http404("다운로드할 파일을 찾을 수 없습니다.")
+        if not handrive_shared_link_allows_request_user(request, hinted_shared_link):
+            return redirect_handrive_shared_access_to_login(request)
     try:
-        rel_path = normalize_scoped_home_api_path(request, request.GET.get("path"), allow_empty=False)
+        shared_context = get_handrive_shared_access_context(request)
+        shared_link = shared_context.get("shared_link") if shared_context else None
+        if shared_link is not None and shared_link.uses_opaque_tokens:
+            if str(request.GET.get("path") or "").strip():
+                raise ValueError("난수 공유 링크에는 실제 경로를 사용할 수 없습니다.")
+            item_token = str(request.GET.get(HANDRIVE_SHARE_ITEM_QUERY_PARAM) or "").strip()
+            if item_token:
+                child_path = resolve_handrive_shared_path_token(shared_link, item_token)
+                if not child_path:
+                    raise ValueError("공유 경로 토큰이 올바르지 않습니다.")
+                requested_path = f"{shared_context['root_path']}/{child_path}"
+            else:
+                requested_path = shared_context["root_path"]
+        else:
+            requested_path = request.GET.get("path")
+        rel_path = normalize_scoped_home_api_path(request, requested_path, allow_empty=False)
     except ValueError:
         raise Http404("다운로드할 파일을 찾을 수 없습니다.")
     google_drive = _parse_google_drive_virtual_path(request, rel_path)

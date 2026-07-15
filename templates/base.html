@@ -118,16 +118,24 @@
     <script src="{% static_v 'js/common/zoom_gesture.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/site.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/site_auth_modal.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
+    {% if load_markdown_mermaid %}
     <script src="{% static_v 'js/common/markdown_mermaid.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
+    {% endif %}
+    {% if request.user.is_authenticated %}
     <script src="{% static_v 'js/common/account_github_widget.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/account_google_widget.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
-    <script src="{% static_v 'js/common/account_weather_widget.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/account_widget.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
+    {% endif %}
+    {% if show_account_weather %}
+    <script src="{% static_v 'js/common/account_weather_widget.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
+    {% endif %}
     {% if not is_root_entry %}
     <script src="{% static_v 'js/vendor/bootstrap.min.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
+    {% if load_portfolio_print_assets %}
     <script src="{% static_v 'js/common/portfolio_print_content_helpers.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/portfolio_print_selector_dialog.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
     <script src="{% static_v 'js/common/portfolio_print_runtime.js' %}" type="text/javascript" defer onerror="window.__reloadStaticScript(this)"></script>
+    {% endif %}
     {% endif %}
     {% if show_chat_widget %}
     <link rel="stylesheet" type="text/css" href="{% static_v 'css/common/chat_widget.css' %}">

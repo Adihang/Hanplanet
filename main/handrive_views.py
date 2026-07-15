@@ -142,6 +142,7 @@ from .handrive.preview import (
 from .models import (
     DEFAULT_HANDRIVE_USER_QUOTA_BYTES,
     HandriveAccessRule,
+    HandriveEditorCompletion,
     HandriveLoginAttemptGuard,
     HandriveSharedLink,
     HandriveSharedPathToken,
@@ -2344,6 +2345,64 @@ def relative_from_root(path_obj: Path) -> str:
         return path_obj.resolve().relative_to(root).as_posix()
 
 
+def is_case_only_path_name_change(source_path: Path, destination_path: Path) -> bool:
+    return (
+        source_path.parent == destination_path.parent
+        and source_path.name != destination_path.name
+        and source_path.name.casefold() == destination_path.name.casefold()
+    )
+
+
+def rename_path_preserving_case(source_path: Path, destination_path: Path) -> None:
+    """대소문자 비구분 파일시스템에서도 이름의 casing 변경을 보장한다."""
+    if not is_case_only_path_name_change(source_path, destination_path):
+        source_path.rename(destination_path)
+        return
+
+    temporary_path = source_path.parent / f".handrive-rename-{uuid.uuid4().hex}.tmp"
+    while temporary_path.exists():
+        temporary_path = source_path.parent / f".handrive-rename-{uuid.uuid4().hex}.tmp"
+
+    source_path.rename(temporary_path)
+    try:
+        temporary_path.rename(destination_path)
+    except Exception:
+        try:
+            temporary_path.rename(source_path)
+        except Exception:
+            logger.exception("HanDrive case-only rename rollback failed: %s", source_path)
+        raise
+
+
+def finalize_handrive_editor_case_rename(
+    source_path: Path,
+    destination_path: Path,
+    source_relative: str,
+    destination_relative: str,
+) -> None:
+    """편집 결과 저장 후 대소문자만 달라진 원본 경로와 메타데이터를 정리한다."""
+    if not is_case_only_path_name_change(source_path, destination_path):
+        return
+
+    source_exists = source_path.exists()
+    destination_exists = destination_path.exists()
+    if source_exists and destination_exists:
+        try:
+            is_same_file = destination_path.samefile(source_path)
+        except OSError:
+            is_same_file = destination_path.resolve() == source_path.resolve()
+        if is_same_file:
+            rename_path_preserving_case(source_path, destination_path)
+        else:
+            source_path.unlink()
+    elif source_exists:
+        rename_path_preserving_case(source_path, destination_path)
+
+    move_handrive_acl_rules(source_relative, destination_relative)
+    move_handrive_shared_links(source_relative, destination_relative)
+    move_handrive_sync_excluded_paths(source_relative, destination_relative)
+
+
 def handrive_edited_output_path(source_path: Path) -> Path:
     """편집 저장용 새 파일 경로를 원본과 같은 폴더 안에서 만든다."""
     parent = source_path.parent
@@ -2394,14 +2453,17 @@ def resolve_handrive_editor_destination(
 
     destination_path = source_path.parent / f"{stem}{extension}"
     destination_exists = destination_path.exists()
+    is_case_only_name_change = is_case_only_path_name_change(source_path, destination_path)
     try:
-        is_same_as_source = destination_exists and destination_path.resolve() == source_path.resolve()
+        is_same_as_source = is_case_only_name_change or (
+            destination_exists and destination_path.samefile(source_path)
+        )
     except OSError:
-        is_same_as_source = False
+        is_same_as_source = is_case_only_name_change
 
     destination_relative = relative_from_root(destination_path)
 
-    if source_path is not None and not is_same_as_source:
+    if source_path is not None and (not is_same_as_source or is_case_only_name_change):
         source_relative = relative_from_root(source_path)
         if is_handrive_shared_root_locked_for_request(request, source_relative):
             raise PermissionError("공유 루트 항목의 이름은 소유자만 바꿀 수 있습니다.")
@@ -7468,12 +7530,13 @@ def build_handrive_tutorial_file_content(ui_lang: str) -> str:
             "2. Search and sort the current folder.\n"
             "3. Preview documents, images, media, PDFs, and 3D files.\n"
             "4. Open `09-html-usage/` to build HTML pages with `index.html`, `login.html`, `css/`, and `js/`; common assets and same-name page assets are applied automatically.\n"
-            "5. Edit text, Markdown, spreadsheets, images, audio, video, and PDFs with the matching editor.\n"
-            "6. Rename files and save changes.\n"
-            "7. Upload by drag and drop, paste, or the context menu.\n"
-            "8. Create folders, files, archives, maps, and Git repositories from the context menu.\n"
-            "9. Share files and folders with optional target users and edit permission.\n"
-            "10. Manage downloads, moves, deletes, archive extraction, MP3 conversion, and job history.\n\n"
+            "5. Try line numbers, syntax highlighting, indent guides, Code Folding, and incremental completion in a code file.\n"
+            "6. Edit text, Markdown, spreadsheets, images, audio, video, and PDFs with the matching editor.\n"
+            "7. Rename files and save changes.\n"
+            "8. Upload by drag and drop, paste, or the context menu.\n"
+            "9. Create folders, files, archives, maps, and Git repositories from the context menu.\n"
+            "10. Share files and folders with optional target users and edit permission.\n"
+            "11. Manage downloads, moves, deletes, archive extraction, MP3 conversion, and job history.\n\n"
             "When you end the tutorial, this file is removed automatically.\n"
         )
     return (
@@ -7484,12 +7547,13 @@ def build_handrive_tutorial_file_content(ui_lang: str) -> str:
         "2. 현재 폴더에서 검색하고 컬럼별로 정렬합니다.\n"
         "3. 문서, 이미지, 미디어, PDF, 3D 파일을 미리봅니다.\n"
         "4. `09-HTML-사용방법/` 폴더에서 `index.html`, `login.html`, `css/`, `js/` 구조로 HTML 페이지를 만들고 공통 asset 과 파일명별 asset 자동 적용을 확인합니다.\n"
-        "5. 텍스트, Markdown, 스프레드시트, 이미지, 오디오, 영상, PDF를 전용 편집기로 수정합니다.\n"
-        "6. 파일명을 바꾸고 변경사항을 저장합니다.\n"
-        "7. 드래그 앤 드롭, 붙여넣기, 우클릭 메뉴로 업로드합니다.\n"
-        "8. 우클릭 메뉴에서 폴더, 파일, 압축, 지도, Git 저장소를 만듭니다.\n"
-        "9. 파일과 폴더를 URL로 공유하고 대상 사용자와 편집권한을 설정합니다.\n"
-        "10. 다운로드, 이동, 삭제, 압축해제, MP3 변환, 작업 내역을 확인합니다.\n\n"
+        "5. 코드 파일에서 줄 번호, Syntax Highlighting, 들여쓰기 가이드, Code Folding, 단계별 자동완성을 사용합니다.\n"
+        "6. 텍스트, Markdown, 스프레드시트, 이미지, 오디오, 영상, PDF를 전용 편집기로 수정합니다.\n"
+        "7. 파일명을 바꾸고 변경사항을 저장합니다.\n"
+        "8. 드래그 앤 드롭, 붙여넣기, 우클릭 메뉴로 업로드합니다.\n"
+        "9. 우클릭 메뉴에서 폴더, 파일, 압축, 지도, Git 저장소를 만듭니다.\n"
+        "10. 파일과 폴더를 URL로 공유하고 대상 사용자와 편집권한을 설정합니다.\n"
+        "11. 다운로드, 이동, 삭제, 압축해제, MP3 변환, 작업 내역을 확인합니다.\n\n"
         "튜토리얼을 종료하면 이 파일은 자동 삭제됩니다.\n"
     )
 
@@ -9398,6 +9462,8 @@ def handrive_common_context(request, ui_lang):
             "meta_description": DOCS_META_DESCRIPTION,
             "meta_og_description": DOCS_META_DESCRIPTION,
             "meta_robots": get_default_meta_robots_for_path(request.path),
+            "load_markdown_mermaid": True,
+            "load_portfolio_print_assets": True,
             "handrive_base_url": handrive_base_url,
             "handrive_root_url": handrive_root_url,
             "handrive_write_url": handrive_write_url,
@@ -9420,6 +9486,7 @@ def handrive_common_context(request, ui_lang):
             "account_email": account_email,
             "account_profile_upload_url": account_profile_upload_url,
             "handrive_api_admin_user_check_url": reverse("main:handrive_api_admin_user_check"),
+            "handrive_api_editor_completions_url": reverse("main:handrive_api_editor_completions"),
             "handrive_api_list_url": reverse("main:handrive_api_list"),
             "handrive_api_search_url": reverse("main:handrive_api_search"),
             "handrive_api_save_url": reverse("main:handrive_api_save"),
@@ -13624,7 +13691,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
             "list_current_dir_size_display": directory_meta["size_display"],
             "current_dir_modified_display": directory_meta["modified_display"],
             "page_help_html": build_page_help_html(resolved_lang, "list", handrive_text),
-            "hide_global_nav": bool(shared_context) and not request.user.is_authenticated,
+            "hide_global_nav": False,
             "is_handrive_shared_view": bool(shared_context),
             "handrive_demo_save_mode": handrive_demo_save_mode,
             "handrive_guest_demo_mode": handrive_guest_demo_mode,
@@ -13997,7 +14064,7 @@ def handrive_view(request, doc_path, ui_lang=None):
             "scoped_home_dir": scoped_home_dir,
             "handrive_root_label": handrive_root_label,
             "page_help_html": build_page_help_html(resolved_lang, "view", handrive_text),
-            "hide_global_nav": bool(shared_context) and not request.user.is_authenticated,
+            "hide_global_nav": False,
             "is_handrive_shared_view": bool(shared_context),
             "handrive_demo_save_mode": doc_can_demo_edit,
             "handrive_tutorial_mode": handrive_tutorial_mode,
@@ -14140,7 +14207,7 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
             "doc_share_allowed_users": get_handrive_share_allowed_users_for_request(request, shared_link),
             "doc_share_can_edit": handrive_shared_link_allows_request_edit(request, shared_link),
             "doc_share_can_manage": can_manage_handrive_shared_link(request, shared_link),
-            "hide_global_nav": not request.user.is_authenticated,
+            "hide_global_nav": False,
             "is_handrive_shared_view": True,
             "handrive_demo_save_mode": False,
             "doc_content_html": rendered_content_html,
@@ -14416,7 +14483,7 @@ def handrive_write(request, ui_lang=None):
             "handrive_tutorial_forced": handrive_tutorial_forced,
             "handrive_tutorial_autostart": False,
             "handrive_tutorial_return_url": handrive_tutorial_return_url,
-            "hide_global_nav": bool(shared_context) and not request.user.is_authenticated,
+            "hide_global_nav": False,
             "is_handrive_shared_view": bool(shared_context),
             "handrive_shared_owner_username": shared_context["owner_username"] if shared_context else "",
             "handrive_shared_slug": shared_context["share_slug"] if shared_context else "",
@@ -14805,6 +14872,31 @@ def handrive_api_sync_settings(request):
     profile.save(update_fields=["sync_excluded_paths", "updated_at"])
 
     return JsonResponse({"ok": True, "excluded_paths": excluded_paths})
+
+
+@require_http_methods(["GET"])
+def handrive_api_editor_completions(request):
+    completion_map = {}
+    rows = HandriveEditorCompletion.objects.filter(enabled=True).order_by(
+        "extension",
+        "-priority",
+        "trigger",
+        "id",
+    )
+    for row in rows.iterator():
+        item = {
+            "trigger": row.trigger,
+            "insertText": row.insert_text,
+            "label": row.label or row.insert_text,
+            "cursorBack": row.cursor_back,
+            "priority": row.priority,
+        }
+        if row.description:
+            item["description"] = row.description
+        if row.kind:
+            item["kind"] = row.kind
+        completion_map.setdefault(row.extension, []).append(item)
+    return JsonResponse({"ok": True, "completions": completion_map})
 
 
 @require_http_methods(["GET"])
@@ -15198,7 +15290,7 @@ def handrive_api_rename(request):
             destination_target = _resolve_git_worktree_path(worktree_dir, new_repo_relative)
             destination_target.parent.mkdir(parents=True, exist_ok=True)
             _remove_gitkeep_placeholder(destination_target.parent)
-            source_target.rename(destination_target)
+            rename_path_preserving_case(source_target, destination_target)
 
         try:
             _commit_git_branch_mutation(git_virtual_source["repo"], git_virtual_source["branch_name"], commit_message, request.user, _mutate)
@@ -15235,11 +15327,17 @@ def handrive_api_rename(request):
     else:
         destination = parent / new_name
 
-    same_path_case_change_only = destination.name.lower() == source_path.name.lower()
-    if destination.exists() and destination.resolve() != source_path.resolve() and not same_path_case_change_only:
+    destination_exists = destination.exists()
+    destination_is_source = False
+    if destination_exists:
+        try:
+            destination_is_source = destination.samefile(source_path)
+        except OSError:
+            destination_is_source = destination.resolve() == source_path.resolve()
+    if destination_exists and not destination_is_source:
         return json_error("같은 이름의 항목이 이미 존재합니다.", status=409)
 
-    source_path.rename(destination)
+    rename_path_preserving_case(source_path, destination)
     relative_destination = relative_from_root(destination)
     move_handrive_acl_rules(source_relative, relative_destination)
     move_handrive_shared_links(source_relative, relative_destination)
@@ -17292,14 +17390,25 @@ def handrive_api_save(request):
             )
         destination = target_dir_path / f"{filename}{target_extension}"
         destination_exists = destination.exists()
+        is_case_only_name_change = bool(
+            source_path is not None and is_case_only_path_name_change(source_path, destination)
+        )
         is_same_as_source = bool(
-            source_path is not None and destination_exists and destination.resolve() == source_path.resolve()
+            source_path is not None
+            and (
+                is_case_only_name_change
+                or (destination_exists and destination.samefile(source_path))
+            )
         )
         destination_relative = relative_from_root(destination)
 
-        if source_is_public_write and not is_same_as_source:
+        if source_is_public_write and (not is_same_as_source or is_case_only_name_change):
             return json_error("전체 허용 파일은 위치나 이름을 바꿀 수 없습니다.", status=403)
-        if source_relative and not is_same_as_source and is_handrive_shared_root_locked_for_request(request, source_relative):
+        if (
+            source_relative
+            and (not is_same_as_source or is_case_only_name_change)
+            and is_handrive_shared_root_locked_for_request(request, source_relative)
+        ):
             return json_error("공유 루트 항목의 이름은 소유자만 바꿀 수 있습니다.", status=403)
 
         if destination_exists and not destination.is_file():
@@ -17343,7 +17452,14 @@ def handrive_api_save(request):
     destination.write_text(content, encoding="utf-8")
 
     destination_relative = relative_from_root(destination)
-    if source_content_before_save and source_path is not None and destination.resolve() == source_path.resolve():
+    if source_path is not None:
+        finalize_handrive_editor_case_rename(
+            source_path,
+            destination,
+            source_relative,
+            destination_relative,
+        )
+    if source_content_before_save and source_path is not None and is_same_as_source:
         cleanup_removed_markdown_image_files(
             request=request,
             markdown_relative_path=source_relative or destination_relative,
@@ -17436,14 +17552,25 @@ def handrive_api_spreadsheet_save(request):
 
         destination = target_dir_path / f"{filename}{resolved_extension}"
         destination_exists = destination.exists()
+        is_case_only_name_change = bool(
+            source_path is not None and is_case_only_path_name_change(source_path, destination)
+        )
         is_same_as_source = bool(
-            source_path is not None and destination_exists and destination.resolve() == source_path.resolve()
+            source_path is not None
+            and (
+                is_case_only_name_change
+                or (destination_exists and destination.samefile(source_path))
+            )
         )
         destination_relative = relative_from_root(destination)
 
-        if source_is_public_write and not is_same_as_source:
+        if source_is_public_write and (not is_same_as_source or is_case_only_name_change):
             return json_error("전체 허용 파일은 위치나 이름을 바꿀 수 없습니다.", status=403)
-        if source_relative and not is_same_as_source and is_handrive_shared_root_locked_for_request(request, source_relative):
+        if (
+            source_relative
+            and (not is_same_as_source or is_case_only_name_change)
+            and is_handrive_shared_root_locked_for_request(request, source_relative)
+        ):
             return json_error("공유 루트 항목의 이름은 소유자만 바꿀 수 있습니다.", status=403)
 
         if destination_exists and not destination.is_file():
@@ -17487,6 +17614,13 @@ def handrive_api_spreadsheet_save(request):
     destination.write_bytes(file_bytes)
 
     destination_relative = relative_from_root(destination)
+    if source_path is not None:
+        finalize_handrive_editor_case_rename(
+            source_path,
+            destination,
+            source_relative,
+            destination_relative,
+        )
     destination_slug = markdown_slug_from_relative(destination_relative)
     parent_dir = str(Path(destination_relative).parent).replace("\\", "/")
     if parent_dir == ".":
@@ -19126,7 +19260,8 @@ def handrive_api_pdf_editor_save(request, ui_lang=None):
         if message == "지원하지 않는 파일 형식입니다.":
             message = "PDF 파일명만 사용할 수 있습니다."
         return json_error(message, status=400)
-    if not annotations and is_same_as_source:
+    is_case_only_name_change = is_case_only_path_name_change(file_path, destination_path)
+    if not annotations and is_same_as_source and not is_case_only_name_change:
         return json_error("저장할 PDF 편집 내용이 없습니다.", status=400)
 
     output_path = None
@@ -19147,7 +19282,15 @@ def handrive_api_pdf_editor_save(request, ui_lang=None):
                 extra_bytes=quota_extra_bytes,
                 extra_entries=quota_extra_entries,
             )
-            shutil.copy2(file_path, destination_path)
+            if is_case_only_name_change:
+                finalize_handrive_editor_case_rename(
+                    file_path,
+                    destination_path,
+                    normalized,
+                    destination_relative,
+                )
+            else:
+                shutil.copy2(file_path, destination_path)
             return JsonResponse({
                 "ok": True,
                 "path": destination_relative,
@@ -19229,6 +19372,12 @@ def handrive_api_pdf_editor_save(request, ui_lang=None):
         )
         os.replace(str(output_path), str(destination_path))
         output_path = None
+        finalize_handrive_editor_case_rename(
+            file_path,
+            destination_path,
+            normalized,
+            destination_relative,
+        )
     except RuntimeError as exc:
         return json_error(str(exc), status=500)
     except ValueError as exc:
@@ -19871,6 +20020,12 @@ def handrive_api_image_editor_save(request):
         with destination_path.open("wb") as dst:
             for chunk in image_blob.chunks():
                 dst.write(chunk)
+        finalize_handrive_editor_case_rename(
+            file_path,
+            destination_path,
+            normalized,
+            destination_relative,
+        )
     except (OSError, PermissionError) as exc:
         return _storage_unavailable_response(request, exc)
 
@@ -20017,6 +20172,12 @@ def handrive_api_audio_editor_save(request):
         )
         os.replace(str(output_path), str(destination_path))
         output_path = None
+        finalize_handrive_editor_case_rename(
+            file_path,
+            destination_path,
+            normalized,
+            destination_relative,
+        )
     except subprocess.TimeoutExpired:
         return json_error("오디오 저장 시간이 초과되었습니다.", status=504)
     except subprocess.CalledProcessError as exc:
@@ -20685,6 +20846,12 @@ def handrive_api_video_editor_save(request):
         )
         os.replace(str(output_path), str(destination_path))
         output_path = None
+        finalize_handrive_editor_case_rename(
+            file_path,
+            destination_path,
+            normalized,
+            destination_relative,
+        )
     except subprocess.TimeoutExpired:
         return json_error("비디오 저장 시간이 초과되었습니다.", status=504)
     except subprocess.CalledProcessError as exc:

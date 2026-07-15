@@ -35,11 +35,6 @@
         </div>
         <div class="handrive-toolbar-right ui-toolbar-right">
             {% include "handrive/_auth_account.html" %}
-            {% if is_handrive_shared_view and not user.is_authenticated %}
-            <div class="ui-shared-controls">
-                {% include "partials/ui_controls_stack.html" %}
-            </div>
-            {% endif %}
             <div class="handrive-toolbar-actions ui-toolbar-actions handrive-icon-actions">
                 <button
                     class="handrive-icon-btn"
@@ -131,6 +126,7 @@
     data-scoped-home-dir="{{ scoped_home_dir|default:'' }}"
     data-handrive-base-url="{{ handrive_base_url }}"
     data-handrive-root-url="{{ handrive_root_url }}"
+    data-editor-completions-api-url="{{ handrive_api_editor_completions_url }}"
     data-list-api-url="{{ handrive_api_list_url }}"
     data-search-api-url="{{ handrive_api_search_url }}"
     data-save-api-url="{{ handrive_api_save_url }}"
@@ -394,10 +390,7 @@
                 </div>
                 <div class="handrive-editor-surface" id="handrive-list-editor-surface">
                     <pre class="handrive-editor-highlight handrive-plain-text" id="handrive-list-editor-highlight" aria-hidden="true"><code id="handrive-list-editor-highlight-code"></code></pre>
-                    <div class="handrive-editor-suggest site-dropdown-menu" id="handrive-list-editor-suggest" hidden>
-                        <span class="handrive-editor-suggest-label" id="handrive-list-editor-suggest-label"></span>
-                        <span class="handrive-editor-suggest-hint"><kbd>Tab</kbd> 적용</span>
-                    </div>
+                    <div class="handrive-editor-suggest site-dropdown-menu" id="handrive-list-editor-suggest" hidden></div>
                     <textarea id="handrive-list-content-input" spellcheck="false" wrap="off"></textarea>
                 </div>
                 <div class="handrive-list-editor-body-loading site-loading-overlay" id="handrive-list-editor-body-loading" role="status" aria-live="polite" aria-label="{{ handrive_text.list_preview_loading }}" hidden>
@@ -446,5 +439,6 @@
 {{ current_dir_share_allowed_users|json_script:"handrive-current-dir-share-allowed-users" }}
 {{ current_dir_write_acl_labels|json_script:"handrive-current-dir-write-acl-labels" }}
 {{ sync_excluded_paths|json_script:"handrive-sync-excluded-paths" }}
+{% include 'handrive/_code_editor_assets.html' %}
 {% include 'handrive/_assets_script.html' %}
 {% endblock %}

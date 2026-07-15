@@ -2,7 +2,7 @@ import uuid
 
 from django.conf import settings
 from django.contrib.auth.models import Group
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 
 
@@ -370,6 +370,159 @@ class HandriveSiteSettings(models.Model):
 
     def __str__(self):
         return "HanDrive 기본 설정"
+
+
+class HandriveEditorCompletion(models.Model):
+    extension = models.CharField(
+        "파일 확장자",
+        max_length=16,
+        validators=[
+            RegexValidator(
+                regex=r"^\.[a-z0-9][a-z0-9_+-]*$",
+                message="확장자는 .js처럼 점으로 시작하는 영문 소문자 형식이어야 합니다.",
+            )
+        ],
+        help_text="예: .md, .py, .js",
+    )
+    trigger = models.CharField("트리거", max_length=80)
+    insert_text = models.TextField("삽입 내용")
+    label = models.CharField("표시명", max_length=200, blank=True, default="")
+    description = models.CharField("설명", max_length=300, blank=True, default="")
+    kind = models.CharField(
+        "종류",
+        max_length=24,
+        blank=True,
+        default="",
+        help_text="비워 두면 삽입 내용에 따라 자동 판별합니다.",
+    )
+    cursor_back = models.PositiveIntegerField(
+        "완료 후 커서 이동량",
+        default=0,
+        help_text="마지막 어절까지 적용한 뒤 커서를 뒤로 이동할 문자 수입니다.",
+    )
+    priority = models.IntegerField("우선순위", default=0)
+    enabled = models.BooleanField("사용", default=True)
+    created_at = models.DateTimeField("생성일", auto_now_add=True)
+    updated_at = models.DateTimeField("수정일", auto_now=True)
+
+    class Meta:
+        ordering = ["extension", "-priority", "trigger", "id"]
+        verbose_name = "HanDrive 코드 자동완성"
+        verbose_name_plural = "HanDrive 코드 자동완성"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["extension", "trigger"],
+                name="unique_handrive_editor_completion_trigger",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["enabled", "extension", "priority"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.extension = str(self.extension or "").strip().lower()
+        self.trigger = str(self.trigger or "").strip()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.extension} · {self.trigger}"
+
+
+class OnscripterGameConfig(models.Model):
+    slug = models.SlugField("슬러그", max_length=80, primary_key=True)
+    title = models.CharField("게임 제목", max_length=160)
+    folder_name = models.CharField("원본 폴더명", max_length=255)
+    asset_folder_name = models.CharField("웹 자산 폴더명", max_length=255)
+    description_ko = models.TextField("한국어 설명", blank=True, default="")
+    description_en = models.TextField("영어 설명", blank=True, default="")
+    thumbnail_path = models.CharField("대표 이미지 상대 경로", max_length=512, blank=True, default="")
+    encoding_arg = models.CharField("엔진 인코딩 인자", max_length=40, default="--enc:utf8")
+    width = models.PositiveIntegerField("화면 너비", default=800)
+    height = models.PositiveIntegerField("화면 높이", default=600)
+    meta_title = models.CharField("메타 제목", max_length=200, blank=True, default="")
+    direct_voice_playback = models.BooleanField("직접 음성 재생", default=False)
+    display_order = models.IntegerField("표시 순서", default=0)
+    enabled = models.BooleanField("사용", default=True)
+    asset_manifest = models.JSONField("자산 manifest", default=dict, blank=True)
+    manifest_updated_at = models.DateTimeField("manifest 수정일", null=True, blank=True)
+    created_at = models.DateTimeField("생성일", auto_now_add=True)
+    updated_at = models.DateTimeField("수정일", auto_now=True)
+
+    class Meta:
+        ordering = ["display_order", "slug"]
+        verbose_name = "ONScripter 게임"
+        verbose_name_plural = "ONScripter 게임"
+
+    def __str__(self):
+        return self.title
+
+
+class BumpercarSkin(models.Model):
+    SKIN_TYPE_CHOICES = (
+        ("classic", "Classic"),
+        ("double", "Double"),
+        ("many", "Many"),
+        ("pumkin", "Pumkin"),
+        ("evolution", "Evolution"),
+    )
+
+    name = models.SlugField("스킨 키", max_length=80, primary_key=True)
+    asset_source_name = models.SlugField("자산 소스 키", max_length=80, blank=True, default="")
+    fallback_sound_source_name = models.SlugField("대체 음원 소스 키", max_length=80, blank=True, default="")
+    preview_icon_name = models.CharField("대표 아이콘 이름", max_length=80, default="main")
+    skin_type = models.CharField("스킨 유형", max_length=16, choices=SKIN_TYPE_CHOICES, default="classic")
+    display_name_ko = models.CharField("한국어 이름", max_length=120)
+    display_name_en = models.CharField("영어 이름", max_length=120)
+    unlock_condition_ko = models.CharField("한국어 해금 조건", max_length=200, blank=True, default="")
+    unlock_condition_en = models.CharField("영어 해금 조건", max_length=200, blank=True, default="")
+    description_ko = models.TextField("한국어 설명", blank=True, default="")
+    description_en = models.TextField("영어 설명", blank=True, default="")
+    unlock_stat_key = models.CharField("해금 전적 키", max_length=80, blank=True, default="")
+    unlock_threshold = models.PositiveIntegerField("해금 기준값", default=0)
+    admin_only = models.BooleanField("관리자 전용", default=False)
+    disabled_game_slugs = models.JSONField("비활성 게임 슬러그", default=list, blank=True)
+    visual_scale = models.FloatField("표시 배율", default=1.0)
+    display_order = models.IntegerField("표시 순서", default=0)
+    enabled = models.BooleanField("사용", default=True)
+    asset_manifest = models.JSONField("자산 manifest", default=dict, blank=True)
+    manifest_updated_at = models.DateTimeField("manifest 수정일", null=True, blank=True)
+    created_at = models.DateTimeField("생성일", auto_now_add=True)
+    updated_at = models.DateTimeField("수정일", auto_now=True)
+
+    class Meta:
+        ordering = ["display_order", "name"]
+        verbose_name = "범퍼카 스킨"
+        verbose_name_plural = "범퍼카 스킨"
+
+    def save(self, *args, **kwargs):
+        if not self.asset_source_name:
+            self.asset_source_name = self.name
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.display_name_ko or self.name
+
+
+class BumpercarGameplaySettings(models.Model):
+    singleton_key = models.PositiveSmallIntegerField(default=1, unique=True, editable=False)
+    payload = models.JSONField("게임 설정", default=dict, blank=True)
+    updated_at = models.DateTimeField("수정일", auto_now=True)
+
+    class Meta:
+        verbose_name = "범퍼카 게임 설정"
+        verbose_name_plural = "범퍼카 게임 설정"
+
+    def save(self, *args, **kwargs):
+        self.singleton_key = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls) -> "BumpercarGameplaySettings":
+        settings_obj, _ = cls.objects.get_or_create(singleton_key=1)
+        return settings_obj
+
+    def __str__(self):
+        return "범퍼카 게임 설정"
 
 
 class HandriveUserQuota(models.Model):

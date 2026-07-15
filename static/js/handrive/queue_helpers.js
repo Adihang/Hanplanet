@@ -353,31 +353,38 @@
                     });
                 }
 
+                var childHead = documentRef.createElement("div");
+                childHead.className = "handrive-job-queue-item-head handrive-job-queue-child-head";
+
                 var childName = documentRef.createElement("span");
-                childName.className = "handrive-job-queue-child-name";
+                childName.className = "handrive-job-queue-item-name handrive-job-queue-child-name";
                 childName.textContent = childItem.fileName || "";
-                childAction.appendChild(childName);
+                childHead.appendChild(childName);
+
+                var childSizeText = String(childItem.sizeDisplay || childItem.size_display || "").trim();
+                if (childSizeText) {
+                    var childSize = documentRef.createElement("span");
+                    childSize.className = "handrive-job-queue-item-size handrive-job-queue-child-size";
+                    childSize.textContent = childSizeText;
+                    childHead.appendChild(childSize);
+                }
+                childAction.appendChild(childHead);
+
+                var childSub = documentRef.createElement("div");
+                childSub.className = "handrive-job-queue-item-sub handrive-job-queue-child-sub";
+
+                var childStatus = documentRef.createElement("span");
+                childStatus.className = "handrive-job-queue-item-status handrive-job-queue-child-status";
+                childStatus.textContent = getChildStatusLabel(childItem, item);
+                childSub.appendChild(childStatus);
+                childAction.appendChild(childSub);
 
                 var childMetaText = getChildMetaLabel(childItem, item);
                 if (childMetaText) {
-                    var childMeta = documentRef.createElement("span");
-                    childMeta.className = "handrive-job-queue-child-meta";
+                    var childMeta = documentRef.createElement("div");
+                    childMeta.className = "handrive-job-queue-item-meta handrive-job-queue-child-meta";
                     childMeta.textContent = childMetaText;
                     childAction.appendChild(childMeta);
-                }
-
-                var childStatusText = getChildStatusLabel(childItem, item);
-                var childSizeText = String(childItem.sizeDisplay || childItem.size_display || "").trim();
-                if (childStatusText && childSizeText) {
-                    childStatusText += " · " + childSizeText;
-                } else if (childSizeText) {
-                    childStatusText = childSizeText;
-                }
-                if (childStatusText) {
-                    var childStatus = documentRef.createElement("span");
-                    childStatus.className = "handrive-job-queue-child-status";
-                    childStatus.textContent = childStatusText;
-                    childAction.appendChild(childStatus);
                 }
                 childRow.appendChild(childAction);
                 childList.appendChild(childRow);

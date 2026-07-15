@@ -8,19 +8,23 @@ import posixpath
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
+from django.db.utils import OperationalError, ProgrammingError
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import render
 from django.templatetags.static import static
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
 from portfolio.models import PortfolioProfile
 
 from .onscripter_access import is_onscripter_user_allowed
+from .models import OnscripterGameConfig
 from .views import apply_ui_context, build_public_absolute_url, get_account_display_name, resolve_ui_lang
 
 
@@ -38,6 +42,8 @@ class OnscripterGame:
     height: int
     meta_title: str | None = None
     direct_voice_playback: bool = False
+    display_order: int = 0
+    asset_manifest: dict | None = None
 
 
 ONSCRIPTER_GAMES = {
@@ -126,11 +132,56 @@ ONSCRIPTER_META_IMAGE_URL = build_public_absolute_url(static("media/icons/onscri
 ONSCRIPTER_META_IMAGE_ALT = "ONScripter preview image"
 
 
-def _get_game_or_404(game_slug: str) -> OnscripterGame:
-    game = ONSCRIPTER_GAMES.get(str(game_slug or "").strip().lower())
-    if game is None:
+def _game_from_config(config: OnscripterGameConfig, *, include_manifest: bool = True) -> OnscripterGame:
+    return OnscripterGame(
+        slug=config.slug,
+        title=config.title,
+        folder_name=config.folder_name,
+        asset_folder_name=config.asset_folder_name,
+        description_ko=config.description_ko,
+        description_en=config.description_en,
+        thumbnail_path=config.thumbnail_path,
+        encoding_arg=config.encoding_arg,
+        width=config.width,
+        height=config.height,
+        meta_title=config.meta_title or None,
+        direct_voice_playback=config.direct_voice_playback,
+        display_order=config.display_order,
+        asset_manifest=(
+            config.asset_manifest
+            if include_manifest and isinstance(config.asset_manifest, dict)
+            else {}
+        ),
+    )
+
+
+def _configured_games() -> list[OnscripterGame]:
+    try:
+        configs = list(
+            OnscripterGameConfig.objects.filter(enabled=True)
+            .defer("asset_manifest")
+            .order_by("display_order", "slug")
+        )
+    except (OperationalError, ProgrammingError):
+        return list(ONSCRIPTER_GAMES.values())
+    return [_game_from_config(config, include_manifest=False) for config in configs]
+
+
+def _get_game_or_404(game_slug: str, *, include_manifest: bool = False) -> OnscripterGame:
+    normalized_slug = str(game_slug or "").strip().lower()
+    try:
+        queryset = OnscripterGameConfig.objects.filter(slug=normalized_slug, enabled=True)
+        if not include_manifest:
+            queryset = queryset.defer("asset_manifest")
+        config = queryset.first()
+    except (OperationalError, ProgrammingError):
+        config = None
+        fallback_game = ONSCRIPTER_GAMES.get(normalized_slug)
+        if fallback_game is not None:
+            return fallback_game
+    if config is None:
         raise Http404("ONScripter game not found")
-    return game
+    return _game_from_config(config, include_manifest=include_manifest)
 
 
 def _require_onscripter_access(request) -> None:
@@ -241,7 +292,7 @@ def _build_onscripter_links(resolved_lang: str) -> list[dict[str, str]]:
     is_english = resolved_lang == "en"
     links = []
 
-    for game in ONSCRIPTER_GAMES.values():
+    for game in _configured_games():
         links.append({
             "slug": game.slug,
             "url": reverse(
@@ -330,16 +381,10 @@ def onscripter_index(request, ui_lang=None):
     return response
 
 
-def _build_game_index(request, game: OnscripterGame, ui_lang: str | None = None) -> dict:
+def _scan_onscripter_game_manifest(game: OnscripterGame) -> dict:
     root = _game_root(game)
     if not root.is_dir():
         raise FileNotFoundError(str(root))
-
-    save_owner_key = _save_owner_key(request)
-    save_url = reverse(
-        "main:onscripter_game_save_lang",
-        kwargs={"ui_lang": ui_lang or "ko", "game_slug": game.slug},
-    )
 
     dirs: set[str] = set()
     files: list[dict[str, object]] = []
@@ -354,11 +399,102 @@ def _build_game_index(request, game: OnscripterGame, ui_lang: str | None = None)
             for index in range(1, len(parts) + 1):
                 dirs.add("/".join(parts[:index]))
 
+        file_stat = file_path.stat()
         files.append({
             "path": relative_path,
-            "url": _onscripter_asset_url_for_path(file_path, ui_lang),
-            "lazyload": True,
+            "version": f"{file_stat.st_mtime_ns}-{file_stat.st_size}",
         })
+
+    return {
+        "asset_folder_name": game.asset_folder_name,
+        "dirs": sorted(dirs),
+        "files": files,
+    }
+
+
+def rebuild_onscripter_game_manifest(game_config: OnscripterGameConfig) -> bool:
+    game = _game_from_config(game_config, include_manifest=False)
+    try:
+        manifest = _scan_onscripter_game_manifest(game)
+    except FileNotFoundError:
+        return False
+    game_config.asset_manifest = manifest
+    game_config.manifest_updated_at = timezone.now()
+    game_config.save(update_fields=["asset_manifest", "manifest_updated_at", "updated_at"])
+    return True
+
+
+def _manifest_asset_url(
+    game: OnscripterGame,
+    file_entry: dict,
+    ui_lang: str | None = None,
+    *,
+    asset_url_prefix: str = "",
+) -> str:
+    relative_path = str(file_entry.get("path") or "").lstrip("/")
+    if asset_url_prefix:
+        encoded_relative_path = quote(relative_path, safe="/!$&'()*+,;=~:@")
+        asset_url = f"{asset_url_prefix}{encoded_relative_path}"
+    else:
+        asset_path = f"{game.asset_folder_name}/{relative_path}"
+        asset_url = reverse(
+            "main:onscripter_asset_lang",
+            kwargs={"ui_lang": ui_lang or "ko", "asset_path": asset_path},
+        )
+    version = str(file_entry.get("version") or "").strip()
+    return f"{asset_url}?v={version}" if version else asset_url
+
+
+def _resolve_game_manifest(game: OnscripterGame) -> dict:
+    manifest = game.asset_manifest if isinstance(game.asset_manifest, dict) else {}
+    if (
+        manifest.get("asset_folder_name") == game.asset_folder_name
+        and isinstance(manifest.get("dirs"), list)
+        and isinstance(manifest.get("files"), list)
+    ):
+        return manifest
+
+    manifest = _scan_onscripter_game_manifest(game)
+    try:
+        OnscripterGameConfig.objects.filter(slug=game.slug).update(
+            asset_manifest=manifest,
+            manifest_updated_at=timezone.now(),
+        )
+    except (OperationalError, ProgrammingError):
+        pass
+    return manifest
+
+
+def _build_game_index(request, game: OnscripterGame, ui_lang: str | None = None) -> dict:
+    manifest = _resolve_game_manifest(game)
+    save_owner_key = _save_owner_key(request)
+    save_url = reverse(
+        "main:onscripter_game_save_lang",
+        kwargs={"ui_lang": ui_lang or "ko", "game_slug": game.slug},
+    )
+    asset_url_marker = "__onscripter_asset_path__"
+    asset_url_template = reverse(
+        "main:onscripter_asset_lang",
+        kwargs={
+            "ui_lang": ui_lang or "ko",
+            "asset_path": f"{game.asset_folder_name}/{asset_url_marker}",
+        },
+    )
+    asset_url_prefix = asset_url_template.split(asset_url_marker, 1)[0]
+    files = [
+        {
+            "path": str(file_entry.get("path") or ""),
+            "url": _manifest_asset_url(
+                game,
+                file_entry,
+                ui_lang,
+                asset_url_prefix=asset_url_prefix,
+            ),
+            "lazyload": True,
+        }
+        for file_entry in manifest.get("files", [])
+        if isinstance(file_entry, dict) and str(file_entry.get("path") or "").strip()
+    ]
 
     return {
         "title": game.title,
@@ -379,7 +515,7 @@ def _build_game_index(request, game: OnscripterGame, ui_lang: str | None = None)
         ],
         "lazyload": True,
         "directVoicePlayback": game.direct_voice_playback,
-        "dirs": sorted(dirs),
+        "dirs": list(manifest.get("dirs", [])),
         "files": files,
     }
 
@@ -442,7 +578,7 @@ def onscripter_asset(request, ui_lang=None, asset_path=""):
 @require_GET
 def onscripter_game_index(request, ui_lang=None, game_slug="haruuru"):
     _require_onscripter_access(request)
-    game = _get_game_or_404(game_slug)
+    game = _get_game_or_404(game_slug, include_manifest=True)
     try:
         payload = _build_game_index(request, game, ui_lang)
     except FileNotFoundError:

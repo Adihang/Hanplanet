@@ -1057,7 +1057,7 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
     var portfolioPreviewObjectUrls = [];
     var portfolioWriteSelectionRequestToken = 0;
     var portfolioWriteSubmitRequestToken = 0;
-    var HANDRIVE_MARKDOWN_CODE_COPY_ICON = '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"/></svg>';
+    var HANDRIVE_MARKDOWN_CODE_COPY_ICON = '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="6" width="9" height="11" rx="1.5"/><path d="M4 13V4.5C4 3.7 4.7 3 5.5 3H13"/></svg>';
 
     function getJsonScriptData(elementId, fallbackValue) {
         var element = document.getElementById(elementId);
@@ -1596,6 +1596,14 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
         });
     }
 
+    function isSingleLineMarkdownCodeBlock(codeNode) {
+        var normalizedText = String(codeNode.textContent || "").replace(/\r\n?/g, "\n");
+        var contentText = normalizedText.endsWith("\n")
+            ? normalizedText.slice(0, -1)
+            : normalizedText;
+        return !contentText.includes("\n");
+    }
+
     function hydrateMarkdownCodeBlockCopyButtons(container) {
         if (!container || !container.querySelectorAll) {
             return;
@@ -1607,6 +1615,10 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
             }
             pre.dataset.handriveCodeCopyBound = "1";
             pre.classList.add("handrive-markdown-code-copy-wrap");
+            pre.classList.toggle(
+                "is-single-line-code",
+                isSingleLineMarkdownCodeBlock(codeNode)
+            );
             var button = document.createElement("button");
             button.type = "button";
             button.className = "handrive-markdown-code-copy-btn handrive-inline-copy-action";

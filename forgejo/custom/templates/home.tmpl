@@ -6,18 +6,18 @@
 				<h1 class="ui header title root-search-title forgejo-home-wordmark" aria-label="Hanplanet"></h1>
 			</div>
 			{{if not .IsSigned}}
-			<div class="forgejo-home-auth-actions root-shortcuts-auth-actions">
+			<div class="forgejo-home-auth-actions ui-auth-action-buttons root-shortcuts-auth-actions">
 				<a
-					class="root-shortcuts-auth-btn"
-					href='https://www.hanplanet.com/{{if eq ctx.Locale.Lang "en-US"}}en{{else}}ko{{end}}/login/?next=https%3A%2F%2Fgit.hanplanet.com%2F'
-				>
-					{{if eq ctx.Locale.Lang "en-US"}}Login{{else}}로그인{{end}}
-				</a>
-				<a
-					class="root-shortcuts-auth-btn root-shortcuts-auth-btn-primary"
+					class="ui-btn"
 					href='https://www.hanplanet.com/{{if eq ctx.Locale.Lang "en-US"}}en{{else}}ko{{end}}/signup/?next=https%3A%2F%2Fgit.hanplanet.com%2F'
 				>
 					{{if eq ctx.Locale.Lang "en-US"}}Sign Up{{else}}회원가입{{end}}
+				</a>
+				<a
+					class="ui-btn ui-btn-primary"
+					href='https://www.hanplanet.com/{{if eq ctx.Locale.Lang "en-US"}}en{{else}}ko{{end}}/login/?next=https%3A%2F%2Fgit.hanplanet.com%2F'
+				>
+					{{if eq ctx.Locale.Lang "en-US"}}Login{{else}}로그인{{end}}
 				</a>
 			</div>
 			{{end}}

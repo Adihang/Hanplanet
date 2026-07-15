@@ -43,11 +43,6 @@
         </div>
         <div class="handrive-toolbar-right ui-toolbar-right">
             {% include "handrive/_auth_account.html" %}
-            {% if is_handrive_shared_view and not user.is_authenticated %}
-            <div class="ui-shared-controls">
-                {% include "partials/ui_controls_stack.html" %}
-            </div>
-            {% endif %}
             <div class="handrive-toolbar-actions ui-toolbar-actions handrive-icon-actions">
                 {% if doc_can_edit %}
                     <button class="handrive-icon-btn" type="button" id="handrive-url-share-btn" aria-label="{{ handrive_text.url_share_button }}" title="{{ handrive_text.url_share_button }}">

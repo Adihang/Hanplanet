@@ -98,6 +98,7 @@ urlpatterns = [
     path('handrive/ops/apply-static', handrive_views.handrive_ops_apply_static, name='handrive_ops_apply_static'),
     path('handrive/ops/apply-static/', handrive_views.handrive_ops_apply_static),
     path('handrive/api/admin-user-check', handrive_views.handrive_api_admin_user_check, name='handrive_api_admin_user_check'),
+    path('handrive/api/editor-completions', handrive_views.handrive_api_editor_completions, name='handrive_api_editor_completions'),
     path('handrive/api/list', handrive_views.handrive_api_list, name='handrive_api_list'),
     path('handrive/api/search', handrive_views.handrive_api_search, name='handrive_api_search'),
     path('handrive/api/save', handrive_views.handrive_api_save, name='handrive_api_save'),

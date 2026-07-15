@@ -10,7 +10,16 @@ from .forms import (
     PortfolioProfileForm,
     PortfolioProjectForm,
 )
-from .models import MinecraftAccountLink, MinecraftLinkCode, NavLink, QuickLink, UserProfile, WargameSolve
+from .models import (
+    BumpercarGameplaySettings,
+    BumpercarSkin,
+    MinecraftAccountLink,
+    MinecraftLinkCode,
+    NavLink,
+    QuickLink,
+    UserProfile,
+    WargameSolve,
+)
 from portfolio.models import (
     PortfolioActionButton,
     PortfolioCareer,
@@ -49,9 +58,11 @@ import socket
 import os
 import stat
 import struct
+from functools import lru_cache
 from django.utils import timezone
 from django.utils.safestring import mark_safe
 import markdown
+from markdown.inlinepatterns import BACKTICK_RE
 import random
 import html
 import secrets
@@ -527,6 +538,7 @@ def normalize_bumpercar_spiky_account_stats(raw_stats=None):
     return normalized
 
 
+@lru_cache(maxsize=128)
 def _collect_bumpercar_skin_sound_urls(skin_name, folder_name):
     """Collect versioned sound URLs for one bumpercar skin asset folder."""
     sound_dir = Path(settings.BASE_DIR) / "static" / "media" / "Spikip" / f"speaki_{skin_name}" / folder_name
@@ -539,6 +551,7 @@ def _collect_bumpercar_skin_sound_urls(skin_name, folder_name):
     ]
 
 
+@lru_cache(maxsize=256)
 def _find_bumpercar_skin_icon_url(skin_name, *parts):
     """Resolve the first matching icon asset URL for a skin path fragment."""
     icon_dir = Path(settings.BASE_DIR) / "static" / "media" / "Spikip" / f"speaki_{skin_name}" / "icon"
@@ -559,6 +572,7 @@ def _find_bumpercar_skin_icon_url(skin_name, *parts):
     return ""
 
 
+@lru_cache(maxsize=512)
 def _collect_bumpercar_skin_icon_urls(skin_name, folder_name, *parts):
     """Collect every icon URL for a skin state folder in stable display order."""
     icon_dir = Path(settings.BASE_DIR) / "static" / "media" / "Spikip" / f"speaki_{skin_name}" / "icon" / folder_name
@@ -598,6 +612,7 @@ def _collect_bumpercar_skin_icon_sequence_urls(skin_name, folder_name, *parts):
     return _collect_bumpercar_skin_icon_urls(skin_name, folder_name, *parts)
 
 
+@lru_cache(maxsize=128)
 def _collect_bumpercar_skin_variant_dirs(skin_name, folder_name):
     """List child directories that represent grouped skin variants for one state folder."""
     icon_dir = Path(settings.BASE_DIR) / "static" / "media" / "Spikip" / f"speaki_{skin_name}" / "icon" / folder_name
@@ -609,6 +624,155 @@ def _collect_bumpercar_skin_variant_dirs(skin_name, folder_name):
         [entry.name for entry in variant_dirs],
         key=lambda value: (0, int(value)) if str(value).isdigit() else (1, str(value)),
     )
+
+
+def _load_bumpercar_skin_specs(ui_lang, stats, user, game_slug):
+    try:
+        skin_rows = list(BumpercarSkin.objects.filter(enabled=True).order_by("display_order", "name"))
+    except (OperationalError, ProgrammingError):
+        return None
+    if not skin_rows:
+        return None
+
+    is_english = ui_lang == "en"
+    is_admin = bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+    normalized_game_slug = str(game_slug or "bumpercar-spiky").strip().lower() or "bumpercar-spiky"
+    specs = []
+    for skin in skin_rows:
+        disabled_slugs = {
+            str(slug or "").strip().lower()
+            for slug in (skin.disabled_game_slugs if isinstance(skin.disabled_game_slugs, list) else [])
+        }
+        is_disabled = normalized_game_slug in disabled_slugs
+        if is_disabled:
+            unlocked = False
+        elif skin.admin_only:
+            unlocked = is_admin
+        elif skin.unlock_stat_key:
+            unlocked = is_admin or int(stats.get(skin.unlock_stat_key, 0) or 0) >= int(skin.unlock_threshold or 0)
+        else:
+            unlocked = True
+
+        unlock_condition = skin.unlock_condition_en if is_english else skin.unlock_condition_ko
+        if is_disabled:
+            unlock_condition = "Unavailable" if is_english else "사용불가"
+        specs.append({
+            "name": skin.name,
+            "asset_source_name": skin.asset_source_name or skin.name,
+            "fallback_sound_source_name": skin.fallback_sound_source_name,
+            "preview_icon_name": skin.preview_icon_name or "main",
+            "skin_type": skin.skin_type or "classic",
+            "display_name": skin.display_name_en if is_english else skin.display_name_ko,
+            "unlock_condition": unlock_condition,
+            "description": skin.description_en if is_english else skin.description_ko,
+            "unlocked": unlocked,
+            "visual_scale": max(0.1, float(skin.visual_scale or 1.0)),
+            "asset_manifest": skin.asset_manifest if isinstance(skin.asset_manifest, dict) else {},
+        })
+    return specs
+
+
+def _build_bumpercar_skin_assets(
+    skin_name,
+    asset_source_name,
+    fallback_sound_source_name,
+    preview_icon_name,
+    skin_type,
+):
+    default_variants = []
+    for variant_name in _collect_bumpercar_skin_variant_dirs(asset_source_name, "default"):
+        variant_frames = _collect_bumpercar_skin_icon_sequence_urls(asset_source_name, "default", variant_name)
+        if len(variant_frames) >= 2:
+            default_variants.append({
+                "healthy_icon_url": variant_frames[0],
+                "damaged_icon_url": variant_frames[1],
+            })
+
+    collision_folder_name = "crash"
+    collision_variant_names = _collect_bumpercar_skin_variant_dirs(asset_source_name, collision_folder_name)
+    if not collision_variant_names:
+        collision_folder_name = "ch"
+        collision_variant_names = _collect_bumpercar_skin_variant_dirs(asset_source_name, collision_folder_name)
+
+    collision_variants = []
+    for variant_name in collision_variant_names:
+        variant_frames = _collect_bumpercar_skin_icon_sequence_urls(asset_source_name, collision_folder_name, variant_name)
+        if len(variant_frames) >= 2:
+            collision_variants.append({
+                "impact_icon_url": variant_frames[0],
+                "slow_icon_url": variant_frames[1],
+            })
+
+    defeat_frames = _collect_bumpercar_skin_icon_sequence_urls(asset_source_name, "defeat", "1")
+    boost_frames = _collect_bumpercar_skin_icon_sequence_urls(asset_source_name, "acc", "1")
+    if skin_type == "evolution":
+        defeat_frames = _collect_bumpercar_skin_icon_urls(asset_source_name, "defeat")
+        boost_frames = _collect_bumpercar_skin_icon_urls(asset_source_name, "acc")
+
+    boost_sound_urls = _collect_bumpercar_skin_sound_urls(asset_source_name, "acceleration")
+    crash_sound_urls = _collect_bumpercar_skin_sound_urls(asset_source_name, "crash")
+    defeat_sound_urls = _collect_bumpercar_skin_sound_urls(asset_source_name, "defeat")
+    die_sound_urls = _collect_bumpercar_skin_sound_urls(asset_source_name, "die")
+    respawn_sound_urls = _collect_bumpercar_skin_sound_urls(asset_source_name, "respawn")
+    ntr_sound_urls = _collect_bumpercar_skin_sound_urls(asset_source_name, "ntr")
+    if fallback_sound_source_name and fallback_sound_source_name != asset_source_name:
+        if not boost_sound_urls:
+            boost_sound_urls = _collect_bumpercar_skin_sound_urls(fallback_sound_source_name, "acceleration")
+        if not crash_sound_urls:
+            crash_sound_urls = _collect_bumpercar_skin_sound_urls(fallback_sound_source_name, "crash")
+        if not defeat_sound_urls:
+            defeat_sound_urls = _collect_bumpercar_skin_sound_urls(fallback_sound_source_name, "defeat")
+        if not die_sound_urls:
+            die_sound_urls = _collect_bumpercar_skin_sound_urls(fallback_sound_source_name, "die")
+        if not respawn_sound_urls:
+            respawn_sound_urls = _collect_bumpercar_skin_sound_urls(fallback_sound_source_name, "respawn")
+        if not ntr_sound_urls:
+            ntr_sound_urls = _collect_bumpercar_skin_sound_urls(fallback_sound_source_name, "ntr")
+
+    return {
+        "preview_icon_url": _find_bumpercar_skin_icon_url(asset_source_name, preview_icon_name),
+        "pumpkin_npc_icon_url": _find_bumpercar_skin_icon_url(asset_source_name, "pumkin") if skin_name == "pumkin" else "",
+        "default_icon_sets": default_variants,
+        "boost_icon_stages": boost_frames,
+        "collision_icon_sets": collision_variants,
+        "defeat_icon_stages": defeat_frames,
+        "default_icon_url": _find_bumpercar_skin_icon_url(asset_source_name, "default"),
+        "boost_icon_url": _find_bumpercar_skin_icon_url(asset_source_name, "acceleration"),
+        "collision_icon_url": _find_bumpercar_skin_icon_url(asset_source_name, "win"),
+        "defeat_icon_url": _find_bumpercar_skin_icon_url(asset_source_name, "defeat"),
+        "default_state_icons": _collect_bumpercar_skin_icon_urls(asset_source_name, "default"),
+        "collision_state_icons": _collect_bumpercar_skin_icon_urls(asset_source_name, "crash"),
+        "defeat_state_icons": _collect_bumpercar_skin_icon_urls(asset_source_name, "defeat"),
+        "win_state_icons": _collect_bumpercar_skin_icon_urls(asset_source_name, "win"),
+        "stop_state_icons": _collect_bumpercar_skin_icon_urls(asset_source_name, "stop"),
+        "boost_sound_urls": boost_sound_urls,
+        "crash_sound_urls": crash_sound_urls,
+        "defeat_sound_urls": defeat_sound_urls,
+        "die_sound_urls": die_sound_urls,
+        "respawn_sound_urls": respawn_sound_urls,
+        "ntr_sound_urls": ntr_sound_urls,
+    }
+
+
+def rebuild_bumpercar_skin_manifest(skin: BumpercarSkin) -> bool:
+    for cached_function in (
+        _collect_bumpercar_skin_sound_urls,
+        _find_bumpercar_skin_icon_url,
+        _collect_bumpercar_skin_icon_urls,
+        _collect_bumpercar_skin_variant_dirs,
+    ):
+        cached_function.cache_clear()
+    asset_source_name = skin.asset_source_name or skin.name
+    skin.asset_manifest = _build_bumpercar_skin_assets(
+        skin.name,
+        asset_source_name,
+        skin.fallback_sound_source_name,
+        skin.preview_icon_name or "main",
+        skin.skin_type or "classic",
+    )
+    skin.manifest_updated_at = timezone.now()
+    skin.save(update_fields=["asset_manifest", "manifest_updated_at", "updated_at"])
+    return True
 
 
 def _build_bumpercar_skin_catalog(ui_lang, account_stats=None, user=None, game_slug="bumpercar-spiky"):
@@ -715,96 +879,50 @@ def _build_bumpercar_skin_catalog(ui_lang, account_stats=None, user=None, game_s
         },
     ]
 
+    configured_skin_specs = _load_bumpercar_skin_specs(ui_lang, stats, user, normalized_game_slug)
+    if configured_skin_specs is not None:
+        skin_specs = configured_skin_specs
+
     catalog = []
     for skin_spec in skin_specs:
+        output_spec = dict(skin_spec)
+        stored_assets = output_spec.pop("asset_manifest", None)
+        for internal_key in (
+            "asset_source_name",
+            "fallback_sound_source_name",
+            "preview_icon_name",
+        ):
+            output_spec.pop(internal_key, None)
         skin_name = skin_spec["name"]
         asset_source_name = str(skin_spec.get("asset_source_name") or skin_name)
-        fallback_sound_source_name = "default" if skin_name in {"double", "many", "pumkin"} else asset_source_name
-        default_variants = []
-        for variant_name in _collect_bumpercar_skin_variant_dirs(asset_source_name, "default"):
-            variant_frames = _collect_bumpercar_skin_icon_sequence_urls(asset_source_name, "default", variant_name)
-            if len(variant_frames) >= 2:
-                default_variants.append({
-                    "healthy_icon_url": variant_frames[0],
-                    "damaged_icon_url": variant_frames[1],
-                })
-
-        collision_folder_name = "crash"
-        collision_variant_names = _collect_bumpercar_skin_variant_dirs(asset_source_name, collision_folder_name)
-        if not collision_variant_names:
-            collision_folder_name = "ch"
-            collision_variant_names = _collect_bumpercar_skin_variant_dirs(asset_source_name, collision_folder_name)
-
-        collision_variants = []
-        for variant_name in collision_variant_names:
-            variant_frames = _collect_bumpercar_skin_icon_sequence_urls(asset_source_name, collision_folder_name, variant_name)
-            if len(variant_frames) >= 2:
-                collision_variants.append({
-                    "impact_icon_url": variant_frames[0],
-                    "slow_icon_url": variant_frames[1],
-                })
-
-        defeat_frames = _collect_bumpercar_skin_icon_sequence_urls(asset_source_name, "defeat", "1")
-        boost_frames = _collect_bumpercar_skin_icon_sequence_urls(asset_source_name, "acc", "1")
+        fallback_sound_source_name = str(
+            skin_spec.get("fallback_sound_source_name")
+            or ("default" if skin_name in {"double", "many", "pumkin"} else asset_source_name)
+        )
         preview_icon_name = str(skin_spec.get("preview_icon_name") or "main")
-        preview_icon_url = _find_bumpercar_skin_icon_url(asset_source_name, preview_icon_name)
-        skin_type = "classic"
-        if skin_name == "evolution":
-            skin_type = "evolution"
-        elif skin_name == "double":
-            skin_type = "double"
-        elif skin_name == "many":
-            skin_type = "many"
-        elif skin_name == "pumkin":
-            skin_type = "pumkin"
-        if skin_type == "evolution":
-            defeat_frames = _collect_bumpercar_skin_icon_urls(asset_source_name, "defeat")
-            boost_frames = _collect_bumpercar_skin_icon_urls(asset_source_name, "acc")
-        boost_sound_urls = _collect_bumpercar_skin_sound_urls(asset_source_name, "acceleration")
-        crash_sound_urls = _collect_bumpercar_skin_sound_urls(asset_source_name, "crash")
-        defeat_sound_urls = _collect_bumpercar_skin_sound_urls(asset_source_name, "defeat")
-        die_sound_urls = _collect_bumpercar_skin_sound_urls(asset_source_name, "die")
-        respawn_sound_urls = _collect_bumpercar_skin_sound_urls(asset_source_name, "respawn")
-        ntr_sound_urls = _collect_bumpercar_skin_sound_urls(asset_source_name, "ntr")
-        if fallback_sound_source_name != asset_source_name:
-            if not boost_sound_urls:
-                boost_sound_urls = _collect_bumpercar_skin_sound_urls(fallback_sound_source_name, "acceleration")
-            if not crash_sound_urls:
-                crash_sound_urls = _collect_bumpercar_skin_sound_urls(fallback_sound_source_name, "crash")
-            if not defeat_sound_urls:
-                defeat_sound_urls = _collect_bumpercar_skin_sound_urls(fallback_sound_source_name, "defeat")
-            if not die_sound_urls:
-                die_sound_urls = _collect_bumpercar_skin_sound_urls(fallback_sound_source_name, "die")
-            if not respawn_sound_urls:
-                respawn_sound_urls = _collect_bumpercar_skin_sound_urls(fallback_sound_source_name, "respawn")
-            if not ntr_sound_urls:
-                ntr_sound_urls = _collect_bumpercar_skin_sound_urls(fallback_sound_source_name, "ntr")
+        skin_type = str(skin_spec.get("skin_type") or "").strip()
+        if not skin_type:
+            skin_type = skin_name if skin_name in {"evolution", "double", "many", "pumkin"} else "classic"
+        assets = stored_assets if isinstance(stored_assets, dict) and stored_assets else None
+        if assets is None:
+            assets = _build_bumpercar_skin_assets(
+                skin_name,
+                asset_source_name,
+                fallback_sound_source_name,
+                preview_icon_name,
+                skin_type,
+            )
+            try:
+                BumpercarSkin.objects.filter(name=skin_name, asset_manifest={}).update(
+                    asset_manifest=assets,
+                    manifest_updated_at=timezone.now(),
+                )
+            except (OperationalError, ProgrammingError):
+                pass
         catalog.append({
-            **skin_spec,
+            **output_spec,
             "skin_type": skin_type,
-            "assets": {
-                "preview_icon_url": preview_icon_url,
-                "pumpkin_npc_icon_url": _find_bumpercar_skin_icon_url(asset_source_name, "pumkin") if skin_name == "pumkin" else "",
-                "default_icon_sets": default_variants,
-                "boost_icon_stages": boost_frames,
-                "collision_icon_sets": collision_variants,
-                "defeat_icon_stages": defeat_frames,
-                "default_icon_url": _find_bumpercar_skin_icon_url(asset_source_name, "default"),
-                "boost_icon_url": _find_bumpercar_skin_icon_url(asset_source_name, "acceleration"),
-                "collision_icon_url": _find_bumpercar_skin_icon_url(asset_source_name, "win"),
-                "defeat_icon_url": _find_bumpercar_skin_icon_url(asset_source_name, "defeat"),
-                "default_state_icons": _collect_bumpercar_skin_icon_urls(asset_source_name, "default"),
-                "collision_state_icons": _collect_bumpercar_skin_icon_urls(asset_source_name, "crash"),
-                "defeat_state_icons": _collect_bumpercar_skin_icon_urls(asset_source_name, "defeat"),
-                "win_state_icons": _collect_bumpercar_skin_icon_urls(asset_source_name, "win"),
-                "stop_state_icons": _collect_bumpercar_skin_icon_urls(asset_source_name, "stop"),
-                "boost_sound_urls": boost_sound_urls,
-                "crash_sound_urls": crash_sound_urls,
-                "defeat_sound_urls": defeat_sound_urls,
-                "die_sound_urls": die_sound_urls,
-                "respawn_sound_urls": respawn_sound_urls,
-                "ntr_sound_urls": ntr_sound_urls,
-            },
+            "assets": assets,
         })
 
     return catalog
@@ -1151,13 +1269,36 @@ def _escape_raw_html_outside_fences(text: str) -> str:
     return "".join(escaped_lines)
 
 
+def _protect_markdown_inline_code(text: str) -> tuple[str, list[tuple[str, str]]]:
+    """Protect valid inline code spans while raw HTML starts are escaped."""
+    tokens: list[tuple[str, str]] = []
+
+    def replace_span(match: re.Match) -> str:
+        if match.group(2) is None:
+            return match.group(0)
+        token = f"@@DOCS_INLINE_CODE_{len(tokens)}@@"
+        tokens.append((token, match.group(0)))
+        return token
+
+    return re.sub(BACKTICK_RE, replace_span, text or "", flags=re.DOTALL), tokens
+
+
+def _restore_markdown_inline_code(text: str, tokens: list[tuple[str, str]]) -> str:
+    result = text
+    for token, code_span in tokens:
+        result = result.replace(token, code_span)
+    return result
+
+
 def render_markdown_safely(text, *, preserve_blank_lines: bool = False):
     """Render markdown while neutralizing raw HTML input to prevent script injection."""
     prepared_source, extracted_blocks = _extract_fenced_code_blocks(text or "")
     blank_line_tokens: list[str] = []
     if preserve_blank_lines:
         prepared_source, blank_line_tokens = _insert_markdown_blank_line_placeholders(prepared_source)
+    prepared_source, inline_code_tokens = _protect_markdown_inline_code(prepared_source)
     safe_source = _escape_raw_html_outside_fences(prepared_source)
+    safe_source = _restore_markdown_inline_code(safe_source, inline_code_tokens)
     rendered_html = markdown.markdown(safe_source, extensions=MARKDOWN_EXTENSIONS)
     rendered_html = _restore_fenced_code_blocks(rendered_html, extracted_blocks)
     if preserve_blank_lines:
@@ -1917,7 +2058,18 @@ def _normalize_bumpercar_spiky_settings(raw_settings=None):
 
 
 def load_bumpercar_spiky_settings():
-    """Load persisted bumpercar settings and normalize legacy or partial payloads."""
+    """Load DB-backed gameplay settings, retaining the shared JSON snapshot as a fallback."""
+    try:
+        stored_payload = (
+            BumpercarGameplaySettings.objects.filter(singleton_key=1)
+            .values_list("payload", flat=True)
+            .first()
+        )
+    except (OperationalError, ProgrammingError):
+        stored_payload = None
+    if isinstance(stored_payload, dict) and stored_payload:
+        return _normalize_bumpercar_spiky_settings(stored_payload)
+
     settings_path = get_bumpercar_spiky_settings_path()
     if not settings_path.exists():
         return dict(BUMPERCAR_SPIKY_SETTINGS_DEFAULTS)
@@ -1930,7 +2082,7 @@ def load_bumpercar_spiky_settings():
 
 
 def save_bumpercar_spiky_settings(next_settings):
-    """Persist bumpercar settings back to disk while keeping derived values runtime-only."""
+    """Persist settings in DB and atomically export the Node runtime's JSON snapshot."""
     settings_path = get_bumpercar_spiky_settings_path()
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     normalized = _normalize_bumpercar_spiky_settings(next_settings)
@@ -1944,7 +2096,20 @@ def save_bumpercar_spiky_settings(next_settings):
         "user_boost_cooldown",
     ):
         storage_payload.pop(key, None)
-    settings_path.write_text(json.dumps(storage_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    try:
+        with transaction.atomic():
+            BumpercarGameplaySettings.objects.update_or_create(
+                singleton_key=1,
+                defaults={"payload": storage_payload},
+            )
+    except (OperationalError, ProgrammingError):
+        logger.warning("Bumpercar settings DB is unavailable; exporting only the runtime snapshot.")
+
+    snapshot_text = json.dumps(storage_payload, ensure_ascii=False, indent=2) + "\n"
+    temporary_path = settings_path.with_suffix(f"{settings_path.suffix}.tmp")
+    temporary_path.write_text(snapshot_text, encoding="utf-8")
+    temporary_path.replace(settings_path)
     return normalized
 
 
@@ -7182,6 +7347,8 @@ def portfolio_user(request, user_id, ui_lang=None):
     resolved_lang = resolve_ui_lang(request, ui_lang)
     owner = get_object_or_404(get_user_model(), username=user_id)
     context = _build_portfolio_view_context(request, resolved_lang, owner)
+    context["load_markdown_mermaid"] = True
+    context["load_portfolio_print_assets"] = True
     is_english = resolved_lang == "en"
     context["meta_title"] = (
         f"{owner.username} Portfolio | Hanplanet" if is_english else f"{owner.username} 포트폴리오 | Hanplanet"
@@ -7203,6 +7370,8 @@ def portfolio_user_cover_letter(request, user_id, company_slug, ui_lang=None):
     normalized_slug = PortfolioCoverLetter.build_slug(unquote(company_slug))
     cover_letter = get_object_or_404(PortfolioCoverLetter, user=owner, slug=normalized_slug)
     context = _build_portfolio_view_context(request, resolved_lang, owner, cover_letter=cover_letter)
+    context["load_markdown_mermaid"] = True
+    context["load_portfolio_print_assets"] = True
     is_english = resolved_lang == "en"
     context["meta_title"] = (
         f"{owner.username} Portfolio | Hanplanet" if is_english else f"{owner.username} 포트폴리오 | Hanplanet"

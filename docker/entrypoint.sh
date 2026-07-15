@@ -33,6 +33,10 @@ if [ "${COLLECTSTATIC_ON_START:-true}" = "true" ]; then
     python manage.py collectstatic --noinput
 fi
 
+if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ "${REBUILD_GAME_ASSET_MANIFESTS_ON_START:-true}" = "true" ]; then
+    python manage.py rebuild_game_asset_manifests --missing-only
+fi
+
 if [ "$#" -gt 0 ]; then
     exec "$@"
 fi

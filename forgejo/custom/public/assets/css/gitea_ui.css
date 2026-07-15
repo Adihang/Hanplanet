@@ -2,12 +2,62 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: calc(100vh - 88px);
-  transform: translateY(-30px);
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .page-content.home > .tw-px-8 {
   width: 100%;
+}
+
+.flex-container-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.flex-container-sidebar > div {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+
+.flex-container-sidebar > div > .ui.menu {
+  margin-bottom: 0;
+}
+
+#user-heatmap {
+  --hanplanet-heatmap-square-border: rgba(15, 23, 42, 0.08);
+  --color-secondary-alpha-60: transparent;
+  --color-primary-light-4: #dbeafe;
+  --color-primary-light-2: #93c5fd;
+  --color-primary: #3b82f6;
+  --color-primary-dark-2: #1d4ed8;
+  --color-primary-dark-4: #172554;
+}
+
+#user-heatmap .vch__legend-left,
+#user-heatmap .vch__month__label,
+#user-heatmap .vch__day__label {
+  font-family: "Inter", "Noto Sans KR", sans-serif;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 400;
+  font-variation-settings: normal;
+  line-height: normal;
+  letter-spacing: 0;
+  font-synthesis: none;
+  stroke: none;
+  text-shadow: none;
+  -webkit-text-stroke: 0;
+}
+
+#user-heatmap .vch__day__square {
+  stroke: var(--hanplanet-heatmap-square-border) !important;
+}
+
+body.theme-dark #user-heatmap {
+  --hanplanet-heatmap-square-border: rgba(255, 255, 255, 0.1);
 }
 
 [data-tippy-root] {
@@ -241,18 +291,67 @@ main.page-content.django .page-content.explore .filter.menu form {
   border: 0;
 }
 
-main.page-content.django .ui.input > input,
-main.page-content.django .ui.form input,
-main.page-content.django input[type="search"],
-main.page-content.django input[type="text"],
-main.page-content.django input[type="password"],
-main.page-content.django textarea {
+main.page-content.django :is(
+  .ui.input > input,
+  .ui.form input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="submit"], [type="button"], [type="reset"]),
+  .ui.form select,
+  .ui.form textarea,
+  input[type="search"],
+  input[type="text"],
+  input[type="password"],
+  textarea,
+  .ui.selection.dropdown
+) {
   min-height: 36px;
-  background: var(--hp-gitea-panel-bg-strong, var(--site-surface-muted-strong));
+  background: var(--color-input-background, var(--hp-gitea-panel-bg-strong, var(--site-surface-muted-strong)));
   border: 1px solid var(--hp-gitea-border, var(--site-border));
-  border-radius: 7px;
+  border-radius: var(--btn-template-radius, 8px);
   box-shadow: none;
-  color: var(--hp-gitea-text, var(--site-text));
+  color: var(--color-input-text, var(--hp-gitea-text, var(--site-text)));
+  font-family: var(--site-font-default, inherit);
+}
+
+main.page-content.django :is(
+  .ui.input > input,
+  .ui.form input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="submit"], [type="button"], [type="reset"]),
+  .ui.form select,
+  .ui.form textarea,
+  .ui.selection.dropdown
+):hover {
+  border-color: var(--hp-gitea-border-strong, var(--site-border-strong));
+}
+
+main.page-content.django :is(
+  .ui.input > input,
+  .ui.form input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="submit"], [type="button"], [type="reset"]),
+  .ui.form select,
+  .ui.form textarea,
+  .ui.selection.dropdown
+):focus,
+main.page-content.django .ui.selection.dropdown.active {
+  background: var(--color-input-background, var(--hp-gitea-panel-bg-strong, var(--site-surface-muted-strong)));
+  border-color: var(--hp-gitea-border-strong, var(--site-border-strong));
+  box-shadow: var(--shadow-focus-ring, 0 0 0 0.18rem rgba(0, 0, 0, 0.12));
+  color: var(--color-input-text, var(--hp-gitea-text, var(--site-text)));
+  outline: none;
+}
+
+main.page-content.django :is(input, textarea)::placeholder {
+  color: var(--color-placeholder-text, var(--site-text-faint));
+  opacity: 1;
+}
+
+main.page-content.django :is(input, textarea, select):disabled,
+main.page-content.django .ui.selection.dropdown.disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+main.page-content.django .ui.form input:-webkit-autofill,
+main.page-content.django .ui.form input:-webkit-autofill:hover,
+main.page-content.django .ui.form input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--color-input-text, var(--site-text));
+  box-shadow: 0 0 0 100px var(--color-input-background, var(--site-surface-muted-strong)) inset !important;
 }
 
 main.page-content.django .ui.action.input > input {
@@ -274,11 +373,14 @@ main.page-content.django .ui.basic.button,
 main.page-content.django .ui.compact.button,
 main.page-content.django .ui.labeled.button > .ui.button,
 main.page-content.django .btn-octicon {
-  border-radius: 7px;
-  border-color: var(--hp-gitea-border, var(--site-border));
-  background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
+  border-radius: var(--btn-template-radius, 8px);
+  border-color: var(--btn-template-base-border, var(--hp-gitea-border, var(--site-border)));
+  background: var(--btn-template-base-bg, transparent);
   box-shadow: none;
-  color: var(--hp-gitea-text, var(--site-text));
+  color: var(--btn-template-base-color, var(--hp-gitea-text, var(--site-text)));
+  font-family: var(--site-font-control, var(--site-font-default, inherit));
+  font-weight: var(--site-weight-button, 600);
+  transition: var(--btn-template-transition);
 }
 
 main.page-content.django .ui.button:hover,
@@ -291,22 +393,22 @@ main.page-content.django .ui.button:focus-visible,
 main.page-content.django button.ui.button:focus-visible,
 main.page-content.django a.ui.button:focus-visible,
 main.page-content.django .btn-octicon:focus-visible {
-  background: var(--hp-gitea-hover, var(--site-hover-soft));
-  border-color: var(--hp-gitea-border-strong, var(--site-border-strong));
-  color: var(--hp-gitea-text-strong, var(--site-text-strong));
+  background: var(--btn-template-base-hover-bg, var(--hp-gitea-hover, var(--site-hover-soft)));
+  border-color: var(--btn-template-base-hover-border, var(--hp-gitea-border-strong, var(--site-border-strong)));
+  color: var(--btn-template-base-hover-color, var(--hp-gitea-text-strong, var(--site-text-strong)));
 }
 
 main.page-content.django .ui.primary.button {
-  background: var(--hp-gitea-text-strong, var(--site-text-strong));
-  border-color: var(--hp-gitea-text-strong, var(--site-text-strong));
-  color: var(--forgejo-main-bg, var(--site-bg));
+  background: var(--btn-template-primary-bg);
+  border-color: var(--btn-template-primary-border);
+  color: var(--btn-template-primary-color);
 }
 
 main.page-content.django .ui.primary.button:hover,
 main.page-content.django .ui.primary.button:focus-visible {
-  background: var(--hp-gitea-text, var(--site-text));
-  border-color: var(--hp-gitea-text, var(--site-text));
-  color: var(--forgejo-main-bg, var(--site-bg));
+  background: var(--btn-template-primary-hover-bg);
+  border-color: var(--btn-template-primary-hover-border);
+  color: var(--btn-template-primary-hover-color);
 }
 
 main.page-content.django .ui.basic.label,
@@ -320,14 +422,30 @@ main.page-content.django .label {
 
 main.page-content.django .ui.dropdown .menu {
   padding: 6px;
-  border: 1px solid var(--hp-gitea-border, var(--site-border));
-  border-radius: 8px;
-  background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
-  box-shadow: var(--site-shadow-md, 0 16px 34px rgba(0, 0, 0, 0.18));
+  border: 1px solid var(--site-border-context, var(--hp-gitea-border, var(--site-border)));
+  border-radius: var(--site-popup-radius-common, 12px);
+  background: var(--site-dropdown-surface-bg, var(--hp-gitea-panel-bg, var(--site-surface-muted)));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--site-popup-shadow-common, var(--site-shadow-md, 0 8px 18px rgba(0, 0, 0, 0.2)));
+  color: var(--hp-gitea-text, var(--site-text));
 }
 
 main.page-content.django .ui.dropdown .menu > .item {
-  border-radius: 6px;
+  border: 0;
+  border-radius: var(--btn-template-radius, 8px);
+  color: var(--hp-gitea-text, var(--site-text));
+}
+
+main.page-content.django .ui.dropdown .menu > .item:hover,
+main.page-content.django .ui.dropdown .menu > .selected.item,
+main.page-content.django .ui.dropdown .menu > .active.item {
+  background: var(--hp-gitea-hover, var(--site-hover-soft));
+  color: var(--hp-gitea-text-strong, var(--site-text-strong));
+}
+
+main.page-content.django .ui.dropdown .menu > .divider {
+  border-color: var(--site-divider-weak, var(--site-border));
 }
 
 main.page-content.django .divider,
@@ -443,6 +561,21 @@ main.page-content.django .ui.table {
   border-radius: 8px;
   background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
   box-shadow: none;
+}
+
+main.page-content.django .ui.top.attached.header,
+main.page-content.django .ui.attached.header {
+  border-color: var(--hp-gitea-border, var(--site-border));
+  border-radius: 8px 8px 0 0;
+  background: var(--hp-gitea-panel-bg-strong, var(--site-surface-muted-strong));
+  color: var(--hp-gitea-text-strong, var(--site-text-strong));
+  box-shadow: none;
+}
+
+main.page-content.django .ui.top.attached.header + .ui.attached.segment,
+main.page-content.django .ui.attached.header + .ui.attached.segment {
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
 }
 
 main.page-content.django .repo-home-filelist {
@@ -597,12 +730,6 @@ main.page-content.django .ui.message {
   border-radius: 8px;
   border-color: var(--hp-gitea-border, var(--site-border));
   background: var(--hp-gitea-panel-bg, var(--site-surface-muted));
-}
-
-body.theme-dark main.page-content.django .ui.primary.button {
-  background: var(--hp-gitea-text-strong, var(--site-text-strong));
-  border-color: var(--hp-gitea-text-strong, var(--site-text-strong));
-  color: var(--forgejo-main-bg, var(--site-bg));
 }
 
 @media (max-width: 767px) {

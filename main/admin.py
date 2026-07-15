@@ -20,14 +20,18 @@ from django.core.exceptions import ValidationError
 
 from .access_log_summary import BOT_UA_PATTERN, resolve_summary_dir, summary_markdown
 from .models import (
+    BumpercarGameplaySettings,
+    BumpercarSkin,
     EmailTwoFactorBypassUser,
     HandriveAccessRule,
+    HandriveEditorCompletion,
     HandriveSiteSettings,
     HandriveUserQuota,
     MinecraftAccountLink,
     MinecraftLinkCode,
     NavLink,
     OnscripterAccessUser,
+    OnscripterGameConfig,
     QuickLink,
     UserProfile,
 )
@@ -209,6 +213,100 @@ class HandriveAccessRuleAdmin(admin.ModelAdmin):
     @admin.display(description="쓰기 주체 수")
     def write_subject_count(self, obj):
         return obj.write_users.count() + obj.write_groups.count()
+
+
+@admin.register(HandriveEditorCompletion)
+class HandriveEditorCompletionAdmin(admin.ModelAdmin):
+    list_display = ["extension", "trigger", "label", "kind", "priority", "cursor_back", "enabled", "updated_at"]
+    list_editable = ["priority", "enabled"]
+    list_filter = ["extension", "enabled", "kind"]
+    search_fields = ["trigger", "label", "description", "insert_text"]
+    ordering = ["extension", "-priority", "trigger", "id"]
+    readonly_fields = ["created_at", "updated_at"]
+    fieldsets = [
+        (None, {"fields": ["extension", "trigger", "label", "description", "kind"]}),
+        ("삽입 설정", {"fields": ["insert_text", "cursor_back", "priority", "enabled"]}),
+        ("기록", {"fields": ["created_at", "updated_at"]}),
+    ]
+
+
+@admin.register(OnscripterGameConfig)
+class OnscripterGameConfigAdmin(admin.ModelAdmin):
+    list_display = ["slug", "title", "asset_folder_name", "display_order", "enabled", "manifest_updated_at"]
+    list_editable = ["display_order", "enabled"]
+    list_filter = ["enabled", "direct_voice_playback"]
+    search_fields = ["slug", "title", "description_ko", "description_en", "asset_folder_name"]
+    ordering = ["display_order", "slug"]
+    readonly_fields = ["asset_manifest", "manifest_updated_at", "created_at", "updated_at"]
+    actions = ["rebuild_asset_manifests"]
+
+    def save_model(self, request, obj, form, change):
+        if change and "asset_folder_name" in form.changed_data:
+            obj.asset_manifest = {}
+            obj.manifest_updated_at = None
+        super().save_model(request, obj, form, change)
+
+    @admin.action(description="선택한 게임의 자산 manifest 재생성")
+    def rebuild_asset_manifests(self, request, queryset):
+        from .onscripter_views import rebuild_onscripter_game_manifest
+
+        updated = 0
+        for game_config in queryset:
+            if rebuild_onscripter_game_manifest(game_config):
+                updated += 1
+        self.message_user(request, f"ONScripter manifest {updated}개를 재생성했습니다.")
+
+
+@admin.register(BumpercarSkin)
+class BumpercarSkinAdmin(admin.ModelAdmin):
+    list_display = ["name", "display_name_ko", "skin_type", "display_order", "enabled", "manifest_updated_at"]
+    list_editable = ["display_order", "enabled"]
+    list_filter = ["enabled", "skin_type", "admin_only"]
+    search_fields = ["name", "display_name_ko", "display_name_en", "description_ko", "description_en"]
+    ordering = ["display_order", "name"]
+    readonly_fields = ["asset_manifest", "manifest_updated_at", "created_at", "updated_at"]
+    actions = ["rebuild_asset_manifests"]
+
+    def save_model(self, request, obj, form, change):
+        asset_fields = {
+            "asset_source_name",
+            "fallback_sound_source_name",
+            "preview_icon_name",
+            "skin_type",
+        }
+        if change and asset_fields.intersection(form.changed_data):
+            obj.asset_manifest = {}
+            obj.manifest_updated_at = None
+        super().save_model(request, obj, form, change)
+
+    @admin.action(description="선택한 스킨의 자산 manifest 재생성")
+    def rebuild_asset_manifests(self, request, queryset):
+        from .views import rebuild_bumpercar_skin_manifest
+
+        updated = 0
+        for skin in queryset:
+            if rebuild_bumpercar_skin_manifest(skin):
+                updated += 1
+        self.message_user(request, f"범퍼카 스킨 manifest {updated}개를 재생성했습니다.")
+
+
+@admin.register(BumpercarGameplaySettings)
+class BumpercarGameplaySettingsAdmin(admin.ModelAdmin):
+    list_display = ["__str__", "updated_at"]
+    readonly_fields = ["updated_at"]
+
+    def has_add_permission(self, request):
+        return not BumpercarGameplaySettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        from .views import save_bumpercar_spiky_settings
+
+        save_bumpercar_spiky_settings(obj.payload)
+
 
 class HandriveUserQuotaForm(forms.ModelForm):
     quota_gb = forms.FloatField(

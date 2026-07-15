@@ -26,6 +26,115 @@
     const demoTutorialPath = String(root.dataset.demoTutorialPath || "").trim();
     const tutorialCompleteApiUrl = String(root.dataset.tutorialCompleteApiUrl || "").trim();
     const HANDRIVE_EDITOR_HIGHLIGHT_CHAR_LIMIT = 120000;
+    const editorCompletionsApiUrl = String(root.dataset.editorCompletionsApiUrl || "").trim();
+    let handriveEditorCompletionMap = {};
+    let handriveEditorCompletionsReady = !editorCompletionsApiUrl;
+
+    const handriveEditorCompletionsPromise = editorCompletionsApiUrl
+        ? fetch(editorCompletionsApiUrl, {
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+        })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error("Editor completion data request failed.");
+                }
+                return response.json();
+            })
+            .then(function (payload) {
+                const sourceMap = payload && payload.ok && payload.completions && typeof payload.completions === "object"
+                    ? payload.completions
+                    : {};
+                const normalizedMap = {};
+                Object.keys(sourceMap).forEach(function (extension) {
+                    const normalizedExtension = String(extension || "").trim().toLowerCase();
+                    if (!normalizedExtension || !Array.isArray(sourceMap[extension])) {
+                        return;
+                    }
+                    normalizedMap[normalizedExtension] = sourceMap[extension].filter(function (item) {
+                        return item && typeof item === "object" && String(item.trigger || "").trim();
+                    });
+                });
+                handriveEditorCompletionMap = normalizedMap;
+                handriveEditorCompletionsReady = true;
+                return normalizedMap;
+            })
+            .catch(function (error) {
+                handriveEditorCompletionsReady = true;
+                console.warn("HanDrive editor completions unavailable.", error);
+                return handriveEditorCompletionMap;
+            })
+        : Promise.resolve(handriveEditorCompletionMap);
+
+    function isHandriveTextEditingTarget(target) {
+        if (!(target instanceof Element)) {
+            return false;
+        }
+        const tagName = String(target.tagName || "").toLowerCase();
+        if (tagName === "input" || tagName === "textarea" || tagName === "select") {
+            return true;
+        }
+        return Boolean(target.isContentEditable);
+    }
+
+    function getHoveredHandriveSelectAllContainer() {
+        const previewBody = document.querySelector(".handrive-list-preview-body:hover");
+        if (previewBody) {
+            return previewBody;
+        }
+        if (pageType === "view" && root.classList.contains("ui-content") && root.matches(":hover")) {
+            return root;
+        }
+        return null;
+    }
+
+    function getHandriveSelectAllContent(container) {
+        if (!(container instanceof Element)) {
+            return null;
+        }
+        let content = null;
+        if (container.classList.contains("handrive-list-preview-body")) {
+            content = container.querySelector(":scope > .handrive-list-preview-content");
+        } else if (container === root && pageType === "view") {
+            content = container.querySelector(":scope > article");
+        }
+        const lineNumberedCode = content
+            ? content.querySelector(":scope > pre.handrive-line-numbered-code > code")
+            : null;
+        return lineNumberedCode || content;
+    }
+
+    function initializeHandriveScopedSelectAll() {
+        document.addEventListener("keydown", function (event) {
+            const isSelectAll = (event.metaKey || event.ctrlKey)
+                && !event.altKey
+                && !event.shiftKey
+                && String(event.key || "").toLowerCase() === "a";
+            if (!isSelectAll || event.defaultPrevented) {
+                return;
+            }
+            if (
+                isHandriveTextEditingTarget(event.target) ||
+                isHandriveTextEditingTarget(document.activeElement)
+            ) {
+                return;
+            }
+
+            const content = getHandriveSelectAllContent(getHoveredHandriveSelectAllContainer());
+            const selection = window.getSelection ? window.getSelection() : null;
+            if (!content || !selection || content.closest("[hidden]") || content.getAttribute("aria-hidden") === "true") {
+                return;
+            }
+
+            const range = document.createRange();
+            range.selectNodeContents(content);
+            event.preventDefault();
+            selection.removeAllRanges();
+            selection.addRange(range);
+        });
+    }
+
     const initialTutorialStepValue = (function () {
         try {
             return String(new URLSearchParams(window.location.search).get("tutorial_step") || "").trim();
@@ -387,6 +496,31 @@
         }
         mirror.scrollTop = 0;
         mirror.scrollLeft = 0;
+    }
+
+    function createHandriveCodeEditor(surface, textarea, extension) {
+        const codeEditorApi = window.HandriveCodeEditor;
+        if (!codeEditorApi || typeof codeEditorApi.create !== "function") {
+            return null;
+        }
+        try {
+            return codeEditorApi.create({
+                surface: surface,
+                textarea: textarea,
+                extension: extension || "",
+            });
+        } catch (error) {
+            console.error(error);
+            return null;
+        }
+    }
+
+    function getHandriveCodeEditor(textarea) {
+        const codeEditorApi = window.HandriveCodeEditor;
+        if (!codeEditorApi || typeof codeEditorApi.get !== "function") {
+            return null;
+        }
+        return codeEditorApi.get(textarea);
     }
 
     const lazyScriptLoadPromises = Object.create(null);
@@ -1119,6 +1253,7 @@
             + ".handrive-print-rendered pre,.handrive-print-rendered code{white-space:pre-wrap;overflow:visible;}"
             + ".handrive-print-rendered.ui-markdown pre,.handrive-print-rendered.handrive-markdown pre,.handrive-print-rendered .ui-markdown pre,.handrive-print-rendered .handrive-markdown pre{border:1px solid #d0d7de;background:#fff;padding:8px 10px;}"
             + ".handrive-print-rendered .handrive-markdown-code-copy-btn{display:none!important;}"
+            + ".handrive-print-rendered .handrive-code-fold-controls,.handrive-print-rendered .handrive-ace-fold-controls{display:none;}"
             + ".handrive-print-rendered table{max-width:none;break-inside:auto;page-break-inside:auto;}"
             + ".handrive-print-rendered.ui-markdown table,.handrive-print-rendered.handrive-markdown table,.handrive-print-rendered .ui-markdown table,.handrive-print-rendered .handrive-markdown table{width:calc(100% - 1px);max-width:calc(100% - 1px);box-sizing:border-box;}"
             + ".handrive-print-rendered.ui-markdown th,.handrive-print-rendered.ui-markdown td,.handrive-print-rendered.handrive-markdown th,.handrive-print-rendered.handrive-markdown td,.handrive-print-rendered .ui-markdown th,.handrive-print-rendered .ui-markdown td,.handrive-print-rendered .handrive-markdown th,.handrive-print-rendered .handrive-markdown td{box-sizing:border-box;}"
@@ -1284,7 +1419,9 @@
         }
         const clone = contentElement.cloneNode(true);
         clone.removeAttribute("id");
-        clone.querySelectorAll("script,.handrive-list-preview-loading,.handrive-frame-loading,.handrive-office-frame-loading").forEach(function (node) {
+        clone.querySelectorAll(
+            "script,.handrive-list-preview-loading,.handrive-frame-loading,.handrive-office-frame-loading,.handrive-code-fold-controls,.handrive-ace-fold-controls"
+        ).forEach(function (node) {
             node.remove();
         });
         clone.querySelectorAll("video,audio").forEach(function (mediaElement) {
@@ -1902,7 +2039,7 @@
         return uiLang === "en" ? enValue : koValue;
     }
 
-    const HANDRIVE_TUTORIAL_TOTAL_GROUPS = 19;
+    const HANDRIVE_TUTORIAL_TOTAL_GROUPS = 20;
     const HANDRIVE_TUTORIAL_STEP_PROGRESS = [
         [1, 1, 1],
         [2, 1, 2],
@@ -1934,27 +2071,33 @@
         [10, 5, 5],
         [11, 1, 2],
         [11, 2, 2],
-        [12, 1, 5],
-        [12, 2, 5],
-        [12, 3, 5],
-        [12, 4, 5],
-        [12, 5, 5],
-        [13, 1, 8],
-        [13, 2, 8],
-        [13, 3, 8],
-        [13, 4, 8],
-        [13, 5, 8],
-        [13, 6, 8],
-        [13, 7, 8],
-        [13, 8, 8],
-        [14, 1, 1],
+        [12, 1, 6],
+        [12, 2, 6],
+        [12, 3, 6],
+        [12, 4, 6],
+        [12, 5, 6],
+        [12, 6, 6],
+        [13, 1, 5],
+        [13, 2, 5],
+        [13, 3, 5],
+        [13, 4, 5],
+        [13, 5, 5],
+        [14, 1, 8],
+        [14, 2, 8],
+        [14, 3, 8],
+        [14, 4, 8],
+        [14, 5, 8],
+        [14, 6, 8],
+        [14, 7, 8],
+        [14, 8, 8],
         [15, 1, 1],
         [16, 1, 1],
-        [17, 1, 2],
-        [17, 2, 2],
+        [17, 1, 1],
         [18, 1, 2],
         [18, 2, 2],
-        [19, 1, 1],
+        [19, 1, 2],
+        [19, 2, 2],
+        [20, 1, 1],
     ];
     const HANDRIVE_TUTORIAL_TOTAL_STEPS = HANDRIVE_TUTORIAL_STEP_PROGRESS.length;
 
@@ -3492,7 +3635,7 @@
     document.addEventListener("dblclick", handleMarkdownInlineCodeDoubleClick, true);
     document.addEventListener("dragstart", handleMarkdownInlineCodeDragStart, true);
 
-    const HANDRIVE_MARKDOWN_CODE_COPY_ICON = '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13"/></svg>';
+    const HANDRIVE_MARKDOWN_CODE_COPY_ICON = '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="6" width="9" height="11" rx="1.5"/><path d="M4 13V4.5C4 3.7 4.7 3 5.5 3H13"/></svg>';
 
     function writeHandriveClipboardText(text) {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
@@ -3561,6 +3704,14 @@
         return codeNodes;
     }
 
+    function isSingleLineMarkdownCodeBlock(codeNode) {
+        const normalizedText = String(codeNode.textContent || "").replace(/\r\n?/g, "\n");
+        const contentText = normalizedText.endsWith("\n")
+            ? normalizedText.slice(0, -1)
+            : normalizedText;
+        return !contentText.includes("\n");
+    }
+
     function hydrateMarkdownCodeBlockCopyButtons(container) {
         getMarkdownCodeBlockNodes(container).forEach(function (codeNode) {
             const pre = codeNode.closest("pre");
@@ -3569,6 +3720,10 @@
             }
             pre.dataset.handriveCodeCopyBound = "1";
             pre.classList.add("handrive-markdown-code-copy-wrap");
+            pre.classList.toggle(
+                "is-single-line-code",
+                isSingleLineMarkdownCodeBlock(codeNode)
+            );
             const button = document.createElement("button");
             button.type = "button";
             button.className = "handrive-markdown-code-copy-btn handrive-inline-copy-action";
@@ -3849,7 +4004,7 @@
     function resolveEditorCompletionItemsByExtension(extension) {
         // Reuse completion packs across adjacent extensions (ts->js, yaml->json, etc.)
         // so the editor can stay lightweight without duplicating snippet tables.
-        const completionMap = window.__handriveEditorCompletionMap || {};
+        const completionMap = handriveEditorCompletionMap;
         const normalized = String(extension || "").trim().toLowerCase();
         if (normalized && Array.isArray(completionMap[normalized])) {
             return completionMap[normalized];
@@ -4034,11 +4189,132 @@
         };
     }
 
+    function splitEditorCompletionIntoSteps(insertText) {
+        const text = String(insertText || "");
+        if (!text) {
+            return [];
+        }
+        const steps = text.match(/\s*\S+\s*/g);
+        return steps && steps.join("") === text ? steps : [text];
+    }
+
+    function createEditorCompletionSession(suggestion) {
+        const item = suggestion || {};
+        const steps = splitEditorCompletionIntoSteps(item.insertText);
+        if (!steps.length) {
+            return null;
+        }
+        return {
+            suggestion: item,
+            steps: steps,
+            nextStepIndex: 0,
+            cursor: Number(item.start || 0),
+        };
+    }
+
+    function focusEditorAfterCompletion(textarea) {
+        const codeEditor = getHandriveCodeEditor(textarea);
+        if (codeEditor && typeof codeEditor.syncFromTextarea === "function") {
+            codeEditor.syncFromTextarea({ focus: true, syncScroll: true });
+            return;
+        }
+        textarea.focus();
+    }
+
+    function applyEditorCompletionSessionStep(textarea, session) {
+        if (!textarea || !session || session.nextStepIndex >= session.steps.length) {
+            return null;
+        }
+        const suggestion = session.suggestion;
+        const isFirstStep = session.nextStepIndex === 0;
+        const selectionStart = Number(textarea.selectionStart || 0);
+        const selectionEnd = Number(textarea.selectionEnd || 0);
+        if (!isFirstStep && (selectionStart !== session.cursor || selectionEnd !== session.cursor)) {
+            return null;
+        }
+
+        const replaceStart = isFirstStep ? suggestion.start : session.cursor;
+        const replaceEnd = isFirstStep ? suggestion.end : session.cursor;
+        const stepText = session.steps[session.nextStepIndex];
+        textarea.setRangeText(stepText, replaceStart, replaceEnd, "end");
+        session.nextStepIndex += 1;
+        session.cursor = replaceStart + stepText.length;
+
+        const completed = session.nextStepIndex >= session.steps.length;
+        if (completed) {
+            session.cursor = Math.max(
+                suggestion.start,
+                suggestion.start + String(suggestion.insertText || "").length - Math.max(0, suggestion.cursorBack),
+            );
+        }
+        textarea.setSelectionRange(session.cursor, session.cursor);
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        focusEditorAfterCompletion(textarea);
+        return { completed: completed };
+    }
+
+    function renderEditorCompletionSession(container, session) {
+        if (!container || !session) {
+            return;
+        }
+        const suggestion = session.suggestion || {};
+        const completedCount = Math.min(session.nextStepIndex, session.steps.length);
+        const nextStep = session.steps[session.nextStepIndex] || "";
+        const remainingText = session.steps.slice(session.nextStepIndex).join("");
+
+        container.innerHTML = "";
+        container.classList.add("is-completion-session");
+        container.setAttribute("role", "status");
+        container.setAttribute("aria-live", "polite");
+
+        const head = document.createElement("div");
+        head.className = "handrive-editor-completion-session-head";
+
+        const label = document.createElement("span");
+        label.className = "handrive-editor-completion-session-label";
+        label.textContent = suggestion.label || suggestion.insertText || "";
+
+        const count = document.createElement("span");
+        count.className = "handrive-editor-completion-session-count";
+        count.textContent = String(completedCount) + " / " + String(session.steps.length);
+
+        const next = document.createElement("code");
+        next.className = "handrive-editor-completion-session-next";
+        next.textContent = truncateEditorSuggestionText(nextStep, 54);
+
+        const remaining = document.createElement("span");
+        remaining.className = "handrive-editor-completion-session-remaining";
+        remaining.textContent = truncateEditorSuggestionText(remainingText, 82);
+
+        const progress = document.createElement("span");
+        progress.className = "handrive-editor-completion-session-progress";
+        progress.setAttribute("role", "progressbar");
+        progress.setAttribute("aria-valuemin", "0");
+        progress.setAttribute("aria-valuemax", String(session.steps.length));
+        progress.setAttribute("aria-valuenow", String(completedCount));
+        const progressValue = document.createElement("span");
+        progressValue.style.width = String((completedCount / session.steps.length) * 100) + "%";
+        progress.appendChild(progressValue);
+
+        head.appendChild(label);
+        head.appendChild(count);
+        container.appendChild(head);
+        if (next.textContent) {
+            container.appendChild(next);
+        }
+        if (remaining.textContent && remaining.textContent !== next.textContent) {
+            container.appendChild(remaining);
+        }
+        container.appendChild(progress);
+    }
+
     function renderEditorSuggestDropdown(container, suggestions, activeIndex) {
         if (!container) {
             return;
         }
         container.innerHTML = "";
+        container.classList.remove("is-completion-session");
+        container.removeAttribute("aria-live");
         container.setAttribute("role", "listbox");
         container.setAttribute("aria-label", "Editor suggestions");
 
@@ -4090,7 +4366,7 @@
         const footer = document.createElement("div");
         footer.className = "handrive-editor-suggest-footer";
         footer.textContent = suggestions.length
-            ? String(activeIndex + 1) + "/" + String(suggestions.length) + " · ↑↓ 이동 · Enter/Tab 적용 · Esc 닫기"
+            ? String(activeIndex + 1) + " / " + String(suggestions.length)
             : "";
 
         container.appendChild(list);
@@ -4101,8 +4377,11 @@
         if (!container || !textarea) {
             return;
         }
+        const codeEditor = getHandriveCodeEditor(textarea);
         const calc = window.__handriveCalculateCursorPosition || calculateCursorPosition;
-        const cursorPosition = typeof calc === "function" ? calc(textarea, cursorIndex) : null;
+        const cursorPosition = codeEditor && typeof codeEditor.getCursorScreenPosition === "function"
+            ? codeEditor.getCursorScreenPosition()
+            : (typeof calc === "function" ? calc(textarea, cursorIndex) : null);
         if (!cursorPosition) {
             container.hidden = false;
             return;
@@ -5224,6 +5503,762 @@
         return "";
     }
 
+    const HANDRIVE_LINE_NUMBER_RENDER_CLASSES = new Set([
+        "handrive-plain-text",
+        "handrive-json",
+        "handrive-html",
+        "handrive-css",
+        "handrive-js",
+        "handrive-py",
+        "handrive-sql",
+    ]);
+
+    const HANDRIVE_CODE_STRUCTURE_RENDER_CLASSES = new Set([
+        "handrive-json",
+        "handrive-html",
+        "handrive-css",
+        "handrive-js",
+        "handrive-py",
+        "handrive-sql",
+        "ui-markdown",
+        "handrive-markdown",
+    ]);
+    const handriveCodeStructureStates = new WeakMap();
+    const HANDRIVE_CODE_LINE_SELECTION_HIGHLIGHT_NAME = "handrive-code-line-selection";
+
+    function resolveHandriveCodeStructureRenderClass(targetElement, renderClass) {
+        const candidates = String(renderClass || "")
+            .split(/\s+/)
+            .filter(Boolean)
+            .concat(Array.from(targetElement.classList || []));
+        if (targetElement.classList.contains("handrive-source-code-view")) {
+            if (candidates.includes("ui-markdown") || candidates.includes("handrive-markdown")) {
+                return "ui-markdown";
+            }
+        }
+        if (candidates.includes("handrive-editor-html")) {
+            return "handrive-html";
+        }
+        return candidates.find(function (className) {
+            return HANDRIVE_LINE_NUMBER_RENDER_CLASSES.has(className);
+        }) || "handrive-plain-text";
+    }
+
+    function getHandriveVisibleCodeLineIndexes(state) {
+        const visibleIndexes = [];
+        for (let lineIndex = 0; lineIndex < state.lines.length;) {
+            visibleIndexes.push(lineIndex);
+            const range = state.foldRanges.get(lineIndex);
+            if (range && state.collapsedStarts.has(lineIndex)) {
+                lineIndex = range.end + 1;
+            } else {
+                lineIndex += 1;
+            }
+        }
+        return visibleIndexes;
+    }
+
+    function buildHandriveCodeTextOffsetMap(codeNode) {
+        const entries = [];
+        const walker = document.createTreeWalker(codeNode, NodeFilter.SHOW_TEXT);
+        let offset = 0;
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            const length = node.data.length;
+            if (length > 0) {
+                entries.push({
+                    node: node,
+                    start: offset,
+                    end: offset + length,
+                });
+            }
+            offset += length;
+        }
+        return entries;
+    }
+
+    function resolveHandriveCodeTextPosition(entries, requestedOffset) {
+        if (!entries.length) {
+            return null;
+        }
+        const maximumOffset = entries[entries.length - 1].end;
+        const offset = Math.max(0, Math.min(requestedOffset, maximumOffset));
+        let low = 0;
+        let high = entries.length - 1;
+        while (low <= high) {
+            const middle = Math.floor((low + high) / 2);
+            const entry = entries[middle];
+            if (offset < entry.start) {
+                high = middle - 1;
+            } else if (offset > entry.end) {
+                low = middle + 1;
+            } else {
+                return {
+                    node: entry.node,
+                    offset: offset - entry.start,
+                };
+            }
+        }
+        const lastEntry = entries[entries.length - 1];
+        return {
+            node: lastEntry.node,
+            offset: lastEntry.node.data.length,
+        };
+    }
+
+    function buildHandriveCodeTextRange(entries, startOffset, endOffset) {
+        if (endOffset <= startOffset) {
+            return null;
+        }
+        const start = resolveHandriveCodeTextPosition(entries, startOffset);
+        const end = resolveHandriveCodeTextPosition(entries, endOffset);
+        if (!start || !end) {
+            return null;
+        }
+        const range = document.createRange();
+        range.setStart(start.node, start.offset);
+        range.setEnd(end.node, end.offset);
+        return range;
+    }
+
+    function syncHandriveCodeTextSelectionHighlight() {
+        if (
+            !window.CSS
+            || !window.CSS.highlights
+            || typeof window.Highlight !== "function"
+        ) {
+            return;
+        }
+        const ranges = [];
+        document.querySelectorAll("pre > code").forEach(function (codeNode) {
+            const state = handriveCodeStructureStates.get(codeNode);
+            if (!state || !state.selectedLineIndexes.size) {
+                return;
+            }
+            const entries = buildHandriveCodeTextOffsetMap(codeNode);
+            const visibleIndexes = getHandriveVisibleCodeLineIndexes(state);
+            let visibleOffset = 0;
+            visibleIndexes.forEach(function (lineIndex, visiblePosition) {
+                const line = state.lines[lineIndex] || "";
+                const lineEndOffset = visibleOffset + line.length;
+                if (state.selectedLineIndexes.has(lineIndex)) {
+                    const range = buildHandriveCodeTextRange(
+                        entries,
+                        visibleOffset,
+                        lineEndOffset,
+                    );
+                    if (range) {
+                        ranges.push(range);
+                    }
+                }
+                visibleOffset = lineEndOffset + (visiblePosition < visibleIndexes.length - 1 ? 1 : 0);
+            });
+        });
+        if (!ranges.length) {
+            window.CSS.highlights.delete(HANDRIVE_CODE_LINE_SELECTION_HIGHLIGHT_NAME);
+            return;
+        }
+        const highlight = new window.Highlight(...ranges);
+        window.CSS.highlights.set(HANDRIVE_CODE_LINE_SELECTION_HIGHLIGHT_NAME, highlight);
+    }
+
+    function syncHandriveCodeLineSelection(pre, state) {
+        if (!pre || !state) {
+            return;
+        }
+        pre.querySelectorAll(":scope > .handrive-code-line-numbers > .handrive-code-line-number-row").forEach(function (row) {
+            const lineIndex = Number(row.dataset.lineIndex);
+            const isSelected = state.selectedLineIndexes.has(lineIndex);
+            row.classList.toggle("is-selected", isSelected);
+            row.setAttribute("aria-pressed", isSelected ? "true" : "false");
+        });
+        pre.querySelectorAll(":scope > .handrive-code-line-selection > .handrive-code-line-selection-row").forEach(function (row) {
+            const lineIndex = Number(row.dataset.lineIndex);
+            row.classList.toggle("is-selected", state.selectedLineIndexes.has(lineIndex));
+        });
+        syncHandriveCodeTextSelectionHighlight();
+    }
+
+    function cancelHandriveCodeLineScroll(pre) {
+        const scrollContainer = getHandriveCodeLineScrollContainer(pre);
+        if (!scrollContainer) {
+            return;
+        }
+        if (isHandriveDocumentScrollContainer(scrollContainer)) {
+            window.scrollTo({
+                top: window.scrollY || window.pageYOffset || 0,
+                left: window.scrollX || window.pageXOffset || 0,
+                behavior: "instant",
+            });
+            return;
+        }
+        scrollContainer.scrollTo({
+            top: scrollContainer.scrollTop,
+            left: scrollContainer.scrollLeft,
+            behavior: "instant",
+        });
+    }
+
+    function clearHandriveCodeLineSelection(pre, state) {
+        if (!pre || !state || (!state.selectedLineIndexes.size && !Number.isInteger(state.selectionAnchorLineIndex))) {
+            return;
+        }
+        cancelHandriveCodeLineScroll(pre);
+        state.selectedLineIndexes = new Set();
+        state.selectionAnchorLineIndex = null;
+        const activeElement = document.activeElement;
+        if (
+            activeElement instanceof HTMLElement
+            && activeElement.matches(".handrive-code-line-number-row")
+            && pre.contains(activeElement)
+        ) {
+            activeElement.blur();
+        }
+        syncHandriveCodeLineSelection(pre, state);
+    }
+
+    function applyHandriveCodeLineSelectionRange(state, startLineIndex, endLineIndex, baseSelection, mode) {
+        const nextSelection = new Set(baseSelection || []);
+        const firstLineIndex = Math.min(startLineIndex, endLineIndex);
+        const lastLineIndex = Math.max(startLineIndex, endLineIndex);
+        for (let lineIndex = firstLineIndex; lineIndex <= lastLineIndex; lineIndex += 1) {
+            if (mode === "remove") {
+                nextSelection.delete(lineIndex);
+            } else {
+                nextSelection.add(lineIndex);
+            }
+        }
+        state.selectedLineIndexes = nextSelection;
+    }
+
+    function copyHandriveCodeLineSelection(event, state) {
+        if (!event || !state || !event.clipboardData || !state.selectedLineIndexes.size) {
+            return;
+        }
+        const selectedText = Array.from(state.selectedLineIndexes)
+            .filter(function (lineIndex) {
+                return Number.isInteger(lineIndex) && lineIndex >= 0 && lineIndex < state.lines.length;
+            })
+            .sort(function (left, right) {
+                return left - right;
+            })
+            .map(function (lineIndex) {
+                return state.lines[lineIndex];
+            })
+            .join("\n");
+        event.clipboardData.setData("text/plain", selectedText);
+        event.preventDefault();
+    }
+
+    function getHandriveCodeLineScrollContainer(pre) {
+        let candidate = pre ? pre.parentElement : null;
+        while (candidate && candidate !== document.body) {
+            const overflowY = window.getComputedStyle(candidate).overflowY;
+            if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") {
+                return candidate;
+            }
+            candidate = candidate.parentElement;
+        }
+        return document.scrollingElement || document.documentElement;
+    }
+
+    function isHandriveDocumentScrollContainer(scrollContainer) {
+        return scrollContainer === document.scrollingElement
+            || scrollContainer === document.documentElement
+            || scrollContainer === document.body;
+    }
+
+    function getHandriveCodeLineScrollViewport(scrollContainer) {
+        if (isHandriveDocumentScrollContainer(scrollContainer)) {
+            return {
+                top: 0,
+                bottom: window.innerHeight,
+                height: window.innerHeight,
+            };
+        }
+        const rect = scrollContainer.getBoundingClientRect();
+        return {
+            top: rect.top,
+            bottom: rect.top + scrollContainer.clientHeight,
+            height: scrollContainer.clientHeight,
+        };
+    }
+
+    function scrollHandriveCodeLineIntoView(pre, lineIndex, options) {
+        if (!pre || !Number.isInteger(lineIndex)) {
+            return;
+        }
+        const row = pre.querySelector(
+            ':scope > .handrive-code-line-numbers > .handrive-code-line-number-row[data-line-index="' + lineIndex + '"]',
+        );
+        if (!row) {
+            return;
+        }
+        const settings = options || {};
+        if (typeof row.scrollIntoView === "function") {
+            row.scrollIntoView({
+                behavior: settings.behavior || "smooth",
+                block: settings.block === "nearest" ? "nearest" : "center",
+                inline: "nearest",
+            });
+            return;
+        }
+        const scrollContainer = getHandriveCodeLineScrollContainer(pre);
+        if (!scrollContainer) {
+            return;
+        }
+        const viewport = getHandriveCodeLineScrollViewport(scrollContainer);
+        const rowRect = row.getBoundingClientRect();
+        let scrollDelta = 0;
+        if (settings.block === "nearest") {
+            if (rowRect.top < viewport.top) {
+                scrollDelta = rowRect.top - viewport.top;
+            } else if (rowRect.bottom > viewport.bottom) {
+                scrollDelta = rowRect.bottom - viewport.bottom;
+            }
+        } else {
+            scrollDelta = rowRect.top - viewport.top - ((viewport.height - rowRect.height) / 2);
+        }
+        if (Math.abs(scrollDelta) < 1) {
+            return;
+        }
+        if (isHandriveDocumentScrollContainer(scrollContainer)) {
+            window.scrollTo({
+                top: Math.max(0, (window.scrollY || window.pageYOffset || 0) + scrollDelta),
+                left: window.scrollX || window.pageXOffset || 0,
+                behavior: settings.behavior || "smooth",
+            });
+            return;
+        }
+        scrollContainer.scrollTo({
+            top: Math.max(0, scrollContainer.scrollTop + scrollDelta),
+            left: scrollContainer.scrollLeft,
+            behavior: settings.behavior || "smooth",
+        });
+    }
+
+    function getHandriveCodeLineAutoScrollDelta(scrollContainer, clientY) {
+        if (!scrollContainer) {
+            return 0;
+        }
+        const viewport = getHandriveCodeLineScrollViewport(scrollContainer);
+        const edgeSize = Math.max(20, Math.min(48, viewport.height / 4));
+        if (clientY < viewport.top + edgeSize) {
+            return -Math.ceil(Math.min(1, (viewport.top + edgeSize - clientY) / edgeSize) * 20);
+        }
+        if (clientY > viewport.bottom - edgeSize) {
+            return Math.ceil(Math.min(1, (clientY - (viewport.bottom - edgeSize)) / edgeSize) * 20);
+        }
+        return 0;
+    }
+
+    function scrollHandriveCodeLineContainerBy(scrollContainer, scrollDelta) {
+        if (!scrollContainer || !scrollDelta) {
+            return;
+        }
+        if (isHandriveDocumentScrollContainer(scrollContainer)) {
+            window.scrollBy(0, scrollDelta);
+            return;
+        }
+        scrollContainer.scrollTop += scrollDelta;
+    }
+
+    function startHandriveCodeLineSelection(event, row, lineNumbers, pre, state) {
+        if (event.isPrimary === false || event.button !== 0) {
+            return;
+        }
+        const lineIndex = Number(row.dataset.lineIndex);
+        if (!Number.isInteger(lineIndex)) {
+            return;
+        }
+
+        event.preventDefault();
+        row.focus({ preventScroll: true });
+        const isAdditive = event.metaKey || event.ctrlKey;
+        const hasAnchor = Number.isInteger(state.selectionAnchorLineIndex);
+        const selectionStartLineIndex = event.shiftKey && hasAnchor
+            ? state.selectionAnchorLineIndex
+            : lineIndex;
+        const baseSelection = isAdditive
+            ? new Set(state.selectedLineIndexes)
+            : new Set();
+        const selectionMode = isAdditive && state.selectedLineIndexes.has(lineIndex)
+            ? "remove"
+            : "add";
+        if (!event.shiftKey || !hasAnchor) {
+            state.selectionAnchorLineIndex = lineIndex;
+        }
+
+        const scrollContainer = getHandriveCodeLineScrollContainer(pre);
+        const pointerStartX = event.clientX;
+        const pointerStartY = event.clientY;
+        let pointerClientX = event.clientX;
+        let pointerClientY = event.clientY;
+        let lastLineIndex = lineIndex;
+        let hasDragged = false;
+        let pointerSelectionActive = true;
+        let autoScrollFrame = 0;
+        applyHandriveCodeLineSelectionRange(
+            state,
+            selectionStartLineIndex,
+            lineIndex,
+            baseSelection,
+            selectionMode,
+        );
+        syncHandriveCodeLineSelection(pre, state);
+
+        function resolveLineIndexAtPoint(clientX, clientY) {
+            const pointedRow = document.elementFromPoint(clientX, clientY);
+            const candidate = pointedRow
+                ? pointedRow.closest(".handrive-code-line-number-row")
+                : null;
+            if (!candidate || candidate.parentElement !== lineNumbers) {
+                return null;
+            }
+            const candidateLineIndex = Number(candidate.dataset.lineIndex);
+            return Number.isInteger(candidateLineIndex) ? candidateLineIndex : null;
+        }
+
+        function updatePointerSelectionAtPoint(clientX, clientY) {
+            const nextLineIndex = resolveLineIndexAtPoint(clientX, clientY);
+            if (!Number.isInteger(nextLineIndex) || nextLineIndex === lastLineIndex) {
+                return;
+            }
+            lastLineIndex = nextLineIndex;
+            applyHandriveCodeLineSelectionRange(
+                state,
+                selectionStartLineIndex,
+                nextLineIndex,
+                baseSelection,
+                selectionMode,
+            );
+            syncHandriveCodeLineSelection(pre, state);
+        }
+
+        function runAutoScroll() {
+            autoScrollFrame = 0;
+            if (!pointerSelectionActive) {
+                return;
+            }
+            const scrollDelta = getHandriveCodeLineAutoScrollDelta(scrollContainer, pointerClientY);
+            if (!scrollDelta) {
+                return;
+            }
+            scrollHandriveCodeLineContainerBy(scrollContainer, scrollDelta);
+            const viewport = getHandriveCodeLineScrollViewport(scrollContainer);
+            const lineNumberRect = lineNumbers.getBoundingClientRect();
+            updatePointerSelectionAtPoint(
+                lineNumberRect.left + (lineNumberRect.width / 2),
+                Math.max(viewport.top + 1, Math.min(viewport.bottom - 1, pointerClientY)),
+            );
+            autoScrollFrame = window.requestAnimationFrame(runAutoScroll);
+        }
+
+        function scheduleAutoScroll() {
+            if (!autoScrollFrame) {
+                autoScrollFrame = window.requestAnimationFrame(runAutoScroll);
+            }
+        }
+
+        function handlePointerMove(pointerEvent) {
+            if (pointerEvent.pointerId !== event.pointerId) {
+                return;
+            }
+            pointerEvent.preventDefault();
+            pointerClientX = pointerEvent.clientX;
+            pointerClientY = pointerEvent.clientY;
+            hasDragged = hasDragged
+                || Math.abs(pointerClientX - pointerStartX) > 3
+                || Math.abs(pointerClientY - pointerStartY) > 3;
+            updatePointerSelectionAtPoint(pointerClientX, pointerClientY);
+            scheduleAutoScroll();
+        }
+
+        function finishPointerSelection(pointerEvent) {
+            if (pointerEvent.pointerId !== event.pointerId) {
+                return;
+            }
+            pointerSelectionActive = false;
+            if (autoScrollFrame) {
+                window.cancelAnimationFrame(autoScrollFrame);
+                autoScrollFrame = 0;
+            }
+            window.removeEventListener("pointermove", handlePointerMove);
+            window.removeEventListener("pointerup", finishPointerSelection);
+            window.removeEventListener("pointercancel", finishPointerSelection);
+            scrollHandriveCodeLineIntoView(pre, lastLineIndex, {
+                behavior: "smooth",
+                block: hasDragged ? "nearest" : "center",
+            });
+        }
+
+        window.addEventListener("pointermove", handlePointerMove, { passive: false });
+        window.addEventListener("pointerup", finishPointerSelection);
+        window.addEventListener("pointercancel", finishPointerSelection);
+    }
+
+    function renderHandriveCodeStructure(codeNode, state) {
+        const pre = codeNode.parentElement;
+        if (!pre) {
+            return;
+        }
+        const visibleIndexes = getHandriveVisibleCodeLineIndexes(state);
+        const visibleSource = visibleIndexes.map(function (lineIndex) {
+            return state.lines[lineIndex];
+        }).join("\n");
+        if (state.isCodeFormat) {
+            codeNode.innerHTML = highlightHandriveSourceCode(visibleSource, state.renderClass);
+            codeNode.dataset.handriveCodeHighlighted = "1";
+        } else {
+            codeNode.textContent = visibleSource;
+        }
+
+        let lineNumbers = pre.querySelector(":scope > .handrive-code-line-numbers");
+        if (!lineNumbers) {
+            lineNumbers = document.createElement("span");
+            lineNumbers.className = "handrive-code-line-numbers";
+            pre.insertBefore(lineNumbers, codeNode);
+        }
+        lineNumbers.style.setProperty(
+            "--handrive-code-line-number-digits",
+            String(String(state.lines.length).length),
+        );
+        lineNumbers.replaceChildren();
+        visibleIndexes.forEach(function (lineIndex) {
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "handrive-code-line-number-row";
+            row.dataset.lineIndex = String(lineIndex);
+            row.setAttribute("aria-label", String(lineIndex + 1));
+            const isSelected = state.selectedLineIndexes.has(lineIndex);
+            row.classList.toggle("is-selected", isSelected);
+            row.setAttribute("aria-pressed", isSelected ? "true" : "false");
+            const number = document.createElement("span");
+            number.className = "handrive-code-line-number";
+            number.textContent = String(lineIndex + 1);
+            number.setAttribute("aria-hidden", "true");
+            row.appendChild(number);
+            row.addEventListener("pointerdown", function (event) {
+                startHandriveCodeLineSelection(event, row, lineNumbers, pre, state);
+            });
+            row.addEventListener("copy", function (event) {
+                copyHandriveCodeLineSelection(event, state);
+            });
+            row.addEventListener("click", function (event) {
+                event.preventDefault();
+                if (event.detail !== 0) {
+                    return;
+                }
+                const isAdditive = event.metaKey || event.ctrlKey;
+                const hasAnchor = Number.isInteger(state.selectionAnchorLineIndex);
+                const selectionStartLineIndex = event.shiftKey && hasAnchor
+                    ? state.selectionAnchorLineIndex
+                    : lineIndex;
+                const baseSelection = isAdditive
+                    ? new Set(state.selectedLineIndexes)
+                    : new Set();
+                const selectionMode = isAdditive && state.selectedLineIndexes.has(lineIndex)
+                    ? "remove"
+                    : "add";
+                if (!event.shiftKey || !hasAnchor) {
+                    state.selectionAnchorLineIndex = lineIndex;
+                }
+                applyHandriveCodeLineSelectionRange(
+                    state,
+                    selectionStartLineIndex,
+                    lineIndex,
+                    baseSelection,
+                    selectionMode,
+                );
+                syncHandriveCodeLineSelection(pre, state);
+                scrollHandriveCodeLineIntoView(pre, lineIndex, {
+                    behavior: "smooth",
+                    block: "center",
+                });
+            });
+            lineNumbers.appendChild(row);
+        });
+
+        let lineSelection = pre.querySelector(":scope > .handrive-code-line-selection");
+        if (!lineSelection) {
+            lineSelection = document.createElement("span");
+            lineSelection.className = "handrive-code-line-selection";
+            lineSelection.setAttribute("aria-hidden", "true");
+            pre.insertBefore(lineSelection, codeNode);
+        }
+        lineSelection.replaceChildren();
+        visibleIndexes.forEach(function (lineIndex) {
+            const row = document.createElement("span");
+            row.className = "handrive-code-line-selection-row";
+            row.dataset.lineIndex = String(lineIndex);
+            row.classList.toggle("is-selected", state.selectedLineIndexes.has(lineIndex));
+            lineSelection.appendChild(row);
+        });
+
+        let foldControls = pre.querySelector(":scope > .handrive-code-fold-controls");
+        let indentGuides = pre.querySelector(":scope > .handrive-code-indent-guides");
+        if (!state.isCodeFormat) {
+            if (foldControls) {
+                foldControls.remove();
+            }
+            if (indentGuides) {
+                indentGuides.remove();
+            }
+            syncHandriveCodeTextSelectionHighlight();
+            return;
+        }
+        if (!foldControls) {
+            foldControls = document.createElement("span");
+            foldControls.className = "handrive-code-fold-controls";
+            pre.insertBefore(foldControls, codeNode);
+        }
+        foldControls.replaceChildren();
+        visibleIndexes.forEach(function (lineIndex) {
+            const row = document.createElement("span");
+            row.className = "handrive-code-fold-control-row";
+            row.dataset.lineIndex = String(lineIndex);
+            row.style.setProperty("--handrive-code-fold-depth", String(state.guideDepths[lineIndex] || 0));
+            const range = state.foldRanges.get(lineIndex);
+            if (range) {
+                const isExpanded = !state.collapsedStarts.has(lineIndex);
+                const toggleFold = function (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (state.collapsedStarts.has(lineIndex)) {
+                        state.collapsedStarts.delete(lineIndex);
+                    } else {
+                        state.collapsedStarts.add(lineIndex);
+                    }
+                    renderHandriveCodeStructure(codeNode, state);
+                    const replacementToggle = pre.querySelector(
+                        '.handrive-code-fold-control-row[data-line-index="' + lineIndex + '"] > .handrive-code-fold-toggle',
+                    );
+                    if (replacementToggle) {
+                        replacementToggle.focus({ preventScroll: true });
+                    }
+                };
+                const toggle = document.createElement("button");
+                toggle.type = "button";
+                toggle.className = "handrive-code-fold-toggle";
+                toggle.setAttribute("aria-expanded", isExpanded ? "true" : "false");
+                toggle.setAttribute(
+                    "aria-label",
+                    isExpanded ? textByLang("코드 접기", "Fold code") : textByLang("코드 펼치기", "Expand code"),
+                );
+                toggle.title = toggle.getAttribute("aria-label");
+                toggle.addEventListener("click", toggleFold);
+                row.appendChild(toggle);
+                if (!isExpanded) {
+                    const lineMeasure = document.createElement("span");
+                    lineMeasure.className = "handrive-code-fold-line-measure";
+                    lineMeasure.textContent = String(state.lines[lineIndex] || "").replace(/\s+$/, "");
+                    lineMeasure.setAttribute("aria-hidden", "true");
+                    const ellipsis = document.createElement("button");
+                    ellipsis.type = "button";
+                    ellipsis.className = "handrive-code-fold-ellipsis";
+                    ellipsis.textContent = "...";
+                    ellipsis.setAttribute("aria-label", textByLang("코드 펼치기", "Expand code"));
+                    ellipsis.title = ellipsis.getAttribute("aria-label");
+                    ellipsis.addEventListener("click", toggleFold);
+                    row.appendChild(lineMeasure);
+                    row.appendChild(ellipsis);
+                }
+            }
+            foldControls.appendChild(row);
+        });
+        if (!indentGuides) {
+            indentGuides = document.createElement("span");
+            indentGuides.className = "handrive-code-indent-guides";
+            indentGuides.setAttribute("aria-hidden", "true");
+            pre.insertBefore(indentGuides, codeNode);
+        }
+        pre.style.setProperty("--handrive-code-indent-size", String(state.indentSize));
+        indentGuides.replaceChildren();
+        visibleIndexes.forEach(function (lineIndex) {
+            const row = document.createElement("span");
+            row.className = "handrive-code-indent-guide-row";
+            row.dataset.lineIndex = String(lineIndex);
+            (state.guideColumns[lineIndex] || []).forEach(function (guideColumn) {
+                const guide = document.createElement("span");
+                guide.className = "handrive-code-indent-guide";
+                guide.style.setProperty("--handrive-code-indent-column", String(guideColumn));
+                row.appendChild(guide);
+            });
+            indentGuides.appendChild(row);
+        });
+        syncHandriveCodeTextSelectionHighlight();
+    }
+
+    function applyHandriveLineNumbers(targetElement, renderClass) {
+        if (!targetElement || !(targetElement instanceof Element)) {
+            return;
+        }
+        const renderClasses = String(renderClass || "")
+            .split(/\s+/)
+            .filter(Boolean);
+        const shouldShowLineNumbers = targetElement.classList.contains("handrive-source-code-view")
+            || renderClasses.some(function (className) {
+                return HANDRIVE_LINE_NUMBER_RENDER_CLASSES.has(className);
+            })
+            || Array.from(targetElement.classList).some(function (className) {
+                return HANDRIVE_LINE_NUMBER_RENDER_CLASSES.has(className);
+            });
+        if (!shouldShowLineNumbers) {
+            return;
+        }
+
+        targetElement.querySelectorAll("pre > code").forEach(function (codeNode) {
+            const pre = codeNode.parentElement;
+            if (!pre || pre.tagName.toLowerCase() !== "pre") {
+                return;
+            }
+            let state = handriveCodeStructureStates.get(codeNode);
+            if (!state) {
+                const source = String(codeNode.textContent || "").replace(/\r\n?/g, "\n");
+                const lines = source.split("\n");
+                const structureRenderClass = resolveHandriveCodeStructureRenderClass(targetElement, renderClass);
+                const isCodeFormat = HANDRIVE_CODE_STRUCTURE_RENDER_CLASSES.has(structureRenderClass);
+                const indentSize = window.HandriveCodeStructure.detectIndentSize(
+                    lines,
+                    structureRenderClass,
+                );
+                const allFoldRanges = isCodeFormat
+                    ? window.HandriveCodeStructure.buildFoldRanges(lines, indentSize, structureRenderClass)
+                    : new Map();
+                const foldRanges = window.HandriveCodeStructure.filterOutermostFoldRanges(allFoldRanges);
+                state = {
+                    source: source,
+                    lines: lines,
+                    renderClass: structureRenderClass,
+                    isCodeFormat: isCodeFormat,
+                    indentSize: indentSize,
+                    guideDepths: window.HandriveCodeStructure.getGuideDepths(lines, indentSize),
+                    guideColumns: window.HandriveCodeStructure.getGuideColumns(
+                        lines,
+                        indentSize,
+                        allFoldRanges,
+                    ),
+                    foldRanges: foldRanges,
+                    collapsedStarts: new Set(),
+                    selectedLineIndexes: new Set(),
+                    selectionAnchorLineIndex: null,
+                };
+                handriveCodeStructureStates.set(codeNode, state);
+                pre.addEventListener("pointerdown", function (event) {
+                    if (event.isPrimary === false || event.button !== 0 || !(event.target instanceof Element)) {
+                        return;
+                    }
+                    if (event.target.closest(".handrive-code-line-number-row, .handrive-code-fold-toggle, .handrive-code-fold-ellipsis")) {
+                        return;
+                    }
+                    clearHandriveCodeLineSelection(pre, state);
+                });
+            }
+            renderHandriveCodeStructure(codeNode, state);
+            pre.classList.add("handrive-line-numbered-code");
+        });
+    }
+
     // 문서 코드 하이라이팅을 적용하는 함수
     function applyHandriveCodeHighlighting(targetElement, renderClass) {
         if (!targetElement || !(targetElement instanceof Element)) {
@@ -5245,6 +6280,8 @@
             requestedRenderClass = "handrive-sql";
         } else if (renderClasses.includes("handrive-html") || renderClasses.includes("handrive-editor-html")) {
             requestedRenderClass = "handrive-html";
+        } else if (renderClasses.includes("handrive-plain-text")) {
+            requestedRenderClass = "handrive-plain-text";
         } else if (
             renderClasses.includes("ui-markdown") ||
             renderClasses.includes("handrive-markdown") ||
@@ -5259,6 +6296,9 @@
         const codeNodes = targetElement.querySelectorAll("pre code");
         codeNodes.forEach(function (codeNode) {
             if (!(codeNode instanceof HTMLElement)) {
+                return;
+            }
+            if (requestedRenderClass === "handrive-plain-text") {
                 return;
             }
             if (codeNode.dataset.handriveCodeHighlighted === "1") {
@@ -5286,6 +6326,7 @@
             }
             codeNode.dataset.handriveCodeHighlighted = "1";
         });
+        applyHandriveLineNumbers(targetElement, renderClass || requestedRenderClass);
         if (requestedRenderClass === "ui-markdown") {
             hydrateMarkdownCodeBlockCopyButtons(targetElement);
         }
@@ -5354,6 +6395,7 @@
         code.dataset.handriveCodeHighlighted = "1";
         pre.appendChild(code);
         targetElement.replaceChildren(pre);
+        applyHandriveLineNumbers(targetElement, sourceRenderClass);
         return sourceRenderClass;
     }
 
@@ -6450,7 +7492,7 @@
         const audioEditorScriptUrl = root.dataset.audioEditorScriptUrl || "";
         const pdfEditorScriptUrl = root.dataset.pdfEditorScriptUrl || "";
         const editorSuggest = document.getElementById("handrive-list-editor-suggest");
-        const editorSuggestLabel = document.getElementById("handrive-list-editor-suggest-label");
+        const listCodeEditor = createHandriveCodeEditor(editorSurface, editorContentInput, "");
         const markdownSnippetMenu = document.getElementById("ui-markdown-snippet-menu");
         const markdownSnippetButtons = markdownSnippetMenu
             ? Array.from(markdownSnippetMenu.querySelectorAll("button[data-editor-snippet]"))
@@ -7775,6 +8817,8 @@
 
         let activeListEditorSuggestions = [];
         let activeListEditorSuggestionIndex = -1;
+        let listEditorCompletionSession = null;
+        let listEditorCompletionMutation = false;
         let activeListEditorEntry = null;
         let listSuggestEventsBound = false;
         let listMarkdownSnippetEventsBound = false;
@@ -8100,14 +9144,14 @@
         function clearListEditorSuggestion() {
             activeListEditorSuggestions = [];
             activeListEditorSuggestionIndex = -1;
+            listEditorCompletionSession = null;
             if (editorSuggest) {
                 editorSuggest.hidden = true;
                 editorSuggest.style.left = "";
                 editorSuggest.style.top = "";
                 editorSuggest.innerHTML = "";
-            }
-            if (editorSuggestLabel) {
-                editorSuggestLabel.textContent = "";
+                editorSuggest.classList.remove("is-completion-session");
+                editorSuggest.removeAttribute("aria-live");
             }
         }
 
@@ -8403,6 +9447,9 @@
             if (!editorContentInput || !editorHighlight) {
                 return;
             }
+            if (listCodeEditor) {
+                return;
+            }
             syncEditorMirrorScroll(editorContentInput, editorHighlight, editorHighlightCode);
         }
 
@@ -8440,6 +9487,9 @@
             if (editorContentInput && editorHighlight) {
                 syncEditorMirrorScroll(editorContentInput, editorHighlight, editorHighlightCode);
             }
+            if (listCodeEditor) {
+                listCodeEditor.setScroll(0, 0);
+            }
         }
 
         function scheduleListEditorHorizontalScrollReset() {
@@ -8459,6 +9509,12 @@
 
             const extension = resolveListEditorExtension();
             const source = editorContentInput.value || "";
+            if (listCodeEditor) {
+                listCodeEditor.setExtension(extension);
+                listCodeEditor.syncFromTextarea();
+                listCodeEditor.resize();
+                return;
+            }
             const useSyntaxHighlight = shouldUseEditorSyntaxHighlight(source);
             let renderClass = "handrive-plain-text";
             let highlightedHtml = "";
@@ -8513,6 +9569,11 @@
             if (!editorContentInput || !editorSuggest) {
                 return;
             }
+            if (!handriveEditorCompletionsReady) {
+                clearListEditorSuggestion();
+                handriveEditorCompletionsPromise.then(updateListEditorSuggestion);
+                return;
+            }
 
             const start = editorContentInput.selectionStart || 0;
             const end = editorContentInput.selectionEnd || 0;
@@ -8546,17 +9607,43 @@
             if (!editorContentInput) {
                 return false;
             }
-            const resolvedIndex = Number.isInteger(index) ? index : activeListEditorSuggestionIndex;
-            const suggestion = activeListEditorSuggestions[resolvedIndex] || null;
-            if (!suggestion) {
+            if (!listEditorCompletionSession) {
+                const resolvedIndex = Number.isInteger(index) ? index : activeListEditorSuggestionIndex;
+                const suggestion = activeListEditorSuggestions[resolvedIndex] || null;
+                if (!suggestion) {
+                    return false;
+                }
+                listEditorCompletionSession = createEditorCompletionSession(suggestion);
+            }
+            if (!listEditorCompletionSession) {
                 return false;
             }
-            editorContentInput.setRangeText(suggestion.insertText, suggestion.start, suggestion.end, "end");
-            const cursorPos = (suggestion.start + suggestion.insertText.length) - Math.max(0, suggestion.cursorBack);
-            editorContentInput.setSelectionRange(cursorPos, cursorPos);
-            editorContentInput.focus();
-            editorContentInput.dispatchEvent(new Event("input", { bubbles: true }));
-            clearListEditorSuggestion();
+
+            listEditorCompletionMutation = true;
+            let result = null;
+            try {
+                result = applyEditorCompletionSessionStep(editorContentInput, listEditorCompletionSession);
+            } finally {
+                listEditorCompletionMutation = false;
+            }
+            if (!result) {
+                clearListEditorSuggestion();
+                return false;
+            }
+            if (result.completed) {
+                clearListEditorSuggestion();
+                return true;
+            }
+
+            activeListEditorSuggestions = [];
+            activeListEditorSuggestionIndex = -1;
+            renderEditorCompletionSession(editorSuggest, listEditorCompletionSession);
+            positionEditorSuggestDropdown(
+                editorSuggest,
+                editorContentInput,
+                editorSurface,
+                editorContentInput.selectionStart || 0,
+            );
             return true;
         }
 
@@ -8765,14 +9852,7 @@
         }
 
         function isKeyboardEditableTarget(target) {
-            if (!(target instanceof Element)) {
-                return false;
-            }
-            const tagName = String(target.tagName || "").toLowerCase();
-            if (tagName === "input" || tagName === "textarea" || tagName === "select") {
-                return true;
-            }
-            return Boolean(target.isContentEditable);
+            return isHandriveTextEditingTarget(target);
         }
 
         function isNestedRowInteractiveTarget(target, row) {
@@ -12191,6 +13271,9 @@
             cleanupEditorEvents();
             
             if (editorContentInput) {
+                const listEditorInteractionTarget = listCodeEditor
+                    ? listCodeEditor.getElement()
+                    : editorContentInput;
                 const listEditorZoomExtension = getEntryFileExtension(entry) || getPathZoomExtension(entry && (entry.path || entry.name));
                 const listEditorCanPersistZoom = isHandriveTextCodeZoomExtension(listEditorZoomExtension);
                 let listEditorFontSize = listEditorCanPersistZoom
@@ -12203,6 +13286,9 @@
                     if (editorHighlight) {
                         editorHighlight.style.fontSize = listEditorFontSize + "px";
                     }
+                    if (listCodeEditor) {
+                        listCodeEditor.setFontSize(listEditorFontSize);
+                    }
                     syncListEditorHighlightScroll();
                     if (!settings.skipPersist && listEditorCanPersistZoom) {
                         writeStoredHandriveZoom("write-text", listEditorZoomExtension, listEditorFontSize, 8, 40);
@@ -12211,22 +13297,29 @@
                 applyListEditorFontSize(listEditorFontSize, { skipPersist: true });
                 if (!listMarkdownImageEventsBound) {
                     listMarkdownImageEventsBound = true;
-                    editorContentInput.addEventListener("paste", function (event) {
+                    listEditorInteractionTarget.addEventListener("paste", function (event) {
                         listMarkdownImageInput.handlePaste(event);
                     });
-                    editorContentInput.addEventListener("dragover", function (event) {
+                    listEditorInteractionTarget.addEventListener("dragover", function (event) {
                         listMarkdownImageInput.handleDragOver(event);
                     });
-                    editorContentInput.addEventListener("drop", function (event) {
+                    listEditorInteractionTarget.addEventListener("drop", function (event) {
                         listMarkdownImageInput.handleDrop(event);
                     });
                 }
                 editorContentInput.addEventListener("input", function () {
                     renderListEditorHighlight();
+                    if (listEditorCompletionMutation) {
+                        return;
+                    }
+                    if (listEditorCompletionSession) {
+                        clearListEditorSuggestion();
+                        return;
+                    }
                     updateListEditorSuggestion();
                 });
                 editorContentInput.addEventListener("scroll", syncListEditorHighlightScroll, { passive: true });
-                bindHanplanetZoomGesture(editorContentInput, {
+                bindHanplanetZoomGesture(listEditorInteractionTarget, {
                     min: 8,
                     max: 40,
                     wheelStep: 2,
@@ -12252,17 +13345,17 @@
                         clearListEditorSuggestion();
                         return;
                     }
-                    if (!editorSuggest.hidden && event.key === "ArrowDown") {
+                    if (!listEditorCompletionSession && !editorSuggest.hidden && event.key === "ArrowDown") {
                         event.preventDefault();
                         moveListEditorSuggestion(1);
                         return;
                     }
-                    if (!editorSuggest.hidden && event.key === "ArrowUp") {
+                    if (!listEditorCompletionSession && !editorSuggest.hidden && event.key === "ArrowUp") {
                         event.preventDefault();
                         moveListEditorSuggestion(-1);
                         return;
                     }
-                    if (!editorSuggest.hidden && event.key === "Enter") {
+                    if (!listEditorCompletionSession && !editorSuggest.hidden && event.key === "Enter") {
                         if (acceptListEditorSuggestion()) {
                             event.preventDefault();
                         }
@@ -13308,6 +14401,7 @@
             listPreviewFontSize = Math.max(8, Math.min(40, Number(nextFontSize) || 16));
             if (previewContent) {
                 previewContent.style.setProperty("--handrive-text-font-size", listPreviewFontSize + "px");
+                previewContent.style.setProperty("--handrive-code-font-size", listPreviewFontSize + "px");
             }
             if (!settings.skipPersist && isHandriveTextCodeZoomExtension(extension)) {
                 writeStoredHandriveZoom("preview-text", extension, listPreviewFontSize, 8, 40);
@@ -13447,6 +14541,9 @@
                 t: t,
             });
             if (isTutorialMode) {
+                if (isGuestDemoCodeFeatureEntry(entry)) {
+                    scheduleGuestDemoCodeViewerHorizontalScrollReset();
+                }
                 scheduleGuestDemoTourPositionAfterLayoutChange();
                 if (
                     guestDemoTourActiveStep &&
@@ -14586,8 +15683,14 @@
         }
 
         let _uploadQueuePollTimer = null;
+        let guestDemoQueuePreviewItems = null;
         function renderUploadQueue() {
-            const items = state.uploadQueueItems.slice(-20);
+            const isTutorialPreview = Boolean(
+                uploadQueuePanel &&
+                uploadQueuePanel.classList.contains("is-tutorial-preview") &&
+                Array.isArray(guestDemoQueuePreviewItems)
+            );
+            const items = (isTutorialPreview ? guestDemoQueuePreviewItems : state.uploadQueueItems).slice(-20);
             const hasActiveUploads = items.some(function (item) {
                 return item.status === "uploading" && item.kind !== "operation";
             });
@@ -14606,7 +15709,7 @@
             }
             renderUploadQueuePanel({
                 createQueueListItem: function (item) {
-                    return createQueueListItem(item, {
+                    const listItem = createQueueListItem(item, {
                         documentRef: document,
                         getMetaLabel: function (nextItem) {
                             return getQueueItemMetaLabel(nextItem, getHandrivePathLabel);
@@ -14640,9 +15743,16 @@
                             renderUploadQueue();
                         },
                     });
+                    if (listItem && item.isTutorialSample) {
+                        listItem.classList.add("is-tutorial-sample");
+                        listItem.dataset.tutorialEntryPath = item.tutorialLinkedEntryPath || "";
+                        listItem.dataset.tutorialFileExtension = item.tutorialFileExtension || "";
+                        listItem.dataset.tutorialInteractive = item.tutorialInteractive ? "true" : "false";
+                    }
+                    return listItem;
                 },
                 collapsed: state.uploadQueueCollapsed,
-                dismissed: state.uploadQueueDismissed,
+                dismissed: isTutorialPreview ? false : state.uploadQueueDismissed,
                 items: items,
                 sortQueueItems: sortQueueItems,
                 summarizeUploadQueue: function (nextItems) {
@@ -20146,6 +21256,12 @@
 
         if (uploadQueueCloseButton) {
             uploadQueueCloseButton.addEventListener("click", function () {
+                if (uploadQueuePanel && uploadQueuePanel.classList.contains("is-tutorial-preview")) {
+                    uploadQueuePanel.classList.remove("is-tutorial-preview");
+                    uploadQueuePanel.hidden = true;
+                    scheduleGuestDemoTourPositionAfterLayoutChange();
+                    return;
+                }
                 state.uploadQueueDismissed = true;
                 renderUploadQueue();
             });
@@ -20859,7 +21975,8 @@
             return guestDemoTourCompositeTarget;
         }
 
-        function buildGuestDemoCompositeTarget(elements) {
+        function buildGuestDemoCompositeTarget(elements, options) {
+            var settings = options || {};
             var visibleElements = (Array.isArray(elements) ? elements : [])
                 .map(resolveGuestDemoElement)
                 .filter(isGuestDemoElementVisible);
@@ -20868,14 +21985,14 @@
             }
             var firstElement = visibleElements[0];
             var lastElement = visibleElements[visibleElements.length - 1];
-            if (firstElement && typeof firstElement.scrollIntoView === "function") {
+            if (!settings.preserveHorizontalScroll && firstElement && typeof firstElement.scrollIntoView === "function") {
                 try {
                     firstElement.scrollIntoView({ block: "nearest", inline: "nearest" });
                 } catch (error) {
                     firstElement.scrollIntoView();
                 }
             }
-            if (lastElement && lastElement !== firstElement && typeof lastElement.scrollIntoView === "function") {
+            if (!settings.preserveHorizontalScroll && lastElement && lastElement !== firstElement && typeof lastElement.scrollIntoView === "function") {
                 try {
                     lastElement.scrollIntoView({ block: "nearest", inline: "nearest" });
                 } catch (error) {}
@@ -21803,6 +22920,163 @@
             return findFirstVisibleGuestDemoElement([editorSaveButton, editorHead, editorPanel]);
         }
 
+        function isGuestDemoCodeFeatureEntry(entry) {
+            if (!isGuestDemoEditableFileEntry(entry) || getEntryFileExtension(entry) !== ".js") {
+                return false;
+            }
+            var filename = String(entry.name || entry.path || "").split("/").pop().toLowerCase();
+            return filename === "05-javascript-highlight.js" || filename === "05-javascript-하이라이트.js";
+        }
+
+        function getGuestDemoCodeFeatureEntry() {
+            return getGuestDemoActionFileEntry(isGuestDemoCodeFeatureEntry);
+        }
+
+        function getGuestDemoCodeFeatureRow() {
+            return getGuestDemoFirstListRow(isGuestDemoCodeFeatureEntry);
+        }
+
+        function isGuestDemoCodeFeaturePath(pathValue) {
+            var entry = getGuestDemoCodeFeatureEntry();
+            return Boolean(
+                entry &&
+                normalizePath(entry.path || "", true) === normalizePath(pathValue || "", true)
+            );
+        }
+
+        function isGuestDemoCodeFeaturePreviewVisible() {
+            return Boolean(
+                getGuestDemoVisiblePreviewPanel() &&
+                isGuestDemoCodeFeaturePath(state.activePreviewPath)
+            );
+        }
+
+        function isGuestDemoCodeFeatureEditorVisible() {
+            return Boolean(
+                isGuestDemoEditorVisible() &&
+                activeListEditorEntry &&
+                isGuestDemoCodeFeaturePath(activeListEditorEntry.path)
+            );
+        }
+
+        function prepareGuestDemoCodeFeatureSelection() {
+            if (isGuestDemoEditorVisible() && !isGuestDemoCodeFeatureEditorVisible()) {
+                switchToPreview();
+            }
+            return getGuestDemoCodeFeatureRow();
+        }
+
+        function startGuestDemoCodeFeaturePreview() {
+            if (!isGuestDemoCodeFeaturePreviewVisible() && !isGuestDemoCodeFeatureEditorVisible()) {
+                startGuestDemoOnboarding(isGuestDemoCodeFeatureEntry);
+            }
+            scheduleGuestDemoCodeViewerHorizontalScrollReset();
+            return getGuestDemoCodeViewerStructureTarget();
+        }
+
+        function getGuestDemoCodeViewerPre() {
+            if (!isGuestDemoCodeFeaturePreviewVisible() || !previewContent) {
+                return null;
+            }
+            return previewContent.querySelector("pre.handrive-line-numbered-code");
+        }
+
+        function resetGuestDemoCodeViewerHorizontalScroll() {
+            [previewBody, previewContent].forEach(function (element) {
+                if (element && typeof element.scrollLeft === "number") {
+                    element.scrollLeft = 0;
+                }
+            });
+        }
+
+        function scheduleGuestDemoCodeViewerHorizontalScrollReset() {
+            resetGuestDemoCodeViewerHorizontalScroll();
+            window.requestAnimationFrame(function () {
+                resetGuestDemoCodeViewerHorizontalScroll();
+                window.requestAnimationFrame(resetGuestDemoCodeViewerHorizontalScroll);
+            });
+            window.setTimeout(resetGuestDemoCodeViewerHorizontalScroll, 80);
+            window.setTimeout(resetGuestDemoCodeViewerHorizontalScroll, 240);
+        }
+
+        function getGuestDemoCodeViewerStructureTarget() {
+            resetGuestDemoCodeViewerHorizontalScroll();
+            var pre = getGuestDemoCodeViewerPre();
+            if (!pre) {
+                return null;
+            }
+            return buildGuestDemoCompositeTarget([
+                pre.querySelector(":scope > .handrive-code-line-numbers"),
+                pre.querySelector(":scope > .handrive-code-indent-guides"),
+                pre.querySelector(":scope > code"),
+            ], { preserveHorizontalScroll: true }) || pre;
+        }
+
+        function getGuestDemoCodeViewerFoldTarget() {
+            resetGuestDemoCodeViewerHorizontalScroll();
+            var pre = getGuestDemoCodeViewerPre();
+            return pre
+                ? findFirstVisibleGuestDemoElement([
+                    pre.querySelector(".handrive-code-fold-toggle"),
+                    pre.querySelector(".handrive-code-fold-controls"),
+                ])
+                : null;
+        }
+
+        function getGuestDemoCodeEditorStructureTarget() {
+            if (!isGuestDemoCodeFeatureEditorVisible() || !editorPanel) {
+                return null;
+            }
+            var codeEditorElement = listCodeEditor ? listCodeEditor.getElement() : null;
+            return buildGuestDemoCompositeTarget([
+                codeEditorElement ? codeEditorElement.querySelector(".ace_gutter") : null,
+                codeEditorElement ? codeEditorElement.querySelector(".handrive-ace-indent-guide-row") : null,
+                codeEditorElement ? codeEditorElement.querySelector(".handrive-ace-fold-toggle") : null,
+            ]) || findFirstVisibleGuestDemoElement([codeEditorElement, editorSurface, editorPanel]);
+        }
+
+        function getGuestDemoCodeAutocompleteTarget() {
+            if (!isGuestDemoCodeFeatureEditorVisible()) {
+                return null;
+            }
+            return findFirstVisibleGuestDemoElement([
+                editorSuggest,
+                listCodeEditor ? listCodeEditor.getElement() : null,
+                editorSurface,
+                editorPanel,
+            ]);
+        }
+
+        function prepareGuestDemoCodeAutocomplete() {
+            if (!isGuestDemoCodeFeatureEditorVisible() || !editorContentInput) {
+                return null;
+            }
+            var moveToPracticeLine = function () {
+                if (!isGuestDemoCodeFeatureEditorVisible()) {
+                    return;
+                }
+                var cursor = String(editorContentInput.value || "").length;
+                editorContentInput.setSelectionRange(cursor, cursor);
+                if (listCodeEditor) {
+                    listCodeEditor.syncFromTextarea({ focus: true, syncScroll: true });
+                } else {
+                    editorContentInput.focus();
+                }
+                scheduleGuestDemoTourPositionAfterLayoutChange();
+            };
+            var syncAutocompleteTarget = function () {
+                window.requestAnimationFrame(scheduleGuestDemoTourPositionAfterLayoutChange);
+            };
+            editorContentInput.addEventListener("input", syncAutocompleteTarget);
+            editorContentInput.addEventListener("keydown", syncAutocompleteTarget);
+            appendGuestDemoTourStepCleanup(function () {
+                editorContentInput.removeEventListener("input", syncAutocompleteTarget);
+                editorContentInput.removeEventListener("keydown", syncAutocompleteTarget);
+            });
+            window.requestAnimationFrame(moveToPracticeLine);
+            return getGuestDemoCodeAutocompleteTarget();
+        }
+
         function openGuestDemoShareModal() {
             var entry = state.activePreviewPath
                 ? state.entryByPath.get(state.activePreviewPath) || null
@@ -21818,6 +23092,7 @@
 
         function getGuestDemoJobItemTarget() {
             return findFirstVisibleGuestDemoElement([
+                uploadQueueList ? uploadQueueList.querySelector('.handrive-job-queue-item.is-tutorial-sample[data-tutorial-interactive="true"]') : null,
                 uploadQueueList ? uploadQueueList.querySelector("li, .handrive-job-queue-item, button") : null,
                 uploadQueueList,
                 uploadQueuePanel,
@@ -21880,155 +23155,166 @@
         }
 
         function buildGuestDemoQueueSampleItems() {
-            var currentPath = normalizePath(state.currentDir || "", true);
-            var buildPath = function (name) {
-                var leaf = String(name || "").trim();
-                return normalizePath((currentPath ? currentPath + "/" : "") + leaf, true);
+            var tutorialRootPath = normalizePath(getGuestDemoTutorialRootPath() || state.currentDir || "", true);
+            var fileEntries = getCachedEntries(tutorialRootPath).filter(function (entry) {
+                return Boolean(
+                    entry &&
+                    entry.type === "file" &&
+                    entry.path &&
+                    !String(entry.name || "").startsWith(".")
+                );
+            });
+            var usedPaths = new Set();
+            var sampleItems = [];
+            var nextSampleId = -1000;
+            var takeEntryByExtensions = function (extensions, options) {
+                var settings = options || {};
+                var extensionSet = new Set((extensions || []).map(function (extension) {
+                    return String(extension || "").toLowerCase();
+                }));
+                var entry = fileEntries.find(function (candidate) {
+                    var candidatePath = normalizePath(candidate.path || "", true);
+                    return Boolean(
+                        candidatePath &&
+                        (settings.allowUsed || !usedPaths.has(candidatePath)) &&
+                        extensionSet.has(getEntryFileExtension(candidate)) &&
+                        (!settings.previewable || isPreviewableFileEntry(candidate))
+                    );
+                }) || null;
+                if (entry && !settings.allowUsed) {
+                    usedPaths.add(normalizePath(entry.path || "", true));
+                }
+                return entry;
             };
-            return [
-                {
-                    id: -101,
-                    kind: "operation",
-                    operationType: "youtube-save",
-                    entries: [],
-                    fileName: textByLang("튜토리얼-영상-저장.mp4", "tutorial-video-save.mp4"),
-                    sourcePath: "YouTube Downloader",
-                    targetDirPath: buildPath("youtube-downloader"),
-                    status: "uploading",
-                    progress: 68,
+            var toQueueEntry = function (entry) {
+                return {
+                    path: entry.path,
+                    slug_path: entry.slug_path || "",
+                    name: entry.name || "",
+                    type: entry.type,
+                    size_display: entry.size_display || "",
+                    is_archive_member: Boolean(entry.is_archive_member),
+                    is_archive: Boolean(entry.is_archive),
+                    archive_path: entry.archive_path || "",
+                    archive_member_path: entry.archive_member_path || "",
+                };
+            };
+            var addSampleItem = function (item, linkedEntry, interactive) {
+                if (!item || !linkedEntry) {
+                    return;
+                }
+                nextSampleId += 1;
+                item.id = nextSampleId;
+                item.isTutorialSample = true;
+                item.tutorialLinkedEntryPath = normalizePath(linkedEntry.path || "", true);
+                item.tutorialFileExtension = getEntryFileExtension(linkedEntry);
+                item.tutorialInteractive = Boolean(interactive);
+                sampleItems.push(item);
+            };
+
+            var uploadEntry = takeEntryByExtensions([
+                ".md", ".txt", ".html", ".css", ".js", ".py", ".json", ".sql", ".csv", ".svg",
+            ], { previewable: true });
+            if (!uploadEntry) {
+                uploadEntry = fileEntries.find(function (entry) {
+                    return isPreviewableFileEntry(entry);
+                }) || fileEntries[0] || null;
+            }
+            if (uploadEntry) {
+                usedPaths.add(normalizePath(uploadEntry.path || "", true));
+                addSampleItem({
+                    kind: "upload",
+                    fileName: uploadEntry.name || "",
+                    fileSize: Number(uploadEntry.size || uploadEntry.size_bytes || 0),
+                    sizeDisplay: uploadEntry.size_display || "",
+                    targetDirPath: getParentDirectory(uploadEntry.path || ""),
+                    status: "done",
+                    progress: 100,
                     errorMessage: "",
-                    savedPath: buildPath("youtube-downloader/tutorial-video-save.mp4"),
-                    savedSlugPath: "",
-                    sizeDisplay: "48.2 MB",
-                },
-                {
-                    id: -102,
+                    savedPath: normalizePath(uploadEntry.path || "", true),
+                    savedSlugPath: uploadEntry.slug_path || "",
+                    uploadSpeed: 0,
+                    startTime: 0,
+                }, uploadEntry, isPreviewableFileEntry(uploadEntry));
+            }
+
+            var archiveEntry = takeEntryByExtensions([
+                ".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz",
+            ], { allowUsed: true });
+            if (archiveEntry) {
+                addSampleItem({
                     kind: "operation",
-                    operationType: "convert-mp3",
-                    entries: [],
-                    fileName: textByLang("15-MP3-변환-샘플.mp4", "15-mp3-conversion-sample.mp4"),
-                    sourcePath: buildPath(textByLang("15-MP3-변환-샘플.mp4", "15-mp3-conversion-sample.mp4")),
-                    targetDirPath: currentPath,
+                    operationType: "extract",
+                    entries: [toQueueEntry(archiveEntry)],
+                    fileName: archiveEntry.name || "",
+                    sourcePath: normalizePath(archiveEntry.path || "", true),
+                    targetDirPath: tutorialRootPath,
                     status: "queued",
                     progress: 0,
                     errorMessage: "",
                     savedPath: "",
                     savedSlugPath: "",
-                    sizeDisplay: "5.1 MB",
-                },
-                {
-                    id: -103,
+                    sizeDisplay: archiveEntry.size_display || "",
+                }, archiveEntry, false);
+            }
+
+            var videoEntry = takeEntryByExtensions([
+                ".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v",
+            ], { allowUsed: true });
+            var audioEntry = takeEntryByExtensions([
+                ".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac", ".opus",
+            ], { allowUsed: true });
+            if (videoEntry) {
+                addSampleItem({
                     kind: "operation",
-                    operationType: "extract",
-                    entries: [],
-                    fileName: textByLang("12-압축-샘플.zip", "12-archive-sample.zip"),
-                    sourcePath: buildPath(textByLang("12-압축-샘플.zip", "12-archive-sample.zip")),
-                    targetDirPath: currentPath,
-                    status: "done",
-                    progress: 100,
+                    operationType: "convert-mp3",
+                    entries: [toQueueEntry(videoEntry)],
+                    fileName: videoEntry.name || "",
+                    sourcePath: normalizePath(videoEntry.path || "", true),
+                    targetDirPath: tutorialRootPath,
+                    status: audioEntry ? "done" : "queued",
+                    progress: audioEntry ? 100 : 0,
                     errorMessage: "",
-                    savedPath: buildPath(textByLang("12-압축-샘플", "12-archive-sample")),
-                    savedSlugPath: "",
-                    sizeDisplay: "1.8 MB",
-                },
-                {
-                    id: -104,
-                    kind: "upload",
-                    fileName: textByLang("자유연습-메모.md", "free-practice-note.md"),
-                    fileSize: 18640,
-                    targetDirPath: currentPath,
+                    savedPath: audioEntry ? normalizePath(audioEntry.path || "", true) : "",
+                    savedSlugPath: audioEntry ? (audioEntry.slug_path || "") : "",
+                    sizeDisplay: videoEntry.size_display || "",
+                }, audioEntry || videoEntry, Boolean(audioEntry && isPreviewableFileEntry(audioEntry)));
+
+                addSampleItem({
+                    kind: "operation",
+                    operationType: "youtube-save",
+                    entries: [toQueueEntry(videoEntry)],
+                    fileName: videoEntry.name || "",
+                    sourcePath: normalizePath(videoEntry.path || "", true),
+                    targetDirPath: tutorialRootPath,
                     status: "uploading",
-                    progress: 72,
+                    progress: 68,
                     errorMessage: "",
-                    savedPath: buildPath(textByLang("자유연습-메모.md", "free-practice-note.md")),
+                    savedPath: "",
                     savedSlugPath: "",
-                    uploadSpeed: 420 * 1024,
-                    startTime: Date.now() - 38000,
-                },
-            ];
+                    sizeDisplay: videoEntry.size_display || "",
+                }, videoEntry, false);
+            }
+
+            return sampleItems;
         }
 
         function showGuestDemoQueuePreview() {
             if (!uploadQueuePanel) {
                 return null;
             }
-            var previousHadItems = state.uploadQueueItems.length > 0;
-            var previousHidden = uploadQueuePanel.hidden;
-            var previousSummary = uploadQueueSummary ? uploadQueueSummary.textContent : "";
-            var previousListHtml = uploadQueueList ? uploadQueueList.innerHTML : "";
-            var previousListHidden = uploadQueueList ? uploadQueueList.hidden : false;
-            var previousCollapsed = uploadQueuePanel.classList.contains("is-collapsed");
             var previousStateCollapsed = state.uploadQueueCollapsed;
-            var previousToggleExpanded = uploadQueueToggleButton ? uploadQueueToggleButton.getAttribute("aria-expanded") : null;
-            var previousToggleLabel = uploadQueueToggleButton ? uploadQueueToggleButton.getAttribute("aria-label") : null;
-            var previousToggleTitle = uploadQueueToggleButton ? uploadQueueToggleButton.getAttribute("title") : null;
             var sampleItems = buildGuestDemoQueueSampleItems();
 
-            uploadQueuePanel.hidden = false;
+            guestDemoQueuePreviewItems = sampleItems;
             uploadQueuePanel.classList.add("is-tutorial-preview");
-            uploadQueuePanel.classList.remove("is-collapsed");
             state.uploadQueueCollapsed = false;
-            if (uploadQueueSummary) {
-                uploadQueueSummary.textContent = t("guest_demo_tour_jobs_sample", textByLang("튜토리얼 샘플 작업 4개", "4 tutorial sample jobs"));
-            }
-            if (uploadQueueList) {
-                uploadQueueList.hidden = false;
-                uploadQueueList.innerHTML = "";
-                sampleItems.forEach(function (item) {
-                    var listItem = createQueueListItem(item, {
-                        documentRef: document,
-                        getMetaLabel: function (nextItem) {
-                            return getQueueItemMetaLabel(nextItem, getHandrivePathLabel);
-                        },
-                        getStatusLabel: function (nextItem) {
-                            return getQueueItemStatusLabel(nextItem, t);
-                        },
-                    });
-                    if (listItem) {
-                        listItem.classList.add("is-tutorial-sample");
-                        uploadQueueList.appendChild(listItem);
-                    }
-                });
-            }
-            if (uploadQueueToggleButton) {
-                var collapseLabel = t("collapse", "접기");
-                uploadQueueToggleButton.setAttribute("aria-expanded", "true");
-                uploadQueueToggleButton.setAttribute("aria-label", collapseLabel);
-                uploadQueueToggleButton.setAttribute("title", collapseLabel);
-            }
+            renderUploadQueue();
             guestDemoTourStepCleanup = function () {
+                guestDemoQueuePreviewItems = null;
                 uploadQueuePanel.classList.remove("is-tutorial-preview");
                 state.uploadQueueCollapsed = previousStateCollapsed;
-                if (previousHadItems || state.uploadQueueItems.length > 0) {
-                    renderUploadQueue();
-                    return;
-                }
-                uploadQueuePanel.hidden = previousHidden;
-                uploadQueuePanel.classList.toggle("is-collapsed", previousCollapsed);
-                if (uploadQueueSummary) {
-                    uploadQueueSummary.textContent = previousSummary;
-                }
-                if (uploadQueueList) {
-                    uploadQueueList.innerHTML = previousListHtml;
-                    uploadQueueList.hidden = previousListHidden;
-                }
-                if (uploadQueueToggleButton) {
-                    if (previousToggleExpanded === null) {
-                        uploadQueueToggleButton.removeAttribute("aria-expanded");
-                    } else {
-                        uploadQueueToggleButton.setAttribute("aria-expanded", previousToggleExpanded);
-                    }
-                    if (previousToggleLabel === null) {
-                        uploadQueueToggleButton.removeAttribute("aria-label");
-                    } else {
-                        uploadQueueToggleButton.setAttribute("aria-label", previousToggleLabel);
-                    }
-                    if (previousToggleTitle === null) {
-                        uploadQueueToggleButton.removeAttribute("title");
-                    } else {
-                        uploadQueueToggleButton.setAttribute("title", previousToggleTitle);
-                    }
-                }
+                renderUploadQueue();
             };
             return uploadQueuePanel;
         }
@@ -22445,7 +23731,7 @@
                 return makeGuestDemoTourStep(id, titleFallback, bodyFallback, actionFallback, settings);
             }
 
-            return [
+            var steps = [
                 step(
                     1,
                     1,
@@ -23151,7 +24437,7 @@
                     }
                 ),
                 step(
-                    12,
+                    13,
                     1,
                     5,
                     "html_structure",
@@ -23166,7 +24452,7 @@
                     }
                 ),
                 step(
-                    12,
+                    13,
                     2,
                     5,
                     "html_common_assets",
@@ -23194,7 +24480,7 @@
                     }
                 ),
                 step(
-                    12,
+                    13,
                     3,
                     5,
                     "html_page_assets",
@@ -23218,7 +24504,7 @@
                     }
                 ),
                 step(
-                    12,
+                    13,
                     4,
                     5,
                     "html_preview",
@@ -23252,7 +24538,7 @@
                     }
                 ),
                 step(
-                    12,
+                    13,
                     5,
                     5,
                     "html_preview_opened",
@@ -23268,7 +24554,7 @@
                     }
                 ),
                 step(
-                    13,
+                    14,
                     1,
                     8,
                     "advanced_samples",
@@ -23303,7 +24589,7 @@
                     }
                 ),
                 step(
-                    13,
+                    14,
                     2,
                     8,
                     "advanced_archive_menu",
@@ -23331,7 +24617,7 @@
                     }
                 ),
                 step(
-                    13,
+                    14,
                     3,
                     8,
                     "advanced_git_menu",
@@ -23379,7 +24665,7 @@
                     }
                 ),
                 step(
-                    13,
+                    14,
                     4,
                     8,
                     "advanced_git_opened",
@@ -23399,7 +24685,7 @@
                     }
                 ),
                 step(
-                    13,
+                    14,
                     5,
                     8,
                     "advanced_map_menu",
@@ -23427,7 +24713,7 @@
                     }
                 ),
                 step(
-                    13,
+                    14,
                     6,
                     8,
                     "advanced_mp3_menu",
@@ -23455,7 +24741,7 @@
                     }
                 ),
                 step(
-                    13,
+                    14,
                     7,
                     8,
                     "advanced_audio_menu",
@@ -23485,7 +24771,7 @@
                     }
                 ),
                 step(
-                    13,
+                    14,
                     8,
                     8,
                     "advanced_default_menu",
@@ -23503,7 +24789,7 @@
                     }
                 ),
                 step(
-                    14,
+                    15,
                     1,
                     1,
                     "layout_splitter",
@@ -23522,7 +24808,7 @@
                     }
                 ),
                 step(
-                    15,
+                    16,
                     1,
                     1,
                     "layout_zoom",
@@ -23544,7 +24830,7 @@
                     }
                 ),
                 step(
-                    16,
+                    17,
                     1,
                     1,
                     "preview_drag",
@@ -23563,13 +24849,13 @@
                     }
                 ),
                 step(
-                    17,
+                    18,
                     1,
                     2,
                     "jobs_panel",
                     textByLang("작업 내역", "Job history"),
                     textByLang("업로드, 이동, 삭제, 압축, YouTube 저장, MP3 변환 같은 비동기 작업은 이 패널에 진행률과 결과가 표시됩니다.", "Uploads, moves, deletes, archive jobs, YouTube saves, and MP3 conversions show progress and results in this panel."),
-                    textByLang("작업 내역 패널을 확인해보세요.", "Check the job history panel."),
+                    textByLang("접기 버튼으로 작업 내역 패널을 접었다 펼쳐보세요.", "Collapse and expand the job history panel with its toggle button."),
                     {
                         labelKey: "guest_demo_onboarding_step_jobs",
                         prepare: showGuestDemoQueuePreview,
@@ -23580,13 +24866,13 @@
                     }
                 ),
                 step(
-                    17,
+                    18,
                     2,
                     2,
                     "jobs_item",
                     textByLang("작업 내역", "Job history"),
                     textByLang("작업 항목은 클릭하면 미리보기, 더블클릭하면 열기 동작을 합니다.", "Click a job item to preview it, or double-click it to open."),
-                    textByLang("샘플 작업 항목을 확인하세요.", "Check the sample job items."),
+                    textByLang("완료된 작업 항목을 클릭해 연결된 튜토리얼 파일을 미리보세요.", "Click a completed job to preview its linked tutorial file."),
                     {
                         labelKey: "guest_demo_onboarding_step_jobs",
                         prepare: showGuestDemoQueuePreview,
@@ -23597,7 +24883,7 @@
                     }
                 ),
                 step(
-                    18,
+                    19,
                     1,
                     2,
                     "help_button",
@@ -23618,7 +24904,7 @@
                     }
                 ),
                 step(
-                    18,
+                    19,
                     2,
                     2,
                     "help_modal",
@@ -23640,7 +24926,171 @@
                     }
                 ),
                 step(
-                    19,
+                    12,
+                    1,
+                    6,
+                    "code_select",
+                    textByLang("코드 파일 기능", "Code file features"),
+                    textByLang("JavaScript 샘플에서 코드 뷰어와 에디터의 전용 기능을 차례로 체험합니다.", "Use the JavaScript sample to try the dedicated code viewer and editor features in sequence."),
+                    textByLang("강조된 JavaScript 샘플 행을 클릭해 코드 미리보기를 여세요.", "Click the highlighted JavaScript sample row to open its code preview."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_code_features",
+                        prepare: function () {
+                            var row = prepareGuestDemoCodeFeatureSelection();
+                            bindGuestDemoStepAutoAdvance(row, "click", "code_select", {
+                                capture: true,
+                                filter: function (event) {
+                                    return !event || event.button === 0 || event.button === undefined;
+                                },
+                                delayMs: 420,
+                            });
+                            return row;
+                        },
+                        target: getGuestDemoCodeFeatureRow,
+                        allowTargetFallback: false,
+                    }
+                ),
+                step(
+                    12,
+                    2,
+                    6,
+                    "code_viewer_structure",
+                    textByLang("코드 뷰어 구조", "Code viewer structure"),
+                    textByLang("코드 뷰어는 줄 번호, Syntax Highlighting, 들여쓰기 가이드를 함께 표시해 구조를 빠르게 읽을 수 있게 합니다.", "The code viewer combines line numbers, syntax highlighting, and indent guides so the structure is easy to scan."),
+                    textByLang("줄 번호와 들여쓰기 가이드를 확인한 뒤 코드 본문을 한 번 클릭하세요.", "Review the line numbers and indent guides, then click the code body once."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_code_features",
+                        prepare: function () {
+                            startGuestDemoCodeFeaturePreview();
+                            bindGuestDemoStepAutoAdvance(previewContent, "click", "code_viewer_structure", {
+                                capture: true,
+                                filter: function (event) {
+                                    var target = event && event.target instanceof Element ? event.target : null;
+                                    return Boolean(
+                                        target &&
+                                        target.closest("pre.handrive-line-numbered-code") &&
+                                        !target.closest("button")
+                                    );
+                                },
+                                delayMs: 180,
+                            });
+                            return getGuestDemoCodeViewerStructureTarget();
+                        },
+                        target: getGuestDemoCodeViewerStructureTarget,
+                        allowTargetFallback: false,
+                    }
+                ),
+                step(
+                    12,
+                    3,
+                    6,
+                    "code_viewer_fold",
+                    textByLang("뷰어 Code Folding", "Viewer code folding"),
+                    textByLang("접을 수 있는 블록의 들여쓰기 가이드 오른쪽에는 Code Folding 화살표가 표시됩니다.", "A Code Folding arrow appears to the right of the indent guide for each collapsible block."),
+                    textByLang("강조된 화살표를 클릭해 코드 블록을 접어보세요. 다시 클릭하면 펼칠 수 있습니다.", "Click the highlighted arrow to fold the block. Clicking it again expands the block."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_code_features",
+                        prepare: function () {
+                            startGuestDemoCodeFeaturePreview();
+                            bindGuestDemoStepAutoAdvance(previewContent, "click", "code_viewer_fold", {
+                                capture: true,
+                                filter: function (event) {
+                                    return Boolean(
+                                        event &&
+                                        event.target instanceof Element &&
+                                        event.target.closest(".handrive-code-fold-toggle")
+                                    );
+                                },
+                                delayMs: 220,
+                            });
+                            return getGuestDemoCodeViewerFoldTarget();
+                        },
+                        target: getGuestDemoCodeViewerFoldTarget,
+                        allowTargetFallback: false,
+                    }
+                ),
+                step(
+                    12,
+                    4,
+                    6,
+                    "code_edit_open",
+                    textByLang("코드 편집기로 전환", "Switch to the code editor"),
+                    textByLang("미리보기에서 같은 파일의 코드 편집기로 바로 전환할 수 있습니다.", "You can switch directly from the preview to the code editor for the same file."),
+                    textByLang("미리보기 상단의 편집 아이콘을 클릭하세요.", "Click the edit icon in the preview header."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_code_features",
+                        prepare: function () {
+                            if (!isGuestDemoCodeFeaturePreviewVisible()) {
+                                return null;
+                            }
+                            bindGuestDemoStepAutoAdvance(previewPanel, "click", "code_edit_open", {
+                                capture: true,
+                                filter: function (event) {
+                                    var target = event && event.target instanceof Element
+                                        ? event.target.closest("#handrive-list-preview-edit-btn")
+                                        : null;
+                                    if (!target) {
+                                        return false;
+                                    }
+                                    markGuestDemoEditTransition();
+                                    return true;
+                                },
+                                delayMs: 320,
+                            });
+                            return getGuestDemoPreviewEditTarget();
+                        },
+                        target: getGuestDemoPreviewEditTarget,
+                        allowTargetFallback: false,
+                    }
+                ),
+                step(
+                    12,
+                    5,
+                    6,
+                    "code_editor_structure",
+                    textByLang("코드 에디터 구조", "Code editor structure"),
+                    textByLang("에디터에서도 뷰어와 같은 줄 번호, Syntax Highlighting, 들여쓰기 가이드, Code Folding을 사용할 수 있습니다.", "The editor provides the same line numbers, syntax highlighting, indent guides, and Code Folding as the viewer."),
+                    textByLang("편집기 안의 Code Folding 화살표를 클릭해 동작이 같은지 확인하세요.", "Click a Code Folding arrow in the editor and confirm that it behaves the same way."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_code_features",
+                        prepare: function () {
+                            if (!isGuestDemoCodeFeatureEditorVisible()) {
+                                return null;
+                            }
+                            bindGuestDemoStepAutoAdvance(editorPanel, "click", "code_editor_structure", {
+                                capture: true,
+                                filter: function (event) {
+                                    return Boolean(
+                                        event &&
+                                        event.target instanceof Element &&
+                                        event.target.closest(".handrive-ace-fold-toggle")
+                                    );
+                                },
+                                delayMs: 220,
+                            });
+                            return getGuestDemoCodeEditorStructureTarget();
+                        },
+                        target: getGuestDemoCodeEditorStructureTarget,
+                        allowTargetFallback: false,
+                    }
+                ),
+                step(
+                    12,
+                    6,
+                    6,
+                    "code_autocomplete",
+                    textByLang("단계별 자동완성", "Incremental completion"),
+                    textByLang("코드 자동완성 후보를 선택하면 Tab을 누를 때마다 문장의 한 어절씩 적용되고, 다른 내용을 입력하면 자동완성이 종료됩니다.", "After selecting a code completion, each Tab applies one word or segment of the suggestion, and typing something else ends the completion session."),
+                    textByLang("마지막 빈 줄에 `for`를 입력하고 Tab을 여러 번 눌러 단계별 적용과 진행 표시를 확인하세요.", "Type `for` on the final blank line, then press Tab several times to watch the incremental insertion and progress indicator."),
+                    {
+                        labelKey: "guest_demo_onboarding_step_code_features",
+                        prepare: prepareGuestDemoCodeAutocomplete,
+                        target: getGuestDemoCodeAutocompleteTarget,
+                        allowTargetFallback: false,
+                    }
+                ),
+                step(
+                    20,
                     1,
                     1,
                     "practice",
@@ -23658,6 +25108,9 @@
                     }
                 ),
             ];
+            return steps.sort(function (left, right) {
+                return (left.groupIndex - right.groupIndex) || (left.partIndex - right.partIndex);
+            });
         }
 
         function getGuestDemoStepIndexById(steps, stepId) {
@@ -23736,6 +25189,18 @@
                 return isGuestDemoElementVisible(contextRenameButton) ? "manage_menu" : "manage_row";
             }
             if (groupIndex === 12) {
+                if (isGuestDemoCodeFeatureEditorVisible()) {
+                    if (isGuestDemoElementVisible(editorSuggest)) {
+                        return "code_autocomplete";
+                    }
+                    return "code_editor_structure";
+                }
+                if (isGuestDemoCodeFeaturePreviewVisible()) {
+                    return "code_viewer_structure";
+                }
+                return "code_select";
+            }
+            if (groupIndex === 13) {
                 if (isGuestDemoHtmlUsagePreviewRendered()) {
                     return "html_preview_opened";
                 }
@@ -23744,7 +25209,7 @@
                 }
                 return (isGuestDemoHtmlUsageDirectoryOpen() || isGuestDemoHtmlUsageTreeExpanded()) ? "html_common_assets" : "html_structure";
             }
-            if (groupIndex === 13) {
+            if (groupIndex === 14) {
                 if (isGuestDemoGitRepositoryView()) {
                     return "advanced_git_opened";
                 }
@@ -23754,16 +25219,16 @@
                 }
                 return "advanced_samples";
             }
-            if (groupIndex === 15) {
+            if (groupIndex === 16) {
                 return "layout_zoom";
             }
-            if (groupIndex === 16) {
+            if (groupIndex === 17) {
                 return "preview_drag";
             }
-            if (groupIndex === 17) {
+            if (groupIndex === 18) {
                 return getGuestDemoJobItemTarget() ? "jobs_item" : "jobs_panel";
             }
-            if (groupIndex === 18) {
+            if (groupIndex === 19) {
                 return getGuestDemoHelpModalTarget() ? "help_modal" : "help_button";
             }
             return "";
@@ -23886,6 +25351,15 @@
                     return !hasHelpModal;
                 case "help_modal":
                     return hasHelpModal;
+                case "code_select":
+                    return !isGuestDemoCodeFeaturePreviewVisible() && !isGuestDemoCodeFeatureEditorVisible();
+                case "code_viewer_structure":
+                case "code_viewer_fold":
+                case "code_edit_open":
+                    return isGuestDemoCodeFeaturePreviewVisible();
+                case "code_editor_structure":
+                case "code_autocomplete":
+                    return isGuestDemoCodeFeatureEditorVisible();
                 default:
                     return true;
             }
@@ -24099,7 +25573,7 @@
 
         function closeGuestDemoHelpModalForGroupChange(groupIndex) {
             var targetGroup = Math.max(1, Math.min(HANDRIVE_TUTORIAL_TOTAL_GROUPS, Math.floor(Number(groupIndex) || 1)));
-            if (targetGroup === 18 || getGuestDemoActiveGroupIndex() !== 18 || !getGuestDemoHelpModalTarget()) {
+            if (targetGroup === 19 || getGuestDemoActiveGroupIndex() !== 19 || !getGuestDemoHelpModalTarget()) {
                 return;
             }
             document.dispatchEvent(new window.CustomEvent("handrive:tutorial-close-help-modal"));
@@ -24525,6 +25999,7 @@
             viewTextFontSize = Math.max(8, Math.min(40, Number(nextFontSize) || 16));
             if (contentArticle) {
                 contentArticle.style.setProperty("--handrive-text-font-size", viewTextFontSize + "px");
+                contentArticle.style.setProperty("--handrive-code-font-size", viewTextFontSize + "px");
             }
             if (!settings.skipPersist && isHandriveTextCodeZoomExtension(extension)) {
                 writeStoredHandriveZoom("read-text", extension, viewTextFontSize, 8, 40);
@@ -24774,6 +26249,8 @@
             applyHandriveCodeHighlighting(contentArticle, "handrive-sql");
         } else if (contentArticle && contentArticle.classList.contains("handrive-html")) {
             applyHandriveCodeHighlighting(contentArticle, "handrive-html");
+        } else if (contentArticle && contentArticle.classList.contains("handrive-plain-text")) {
+            applyHandriveCodeHighlighting(contentArticle, "handrive-plain-text");
         } else if (contentArticle && contentArticle.classList.contains("ui-markdown")) {
             applyHandriveCodeHighlighting(contentArticle, "ui-markdown");
         }
@@ -24969,7 +26446,9 @@
         const editorHighlight = document.getElementById("handrive-editor-highlight");
         const editorHighlightCode = document.getElementById("handrive-editor-highlight-code");
         const editorSuggest = document.getElementById("handrive-editor-suggest");
-        const editorSuggestLabel = document.getElementById("handrive-editor-suggest-label");
+        const writeCodeEditor = isMediaWriteEditor
+            ? null
+            : createHandriveCodeEditor(editorSurface, contentInput, getPathFileExtension(originalPath));
         const markdownHelpButton = document.getElementById("ui-markdown-help-btn");
         const markdownHelpModal = document.getElementById("ui-markdown-help-modal");
         const markdownHelpBackdrop = document.getElementById("ui-markdown-help-backdrop");
@@ -25197,6 +26676,8 @@
         let lastUnsavedFocusedElement = null;
         let activeEditorSuggestions = [];
         let activeEditorSuggestionIndex = -1;
+        let editorCompletionSession = null;
+        let editorCompletionMutation = false;
         let writeSuggestEventsBound = false;
         let writeMarkdownUploadedImagePaths = [];
         let writeUndoStack = [];
@@ -25204,8 +26685,6 @@
         let writeUndoApplying = false;
         let writeEditorFontSize = 16;
         const WRITE_UNDO_STACK_LIMIT = 200;
-        // 자동완성 단어 리스트는 전역 단일 맵(window.__handriveEditorCompletionMap)만 사용
-        const editorCompletionMap = window.__handriveEditorCompletionMap || {};
         const writeMarkdownImageInput = createMarkdownImageInputHandler({
             textarea: contentInput,
             uploadApiUrl: appendSharedQuery(markdownImageUploadApiUrl),
@@ -26489,6 +27968,9 @@
             if (editorHighlight) {
                 editorHighlight.style.fontSize = writeEditorFontSize + "px";
             }
+            if (writeCodeEditor) {
+                writeCodeEditor.setFontSize(writeEditorFontSize);
+            }
             syncEditorHighlightScroll();
             if (!settings.skipPersist && isHandriveTextCodeZoomExtension(extension)) {
                 writeStoredHandriveZoom("write-text", extension, writeEditorFontSize, 8, 40);
@@ -26535,6 +28017,9 @@
             if (!contentInput || !editorHighlight) {
                 return;
             }
+            if (writeCodeEditor) {
+                return;
+            }
             syncEditorMirrorScroll(contentInput, editorHighlight, editorHighlightCode);
         }
 
@@ -26570,6 +28055,9 @@
             if (contentInput && editorHighlight) {
                 syncEditorMirrorScroll(contentInput, editorHighlight, editorHighlightCode);
             }
+            if (writeCodeEditor) {
+                writeCodeEditor.setScroll(0, 0);
+            }
         }
 
         function scheduleWriteEditorHorizontalScrollReset() {
@@ -26585,15 +28073,15 @@
         function clearEditorSuggestion() {
             activeEditorSuggestions = [];
             activeEditorSuggestionIndex = -1;
+            editorCompletionSession = null;
             if (editorSuggest) {
                 editorSuggest.hidden = true;
                 // 위치 스타일 초기화
                 editorSuggest.style.left = '';
                 editorSuggest.style.top = '';
                 editorSuggest.innerHTML = "";
-            }
-            if (editorSuggestLabel) {
-                editorSuggestLabel.textContent = "";
+                editorSuggest.classList.remove("is-completion-session");
+                editorSuggest.removeAttribute("aria-live");
             }
         }
 
@@ -26624,6 +28112,11 @@
 
         function updateEditorSuggestion() {
             if (!contentInput || !editorSuggest) {
+                return;
+            }
+            if (!handriveEditorCompletionsReady) {
+                clearEditorSuggestion();
+                handriveEditorCompletionsPromise.then(updateEditorSuggestion);
                 return;
             }
             const start = contentInput.selectionStart || 0;
@@ -26703,16 +28196,42 @@
             if (!contentInput) {
                 return false;
             }
-            const suggestion = activeEditorSuggestions[activeEditorSuggestionIndex] || null;
-            if (!suggestion) {
+            if (!editorCompletionSession) {
+                const suggestion = activeEditorSuggestions[activeEditorSuggestionIndex] || null;
+                if (!suggestion) {
+                    return false;
+                }
+                editorCompletionSession = createEditorCompletionSession(suggestion);
+            }
+            if (!editorCompletionSession) {
                 return false;
             }
-            contentInput.setRangeText(suggestion.insertText, suggestion.start, suggestion.end, "end");
-            const cursorPos = (suggestion.start + suggestion.insertText.length) - Math.max(0, suggestion.cursorBack);
-            contentInput.setSelectionRange(cursorPos, cursorPos);
-            contentInput.focus();
-            contentInput.dispatchEvent(new Event("input", { bubbles: true }));
-            clearEditorSuggestion();
+
+            editorCompletionMutation = true;
+            let result = null;
+            try {
+                result = applyEditorCompletionSessionStep(contentInput, editorCompletionSession);
+            } finally {
+                editorCompletionMutation = false;
+            }
+            if (!result) {
+                clearEditorSuggestion();
+                return false;
+            }
+            if (result.completed) {
+                clearEditorSuggestion();
+                return true;
+            }
+
+            activeEditorSuggestions = [];
+            activeEditorSuggestionIndex = -1;
+            renderEditorCompletionSession(editorSuggest, editorCompletionSession);
+            positionEditorSuggestDropdown(
+                editorSuggest,
+                contentInput,
+                editorSurface,
+                contentInput.selectionStart || 0,
+            );
             return true;
         }
 
@@ -26722,6 +28241,12 @@
             }
 
             const source = contentInput.value || "";
+            if (writeCodeEditor) {
+                writeCodeEditor.setExtension(resolveWriteFilenameExtension() || getPathFileExtension(originalPath));
+                writeCodeEditor.syncFromTextarea();
+                writeCodeEditor.resize();
+                return;
+            }
             const useSyntaxHighlight = shouldUseEditorSyntaxHighlight(source);
             let renderClass = "handrive-plain-text";
             let highlightedHtml = "";
@@ -28381,22 +29906,32 @@
         }
 
         if (contentInput) {
-            contentInput.addEventListener("paste", function (event) {
+            const writeEditorInteractionTarget = writeCodeEditor
+                ? writeCodeEditor.getElement()
+                : contentInput;
+            writeEditorInteractionTarget.addEventListener("paste", function (event) {
                 writeMarkdownImageInput.handlePaste(event);
             });
-            contentInput.addEventListener("dragover", function (event) {
+            writeEditorInteractionTarget.addEventListener("dragover", function (event) {
                 writeMarkdownImageInput.handleDragOver(event);
             });
-            contentInput.addEventListener("drop", function (event) {
+            writeEditorInteractionTarget.addEventListener("drop", function (event) {
                 writeMarkdownImageInput.handleDrop(event);
             });
             contentInput.addEventListener("input", function () {
                 renderWriteEditorHighlight();
-                updateEditorSuggestion();
                 recordWriteEditorSnapshot();
+                if (editorCompletionMutation) {
+                    return;
+                }
+                if (editorCompletionSession) {
+                    clearEditorSuggestion();
+                    return;
+                }
+                updateEditorSuggestion();
             });
             contentInput.addEventListener("scroll", syncEditorHighlightScroll, { passive: true });
-            bindHanplanetZoomGesture(contentInput, {
+            bindHanplanetZoomGesture(writeEditorInteractionTarget, {
                 min: 8,
                 max: 40,
                 wheelStep: 2,
@@ -28437,17 +29972,17 @@
                     clearEditorSuggestion();
                     return;
                 }
-                if (!editorSuggest.hidden && event.key === "ArrowDown") {
+                if (!editorCompletionSession && !editorSuggest.hidden && event.key === "ArrowDown") {
                     event.preventDefault();
                     moveWriteEditorSuggestion(1);
                     return;
                 }
-                if (!editorSuggest.hidden && event.key === "ArrowUp") {
+                if (!editorCompletionSession && !editorSuggest.hidden && event.key === "ArrowUp") {
                     event.preventDefault();
                     moveWriteEditorSuggestion(-1);
                     return;
                 }
-                if (!editorSuggest.hidden && event.key === "Enter") {
+                if (!editorCompletionSession && !editorSuggest.hidden && event.key === "Enter") {
                     if (acceptEditorSuggestion()) {
                         event.preventDefault();
                     }
@@ -28844,6 +30379,7 @@
     initializeHandrivePageHelpModal();
     initializeHandriveToolbarAutoCollapse();
     initializeHandriveBreadcrumbOverflow();
+    initializeHandriveScopedSelectAll();
 
     if (pageType === "list") {
         initializeListPage();

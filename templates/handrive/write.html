@@ -53,6 +53,7 @@
     data-tutorial-complete-api-url="{{ handrive_api_tutorial_complete_url }}"
     data-handrive-base-url="{{ handrive_base_url }}"
     data-handrive-root-url="{{ handrive_root_url }}"
+    data-editor-completions-api-url="{{ handrive_api_editor_completions_url }}"
     data-save-api-url="{{ handrive_api_save_url }}"
     data-spreadsheet-save-api-url="{{ handrive_api_spreadsheet_save_url }}"
     data-rename-api-url="{{ handrive_api_rename_url }}"
@@ -139,10 +140,7 @@
             {% include "handrive/_media_editor_surfaces.html" %}
             <div class="handrive-editor-surface" id="handrive-editor-surface">
                 <pre class="handrive-editor-highlight handrive-plain-text" id="handrive-editor-highlight" aria-hidden="true"><code id="handrive-editor-highlight-code"></code></pre>
-                <div class="handrive-editor-suggest site-dropdown-menu" id="handrive-editor-suggest" hidden>
-                    <span class="handrive-editor-suggest-label" id="handrive-editor-suggest-label"></span>
-                    <span class="handrive-editor-suggest-hint"><kbd>Tab</kbd> 적용</span>
-                </div>
+                <div class="handrive-editor-suggest site-dropdown-menu" id="handrive-editor-suggest" hidden></div>
                 <textarea id="handrive-content-input" spellcheck="false" wrap="off" placeholder="내용을 입력하세요.">{{ initial_content }}</textarea>
             </div>
         </div>
@@ -168,5 +166,6 @@
 
 {{ handrive_text|json_script:"handrive-i18n" }}
 {{ available_directories|json_script:"handrive-directory-data" }}
+{% include 'handrive/_code_editor_assets.html' %}
 {% include 'handrive/_assets_script.html' %}
 {% endblock %}

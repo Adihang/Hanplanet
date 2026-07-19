@@ -52,7 +52,7 @@ function wargame_portal_headers(): void
     header('Cross-Origin-Resource-Policy: same-origin');
     header('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()');
     $upgrade = wargame_is_https() ? '; upgrade-insecure-requests' : '';
-    header("Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' " . $djangoOrigin . "; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" . $upgrade);
+    header("Content-Security-Policy: default-src 'self'; img-src 'self' data: " . $djangoOrigin . "; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' https://cdn.jsdelivr.net; script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net; script-src-attr 'none'; connect-src 'self' " . $djangoOrigin . "; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" . $upgrade);
 }
 
 function csrf_token(): string
@@ -73,9 +73,7 @@ function require_csrf(): void
 
 function redirect_to(string $path): never
 {
-    if (!str_starts_with($path, '/') || str_starts_with($path, '//') || preg_match('/[\r\n]/', $path)) {
-        $path = '/';
-    }
+    $path = wargame_return_path($path);
     header('Location: ' . $path, true, 303);
     exit;
 }
@@ -120,10 +118,64 @@ function django_internal_api_url(string $endpoint): string
     return $base . '/ko/api/wargame/' . $normalized;
 }
 
-function django_login_url(): string
+function wargame_public_origin(): string
 {
-    $returnUrl = trim((string) getenv('WARGAME_PUBLIC_URL')) ?: 'https://wargame.hanplanet.com/';
+    $configured = trim((string) getenv('WARGAME_PUBLIC_URL')) ?: 'https://wargame.hanplanet.com/';
+    $parts = parse_url($configured);
+    if (!is_array($parts)
+        || !in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
+        || empty($parts['host'])
+        || isset($parts['user'])
+        || isset($parts['pass'])
+        || preg_match('/[\r\n]/', $configured)) {
+        return 'https://wargame.hanplanet.com';
+    }
+
+    $scheme = strtolower((string) $parts['scheme']);
+    $host = (string) $parts['host'];
+    if (str_contains($host, ':') && !str_starts_with($host, '[')) {
+        $host = '[' . $host . ']';
+    }
+    $port = isset($parts['port']) ? ':' . (int) $parts['port'] : '';
+    return $scheme . '://' . $host . $port;
+}
+
+function wargame_return_path(?string $candidate = null): string
+{
+    $path = $candidate ?? (string) ($_SERVER['REQUEST_URI'] ?? '/');
+    if (strlen($path) > 4096
+        || !str_starts_with($path, '/')
+        || str_starts_with($path, '//')
+        || preg_match('/[\x00-\x1f\x7f\\\\]/', $path)) {
+        return '/';
+    }
+    $parts = parse_url($path);
+    if (!is_array($parts)
+        || isset($parts['scheme'])
+        || isset($parts['host'])
+        || isset($parts['user'])
+        || isset($parts['pass'])
+        || isset($parts['fragment'])) {
+        return '/';
+    }
+    return $path;
+}
+
+function django_login_url(?string $returnPath = null): string
+{
+    $returnUrl = wargame_public_origin() . wargame_return_path($returnPath);
     return django_base_url() . '/ko/login/?next=' . rawurlencode($returnUrl);
+}
+
+function wargame_bearer_token(string $token): string
+{
+    $token = trim($token);
+    if (strlen($token) > 8192
+        || preg_match('/\A[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\z/D', $token) !== 1) {
+        throw new InvalidArgumentException('로그인 토큰이 올바르지 않습니다.');
+    }
+
+    return $token;
 }
 
 function django_api_request(string $method, string $endpoint, ?string $token = null, ?array $payload = null): array
@@ -131,7 +183,7 @@ function django_api_request(string $method, string $endpoint, ?string $token = n
     $headers = ['Accept: application/json', 'User-Agent: Hanplanet-Wargame-Portal/1.0'];
     $body = '';
     if (is_string($token) && $token !== '') {
-        $headers[] = 'Authorization: Bearer ' . $token;
+        $headers[] = 'Authorization: Bearer ' . wargame_bearer_token($token);
     }
     if ($payload !== null) {
         $body = wargame_json($payload);
@@ -183,10 +235,7 @@ function token_expiry(string $token): int
 
 function accept_django_token(string $token): array
 {
-    $token = trim($token);
-    if ($token === '' || strlen($token) > 8192) {
-        throw new InvalidArgumentException('로그인 토큰이 올바르지 않습니다.');
-    }
+    $token = wargame_bearer_token($token);
 
     $response = django_api_request('GET', 'solves/', $token);
     if ($response['status'] !== 200 || !is_array($response['data'])) {
@@ -198,17 +247,26 @@ function accept_django_token(string $token): array
     if ($username === '') {
         throw new InvalidArgumentException('로그인 사용자 정보가 비어 있습니다.');
     }
+    try {
+        $userId = wargame_django_user_id($data);
+    } catch (InvalidArgumentException) {
+        throw new InvalidArgumentException('Hanplanet 계정의 안정적인 식별자를 확인하지 못했습니다.');
+    }
 
-    session_regenerate_id(true);
-    $_SESSION['django_auth'] = [
+    $auth = [
         'token' => $token,
         'expires_at' => token_expiry($token),
+        'user_id' => $userId,
         'username' => $username,
         'display_name' => trim((string) ($data['display_name'] ?? $username)),
         'email' => trim((string) ($data['email'] ?? '')),
+        'profile_image_url' => trim((string) ($data['profile_image_url'] ?? '')),
         'solves' => array_values(array_filter((array) ($data['solves'] ?? []), 'is_string')),
         'checked_at' => time(),
     ];
+
+    session_regenerate_id(true);
+    $_SESSION['django_auth'] = $auth;
     unset($_SESSION['csrf_token']);
 
     return current_django_user(false) ?? throw new RuntimeException('로그인 세션을 만들지 못했습니다.');
@@ -227,25 +285,42 @@ function current_django_user(bool $refresh = true): ?array
         return null;
     }
 
-    if ($refresh && time() - (int) ($auth['checked_at'] ?? 0) >= 30) {
+    $hasStableUserId = preg_match('/^[1-9][0-9]{0,18}$/', trim((string) ($auth['user_id'] ?? ''))) === 1;
+    if ($refresh && (!$hasStableUserId || time() - (int) ($auth['checked_at'] ?? 0) >= 30)) {
         $response = django_api_request('GET', 'solves/', (string) $auth['token']);
         if ($response['status'] !== 200 || !is_array($response['data'])) {
             unset($_SESSION['django_auth']);
             return null;
         }
         $data = $response['data'];
+        try {
+            $auth['user_id'] = wargame_django_user_id($data);
+        } catch (InvalidArgumentException) {
+            unset($_SESSION['django_auth']);
+            return null;
+        }
         $auth['username'] = trim((string) ($data['username'] ?? $auth['username'] ?? ''));
         $auth['display_name'] = trim((string) ($data['display_name'] ?? $auth['display_name'] ?? $auth['username']));
         $auth['email'] = trim((string) ($data['email'] ?? $auth['email'] ?? ''));
+        $auth['profile_image_url'] = trim((string) ($data['profile_image_url'] ?? $auth['profile_image_url'] ?? ''));
         $auth['solves'] = array_values(array_filter((array) ($data['solves'] ?? []), 'is_string'));
         $auth['checked_at'] = time();
         $_SESSION['django_auth'] = $auth;
     }
 
+    try {
+        $userId = wargame_django_user_id($auth);
+    } catch (InvalidArgumentException) {
+        unset($_SESSION['django_auth']);
+        return null;
+    }
+
     return [
+        'user_id' => $userId,
         'username' => (string) ($auth['username'] ?? ''),
         'display_name' => (string) ($auth['display_name'] ?? ''),
         'email' => (string) ($auth['email'] ?? ''),
+        'profile_image_url' => (string) ($auth['profile_image_url'] ?? ''),
         'solves' => (array) ($auth['solves'] ?? []),
         'expires_at' => (int) ($auth['expires_at'] ?? 0),
     ];
@@ -270,17 +345,35 @@ function forget_django_user(): void
     unset($_SESSION['csrf_token']);
 }
 
-function django_completion_payload(string $username, string $challengeId, string $ticketHash): array
+function wargame_completion_secret(): string
+{
+    $secret = trim((string) getenv('WARGAME_COMPLETION_SECRET'));
+    $normalized = strtolower($secret);
+    $knownPlaceholders = [
+        'change-this-to-a-separate-long-random-wargame-secret',
+        'replace-me',
+        'changeme',
+    ];
+    $supportedFormat = preg_match('/^(?:[a-f0-9]{64,}|[a-z0-9_-]{43,})$/i', $secret) === 1;
+    $distinctCharacters = count(array_unique(str_split($secret)));
+    if (!$supportedFormat || $distinctCharacters < 12 || in_array($normalized, $knownPlaceholders, true)) {
+        return '';
+    }
+    return $secret;
+}
+
+function django_completion_payload(array $user, string $challengeId, string $ticketHash): array
 {
     $payload = ['challenge_id' => $challengeId];
-    $secret = trim((string) getenv('WARGAME_COMPLETION_SECRET'));
+    $secret = wargame_completion_secret();
     if ($secret === '') {
         return $payload;
     }
 
     $timestamp = time();
     $nonce = bin2hex(random_bytes(16));
-    $message = implode("\n", [$username, $challengeId, $ticketHash, (string) $timestamp, $nonce]);
+    $identity = 'django-user-id:v1:' . wargame_django_user_id($user);
+    $message = implode("\n", [$identity, $challengeId, $ticketHash, (string) $timestamp, $nonce]);
     return $payload + [
         'ticket_hash' => $ticketHash,
         'timestamp' => $timestamp,
@@ -295,7 +388,7 @@ function mark_solved_with_django(array $user, string $challengeId, string $ticke
     if ($token === null) {
         throw new RuntimeException('로그인이 만료되었습니다. 다시 연결해 주세요.');
     }
-    $payload = django_completion_payload((string) $user['username'], $challengeId, $ticketHash);
+    $payload = django_completion_payload($user, $challengeId, $ticketHash);
     $response = django_api_request('POST', 'solves/', $token, $payload);
     if ($response['status'] !== 200 || !is_array($response['data'])) {
         throw new RuntimeException('진행 기록을 Hanplanet 계정에 저장하지 못했습니다.');

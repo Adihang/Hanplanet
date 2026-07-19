@@ -5524,6 +5524,7 @@
         "handrive-markdown",
     ]);
     const handriveCodeStructureStates = new WeakMap();
+    const handriveCodeLineNumberScrollBindings = new WeakMap();
     const HANDRIVE_CODE_LINE_SELECTION_HIGHLIGHT_NAME = "handrive-code-line-selection";
 
     function resolveHandriveCodeStructureRenderClass(targetElement, renderClass) {
@@ -5625,57 +5626,38 @@
         if (
             !window.CSS
             || !window.CSS.highlights
-            || typeof window.Highlight !== "function"
         ) {
             return;
         }
-        const ranges = [];
-        document.querySelectorAll("pre > code").forEach(function (codeNode) {
-            const state = handriveCodeStructureStates.get(codeNode);
-            if (!state || !state.selectedLineIndexes.size) {
-                return;
-            }
-            const entries = buildHandriveCodeTextOffsetMap(codeNode);
-            const visibleIndexes = getHandriveVisibleCodeLineIndexes(state);
-            let visibleOffset = 0;
-            visibleIndexes.forEach(function (lineIndex, visiblePosition) {
-                const line = state.lines[lineIndex] || "";
-                const lineEndOffset = visibleOffset + line.length;
-                if (state.selectedLineIndexes.has(lineIndex)) {
-                    const range = buildHandriveCodeTextRange(
-                        entries,
-                        visibleOffset,
-                        lineEndOffset,
-                    );
-                    if (range) {
-                        ranges.push(range);
-                    }
-                }
-                visibleOffset = lineEndOffset + (visiblePosition < visibleIndexes.length - 1 ? 1 : 0);
-            });
-        });
-        if (!ranges.length) {
-            window.CSS.highlights.delete(HANDRIVE_CODE_LINE_SELECTION_HIGHLIGHT_NAME);
-            return;
-        }
-        const highlight = new window.Highlight(...ranges);
-        window.CSS.highlights.set(HANDRIVE_CODE_LINE_SELECTION_HIGHLIGHT_NAME, highlight);
+        window.CSS.highlights.delete(HANDRIVE_CODE_LINE_SELECTION_HIGHLIGHT_NAME);
     }
 
     function syncHandriveCodeLineSelection(pre, state) {
         if (!pre || !state) {
             return;
         }
-        pre.querySelectorAll(":scope > .handrive-code-line-numbers > .handrive-code-line-number-row").forEach(function (row) {
-            const lineIndex = Number(row.dataset.lineIndex);
+        const renderedSelection = state.renderedSelectedLineIndexes || new Set();
+        const changedLineIndexes = new Set(renderedSelection);
+        state.selectedLineIndexes.forEach(function (lineIndex) {
+            changedLineIndexes.add(lineIndex);
+        });
+        changedLineIndexes.forEach(function (lineIndex) {
             const isSelected = state.selectedLineIndexes.has(lineIndex);
-            row.classList.toggle("is-selected", isSelected);
-            row.setAttribute("aria-pressed", isSelected ? "true" : "false");
+            const lineNumberRow = state.lineNumberRowsByIndex && state.lineNumberRowsByIndex.get(lineIndex);
+            const lineSelectionRow = state.lineSelectionRowsByIndex && state.lineSelectionRowsByIndex.get(lineIndex);
+            const foldControlRow = state.foldControlRowsByIndex && state.foldControlRowsByIndex.get(lineIndex);
+            if (lineNumberRow) {
+                lineNumberRow.classList.toggle("is-selected", isSelected);
+                lineNumberRow.setAttribute("aria-pressed", isSelected ? "true" : "false");
+            }
+            if (lineSelectionRow) {
+                lineSelectionRow.classList.toggle("is-selected", isSelected);
+            }
+            if (foldControlRow) {
+                foldControlRow.classList.toggle("is-selected", isSelected);
+            }
         });
-        pre.querySelectorAll(":scope > .handrive-code-line-selection > .handrive-code-line-selection-row").forEach(function (row) {
-            const lineIndex = Number(row.dataset.lineIndex);
-            row.classList.toggle("is-selected", state.selectedLineIndexes.has(lineIndex));
-        });
+        state.renderedSelectedLineIndexes = new Set(state.selectedLineIndexes);
         syncHandriveCodeTextSelectionHighlight();
     }
 
@@ -5766,6 +5748,78 @@
         return scrollContainer === document.scrollingElement
             || scrollContainer === document.documentElement
             || scrollContainer === document.body;
+    }
+
+    function getHandriveCodeLineScrollLeft(scrollContainer) {
+        if (!scrollContainer) {
+            return 0;
+        }
+        return isHandriveDocumentScrollContainer(scrollContainer)
+            ? (window.scrollX || window.pageXOffset || 0)
+            : (Number(scrollContainer.scrollLeft) || 0);
+    }
+
+    function updateHandriveCodeLineNumberScrollPadding(lineNumbers, isHorizontallyScrolled) {
+        if (!lineNumbers) {
+            return;
+        }
+        if (
+            lineNumbers.classList.contains("is-horizontally-scrolled")
+            === isHorizontallyScrolled
+        ) {
+            return;
+        }
+        lineNumbers.classList.toggle("is-horizontally-scrolled", isHorizontallyScrolled);
+    }
+
+    function syncHandriveCodeLineNumberScrollPadding(pre, lineNumbers) {
+        if (!pre || !lineNumbers) {
+            return;
+        }
+        const scrollContainer = getHandriveCodeLineScrollContainer(pre);
+        if (!scrollContainer) {
+            lineNumbers.classList.remove("is-horizontally-scrolled");
+            return;
+        }
+        const scrollTarget = isHandriveDocumentScrollContainer(scrollContainer)
+            ? window
+            : scrollContainer;
+        let binding = handriveCodeLineNumberScrollBindings.get(scrollTarget);
+        if (!binding) {
+            binding = {
+                lineNumbers: new Set(),
+                scrollContainer: scrollContainer,
+                isHorizontallyScrolled: null,
+            };
+            binding.handleScroll = function () {
+                const isHorizontallyScrolled = getHandriveCodeLineScrollLeft(binding.scrollContainer) > 0;
+                if (binding.isHorizontallyScrolled === isHorizontallyScrolled) {
+                    return;
+                }
+                binding.isHorizontallyScrolled = isHorizontallyScrolled;
+                binding.lineNumbers.forEach(function (boundLineNumbers) {
+                    if (!boundLineNumbers.isConnected) {
+                        binding.lineNumbers.delete(boundLineNumbers);
+                        return;
+                    }
+                    updateHandriveCodeLineNumberScrollPadding(
+                        boundLineNumbers,
+                        isHorizontallyScrolled,
+                    );
+                });
+            };
+            handriveCodeLineNumberScrollBindings.set(scrollTarget, binding);
+            scrollTarget.addEventListener("scroll", binding.handleScroll, { passive: true });
+        }
+        binding.lineNumbers.forEach(function (boundLineNumbers) {
+            if (!boundLineNumbers.isConnected) {
+                binding.lineNumbers.delete(boundLineNumbers);
+            }
+        });
+        binding.lineNumbers.add(lineNumbers);
+        const isHorizontallyScrolled = getHandriveCodeLineScrollLeft(scrollContainer) > 0;
+        binding.isHorizontallyScrolled = isHorizontallyScrolled;
+        updateHandriveCodeLineNumberScrollPadding(lineNumbers, isHorizontallyScrolled);
     }
 
     function getHandriveCodeLineScrollViewport(scrollContainer) {
@@ -6019,11 +6073,12 @@
             lineNumbers.className = "handrive-code-line-numbers";
             pre.insertBefore(lineNumbers, codeNode);
         }
-        lineNumbers.style.setProperty(
-            "--handrive-code-line-number-digits",
-            String(String(state.lines.length).length),
-        );
+        const lineNumberDigits = String(String(state.lines.length).length);
+        pre.style.setProperty("--handrive-code-line-number-digits", lineNumberDigits);
+        lineNumbers.style.setProperty("--handrive-code-line-number-digits", lineNumberDigits);
+        syncHandriveCodeLineNumberScrollPadding(pre, lineNumbers);
         lineNumbers.replaceChildren();
+        state.lineNumberRowsByIndex = new Map();
         visibleIndexes.forEach(function (lineIndex) {
             const row = document.createElement("button");
             row.type = "button";
@@ -6076,6 +6131,7 @@
                     block: "center",
                 });
             });
+            state.lineNumberRowsByIndex.set(lineIndex, row);
             lineNumbers.appendChild(row);
         });
 
@@ -6087,11 +6143,13 @@
             pre.insertBefore(lineSelection, codeNode);
         }
         lineSelection.replaceChildren();
+        state.lineSelectionRowsByIndex = new Map();
         visibleIndexes.forEach(function (lineIndex) {
             const row = document.createElement("span");
             row.className = "handrive-code-line-selection-row";
             row.dataset.lineIndex = String(lineIndex);
             row.classList.toggle("is-selected", state.selectedLineIndexes.has(lineIndex));
+            state.lineSelectionRowsByIndex.set(lineIndex, row);
             lineSelection.appendChild(row);
         });
 
@@ -6113,10 +6171,12 @@
             pre.insertBefore(foldControls, codeNode);
         }
         foldControls.replaceChildren();
+        state.foldControlRowsByIndex = new Map();
         visibleIndexes.forEach(function (lineIndex) {
             const row = document.createElement("span");
             row.className = "handrive-code-fold-control-row";
             row.dataset.lineIndex = String(lineIndex);
+            row.classList.toggle("is-selected", state.selectedLineIndexes.has(lineIndex));
             row.style.setProperty("--handrive-code-fold-depth", String(state.guideDepths[lineIndex] || 0));
             const range = state.foldRanges.get(lineIndex);
             if (range) {
@@ -6164,6 +6224,7 @@
                     row.appendChild(ellipsis);
                 }
             }
+            state.foldControlRowsByIndex.set(lineIndex, row);
             foldControls.appendChild(row);
         });
         if (!indentGuides) {
@@ -6186,6 +6247,7 @@
             });
             indentGuides.appendChild(row);
         });
+        state.renderedSelectedLineIndexes = new Set(state.selectedLineIndexes);
         syncHandriveCodeTextSelectionHighlight();
     }
 
@@ -6225,7 +6287,10 @@
                 const allFoldRanges = isCodeFormat
                     ? window.HandriveCodeStructure.buildFoldRanges(lines, indentSize, structureRenderClass)
                     : new Map();
-                const foldRanges = window.HandriveCodeStructure.filterOutermostFoldRanges(allFoldRanges);
+                const foldRanges = window.HandriveCodeStructure.filterFoldRangesByParentDepth(
+                    allFoldRanges,
+                    1,
+                );
                 state = {
                     source: source,
                     lines: lines,
@@ -7363,6 +7428,7 @@
         const handriveRootUrl = root.dataset.handriveRootUrl || handriveBaseUrl;
         const listApiUrl = root.dataset.listApiUrl;
         const searchApiUrl = root.dataset.searchApiUrl;
+        const gitCommitApiUrl = root.dataset.gitCommitApiUrl || "";
         const saveApiUrl = root.dataset.saveApiUrl;
         const spreadsheetSaveApiUrl = root.dataset.spreadsheetSaveApiUrl || "";
         const renameApiUrl = root.dataset.renameApiUrl;
@@ -7530,6 +7596,11 @@
         const contextGitDeleteBranchButton = contextMenu ? contextMenu.querySelector('button[data-action="git-delete-branch"]') : null;
         const contextChangeIconButton = contextMenu ? contextMenu.querySelector('button[data-action="change-icon"]') : null;
         const contextGoogleDriveAddItemsButton = contextMenu ? contextMenu.querySelector('button[data-action="google-drive-add-items"]') : null;
+        const gitUnsavedModal = document.getElementById("handrive-git-unsaved-modal");
+        const gitUnsavedModalBackdrop = document.getElementById("handrive-git-unsaved-modal-backdrop");
+        const gitUnsavedCloseButton = document.getElementById("handrive-git-unsaved-close-btn");
+        const gitUnsavedLeaveButton = document.getElementById("handrive-git-unsaved-leave-btn");
+        const gitUnsavedCommitButton = document.getElementById("handrive-git-unsaved-commit-btn");
         const branchCreateModal = document.getElementById("handrive-branch-create-modal");
         const branchCreateModalBackdrop = document.getElementById("handrive-branch-create-modal-backdrop");
         const branchCreateTarget = document.getElementById("handrive-branch-create-target");
@@ -7738,6 +7809,8 @@
         const currentDirArchiveCanDelete = root.dataset.currentDirArchiveCanDelete === "1";
         const currentDirRequiresCommitMessage = root.dataset.currentDirRequiresCommitMessage === "1";
         const currentDirGitBranchRoot = root.dataset.currentDirGitBranchRoot === "1";
+        const currentDirGitBranchPath = normalizePath(root.dataset.currentDirGitBranchPath || "", true);
+        const currentDirHasUncommittedChanges = root.dataset.currentDirHasUncommittedChanges === "1";
         const currentDirGitCommitId = String(root.dataset.currentDirGitCommitId || "").trim();
         const currentDirGitCommitMessage = String(root.dataset.currentDirGitCommitMessage || "").trim();
         const currentDirGitCommitAuthorUsername = String(root.dataset.currentDirGitCommitAuthorUsername || "").trim();
@@ -7925,6 +7998,8 @@
                 is_git_repo_root: currentDirIsGitRepoRoot,
                 requires_commit_message: currentDirRequiresCommitMessage,
                 git_branch_root: currentDirGitBranchRoot,
+                git_branch_path: currentDirGitBranchPath,
+                has_uncommitted_changes: currentDirHasUncommittedChanges,
                 git_commit_id: currentDirGitCommitId,
                 git_commit_message: currentDirGitCommitMessage,
                 git_commit_author_username: currentDirGitCommitAuthorUsername,
@@ -9512,7 +9587,6 @@
             if (listCodeEditor) {
                 listCodeEditor.setExtension(extension);
                 listCodeEditor.syncFromTextarea();
-                listCodeEditor.resize();
                 return;
             }
             const useSyntaxHighlight = shouldUseEditorSyntaxHighlight(source);
@@ -13539,13 +13613,7 @@
                         if (!overwriteConfirmed) {
                             return null;
                         }
-                        let commitMessage = "";
-                        if (entry.requires_commit_message) {
-                            commitMessage = await promptCommitMessage(entry.path);
-                            if (commitMessage === null) {
-                                return null;
-                            }
-                        }
+                        const commitMessage = "";
                         setListEditorSaving(true);
                         return window.HandriveSpreadsheetEditor.saveToServer({
                             saveUrl: appendSharedQuery(spreadsheetSaveApiUrl),
@@ -13877,13 +13945,6 @@
                 const overwriteConfirmed = await confirmListEditorOverwriteIfNeeded(sourcePath, targetPath);
                 if (!overwriteConfirmed) {
                     return;
-                }
-                if (entry && entry.requires_commit_message) {
-                    const commitMessage = await promptCommitMessage(sourcePath);
-                    if (commitMessage === null) {
-                        return;
-                    }
-                    payload.commit_message = commitMessage;
                 }
                 setListEditorSaving(true);
                 editorSavingShown = true;
@@ -14971,6 +15032,147 @@
             updatePathCurrentSize();
         }
 
+        let resolveGitUnsavedNavigation = null;
+        let gitUnsavedLastFocusedElement = null;
+
+        function closeGitUnsavedNavigation(choice) {
+            if (!gitUnsavedModal || gitUnsavedModal.hidden) {
+                return;
+            }
+            gitUnsavedModal.hidden = true;
+            if (resolveGitUnsavedNavigation) {
+                resolveGitUnsavedNavigation(choice || "cancel");
+                resolveGitUnsavedNavigation = null;
+            }
+            if (gitUnsavedLastFocusedElement && typeof gitUnsavedLastFocusedElement.focus === "function") {
+                gitUnsavedLastFocusedElement.focus();
+            }
+            gitUnsavedLastFocusedElement = null;
+        }
+
+        function requestGitUnsavedNavigation() {
+            if (!gitUnsavedModal) {
+                return Promise.resolve(window.confirm(t(
+                    "git_unsaved_changes_message",
+                    "커밋되지 않은 변경 사항이 있습니다. 이동 전에 커밋 할까요?"
+                )) ? "commit" : "leave");
+            }
+            if (resolveGitUnsavedNavigation) {
+                resolveGitUnsavedNavigation("cancel");
+                resolveGitUnsavedNavigation = null;
+            }
+            gitUnsavedLastFocusedElement = document.activeElement;
+            gitUnsavedModal.hidden = false;
+            if (gitUnsavedCommitButton) {
+                gitUnsavedCommitButton.focus();
+            }
+            return new Promise(function (resolve) {
+                resolveGitUnsavedNavigation = resolve;
+            });
+        }
+
+        function isPathInCurrentGitBranch(pathValue) {
+            const branchPath = getCurrentGitBranchPath();
+            const normalizedPath = normalizePath(pathValue, true);
+            return Boolean(branchPath && (normalizedPath === branchPath || normalizedPath.startsWith(branchPath + "/")));
+        }
+
+        async function confirmGitCommitBeforeNavigation(nextPath) {
+            if (!hasCurrentGitBranchChanges() || isPathInCurrentGitBranch(nextPath)) {
+                return true;
+            }
+            const choice = await requestGitUnsavedNavigation();
+            if (choice === "leave") {
+                return true;
+            }
+            if (choice === "commit") {
+                return commitCurrentGitBranch();
+            }
+            return false;
+        }
+
+        if (gitUnsavedModalBackdrop) {
+            gitUnsavedModalBackdrop.addEventListener("click", function () {
+                closeGitUnsavedNavigation("cancel");
+            });
+        }
+        if (gitUnsavedCloseButton) {
+            gitUnsavedCloseButton.addEventListener("click", function () {
+                closeGitUnsavedNavigation("cancel");
+            });
+        }
+        if (gitUnsavedLeaveButton) {
+            gitUnsavedLeaveButton.addEventListener("click", function () {
+                closeGitUnsavedNavigation("leave");
+            });
+        }
+        if (gitUnsavedCommitButton) {
+            gitUnsavedCommitButton.addEventListener("click", function () {
+                closeGitUnsavedNavigation("commit");
+            });
+        }
+        document.addEventListener("keydown", function (event) {
+            if (event.key !== "Escape" || !gitUnsavedModal || gitUnsavedModal.hidden) {
+                return;
+            }
+            event.preventDefault();
+            closeGitUnsavedNavigation("cancel");
+        });
+
+        function isUrlInCurrentGitBranch(urlValue) {
+            const branchPath = getCurrentGitBranchPath();
+            if (!branchPath || !urlValue) {
+                return false;
+            }
+            try {
+                const branchBaseUrl = new URL(
+                    handriveBaseUrl.replace(/\/$/, "") + "/" + encodePathSegments(branchPath),
+                    window.location.origin
+                );
+                const targetUrl = new URL(urlValue, window.location.href);
+                return targetUrl.origin === branchBaseUrl.origin && (
+                    targetUrl.pathname === branchBaseUrl.pathname
+                    || targetUrl.pathname.startsWith(branchBaseUrl.pathname + "/")
+                );
+            } catch (error) {
+                return false;
+            }
+        }
+
+        document.addEventListener("click", function (event) {
+            if (event.defaultPrevented || !hasCurrentGitBranchChanges()) {
+                return;
+            }
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                return;
+            }
+            if (!(event.target instanceof Element)) {
+                return;
+            }
+            const anchor = event.target.closest("a[href]");
+            if (!anchor || anchor.hasAttribute("download") || (pathBreadcrumbs && pathBreadcrumbs.contains(anchor))) {
+                return;
+            }
+            const target = String(anchor.getAttribute("target") || "").toLowerCase();
+            if (target && target !== "_self") {
+                return;
+            }
+            const href = String(anchor.getAttribute("href") || "").trim();
+            if (!href || href === "#" || href.startsWith("#") || href.startsWith("javascript:")) {
+                return;
+            }
+            if (isUrlInCurrentGitBranch(anchor.href)) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            confirmGitCommitBeforeNavigation("").then(function (canNavigate) {
+                if (canNavigate) {
+                    window.location.assign(anchor.href);
+                }
+            }).catch(alertError);
+        }, true);
+
         function resetDirectoryScopedUi() {
             state.selectedPath = "";
             state.selectedPaths = new Set();
@@ -15021,6 +15223,16 @@
                     updateDirectoryHistory(normalizedDirPath, "replace");
                 }
                 return;
+            }
+
+            if (!settings.skipGitUnsavedGuard) {
+                const canNavigate = await confirmGitCommitBeforeNavigation(normalizedDirPath);
+                if (!canNavigate) {
+                    if (settings.historyMode === "skip") {
+                        updateDirectoryHistory(state.currentDir, "replace");
+                    }
+                    return;
+                }
             }
 
             state.navigationGeneration += 1;
@@ -16853,12 +17065,6 @@
                 return;
             }
             var commitMessage = "";
-            if (requiresCommitMessageForEntries(sourceEntries) || requiresCommitMessageForDirectory(targetDirPath)) {
-                commitMessage = await promptCommitMessage(targetDirPath);
-                if (commitMessage === null) {
-                    return;
-                }
-            }
             createOperationQueueItem("move", sourceEntries, targetDirPath, commitMessage);
             processOperationQueue().catch(alertError);
         }
@@ -17155,6 +17361,10 @@
                 nextMeta.archive_can_edit = false;
                 nextMeta.archive_can_delete = false;
             }
+            if (!nextMeta.requires_commit_message) {
+                nextMeta.git_branch_path = "";
+                nextMeta.has_uncommitted_changes = false;
+            }
             if (rawMeta.is_google_drive === undefined && rawMeta.google_drive === undefined) {
                 nextMeta.is_google_drive = false;
                 nextMeta.google_drive = null;
@@ -17213,6 +17423,8 @@
             root.dataset.currentDirIsGoogleDrive = nextMeta.is_google_drive ? "1" : "0";
             root.dataset.currentDirRequiresCommitMessage = nextMeta.requires_commit_message ? "1" : "0";
             root.dataset.currentDirGitBranchRoot = nextMeta.git_branch_root ? "1" : "0";
+            root.dataset.currentDirGitBranchPath = nextMeta.git_branch_path || "";
+            root.dataset.currentDirHasUncommittedChanges = nextMeta.has_uncommitted_changes ? "1" : "0";
             root.dataset.currentDirGitCommitId = nextMeta.git_commit_id || "";
             root.dataset.currentDirGitCommitMessage = nextMeta.git_commit_message || "";
             root.dataset.currentDirGitCommitAuthorUsername = nextMeta.git_commit_author_username || "";
@@ -17605,6 +17817,80 @@
             nameWrap.appendChild(indicator);
         }
 
+        let gitCommitSubmitting = false;
+
+        function getCurrentGitBranchPath() {
+            const currentDirMeta = getCurrentDirMeta();
+            return normalizePath(currentDirMeta.git_branch_path || "", true);
+        }
+
+        function hasCurrentGitBranchChanges() {
+            const currentDirMeta = getCurrentDirMeta();
+            return Boolean(getCurrentGitBranchPath() && currentDirMeta.has_uncommitted_changes);
+        }
+
+        async function commitGitBranch(branchPath, hasChanges) {
+            branchPath = normalizePath(branchPath || "", true);
+            if (!branchPath || !gitCommitApiUrl || gitCommitSubmitting) {
+                return false;
+            }
+            if (!hasChanges) {
+                return false;
+            }
+            const commitMessage = await promptCommitMessage(branchPath);
+            if (commitMessage === null) {
+                return false;
+            }
+            gitCommitSubmitting = true;
+            try {
+                await requestJson(
+                    appendSharedQuery(gitCommitApiUrl),
+                    buildPostOptions({
+                        path: branchPath,
+                        commit_message: commitMessage,
+                    })
+                );
+                await refreshCurrentDirectory({ skipPreview: true });
+                return true;
+            } finally {
+                gitCommitSubmitting = false;
+            }
+        }
+
+        function commitCurrentGitBranch() {
+            return commitGitBranch(getCurrentGitBranchPath(), hasCurrentGitBranchChanges());
+        }
+
+        function appendGitCommitButton(nameWrap, currentDirMeta) {
+            const branchPath = normalizePath(currentDirMeta && currentDirMeta.git_branch_path || "", true);
+            const canCommit = Boolean(currentDirMeta && (currentDirMeta.can_edit || currentDirMeta.can_write_children));
+            const hasChanges = Boolean(currentDirMeta && currentDirMeta.has_uncommitted_changes);
+            if (!nameWrap || !branchPath || !canCommit || !hasChanges || !gitCommitApiUrl) {
+                return;
+            }
+            const label = t("commit_message_title", "커밋");
+            nameWrap.classList.add("has-git-commit-button");
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "handrive-icon-btn handrive-item-git-commit-button handrive-item-meta-label";
+            button.setAttribute("aria-label", label);
+            button.title = label;
+            button.innerHTML = '<svg class="handrive-save-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><use href="#hanplanet-icon-save"></use></svg>';
+            button.addEventListener("pointerdown", function (event) {
+                event.stopPropagation();
+            });
+            button.addEventListener("click", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                commitGitBranch(branchPath, hasChanges).catch(alertError);
+            });
+            button.addEventListener("dblclick", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            });
+            nameWrap.appendChild(button);
+        }
+
         function appendCurrentDirMetaColumns(row) {
             if (!row) {
                 return;
@@ -17988,6 +18274,7 @@
             row.appendChild(nameWrap);
             nameWrap.appendChild(name);
             appendUrlShareIndicator(nameWrap, currentFolderEntry);
+            appendGitCommitButton(nameWrap, currentDirMeta);
 
             appendCurrentDirRepoName(nameWrap, currentDirMeta.git_repo || null, {
                 showForBranchOrRepoInner: Boolean(currentDirMeta.git_branch_root || currentDirMeta.requires_commit_message),
@@ -18313,6 +18600,7 @@
             row.appendChild(nameWrap);
             nameWrap.appendChild(name);
             appendUrlShareIndicator(nameWrap, currentFolderEntry);
+            appendGitCommitButton(nameWrap, currentDirMeta);
 
             appendCurrentDirRepoName(nameWrap, currentDirMeta.git_repo || null, {
                 showForBranchOrRepoInner: Boolean(currentDirMeta.git_branch_root || currentDirMeta.requires_commit_message),
@@ -18368,6 +18656,7 @@
             name.textContent = entry.name;
             nameWrap.appendChild(name);
             appendUrlShareIndicator(nameWrap, entry);
+            appendGitCommitButton(nameWrap, entry);
             row.appendChild(nameWrap);
             row.appendChild(createSyncCheckbox(entry.path, entry.type));
 
@@ -18757,12 +19046,6 @@
             }
 
             var commitMessage = "";
-            if (entry.requires_commit_message) {
-                commitMessage = await promptCommitMessage(entry.path);
-                if (commitMessage === null) {
-                    return;
-                }
-            }
 
             setRenameModalSubmitting(true);
             try {
@@ -18823,12 +19106,6 @@
             }
 
             var commitMessage = "";
-            if (parentEntry.requires_commit_message) {
-                commitMessage = await promptCommitMessage(parentEntry.path);
-                if (commitMessage === null) {
-                    return;
-                }
-            }
 
             await requestJson(
                 appendSharedQuery(mkdirApiUrl),
@@ -18896,12 +19173,6 @@
             }
 
             var commitMessage = "";
-            if (requiresCommitMessageForEntries(entries)) {
-                commitMessage = await promptCommitMessage(targetPaths[0] || "");
-                if (commitMessage === null) {
-                    return;
-                }
-            }
             createOperationQueueItem("delete", entries, "", commitMessage, {
                 repoDelete: Boolean(settings.repoDelete),
             });
@@ -18916,7 +19187,7 @@
 
             if (state.expandedFolders.has(folderPath)) {
                 state.expandedFolders.delete(folderPath);
-                renderList();
+                renderList({ preserveListScroll: true });
                 scheduleListColumnVisibilityAfterTreeToggle();
                 scheduleGuestDemoTourPositionAfterLayoutChange();
                 return;
@@ -18927,7 +19198,7 @@
             });
             state.expandedFolders.add(folderPath);
             state.openingFolderPath = folderPath;
-            renderList();
+            renderList({ preserveListScroll: true });
             scheduleListColumnVisibilityAfterTreeToggle();
             scheduleGuestDemoTourPositionAfterLayoutChange();
             if (
@@ -18951,7 +19222,7 @@
             }
             if (state.expandedFolders.has(archivePath)) {
                 state.expandedFolders.delete(archivePath);
-                renderList();
+                renderList({ preserveListScroll: true });
                 scheduleListColumnVisibilityAfterTreeToggle();
                 return;
             }
@@ -18960,7 +19231,7 @@
             });
             state.expandedFolders.add(archivePath);
             state.openingFolderPath = archivePath;
-            renderList();
+            renderList({ preserveListScroll: true });
             scheduleListColumnVisibilityAfterTreeToggle();
         }
 
@@ -19429,6 +19700,13 @@
             if (!container) {
                 return;
             }
+            const scrollContainer = getVirtualListScrollContainer();
+            const hasInitialScrollTop = settings.initialScrollTop !== null
+                && settings.initialScrollTop !== undefined
+                && Number.isFinite(Number(settings.initialScrollTop));
+            const initialScrollTop = hasInitialScrollTop
+                ? Math.max(0, Number(settings.initialScrollTop))
+                : null;
             const shouldVirtualize = shouldVirtualizeListRecords(records);
             state.virtualListRecords = shouldVirtualize ? records : [];
             state.virtualListActive = shouldVirtualize;
@@ -19445,12 +19723,16 @@
                 const fragment = document.createDocumentFragment();
                 renderListRecordRange(records, 0, records.length, fragment);
                 container.appendChild(fragment);
+                if (scrollContainer && hasInitialScrollTop) {
+                    scrollContainer.scrollTop = initialScrollTop;
+                }
                 return;
             }
 
-            const scrollContainer = getVirtualListScrollContainer();
             const rowHeight = getEstimatedVirtualListRowHeight();
-            const scrollTop = scrollContainer ? Math.max(0, Number(scrollContainer.scrollTop) || 0) : 0;
+            const scrollTop = hasInitialScrollTop
+                ? initialScrollTop
+                : (scrollContainer ? Math.max(0, Number(scrollContainer.scrollTop) || 0) : 0);
             const viewportHeight = scrollContainer ? Math.max(1, Number(scrollContainer.clientHeight) || 1) : 1;
             const totalCount = records.length;
             const visibleStartIndex = Math.max(0, Math.floor(scrollTop / rowHeight));
@@ -19482,6 +19764,9 @@
             beginVirtualListMetaMutationIgnore();
             container.innerHTML = "";
             container.appendChild(fragment);
+            if (scrollContainer && hasInitialScrollTop) {
+                scrollContainer.scrollTop = scrollTop;
+            }
             state.virtualListStartIndex = startIndex;
             state.virtualListEndIndex = endIndex;
             if (!settings.skipMeasure) {
@@ -19565,6 +19850,7 @@
             name.textContent = entry.name;
             nameWrap.appendChild(name);
             appendUrlShareIndicator(nameWrap, entry);
+            appendGitCommitButton(nameWrap, entry);
             row.appendChild(nameWrap);
             appendEntryMetaColumns(row, entry);
 
@@ -19755,6 +20041,9 @@
             hideCommitTooltip();
             const currentDirRenderContainer = getCurrentDirRenderContainer();
             const listItemsRenderContainer = getListItemsRenderContainer();
+            const preservedListScrollTop = renderListOptions.preserveListScroll && listItemsRenderContainer
+                ? Math.max(0, Number(listItemsRenderContainer.scrollTop) || 0)
+                : null;
             const existingCurrentDirItem = currentDirRenderContainer
                 ? currentDirRenderContainer.querySelector(".handrive-current-dir-item")
                 : listContainer.querySelector(".handrive-current-dir-item");
@@ -19858,7 +20147,9 @@
             state.selectionAnchorPath = state.selectedPaths.has(state.selectionAnchorPath)
                 ? state.selectionAnchorPath
                 : (state.selectedPath || "");
-            renderVirtualListRecords(itemRecords);
+            renderVirtualListRecords(itemRecords, {
+                initialScrollTop: preservedListScrollTop,
+            });
             restoreActiveDropPreviewAfterRender();
             syncSearchFormVisibility();
             updateListColumnVisibility();
@@ -28244,7 +28535,6 @@
             if (writeCodeEditor) {
                 writeCodeEditor.setExtension(resolveWriteFilenameExtension() || getPathFileExtension(originalPath));
                 writeCodeEditor.syncFromTextarea();
-                writeCodeEditor.resize();
                 return;
             }
             const useSyntaxHighlight = shouldUseEditorSyntaxHighlight(source);
@@ -29622,13 +29912,6 @@
                 if (!overwriteConfirmed) {
                     return;
                 }
-                if (writeRequiresCommitMessage) {
-                    const commitMessage = await promptWriteCommitMessage(requestOriginalPath || saveTargetPath || targetDir);
-                    if (commitMessage === null) {
-                        return;
-                    }
-                    payload.commit_message = commitMessage;
-                }
                 setSaveModalSaving(true);
                 const data = await requestJson(appendSharedQuery(saveApiUrl), buildPostOptions(payload));
                 writeMarkdownUploadedImagePaths = [];
@@ -29722,12 +30005,6 @@
 
             try {
                 var commitMessage = "";
-                if (writeRequiresCommitMessage) {
-                    commitMessage = await promptWriteCommitMessage(parentDir);
-                    if (commitMessage === null) {
-                        return;
-                    }
-                }
                 const data = await requestJson(
                     appendSharedQuery(mkdirApiUrl),
                     buildPostOptions({

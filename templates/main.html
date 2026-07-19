@@ -70,12 +70,7 @@
             aria-label="{% include_trimmed 'partials/ui_i18n.html' key='print_summary' %}"
             title="{% include_trimmed 'partials/ui_i18n.html' key='print_summary' %}"
         >
-            <svg class="portfolio-print-btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M7 9V4h10v5"/>
-                <rect x="4" y="9" width="16" height="8" rx="2"/>
-                <rect x="8" y="15" width="8" height="5"/>
-                <line x1="9" y1="18" x2="15" y2="18"/>
-            </svg>
+            <svg class="portfolio-print-btn-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><use href="#hanplanet-icon-print"></use></svg>
         </button>
         {% for button in portfolio_action_buttons %}
         <a

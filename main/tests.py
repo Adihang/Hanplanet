@@ -1058,6 +1058,22 @@ class HandriveHlsThumbnailTests(TestCase):
         self.assertIn("hlsAbortController.abort()", video_js)
         self.assertIn("releasePlayerMediaResources(entry.player, el)", video_js)
 
+    def test_realtime_thumbnail_stays_hidden_after_progress_leave(self):
+        video_js = (Path(settings.BASE_DIR) / "static/js/handrive/video_player.js").read_text(encoding="utf-8")
+        realtime_start = video_js.index("function setupRealtimeThumbnails")
+        realtime_end = video_js.index("// ── 재생위치 · 배속 저장", realtime_start)
+        realtime_block = video_js[realtime_start:realtime_end]
+
+        self.assertIn("let hoveringProgress = false;", realtime_block)
+        self.assertIn("function hideThumbnailPreview()", realtime_block)
+        self.assertIn("lastRatio = -1;", realtime_block)
+        self.assertIn(
+            "if (hoveringProgress && lastRatio >= 0 && thumbVid.duration)",
+            realtime_block,
+        )
+        self.assertIn("progEl.addEventListener('mouseenter', () => {\n                hoveringProgress = true;", realtime_block)
+        self.assertIn("progEl.addEventListener('mouseleave', hideThumbnailPreview);", realtime_block)
+
     def test_preview_flow_aborts_stale_preview_request(self):
         preview_flow_js = (Path(settings.BASE_DIR) / "static/js/handrive/preview_flow_helpers.js").read_text(encoding="utf-8")
 
@@ -1455,9 +1471,61 @@ class PwaMetadataTests(TestCase):
         self.assertRegex(html, r'href="/manifest\.webmanifest\?v=\d+"')
         self.assertRegex(html, r'href="/static/favicon\.ico\?v=\d+"')
         self.assertRegex(html, r'href="/static/media/icons/pwa-180\.png\?v=\d+"')
-        self.assertRegex(html, r'href="/static/media/icons/pwa-192\.png\?v=\d+"')
-        self.assertRegex(html, r'href="/static/media/icons/pwa-512\.png\?v=\d+"')
+        self.assertRegex(html, r'href="/static/media/icons/favicon-192\.png\?v=\d+"')
+        self.assertRegex(html, r'href="/static/media/icons/favicon-512\.png\?v=\d+"')
         self.assertNotIn('href="/favicon.ico"', html)
+
+    def test_site_icons_have_transparent_corners(self):
+        from PIL import Image
+
+        base_dir = Path(settings.BASE_DIR)
+        favicon_paths = (
+            base_dir / "static/favicon.ico",
+            base_dir / "static/media/icons/favicon-192.png",
+            base_dir / "static/media/icons/favicon-512.png",
+            base_dir / "static/media/icons/pwa-180.png",
+            base_dir / "static/media/icons/pwa-192.png",
+            base_dir / "static/media/icons/pwa-512.png",
+            base_dir / "forgejo/custom/public/assets/img/favicon.png",
+            base_dir / "forgejo/custom/public/assets/img/apple-touch-icon.png",
+            base_dir / "Wargame/public/assets/favicon.ico",
+        )
+        for favicon_path in favicon_paths:
+            with self.subTest(favicon_path=favicon_path):
+                with Image.open(favicon_path) as image:
+                    rgba = image.convert("RGBA")
+                    self.assertEqual(rgba.getpixel((0, 0))[3], 0)
+                    self.assertLessEqual(rgba.getpixel((rgba.width // 4, 0))[3], 8)
+                    self.assertLessEqual(rgba.getpixel((0, rgba.height // 4))[3], 8)
+                    self.assertEqual(rgba.getpixel((rgba.width // 2, rgba.height // 2))[3], 255)
+
+    def test_png_site_icons_keep_antialiased_edges_light(self):
+        from PIL import Image
+
+        base_dir = Path(settings.BASE_DIR)
+        favicon_paths = (
+            base_dir / "static/media/icons/favicon-192.png",
+            base_dir / "static/media/icons/favicon-512.png",
+            base_dir / "static/media/icons/pwa-180.png",
+            base_dir / "static/media/icons/pwa-192.png",
+            base_dir / "static/media/icons/pwa-512.png",
+            base_dir / "forgejo/custom/public/assets/img/favicon.png",
+            base_dir / "forgejo/custom/public/assets/img/apple-touch-icon.png",
+        )
+        for favicon_path in favicon_paths:
+            with self.subTest(favicon_path=favicon_path):
+                with Image.open(favicon_path) as image:
+                    rgba = image.convert("RGBA")
+                    edge_pixels = [
+                        (red, green, blue)
+                        for red, green, blue, alpha in rgba.getdata()
+                        if 24 <= alpha < 255
+                    ]
+                    self.assertTrue(edge_pixels)
+                    self.assertGreaterEqual(
+                        min(min(pixel) for pixel in edge_pixels),
+                        220,
+                    )
 
     def test_pwa_manifest_uses_cache_busted_icon_urls(self):
         response = self.client.get(reverse("main:pwa_manifest"))
@@ -4173,7 +4241,9 @@ class HandriveWriteFilenameExtensionSourceTests(TestCase):
         self.assertIn('<line x1="5" y1="5" x2="15" y2="15"/>', write_template)
         self.assertIn('<line x1="15" y1="5" x2="5" y2="15"/>', write_template)
         self.assertNotIn('<polyline points="12,5 7,10 12,15"/>', write_template)
-        self.assertIn('<path d="M4 3h10l2 2v12H4z"/>', list_template)
+        self.assertIn('class="handrive-save-icon"', list_template)
+        self.assertIn('class="handrive-save-icon"', write_template)
+        self.assertNotIn('<path d="M4 3h10l2 2v12H4z"/>', list_template)
         self.assertNotIn('id="handrive-list-cancel-btn">{{ handrive_text.cancel }}</button>', list_template)
         self.assertNotIn('id="handrive-list-save-btn">{{ handrive_text.save_button }}</button>', list_template)
         self.assertLess(
@@ -4428,14 +4498,17 @@ class HandriveStyleSourceTests(TestCase):
             page_js,
         )
         self.assertIn("window.CSS.highlights", page_js)
-        self.assertIn("new window.Highlight(...ranges)", page_js)
         self.assertIn(
-            "window.CSS.highlights.set(HANDRIVE_CODE_LINE_SELECTION_HIGHLIGHT_NAME, highlight);",
+            "window.CSS.highlights.delete(HANDRIVE_CODE_LINE_SELECTION_HIGHLIGHT_NAME);",
             page_js,
         )
+        self.assertIn("state.lineNumberRowsByIndex = new Map();", page_js)
+        self.assertIn("state.lineSelectionRowsByIndex = new Map();", page_js)
+        self.assertIn("state.foldControlRowsByIndex = new Map();", page_js)
         self.assertIn("touch-action: none;", handrive_css)
         self.assertIn("--handrive-code-selection-bg: #073BA5;", handrive_css)
         self.assertIn("--handrive-code-selection-text: #ffffff;", handrive_css)
+        self.assertIn("--handrive-code-line-scroll-bg: var(--handrive-selected-bg);", handrive_css)
 
         line_number_row_css = handrive_css[
             handrive_css.index(".handrive-code-line-number-row {"):
@@ -4445,12 +4518,25 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("--btn-template-hover-lift: 0px;", line_number_row_css)
         self.assertIn("border-radius: 0;", line_number_row_css)
         self.assertIn("background: var(--handrive-bg);", line_number_row_css)
+        self.assertIn("margin: 0;", line_number_row_css)
+        self.assertIn("padding: 0;", line_number_row_css)
+        self.assertNotIn("margin: 0 -2px;", line_number_row_css)
         line_number_gap_css = handrive_css[
             handrive_css.index(".handrive-code-line-number-row::after {"):
             handrive_css.index(".handrive-code-line-number {", handrive_css.index(".handrive-code-line-number-row::after {"))
         ]
-        self.assertIn("width: 0.875em;", line_number_gap_css)
+        self.assertIn(
+            "width: var(--handrive-code-line-number-scroll-padding);",
+            line_number_gap_css,
+        )
         self.assertIn("background: var(--handrive-bg);", line_number_gap_css)
+        line_number_left_padding_css = handrive_css[
+            handrive_css.index(".handrive-code-line-number-row::before {"):
+            handrive_css.index(".handrive-code-line-number {", handrive_css.index(".handrive-code-line-number-row::before {"))
+        ]
+        self.assertIn("right: 100%;", line_number_left_padding_css)
+        self.assertIn("width: 5px;", line_number_left_padding_css)
+        self.assertIn("background: inherit;", line_number_left_padding_css)
         selected_number_start = handrive_css.index(
             ".handrive-code-line-number-row.is-selected {"
         )
@@ -4462,16 +4548,12 @@ class HandriveStyleSourceTests(TestCase):
             )
         ]
         self.assertIn(
-            "background: var(--handrive-code-selection-bg);",
+            "background: var(--handrive-code-line-scroll-bg);",
             selected_number_css,
         )
-        self.assertIn(
-            "color: var(--handrive-code-selection-text);",
-            selected_number_css,
-        )
+        self.assertIn("color: inherit;", selected_number_css)
         self.assertNotIn("var(--handrive-surface-muted)", selected_number_css)
         self.assertNotIn("var(--handrive-text-stronger)", selected_number_css)
-        self.assertNotIn("var(--handrive-selected-bg)", selected_number_css)
         selected_body_start = handrive_css.index(
             ".handrive-code-line-selection-row.is-selected {"
         )
@@ -4480,7 +4562,7 @@ class HandriveStyleSourceTests(TestCase):
             handrive_css.index(".handrive-code-fold-controls {", selected_body_start)
         ]
         self.assertIn(
-            "background: var(--handrive-code-selection-bg);",
+            "background: var(--handrive-code-line-scroll-bg);",
             selected_body_css,
         )
         self.assertIn(
@@ -4488,12 +4570,7 @@ class HandriveStyleSourceTests(TestCase):
             selected_body_css,
         )
         self.assertIn("::highlight(handrive-code-line-selection) {", selected_body_css)
-        self.assertIn(
-            "color: var(--handrive-code-selection-text);",
-            selected_body_css,
-        )
         self.assertNotIn("var(--handrive-surface-muted)", selected_body_css)
-        self.assertNotIn("var(--handrive-selected-bg)", selected_body_css)
         line_number_focus_start = handrive_css.index(".handrive-code-line-number-row:focus-visible {")
         line_number_focus_css = handrive_css[
             line_number_focus_start:
@@ -4504,12 +4581,30 @@ class HandriveStyleSourceTests(TestCase):
             handrive_css.index(".handrive-code-fold-controls {"):
             handrive_css.index(".handrive-code-fold-control-row {")
         ]
-        self.assertIn("z-index: 5;", fold_controls_css)
+        self.assertIn("position: relative;", fold_controls_css)
+        self.assertIn("z-index: 3;", fold_controls_css)
+        self.assertNotIn("position: sticky;", fold_controls_css)
+        self.assertIn("state.foldControlRowsByIndex = new Map();", page_js)
+        self.assertIn(
+            'row.classList.toggle("is-selected", state.selectedLineIndexes.has(lineIndex));',
+            page_js,
+        )
+        selected_fold_row_start = handrive_css.index(
+            ".handrive-code-fold-control-row.is-selected::before {"
+        )
+        selected_fold_row_css = handrive_css[
+            selected_fold_row_start:
+            handrive_css.index(".handrive-code-fold-line-measure {", selected_fold_row_start)
+        ]
+        self.assertIn("left: calc(-1 * var(--handrive-code-font-size));", selected_fold_row_css)
+        self.assertIn("background: var(--handrive-code-line-scroll-bg);", selected_fold_row_css)
+        self.assertIn("pointer-events: none;", selected_fold_row_css)
         fold_toggle_css = handrive_css[
             handrive_css.index(".handrive-code-fold-toggle {"):
             handrive_css.index(".handrive-code-fold-toggle::before {")
         ]
-        self.assertIn("* 1ch - 0.875em", fold_toggle_css)
+        self.assertIn("left: calc(-1 * var(--handrive-code-font-size));", fold_toggle_css)
+        self.assertNotIn("--handrive-code-fold-depth", fold_toggle_css)
         self.assertIn("width: 0.75em;", fold_toggle_css)
         fold_toggle_icon_css = handrive_css[
             handrive_css.index(".handrive-code-fold-toggle::before {"):
@@ -4549,6 +4644,111 @@ class HandriveStyleSourceTests(TestCase):
             viewer_guide_row_css,
         )
         self.assertNotIn("repeating-linear-gradient", viewer_guide_row_css)
+        self.assertIn(
+            "pointer-events: none;",
+            indent_guide_css,
+        )
+        self.assertNotIn("clip-path:", indent_guide_css)
+
+    def test_code_viewer_and_editor_line_numbers_add_two_pixels_only_after_horizontal_scroll(self):
+        base_dir = Path(settings.BASE_DIR)
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        editor_js = (base_dir / "static/js/handrive/code_editor.js").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "function syncHandriveCodeLineNumberScrollPadding(pre, lineNumbers)",
+            page_js,
+        )
+        self.assertIn(
+            'scrollTarget.addEventListener("scroll", binding.handleScroll, { passive: true });',
+            page_js,
+        )
+        self.assertIn("function getHandriveCodeLineScrollLeft(scrollContainer)", page_js)
+        self.assertIn("binding.isHorizontallyScrolled === isHorizontallyScrolled", page_js)
+        self.assertIn(
+            'lineNumbers.classList.toggle("is-horizontally-scrolled", isHorizontallyScrolled);',
+            page_js,
+        )
+        self.assertNotIn("--handrive-code-indent-guide-scroll-clip", page_js)
+        self.assertIn(
+            "syncHandriveCodeLineNumberScrollPadding(pre, lineNumbers);",
+            page_js,
+        )
+        self.assertIn("const handriveCodeLineNumberScrollBindings = new WeakMap();", page_js)
+        self.assertIn("if (!boundLineNumbers.isConnected)", page_js)
+        self.assertNotIn(
+            "clip-path: inset(0 0 0 var(--handrive-code-indent-guide-scroll-clip, 0px));",
+            handrive_css,
+        )
+        self.assertIn("--handrive-code-line-number-scroll-padding: 0px;", handrive_css)
+        self.assertIn(
+            ".handrive-code-line-numbers.is-horizontally-scrolled {\n"
+            "    --handrive-code-line-number-scroll-padding: 2px;\n"
+            "}",
+            handrive_css,
+        )
+        self.assertIn(
+            ".handrive-code-line-numbers.is-horizontally-scrolled::after {",
+            handrive_css,
+        )
+        viewer_shadow_start = handrive_css.index(
+            ".handrive-code-line-numbers.is-horizontally-scrolled::after {"
+        )
+        viewer_shadow_css = handrive_css[
+            viewer_shadow_start:handrive_css.index("}", viewer_shadow_start)
+        ]
+        self.assertIn(
+            "left: calc(100% + var(--handrive-code-line-number-scroll-padding));",
+            viewer_shadow_css,
+        )
+        self.assertIn("background: linear-gradient(", viewer_shadow_css)
+        self.assertIn("width: 6px;", viewer_shadow_css)
+        self.assertIn(
+            "color-mix(in srgb, var(--handrive-text) 12%, transparent),",
+            viewer_shadow_css,
+        )
+        self.assertNotIn("inset", viewer_shadow_css)
+        self.assertIn(
+            "width: var(--handrive-code-line-number-scroll-padding);",
+            handrive_css,
+        )
+        self.assertIn("function syncEditorLineNumberScrollPadding()", editor_js)
+        self.assertIn("function syncEditorLineNumberGutterOffset()", editor_js)
+        self.assertIn("editorGutter.offsetLeft + editorGutter.offsetWidth", editor_js)
+        self.assertIn(
+            'host.classList.toggle("is-horizontally-scrolled", isHorizontallyScrolled);',
+            editor_js,
+        )
+        self.assertIn(
+            '"--handrive-code-editor-gutter-offset",',
+            editor_js,
+        )
+        self.assertIn(
+            ".handrive-code-editor.is-horizontally-scrolled {\n"
+            "    --handrive-code-editor-line-number-scroll-padding: 2px;\n"
+            "}",
+            handrive_css,
+        )
+        self.assertIn("editorGutter.style.width = nextGutterWidthValue;", editor_js)
+        self.assertIn(
+            "editor.renderer.scroller.style.left = nextScrollerLeft;",
+            editor_js,
+        )
+        self.assertIn(
+            "body .handrive-code-editor.is-horizontally-scrolled .ace_gutter.ace_gutter-left::after {",
+            handrive_css,
+        )
+        self.assertNotIn(
+            "translate: var(--handrive-code-editor-line-number-scroll-padding) 0;",
+            handrive_css,
+        )
+        self.assertNotIn(".handrive-code-editor::after {", handrive_css)
+        fold_controls_start = handrive_css.index(".handrive-code-fold-controls {")
+        fold_controls_end = handrive_css.index("}", fold_controls_start)
+        fold_controls_css = handrive_css[fold_controls_start:fold_controls_end]
+        self.assertIn("position: relative;", fold_controls_css)
+        self.assertNotIn("position: sticky;", fold_controls_css)
 
     def test_code_fold_controls_strengthen_icon_color_on_hover(self):
         handrive_css = (
@@ -4556,12 +4756,21 @@ class HandriveStyleSourceTests(TestCase):
         ).read_text(encoding="utf-8")
 
         for selector in (
-            ".handrive-code-fold-toggle:hover,",
-            ".handrive-ace-fold-toggle:hover,",
+            ".handrive-code-fold-toggle:hover {",
+            ".handrive-ace-fold-toggle:hover {",
         ):
             hover_start = handrive_css.index(selector)
             hover_end = handrive_css.index("}", hover_start)
             self.assertIn("color: var(--handrive-text-stronger);", handrive_css[hover_start:hover_end])
+        for selector in (
+            ".handrive-code-fold-toggle:focus-visible {",
+            ".handrive-ace-fold-toggle:focus-visible {",
+        ):
+            focus_start = handrive_css.index(selector)
+            focus_end = handrive_css.index("}", focus_start)
+            focus_css = handrive_css[focus_start:focus_end]
+            self.assertNotIn("background:", focus_css)
+            self.assertIn("color: var(--handrive-text-stronger);", focus_css)
         self.assertIn("body .handrive-code-editor .ace_gutter-cell:hover {", handrive_css)
 
     def test_common_copy_icons_match_root_translate_shape(self):
@@ -4629,6 +4838,7 @@ class HandriveStyleSourceTests(TestCase):
 
         self.assertIn("function collectIndentFoldRanges(lines, indentSize)", structure_js)
         self.assertIn("function collectBracketFoldRanges(lines, renderClass)", structure_js)
+        self.assertIn("function filterFoldRangesByParentDepth(rangesByStart, maximumParentDepth)", structure_js)
         self.assertIn("function filterOutermostFoldRanges(rangesByStart)", structure_js)
         self.assertIn("return rangesByStart;", structure_js)
         self.assertIn("function getGuideColumns(lines, indentSize, foldRanges)", structure_js)
@@ -4648,7 +4858,10 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("js/handrive/code_structure_helpers.js", assets_template)
         self.assertIn("window.HandriveCodeStructure.buildFoldRanges", page_js)
         self.assertIn(
-            "window.HandriveCodeStructure.filterOutermostFoldRanges(allFoldRanges)",
+            "window.HandriveCodeStructure.filterFoldRangesByParentDepth(\n"
+            "                    allFoldRanges,\n"
+            "                    1,\n"
+            "                )",
             page_js,
         )
         self.assertIn("window.HandriveCodeStructure.getGuideColumns(", page_js)
@@ -4671,7 +4884,10 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('guide.className = "handrive-code-indent-guide"', page_js)
         self.assertIn(".handrive-code-fold-controls {", handrive_css)
         self.assertIn('row.className = "handrive-code-fold-control-row"', page_js)
-        self.assertIn('row.style.setProperty("--handrive-code-fold-depth"', page_js)
+        self.assertIn(
+            'pre.style.setProperty("--handrive-code-line-number-digits", lineNumberDigits);',
+            page_js,
+        )
         self.assertIn(".handrive-code-fold-toggle {", handrive_css)
         self.assertNotIn(".handrive-code-fold-control-row.is-collapsed::after {", handrive_css)
         self.assertIn('lineMeasure.className = "handrive-code-fold-line-measure"', page_js)
@@ -4681,8 +4897,51 @@ class HandriveStyleSourceTests(TestCase):
         static_ellipsis_start = handrive_css.index(".handrive-code-fold-ellipsis,")
         static_ellipsis_end = handrive_css.index("}", static_ellipsis_start)
         static_ellipsis_css = handrive_css[static_ellipsis_start:static_ellipsis_end]
-        self.assertIn("border: 0;", static_ellipsis_css)
+        self.assertIn("border: 1px solid transparent;", static_ellipsis_css)
         self.assertIn("background: var(--handrive-bg);", static_ellipsis_css)
+        self.assertIn(
+            "box-shadow: inset 0 0 0 1em var(--handrive-markdown-code-block-bg);",
+            static_ellipsis_css,
+        )
+        self.assertIn("width: auto;", static_ellipsis_css)
+        self.assertIn("min-width: 1.5em;", static_ellipsis_css)
+        self.assertIn("padding: 0 0.25em;", static_ellipsis_css)
+        self.assertIn("transition: var(--btn-template-transition);", static_ellipsis_css)
+        self.assertNotIn("--btn-template-hover-lift: 0px;", static_ellipsis_css)
+        self.assertNotIn("--btn-template-active-press-depth: 0px;", static_ellipsis_css)
+        ellipsis_hover_start = handrive_css.index(".handrive-code-fold-ellipsis:hover,")
+        ellipsis_hover_end = handrive_css.index("}", ellipsis_hover_start)
+        ellipsis_hover_css = handrive_css[ellipsis_hover_start:ellipsis_hover_end]
+        self.assertNotIn("border-color:", ellipsis_hover_css)
+        self.assertIn("background: var(--btn-template-base-hover-bg);", ellipsis_hover_css)
+        self.assertIn("color: var(--btn-template-base-hover-color);", ellipsis_hover_css)
+        self.assertIn("translate: 0 var(--btn-template-hover-lift, -1px);", ellipsis_hover_css)
+        ellipsis_active_start = handrive_css.index(
+            ".handrive-code-fold-ellipsis:is(:active, .is-ui-pressing),"
+        )
+        ellipsis_active_end = handrive_css.index("}", ellipsis_active_start)
+        ellipsis_active_css = handrive_css[ellipsis_active_start:ellipsis_active_end]
+        self.assertNotIn("border-color:", ellipsis_active_css)
+        self.assertIn(
+            "background: var(--btn-template-base-active-bg, var(--btn-template-base-hover-bg));",
+            ellipsis_active_css,
+        )
+        self.assertIn(
+            "translate: 0 var(--btn-template-active-press-depth, 1px);",
+            ellipsis_active_css,
+        )
+        fold_controls_start = handrive_css.index(".handrive-code-fold-controls {")
+        fold_controls_end = handrive_css.index("}", fold_controls_start)
+        fold_controls_css = handrive_css[fold_controls_start:fold_controls_end]
+        self.assertIn("position: relative;", fold_controls_css)
+        self.assertNotIn("position: sticky;", fold_controls_css)
+        self.assertNotIn("left:", fold_controls_css)
+        self.assertIn("width: 0;", fold_controls_css)
+        self.assertIn("min-width: 0;", fold_controls_css)
+        self.assertNotIn(
+            '.handrive-code-fold-toggle[aria-expanded="false"] {',
+            handrive_css,
+        )
         self.assertIn(
             "background: color-mix(in srgb, currentColor 22%, transparent);",
             handrive_css,
@@ -4732,6 +4991,12 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("function syncEditorHorizontalPadding()", editor_js)
         self.assertIn("editor.renderer.setPadding(getEditorFontSize() * 1.5);", editor_js)
         self.assertIn("editor.setFontSize(value + \"px\");\n                syncEditorHorizontalPadding();", editor_js)
+        self.assertIn("function syncEditorCompositionLineHeight()", editor_js)
+        self.assertIn(
+            '"--handrive-code-editor-composition-line-height",',
+            editor_js,
+        )
+        self.assertIn("syncEditorCompositionLineHeight();", editor_js)
         self.assertIn("displayIndentGuides: false", editor_js)
         self.assertIn('editor.setOption("displayIndentGuides", false)', editor_js)
         self.assertIn("showFoldWidgets: false", editor_js)
@@ -4746,7 +5011,28 @@ class HandriveStyleSourceTests(TestCase):
         )
         self.assertIn("guideDepths: codeStructure.getGuideDepths(lines, indentSize)", editor_js)
         self.assertIn("guideColumns: codeStructure.getGuideColumns(", editor_js)
-        self.assertIn("codeStructure.filterOutermostFoldRanges(allFoldRanges)", editor_js)
+        self.assertIn("codeStructure.filterFoldRangesByParentDepth(allFoldRanges, 1)", editor_js)
+        self.assertIn("let cachedCodeStructureState = null;", editor_js)
+        self.assertIn("if (cachedCodeStructureState) {", editor_js)
+        self.assertIn("function invalidateCodeStructureState()", editor_js)
+        self.assertIn("function scheduleCodeStructureStateRefresh()", editor_js)
+        self.assertIn("}, 120);", editor_js)
+        self.assertIn("function syncCodeStructureOverlayScroll()", editor_js)
+        self.assertIn("function scheduleCodeStructureOverlayScroll()", editor_js)
+        self.assertIn("function scheduleTextareaScrollSync()", editor_js)
+        self.assertIn("let editorInputSyncFrame = 0;", editor_js)
+        self.assertIn('indentGuideCanvas.className = "handrive-ace-indent-guide-canvas"', editor_js)
+        self.assertIn('foldControlCanvas.className = "handrive-ace-fold-control-canvas"', editor_js)
+        self.assertIn('session.on("changeScrollLeft", syncHorizontalScroll);', editor_js)
+        self.assertIn('session.on("changeScrollTop", syncVerticalScroll);', editor_js)
+        self.assertIn('"translate3d(" + translateX + "px, " + translateY + "px, 0)"', editor_js)
+        self.assertIn("const indentGuideFragment = document.createDocumentFragment();", editor_js)
+        self.assertIn("const foldControlFragment = document.createDocumentFragment();", editor_js)
+        self.assertIn("indentGuideCanvas.replaceChildren(indentGuideFragment);", editor_js)
+        self.assertIn("foldControlCanvas.replaceChildren(foldControlFragment);", editor_js)
+        self.assertIn("function syncEditorLineScrollSelection()", editor_js)
+        self.assertIn('"handrive-ace-line-scroll-selected"', editor_js)
+        self.assertIn('editor.on("guttermousedown"', editor_js)
         self.assertNotIn("function renderCodeLineIndentGuides(structureState)", editor_js)
         self.assertNotIn("editor.renderer.$textLayer", editor_js)
         self.assertNotIn("handrive-ace-line-indent-guides", editor_js)
@@ -4761,7 +5047,10 @@ class HandriveStyleSourceTests(TestCase):
         )
         self.assertIn("const fontSize = getEditorFontSize();", editor_js)
         self.assertIn('foldControls.style.fontSize = fontSize + "px";', editor_js)
-        self.assertIn("Number(position.pageX) - pageLeft - (fontSize * 0.875)", editor_js)
+        self.assertIn("const foldColumnLeft = textOriginLeft - (fontSize * 0.875);", editor_js)
+        self.assertIn("toggle.style.left = foldColumnLeft + \"px\";", editor_js)
+        self.assertIn("function getRowPosition(row, column)", editor_js)
+        self.assertNotIn("editor.renderer.textToScreenCoordinates(row", editor_js)
         self.assertIn("function applyCollapsedCodeFolds(foldRanges)", editor_js)
         self.assertIn('session.addFold(', editor_js)
         self.assertIn("collapsedFoldStarts.add(row);", editor_js)
@@ -4777,9 +5066,38 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("createHandriveCodeEditor(editorSurface, contentInput", page_js)
         self.assertIn("listCodeEditor.setExtension(extension)", page_js)
         self.assertIn("writeCodeEditor.setExtension(resolveWriteFilenameExtension()", page_js)
+        list_editor_render_start = page_js.index("function renderListEditorHighlight()")
+        list_editor_render_end = page_js.index("function updateListEditorSuggestion()", list_editor_render_start)
+        list_editor_render = page_js[list_editor_render_start:list_editor_render_end]
+        self.assertNotIn("listCodeEditor.resize();", list_editor_render)
+        write_editor_render_start = page_js.index("function renderWriteEditorHighlight()")
+        write_editor_render_end = page_js.index("function syncMarkdownHelpButtonVisibility()", write_editor_render_start)
+        write_editor_render = page_js[write_editor_render_start:write_editor_render_end]
+        self.assertNotIn("writeCodeEditor.resize();", write_editor_render)
         self.assertIn('codeEditorElement.querySelector(".handrive-ace-indent-guide-row")', page_js)
         self.assertIn(".handrive-code-editor {", handrive_css)
+        self.assertIn(
+            "--handrive-code-editor-composition-line-height: 1em;",
+            handrive_css,
+        )
+        self.assertIn(".ace_text-input.ace_composition {", handrive_css)
+        composition_input_start = handrive_css.index(
+            "body .handrive-code-editor .ace_text-input.ace_composition {"
+        )
+        composition_input_end = handrive_css.index("}", composition_input_start)
+        composition_input_css = handrive_css[composition_input_start:composition_input_end]
+        self.assertIn(
+            "height: var(--handrive-code-editor-composition-line-height);",
+            composition_input_css,
+        )
+        self.assertIn(
+            "line-height: var(--handrive-code-editor-composition-line-height);",
+            composition_input_css,
+        )
+        self.assertIn("max-height: var(--handrive-code-editor-composition-line-height);", composition_input_css)
         self.assertIn(".handrive-ace-indent-guides {", handrive_css)
+        self.assertIn(".handrive-ace-indent-guide-canvas,", handrive_css)
+        self.assertIn(".handrive-ace-fold-control-canvas {", handrive_css)
         self.assertIn(".handrive-ace-indent-guide-row {", handrive_css)
         self.assertIn(".handrive-ace-indent-guide {", handrive_css)
         self.assertNotIn(".handrive-code-editor .ace_line.handrive-ace-line-indent-guides", handrive_css)
@@ -4793,9 +5111,26 @@ class HandriveStyleSourceTests(TestCase):
         )
         self.assertNotIn("repeating-linear-gradient", ace_guide_css)
         self.assertNotIn("!important", ace_guide_css)
+        self.assertIn(
+            "var(--handrive-code-editor-gutter-offset)\n"
+            "            + var(--handrive-code-editor-line-number-scroll-padding)",
+            ace_guide_css,
+        )
         self.assertIn(".handrive-ace-fold-toggle {", handrive_css)
         self.assertIn(".handrive-ace-fold-ellipsis {", handrive_css)
+        self.assertIn(".handrive-ace-fold-line-scroll-selection {", handrive_css)
+        self.assertIn(".ace_gutter-cell.handrive-ace-line-scroll-selected {", handrive_css)
+        self.assertIn(".ace_marker-layer .handrive-ace-line-scroll-selected {", handrive_css)
         self.assertNotIn(".handrive-ace-fold-placeholder {", handrive_css)
+        ace_fold_controls_css = handrive_css[
+            handrive_css.index(".handrive-ace-fold-controls {"):
+            handrive_css.index(".handrive-ace-fold-controls[hidden] {")
+        ]
+        self.assertIn("clip-path: inset(", ace_fold_controls_css)
+        self.assertIn(
+            "var(--handrive-code-editor-line-number-scroll-padding)",
+            ace_fold_controls_css,
+        )
         ace_fold_toggle_css = handrive_css[
             handrive_css.index(".handrive-ace-fold-toggle {"):
             handrive_css.index(".handrive-ace-fold-toggle::before {")
@@ -5660,6 +5995,19 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("listSplitter.addEventListener(\"pointerdown\", handleListSplitPointerDown);", page_js)
         self.assertIn("setCookieValue(getListSplitCookieName(finishedDrag.mode), finishedDrag.latestRatio.toFixed(4));", page_js)
 
+    def test_handrive_list_items_use_wider_scrollbar_beside_splitter(self):
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+        list_items_start = handrive_css.index(".handrive-list-items {", handrive_css.index(".handrive-current-dir-list {"))
+        list_items_end = handrive_css.index("}", list_items_start)
+        list_items_block = handrive_css[list_items_start:list_items_end]
+        webkit_start = handrive_css.index(".handrive-list-items::-webkit-scrollbar {", list_items_end)
+        webkit_end = handrive_css.index("}", webkit_start)
+        webkit_block = handrive_css[webkit_start:webkit_end]
+
+        self.assertIn("--handrive-list-scrollbar-size: 15px;", list_items_block)
+        self.assertIn("scrollbar-width: auto;", list_items_block)
+        self.assertIn("width: var(--handrive-list-scrollbar-size);", webkit_block)
+
     def test_floating_list_detail_eighty_percent_width_uses_top_bottom_side(self):
         page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
         width_start = page_js.index("function shouldUsePortraitFloatingListDetailWidth(sourceRect)")
@@ -6214,6 +6562,29 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn(".handrive-virtual-spacer", handrive_css)
         self.assertIn("contain: layout paint;", handrive_css)
 
+    def test_folder_tree_toggle_preserves_list_scroll_position(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+
+        folder_toggle_start = page_js.index("async function toggleFolderExpansion(entry)")
+        archive_toggle_end = page_js.index("function cancelPendingEntrySingleClick()", folder_toggle_start)
+        tree_toggle_block = page_js[folder_toggle_start:archive_toggle_end]
+        render_list_start = page_js.index("function renderList(options)")
+        render_list_end = page_js.index("function openContextMenuForEntry", render_list_start)
+        render_list_block = page_js[render_list_start:render_list_end]
+        virtual_render_start = page_js.index("function renderVirtualListRecords(records, options)")
+        virtual_render_end = page_js.index("function scheduleVirtualListWindowRender", virtual_render_start)
+        virtual_render_block = page_js[virtual_render_start:virtual_render_end]
+
+        self.assertEqual(tree_toggle_block.count("renderList({ preserveListScroll: true });"), 4)
+        self.assertIn("const preservedListScrollTop = renderListOptions.preserveListScroll", render_list_block)
+        self.assertIn("initialScrollTop: preservedListScrollTop,", render_list_block)
+        self.assertIn("const hasInitialScrollTop = settings.initialScrollTop !== null", virtual_render_block)
+        self.assertIn("? initialScrollTop", virtual_render_block)
+        self.assertEqual(
+            virtual_render_block.count("scrollContainer.scrollTop ="),
+            2,
+        )
+
     def test_archive_context_menu_does_not_show_edit_action(self):
         base_dir = Path(settings.BASE_DIR)
         context_helpers_js = (base_dir / "static/js/handrive/context_menu_helpers.js").read_text(encoding="utf-8")
@@ -6373,6 +6744,15 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("sourceRenderClass: sourceRenderClass,", preview_flow_js)
         self.assertIn(".handrive-icon-btn[aria-pressed=\"true\"]", handrive_css)
         self.assertIn(".handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-source-code-view)", handrive_css)
+        source_code_preview_body_start = handrive_css.index(
+            ".handrive-list-preview-body:has(.handrive-code-line-numbers),\n"
+            ".handrive-list-preview-body:has(> .handrive-list-preview-content.handrive-source-code-view) {"
+        )
+        source_code_preview_body_css = handrive_css[
+            source_code_preview_body_start:handrive_css.index("}", source_code_preview_body_start)
+        ]
+        self.assertIn("padding-top: 0;", source_code_preview_body_css)
+        self.assertIn("padding-bottom: 0;", source_code_preview_body_css)
         self.assertIn(".handrive-list-preview-content.handrive-source-code-view.handrive-html", handrive_css)
         self.assertIn(".handrive-list-preview-content.handrive-source-code-view.ui-markdown", handrive_css)
         self.assertIn(".handrive-list-preview-content.handrive-source-code-view.ui-markdown pre", handrive_css)
@@ -7061,29 +7441,48 @@ class HandriveStyleSourceTests(TestCase):
 
         self.assertIn("padding: 10px;", modal_block)
         self.assertIn("data-handrive-help-initial-width", help_template)
+        self.assertIn("data-handrive-help-initial-height", help_template)
         self.assertIn("--handrive-help-modal-viewport-max-width: calc(100vw - 20px);", dialog_block)
+        self.assertIn("--handrive-help-modal-viewport-max-height: calc(100vh - 20px);", dialog_block)
         self.assertIn(
             "--handrive-help-modal-initial-min-width: min(320px, var(--handrive-help-modal-viewport-max-width));",
             dialog_block,
         )
+        self.assertIn(
+            "--handrive-help-modal-initial-min-height: min(220px, var(--handrive-help-modal-viewport-max-height));",
+            dialog_block,
+        )
         self.assertIn("width: fit-content;", dialog_block)
         self.assertIn("min-width: var(--handrive-help-modal-initial-min-width);", dialog_block)
-        self.assertIn("min-height: min(220px, calc(100vh - 20px));", dialog_block)
-        self.assertIn("min-height: min(220px, calc(100dvh - 20px));", dialog_block)
+        self.assertIn("min-height: var(--handrive-help-modal-initial-min-height);", dialog_block)
         self.assertIn(
             "max-width: var(--handrive-help-modal-max-width, var(--handrive-help-modal-viewport-max-width));",
             dialog_block,
         )
         self.assertIn(
-            "width: clamp(var(--handrive-help-modal-initial-min-width), 50vw, var(--handrive-help-modal-viewport-max-width));",
+            "width: clamp(var(--handrive-help-modal-initial-min-width), 70vw, var(--handrive-help-modal-viewport-max-width));",
             initial_width_block,
+        )
+        self.assertIn(
+            "height: clamp(var(--handrive-help-modal-initial-min-height), 70vh, var(--handrive-help-modal-viewport-max-height));",
+            dialog_block,
+        )
+        self.assertIn(
+            "--handrive-help-modal-viewport-max-height: calc(100dvh - 20px);",
+            dialog_block,
+        )
+        self.assertIn(
+            "height: clamp(var(--handrive-help-modal-initial-min-height), 70dvh, var(--handrive-help-modal-viewport-max-height));",
+            dialog_block,
         )
         self.assertIn(
             'dialog.style.setProperty("--handrive-help-modal-max-width", "var(--handrive-help-modal-viewport-max-width, calc(100vw - 20px))");',
             popup_common_js,
         )
-        self.assertIn("max-height: calc(100vh - 20px);", dialog_block)
-        self.assertIn("max-height: calc(100dvh - 20px);", dialog_block)
+        self.assertIn(
+            "max-height: var(--handrive-help-modal-max-height, var(--handrive-help-modal-viewport-max-height));",
+            dialog_block,
+        )
         self.assertNotIn("760px", initial_width_block)
         self.assertNotIn("880px", initial_width_block)
         self.assertNotIn("--handrive-help-modal-max-width: min(", initial_width_block)
@@ -7276,6 +7675,10 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("var(--site-text", mermaid_block)
         self.assertIn("stroke: var(--handrive-mermaid-border);", mermaid_block)
         self.assertIn("fill: var(--handrive-mermaid-node-text);", mermaid_block)
+        self.assertIn("--handrive-mermaid-label-radius: var(--handrive-radius-sm, 8px);", mermaid_block)
+        self.assertIn(".handrive-mermaid-output .label-container {", mermaid_block)
+        self.assertIn("rx: var(--handrive-mermaid-label-radius);", mermaid_block)
+        self.assertIn("ry: var(--handrive-mermaid-label-radius);", mermaid_block)
         self.assertIn("function resolveThemeColorChain", mermaid_js)
         self.assertIn('"--site-bg"', mermaid_js)
         self.assertIn('"--color-hover-bg"', mermaid_js)
@@ -9706,7 +10109,6 @@ class SiteZIndexLayerTests(TestCase):
             "hpmail": "templates/popup/hpmail/mailbox_modal.html",
             "image_demo": "templates/popup/fun/image_demo_code_modal.html",
             "multiplayer_idle": "templates/popup/fun/multiplayer_idle_timeout_modal.html",
-            "multiplayer_death": "templates/popup/fun/multiplayer_death_modal.html",
             "multiplayer_skin": "templates/popup/fun/multiplayer_skin_modal.html",
             "media_editor": "templates/handrive/_media_editor_surfaces.html",
             "handrive_login_choices": "templates/handrive/login.html",
@@ -9719,6 +10121,15 @@ class SiteZIndexLayerTests(TestCase):
             source = (base_dir / relative_path).read_text(encoding="utf-8")
             with self.subTest(template=name):
                 self.assertIn("site-modal-", source)
+
+        death_modal_template = (base_dir / "templates/popup/fun/multiplayer_death_modal.html").read_text(encoding="utf-8")
+        self.assertNotIn("site-modal-", death_modal_template)
+        self.assertNotIn("data-popup-fit-bottom", death_modal_template)
+        common_dialog_rule = popup_common_css[
+            popup_common_css.index(":where(\n    .site-modal-dialog,"):
+            popup_common_css.index(":where(.site-modal-dialog)")
+        ]
+        self.assertNotIn(".multiplayer-death-modal,", common_dialog_rule)
 
     def test_logout_and_confirm_modals_reuse_shared_partials(self):
         base_dir = Path(settings.BASE_DIR)
@@ -9757,10 +10168,6 @@ class SiteZIndexLayerTests(TestCase):
             "multiplayer_idle": (
                 "templates/popup/fun/multiplayer_idle_timeout_modal.html",
                 ("multiplayer-idle-modal-header site-modal-head", "multiplayer-idle-modal-close site-modal-close"),
-            ),
-            "multiplayer_death": (
-                "templates/popup/fun/multiplayer_death_modal.html",
-                ("multiplayer-death-modal-header site-modal-head",),
             ),
             "map_marker": (
                 "templates/popup/handrive/map_marker_popup.html",
@@ -9941,7 +10348,6 @@ class SiteZIndexLayerTests(TestCase):
             "hpmail": hpmail_css,
             "image_demo": image_demo_css,
             "image_color": image_color_css,
-            "multiplayer": multiplayer_css,
             "fun_sub": fun_sub_template,
             "map_editor": map_editor_template,
             "map_viewer": map_viewer_template,
@@ -9960,7 +10366,6 @@ class SiteZIndexLayerTests(TestCase):
             "hpmail": hpmail_css,
             "image_demo": image_demo_css,
             "image_color": image_color_css,
-            "multiplayer": multiplayer_css,
             "fun_sub": fun_sub_template,
             "map_editor": map_editor_template,
             "map_viewer": map_viewer_template,
@@ -9969,6 +10374,18 @@ class SiteZIndexLayerTests(TestCase):
             with self.subTest(modal_source=name):
                 self.assertNotIn("background: var(--site-modal-backdrop-bg", source)
                 self.assertIn("site-modal-exterior-dim-shadow", source)
+
+        death_backdrop_rule = multiplayer_css[
+            multiplayer_css.index(".multiplayer-death-modal-backdrop {"):
+            multiplayer_css.index(".multiplayer-encounter-overlay {", multiplayer_css.index(".multiplayer-death-modal-backdrop {"))
+        ]
+        death_dialog_rule = multiplayer_css[
+            multiplayer_css.index(".multiplayer-death-modal {"):
+            multiplayer_css.index(".multiplayer-death-modal-header {", multiplayer_css.index(".multiplayer-death-modal {"))
+        ]
+        self.assertIn("background: var(--site-modal-backdrop-bg", death_backdrop_rule)
+        self.assertNotIn("box-shadow", death_dialog_rule)
+        self.assertNotIn("background:", death_dialog_rule)
 
     def test_modal_headers_do_not_draw_bottom_borders(self):
         base_dir = Path(settings.BASE_DIR)
@@ -9996,7 +10413,7 @@ class SiteZIndexLayerTests(TestCase):
             "media_tool": css_block(image_color_css, ".media-tool-modal-head {", ".media-tool-modal-title"),
             "hpmail_mailbox": css_block(hpmail_css, ".hpmail-mailbox-modal-head,", ".hpmail-mailbox-modal-field"),
             "multiplayer_idle": css_block(multiplayer_css, ".multiplayer-idle-modal-header.site-modal-head {", ".multiplayer-idle-modal-title"),
-            "multiplayer_death": css_block(multiplayer_css, ".multiplayer-death-modal-header.site-modal-head {", ".multiplayer-death-modal-title"),
+            "multiplayer_death": css_block(multiplayer_css, ".multiplayer-death-modal-header {", ".multiplayer-death-modal-title"),
             "multiplayer_skin": css_block(multiplayer_css, ".multiplayer-skin-modal-header {", ".multiplayer-skin-modal-title"),
             "bumpercar_stats": css_block(fun_sub_template, ".bumpercar-stats-modal-header {", ".bumpercar-stats-modal-title"),
         }
@@ -11926,6 +12343,36 @@ class HandriveAuthFlowTests(TestCase):
         self.assertNotIn("hp_gitea_session", response.cookies)
         mock_attach_session.assert_not_called()
 
+    @override_settings(WARGAME_PUBLIC_URL="https://wargame.hanplanet.com/")
+    @mock.patch("main.handrive_views._attach_forgejo_login_session")
+    def test_docs_login_authenticated_keeps_exact_wargame_mission_next(self, mock_attach_session):
+        mock_attach_session.side_effect = lambda response, user: response
+        self.client.force_login(self.user)
+        self.activate_hanplanet_session_token()
+        next_url = "https://wargame.hanplanet.com/?mission=web-v1-01-http&launch=1"
+
+        response = self.client.get("/ko/login/", {"next": next_url}, secure=True)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], next_url)
+
+    @override_settings(WARGAME_PUBLIC_URL="https://wargame.hanplanet.com/")
+    @mock.patch("main.handrive_views._attach_forgejo_login_session")
+    def test_docs_login_rejects_wargame_lookalike_or_insecure_next(self, mock_attach_session):
+        mock_attach_session.side_effect = lambda response, user: response
+        self.client.force_login(self.user)
+        self.activate_hanplanet_session_token()
+
+        for next_url in (
+            "https://wargame.hanplanet.com.evil.example/?mission=web-v1-01-http&launch=1",
+            "http://wargame.hanplanet.com/?mission=web-v1-01-http&launch=1",
+            "https://evil.example@wargame.hanplanet.com/?mission=web-v1-01-http&launch=1",
+        ):
+            with self.subTest(next_url=next_url):
+                response = self.client.get("/ko/login/", {"next": next_url}, secure=True)
+                self.assertEqual(response.status_code, 302)
+                self.assertNotEqual(response["Location"], next_url)
+
     def test_resolve_handrive_post_login_url_keeps_portfolio_next(self):
         public_group, _ = Group.objects.get_or_create(name=DOCS_PUBLIC_WRITE_GROUP_NAME)
         self.user.groups.add(public_group)
@@ -12577,6 +13024,36 @@ class HanplanetMultiplayerPageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "/static/media/Spikip/speaki_default/icon/main.png", html=False)
         self.assertNotContains(response, "/static/Spikip/speaki_default/icon/main.png", html=False)
+
+    def test_multiplayer_death_audio_is_not_suppressed_by_defeat_audio(self):
+        base_dir = Path(settings.BASE_DIR)
+        for client_name in ("bumpercar_spiky", "raise_speaki"):
+            with self.subTest(client=client_name):
+                client_js = (base_dir / f"static/js/fun/{client_name}/multiplayer.js").read_text(encoding="utf-8")
+                self.assertIn("if (player.deathActive && !previousState.deathActive) {", client_js)
+                self.assertIn("if (selfDeathActive && !wasSelfDeathActive) {", client_js)
+                self.assertNotIn("deathWasCausedByDefeat", client_js)
+                self.assertNotIn("selfDeathWasCausedByDefeat", client_js)
+
+    def test_multiplayer_escape_resume_and_skin_reconnect_controls(self):
+        base_dir = Path(settings.BASE_DIR)
+        template = (base_dir / "templates/fun/Hanplanet_Multiplayer.html").read_text(encoding="utf-8")
+        i18n_template = (base_dir / "templates/partials/ui_i18n.html").read_text(encoding="utf-8")
+
+        self.assertIn("data-continue-label", template)
+        self.assertIn("multiplayer_continue_button", template)
+        self.assertIn('{% elif key == "multiplayer_continue_button" %}Continue', i18n_template)
+
+        for client_name in ("bumpercar_spiky", "raise_speaki"):
+            with self.subTest(client=client_name):
+                client_js = (base_dir / f"static/js/fun/{client_name}/multiplayer.js").read_text(encoding="utf-8")
+                self.assertIn("const clearGameplayInputForStartOverlay = function ()", client_js)
+                self.assertIn("const resumeGameFromStartOverlay = function ()", client_js)
+                self.assertIn("selectedSkinName !== activeSelfSkinName", client_js)
+                self.assertIn("if (skinChangedSinceConnection) {\n            connect();", client_js)
+                self.assertIn("if (event.key !== 'Escape')", client_js)
+                self.assertIn("setStartOverlayOpen(true);", client_js)
+                self.assertIn("resumeGameFromStartOverlay();", client_js)
 
     def test_multiplayer_page_renders_for_authenticated_user(self):
         self.client.force_login(self.user)
@@ -15189,6 +15666,339 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(branch_name, "main")
         self.assertEqual(commit_message, "Delete README")
         self.assertEqual(author, editor)
+
+    def _create_local_git_remote(self, repository_path: Path) -> None:
+        with TemporaryDirectory() as checkout_dir:
+            checkout_path = Path(checkout_dir)
+            subprocess.run(["git", "init", str(checkout_path)], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "-C", str(checkout_path), "checkout", "-b", "main"], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "-C", str(checkout_path), "config", "user.name", "Test User"], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "-C", str(checkout_path), "config", "user.email", "test@example.com"], check=True, capture_output=True, text=True)
+            (checkout_path / "README.md").write_text("before\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(checkout_path), "add", "README.md"], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "-C", str(checkout_path), "commit", "-m", "Initial"], check=True, capture_output=True, text=True)
+            repository_path.parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["git", "clone", "--bare", str(checkout_path), str(repository_path)], check=True, capture_output=True, text=True)
+
+    def _create_local_git_branch(self, repository_path: Path, branch_name: str, source_branch_name: str = "main") -> None:
+        with TemporaryDirectory() as checkout_dir:
+            checkout_path = Path(checkout_dir)
+            subprocess.run(["git", "clone", str(repository_path), str(checkout_path)], check=True, capture_output=True, text=True)
+            subprocess.run(
+                ["git", "-C", str(checkout_path), "checkout", "-b", branch_name, source_branch_name],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(["git", "-C", str(checkout_path), "push", "origin", branch_name], check=True, capture_output=True, text=True)
+
+    def _write_local_git_branch_file(self, repository_path: Path, branch_name: str, filename: str, content: str) -> None:
+        with TemporaryDirectory() as checkout_dir:
+            checkout_path = Path(checkout_dir)
+            subprocess.run(
+                ["git", "clone", "--branch", branch_name, "--single-branch", str(repository_path), str(checkout_path)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(["git", "-C", str(checkout_path), "config", "user.name", "Test User"], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "-C", str(checkout_path), "config", "user.email", "test@example.com"], check=True, capture_output=True, text=True)
+            (checkout_path / filename).write_text(content, encoding="utf-8")
+            subprocess.run(["git", "-C", str(checkout_path), "add", filename], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "-C", str(checkout_path), "commit", "-m", f"Add {filename}"], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "-C", str(checkout_path), "push", "origin", branch_name], check=True, capture_output=True, text=True)
+
+    def test_github_branch_changes_stage_until_explicit_commit(self):
+        editor = self.create_scoped_handrive_user("github_draft_editor")
+        remote_path = Path(self.temp_dir.name) / "github-remote.git"
+        self._create_local_git_remote(remote_path)
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98774,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 2477,
+                    "full_name": "team/draftable",
+                    "name": "draftable",
+                    "owner": "team",
+                    "default_branch": "main",
+                    "clone_url": str(remote_path),
+                    "can_push": True,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+        branch_path = f"users/{editor.username}/.github-repo-2477/main"
+
+        with override_settings(GITHUB_REPO_CACHE_ROOT=str(Path(self.temp_dir.name) / "github-cache")):
+            save_response = self.client.post(
+                reverse("main:handrive_api_save"),
+                data=json.dumps(
+                    {
+                        "original_path": f"{branch_path}/README.md",
+                        "target_dir": branch_path,
+                        "filename": "README.md",
+                        "extension": ".md",
+                        "content": "after\n",
+                    }
+                ),
+                content_type="application/json",
+            )
+            self.assertEqual(save_response.status_code, 200, save_response.content)
+            self.assertEqual(
+                subprocess.run(
+                    ["git", f"--git-dir={remote_path}", "show", "main:README.md"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout,
+                "before\n",
+            )
+
+            list_response = self.client.get(reverse("main:handrive_api_list"), data={"path": branch_path})
+            self.assertEqual(list_response.status_code, 200, list_response.content)
+            self.assertTrue(list_response.json()["directory_meta"]["has_uncommitted_changes"])
+
+            commit_response = self.client.post(
+                reverse("main:handrive_api_git_commit"),
+                data=json.dumps({"path": branch_path, "commit_message": "Update README"}),
+                content_type="application/json",
+            )
+            self.assertEqual(commit_response.status_code, 200, commit_response.content)
+
+        self.assertEqual(
+            subprocess.run(
+                ["git", f"--git-dir={remote_path}", "show", "main:README.md"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout,
+            "after\n",
+        )
+
+    def test_gitea_branch_changes_stage_until_explicit_commit(self):
+        editor = self.create_scoped_handrive_user("gitea_draft_editor")
+        repo_name = "draftable"
+        remote_path = Path(settings.FORGEJO_REPOS_ROOT) / editor.username / f"{repo_name}.git"
+        self._create_local_git_remote(remote_path)
+        GitRepository.objects.create(
+            owner=editor,
+            repo_name=repo_name,
+            forgejo_owner=editor.username,
+            forgejo_repo_name=repo_name,
+            handrive_path=f"users/{editor.username}/{repo_name}",
+            status="active",
+        )
+        self.client.force_login(editor)
+        branch_path = f"users/{editor.username}/{repo_name}/main"
+        forgejo_client = mock.Mock()
+        forgejo_client.internal_authed_clone_url.return_value = str(remote_path)
+        forgejo_client.list_collaborators.return_value = []
+
+        with mock.patch("main.handrive_views.ForgejoClient", return_value=forgejo_client):
+            save_response = self.client.post(
+                reverse("main:handrive_api_save"),
+                data=json.dumps(
+                    {
+                        "original_path": f"{branch_path}/README.md",
+                        "target_dir": branch_path,
+                        "filename": "README.md",
+                        "extension": ".md",
+                        "content": "after\n",
+                    }
+                ),
+                content_type="application/json",
+            )
+        self.assertEqual(save_response.status_code, 200, save_response.content)
+        self.assertEqual(
+            subprocess.run(
+                ["git", f"--git-dir={remote_path}", "show", "main:README.md"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout,
+            "before\n",
+        )
+
+        with mock.patch("main.handrive_views.ForgejoClient", return_value=forgejo_client):
+            commit_response = self.client.post(
+                reverse("main:handrive_api_git_commit"),
+                data=json.dumps({"path": branch_path, "commit_message": "Update README"}),
+                content_type="application/json",
+            )
+        self.assertEqual(commit_response.status_code, 200, commit_response.content)
+        self.assertEqual(
+            subprocess.run(
+                ["git", f"--git-dir={remote_path}", "show", "main:README.md"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout,
+            "after\n",
+        )
+
+    def test_github_move_between_branches_stages_both_branch_changes(self):
+        editor = self.create_scoped_handrive_user("github_cross_branch_move_editor")
+        remote_path = Path(self.temp_dir.name) / "github-cross-branch-remote.git"
+        self._create_local_git_remote(remote_path)
+        self._create_local_git_branch(remote_path, "feature")
+        self._write_local_git_branch_file(remote_path, "main", "main-only.md", "main only\n")
+        GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98775,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 2478,
+                    "full_name": "team/cross-branch-move",
+                    "name": "cross-branch-move",
+                    "owner": "team",
+                    "default_branch": "main",
+                    "clone_url": str(remote_path),
+                    "can_push": True,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+        repo_root = f"users/{editor.username}/.github-repo-2478"
+        source_branch_path = f"{repo_root}/main"
+        target_branch_path = f"{repo_root}/feature"
+
+        with override_settings(GITHUB_REPO_CACHE_ROOT=str(Path(self.temp_dir.name) / "github-cross-branch-cache")):
+            move_response = self.client.post(
+                reverse("main:handrive_api_move"),
+                data=json.dumps(
+                    {
+                        "source_path": f"{source_branch_path}/main-only.md",
+                        "target_dir": target_branch_path,
+                    }
+                ),
+                content_type="application/json",
+            )
+            self.assertEqual(move_response.status_code, 200, move_response.content)
+            self.assertEqual(move_response.json()["path"], f"{target_branch_path}/main-only.md")
+
+            self.assertEqual(
+                subprocess.run(
+                    ["git", f"--git-dir={remote_path}", "show", "main:main-only.md"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout,
+                "main only\n",
+            )
+            self.assertNotEqual(
+                subprocess.run(
+                    ["git", f"--git-dir={remote_path}", "cat-file", "-e", "feature:main-only.md"],
+                    capture_output=True,
+                    text=True,
+                ).returncode,
+                0,
+            )
+
+            source_list_response = self.client.get(reverse("main:handrive_api_list"), data={"path": source_branch_path})
+            target_list_response = self.client.get(reverse("main:handrive_api_list"), data={"path": target_branch_path})
+            self.assertEqual(source_list_response.status_code, 200, source_list_response.content)
+            self.assertEqual(target_list_response.status_code, 200, target_list_response.content)
+            self.assertTrue(source_list_response.json()["directory_meta"]["has_uncommitted_changes"])
+            self.assertTrue(target_list_response.json()["directory_meta"]["has_uncommitted_changes"])
+            self.assertNotIn("main-only.md", {entry["name"] for entry in source_list_response.json()["entries"]})
+            self.assertIn("main-only.md", {entry["name"] for entry in target_list_response.json()["entries"]})
+
+            source_commit_response = self.client.post(
+                reverse("main:handrive_api_git_commit"),
+                data=json.dumps({"path": source_branch_path, "commit_message": "Move main-only to feature"}),
+                content_type="application/json",
+            )
+            target_commit_response = self.client.post(
+                reverse("main:handrive_api_git_commit"),
+                data=json.dumps({"path": target_branch_path, "commit_message": "Add main-only from main"}),
+                content_type="application/json",
+            )
+            self.assertEqual(source_commit_response.status_code, 200, source_commit_response.content)
+            self.assertEqual(target_commit_response.status_code, 200, target_commit_response.content)
+
+        self.assertNotEqual(
+            subprocess.run(
+                ["git", f"--git-dir={remote_path}", "cat-file", "-e", "main:main-only.md"],
+                capture_output=True,
+                text=True,
+            ).returncode,
+            0,
+        )
+        self.assertEqual(
+            subprocess.run(
+                ["git", f"--git-dir={remote_path}", "show", "feature:main-only.md"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout,
+            "main only\n",
+        )
+
+    def test_gitea_move_from_branch_to_handrive_stages_branch_deletion(self):
+        editor = self.create_scoped_handrive_user("gitea_branch_to_handrive_move_editor")
+        repo_name = "branch-to-handrive"
+        remote_path = Path(settings.FORGEJO_REPOS_ROOT) / editor.username / f"{repo_name}.git"
+        self._create_local_git_remote(remote_path)
+        GitRepository.objects.create(
+            owner=editor,
+            repo_name=repo_name,
+            forgejo_owner=editor.username,
+            forgejo_repo_name=repo_name,
+            handrive_path=f"users/{editor.username}/{repo_name}",
+            status="active",
+        )
+        self.client.force_login(editor)
+        branch_path = f"users/{editor.username}/{repo_name}/main"
+        target_dir = f"users/{editor.username}"
+        forgejo_client = mock.Mock()
+        forgejo_client.internal_authed_clone_url.return_value = str(remote_path)
+        forgejo_client.list_collaborators.return_value = []
+
+        with mock.patch("main.handrive_views.ForgejoClient", return_value=forgejo_client):
+            move_response = self.client.post(
+                reverse("main:handrive_api_move"),
+                data=json.dumps({"source_path": f"{branch_path}/README.md", "target_dir": target_dir}),
+                content_type="application/json",
+            )
+            self.assertEqual(move_response.status_code, 200, move_response.content)
+            self.assertEqual(move_response.json()["path"], f"{target_dir}/README.md")
+            self.assertEqual((Path(settings.MEDIA_ROOT) / "HanDrive" / target_dir / "README.md").read_text(encoding="utf-8"), "before\n")
+            self.assertEqual(
+                subprocess.run(
+                    ["git", f"--git-dir={remote_path}", "show", "main:README.md"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout,
+                "before\n",
+            )
+
+            list_response = self.client.get(reverse("main:handrive_api_list"), data={"path": branch_path})
+            self.assertEqual(list_response.status_code, 200, list_response.content)
+            self.assertTrue(list_response.json()["directory_meta"]["has_uncommitted_changes"])
+
+            commit_response = self.client.post(
+                reverse("main:handrive_api_git_commit"),
+                data=json.dumps({"path": branch_path, "commit_message": "Move README to HanDrive"}),
+                content_type="application/json",
+            )
+            self.assertEqual(commit_response.status_code, 200, commit_response.content)
+
+        self.assertNotEqual(
+            subprocess.run(
+                ["git", f"--git-dir={remote_path}", "cat-file", "-e", "main:README.md"],
+                capture_output=True,
+                text=True,
+            ).returncode,
+            0,
+        )
 
     def test_git_branch_create_pushes_selected_github_repository_branch(self):
         editor = self.create_scoped_handrive_user("github_branch_create_editor")
@@ -18951,10 +19761,11 @@ class HanharnessDownloadTests(TestCase):
 
 
 @override_settings(
-    WARGAME_COMPLETION_SECRET="wargame-test-completion-secret",
+    WARGAME_COMPLETION_SECRET="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     GAME_JWT_SECRET="wargame-test-jwt-secret",
     GAME_JWT_ISSUER="hanplanet-tests",
     GAME_JWT_AUDIENCE="hanplanet-wargame-tests",
+    PUBLIC_BASE_URL="https://www.hanplanet.com",
 )
 class WargameApiSecurityTests(TestCase):
     def setUp(self):
@@ -18973,10 +19784,16 @@ class WargameApiSecurityTests(TestCase):
         ticket_hash = "a" * 64
         nonce = "b" * 32
         message = "\n".join(
-            [self.user.username, challenge_id, ticket_hash, str(timestamp), nonce]
+            [
+                f"django-user-id:v1:{self.user.pk}",
+                challenge_id,
+                ticket_hash,
+                str(timestamp),
+                nonce,
+            ]
         )
         receipt = hmac.new(
-            b"wargame-test-completion-secret",
+            b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             message.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
@@ -18996,13 +19813,94 @@ class WargameApiSecurityTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["user_id"], self.user.pk)
         self.assertEqual(response.json()["email"], "operator@example.com")
+        token_payload_segment = response.json()["token"].split(".")[1]
+        token_payload = json.loads(
+            base64.urlsafe_b64decode(
+                token_payload_segment + "=" * (-len(token_payload_segment) % 4)
+            ).decode("utf-8")
+        )
+        self.assertEqual(token_payload["user_id"], self.user.pk)
         self.assertEqual(
             response.get("Access-Control-Allow-Origin"),
             "https://wargame.hanplanet.com",
         )
         self.assertIsNone(settings.SESSION_COOKIE_DOMAIN)
         self.assertIsNone(settings.CSRF_COOKIE_DOMAIN)
+
+    def test_authenticated_identity_exposes_own_django_profile_image(self):
+        PortfolioProfile.objects.create(
+            user=self.user,
+            profile_img="profile_images/wargame-operator.png",
+        )
+
+        self.client.force_login(self.user)
+        session_response = self.client.get("/ko/api/wargame/session/")
+        solves_response = self.client.get(
+            "/ko/api/wargame/solves/",
+            HTTP_AUTHORIZATION=self.authorization,
+        )
+
+        expected_url = "https://www.hanplanet.com/media/profile_images/wargame-operator.png"
+        self.assertEqual(session_response.status_code, 200)
+        self.assertEqual(session_response.json()["profile_image_url"], expected_url)
+        self.assertEqual(solves_response.status_code, 200)
+        self.assertEqual(solves_response.json()["profile_image_url"], expected_url)
+
+    def test_bearer_identity_uses_stable_user_id_after_username_change(self):
+        original_user_id = self.user.pk
+        self.user.username = "wargame_api_user_renamed"
+        self.user.save(update_fields=["username"])
+
+        response = self.client.get(
+            "/ko/api/wargame/solves/",
+            HTTP_AUTHORIZATION=self.authorization,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["user_id"], original_user_id)
+        self.assertEqual(response.json()["username"], "wargame_api_user_renamed")
+
+    def test_completion_receipt_survives_username_change(self):
+        payload = self.completion_payload()
+        self.user.username = "wargame_api_user_renamed_during_lab"
+        self.user.save(update_fields=["username"])
+
+        response = self.client.post(
+            "/ko/api/wargame/solves/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=self.authorization,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["username"], "wargame_api_user_renamed_during_lab")
+        self.assertEqual(response.json()["solves"], ["web-v1-01-http"])
+
+    def test_case_colliding_usernames_receive_distinct_immutable_ids(self):
+        case_twin = get_user_model().objects.create_user(
+            username=self.user.username.upper(),
+            email="case-twin@example.com",
+            password="test-password-only",
+        )
+        from .views import build_game_auth_token
+
+        original_response = self.client.get(
+            "/ko/api/wargame/solves/",
+            HTTP_AUTHORIZATION=self.authorization,
+        )
+        case_twin_token = build_game_auth_token(case_twin, game_slug="wargame")
+        twin_response = self.client.get(
+            "/ko/api/wargame/solves/",
+            HTTP_AUTHORIZATION=f"Bearer {case_twin_token}",
+        )
+
+        self.assertEqual(original_response.status_code, 200)
+        self.assertEqual(twin_response.status_code, 200)
+        self.assertEqual(original_response.json()["user_id"], self.user.pk)
+        self.assertEqual(twin_response.json()["user_id"], case_twin.pk)
+        self.assertNotEqual(original_response.json()["user_id"], twin_response.json()["user_id"])
 
     def test_solve_post_rejects_bearer_without_server_receipt(self):
         response = self.client.post(
@@ -19036,6 +19934,25 @@ class WargameApiSecurityTests(TestCase):
         self.assertEqual(first.json()["email"], "operator@example.com")
         self.assertEqual(first.json()["solves"], ["web-v1-01-http"])
         self.assertEqual(WargameSolve.objects.count(), 1)
+
+    def test_placeholder_or_low_entropy_completion_secret_fails_closed(self):
+        for weak_secret in (
+            "change-this-to-a-separate-long-random-wargame-secret",
+            "a" * 64,
+        ):
+            with self.subTest(weak_secret=weak_secret), override_settings(
+                WARGAME_COMPLETION_SECRET=weak_secret
+            ):
+                response = self.client.post(
+                    "/ko/api/wargame/solves/",
+                    data=json.dumps(self.completion_payload()),
+                    content_type="application/json",
+                    HTTP_AUTHORIZATION=self.authorization,
+                )
+
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.json()["error"], "completion_secret_not_configured")
+                self.assertFalse(WargameSolve.objects.exists())
 
     def test_expired_or_legacy_receipt_is_rejected(self):
         expired = self.client.post(

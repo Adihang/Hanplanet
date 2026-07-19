@@ -33,7 +33,7 @@ import unicodedata
 import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone as datetime_timezone
-from contextlib import contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 from contextvars import ContextVar
 from functools import wraps
 from glob import escape as glob_escape
@@ -1138,6 +1138,10 @@ DOCS_TEXT = {
         "unsaved_changes_message": "저장되지 않은 변경 사항이 있습니다. 이동 전에 저장할까요?",
         "unsaved_changes_leave_button": "저장안함",
         "unsaved_changes_save_button": "저장",
+        "git_unsaved_changes_title": "커밋",
+        "git_unsaved_changes_message": "커밋되지 않은 변경 사항이 있습니다. 이동 전에 커밋 할까요?",
+        "git_unsaved_changes_leave_button": "커밋안함",
+        "git_unsaved_changes_commit_button": "커밋",
         "list_preview_title": "파일 미리보기",
         "list_preview_empty": "파일을 선택하면 미리보기가 표시됩니다.",
         "list_preview_loading": "미리보기를 불러오는 중...",
@@ -1663,6 +1667,10 @@ DOCS_TEXT = {
         "unsaved_changes_message": "You have unsaved changes. Save before leaving?",
         "unsaved_changes_leave_button": "Don't save",
         "unsaved_changes_save_button": "Save",
+        "git_unsaved_changes_title": "Commit",
+        "git_unsaved_changes_message": "You have uncommitted changes. Commit before leaving?",
+        "git_unsaved_changes_leave_button": "Don't commit",
+        "git_unsaved_changes_commit_button": "Commit",
         "list_preview_title": "File Preview",
         "list_preview_empty": "Select a file to preview.",
         "list_preview_loading": "Loading preview...",
@@ -1966,9 +1974,16 @@ def _collect_allowed_return_hosts(request) -> set[str]:
     for candidate in (
         getattr(settings, "PUBLIC_BASE_URL", ""),
         getattr(settings, "PUBLIC_GIT_BASE_URL", ""),
+        getattr(settings, "WARGAME_PUBLIC_URL", ""),
     ):
         parsed = urlparse(str(candidate or "").strip())
-        if parsed.netloc:
+        if (
+            parsed.scheme in {"http", "https"}
+            and parsed.netloc
+            and parsed.hostname
+            and parsed.username is None
+            and parsed.password is None
+        ):
             allowed_hosts.add(parsed.netloc)
 
     return {host for host in allowed_hosts if host}
@@ -5443,6 +5458,8 @@ def _build_handrive_directory_meta(
     current_dir_size_display = ""
     current_dir_modified_display = ""
     current_dir_commit_meta = {"commit_id": "", "subject": "", "author_username": "", "modified_display": ""}
+    git_branch_path = ""
+    has_uncommitted_changes = False
 
     if git_virtual is None:
         directory, normalized_dir = resolve_path(normalized_dir, must_exist=True)
@@ -5463,6 +5480,12 @@ def _build_handrive_directory_meta(
     else:
         if git_virtual["kind"] == "branch_file":
             raise FileNotFoundError("폴더를 찾을 수 없습니다.")
+        if git_virtual["kind"] == "branch_dir":
+            git_branch_path = f"{git_virtual['repo_root']}/{git_virtual['branch_segment']}"
+            has_uncommitted_changes = _git_branch_has_uncommitted_changes(
+                git_virtual["repo"],
+                git_virtual["branch_name"],
+            )
         if git_virtual["kind"] == "branch_dir" and git_virtual["repo_relative_path"]:
             current_dir_commit_meta = _git_repo_latest_commit_meta(
                 git_virtual["repo"],
@@ -5495,6 +5518,8 @@ def _build_handrive_directory_meta(
             and git_virtual["kind"] == "branch_dir"
             and not git_virtual["repo_relative_path"]
         ),
+        "git_branch_path": git_branch_path,
+        "has_uncommitted_changes": has_uncommitted_changes,
         "git_commit_id": current_dir_commit_meta.get("commit_id", ""),
         "git_commit_message": current_dir_commit_meta.get("subject", ""),
         "git_commit_author_username": current_dir_commit_meta.get("author_username", ""),
@@ -6076,6 +6101,122 @@ def _run_git_repo_command(repo, *args: str, text: bool = True, check: bool = Tru
     return result
 
 
+def _get_handrive_git_draft_root() -> Path:
+    """커밋 전 HanDrive Git 변경사항을 보관할 영속 디렉터리."""
+    configured_root = str(getattr(settings, "HANDRIVE_GIT_DRAFT_ROOT", "") or "").strip()
+    root = Path(configured_root) if configured_root else Path(settings.MEDIA_ROOT) / ".handrive-git-drafts"
+    root.mkdir(parents=True, exist_ok=True)
+    return root.resolve()
+
+
+def _get_handrive_git_draft_user(user=None):
+    if user is None:
+        request = HANDRIVE_ACTIVE_REQUEST.get()
+        user = getattr(request, "user", None) if request is not None else None
+    if not user or not getattr(user, "is_authenticated", False):
+        return None
+    return user
+
+
+def _get_handrive_git_draft_path(repo, branch_name: str, user=None) -> Path | None:
+    """사용자별 repo/branch 작업공간 경로를 안전하게 계산한다."""
+    draft_user = _get_handrive_git_draft_user(user)
+    if draft_user is None:
+        return None
+    user_key = sanitize_upload_segment(str(getattr(draft_user, "pk", "") or "")) or "user"
+    if _is_github_virtual_repo(repo):
+        repo_key = f"github-{sanitize_upload_segment(str(getattr(repo, 'github_repo_id', '') or getattr(repo, 'id', '') or 'repo'))}"
+    else:
+        repo_key = f"forgejo-{sanitize_upload_segment(str(getattr(repo, 'id', '') or 'repo'))}"
+    branch_digest = hashlib.sha256(str(branch_name or "").encode("utf-8")).hexdigest()[:24]
+    return _get_handrive_git_draft_root() / user_key / repo_key / branch_digest
+
+
+@contextmanager
+def _handrive_git_draft_lock(draft_path: Path):
+    """동일 브랜치의 동시 저장/커밋이 작업공간을 훼손하지 않게 보호한다."""
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = draft_path.parent / f".{draft_path.name}.lock"
+    with lock_path.open("w", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _get_handrive_git_draft_worktree(repo, branch_name: str, user=None) -> Path | None:
+    draft_path = _get_handrive_git_draft_path(repo, branch_name, user)
+    if draft_path is None or not (draft_path / ".git").is_dir():
+        return None
+    return draft_path
+
+
+def _git_worktree_command(worktree_dir: Path, *args: str, text: bool = True, check: bool = True, timeout: int = 120):
+    command = [GIT_BIN, "-C", str(worktree_dir), *args]
+    result = subprocess.run(command, capture_output=True, text=text, timeout=timeout)
+    if check and result.returncode != 0:
+        stderr = result.stderr.strip() if isinstance(result.stderr, str) else ""
+        raise RuntimeError(stderr or f"git command failed: {' '.join(command)}")
+    return result
+
+
+def _ensure_handrive_git_draft_worktree(repo, branch_name: str, author_user) -> Path:
+    """원격 branch에서 사용자 작업공간을 최초 한 번만 clone한다."""
+    draft_path = _get_handrive_git_draft_path(repo, branch_name, author_user)
+    if draft_path is None:
+        raise PermissionDenied("로그인이 필요합니다.")
+    if (draft_path / ".git").is_dir():
+        return draft_path
+    if draft_path.exists():
+        shutil.rmtree(draft_path, ignore_errors=True)
+
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = draft_path.parent / f".{draft_path.name}-{uuid.uuid4().hex}"
+    if _is_github_virtual_repo(repo):
+        clone_url = repo.clone_url
+        auth_env_context = _github_git_auth_env(repo.access_token)
+    else:
+        client = ForgejoClient()
+        clone_url = client.internal_authed_clone_url(
+            repo.forgejo_owner or repo.owner.username,
+            repo.forgejo_repo_name or repo.repo_name,
+        )
+        auth_env_context = nullcontext(None)
+    try:
+        with auth_env_context as git_env:
+            clone_result = subprocess.run(
+                [GIT_BIN, "clone", "--branch", branch_name, "--single-branch", clone_url, str(temporary_path)],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                env=git_env,
+            )
+        if clone_result.returncode != 0:
+            raise RuntimeError(clone_result.stderr.strip() or "repo clone failed")
+        _git_worktree_command(temporary_path, "config", "user.name", author_user.username, timeout=10)
+        _git_worktree_command(
+            temporary_path,
+            "config",
+            "user.email",
+            getattr(author_user, "email", "") or f"{author_user.username}@hanplanet.local",
+            timeout=10,
+        )
+        os.replace(temporary_path, draft_path)
+    except Exception:
+        shutil.rmtree(temporary_path, ignore_errors=True)
+        raise
+    return draft_path
+
+
+def _git_branch_has_uncommitted_changes(repo, branch_name: str, user=None) -> bool:
+    worktree_dir = _get_handrive_git_draft_worktree(repo, branch_name, user)
+    if worktree_dir is None:
+        return False
+    result = _git_worktree_command(worktree_dir, "status", "--porcelain", check=False, timeout=30)
+    return result.returncode == 0 and bool((result.stdout or "").strip())
+
+
 def _empty_git_commit_meta() -> dict[str, str]:
     return {"commit_id": "", "subject": "", "author_username": "", "modified_display": ""}
 
@@ -6158,6 +6299,14 @@ def _git_repo_branch_latest_commit_meta_map(repo, branch_names: list[str]) -> di
 
 def _git_repo_object_type(repo, branch_name: str, repo_relative_path: str = "") -> str:
     """branch/path 가 tree 인지 blob 인지 확인한다."""
+    worktree_dir = _get_handrive_git_draft_worktree(repo, branch_name)
+    if worktree_dir is not None:
+        target_path = _resolve_git_worktree_path(worktree_dir, repo_relative_path)
+        if target_path.is_dir():
+            return "tree"
+        if target_path.is_file():
+            return "blob"
+        raise RuntimeError("경로를 찾을 수 없습니다.")
     spec = branch_name if not repo_relative_path else f"{branch_name}:{repo_relative_path}"
     result = _run_git_repo_command(repo, "cat-file", "-t", spec)
     return (result.stdout or "").strip()
@@ -6165,6 +6314,12 @@ def _git_repo_object_type(repo, branch_name: str, repo_relative_path: str = "") 
 
 def _git_repo_read_file_bytes(repo, branch_name: str, repo_relative_path: str) -> bytes:
     """branch 내부 파일을 bare repo 에서 직접 읽는다."""
+    worktree_dir = _get_handrive_git_draft_worktree(repo, branch_name)
+    if worktree_dir is not None:
+        target_path = _resolve_git_worktree_path(worktree_dir, repo_relative_path)
+        if not target_path.is_file():
+            raise FileNotFoundError("파일을 찾을 수 없습니다.")
+        return target_path.read_bytes()
     spec = f"{branch_name}:{repo_relative_path}"
     result = _run_git_repo_command(repo, "show", spec, text=False)
     return result.stdout or b""
@@ -6172,6 +6327,30 @@ def _git_repo_read_file_bytes(repo, branch_name: str, repo_relative_path: str) -
 
 def _git_repo_list_tree(repo, branch_name: str, repo_relative_path: str = "") -> list[dict]:
     """branch 디렉터리 엔트리를 HanDrive list 용 dict 목록으로 변환한다."""
+    worktree_dir = _get_handrive_git_draft_worktree(repo, branch_name)
+    if worktree_dir is not None:
+        directory_path = _resolve_git_worktree_path(worktree_dir, repo_relative_path)
+        if not directory_path.is_dir():
+            raise FileNotFoundError("폴더를 찾을 수 없습니다.")
+        entries = []
+        for child_path in directory_path.iterdir():
+            if child_path.name in {".git", ".gitkeep"}:
+                continue
+            if not child_path.is_file() and not child_path.is_dir():
+                continue
+            size_display = ""
+            if child_path.is_file():
+                try:
+                    size_display = format_handrive_bytes_display(child_path.stat().st_size)
+                except OSError:
+                    pass
+            entries.append({
+                "name": child_path.name,
+                "type": "tree" if child_path.is_dir() else "blob",
+                "sha": "",
+                "size_display": size_display,
+            })
+        return sorted(entries, key=lambda item: (0 if item["type"] == "tree" else 1, item["name"].lower()))
     spec = branch_name if not repo_relative_path else f"{branch_name}:{repo_relative_path}"
     result = _run_git_repo_command(repo, "ls-tree", "-z", spec, text=False)
     payload = result.stdout or b""
@@ -6268,6 +6447,10 @@ def _git_repo_latest_commit_subject(repo, branch_name: str, repo_relative_path: 
 def _git_repo_path_exists(repo, branch_name: str, repo_relative_path: str) -> bool:
     """branch 내부 경로가 실제로 존재하는지 확인한다."""
     normalized_path = normalize_relative_path(repo_relative_path, allow_empty=False)
+    worktree_dir = _get_handrive_git_draft_worktree(repo, branch_name)
+    if worktree_dir is not None:
+        target_path = _resolve_git_worktree_path(worktree_dir, normalized_path)
+        return target_path.exists()
     spec = f"{branch_name}:{normalized_path}"
     result = _run_git_repo_command(repo, "cat-file", "-e", spec, check=False)
     return result.returncode == 0
@@ -6316,55 +6499,96 @@ def _copy_local_item_to_git_worktree(source_path: Path, destination_path: Path) 
     shutil.copy2(source_path, destination_path)
 
 
+def _copy_git_worktree_item(source_path: Path, destination_path: Path) -> None:
+    """한 Git draft의 항목을 다른 Git draft로 안전하게 복사한다."""
+    if source_path.is_symlink():
+        os.symlink(os.readlink(source_path), destination_path)
+        return
+    if source_path.is_dir():
+        shutil.copytree(source_path, destination_path, symlinks=True)
+        git_dir = destination_path / ".git"
+        if git_dir.is_dir():
+            shutil.rmtree(git_dir, ignore_errors=True)
+        elif git_dir.exists() or git_dir.is_symlink():
+            git_dir.unlink()
+        return
+    shutil.copy2(source_path, destination_path)
+
+
+def _remove_git_worktree_item(target_path: Path) -> None:
+    """Git draft에서 파일, 폴더, 심볼릭 링크를 구분해 제거한다."""
+    if target_path.is_dir() and not target_path.is_symlink():
+        shutil.rmtree(target_path)
+        return
+    target_path.unlink()
+
+
+def _stage_git_branch_cross_move(
+    source_repo,
+    source_branch_name: str,
+    source_repo_relative_path: str,
+    target_repo,
+    target_branch_name: str,
+    target_repo_relative_path: str,
+    author_user,
+) -> None:
+    """브랜치(또는 repo) 사이 이동을 양쪽 사용자 draft에 stage 한다.
+
+    Git은 브랜치 사이 rename을 하나의 commit으로 표현할 수 없으므로, 대상 브랜치에는
+    추가를, 원본 브랜치에는 삭제를 각각 stage한다. 두 draft lock은 정렬된 순서로 잡아
+    서로 반대 방향의 동시 이동에서도 교착 상태가 나지 않게 한다.
+    """
+    source_draft_path = _get_handrive_git_draft_path(source_repo, source_branch_name, author_user)
+    target_draft_path = _get_handrive_git_draft_path(target_repo, target_branch_name, author_user)
+    if source_draft_path is None or target_draft_path is None:
+        raise PermissionDenied("로그인이 필요합니다.")
+
+    draft_paths = sorted({source_draft_path, target_draft_path}, key=lambda path: str(path))
+    with ExitStack() as stack:
+        for draft_path in draft_paths:
+            stack.enter_context(_handrive_git_draft_lock(draft_path))
+
+        source_worktree_dir = _ensure_handrive_git_draft_worktree(source_repo, source_branch_name, author_user)
+        target_worktree_dir = _ensure_handrive_git_draft_worktree(target_repo, target_branch_name, author_user)
+        source_target = _resolve_git_worktree_path(source_worktree_dir, source_repo_relative_path)
+        destination_target = _resolve_git_worktree_path(target_worktree_dir, target_repo_relative_path)
+        if not source_target.exists() and not source_target.is_symlink():
+            raise ValueError("이동할 항목을 찾을 수 없습니다.")
+        if destination_target.exists() or destination_target.is_symlink():
+            raise ValueError("같은 이름의 항목이 이미 존재합니다.")
+
+        source_parent = source_target.parent
+        destination_target.parent.mkdir(parents=True, exist_ok=True)
+        _remove_gitkeep_placeholder(destination_target.parent)
+        _copy_git_worktree_item(source_target, destination_target)
+        try:
+            _remove_git_worktree_item(source_target)
+        except Exception:
+            _remove_git_worktree_item(destination_target)
+            raise
+        _ensure_gitkeep_if_empty(source_parent, source_worktree_dir)
+
+        _git_worktree_command(source_worktree_dir, "add", "--all", timeout=60)
+        _git_worktree_command(target_worktree_dir, "add", "--all", timeout=60)
+
+
 def _commit_git_branch_mutation(repo, branch_name: str, commit_message: str, author_user, mutator) -> None:
-    """temp clone 에 mutation 을 적용한 뒤 commit/push 까지 수행한다."""
-    message = str(commit_message or "").strip()
-    if not message:
-        raise ValueError("커밋 메시지를 입력해주세요.")
+    """branch 변경을 사용자 작업공간에 stage 한다.
 
-    if _is_github_virtual_repo(repo):
-        clone_url = repo.clone_url
-        auth_env_context = _github_git_auth_env(repo.access_token)
-    else:
-        client = ForgejoClient()
-        clone_url = client.internal_authed_clone_url(repo.forgejo_owner or repo.owner.username, repo.forgejo_repo_name or repo.repo_name)
-        auth_env_context = nullcontext(None)
-    with tempfile.TemporaryDirectory(prefix="handrive_git_commit_") as temp_dir:
-        with auth_env_context as git_env:
-            clone_result = subprocess.run(
-                [GIT_BIN, "clone", "--branch", branch_name, "--single-branch", clone_url, temp_dir],
-                capture_output=True,
-                text=True,
-                timeout=180,
-                env=git_env,
-            )
-            if clone_result.returncode != 0:
-                raise RuntimeError(clone_result.stderr.strip() or "repo clone failed")
-
-            subprocess.run([GIT_BIN, "-C", temp_dir, "config", "user.name", author_user.username], capture_output=True, timeout=10)
-            subprocess.run(
-                [GIT_BIN, "-C", temp_dir, "config", "user.email", getattr(author_user, "email", "") or f"{author_user.username}@hanplanet.local"],
-                capture_output=True,
-                timeout=10,
-            )
-
-            mutator(Path(temp_dir))
-
-            status_result = subprocess.run([GIT_BIN, "-C", temp_dir, "status", "--porcelain"], capture_output=True, text=True, timeout=30)
-            if not (status_result.stdout or "").strip():
-                raise ValueError("변경된 내용이 없습니다.")
-
-            add_result = subprocess.run([GIT_BIN, "-C", temp_dir, "add", "-A"], capture_output=True, text=True, timeout=60)
-            if add_result.returncode != 0:
-                raise RuntimeError(add_result.stderr.strip() or "git add failed")
-            commit_result = subprocess.run([GIT_BIN, "-C", temp_dir, "commit", "-m", message], capture_output=True, text=True, timeout=60)
-            if commit_result.returncode != 0:
-                raise RuntimeError(commit_result.stderr.strip() or "git commit failed")
-            push_result = subprocess.run([GIT_BIN, "-C", temp_dir, "push", "origin", branch_name], capture_output=True, text=True, timeout=180, env=git_env)
-            if push_result.returncode != 0:
-                raise RuntimeError(push_result.stderr.strip() or "git push failed")
-            if _is_github_virtual_repo(repo):
-                repo._cache_ready = False
+    ``commit_message`` 는 이전 API 호출과의 호환을 위해 유지한다. 실제 commit/push는
+    사용자가 목록의 저장 아이콘을 눌렀을 때 한 번에 수행한다.
+    """
+    del commit_message
+    draft_path = _get_handrive_git_draft_path(repo, branch_name, author_user)
+    if draft_path is None:
+        raise PermissionDenied("로그인이 필요합니다.")
+    with _handrive_git_draft_lock(draft_path):
+        worktree_dir = _ensure_handrive_git_draft_worktree(repo, branch_name, author_user)
+        mutator(worktree_dir)
+        _git_worktree_command(worktree_dir, "add", "--all", timeout=60)
+        status_result = _git_worktree_command(worktree_dir, "status", "--porcelain", timeout=30)
+        if not (status_result.stdout or "").strip():
+            raise ValueError("변경된 내용이 없습니다.")
 
 
 def _build_available_git_repo_filename(repo, branch_name: str, repo_relative_dir: str, original_name: str) -> str:
@@ -6560,9 +6784,10 @@ def _build_git_virtual_entries(request, context) -> list[dict]:
             commit_meta_by_branch = {}
         for branch_name in branch_names:
             commit_meta = commit_meta_by_branch.get(branch_name) or _git_repo_latest_commit_meta(repo, branch_name)
+            branch_path = f"{repo_root}/{_encode_git_branch_segment(branch_name)}"
             entries.append({
                 "name": branch_name,
-                "path": f"{repo_root}/{_encode_git_branch_segment(branch_name)}",
+                "path": branch_path,
                 "type": "dir",
                 "has_children": True,
                 "modified_display": commit_meta.get("modified_display", ""),
@@ -6579,6 +6804,8 @@ def _build_git_virtual_entries(request, context) -> list[dict]:
                 "share_allowed_users": [],
                 "write_acl_labels": [],
                 "git_branch_root": True,
+                "git_branch_path": branch_path,
+                "has_uncommitted_changes": _git_branch_has_uncommitted_changes(repo, branch_name),
                 "git_provider": "github" if is_github_repo else "forgejo",
                 "git_repo_branch": branch_name,
                 "git_repo_id": repo.id,
@@ -9489,6 +9716,7 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_editor_completions_url": reverse("main:handrive_api_editor_completions"),
             "handrive_api_list_url": reverse("main:handrive_api_list"),
             "handrive_api_search_url": reverse("main:handrive_api_search"),
+            "handrive_api_git_commit_url": reverse("main:handrive_api_git_commit"),
             "handrive_api_save_url": reverse("main:handrive_api_save"),
             "handrive_api_spreadsheet_save_url": reverse("main:handrive_api_spreadsheet_save"),
             "handrive_api_preview_url": reverse("main:handrive_api_preview"),
@@ -13667,6 +13895,8 @@ def handrive_list(request, folder_path="", ui_lang=None):
             "current_dir_is_git_repo_root": directory_meta["is_git_repo_root"],
             "current_dir_requires_commit_message": directory_meta["requires_commit_message"],
             "current_dir_git_branch_root": directory_meta["git_branch_root"],
+            "current_dir_git_branch_path": directory_meta.get("git_branch_path", ""),
+            "current_dir_has_uncommitted_changes": directory_meta.get("has_uncommitted_changes", False),
             "current_dir_git_commit_id": directory_meta["git_commit_id"],
             "current_dir_git_commit_message": directory_meta["git_commit_message"],
             "current_dir_git_commit_author_username": directory_meta["git_commit_author_username"],
@@ -14994,6 +15224,83 @@ def handrive_api_list(request):
     )
 
 
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_git_commit(request):
+    """현재 사용자 작업공간의 staged 변경을 한 번에 commit/push 한다."""
+    try:
+        payload = parse_json_body(request)
+        path_value = normalize_relative_path(payload.get("path"), allow_empty=False)
+        commit_message = str(payload.get("commit_message") or "").strip()
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+    if not commit_message:
+        return json_error("커밋 메시지를 입력해주세요.", status=400)
+
+    git_virtual = _get_git_virtual_context(request, path_value)
+    if git_virtual is None or git_virtual.get("kind") != "branch_dir":
+        return json_error("Repo 브랜치를 선택해주세요.", status=400)
+    if str(git_virtual.get("repo_permission") or "").lower() not in {"write", "admin", "owner"}:
+        return json_error("커밋할 권한이 없습니다.", status=403)
+
+    repo = git_virtual["repo"]
+    branch_name = git_virtual["branch_name"]
+    draft_path = _get_handrive_git_draft_path(repo, branch_name, request.user)
+    if draft_path is None:
+        return json_error("로그인이 필요합니다.", status=403)
+
+    with _handrive_git_draft_lock(draft_path):
+        worktree_dir = _get_handrive_git_draft_worktree(repo, branch_name, request.user)
+        if worktree_dir is None or not _git_branch_has_uncommitted_changes(repo, branch_name, request.user):
+            return json_error("커밋할 변경 사항이 없습니다.", status=400)
+
+        if _is_github_virtual_repo(repo):
+            auth_env_context = _github_git_auth_env(repo.access_token)
+        else:
+            auth_env_context = nullcontext(None)
+        with auth_env_context as git_env:
+            fetch_result = subprocess.run(
+                [GIT_BIN, "-C", str(worktree_dir), "fetch", "origin", branch_name],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                env=git_env,
+            )
+            if fetch_result.returncode != 0:
+                return json_error(fetch_result.stderr.strip() or "원격 브랜치를 확인하지 못했습니다.", status=502)
+
+            local_head = _git_worktree_command(worktree_dir, "rev-parse", "HEAD", timeout=30).stdout.strip()
+            remote_head_result = _git_worktree_command(
+                worktree_dir,
+                "rev-parse",
+                f"origin/{branch_name}",
+                check=False,
+                timeout=30,
+            )
+            remote_head = (remote_head_result.stdout or "").strip()
+            if remote_head_result.returncode != 0 or local_head != remote_head:
+                return json_error("원격 브랜치가 변경되었습니다. 새로고침 후 변경 사항을 다시 확인해주세요.", status=409)
+
+            commit_result = _git_worktree_command(worktree_dir, "commit", "-m", commit_message, check=False, timeout=60)
+            if commit_result.returncode != 0:
+                return json_error(commit_result.stderr.strip() or "git commit failed", status=500)
+            push_result = subprocess.run(
+                [GIT_BIN, "-C", str(worktree_dir), "push", "origin", branch_name],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                env=git_env,
+            )
+            if push_result.returncode != 0:
+                return json_error(push_result.stderr.strip() or "git push failed", status=502)
+
+    shutil.rmtree(draft_path, ignore_errors=True)
+    if _is_github_virtual_repo(repo):
+        repo._cache_ready = False
+    return JsonResponse({"ok": True, "path": path_value})
+
+
 @require_http_methods(["GET"])
 @with_request_handrive_root
 def handrive_api_search(request):
@@ -16288,6 +16595,64 @@ def handrive_api_move(request):
             response["slug_path"] = build_handrive_public_url_path(request, destination_relative)
         return JsonResponse(response)
     if git_virtual_source is not None or git_virtual_target is not None:
+        if git_virtual_source is not None and git_virtual_target is None:
+            if git_virtual_source["kind"] == "repo_root" or (
+                git_virtual_source["kind"] == "branch_dir" and not git_virtual_source["repo_relative_path"]
+            ):
+                return json_error("브랜치 루트는 이동할 수 없습니다.", status=400)
+            if str(git_virtual_source.get("repo_permission") or "").lower() not in {"write", "admin", "owner"}:
+                return json_error("파일을 수정할 권한이 없습니다.", status=403)
+            if not target_dir_path.is_dir():
+                return json_error("이동 대상 경로가 폴더가 아닙니다.", status=400)
+            if not has_handrive_directory_write_access(request, target_dir_relative):
+                return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+            source_repo_relative = normalize_relative_path(git_virtual_source["repo_relative_path"], allow_empty=False)
+            source_name = Path(source_repo_relative).name
+            destination_path = target_dir_path / source_name
+            if destination_path.exists() or destination_path.is_symlink():
+                return json_error("같은 이름의 항목이 이미 존재합니다.", status=409)
+
+            def _mutate(worktree_dir: Path) -> None:
+                source_target = _resolve_git_worktree_path(worktree_dir, source_repo_relative)
+                if not source_target.exists() and not source_target.is_symlink():
+                    raise ValueError("이동할 항목을 찾을 수 없습니다.")
+                extra_bytes, extra_entries = calculate_handrive_tree_usage(source_target)
+                enforce_handrive_scoped_quota(
+                    request,
+                    quota_path=target_dir_relative,
+                    extra_bytes=extra_bytes,
+                    extra_entries=extra_entries,
+                )
+                try:
+                    _copy_git_worktree_item(source_target, destination_path)
+                    _remove_git_worktree_item(source_target)
+                except Exception:
+                    if destination_path.exists() or destination_path.is_symlink():
+                        _remove_git_worktree_item(destination_path)
+                    raise
+                _ensure_gitkeep_if_empty(source_target.parent, worktree_dir)
+
+            try:
+                _commit_git_branch_mutation(
+                    git_virtual_source["repo"],
+                    git_virtual_source["branch_name"],
+                    commit_message,
+                    request.user,
+                    _mutate,
+                )
+            except ValueError as exc:
+                return json_error(str(exc), status=400)
+
+            destination_relative = f"{target_dir_relative}/{source_name}" if target_dir_relative else source_name
+            response = {
+                "ok": True,
+                "path": destination_relative,
+                "type": "dir" if git_virtual_source["kind"] == "branch_dir" else "file",
+            }
+            if git_virtual_source["kind"] == "branch_file":
+                response["slug_path"] = markdown_slug_from_relative(destination_relative)
+            return JsonResponse(response)
         if git_virtual_source is None and git_virtual_target is not None:
             if not target_dir_relative:
                 return json_error("이동 대상 경로가 올바르지 않습니다.", status=400)
@@ -16339,23 +16704,30 @@ def handrive_api_move(request):
                 response["slug_path"] = build_handrive_public_url_path(request, destination_relative)
             return JsonResponse(response)
         if git_virtual_source is None or git_virtual_target is None:
-            return json_error("Repo 브랜치 항목은 같은 브랜치 안에서만 이동할 수 있습니다.", status=400)
-        if git_virtual_source["repo"].id != git_virtual_target["repo"].id or git_virtual_source["branch_name"] != git_virtual_target["branch_name"]:
-            return json_error("Repo 브랜치 항목은 같은 브랜치 안에서만 이동할 수 있습니다.", status=400)
+            return json_error("Repo 브랜치 항목의 이동 경로가 올바르지 않습니다.", status=400)
         if git_virtual_source["kind"] == "repo_root" or (git_virtual_source["kind"] == "branch_dir" and not git_virtual_source["repo_relative_path"]):
             return json_error("브랜치 루트는 이동할 수 없습니다.", status=400)
         if git_virtual_target["kind"] != "branch_dir":
             return json_error("이동 대상 경로가 폴더가 아닙니다.", status=400)
+        if (
+            str(git_virtual_source.get("repo_permission") or "").lower() not in {"write", "admin", "owner"}
+            or str(git_virtual_target.get("repo_permission") or "").lower() not in {"write", "admin", "owner"}
+        ):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
         source_repo_relative = normalize_relative_path(git_virtual_source["repo_relative_path"], allow_empty=False)
         target_repo_relative = (
             f"{git_virtual_target['repo_relative_path']}/{Path(source_repo_relative).name}"
             if git_virtual_target["repo_relative_path"]
             else Path(source_repo_relative).name
         )
+        same_git_branch = (
+            git_virtual_source["repo_root"] == git_virtual_target["repo_root"]
+            and git_virtual_source["branch_name"] == git_virtual_target["branch_name"]
+        )
         source_parent_relative = normalize_relative_path(str(Path(source_repo_relative).parent).replace("\\", "/"), allow_empty=True)
         if source_parent_relative == ".":
             source_parent_relative = ""
-        if source_parent_relative == git_virtual_target["repo_relative_path"]:
+        if same_git_branch and source_parent_relative == git_virtual_target["repo_relative_path"]:
             response = {
                 "ok": True,
                 "path": source_relative,
@@ -16364,8 +16736,32 @@ def handrive_api_move(request):
             if git_virtual_source["kind"] == "branch_file":
                 response["slug_path"] = build_handrive_public_url_path(request, source_relative)
             return JsonResponse(response)
-        if _git_repo_path_exists(git_virtual_source["repo"], git_virtual_source["branch_name"], target_repo_relative):
+        if _git_repo_path_exists(git_virtual_target["repo"], git_virtual_target["branch_name"], target_repo_relative):
             return json_error("같은 이름의 항목이 이미 존재합니다.", status=409)
+
+        if not same_git_branch:
+            try:
+                _stage_git_branch_cross_move(
+                    git_virtual_source["repo"],
+                    git_virtual_source["branch_name"],
+                    source_repo_relative,
+                    git_virtual_target["repo"],
+                    git_virtual_target["branch_name"],
+                    target_repo_relative,
+                    request.user,
+                )
+            except ValueError as exc:
+                return json_error(str(exc), status=400)
+
+            destination_relative = f"{git_virtual_target['repo_root']}/{git_virtual_target['branch_segment']}/{target_repo_relative}"
+            response = {
+                "ok": True,
+                "path": destination_relative,
+                "type": "dir" if git_virtual_source["kind"] == "branch_dir" else "file",
+            }
+            if git_virtual_source["kind"] == "branch_file":
+                response["slug_path"] = build_handrive_public_url_path(request, destination_relative)
+            return JsonResponse(response)
 
         def _mutate(worktree_dir: Path) -> None:
             source_target = _resolve_git_worktree_path(worktree_dir, source_repo_relative)

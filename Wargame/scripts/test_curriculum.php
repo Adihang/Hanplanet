@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../app/runtime.php';
 require_once __DIR__ . '/../app/labs/LabEngine.php';
+require_once __DIR__ . '/../app/LabSessionService.php';
 
 $assertions = 0;
 $assert = static function (bool $condition, string $message) use (&$assertions): void {
@@ -15,9 +16,11 @@ $assert = static function (bool $condition, string $message) use (&$assertions):
 $curriculum = wargame_curriculum();
 $missions = wargame_missions();
 $expectedIds = LabEngine::stableIds();
+$targetProfiles = LabEngine::targetProfiles();
 $assert((string) ($curriculum['version'] ?? '') === WARGAME_CURRICULUM_VERSION, 'version');
 $assert(count((array) ($curriculum['modules'] ?? [])) === 4, 'four modules');
 $assert(array_keys($missions) === $expectedIds, 'stable IDs match lab engine order');
+$assert(array_keys($targetProfiles) === $expectedIds, 'target profiles match stable IDs');
 $assert(count($missions) === 11, 'eleven missions');
 
 $previousId = null;
@@ -40,6 +43,24 @@ foreach ($missions as $missionId => $mission) {
     $previousId = $missionId;
 
     $lesson = (array) ($mission['lesson'] ?? []);
+    $target = (array) ($mission['target'] ?? []);
+    $profile = (array) ($targetProfiles[$missionId] ?? []);
+    $assert((string) ($target['service_name'] ?? '') === (string) ($profile['product'] ?? ''), $missionId . ' target service matches engine');
+    $assert((string) ($target['hostname'] ?? '') === (string) ($profile['host'] ?? ''), $missionId . ' target host matches engine');
+    $assert((string) ($target['entry_path'] ?? '') === (string) ($profile['entry_path'] ?? ''), $missionId . ' target path matches engine');
+    $assert((string) ($target['entry_url'] ?? '') === LabSessionService::targetEntryPath($missionId), $missionId . ' uses its live HTTP route');
+    $assert(str_ends_with((string) ($target['hostname'] ?? ''), '.training'), $missionId . ' uses reserved virtual host');
+    if ($missionId === LabEngine::OPERATION_NIGHTFALL) {
+        $surface = (string) ($target['surface'] ?? '');
+        foreach (['보고서', '운영 문서', '세션 무결성', 'evidence vault'] as $serviceContract) {
+            $assert(str_contains($surface, $serviceContract), 'Nightfall target surface includes ' . $serviceContract);
+        }
+        $assert(
+            !str_contains($surface, '터미널')
+                && !str_contains($surface, '명령'),
+            'Nightfall curriculum describes the operating portal instead of a simulator'
+        );
+    }
     $assert(count((array) ($lesson['paragraphs'] ?? [])) >= 3, $missionId . ' lesson paragraphs');
     $assert(count((array) ($lesson['table']['rows'] ?? [])) >= 3, $missionId . ' comparison table');
     $assert(trim((string) ($lesson['code']['content'] ?? '')) !== '', $missionId . ' code example');

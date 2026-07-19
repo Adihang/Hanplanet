@@ -7,11 +7,10 @@
     const wargameMermaidSources = {
         operations: [
             'flowchart TB',
-            '    operator[OPERATOR] -->|authorized session| gateway[LAB GATE]',
-            '    gateway -->|isolated access| target[WEB TARGET]',
-            '    target --> database[(SQLite)]',
-            '    target --> virtualNetwork[V-NET]',
-            '    target --> terminal[TERMINAL]',
+            '    operator[OPERATOR] -->|authorized session| gateway[ACCESS GATE]',
+            '    gateway -->|isolated HTTP access| target[OPERATING WEB TARGET]',
+            '    target --> storage[(ISOLATED DATA)]',
+            '    target --> services[FIXED INTERNAL SERVICES]',
         ].join('\n'),
         'http-flow': [
             'flowchart LR',
@@ -55,7 +54,7 @@
             '    token --> verify{서명 · 만료 · 대상 검증}',
             '    verify -->|실패| reject[요청 거부]',
             '    verify -->|통과| app[훈련 애플리케이션]',
-            '    app --> outbound{허용된 가상 서비스인가?}',
+            '    app --> outbound{허용된 내부 서비스인가?}',
             '    outbound -->|예| service[격리된 내부 서비스]',
             '    outbound -->|아니오| blocked[외부 연결 차단]',
         ].join('\n'),
@@ -186,10 +185,10 @@
     });
 
     const syncAccount = async () => {
-        if (body.dataset.needsAuthRefresh !== '1') return;
+        if (body.dataset.needsAuthRefresh !== '1') return { status: 'ready' };
         const sessionUrl = body.dataset.djangoSessionUrl;
         const csrf = body.dataset.csrf;
-        if (!sessionUrl || !csrf) return;
+        if (!sessionUrl || !csrf) return { status: 'error' };
 
         const bridge = document.querySelector('[data-account-bridge]');
         if (bridge) bridge.textContent = '계정 확인 중…';
@@ -203,7 +202,7 @@
             const payload = await response.json();
             if (!payload.authenticated || !payload.token) {
                 if (bridge) bridge.textContent = '로그인 필요';
-                return;
+                return { status: 'unauthenticated' };
             }
 
             const form = new FormData();
@@ -218,12 +217,36 @@
             });
             if (!connected.ok) throw new Error('portal_session_failed');
             const result = await connected.json();
-            if (result.authenticated) window.location.reload();
+            if (result.authenticated) {
+                window.location.reload();
+                return { status: 'reloading' };
+            }
+            return { status: 'error' };
         } catch (_) {
             if (bridge) bridge.textContent = '계정 연결 실패';
+            return { status: 'error' };
         }
     };
 
-    renderWargameMermaidDiagrams();
-    syncAccount();
+    const openTargetFromEmail = () => {
+        if (body.dataset.autoLaunch !== '1') return;
+        const form = document.querySelector('form[data-email-target-launch]');
+        if (!form || form.dataset.autoLaunchSubmitted === '1') return;
+        form.dataset.autoLaunchSubmitted = '1';
+        window.setTimeout(() => form.requestSubmit(), 80);
+    };
+
+    const bootPortal = async () => {
+        renderWargameMermaidDiagrams();
+        const accountState = await syncAccount();
+        if (accountState.status === 'reloading') return;
+        if (body.dataset.autoLaunch === '1' && accountState.status === 'unauthenticated') {
+            const loginUrl = body.dataset.loginUrl;
+            if (loginUrl) window.location.assign(loginUrl);
+            return;
+        }
+        if (accountState.status === 'ready') openTargetFromEmail();
+    };
+
+    bootPortal();
 })();

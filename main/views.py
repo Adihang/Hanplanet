@@ -2236,6 +2236,13 @@ def build_game_auth_token(
         "iss": str(getattr(settings, "GAME_JWT_ISSUER", "") or ""),
         "aud": str(getattr(settings, "GAME_JWT_AUDIENCE", "") or ""),
     }
+    if (
+        payload["game"] == "wargame"
+        and user is not None
+        and not is_guest
+        and getattr(user, "pk", None) is not None
+    ):
+        payload["user_id"] = int(user.pk)
     encoded_header = _base64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
     encoded_payload = _base64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     signing_input = f"{encoded_header}.{encoded_payload}".encode("ascii")
@@ -2304,14 +2311,57 @@ def _wargame_user_from_request(request):
     payload = _decode_wargame_auth_token(authorization.removeprefix("Bearer ").strip())
     if payload.get("is_guest"):
         raise ValueError("guest_token_not_allowed")
+    raw_user_id = payload.get("user_id")
+    if raw_user_id not in (None, ""):
+        normalized_user_id = str(raw_user_id).strip()
+        if isinstance(raw_user_id, bool) or not re.fullmatch(r"[1-9][0-9]{0,18}", normalized_user_id):
+            raise ValueError("invalid_user_id")
+        return get_user_model().objects.get(pk=int(normalized_user_id))
     username = str(payload.get("username") or payload.get("sub") or "").strip()
     if not username:
         raise ValueError("missing_username")
     return get_user_model().objects.get(username=username)
 
 
-def _wargame_completion_receipt_valid(user, payload):
+def _wargame_identity_payload(user):
+    profile = PortfolioProfile.objects.filter(user=user).only("profile_img").first()
+    profile_image_url = ""
+    if profile and profile.profile_img:
+        image_url = str(profile.profile_img.url or "").strip()
+        parsed_url = urlparse(image_url)
+        if not parsed_url.scheme and not parsed_url.netloc:
+            profile_image_url = build_public_absolute_url(image_url)
+
+    return {
+        "user_id": int(user.pk),
+        "username": user.username,
+        "display_name": get_account_display_name(user),
+        "email": str(user.email or "").strip(),
+        "profile_image_url": profile_image_url,
+    }
+
+
+def _wargame_completion_secret():
     secret = str(getattr(settings, "WARGAME_COMPLETION_SECRET", "") or "").strip()
+    known_placeholders = {
+        "change-this-to-a-separate-long-random-wargame-secret",
+        "replace-me",
+        "changeme",
+    }
+    supported_format = bool(
+        re.fullmatch(r"(?:[a-f0-9]{64,}|[a-z0-9_-]{43,})", secret, flags=re.IGNORECASE)
+    )
+    if (
+        not supported_format
+        or len(set(secret)) < 12
+        or secret.lower() in known_placeholders
+    ):
+        return ""
+    return secret
+
+
+def _wargame_completion_receipt_valid(user, payload):
+    secret = _wargame_completion_secret()
     if not secret:
         return False, "completion_secret_not_configured"
 
@@ -2335,7 +2385,8 @@ def _wargame_completion_receipt_valid(user, payload):
     if abs(int(time.time()) - timestamp) > 90:
         return False, "expired_receipt"
 
-    message = "\n".join([user.username, challenge_id, ticket_hash, str(timestamp), nonce])
+    identity = f"django-user-id:v1:{int(user.pk)}"
+    message = "\n".join([identity, challenge_id, ticket_hash, str(timestamp), nonce])
     expected = hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, receipt):
         return False, "invalid_receipt"
@@ -2366,9 +2417,7 @@ def wargame_session(request, ui_lang=None):
         JsonResponse(
             {
                 "authenticated": True,
-                "username": request.user.username,
-                "display_name": get_account_display_name(request.user),
-                "email": str(request.user.email or "").strip(),
+                **_wargame_identity_payload(request.user),
                 "token": token,
                 "expires_in": int(getattr(settings, "GAME_JWT_EXP_SECONDS", 300) or 300),
             }
@@ -2421,9 +2470,7 @@ def wargame_solves(request, ui_lang=None):
         JsonResponse(
             {
                 "authenticated": True,
-                "username": user.username,
-                "display_name": get_account_display_name(user),
-                "email": str(user.email or "").strip(),
+                **_wargame_identity_payload(user),
                 "solves": solves,
             }
         ),
@@ -8140,14 +8187,7 @@ def _portfolio_write_preview_buttons_html(data, ui_lang):
     return f"""
 {notice}
 <div class="portfolio-floating-actions" aria-hidden="true">
-        <button type="button" class="portfolio-print-btn ui-nav-link" aria-label="Print" title="Print">
-            <svg class="portfolio-print-btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M7 9V4h10v5"></path>
-                <rect x="4" y="9" width="16" height="8" rx="2"></rect>
-                <rect x="8" y="15" width="8" height="5"></rect>
-                <line x1="9" y1="18" x2="15" y2="18"></line>
-            </svg>
-        </button>
+        <button type="button" class="portfolio-print-btn ui-nav-link" aria-label="Print" title="Print"><svg class="portfolio-print-btn-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><use href="#hanplanet-icon-print"></use></svg></button>
         {"".join(items)}
 </div>
 """.strip()

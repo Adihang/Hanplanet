@@ -3,17 +3,36 @@
 
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageDraw
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SOURCE_PATH = BASE_DIR / "static/media/icons/favicon-source-1024.png"
 PWA_SIZES = (180, 192, 512)
+FAVICON_PNG_SIZES = (192, 512)
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
+FAVICON_CORNER_RADIUS_RATIO = 0.34
 
 
 def resize_square(image, size):
     return image.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def add_transparent_rounded_corners(image):
+    rounded = image.convert("RGBA")
+    width, height = rounded.size
+    radius = max(1, round(min(width, height) * FAVICON_CORNER_RADIUS_RATIO))
+    corner_mask = Image.new("L", rounded.size, 0)
+    ImageDraw.Draw(corner_mask).rounded_rectangle(
+        (0, 0, width - 1, height - 1),
+        radius=radius,
+        fill=255,
+    )
+    rounded_alpha = ImageChops.multiply(rounded.getchannel("A"), corner_mask)
+    transparent_white = Image.new("RGBA", rounded.size, (255, 255, 255, 0))
+    rounded = Image.composite(rounded, transparent_white, corner_mask)
+    rounded.putalpha(rounded_alpha)
+    return rounded
 
 
 def save_png(image, path, size):
@@ -28,12 +47,16 @@ def save_ico(image, path):
 
 def main():
     source = Image.open(SOURCE_PATH).convert("RGBA")
+    favicon = add_transparent_rounded_corners(source)
 
     for size in PWA_SIZES:
-        save_png(source, BASE_DIR / f"static/media/icons/pwa-{size}.png", size)
+        save_png(favicon, BASE_DIR / f"static/media/icons/pwa-{size}.png", size)
 
-    save_png(source, BASE_DIR / "forgejo/custom/public/assets/img/apple-touch-icon.png", 180)
-    save_png(source, BASE_DIR / "forgejo/custom/public/assets/img/favicon.png", 192)
+    for size in FAVICON_PNG_SIZES:
+        save_png(favicon, BASE_DIR / f"static/media/icons/favicon-{size}.png", size)
+
+    save_png(favicon, BASE_DIR / "forgejo/custom/public/assets/img/apple-touch-icon.png", 180)
+    save_png(favicon, BASE_DIR / "forgejo/custom/public/assets/img/favicon.png", 192)
 
     ico_paths = (
         BASE_DIR / "static/favicon.ico",
@@ -42,7 +65,7 @@ def main():
         BASE_DIR / "Wargame/public/assets/favicon.ico",
     )
     for path in ico_paths:
-        save_ico(source, path)
+        save_ico(favicon, path)
 
 
 if __name__ == "__main__":

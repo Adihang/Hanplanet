@@ -934,9 +934,9 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
 	        <span class="map-editor-toolbar-title" title="{{ map_name }}">{{ map_name }}</span>
 	        <div class="map-editor-toolbar-right">
 	            <div class="map-editor-toolbar-actions handrive-icon-actions">
-	                {% if can_edit %}
-	                <button type="button" class="handrive-icon-btn" id="map-save-btn" title="저장" aria-label="저장"
-	                ><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="2"/><rect x="6" y="3" width="8" height="5" rx="1"/><rect x="6" y="11" width="8" height="6" rx="1"/><line x1="8" y1="4.5" x2="12" y2="4.5"/></svg></button>
+                {% if can_edit %}
+                <button type="button" class="handrive-icon-btn" id="map-save-btn" title="저장" aria-label="저장"
+                ><svg class="handrive-save-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><use href="#hanplanet-icon-save"></use></svg></button>
 	                {% endif %}
 	                <span class="map-save-status" id="map-save-status"></span>
 	                <a href="{{ map_viewer_url }}" class="ui-btn">뷰어로 보기</a>

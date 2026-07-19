@@ -110,6 +110,8 @@
     data-current-dir-archive-can-delete="{% if current_dir_archive_can_delete %}1{% else %}0{% endif %}"
     data-current-dir-requires-commit-message="{% if current_dir_requires_commit_message %}1{% else %}0{% endif %}"
     data-current-dir-git-branch-root="{% if current_dir_git_branch_root %}1{% else %}0{% endif %}"
+    data-current-dir-git-branch-path="{{ current_dir_git_branch_path|default:''|escape }}"
+    data-current-dir-has-uncommitted-changes="{% if current_dir_has_uncommitted_changes %}1{% else %}0{% endif %}"
     data-current-dir-git-commit-id="{{ current_dir_git_commit_id|default:''|escape }}"
     data-current-dir-git-commit-message="{{ current_dir_git_commit_message|default:''|escape }}"
     data-current-dir-git-commit-author-username="{{ current_dir_git_commit_author_username|default:''|escape }}"
@@ -129,6 +131,7 @@
     data-editor-completions-api-url="{{ handrive_api_editor_completions_url }}"
     data-list-api-url="{{ handrive_api_list_url }}"
     data-search-api-url="{{ handrive_api_search_url }}"
+    data-git-commit-api-url="{{ handrive_api_git_commit_url }}"
     data-save-api-url="{{ handrive_api_save_url }}"
     data-spreadsheet-save-api-url="{{ handrive_api_spreadsheet_save_url }}"
     data-rename-api-url="{{ handrive_api_rename_url }}"
@@ -265,7 +268,7 @@
                         aria-label="{{ handrive_text.print_button }}"
                         title="{{ handrive_text.print_button }}"
                         hidden
-                    ><svg class="portfolio-print-btn-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V4h10v5"/><rect x="4" y="9" width="16" height="8" rx="2"/><rect x="8" y="15" width="8" height="5"/><line x1="9" y1="18" x2="15" y2="18"/></svg></button>
+                    ><svg class="portfolio-print-btn-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><use href="#hanplanet-icon-print"></use></svg></button>
                     <button
                         id="handrive-list-preview-code-toggle-btn"
                         class="handrive-icon-btn"
@@ -359,11 +362,7 @@
                         <span>{{ handrive_text.preview_button }}</span>
                     </button>
                     <button class="handrive-icon-btn handrive-list-editor-save-btn" type="button" id="handrive-list-save-btn" aria-label="{{ handrive_text.save_button }}" title="{{ handrive_text.save_button }}">
-                        <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M4 3h10l2 2v12H4z"/>
-                            <path d="M7 3v5h6V3"/>
-                            <path d="M7 13h6v4H7z"/>
-                        </svg>
+                        <svg class="handrive-save-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><use href="#hanplanet-icon-save"></use></svg>
                     </button>
                     <button class="handrive-icon-btn handrive-list-editor-cancel-btn" type="button" id="handrive-list-cancel-btn" aria-label="{{ handrive_text.cancel }}" title="{{ handrive_text.cancel }}">
                         <svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>
@@ -413,6 +412,7 @@
 {% include "popup/handrive/rename_modal.html" %}
 {% include "popup/handrive/folder_create_modal.html" %}
 {% include "popup/handrive/commit_message_modal.html" %}
+{% include "popup/handrive/git_unsaved_changes_modal.html" %}
 
 {% include "popup/handrive/git_repo_modal.html" %}
 {% include "popup/handrive/branch_create_modal.html" %}

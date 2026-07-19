@@ -31,7 +31,7 @@
   <rect class="chip" x="252" y="146" width="55" height="24" rx="8"/><text class="chipText" x="264" y="162">METHOD</text>
   <text class="small" x="321" y="163">GET /coupon?code=...</text>
   <rect class="chip" x="252" y="180" width="55" height="24" rx="8"/><text class="chipText" x="263" y="196">HEADER</text>
-  <text class="small" x="321" y="197">Cookie, X-Debug-Mode</text>
+  <text class="small" x="321" y="197">Cookie, X-Store-Channel</text>
   <rect class="chip" x="252" y="214" width="55" height="24" rx="8"/><text class="chipText" x="269" y="230">BODY</text>
   <text class="small" x="321" y="231">폼 또는 JSON 데이터</text>
 
@@ -56,7 +56,7 @@
   <rect class="response" x="232" y="292" width="554" height="96" rx="16"/>
   <text class="label" x="252" y="321">응답 Response</text>
   <text class="small" x="252" y="347">STATUS  200 OK · 302 Found · 403 Forbidden</text>
-  <text class="small" x="252" y="369">HEADER  Content-Type · Location · X-Lab-Next     BODY  HTML · JSON</text>
+  <text class="small" x="252" y="369">HEADER  Content-Type · Location · X-Aurora-Route  BODY  HTML · JSON</text>
   <path d="M730 248V282H194V221" fill="none" stroke="#b59cff" stroke-width="3" marker-end="url(#arrowBack)"/>
   <text class="subtitle" x="800" y="331">화면에 보이지 않는</text>
   <text class="subtitle" x="800" y="350">헤더도 중요한 단서</text>

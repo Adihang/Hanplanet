@@ -6,7 +6,6 @@ const WARGAME_DATA_DIR = WARGAME_ROOT . '/data';
 const WARGAME_DB_PATH = WARGAME_DATA_DIR . '/wargame.sqlite3';
 const WARGAME_SCHEMA_PATH = WARGAME_ROOT . '/database/schema.sql';
 const WARGAME_INSTANCE_DIR = WARGAME_DATA_DIR . '/instances';
-const WARGAME_MAIL_DIR = WARGAME_DATA_DIR . '/mail';
 const WARGAME_SESSION_DIR = WARGAME_DATA_DIR . '/sessions';
 const WARGAME_CURRICULUM_VERSION = 'web-v1';
 const WARGAME_DJANGO_DEFAULT_BASE_URL = 'https://www.hanplanet.com';
@@ -15,7 +14,7 @@ ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 ini_set('expose_php', '0');
 
-foreach ([WARGAME_DATA_DIR, WARGAME_INSTANCE_DIR, WARGAME_MAIL_DIR, WARGAME_SESSION_DIR] as $directory) {
+foreach ([WARGAME_DATA_DIR, WARGAME_INSTANCE_DIR, WARGAME_SESSION_DIR] as $directory) {
     if (!is_dir($directory) && !mkdir($directory, 0770, true) && !is_dir($directory)) {
         throw new RuntimeException('런타임 디렉터리를 만들 수 없습니다.');
     }
@@ -107,9 +106,23 @@ function wargame_app_secret(): string
     return $secret;
 }
 
-function wargame_owner_key(string $username): string
+function wargame_django_user_id(array $identity): string
 {
-    return hash_hmac('sha256', strtolower(trim($username)), wargame_app_secret());
+    $candidate = trim((string) ($identity['user_id'] ?? ''));
+    if (!preg_match('/^[1-9][0-9]{0,18}$/', $candidate)) {
+        throw new InvalidArgumentException('안정적인 Hanplanet 사용자 식별자가 없습니다.');
+    }
+
+    return ltrim($candidate, '0') ?: '0';
+}
+
+function wargame_owner_key(array $identity): string
+{
+    return hash_hmac(
+        'sha256',
+        'django-user-id:v1:' . wargame_django_user_id($identity),
+        wargame_app_secret(),
+    );
 }
 
 function wargame_curriculum(): array

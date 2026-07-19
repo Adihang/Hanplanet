@@ -184,20 +184,33 @@
         return ranges;
     }
 
-    function filterOutermostFoldRanges(rangesByStart) {
+    function filterFoldRangesByParentDepth(rangesByStart, maximumParentDepth) {
         const ranges = Array.from(rangesByStart.values()).sort(function (left, right) {
             return left.start - right.start || right.end - left.end;
         });
-        const outermostRanges = new Map();
-        let furthestParentEnd = -1;
+        const maxDepth = Math.max(0, Number(maximumParentDepth) || 0);
+        const visibleRanges = new Map();
+        const parents = [];
         ranges.forEach(function (range) {
-            if (range.end <= furthestParentEnd) {
-                return;
+            while (parents.length && range.start > parents[parents.length - 1].end) {
+                parents.pop();
             }
-            outermostRanges.set(range.start, range);
-            furthestParentEnd = range.end;
+            while (
+                parents.length
+                && range.end > parents[parents.length - 1].end
+            ) {
+                parents.pop();
+            }
+            if (parents.length <= maxDepth) {
+                visibleRanges.set(range.start, range);
+            }
+            parents.push(range);
         });
-        return outermostRanges;
+        return visibleRanges;
+    }
+
+    function filterOutermostFoldRanges(rangesByStart) {
+        return filterFoldRangesByParentDepth(rangesByStart, 0);
     }
 
     function buildFoldRanges(lines, indentSize, renderClass) {
@@ -290,6 +303,7 @@
         collectBracketFoldRanges: collectBracketFoldRanges,
         collectIndentFoldRanges: collectIndentFoldRanges,
         detectIndentSize: detectIndentSize,
+        filterFoldRangesByParentDepth: filterFoldRangesByParentDepth,
         filterOutermostFoldRanges: filterOutermostFoldRanges,
         getGuideColumns: getGuideColumns,
         getGuideDepths: getGuideDepths,

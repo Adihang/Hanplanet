@@ -33,10 +33,10 @@
   <text class="head" x="634" y="155">3 · HTML 파서와 DOM</text>
   <text class="body" x="634" y="181">문자열을 img 요소로 생성</text>
   <text class="body" x="634" y="202">이미지 실패 → error 이벤트</text>
-  <text class="mono" x="634" y="228">completeLab(nonce)</text>
+  <text class="mono" x="634" y="228">무해한 DOM 표식 변경</text>
 
   <path d="M756 262V294H506" fill="none" stroke="#7b83ff" stroke-width="3" marker-end="url(#arrow)"/>
-  <text class="body" x="529" y="319">부모에는 nonce 완료 신호만 postMessage</text>
+  <text class="body" x="529" y="319">격리된 검색 응답 안에서만 실행 · 포털 출처와 네트워크 접근 차단</text>
 
   <rect class="safe" x="62" y="372" width="834" height="48" rx="13"/>
   <text class="head" x="80" y="402">방어</text>

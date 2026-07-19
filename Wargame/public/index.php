@@ -10,8 +10,7 @@ wargame_db();
 
 function request_return_path(): string
 {
-    $path = (string) ($_POST['return_to'] ?? '/');
-    return str_starts_with($path, '/') && !str_starts_with($path, '//') && !preg_match('/[\r\n]/', $path) ? $path : '/';
+    return wargame_return_path((string) ($_POST['return_to'] ?? '/'));
 }
 
 function mission_number(array $mission): string
@@ -60,10 +59,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect_to('/');
         }
 
+        $completionTicket = '';
+        if ($action === 'claim_completion') {
+            $completionTicket = (string) ($_POST['ticket'] ?? ($_SESSION['pending_completion_ticket'] ?? ''));
+            $handoffToken = (string) ($_POST['handoff_token'] ?? '');
+            if ($handoffToken !== '') {
+                LabSessionService::requireCompletionHandoff($completionTicket, $handoffToken);
+            } else {
+                // Recovery from the portal uses its ordinary session CSRF token.
+                // The target page cannot read the portal session, so its first
+                // handoff uses the separately signed, ticket-bound token above.
+                require_csrf();
+            }
+        }
+
         $user = current_django_user();
         if (!is_array($user)) {
-            if ($action === 'claim_completion' && preg_match('/^[a-f0-9]{64}$/', (string) ($_POST['ticket'] ?? ''))) {
-                $_SESSION['pending_completion_ticket'] = (string) $_POST['ticket'];
+            if ($action === 'claim_completion' && preg_match('/^[a-f0-9]{64}$/', $completionTicket)) {
+                $_SESSION['pending_completion_ticket'] = $completionTicket;
                 flash_message('error', '완료 기록을 저장하려면 Hanplanet 계정을 다시 연결해 주세요. 증표는 잠시 보관했습니다.');
                 redirect_to('/');
             }
@@ -71,6 +84,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $progress = wargame_progress((array) $user['solves']);
+        $ownerKey = wargame_owner_key($user);
+        $hasStartedCampaign = campaign_started($ownerKey) || (int) $progress['completed'] > 0;
         if ($action === 'start_campaign') {
             require_csrf();
             $firstMission = array_values(wargame_missions())[0] ?? null;
@@ -84,6 +99,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'resend_mission') {
             require_csrf();
+            if (!$hasStartedCampaign) {
+                throw new InvalidArgumentException('먼저 게임을 시작해 첫 의뢰를 수신해 주세요.');
+            }
             $missionId = (string) ($_POST['mission_id'] ?? '');
             $mission = wargame_mission($missionId);
             if (!is_array($mission) || (($progress['states'][$missionId] ?? 'locked') === 'locked')) {
@@ -96,26 +114,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'launch_lab') {
             require_csrf();
+            if (!$hasStartedCampaign) {
+                throw new InvalidArgumentException('먼저 게임을 시작해 등록 이메일로 첫 의뢰를 수신해 주세요.');
+            }
             $missionId = (string) ($_POST['mission_id'] ?? '');
             $state = (string) ($progress['states'][$missionId] ?? 'locked');
             if ($state === 'locked' || wargame_mission($missionId) === null) {
                 throw new InvalidArgumentException('선행 의뢰를 먼저 완료해야 합니다.');
             }
             LabSessionService::launchFor($user, $missionId);
-            redirect_to('/lab.php');
+            redirect_to(LabSessionService::targetEntryPath($missionId));
         }
 
         if ($action === 'claim_completion') {
-            $ticket = (string) ($_POST['ticket'] ?? ($_SESSION['pending_completion_ticket'] ?? ''));
-            if (isset($_POST['csrf_token'])) {
-                require_csrf();
-            }
-            $claimed = LabSessionService::claimCompletion($user, $ticket);
+            $handoff = CampaignService::completeAndDispatch($user, $completionTicket);
             unset($_SESSION['pending_completion_ticket']);
-            $mission = wargame_mission((string) $claimed['challenge_id']);
-            $nextMission = is_array($mission) ? CampaignService::nextMission((string) $mission['id']) : null;
+            $nextMission = $handoff['next_mission'];
             if (is_array($nextMission)) {
-                $dispatch = CampaignService::dispatchMission($user, $nextMission, 'previous_completed');
+                $dispatch = (array) ($handoff['dispatch'] ?? []);
                 $mailSuffix = (string) $dispatch['status'] === 'sent'
                     ? ' 다음 의뢰를 이메일로 전송했습니다.'
                     : ((string) $dispatch['status'] === 'preview' ? ' 다음 의뢰가 미리보기 모드로 등록되었습니다.' : ' 다음 의뢰 이메일은 전송에 실패해 화면에서 다시 보낼 수 있습니다.');
@@ -145,12 +161,13 @@ $user = current_django_user();
 $missions = wargame_missions();
 $curriculum = wargame_curriculum();
 $progress = wargame_progress(is_array($user) ? (array) $user['solves'] : []);
-$ownerKey = is_array($user) ? wargame_owner_key((string) $user['username']) : '';
+$ownerKey = is_array($user) ? wargame_owner_key($user) : '';
 $dispatches = $ownerKey !== '' ? CampaignService::dispatchesFor($ownerKey) : [];
 $campaignStarted = is_array($user) && (campaign_started($ownerKey) || (int) $progress['completed'] > 0);
 $selectedMissionId = (string) ($_GET['mission'] ?? '');
 $selectedMission = $selectedMissionId !== '' ? wargame_mission($selectedMissionId) : null;
 $selectedState = is_array($selectedMission) ? (string) ($progress['states'][$selectedMissionId] ?? 'locked') : '';
+$autoLaunchRequested = is_array($selectedMission) && (string) ($_GET['launch'] ?? '') === '1';
 $currentMission = $progress['current_id'] ? wargame_mission((string) $progress['current_id']) : null;
 $flash = take_flash_message();
 $pendingTicket = (string) ($_SESSION['pending_completion_ticket'] ?? '');
@@ -158,7 +175,10 @@ $cssVersion = (string) (filemtime(__DIR__ . '/assets/wargame.css') ?: time());
 $themeVersion = (string) (filemtime(__DIR__ . '/assets/theme.js') ?: time());
 $jsVersion = (string) (filemtime(__DIR__ . '/assets/portal.js') ?: time());
 $faviconVersion = (string) (filemtime(__DIR__ . '/assets/favicon.ico') ?: time());
+$loginUrl = django_login_url();
 $initial = is_array($user) ? strtoupper(substr((string) ($user['display_name'] ?: $user['username']), 0, 1)) : 'OP';
+$profileImageUrl = is_array($user) ? trim((string) ($user['profile_image_url'] ?? '')) : '';
+$djangoSiteIconUrl = django_base_url() . '/static/media/icons/favicon-192.png';
 $metaTitle = 'Hanplanet Wargame';
 $metaDescription = '실전 의뢰를 수행하며 웹 보안의 원리와 공격·방어 과정을 익히는 Hanplanet Wargame 학습 플랫폼';
 $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
@@ -195,12 +215,14 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
     data-needs-auth-refresh="<?= !is_array($user) || auth_refresh_needed() ? '1' : '0' ?>"
     data-django-session-url="<?= wargame_html(django_api_url('session/')) ?>"
     data-csrf="<?= wargame_html(csrf_token()) ?>"
+    data-auto-launch="<?= $autoLaunchRequested ? '1' : '0' ?>"
+    data-login-url="<?= wargame_html($loginUrl) ?>"
 >
     <a class="skip-link" href="#main-content">본문으로 이동</a>
     <header class="site-header">
         <div class="header-inner">
             <a class="brand" href="/" aria-label="FIELD OPS 홈">
-                <span class="brand-mark">H//P</span>
+                <img class="brand-mark" src="<?= wargame_html($djangoSiteIconUrl) ?>" alt="" width="38" height="38" decoding="async">
                 <span class="brand-copy"><strong>FIELD//OPS</strong><span>WARGAME ACADEMY</span></span>
             </a>
             <nav class="main-nav" aria-label="주요 메뉴">
@@ -217,15 +239,23 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
                             class="account-chip"
                             type="button"
                             data-account-menu-trigger
-                            aria-expanded="false"
-                            aria-controls="wargame-account-menu"
-                        >
-                            <span class="account-avatar"><?= wargame_html($initial) ?></span>
+                        aria-expanded="false"
+                        aria-controls="wargame-account-menu"
+                    >
+                            <?php if ($profileImageUrl !== ''): ?>
+                                <img class="account-avatar" src="<?= wargame_html($profileImageUrl) ?>" alt="" loading="lazy">
+                            <?php else: ?>
+                                <span class="account-avatar"><?= wargame_html($initial) ?></span>
+                            <?php endif; ?>
                             <span class="account-copy"><strong><?= wargame_html((string) $user['display_name']) ?></strong><small>ACCOUNT LINKED</small></span>
                         </button>
                         <section id="wargame-account-menu" class="account-menu-popup" data-account-menu hidden aria-label="연결된 Hanplanet 계정">
                             <div class="account-menu-profile">
-                                <span class="account-menu-avatar" aria-hidden="true"><?= wargame_html($initial) ?></span>
+                                <?php if ($profileImageUrl !== ''): ?>
+                                    <img class="account-menu-avatar" src="<?= wargame_html($profileImageUrl) ?>" alt="" loading="lazy">
+                                <?php else: ?>
+                                    <span class="account-menu-avatar" aria-hidden="true"><?= wargame_html($initial) ?></span>
+                                <?php endif; ?>
                                 <strong><?= wargame_html((string) $user['display_name']) ?></strong>
                                 <span><?= wargame_html((string) ($user['email'] ?: $user['username'])) ?></span>
                                 <small>HANPLANET ACCOUNT LINKED</small>
@@ -238,7 +268,7 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
                         </section>
                     </div>
                 <?php else: ?>
-                    <a class="account-chip" href="<?= wargame_html(django_login_url()) ?>">
+                    <a class="account-chip" href="<?= wargame_html($loginUrl) ?>">
                         <span class="account-avatar">OP</span>
                         <span class="account-copy"><strong data-account-bridge>Hanplanet 로그인</strong><small>SECURE ACCOUNT LINK</small></span>
                     </a>
@@ -276,6 +306,7 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
                 $selectedDispatch = $dispatches[$selectedMissionId] ?? null;
                 $diagram = (string) ($lesson['diagram'] ?? '');
                 $diagramId = str_starts_with($diagram, '/assets/lessons/') ? pathinfo($diagram, PATHINFO_FILENAME) : '';
+                $targetAddress = wargame_public_origin() . LabSessionService::targetEntryPath($selectedMissionId);
             ?>
             <article class="mission-page">
                 <a class="back-link" href="/#curriculum">← 전체 학습 경로</a>
@@ -285,7 +316,8 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
                     <p><?= wargame_html((string) ($selectedMission['brief'] ?? '')) ?></p>
                     <div class="mission-facts">
                         <div class="fact"><span>CLIENT</span><strong><?= wargame_html(mission_client($selectedMission)) ?></strong></div>
-                        <div class="fact"><span>TARGET SURFACE</span><strong><?= wargame_html((string) ($target['surface'] ?? 'Virtual range')) ?></strong></div>
+                        <div class="fact"><span>TARGET SERVICE</span><strong><?= wargame_html((string) ($target['service_name'] ?? 'Assessment target')) ?></strong></div>
+                        <div class="fact"><span>TARGET ADDRESS</span><strong><?= wargame_html($targetAddress) ?></strong></div>
                         <div class="fact"><span>ESTIMATED TIME</span><strong><?= (int) ($selectedMission['minutes'] ?? 30) ?> MIN</strong></div>
                     </div>
                 </header>
@@ -341,21 +373,27 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
 
                 <section class="launch-panel">
                     <div>
-                        <h3><?= $selectedState === 'locked' ? '선행 의뢰가 잠겨 있습니다' : '격리된 가상 타깃 준비 완료' ?></h3>
-                        <p><?= $selectedState === 'locked' ? '이전 단계를 완료하면 자동으로 의뢰 메일과 실습 환경이 열립니다.' : '모든 데이터는 이 계정의 임시 instance 안에만 존재하며 2시간 뒤 폐기됩니다.' ?></p>
+                        <h3><?= $selectedState === 'locked' ? '선행 의뢰가 잠겨 있습니다' : '검증 타깃 접속 준비 완료' ?></h3>
+                        <p><?= $selectedState === 'locked' ? '이전 단계를 완료하면 자동으로 의뢰 메일과 실습 환경이 열립니다.' : '타깃은 실제 HTTP 요청을 처리하며, 데이터는 이 계정의 임시 instance 안에서 2시간 뒤 폐기됩니다.' ?></p>
                     </div>
                     <?php if (!is_array($user)): ?>
-                        <a class="button" href="<?= wargame_html(django_login_url()) ?>">로그인 후 실습</a>
+                        <a class="button" href="<?= wargame_html($loginUrl) ?>">로그인 후 실습</a>
+                    <?php elseif (!$campaignStarted): ?>
+                        <form method="post" data-loading-form>
+                            <input type="hidden" name="csrf_token" value="<?= wargame_html(csrf_token()) ?>">
+                            <input type="hidden" name="action" value="start_campaign">
+                            <button class="button" type="submit" data-loading-label="첫 의뢰 준비 중…">첫 의뢰를 이메일로 수신하기</button>
+                        </form>
                     <?php elseif ($selectedState === 'locked'): ?>
                         <span class="button secondary" aria-disabled="true">LOCKED</span>
                     <?php else: ?>
                         <div class="button-row">
-                            <form method="post" data-loading-form>
+                            <form method="post" data-loading-form <?= $autoLaunchRequested && $campaignStarted ? 'data-email-target-launch' : '' ?>>
                                 <input type="hidden" name="csrf_token" value="<?= wargame_html(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="launch_lab">
                                 <input type="hidden" name="mission_id" value="<?= wargame_html($selectedMissionId) ?>">
                                 <input type="hidden" name="return_to" value="/?mission=<?= wargame_html(rawurlencode($selectedMissionId)) ?>">
-                                <button class="button" type="submit" data-loading-label="인스턴스 생성 중…"><?= $selectedState === 'completed' ? '다시 실습하기' : '가상 타깃 접속' ?> ↗</button>
+                                <button class="button" type="submit" data-loading-label="타깃 연결 중…"><?= $selectedState === 'completed' ? '다시 점검하기' : '타깃 사이트 접속' ?> ↗</button>
                             </form>
                             <form method="post" data-loading-form>
                                 <input type="hidden" name="csrf_token" value="<?= wargame_html(csrf_token()) ?>">
@@ -374,7 +412,7 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
                     <span class="eyebrow">ISOLATED RANGE · LIVE TRAINING</span>
                     <?php if (is_array($user) && $campaignStarted): ?>
                         <h1 id="hero-title">환영합니다,<br><span><?= wargame_html((string) $user['display_name']) ?></span> 오퍼레이터.</h1>
-                        <p class="hero-lead">현재 의뢰의 기술 브리핑을 읽고 가상 웹·터미널·네트워크를 직접 조사하세요. 성공 증거가 검증되면 다음 의뢰가 등록 이메일로 전달됩니다.</p>
+                        <p class="hero-lead">현재 의뢰의 기술 브리핑을 읽고 타깃의 실제 HTTP 요청·응답을 직접 조사하세요. 성공 증거가 검증되면 다음 의뢰가 등록 이메일로 전달됩니다.</p>
                         <div class="hero-actions">
                             <?php if (is_array($currentMission)): ?><a class="button" href="/?mission=<?= wargame_html(rawurlencode((string) $currentMission['id'])) ?>">현재 의뢰 계속하기</a><?php endif; ?>
                             <a class="button secondary" href="#curriculum">전체 경로 보기</a>
@@ -390,7 +428,7 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
                                     <button class="button" type="submit" data-loading-label="첫 의뢰 준비 중…">첫 의뢰 수신하기</button>
                                 </form>
                             <?php else: ?>
-                                <a class="button" href="<?= wargame_html(django_login_url()) ?>">Hanplanet 계정으로 시작</a>
+                                <a class="button" href="<?= wargame_html($loginUrl) ?>">Hanplanet 계정으로 시작</a>
                             <?php endif; ?>
                             <a class="button secondary" href="#how-it-works">훈련 방식 살펴보기</a>
                         </div>
@@ -462,7 +500,7 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
                 <div class="onboarding-grid">
                     <article class="card onboarding-card"><span class="step-number">01</span><h3>의뢰 메일 수신</h3><p>등록 이메일로 스토리, 허가 범위, 타깃 정보와 명확한 목표가 담긴 의뢰서가 전달됩니다.</p></article>
                     <article class="card onboarding-card"><span class="step-number">02</span><h3>기술 브리핑 학습</h3><p>Mermaid 흐름도, 취약/안전 비교표, 실제 요청 예시와 공식 참고 자료로 원리를 먼저 이해합니다.</p></article>
-                    <article class="card onboarding-card"><span class="step-number">03</span><h3>격리 타깃 침투</h3><p>개인별 SQLite·가상 파일·가상 네트워크에서 직접 증거를 확보하면 다음 의뢰가 자동으로 열립니다.</p></article>
+                    <article class="card onboarding-card"><span class="step-number">03</span><h3>격리 타깃 침투</h3><p>운영 사이트처럼 동작하는 독립 타깃에 직접 HTTP 요청을 보내 증거를 확보하면 다음 의뢰가 자동으로 열립니다.</p></article>
                 </div>
             </section>
 
@@ -499,7 +537,7 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
                 <div class="section-heading"><div><span class="kicker">RULES OF ENGAGEMENT</span><h2>훈련 범위와 안전 경계</h2></div></div>
                 <div class="safety-banner">
                     <strong>AUTHORIZED RANGE ONLY</strong>
-                    <span>모든 실습은 Hanplanet Wargame이 발급한 임시 instance에만 허가됩니다. 실제 도메인, 타인의 계정, 외부 네트워크에는 동일한 기법을 시도하지 마세요. SQL은 개인별 SQLite에서만 실행되고, 파일은 instance 루트를 벗어나지 못하며, SSRF는 DNS나 HTTP를 사용하지 않는 메모리 내 가상 네트워크입니다.</span>
+                    <span>모든 실습은 Hanplanet Wargame이 발급한 임시 instance에만 허가됩니다. 실제 도메인, 타인의 계정, 외부 네트워크에는 동일한 기법을 시도하지 마세요. SQL과 파일은 개인별 격리 저장소에서만 처리되며, 서버 측 URL 검증도 승인된 고정 내부 서비스 맵 밖으로 연결되지 않습니다.</span>
                 </div>
             </section>
         <?php endif; ?>

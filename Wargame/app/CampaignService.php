@@ -2,12 +2,42 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/MissionMailer.php';
+require_once __DIR__ . '/LabSessionService.php';
 
 final class CampaignService
 {
+    /**
+     * Claims a verified target completion and reserves the next email as one
+     * idempotent handoff. Replaying the same browser POST neither records the
+     * solve again nor sends another copy of the next mission.
+     *
+     * @param null|callable(array,string,string):array $solveRecorder
+     * @return array{claim:array,mission:array,next_mission:?array,dispatch:?array}
+     */
+    public static function completeAndDispatch(array $user, string $ticket, ?callable $solveRecorder = null): array
+    {
+        $claim = LabSessionService::claimCompletion($user, $ticket, $solveRecorder);
+        $mission = wargame_mission((string) ($claim['challenge_id'] ?? ''));
+        if (!is_array($mission)) {
+            throw new RuntimeException('완료한 의뢰를 커리큘럼에서 확인하지 못했습니다.');
+        }
+
+        $nextMission = self::nextMission((string) $mission['id']);
+        $dispatch = is_array($nextMission)
+            ? self::dispatchMission($user, $nextMission, 'previous_completed')
+            : null;
+
+        return [
+            'claim' => $claim,
+            'mission' => $mission,
+            'next_mission' => $nextMission,
+            'dispatch' => $dispatch,
+        ];
+    }
+
     public static function dispatchMission(array $user, array $mission, string $reason, bool $retry = false): array
     {
-        $ownerKey = wargame_owner_key((string) $user['username']);
+        $ownerKey = wargame_owner_key($user);
         $missionId = (string) ($mission['id'] ?? '');
         if ($missionId === '') {
             throw new InvalidArgumentException('의뢰 식별자가 없습니다.');

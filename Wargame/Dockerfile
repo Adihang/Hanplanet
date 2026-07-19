@@ -2,12 +2,7 @@ FROM php:8.3-apache
 
 ENV WARGAME_TRUST_PROXY=1 \
     WARGAME_PUBLIC_URL=https://wargame.hanplanet.com/ \
-    WARGAME_DJANGO_BASE_URL=https://www.hanplanet.com \
-    WARGAME_MAIL_TRANSPORT=preview \
-    WARGAME_MAIL_FROM=operations@wargame.hanplanet.com \
-    WARGAME_SMTP_PORT=25 \
-    WARGAME_SMTP_SECURITY=none \
-    WARGAME_SMTP_TIMEOUT=5
+    WARGAME_DJANGO_BASE_URL=https://www.hanplanet.com
 
 WORKDIR /app/Wargame
 
@@ -40,9 +35,9 @@ RUN sed -ri \
         -e 's#ErrorLog "/app/Wargame/data/apache-error.log"#ErrorLog /proc/self/fd/2#' \
         -e 's#CustomLog "/app/Wargame/data/apache-access.log"#CustomLog /proc/self/fd/1#' \
         /etc/apache2/sites-available/000-default.conf \
-    && mkdir -p /app/Wargame/data/sessions /app/Wargame/data/instances /app/Wargame/data/mail \
+    && mkdir -p /app/Wargame/data/sessions /app/Wargame/data/instances \
     && chown -R www-data:www-data /app/Wargame/data /var/run/apache2 /var/lock/apache2 /var/log/apache2 \
-    && chmod 770 /app/Wargame/data /app/Wargame/data/instances /app/Wargame/data/mail \
+    && chmod 770 /app/Wargame/data /app/Wargame/data/instances \
     && chmod 700 /app/Wargame/data/sessions \
     && chmod 0555 /app/Wargame/docker-entrypoint.sh
 

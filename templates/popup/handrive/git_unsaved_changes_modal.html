@@ -1,0 +1,14 @@
+<div id="handrive-git-unsaved-modal" class="handrive-popup-modal" hidden>
+    <div class="handrive-popup-modal-backdrop site-modal-backdrop" id="handrive-git-unsaved-modal-backdrop"></div>
+    <div class="handrive-popup-modal-dialog site-modal-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="handrive-git-unsaved-title" aria-describedby="handrive-git-unsaved-message">
+        <header class="handrive-popup-head site-modal-head">
+            <h2 id="handrive-git-unsaved-title" class="handrive-popup-title">{{ handrive_text.git_unsaved_changes_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with button_id="handrive-git-unsaved-close-btn" %}
+        </header>
+        <p id="handrive-git-unsaved-message" class="handrive-popup-message">{{ handrive_text.git_unsaved_changes_message }}</p>
+        <div class="handrive-popup-actions">
+            <button type="button" class="ui-btn" id="handrive-git-unsaved-leave-btn">{{ handrive_text.git_unsaved_changes_leave_button }}</button>
+            <button type="button" class="ui-btn ui-btn-primary" id="handrive-git-unsaved-commit-btn">{{ handrive_text.git_unsaved_changes_commit_button }}</button>
+        </div>
+    </div>
+</div>

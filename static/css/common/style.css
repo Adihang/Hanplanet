@@ -4795,6 +4795,7 @@ body.portfolio-page .projects .project_card:has(.project_card_link:active) {
     --handrive-mermaid-node-bg: var(--handrive-surface-subtle, var(--site-surface-muted, #f5f5f5));
     --handrive-mermaid-node-text: var(--handrive-text, var(--site-text, #222222));
     --handrive-mermaid-edge-label-bg: var(--handrive-mermaid-bg);
+    --handrive-mermaid-label-radius: var(--handrive-radius-sm, 8px);
     margin: 12px 0;
     border: 1px solid var(--handrive-mermaid-border);
     border-radius: 0;
@@ -4838,6 +4839,11 @@ body.theme-dark .handrive-mermaid {
 .handrive-mermaid-output .node path {
     fill: var(--handrive-mermaid-node-bg);
     stroke: var(--handrive-mermaid-border);
+}
+
+.handrive-mermaid-output .label-container {
+    rx: var(--handrive-mermaid-label-radius);
+    ry: var(--handrive-mermaid-label-radius);
 }
 
 .handrive-mermaid-output .nodeLabel,
@@ -4968,6 +4974,12 @@ body.theme-dark .handrive-mermaid {
     width: 24px;
     height: 24px;
     display: block;
+    flex: 0 0 24px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .portfolio-chat-link-btn {

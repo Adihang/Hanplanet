@@ -10,7 +10,7 @@
 - Bearer token은 portal의 host-only PHP session에만 보관합니다. HTML, JavaScript, 실습 instance 또는 메일 payload에 넣지 않습니다.
 - Lab engine은 Django API와 메일 transport를 사용하지 않으며, instance 전용 SQLite·파일만 다룹니다.
 - `public/` 밖의 `app/`, `data/`, `database/`, `deploy/`, `scripts/`는 HTTP로 접근할 수 없습니다.
-- 실제 SMTP outbound는 portal 프로세스만 사용할 수 있습니다. 실습의 SSRF·명령 실행·메일 기능은 외부 네트워크에 연결하지 않는 격리된 동작이어야 합니다.
+- 실제 SMTP outbound는 portal의 의뢰 발송 흐름에서만 호출합니다. 실습의 SSRF·명령 실행·메일 기능은 외부 네트워크에 연결하지 않는 격리된 동작이어야 합니다.
 - Wargame cookie에는 `Domain`을 지정하지 않습니다. Django session/CSRF cookie도 `www.hanplanet.com` host-only여야 합니다.
 
 ## 디렉터리
@@ -24,7 +24,6 @@
 | `data/wargame.sqlite3` | portal의 challenge-local runtime state | 비공개 |
 | `data/sessions/` | PHP file session (`0700`) | 비공개 |
 | `data/instances/` | instance별 SQLite·파일 | 비공개 |
-| `data/mail/` | local mail transport용 runtime 공간 | 비공개 |
 
 `data/`에는 사용자 계정, Django session, solve 원본, Django secret을 저장하지 않습니다.
 
@@ -59,21 +58,25 @@ Initialized /absolute/path/Wargame/data/wargame.sqlite3 at schema version 1.
 
 | 환경 변수 | 기본값 | 설명 |
 | --- | --- | --- |
-| `WARGAME_MAIL_TRANSPORT` | `preview` | `preview`, `smtp`, `mail` 중 하나 |
-| `WARGAME_MAIL_FROM` | `operations@wargame.hanplanet.com` | 발신 주소 |
-| `WARGAME_SMTP_HOST` | 없음 | SMTP hostname; `smtp`에서 필수 |
-| `WARGAME_SMTP_PORT` | `25` | SMTP port |
-| `WARGAME_SMTP_SECURITY` | `none` | `none` 또는 `tls` |
-| `WARGAME_SMTP_USERNAME` | 없음 | SMTP 사용자명 |
-| `WARGAME_SMTP_PASSWORD` | 없음 | SMTP 비밀번호; repository나 image에 넣지 않음 |
-| `WARGAME_SMTP_TIMEOUT` | `5` | 연결 timeout(초) |
-| `WARGAME_COMPLETION_SECRET` | 없음 | Django와 Wargame portal에만 동일하게 주입하는 별도 장기 random secret |
+| `WARGAME_MAIL_TRANSPORT` | 앱 `preview`, Compose `smtp` | `preview`, `smtp`, `mail` 중 하나 |
+| `WARGAME_MAIL_FROM` | `operations@wargame.hanplanet.com` | 의뢰서 발신 envelope 주소 |
+| `WARGAME_SMTP_HOST` | HPmail host 또는 `host.docker.internal` | Wargame portal이 연결할 SMTP relay |
+| `WARGAME_SMTP_PORT` | `25` | SMTP relay port |
+| `WARGAME_SMTP_SECURITY` | `none` | STARTTLS 사용 시 `tls` |
+| `WARGAME_SMTP_TLS_PEER_NAME` | SMTP host와 동일 | relay 주소와 인증서 hostname이 다를 때 검증할 인증서 hostname |
+| `WARGAME_SMTP_USERNAME` | 없음 | relay 인증 사용자 |
+| `WARGAME_SMTP_PASSWORD` | 없음 | relay 인증 비밀번호 |
+| `WARGAME_SMTP_TIMEOUT` | `5` | 연결·응답 timeout(초) |
+| `WARGAME_PUBLIC_URL` | `https://wargame.hanplanet.com/` | 메일의 미션별 타깃 시작 링크 기준 URL |
+| `WARGAME_COMPLETION_SECRET` | 없음 | Django와 Wargame portal에만 동일하게 주입하는 별도 32-byte 이상 random secret (`openssl rand -hex 32` 권장) |
 
 - `preview`: 실제 수신자나 본문 파일을 남기지 않고 `mission_dispatches.status=preview` 상태만 기록합니다.
 - `smtp`: 운영 권장 transport입니다. credential은 저장소나 image가 아닌 배포 secret manager가 제공하는 환경 변수로 주입합니다.
 - `mail`: PHP `mail()` 호환 경로이며, host MTA가 명확하게 격리된 경우에만 사용합니다.
 
-SMTP credential과 transport 환경 변수는 portal에만 전달합니다. Lab engine 또는 instance subprocess에는 상속하지 않습니다.
+Portal과 실습 요청은 같은 Apache/PHP worker 환경에서 처리되므로 process-level 환경 변수 자체는 공유됩니다. 다만 실습 요청 경로는 `MissionMailer`나 portal bootstrap을 include하지 않고, `LabEngine`은 환경 변수 조회·외부 socket·shell 호출을 사용하지 않습니다. 더 강한 process-level 분리가 필요한 배포에서는 portal과 target을 별도 PHP-FPM pool/service로 나눠야 합니다.
+
+SMTP 인증(`WARGAME_SMTP_USERNAME`)을 설정하면 `WARGAME_SMTP_SECURITY=tls`가 아니면 fail closed 합니다. `host.docker.internal`을 통해 실제 인증서 hostname이 다른 relay에 연결할 때는 `WARGAME_SMTP_TLS_PEER_NAME`에 인증서의 hostname을 지정하십시오. 운영 시작 전 `WARGAME_COMPLETION_SECRET`과 실제 SMTP relay를 설정한 뒤 Django와 Wargame 서비스를 재생성해야 합니다.
 
 `WARGAME_COMPLETION_SECRET`은 `GAME_JWT_SECRET`, Django `SECRET_KEY`, SMTP password와 다른 값이어야 합니다. Docker Compose에서는 Django와 Wargame 두 서비스에 같은 환경 변수 이름으로 주입되며, 브라우저·메일·instance·SQLite에는 출력하거나 저장하지 않습니다.
 
@@ -96,13 +99,13 @@ Apache와 초기화 스크립트는 container 안에서 `www-data` 비루트 사
 
 ```bash
 docker compose run --rm --user root --entrypoint sh wargame -c \
-  'mkdir -p /app/Wargame/data/sessions /app/Wargame/data/instances /app/Wargame/data/mail && chown -R 33:33 /app/Wargame/data && chmod 0770 /app/Wargame/data /app/Wargame/data/instances /app/Wargame/data/mail && chmod 0700 /app/Wargame/data/sessions'
+  'mkdir -p /app/Wargame/data/sessions /app/Wargame/data/instances && chown -R 33:33 /app/Wargame/data && chmod 0770 /app/Wargame/data /app/Wargame/data/instances && chmod 0700 /app/Wargame/data/sessions'
 ```
 
 ```bash
 sudo install -d -o 33 -g 33 -m 0770 /srv/hanplanet/wargame
 sudo install -d -o 33 -g 33 -m 0700 /srv/hanplanet/wargame/sessions
-sudo install -d -o 33 -g 33 -m 0770 /srv/hanplanet/wargame/instances /srv/hanplanet/wargame/mail
+sudo install -d -o 33 -g 33 -m 0770 /srv/hanplanet/wargame/instances
 ```
 
 상위 Compose는 Wargame host port를 loopback에 고정합니다.
@@ -134,9 +137,9 @@ Native fallback은 `localhost:8090`에만 bind합니다. Homebrew PHP-FPM이 `12
 ```bash
 brew install php
 brew services start php
-mkdir -p data/sessions data/instances data/mail
+mkdir -p data/sessions data/instances
 sudo chown -R _www:staff data
-sudo chmod 0770 data data/instances data/mail
+sudo chmod 0770 data data/instances
 sudo chmod 0700 data/sessions
 sudo -u _www /opt/homebrew/bin/php scripts/init_db.php
 httpd -t -f /Users/imhanbyeol/Development/Hanplanet/Wargame/deploy/apache/httpd-wargame.conf

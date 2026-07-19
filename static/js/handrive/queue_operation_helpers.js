@@ -415,13 +415,11 @@
 
     async function enqueueUploadFiles(files, targetDirPath, options) {
         // Queue raw File objects first, then let the worker handle transport so drag/drop
-        // and picker uploads can reuse the same status UI and commit-message flow.
+        // and picker uploads can reuse the same status UI.
         var settings = options || {};
         var state = settings.state || {};
         var uploadApiUrl = settings.uploadApiUrl || "";
         var normalizePath = settings.normalizePath || function (value) { return value || ""; };
-        var requiresCommitMessageForDirectory = settings.requiresCommitMessageForDirectory || function () { return false; };
-        var promptCommitMessage = settings.promptCommitMessage || function () { return Promise.resolve(""); };
         var renderUploadQueue = settings.renderUploadQueue || function () {};
         var processUploadQueue = settings.processUploadQueue || function () { return Promise.resolve(); };
         var alertError = settings.alertError || function () {};
@@ -445,12 +443,6 @@
 
         var normalizedTargetDir = normalizePath(targetDirPath, true);
         var commitMessage = "";
-        if (requiresCommitMessageForDirectory(normalizedTargetDir)) {
-            commitMessage = await promptCommitMessage(normalizedTargetDir);
-            if (commitMessage === null) {
-                return;
-            }
-        }
 
         fileList.forEach(function (file) {
             state.uploadQueueSequence += 1;

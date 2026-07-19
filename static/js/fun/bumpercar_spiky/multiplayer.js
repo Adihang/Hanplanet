@@ -204,6 +204,8 @@
     const doubleUnitDeathFadeMs = 3000;
     const soundHearingRadius = 560;
     const remoteCharacterSoundMinVolume = 0.2;
+    const characterSoundTargetRms = 0.13;
+    const characterSoundMaxNormalizationGain = 2.8;
     const inputSendIntervalMs = 33;
     const inputHeartbeatMs = 150;
     const input = { up: false, down: false, left: false, right: false, boost: false, respawn: false };
@@ -300,6 +302,8 @@
     const activePlayerSounds = new Map();
     const pendingPlayerSoundTimers = new Map();
     const lastRandomSoundUrlByList = new WeakMap();
+    const characterSoundBufferByUrl = new Map();
+    const characterSoundPreloadByUrl = new Map();
     const playerVisuals = new Map();
     const spriteOverlayNodes = new Map();
     let canvasScale = 1;
@@ -1116,7 +1120,9 @@
             return;
         }
         selectedSkinName = skinRuntime.name;
-        activeSelfSkinName = skinRuntime.name;
+        if (!gameStarted) {
+            activeSelfSkinName = skinRuntime.name;
+        }
         if (boostState === 'idle') {
             currentMoveSpeed = getSelectedPlayerBaseSpeed();
             serverReportedMoveSpeed = getSelectedPlayerBaseSpeed();
@@ -1197,11 +1203,59 @@
         setIdleModalOpen(true);
     };
 
+    const clearGameplayInputForStartOverlay = function () {
+        keyboardDirectionInput.up = false;
+        keyboardDirectionInput.down = false;
+        keyboardDirectionInput.left = false;
+        keyboardDirectionInput.right = false;
+        joystickDirectionInput.up = false;
+        joystickDirectionInput.down = false;
+        joystickDirectionInput.left = false;
+        joystickDirectionInput.right = false;
+        joystickAnalogInput.x = 0;
+        joystickAnalogInput.y = 0;
+        joystickPointerId = null;
+        mouseDirectionInput.up = false;
+        mouseDirectionInput.down = false;
+        mouseDirectionInput.left = false;
+        mouseDirectionInput.right = false;
+        mouseLeftHeld = false;
+        mouseRightHeld = false;
+        mouseBoostRequested = false;
+        mouseMoveActive = false;
+        input.boost = false;
+        syncDirectionalInput();
+        if (joystickKnob) {
+            joystickKnob.style.transform = 'translate(0, 0)';
+        }
+        sendInputNow(true);
+    };
+
     const setStartOverlayOpen = function (opened) {
         if (!startOverlay) {
             return;
         }
         startOverlay.hidden = !opened;
+        if (startButton) {
+            startButton.textContent = opened && gameStarted
+                ? (startButton.dataset.continueLabel || 'Continue')
+                : (startButton.dataset.startLabel || 'Start!');
+        }
+        if (opened && gameStarted) {
+            clearGameplayInputForStartOverlay();
+        }
+    };
+
+    const resumeGameFromStartOverlay = function () {
+        const skinChangedSinceConnection = gameStarted && selectedSkinName !== activeSelfSkinName;
+        setStartOverlayOpen(false);
+        if (!gameStarted) {
+            startGame();
+            return;
+        }
+        if (skinChangedSinceConnection) {
+            connect();
+        }
     };
 
     const releaseInitialLoadingOverlay = function () {
@@ -1681,6 +1735,12 @@
             } catch (error) {}
         }
 
+        if (activeSound.gain) {
+            try {
+                activeSound.gain.disconnect();
+            } catch (error) {}
+        }
+
         if (activeSound.kind === 'buffer' && activeSound.source) {
             try {
                 activeSound.source.stop(0);
@@ -1856,6 +1916,162 @@
         return Math.max(0, Math.min(1, normalizedVolume * masterVolume));
     };
 
+    const getAllCharacterSoundUrls = function () {
+        const soundUrls = new Set();
+        const soundGroups = [
+            'boost_sound_urls',
+            'crash_sound_urls',
+            'defeat_sound_urls',
+            'die_sound_urls',
+            'respawn_sound_urls',
+            'ntr_sound_urls'
+        ];
+        skinCatalog.forEach(function (skin) {
+            const assets = skin && skin.assets ? skin.assets : {};
+            soundGroups.forEach(function (groupName) {
+                const urls = assets[groupName];
+                if (Array.isArray(urls)) {
+                    urls.forEach(function (url) {
+                        if (url) {
+                            soundUrls.add(url);
+                        }
+                    });
+                }
+            });
+        });
+        nerTrackingSoundUrls.concat(nerAccelerationSoundUrls).forEach(function (url) {
+            if (url) {
+                soundUrls.add(url);
+            }
+        });
+        return Array.from(soundUrls);
+    };
+
+    const getCharacterSoundNormalizationGain = function (buffer) {
+        if (!buffer || !buffer.length || !buffer.numberOfChannels) {
+            return 1;
+        }
+        const sampleStep = Math.max(1, Math.floor(buffer.length / 120000));
+        let sampleCount = 0;
+        let squaredTotal = 0;
+        let peak = 0;
+        for (let channelIndex = 0; channelIndex < buffer.numberOfChannels; channelIndex += 1) {
+            const channel = buffer.getChannelData(channelIndex);
+            for (let sampleIndex = 0; sampleIndex < channel.length; sampleIndex += sampleStep) {
+                const sample = channel[sampleIndex];
+                squaredTotal += sample * sample;
+                peak = Math.max(peak, Math.abs(sample));
+                sampleCount += 1;
+            }
+        }
+        if (!sampleCount) {
+            return 1;
+        }
+        const rms = Math.sqrt(squaredTotal / sampleCount);
+        const targetGain = rms > 0.0001 ? characterSoundTargetRms / rms : 1;
+        const peakSafeGain = peak > 0.0001 ? 0.95 / peak : characterSoundMaxNormalizationGain;
+        return Math.max(0.55, Math.min(characterSoundMaxNormalizationGain, targetGain, peakSafeGain));
+    };
+
+    const decodeCharacterSound = function (context, audioData) {
+        return new Promise(function (resolve, reject) {
+            try {
+                const decoded = context.decodeAudioData(audioData, resolve, reject);
+                if (decoded && typeof decoded.then === 'function') {
+                    decoded.then(resolve, reject);
+                }
+            } catch (error) {
+                reject(error);
+            }
+        });
+    };
+
+    const preloadCharacterSound = function (url) {
+        if (!url || characterSoundPreloadByUrl.has(url)) {
+            return characterSoundPreloadByUrl.get(url) || Promise.resolve();
+        }
+        const context = getAudioContext();
+        if (!context || typeof window.fetch !== 'function') {
+            return Promise.resolve();
+        }
+        const preload = window.fetch(url, { credentials: 'same-origin' })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('Unable to preload character sound');
+                }
+                return response.arrayBuffer();
+            })
+            .then(function (audioData) {
+                return decodeCharacterSound(context, audioData);
+            })
+            .then(function (buffer) {
+                characterSoundBufferByUrl.set(url, {
+                    buffer: buffer,
+                    normalizationGain: getCharacterSoundNormalizationGain(buffer)
+                });
+            })
+            .catch(function () {
+                // Keep the HTMLAudio fallback available if a browser cannot decode a file here.
+            });
+        characterSoundPreloadByUrl.set(url, preload);
+        return preload;
+    };
+
+    const primeCharacterAudio = function () {
+        getAudioContext();
+        getAllCharacterSoundUrls().forEach(preloadCharacterSound);
+    };
+
+    const playBufferedAudioFile = function (url, effectiveVolume, playerId, pan) {
+        const soundEntry = characterSoundBufferByUrl.get(url);
+        const context = getAudioContext();
+        if (!soundEntry || !context || context.state !== 'running' || effectiveVolume <= 0.01) {
+            return false;
+        }
+        try {
+            stopPlayerSound(playerId);
+            const source = context.createBufferSource();
+            const gain = context.createGain();
+            const panner = typeof context.createStereoPanner === 'function' ? context.createStereoPanner() : null;
+            source.buffer = soundEntry.buffer;
+            gain.gain.value = effectiveVolume * soundEntry.normalizationGain;
+            source.connect(gain);
+            if (panner) {
+                panner.pan.value = Math.max(-1, Math.min(1, Number(pan || 0)));
+                gain.connect(panner);
+                panner.connect(context.destination);
+            } else {
+                gain.connect(context.destination);
+            }
+            activePlayerSounds.set(playerId, {
+                kind: 'buffer',
+                source: source,
+                gain: gain,
+                panner: panner
+            });
+            source.addEventListener('ended', function () {
+                if (activePlayerSounds.get(playerId)?.source === source) {
+                    try {
+                        source.disconnect();
+                    } catch (error) {}
+                    try {
+                        gain.disconnect();
+                    } catch (error) {}
+                    if (panner) {
+                        try {
+                            panner.disconnect();
+                        } catch (error) {}
+                    }
+                    activePlayerSounds.delete(playerId);
+                }
+            });
+            source.start(0);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    };
+
     const connectSoundToStereoOutput = function (sound, pan) {
         const context = getAudioContext();
         if (!context || typeof context.createMediaElementSource !== 'function' || typeof context.createStereoPanner !== 'function') {
@@ -1881,6 +2097,11 @@
         if (!url || effectiveVolume <= 0.01) {
             return;
         }
+
+        if (playBufferedAudioFile(url, effectiveVolume, playerId, pan)) {
+            return;
+        }
+        preloadCharacterSound(url);
 
         stopPlayerSound(playerId);
         const sound = new window.Audio(url);
@@ -3003,6 +3224,7 @@
     };
 
     const startGame = function () {
+        primeCharacterAudio();
         manualStartAutoRespawnPending = true;
         if (gameStarted) {
             connect();
@@ -5240,6 +5462,11 @@
     const handleKey = function (value) {
         // Keydown/keyup handlers are generated from one factory so boost and directional keys share the same send path.
         return function (event) {
+            const mapped = keyMap[event.key];
+            if (startOverlay && !startOverlay.hidden && (event.key === ' ' || mapped)) {
+                event.preventDefault();
+                return;
+            }
             if (event.key === ' ') {
                 event.preventDefault();
                 if (boostLockedActive) {
@@ -5255,7 +5482,6 @@
                 return;
             }
 
-            const mapped = keyMap[event.key];
             if (!mapped) {
                 return;
             }
@@ -5358,9 +5584,21 @@
         });
     }
     document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape' && isFullscreenMode) {
+        if (event.key !== 'Escape') {
+            return;
+        }
+        if (skinModal && !skinModal.hidden) {
+            event.preventDefault();
+            setSkinModalOpen(false);
+            return;
+        }
+        if (isFullscreenMode) {
             event.preventDefault();
             setFullscreenMode(false);
+        }
+        if (gameStarted && !selfDeathActive) {
+            event.preventDefault();
+            setStartOverlayOpen(true);
         }
     });
     window.addEventListener('resize', function () {
@@ -5483,7 +5721,7 @@
     });
     if (startButton) {
         startButton.addEventListener('click', function () {
-            startGame();
+            resumeGameFromStartOverlay();
         });
     }
     if (startCharacterButton) {

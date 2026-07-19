@@ -57,7 +57,6 @@ try {
     ensure_directory(WARGAME_DATA_DIR, 0770);
     ensure_directory(WARGAME_DATA_DIR . '/sessions', 0700);
     ensure_directory(WARGAME_DATA_DIR . '/instances', 0770);
-    ensure_directory(WARGAME_DATA_DIR . '/mail', 0770);
 
     $lockPath = WARGAME_DATA_DIR . '/.init.lock';
     if (is_link($lockPath)) {

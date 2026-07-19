@@ -23,25 +23,43 @@
 }
 
 :root {
-    color-scheme: dark;
-    --bg: #061018;
-    --bg-elevated: #0a1720;
-    --surface: rgba(15, 31, 41, 0.92);
-    --surface-strong: #10232d;
-    --surface-soft: #0b1a23;
-    --line: #203d48;
-    --line-bright: #345d68;
-    --text: #ecf3f0;
-    --text-soft: #b5c7c6;
-    --muted: #76909a;
-    --accent: #72f1c5;
-    --accent-strong: #36dca6;
-    --accent-ink: #032017;
-    --amber: #efb35c;
-    --red: #ff7a7a;
-    --blue: #73b7ff;
-    --purple: #b99bff;
-    --shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+    color-scheme: light;
+    /* Same shared colour tokens as www.hanplanet.com. */
+    --site-bg: #ffffff;
+    --site-text: #101010;
+    --site-text-strong: #131313;
+    --site-text-stronger: #141414;
+    --site-text-muted: #545454;
+    --site-text-faint: #808080;
+    --site-border: rgba(0, 0, 0, 0.12);
+    --site-border-strong: rgba(0, 0, 0, 0.18);
+    --site-hover: rgba(0, 0, 0, 0.08);
+    --site-surface-muted: rgba(248, 248, 248, 0.92);
+    --site-elevated-bg: rgba(248, 248, 248, 0.96);
+    --shared-card-bg: rgb(238, 238, 238);
+    --site-shadow-md: 0 16px 34px rgba(0, 0, 0, 0.2);
+    --site-shadow-lg: 0 16px 34px rgba(0, 0, 0, 0.24);
+    --theme-accent: #000000;
+    --theme-accent-strong: #000000;
+
+    --bg: var(--site-bg);
+    --bg-elevated: var(--site-surface-muted);
+    --surface: var(--shared-card-bg);
+    --surface-strong: var(--site-elevated-bg);
+    --surface-soft: var(--site-surface-muted);
+    --line: var(--site-border);
+    --line-bright: var(--site-border-strong);
+    --text: var(--site-text);
+    --text-soft: var(--site-text-muted);
+    --muted: var(--site-text-faint);
+    --accent: var(--theme-accent);
+    --accent-strong: var(--theme-accent-strong);
+    --accent-ink: var(--site-bg);
+    --amber: var(--site-text-strong);
+    --red: #b42318;
+    --blue: var(--site-text-strong);
+    --purple: var(--site-text-strong);
+    --shadow: var(--site-shadow-lg);
     --radius-xl: 28px;
     --radius-lg: 20px;
     --radius-md: 14px;
@@ -50,26 +68,25 @@
     --display: "Inter", "Noto Sans KR", "Helvetica Neue", Helvetica, Arial, "맑은 고딕", malgun gothic, "돋움", Dotum, sans-serif, "Apple Color Emoji", "Noto Color Emoji";
 }
 
-:root[data-theme="light"] {
-    color-scheme: light;
-    --bg: #eef4f2;
-    --bg-elevated: #f8fbfa;
-    --surface: rgba(255, 255, 255, 0.94);
-    --surface-strong: #ffffff;
-    --surface-soft: #e8f0ee;
-    --line: #cedbd7;
-    --line-bright: #9fb8b0;
-    --text: #10251f;
-    --text-soft: #3c5a51;
-    --muted: #6b8179;
-    --accent: #087b5d;
-    --accent-strong: #056348;
-    --accent-ink: #ffffff;
-    --amber: #9b5e08;
-    --red: #be3939;
-    --blue: #1769b0;
-    --purple: #6e51b5;
-    --shadow: 0 24px 70px rgba(31, 57, 49, 0.12);
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --site-bg: #222222;
+    --site-text: #f2f2f2;
+    --site-text-strong: #f5f5f5;
+    --site-text-stronger: #fafafa;
+    --site-text-muted: #d6d6d6;
+    --site-text-faint: #b2b2b2;
+    --site-border: rgba(255, 255, 255, 0.18);
+    --site-border-strong: rgba(255, 255, 255, 0.28);
+    --site-hover: rgba(255, 255, 255, 0.13);
+    --site-surface-muted: rgba(40, 40, 40, 0.94);
+    --site-elevated-bg: rgba(46, 46, 46, 0.97);
+    --shared-card-bg: rgba(43, 43, 43, 0.94);
+    --site-shadow-md: 0 16px 34px rgba(0, 0, 0, 0.5);
+    --site-shadow-lg: 0 16px 34px rgba(0, 0, 0, 0.55);
+    --theme-accent: #ffffff;
+    --theme-accent-strong: #ffffff;
+    --red: #ffb4ab;
 }
 
 * {
@@ -84,10 +101,7 @@ body {
     margin: 0;
     min-width: 320px;
     min-height: 100vh;
-    background:
-        radial-gradient(circle at 9% -5%, rgba(57, 204, 166, 0.12), transparent 30rem),
-        radial-gradient(circle at 92% 8%, rgba(77, 125, 155, 0.13), transparent 33rem),
-        var(--bg);
+    background: var(--bg);
     color: var(--text);
     font-family: var(--sans);
     line-height: 1.6;
@@ -98,7 +112,7 @@ body::before {
     position: fixed;
     inset: 0;
     z-index: -1;
-    background-image: linear-gradient(rgba(109, 154, 154, 0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(109, 154, 154, 0.035) 1px, transparent 1px);
+    background-image: linear-gradient(color-mix(in srgb, var(--text) 3.5%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--text) 3.5%, transparent) 1px, transparent 1px);
     background-size: 36px 36px;
     content: "";
     mask-image: linear-gradient(to bottom, #000 0, transparent 78%);
@@ -197,18 +211,10 @@ svg {
 }
 
 .brand-mark {
-    display: grid;
     width: 38px;
     height: 38px;
-    border: 1px solid var(--line-bright);
-    border-radius: 11px;
-    place-items: center;
-    background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 22%, transparent), transparent);
-    color: var(--accent);
-    font-family: var(--mono);
-    font-size: 13px;
-    font-weight: 800;
-    box-shadow: inset 0 0 16px rgba(85, 233, 190, 0.08);
+    flex: 0 0 auto;
+    object-fit: contain;
 }
 
 .brand-copy {
@@ -343,6 +349,12 @@ button.account-chip {
     font-family: var(--mono);
     font-size: 21px;
     font-weight: 800;
+}
+
+img.account-menu-avatar,
+img.account-avatar {
+    display: block;
+    object-fit: cover;
 }
 
 .account-menu-profile strong {
@@ -575,7 +587,7 @@ button.account-chip {
     inset: 14% 10%;
     z-index: -1;
     border-radius: 50%;
-    background: rgba(55, 225, 175, 0.13);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
     filter: blur(55px);
     content: "";
 }
@@ -638,7 +650,7 @@ button.account-chip {
 .stat-strip {
     display: grid;
     margin-top: 42px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     border-top: 1px solid var(--line);
     border-bottom: 1px solid var(--line);
 }
@@ -709,7 +721,7 @@ button.account-chip {
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
     background: var(--surface);
-    box-shadow: 0 16px 50px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--site-shadow-md);
 }
 
 .onboarding-card {
@@ -1133,6 +1145,7 @@ progress::-moz-progress-bar {
 .fact strong {
     margin-top: 5px;
     font-size: 13px;
+    overflow-wrap: anywhere;
 }
 
 .lesson-card-half {
@@ -1461,8 +1474,19 @@ progress::-moz-progress-bar {
 
 /* Isolated target console */
 .lab-body {
-    background: #050b10;
-    color: #dce8e4;
+    --lab-panel: var(--surface);
+    --lab-panel-strong: var(--surface-strong);
+    --lab-panel-soft: var(--surface-soft);
+    --lab-code: color-mix(in srgb, var(--bg) 72%, var(--surface));
+    --lab-border: var(--line);
+    --lab-border-strong: var(--line-bright);
+    --lab-text: var(--text);
+    --lab-text-soft: var(--text-soft);
+    --lab-muted: var(--muted);
+    --lab-accent: var(--accent);
+    --lab-accent-soft: color-mix(in srgb, var(--accent) 10%, var(--lab-panel));
+    background: var(--bg);
+    color: var(--text);
 }
 
 .lab-body::before {
@@ -1481,13 +1505,13 @@ progress::-moz-progress-bar {
     align-items: center;
     gap: 14px;
     padding: 0 14px;
-    border: 1px solid #1b313b;
+    border: 1px solid var(--lab-border);
     border-radius: 13px;
-    background: #0b151d;
+    background: var(--lab-panel);
 }
 
 .lab-brand {
-    color: #75f3c8;
+    color: var(--lab-accent);
     font-family: var(--mono);
     font-size: 11px;
     font-weight: 800;
@@ -1495,7 +1519,7 @@ progress::-moz-progress-bar {
 }
 
 .lab-scope {
-    color: #6e8790;
+    color: var(--lab-muted);
     font-family: var(--mono);
     font-size: 9px;
 }
@@ -1514,9 +1538,9 @@ progress::-moz-progress-bar {
 
 .lab-sidebar,
 .lab-workspace {
-    border: 1px solid #1b313b;
+    border: 1px solid var(--lab-border);
     border-radius: 15px;
-    background: #09131a;
+    background: var(--lab-panel);
 }
 
 .lab-sidebar {
@@ -1530,21 +1554,21 @@ progress::-moz-progress-bar {
 }
 
 .lab-sidebar p {
-    color: #78919a;
+    color: var(--lab-muted);
     font-size: 12px;
 }
 
 .lab-objective {
     margin-top: 18px;
     padding: 14px;
-    border: 1px solid #223f49;
+    border: 1px solid var(--lab-border-strong);
     border-radius: 11px;
-    background: #0d1b23;
+    background: var(--lab-panel-soft);
 }
 
 .lab-objective strong {
     display: block;
-    color: #efb35c;
+    color: var(--lab-accent);
     font-family: var(--mono);
     font-size: 9px;
     letter-spacing: 0.08em;
@@ -1552,7 +1576,7 @@ progress::-moz-progress-bar {
 
 .lab-objective p {
     margin: 8px 0 0;
-    color: #c0d0ce;
+    color: var(--lab-text-soft);
 }
 
 .lab-tabs {
@@ -1561,20 +1585,20 @@ progress::-moz-progress-bar {
     align-items: center;
     gap: 4px;
     padding: 0 10px;
-    border-bottom: 1px solid #1b313b;
+    border-bottom: 1px solid var(--lab-border);
 }
 
 .lab-tab {
     padding: 7px 10px;
     border-radius: 8px;
-    color: #6f8992;
+    color: var(--lab-muted);
     font-family: var(--mono);
     font-size: 10px;
 }
 
 .lab-tab.active {
-    background: #10242c;
-    color: #9eeed3;
+    background: var(--lab-accent-soft);
+    color: var(--lab-accent);
 }
 
 .lab-surface {
@@ -1584,10 +1608,10 @@ progress::-moz-progress-bar {
 .terminal {
     min-height: 460px;
     overflow: hidden;
-    border: 1px solid #213b45;
+    border: 1px solid var(--lab-border-strong);
     border-radius: 13px;
-    background: #040a0e;
-    box-shadow: inset 0 0 50px rgba(28, 106, 82, 0.07);
+    background: var(--lab-code);
+    box-shadow: inset 0 0 50px color-mix(in srgb, var(--accent) 5%, transparent);
 }
 
 .terminal-head,
@@ -1598,24 +1622,24 @@ progress::-moz-progress-bar {
     align-items: center;
     gap: 7px;
     padding: 0 13px;
-    border-bottom: 1px solid #1c323c;
-    background: #0c171e;
+    border-bottom: 1px solid var(--lab-border);
+    background: var(--lab-panel-soft);
 }
 
 .window-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #35515a;
+    background: var(--lab-border-strong);
 }
 
-.window-dot.red { background: #dc6e6e; }
-.window-dot.amber { background: #dba653; }
-.window-dot.green { background: #5ad3a8; }
+.window-dot.red { background: var(--red); }
+.window-dot.amber,
+.window-dot.green { background: var(--lab-accent); }
 
 .window-title {
     margin-left: 7px;
-    color: #77909a;
+    color: var(--lab-muted);
     font-family: var(--mono);
     font-size: 9px;
 }
@@ -1625,7 +1649,7 @@ progress::-moz-progress-bar {
     margin: 0;
     padding: 18px;
     overflow: auto;
-    color: #b8cbc7;
+    color: var(--lab-text-soft);
     font-family: var(--mono);
     font-size: 12px;
     line-height: 1.7;
@@ -1633,7 +1657,7 @@ progress::-moz-progress-bar {
 }
 
 .terminal-output .accent {
-    color: #75f3c8;
+    color: var(--lab-accent);
 }
 
 .terminal-form {
@@ -1641,11 +1665,11 @@ progress::-moz-progress-bar {
     align-items: center;
     gap: 9px;
     padding: 13px 15px;
-    border-top: 1px solid #1c323c;
+    border-top: 1px solid var(--lab-border);
 }
 
 .prompt {
-    color: #75f3c8;
+    color: var(--lab-accent);
     font-family: var(--mono);
     font-size: 12px;
 }
@@ -1655,11 +1679,11 @@ progress::-moz-progress-bar {
 .request-form textarea,
 .request-form select {
     width: 100%;
-    border: 1px solid #28434d;
+    border: 1px solid var(--lab-border-strong);
     border-radius: 8px;
     outline: none;
-    background: #071119;
-    color: #dce8e4;
+    background: var(--lab-code);
+    color: var(--lab-text);
     font-family: var(--mono);
     font-size: 12px;
 }
@@ -1674,15 +1698,15 @@ progress::-moz-progress-bar {
 .request-form input:focus,
 .request-form textarea:focus,
 .request-form select:focus {
-    border-color: #55cda5;
+    border-color: var(--lab-accent);
 }
 
 .lab-submit {
     padding: 8px 12px;
-    border: 1px solid #3f7666;
+    border: 1px solid var(--lab-border-strong);
     border-radius: 8px;
-    background: #15392e;
-    color: #9be9cf;
+    background: var(--lab-accent);
+    color: var(--accent-ink);
     font-family: var(--mono);
     font-size: 10px;
     cursor: pointer;
@@ -1692,10 +1716,10 @@ progress::-moz-progress-bar {
 .network-window {
     min-height: 500px;
     overflow: hidden;
-    border: 1px solid #213b45;
+    border: 1px solid var(--lab-border-strong);
     border-radius: 13px;
-    background: #e8eeec;
-    color: #14221e;
+    background: var(--lab-panel-strong);
+    color: var(--lab-text);
 }
 
 .browser-address {
@@ -1703,8 +1727,8 @@ progress::-moz-progress-bar {
     margin-left: 8px;
     padding: 5px 9px;
     border-radius: 7px;
-    background: #071118;
-    color: #79919a;
+    background: var(--lab-code);
+    color: var(--lab-muted);
     font-family: var(--mono);
     font-size: 9px;
 }
@@ -1718,7 +1742,7 @@ progress::-moz-progress-bar {
 }
 
 .browser-page p {
-    color: #52645e;
+    color: var(--lab-text-soft);
 }
 
 .request-form {
@@ -1730,7 +1754,7 @@ progress::-moz-progress-bar {
 .request-form label {
     display: grid;
     gap: 5px;
-    color: #546862;
+    color: var(--lab-text-soft);
     font-size: 11px;
     font-weight: 700;
 }
@@ -1742,8 +1766,8 @@ progress::-moz-progress-bar {
 }
 
 .network-window {
-    background: #071118;
-    color: #dce8e4;
+    background: var(--lab-code);
+    color: var(--lab-text);
 }
 
 .network-canvas {
@@ -1751,7 +1775,7 @@ progress::-moz-progress-bar {
     min-height: 410px;
     padding: 35px;
     place-items: center;
-    background-image: linear-gradient(rgba(89, 137, 137, .08) 1px, transparent 1px), linear-gradient(90deg, rgba(89, 137, 137, .08) 1px, transparent 1px);
+    background-image: linear-gradient(color-mix(in srgb, var(--text) 7%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--text) 7%, transparent) 1px, transparent 1px);
     background-size: 30px 30px;
 }
 
@@ -1766,9 +1790,9 @@ progress::-moz-progress-bar {
 .network-node {
     min-width: 120px;
     padding: 18px 13px;
-    border: 1px solid #31515c;
+    border: 1px solid var(--lab-border-strong);
     border-radius: 12px;
-    background: #0e2029;
+    background: var(--lab-panel-soft);
     text-align: center;
 }
 
@@ -1778,58 +1802,58 @@ progress::-moz-progress-bar {
 }
 
 .network-node strong {
-    color: #9eeed3;
+    color: var(--lab-accent);
     font-family: var(--mono);
     font-size: 11px;
 }
 
 .network-node span {
     margin-top: 5px;
-    color: #6f8992;
+    color: var(--lab-muted);
     font-size: 10px;
 }
 
 .network-edge {
     flex: 1;
     height: 1px;
-    background: #31515c;
+    background: var(--lab-border-strong);
 }
 
 .lab-result {
     margin-top: 14px;
     padding: 14px;
-    border: 1px solid #28444e;
+    border: 1px solid var(--lab-border-strong);
     border-radius: 10px;
-    background: #0d1b23;
-    color: #a9bdbb;
+    background: var(--lab-panel-soft);
+    color: var(--lab-text-soft);
     font-family: var(--mono);
     font-size: 11px;
     white-space: pre-wrap;
 }
 
 .lab-result.success {
-    border-color: #357b65;
-    background: #0c251d;
-    color: #9eeed3;
+    border-color: var(--lab-border-strong);
+    background: var(--lab-accent-soft);
+    color: var(--lab-accent);
 }
 
 .completion-receipt {
     margin-top: 18px;
     padding: 18px;
-    border: 1px solid #3b826c;
+    border: 1px solid var(--lab-border-strong);
     border-radius: 12px;
-    background: linear-gradient(135deg, #102e25, #0b1b18);
+    background: linear-gradient(135deg, var(--lab-accent-soft), var(--lab-panel));
 }
 
 .completion-receipt h2 {
     margin: 0 0 5px;
-    color: #9ef2d5;
+    color: var(--lab-accent);
     font-size: 19px;
 }
 
 .completion-receipt p {
     margin: 0 0 13px;
-    color: #89aaa0;
+    color: var(--lab-text-soft);
     font-size: 12px;
 }
 
@@ -1847,7 +1871,7 @@ progress::-moz-progress-bar {
 
 .sandbox-label {
     margin-top: 22px;
-    color: #667d76;
+    color: var(--lab-muted);
     font-family: var(--mono);
     font-size: 9px;
     letter-spacing: .08em;
@@ -1857,19 +1881,19 @@ progress::-moz-progress-bar {
     width: 100%;
     min-height: 150px;
     margin-top: 7px;
-    border: 1px solid #c4d4cf;
+    border: 1px solid var(--lab-border);
     border-radius: 10px;
-    background: #f4f7f6;
+    background: var(--lab-panel-strong);
 }
 
 .response-inspector {
     margin: 20px 0 0;
     padding: 17px;
     overflow: auto;
-    border: 1px solid #ced9d5;
+    border: 1px solid var(--lab-border);
     border-radius: 10px;
-    background: #f7faf9;
-    color: #254139;
+    background: var(--lab-panel-strong);
+    color: var(--lab-text);
     font-family: var(--mono);
     font-size: 11px;
     line-height: 1.65;
@@ -1879,10 +1903,10 @@ progress::-moz-progress-bar {
 .response-inspector.dark {
     margin: 0;
     border: 0;
-    border-top: 1px solid #1c323c;
+    border-top: 1px solid var(--lab-border);
     border-radius: 0;
-    background: #061016;
-    color: #9fb7b4;
+    background: var(--lab-code);
+    color: var(--lab-text-soft);
 }
 
 .request-response-grid {
@@ -1895,9 +1919,9 @@ progress::-moz-progress-bar {
 .request-composer,
 .response-card {
     padding: 19px;
-    border: 1px solid #1f3741;
+    border: 1px solid var(--lab-border);
     border-radius: 13px;
-    background: #0a161e;
+    background: var(--lab-panel);
 }
 
 .composer-head {
@@ -1910,14 +1934,14 @@ progress::-moz-progress-bar {
 
 .composer-head h2 {
     margin: 3px 0 0;
-    color: #e0ebe8;
+    color: var(--lab-text);
     font-size: 18px;
 }
 
 .request-composer label {
     display: block;
     margin-bottom: 7px;
-    color: #6f8992;
+    color: var(--lab-muted);
     font-size: 10px;
 }
 
@@ -1925,11 +1949,11 @@ progress::-moz-progress-bar {
     width: 100%;
     resize: vertical;
     padding: 14px;
-    border: 1px solid #294650;
+    border: 1px solid var(--lab-border-strong);
     border-radius: 9px;
     outline: none;
-    background: #050d12;
-    color: #bcd0cb;
+    background: var(--lab-code);
+    color: var(--lab-text-soft);
     font-family: var(--mono);
     font-size: 11px;
     line-height: 1.6;
@@ -1937,8 +1961,8 @@ progress::-moz-progress-bar {
 }
 
 .request-composer textarea:focus {
-    border-color: #4f9d85;
-    box-shadow: 0 0 0 3px rgba(76, 181, 146, .09);
+    border-color: var(--lab-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .request-composer .button {
@@ -1947,9 +1971,9 @@ progress::-moz-progress-bar {
 
 .response-event {
     padding: 13px;
-    border: 1px solid #213c46;
+    border: 1px solid var(--lab-border);
     border-radius: 9px;
-    background: #0d1d25;
+    background: var(--lab-panel-soft);
 }
 
 .response-event strong,
@@ -1958,14 +1982,14 @@ progress::-moz-progress-bar {
 }
 
 .response-event strong {
-    color: #86dfc1;
+    color: var(--lab-accent);
     font-family: var(--mono);
     font-size: 10px;
 }
 
 .response-event span {
     margin-top: 6px;
-    color: #8ca3a6;
+    color: var(--lab-muted);
     font-size: 11px;
 }
 
@@ -1979,17 +2003,17 @@ progress::-moz-progress-bar {
 .header-list span {
     padding: 8px 9px;
     border-radius: 7px;
-    background: #061017;
-    color: #78939a;
+    background: var(--lab-code);
+    color: var(--lab-muted);
     font-family: var(--mono);
     font-size: 9px;
     overflow-wrap: anywhere;
 }
 
 .lab-result.error {
-    border-color: #65383b;
-    background: #241416;
-    color: #f2a3a3;
+    border-color: color-mix(in srgb, var(--red) 45%, var(--lab-border));
+    background: color-mix(in srgb, var(--red) 9%, var(--lab-panel));
+    color: var(--red);
 }
 
 @media (max-width: 920px) {

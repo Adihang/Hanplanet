@@ -1243,7 +1243,16 @@
         let lastRatio    = -1;  // 마지막 hover 위치 (metadata 로드 후 재처리용)
         let lastClientX  = -1;
         let lastProgEl   = null;
+        let hoveringProgress = false;
         let disposed     = false;
+
+        function hideThumbnailPreview() {
+            hoveringProgress = false;
+            lastRatio = -1;
+            lastClientX = -1;
+            lastProgEl = null;
+            tooltip.hidden = true;
+        }
 
         function cleanupThumbVideo() {
             if (disposed) return;
@@ -1275,7 +1284,7 @@
         thumbVid.addEventListener('loadedmetadata', () => {
             metaReady = true;
             // preload:none 미니 플레이어: metadata 로드 후 마지막 hover 위치로 즉시 seek
-            if (lastRatio >= 0 && thumbVid.duration) {
+            if (hoveringProgress && lastRatio >= 0 && thumbVid.duration) {
                 pendingTime = lastRatio * thumbVid.duration;
                 tooltip.hidden = false;
                 if (lastProgEl && lastClientX >= 0) {
@@ -1306,6 +1315,7 @@
 
             // preload:none 미니 플레이어용: mouseenter 시 thumbVid 소스 미리 로드
             progEl.addEventListener('mouseenter', () => {
+                hoveringProgress = true;
                 if (!thumbVid.src) {
                     const startup = resolveStartupSource(el, { allowUnsupportedFallback: false });
                     const src = (startup.kind === 'faststart' ? startup.src : '')
@@ -1319,6 +1329,7 @@
             });
 
             progEl.addEventListener('mousemove', (e) => {
+                hoveringProgress = true;
                 const progRect   = progEl.getBoundingClientRect();
                 const ratio = Math.max(0, Math.min(1, (e.clientX - progRect.left) / progRect.width));
                 lastRatio = ratio;  // metadata 로드 후 재처리용
@@ -1339,7 +1350,7 @@
                 if (!seeking) doSeek();
             });
 
-            progEl.addEventListener('mouseleave', () => { tooltip.hidden = true; });
+            progEl.addEventListener('mouseleave', hideThumbnailPreview);
         });
     }
 

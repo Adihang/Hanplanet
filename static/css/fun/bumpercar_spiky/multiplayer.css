@@ -1299,9 +1299,7 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
     align-items: center;
     justify-content: center;
     padding: 24px;
-    background: var(--site-modal-backdrop-surface-bg, transparent);
-    -webkit-backdrop-filter: var(--site-modal-backdrop-filter, none);
-    backdrop-filter: var(--site-modal-backdrop-filter, none);
+    background: var(--site-modal-backdrop-bg, rgb(0 0 0 / 0.24));
     isolation: isolate;
 }
 
@@ -1361,7 +1359,6 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
 }
 
 .multiplayer-death-modal {
-    --site-modal-head-follow-gap: 22px;
     position: relative;
     z-index: 1;
     display: flex;
@@ -1369,10 +1366,10 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
     align-items: center;
     gap: 22px;
     text-align: center;
-    box-shadow: var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 15 23 42) / var(--site-modal-backdrop-opacity, 0.24)));
 }
 
-.multiplayer-death-modal-header.site-modal-head {
+.multiplayer-death-modal-header {
+    display: flex;
     justify-content: center;
 }
 

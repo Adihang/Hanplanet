@@ -101,6 +101,7 @@ urlpatterns = [
     path('handrive/api/editor-completions', handrive_views.handrive_api_editor_completions, name='handrive_api_editor_completions'),
     path('handrive/api/list', handrive_views.handrive_api_list, name='handrive_api_list'),
     path('handrive/api/search', handrive_views.handrive_api_search, name='handrive_api_search'),
+    path('handrive/api/git/commit', handrive_views.handrive_api_git_commit, name='handrive_api_git_commit'),
     path('handrive/api/save', handrive_views.handrive_api_save, name='handrive_api_save'),
     path('handrive/api/spreadsheet/save', handrive_views.handrive_api_spreadsheet_save, name='handrive_api_spreadsheet_save'),
     path('handrive/api/preview', handrive_views.handrive_api_preview, name='handrive_api_preview'),

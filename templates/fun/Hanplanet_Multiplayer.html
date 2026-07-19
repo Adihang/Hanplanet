@@ -99,7 +99,13 @@
                                         data-game-start-character-image
                                     >
                                 </button>
-                                <button class="ui-btn ui-btn-primary multiplayer-primary-btn multiplayer-start-button" type="button" data-game-start>
+                                <button
+                                    class="ui-btn ui-btn-primary multiplayer-primary-btn multiplayer-start-button"
+                                    type="button"
+                                    data-game-start
+                                    data-start-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_start_button' %}"
+                                    data-continue-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_continue_button' %}"
+                                >
                                     {% include 'partials/ui_i18n.html' with key='multiplayer_start_button' %}
                                 </button>
                                 {% if not request.user.is_authenticated %}

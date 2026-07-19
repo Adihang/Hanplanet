@@ -205,6 +205,10 @@ ALLOWED_HOSTS = env_list(
 )
 
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://www.hanplanet.com").rstrip("/")
+WARGAME_PUBLIC_URL = os.environ.get(
+    "WARGAME_PUBLIC_URL",
+    "https://wargame.hanplanet.com/",
+).rstrip("/")
 CANONICAL_PUBLIC_HOST_REDIRECT = load_optional_bool_secret(
     "CANONICAL_PUBLIC_HOST_REDIRECT",
     default=not DEBUG and not RUNNING_TESTS,

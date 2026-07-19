@@ -10,6 +10,51 @@ final class LabSessionService
     private const TARGET_COOKIE = 'wargame_target';
     private const COMPLETION_COOKIE = 'wargame_completion';
 
+    /** @var array<string, string> */
+    private const TARGET_SLUGS = [
+        LabEngine::HTTP_HEADERS => 'aurora',
+        LabEngine::CLIENT_TRUST => 'leaf',
+        LabEngine::IDOR => 'nova',
+        LabEngine::SQLI_LOGIN => 'comet',
+        LabEngine::SQLI_UNION => 'helios',
+        LabEngine::REFLECTED_XSS => 'prism',
+        LabEngine::PATH_TRAVERSAL => 'atlas',
+        LabEngine::UPLOAD_VALIDATION => 'pixelpet',
+        LabEngine::JWT_VALIDATION => 'vector',
+        LabEngine::SSRF => 'lumen',
+        LabEngine::OPERATION_NIGHTFALL => 'nightfall',
+    ];
+
+    public static function targetSlug(string $missionId): string
+    {
+        $slug = self::TARGET_SLUGS[$missionId] ?? null;
+        if (!is_string($slug)) {
+            throw new InvalidArgumentException('존재하지 않는 타깃 경로입니다.');
+        }
+        return $slug;
+    }
+
+    public static function missionForTargetSlug(string $slug): ?string
+    {
+        $missionId = array_search(strtolower(trim($slug)), self::TARGET_SLUGS, true);
+        return is_string($missionId) ? $missionId : null;
+    }
+
+    public static function targetBasePath(string $missionId): string
+    {
+        return '/' . self::targetSlug($missionId);
+    }
+
+    public static function targetEntryPath(string $missionId): string
+    {
+        $profiles = LabEngine::targetProfiles();
+        $entryPath = (string) ($profiles[$missionId]['entry_path'] ?? '/');
+        if ($entryPath === '' || $entryPath[0] !== '/') {
+            throw new RuntimeException('타깃 시작 경로가 올바르지 않습니다.');
+        }
+        return self::targetBasePath($missionId) . $entryPath;
+    }
+
     public static function launchFor(array $user, string $missionId): array
     {
         if (!in_array($missionId, LabEngine::stableIds(), true) || wargame_mission($missionId) === null) {
@@ -17,7 +62,7 @@ final class LabSessionService
         }
 
         self::cleanupExpired();
-        $ownerKey = wargame_owner_key((string) $user['username']);
+        $ownerKey = wargame_owner_key($user);
         $active = $_SESSION['active_targets'][$missionId] ?? null;
         if (is_array($active)) {
             $instanceId = (string) ($active['id'] ?? '');
@@ -27,7 +72,7 @@ final class LabSessionService
                 && (string) $row['owner_key_hash'] === $ownerKey
                 && (int) $row['expires_at'] > time()
                 && hash_equals((string) $row['access_token_hash'], hash('sha256', $token))) {
-                self::setTargetCookie($instanceId, $token, (int) $row['expires_at']);
+                self::setTargetCookie($missionId, $instanceId, $token, (int) $row['expires_at']);
                 return $row;
             }
         }
@@ -64,7 +109,7 @@ final class LabSessionService
         }
 
         $_SESSION['active_targets'][$missionId] = ['id' => $instanceId, 'token' => $accessToken];
-        self::setTargetCookie($instanceId, $accessToken, $expiresAt);
+        self::setTargetCookie($missionId, $instanceId, $accessToken, $expiresAt);
         self::recordEvent($instanceId, 'instance_started', ['challenge_id' => $missionId]);
         return self::instanceRow($instanceId) ?? throw new RuntimeException('실습 인스턴스를 저장하지 못했습니다.');
     }
@@ -101,6 +146,28 @@ final class LabSessionService
             'engine' => new LabEngine($directory),
             'response' => $lastResponse,
         ];
+    }
+
+    public static function targetContextForSlug(string $slug): ?array
+    {
+        $missionId = self::missionForTargetSlug($slug);
+        if ($missionId === null) {
+            return null;
+        }
+        $context = self::targetContext();
+        if (!is_array($context) || (string) ($context['row']['challenge_id'] ?? '') !== $missionId) {
+            return null;
+        }
+        return $context;
+    }
+
+    public static function contextBelongsTo(array $context, array $user): bool
+    {
+        try {
+            return hash_equals((string) ($context['row']['owner_key_hash'] ?? ''), wargame_owner_key($user));
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     public static function targetCsrf(array $context): string
@@ -152,42 +219,89 @@ final class LabSessionService
             throw new RuntimeException('완료 조건이 아직 충족되지 않았습니다.');
         }
 
-        $existingCookie = (string) ($_COOKIE[self::COMPLETION_COOKIE] ?? '');
-        if (preg_match('/^([a-f0-9]{32})\.([a-f0-9]{64})$/', $existingCookie, $match)
-            && hash_equals((string) $context['instance_id'], $match[1])) {
-            $existing = wargame_db()->prepare(
-                'SELECT 1 FROM completion_tickets WHERE ticket_hash = :ticket AND instance_id = :instance '
-                . 'AND consumed_at IS NULL AND expires_at >= :now LIMIT 1'
-            );
-            $existing->execute([
-                'ticket' => hash('sha256', $match[2]),
-                'instance' => (string) $context['instance_id'],
-                'now' => time(),
-            ]);
-            if ($existing->fetchColumn()) {
-                return $match[2];
-            }
+        $proof = (string) (($snapshot['output']['proof'] ?? null) ?: '');
+        if ($proof === '') {
+            throw new RuntimeException('완료 증거를 확인할 수 없습니다.');
         }
 
-        $ticket = bin2hex(random_bytes(32));
+        // The raw ticket is reproducible only by this service. Returning the same
+        // ticket after a reload makes the browser handoff retry-safe without ever
+        // storing a bearer credential in SQLite.
+        $ticket = hash_hmac('sha256', implode("\n", [
+            'completion-ticket-v1',
+            (string) $context['instance_id'],
+            (string) $context['row']['challenge_id'],
+            $proof,
+        ]), wargame_app_secret());
+        $ticketHash = hash('sha256', $ticket);
         $expiresAt = time() + self::TICKET_TTL;
         $statement = wargame_db()->prepare(
-            'INSERT INTO completion_tickets (ticket_hash, instance_id, challenge_id, owner_key_hash, expires_at, consumed_at) '
+            'INSERT OR IGNORE INTO completion_tickets (ticket_hash, instance_id, challenge_id, owner_key_hash, expires_at, consumed_at) '
             . 'VALUES (:ticket, :instance, :challenge, :owner, :expires, NULL)'
         );
         $statement->execute([
-            'ticket' => hash('sha256', $ticket),
+            'ticket' => $ticketHash,
             'instance' => (string) $context['instance_id'],
             'challenge' => (string) $context['row']['challenge_id'],
             'owner' => (string) $context['row']['owner_key_hash'],
             'expires' => $expiresAt,
         ]);
-        self::setCompletionCookie((string) $context['instance_id'], $ticket, $expiresAt);
-        self::recordEvent((string) $context['instance_id'], 'completion_ticket_issued', []);
+
+        $lookup = wargame_db()->prepare(
+            'SELECT instance_id, challenge_id, owner_key_hash, expires_at, consumed_at '
+            . 'FROM completion_tickets WHERE ticket_hash = :ticket LIMIT 1'
+        );
+        $lookup->execute(['ticket' => $ticketHash]);
+        $row = $lookup->fetch();
+        if (!is_array($row)
+            || !hash_equals((string) $row['instance_id'], (string) $context['instance_id'])
+            || !hash_equals((string) $row['owner_key_hash'], (string) $context['row']['owner_key_hash'])
+            || (string) $row['challenge_id'] !== (string) $context['row']['challenge_id']) {
+            throw new RuntimeException('완료 증표를 안전하게 예약하지 못했습니다.');
+        }
+
+        if (($row['consumed_at'] === null || (int) $row['consumed_at'] < 0)
+            && (int) $row['expires_at'] < time()) {
+            wargame_db()->prepare(
+                'UPDATE completion_tickets SET expires_at = :expires '
+                . 'WHERE ticket_hash = :ticket AND (consumed_at IS NULL OR consumed_at < 0)'
+            )->execute(['expires' => $expiresAt, 'ticket' => $ticketHash]);
+        }
+        if ($row['consumed_at'] === null || (int) $row['consumed_at'] < 0) {
+            self::setCompletionCookie((string) $context['instance_id'], $ticket, $expiresAt);
+        }
+        if ($statement->rowCount() === 1) {
+            self::recordEvent((string) $context['instance_id'], 'completion_ticket_issued', []);
+        }
         return $ticket;
     }
 
-    public static function claimCompletion(array $user, string $ticket): array
+    public static function completionHandoffToken(string $ticket): string
+    {
+        if (!preg_match('/^[a-f0-9]{64}$/', $ticket)) {
+            throw new InvalidArgumentException('완료 증표 형식이 올바르지 않습니다.');
+        }
+        return hash_hmac(
+            'sha256',
+            "completion-handoff-v1\n" . hash('sha256', $ticket),
+            wargame_app_secret(),
+        );
+    }
+
+    public static function requireCompletionHandoff(string $ticket, mixed $submitted): void
+    {
+        if (!is_string($submitted)
+            || !preg_match('/^[a-f0-9]{64}$/', $submitted)
+            || !hash_equals(self::completionHandoffToken($ticket), $submitted)) {
+            throw new InvalidArgumentException('완료 기록 요청이 만료되었습니다. 타깃 페이지에서 다시 시도해 주세요.');
+        }
+    }
+
+    /**
+     * @param null|callable(array,string,string):array $solveRecorder
+     * @return array{challenge_id:string,ticket_hash:string,already_claimed:bool}
+     */
+    public static function claimCompletion(array $user, string $ticket, ?callable $solveRecorder = null): array
     {
         if (!preg_match('/^[a-f0-9]{64}$/', $ticket)) {
             throw new InvalidArgumentException('완료 증표 형식이 올바르지 않습니다.');
@@ -195,14 +309,14 @@ final class LabSessionService
 
         $ticketHash = hash('sha256', $ticket);
         $statement = wargame_db()->prepare(
-            'SELECT * FROM completion_tickets WHERE ticket_hash = :ticket AND consumed_at IS NULL AND expires_at >= :now LIMIT 1'
+            'SELECT * FROM completion_tickets WHERE ticket_hash = :ticket LIMIT 1'
         );
-        $statement->execute(['ticket' => $ticketHash, 'now' => time()]);
+        $statement->execute(['ticket' => $ticketHash]);
         $row = $statement->fetch();
         if (!is_array($row)) {
             throw new InvalidArgumentException('완료 증표가 만료되었거나 이미 사용되었습니다.');
         }
-        $ownerKey = wargame_owner_key((string) $user['username']);
+        $ownerKey = wargame_owner_key($user);
         if (!hash_equals((string) $row['owner_key_hash'], $ownerKey)) {
             throw new InvalidArgumentException('이 완료 증표는 현재 계정의 것이 아닙니다.');
         }
@@ -211,29 +325,75 @@ final class LabSessionService
             throw new RuntimeException('완료 증표의 커리큘럼 버전이 올바르지 않습니다.');
         }
 
-        mark_solved_with_django($user, $challengeId, $ticketHash);
+        $now = time();
+        $consumedAt = $row['consumed_at'] === null ? null : (int) $row['consumed_at'];
+        if (is_int($consumedAt) && $consumedAt > 0) {
+            self::clearCompletionCookie();
+            return ['challenge_id' => $challengeId, 'ticket_hash' => $ticketHash, 'already_claimed' => true];
+        }
+        if ((int) $row['expires_at'] < $now) {
+            throw new InvalidArgumentException('완료 증표가 만료되었거나 이미 사용되었습니다.');
+        }
+
+        if (is_int($consumedAt) && $consumedAt < 0) {
+            $claimedAt = intdiv(-$consumedAt, 1_000_000);
+            if ($claimedAt > $now - 30) {
+                throw new RuntimeException('완료 기록을 이미 처리 중입니다. 잠시 후 진행 현황을 확인해 주세요.');
+            }
+        }
+
+        $claimMarker = -($now * 1_000_000 + random_int(1, 999_999));
+        $claimSql = 'UPDATE completion_tickets SET consumed_at = :marker '
+            . 'WHERE ticket_hash = :ticket AND expires_at >= :now AND ';
+        $claimValues = ['marker' => $claimMarker, 'ticket' => $ticketHash, 'now' => $now];
+        if ($consumedAt === null) {
+            $claimSql .= 'consumed_at IS NULL';
+        } else {
+            $claimSql .= 'consumed_at = :previous AND consumed_at < 0';
+            $claimValues['previous'] = $consumedAt;
+        }
+        $claim = wargame_db()->prepare($claimSql);
+        $claim->execute($claimValues);
+        if ($claim->rowCount() !== 1) {
+            $statement->execute(['ticket' => $ticketHash]);
+            $latest = $statement->fetch();
+            if (is_array($latest) && (int) ($latest['consumed_at'] ?? 0) > 0) {
+                self::clearCompletionCookie();
+                return ['challenge_id' => $challengeId, 'ticket_hash' => $ticketHash, 'already_claimed' => true];
+            }
+            throw new RuntimeException('완료 기록을 이미 처리 중입니다. 잠시 후 진행 현황을 확인해 주세요.');
+        }
+
+        try {
+            if ($solveRecorder !== null) {
+                $solveRecorder($user, $challengeId, $ticketHash);
+            } else {
+                mark_solved_with_django($user, $challengeId, $ticketHash);
+            }
+        } catch (Throwable $exception) {
+            wargame_db()->prepare(
+                'UPDATE completion_tickets SET consumed_at = NULL '
+                . 'WHERE ticket_hash = :ticket AND consumed_at = :marker'
+            )->execute(['ticket' => $ticketHash, 'marker' => $claimMarker]);
+            throw $exception;
+        }
+
         $consume = wargame_db()->prepare(
-            'UPDATE completion_tickets SET consumed_at = :now WHERE ticket_hash = :ticket AND consumed_at IS NULL'
+            'UPDATE completion_tickets SET consumed_at = :now '
+            . 'WHERE ticket_hash = :ticket AND consumed_at = :marker'
         );
-        $consume->execute(['now' => time(), 'ticket' => $ticketHash]);
+        $consume->execute(['now' => time(), 'ticket' => $ticketHash, 'marker' => $claimMarker]);
         if ($consume->rowCount() !== 1) {
-            throw new RuntimeException('완료 증표가 동시에 사용되었습니다. 진행 기록은 계정에 안전하게 저장되었습니다.');
+            throw new RuntimeException('완료 기록 상태를 확정하지 못했습니다. 진행 기록은 계정에 안전하게 저장되었습니다.');
         }
         self::clearCompletionCookie();
         self::recordEvent((string) $row['instance_id'], 'completion_claimed', ['challenge_id' => $challengeId]);
-        return ['challenge_id' => $challengeId, 'ticket_hash' => $ticketHash];
+        return ['challenge_id' => $challengeId, 'ticket_hash' => $ticketHash, 'already_claimed' => false];
     }
 
     public static function clearTargetCookie(): void
     {
-        setcookie(self::TARGET_COOKIE, '', [
-            'expires' => 1,
-            'path' => '/lab.php',
-            'domain' => '',
-            'secure' => function_exists('wargame_is_https') ? wargame_is_https() : self::requestIsHttps(),
-            'httponly' => true,
-            'samesite' => 'Strict',
-        ]);
+        self::clearTargetCookieValues();
         self::clearCompletionCookie();
     }
 
@@ -241,7 +401,7 @@ final class LabSessionService
     {
         setcookie(self::COMPLETION_COOKIE, $instanceId . '.' . $ticket, [
             'expires' => $expiresAt,
-            'path' => '/lab.php',
+            'path' => '/',
             'domain' => '',
             'secure' => function_exists('wargame_is_https') ? wargame_is_https() : self::requestIsHttps(),
             'httponly' => true,
@@ -254,7 +414,7 @@ final class LabSessionService
     {
         setcookie(self::COMPLETION_COOKIE, '', [
             'expires' => 1,
-            'path' => '/lab.php',
+            'path' => '/',
             'domain' => '',
             'secure' => function_exists('wargame_is_https') ? wargame_is_https() : self::requestIsHttps(),
             'httponly' => true,
@@ -263,11 +423,12 @@ final class LabSessionService
         unset($_COOKIE[self::COMPLETION_COOKIE]);
     }
 
-    private static function setTargetCookie(string $instanceId, string $accessToken, int $expiresAt): void
+    private static function setTargetCookie(string $missionId, string $instanceId, string $accessToken, int $expiresAt): void
     {
+        self::clearTargetCookieValues();
         setcookie(self::TARGET_COOKIE, $instanceId . '.' . $accessToken, [
             'expires' => $expiresAt,
-            'path' => '/lab.php',
+            'path' => self::targetBasePath($missionId) . '/',
             'domain' => '',
             'secure' => function_exists('wargame_is_https') ? wargame_is_https() : self::requestIsHttps(),
             'httponly' => true,
@@ -275,12 +436,35 @@ final class LabSessionService
         ]);
     }
 
+    private static function clearTargetCookieValues(): void
+    {
+        $paths = ['/lab.php', '/targets/', '/'];
+        foreach (self::TARGET_SLUGS as $slug) {
+            $paths[] = '/' . $slug . '/';
+        }
+        foreach (array_unique($paths) as $path) {
+            setcookie(self::TARGET_COOKIE, '', [
+                'expires' => 1,
+                'path' => $path,
+                'domain' => '',
+                'secure' => function_exists('wargame_is_https') ? wargame_is_https() : self::requestIsHttps(),
+                'httponly' => true,
+                'samesite' => 'Strict',
+            ]);
+        }
+        unset($_COOKIE[self::TARGET_COOKIE]);
+    }
+
     private static function requestIsHttps(): bool
     {
         if ((string) getenv('WARGAME_FORCE_SECURE_COOKIE') === '1') {
             return true;
         }
-        return !empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off';
+        if (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off') {
+            return true;
+        }
+        return (string) getenv('WARGAME_TRUST_PROXY') === '1'
+            && strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))) === 'https';
     }
 
     private static function instanceRow(string $instanceId): ?array

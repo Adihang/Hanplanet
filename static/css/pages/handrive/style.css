@@ -4863,6 +4863,21 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     background-image: url("/static/media/icons/handrive/folder_empty-list.png?v=20260629");
 }
 
+.handrive-item-type-icon.is-dir.is-trash-empty::before,
+.handrive-item-type-icon.is-dir.is-trash-full::before {
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+}
+
+.handrive-item-type-icon.is-dir.is-trash-empty::before {
+    background-image: url("/static/media/icons/handrive/trash-empty.png?v=20260720-2");
+}
+
+.handrive-item-type-icon.is-dir.is-trash-full::before {
+    background-image: url("/static/media/icons/handrive/trash-full.png?v=20260720-2");
+}
+
 .handrive-item-type-icon.is-dir.is-markdown-image-folder::before {
     content: "";
     width: 18px;

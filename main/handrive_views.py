@@ -171,6 +171,7 @@ HANDRIVE_GOOGLE_PENDING_AUTH_SESSION_KEY = "handrive_google_pending_auth"
 GOOGLE_DRIVE_VIRTUAL_PREFIX = ".google-drive-"
 HANDRIVE_GITHUB_URL_PREFIX = "github"
 HANDRIVE_GOOGLE_DRIVE_URL_PREFIX = "google-drive"
+HANDRIVE_TRASH_PUBLIC_SEGMENT = "trash"
 HANDRIVE_URL_ID_SEPARATOR = "~"
 GOOGLE_DRIVE_SELECTED_ITEM_LIMIT = 300
 HANDRIVE_SHARE_TOKEN_BYTES = 32
@@ -275,6 +276,8 @@ HANDRIVE_GUEST_ROOT = "guest"
 HANDRIVE_LEGACY_GUEST_ROOT = "all"
 HANDRIVE_GUEST_TUTORIAL_ROOT = "guest-tutorial"
 HANDRIVE_USER_TUTORIAL_DIR_NAME = "tutorial-temp"
+HANDRIVE_TRASH_DIR_NAME = ".handrive-trash"
+HANDRIVE_TRASH_INDEX_FILENAME = ".handrive-trash-index.json"
 HANDRIVE_TUTORIAL_PUBLIC_SEGMENT = "tutorial"
 HANDRIVE_GUEST_TUTORIAL_SESSION_KEY = "handrive_guest_tutorial_token"
 MARKDOWN_IMAGE_UPLOAD_EXTENSIONS = {
@@ -969,6 +972,9 @@ DOCS_TEXT = {
         "menu_rename": "이름 바꾸기",
         "menu_edit": "수정",
         "menu_delete": "삭제",
+        "menu_restore": "복원",
+        "menu_empty_trash": "휴지통 비우기",
+        "trash_name": "휴지통",
         "menu_create_repo": "Repo 생성",
         "menu_manage_repo": "Repo 관리",
         "menu_delete_repo": "Repo 삭제",
@@ -1012,6 +1018,9 @@ DOCS_TEXT = {
         "queue_status_delete_queued": "삭제 대기",
         "queue_status_deleting": "삭제 중",
         "queue_status_delete_done": "삭제 완료",
+        "queue_status_restore_queued": "복원 대기",
+        "queue_status_restoring": "복원 중",
+        "queue_status_restore_done": "복원 완료",
         "queue_status_move_queued": "이동 대기",
         "queue_status_moving": "이동 중",
         "queue_status_move_done": "이동 완료",
@@ -1517,6 +1526,9 @@ DOCS_TEXT = {
         "menu_rename": "Rename",
         "menu_edit": "Edit",
         "menu_delete": "Delete",
+        "menu_restore": "Restore",
+        "menu_empty_trash": "Empty Trash",
+        "trash_name": "Trash",
         "menu_create_repo": "Create Repo",
         "menu_manage_repo": "Manage Repo",
         "menu_delete_repo": "Delete Repo",
@@ -1804,6 +1816,9 @@ DOCS_TEXT = {
         "queue_status_delete_queued": "Delete queued",
         "queue_status_deleting": "Deleting",
         "queue_status_delete_done": "Deleted",
+        "queue_status_restore_queued": "Restore queued",
+        "queue_status_restoring": "Restoring",
+        "queue_status_restore_done": "Restore complete",
         "queue_status_move_queued": "Move queued",
         "queue_status_moving": "Moving",
         "queue_status_move_done": "Move complete",
@@ -3337,10 +3352,18 @@ def _find_sidecar_vtt(source_path: Path, root: Path) -> list[dict]:
     return result
 
 
-def render_handrive_media_safely(source_path: Path, relative_path: str, share_owner: str = "", share_slug: str = "", *, request=None) -> str:
+def render_handrive_media_safely(
+    source_path: Path,
+    relative_path: str,
+    share_owner: str = "",
+    share_slug: str = "",
+    *,
+    request=None,
+    file_extension: str | None = None,
+) -> str:
     """이미지·비디오·오디오 파일을 HanDrive 미리보기용 HTML로 감싼다."""
     source_url = escape(build_handrive_download_url(relative_path, share_owner=share_owner, share_slug=share_slug, request=request))
-    extension = source_path.suffix.lower()
+    extension = str(file_extension or source_path.suffix).lower()
     if extension in {".stl", ".obj"}:
         text = get_handrive_text(resolve_ui_lang(request)) if request is not None else {}
         reset_label = escape(text.get("model_preview_reset", "Reset 3D view"))
@@ -3832,7 +3855,14 @@ def render_handrive_content(
         DOCS_RENDER_MODE_MEDIA_AUDIO,
         DOCS_RENDER_MODE_MEDIA_3D,
     } and source_path is not None:
-        rendered = render_handrive_media_safely(source_path, relative_path, share_owner=share_owner, share_slug=share_slug, request=request)
+        rendered = render_handrive_media_safely(
+            source_path,
+            relative_path,
+            share_owner=share_owner,
+            share_slug=share_slug,
+            request=request,
+            file_extension=profile["extension"],
+        )
     else:
         rendered = render_plain_text_safely(content)
     return str(rendered), profile
@@ -5154,6 +5184,8 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
         current_dir_relative = relative_from_root(directory)
     except ValueError:
         current_dir_relative = ""
+    if request is not None and is_handrive_trash_root_relative(current_dir_relative):
+        return build_handrive_trash_entries(request, current_dir_relative)
     folder_icon_stems = set()
     folder_icon_owner_key = ""
     if request is not None and hasattr(request, "user"):
@@ -5252,6 +5284,12 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
                     entry["has_children"] = True
             entries.append(entry)
             existing_entry_paths.add(entry["path"])
+
+    if request is not None:
+        trash_root_entry = build_handrive_trash_root_entry(request, current_dir_relative)
+        if trash_root_entry is not None:
+            entries.append(trash_root_entry)
+            existing_entry_paths.add(trash_root_entry["path"])
 
     tutorial_git_entry = _handrive_tutorial_git_repository_entry_for_directory(
         request,
@@ -5358,7 +5396,7 @@ def list_directory_entries(directory: Path, request=None) -> list[dict]:
             entries.extend(sorted(google_drive_entries, key=lambda item: (0, item["name"].lower())))
             existing_entry_paths.update(entry["path"] for entry in google_drive_entries)
         if virtual_repo_entries or github_repo_entries or google_drive_entries:
-            entries.sort(key=lambda item: (0 if item.get("type") == "dir" else 1, item.get("name", "").lower()))
+            entries.sort(key=lambda item: (0 if item.get("type") in {"dir", "trash"} else 1, item.get("name", "").lower()))
 
     return entries
 
@@ -5451,6 +5489,51 @@ def _build_handrive_directory_meta(
     """목록 페이지가 현재 디렉터리를 클라이언트에서 재구성할 수 있도록 메타데이터를 반환한다."""
     normalized_dir = normalize_relative_path(current_dir, allow_empty=True)
     scoped_home_dir = get_scoped_handrive_home_dir(request)
+    if is_handrive_trash_item_relative(normalized_dir):
+        raise FileNotFoundError("휴지통 항목은 열 수 없습니다.")
+    if is_handrive_trash_root_relative(normalized_dir):
+        if normalized_dir != get_scoped_handrive_trash_root_relative(request):
+            raise FileNotFoundError("휴지통을 찾을 수 없습니다.")
+        effective_entries = entries if entries is not None else build_handrive_trash_entries(request, normalized_dir)
+        trash_entry = build_entry(ensure_handrive_trash_dir(normalized_dir))
+        return {
+            "path": normalized_dir,
+            "display_label": get_handrive_text(resolve_ui_lang(request)).get("trash_name", "휴지통"),
+            "is_root": False,
+            "can_edit": False,
+            "can_rename": False,
+            "can_delete": False,
+            "can_write_children": False,
+            "has_children": bool(effective_entries),
+            "is_trash_root": True,
+            "can_empty_trash": True,
+            "is_git_repo_root": False,
+            "requires_commit_message": False,
+            "git_branch_root": False,
+            "git_branch_path": "",
+            "has_uncommitted_changes": False,
+            "git_commit_id": "",
+            "git_commit_message": "",
+            "git_commit_author_username": "",
+            "modified_display": trash_entry.get("modified_display", ""),
+            "size_display": trash_entry.get("size_display", ""),
+            "write_acl_labels": [],
+            "git_repo": None,
+            "is_url_only": False,
+            "share_url": "",
+            "share_download_url": "",
+            "share_is_inherited": False,
+            "share_allowed_users": [],
+            "share_can_edit": False,
+            "share_can_manage": False,
+            "is_google_drive": False,
+            "google_drive": None,
+            "is_archive_virtual": False,
+            "archive_path": "",
+            "archive_member_path": "",
+            "archive_can_edit": False,
+            "archive_can_delete": False,
+        }
     google_drive = _parse_google_drive_virtual_path(request, normalized_dir)
     if google_drive is not None:
         return _build_google_drive_directory_meta(request, google_drive, entries)
@@ -5508,6 +5591,8 @@ def _build_handrive_directory_meta(
         "can_delete": has_handrive_write_access(request, normalized_dir) and not is_handrive_shared_root_locked_for_request(request, normalized_dir),
         "can_write_children": has_handrive_directory_write_access(request, normalized_dir),
         "has_children": bool(effective_entries),
+        "is_trash_root": False,
+        "can_empty_trash": False,
         "is_git_repo_root": bool(
             is_handrive_git_repo_root_path(request, normalized_dir)
             or (git_virtual is not None and git_virtual["kind"] == "repo_root")
@@ -6720,6 +6805,8 @@ def _build_git_virtual_breadcrumbs(request, base_url: str, current_path: str, *,
             root_url=root_url,
             request=request,
         )
+        if is_handrive_trash_root_relative(current_path) and breadcrumbs:
+            breadcrumbs[-1]["label"] = get_handrive_text(resolve_ui_lang(request)).get("trash_name", "휴지통")
         breadcrumbs = _apply_github_virtual_breadcrumb_labels(request, breadcrumbs)
         return _apply_google_drive_virtual_breadcrumb_labels(request, breadcrumbs)
 
@@ -7082,6 +7169,8 @@ def resolve_handrive_tutorial_public_route_path(request, parts: list[str], start
 
 
 def is_hidden_handrive_internal_directory_entry(parent_relative: str | None, child_name: str | None) -> bool:
+    if str(child_name or "") == HANDRIVE_TRASH_DIR_NAME:
+        return True
     if str(child_name or "") != HANDRIVE_USER_TUTORIAL_DIR_NAME:
         return False
     try:
@@ -7107,6 +7196,11 @@ def resolve_handrive_route_path(request, path_value: str | None) -> str:
     tutorial_route = resolve_handrive_tutorial_public_route_path(request, parts, start_index)
     if tutorial_route:
         return tutorial_route
+
+    if alias_prefix == HANDRIVE_TRASH_PUBLIC_SEGMENT and len(parts) == start_index + 1:
+        trash_root = get_scoped_handrive_trash_root_relative(request)
+        if trash_root:
+            return trash_root
 
     if alias_prefix == HANDRIVE_GITHUB_URL_PREFIX and len(parts) >= start_index + 3:
         owner_login = unquote(parts[start_index + 1])
@@ -7150,6 +7244,8 @@ def handrive_path_uses_internal_virtual_url(path_value: str | None) -> bool:
 def handrive_path_uses_internal_public_url(request, path_value: str | None) -> bool:
     if handrive_path_uses_internal_virtual_url(path_value):
         return True
+    if request is not None and is_handrive_trash_root_relative(path_value):
+        return True
     if request is None or not is_handrive_session_tutorial_path(request, path_value):
         return False
     return bool(build_handrive_user_tutorial_public_url_path(path_value))
@@ -7167,6 +7263,12 @@ def build_handrive_public_url_path(request, relative_path: str) -> str:
         tutorial_url_path = build_handrive_user_tutorial_public_url_path(normalized)
         if tutorial_url_path:
             return tutorial_url_path
+
+    if normalized == get_scoped_handrive_trash_root_relative(request):
+        return normalize_relative_path(
+            "/".join([part for part in [scoped_home_dir, HANDRIVE_TRASH_PUBLIC_SEGMENT] if part]),
+            allow_empty=False,
+        )
 
     google_drive = _parse_google_drive_virtual_path(request, normalized)
     if google_drive is not None:
@@ -7346,6 +7448,317 @@ def ensure_scoped_home_dir(scoped_home_dir: str) -> None:
         migrate_legacy_handrive_guest_root()
     path_obj, _ = resolve_path(scoped_home_dir, must_exist=False)
     path_obj.mkdir(parents=True, exist_ok=True)
+
+
+def get_handrive_trash_root_relative_for_path(path_value: str | None) -> str:
+    """``users/<username>`` 아래 경로의 사용자별 휴지통 경로를 반환한다."""
+    try:
+        normalized = normalize_relative_path(path_value, allow_empty=True)
+    except ValueError:
+        return ""
+    parts = [part for part in normalized.split("/") if part]
+    if len(parts) < 2 or parts[0] != "users":
+        return ""
+    return f"users/{parts[1]}/{HANDRIVE_TRASH_DIR_NAME}"
+
+
+def get_scoped_handrive_trash_root_relative(request) -> str:
+    """현재 HanDrive 사용자(관리자 전환 대상 포함)의 휴지통 경로를 반환한다."""
+    return get_handrive_trash_root_relative_for_path(get_scoped_handrive_home_dir(request))
+
+
+def is_handrive_trash_root_relative(path_value: str | None) -> bool:
+    try:
+        normalized = normalize_relative_path(path_value, allow_empty=True)
+    except ValueError:
+        return False
+    trash_root = get_handrive_trash_root_relative_for_path(normalized)
+    return bool(trash_root and normalized == trash_root)
+
+
+def is_handrive_trash_item_relative(path_value: str | None) -> bool:
+    try:
+        normalized = normalize_relative_path(path_value, allow_empty=True)
+    except ValueError:
+        return False
+    trash_root = get_handrive_trash_root_relative_for_path(normalized)
+    return bool(trash_root and normalized.startswith(trash_root + "/"))
+
+
+def is_handrive_trash_relative(path_value: str | None) -> bool:
+    return is_handrive_trash_root_relative(path_value) or is_handrive_trash_item_relative(path_value)
+
+
+def ensure_handrive_trash_dir(trash_root_relative: str) -> Path:
+    """휴지통 디렉터리를 만들고 경로를 반환한다."""
+    trash_dir, _ = resolve_path(trash_root_relative, must_exist=False)
+    trash_dir.mkdir(parents=True, exist_ok=True)
+    return trash_dir
+
+
+def _read_handrive_trash_index(trash_dir: Path) -> dict[str, dict]:
+    index_path = trash_dir / HANDRIVE_TRASH_INDEX_FILENAME
+    try:
+        raw = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    items = raw.get("items", raw)
+    if not isinstance(items, dict):
+        return {}
+    return {
+        str(storage_name): metadata
+        for storage_name, metadata in items.items()
+        if isinstance(metadata, dict)
+    }
+
+
+def _write_handrive_trash_index(trash_dir: Path, items: dict[str, dict]) -> None:
+    """인덱스 파일은 임시 파일 교체로 기록해 삭제 중단에도 깨지지 않게 한다."""
+    trash_dir.mkdir(parents=True, exist_ok=True)
+    index_path = trash_dir / HANDRIVE_TRASH_INDEX_FILENAME
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=trash_dir,
+        prefix=".handrive-trash-index-",
+        suffix=".tmp",
+        delete=False,
+    ) as temp_file:
+        json.dump({"version": 1, "items": items}, temp_file, ensure_ascii=False, sort_keys=True)
+        temp_file.write("\n")
+        temp_path = Path(temp_file.name)
+    try:
+        os.replace(temp_path, index_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+
+def _is_handrive_trash_storage_name(value: str | None) -> bool:
+    try:
+        uuid.UUID(str(value or ""))
+    except (ValueError, AttributeError):
+        return False
+    return True
+
+
+def _handrive_trash_payload_path(trash_dir: Path, storage_name: str) -> Path:
+    if not _is_handrive_trash_storage_name(storage_name):
+        raise ValueError("휴지통 항목이 올바르지 않습니다.")
+    return trash_dir / storage_name
+
+
+def move_handrive_item_to_trash(source_path: Path, source_relative: str) -> str:
+    """파일/폴더를 해당 사용자 루트의 휴지통으로 이동하고 원래 위치를 기록한다."""
+    trash_root_relative = get_handrive_trash_root_relative_for_path(source_relative)
+    if not trash_root_relative:
+        raise ValueError("사용자 HanDrive 항목만 휴지통으로 이동할 수 있습니다.")
+    owner_root = trash_root_relative.rsplit("/", 1)[0]
+    if source_relative == owner_root:
+        raise ValueError("사용자 루트 폴더는 삭제할 수 없습니다.")
+    trash_dir = ensure_handrive_trash_dir(trash_root_relative)
+    storage_name = str(uuid.uuid4())
+    destination_path = _handrive_trash_payload_path(trash_dir, storage_name)
+    if destination_path.exists() or destination_path.is_symlink():
+        raise OSError("휴지통 항목을 준비하지 못했습니다.")
+    items = _read_handrive_trash_index(trash_dir)
+    source_path.rename(destination_path)
+    items[storage_name] = {
+        "original_path": source_relative,
+        "original_name": source_path.name,
+        "deleted_at": timezone.now().isoformat(),
+    }
+    try:
+        _write_handrive_trash_index(trash_dir, items)
+    except OSError:
+        destination_path.rename(source_path)
+        raise
+    return f"{trash_root_relative}/{storage_name}"
+
+
+def build_handrive_trash_entries(request, trash_root_relative: str) -> list[dict]:
+    """휴지통 인덱스를 사용자에게 보이는 읽기 전용 항목 목록으로 변환한다."""
+    trash_dir = ensure_handrive_trash_dir(trash_root_relative)
+    items = _read_handrive_trash_index(trash_dir)
+    entries: list[dict] = []
+    stale_names: list[str] = []
+    for storage_name, metadata in items.items():
+        if not _is_handrive_trash_storage_name(storage_name):
+            stale_names.append(storage_name)
+            continue
+        payload_path = _handrive_trash_payload_path(trash_dir, storage_name)
+        if not (payload_path.exists() or payload_path.is_symlink()):
+            stale_names.append(storage_name)
+            continue
+        entry = build_entry(payload_path)
+        entry.update(
+            {
+                "name": str(metadata.get("original_name") or payload_path.name),
+                "path": f"{trash_root_relative}/{storage_name}",
+                "has_children": False,
+                "slug_path": "",
+                "can_edit": False,
+                "can_rename": False,
+                "can_read": True,
+                "can_demo_edit": False,
+                "can_write_children": False,
+                "can_delete": True,
+                "can_restore": True,
+                "is_trash_item": True,
+                "is_public_write": False,
+                "is_url_only": False,
+                "share_url": "",
+                "share_download_url": "",
+                "share_is_inherited": False,
+                "share_allowed_users": [],
+                "share_can_edit": False,
+                "share_can_manage": False,
+                "write_acl_labels": [],
+            }
+        )
+        entries.append(entry)
+    if stale_names:
+        for storage_name in stale_names:
+            items.pop(storage_name, None)
+        try:
+            _write_handrive_trash_index(trash_dir, items)
+        except OSError:
+            pass
+    return sorted(
+        entries,
+        key=lambda item: str(items.get(Path(str(item.get("path") or "")).name, {}).get("deleted_at") or ""),
+        reverse=True,
+    )
+
+
+def build_handrive_trash_root_entry(request, current_dir_relative: str) -> dict | None:
+    scoped_home_dir = get_scoped_handrive_home_dir(request)
+    if not scoped_home_dir or current_dir_relative != scoped_home_dir:
+        return None
+    trash_root_relative = get_scoped_handrive_trash_root_relative(request)
+    if not trash_root_relative:
+        return None
+    entries = build_handrive_trash_entries(request, trash_root_relative)
+    trash_entry = build_entry(ensure_handrive_trash_dir(trash_root_relative))
+    text = get_handrive_text(resolve_ui_lang(request))
+    return {
+        "name": text.get("trash_name", "휴지통"),
+        "path": trash_root_relative,
+        "type": "trash",
+        "has_children": bool(entries),
+        "modified_display": trash_entry.get("modified_display", ""),
+        "size_display": trash_entry.get("size_display", ""),
+        "can_edit": False,
+        "can_rename": False,
+        "can_read": True,
+        "can_demo_edit": False,
+        "can_write_children": False,
+        "can_delete": False,
+        "can_empty_trash": True,
+        "is_trash_root": True,
+        "is_public_write": False,
+        "is_url_only": False,
+        "share_url": "",
+        "share_download_url": "",
+        "share_is_inherited": False,
+        "share_allowed_users": [],
+        "share_can_edit": False,
+        "share_can_manage": False,
+        "write_acl_labels": [],
+    }
+
+
+def _get_scoped_handrive_trash_items(request, path_values: list[str]) -> tuple[Path, str, dict[str, dict], list[tuple[str, Path, dict]]]:
+    """현재 사용자 휴지통에 속한 API 대상만 검증해 반환한다."""
+    trash_root_relative = get_scoped_handrive_trash_root_relative(request)
+    if not trash_root_relative:
+        raise ValueError("휴지통을 사용할 수 없습니다.")
+    trash_dir = ensure_handrive_trash_dir(trash_root_relative)
+    items = _read_handrive_trash_index(trash_dir)
+    resolved_items: list[tuple[str, Path, dict]] = []
+    for path_value in path_values:
+        normalized = normalize_relative_path(path_value, allow_empty=False)
+        if not normalized.startswith(trash_root_relative + "/"):
+            raise ValueError("현재 사용자 휴지통의 항목만 처리할 수 있습니다.")
+        storage_name = normalized[len(trash_root_relative) + 1 :]
+        if "/" in storage_name or not _is_handrive_trash_storage_name(storage_name):
+            raise ValueError("휴지통 항목이 올바르지 않습니다.")
+        metadata = items.get(storage_name)
+        payload_path = _handrive_trash_payload_path(trash_dir, storage_name)
+        if metadata is None or not (payload_path.exists() or payload_path.is_symlink()):
+            raise FileNotFoundError("휴지통 항목을 찾을 수 없습니다.")
+        resolved_items.append((storage_name, payload_path, metadata))
+    return trash_dir, trash_root_relative, items, resolved_items
+
+
+def permanently_delete_handrive_trash_items(request, path_values: list[str]) -> list[str]:
+    trash_dir, trash_root_relative, items, resolved_items = _get_scoped_handrive_trash_items(request, path_values)
+    for storage_name, payload_path, _metadata in resolved_items:
+        if payload_path.is_dir() and not payload_path.is_symlink():
+            shutil.rmtree(payload_path)
+        else:
+            payload_path.unlink()
+        items.pop(storage_name, None)
+    _write_handrive_trash_index(trash_dir, items)
+    return [f"{trash_root_relative}/{storage_name}" for storage_name, _payload_path, _metadata in resolved_items]
+
+
+def restore_handrive_trash_items(request, path_values: list[str]) -> list[str]:
+    """휴지통 항목을 원래 경로로 복원한다. 사라진 상위 폴더는 자동 생성한다."""
+    trash_dir, trash_root_relative, items, resolved_items = _get_scoped_handrive_trash_items(request, path_values)
+    owner_root_relative = trash_root_relative.rsplit("/", 1)[0]
+    restore_targets: list[tuple[str, Path, dict, Path, str]] = []
+    destination_paths: set[Path] = set()
+    for storage_name, payload_path, metadata in resolved_items:
+        original_relative = normalize_relative_path(metadata.get("original_path"), allow_empty=False)
+        if (
+            original_relative == owner_root_relative
+            or not original_relative.startswith(owner_root_relative + "/")
+            or is_handrive_trash_relative(original_relative)
+        ):
+            raise ValueError("휴지통 원래 경로가 올바르지 않습니다.")
+        destination_path, destination_relative = resolve_path(original_relative, must_exist=False)
+        if destination_path.exists() or destination_path.is_symlink():
+            raise FileExistsError("원래 위치에 같은 이름의 항목이 이미 있습니다.")
+        if destination_path in destination_paths:
+            raise FileExistsError("복원 대상 경로가 중복됩니다.")
+        destination_paths.add(destination_path)
+        restore_targets.append((storage_name, payload_path, metadata, destination_path, destination_relative))
+
+    moved_items: list[tuple[Path, Path]] = []
+    try:
+        for storage_name, payload_path, _metadata, destination_path, _destination_relative in restore_targets:
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
+            payload_path.rename(destination_path)
+            moved_items.append((payload_path, destination_path))
+            items.pop(storage_name, None)
+        _write_handrive_trash_index(trash_dir, items)
+    except OSError:
+        for payload_path, destination_path in reversed(moved_items):
+            try:
+                if destination_path.exists() or destination_path.is_symlink():
+                    destination_path.rename(payload_path)
+            except OSError:
+                pass
+        raise
+    return [destination_relative for _storage_name, _payload_path, _metadata, _destination_path, destination_relative in restore_targets]
+
+
+def empty_handrive_trash(request) -> None:
+    trash_root_relative = get_scoped_handrive_trash_root_relative(request)
+    if not trash_root_relative:
+        raise ValueError("휴지통을 사용할 수 없습니다.")
+    trash_dir = ensure_handrive_trash_dir(trash_root_relative)
+    for child in trash_dir.iterdir():
+        if child.name == HANDRIVE_TRASH_INDEX_FILENAME:
+            continue
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+    _write_handrive_trash_index(trash_dir, {})
 
 
 def merge_handrive_acl_rules(source_rule: HandriveAccessRule, target_rule: HandriveAccessRule) -> None:
@@ -8593,6 +9006,8 @@ def get_handrive_display_label_for_path(request, path_value: str | None, ui_lang
         normalized_path = normalize_relative_path(path_value, allow_empty=True)
     except ValueError:
         return ""
+    if is_handrive_trash_root_relative(normalized_path):
+        return get_handrive_text(ui_lang or resolve_ui_lang(request)).get("trash_name", "휴지통")
     if normalized_path and is_handrive_session_tutorial_path(request, normalized_path):
         token = get_handrive_tutorial_token(request, create=False)
         tutorial_dir = build_handrive_session_tutorial_dir(request, token)
@@ -9722,6 +10137,8 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_preview_url": reverse("main:handrive_api_preview"),
             "handrive_api_rename_url": reverse("main:handrive_api_rename"),
             "handrive_api_delete_url": reverse("main:handrive_api_delete"),
+            "handrive_api_trash_restore_url": reverse("main:handrive_api_trash_restore"),
+            "handrive_api_trash_empty_url": reverse("main:handrive_api_trash_empty"),
             "handrive_api_mkdir_url": reverse("main:handrive_api_mkdir"),
             "handrive_api_move_url": reverse("main:handrive_api_move"),
             "handrive_api_archive_extract_url": reverse("main:handrive_api_archive_extract"),
@@ -13739,6 +14156,11 @@ def handrive_list(request, folder_path="", ui_lang=None):
                 return redirect(login_url + "?" + urlencode({"next": request.get_full_path()}))
             raise PermissionDenied("파일을 볼 권한이 없습니다.")
 
+    if requested_archive_virtual is None and is_handrive_trash_relative(requested_dir):
+        if shared_context or requested_dir != get_scoped_handrive_trash_root_relative(request):
+            raise Http404("휴지통 항목은 열 수 없습니다.")
+        ensure_handrive_trash_dir(requested_dir)
+
     current_dir = requested_dir
     archive_virtual = requested_archive_virtual
     directory_meta = None
@@ -13892,6 +14314,7 @@ def handrive_list(request, folder_path="", ui_lang=None):
             "current_dir_can_delete": directory_meta.get("can_delete", directory_meta["can_edit"]),
             "current_dir_can_write_children": directory_meta["can_write_children"],
             "current_dir_has_children": directory_meta["has_children"],
+            "current_dir_is_trash_root": directory_meta.get("is_trash_root", False),
             "current_dir_is_git_repo_root": directory_meta["is_git_repo_root"],
             "current_dir_requires_commit_message": directory_meta["requires_commit_message"],
             "current_dir_git_branch_root": directory_meta["git_branch_root"],
@@ -13959,6 +14382,8 @@ def handrive_view(request, doc_path, ui_lang=None):
         relative_file_path = normalize_relative_path(route_doc_path, allow_empty=False)
     except ValueError:
         raise Http404("파일을 찾을 수 없습니다.")
+    if is_handrive_trash_relative(relative_file_path):
+        raise Http404("휴지통 항목은 열 수 없습니다.")
     if (
         request.user.is_authenticated
         and not shared_context
@@ -15173,6 +15598,11 @@ def handrive_api_list(request):
             }
         )
 
+    if is_handrive_trash_relative(normalized):
+        if shared_context or normalized != get_scoped_handrive_trash_root_relative(request):
+            return json_error("휴지통 항목은 열 수 없습니다.", status=404)
+        ensure_handrive_trash_dir(normalized)
+
     google_drive = _parse_google_drive_virtual_path(request, normalized)
     git_virtual = None if google_drive is not None else _get_git_virtual_context(request, normalized)
     if google_drive is not None:
@@ -15521,6 +15951,8 @@ def handrive_api_rename(request):
 
     if source_relative == "":
         return json_error("루트 폴더는 이름을 바꿀 수 없습니다.", status=400)
+    if is_handrive_trash_relative(source_relative):
+        return json_error("휴지통 항목의 이름은 바꿀 수 없습니다.", status=400)
     if google_drive_source is not None:
         if google_drive_source["is_root"]:
             return json_error("Google Drive 루트는 이름을 바꿀 수 없습니다.", status=400)
@@ -15806,6 +16238,26 @@ def handrive_api_delete(request):
             return json_error(str(exc), status=400)
         return JsonResponse({"ok": True, "deleted_paths": [item[1] for item in effective_targets]})
 
+    trash_targets = [item for item in resolved_targets if is_handrive_trash_item_relative(item[1])]
+    if trash_targets:
+        if len(trash_targets) != len(resolved_targets):
+            return json_error("휴지통 항목과 일반 항목은 함께 삭제할 수 없습니다.", status=400)
+        try:
+            deleted_paths = permanently_delete_handrive_trash_items(
+                request,
+                [target_relative for _target_path, target_relative, _git_virtual in trash_targets],
+            )
+        except FileNotFoundError as exc:
+            return json_error(str(exc), status=404)
+        except ValueError as exc:
+            return json_error(str(exc), status=400)
+        except OSError as exc:
+            return json_error(f"휴지통 항목 삭제에 실패했습니다: {exc}", status=500)
+        return JsonResponse({"ok": True, "deleted_paths": deleted_paths, "permanently_deleted": True})
+
+    if any(is_handrive_trash_root_relative(item[1]) for item in resolved_targets):
+        return json_error("휴지통은 '휴지통 비우기'로만 비울 수 있습니다.", status=400)
+
     for target_path, target_relative, _git_virtual in resolved_targets:
         if target_relative == "":
             return json_error("루트 폴더는 삭제할 수 없습니다.", status=400)
@@ -15865,7 +16317,14 @@ def handrive_api_delete(request):
             git_repo.delete()
             deleted_paths.append(target_relative)
             continue
-        if target_path.is_dir():
+        if get_handrive_trash_root_relative_for_path(target_relative):
+            try:
+                move_handrive_item_to_trash(target_path, target_relative)
+            except ValueError as exc:
+                return json_error(str(exc), status=400)
+            except OSError as exc:
+                return json_error(f"휴지통으로 이동하지 못했습니다: {exc}", status=500)
+        elif target_path.is_dir():
             if target_path.is_symlink():
                 target_path.unlink()
             else:
@@ -15877,7 +16336,46 @@ def handrive_api_delete(request):
         delete_handrive_sync_excluded_paths_for_path(target_relative)
         deleted_paths.append(target_relative)
 
-    return JsonResponse({"ok": True, "deleted_paths": deleted_paths})
+    return JsonResponse({"ok": True, "deleted_paths": deleted_paths, "trashed": True})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_trash_restore(request):
+    """현재 사용자 휴지통의 선택 항목을 원래 위치로 복원한다."""
+    try:
+        payload = parse_json_body(request)
+        path_values = parse_path_values(payload, allow_empty=False)
+        restore_handrive_trash_items(request, path_values)
+    except FileNotFoundError as exc:
+        return json_error(str(exc), status=404)
+    except FileExistsError as exc:
+        return json_error(str(exc), status=409)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+    except OSError as exc:
+        return json_error(f"휴지통 복원에 실패했습니다: {exc}", status=500)
+    return JsonResponse({"ok": True, "restored_count": len(path_values)})
+
+
+@require_http_methods(["POST"])
+@csrf_protect
+@with_request_handrive_root
+def handrive_api_trash_empty(request):
+    """현재 사용자 휴지통을 비운다."""
+    try:
+        payload = parse_json_body(request) if request.body else {}
+        requested_path = normalize_relative_path(payload.get("path"), allow_empty=True)
+        trash_root_relative = get_scoped_handrive_trash_root_relative(request)
+        if requested_path and requested_path != trash_root_relative:
+            raise ValueError("현재 사용자 휴지통만 비울 수 있습니다.")
+        empty_handrive_trash(request)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+    except OSError as exc:
+        return json_error(f"휴지통 비우기에 실패했습니다: {exc}", status=500)
+    return JsonResponse({"ok": True})
 
 
 @require_http_methods(["POST"])
@@ -16310,6 +16808,8 @@ def handrive_api_mkdir(request):
 
     if not has_handrive_directory_write_access(request, parent_dir):
         return json_error("파일을 수정할 권한이 없습니다.", status=403)
+    if is_handrive_trash_relative(parent_dir):
+        return json_error("휴지통에는 새 항목을 만들 수 없습니다.", status=400)
     if google_drive_parent is not None:
         try:
             _ensure_google_drive_folder_context(google_drive_parent)
@@ -16398,6 +16898,7 @@ def handrive_api_move(request):
         google_drive_target = None if target_archive_virtual is not None else _parse_google_drive_virtual_path(request, target_dir_value)
         git_virtual_source = None if google_drive_source is not None or source_archive_virtual is not None else _get_git_virtual_context(request, source_path_value)
         git_virtual_target = None if google_drive_target is not None or target_archive_virtual is not None else _get_git_virtual_context(request, target_dir_value)
+        trash_source_item = None
         target_archive_path = None
         target_archive_relative = ""
         target_archive_member_path = ""
@@ -16408,7 +16909,22 @@ def handrive_api_move(request):
             source_path = None
             source_relative = source_path_value
         elif git_virtual_source is None:
-            source_path, source_relative = resolve_path(source_path_value, must_exist=True)
+            if is_handrive_trash_item_relative(source_path_value):
+                _trash_dir, _trash_root, _trash_items, resolved_items = _get_scoped_handrive_trash_items(
+                    request,
+                    [source_path_value],
+                )
+                storage_name, payload_path, metadata = resolved_items[0]
+                source_path = payload_path
+                source_relative = source_path_value
+                trash_source_item = {
+                    "storage_name": storage_name,
+                    "metadata": metadata,
+                    "items": _trash_items,
+                    "trash_dir": _trash_dir,
+                }
+            else:
+                source_path, source_relative = resolve_path(source_path_value, must_exist=True)
         else:
             source_path = None
             source_relative = source_path_value
@@ -16430,6 +16946,51 @@ def handrive_api_move(request):
 
     if source_relative == "":
         return json_error("루트 폴더는 이동할 수 없습니다.", status=400)
+    if is_handrive_trash_relative(target_dir_relative):
+        return json_error("휴지통에는 항목을 이동할 수 없습니다.", status=400)
+    if is_handrive_trash_relative(source_relative) and trash_source_item is None:
+        return json_error("휴지통 루트는 이동할 수 없습니다.", status=400)
+    if trash_source_item is not None:
+        if target_archive_virtual is not None or google_drive_target is not None or git_virtual_target is not None:
+            return json_error("휴지통 항목은 일반 HanDrive 폴더로만 이동할 수 있습니다.", status=400)
+        if not target_dir_path.is_dir():
+            return json_error("이동 대상 경로가 폴더가 아닙니다.", status=400)
+        if not has_handrive_directory_write_access(request, target_dir_relative):
+            return json_error("파일을 수정할 권한이 없습니다.", status=403)
+
+        source_is_dir = source_path.is_dir() and not source_path.is_symlink()
+        try:
+            source_name = validate_name(
+                str(trash_source_item["metadata"].get("original_name") or ""),
+                for_file=False,
+            )
+        except ValueError as exc:
+            return json_error(f"휴지통 원래 파일명이 올바르지 않습니다: {exc}", status=400)
+        destination_path = target_dir_path / source_name
+        if destination_path.exists() or destination_path.is_symlink():
+            return json_error("같은 이름의 항목이 이미 존재합니다.", status=409)
+
+        try:
+            source_path.rename(destination_path)
+            trash_source_item["items"].pop(trash_source_item["storage_name"], None)
+            _write_handrive_trash_index(trash_source_item["trash_dir"], trash_source_item["items"])
+        except OSError as exc:
+            if (destination_path.exists() or destination_path.is_symlink()) and not (source_path.exists() or source_path.is_symlink()):
+                try:
+                    destination_path.rename(source_path)
+                except OSError:
+                    pass
+            return json_error(f"휴지통 항목 이동에 실패했습니다: {exc}", status=500)
+
+        destination_relative = relative_from_root(destination_path)
+        response = {
+            "ok": True,
+            "path": destination_relative,
+            "type": "dir" if source_is_dir else "file",
+        }
+        if not source_is_dir:
+            response["slug_path"] = markdown_slug_from_relative(destination_relative)
+        return JsonResponse(response)
     if is_handrive_shared_root_locked_for_request(request, source_relative):
         return json_error("공유 루트 항목은 소유자만 이동할 수 있습니다.", status=403)
     if source_archive_virtual is not None:
@@ -16599,11 +17160,11 @@ def handrive_api_move(request):
             if git_virtual_source["kind"] == "repo_root" or (
                 git_virtual_source["kind"] == "branch_dir" and not git_virtual_source["repo_relative_path"]
             ):
-                return json_error("브랜치 루트는 이동할 수 없습니다.", status=400)
-            if str(git_virtual_source.get("repo_permission") or "").lower() not in {"write", "admin", "owner"}:
-                return json_error("파일을 수정할 권한이 없습니다.", status=403)
+                return json_error("브랜치 루트는 복사할 수 없습니다.", status=400)
+            if str(git_virtual_source.get("repo_permission") or "").lower() not in {"read", "write", "admin", "owner"}:
+                return json_error("파일을 볼 권한이 없습니다.", status=403)
             if not target_dir_path.is_dir():
-                return json_error("이동 대상 경로가 폴더가 아닙니다.", status=400)
+                return json_error("복사 대상 경로가 폴더가 아닙니다.", status=400)
             if not has_handrive_directory_write_access(request, target_dir_relative):
                 return json_error("파일을 수정할 권한이 없습니다.", status=403)
 
@@ -16613,40 +17174,42 @@ def handrive_api_move(request):
             if destination_path.exists() or destination_path.is_symlink():
                 return json_error("같은 이름의 항목이 이미 존재합니다.", status=409)
 
-            def _mutate(worktree_dir: Path) -> None:
-                source_target = _resolve_git_worktree_path(worktree_dir, source_repo_relative)
-                if not source_target.exists() and not source_target.is_symlink():
-                    raise ValueError("이동할 항목을 찾을 수 없습니다.")
-                extra_bytes, extra_entries = calculate_handrive_tree_usage(source_target)
-                enforce_handrive_scoped_quota(
-                    request,
-                    quota_path=target_dir_relative,
-                    extra_bytes=extra_bytes,
-                    extra_entries=extra_entries,
-                )
-                try:
-                    _copy_git_worktree_item(source_target, destination_path)
-                    _remove_git_worktree_item(source_target)
-                except Exception:
-                    if destination_path.exists() or destination_path.is_symlink():
-                        _remove_git_worktree_item(destination_path)
-                    raise
-                _ensure_gitkeep_if_empty(source_target.parent, worktree_dir)
-
             try:
-                _commit_git_branch_mutation(
+                draft_path = _get_handrive_git_draft_path(
                     git_virtual_source["repo"],
                     git_virtual_source["branch_name"],
-                    commit_message,
                     request.user,
-                    _mutate,
                 )
+                if draft_path is None:
+                    raise PermissionDenied("로그인이 필요합니다.")
+                with _handrive_git_draft_lock(draft_path):
+                    worktree_dir = _ensure_handrive_git_draft_worktree(
+                        git_virtual_source["repo"],
+                        git_virtual_source["branch_name"],
+                        request.user,
+                    )
+                    source_target = _resolve_git_worktree_path(worktree_dir, source_repo_relative)
+                    if not source_target.exists() and not source_target.is_symlink():
+                        raise ValueError("복사할 항목을 찾을 수 없습니다.")
+                    extra_bytes, extra_entries = calculate_handrive_tree_usage(source_target)
+                    enforce_handrive_scoped_quota(
+                        request,
+                        quota_path=target_dir_relative,
+                        extra_bytes=extra_bytes,
+                        extra_entries=extra_entries,
+                    )
+                    _copy_git_worktree_item(source_target, destination_path)
+            except PermissionDenied as exc:
+                return json_error(str(exc), status=403)
             except ValueError as exc:
                 return json_error(str(exc), status=400)
+            except (OSError, RuntimeError) as exc:
+                return json_error(f"Repo 항목 복사에 실패했습니다: {exc}", status=500)
 
             destination_relative = f"{target_dir_relative}/{source_name}" if target_dir_relative else source_name
             response = {
                 "ok": True,
+                "copied": True,
                 "path": destination_relative,
                 "type": "dir" if git_virtual_source["kind"] == "branch_dir" else "file",
             }
@@ -16655,13 +17218,13 @@ def handrive_api_move(request):
             return JsonResponse(response)
         if git_virtual_source is None and git_virtual_target is not None:
             if not target_dir_relative:
-                return json_error("이동 대상 경로가 올바르지 않습니다.", status=400)
+                return json_error("복사 대상 경로가 올바르지 않습니다.", status=400)
             if not target_dir_relative or git_virtual_target["kind"] != "branch_dir":
-                return json_error("이동 대상 경로가 폴더가 아닙니다.", status=400)
-            if not has_handrive_write_access(request, source_relative):
-                return json_error("파일을 수정할 권한이 없습니다.", status=403)
-            if source_path.is_file() and is_handrive_public_write_enabled(request, source_relative):
-                return json_error("전체 허용 파일은 이동할 수 없습니다.", status=403)
+                return json_error("복사 대상 경로가 폴더가 아닙니다.", status=400)
+            if not has_handrive_read_access(request, source_relative):
+                return json_error("파일을 볼 권한이 없습니다.", status=403)
+            if str(git_virtual_target.get("repo_permission") or "").lower() not in {"write", "admin", "owner"}:
+                return json_error("Repo에 파일을 추가할 권한이 없습니다.", status=403)
             source_was_dir = source_path.is_dir()
             source_name = source_path.name
             target_repo_relative = (
@@ -16674,6 +17237,8 @@ def handrive_api_move(request):
 
             def _mutate(worktree_dir: Path) -> None:
                 destination_target = _resolve_git_worktree_path(worktree_dir, target_repo_relative)
+                if destination_target.exists() or destination_target.is_symlink():
+                    raise ValueError("같은 이름의 항목이 이미 존재합니다.")
                 destination_target.parent.mkdir(parents=True, exist_ok=True)
                 _remove_gitkeep_placeholder(destination_target.parent)
                 _copy_local_item_to_git_worktree(source_path, destination_target)
@@ -16683,20 +17248,10 @@ def handrive_api_move(request):
             except ValueError as exc:
                 return json_error(str(exc), status=400)
 
-            if source_path.is_dir():
-                if source_path.is_symlink():
-                    source_path.unlink()
-                else:
-                    shutil.rmtree(source_path)
-            else:
-                source_path.unlink()
-            delete_handrive_acl_rules_for_path(source_relative)
-            delete_handrive_shared_links_for_path(source_relative)
-            delete_handrive_sync_excluded_paths_for_path(source_relative)
-
             destination_relative = f"{git_virtual_target['repo_root']}/{git_virtual_target['branch_segment']}/{target_repo_relative}"
             response = {
                 "ok": True,
+                "copied": True,
                 "path": destination_relative,
                 "type": "dir" if source_was_dir else "file",
             }
@@ -16873,6 +17428,8 @@ def handrive_api_upload(request):
     except (ValueError, FileNotFoundError) as exc:
         return json_error(str(exc), status=400)
 
+    if is_handrive_trash_relative(target_dir_relative):
+        return json_error("휴지통에는 업로드할 수 없습니다.", status=400)
     if target_archive_virtual is not None:
         if target_archive_path is None or not target_archive_path.is_file() or not is_handrive_supported_archive_path(target_archive_path):
             return json_error("지원하지 않는 압축파일입니다.", status=400)
@@ -17359,10 +17916,39 @@ def handrive_api_preview(request):
         payload = parse_json_body(request)
         preview_relative_path = normalize_relative_path(payload.get("path"), allow_empty=True)
         preview_target_dir = normalize_relative_path(payload.get("target_dir"), allow_empty=True)
+    except ValueError as exc:
+        return json_error(str(exc), status=400)
+
+    trash_preview_item = None
+    if is_handrive_trash_item_relative(preview_relative_path):
+        if shared_context:
+            return json_error("휴지통 항목은 열 수 없습니다.", status=404)
+        try:
+            _trash_dir, _trash_root, _trash_items, resolved_items = _get_scoped_handrive_trash_items(
+                request,
+                [preview_relative_path],
+            )
+        except (ValueError, FileNotFoundError) as exc:
+            return json_error(str(exc), status=404)
+        storage_name, payload_path, metadata = resolved_items[0]
+        if payload_path.is_dir() and not payload_path.is_symlink():
+            return json_error("파일을 찾을 수 없습니다.", status=404)
+        trash_preview_item = {
+            "storage_name": storage_name,
+            "payload_path": payload_path,
+            "name": str(metadata.get("original_name") or payload_path.name),
+        }
+    elif is_handrive_trash_relative(preview_relative_path) or is_handrive_trash_relative(preview_target_dir):
+        return json_error("휴지통 항목은 열 수 없습니다.", status=404)
+
+    try:
         if preview_relative_path:
             source_content_for_toggle = ""
             google_drive = _parse_google_drive_virtual_path(request, preview_relative_path)
             git_virtual = None if google_drive is not None else _get_git_virtual_context(request, preview_relative_path)
+            if trash_preview_item is not None:
+                google_drive = None
+                git_virtual = None
             if google_drive is not None:
                 if google_drive["is_root"]:
                     return json_error("파일을 찾을 수 없습니다.", status=404)
@@ -17435,10 +18021,13 @@ def handrive_api_preview(request):
                                 message=get_handrive_text(resolve_ui_lang(request)).get("list_preview_unsupported", "미리보기 미지원"),
                             )
                             render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
-            elif git_virtual is None:
+            elif git_virtual is None and trash_preview_item is None:
                 file_path, relative_file_path = normalize_handrive_relative_path(
                     preview_relative_path, must_exist=True
                 )
+            elif trash_preview_item is not None:
+                file_path = trash_preview_item["payload_path"]
+                relative_file_path = preview_relative_path
             else:
                 if git_virtual["kind"] != "branch_file":
                     return json_error("파일을 찾을 수 없습니다.", status=404)
@@ -17449,8 +18038,12 @@ def handrive_api_preview(request):
             if google_drive is not None:
                 pass
             elif git_virtual is None:
-                file_extension = file_path.suffix.lower()
-                file_can_edit = has_handrive_write_access(request, relative_file_path)
+                file_extension = (
+                    Path(trash_preview_item["name"]).suffix.lower()
+                    if trash_preview_item is not None
+                    else file_path.suffix.lower()
+                )
+                file_can_edit = False if trash_preview_item is not None else has_handrive_write_access(request, relative_file_path)
                 file_can_render_edit = file_can_edit or has_handrive_demo_edit_access(request, relative_file_path)
                 render_mode = resolve_handrive_render_profile(file_extension).get("mode")
                 if render_mode in (DOCS_RENDER_MODE_OFFICE, DOCS_RENDER_MODE_PDF):
@@ -17464,6 +18057,18 @@ def handrive_api_preview(request):
                         share_owner=shared_context["owner_username"] if shared_context else "",
                         share_slug=shared_context["share_slug"] if shared_context else "",
                         can_edit=file_can_render_edit,
+                    )
+                elif is_handrive_non_editable_media_extension(file_extension):
+                    content = ""
+                    rendered_html, render_profile = render_handrive_content(
+                        content,
+                        file_extension,
+                        source_path=file_path,
+                        relative_path=relative_file_path,
+                        request=request,
+                        share_owner=shared_context["owner_username"] if shared_context else "",
+                        share_slug=shared_context["share_slug"] if shared_context else "",
+                        can_edit=False,
                     )
                 else:
                     try:
@@ -17486,7 +18091,7 @@ def handrive_api_preview(request):
                             message=get_handrive_text(resolve_ui_lang(request)).get("list_preview_unsupported", "미리보기 미지원"),
                         )
                         render_profile = DOCS_UNSUPPORTED_RENDER_PROFILE
-                title = file_path.name
+                title = trash_preview_item["name"] if trash_preview_item is not None else file_path.name
             else:
                 title = Path(git_virtual["repo_relative_path"]).name
                 file_extension = Path(title).suffix.lower()
@@ -17547,7 +18152,11 @@ def handrive_api_preview(request):
                 "ok": True,
                 "html": rendered_html,
                 "path": relative_file_path,
-                "slug_path": build_handrive_public_url_path(request, relative_file_path) if (git_virtual is not None or google_drive is not None) else markdown_slug_from_relative(relative_file_path),
+                "slug_path": "" if trash_preview_item is not None else (
+                    build_handrive_public_url_path(request, relative_file_path)
+                    if (git_virtual is not None or google_drive is not None)
+                    else markdown_slug_from_relative(relative_file_path)
+                ),
                 "title": title,
                 "render_mode": render_profile["mode"],
                 "render_class": render_profile["css_class"],
@@ -17691,6 +18300,8 @@ def handrive_api_save(request):
         commit_message = str(payload.get("commit_message") or "").strip()
         if not isinstance(content, str):
             raise ValueError("내용 형식이 올바르지 않습니다.")
+        if is_handrive_trash_relative(original_relative_path) or is_handrive_trash_relative(target_dir):
+            raise ValueError("휴지통 항목은 저장할 수 없습니다.")
 
         google_drive_save_response = _handle_google_drive_save_request(
             request,
@@ -18127,9 +18738,29 @@ def handrive_api_download(request):
         rel_path = normalize_scoped_home_api_path(request, requested_path, allow_empty=False)
     except ValueError:
         raise Http404("다운로드할 파일을 찾을 수 없습니다.")
-    google_drive = _parse_google_drive_virtual_path(request, rel_path)
+    trash_download_item = None
+    if is_handrive_trash_item_relative(rel_path) and not shared_context:
+        try:
+            _trash_dir, _trash_root, _trash_items, resolved_items = _get_scoped_handrive_trash_items(request, [rel_path])
+        except (ValueError, FileNotFoundError):
+            raise Http404("다운로드할 파일을 찾을 수 없습니다.")
+        _storage_name, payload_path, metadata = resolved_items[0]
+        if payload_path.is_dir() and not payload_path.is_symlink():
+            raise Http404("다운로드할 파일을 찾을 수 없습니다.")
+        trash_download_item = {
+            "payload_path": payload_path,
+            "name": str(metadata.get("original_name") or payload_path.name),
+        }
+    elif is_handrive_trash_relative(rel_path):
+        raise Http404("휴지통 항목은 열 수 없습니다.")
+    google_drive = None if trash_download_item is not None else _parse_google_drive_virtual_path(request, rel_path)
     git_virtual = None if google_drive is not None else _get_git_virtual_context(request, rel_path)
-    if google_drive is not None:
+    if trash_download_item is not None:
+        file_path = trash_download_item["payload_path"]
+        filename = trash_download_item["name"]
+        file_handle = file_path.open("rb")
+        file_size = file_path.stat().st_size
+    elif google_drive is not None:
         if google_drive["is_root"]:
             raise Http404("다운로드할 파일을 찾을 수 없습니다.")
         try:
@@ -18504,11 +19135,31 @@ def handrive_api_pdf_preview(request):
     if not rel_path and shared_context:
         rel_path = shared_context["root_path"]
 
-    google_drive = _parse_google_drive_virtual_path(request, rel_path)
+    trash_pdf_item = None
+    if is_handrive_trash_item_relative(rel_path) and not shared_context:
+        try:
+            _trash_dir, _trash_root, _trash_items, resolved_items = _get_scoped_handrive_trash_items(request, [rel_path])
+        except (ValueError, FileNotFoundError):
+            raise Http404("파일을 찾을 수 없습니다.")
+        _storage_name, payload_path, metadata = resolved_items[0]
+        if payload_path.is_dir() and not payload_path.is_symlink():
+            raise Http404("파일을 찾을 수 없습니다.")
+        trash_pdf_item = {
+            "payload_path": payload_path,
+            "name": str(metadata.get("original_name") or payload_path.name),
+        }
+    elif is_handrive_trash_relative(rel_path):
+        raise Http404("파일을 찾을 수 없습니다.")
+
+    google_drive = None if trash_pdf_item is not None else _parse_google_drive_virtual_path(request, rel_path)
     git_virtual = None
     source_bytes = None
     file_path = None
-    if google_drive is not None:
+    if trash_pdf_item is not None:
+        file_path = trash_pdf_item["payload_path"]
+        filename = trash_pdf_item["name"]
+        extension = Path(filename).suffix.lower()
+    elif google_drive is not None:
         if google_drive["is_root"]:
             raise Http404("파일을 찾을 수 없습니다.")
         try:

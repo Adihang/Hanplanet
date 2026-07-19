@@ -65,7 +65,9 @@
     const sfxMuteToggleButton = root.querySelector('[data-game-sfx-mute-toggle]');
     const spriteOverlayRoot = root.querySelector('[data-game-sprite-overlay]');
     const idleModal = document.querySelector('[data-game-idle-modal]');
-    const idleModalCloseButton = idleModal ? idleModal.querySelector('[data-game-idle-modal-close]') : null;
+    const idleModalCloseButtons = idleModal
+        ? Array.from(idleModal.querySelectorAll('[data-game-idle-modal-close]'))
+        : [];
 
     if (!canvas || !minimapCanvas || !connectionStatus) {
         return;
@@ -1134,6 +1136,16 @@
         renderSkinList();
     };
 
+    const restoreConnectedSkinSelection = function () {
+        const connectedSkin = getSkinConfig(activeSelfSkinName || selectedSkinName || 'default');
+        selectedSkinName = connectedSkin.name;
+        if (window.localStorage) {
+            window.localStorage.setItem('hanplanet-bumpercar-selected-skin', selectedSkinName);
+        }
+        updateStartCharacterPreview();
+        renderSkinList();
+    };
+
     const handleIdleTimeoutDisconnect = function () {
         idleReconnectBlocked = true;
         serverPlayers = [];
@@ -1236,6 +1248,7 @@
             return;
         }
         startOverlay.hidden = !opened;
+        startOverlay.classList.toggle('is-game-menu', Boolean(opened && gameStarted));
         if (startButton) {
             startButton.textContent = opened && gameStarted
                 ? (startButton.dataset.continueLabel || 'Continue')
@@ -1256,6 +1269,29 @@
         if (skinChangedSinceConnection) {
             connect();
         }
+    };
+
+    const returnToInitialStartScreen = function () {
+        gameStarted = false;
+        idleReconnectBlocked = true;
+        reconnectAttemptInFlight = false;
+        manualStartAutoRespawnPending = false;
+        window.clearTimeout(reconnectTimer);
+        stopInputLoop();
+        stopPingLoop();
+        const socketToClose = activeSocket || socket;
+        activeSocket = null;
+        socket = null;
+        if (socketToClose) {
+            try {
+                socketToClose.close();
+            } catch (error) {}
+        }
+        handleIdleTimeoutDisconnect();
+        setIdleModalOpen(false);
+        setSkinModalOpen(false);
+        setLoadingOverlayOpen(false);
+        setStartOverlayOpen(true);
     };
 
     const releaseInitialLoadingOverlay = function () {
@@ -3106,6 +3142,9 @@
                         }
                     }
                     if (selfDeathActive && !wasSelfDeathActive) {
+                        restoreConnectedSkinSelection();
+                        setSkinModalOpen(false);
+                        setStartOverlayOpen(false);
                         if (selfDoubleMerged) {
                             playMergedDoubleSoundFromList(getSkinConfig(activeSelfSkinName || selectedSkinName).sounds.die, 0.98, undefined, selfId || '__self__');
                         } else {
@@ -5592,6 +5631,11 @@
             setSkinModalOpen(false);
             return;
         }
+        if (startOverlay && !startOverlay.hidden) {
+            event.preventDefault();
+            resumeGameFromStartOverlay();
+            return;
+        }
         if (isFullscreenMode) {
             event.preventDefault();
             setFullscreenMode(false);
@@ -5756,14 +5800,11 @@
             startGame();
         });
     }
-    if (idleModalCloseButton) {
+    idleModalCloseButtons.forEach(function (idleModalCloseButton) {
         idleModalCloseButton.addEventListener('click', function () {
-            setIdleModalOpen(false);
-            if (gameStarted) {
-                connect();
-            }
+            returnToInitialStartScreen();
         });
-    }
+    });
 
     setFullscreenMode(false);
     updateCompactViewportUI();

@@ -104,9 +104,32 @@
             createMap: false,
             convertMp3: false,
             changeIcon: false,
+            restore: false,
+            emptyTrash: false,
         };
 
         if (!targetEntry) {
+            return flags;
+        }
+
+        var allTrashItems = targets.length > 0 && targets.every(function (entry) {
+            return Boolean(entry && entry.is_trash_item);
+        });
+        if (allTrashItems) {
+            flags.restore = targets.every(function (entry) {
+                return entry.can_restore !== false;
+            });
+            flags.deleteEntry = targets.every(function (entry) {
+                return isEntryDeletable(entry);
+            });
+            return flags;
+        }
+        if (!isMultiSelection && targetEntry.is_trash_root) {
+            flags.open = true;
+            flags.emptyTrash = targetEntry.can_empty_trash !== false;
+            return flags;
+        }
+        if (targets.some(function (entry) { return Boolean(entry && (entry.is_trash_root || entry.is_trash_item)); })) {
             return flags;
         }
 

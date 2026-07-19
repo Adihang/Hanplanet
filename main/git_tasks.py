@@ -206,6 +206,16 @@ def _run(cmd: list, timeout: int = 60, **kwargs):
     return result
 
 
+def _configure_git_author_identity(worktree_path: str, owner) -> None:
+    """초기 커밋을 포함한 로컬 Git 작업의 작성자를 Repo 소유자로 설정한다."""
+    username = str(getattr(owner, "username", "") or "").strip()
+    if not username:
+        raise ValueError("Repo 소유자 ID를 찾을 수 없습니다.")
+    email = str(getattr(owner, "email", "") or "").strip() or f"{username}@hanplanet.local"
+    _run([GIT_BIN, "-C", worktree_path, "config", "user.name", username], timeout=10)
+    _run([GIT_BIN, "-C", worktree_path, "config", "user.email", email], timeout=10)
+
+
 def _setup_local_git(client: ForgejoClient, abs_path: str, repo, mapping) -> None:
     """HanDrive 폴더의 .git을 유저 인증 URL·git config로 세팅.
 
@@ -227,10 +237,7 @@ def _setup_local_git(client: ForgejoClient, abs_path: str, repo, mapping) -> Non
     else:
         _run([GIT_BIN, "-C", abs_path, "remote", "add", "origin", user_url], timeout=10)
 
-    owner = repo.owner
-    _run([GIT_BIN, "-C", abs_path, "config", "user.name", owner.username], timeout=10)
-    _run([GIT_BIN, "-C", abs_path, "config", "user.email",
-          getattr(owner, "email", "") or f"{owner.username}@hanplanet.local"], timeout=10)
+    _configure_git_author_identity(abs_path, repo.owner)
 
 
 @shared_task
@@ -292,9 +299,8 @@ def create_repo_task(repo_id: int) -> None:
         )
         _run([GIT_BIN, "clone", "--depth=1", internal_url, tmp])
 
-        # git user 설정 (launchd 환경에 전역 git config 없을 수 있음)
-        _run([GIT_BIN, "-C", tmp, "config", "user.name", "hanplanet"], timeout=10)
-        _run([GIT_BIN, "-C", tmp, "config", "user.email", "system@hanplanet"], timeout=10)
+        # git user 설정 (Worker 환경에 전역 git config 없을 수 있음)
+        _configure_git_author_identity(tmp, repo.owner)
 
         # rsync로 파일 복사 (.git 폴더 제외)
         _run(["rsync", "-a", "--exclude=.git", abs_path + "/", tmp + "/"], timeout=60)

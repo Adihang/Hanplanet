@@ -6,6 +6,7 @@ import hmac
 import os
 import plistlib
 import re
+import shutil
 import sqlite3
 import subprocess
 import time
@@ -473,6 +474,303 @@ class HandriveListApiMetaTests(TestCase):
             self.assertEqual(payload["directory_meta"]["size_display"], "")
             nested_entry = next(entry for entry in payload["entries"] if entry["path"] == f"users/{user.username}/shared_meta/nested")
             self.assertEqual(nested_entry["size_display"], "")
+
+
+class HandriveTrashTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="trash_api_user", password="pw123456")
+
+    def test_delete_moves_item_to_user_trash_and_restore_recreates_missing_parent_directories(self):
+        with TemporaryDirectory() as tmpdir:
+            media_root = Path(tmpdir)
+            home_dir = media_root / "HanDrive" / "users" / self.user.username
+            source_path = home_dir / "missing-parent" / "nested" / "note.md"
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_text("restore me", encoding="utf-8")
+
+            with override_settings(MEDIA_ROOT=str(media_root)):
+                self.client.force_login(self.user)
+                source_relative = f"users/{self.user.username}/missing-parent/nested/note.md"
+                delete_response = self.client.post(
+                    reverse("main:handrive_api_delete"),
+                    data=json.dumps({"path": source_relative}),
+                    content_type="application/json",
+                )
+                self.assertEqual(delete_response.status_code, 200)
+                self.assertTrue(delete_response.json()["trashed"])
+                self.assertFalse(source_path.exists())
+
+                trash_relative = f"users/{self.user.username}/.handrive-trash"
+                home_list_response = self.client.get(reverse("main:handrive_api_list"), data={"path": f"users/{self.user.username}"})
+                self.assertEqual(home_list_response.status_code, 200)
+                trash_root_entry = next(entry for entry in home_list_response.json()["entries"] if entry.get("is_trash_root"))
+                self.assertEqual(trash_root_entry["path"], trash_relative)
+                self.assertEqual(trash_root_entry["type"], "trash")
+                self.assertEqual(trash_root_entry["url_path"], f"users/{self.user.username}/trash")
+                self.assertTrue(trash_root_entry["has_children"])
+                self.assertTrue(trash_root_entry["modified_display"])
+                self.assertTrue(trash_root_entry["size_display"])
+
+                trash_page_url = reverse(
+                    "main:handrive_list_lang",
+                    kwargs={"ui_lang": "ko", "folder_path": f"users/{self.user.username}/trash"},
+                )
+                trash_page_response = self.client.get(trash_page_url)
+                self.assertEqual(trash_page_response.status_code, 200)
+                self.assertEqual(trash_page_response.context["current_dir"], trash_relative)
+                self.assertEqual(trash_page_response.context["current_dir_display_label"], "휴지통")
+                self.assertTrue(trash_page_response.context["current_dir_is_trash_root"])
+                self.assertContains(
+                    trash_page_response,
+                    f'<span class="ui-path-current" data-handrive-dir="{trash_relative}">휴지통</span>',
+                    html=True,
+                )
+
+                internal_trash_url = reverse(
+                    "main:handrive_list_lang",
+                    kwargs={"ui_lang": "ko", "folder_path": trash_relative},
+                )
+                internal_trash_redirect = self.client.get(internal_trash_url)
+                self.assertEqual(internal_trash_redirect.status_code, 302)
+                self.assertIn(f"users/{self.user.username}/trash/list", internal_trash_redirect["Location"])
+
+                trash_list_response = self.client.get(reverse("main:handrive_api_list"), data={"path": trash_relative})
+                self.assertEqual(trash_list_response.status_code, 200)
+                self.assertTrue(trash_list_response.json()["directory_meta"]["modified_display"])
+                self.assertTrue(trash_list_response.json()["directory_meta"]["size_display"])
+                trash_entry = trash_list_response.json()["entries"][0]
+                self.assertTrue(trash_entry["is_trash_item"])
+                self.assertEqual(trash_entry["name"], "note.md")
+                self.assertNotIn("original_path", trash_entry)
+                self.assertFalse(trash_entry["has_children"])
+                self.assertTrue(trash_entry["can_read"])
+                self.assertFalse(trash_entry["can_edit"])
+                self.assertTrue(trash_entry["modified_display"])
+                self.assertTrue(trash_entry["size_display"])
+
+                preview_response = self.client.post(
+                    reverse("main:handrive_api_preview"),
+                    data=json.dumps({"path": trash_entry["path"]}),
+                    content_type="application/json",
+                )
+                self.assertEqual(preview_response.status_code, 200)
+                self.assertEqual(preview_response.json()["title"], "note.md")
+                self.assertIn("restore me", preview_response.json()["html"])
+
+                save_response = self.client.post(
+                    reverse("main:handrive_api_save"),
+                    data=json.dumps({
+                        "original_path": trash_entry["path"],
+                        "target_dir": trash_relative,
+                        "filename": "note.md",
+                        "extension": ".md",
+                        "content": "edited",
+                    }),
+                    content_type="application/json",
+                )
+                self.assertEqual(save_response.status_code, 400)
+
+                shutil.rmtree(home_dir / "missing-parent")
+                restore_response = self.client.post(
+                    reverse("main:handrive_api_trash_restore"),
+                    data=json.dumps({"path": trash_entry["path"]}),
+                    content_type="application/json",
+                )
+
+            self.assertEqual(restore_response.status_code, 200)
+            self.assertEqual(restore_response.json()["restored_count"], 1)
+            self.assertNotIn("restored_paths", restore_response.json())
+            self.assertTrue(source_path.is_file())
+            self.assertEqual(source_path.read_text(encoding="utf-8"), "restore me")
+
+    def test_trash_image_preview_uses_original_extension_after_storage_name_is_replaced(self):
+        with TemporaryDirectory() as tmpdir:
+            media_root = Path(tmpdir)
+            home_dir = media_root / "HanDrive" / "users" / self.user.username
+            source_path = home_dir / "preview.png"
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_bytes(
+                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+                b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\x0dIDAT\x08\xd7c\xf8\xcf\xc0\xf0\x1f\x00\x05\x00\x01\xff\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`\x82"
+            )
+
+            with override_settings(MEDIA_ROOT=str(media_root)):
+                self.client.force_login(self.user)
+                source_relative = f"users/{self.user.username}/preview.png"
+                delete_response = self.client.post(
+                    reverse("main:handrive_api_delete"),
+                    data=json.dumps({"path": source_relative}),
+                    content_type="application/json",
+                )
+                self.assertEqual(delete_response.status_code, 200)
+                trash_relative = f"users/{self.user.username}/.handrive-trash"
+                trash_response = self.client.get(reverse("main:handrive_api_list"), data={"path": trash_relative})
+                trash_entry = next(entry for entry in trash_response.json()["entries"] if entry["name"] == "preview.png")
+                preview_response = self.client.post(
+                    reverse("main:handrive_api_preview"),
+                    data=json.dumps({"path": trash_entry["path"]}),
+                    content_type="application/json",
+                )
+
+            self.assertEqual(preview_response.status_code, 200)
+            self.assertEqual(preview_response.json()["render_mode"], "media_image")
+            self.assertIn("handrive-media-image-element", preview_response.json()["html"])
+
+    def test_trash_item_move_restores_original_name_at_drop_target(self):
+        with TemporaryDirectory() as tmpdir:
+            media_root = Path(tmpdir)
+            home_dir = media_root / "HanDrive" / "users" / self.user.username
+            source_path = home_dir / "original-name.txt"
+            target_dir = home_dir / "moved-here"
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            target_dir.mkdir()
+            source_path.write_text("move from trash", encoding="utf-8")
+
+            with override_settings(MEDIA_ROOT=str(media_root)):
+                self.client.force_login(self.user)
+                source_relative = f"users/{self.user.username}/original-name.txt"
+                delete_response = self.client.post(
+                    reverse("main:handrive_api_delete"),
+                    data=json.dumps({"path": source_relative}),
+                    content_type="application/json",
+                )
+                self.assertEqual(delete_response.status_code, 200)
+
+                trash_relative = f"users/{self.user.username}/.handrive-trash"
+                trash_list_response = self.client.get(
+                    reverse("main:handrive_api_list"),
+                    data={"path": trash_relative},
+                )
+                trash_entry = trash_list_response.json()["entries"][0]
+                self.assertNotEqual(Path(trash_entry["path"]).name, "original-name.txt")
+
+                destination_relative = f"users/{self.user.username}/moved-here"
+                move_response = self.client.post(
+                    reverse("main:handrive_api_move"),
+                    data=json.dumps({
+                        "source_path": trash_entry["path"],
+                        "target_dir": destination_relative,
+                    }),
+                    content_type="application/json",
+                )
+                self.assertEqual(move_response.status_code, 200, move_response.content)
+
+                trash_after_move = self.client.get(
+                    reverse("main:handrive_api_list"),
+                    data={"path": trash_relative},
+                )
+
+            self.assertEqual(
+                move_response.json()["path"],
+                f"{destination_relative}/original-name.txt",
+            )
+            self.assertFalse(source_path.exists())
+            self.assertEqual((target_dir / "original-name.txt").read_text(encoding="utf-8"), "move from trash")
+            self.assertEqual(trash_after_move.json()["entries"], [])
+
+    def test_trash_item_move_rejects_existing_original_name_at_drop_target(self):
+        with TemporaryDirectory() as tmpdir:
+            media_root = Path(tmpdir)
+            home_dir = media_root / "HanDrive" / "users" / self.user.username
+            source_path = home_dir / "conflict.txt"
+            target_dir = home_dir / "target"
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            target_dir.mkdir()
+            source_path.write_text("from trash", encoding="utf-8")
+            (target_dir / "conflict.txt").write_text("already here", encoding="utf-8")
+
+            with override_settings(MEDIA_ROOT=str(media_root)):
+                self.client.force_login(self.user)
+                source_relative = f"users/{self.user.username}/conflict.txt"
+                self.client.post(
+                    reverse("main:handrive_api_delete"),
+                    data=json.dumps({"path": source_relative}),
+                    content_type="application/json",
+                )
+                trash_relative = f"users/{self.user.username}/.handrive-trash"
+                trash_entry = self.client.get(
+                    reverse("main:handrive_api_list"),
+                    data={"path": trash_relative},
+                ).json()["entries"][0]
+                move_response = self.client.post(
+                    reverse("main:handrive_api_move"),
+                    data=json.dumps({
+                        "source_path": trash_entry["path"],
+                        "target_dir": f"users/{self.user.username}/target",
+                    }),
+                    content_type="application/json",
+                )
+                trash_after_move = self.client.get(
+                    reverse("main:handrive_api_list"),
+                    data={"path": trash_relative},
+                )
+
+            self.assertEqual(move_response.status_code, 409)
+            self.assertEqual((target_dir / "conflict.txt").read_text(encoding="utf-8"), "already here")
+            self.assertEqual(len(trash_after_move.json()["entries"]), 1)
+            self.assertEqual(trash_after_move.json()["entries"][0]["name"], "conflict.txt")
+
+    def test_trash_item_delete_is_permanent_and_trash_root_cannot_be_browsed_below_root(self):
+        with TemporaryDirectory() as tmpdir:
+            media_root = Path(tmpdir)
+            home_dir = media_root / "HanDrive" / "users" / self.user.username
+            source_path = home_dir / "remove.txt"
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_text("delete me", encoding="utf-8")
+
+            with override_settings(MEDIA_ROOT=str(media_root)):
+                self.client.force_login(self.user)
+                source_relative = f"users/{self.user.username}/remove.txt"
+                self.client.post(
+                    reverse("main:handrive_api_delete"),
+                    data=json.dumps({"path": source_relative}),
+                    content_type="application/json",
+                )
+                trash_relative = f"users/{self.user.username}/.handrive-trash"
+                trash_list_response = self.client.get(reverse("main:handrive_api_list"), data={"path": trash_relative})
+                trash_entry = trash_list_response.json()["entries"][0]
+
+                nested_list_response = self.client.get(
+                    reverse("main:handrive_api_list"),
+                    data={"path": trash_entry["path"]},
+                )
+                self.assertEqual(nested_list_response.status_code, 404)
+
+                permanent_delete_response = self.client.post(
+                    reverse("main:handrive_api_delete"),
+                    data=json.dumps({"path": trash_entry["path"]}),
+                    content_type="application/json",
+                )
+                self.assertEqual(permanent_delete_response.status_code, 200)
+                self.assertTrue(permanent_delete_response.json()["permanently_deleted"])
+
+                empty_trash_response = self.client.post(
+                    reverse("main:handrive_api_trash_empty"),
+                    data=json.dumps({"path": trash_relative}),
+                    content_type="application/json",
+                )
+                empty_trash_list_response = self.client.get(
+                    reverse("main:handrive_api_list"),
+                    data={"path": trash_relative},
+                )
+
+            self.assertEqual(empty_trash_response.status_code, 200)
+            self.assertEqual(empty_trash_list_response.status_code, 200)
+            self.assertEqual(empty_trash_list_response.json()["entries"], [])
+
+    def test_trash_selection_breadcrumb_uses_rendered_item_name(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        breadcrumb_block = page_js[
+            page_js.index("function applyTrashBreadcrumbLabels(crumbs, pathValue)"):
+            page_js.index("function applyVirtualBreadcrumbLabels", page_js.index("function applyTrashBreadcrumbLabels(crumbs, pathValue)"))
+        ]
+
+        self.assertIn('normalizedPath.startsWith(trashRootPath + "/")', breadcrumb_block)
+        self.assertIn("crumbPath === trashRootPath", breadcrumb_block)
+        self.assertIn("state.entryByPath.get(normalizedPath)", breadcrumb_block)
+        self.assertIn("getEntryEditableName(selectedTrashEntry)", breadcrumb_block)
+        self.assertIn("crumbPath === normalizedPath && selectedItemLabel", breadcrumb_block)
+        self.assertIn('!crumbPath.startsWith(trashRootPath + "/")', breadcrumb_block)
 
 
 class MarkdownSafetyTests(TestCase):
@@ -5258,6 +5556,10 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("openUploadQueueItem(childItem).catch(alertError);", page_js)
         self.assertIn("item.resultEntries = entries.map(function (entry)", queue_operation_js)
         self.assertIn("item.resultEntries[index] = Object.assign({}, item.resultEntries[index] || {},", queue_operation_js)
+        self.assertIn('if (item.operationType === "restore")', queue_helpers_js)
+        self.assertIn("async function runRestoreOperationQueueItem(item)", page_js)
+        self.assertIn("await runRestoreQueueOperation(item, {", page_js)
+        self.assertIn('else if (nextItem.operationType === "restore")', queue_operation_js)
         self.assertIn(".handrive-job-queue-child-list", handrive_css)
         self.assertIn(".handrive-job-queue-child-item", handrive_css)
         self.assertIn(
@@ -12687,6 +12989,37 @@ class ForgejoAvatarSignalTests(TestCase):
         client.ensure_user_with_token.assert_called_once_with(user.username, "")
 
 
+class GitTaskAuthorIdentityTests(TestCase):
+    def test_initial_repo_worktree_uses_repo_owner_as_git_author(self):
+        from .git_tasks import GIT_BIN, _configure_git_author_identity
+
+        user = get_user_model().objects.create_user(
+            username="initial_repo_owner",
+            email="initial-repo-owner@example.com",
+            password="pw123456",
+        )
+        with TemporaryDirectory() as tmpdir:
+            subprocess.run([GIT_BIN, "init", tmpdir], check=True, capture_output=True, text=True)
+
+            _configure_git_author_identity(tmpdir, user)
+
+            author_name = subprocess.run(
+                [GIT_BIN, "-C", tmpdir, "config", "--get", "user.name"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            author_email = subprocess.run(
+                [GIT_BIN, "-C", tmpdir, "config", "--get", "user.email"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+
+        self.assertEqual(author_name, user.username)
+        self.assertEqual(author_email, user.email)
+
+
 class AccountMediaCleanupSignalTests(TestCase):
     def test_user_delete_removes_account_media_directories_after_commit(self):
         with TemporaryDirectory() as tmpdir, override_settings(MEDIA_ROOT=tmpdir):
@@ -13054,6 +13387,38 @@ class HanplanetMultiplayerPageTests(TestCase):
                 self.assertIn("if (event.key !== 'Escape')", client_js)
                 self.assertIn("setStartOverlayOpen(true);", client_js)
                 self.assertIn("resumeGameFromStartOverlay();", client_js)
+
+    def test_multiplayer_start_overlay_death_and_idle_reset_controls(self):
+        base_dir = Path(settings.BASE_DIR)
+        multiplayer_css = (base_dir / "static/css/fun/bumpercar_spiky/multiplayer.css").read_text(encoding="utf-8")
+        idle_modal_template = (base_dir / "templates/popup/fun/multiplayer_idle_timeout_modal.html").read_text(encoding="utf-8")
+
+        self.assertIn(".multiplayer-start-overlay.is-game-menu", multiplayer_css)
+        self.assertIn("background: rgb(15 23 42 / 0.24);", multiplayer_css)
+        self.assertIn("backdrop-filter: none;", multiplayer_css)
+        self.assertEqual(idle_modal_template.count("data-game-idle-modal-close"), 2)
+
+        for client_name in ("bumpercar_spiky", "raise_speaki"):
+            with self.subTest(client=client_name):
+                client_js = (base_dir / f"static/js/fun/{client_name}/multiplayer.js").read_text(encoding="utf-8")
+                self.assertIn("const restoreConnectedSkinSelection = function ()", client_js)
+                self.assertIn("const returnToInitialStartScreen = function ()", client_js)
+                self.assertIn("startOverlay.classList.toggle('is-game-menu'", client_js)
+                self.assertIn("if (startOverlay && !startOverlay.hidden)", client_js)
+                self.assertIn("restoreConnectedSkinSelection();", client_js)
+                self.assertIn("setStartOverlayOpen(false);", client_js)
+                self.assertIn("const idleModalCloseButtons = idleModal", client_js)
+                self.assertIn("idleModalCloseButtons.forEach", client_js)
+                self.assertIn("returnToInitialStartScreen();", client_js)
+
+                self_death_transition = client_js.split("if (selfDeathActive && !wasSelfDeathActive) {", 1)[1]
+                self_death_transition = self_death_transition.split("if (!selfDeathActive && wasSelfDeathActive)", 1)[0]
+                self.assertIn("restoreConnectedSkinSelection();", self_death_transition)
+                self.assertIn("setStartOverlayOpen(false);", self_death_transition)
+                self.assertLess(
+                    self_death_transition.index("restoreConnectedSkinSelection();"),
+                    self_death_transition.index("playMergedDoubleSoundFromList"),
+                )
 
     def test_multiplayer_page_renders_for_authenticated_user(self):
         self.client.force_login(self.user)
@@ -15941,7 +16306,7 @@ class HandriveAccessRuleTests(TestCase):
             "main only\n",
         )
 
-    def test_gitea_move_from_branch_to_handrive_stages_branch_deletion(self):
+    def test_gitea_repo_and_handrive_drag_operations_copy_in_both_directions(self):
         editor = self.create_scoped_handrive_user("gitea_branch_to_handrive_move_editor")
         repo_name = "branch-to-handrive"
         remote_path = Path(settings.FORGEJO_REPOS_ROOT) / editor.username / f"{repo_name}.git"
@@ -15968,6 +16333,7 @@ class HandriveAccessRuleTests(TestCase):
                 content_type="application/json",
             )
             self.assertEqual(move_response.status_code, 200, move_response.content)
+            self.assertTrue(move_response.json()["copied"])
             self.assertEqual(move_response.json()["path"], f"{target_dir}/README.md")
             self.assertEqual((Path(settings.MEDIA_ROOT) / "HanDrive" / target_dir / "README.md").read_text(encoding="utf-8"), "before\n")
             self.assertEqual(
@@ -15982,22 +16348,123 @@ class HandriveAccessRuleTests(TestCase):
 
             list_response = self.client.get(reverse("main:handrive_api_list"), data={"path": branch_path})
             self.assertEqual(list_response.status_code, 200, list_response.content)
-            self.assertTrue(list_response.json()["directory_meta"]["has_uncommitted_changes"])
+            self.assertFalse(list_response.json()["directory_meta"]["has_uncommitted_changes"])
+            self.assertIn("README.md", {entry["name"] for entry in list_response.json()["entries"]})
+
+            local_source = Path(settings.MEDIA_ROOT) / "HanDrive" / target_dir / "copy-to-repo.md"
+            local_source.write_text("copy to repo\n", encoding="utf-8")
+            copy_to_repo_response = self.client.post(
+                reverse("main:handrive_api_move"),
+                data=json.dumps({"source_path": f"{target_dir}/copy-to-repo.md", "target_dir": branch_path}),
+                content_type="application/json",
+            )
+            self.assertEqual(copy_to_repo_response.status_code, 200, copy_to_repo_response.content)
+            self.assertTrue(copy_to_repo_response.json()["copied"])
+            self.assertTrue(local_source.is_file())
+            self.assertEqual(local_source.read_text(encoding="utf-8"), "copy to repo\n")
 
             commit_response = self.client.post(
                 reverse("main:handrive_api_git_commit"),
-                data=json.dumps({"path": branch_path, "commit_message": "Move README to HanDrive"}),
+                data=json.dumps({"path": branch_path, "commit_message": "Copy file from HanDrive"}),
                 content_type="application/json",
             )
             self.assertEqual(commit_response.status_code, 200, commit_response.content)
 
-        self.assertNotEqual(
+        self.assertEqual(
             subprocess.run(
                 ["git", f"--git-dir={remote_path}", "cat-file", "-e", "main:README.md"],
                 capture_output=True,
                 text=True,
             ).returncode,
             0,
+        )
+        self.assertEqual(
+            subprocess.run(
+                ["git", f"--git-dir={remote_path}", "show", "main:copy-to-repo.md"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout,
+            "copy to repo\n",
+        )
+
+    def test_github_repo_and_handrive_drag_operations_copy_in_both_directions(self):
+        editor = self.create_scoped_handrive_user("github_handrive_copy_editor")
+        remote_path = Path(self.temp_dir.name) / "github-handrive-copy.git"
+        self._create_local_git_remote(remote_path)
+        mapping = GitHubAccountMapping.objects.create(
+            user=editor,
+            github_user_id=98778,
+            github_login="github-user",
+            user_access_token="scoped-token",
+            token_scope="repo,user:email",
+            selected_repositories=[
+                {
+                    "id": 2481,
+                    "full_name": "team/handrive-copy",
+                    "name": "handrive-copy",
+                    "owner": "team",
+                    "default_branch": "main",
+                    "clone_url": str(remote_path),
+                    "can_push": False,
+                }
+            ],
+        )
+        self.client.force_login(editor)
+        repo_root = f"users/{editor.username}/.github-repo-2481"
+        branch_path = f"{repo_root}/main"
+        target_dir = f"users/{editor.username}"
+
+        with override_settings(GITHUB_REPO_CACHE_ROOT=str(Path(self.temp_dir.name) / "github-handrive-copy-cache")):
+            copy_from_repo_response = self.client.post(
+                reverse("main:handrive_api_move"),
+                data=json.dumps({"source_path": f"{branch_path}/README.md", "target_dir": target_dir}),
+                content_type="application/json",
+            )
+            self.assertEqual(copy_from_repo_response.status_code, 200, copy_from_repo_response.content)
+            self.assertTrue(copy_from_repo_response.json()["copied"])
+            self.assertEqual(
+                (Path(settings.MEDIA_ROOT) / "HanDrive" / target_dir / "README.md").read_text(encoding="utf-8"),
+                "before\n",
+            )
+
+            mapping.selected_repositories[0]["can_push"] = True
+            mapping.save(update_fields=["selected_repositories"])
+            local_source = Path(settings.MEDIA_ROOT) / "HanDrive" / target_dir / "copy-to-github.md"
+            local_source.write_text("copy to github\n", encoding="utf-8")
+            copy_to_repo_response = self.client.post(
+                reverse("main:handrive_api_move"),
+                data=json.dumps({"source_path": f"{target_dir}/copy-to-github.md", "target_dir": branch_path}),
+                content_type="application/json",
+            )
+            self.assertEqual(copy_to_repo_response.status_code, 200, copy_to_repo_response.content)
+            self.assertTrue(copy_to_repo_response.json()["copied"])
+            self.assertTrue(local_source.is_file())
+
+            commit_response = self.client.post(
+                reverse("main:handrive_api_git_commit"),
+                data=json.dumps({"path": branch_path, "commit_message": "Copy file from HanDrive"}),
+                content_type="application/json",
+            )
+            self.assertEqual(commit_response.status_code, 200, commit_response.content)
+
+        self.assertEqual(
+            subprocess.run(
+                ["git", f"--git-dir={remote_path}", "show", "main:README.md"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout,
+            "before\n",
+        )
+        self.assertEqual(
+            subprocess.run(
+                ["git", f"--git-dir={remote_path}", "show", "main:copy-to-github.md"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout,
+            "copy to github\n",
         )
 
     def test_git_branch_create_pushes_selected_github_repository_branch(self):

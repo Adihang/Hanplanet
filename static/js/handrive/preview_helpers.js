@@ -185,13 +185,14 @@
         var previewCanPrint = Boolean(settings.previewCanPrint);
 
         var isFileEntry = Boolean(isPreviewableFileEntry(entry));
+        var canDownload = Boolean(isFileEntry && !(entry && entry.is_trash_item));
         var canRead = Boolean(entry && entry.can_read !== false);
         var canEdit = Boolean(entry && entry.can_edit);
         var canOpenEditor = Boolean(entry && (entry.can_edit || entry.can_demo_edit));
         var canEditPreview = previewRenderMode !== "unsupported";
         var canPrintPreview = previewRenderMode !== "unsupported" && previewRenderMode !== "media_video";
         if (previewDownloadButton) {
-            if (!isFileEntry) {
+            if (!canDownload) {
                 previewDownloadButton.hidden = true;
                 previewDownloadButton.removeAttribute("href");
             } else {

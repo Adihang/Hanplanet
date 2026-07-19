@@ -159,6 +159,12 @@
     backdrop-filter: blur(6px);
 }
 
+.multiplayer-start-overlay.is-game-menu {
+    background: rgb(15 23 42 / 0.24);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
 body.hanplanet-multiplayer-page .root-auth-modal {
     z-index: var(--site-modal-stack-z, var(--multiplayer-z-root-modal));
 }

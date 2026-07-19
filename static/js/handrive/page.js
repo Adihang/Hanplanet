@@ -2632,6 +2632,7 @@
     const processOperationQueueWorker = handriveQueueOperationHelpers.processOperationQueue || function () { return Promise.resolve(); };
     const processUploadQueueWorker = handriveQueueOperationHelpers.processUploadQueue || function () { return Promise.resolve(); };
     const runDeleteQueueOperation = handriveQueueOperationHelpers.runDeleteOperationQueueItem || function () { return Promise.resolve(); };
+    const runRestoreQueueOperation = handriveQueueOperationHelpers.runRestoreOperationQueueItem || function () { return Promise.resolve(); };
     const runCreateArchiveQueueOperation = handriveQueueOperationHelpers.runCreateArchiveOperationQueueItem || function () { return Promise.resolve(); };
     const runExtractQueueOperation = handriveQueueOperationHelpers.runExtractOperationQueueItem || function () { return Promise.resolve(); };
     const runMoveQueueOperation = handriveQueueOperationHelpers.runMoveOperationQueueItem || function () { return Promise.resolve(); };
@@ -7433,6 +7434,8 @@
         const spreadsheetSaveApiUrl = root.dataset.spreadsheetSaveApiUrl || "";
         const renameApiUrl = root.dataset.renameApiUrl;
         const deleteApiUrl = root.dataset.deleteApiUrl;
+        const trashRestoreApiUrl = root.dataset.trashRestoreApiUrl || "";
+        const trashEmptyApiUrl = root.dataset.trashEmptyApiUrl || "";
         const mkdirApiUrl = root.dataset.mkdirApiUrl;
         const moveApiUrl = root.dataset.moveApiUrl;
         const archiveExtractApiUrl = root.dataset.archiveExtractApiUrl || "";
@@ -7584,6 +7587,8 @@
         const contextCreateArchiveButton = contextMenu ? contextMenu.querySelector('button[data-action="create-archive"]') : null;
         const contextEditButton = contextMenu ? contextMenu.querySelector('button[data-action="edit"]') : null;
         const contextRenameButton = contextMenu ? contextMenu.querySelector('button[data-action="rename"]') : null;
+        const contextRestoreButton = contextMenu ? contextMenu.querySelector('button[data-action="restore"]') : null;
+        const contextEmptyTrashButton = contextMenu ? contextMenu.querySelector('button[data-action="empty-trash"]') : null;
         const contextDeleteButton = contextMenu ? contextMenu.querySelector('button[data-action="delete"]') : null;
         const contextNewFolderButton = contextMenu ? contextMenu.querySelector('button[data-action="new-folder"]') : null;
         const contextNewDocButton = contextMenu ? contextMenu.querySelector('button[data-action="new-doc"]') : null;
@@ -7800,6 +7805,7 @@
         const currentDirCanWriteChildren =
             root.dataset.currentDirCanWriteChildren === "1" || currentDirCanEdit;
         const currentDirHasChildren = root.dataset.currentDirHasChildren === "1";
+        const currentDirIsTrashRoot = root.dataset.currentDirIsTrashRoot === "1";
         const currentDirIsGitRepoRoot = root.dataset.currentDirIsGitRepoRoot === "1";
         const currentDirIsGoogleDrive = root.dataset.currentDirIsGoogleDrive === "1";
         const currentDirIsArchiveVirtual = root.dataset.currentDirIsArchiveVirtual === "1";
@@ -7995,6 +8001,7 @@
                 can_delete: currentDirCanDelete,
                 can_write_children: currentDirCanWriteChildren,
                 has_children: currentDirHasChildren,
+                is_trash_root: currentDirIsTrashRoot,
                 is_git_repo_root: currentDirIsGitRepoRoot,
                 requires_commit_message: currentDirRequiresCommitMessage,
                 git_branch_root: currentDirGitBranchRoot,
@@ -8594,9 +8601,49 @@
             }, []);
         }
 
+        function applyTrashBreadcrumbLabels(crumbs, pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            const trashRootPath = getTrashRootPath();
+            const isTrashPath = Boolean(
+                trashRootPath && (
+                    normalizedPath === trashRootPath ||
+                    normalizedPath.startsWith(trashRootPath + "/")
+                )
+            );
+            if (!Array.isArray(crumbs) || !isTrashPath) {
+                return crumbs;
+            }
+            const currentMeta = getCurrentDirMeta();
+            const label = String(currentMeta.display_label || t("trash_name", textByLang("휴지통", "Trash"))).trim();
+            const selectedTrashEntry = normalizedPath === trashRootPath
+                ? null
+                : state.entryByPath.get(normalizedPath);
+            const selectedItemLabel = String(getEntryEditableName(selectedTrashEntry) || "").trim();
+            return crumbs.reduce(function (items, crumb) {
+                const crumbPath = normalizePath(crumb && crumb.path || "", true);
+                if (crumbPath === trashRootPath) {
+                    items.push(Object.assign({}, crumb, {
+                        is_current: !selectedItemLabel,
+                        label: label || t("trash_name", "휴지통"),
+                    }));
+                } else if (crumbPath === normalizedPath && selectedItemLabel) {
+                    items.push(Object.assign({}, crumb, {
+                        is_current: true,
+                        label: selectedItemLabel,
+                    }));
+                } else if (!crumbPath.startsWith(trashRootPath + "/")) {
+                    items.push(crumb);
+                }
+                return items;
+            }, []);
+        }
+
         function applyVirtualBreadcrumbLabels(crumbs, pathValue) {
-            return applyTutorialBreadcrumbLabels(
-                applyGoogleDriveBreadcrumbLabels(applyGithubBreadcrumbLabels(crumbs)),
+            return applyTrashBreadcrumbLabels(
+                applyTutorialBreadcrumbLabels(
+                    applyGoogleDriveBreadcrumbLabels(applyGithubBreadcrumbLabels(crumbs)),
+                    pathValue
+                ),
                 pathValue
             );
         }
@@ -8826,6 +8873,15 @@
             return match ? match[1] : "";
         }
 
+        function getTrashRootPath() {
+            return scopedHomeDir ? scopedHomeDir + "/.handrive-trash" : "";
+        }
+
+        function isTrashRootPath(pathValue) {
+            const trashRootPath = getTrashRootPath();
+            return Boolean(trashRootPath && normalizePath(pathValue, true) === trashRootPath);
+        }
+
         function toReadableVirtualUrlPath(pathValue) {
             const normalizedPath = normalizePath(pathValue, true);
             if (!normalizedPath) {
@@ -8838,6 +8894,9 @@
             const tutorialUrlPath = toReadableTutorialUrlPath(normalizedPath);
             if (tutorialUrlPath) {
                 return tutorialUrlPath;
+            }
+            if (isTrashRootPath(normalizedPath)) {
+                return scopedHomeDir + "/trash";
             }
             const githubRootPath = resolveGithubVirtualRootPath(normalizedPath);
             if (githubRootPath) {
@@ -12171,6 +12230,9 @@
             if (explicitLabel) {
                 return explicitLabel;
             }
+            if (safeEntry.type === "trash" || safeEntry.is_trash_root) {
+                return t("trash_name", textByLang("휴지통", "Trash"));
+            }
             if (safeEntry.type === "dir") {
                 if (safeEntry.google_drive && safeEntry.google_drive.is_root) {
                     return "Google Drive";
@@ -12326,6 +12388,9 @@
                 return null;
             }
             const safeEntry = entry || {};
+            if (safeEntry.type === "trash" || safeEntry.is_trash_root) {
+                return "000:trash";
+            }
             if (safeEntry.type === "dir") {
                 if (safeEntry.google_drive) {
                     return "000:google-drive";
@@ -14660,6 +14725,8 @@
             setContextButtonVisible(contextCreateArchiveButton, Boolean(visibility.createArchive && archiveCreateApiUrl));
             setContextButtonVisible(contextEditButton, Boolean(visibility.edit));
             setContextButtonVisible(contextRenameButton, Boolean(visibility.rename));
+            setContextButtonVisible(contextRestoreButton, Boolean(visibility.restore && trashRestoreApiUrl));
+            setContextButtonVisible(contextEmptyTrashButton, Boolean(visibility.emptyTrash && trashEmptyApiUrl));
             setContextButtonVisible(contextDeleteButton, Boolean(visibility.deleteEntry));
             setContextButtonVisible(contextNewFolderButton, Boolean(visibility.newFolder));
             setContextButtonVisible(contextNewDocButton, Boolean(visibility.newDoc));
@@ -15744,6 +15811,31 @@
             return Boolean(entry && entry.google_drive);
         }
 
+        function isRepoBranchEntry(entry) {
+            return Boolean(entry && entry.git_repo_branch && !entry.git_branch_root);
+        }
+
+        function isRepoBranchPath(pathValue) {
+            const normalizedPath = normalizePath(pathValue, true);
+            if (!normalizedPath) {
+                return false;
+            }
+            const cachedMeta = state.directoryMetaCache.get(normalizedPath);
+            if (cachedMeta && (cachedMeta.requires_commit_message || cachedMeta.git_branch_root)) {
+                return true;
+            }
+            const currentMetaPath = normalizePath((state.currentDirMeta || {}).path || state.currentDir, true);
+            if (
+                currentMetaPath === normalizedPath &&
+                state.currentDirMeta &&
+                (state.currentDirMeta.requires_commit_message || state.currentDirMeta.git_branch_root)
+            ) {
+                return true;
+            }
+            const entry = state.entryByPath.get(normalizedPath);
+            return Boolean(entry && (entry.git_branch_root || entry.git_repo_branch || entry.is_git_virtual));
+        }
+
         function isGoogleDrivePath(pathValue) {
             const normalizedPath = normalizePath(pathValue, true);
             if (!normalizedPath) {
@@ -15771,8 +15863,16 @@
             });
         }
 
+        function isRepoHandriveCopyDrop(targetDirPath) {
+            if (!Array.isArray(state.draggingEntries) || state.draggingEntries.length === 0) {
+                return false;
+            }
+            const hasRepoSource = state.draggingEntries.some(isRepoBranchEntry);
+            return hasRepoSource !== isRepoBranchPath(targetDirPath);
+        }
+
         function resolveDriveDropEffect(targetDirPath) {
-            return isGoogleDriveUploadDrop(targetDirPath) ? "copy" : "move";
+            return (isGoogleDriveUploadDrop(targetDirPath) || isRepoHandriveCopyDrop(targetDirPath)) ? "copy" : "move";
         }
 
         function resolveFileDropHighlightElement(targetNode) {
@@ -15822,7 +15922,14 @@
                     getEntryEditableName: getEntryEditableName,
                     t: t,
                 }),
-                sourcePath: normalizedEntries.length > 0 ? normalizedEntries[0].path : "",
+                sourcePath: normalizePath(
+                    settings.sourcePath || (
+                        operationType === "restore" && normalizedEntries[0]
+                            ? getParentDirectory(normalizedEntries[0].path)
+                            : (normalizedEntries[0] && normalizedEntries[0].path)
+                    ) || "",
+                    true
+                ),
                 targetDirPath: normalizePath(targetDirPath || "", true),
                 destinationMode: settings.destinationMode || "",
                 status: "queued",
@@ -16093,7 +16200,7 @@
             if (
                 !item ||
                 item.kind !== "operation" ||
-                (item.operationType !== "move" && item.operationType !== "delete")
+                (item.operationType !== "move" && item.operationType !== "delete" && item.operationType !== "restore")
             ) {
                 return [];
             }
@@ -16107,8 +16214,8 @@
                 const resultEntry = resultEntries[index] || {};
                 const sourcePath = normalizePath(resultEntry.sourcePath || entry.path || "", true);
                 const resultPath = normalizePath(resultEntry.path || "", true);
-                const isMove = item.operationType === "move";
-                const savedPath = isMove && resultPath ? resultPath : "";
+                const isMoveLike = item.operationType === "move" || item.operationType === "restore";
+                const savedPath = isMoveLike && resultPath ? resultPath : "";
                 const displayPath = savedPath || sourcePath;
                 const childName = String(
                     (savedPath ? getPathLeafLabel(savedPath, "") : "") ||
@@ -16131,7 +16238,7 @@
                     savedPath: savedPath,
                     savedSlugPath: resultEntry.slug_path || "",
                     sizeDisplay: resultEntry.size_display || entry.size_display || "",
-                    canOpen: Boolean(isMove && savedPath && childStatus === "done"),
+                    canOpen: Boolean(isMoveLike && savedPath && childStatus === "done"),
                     parentQueueItemId: item.id,
                 };
             });
@@ -16535,6 +16642,18 @@
             });
         }
 
+        async function runRestoreOperationQueueItem(item) {
+            await runRestoreQueueOperation(item, {
+                applySelection: applySelection,
+                buildPostOptions: buildPostOptions,
+                queueNeedsRefresh: queueNeedsRefresh,
+                renderUploadQueue: renderUploadQueue,
+                requestJson: requestJson,
+                t: t,
+                trashRestoreApiUrl: appendSharedQuery(trashRestoreApiUrl),
+            });
+        }
+
         async function runCreateArchiveOperationQueueItem(item) {
             await runCreateArchiveQueueOperation(item, {
                 applySelection: applySelection,
@@ -16635,11 +16754,13 @@
                 renderUploadQueue: renderUploadQueue,
                 runCreateArchiveOperationQueueItem: runCreateArchiveOperationQueueItem,
                 runDeleteOperationQueueItem: runDeleteOperationQueueItem,
+                runRestoreOperationQueueItem: runRestoreOperationQueueItem,
                 runExtractOperationQueueItem: runExtractOperationQueueItem,
                 runMoveOperationQueueItem: runMoveOperationQueueItem,
                 runYoutubeSaveOperationQueueItem: runYoutubeSaveOperationQueueItem,
                 runConvertMp3OperationQueueItem: runConvertMp3OperationQueueItem,
                 state: state,
+                trashRestoreApiUrl: appendSharedQuery(trashRestoreApiUrl),
                 t: t,
             });
         }
@@ -16907,6 +17028,35 @@
                 return false;
             }
             const targetIsGoogleDrive = isGoogleDrivePath(targetPath);
+            const trashSources = state.draggingEntries.filter(function (entry) {
+                return Boolean(entry && entry.is_trash_item);
+            });
+            if (trashSources.length > 0) {
+                if (trashSources.length !== state.draggingEntries.length || isArchiveVirtualPath(targetPath) || targetIsGoogleDrive) {
+                    return false;
+                }
+                const targetDirectoryMeta = state.directoryMetaCache.get(targetPath) || (
+                    normalizePath((state.currentDirMeta || {}).path || state.currentDir, true) === targetPath
+                        ? state.currentDirMeta
+                        : null
+                );
+                const targetEntry = state.entryByPath.get(targetPath);
+                if (
+                    (targetDirectoryMeta && (
+                        targetDirectoryMeta.is_git_repo_root ||
+                        targetDirectoryMeta.git_branch_root ||
+                        targetDirectoryMeta.git_branch_path
+                    )) ||
+                    (targetEntry && (
+                        targetEntry.git_repo ||
+                        targetEntry.github_repo ||
+                        targetEntry.git_branch_root ||
+                        targetEntry.is_git_virtual
+                    ))
+                ) {
+                    return false;
+                }
+            }
             const googleDriveSources = state.draggingEntries.filter(isGoogleDriveEntry);
             if (googleDriveSources.length > 0 && googleDriveSources.length !== state.draggingEntries.length) {
                 return false;
@@ -17250,6 +17400,12 @@
                 if (candidate.isCurrentFolder) {
                     return false;
                 }
+                if (candidate.is_trash_item) {
+                    return Boolean(candidate.can_restore);
+                }
+                if (isRepoBranchEntry(candidate)) {
+                    return Boolean(candidate.can_read);
+                }
                 if (candidate.is_archive_member && candidate.can_extract) {
                     return true;
                 }
@@ -17327,6 +17483,8 @@
                 isDir: !useArchiveFileIcon,
                 folderPath: !useArchiveFileIcon ? normalizePath(meta.path || state.currentDir || "", true) : "",
                 isRootAvatar: !useArchiveFileIcon && Boolean(meta.is_root),
+                isTrashRoot: !useArchiveFileIcon && Boolean(meta.is_trash_root),
+                isTrashEmpty: !useArchiveFileIcon && Boolean(meta.is_trash_root && !meta.has_children),
                 accountProfileImageUrl: handriveRootProfileImageUrl,
                 isGoogleDrive: !useArchiveFileIcon && isGoogleDriveRootMeta(meta),
                 isGithubRepo: !useArchiveFileIcon && Boolean(meta.is_git_repo_root && meta.git_repo && meta.git_repo.provider === "github"),
@@ -17360,6 +17518,10 @@
                 nextMeta.archive_member_path = "";
                 nextMeta.archive_can_edit = false;
                 nextMeta.archive_can_delete = false;
+            }
+            if (rawMeta.is_trash_root === undefined) {
+                nextMeta.is_trash_root = false;
+                nextMeta.can_empty_trash = false;
             }
             if (!nextMeta.requires_commit_message) {
                 nextMeta.git_branch_path = "";
@@ -17419,6 +17581,7 @@
             root.dataset.currentDirCanDelete = nextMeta.can_delete === false ? "0" : "1";
             root.dataset.currentDirCanWriteChildren = nextMeta.can_write_children ? "1" : "0";
             root.dataset.currentDirHasChildren = nextMeta.has_children ? "1" : "0";
+            root.dataset.currentDirIsTrashRoot = nextMeta.is_trash_root ? "1" : "0";
             root.dataset.currentDirIsGitRepoRoot = nextMeta.is_git_repo_root ? "1" : "0";
             root.dataset.currentDirIsGoogleDrive = nextMeta.is_google_drive ? "1" : "0";
             root.dataset.currentDirRequiresCommitMessage = nextMeta.requires_commit_message ? "1" : "0";
@@ -17452,9 +17615,11 @@
             const treatCurrentDirAsRoot = Boolean(currentDirMeta.is_root || isTutorialMode);
             return {
                 path: state.currentDir,
-                type: "dir",
+                type: currentDirMeta.is_trash_root ? "trash" : "dir",
                 isCurrentFolder: true,
                 is_root: treatCurrentDirAsRoot,
+                is_trash_root: Boolean(currentDirMeta.is_trash_root),
+                can_empty_trash: Boolean(currentDirMeta.can_empty_trash),
                 can_edit: Boolean(currentDirMeta.can_edit),
                 can_rename: !treatCurrentDirAsRoot && currentDirMeta.can_rename !== false,
                 can_write_children: Boolean(currentDirMeta.can_write_children),
@@ -18346,8 +18511,14 @@
         function isSyncHiddenEntry(entry) {
             return Boolean(
                 entry
-                && entry.type === "dir"
-                && (entry.git_repo || entry.github_repo || entry.google_drive || entry.git_branch_root || entry.is_git_virtual)
+                && (
+                    entry.is_trash_root
+                    || entry.is_trash_item
+                    || (
+                        entry.type === "dir"
+                        && (entry.git_repo || entry.github_repo || entry.google_drive || entry.git_branch_root || entry.is_git_virtual)
+                    )
+                )
             );
         }
 
@@ -19179,8 +19350,45 @@
             processOperationQueue().catch(alertError);
         }
 
+        async function restoreTrashEntries(entriesOrEntry) {
+            const entries = Array.isArray(entriesOrEntry)
+                ? entriesOrEntry.filter(Boolean)
+                : (entriesOrEntry ? [entriesOrEntry] : []);
+            if (!trashRestoreApiUrl || entries.length === 0 || entries.some(function (entry) { return !entry.is_trash_item; })) {
+                return;
+            }
+            createOperationQueueItem(
+                "restore",
+                entries,
+                getParentDirectory(entries[0].path),
+                ""
+            );
+            processOperationQueue().catch(alertError);
+        }
+
+        async function emptyTrash(entry) {
+            if (!trashEmptyApiUrl || !entry || !entry.is_trash_root) {
+                return;
+            }
+            const confirmed = await requestConfirmDialog({
+                title: t("js_empty_trash_title", "휴지통 비우기"),
+                message: t("js_empty_trash_message", "휴지통의 모든 항목을 영구적으로 삭제할까요?"),
+                cancelText: t("cancel", "취소"),
+                confirmText: t("js_empty_trash_confirm", "휴지통 비우기"),
+            });
+            if (!confirmed) {
+                return;
+            }
+            await requestJson(
+                appendSharedQuery(trashEmptyApiUrl),
+                buildPostOptions({ path: entry.path })
+            );
+            applySelection([]);
+            await refreshCurrentDirectory({ skipPreview: true });
+        }
+
         async function toggleFolderExpansion(entry) {
-            if (!entry || entry.type !== "dir") {
+            if (!entry || (entry.type !== "dir" && !entry.is_trash_root) || entry.is_trash_item) {
                 return;
             }
             const folderPath = normalizePath(entry.path, false);
@@ -19301,12 +19509,16 @@
         }
 
         function openEntry(entry) {
-            if (!entry) {
+            if (!entry || entry.is_trash_item) {
                 return;
             }
             cancelPendingEntrySingleClick();
             if (hasSharedContext() && entry.share_url) {
                 window.location.href = entry.share_url;
+                return;
+            }
+            if (entry.is_trash_root) {
+                navigateToDirectory(entry.path, { sourceEntry: entry }).catch(alertError);
                 return;
             }
             if (isArchiveEntry(entry)) {
@@ -19345,12 +19557,15 @@
                 return;
             }
             entries.forEach(function (entry) {
+                if (!entry || entry.is_trash_item) {
+                    return;
+                }
                 const targetUrl = hasSharedContext() && entry.share_url
                     ? entry.share_url
                     : isArchiveEntry(entry)
                     ? buildListUrl(handriveBaseUrl, entry.archive_virtual_path, handriveRootUrl)
                     : (
-                        entry.type === "dir"
+                        (entry.type === "dir" || entry.is_trash_root)
                             ? buildListUrl(handriveBaseUrl, entry.path, handriveRootUrl)
                             : (getGoogleDriveDocsEditorUrl(entry) || buildViewUrl(handriveBaseUrl, entry.slug_path || entry.path))
                     );
@@ -19648,7 +19863,7 @@
                 return;
             }
             const expandsAsArchive = isArchiveEntry(entry) && state.expandedFolders.has(entry.path);
-            const expandsAsDirectory = entry.type === "dir" && state.expandedFolders.has(entry.path);
+            const expandsAsDirectory = (entry.type === "dir" || entry.is_trash_root) && state.expandedFolders.has(entry.path);
             if (!expandsAsArchive && !expandsAsDirectory) {
                 return;
             }
@@ -19819,16 +20034,29 @@
             setHandriveItemRowDepth(item, row, (ancestorHasNextSiblings || []).length);
             state.entryRowByPath.set(entry.path, row);
             const isPublicWriteFile = Boolean(entry.type === "file" && entry.is_public_write);
-            row.draggable = Boolean((moveApiUrl || archiveExtractApiUrl) && (entry.can_edit || entry.can_delete || (entry.is_archive_member && entry.can_extract)) && !isPublicWriteFile);
+            row.draggable = Boolean(
+                !entry.is_trash_root &&
+                (moveApiUrl || archiveExtractApiUrl) &&
+                (
+                    (entry.is_trash_item && entry.can_restore) ||
+                    (isRepoBranchEntry(entry) && entry.can_read) ||
+                    entry.can_edit ||
+                    entry.can_delete ||
+                    (entry.is_archive_member && entry.can_extract)
+                ) &&
+                !isPublicWriteFile
+            );
             if (state.selectedPaths.has(entry.path) || normalizePath(entry.path, true) === state.activePreviewPath) {
                 row.classList.add("is-selected");
             }
 
             const treePrefix = buildTreePrefixElement(ancestorHasNextSiblings, Boolean(isLastSibling));
 
-            const fileIconKey = entry.type === "file" ? getFileIconKey(entry.path) : "";
+            const fileIconKey = entry.type === "file" ? getFileIconKey(entry.name || entry.path) : "";
             const typeMarker = createTypeMarker({
-                isDir: entry.type === "dir",
+                isDir: entry.type === "dir" || entry.type === "trash",
+                isTrashRoot: Boolean(entry.is_trash_root),
+                isTrashEmpty: Boolean(entry.is_trash_root && entry.has_children === false),
                 isGoogleDrive: isGoogleDriveRootEntry(entry),
                 isGithubRepo: entry.type === "dir" && entry.github_repo,
                 isRepo: entry.type === "dir" && entry.git_repo,
@@ -19889,7 +20117,10 @@
                     }
                     return;
                 }
-                if (entry.type === "dir") {
+                if (entry.is_trash_item) {
+                    return;
+                }
+                if (entry.type === "dir" || entry.is_trash_root) {
                     if (event.detail === 1 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
                         if (shouldOpenGoogleDrivePickerOnClick(entry, event)) {
                             scheduleEntrySingleClick(entry, function () {
@@ -19947,7 +20178,7 @@
                     clearDriveDragPreviewState();
                     closeContextMenu();
                     if (event.dataTransfer) {
-                        event.dataTransfer.effectAllowed = draggingEntries.some(isGoogleDriveEntry) ? "copyMove" : "move";
+                        event.dataTransfer.effectAllowed = "copyMove";
                         event.dataTransfer.setData(
                             "text/plain",
                             draggingEntries.map(function (item) {
@@ -19993,7 +20224,7 @@
                 return;
             }
             const expandsAsArchive = isArchiveEntry(entry) && state.expandedFolders.has(entry.path);
-            const expandsAsDirectory = entry.type === "dir" && state.expandedFolders.has(entry.path);
+            const expandsAsDirectory = (entry.type === "dir" || entry.is_trash_root) && !entry.is_trash_item && state.expandedFolders.has(entry.path);
             if (expandsAsArchive || expandsAsDirectory) {
                 const childEntries = getSortedEntriesForRender(getCachedEntries(expandsAsArchive ? entry.archive_virtual_path : entry.path));
                 const nextAncestorHasNextSiblings = (ancestorHasNextSiblings || []).slice();
@@ -20201,6 +20432,10 @@
                 openQueueItemLocation(null, entry).catch(alertError);
                 return true;
             }
+            if (action === "empty-trash") {
+                emptyTrash(entry).catch(alertError);
+                return true;
+            }
             if (action === "download") {
                 downloadEntries(actionEntries);
                 return true;
@@ -20261,6 +20496,10 @@
                         }
                     })
                     .catch(alertError);
+                return true;
+            }
+            if (action === "restore") {
+                restoreTrashEntries(actionEntries.length > 1 ? actionEntries : entry).catch(alertError);
                 return true;
             }
             if (action === "create-map") {

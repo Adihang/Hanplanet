@@ -50,7 +50,9 @@
             return typeMarker;
         }
 
-        if (settings.isGoogleDrive) {
+        if (settings.isTrashRoot) {
+            typeMarker.classList.add(settings.isTrashEmpty ? "is-trash-empty" : "is-trash-full");
+        } else if (settings.isGoogleDrive) {
             typeMarker.classList.add("is-google-drive");
         } else if (settings.isGithubRepo) {
             typeMarker.classList.add("is-github-repo");

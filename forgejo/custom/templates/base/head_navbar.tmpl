@@ -1,4 +1,19 @@
 <nav class="navbar ui-nav" aria-label="Navigation Bar">
+	<script>
+		(function (script) {
+			var nav = script.parentElement;
+			try {
+				var storedMode = JSON.parse(window.sessionStorage.getItem('hanplanet_site_nav_mode_v1'));
+				var viewportWidth = Math.round(window.innerWidth || document.documentElement.clientWidth || 0);
+				if (storedMode && storedMode.viewportWidth === viewportWidth && storedMode.collapsed) {
+					nav.classList.add('nav-auto-collapsed');
+				}
+			} catch (error) {
+				// Runtime measurement remains the source of truth when storage is unavailable.
+			}
+			script.remove();
+		})(document.currentScript);
+	</script>
 	<div class="container-fluid">
 
 		{{/* 브랜드 */}}

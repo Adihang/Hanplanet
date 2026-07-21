@@ -29,6 +29,8 @@ from .models import (
     HandriveUserQuota,
     MinecraftAccountLink,
     MinecraftLinkCode,
+    MinecraftTradeFill,
+    MinecraftTradeListing,
     NavLink,
     OnscripterAccessUser,
     OnscripterGameConfig,
@@ -160,6 +162,52 @@ class MinecraftLinkCodeAdmin(admin.ModelAdmin):
     readonly_fields = ["code_hash", "created_at", "used_at"]
     autocomplete_fields = ["user"]
     ordering = ["-created_at"]
+
+
+@admin.register(MinecraftTradeListing)
+class MinecraftTradeListingAdmin(admin.ModelAdmin):
+    list_display = [
+        "id",
+        "seller",
+        "seller_minecraft_name",
+        "buyer",
+        "buyer_minecraft_name",
+        "sell_item",
+        "sell_amount",
+        "remaining_sell_amount",
+        "price_item",
+        "price_amount",
+        "remaining_price_amount",
+        "unclaimed_price_amount",
+        "claimed_price_amount",
+        "allow_partial",
+        "status",
+        "created_at",
+        "completed_at",
+        "claimed_at",
+    ]
+    list_filter = ["status"]
+    search_fields = [
+        "seller__username",
+        "buyer__username",
+        "seller_minecraft_name",
+        "buyer_minecraft_name",
+        "sell_item",
+        "price_item",
+    ]
+    readonly_fields = ["created_at", "updated_at", "completed_at", "cancelled_at", "claimed_at"]
+    autocomplete_fields = ["seller", "buyer"]
+    ordering = ["-created_at", "-id"]
+
+
+@admin.register(MinecraftTradeFill)
+class MinecraftTradeFillAdmin(admin.ModelAdmin):
+    list_display = ["id", "listing", "buyer", "buyer_minecraft_name", "sell_amount", "price_amount", "created_at"]
+    list_filter = ["created_at"]
+    search_fields = ["listing__seller_minecraft_name", "buyer__username", "buyer_minecraft_name"]
+    readonly_fields = ["created_at"]
+    autocomplete_fields = ["listing", "buyer"]
+    ordering = ["-created_at", "-id"]
 
 
 @admin.register(UserProfile)

@@ -38,7 +38,7 @@ from contextvars import ContextVar
 from functools import wraps
 from glob import escape as glob_escape
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlencode, urlparse, unquote
+from urllib.parse import parse_qs, parse_qsl, quote, urlencode, urlparse, urlunparse, unquote
 import httpx
 
 from django import forms
@@ -177,6 +177,11 @@ GOOGLE_DRIVE_SELECTED_ITEM_LIMIT = 300
 HANDRIVE_SHARE_TOKEN_BYTES = 32
 HANDRIVE_SHARE_ITEM_QUERY_PARAM = "share_item"
 HANDRIVE_SHARE_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
+MINECRAFT_SSO_PUBLIC_HOST = "mc.hanplanet.com"
+MINECRAFT_SSO_QUERY_PARAM = "minecraft_sso"
+MINECRAFT_SSO_FAILED_VALUE = "failed"
+MINECRAFT_SSO_HANDOFF_CACHE_PREFIX = "minecraft_sso_handoff:"
+MINECRAFT_SSO_HANDOFF_TTL_SECONDS = 60
 
 DOCS_FILE_EXTENSION = ".md"
 DOCS_ALLOWED_FILE_EXTENSIONS = (
@@ -11644,6 +11649,130 @@ def _preserve_oauth_return_origin(request, next_url: str, callback_url: str) -> 
     if callback_host and request_host and callback_host != request_host:
         return f"https://{request_host}{next_value}"
     return next_value
+
+
+def _get_configured_public_base_url() -> str:
+    configured = str(getattr(settings, "PUBLIC_BASE_URL", "") or "").strip().rstrip("/")
+    parsed = urlparse(configured)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return "https://www.hanplanet.com"
+
+
+def _is_minecraft_sso_host(request) -> bool:
+    host = str(request.get_host() or "").split(":", 1)[0].strip().lower()
+    return host == MINECRAFT_SSO_PUBLIC_HOST
+
+
+def _normalize_minecraft_sso_next_url(next_url: str) -> str:
+    value = str(next_url or "").strip()
+    if value.startswith("/") and not value.startswith("//"):
+        return f"https://{MINECRAFT_SSO_PUBLIC_HOST}{value}"
+
+    parsed = urlparse(value)
+    if parsed.scheme == "https" and parsed.netloc == MINECRAFT_SSO_PUBLIC_HOST:
+        return value
+    return f"https://{MINECRAFT_SSO_PUBLIC_HOST}/"
+
+
+def _with_minecraft_sso_result(next_url: str, result: str) -> str:
+    parsed = urlparse(_normalize_minecraft_sso_next_url(next_url))
+    query_items = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key != MINECRAFT_SSO_QUERY_PARAM
+    ]
+    query_items.append((MINECRAFT_SSO_QUERY_PARAM, result))
+    return urlunparse(parsed._replace(query=urlencode(query_items)))
+
+
+def _build_minecraft_sso_complete_url(token: str) -> str:
+    complete_path = reverse("main:minecraft_sso_complete")
+    return f"https://{MINECRAFT_SSO_PUBLIC_HOST}{complete_path}?{urlencode({'token': token})}"
+
+
+def _build_minecraft_sso_start_url(next_url: str) -> str:
+    start_path = reverse("main:minecraft_sso_start")
+    return f"{_get_configured_public_base_url()}{start_path}?{urlencode({'next': next_url})}"
+
+
+@require_http_methods(["GET"])
+def minecraft_sso_start(request):
+    """Verify the www session and issue a short-lived one-time handoff for mc."""
+    next_url = _normalize_minecraft_sso_next_url(request.GET.get("next") or "/")
+    public_base = _get_configured_public_base_url()
+    public_netloc = urlparse(public_base).netloc
+    request_netloc = str(request.get_host() or "").strip().lower()
+    if public_netloc and request_netloc != public_netloc.lower():
+        return redirect(_build_minecraft_sso_start_url(next_url))
+
+    if not getattr(request.user, "is_authenticated", False):
+        return redirect(_with_minecraft_sso_result(next_url, MINECRAFT_SSO_FAILED_VALUE))
+
+    session_token = _get_valid_hanplanet_session_token(request, request.user)
+    if not session_token:
+        return redirect(_with_minecraft_sso_result(next_url, MINECRAFT_SSO_FAILED_VALUE))
+
+    handoff_token = secrets.token_urlsafe(32)
+    cache.set(
+        f"{MINECRAFT_SSO_HANDOFF_CACHE_PREFIX}{handoff_token}",
+        {
+            "user_id": request.user.pk,
+            "session_token": session_token,
+            "next_url": next_url,
+        },
+        timeout=MINECRAFT_SSO_HANDOFF_TTL_SECONDS,
+    )
+    return redirect(_build_minecraft_sso_complete_url(handoff_token))
+
+
+@require_http_methods(["GET"])
+def minecraft_sso_complete(request):
+    """Consume the www-issued handoff and create a host-only mc session."""
+    token = str(request.GET.get("token") or "").strip()
+    if not _is_minecraft_sso_host(request):
+        if not token:
+            return redirect(_with_minecraft_sso_result("/", MINECRAFT_SSO_FAILED_VALUE))
+        return redirect(_build_minecraft_sso_complete_url(token))
+
+    if not token:
+        return redirect(_with_minecraft_sso_result("/", MINECRAFT_SSO_FAILED_VALUE))
+
+    cache_key = f"{MINECRAFT_SSO_HANDOFF_CACHE_PREFIX}{token}"
+    payload = cache.get(cache_key)
+    cache.delete(cache_key)
+    if not isinstance(payload, dict):
+        return redirect(_with_minecraft_sso_result("/", MINECRAFT_SSO_FAILED_VALUE))
+
+    session_token = str(payload.get("session_token") or "").strip()
+    try:
+        user_id = int(payload.get("user_id"))
+    except (TypeError, ValueError):
+        user_id = 0
+
+    UserModel = get_user_model()
+    user = UserModel.objects.filter(pk=user_id, is_active=True).first()
+    if user is None or not session_token:
+        return redirect(_with_minecraft_sso_result("/", MINECRAFT_SSO_FAILED_VALUE))
+
+    try:
+        db_token = str(user.profile.session_token or "").strip()
+    except Exception:
+        db_token = ""
+    if not db_token or not secrets.compare_digest(db_token, session_token):
+        return redirect(_with_minecraft_sso_result("/", MINECRAFT_SSO_FAILED_VALUE))
+
+    auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+    request.user = user
+    request.session["_hp_session_token"] = db_token
+    request.session.modified = True
+    try:
+        request.session.save()
+    except Exception:
+        logger.exception("[minecraft-sso] Failed to save mc session for user %s", getattr(user, "username", "?"))
+        return redirect(_with_minecraft_sso_result("/", MINECRAFT_SSO_FAILED_VALUE))
+
+    return redirect(_normalize_minecraft_sso_next_url(payload.get("next_url") or "/"))
 
 
 def _build_github_auth_callback_url(request) -> str:

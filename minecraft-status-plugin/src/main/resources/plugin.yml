@@ -1,12 +1,12 @@
 name: MinecraftStatusBridge
-version: 1.6.0
+version: 2.0.0
 main: dev.minecraftstatus.bridge.MinecraftStatusBridgePlugin
 api-version: "26.2"
-description: Writes Minecraft server status JSON and exposes trusted player-state admin commands.
+description: Writes Minecraft server status JSON and exposes trusted player-state and trade commands.
 commands:
   minecraftstatus:
-    description: Modify Minecraft player status from trusted admin tooling.
-    usage: /minecraftstatus set <player> <health|food|level|exp|gamemode|location|effects|inventory> <value>
+    description: Modify Minecraft player status and trades from trusted admin tooling.
+    usage: /minecraftstatus <set|trade> ...
     permission: minecraftstatus.admin
 permissions:
   minecraftstatus.admin:

@@ -24,4 +24,4 @@ chmod 600 "$CONSOLE_INPUT_FIFO"
 chmod 600 "$CONSOLE_OUTPUT_FILE"
 exec 3<> "$CONSOLE_INPUT_FIFO"
 
-"$JAVA" -Xms1G -Xmx4G -jar paper.jar --nogui <&3 2>&1 | tee -a "$CONSOLE_OUTPUT_FILE"
+"$JAVA" -Djdk.lang.Process.launchMechanism=FORK -Dterminal.jline=false -Dterminal.ansi=false -Xms1G -Xmx4G -jar paper.jar --nogui <&3 2>&1 | tee -a "$CONSOLE_OUTPUT_FILE"

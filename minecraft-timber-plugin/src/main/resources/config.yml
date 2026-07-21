@@ -4,7 +4,7 @@ break-leaves: true
 falling-animation: true
 place-fallen-logs: true
 falling-blocks-damage-entities: true
-log-actions: true
+log-actions: false
 max-logs: 180
 max-leaves: 360
 min-leaves: 4

@@ -543,12 +543,13 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 SHARED_COOKIE_DOMAIN = env_cookie_domain(
     "DJANGO_COOKIE_DOMAIN",
-    None,
+    ".hanplanet.com" if DEFAULT_SECURE_TRANSPORT else None,
 )
-# Authentication cookies stay host-only so intentionally vulnerable training
-# origins can never receive the main site's session, even if a legacy env file
-# still contains the former shared-domain setting.
-SESSION_COOKIE_DOMAIN = None
+SESSION_COOKIE_DOMAIN = SHARED_COOKIE_DOMAIN
+SESSION_SAVE_EVERY_REQUEST = env_bool(
+    "DJANGO_SESSION_SAVE_EVERY_REQUEST",
+    default=bool(SESSION_COOKIE_DOMAIN),
+)
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 3  # 3일
 SESSION_ENGINE = "django.contrib.sessions.backends.db"  # LocMemCache 세션 방지
 CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", default=DEFAULT_SECURE_TRANSPORT) if not DEBUG else False

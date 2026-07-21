@@ -207,7 +207,17 @@ svg {
     align-items: center;
     gap: 12px;
     color: var(--text);
+}
+
+.brand-mark-link,
+.brand-copy {
+    color: inherit;
     text-decoration: none;
+}
+
+.brand-mark-link {
+    display: inline-flex;
+    flex: 0 0 auto;
 }
 
 .brand-mark {
@@ -806,18 +816,6 @@ img.account-avatar {
     border: 1px solid var(--line);
     border-radius: 12px;
     background: var(--surface-soft);
-}
-
-.client-seal {
-    display: grid;
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
-    place-items: center;
-    background: color-mix(in srgb, var(--blue) 16%, var(--surface));
-    color: var(--blue);
-    font-family: var(--mono);
-    font-size: 11px;
 }
 
 .client-line div {

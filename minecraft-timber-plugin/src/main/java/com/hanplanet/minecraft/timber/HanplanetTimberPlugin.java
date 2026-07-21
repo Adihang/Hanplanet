@@ -73,12 +73,10 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         saveDefaultConfig();
         loadSettings();
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("HanplanetTimber enabled with " + logMaterials.size() + " log materials and " + leafMaterials.size() + " leaf materials.");
     }
 
     @Override
     public void onDisable() {
-        getLogger().info("HanplanetTimber disabled.");
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
@@ -125,7 +123,7 @@ public final class HanplanetTimberPlugin extends JavaPlugin implements Listener 
         fallingAnimation = getConfig().getBoolean("falling-animation", true);
         placeFallenLogs = getConfig().getBoolean("place-fallen-logs", true);
         fallingBlocksDamageEntities = getConfig().getBoolean("falling-blocks-damage-entities", true);
-        logActions = getConfig().getBoolean("log-actions", true);
+        logActions = getConfig().getBoolean("log-actions", false);
         maxLogs = Math.max(1, getConfig().getInt("max-logs", 180));
         maxLeaves = Math.max(0, getConfig().getInt("max-leaves", 360));
         minLeaves = Math.max(0, getConfig().getInt("min-leaves", 4));

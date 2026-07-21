@@ -7,36 +7,36 @@
             <div class="account-storage-bar-fill" style="width: {{ handrive_quota_percent }}%"></div>
         </div>
         <span class="account-storage-bar-label">{{ handrive_quota_used_display }} / {{ handrive_quota_total_display }}</span>
-        <div class="account-storage-popup site-dropdown-menu" id="account-storage-popup" hidden>
-            <div class="account-storage-popup-header">
-                <span class="account-storage-popup-title">총 사용 용량</span>
-                <span class="account-storage-popup-used">{{ handrive_quota_used_display }}</span>
-                <span class="account-storage-popup-sep"> / </span>
-                <span class="account-storage-popup-total">{{ handrive_quota_total_display }}</span>
-            </div>
-            <div class="account-storage-popup-bar">
-                {% for item in handrive_quota_breakdown %}{% if item.percent > 0 %}<div class="account-storage-popup-bar-seg" style="width:{{ item.percent }}%;background:{{ item.color }};" title="{{ item.label }}: {{ item.display }}"></div>{% endif %}{% endfor %}{% if handrive_quota_free_percent > 0 %}<div class="account-storage-popup-bar-seg account-storage-popup-bar-free" style="width:{{ handrive_quota_free_percent }}%;" title="여유 공간: {{ handrive_quota_free_display }}"></div>{% endif %}
-            </div>
-            <div class="account-storage-popup-legend">
-                {% for item in handrive_quota_breakdown %}
-                <div class="account-storage-popup-legend-item">
-                    <span class="account-storage-popup-legend-dot" style="background:{{ item.color }};"></span>
-                    <span class="account-storage-popup-legend-text">{{ item.label }} {{ item.count }} ({{ item.display }})</span>
-                </div>
-                {% endfor %}
-                <div class="account-storage-popup-legend-item">
-                    <span class="account-storage-popup-legend-dot account-storage-popup-legend-dot-free"></span>
-                    <span class="account-storage-popup-legend-text">여유 공간 ({{ handrive_quota_free_display }})</span>
-                </div>
-            </div>
-            {% if current_dir is not None %}
-            <button
-                type="button"
-                class="ui-btn ui-btn-primary account-storage-popup-sync-btn"
-                id="account-storage-popup-sync-btn"
-            >{% include 'partials/ui_i18n.html' with key='account_sync_open' %}</button>
-            {% endif %}
+    </div>
+    <div class="account-storage-popup site-dropdown-menu" id="account-storage-popup" data-popup-fit-bottom hidden>
+        <div class="account-storage-popup-header">
+            <span class="account-storage-popup-title">총 사용 용량</span>
+            <span class="account-storage-popup-used">{{ handrive_quota_used_display }}</span>
+            <span class="account-storage-popup-sep"> / </span>
+            <span class="account-storage-popup-total">{{ handrive_quota_total_display }}</span>
         </div>
+        <div class="account-storage-popup-bar">
+            {% for item in handrive_quota_breakdown %}{% if item.percent > 0 %}<div class="account-storage-popup-bar-seg" style="width:{{ item.percent }}%;background:{{ item.color }};" title="{{ item.label }}: {{ item.display }}"></div>{% endif %}{% endfor %}{% if handrive_quota_free_percent > 0 %}<div class="account-storage-popup-bar-seg account-storage-popup-bar-free" style="width:{{ handrive_quota_free_percent }}%;" title="여유 공간: {{ handrive_quota_free_display }}"></div>{% endif %}
+        </div>
+        <div class="account-storage-popup-legend">
+            {% for item in handrive_quota_breakdown %}
+            <div class="account-storage-popup-legend-item">
+                <span class="account-storage-popup-legend-dot" style="background:{{ item.color }};"></span>
+                <span class="account-storage-popup-legend-text">{{ item.label }} {{ item.count }} ({{ item.display }})</span>
+            </div>
+            {% endfor %}
+            <div class="account-storage-popup-legend-item">
+                <span class="account-storage-popup-legend-dot account-storage-popup-legend-dot-free"></span>
+                <span class="account-storage-popup-legend-text">여유 공간 ({{ handrive_quota_free_display }})</span>
+            </div>
+        </div>
+        {% if current_dir is not None %}
+        <button
+            type="button"
+            class="ui-btn ui-btn-primary account-storage-popup-sync-btn"
+            id="account-storage-popup-sync-btn"
+        >{% include 'partials/ui_i18n.html' with key='account_sync_open' %}</button>
+        {% endif %}
     </div>
     <script>
     (function(){

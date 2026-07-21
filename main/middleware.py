@@ -110,13 +110,25 @@ class HanplanetAccountActiveCookieMiddleware:
                 secure=request.is_secure(),
                 samesite="Lax",
             )
-        else:
+        elif self._should_delete_account_active_marker(request):
             response.delete_cookie(
                 HANPLANET_ACCOUNT_ACTIVE_COOKIE_NAME,
                 domain=HANPLANET_SHARED_COOKIE_DOMAIN,
                 path="/",
             )
         return response
+
+    def _should_delete_account_active_marker(self, request):
+        public_base_url = str(getattr(settings, "PUBLIC_BASE_URL", "") or "").strip()
+        public_hostname = str(urlparse(public_base_url).hostname or "").strip().lower()
+        request_hostname = str(request.get_host() or "").split(":", 1)[0].strip().lower()
+        if not public_hostname or not request_hostname:
+            return True
+
+        canonical_hosts = {public_hostname}
+        if public_hostname.startswith("www."):
+            canonical_hosts.add(public_hostname[4:])
+        return request_hostname in canonical_hosts
 
     def _has_active_hanplanet_session(self, request):
         user = getattr(request, "user", None)

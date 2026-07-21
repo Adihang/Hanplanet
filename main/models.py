@@ -624,6 +624,115 @@ class MinecraftAccountLink(models.Model):
         return f"{self.user.username} — {self.minecraft_name} ({self.edition})"
 
 
+class MinecraftTradeListing(models.Model):
+    STATUS_OPEN = "open"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_COMPLETED = "completed"
+    STATUS_CLAIMED = "claimed"
+    STATUS_CHOICES = [
+        (STATUS_OPEN, "Open"),
+        (STATUS_CANCELLED, "Cancelled"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_CLAIMED, "Claimed"),
+    ]
+
+    seller = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="minecraft_trade_listings",
+        verbose_name="판매자",
+    )
+    seller_minecraft_name = models.CharField("판매자 Minecraft 닉네임", max_length=32)
+    buyer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="minecraft_trade_purchases",
+        verbose_name="구매자",
+    )
+    buyer_minecraft_name = models.CharField("구매자 Minecraft 닉네임", max_length=32, blank=True, default="")
+    sell_item = models.CharField("판매 아이템", max_length=64)
+    sell_amount = models.PositiveIntegerField("판매 수량", validators=[MinValueValidator(1)])
+    price_item = models.CharField("대가 아이템", max_length=64)
+    price_amount = models.PositiveIntegerField("대가 수량", validators=[MinValueValidator(1)])
+    allow_partial = models.BooleanField("부분 거래 허용", default=False)
+    remaining_sell_amount = models.PositiveIntegerField("남은 판매 수량", default=0)
+    remaining_price_amount = models.PositiveIntegerField("남은 대가 수량", default=0)
+    unclaimed_price_amount = models.PositiveIntegerField("미수령 대가 수량", default=0)
+    claimed_price_amount = models.PositiveIntegerField("수령한 대가 수량", default=0)
+    status = models.CharField("상태", max_length=12, choices=STATUS_CHOICES, default=STATUS_OPEN)
+    created_at = models.DateTimeField("생성일", auto_now_add=True)
+    updated_at = models.DateTimeField("수정일", auto_now=True)
+    completed_at = models.DateTimeField("거래 완료일", null=True, blank=True)
+    cancelled_at = models.DateTimeField("취소일", null=True, blank=True)
+    claimed_at = models.DateTimeField("수령일", null=True, blank=True)
+
+    class Meta:
+        db_table = "main_minecrafttradelisting"
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Minecraft 거래글"
+        verbose_name_plural = "Minecraft 거래글"
+        indexes = [
+            models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["seller", "status"]),
+            models.Index(fields=["buyer", "status"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.seller_minecraft_name}: {self.sell_item} x{self.sell_amount} "
+            f"for {self.price_item} x{self.price_amount} ({self.status})"
+        )
+
+    def save(self, *args, **kwargs):
+        """Give direct model creations the same escrow balances as the trade API."""
+        if self._state.adding:
+            if self.status == self.STATUS_OPEN:
+                if not self.remaining_sell_amount:
+                    self.remaining_sell_amount = self.sell_amount
+                if not self.remaining_price_amount:
+                    self.remaining_price_amount = self.price_amount
+            elif self.status == self.STATUS_COMPLETED and not self.unclaimed_price_amount:
+                self.unclaimed_price_amount = self.price_amount
+        super().save(*args, **kwargs)
+
+
+class MinecraftTradeFill(models.Model):
+    """One completed quantity from a listing, including partial purchases."""
+    listing = models.ForeignKey(
+        MinecraftTradeListing,
+        on_delete=models.CASCADE,
+        related_name="fills",
+        verbose_name="거래글",
+    )
+    buyer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="minecraft_trade_fill_purchases",
+        verbose_name="구매자",
+    )
+    buyer_minecraft_name = models.CharField("구매자 Minecraft 닉네임", max_length=32)
+    sell_amount = models.PositiveIntegerField("판매 수량", validators=[MinValueValidator(1)])
+    price_amount = models.PositiveIntegerField("지불 수량", validators=[MinValueValidator(1)])
+    created_at = models.DateTimeField("구매일", auto_now_add=True)
+
+    class Meta:
+        db_table = "main_minecrafttradefill"
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Minecraft 거래 체결"
+        verbose_name_plural = "Minecraft 거래 체결"
+        indexes = [
+            models.Index(fields=["listing", "-created_at"]),
+            models.Index(fields=["buyer", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"#{self.listing_id}: {self.buyer_minecraft_name} x{self.sell_amount}"
+
+
 class MinecraftLinkCode(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

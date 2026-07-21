@@ -17,7 +17,8 @@
 }
 
 .ui-auth-account-floating:has(.ui-auth-account-menu:not([hidden])),
-.ui-auth-account-floating:has(.ui-auth-account-weather-popup:not([hidden])) {
+.ui-auth-account-floating:has(.ui-auth-account-weather-popup:not([hidden])),
+.ui-auth-account-floating:has(.account-storage-popup:not([hidden])) {
     z-index: var(--site-z-popup);
 }
 
@@ -755,10 +756,10 @@ body.theme-dark .ui-auth-account-menu {
     display: none;
 }
 
+.ui-auth-account-menu .ui-pwa-install-btn,
 .ui-auth-account-github-btn,
 .ui-auth-account-google-btn {
     position: absolute;
-    right: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -776,6 +777,17 @@ body.theme-dark .ui-auth-account-menu {
     padding: 0;
 }
 
+.ui-auth-account-menu .ui-pwa-install-btn {
+    top: 10px;
+    left: 10px;
+    display: none;
+}
+
+.ui-auth-account-github-btn,
+.ui-auth-account-google-btn {
+    right: 10px;
+}
+
 .ui-auth-account-github-btn {
     top: 10px;
 }
@@ -784,6 +796,7 @@ body.theme-dark .ui-auth-account-menu {
     top: 54px;
 }
 
+.ui-auth-account-menu .ui-pwa-install-icon,
 .ui-auth-account-github-icon,
 .ui-auth-account-google-icon {
     width: 30px;
@@ -792,6 +805,14 @@ body.theme-dark .ui-auth-account-menu {
     pointer-events: none;
 }
 
+.ui-auth-account-menu .ui-pwa-install-icon {
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v10'/%3E%3Cpath d='m8.5 9.5 3.5 3.5 3.5-3.5'/%3E%3Crect x='4' y='16' width='16' height='5' rx='1.5'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v10'/%3E%3Cpath d='m8.5 9.5 3.5 3.5 3.5-3.5'/%3E%3Crect x='4' y='16' width='16' height='5' rx='1.5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.ui-auth-account-menu .ui-pwa-install-btn:hover,
+.ui-auth-account-menu .ui-pwa-install-btn:focus-visible,
 .ui-auth-account-github-btn:hover,
 .ui-auth-account-github-btn:focus-visible,
 .ui-auth-account-google-btn:hover,
@@ -805,11 +826,14 @@ body.theme-dark .ui-auth-account-menu {
     color: #333;
 }
 
+body.theme-dark .ui-auth-account-menu .ui-pwa-install-btn,
 body.theme-dark .ui-auth-account-github-btn,
 body.theme-dark .ui-auth-account-google-btn {
     color: #aaa;
 }
 
+body.theme-dark .ui-auth-account-menu .ui-pwa-install-btn:hover,
+body.theme-dark .ui-auth-account-menu .ui-pwa-install-btn:focus-visible,
 body.theme-dark .ui-auth-account-github-btn:hover,
 body.theme-dark .ui-auth-account-github-btn:focus-visible,
 body.theme-dark .ui-auth-account-google-btn:hover,

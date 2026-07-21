@@ -22,8 +22,17 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.profile.PlayerProfile;
+import org.bukkit.profile.PlayerTextures;
 
+import javax.imageio.ImageIO;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,15 +46,24 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Listener {
     private static final String ADMIN_PERMISSION = "minecraftstatus.admin";
+    private static final int TRADE_MAX_AMOUNT = 2304;
+    private static final String TRADE_MESSAGE_PREFIX = "\u00a76[\uac70\ub798] \u00a7f";
+    private static final int PLAYER_HEAD_SIZE = 32;
+    private static final int SKIN_CONNECT_TIMEOUT_MILLIS = 3500;
+    private static final int SKIN_READ_TIMEOUT_MILLIS = 5000;
     private Path statusPath;
+    private Path playerHeadsPath;
     private long lastNonEmptyAtMillis;
+    private final Set<UUID> pendingHeadBuilds = ConcurrentHashMap.newKeySet();
 
     @Override
     public void onEnable() {
         statusPath = getServer().getWorldContainer().toPath().resolve("web").resolve("status.json");
+        playerHeadsPath = statusPath.getParent().resolve("player-heads");
         lastNonEmptyAtMillis = System.currentTimeMillis();
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getScheduler().runTaskTimer(this, this::writeStatus, 20L, 100L);
@@ -70,6 +88,9 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
     }
 
     private boolean handleAdminCommand(CommandSender sender, String[] args) {
+        if (args.length >= 1 && args[0].equalsIgnoreCase("trade")) {
+            return handleTradeCommand(sender, args);
+        }
         if (args.length < 4 || !args[0].equalsIgnoreCase("set")) {
             sendAdminUsage(sender);
             return true;
@@ -119,6 +140,417 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         writeStatus();
         sender.sendMessage("Set " + player.getName() + " health to " + formatJsonNumber(clamped) + ".");
         return true;
+    }
+
+    private boolean handleTradeCommand(CommandSender sender, String[] args) {
+        if (args.length < 5) {
+            sendTradeUsage(sender);
+            return true;
+        }
+
+        String action = args[1].toLowerCase(Locale.ROOT);
+        switch (action) {
+            case "reserve":
+                return handleTradeReserve(sender, args);
+            case "return":
+                return handleTradeReturn(sender, args);
+            case "claim":
+                return handleTradeClaim(sender, args);
+            case "payout":
+                return handleTradePayout(sender, args);
+            case "settle":
+                return handleTradeSettle(sender, args);
+            case "exchange":
+                return handleTradeExchange(sender, args);
+            default:
+                sendTradeUsage(sender);
+                return true;
+        }
+    }
+
+    private boolean handleTradeReserve(CommandSender sender, String[] args) {
+        if (args.length < 5) {
+            sendTradeUsage(sender);
+            return true;
+        }
+        Player player = resolveOnlineTradePlayer(sender, "reserve", args[2]);
+        Material material = resolveTradeMaterial(sender, "reserve", args[3]);
+        Integer amount = resolveTradeAmount(sender, "reserve", args[4]);
+        if (player == null || material == null || amount == null) {
+            return true;
+        }
+
+        PlayerInventory inventory = player.getInventory();
+        if (countStorageMaterial(inventory, material) < amount) {
+            sendTradeError(sender, "reserve", "insufficient_item");
+            return true;
+        }
+
+        removeStorageMaterial(inventory, material, amount);
+        player.updateInventory();
+        writeStatus();
+        String saleDescription = formatTradeItem(material, amount);
+        String priceDescription = optionalTradeItemDescription(args, 5, 6);
+        sendTradeMessage(
+            player,
+            "\uac70\ub798\uae00 \ub4f1\ub85d: " + formatTradeSummary(saleDescription, priceDescription) + " \ubcf4\uad00"
+        );
+        sendTradeOk(sender, "reserve");
+        return true;
+    }
+
+    private boolean handleTradeReturn(CommandSender sender, String[] args) {
+        if (args.length < 5) {
+            sendTradeUsage(sender);
+            return true;
+        }
+        return handleTradeAddToPlayer(sender, "return", args[2], args[3], args[4], args);
+    }
+
+    private boolean handleTradeClaim(CommandSender sender, String[] args) {
+        if (args.length < 5) {
+            sendTradeUsage(sender);
+            return true;
+        }
+        return handleTradeAddToPlayer(sender, "claim", args[2], args[3], args[4], args);
+    }
+
+    private boolean handleTradePayout(CommandSender sender, String[] args) {
+        if (args.length < 5) {
+            sendTradeUsage(sender);
+            return true;
+        }
+        Player player = resolveOnlineTradePlayer(sender, "payout", args[2]);
+        Material material = resolveTradeMaterial(sender, "payout", args[3]);
+        Integer amount = resolveTradeAmount(sender, "payout", args[4]);
+        if (player == null || material == null || amount == null) {
+            return true;
+        }
+        if (!canFitStorageMaterial(player.getInventory(), material, amount)) {
+            sendTradeError(sender, "payout", "inventory_full");
+            return true;
+        }
+
+        addStorageMaterial(player.getInventory(), material, amount);
+        player.updateInventory();
+        writeStatus();
+        sendTradeMessage(player, "\uac70\ub798 \ub300\uac00 " + formatTradeItem(material, amount) + " \uc218\ub839");
+        sendTradeOk(sender, "payout");
+        return true;
+    }
+
+    private boolean handleTradeSettle(CommandSender sender, String[] args) {
+        if (args.length < 7) {
+            sendTradeUsage(sender);
+            return true;
+        }
+        Player player = resolveOnlineTradePlayer(sender, "settle", args[2]);
+        Material priceMaterial = resolveTradeMaterial(sender, "settle", args[3]);
+        Integer priceAmount = resolveTradeAmountAllowZero(sender, "settle", args[4]);
+        Material saleMaterial = resolveTradeMaterial(sender, "settle", args[5]);
+        Integer saleAmount = resolveTradeAmountAllowZero(sender, "settle", args[6]);
+        if (player == null || priceMaterial == null || priceAmount == null || saleMaterial == null || saleAmount == null) {
+            return true;
+        }
+        if (priceAmount == 0 && saleAmount == 0) {
+            sendTradeError(sender, "settle", "invalid_amount");
+            return true;
+        }
+        if (!canFitStorageMaterials(player.getInventory(), priceMaterial, priceAmount, saleMaterial, saleAmount)) {
+            sendTradeError(sender, "settle", "inventory_full");
+            return true;
+        }
+
+        if (priceAmount > 0) {
+            addStorageMaterial(player.getInventory(), priceMaterial, priceAmount);
+        }
+        if (saleAmount > 0) {
+            addStorageMaterial(player.getInventory(), saleMaterial, saleAmount);
+        }
+        player.updateInventory();
+        writeStatus();
+        String priceDescription = priceAmount > 0 ? formatTradeItem(priceMaterial, priceAmount) : "";
+        String saleDescription = saleAmount > 0 ? formatTradeItem(saleMaterial, saleAmount) : "";
+        sendTradeMessage(
+            player,
+            "\uac70\ub798 \uc885\ub8cc: " + formatTradeSummary(saleDescription, priceDescription) + " \uc218\ub839"
+        );
+        sendTradeOk(sender, "settle");
+        return true;
+    }
+
+    private boolean handleTradeAddToPlayer(
+        CommandSender sender,
+        String action,
+        String playerName,
+        String itemValue,
+        String amountValue,
+        String[] args
+    ) {
+        Player player = resolveOnlineTradePlayer(sender, action, playerName);
+        Material material = resolveTradeMaterial(sender, action, itemValue);
+        Integer amount = resolveTradeAmount(sender, action, amountValue);
+        if (player == null || material == null || amount == null) {
+            return true;
+        }
+        if (!canFitStorageMaterial(player.getInventory(), material, amount)) {
+            sendTradeError(sender, action, "inventory_full");
+            return true;
+        }
+
+        addStorageMaterial(player.getInventory(), material, amount);
+        player.updateInventory();
+        writeStatus();
+        String itemDescription = formatTradeItem(material, amount);
+        if (action.equals("return")) {
+            String priceDescription = optionalTradeItemDescription(args, 5, 6);
+            sendTradeMessage(
+                player,
+                "\uac70\ub798 \ucde8\uc18c: " + formatTradeSummary(itemDescription, priceDescription) + " \ubc18\ud658"
+            );
+        } else if (action.equals("claim")) {
+            String saleDescription = optionalTradeItemDescription(args, 5, 6);
+            String partnerName = optionalTradePartnerName(args, 7);
+            String heading = partnerName.isEmpty()
+                ? "\uac70\ub798 \uc644\ub8cc"
+                : partnerName + "\ub2d8\uacfc \uac70\ub798 \uc644\ub8cc";
+            sendTradeMessage(
+                player,
+                heading + ": " + formatTradeSummary(saleDescription, itemDescription) + " \uc218\ub839"
+            );
+        }
+        sendTradeOk(sender, action);
+        return true;
+    }
+
+    private boolean handleTradeExchange(CommandSender sender, String[] args) {
+        if (args.length < 7) {
+            sendTradeUsage(sender);
+            return true;
+        }
+
+        Player buyer = resolveOnlineTradePlayer(sender, "exchange", args[2]);
+        Material priceMaterial = resolveTradeMaterial(sender, "exchange", args[3]);
+        Integer priceAmount = resolveTradeAmount(sender, "exchange", args[4]);
+        Material saleMaterial = resolveTradeMaterial(sender, "exchange", args[5]);
+        Integer saleAmount = resolveTradeAmount(sender, "exchange", args[6]);
+        if (buyer == null || priceMaterial == null || priceAmount == null || saleMaterial == null || saleAmount == null) {
+            return true;
+        }
+
+        PlayerInventory inventory = buyer.getInventory();
+        if (countStorageMaterial(inventory, priceMaterial) < priceAmount) {
+            sendTradeError(sender, "exchange", "insufficient_item");
+            return true;
+        }
+        if (!canFitStorageMaterial(inventory, saleMaterial, saleAmount)) {
+            sendTradeError(sender, "exchange", "inventory_full");
+            return true;
+        }
+
+        removeStorageMaterial(inventory, priceMaterial, priceAmount);
+        addStorageMaterial(inventory, saleMaterial, saleAmount);
+        buyer.updateInventory();
+        writeStatus();
+        String partnerName = optionalTradePartnerName(args, 7);
+        String heading = partnerName.isEmpty()
+            ? "\uac70\ub798 \uc644\ub8cc"
+            : partnerName + "\ub2d8\uacfc \uac70\ub798 \uc644\ub8cc";
+        sendTradeMessage(
+            buyer,
+            heading + ": " + formatTradeSummary(
+                formatTradeItem(saleMaterial, saleAmount),
+                formatTradeItem(priceMaterial, priceAmount)
+            ) + " \uc218\ub839 / \uc9c0\uae09"
+        );
+        sendTradeOk(sender, "exchange");
+        return true;
+    }
+
+    private Player resolveOnlineTradePlayer(CommandSender sender, String action, String playerName) {
+        Player player = Bukkit.getPlayerExact(playerName);
+        if (player == null) {
+            sendTradeError(sender, action, "player_offline");
+        }
+        return player;
+    }
+
+    private Material resolveTradeMaterial(CommandSender sender, String action, String itemValue) {
+        Material material = resolveMaterial(itemValue);
+        if (material == null || material.isAir() || !material.isItem()) {
+            sendTradeError(sender, action, "invalid_item");
+            return null;
+        }
+        return material;
+    }
+
+    private Integer resolveTradeAmount(CommandSender sender, String action, String amountValue) {
+        Integer amount = parseIntArg(amountValue);
+        if (amount == null || amount < 1 || amount > TRADE_MAX_AMOUNT) {
+            sendTradeError(sender, action, "invalid_amount");
+            return null;
+        }
+        return amount;
+    }
+
+    private Integer resolveTradeAmountAllowZero(CommandSender sender, String action, String amountValue) {
+        Integer amount = parseIntArg(amountValue);
+        if (amount == null || amount < 0 || amount > TRADE_MAX_AMOUNT) {
+            sendTradeError(sender, action, "invalid_amount");
+            return null;
+        }
+        return amount;
+    }
+
+    private int countStorageMaterial(PlayerInventory inventory, Material material) {
+        int count = 0;
+        for (ItemStack item : inventory.getStorageContents()) {
+            if (!isEmptyItem(item) && item.getType() == material) {
+                count += item.getAmount();
+            }
+        }
+        return count;
+    }
+
+    private boolean canFitStorageMaterial(PlayerInventory inventory, Material material, int amount) {
+        int remainingCapacity = 0;
+        int maxStackSize = Math.max(1, material.getMaxStackSize());
+        for (ItemStack item : inventory.getStorageContents()) {
+            if (isEmptyItem(item)) {
+                remainingCapacity += maxStackSize;
+            } else if (item.getType() == material) {
+                remainingCapacity += Math.max(0, maxStackSize - item.getAmount());
+            }
+            if (remainingCapacity >= amount) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean canFitStorageMaterials(
+        PlayerInventory inventory,
+        Material firstMaterial,
+        int firstAmount,
+        Material secondMaterial,
+        int secondAmount
+    ) {
+        ItemStack[] simulatedContents = inventory.getStorageContents();
+        for (int index = 0; index < simulatedContents.length; index += 1) {
+            ItemStack item = simulatedContents[index];
+            simulatedContents[index] = isEmptyItem(item) ? null : item.clone();
+        }
+        return canAddStorageMaterial(simulatedContents, firstMaterial, firstAmount)
+            && canAddStorageMaterial(simulatedContents, secondMaterial, secondAmount);
+    }
+
+    private boolean canAddStorageMaterial(ItemStack[] contents, Material material, int amount) {
+        int remaining = amount;
+        if (remaining == 0) {
+            return true;
+        }
+        int maxStackSize = Math.max(1, material.getMaxStackSize());
+        for (ItemStack item : contents) {
+            if (!isEmptyItem(item) && item.getType() == material) {
+                int accepted = Math.min(remaining, Math.max(0, maxStackSize - item.getAmount()));
+                item.setAmount(item.getAmount() + accepted);
+                remaining -= accepted;
+                if (remaining == 0) {
+                    return true;
+                }
+            }
+        }
+        for (int index = 0; index < contents.length && remaining > 0; index += 1) {
+            if (!isEmptyItem(contents[index])) {
+                continue;
+            }
+            int stackAmount = Math.min(remaining, maxStackSize);
+            contents[index] = new ItemStack(material, stackAmount);
+            remaining -= stackAmount;
+        }
+        return remaining == 0;
+    }
+
+    private void removeStorageMaterial(PlayerInventory inventory, Material material, int amount) {
+        ItemStack[] contents = inventory.getStorageContents();
+        int remaining = amount;
+        for (int index = 0; index < contents.length && remaining > 0; index += 1) {
+            ItemStack item = contents[index];
+            if (isEmptyItem(item) || item.getType() != material) {
+                continue;
+            }
+            int nextAmount = item.getAmount() - remaining;
+            if (nextAmount > 0) {
+                item.setAmount(nextAmount);
+                remaining = 0;
+            } else {
+                contents[index] = null;
+                remaining = Math.abs(nextAmount);
+            }
+        }
+        inventory.setStorageContents(contents);
+    }
+
+    private void addStorageMaterial(PlayerInventory inventory, Material material, int amount) {
+        int remaining = amount;
+        int maxStackSize = Math.max(1, material.getMaxStackSize());
+        while (remaining > 0) {
+            int stackAmount = Math.min(remaining, maxStackSize);
+            inventory.addItem(new ItemStack(material, stackAmount));
+            remaining -= stackAmount;
+        }
+    }
+
+    private void sendTradeUsage(CommandSender sender) {
+        sender.sendMessage(
+            "Usage: minecraftstatus trade <reserve|return|claim|payout|settle|exchange> ..."
+        );
+    }
+
+    private String formatTradeItem(Material material, int amount) {
+        return material.name().toLowerCase(Locale.ROOT) + " x" + amount;
+    }
+
+    private String optionalTradeItemDescription(String[] args, int itemIndex, int amountIndex) {
+        if (args.length <= amountIndex) {
+            return "";
+        }
+        Material material = resolveMaterial(args[itemIndex]);
+        Integer amount = parseIntArg(args[amountIndex]);
+        if (material == null || material.isAir() || !material.isItem() || amount == null || amount < 1 || amount > TRADE_MAX_AMOUNT) {
+            return "";
+        }
+        return formatTradeItem(material, amount);
+    }
+
+    private String optionalTradePartnerName(String[] args, int index) {
+        if (args.length <= index) {
+            return "";
+        }
+        String playerName = args[index].trim();
+        return playerName.matches("[A-Za-z0-9_.-]{1,32}") ? playerName : "";
+    }
+
+    private String formatTradeSummary(String saleDescription, String priceDescription) {
+        if (saleDescription.isEmpty()) {
+            return priceDescription.isEmpty() ? "" : "\ub300\uac00 " + priceDescription;
+        }
+        if (priceDescription.isEmpty()) {
+            return "\ud310\ub9e4 " + saleDescription;
+        }
+        return "\ud310\ub9e4 " + saleDescription + " / \ub300\uac00 " + priceDescription;
+    }
+
+    private void sendTradeMessage(Player player, String message) {
+        player.sendMessage(TRADE_MESSAGE_PREFIX + message);
+    }
+
+    private void sendTradeOk(CommandSender sender, String action) {
+        sender.sendMessage("HANPLANET_TRADE_OK " + action);
+    }
+
+    private void sendTradeError(CommandSender sender, String action, String code) {
+        sender.sendMessage("HANPLANET_TRADE_ERROR " + action + " " + code);
     }
 
     private boolean setPlayerFood(CommandSender sender, Player player, String value) {
@@ -602,8 +1034,10 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
             if (name.isEmpty()) {
                 continue;
             }
+            UUID uuid = player.getUniqueId();
+            ensurePlayerHead(uuid, playerSkinUrl(player));
             onlineNames.add(name.toLowerCase(Locale.ROOT));
-            rows.add(new PlayerRow(name, true, player.getUniqueId(), buildPlayerDetailJson(player)));
+            rows.add(new PlayerRow(name, true, uuid, playerHeadUrl(uuid), buildPlayerDetailJson(player)));
         }
 
         for (OfflinePlayer player : Bukkit.getOfflinePlayers()) {
@@ -615,7 +1049,9 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
             if (!onlineNames.add(key)) {
                 continue;
             }
-            rows.add(new PlayerRow(name, false, player.getUniqueId(), ""));
+            UUID uuid = player.getUniqueId();
+            ensurePlayerHead(uuid, playerSkinUrl(player));
+            rows.add(new PlayerRow(name, false, uuid, playerHeadUrl(uuid), ""));
         }
 
         rows.sort(Comparator
@@ -634,6 +1070,10 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
             if (row.uuid != null) {
                 json.append(',');
                 appendJsonField(json, "uuid", row.uuid.toString());
+            }
+            if (!row.headUrl.isEmpty()) {
+                json.append(',');
+                appendJsonField(json, "headUrl", row.headUrl);
             }
             if (!row.detailJson.isEmpty()) {
                 json.append(",\"detail\":").append(row.detailJson);
@@ -824,6 +1264,156 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         return name == null ? "" : name.trim();
     }
 
+    private void ensurePlayerHead(UUID uuid, URL skinUrl) {
+        if (uuid == null || playerHeadsPath == null) {
+            return;
+        }
+
+        if (skinUrl == null || !isHttpUrl(skinUrl)) {
+            return;
+        }
+
+        Path headPath = playerHeadPath(uuid);
+        Path metadataPath = playerHeadMetadataPath(uuid);
+        String skinUrlText = skinUrl.toString();
+        if (isPlayerHeadCurrent(headPath, metadataPath, skinUrlText)) {
+            return;
+        }
+        if (!pendingHeadBuilds.add(uuid)) {
+            return;
+        }
+
+        getServer().getScheduler().runTaskAsynchronously(this, () -> {
+            try {
+                buildPlayerHead(skinUrl, headPath, metadataPath, skinUrlText);
+            } catch (IOException | RuntimeException error) {
+                getLogger().fine("Failed to build player head for " + uuid + ": " + error.getMessage());
+            } finally {
+                pendingHeadBuilds.remove(uuid);
+            }
+        });
+    }
+
+    private URL playerSkinUrl(Player player) {
+        try {
+            PlayerProfile profile = player.getPlayerProfile();
+            if (profile == null) {
+                return null;
+            }
+            PlayerTextures textures = profile.getTextures();
+            return textures == null ? null : textures.getSkin();
+        } catch (RuntimeException error) {
+            return null;
+        }
+    }
+
+    private URL playerSkinUrl(OfflinePlayer player) {
+        try {
+            PlayerProfile profile = player.getPlayerProfile();
+            if (profile == null) {
+                return null;
+            }
+            PlayerTextures textures = profile.getTextures();
+            return textures == null ? null : textures.getSkin();
+        } catch (RuntimeException error) {
+            return null;
+        }
+    }
+
+    private boolean isHttpUrl(URL url) {
+        String protocol = url.getProtocol();
+        return "https".equalsIgnoreCase(protocol) || "http".equalsIgnoreCase(protocol);
+    }
+
+    private Path playerHeadPath(UUID uuid) {
+        return playerHeadsPath.resolve(uuid.toString() + ".png");
+    }
+
+    private Path playerHeadMetadataPath(UUID uuid) {
+        return playerHeadsPath.resolve(uuid.toString() + ".txt");
+    }
+
+    private boolean isPlayerHeadCurrent(Path headPath, Path metadataPath, String skinUrl) {
+        if (!Files.isRegularFile(headPath) || !Files.isRegularFile(metadataPath)) {
+            return false;
+        }
+        try {
+            return Files.readString(metadataPath, StandardCharsets.UTF_8).trim().equals(skinUrl);
+        } catch (IOException error) {
+            return false;
+        }
+    }
+
+    private void buildPlayerHead(URL skinUrl, Path headPath, Path metadataPath, String skinUrlText) throws IOException {
+        Files.createDirectories(playerHeadsPath);
+        BufferedImage skin = readSkinImage(skinUrl);
+        if (skin == null || skin.getWidth() < 48 || skin.getHeight() < 16) {
+            throw new IOException("Invalid skin image");
+        }
+
+        BufferedImage head = renderPlayerHead(skin);
+        Path tempPath = Files.createTempFile(playerHeadsPath, headPath.getFileName().toString(), ".tmp");
+        try {
+            if (!ImageIO.write(head, "png", tempPath.toFile())) {
+                throw new IOException("PNG writer unavailable");
+            }
+            Files.move(tempPath, headPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            Files.writeString(metadataPath, skinUrlText + "\n", StandardCharsets.UTF_8);
+        } finally {
+            Files.deleteIfExists(tempPath);
+        }
+    }
+
+    private BufferedImage readSkinImage(URL skinUrl) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) skinUrl.openConnection();
+        connection.setConnectTimeout(SKIN_CONNECT_TIMEOUT_MILLIS);
+        connection.setReadTimeout(SKIN_READ_TIMEOUT_MILLIS);
+        connection.setInstanceFollowRedirects(true);
+        connection.setRequestProperty("User-Agent", "Hanplanet-MinecraftStatusBridge/1.7");
+        try {
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) {
+                throw new IOException("Skin request failed with HTTP " + status);
+            }
+            try (InputStream stream = connection.getInputStream()) {
+                return ImageIO.read(stream);
+            }
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private BufferedImage renderPlayerHead(BufferedImage skin) {
+        BufferedImage head = new BufferedImage(PLAYER_HEAD_SIZE, PLAYER_HEAD_SIZE, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = head.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+            graphics.drawImage(skin, 0, 0, PLAYER_HEAD_SIZE, PLAYER_HEAD_SIZE, 8, 8, 16, 16, null);
+            graphics.drawImage(skin, 0, 0, PLAYER_HEAD_SIZE, PLAYER_HEAD_SIZE, 40, 8, 48, 16, null);
+        } finally {
+            graphics.dispose();
+        }
+        return head;
+    }
+
+    private String playerHeadUrl(UUID uuid) {
+        if (uuid == null || playerHeadsPath == null) {
+            return "";
+        }
+        Path headPath = playerHeadPath(uuid);
+        if (!Files.isRegularFile(headPath)) {
+            return "";
+        }
+        long version = 0L;
+        try {
+            version = Files.getLastModifiedTime(headPath).toMillis();
+        } catch (IOException error) {
+            version = System.currentTimeMillis();
+        }
+        return "/player-heads/" + uuid + ".png?v=" + version;
+    }
+
     private String formatMinecraftTime(long ticks) {
         long dayTicks = Math.floorMod(ticks, 24000L);
         long totalMinutes = ((dayTicks + 6000L) % 24000L) * 1440L / 24000L;
@@ -934,6 +1524,6 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         Files.move(tempPath, statusPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     }
 
-    private record PlayerRow(String name, boolean online, UUID uuid, String detailJson) {
+    private record PlayerRow(String name, boolean online, UUID uuid, String headUrl, String detailJson) {
     }
 }

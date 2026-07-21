@@ -69,6 +69,7 @@
         const navControls = navCollapse ? navCollapse.querySelector('.ui-controls-stack') : null;
         const navToggler = nav.querySelector('.ui-nav-toggler');
         const installButton = nav.querySelector('[data-pwa-install]');
+        const navModeStorageKey = 'hanplanet_site_nav_mode_v1';
 
         if (!navContainer || !navBrandGroup || !navLinks || !navCollapse || !navToggler) {
             return;
@@ -221,6 +222,17 @@
             forceClearNavContainerDecorations();
         };
 
+        const persistNavMode = function () {
+            try {
+                window.sessionStorage.setItem(navModeStorageKey, JSON.stringify({
+                    collapsed: nav.classList.contains('nav-auto-collapsed'),
+                    viewportWidth: Math.round(window.innerWidth || document.documentElement.clientWidth || 0)
+                }));
+            } catch (error) {
+                // Responsive behavior must still work when storage is unavailable.
+            }
+        };
+
         const updateNavMode = function () {
             rafId = null;
 
@@ -242,6 +254,7 @@
                 placeInstallButtonInline();
             }
 
+            persistNavMode();
             forceClearNavContainerDecorations();
         };
 

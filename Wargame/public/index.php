@@ -24,6 +24,32 @@ function mission_client(array $mission): string
     return is_array($client) ? (string) ($client['name'] ?? '비공개 의뢰인') : (string) $client;
 }
 
+function text_prefix(string $value, int $length, string $fallback = ''): string
+{
+    $value = trim($value);
+    if ($value === '') {
+        return $fallback;
+    }
+
+    $length = max(1, $length);
+    if (function_exists('mb_substr')) {
+        $prefix = mb_substr($value, 0, $length, 'UTF-8');
+    } elseif (preg_match_all('/./us', $value, $matches) !== false && !empty($matches[0])) {
+        $prefix = implode('', array_slice($matches[0], 0, $length));
+    } else {
+        $prefix = substr($value, 0, $length);
+    }
+
+    $prefix = is_string($prefix) ? trim($prefix) : '';
+    return $prefix !== '' ? $prefix : $fallback;
+}
+
+function account_initial(string $value, string $fallback = 'OP'): string
+{
+    $initial = text_prefix($value, 1, $fallback);
+    return preg_match('/\A[A-Za-z]\z/', $initial) === 1 ? strtoupper($initial) : $initial;
+}
+
 function dispatch_notice(array $dispatch): string
 {
     return match ((string) ($dispatch['status'] ?? 'failed')) {
@@ -176,8 +202,9 @@ $themeVersion = (string) (filemtime(__DIR__ . '/assets/theme.js') ?: time());
 $jsVersion = (string) (filemtime(__DIR__ . '/assets/portal.js') ?: time());
 $faviconVersion = (string) (filemtime(__DIR__ . '/assets/favicon.ico') ?: time());
 $loginUrl = django_login_url();
-$initial = is_array($user) ? strtoupper(substr((string) ($user['display_name'] ?: $user['username']), 0, 1)) : 'OP';
+$initial = is_array($user) ? account_initial((string) ($user['display_name'] ?: $user['username'])) : 'OP';
 $profileImageUrl = is_array($user) ? trim((string) ($user['profile_image_url'] ?? '')) : '';
+$djangoHomeUrl = django_base_url() . '/';
 $djangoSiteIconUrl = django_base_url() . '/static/media/icons/favicon-192.png';
 $metaTitle = 'Hanplanet Wargame';
 $metaDescription = '실전 의뢰를 수행하며 웹 보안의 원리와 공격·방어 과정을 익히는 Hanplanet Wargame 학습 플랫폼';
@@ -221,10 +248,12 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
     <a class="skip-link" href="#main-content">본문으로 이동</a>
     <header class="site-header">
         <div class="header-inner">
-            <a class="brand" href="/" aria-label="FIELD OPS 홈">
-                <img class="brand-mark" src="<?= wargame_html($djangoSiteIconUrl) ?>" alt="" width="38" height="38" decoding="async">
-                <span class="brand-copy"><strong>FIELD//OPS</strong><span>WARGAME ACADEMY</span></span>
-            </a>
+            <div class="brand" aria-label="브랜드 링크">
+                <a class="brand-mark-link" href="<?= wargame_html($djangoHomeUrl) ?>" aria-label="Hanplanet 홈">
+                    <img class="brand-mark" src="<?= wargame_html($djangoSiteIconUrl) ?>" alt="" width="38" height="38" decoding="async">
+                </a>
+                <a class="brand-copy" href="/" aria-label="FIELD OPS Wargame 홈"><strong>FIELD//OPS</strong><span>WARGAME ACADEMY</span></a>
+            </div>
             <nav class="main-nav" aria-label="주요 메뉴">
                 <a href="/#operations">작전 현황</a>
                 <a href="/#curriculum">학습 경로</a>
@@ -462,7 +491,6 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
                                 <h2><?= wargame_html((string) $currentMission['title']) ?></h2>
                                 <p><?= wargame_html((string) ($currentMission['brief'] ?? '')) ?></p>
                                 <div class="client-line">
-                                    <span class="client-seal"><?= wargame_html(substr(mission_client($currentMission), 0, 2)) ?></span>
                                     <div><strong><?= wargame_html(mission_client($currentMission)) ?></strong><span>VERIFIED TRAINING CLIENT</span></div>
                                 </div>
                                 <a class="button" href="/?mission=<?= wargame_html(rawurlencode((string) $currentMission['id'])) ?>">브리핑 열기 →</a>

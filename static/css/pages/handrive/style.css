@@ -590,7 +590,8 @@ body.handrive-write-page .handrive-toolbar {
     margin: 0;
 }
 
-.ui-auth-account-floating:has(.ui-auth-account-menu:not([hidden])) {
+.ui-auth-account-floating:has(.ui-auth-account-menu:not([hidden])),
+.ui-auth-account-floating:has(.account-storage-popup:not([hidden])) {
     z-index: var(--site-z-popup);
 }
 
@@ -637,7 +638,6 @@ body.handrive-write-page .handrive-toolbar {
     min-width: 120px;
     max-width: 180px;
     padding: 3px;
-    position: relative;
     cursor: pointer;
     user-select: none;
 }
@@ -649,12 +649,8 @@ body.handrive-write-page .handrive-toolbar {
 
 .account-storage-bar:hover .account-storage-bar-track,
 .account-storage-bar:focus-visible .account-storage-bar-track {
-    background: rgba(0, 0, 0, 0.18);
-}
-
-body.theme-dark .account-storage-bar:hover .account-storage-bar-track,
-body.theme-dark .account-storage-bar:focus-visible .account-storage-bar-track {
-    background: rgba(255, 255, 255, 0.22);
+    background: var(--account-storage-track-bg);
+    background: color-mix(in srgb, var(--account-storage-track-bg) 80%, var(--handrive-text-stronger) 20%);
 }
 
 .account-storage-bar:hover .account-storage-bar-fill,
@@ -678,7 +674,7 @@ body.theme-dark .account-storage-bar:focus-visible .account-storage-bar-track {
 
 .account-storage-popup {
     position: absolute;
-    top: calc(100% + 8px);
+    top: calc(100% + 6px);
     right: 0;
     min-width: 300px;
     background: var(--site-dropdown-surface-bg, var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72))));
@@ -689,7 +685,7 @@ body.theme-dark .account-storage-bar:focus-visible .account-storage-bar-track {
     border-radius: 12px;
     box-shadow: var(--handrive-shadow-md, 0 12px 28px rgba(0, 0, 0, 0.22));
     padding: 16px;
-    z-index: 10;
+    z-index: var(--site-z-popup);
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -822,15 +818,16 @@ body.theme-dark .account-storage-popup-legend-dot-free {
 }
 
 .account-storage-bar-track {
+    --account-storage-track-bg: var(--handrive-border, rgba(0, 0, 0, 0.12));
     width: 100%;
     height: 8px;
     border-radius: 999px;
-    background: var(--handrive-border, rgba(0, 0, 0, 0.12));
+    background: var(--account-storage-track-bg);
     overflow: hidden;
 }
 
 body.theme-dark .account-storage-bar-track {
-    background: rgba(255, 255, 255, 0.14);
+    --account-storage-track-bg: rgba(255, 255, 255, 0.14);
 }
 
 .account-storage-bar-fill {
@@ -3685,10 +3682,8 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     --handrive-list-item-spinner-half: calc(-11px * var(--handrive-list-item-scale));
     --handrive-list-item-spinner-border: calc(2px * var(--handrive-list-item-scale));
     --handrive-list-item-icon-size: calc(16px * var(--handrive-list-item-scale));
-    --handrive-list-item-icon-18: calc(18px * var(--handrive-list-item-scale));
-    --handrive-list-item-icon-20: calc(20px * var(--handrive-list-item-scale));
     --handrive-list-item-icon-22: calc(22px * var(--handrive-list-item-scale));
-    --handrive-list-item-icon-neg-3: calc(-3px * var(--handrive-list-item-scale));
+    --handrive-list-item-icon-render-size: calc(31px * var(--handrive-list-item-scale));
     flex: 1 1 auto;
     min-height: 0;
     overflow: visible;
@@ -4827,15 +4822,14 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
 .handrive-item-type-icon::before {
     content: "";
     display: block;
-    width: 18px;
-    height: 18px;
-    margin: 0 auto;
-    transform: scale(1.425);
-    transform-origin: center center;
+    width: 31px;
+    height: 31px;
+    margin: 0;
+    flex: 0 0 31px;
     box-sizing: border-box;
     background-position: center;
     background-repeat: no-repeat;
-    background-size: 115% 115%;
+    background-size: contain;
 }
 
 .handrive-item-type-icon.is-dir {
@@ -4845,22 +4839,11 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
 
 .handrive-item-type-icon.is-dir::before {
     content: "";
-    width: 18px;
-    min-width: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0;
-    transform: scale(1.331);
-    background-image: url("/static/media/icons/handrive/folder-list.png?v=20260629");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    line-height: 1;
+    background-image: url("/static/media/icons/handrive/type-folder.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-dir.is-empty::before {
-    background-image: url("/static/media/icons/handrive/folder_empty-list.png?v=20260629");
+    background-image: url("/static/media/icons/handrive/type-folder-empty.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-dir.is-trash-empty::before,
@@ -4871,41 +4854,19 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
 }
 
 .handrive-item-type-icon.is-dir.is-trash-empty::before {
-    background-image: url("/static/media/icons/handrive/trash-empty.png?v=20260720-2");
+    background-image: url("/static/media/icons/handrive/type-trash-empty.png?v=trash-icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-dir.is-trash-full::before {
-    background-image: url("/static/media/icons/handrive/trash-full.png?v=20260720-2");
+    background-image: url("/static/media/icons/handrive/type-trash-full.png?v=trash-icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-dir.is-markdown-image-folder::before {
-    content: "";
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    margin: 0;
-    transform: scale(1.331);
-    background-image:
-        url("/static/media/icons/handrive/image-list.png?v=20260629"),
-        url("/static/media/icons/handrive/folder-list.png?v=20260629");
-    background-position: center calc(50% + 1px), center;
-    background-repeat: no-repeat;
-    background-size: auto 12px, contain;
+    background-image: url("/static/media/icons/handrive/type-folder-image.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-dir.is-youtube-download-folder::before {
-    content: "";
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    margin: 0;
-    transform: scale(1.331);
-    background-image:
-        url("/static/media/icons/handrive/youtube-icon-red-badge.png?v=20260629"),
-        url("/static/media/icons/handrive/folder-list.png?v=20260629");
-    background-position: center calc(50% + 1px), center;
-    background-repeat: no-repeat;
-    background-size: 16px auto, contain;
+    background-image: url("/static/media/icons/handrive/type-folder-youtube.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-dir.is-root-avatar {
@@ -5014,16 +4975,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 }
 
 .handrive-item-type-icon.is-dir.is-google-drive::before {
-    content: "";
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    margin: 0;
-    transform: scale(1.18);
-    background-image: url("/static/media/icons/handrive/google-drive.svg?v=2026-05");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
+    background-image: url("/static/media/icons/handrive/type-google-drive.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-dir.is-github-repo::before {
@@ -5033,7 +4985,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     height: 18px;
     min-width: 18px;
     margin: 0;
-    transform: scale(1.22);
+    transform: none;
     background-color: currentColor;
     background-image: none;
     -webkit-mask-image: var(--handrive-github-mark-icon);
@@ -5046,43 +4998,34 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     mask-size: contain;
 }
 
-.handrive-item-type-icon.is-dir.is-repo::before {
-    content: "";
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
+/* The GitHub mark is an asset as well; the two files keep its contrast without CSS recoloring. */
+.handrive-item-type-icon.is-dir.is-github-repo::before {
+    width: 31px;
+    height: 31px;
+    min-width: 31px;
+    flex-basis: 31px;
     margin: 0;
-    transform: scale(1.24);
-    background-image: url("/static/media/icons/handrive/git.svg");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
+    transform: none;
+    background-color: transparent;
+    background-image: url("/static/media/icons/handrive/type-github.png?v=icon-source-20260720-9");
+    -webkit-mask-image: none;
+    mask-image: none;
+}
+
+body.theme-dark .handrive-item-type-icon.is-dir.is-github-repo::before {
+    background-image: url("/static/media/icons/handrive/type-github-dark.png?v=icon-source-20260720-9");
+}
+
+.handrive-item-type-icon.is-dir.is-repo::before {
+    background-image: url("/static/media/icons/handrive/type-repo.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-dir.is-branch::before {
-    content: "";
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    margin: 0;
-    transform: scale(1.32);
-    background-image: url("/static/media/icons/handrive/git-branch.svg");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
+    background-image: url("/static/media/icons/handrive/type-branch.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-dir.is-map::before {
-    content: "";
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    margin: 0;
-    transform: scale(1.34);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f8ef7' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21'/%3E%3Cline x1='9' y1='3' x2='9' y2='18'/%3E%3Cline x1='15' y1='6' x2='15' y2='21'/%3E%3C/svg%3E");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
+    background-image: url("/static/media/icons/handrive/type-map.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file {
@@ -5091,264 +5034,200 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 }
 
 .handrive-item-type-icon.is-file::before {
-    background-image: url("/static/media/icons/handrive/file.svg?v=blue1");
+    background-image: url("/static/media/icons/handrive/type-default-file.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic::before {
-    width: 22px;
-    height: 22px;
-    margin: -3px;
+    width: 31px;
+    height: 31px;
+    min-width: 31px;
+    flex-basis: 31px;
+    margin: 0;
     transform: none;
-    background-image: none;
-    background-color: var(--handrive-generic-icon-color);
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-    -webkit-mask-position: center;
-    mask-position: center;
-    -webkit-mask-size: 130% 130%;
-    mask-size: 130% 130%;
+    background-image: url("/static/media/icons/handrive/type-code.png?v=icon-source-20260720-9");
+    background-color: transparent;
+    -webkit-mask-image: none;
+    mask-image: none;
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="file"]::before {
-    width: 20px;
-    height: 20px;
-    margin: 0;
-    transform: scaleX(1.355) scaleY(1.48);
-    background-image: url("/static/media/icons/handrive/file.svg?v=blue2");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    background-color: transparent;
-    -webkit-mask-image: none;
-    mask-image: none;
+    background-image: url("/static/media/icons/handrive/type-file.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="image"]::before {
-    width: 20px;
-    height: 20px;
-    margin: 0;
-    transform: scaleX(1.355) scaleY(1.549);
-    background-image: url("/static/media/icons/handrive/image.svg?v=blue2");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    background-color: transparent;
-    -webkit-mask-image: none;
-    mask-image: none;
+    background-image: url("/static/media/icons/handrive/type-image.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="video"]::before {
-    width: 20px;
-    height: 20px;
-    margin: 0;
-    transform: scaleX(1.355) scaleY(1.549);
-    background-image: url("/static/media/icons/handrive/video.svg?v=blue2");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    background-color: transparent;
-    -webkit-mask-image: none;
-    mask-image: none;
+    background-image: url("/static/media/icons/handrive/type-video.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="audio"]::before {
-    width: 20px;
-    height: 20px;
-    margin: 0;
-    transform: scaleX(1.2) scaleY(1.38);
-    background-image: url("/static/media/icons/handrive/Audio-list.png?v=20260629");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    background-color: transparent;
-    -webkit-mask-image: none;
-    mask-image: none;
+    background-image: url("/static/media/icons/handrive/type-audio.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="archive"]::before {
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    margin: 0;
-    transform: scale(1.331);
-    background-image: url("/static/media/icons/handrive/zip-list.png?v=20260629");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    background-color: transparent;
-    -webkit-mask-image: none;
-    mask-image: none;
+    background-image: url("/static/media/icons/handrive/type-archive.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="pdf"]::before {
-    width: 20px;
-    height: 20px;
-    margin: 0;
-    transform: scaleX(1.355) scaleY(1.48);
-    background-image: url("/static/media/icons/handrive/pdf.svg?v=blue4");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    background-color: transparent;
-    -webkit-mask-image: none;
-    mask-image: none;
+    background-image: url("/static/media/icons/handrive/type-pdf.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="text"]::before {
-    width: 20px;
-    height: 20px;
-    margin: 0;
-    transform: scaleX(1.355) scaleY(1.48);
-    background-image: url("/static/media/icons/handrive/text.svg?v=blue1");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    background-color: transparent;
-    -webkit-mask-image: none;
-    mask-image: none;
+    background-image: url("/static/media/icons/handrive/type-text.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="word"]::before {
-    width: 20px;
-    height: 20px;
-    margin: 0;
-    transform: scale(1.24);
-    background-image: url("/static/media/icons/handrive/word.webp?v=office2");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    background-color: transparent;
-    -webkit-mask-image: none;
-    mask-image: none;
+    background-image: url("/static/media/icons/handrive/type-word.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="excel"]::before {
-    width: 20px;
-    height: 20px;
-    margin: 0;
-    transform: scale(1.24);
-    background-image: url("/static/media/icons/handrive/excel.webp?v=office2");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    background-color: transparent;
-    -webkit-mask-image: none;
-    mask-image: none;
+    background-image: url("/static/media/icons/handrive/type-excel.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="powerpoint"]::before {
-    width: 20px;
-    height: 20px;
-    margin: 0;
-    transform: scale(1.24);
-    background-image: url("/static/media/icons/handrive/powerpoint.svg?v=office2");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    background-color: transparent;
-    -webkit-mask-image: none;
-    mask-image: none;
+    background-image: url("/static/media/icons/handrive/type-powerpoint.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="data"]::before {
-    -webkit-mask-image: url("/static/media/icons/handrive/data.svg");
-    mask-image: url("/static/media/icons/handrive/data.svg");
+    background-image: url("/static/media/icons/handrive/type-data.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="js"]::before {
-    background-image: url("/static/media/icons/handrive/js.svg");
+    background-image: url("/static/media/icons/handrive/type-js.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="ts"]::before {
-    background-image: url("/static/media/icons/handrive/ts.svg");
+    background-image: url("/static/media/icons/handrive/type-ts.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="jsx"]::before {
-    background-image: url("/static/media/icons/handrive/react.svg");
+    background-image: url("/static/media/icons/handrive/type-jsx.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="py"]::before {
-    background-image: url("/static/media/icons/handrive/python.svg");
+    background-image: url("/static/media/icons/handrive/type-py.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="java"]::before {
-    background-image: url("/static/media/icons/handrive/java.svg");
+    background-image: url("/static/media/icons/handrive/type-java.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="kotlin"]::before {
-    background-image: url("/static/media/icons/handrive/kotlin.svg");
+    background-image: url("/static/media/icons/handrive/type-kotlin.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="swift"]::before {
-    background-image: url("/static/media/icons/handrive/swift.svg");
+    background-image: url("/static/media/icons/handrive/type-swift.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="go"]::before {
-    background-image: url("/static/media/icons/handrive/go.svg");
+    background-image: url("/static/media/icons/handrive/type-go.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="rust"]::before {
-    background-image: url("/static/media/icons/handrive/rust.svg");
+    background-image: url("/static/media/icons/handrive/type-rust.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="ruby"]::before {
-    background-image: url("/static/media/icons/handrive/ruby.svg");
+    background-image: url("/static/media/icons/handrive/type-ruby.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="php"]::before {
-    background-image: url("/static/media/icons/handrive/php.svg");
+    background-image: url("/static/media/icons/handrive/type-php.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="c"]::before {
-    background-image: url("/static/media/icons/handrive/c.svg");
+    background-image: url("/static/media/icons/handrive/type-c.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="cpp"]::before {
-    background-image: url("/static/media/icons/handrive/cpp.svg");
+    background-image: url("/static/media/icons/handrive/type-cpp.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="csharp"]::before {
-    background-image: url("/static/media/icons/handrive/csharp.svg");
+    background-image: url("/static/media/icons/handrive/type-csharp.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="scala"]::before {
-    background-image: url("/static/media/icons/handrive/scala.svg");
+    background-image: url("/static/media/icons/handrive/type-scala.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="shell"]::before {
-    background-image: url("/static/media/icons/handrive/bash.svg");
+    background-image: url("/static/media/icons/handrive/type-shell.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="html"]::before {
-    background-image: url("/static/media/icons/handrive/html5.svg");
+    background-image: url("/static/media/icons/handrive/type-html.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="css"]::before {
-    background-image: url("/static/media/icons/handrive/css3.svg");
+    background-image: url("/static/media/icons/handrive/type-css.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="code"]::before {
-    -webkit-mask-image: url("/static/media/icons/handrive/file.svg");
-    mask-image: url("/static/media/icons/handrive/file.svg");
+    background-image: url("/static/media/icons/handrive/type-code.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="json"]::before {
-    -webkit-mask-image: url("/static/media/icons/handrive/data.svg");
-    mask-image: url("/static/media/icons/handrive/data.svg");
+    background-image: url("/static/media/icons/handrive/type-data.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="markdown"]::before {
-    -webkit-mask-image: url("/static/media/icons/handrive/text.svg");
-    mask-image: url("/static/media/icons/handrive/text.svg");
+    background-image: url("/static/media/icons/handrive/type-text.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="font"]::before {
-    -webkit-mask-image: url("/static/media/icons/handrive/font.svg");
-    mask-image: url("/static/media/icons/handrive/font.svg");
+    background-image: url("/static/media/icons/handrive/type-font-light.png?v=icon-source-20260720-9");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="exe"]::before {
-    background-image: url("/static/media/icons/handrive/exe.svg");
+    background-image: url("/static/media/icons/handrive/type-exe.png?v=icon-source-20260720-9");
+}
+
+body.theme-dark .handrive-item-type-icon.is-file.is-generic[data-file-icon="font"]::before {
+    background-image: url("/static/media/icons/handrive/type-font-dark.png?v=icon-source-20260720-9");
+}
+
+/* Monochrome marks use SVG masks so their contrast follows the active theme. */
+.handrive-item-type-icon.is-dir.is-github-repo::before,
+.handrive-item-type-icon.is-file[data-file-icon="shell"]::before,
+.handrive-item-type-icon.is-file[data-file-icon="rust"]::before,
+.handrive-item-type-icon.is-file.is-generic[data-file-icon="font"]::before {
+    --handrive-adaptive-icon-mask-size: 72%;
+    background-color: var(--handrive-generic-icon-color);
+    background-image: none;
+    -webkit-mask-image: var(--handrive-adaptive-icon-mask);
+    -webkit-mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size: var(--handrive-adaptive-icon-mask-size);
+    mask-image: var(--handrive-adaptive-icon-mask);
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: var(--handrive-adaptive-icon-mask-size);
+}
+
+.handrive-item-type-icon.is-dir.is-github-repo::before {
+    --handrive-adaptive-icon-mask: url("/static/media/icons/handrive/type-github.svg?v=theme-vector-20260720-1");
+}
+
+.handrive-item-type-icon.is-file[data-file-icon="shell"]::before {
+    --handrive-adaptive-icon-mask: url("/static/media/icons/handrive/type-shell.svg?v=theme-vector-20260720-1");
+}
+
+.handrive-item-type-icon.is-file[data-file-icon="rust"]::before {
+    --handrive-adaptive-icon-mask: url("/static/media/icons/handrive/rust.svg?v=theme-vector-20260720-1");
+}
+
+.handrive-item-type-icon.is-file.is-generic[data-file-icon="font"]::before {
+    --handrive-adaptive-icon-mask: url("/static/media/icons/handrive/font.svg?v=theme-vector-20260720-1");
+    --handrive-adaptive-icon-mask-size: 125%;
+}
+
+body.theme-dark .handrive-item-type-icon.is-dir.is-github-repo::before,
+body.theme-dark .handrive-item-type-icon.is-file.is-generic[data-file-icon="font"]::before {
+    background-image: none;
 }
 
 .handrive-list-items .handrive-item-row {
@@ -5442,9 +5321,11 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 .handrive-list-items .handrive-item-type-icon.is-dir.is-map::before,
 .handrive-list-items .handrive-item-type-icon.is-dir.is-markdown-image-folder::before,
 .handrive-list-items .handrive-item-type-icon.is-dir.is-youtube-download-folder::before {
-    width: var(--handrive-list-item-icon-18);
-    height: var(--handrive-list-item-icon-18);
-    min-width: var(--handrive-list-item-icon-18);
+    width: var(--handrive-list-item-icon-render-size);
+    height: var(--handrive-list-item-icon-render-size);
+    min-width: var(--handrive-list-item-icon-render-size);
+    flex-basis: var(--handrive-list-item-icon-render-size);
+    margin: 0;
 }
 
 .handrive-list-items .handrive-item-type-icon.is-dir.is-root-avatar {
@@ -5457,36 +5338,10 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     max-height: var(--handrive-list-item-icon-22);
 }
 
-.handrive-list-items .handrive-item-type-icon.is-dir.is-root-avatar::before,
-.handrive-list-items .handrive-item-type-icon.is-file.is-generic::before {
+.handrive-list-items .handrive-item-type-icon.is-dir.is-root-avatar::before {
     width: var(--handrive-list-item-icon-22);
     height: var(--handrive-list-item-icon-22);
     min-width: var(--handrive-list-item-icon-22);
-}
-
-.handrive-list-items .handrive-item-type-icon.is-file.is-generic::before {
-    margin: var(--handrive-list-item-icon-neg-3);
-}
-
-.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="file"]::before,
-.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="image"]::before,
-.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="video"]::before,
-.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="audio"]::before,
-.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="pdf"]::before,
-.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="text"]::before,
-.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="word"]::before,
-.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="excel"]::before,
-.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="powerpoint"]::before {
-    width: var(--handrive-list-item-icon-20);
-    height: var(--handrive-list-item-icon-20);
-    margin: 0;
-}
-
-.handrive-list-items .handrive-item-type-icon.is-file.is-generic[data-file-icon="archive"]::before {
-    width: var(--handrive-list-item-icon-18);
-    height: var(--handrive-list-item-icon-18);
-    min-width: var(--handrive-list-item-icon-18);
-    margin: 0;
 }
 
 .handrive-context-menu {

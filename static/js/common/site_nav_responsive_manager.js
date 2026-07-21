@@ -70,9 +70,9 @@
         const navCollapse = nav.querySelector('.ui-nav-collapse');
         const navControls = navCollapse ? navCollapse.querySelector('.ui-controls-stack') : null;
         const navToggler = nav.querySelector('.ui-nav-toggler');
-        const installButton = nav.querySelector('[data-pwa-install]');
         const collapsedBodyClass = 'site-nav-auto-collapsed';
         const navOpenClass = 'show';
+        const navModeStorageKey = 'hanplanet_site_nav_mode_v1';
 
         if (!navContainer || !navBrandGroup || !navLinks || !navCollapse || !navToggler) {
             return;
@@ -81,32 +81,6 @@
         const throttledHandleNavbarScroll = options && typeof options.throttledHandleNavbarScroll === 'function'
             ? options.throttledHandleNavbarScroll
             : null;
-        const installButtonHomeParent = installButton ? installButton.parentNode : null;
-        const installButtonHomeNextSibling = installButton ? installButton.nextSibling : null;
-
-        const placeInstallButtonInline = function () {
-            if (!installButton || !installButtonHomeParent) {
-                return;
-            }
-            const referenceNode = installButtonHomeNextSibling && installButtonHomeNextSibling.parentNode === installButtonHomeParent
-                ? installButtonHomeNextSibling
-                : navControls;
-            if (installButton.parentNode === installButtonHomeParent && installButton.nextSibling === referenceNode) {
-                return;
-            }
-            installButtonHomeParent.insertBefore(installButton, referenceNode || null);
-        };
-
-        const placeInstallButtonBesideToggler = function () {
-            if (!installButton) {
-                return;
-            }
-            if (installButton.parentNode === navContainer && installButton.nextSibling === navToggler) {
-                return;
-            }
-            navContainer.insertBefore(installButton, navToggler);
-        };
-
         const forceClearNavContainerDecorations = function () {
             // Bootstrap collapse transitions can leave inline borders/outlines behind, so scrub them aggressively.
             const resetTargets = [
@@ -164,31 +138,10 @@
                 ...styleOverrides
             });
 
-            const liveInstallBtn = sourceNode.querySelector('[data-pwa-install]');
-            const cloneInstallBtn = measureNode.querySelector('[data-pwa-install]');
-            if (liveInstallBtn && cloneInstallBtn) {
-                const installDisplay = window.getComputedStyle(liveInstallBtn).display;
-                cloneInstallBtn.style.display = installDisplay === 'none' ? 'none' : 'inline-flex';
-            }
-
             document.body.appendChild(measureNode);
             const width = Math.ceil(measureNode.getBoundingClientRect().width);
             measureNode.remove();
             return width;
-        };
-
-        const measureOuterWidth = function (element) {
-            if (!element) {
-                return 0;
-            }
-            const style = window.getComputedStyle(element);
-            if (!style || style.display === 'none' || style.visibility === 'hidden') {
-                return 0;
-            }
-            const rect = element.getBoundingClientRect();
-            const marginLeft = parseFloat(style.marginLeft || '0') || 0;
-            const marginRight = parseFloat(style.marginRight || '0') || 0;
-            return Math.ceil(rect.width + marginLeft + marginRight);
         };
 
         const getMeasuredNavItemsWidth = function () {
@@ -207,9 +160,7 @@
                 alignItems: 'flex-end',
                 gap: '0'
             }) : 0;
-            const installButtonWidth = measureOuterWidth(installButton);
-
-            return linksWidth + controlsWidth + installButtonWidth;
+            return linksWidth + controlsWidth;
         };
 
         const forceCloseNavMenu = function () {
@@ -250,11 +201,21 @@
             document.body.classList.toggle(collapsedBodyClass, nav.classList.contains('nav-auto-collapsed'));
         };
 
+        const persistNavMode = function () {
+            try {
+                window.sessionStorage.setItem(navModeStorageKey, JSON.stringify({
+                    collapsed: nav.classList.contains('nav-auto-collapsed'),
+                    viewportWidth: Math.round(window.innerWidth || document.documentElement.clientWidth || 0)
+                }));
+            } catch (error) {
+                // Responsive behavior must still work when storage is unavailable.
+            }
+        };
+
         const updateNavMode = function () {
             // Collapse automatically only when the live inline layout would overlap the brand block.
             rafId = null;
 
-            placeInstallButtonInline();
             nav.classList.remove('nav-auto-collapsed');
             forceCloseNavMenu();
 
@@ -266,13 +227,11 @@
 
             if (shouldCollapseByOverlap) {
                 nav.classList.add('nav-auto-collapsed');
-                placeInstallButtonBesideToggler();
                 forceCloseNavMenu();
-            } else {
-                placeInstallButtonInline();
             }
 
             syncDocumentNavMode();
+            persistNavMode();
             forceClearNavContainerDecorations();
         };
 
@@ -286,8 +245,6 @@
 
         window.addEventListener('resize', scheduleNavModeUpdate, { passive: true });
         window.addEventListener('orientationchange', scheduleNavModeUpdate, { passive: true });
-        window.addEventListener('beforeinstallprompt', scheduleNavModeUpdate);
-        window.addEventListener('appinstalled', scheduleNavModeUpdate);
         navToggler.addEventListener('click', function (event) {
             if (!window.bootstrap || !window.bootstrap.Collapse) {
                 event.preventDefault();
@@ -320,12 +277,5 @@
             document.fonts.ready.then(scheduleNavModeUpdate).catch(function () {});
         }
 
-        if (installButton && window.MutationObserver) {
-            const installButtonObserver = new MutationObserver(scheduleNavModeUpdate);
-            installButtonObserver.observe(installButton, {
-                attributes: true,
-                attributeFilter: ['style', 'class', 'hidden', 'aria-disabled']
-            });
-        }
     };
 })();

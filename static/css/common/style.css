@@ -3851,65 +3851,6 @@ body.theme-dark .ui-nav::after {
     align-self: center;
 }
 
-.ui-pwa-install-btn {
-    flex: 0 0 auto;
-    appearance: none;
-    border: 1px solid rgba(0, 0, 0, 0.22);
-    background: rgba(255, 255, 255, 0.92);
-    color: #151515;
-    border-radius: 999px;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    margin-right: 10px;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-    translate: 0 0;
-    transition: border-color var(--motion-fast), opacity var(--motion-fast), translate var(--motion-fast), background-color var(--motion-fast), color var(--motion-fast);
-}
-
-.ui-pwa-install-btn:hover,
-.ui-pwa-install-btn:focus-visible {
-    border-color: rgba(0, 0, 0, 0.34);
-    background: #ffffff;
-    opacity: 1;
-    translate: 0 var(--btn-template-hover-lift, -1px);
-}
-
-.ui-pwa-install-btn.is-disabled {
-    opacity: 0.72;
-}
-
-.ui-pwa-install-icon {
-    width: 16px;
-    height: 16px;
-    display: inline-block;
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: 16px 16px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23151515' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v10'/%3E%3Cpath d='m8.5 9.5 3.5 3.5 3.5-3.5'/%3E%3Crect x='4' y='16' width='16' height='5' rx='1.5'/%3E%3C/svg%3E");
-}
-
-body.theme-dark .ui-pwa-install-btn {
-    border-color: rgba(255, 255, 255, 0.28);
-    background: rgba(32, 32, 32, 0.92);
-    color: #f2f2f2;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.32);
-}
-
-body.theme-dark .ui-pwa-install-btn:hover,
-body.theme-dark .ui-pwa-install-btn:focus-visible {
-    border-color: rgba(255, 255, 255, 0.42);
-    background: rgba(46, 46, 46, 0.96);
-}
-
-body.theme-dark .ui-pwa-install-icon {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f2f2f2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v10'/%3E%3Cpath d='m8.5 9.5 3.5 3.5 3.5-3.5'/%3E%3Crect x='4' y='16' width='16' height='5' rx='1.5'/%3E%3C/svg%3E");
-}
-
 .ui-controls-stack .ui-control-toggle {
     width: 100%;
     display: grid;
@@ -4136,16 +4077,6 @@ body.theme-dark .ui-nav.nav-auto-collapsed .ui-nav-links {
     padding-top: 0;
     border-top: 0;
     align-items: flex-end;
-}
-
-.ui-nav.nav-auto-collapsed .ui-pwa-install-btn {
-    order: 1;
-    width: 32px;
-    flex-basis: 32px;
-    margin-left: 0;
-    margin-right: 8px;
-    margin-top: 0;
-    justify-content: center;
 }
 
 .ui-nav.nav-auto-collapsed .ui-nav-link {

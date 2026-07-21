@@ -1,7 +1,7 @@
 """Main Django views for Hanplanet pages, portfolio APIs, and game configuration endpoints."""
 
 from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from .forms import (
     PortfolioActionButtonForm,
@@ -15,6 +15,8 @@ from .models import (
     BumpercarSkin,
     MinecraftAccountLink,
     MinecraftLinkCode,
+    MinecraftTradeFill,
+    MinecraftTradeListing,
     NavLink,
     QuickLink,
     UserProfile,
@@ -71,7 +73,7 @@ from django.core.cache import cache
 from django.template.loader import render_to_string
 import httpx
 from django.db.utils import OperationalError, ProgrammingError
-from django.db.models import Max
+from django.db.models import Max, Q
 from django.db import transaction
 from django.templatetags.static import static
 from urllib.parse import quote, unquote, urlencode, urljoin, urlparse
@@ -83,6 +85,7 @@ from datetime import datetime, timedelta, timezone as datetime_timezone
 from git.models import GitHubAccountMapping, GoogleAccountMapping
 from .github_auth import is_github_auth_configured
 from .google_auth import is_google_auth_configured
+from .middleware import HANPLANET_ACCOUNT_ACTIVE_COOKIE_NAME
 from .onscripter_access import is_onscripter_user_allowed
 
 logger = logging.getLogger(__name__)
@@ -131,6 +134,7 @@ MINECRAFT_PUBLIC_HOST = "mc.hanplanet.com"
 MINECRAFT_SERVER_ADDRESS = "mc.hanplanet.com"
 MINECRAFT_BEDROCK_SERVER_ADDRESS = "mcbe.hanplanet.com"
 MINECRAFT_BEDROCK_SERVER_PORT = 19132
+MINECRAFT_SSO_QUERY_PARAM = "minecraft_sso"
 MINECRAFT_BEDROCK_SERVER_VERSION_FALLBACK = "26.30"
 MINECRAFT_BEDROCK_VERSION_CACHE_KEY = "minecraft_bedrock_server_version"
 MINECRAFT_BEDROCK_VERSION_CACHE_SECONDS = 60
@@ -140,6 +144,9 @@ MINECRAFT_META_DESCRIPTION_KO = "Minecraft 서버의 실시간 플레이어 상�
 MINECRAFT_META_DESCRIPTION_EN = "Provides real-time player status and a world map for the Minecraft server."
 MINECRAFT_SERVER_IMAGE_URL = urljoin("https://www.hanplanet.com", static("media/icons/minecraft/server-og.png"))
 MINECRAFT_WEATHER_ICON_URL = static("media/icons/minecraft/weather.svg")
+MINECRAFT_ITEM_ICON_BASE_URL = static("media/icons/minecraft/items/")
+MINECRAFT_ITEM_ICON_MANIFEST_URL = static("media/icons/minecraft/items/manifest.json")
+MINECRAFT_KOREAN_ITEM_LABELS_PATH = Path(settings.BASE_DIR) / "static" / "media" / "icons" / "minecraft" / "items" / "labels_ko_kr.json"
 MINECRAFT_UI_ICON_URLS = {
     "armor_full": static("media/icons/minecraft/ui/armor_full.png"),
     "armor_half": static("media/icons/minecraft/ui/armor_half.png"),
@@ -156,11 +163,13 @@ MINECRAFT_UI_ICON_URLS = {
 MINECRAFT_SERVER_DIR = Path(getattr(settings, "MINECRAFT_SERVER_DIR", "/Users/imhanbyeol/Development/minecraft"))
 MINECRAFT_PLUGIN_DIR = MINECRAFT_SERVER_DIR / "plugins"
 MINECRAFT_STATUS_PATH = MINECRAFT_SERVER_DIR / "web" / "status.json"
+MINECRAFT_PLAYER_HEADS_PATH = MINECRAFT_SERVER_DIR / "web" / "player-heads"
 MINECRAFT_CONSOLE_OUTPUT_PATH = MINECRAFT_SERVER_DIR / "run" / "console.out"
 MINECRAFT_CONSOLE_INPUT_PATH = MINECRAFT_SERVER_DIR / "run" / "console.in"
 MINECRAFT_LOG_TAIL_BYTES = 64 * 1024
 MINECRAFT_LOG_TAIL_LINES = 220
 MINECRAFT_COMMAND_MAX_LENGTH = 1024
+MINECRAFT_TRADE_MAX_AMOUNT = 2304
 MINECRAFT_RCON_PACKET_AUTH = 3
 MINECRAFT_RCON_PACKET_COMMAND = 2
 MINECRAFT_RCON_MAX_PACKET_BYTES = 4096
@@ -168,6 +177,10 @@ MINECRAFT_LINK_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 MINECRAFT_LINK_CODE_PREFIX = "HNP"
 MINECRAFT_LINK_CODE_LENGTH = 6
 MINECRAFT_VERSION_PATTERN = re.compile(r"(?<!\d)(\d+(?:\.\d+){1,2}(?:[-+][0-9A-Za-z.-]+)?)(?!\d)")
+MINECRAFT_PLAYER_HEAD_URL_PATTERN = re.compile(
+    r"^/player-heads/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png(?:\?v=\d{1,20})?$",
+    re.IGNORECASE,
+)
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 UI_LANG_PATH_PREFIX_PATTERN = re.compile(r"^/(ko|en)(/|$)")
 SEO_NOINDEX_EXACT_PATHS = {
@@ -5730,6 +5743,62 @@ def is_minecraft_host(request):
     return host == MINECRAFT_PUBLIC_HOST
 
 
+def _should_attempt_minecraft_sso(request) -> bool:
+    if getattr(settings, "SESSION_COOKIE_DOMAIN", None):
+        return False
+    if request.method not in {"GET", "HEAD"}:
+        return False
+    if getattr(request.user, "is_authenticated", False):
+        return False
+    if str(request.GET.get(MINECRAFT_SSO_QUERY_PARAM) or "").strip():
+        return False
+    return request.COOKIES.get(HANPLANET_ACCOUNT_ACTIVE_COOKIE_NAME) == "1"
+
+
+def _ensure_valid_minecraft_account_session(request) -> bool:
+    user = getattr(request, "user", None)
+    if not (user and getattr(user, "is_authenticated", False)):
+        return False
+
+    try:
+        db_token = str(user.profile.session_token or "").strip()
+    except Exception:
+        db_token = ""
+    session_token = str(request.session.get("_hp_session_token", "") or "").strip()
+    if db_token and session_token and secrets.compare_digest(db_token, session_token):
+        return True
+
+    auth_logout(request)
+    return False
+
+
+def _discard_anonymous_minecraft_shared_session(request, response):
+    if not getattr(settings, "SESSION_COOKIE_DOMAIN", None):
+        return response
+    if getattr(request.user, "is_authenticated", False):
+        return response
+
+    had_session_cookie = settings.SESSION_COOKIE_NAME in request.COOKIES
+    try:
+        request.session.flush()
+    except Exception:
+        request.session.clear()
+        request.session.modified = True
+    if had_session_cookie:
+        response.delete_cookie(
+            settings.SESSION_COOKIE_NAME,
+            domain=settings.SESSION_COOKIE_DOMAIN,
+            path=getattr(settings, "SESSION_COOKIE_PATH", "/"),
+        )
+    return response
+
+
+def _build_minecraft_sso_start_redirect_url(request) -> str:
+    next_url = f"https://{MINECRAFT_PUBLIC_HOST}{request.get_full_path() or '/'}"
+    start_path = reverse("main:minecraft_sso_start")
+    return f"{build_public_absolute_url(start_path)}?{urlencode({'next': next_url})}"
+
+
 def is_minecraft_admin_user(user):
     """Allow Minecraft server internals only to the Django superuser account."""
     return bool(
@@ -5837,6 +5906,607 @@ def get_current_minecraft_account_names(user):
             name_keys.add(minecraft_name_key)
 
     return name_values
+
+
+def normalize_minecraft_trade_item_id(value):
+    """Normalize a Minecraft material key accepted by the trade bridge."""
+    normalized = str(value or "").strip().lower()
+    if normalized.startswith("minecraft:"):
+        normalized = normalized[len("minecraft:"):]
+    normalized = re.sub(r"[\s-]+", "_", normalized)
+    if re.match(r"^[a-z0-9_]{1,64}$", normalized):
+        return normalized
+
+    normalized_label = re.sub(r"[\s_-]+", "", str(value or "").strip()).casefold()
+    if not normalized_label:
+        return ""
+    matches = [
+        item_id
+        for item_id, label in get_minecraft_korean_item_labels().items()
+        if re.sub(r"[\s_-]+", "", label).casefold() == normalized_label
+    ]
+    return matches[0] if len(matches) == 1 else ""
+
+
+def normalize_minecraft_trade_amount(value):
+    try:
+        amount = int(value)
+    except (TypeError, ValueError):
+        return None
+    if amount < 1 or amount > MINECRAFT_TRADE_MAX_AMOUNT:
+        return None
+    return amount
+
+
+def format_minecraft_trade_item_label(value):
+    item_id = normalize_minecraft_trade_item_id(value)
+    if not item_id:
+        return ""
+    return " ".join(word.capitalize() for word in item_id.split("_") if word)
+
+
+@lru_cache(maxsize=1)
+def get_minecraft_korean_item_labels():
+    """Load the 26.2 Korean Minecraft item and block labels bundled with the site."""
+    try:
+        with MINECRAFT_KOREAN_ITEM_LABELS_PATH.open("r", encoding="utf-8") as labels_file:
+            payload = json.load(labels_file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+
+    labels = {}
+    for raw_item_id, raw_label in payload.items():
+        item_id = str(raw_item_id or "").strip().lower()
+        label = str(raw_label or "").strip()
+        if re.fullmatch(r"[a-z0-9_]{1,64}", item_id) and label:
+            labels[item_id] = label
+    return labels
+
+
+def get_minecraft_trade_item_option(item_id, max_stack_size, is_english, english_label=""):
+    normalized_item_id = normalize_minecraft_trade_item_id(item_id)
+    english_name = str(english_label or "").strip() or format_minecraft_trade_item_label(normalized_item_id)
+    korean_name = get_minecraft_korean_item_labels().get(normalized_item_id, "")
+    aliases = []
+    seen_aliases = set()
+    for alias in (normalized_item_id, english_name, korean_name):
+        alias_text = str(alias or "").strip()
+        alias_key = alias_text.casefold()
+        if alias_text and alias_key not in seen_aliases:
+            aliases.append(alias_text)
+            seen_aliases.add(alias_key)
+    return {
+        "value": normalized_item_id,
+        "label": english_name if is_english or not korean_name else korean_name,
+        "aliases": aliases,
+        "maxStackSize": max_stack_size,
+    }
+
+
+def get_minecraft_trade_item_options(is_english=False):
+    """Return public item choices for the trade form."""
+    payload = read_minecraft_server_status()
+    raw_items = payload.get("items") if isinstance(payload, dict) else None
+    items = []
+    seen = set()
+    if isinstance(raw_items, list):
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                continue
+            item_id = normalize_minecraft_trade_item_id(raw_item.get("value"))
+            if not item_id or item_id in seen:
+                continue
+            seen.add(item_id)
+            max_stack_size = normalize_minecraft_trade_amount(raw_item.get("maxStackSize")) or 64
+            items.append(get_minecraft_trade_item_option(
+                item_id,
+                max_stack_size,
+                is_english,
+                raw_item.get("label"),
+            ))
+    if items:
+        return items
+
+    fallback_ids = [
+        "stone", "dirt", "grass_block", "cobblestone", "oak_log", "oak_planks",
+        "torch", "coal", "iron_ingot", "gold_ingot", "diamond", "emerald",
+        "stick", "bread", "cooked_beef", "water_bucket", "shield",
+        "iron_sword", "iron_pickaxe", "diamond_sword", "diamond_pickaxe",
+        "bow", "arrow", "crafting_table", "furnace", "chest", "white_bed",
+    ]
+    return [get_minecraft_trade_item_option(item_id, 64, is_english) for item_id in fallback_ids]
+
+
+def get_online_minecraft_player_name_keys():
+    payload = read_minecraft_server_status()
+    players = payload.get("players") if isinstance(payload, dict) else []
+    if not isinstance(players, list):
+        return set()
+    names = set()
+    for player in players:
+        if not isinstance(player, dict) or not player.get("online"):
+            continue
+        player_name = normalize_minecraft_player_name(player.get("name"))
+        if player_name:
+            names.add(player_name.lower())
+    return names
+
+
+def get_online_linked_minecraft_name(user):
+    linked_names = get_current_minecraft_account_names(user)
+    if not linked_names:
+        return "", "minecraft_account_required"
+    online_name_keys = get_online_minecraft_player_name_keys()
+    for linked_name in linked_names:
+        if linked_name.lower() in online_name_keys:
+            return linked_name, ""
+    return linked_names[0], ""
+
+
+def validate_minecraft_trade_listing_account(user, minecraft_name):
+    linked_name_keys = {name.lower() for name in get_current_minecraft_account_names(user)}
+    listing_name = normalize_minecraft_player_name(minecraft_name)
+    if not listing_name or listing_name.lower() not in linked_name_keys:
+        return "minecraft_account_required"
+    return ""
+
+
+def parse_minecraft_json_request_body(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        payload = {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def minecraft_trade_error_response(error, status=400, listing=None):
+    payload = {"ok": False, "error": error}
+    if listing is not None:
+        payload["listing"] = serialize_minecraft_trade_listing(listing, None)
+    response = JsonResponse(payload, status=status)
+    response["X-Hanplanet-App"] = "django-minecraft"
+    return response
+
+
+def minecraft_trade_success_response(extra=None, status=200):
+    payload = {"ok": True}
+    if extra:
+        payload.update(extra)
+    response = JsonResponse(payload, status=status)
+    response["X-Hanplanet-App"] = "django-minecraft"
+    return response
+
+
+def require_minecraft_trade_request(request):
+    if not is_minecraft_host(request):
+        raise Http404
+    if not getattr(request.user, "is_authenticated", False):
+        return minecraft_trade_error_response("authentication_required", status=401)
+    if not _ensure_valid_minecraft_account_session(request):
+        return minecraft_trade_error_response("authentication_required", status=401)
+    return None
+
+
+def get_minecraft_trade_seller_head_urls(listings):
+    """Build a linked Minecraft head URL map without issuing one query per trade."""
+    names = {
+        normalize_minecraft_player_name(listing.seller_minecraft_name)
+        for listing in listings
+        if normalize_minecraft_player_name(listing.seller_minecraft_name)
+    }
+    if not names:
+        return {}
+
+    head_urls = {}
+    for link in MinecraftAccountLink.objects.filter(minecraft_name__in=names).only(
+        "minecraft_name", "minecraft_uuid"
+    ):
+        head_urls[link.minecraft_name.lower()] = build_minecraft_player_head_url(link.minecraft_uuid)
+    return head_urls
+
+
+def serialize_minecraft_trade_listing(listing, user, seller_head_urls=None):
+    viewer_id = getattr(user, "id", None)
+    is_seller = viewer_id is not None and listing.seller_id == viewer_id
+    is_buyer = viewer_id is not None and listing.buyer_id == viewer_id
+    remaining_sell_amount = max(0, int(listing.remaining_sell_amount or 0))
+    remaining_price_amount = max(0, int(listing.remaining_price_amount or 0))
+    unclaimed_price_amount = max(0, int(listing.unclaimed_price_amount or 0))
+    minimum_purchase_amount = listing.sell_amount // math.gcd(listing.sell_amount, listing.price_amount)
+    seller_name_key = normalize_minecraft_player_name(listing.seller_minecraft_name).lower()
+    seller_head_url = (seller_head_urls or {}).get(seller_name_key, "")
+    return {
+        "id": listing.id,
+        "status": listing.status,
+        "sellerUsername": getattr(listing.seller, "username", ""),
+        "sellerMinecraftName": listing.seller_minecraft_name,
+        "sellerHeadUrl": seller_head_url,
+        "buyerUsername": getattr(listing.buyer, "username", "") if listing.buyer_id else "",
+        "buyerMinecraftName": listing.buyer_minecraft_name,
+        "sellItem": {
+            "value": listing.sell_item,
+            "label": format_minecraft_trade_item_label(listing.sell_item),
+            "amount": remaining_sell_amount,
+            "totalAmount": listing.sell_amount,
+        },
+        "priceItem": {
+            "value": listing.price_item,
+            "label": format_minecraft_trade_item_label(listing.price_item),
+            "amount": remaining_price_amount,
+            "totalAmount": listing.price_amount,
+        },
+        "allowPartial": bool(listing.allow_partial),
+        "minimumPurchaseAmount": minimum_purchase_amount,
+        "remainingSellAmount": remaining_sell_amount,
+        "remainingPriceAmount": remaining_price_amount,
+        "unclaimedPriceAmount": unclaimed_price_amount,
+        "claimedPriceAmount": max(0, int(listing.claimed_price_amount or 0)),
+        "createdAt": listing.created_at.isoformat() if listing.created_at else "",
+        "updatedAt": listing.updated_at.isoformat() if listing.updated_at else "",
+        "completedAt": listing.completed_at.isoformat() if listing.completed_at else "",
+        "cancelledAt": listing.cancelled_at.isoformat() if listing.cancelled_at else "",
+        "claimedAt": listing.claimed_at.isoformat() if listing.claimed_at else "",
+        "viewerIsSeller": is_seller,
+        "viewerIsBuyer": is_buyer,
+        "canBuy": bool(
+            viewer_id
+            and listing.status == MinecraftTradeListing.STATUS_OPEN
+            and remaining_sell_amount > 0
+            and not is_seller
+        ),
+        "canCancel": bool(is_seller and listing.status == MinecraftTradeListing.STATUS_OPEN),
+        "canClaim": bool(is_seller and unclaimed_price_amount > 0),
+        "canSettle": bool(
+            is_seller
+            and listing.status == MinecraftTradeListing.STATUS_OPEN
+            and (remaining_sell_amount > 0 or unclaimed_price_amount > 0)
+        ),
+    }
+
+
+def run_minecraft_trade_command(action, *args):
+    command = "minecraftstatus trade " + " ".join([action, *[str(arg) for arg in args]])
+    try:
+        response = write_minecraft_console_command(command)
+    except RuntimeError as exc:
+        logger.warning("Minecraft trade command failed: command=%r error=%s", command, exc)
+        return False, "console_unavailable", ""
+
+    response_text = str(response or "")
+    if re.search(r"\bHANPLANET_TRADE_OK\b", response_text):
+        return True, "", response_text
+    error_match = re.search(r"\bHANPLANET_TRADE_ERROR\s+\S+\s+([a-z_]+)\b", response_text)
+    if error_match:
+        return False, error_match.group(1), response_text
+    logger.warning("Minecraft trade command returned unexpected response: command=%r response=%r", command, response_text)
+    return False, "trade_command_no_response", response_text
+
+
+def minecraft_trade_error_status(error):
+    if error in {"authentication_required"}:
+        return 401
+    if error in {"not_found"}:
+        return 404
+    if error in {"forbidden"}:
+        return 403
+    if error in {
+        "not_open",
+        "not_completed",
+        "nothing_to_claim",
+        "nothing_to_settle",
+        "own_listing",
+        "partial_trade_disabled",
+        "insufficient_item",
+        "inventory_full",
+        "player_offline",
+        "minecraft_account_offline",
+        "minecraft_account_required",
+    }:
+        return 409
+    if error in {"console_unavailable", "trade_command_no_response"}:
+        return 503
+    return 400
+
+
+def minecraft_trade_queryset_for_user(user):
+    return (
+        MinecraftTradeListing.objects
+        .select_related("seller", "buyer")
+        .filter(
+            Q(status=MinecraftTradeListing.STATUS_OPEN) |
+            Q(seller=user) |
+            Q(buyer=user) |
+            Q(fills__buyer=user)
+        )
+        .distinct()
+        .order_by("-created_at", "-id")
+    )
+
+
+@cache_control(no_store=True)
+@require_http_methods(["GET"])
+def minecraft_trade_list_json(request):
+    guard_response = require_minecraft_trade_request(request)
+    if guard_response is not None:
+        return guard_response
+    queryset = list(minecraft_trade_queryset_for_user(request.user)[:100])
+    seller_head_urls = get_minecraft_trade_seller_head_urls(queryset)
+    listings = [
+        serialize_minecraft_trade_listing(listing, request.user, seller_head_urls)
+        for listing in queryset
+    ]
+    return minecraft_trade_success_response({
+        "listings": listings,
+        "linkedMinecraftNames": get_current_minecraft_account_names(request.user),
+    })
+
+
+@cache_control(no_store=True)
+@csrf_protect
+@require_http_methods(["POST"])
+def minecraft_trade_create_json(request):
+    guard_response = require_minecraft_trade_request(request)
+    if guard_response is not None:
+        return guard_response
+
+    payload = parse_minecraft_json_request_body(request)
+    sell_item = normalize_minecraft_trade_item_id(payload.get("sellItem"))
+    sell_amount = normalize_minecraft_trade_amount(payload.get("sellAmount"))
+    price_item = normalize_minecraft_trade_item_id(payload.get("priceItem"))
+    price_amount = normalize_minecraft_trade_amount(payload.get("priceAmount"))
+    allow_partial = (
+        payload.get("allowPartial") is True
+        or str(payload.get("allowPartial") or "").strip().lower() in {"1", "true", "yes", "on"}
+    )
+    if not sell_item or not sell_amount or not price_item or not price_amount:
+        return minecraft_trade_error_response("invalid_payload", status=400)
+
+    seller_minecraft_name, account_error = get_online_linked_minecraft_name(request.user)
+    if account_error:
+        return minecraft_trade_error_response(account_error, status=minecraft_trade_error_status(account_error))
+
+    ok, error, _response_text = run_minecraft_trade_command(
+        "reserve",
+        seller_minecraft_name,
+        sell_item,
+        sell_amount,
+        price_item,
+        price_amount,
+    )
+    if not ok:
+        return minecraft_trade_error_response(error, status=minecraft_trade_error_status(error))
+
+    try:
+        listing = MinecraftTradeListing.objects.create(
+            seller=request.user,
+            seller_minecraft_name=seller_minecraft_name,
+            sell_item=sell_item,
+            sell_amount=sell_amount,
+            price_item=price_item,
+            price_amount=price_amount,
+            allow_partial=allow_partial,
+            remaining_sell_amount=sell_amount,
+            remaining_price_amount=price_amount,
+        )
+    except Exception:
+        run_minecraft_trade_command(
+            "return",
+            seller_minecraft_name,
+            sell_item,
+            sell_amount,
+            price_item,
+            price_amount,
+        )
+        raise
+    logger.info(
+        "Minecraft trade listing created: id=%s seller=%s item=%s amount=%s price=%s price_amount=%s",
+        listing.id,
+        request.user.username,
+        sell_item,
+        sell_amount,
+        price_item,
+        price_amount,
+    )
+    return minecraft_trade_success_response({"listing": serialize_minecraft_trade_listing(listing, request.user)}, status=201)
+
+
+@cache_control(no_store=True)
+@csrf_protect
+@require_http_methods(["POST"])
+def minecraft_trade_buy_json(request, listing_id):
+    guard_response = require_minecraft_trade_request(request)
+    if guard_response is not None:
+        return guard_response
+    payload = parse_minecraft_json_request_body(request)
+
+    with transaction.atomic():
+        listing = (
+            MinecraftTradeListing.objects
+            .select_for_update()
+            .select_related("seller", "buyer")
+            .filter(id=listing_id)
+            .first()
+        )
+        if listing is None:
+            return minecraft_trade_error_response("not_found", status=404)
+        if listing.status != MinecraftTradeListing.STATUS_OPEN:
+            return minecraft_trade_error_response("not_open", status=409, listing=listing)
+        if listing.seller_id == request.user.id:
+            return minecraft_trade_error_response("own_listing", status=409, listing=listing)
+
+        requested_sell_amount = normalize_minecraft_trade_amount(payload.get("sellAmount"))
+        if requested_sell_amount is None:
+            # Preserve the original API behavior for callers that buy the whole listing.
+            requested_sell_amount = listing.remaining_sell_amount
+        if requested_sell_amount < 1 or requested_sell_amount > listing.remaining_sell_amount:
+            return minecraft_trade_error_response("invalid_purchase_amount", status=400, listing=listing)
+        if not listing.allow_partial and requested_sell_amount != listing.remaining_sell_amount:
+            return minecraft_trade_error_response("partial_trade_disabled", status=409, listing=listing)
+
+        price_numerator = requested_sell_amount * listing.price_amount
+        if price_numerator % listing.sell_amount:
+            return minecraft_trade_error_response("non_integral_trade_ratio", status=400, listing=listing)
+        requested_price_amount = price_numerator // listing.sell_amount
+        if requested_price_amount < 1 or requested_price_amount > listing.remaining_price_amount:
+            return minecraft_trade_error_response("invalid_purchase_amount", status=400, listing=listing)
+
+        buyer_minecraft_name, account_error = get_online_linked_minecraft_name(request.user)
+        if account_error:
+            return minecraft_trade_error_response(account_error, status=minecraft_trade_error_status(account_error), listing=listing)
+
+        ok, error, _response_text = run_minecraft_trade_command(
+            "exchange",
+            buyer_minecraft_name,
+            listing.price_item,
+            requested_price_amount,
+            listing.sell_item,
+            requested_sell_amount,
+            listing.seller_minecraft_name,
+        )
+        if not ok:
+            return minecraft_trade_error_response(error, status=minecraft_trade_error_status(error), listing=listing)
+
+        now = timezone.now()
+        listing.buyer = request.user
+        listing.buyer_minecraft_name = buyer_minecraft_name
+        listing.remaining_sell_amount -= requested_sell_amount
+        listing.remaining_price_amount -= requested_price_amount
+        listing.unclaimed_price_amount += requested_price_amount
+        update_fields = [
+            "buyer",
+            "buyer_minecraft_name",
+            "remaining_sell_amount",
+            "remaining_price_amount",
+            "unclaimed_price_amount",
+            "updated_at",
+        ]
+        if listing.remaining_sell_amount == 0:
+            listing.status = MinecraftTradeListing.STATUS_COMPLETED
+            listing.completed_at = now
+            update_fields.extend(["status", "completed_at"])
+        listing.save(update_fields=update_fields)
+        MinecraftTradeFill.objects.create(
+            listing=listing,
+            buyer=request.user,
+            buyer_minecraft_name=buyer_minecraft_name,
+            sell_amount=requested_sell_amount,
+            price_amount=requested_price_amount,
+        )
+
+    logger.info("Minecraft trade listing bought: id=%s buyer=%s", listing.id, request.user.username)
+    return minecraft_trade_success_response({"listing": serialize_minecraft_trade_listing(listing, request.user)})
+
+
+@cache_control(no_store=True)
+@csrf_protect
+@require_http_methods(["POST"])
+def minecraft_trade_settle_json(request, listing_id):
+    guard_response = require_minecraft_trade_request(request)
+    if guard_response is not None:
+        return guard_response
+
+    with transaction.atomic():
+        listing = (
+            MinecraftTradeListing.objects
+            .select_for_update()
+            .select_related("seller", "buyer")
+            .filter(id=listing_id, seller=request.user)
+            .first()
+        )
+        if listing is None:
+            return minecraft_trade_error_response("not_found", status=404)
+        if listing.status != MinecraftTradeListing.STATUS_OPEN:
+            return minecraft_trade_error_response("not_open", status=409, listing=listing)
+        if not listing.remaining_sell_amount and not listing.unclaimed_price_amount:
+            return minecraft_trade_error_response("nothing_to_settle", status=409, listing=listing)
+        account_error = validate_minecraft_trade_listing_account(request.user, listing.seller_minecraft_name)
+        if account_error:
+            return minecraft_trade_error_response(account_error, status=minecraft_trade_error_status(account_error), listing=listing)
+
+        ok, error, _response_text = run_minecraft_trade_command(
+            "settle",
+            listing.seller_minecraft_name,
+            listing.price_item,
+            listing.unclaimed_price_amount,
+            listing.sell_item,
+            listing.remaining_sell_amount,
+        )
+        if not ok:
+            return minecraft_trade_error_response(error, status=minecraft_trade_error_status(error), listing=listing)
+
+        now = timezone.now()
+        listing.status = MinecraftTradeListing.STATUS_CANCELLED
+        listing.cancelled_at = now
+        listing.remaining_sell_amount = 0
+        listing.remaining_price_amount = 0
+        listing.claimed_price_amount += listing.unclaimed_price_amount
+        listing.unclaimed_price_amount = 0
+        listing.save(update_fields=[
+            "status",
+            "cancelled_at",
+            "remaining_sell_amount",
+            "remaining_price_amount",
+            "unclaimed_price_amount",
+            "claimed_price_amount",
+            "updated_at",
+        ])
+
+    logger.info("Minecraft trade listing settled: id=%s seller=%s", listing.id, request.user.username)
+    return minecraft_trade_success_response({"listing": serialize_minecraft_trade_listing(listing, request.user)})
+
+
+def minecraft_trade_cancel_json(request, listing_id):
+    """Keep the original cancel endpoint as an alias for early settlement."""
+    return minecraft_trade_settle_json(request, listing_id)
+
+
+@cache_control(no_store=True)
+@csrf_protect
+@require_http_methods(["POST"])
+def minecraft_trade_claim_json(request, listing_id):
+    guard_response = require_minecraft_trade_request(request)
+    if guard_response is not None:
+        return guard_response
+
+    with transaction.atomic():
+        listing = (
+            MinecraftTradeListing.objects
+            .select_for_update()
+            .select_related("seller", "buyer")
+            .filter(id=listing_id, seller=request.user)
+            .first()
+        )
+        if listing is None:
+            return minecraft_trade_error_response("not_found", status=404)
+        if not listing.unclaimed_price_amount:
+            return minecraft_trade_error_response("nothing_to_claim", status=409, listing=listing)
+        account_error = validate_minecraft_trade_listing_account(request.user, listing.seller_minecraft_name)
+        if account_error:
+            return minecraft_trade_error_response(account_error, status=minecraft_trade_error_status(account_error), listing=listing)
+
+        ok, error, _response_text = run_minecraft_trade_command(
+            "payout",
+            listing.seller_minecraft_name,
+            listing.price_item,
+            listing.unclaimed_price_amount,
+        )
+        if not ok:
+            return minecraft_trade_error_response(error, status=minecraft_trade_error_status(error), listing=listing)
+
+        now = timezone.now()
+        listing.claimed_price_amount += listing.unclaimed_price_amount
+        listing.unclaimed_price_amount = 0
+        update_fields = ["claimed_price_amount", "unclaimed_price_amount", "updated_at"]
+        if listing.status == MinecraftTradeListing.STATUS_COMPLETED:
+            listing.status = MinecraftTradeListing.STATUS_CLAIMED
+            listing.claimed_at = now
+            update_fields.extend(["status", "claimed_at"])
+        listing.save(update_fields=update_fields)
+
+    logger.info("Minecraft trade listing claimed: id=%s seller=%s", listing.id, request.user.username)
+    return minecraft_trade_success_response({"listing": serialize_minecraft_trade_listing(listing, request.user)})
 
 
 @cache_control(no_store=True)
@@ -6221,6 +6891,27 @@ def read_minecraft_server_status():
     return payload if isinstance(payload, dict) else {}
 
 
+def build_minecraft_player_head_url(uuid_value):
+    """Return the public player-head URL when a cached head image exists."""
+    try:
+        player_uuid = uuid_lib.UUID(str(uuid_value or "").strip())
+    except (TypeError, ValueError):
+        return ""
+
+    head_path = MINECRAFT_PLAYER_HEADS_PATH / f"{player_uuid}.png"
+    try:
+        modified_at = int(head_path.stat().st_mtime)
+    except OSError:
+        return ""
+    return f"/player-heads/{player_uuid}.png?v={modified_at}"
+
+
+def sanitize_minecraft_player_head_url(value):
+    """Allow only same-origin cached Minecraft player-head URLs."""
+    url = str(value or "").strip()
+    return url if MINECRAFT_PLAYER_HEAD_URL_PATTERN.match(url) else ""
+
+
 def sanitize_minecraft_status_payload(
     payload,
     include_private_player_data=False,
@@ -6249,6 +6940,11 @@ def sanitize_minecraft_status_payload(
             player_name_key = normalize_minecraft_player_name(raw_player.get("name")).lower()
             if player_name_key and player_name_key in current_account_name_keys:
                 player["currentAccount"] = True
+            head_url = sanitize_minecraft_player_head_url(raw_player.get("headUrl"))
+            if not head_url:
+                head_url = build_minecraft_player_head_url(raw_player.get("uuid"))
+            if head_url:
+                player["headUrl"] = head_url
             if include_private_player_data:
                 uuid_value = str(raw_player.get("uuid") or "").strip()
                 detail = raw_player.get("detail")
@@ -6436,6 +7132,11 @@ def minecraft_home(request, ui_lang=None):
     """Render the Minecraft landing page through Django for mc.hanplanet.com."""
     from .handrive_views import build_page_help_html, get_handrive_text
 
+    if getattr(request.user, "is_authenticated", False):
+        _ensure_valid_minecraft_account_session(request)
+    if _should_attempt_minecraft_sso(request):
+        return redirect(_build_minecraft_sso_start_redirect_url(request))
+
     resolved_lang = resolve_ui_lang(request, ui_lang)
     is_english = resolved_lang == "en"
     handrive_text = get_handrive_text(resolved_lang)
@@ -6479,7 +7180,7 @@ def minecraft_home(request, ui_lang=None):
         "sub_label": "Sub",
         "sub_url": build_public_site_nav_url(reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang})),
         "server_panel_title": "Map" if is_english else "지도",
-        "minecraft_account_link_title": "Account Link" if is_english else "계정연동",
+        "minecraft_account_link_title": "Account Link" if is_english else "연동",
         "minecraft_account_link_modal_title": "Minecraft account link" if is_english else "Minecraft 계정연동",
         "minecraft_account_link_code_label": "Link code" if is_english else "연동코드",
         "minecraft_account_link_copy_label": "Copy link code" if is_english else "연동코드 복사",
@@ -6499,6 +7200,44 @@ def minecraft_home(request, ui_lang=None):
         "minecraft_account_link_start_url": reverse("main:minecraft_link_start_json"),
         "minecraft_account_link_status_url": reverse("main:minecraft_link_status_json"),
         "minecraft_account_link_unlink_url_template": reverse("main:minecraft_link_unlink_json", kwargs={"link_id": 0}),
+        "minecraft_trade_panel_title": "Trades" if is_english else "거래",
+        "minecraft_trade_create_title": "Create Listing" if is_english else "거래 등록",
+        "minecraft_trade_list_title": "Listings" if is_english else "거래글",
+        "minecraft_trade_sell_item_label": "Sell item" if is_english else "판매 아이템",
+        "minecraft_trade_sell_amount_label": "Amount" if is_english else "수량",
+        "minecraft_trade_price_item_label": "Wanted item" if is_english else "받을 아이템",
+        "minecraft_trade_price_amount_label": "Amount" if is_english else "수량",
+        "minecraft_trade_partial_label": "Partial trades" if is_english else "부분 거래",
+        "minecraft_trade_batch_label": "Whole listing" if is_english else "일괄 거래",
+        "minecraft_trade_remaining_label": "Remaining" if is_english else "남은 수량",
+        "minecraft_trade_purchase_amount_label": "Purchase amount" if is_english else "구매 수량",
+        "minecraft_trade_payment_amount_label": "Payment" if is_english else "지불 수량",
+        "minecraft_trade_payment_invalid_label": "Enter a quantity with a whole-number payment." if is_english else "지불 수량이 정수가 되는 구매 수량을 입력하세요.",
+        "minecraft_trade_back_button_label": "Back to listings" if is_english else "거래글로 돌아가기",
+        "minecraft_trade_create_button_label": "Register" if is_english else "등록",
+        "minecraft_trade_buy_button_label": "Buy" if is_english else "구입",
+        "minecraft_trade_cancel_button_label": "Complete trade" if is_english else "거래 완료",
+        "minecraft_trade_claim_button_label": "Claim payment" if is_english else "대가 수령",
+        "minecraft_trade_empty_label": "No trade listings." if is_english else "등록된 거래글이 없습니다.",
+        "minecraft_trade_loading_label": "Loading trades." if is_english else "거래글을 불러오는 중입니다.",
+        "minecraft_trade_login_required_label": "Log in and link a Minecraft account to trade." if is_english else "거래는 로그인 후 Minecraft 계정을 연동해야 사용할 수 있습니다.",
+        "minecraft_trade_account_required_label": "Link a Minecraft account first." if is_english else "Minecraft 계정을 먼저 연동하세요.",
+        "minecraft_trade_player_offline_label": "Join the server with the linked Minecraft account first." if is_english else "연동된 Minecraft 계정으로 서버에 접속한 상태여야 합니다.",
+        "minecraft_trade_insufficient_item_label": "Not enough required item in inventory." if is_english else "인벤토리에 필요한 아이템 수량이 부족합니다.",
+        "minecraft_trade_inventory_full_label": "Inventory has no space." if is_english else "인벤토리에 공간이 부족합니다.",
+        "minecraft_trade_failed_label": "Trade request failed." if is_english else "거래 요청에 실패했습니다.",
+        "minecraft_trade_invalid_label": "Check item and amount values." if is_english else "아이템과 수량 값을 확인하세요.",
+        "minecraft_trade_completed_label": "Completed" if is_english else "거래 완료",
+        "minecraft_trade_claimed_label": "Claimed" if is_english else "수령 완료",
+        "minecraft_trade_cancelled_label": "Closed" if is_english else "거래 종료",
+        "minecraft_trade_open_label": "Open" if is_english else "거래 가능",
+        "minecraft_trade_item_options_json": json.dumps(get_minecraft_trade_item_options(is_english), ensure_ascii=False),
+        "minecraft_trade_list_url": reverse("main:minecraft_trade_list_json"),
+        "minecraft_trade_create_url": reverse("main:minecraft_trade_create_json"),
+        "minecraft_trade_buy_url_template": reverse("main:minecraft_trade_buy_json", kwargs={"listing_id": 0}),
+        "minecraft_trade_cancel_url_template": reverse("main:minecraft_trade_cancel_json", kwargs={"listing_id": 0}),
+        "minecraft_trade_settle_url_template": reverse("main:minecraft_trade_settle_json", kwargs={"listing_id": 0}),
+        "minecraft_trade_claim_url_template": reverse("main:minecraft_trade_claim_json", kwargs={"listing_id": 0}),
         "server_address_label": "Java Edition" if is_english else "자바 에디션",
         "bedrock_server_address_label": "Bedrock Edition" if is_english else "베드락 에디션",
         "server_address_copy_label": "Copy server address" if is_english else "서버 주소 복사",
@@ -6558,6 +7297,8 @@ def minecraft_home(request, ui_lang=None):
             else "서버 시간을 불러오는 중입니다."
         ),
         "weather_icon_url": MINECRAFT_WEATHER_ICON_URL,
+        "minecraft_item_icon_base_url": MINECRAFT_ITEM_ICON_BASE_URL,
+        "minecraft_item_icon_manifest_url": _static_with_mtime_version("media/icons/minecraft/items/manifest.json"),
         "minecraft_ui_icon_urls": MINECRAFT_UI_ICON_URLS,
         "server_time_picker_title": "Set server time" if is_english else "서버 시간 설정",
         "server_time_picker_apply_label": "Set time" if is_english else "시간 설정",
@@ -6647,7 +7388,7 @@ def minecraft_home(request, ui_lang=None):
     response = render(request, "main/minecraft_home.html", context)
     response["Cache-Control"] = "no-cache"
     response["X-Hanplanet-App"] = "django-minecraft"
-    return response
+    return _discard_anonymous_minecraft_shared_session(request, response)
 
 
 @cache_control(no_store=True)
@@ -6655,6 +7396,7 @@ def minecraft_status_json(request):
     """Serve the generated Minecraft status JSON through Django."""
     if not is_minecraft_host(request):
         raise Http404
+    has_valid_account_session = _ensure_valid_minecraft_account_session(request)
     payload = read_minecraft_server_status()
     if not payload:
         payload = {
@@ -6663,10 +7405,10 @@ def minecraft_status_json(request):
             "maxPlayers": 0,
             "players": [],
         }
-    minecraft_account_names = get_current_minecraft_account_names(getattr(request, "user", None))
+    minecraft_account_names = get_current_minecraft_account_names(getattr(request, "user", None)) if has_valid_account_session else []
     payload = sanitize_minecraft_status_payload(
         payload,
-        include_private_player_data=is_minecraft_admin_user(getattr(request, "user", None)),
+        include_private_player_data=has_valid_account_session and is_minecraft_admin_user(getattr(request, "user", None)),
         current_account_names=minecraft_account_names,
     )
     response = JsonResponse(payload)
@@ -6674,11 +7416,34 @@ def minecraft_status_json(request):
     return response
 
 
+@cache_control(public=True, max_age=300)
+@require_http_methods(["GET", "HEAD"])
+def minecraft_player_head_png(request, player_uuid):
+    """Serve cached Minecraft player-head images generated by the Paper plugin."""
+    if not is_minecraft_host(request):
+        raise Http404
+
+    head_path = MINECRAFT_PLAYER_HEADS_PATH / f"{player_uuid}.png"
+    try:
+        if not head_path.is_file():
+            raise Http404
+        response = FileResponse(head_path.open("rb"), content_type="image/png")
+    except OSError as exc:
+        raise Http404 from exc
+    response["X-Hanplanet-App"] = "django-minecraft"
+    response["Cache-Control"] = "public, max-age=300, s-maxage=300"
+    return response
+
+
 @cache_control(no_store=True)
 @require_http_methods(["GET"])
 def minecraft_server_log_json(request):
     """Serve a bounded live tail of Minecraft console stdout to the superuser only."""
-    if not is_minecraft_host(request) or not is_minecraft_admin_user(getattr(request, "user", None)):
+    if (
+        not is_minecraft_host(request)
+        or not _ensure_valid_minecraft_account_session(request)
+        or not is_minecraft_admin_user(getattr(request, "user", None))
+    ):
         raise Http404
 
     cursor = None
@@ -6700,7 +7465,11 @@ def minecraft_server_log_json(request):
 @require_http_methods(["POST"])
 def minecraft_server_command_json(request):
     """Execute a Minecraft command through the configured server command channel for the superuser only."""
-    if not is_minecraft_host(request) or not is_minecraft_admin_user(getattr(request, "user", None)):
+    if (
+        not is_minecraft_host(request)
+        or not _ensure_valid_minecraft_account_session(request)
+        or not is_minecraft_admin_user(getattr(request, "user", None))
+    ):
         raise Http404
 
     try:
@@ -6860,7 +7629,7 @@ def service_worker(request):
     """Serve the root-scope service worker used for Hanplanet page and static caching."""
     # Keep service worker script dynamic at root scope so it can control "/".
     script = """
-const STATIC_CACHE = 'hanplanet-static-v54';
+const STATIC_CACHE = 'hanplanet-static-v60';
 const PAGE_CACHE = 'hanplanet-page-v15';
 
 function isDownloadRequest(url) {

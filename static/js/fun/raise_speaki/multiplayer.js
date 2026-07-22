@@ -41,6 +41,7 @@
     const fullscreenToggles = Array.from(root.querySelectorAll('[data-game-fullscreen-toggle]'));
     const fullscreenExitButton = root.querySelector('[data-game-fullscreen-exit]');
     const topActions = root.querySelector('[data-game-top-actions]');
+    const escMenuButton = root.querySelector('[data-game-escape-toggle]');
     const mobileControlsToggle = root.querySelector('[data-game-mobile-controls-toggle]');
     const mobileControls = root.querySelector('[data-game-mobile-controls]');
     const joystick = root.querySelector('[data-game-joystick]');
@@ -1260,6 +1261,10 @@
         }
         startOverlay.hidden = !opened;
         startOverlay.classList.toggle('is-game-menu', Boolean(opened && gameStarted));
+        if (escMenuButton) {
+            escMenuButton.classList.toggle('is-active', Boolean(opened && gameStarted));
+            escMenuButton.setAttribute('aria-pressed', opened && gameStarted ? 'true' : 'false');
+        }
         if (startButton) {
             startButton.textContent = opened && gameStarted
                 ? (startButton.dataset.continueLabel || 'Continue')
@@ -1280,6 +1285,27 @@
         if (skinChangedSinceConnection) {
             connect();
         }
+    };
+
+    const runEscapeAction = function () {
+        if (skinModal && !skinModal.hidden) {
+            setSkinModalOpen(false);
+            return true;
+        }
+        if (startOverlay && !startOverlay.hidden) {
+            resumeGameFromStartOverlay();
+            return true;
+        }
+        let handled = false;
+        if (isFullscreenMode) {
+            setFullscreenMode(false);
+            handled = true;
+        }
+        if (gameStarted && !selfDeathActive) {
+            setStartOverlayOpen(true);
+            return true;
+        }
+        return handled;
     };
 
     const returnToInitialStartScreen = function () {
@@ -5844,27 +5870,17 @@
             setFullscreenMode(false);
         });
     }
+    if (escMenuButton) {
+        escMenuButton.addEventListener('click', function () {
+            runEscapeAction();
+        });
+    }
     document.addEventListener('keydown', function (event) {
         if (event.key !== 'Escape') {
             return;
         }
-        if (skinModal && !skinModal.hidden) {
+        if (runEscapeAction()) {
             event.preventDefault();
-            setSkinModalOpen(false);
-            return;
-        }
-        if (startOverlay && !startOverlay.hidden) {
-            event.preventDefault();
-            resumeGameFromStartOverlay();
-            return;
-        }
-        if (isFullscreenMode) {
-            event.preventDefault();
-            setFullscreenMode(false);
-        }
-        if (gameStarted && !selfDeathActive) {
-            event.preventDefault();
-            setStartOverlayOpen(true);
         }
     });
     window.addEventListener('resize', function () {

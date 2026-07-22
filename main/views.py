@@ -73,7 +73,7 @@ from django.core.cache import cache
 from django.template.loader import render_to_string
 import httpx
 from django.db.utils import OperationalError, ProgrammingError
-from django.db.models import Max, Q
+from django.db.models import Case, IntegerField, Max, Q, Value, When
 from django.db import transaction
 from django.templatetags.static import static
 from urllib.parse import quote, unquote, urlencode, urljoin, urlparse
@@ -146,7 +146,57 @@ MINECRAFT_SERVER_IMAGE_URL = urljoin("https://www.hanplanet.com", static("media/
 MINECRAFT_WEATHER_ICON_URL = static("media/icons/minecraft/weather.svg")
 MINECRAFT_ITEM_ICON_BASE_URL = static("media/icons/minecraft/items/")
 MINECRAFT_ITEM_ICON_MANIFEST_URL = static("media/icons/minecraft/items/manifest.json")
+MINECRAFT_NPC_TRADE_SELLER_NAME = "NPC"
+MINECRAFT_NPC_TRADE_SELLER_HEAD_URL = (
+    "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTk1JxgkwWCJ0G0e2z8w1NOOLibH8tgrJYCf7qxTjvDpw&s=10"
+)
 MINECRAFT_KOREAN_ITEM_LABELS_PATH = Path(settings.BASE_DIR) / "static" / "media" / "icons" / "minecraft" / "items" / "labels_ko_kr.json"
+MINECRAFT_KOREAN_ENCHANTMENT_LABELS = {
+    "aqua_affinity": "친수성",
+    "bane_of_arthropods": "살충",
+    "binding_curse": "귀속 저주",
+    "blast_protection": "폭발로부터 보호",
+    "breach": "격파",
+    "channeling": "집전",
+    "density": "육중",
+    "depth_strider": "물갈퀴",
+    "efficiency": "효율",
+    "feather_falling": "가벼운 착지",
+    "fire_aspect": "발화",
+    "fire_protection": "화염으로부터 보호",
+    "flame": "화염",
+    "fortune": "행운",
+    "frost_walker": "차가운 걸음",
+    "impaling": "찌르기",
+    "infinity": "무한",
+    "knockback": "밀치기",
+    "looting": "약탈",
+    "loyalty": "충성",
+    "luck_of_the_sea": "바다의 행운",
+    "lunge": "돌진",
+    "lure": "미끼",
+    "mending": "수선",
+    "multishot": "다중 발사",
+    "piercing": "관통",
+    "power": "힘",
+    "projectile_protection": "발사체로부터 보호",
+    "protection": "보호",
+    "punch": "밀어내기",
+    "quick_charge": "빠른 장전",
+    "respiration": "호흡",
+    "riptide": "급류",
+    "sharpness": "날카로움",
+    "silk_touch": "섬세한 손길",
+    "smite": "강타",
+    "soul_speed": "영혼 가속",
+    "sweeping": "휩쓸기",
+    "sweeping_edge": "휩쓸기",
+    "swift_sneak": "신속한 잠행",
+    "thorns": "가시",
+    "unbreaking": "내구성",
+    "vanishing_curse": "소실 저주",
+    "wind_burst": "돌풍",
+}
 MINECRAFT_UI_ICON_URLS = {
     "armor_full": static("media/icons/minecraft/ui/armor_full.png"),
     "armor_half": static("media/icons/minecraft/ui/armor_half.png"),
@@ -5938,6 +5988,116 @@ def normalize_minecraft_trade_amount(value):
     return amount
 
 
+def normalize_minecraft_trade_inventory_slot(value):
+    normalized = str(value or "").strip().lower()
+    if normalized in {"helmet", "chestplate", "leggings", "boots", "offhand"}:
+        return normalized
+    try:
+        slot = int(normalized)
+    except (TypeError, ValueError):
+        return ""
+    return str(slot) if 0 <= slot <= 35 else ""
+
+
+def find_minecraft_trade_inventory_slot(player_name, item_id, amount):
+    """Find a legacy trade form's sale stack in the authoritative status snapshot."""
+    normalized_player_name = normalize_minecraft_player_name(player_name).lower()
+    normalized_item_id = normalize_minecraft_trade_item_id(item_id)
+    required_amount = normalize_minecraft_trade_amount(amount)
+    if not normalized_player_name or not normalized_item_id or not required_amount:
+        return ""
+
+    payload = read_minecraft_server_status()
+    players = payload.get("players") if isinstance(payload, dict) else []
+    if not isinstance(players, list):
+        return ""
+
+    for player in players:
+        if not isinstance(player, dict):
+            continue
+        player_key = normalize_minecraft_player_name(player.get("name")).lower()
+        if player_key != normalized_player_name or not player.get("online"):
+            continue
+        detail = player.get("detail")
+        if not isinstance(detail, dict):
+            return ""
+
+        candidates = []
+        inventory = detail.get("inventory")
+        if isinstance(inventory, list):
+            candidates.extend(inventory)
+        armor = detail.get("armor")
+        if isinstance(armor, list):
+            candidates.extend(armor)
+        if isinstance(detail.get("offhand"), dict):
+            candidates.append({**detail["offhand"], "slot": "offhand"})
+
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            slot = normalize_minecraft_trade_inventory_slot(candidate.get("slot"))
+            candidate_item_id = normalize_minecraft_trade_item_id(candidate.get("type"))
+            candidate_amount = normalize_minecraft_trade_amount(candidate.get("amount"))
+            if slot and candidate_item_id == normalized_item_id and candidate_amount and candidate_amount >= required_amount:
+                return slot
+        return ""
+    return ""
+
+
+def normalize_minecraft_trade_item_data(value):
+    """Keep display metadata from the trusted Paper bridge bounded and JSON-safe."""
+    if not isinstance(value, dict):
+        return {}
+    item_id = normalize_minecraft_trade_item_id(value.get("type"))
+    if not item_id:
+        return {}
+
+    data = {"type": item_id}
+    label = "".join(char for char in str(value.get("label") or "").strip() if ord(char) >= 32)
+    if label:
+        data["label"] = label[:160]
+    if value.get("customName") is True:
+        data["customName"] = True
+
+    try:
+        amount = int(value.get("amount"))
+    except (TypeError, ValueError):
+        amount = 0
+    if 1 <= amount <= MINECRAFT_TRADE_MAX_AMOUNT:
+        data["amount"] = amount
+
+    enchantments = []
+    raw_enchantments = value.get("enchantments")
+    if isinstance(raw_enchantments, list):
+        for raw_enchantment in raw_enchantments[:32]:
+            if not isinstance(raw_enchantment, dict):
+                continue
+            enchantment_key = str(raw_enchantment.get("key") or "").strip().lower()
+            if not re.fullmatch(r"[a-z0-9_]{1,64}", enchantment_key):
+                continue
+            try:
+                level = int(raw_enchantment.get("level"))
+            except (TypeError, ValueError):
+                continue
+            if 1 <= level <= 255:
+                enchantments.append({"key": enchantment_key, "level": level})
+    if enchantments:
+        data["enchanted"] = True
+        data["enchantments"] = enchantments
+    elif value.get("enchanted") is True:
+        data["enchanted"] = True
+
+    try:
+        damage = int(value.get("damage"))
+        max_damage = int(value.get("maxDamage"))
+    except (TypeError, ValueError):
+        damage = max_damage = 0
+    if 1 <= max_damage <= 100000 and 0 <= damage <= max_damage:
+        data["damage"] = damage
+        data["maxDamage"] = max_damage
+    return data
+
+
 def format_minecraft_trade_item_label(value):
     item_id = normalize_minecraft_trade_item_id(value)
     if not item_id:
@@ -5963,6 +6123,19 @@ def get_minecraft_korean_item_labels():
         if re.fullmatch(r"[a-z0-9_]{1,64}", item_id) and label:
             labels[item_id] = label
     return labels
+
+
+def get_minecraft_trade_notice_ui_lang(user):
+    """Return the language last selected by a trade recipient on the Minecraft site."""
+    if not getattr(user, "is_authenticated", False):
+        return "ko"
+    preferred_ui_lang = (
+        UserProfile.objects
+        .filter(user=user)
+        .values_list("preferred_ui_lang", flat=True)
+        .first()
+    )
+    return preferred_ui_lang if preferred_ui_lang in SUPPORTED_UI_LANGS else "ko"
 
 
 def get_minecraft_trade_item_option(item_id, max_stack_size, is_english, english_label=""):
@@ -6094,7 +6267,7 @@ def get_minecraft_trade_seller_head_urls(listings):
     names = {
         normalize_minecraft_player_name(listing.seller_minecraft_name)
         for listing in listings
-        if normalize_minecraft_player_name(listing.seller_minecraft_name)
+        if not listing.is_npc and normalize_minecraft_player_name(listing.seller_minecraft_name)
     }
     if not names:
         return {}
@@ -6107,30 +6280,55 @@ def get_minecraft_trade_seller_head_urls(listings):
     return head_urls
 
 
-def serialize_minecraft_trade_listing(listing, user, seller_head_urls=None):
+def serialize_minecraft_trade_listing(listing, user, seller_head_urls=None, include_account_usernames=True):
     viewer_id = getattr(user, "id", None)
-    is_seller = viewer_id is not None and listing.seller_id == viewer_id
+    is_npc = bool(listing.is_npc)
+    is_seller = not is_npc and viewer_id is not None and listing.seller_id == viewer_id
     is_buyer = viewer_id is not None and listing.buyer_id == viewer_id
     remaining_sell_amount = max(0, int(listing.remaining_sell_amount or 0))
     remaining_price_amount = max(0, int(listing.remaining_price_amount or 0))
     unclaimed_price_amount = max(0, int(listing.unclaimed_price_amount or 0))
     minimum_purchase_amount = listing.sell_amount // math.gcd(listing.sell_amount, listing.price_amount)
     seller_name_key = normalize_minecraft_player_name(listing.seller_minecraft_name).lower()
-    seller_head_url = (seller_head_urls or {}).get(seller_name_key, "")
+    seller_head_url = (
+        MINECRAFT_NPC_TRADE_SELLER_HEAD_URL
+        if is_npc
+        else (seller_head_urls or {}).get(seller_name_key, "")
+    )
+    sell_item_data = normalize_minecraft_trade_item_data(listing.sell_item_data)
+    sell_item = {
+        "value": listing.sell_item,
+        "label": sell_item_data.get("label") or format_minecraft_trade_item_label(listing.sell_item),
+        "amount": remaining_sell_amount,
+        "totalAmount": listing.sell_amount,
+    }
+    for field in ("customName", "enchanted", "enchantments", "damage", "maxDamage"):
+        if field in sell_item_data:
+            sell_item[field] = sell_item_data[field]
+    can_purchase = bool(
+        listing.status == MinecraftTradeListing.STATUS_OPEN
+        and remaining_sell_amount > 0
+        and (is_npc or not is_seller)
+    )
+    can_manage_npc_listing = is_npc and is_minecraft_admin_user(user)
     return {
         "id": listing.id,
         "status": listing.status,
-        "sellerUsername": getattr(listing.seller, "username", ""),
-        "sellerMinecraftName": listing.seller_minecraft_name,
+        "isNpc": is_npc,
+        "sellerUsername": (
+            ""
+            if is_npc or not include_account_usernames
+            else getattr(listing.seller, "username", "")
+        ),
+        "sellerMinecraftName": MINECRAFT_NPC_TRADE_SELLER_NAME if is_npc else listing.seller_minecraft_name,
         "sellerHeadUrl": seller_head_url,
-        "buyerUsername": getattr(listing.buyer, "username", "") if listing.buyer_id else "",
+        "buyerUsername": (
+            getattr(listing.buyer, "username", "")
+            if include_account_usernames and listing.buyer_id
+            else ""
+        ),
         "buyerMinecraftName": listing.buyer_minecraft_name,
-        "sellItem": {
-            "value": listing.sell_item,
-            "label": format_minecraft_trade_item_label(listing.sell_item),
-            "amount": remaining_sell_amount,
-            "totalAmount": listing.sell_amount,
-        },
+        "sellItem": sell_item,
         "priceItem": {
             "value": listing.price_item,
             "label": format_minecraft_trade_item_label(listing.price_item),
@@ -6150,16 +6348,12 @@ def serialize_minecraft_trade_listing(listing, user, seller_head_urls=None):
         "claimedAt": listing.claimed_at.isoformat() if listing.claimed_at else "",
         "viewerIsSeller": is_seller,
         "viewerIsBuyer": is_buyer,
-        "canBuy": bool(
-            viewer_id
-            and listing.status == MinecraftTradeListing.STATUS_OPEN
-            and remaining_sell_amount > 0
-            and not is_seller
-        ),
-        "canCancel": bool(is_seller and listing.status == MinecraftTradeListing.STATUS_OPEN),
+        "canPurchase": can_purchase,
+        "canBuy": bool(viewer_id and can_purchase),
+        "canCancel": bool((is_seller or can_manage_npc_listing) and listing.status == MinecraftTradeListing.STATUS_OPEN),
         "canClaim": bool(is_seller and unclaimed_price_amount > 0),
         "canSettle": bool(
-            is_seller
+            (is_seller or can_manage_npc_listing)
             and listing.status == MinecraftTradeListing.STATUS_OPEN
             and (remaining_sell_amount > 0 or unclaimed_price_amount > 0)
         ),
@@ -6184,6 +6378,31 @@ def run_minecraft_trade_command(action, *args):
     return False, "trade_command_no_response", response_text
 
 
+def extract_minecraft_trade_escrow_item(response_text, action, listing_id):
+    pattern = re.compile(
+        r"\bHANPLANET_TRADE_ITEM\s+" + re.escape(str(action)) +
+        r"\s+" + re.escape(str(listing_id)) + r"\s+([A-Za-z0-9_-]+)\b"
+    )
+    matches = pattern.findall(str(response_text or ""))
+    for encoded_value in reversed(matches):
+        try:
+            padding = "=" * (-len(encoded_value) % 4)
+            decoded_value = base64.urlsafe_b64decode((encoded_value + padding).encode("ascii"))
+            payload = json.loads(decoded_value.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
+            continue
+        item_data = normalize_minecraft_trade_item_data(payload)
+        if item_data:
+            return item_data
+    return {}
+
+
+def minecraft_trade_escrow_id(listing):
+    raw_data = listing.sell_item_data if isinstance(listing.sell_item_data, dict) else {}
+    escrow_id = str(raw_data.get("escrowId") or "").strip()
+    return escrow_id if escrow_id == str(listing.id) else ""
+
+
 def minecraft_trade_error_status(error):
     if error in {"authentication_required"}:
         return 401
@@ -6203,9 +6422,10 @@ def minecraft_trade_error_status(error):
         "player_offline",
         "minecraft_account_offline",
         "minecraft_account_required",
+        "escrow_missing",
     }:
         return 409
-    if error in {"console_unavailable", "trade_command_no_response"}:
+    if error in {"console_unavailable", "trade_command_no_response", "escrow_unavailable"}:
         return 503
     return 400
 
@@ -6221,6 +6441,24 @@ def minecraft_trade_queryset_for_user(user):
             Q(fills__buyer=user)
         )
         .distinct()
+        .order_by(
+            Case(
+                When(status=MinecraftTradeListing.STATUS_OPEN, then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField(),
+            ),
+            "-created_at",
+            "-id",
+        )
+    )
+
+
+def minecraft_trade_public_queryset():
+    """Return only the active listings that may be viewed without an account."""
+    return (
+        MinecraftTradeListing.objects
+        .select_related("seller", "buyer")
+        .filter(status=MinecraftTradeListing.STATUS_OPEN)
         .order_by("-created_at", "-id")
     )
 
@@ -6228,18 +6466,26 @@ def minecraft_trade_queryset_for_user(user):
 @cache_control(no_store=True)
 @require_http_methods(["GET"])
 def minecraft_trade_list_json(request):
-    guard_response = require_minecraft_trade_request(request)
-    if guard_response is not None:
-        return guard_response
-    queryset = list(minecraft_trade_queryset_for_user(request.user)[:100])
+    if not is_minecraft_host(request):
+        raise Http404
+
+    viewer = request.user if _ensure_valid_minecraft_account_session(request) else None
+    queryset = list(
+        (minecraft_trade_queryset_for_user(viewer) if viewer else minecraft_trade_public_queryset())[:100]
+    )
     seller_head_urls = get_minecraft_trade_seller_head_urls(queryset)
     listings = [
-        serialize_minecraft_trade_listing(listing, request.user, seller_head_urls)
+        serialize_minecraft_trade_listing(
+            listing,
+            viewer,
+            seller_head_urls,
+            include_account_usernames=viewer is not None,
+        )
         for listing in queryset
     ]
     return minecraft_trade_success_response({
         "listings": listings,
-        "linkedMinecraftNames": get_current_minecraft_account_names(request.user),
+        "linkedMinecraftNames": get_current_minecraft_account_names(viewer),
     })
 
 
@@ -6252,7 +6498,15 @@ def minecraft_trade_create_json(request):
         return guard_response
 
     payload = parse_minecraft_json_request_body(request)
+    is_npc = (
+        payload.get("isNpc") is True
+        or str(payload.get("isNpc") or "").strip().lower() in {"1", "true", "yes", "on"}
+    )
+    if is_npc and not is_minecraft_admin_user(request.user):
+        return minecraft_trade_error_response("forbidden", status=403)
     sell_item = normalize_minecraft_trade_item_id(payload.get("sellItem"))
+    raw_sell_slot = payload.get("sellSlot")
+    sell_slot = normalize_minecraft_trade_inventory_slot(raw_sell_slot)
     sell_amount = normalize_minecraft_trade_amount(payload.get("sellAmount"))
     price_item = normalize_minecraft_trade_item_id(payload.get("priceItem"))
     price_amount = normalize_minecraft_trade_amount(payload.get("priceAmount"))
@@ -6260,29 +6514,55 @@ def minecraft_trade_create_json(request):
         payload.get("allowPartial") is True
         or str(payload.get("allowPartial") or "").strip().lower() in {"1", "true", "yes", "on"}
     )
-    if not sell_item or not sell_amount or not price_item or not price_amount:
-        return minecraft_trade_error_response("invalid_payload", status=400)
+    invalid_fields = []
+    if not sell_item:
+        invalid_fields.append("sell_item")
+    if not sell_amount:
+        invalid_fields.append("sell_amount")
+    if not price_item:
+        invalid_fields.append("price_item")
+    if not price_amount:
+        invalid_fields.append("price_amount")
+    if not is_npc and raw_sell_slot not in (None, "") and not sell_slot:
+        invalid_fields.append("sell_slot")
+    if invalid_fields:
+        logger.warning(
+            "Minecraft trade create rejected: user=%s invalid_fields=%s",
+            request.user.username,
+            ",".join(invalid_fields),
+        )
+        return minecraft_trade_error_response(
+            f"invalid_{invalid_fields[0]}",
+            status=400,
+        )
 
-    seller_minecraft_name, account_error = get_online_linked_minecraft_name(request.user)
-    if account_error:
-        return minecraft_trade_error_response(account_error, status=minecraft_trade_error_status(account_error))
-
-    ok, error, _response_text = run_minecraft_trade_command(
-        "reserve",
-        seller_minecraft_name,
-        sell_item,
-        sell_amount,
-        price_item,
-        price_amount,
-    )
-    if not ok:
-        return minecraft_trade_error_response(error, status=minecraft_trade_error_status(error))
+    seller_minecraft_name = MINECRAFT_NPC_TRADE_SELLER_NAME if is_npc else ""
+    if not is_npc:
+        seller_minecraft_name, account_error = get_online_linked_minecraft_name(request.user)
+        if account_error:
+            return minecraft_trade_error_response(account_error, status=minecraft_trade_error_status(account_error))
+        if not sell_slot:
+            sell_slot = find_minecraft_trade_inventory_slot(
+                seller_minecraft_name,
+                sell_item,
+                sell_amount,
+            )
+            if not sell_slot:
+                return minecraft_trade_error_response("insufficient_item", status=409)
+            logger.info(
+                "Minecraft trade legacy slot fallback: seller=%s item=%s slot=%s",
+                request.user.username,
+                sell_item,
+                sell_slot,
+            )
 
     try:
         listing = MinecraftTradeListing.objects.create(
             seller=request.user,
             seller_minecraft_name=seller_minecraft_name,
+            is_npc=is_npc,
             sell_item=sell_item,
+            sell_item_data={"type": sell_item, "amount": sell_amount} if is_npc else {},
             sell_amount=sell_amount,
             price_item=price_item,
             price_amount=price_amount,
@@ -6291,20 +6571,51 @@ def minecraft_trade_create_json(request):
             remaining_price_amount=price_amount,
         )
     except Exception:
-        run_minecraft_trade_command(
-            "return",
-            seller_minecraft_name,
+        raise
+
+    if is_npc:
+        logger.info(
+            "Minecraft NPC trade listing created: id=%s admin=%s item=%s amount=%s price=%s price_amount=%s",
+            listing.id,
+            request.user.username,
             sell_item,
             sell_amount,
             price_item,
             price_amount,
         )
+        return minecraft_trade_success_response({"listing": serialize_minecraft_trade_listing(listing, request.user)}, status=201)
+
+    seller_notice_ui_lang = resolve_ui_lang(request)
+    ok, error, response_text = run_minecraft_trade_command(
+        "reserve-escrow",
+        listing.id,
+        seller_minecraft_name,
+        sell_slot,
+        sell_amount,
+        price_item,
+        price_amount,
+        seller_notice_ui_lang,
+    )
+    if not ok:
+        listing.delete()
+        return minecraft_trade_error_response(error, status=minecraft_trade_error_status(error))
+
+    try:
+        sell_item_data = extract_minecraft_trade_escrow_item(response_text, "reserve-escrow", listing.id)
+        if not sell_item_data:
+            sell_item_data = {"type": sell_item, "amount": sell_amount}
+        listing.sell_item = sell_item_data.get("type") or sell_item
+        listing.sell_item_data = {**sell_item_data, "escrowId": str(listing.id)}
+        listing.save(update_fields=["sell_item", "sell_item_data", "updated_at"])
+    except Exception:
+        run_minecraft_trade_command("release-escrow", listing.id, seller_minecraft_name)
+        listing.delete()
         raise
     logger.info(
         "Minecraft trade listing created: id=%s seller=%s item=%s amount=%s price=%s price_amount=%s",
         listing.id,
         request.user.username,
-        sell_item,
+        listing.sell_item,
         sell_amount,
         price_item,
         price_amount,
@@ -6320,6 +6631,7 @@ def minecraft_trade_buy_json(request, listing_id):
     if guard_response is not None:
         return guard_response
     payload = parse_minecraft_json_request_body(request)
+    buyer_notice_ui_lang = resolve_ui_lang(request)
 
     with transaction.atomic():
         listing = (
@@ -6333,7 +6645,7 @@ def minecraft_trade_buy_json(request, listing_id):
             return minecraft_trade_error_response("not_found", status=404)
         if listing.status != MinecraftTradeListing.STATUS_OPEN:
             return minecraft_trade_error_response("not_open", status=409, listing=listing)
-        if listing.seller_id == request.user.id:
+        if not listing.is_npc and listing.seller_id == request.user.id:
             return minecraft_trade_error_response("own_listing", status=409, listing=listing)
 
         requested_sell_amount = normalize_minecraft_trade_amount(payload.get("sellAmount"))
@@ -6356,15 +6668,42 @@ def minecraft_trade_buy_json(request, listing_id):
         if account_error:
             return minecraft_trade_error_response(account_error, status=minecraft_trade_error_status(account_error), listing=listing)
 
-        ok, error, _response_text = run_minecraft_trade_command(
-            "exchange",
-            buyer_minecraft_name,
-            listing.price_item,
-            requested_price_amount,
-            listing.sell_item,
-            requested_sell_amount,
-            listing.seller_minecraft_name,
-        )
+        seller_notice_ui_lang = get_minecraft_trade_notice_ui_lang(listing.seller)
+        escrow_id = minecraft_trade_escrow_id(listing)
+        if listing.is_npc:
+            ok, error, _response_text = run_minecraft_trade_command(
+                "npc-exchange",
+                buyer_minecraft_name,
+                listing.price_item,
+                requested_price_amount,
+                listing.sell_item,
+                requested_sell_amount,
+                buyer_notice_ui_lang,
+            )
+        elif escrow_id:
+            ok, error, _response_text = run_minecraft_trade_command(
+                "exchange-escrow",
+                escrow_id,
+                buyer_minecraft_name,
+                listing.price_item,
+                requested_price_amount,
+                requested_sell_amount,
+                listing.seller_minecraft_name,
+                buyer_notice_ui_lang,
+                seller_notice_ui_lang,
+            )
+        else:
+            ok, error, _response_text = run_minecraft_trade_command(
+                "exchange",
+                buyer_minecraft_name,
+                listing.price_item,
+                requested_price_amount,
+                listing.sell_item,
+                requested_sell_amount,
+                listing.seller_minecraft_name,
+                buyer_notice_ui_lang,
+                seller_notice_ui_lang,
+            )
         if not ok:
             return minecraft_trade_error_response(error, status=minecraft_trade_error_status(error), listing=listing)
 
@@ -6373,15 +6712,26 @@ def minecraft_trade_buy_json(request, listing_id):
         listing.buyer_minecraft_name = buyer_minecraft_name
         listing.remaining_sell_amount -= requested_sell_amount
         listing.remaining_price_amount -= requested_price_amount
-        listing.unclaimed_price_amount += requested_price_amount
+        if listing.is_npc and listing.remaining_sell_amount == 0:
+            deleted_listing_id = listing.id
+            listing.delete()
+            logger.info(
+                "Minecraft NPC trade listing sold out and deleted: id=%s buyer=%s",
+                deleted_listing_id,
+                request.user.username,
+            )
+            return minecraft_trade_success_response({"deletedListingId": deleted_listing_id})
+        if not listing.is_npc:
+            listing.unclaimed_price_amount += requested_price_amount
         update_fields = [
             "buyer",
             "buyer_minecraft_name",
             "remaining_sell_amount",
             "remaining_price_amount",
-            "unclaimed_price_amount",
             "updated_at",
         ]
+        if not listing.is_npc:
+            update_fields.append("unclaimed_price_amount")
         if listing.remaining_sell_amount == 0:
             listing.status = MinecraftTradeListing.STATUS_COMPLETED
             listing.completed_at = now
@@ -6412,49 +6762,55 @@ def minecraft_trade_settle_json(request, listing_id):
             MinecraftTradeListing.objects
             .select_for_update()
             .select_related("seller", "buyer")
-            .filter(id=listing_id, seller=request.user)
+            .filter(id=listing_id)
             .first()
         )
-        if listing is None:
+        if listing is None or (not listing.is_npc and listing.seller_id != request.user.id):
             return minecraft_trade_error_response("not_found", status=404)
+        if listing.is_npc and not is_minecraft_admin_user(request.user):
+            return minecraft_trade_error_response("forbidden", status=403, listing=listing)
         if listing.status != MinecraftTradeListing.STATUS_OPEN:
             return minecraft_trade_error_response("not_open", status=409, listing=listing)
         if not listing.remaining_sell_amount and not listing.unclaimed_price_amount:
             return minecraft_trade_error_response("nothing_to_settle", status=409, listing=listing)
+        if listing.is_npc:
+            deleted_listing_id = listing.id
+            listing.delete()
+            logger.info("Minecraft NPC trade listing closed and deleted: id=%s admin=%s", deleted_listing_id, request.user.username)
+            return minecraft_trade_success_response({"deletedListingId": deleted_listing_id})
         account_error = validate_minecraft_trade_listing_account(request.user, listing.seller_minecraft_name)
         if account_error:
             return minecraft_trade_error_response(account_error, status=minecraft_trade_error_status(account_error), listing=listing)
 
-        ok, error, _response_text = run_minecraft_trade_command(
-            "settle",
-            listing.seller_minecraft_name,
-            listing.price_item,
-            listing.unclaimed_price_amount,
-            listing.sell_item,
-            listing.remaining_sell_amount,
-        )
+        seller_notice_ui_lang = resolve_ui_lang(request)
+        escrow_id = minecraft_trade_escrow_id(listing)
+        if escrow_id:
+            ok, error, _response_text = run_minecraft_trade_command(
+                "settle-escrow",
+                escrow_id,
+                listing.seller_minecraft_name,
+                listing.price_item,
+                listing.unclaimed_price_amount,
+                seller_notice_ui_lang,
+            )
+        else:
+            ok, error, _response_text = run_minecraft_trade_command(
+                "settle",
+                listing.seller_minecraft_name,
+                listing.price_item,
+                listing.unclaimed_price_amount,
+                listing.sell_item,
+                listing.remaining_sell_amount,
+                seller_notice_ui_lang,
+            )
         if not ok:
             return minecraft_trade_error_response(error, status=minecraft_trade_error_status(error), listing=listing)
 
-        now = timezone.now()
-        listing.status = MinecraftTradeListing.STATUS_CANCELLED
-        listing.cancelled_at = now
-        listing.remaining_sell_amount = 0
-        listing.remaining_price_amount = 0
-        listing.claimed_price_amount += listing.unclaimed_price_amount
-        listing.unclaimed_price_amount = 0
-        listing.save(update_fields=[
-            "status",
-            "cancelled_at",
-            "remaining_sell_amount",
-            "remaining_price_amount",
-            "unclaimed_price_amount",
-            "claimed_price_amount",
-            "updated_at",
-        ])
+        deleted_listing_id = listing.id
+        listing.delete()
 
-    logger.info("Minecraft trade listing settled: id=%s seller=%s", listing.id, request.user.username)
-    return minecraft_trade_success_response({"listing": serialize_minecraft_trade_listing(listing, request.user)})
+    logger.info("Minecraft trade listing settled and deleted: id=%s seller=%s", deleted_listing_id, request.user.username)
+    return minecraft_trade_success_response({"deletedListingId": deleted_listing_id})
 
 
 def minecraft_trade_cancel_json(request, listing_id):
@@ -6480,31 +6836,36 @@ def minecraft_trade_claim_json(request, listing_id):
         )
         if listing is None:
             return minecraft_trade_error_response("not_found", status=404)
+        if listing.is_npc:
+            return minecraft_trade_error_response("nothing_to_claim", status=409, listing=listing)
         if not listing.unclaimed_price_amount:
             return minecraft_trade_error_response("nothing_to_claim", status=409, listing=listing)
         account_error = validate_minecraft_trade_listing_account(request.user, listing.seller_minecraft_name)
         if account_error:
             return minecraft_trade_error_response(account_error, status=minecraft_trade_error_status(account_error), listing=listing)
 
+        seller_notice_ui_lang = resolve_ui_lang(request)
         ok, error, _response_text = run_minecraft_trade_command(
             "payout",
             listing.seller_minecraft_name,
             listing.price_item,
             listing.unclaimed_price_amount,
+            seller_notice_ui_lang,
         )
         if not ok:
             return minecraft_trade_error_response(error, status=minecraft_trade_error_status(error), listing=listing)
 
-        now = timezone.now()
-        listing.claimed_price_amount += listing.unclaimed_price_amount
-        listing.unclaimed_price_amount = 0
-        update_fields = ["claimed_price_amount", "unclaimed_price_amount", "updated_at"]
         if listing.status == MinecraftTradeListing.STATUS_COMPLETED:
-            listing.status = MinecraftTradeListing.STATUS_CLAIMED
-            listing.claimed_at = now
-            update_fields.extend(["status", "claimed_at"])
-        listing.save(update_fields=update_fields)
+            deleted_listing_id = listing.id
+            listing.delete()
+        else:
+            listing.claimed_price_amount += listing.unclaimed_price_amount
+            listing.unclaimed_price_amount = 0
+            listing.save(update_fields=["claimed_price_amount", "unclaimed_price_amount", "updated_at"])
 
+    if listing.status == MinecraftTradeListing.STATUS_COMPLETED:
+        logger.info("Minecraft completed trade listing claimed and deleted: id=%s seller=%s", deleted_listing_id, request.user.username)
+        return minecraft_trade_success_response({"deletedListingId": deleted_listing_id})
     logger.info("Minecraft trade listing claimed: id=%s seller=%s", listing.id, request.user.username)
     return minecraft_trade_success_response({"listing": serialize_minecraft_trade_listing(listing, request.user)})
 
@@ -7180,7 +7541,9 @@ def minecraft_home(request, ui_lang=None):
         "sub_label": "Sub",
         "sub_url": build_public_site_nav_url(reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang})),
         "server_panel_title": "Map" if is_english else "지도",
-        "minecraft_account_link_title": "Account Link" if is_english else "연동",
+        "minecraft_page_splitter_label": "Resize map and side panels" if is_english else "지도와 사이드 패널 영역 크기 조절",
+        "minecraft_side_splitter_label": "Resize player and trade areas" if is_english else "플레이어와 거래 영역 크기 조절",
+        "minecraft_account_link_title": "Link" if is_english else "연동",
         "minecraft_account_link_modal_title": "Minecraft account link" if is_english else "Minecraft 계정연동",
         "minecraft_account_link_code_label": "Link code" if is_english else "연동코드",
         "minecraft_account_link_copy_label": "Copy link code" if is_english else "연동코드 복사",
@@ -7209,22 +7572,30 @@ def minecraft_home(request, ui_lang=None):
         "minecraft_trade_price_amount_label": "Amount" if is_english else "수량",
         "minecraft_trade_partial_label": "Partial trades" if is_english else "부분 거래",
         "minecraft_trade_batch_label": "Whole listing" if is_english else "일괄 거래",
+        "minecraft_trade_npc_label": "NPC",
         "minecraft_trade_remaining_label": "Remaining" if is_english else "남은 수량",
         "minecraft_trade_purchase_amount_label": "Purchase amount" if is_english else "구매 수량",
         "minecraft_trade_payment_amount_label": "Payment" if is_english else "지불 수량",
         "minecraft_trade_payment_invalid_label": "Enter a quantity with a whole-number payment." if is_english else "지불 수량이 정수가 되는 구매 수량을 입력하세요.",
+        "minecraft_trade_durability_label": "Durability" if is_english else "내구도",
         "minecraft_trade_back_button_label": "Back to listings" if is_english else "거래글로 돌아가기",
         "minecraft_trade_create_button_label": "Register" if is_english else "등록",
         "minecraft_trade_buy_button_label": "Buy" if is_english else "구입",
         "minecraft_trade_cancel_button_label": "Complete trade" if is_english else "거래 완료",
-        "minecraft_trade_claim_button_label": "Claim payment" if is_english else "대가 수령",
-        "minecraft_trade_empty_label": "No trade listings." if is_english else "등록된 거래글이 없습니다.",
+        "minecraft_trade_claim_button_label": "Claim payment" if is_english else "아이템 수령",
+        "minecraft_trade_empty_label": "No trade listings." if is_english else "등록된 거래가 없습니다.",
         "minecraft_trade_loading_label": "Loading trades." if is_english else "거래글을 불러오는 중입니다.",
         "minecraft_trade_login_required_label": "Log in and link a Minecraft account to trade." if is_english else "거래는 로그인 후 Minecraft 계정을 연동해야 사용할 수 있습니다.",
         "minecraft_trade_account_required_label": "Link a Minecraft account first." if is_english else "Minecraft 계정을 먼저 연동하세요.",
-        "minecraft_trade_player_offline_label": "Join the server with the linked Minecraft account first." if is_english else "연동된 Minecraft 계정으로 서버에 접속한 상태여야 합니다.",
-        "minecraft_trade_insufficient_item_label": "Not enough required item in inventory." if is_english else "인벤토리에 필요한 아이템 수량이 부족합니다.",
+        "minecraft_trade_player_offline_label": "Join the server with the linked Minecraft account first." if is_english else "인게임 서버에 접속한 상태여야 합니다.",
+        "minecraft_trade_insufficient_item_label": "Not enough items in inventory." if is_english else "보유 수량이 부족합니다.",
         "minecraft_trade_inventory_full_label": "Inventory has no space." if is_english else "인벤토리에 공간이 부족합니다.",
+        "minecraft_trade_own_listing_label": "You cannot buy your own listing." if is_english else "본인의 거래글은 구입할 수 없습니다.",
+        "minecraft_trade_unavailable_label": "This listing is no longer available." if is_english else "거래글이 이미 변경되었거나 종료되었습니다.",
+        "minecraft_trade_nothing_to_claim_label": "There are no items to claim." if is_english else "수령할 아이템이 없습니다.",
+        "minecraft_trade_nothing_to_settle_label": "There are no items to settle." if is_english else "완료 처리할 아이템이 없습니다.",
+        "minecraft_trade_escrow_missing_label": "The trade escrow item is unavailable." if is_english else "거래 보관 아이템을 찾을 수 없습니다.",
+        "minecraft_trade_server_error_label": "The server could not process the trade." if is_english else "서버 오류로 거래를 처리하지 못했습니다.",
         "minecraft_trade_failed_label": "Trade request failed." if is_english else "거래 요청에 실패했습니다.",
         "minecraft_trade_invalid_label": "Check item and amount values." if is_english else "아이템과 수량 값을 확인하세요.",
         "minecraft_trade_completed_label": "Completed" if is_english else "거래 완료",
@@ -7232,6 +7603,15 @@ def minecraft_home(request, ui_lang=None):
         "minecraft_trade_cancelled_label": "Closed" if is_english else "거래 종료",
         "minecraft_trade_open_label": "Open" if is_english else "거래 가능",
         "minecraft_trade_item_options_json": json.dumps(get_minecraft_trade_item_options(is_english), ensure_ascii=False),
+        "minecraft_npc_trade_seller_head_url": MINECRAFT_NPC_TRADE_SELLER_HEAD_URL,
+        "minecraft_item_labels_json": json.dumps(
+            {} if is_english else get_minecraft_korean_item_labels(),
+            ensure_ascii=False,
+        ),
+        "minecraft_enchantment_labels_json": json.dumps(
+            {} if is_english else MINECRAFT_KOREAN_ENCHANTMENT_LABELS,
+            ensure_ascii=False,
+        ),
         "minecraft_trade_list_url": reverse("main:minecraft_trade_list_json"),
         "minecraft_trade_create_url": reverse("main:minecraft_trade_create_json"),
         "minecraft_trade_buy_url_template": reverse("main:minecraft_trade_buy_json", kwargs={"listing_id": 0}),
@@ -7629,7 +8009,7 @@ def service_worker(request):
     """Serve the root-scope service worker used for Hanplanet page and static caching."""
     # Keep service worker script dynamic at root scope so it can control "/".
     script = """
-const STATIC_CACHE = 'hanplanet-static-v60';
+const STATIC_CACHE = 'hanplanet-static-v65';
 const PAGE_CACHE = 'hanplanet-page-v15';
 
 function isDownloadRequest(url) {

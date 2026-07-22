@@ -38,18 +38,22 @@
     }
 
     .minecraft-page-layout {
+        --minecraft-side-layout-size: clamp(300px, 27%, 360px);
         width: min(1300px, 100%);
         height: 100%;
         min-height: 0;
         margin: 0 auto;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) max-content;
-        gap: 8px;
+        grid-template-columns: minmax(320px, 1fr) 14px minmax(300px, var(--minecraft-side-layout-size));
+        column-gap: 0;
+        row-gap: 8px;
         align-items: stretch;
         overflow: auto;
     }
 
     .minecraft-layout {
+        grid-column: 1;
+        grid-row: 1;
         display: grid;
         grid-template-columns: 1fr;
         gap: 12px;
@@ -60,15 +64,16 @@
     }
 
     .minecraft-side-layout {
-        justify-self: end;
+        grid-column: 3;
+        grid-row: 1;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 0;
         height: 100%;
         min-height: 0;
-        width: max-content;
-        min-width: 220px;
-        max-width: 360px;
+        width: 100%;
+        min-width: 0;
+        max-width: none;
         overflow: hidden;
     }
 
@@ -76,6 +81,10 @@
         width: 100%;
         min-width: 0;
         max-width: none;
+    }
+
+    .minecraft-side-layout > .minecraft-panel + .minecraft-panel {
+        margin-top: 8px;
     }
 
     .minecraft-player-panel,
@@ -91,8 +100,129 @@
         flex: 1 1 auto;
     }
 
+    .minecraft-side-layout.has-custom-player-size .minecraft-player-panel {
+        flex: 0 0 var(--minecraft-player-panel-size);
+    }
+
     .minecraft-trade-panel {
         flex: 1 1 300px;
+    }
+
+    .minecraft-side-layout > .minecraft-trade-panel {
+        width: 100%;
+    }
+
+    .minecraft-page-splitter,
+    .minecraft-side-splitter {
+        position: relative;
+        z-index: 3;
+        display: block;
+        padding: 0;
+        border: 0;
+        color: var(--handrive-border-heavy);
+        background: transparent;
+        appearance: none;
+        -webkit-appearance: none;
+        touch-action: none;
+        translate: 0 0;
+    }
+
+    .minecraft-page-splitter[hidden],
+    .minecraft-side-splitter[hidden] {
+        display: none;
+    }
+
+    .minecraft-page-splitter::before,
+    .minecraft-side-splitter::before {
+        position: absolute;
+        background: var(--handrive-border-soft);
+        content: "";
+        pointer-events: none;
+        transition: background-color 0.15s ease, width 0.15s ease, height 0.15s ease;
+    }
+
+    .minecraft-page-splitter:hover::before,
+    .minecraft-page-splitter:focus-visible::before,
+    .minecraft-page-splitter.is-active::before,
+    .minecraft-side-splitter:hover::before,
+    .minecraft-side-splitter:focus-visible::before,
+    .minecraft-side-splitter.is-active::before {
+        background: color-mix(in srgb, var(--handrive-text-stronger) 68%, var(--handrive-border-soft));
+    }
+
+    .minecraft-page-splitter:focus-visible,
+    .minecraft-side-splitter:focus-visible {
+        outline: 2px solid color-mix(in srgb, currentColor 72%, transparent);
+        outline-offset: -2px;
+    }
+
+    .minecraft-page-splitter {
+        grid-column: 2;
+        grid-row: 1;
+        width: 14px;
+        min-height: 0;
+        cursor: col-resize !important;
+    }
+
+    .minecraft-page-splitter::before {
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        width: 1px;
+        transform: translateX(-50%);
+    }
+
+    .minecraft-page-splitter.is-active::before {
+        width: 3px;
+    }
+
+    .minecraft-side-splitter {
+        flex: 0 0 8px;
+        width: 100%;
+        height: 8px;
+        cursor: row-resize !important;
+    }
+
+    .minecraft-side-splitter::before {
+        top: 50%;
+        right: 0;
+        left: 0;
+        height: 1px;
+        transform: translateY(-50%);
+    }
+
+    .minecraft-side-splitter.is-active::before {
+        height: 3px;
+    }
+
+    body.minecraft-page-split-resizing,
+    body.minecraft-side-split-resizing {
+        user-select: none;
+    }
+
+    body.minecraft-page-split-resizing,
+    body.minecraft-page-split-resizing *,
+    body.minecraft-side-split-resizing,
+    body.minecraft-side-split-resizing * {
+        cursor: inherit !important;
+    }
+
+    body.minecraft-page-split-resizing {
+        cursor: col-resize;
+    }
+
+    body.minecraft-side-split-resizing {
+        cursor: row-resize;
+    }
+
+    @media (min-width: 841px) and (orientation: landscape) {
+        .minecraft-player-panel {
+            flex: 2 1 0;
+        }
+
+        .minecraft-trade-panel {
+            flex: 1 1 0;
+        }
     }
 
     .minecraft-plugin-panel {
@@ -238,7 +368,7 @@
     }
 
     .minecraft-account-link-dialog {
-        width: min(420px, calc(100vw - 20px));
+        width: min(284px, calc(100vw - 20px));
         max-height: calc(100vh - 20px);
         max-height: calc(100dvh - 20px);
         display: flex;
@@ -541,6 +671,22 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
         gap: 10px;
+        container-type: inline-size;
+    }
+
+    @container (min-width: 690px) {
+        .minecraft-detail-grid > .minecraft-field + .minecraft-field {
+            position: relative;
+        }
+
+        .minecraft-detail-grid > .minecraft-field + .minecraft-field::before {
+            position: absolute;
+            inset-block: 0;
+            inset-inline-start: -5px;
+            width: 1px;
+            background: var(--handrive-border-soft);
+            content: "";
+        }
     }
 
     .minecraft-field {
@@ -638,7 +784,7 @@
         align-content: start;
         gap: 6px;
         margin: 0;
-        padding: 0;
+        padding: 1px 0;
         min-height: 0;
         width: 100%;
         box-sizing: border-box;
@@ -699,7 +845,7 @@
         width: 28px;
         height: 28px;
         padding: 0;
-        margin: -3px -3px -3px 3px;
+        margin: -3px -3px -3px auto;
         border: 0;
         color: inherit;
         background: transparent;
@@ -756,6 +902,15 @@
 
     .minecraft-player-panel .minecraft-status-title-row {
         gap: 0;
+    }
+
+    .minecraft-player-panel .minecraft-status-header {
+        justify-content: flex-start;
+        gap: 8px;
+    }
+
+    .minecraft-player-panel .minecraft-panel-collapse-trigger {
+        margin-left: auto;
     }
 
     .minecraft-server-log-title-row {
@@ -822,6 +977,7 @@
 
     .minecraft-trade-list-view {
         gap: 8px;
+        overflow: hidden;
     }
 
     .minecraft-trade-create-view {
@@ -884,9 +1040,137 @@
         text-align: left;
     }
 
+    .minecraft-trade-sell-item-picker {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .minecraft-trade-sell-item-trigger {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        cursor: pointer;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .minecraft-trade-sell-item-trigger:focus-visible {
+        outline: 2px solid var(--theme-accent, var(--handrive-text-stronger));
+        outline-offset: 2px;
+    }
+
+    .minecraft-trade-inventory-picker {
+        position: fixed;
+        z-index: 80;
+        width: min(342px, calc(100vw - 20px));
+        max-height: min(300px, calc(100vh - 20px));
+        overflow: auto;
+        padding: 8px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted);
+        box-shadow: var(--handrive-shadow-soft);
+        box-sizing: border-box;
+    }
+
+    .minecraft-trade-inventory-picker[hidden] {
+        display: none;
+    }
+
+    .minecraft-trade-inventory-picker .minecraft-player-inventory-panel {
+        grid-template-columns: max-content;
+        gap: 8px;
+    }
+
+    .minecraft-trade-inventory-picker .minecraft-player-inventory-section {
+        gap: 4px;
+    }
+
+    .minecraft-trade-inventory-picker .minecraft-equipment-grid {
+        grid-template-columns: repeat(5, 34px);
+        grid-template-rows: 34px;
+    }
+
+    .minecraft-trade-inventory-picker .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="helmet"],
+    .minecraft-trade-inventory-picker .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="chestplate"],
+    .minecraft-trade-inventory-picker .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="leggings"],
+    .minecraft-trade-inventory-picker .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="boots"],
+    .minecraft-trade-inventory-picker .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="offhand"] {
+        grid-row: 1;
+    }
+
+    .minecraft-trade-inventory-picker .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="helmet"] { grid-column: 1; }
+    .minecraft-trade-inventory-picker .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="chestplate"] { grid-column: 2; }
+    .minecraft-trade-inventory-picker .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="leggings"] { grid-column: 3; }
+    .minecraft-trade-inventory-picker .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="boots"] { grid-column: 4; }
+    .minecraft-trade-inventory-picker .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="offhand"] { grid-column: 5; }
+
+    .minecraft-trade-inventory-slot.is-selected {
+        box-shadow: inset 0 0 0 2px var(--theme-accent, var(--handrive-border-heavy));
+    }
+
     .minecraft-trade-amount-input {
         text-align: right;
         padding-right: 20px;
+    }
+
+    .minecraft-trade-panel .minecraft-player-edit-input {
+        width: 100%;
+        min-width: 0;
+        height: 32px;
+        padding: 0 8px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--shared-card-bg);
+        color: var(--handrive-text-stronger);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        text-align: right;
+        box-sizing: border-box;
+    }
+
+    .minecraft-trade-panel .minecraft-inventory-item-input {
+        text-align: left;
+    }
+
+    .minecraft-trade-panel .minecraft-player-edit-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 52px;
+        height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted-strong);
+        color: var(--handrive-text-stronger);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+        box-sizing: border-box;
+        transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+    }
+
+    .minecraft-trade-panel .minecraft-player-edit-input:focus {
+        border-color: var(--handrive-border-heavy);
+        outline: none;
+    }
+
+    .minecraft-trade-panel .minecraft-player-edit-button:hover,
+    .minecraft-trade-panel .minecraft-player-edit-button:focus-visible {
+        background: var(--handrive-hover);
+        border-color: var(--handrive-border-heavy);
+        outline: none;
+    }
+
+    .minecraft-trade-panel .minecraft-player-edit-button:disabled,
+    .minecraft-trade-panel .minecraft-player-edit-input:disabled {
+        cursor: default;
+        opacity: 0.55;
     }
 
     .minecraft-trade-create-button,
@@ -895,33 +1179,80 @@
     }
 
     .minecraft-trade-create-button {
+        flex: 0 0 auto;
         width: 100%;
     }
 
     .minecraft-trade-list {
         display: grid;
         flex: 1 1 auto;
+        grid-auto-rows: max-content;
         align-content: start;
         gap: 6px;
         min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
         overflow: auto;
     }
 
     .minecraft-trade-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
         height: auto;
         min-height: 64px;
         align-items: stretch;
-        flex-direction: column;
-        justify-content: flex-start;
+        justify-content: start;
         gap: 6px;
         padding: 8px;
     }
 
-    .minecraft-trade-summary {
+    .minecraft-trade-item[data-trade-toggle] {
+        cursor: pointer;
+        transition: background-color 0.16s ease, border-color 0.16s ease, translate 0.16s ease;
+    }
+
+    .minecraft-trade-item[data-trade-toggle]:hover,
+    .minecraft-trade-item[data-trade-toggle]:focus-within,
+    .minecraft-trade-item[data-trade-toggle]:active {
+        border-color: var(--handrive-border-heavy);
+        background: var(--handrive-surface-muted-strong);
+    }
+
+    .minecraft-trade-item[data-trade-toggle]:hover {
+        translate: 0 var(--btn-template-hover-lift, -1px);
+    }
+
+    .minecraft-trade-item[data-trade-toggle]:active {
+        translate: 0 var(--btn-template-active-press-depth, 1px);
+    }
+
+    .minecraft-trade-item[data-trade-toggle] .minecraft-trade-summary,
+    .minecraft-trade-item[data-trade-toggle] .minecraft-trade-summary:hover,
+    .minecraft-trade-item[data-trade-toggle] .minecraft-trade-summary:focus-visible,
+    .minecraft-trade-item[data-trade-toggle] .minecraft-trade-summary:active {
+        translate: 0 0 !important;
+    }
+
+    .minecraft-trade-item.is-completed {
+        opacity: 0.62;
+    }
+
+    .minecraft-trade-item-head {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .minecraft-trade-summary {
+        display: flex;
+        align-items: center;
+        justify-content: center;
         width: 100%;
+        min-height: 24px;
+        min-width: 0;
         padding: 0;
         border: 0;
         color: inherit;
@@ -936,6 +1267,10 @@
         border-radius: 4px;
     }
 
+    .minecraft-trade-summary:disabled {
+        cursor: default;
+    }
+
     .minecraft-trade-item-main,
     .minecraft-trade-item-meta {
         display: flex;
@@ -945,12 +1280,16 @@
     }
 
     .minecraft-trade-item-main {
-        justify-content: flex-start;
+        justify-content: center;
+        gap: 12px;
+        width: 100%;
         overflow: hidden;
     }
 
     .minecraft-trade-item-meta {
         justify-content: flex-end;
+        justify-self: end;
+        overflow: hidden;
     }
 
     .minecraft-trade-seller {
@@ -958,13 +1297,15 @@
         align-items: center;
         gap: 6px;
         min-width: 0;
-        margin-top: 2px;
+        justify-self: start;
+        overflow: hidden;
     }
 
     .minecraft-trade-seller .minecraft-player-avatar-wrap {
         flex: 0 0 20px;
         width: 20px;
         height: 20px;
+        opacity: 1;
     }
 
     .minecraft-trade-seller .minecraft-player-avatar {
@@ -987,15 +1328,32 @@
         line-height: 1.2;
     }
 
+    .minecraft-trade-stack > span:last-child,
+    .minecraft-trade-state {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .minecraft-trade-icon-stack {
+        flex: 0 0 auto;
+        gap: 4px;
+        cursor: pointer;
+    }
+
+    .minecraft-trade-icon-stack .minecraft-trade-amount {
+        color: var(--handrive-text-stronger);
+    }
+
     .minecraft-trade-icon {
         display: grid;
         place-items: center;
-        flex: 0 0 24px;
-        width: 24px;
-        height: 24px;
-        border: 1px solid var(--handrive-border-soft);
+        flex: 0 0 28px;
+        width: 28px;
+        height: 28px;
         border-radius: 4px;
-        background: var(--shared-card-bg);
+        background: transparent;
         box-sizing: border-box;
         image-rendering: pixelated;
         overflow: hidden;
@@ -1003,10 +1361,18 @@
 
     .minecraft-trade-icon img {
         display: block;
-        width: 20px;
-        height: 20px;
+        width: 26px;
+        height: 26px;
         object-fit: contain;
         image-rendering: pixelated;
+    }
+
+    .minecraft-trade-icon.is-enchanted img {
+        filter: drop-shadow(0 0 2px rgba(167, 139, 250, 0.82));
+    }
+
+    .minecraft-trade-icon.is-enchanted .minecraft-trade-code {
+        color: #a78bfa;
     }
 
     .minecraft-trade-code {
@@ -1023,6 +1389,7 @@
         font-size: 14px;
         font-weight: 900;
         line-height: 1;
+        cursor: pointer;
     }
 
     .minecraft-trade-user,
@@ -1040,32 +1407,21 @@
         white-space: nowrap;
     }
 
-    .minecraft-trade-detail {
-        display: grid;
-        gap: 8px;
-        padding-top: 8px;
-        border-top: 1px solid var(--handrive-border-soft);
-    }
-
-    .minecraft-trade-detail-meta {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        min-width: 0;
-        color: var(--handrive-text-muted);
-        font-size: 12px;
-        font-weight: 700;
-    }
-
-    .minecraft-trade-detail-meta strong {
+    .minecraft-trade-seller .minecraft-trade-user {
         color: var(--handrive-text-stronger);
         font-weight: 800;
     }
 
+    .minecraft-trade-detail {
+        display: grid;
+        gap: 6px;
+        padding-top: 6px;
+        border-top: 1px solid var(--handrive-border-soft);
+    }
+
     .minecraft-trade-purchase-row {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 6px;
         align-items: end;
     }
@@ -1077,7 +1433,7 @@
     .minecraft-trade-payment {
         display: grid;
         gap: 4px;
-        min-width: 92px;
+        min-width: 0;
     }
 
     .minecraft-trade-payment-value {
@@ -1085,10 +1441,16 @@
         display: inline-flex;
         align-items: center;
         justify-content: flex-end;
+        width: 100%;
+        padding: 0 12px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--shared-card-bg);
         color: var(--handrive-text-stronger);
         font-size: 13px;
         font-weight: 800;
         white-space: nowrap;
+        box-sizing: border-box;
     }
 
     .minecraft-trade-payment-value.is-error {
@@ -1096,12 +1458,24 @@
     }
 
     .minecraft-trade-actions {
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
         gap: 6px;
     }
 
-    .minecraft-trade-partial-toggle {
+    .minecraft-trade-actions .minecraft-trade-action {
+        width: 100%;
+    }
+
+    .minecraft-trade-toggle-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .minecraft-trade-partial-toggle,
+    .minecraft-trade-npc-toggle {
         display: inline-flex;
         align-items: center;
         justify-content: flex-start;
@@ -1109,7 +1483,7 @@
         width: max-content;
         min-height: 28px;
         padding: 4px 8px 4px 5px;
-        border: 1px solid var(--handrive-border-soft);
+        border: 0;
         border-radius: 4px;
         color: var(--handrive-text-muted);
         background: var(--shared-card-bg);
@@ -1117,14 +1491,33 @@
         font-size: 12px;
         font-weight: 800;
         cursor: pointer;
+        --btn-template-hover-lift: 0px;
+        --btn-template-active-press-depth: 0px;
+        transform: none;
+        translate: 0 0;
     }
 
-    .minecraft-trade-partial-toggle[aria-pressed="true"] {
+    .minecraft-trade-partial-toggle {
+        margin-left: auto;
+    }
+
+    .minecraft-trade-partial-toggle[aria-pressed="true"],
+    .minecraft-trade-npc-toggle[aria-pressed="true"] {
         color: var(--handrive-text-stronger);
-        border-color: var(--theme-accent, var(--handrive-text-stronger));
     }
 
-    .minecraft-trade-partial-toggle-knob {
+    .minecraft-trade-partial-toggle:hover,
+    .minecraft-trade-partial-toggle:focus-visible,
+    .minecraft-trade-partial-toggle:active,
+    .minecraft-trade-npc-toggle:hover,
+    .minecraft-trade-npc-toggle:focus-visible,
+    .minecraft-trade-npc-toggle:active {
+        transform: none !important;
+        translate: 0 0 !important;
+    }
+
+    .minecraft-trade-partial-toggle-knob,
+    .minecraft-trade-npc-toggle-knob {
         position: relative;
         width: 20px;
         height: 12px;
@@ -1132,7 +1525,8 @@
         background: var(--handrive-border-soft);
     }
 
-    .minecraft-trade-partial-toggle-knob::after {
+    .minecraft-trade-partial-toggle-knob::after,
+    .minecraft-trade-npc-toggle-knob::after {
         content: "";
         position: absolute;
         top: 2px;
@@ -1144,11 +1538,13 @@
         transition: transform 120ms ease;
     }
 
-    .minecraft-trade-partial-toggle[aria-pressed="true"] .minecraft-trade-partial-toggle-knob {
+    .minecraft-trade-partial-toggle[aria-pressed="true"] .minecraft-trade-partial-toggle-knob,
+    .minecraft-trade-npc-toggle[aria-pressed="true"] .minecraft-trade-npc-toggle-knob {
         background: var(--theme-accent, var(--handrive-text-stronger));
     }
 
-    .minecraft-trade-partial-toggle[aria-pressed="true"] .minecraft-trade-partial-toggle-knob::after {
+    .minecraft-trade-partial-toggle[aria-pressed="true"] .minecraft-trade-partial-toggle-knob::after,
+    .minecraft-trade-npc-toggle[aria-pressed="true"] .minecraft-trade-npc-toggle-knob::after {
         transform: translateX(8px);
     }
 
@@ -1394,6 +1790,10 @@
         min-width: 0;
     }
 
+    .minecraft-trade-npc-sell-item-combobox[hidden] {
+        display: none;
+    }
+
     .minecraft-inventory-item-menu {
         position: absolute;
         top: calc(100% + 3px);
@@ -1415,9 +1815,15 @@
         display: none;
     }
 
+    .minecraft-trade-field .minecraft-inventory-item-menu {
+        right: auto;
+        left: 0;
+        width: min(284px, calc(100vw - 20px));
+    }
+
     .minecraft-inventory-item-option {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) max-content;
+        grid-template-columns: 24px minmax(0, 1fr);
         align-items: center;
         gap: 8px;
         min-height: 28px;
@@ -1441,18 +1847,11 @@
         outline: none;
     }
 
-    .minecraft-inventory-item-option-label,
-    .minecraft-inventory-item-option-value {
+    .minecraft-inventory-item-option-label {
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-    }
-
-    .minecraft-inventory-item-option-value {
-        color: var(--handrive-text-muted);
-        font-size: 11px;
-        font-weight: 700;
     }
 
     .minecraft-player-edit-form.is-value-control .minecraft-player-edit-input,
@@ -1700,6 +2099,13 @@
 
     .minecraft-inventory-grid {
         display: grid;
+        gap: 6px;
+        align-content: start;
+        justify-content: start;
+    }
+
+    .minecraft-inventory-grid-row {
+        display: grid;
         grid-template-columns: repeat(9, 34px);
         grid-auto-rows: 34px;
         gap: 2px;
@@ -1858,10 +2264,6 @@
             grid-template-columns: 1fr;
         }
 
-        .minecraft-inventory-grid {
-            grid-template-columns: repeat(6, 34px);
-        }
-
         .minecraft-player-edit-form {
             grid-template-columns: 1fr;
         }
@@ -1882,6 +2284,25 @@
             grid-template-columns: 1fr;
             justify-items: center;
         }
+
+        .minecraft-player-inventory-panel .minecraft-equipment-grid {
+            grid-template-columns: repeat(5, 34px);
+            grid-template-rows: 34px;
+        }
+
+        .minecraft-player-inventory-panel .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="helmet"],
+        .minecraft-player-inventory-panel .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="chestplate"],
+        .minecraft-player-inventory-panel .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="leggings"],
+        .minecraft-player-inventory-panel .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="boots"],
+        .minecraft-player-inventory-panel .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="offhand"] {
+            grid-row: 1;
+        }
+
+        .minecraft-player-inventory-panel .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="helmet"] { grid-column: 1; }
+        .minecraft-player-inventory-panel .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="chestplate"] { grid-column: 2; }
+        .minecraft-player-inventory-panel .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="leggings"] { grid-column: 3; }
+        .minecraft-player-inventory-panel .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="boots"] { grid-column: 4; }
+        .minecraft-player-inventory-panel .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="offhand"] { grid-column: 5; }
     }
     {% endif %}
 
@@ -2171,6 +2592,16 @@
             overflow: auto;
         }
 
+        .minecraft-page-splitter,
+        .minecraft-side-splitter {
+            display: none;
+        }
+
+        .minecraft-layout {
+            grid-column: 1;
+            grid-row: 1;
+        }
+
         .minecraft-layout {
             height: 100%;
             min-height: 0;
@@ -2196,31 +2627,52 @@
         }
 
         .minecraft-side-layout {
+            grid-column: 1;
+            grid-row: 2;
             justify-self: stretch;
             height: max-content;
             min-height: max-content;
             width: 100%;
             min-width: 0;
             max-width: none;
+            container-type: inline-size;
             overflow: visible;
+        }
+
+        .minecraft-side-layout > .minecraft-player-panel {
+            margin-bottom: 8px;
         }
 
         .minecraft-player-panel,
         .minecraft-trade-panel,
         .minecraft-plugin-panel {
-            max-height: none;
-            overflow: visible;
+            max-height: 200cqw;
+            overflow: hidden;
         }
 
-        .minecraft-player-list,
+        .minecraft-side-layout > .minecraft-panel .minecraft-panel-collapsible-content {
+            min-width: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            scrollbar-gutter: stable;
+        }
+
+        .minecraft-side-layout > .minecraft-trade-panel .minecraft-panel-collapsible-content {
+            overflow: hidden;
+        }
+
+        .minecraft-side-layout > .minecraft-trade-panel {
+            width: 100%;
+        }
+
+        .minecraft-player-list {
+            width: 100%;
+            margin: 0;
+        }
+
         .minecraft-trade-list {
-            overflow: visible;
-        }
-
-        .minecraft-status-header {
-            align-items: flex-start;
-            flex-direction: column;
-            gap: 4px;
+            overflow-x: hidden;
+            overflow-y: auto;
         }
 
         .minecraft-panel-heading {
@@ -2241,7 +2693,7 @@
 
     @media (max-height: 520px) and (orientation: landscape) {
         .minecraft-page-layout {
-            grid-template-columns: minmax(0, 1fr) minmax(220px, 360px);
+            grid-template-columns: minmax(320px, 1fr) 14px minmax(300px, var(--minecraft-side-layout-size));
             grid-template-rows: minmax(0, 1fr) max-content;
             align-items: stretch;
         }
@@ -2267,8 +2719,8 @@
         .minecraft-side-layout {
             justify-self: stretch;
             width: 100%;
-            min-width: 220px;
-            max-width: 360px;
+            min-width: 0;
+            max-width: none;
             height: 100%;
             min-height: 0;
             overflow: auto;
@@ -2301,8 +2753,8 @@
 </div>
 
 <main class="ui-shell ui-content minecraft-content">
-    <div class="minecraft-page-layout">
-        <div class="minecraft-layout">
+    <div class="minecraft-page-layout" id="minecraftPageLayout">
+        <div class="minecraft-layout" id="minecraftMainLayout">
             <section class="minecraft-panel minecraft-server-panel" aria-labelledby="minecraft-server-title">
                 <div class="minecraft-panel-heading">
                     <h2 class="minecraft-panel-title" id="minecraft-server-title">{{ server_panel_title }}</h2>
@@ -2439,12 +2891,13 @@
 
         </div>
 
-        <div class="minecraft-side-layout">
+        <button class="minecraft-page-splitter" id="minecraftPageSplitter" type="button" role="separator" aria-label="{{ minecraft_page_splitter_label }}" aria-controls="minecraftMainLayout minecraftSideLayout" aria-orientation="vertical" aria-valuemin="18" aria-valuemax="50" aria-valuenow="27" data-ui-press-disabled="true"></button>
+
+        <div class="minecraft-side-layout" id="minecraftSideLayout">
             <section class="minecraft-panel minecraft-player-panel" aria-labelledby="minecraft-players-title">
                 <div class="minecraft-status-header" data-minecraft-panel-header>
                     <div class="minecraft-status-title-row">
                         <h2 class="minecraft-panel-title" id="minecraft-players-title">{{ players_panel_title }}</h2>
-                        <button class="minecraft-panel-collapse-trigger" id="minecraftPlayerPanelToggle" type="button" aria-expanded="true" aria-controls="minecraftPlayerPanelContent" aria-label="{{ players_panel_title }}" title="{{ players_panel_title }}"><svg class="minecraft-panel-collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m4 7 6 6 6-6"></path></svg></button>
                         <button
                             class="minecraft-account-link-trigger"
                             type="button"
@@ -2455,6 +2908,7 @@
                         >{{ minecraft_account_link_title }}</button>
                     </div>
                     <p class="minecraft-status-summary" id="playerSummary">{{ status_loading_label }}</p>
+                    <button class="minecraft-panel-collapse-trigger" id="minecraftPlayerPanelToggle" type="button" aria-expanded="true" aria-controls="minecraftPlayerPanelContent" aria-label="{{ players_panel_title }}" title="{{ players_panel_title }}"><svg class="minecraft-panel-collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m4 7 6 6 6-6"></path></svg></button>
                 </div>
                 <div class="minecraft-panel-collapsible-content" id="minecraftPlayerPanelContent">
                     <ul class="minecraft-panel-list minecraft-player-list" id="playerList"></ul>
@@ -2464,6 +2918,8 @@
                     <p class="minecraft-status-empty" id="playerEmpty" hidden></p>
                 </div>
             </section>
+
+            <button class="minecraft-side-splitter" id="minecraftSideSplitter" type="button" role="separator" aria-label="{{ minecraft_side_splitter_label }}" aria-controls="minecraftPlayerPanelContent minecraftTradePanelContent" aria-orientation="horizontal" aria-valuemin="15" aria-valuemax="70" aria-valuenow="50" data-ui-press-disabled="true"></button>
 
             <section
                 class="minecraft-panel minecraft-trade-panel"
@@ -2478,11 +2934,10 @@
             >
                 <div class="minecraft-status-header" data-minecraft-panel-header>
                     <h2 class="minecraft-panel-title" id="minecraft-trade-title">{{ minecraft_trade_panel_title }}</h2>
-                    <button class="minecraft-panel-collapse-trigger" id="minecraftTradePanelToggle" type="button" aria-expanded="true" aria-controls="minecraftTradePanelContent" aria-label="{{ minecraft_trade_panel_title }}" title="{{ minecraft_trade_panel_title }}"><svg class="minecraft-panel-collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m4 7 6 6 6-6"></path></svg></button>
                     <p class="minecraft-status-summary" id="minecraftTradeStatus">{{ minecraft_trade_loading_label }}</p>
+                    <button class="minecraft-panel-collapse-trigger" id="minecraftTradePanelToggle" type="button" aria-expanded="true" aria-controls="minecraftTradePanelContent" aria-label="{{ minecraft_trade_panel_title }}" title="{{ minecraft_trade_panel_title }}"><svg class="minecraft-panel-collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m4 7 6 6 6-6"></path></svg></button>
                 </div>
                 <div class="minecraft-panel-collapsible-content" id="minecraftTradePanelContent">
-                    {% if user.is_authenticated %}
                     <div class="minecraft-trade-list-view" id="minecraftTradeListView">
                         <ul class="minecraft-panel-list minecraft-trade-list" id="minecraftTradeList"></ul>
                         <p class="minecraft-status-empty" id="minecraftTradeEmpty" hidden>{{ minecraft_trade_empty_label }}</p>
@@ -2498,13 +2953,21 @@
                         <form class="minecraft-trade-form" id="minecraftTradeForm" autocomplete="off">
                             {% csrf_token %}
                             <div class="minecraft-trade-form-grid">
-                                <label class="minecraft-trade-field">
+                                <div class="minecraft-trade-field">
                                     <span class="minecraft-label">{{ minecraft_trade_sell_item_label }}</span>
-                                    <span class="minecraft-inventory-item-combobox" data-inventory-item-combobox>
-                                        <input class="minecraft-player-edit-input minecraft-inventory-item-input minecraft-trade-item-input" name="sellItem" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="minecraftTradeSellItemMenu" autocapitalize="none" autocomplete="off" spellcheck="false">
-                                        <span class="minecraft-inventory-item-menu" id="minecraftTradeSellItemMenu" role="listbox" hidden></span>
+                                    <span class="minecraft-trade-sell-item-picker" id="minecraftTradeSellItemPickerWrap" data-trade-sell-item-picker>
+                                        <button class="minecraft-player-edit-input minecraft-inventory-item-input minecraft-trade-item-input minecraft-trade-sell-item-trigger" id="minecraftTradeSellItemTrigger" type="button" aria-label="{{ minecraft_trade_sell_item_label }}" aria-expanded="false" aria-controls="minecraftTradeSellItemPicker"></button>
+                                        <input name="sellItem" type="hidden" value="">
+                                        <input name="sellSlot" type="hidden" value="">
+                                        <div class="minecraft-trade-inventory-picker" id="minecraftTradeSellItemPicker" role="dialog" aria-modal="false" aria-label="{{ minecraft_trade_sell_item_label }}" hidden></div>
                                     </span>
-                                </label>
+                                    {% if minecraft_admin_log_enabled %}
+                                    <span class="minecraft-inventory-item-combobox minecraft-trade-npc-sell-item-combobox" id="minecraftTradeNpcSellItemCombobox" data-inventory-item-combobox hidden>
+                                        <input class="minecraft-player-edit-input minecraft-inventory-item-input minecraft-trade-item-input" id="minecraftTradeNpcSellItemInput" name="npcSellItem" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="minecraftTradeNpcSellItemMenu" aria-label="{{ minecraft_trade_sell_item_label }}" autocapitalize="none" autocomplete="off" spellcheck="false">
+                                        <span class="minecraft-inventory-item-menu" id="minecraftTradeNpcSellItemMenu" role="listbox" hidden></span>
+                                    </span>
+                                    {% endif %}
+                                </div>
                                 <label class="minecraft-trade-field">
                                     <span class="minecraft-label">{{ minecraft_trade_sell_amount_label }}</span>
                                     <input class="minecraft-player-edit-input minecraft-trade-amount-input" name="sellAmount" type="text" inputmode="numeric" value="1">
@@ -2514,7 +2977,7 @@
                                 <label class="minecraft-trade-field">
                                     <span class="minecraft-label">{{ minecraft_trade_price_item_label }}</span>
                                     <span class="minecraft-inventory-item-combobox" data-inventory-item-combobox>
-                                        <input class="minecraft-player-edit-input minecraft-inventory-item-input minecraft-trade-item-input" name="priceItem" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="minecraftTradePriceItemMenu" autocapitalize="none" autocomplete="off" spellcheck="false">
+                                        <input class="minecraft-player-edit-input minecraft-inventory-item-input" name="priceItem" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="minecraftTradePriceItemMenu" autocapitalize="none" autocomplete="off" spellcheck="false">
                                         <span class="minecraft-inventory-item-menu" id="minecraftTradePriceItemMenu" role="listbox" hidden></span>
                                     </span>
                                 </label>
@@ -2523,16 +2986,21 @@
                                     <input class="minecraft-player-edit-input minecraft-trade-amount-input" name="priceAmount" type="text" inputmode="numeric" value="1">
                                 </label>
                             </div>
-                            <button class="minecraft-trade-partial-toggle" id="minecraftTradePartialToggle" type="button" aria-pressed="false" data-batch-label="{{ minecraft_trade_batch_label }}" data-partial-label="{{ minecraft_trade_partial_label }}">
-                                <span class="minecraft-trade-partial-toggle-knob" aria-hidden="true"></span>
-                                <span id="minecraftTradePartialToggleLabel">{{ minecraft_trade_batch_label }}</span>
-                            </button>
+                            <div class="minecraft-trade-toggle-row">
+                                {% if minecraft_admin_log_enabled %}
+                                <button class="minecraft-trade-npc-toggle" id="minecraftTradeNpcToggle" type="button" aria-pressed="false">
+                                    <span>{{ minecraft_trade_npc_label }}</span>
+                                    <span class="minecraft-trade-npc-toggle-knob" aria-hidden="true"></span>
+                                </button>
+                                {% endif %}
+                                <button class="minecraft-trade-partial-toggle" id="minecraftTradePartialToggle" type="button" aria-pressed="false" data-batch-label="{{ minecraft_trade_batch_label }}" data-partial-label="{{ minecraft_trade_partial_label }}">
+                                    <span id="minecraftTradePartialToggleLabel">{{ minecraft_trade_batch_label }}</span>
+                                    <span class="minecraft-trade-partial-toggle-knob" aria-hidden="true"></span>
+                                </button>
+                            </div>
                             <button class="minecraft-player-edit-button minecraft-trade-create-button" type="submit">{{ minecraft_trade_create_button_label }}</button>
                         </form>
                     </div>
-                    {% else %}
-                    <p class="minecraft-status-empty" id="minecraftTradeEmpty" hidden>{{ minecraft_trade_login_required_label }}</p>
-                    {% endif %}
                 </div>
             </section>
 
@@ -2582,6 +3050,12 @@
         const serverWeatherIconEl = document.getElementById('serverWeatherIcon');
         const serverTimeLabelEl = document.getElementById('serverTimeLabel');
         const serverVersionEl = document.getElementById('serverVersion');
+        const pageLayoutEl = document.getElementById('minecraftPageLayout');
+        const mainLayoutEl = document.getElementById('minecraftMainLayout');
+        const sideLayoutEl = document.getElementById('minecraftSideLayout');
+        const pageSplitterEl = document.getElementById('minecraftPageSplitter');
+        const sideSplitterEl = document.getElementById('minecraftSideSplitter');
+        const playerPanelEl = document.querySelector('.minecraft-player-panel');
         const tradePanelEl = document.getElementById('minecraftTradePanel');
         const tradeFormEl = document.getElementById('minecraftTradeForm');
         const tradeListEl = document.getElementById('minecraftTradeList');
@@ -2592,6 +3066,12 @@
         const tradeCreateTriggerEl = document.getElementById('minecraftTradeCreateTrigger');
         const tradeBackButtonEl = document.getElementById('minecraftTradeBackButton');
         const tradePartialToggleEl = document.getElementById('minecraftTradePartialToggle');
+        const tradeNpcToggleEl = document.getElementById('minecraftTradeNpcToggle');
+        const tradeSellItemPickerWrapEl = document.getElementById('minecraftTradeSellItemPickerWrap');
+        const tradeSellItemTriggerEl = document.getElementById('minecraftTradeSellItemTrigger');
+        const tradeSellItemPickerEl = document.getElementById('minecraftTradeSellItemPicker');
+        const tradeNpcSellItemComboboxEl = document.getElementById('minecraftTradeNpcSellItemCombobox');
+        const tradeNpcSellItemInputEl = document.getElementById('minecraftTradeNpcSellItemInput');
         const accountLinkTriggerEl = document.getElementById('minecraftAccountLinkTrigger');
         const accountLinkModalEl = document.getElementById('minecraftAccountLinkModal');
         const accountLinkBackdropEl = document.getElementById('minecraft-account-link-backdrop');
@@ -2647,15 +3127,19 @@
         const tradeSettleUrlTemplate = tradePanelEl ? tradePanelEl.dataset.settleUrlTemplate || '' : '';
         const tradeClaimUrlTemplate = tradePanelEl ? tradePanelEl.dataset.claimUrlTemplate || '' : '';
         const isMinecraftAdmin = {{ minecraft_admin_log_enabled|yesno:"true,false" }};
+        const npcTradeSellerHeadUrl = '{{ minecraft_npc_trade_seller_head_url|escapejs }}';
         const isAuthenticated = document.body && document.body.dataset.authenticated === '1';
         let hasRenderedStatus = false;
         let worldState = null;
         const initialMinecraftTradeItemOptions = {{ minecraft_trade_item_options_json|safe }};
+        const minecraftLocalizedItemLabels = new Map(Object.entries({{ minecraft_item_labels_json|safe }}));
+        const minecraftLocalizedEnchantmentLabels = new Map(Object.entries({{ minecraft_enchantment_labels_json|safe }}));
         let latestWorldOptions = [];
         let latestItemOptions = [];
         let latestTradeListings = [];
         let expandedTradeListingId = null;
         let latestPlayersByName = new Map();
+        let linkedMinecraftNames = [];
         const addressCopyResetTimers = new WeakMap();
         let serverLogCursor = null;
         let serverLogText = '';
@@ -2664,6 +3148,10 @@
         let serverLogReloadQueued = false;
         let serverCommandRequestInFlight = false;
         let tradeRequestInFlight = false;
+        let tradeSellItemUnavailableTooltipState = null;
+        let tradeActionFailureTooltipState = null;
+        const tradePurchaseCorrectionTimers = new Map();
+        const tradePurchaseInputValues = new Map();
         let selectedTimeHour = 0;
         let selectedTimeMinute = 0;
         let playerDetailLastFocusedElement = null;
@@ -2733,6 +3221,12 @@
             tradePlayerOffline: '{{ minecraft_trade_player_offline_label|escapejs }}',
             tradeInsufficientItem: '{{ minecraft_trade_insufficient_item_label|escapejs }}',
             tradeInventoryFull: '{{ minecraft_trade_inventory_full_label|escapejs }}',
+            tradeOwnListing: '{{ minecraft_trade_own_listing_label|escapejs }}',
+            tradeUnavailable: '{{ minecraft_trade_unavailable_label|escapejs }}',
+            tradeNothingToClaim: '{{ minecraft_trade_nothing_to_claim_label|escapejs }}',
+            tradeNothingToSettle: '{{ minecraft_trade_nothing_to_settle_label|escapejs }}',
+            tradeEscrowMissing: '{{ minecraft_trade_escrow_missing_label|escapejs }}',
+            tradeServerError: '{{ minecraft_trade_server_error_label|escapejs }}',
             tradeFailed: '{{ minecraft_trade_failed_label|escapejs }}',
             tradeInvalid: '{{ minecraft_trade_invalid_label|escapejs }}',
             tradeOpen: '{{ minecraft_trade_open_label|escapejs }}',
@@ -2746,6 +3240,7 @@
             tradePurchaseAmount: '{{ minecraft_trade_purchase_amount_label|escapejs }}',
             tradePaymentAmount: '{{ minecraft_trade_payment_amount_label|escapejs }}',
             tradePaymentInvalid: '{{ minecraft_trade_payment_invalid_label|escapejs }}',
+            tradeDurability: '{{ minecraft_trade_durability_label|escapejs }}',
             accountLinkLoading: '{{ minecraft_account_link_loading_label|escapejs }}',
             accountLinkFailed: '{{ minecraft_account_link_failed_label|escapejs }}',
             accountLinkUnlink: '{{ minecraft_account_link_unlink_label|escapejs }}',
@@ -3281,6 +3776,7 @@
 
         function normalizePlayerHeadUrl(value) {
             const url = String(value || '').trim();
+            if (url === npcTradeSellerHeadUrl) return url;
             return /^\/player-heads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png(?:\?v=\d{1,20})?$/i.test(url) ? url : '';
         }
 
@@ -3291,13 +3787,14 @@
 
         function renderPlayerAvatar(player, isOnline) {
             const headUrl = normalizePlayerHeadUrl(player && player.headUrl);
+            const imagePolicy = headUrl === npcTradeSellerHeadUrl ? ' referrerpolicy="no-referrer"' : '';
             const classes = [
                 'minecraft-player-avatar-wrap',
                 isOnline ? 'is-online' : 'is-offline',
                 headUrl ? 'has-image' : 'has-fallback'
             ].filter(Boolean).join(' ');
             return '<span class="' + escapeAttribute(classes) + '" aria-hidden="true">' +
-                (headUrl ? '<img class="minecraft-player-avatar" src="' + escapeAttribute(headUrl) + '" alt="" draggable="false">' : '') +
+                (headUrl ? '<img class="minecraft-player-avatar" src="' + escapeAttribute(headUrl) + '" alt="" draggable="false"' + imagePolicy + '>' : '') +
                 '<span class="minecraft-player-avatar-fallback"' + (headUrl ? ' hidden' : '') + '>' + escapeHtml(getPlayerAvatarFallbackText(player)) + '</span>' +
                 '</span>';
         }
@@ -3371,11 +3868,14 @@
             const key = normalizedValue.toLowerCase();
             if (seen.has(key)) return;
             seen.add(key);
-            const optionLabel = String(label || formatPlayerLabel(normalizedValue));
+            const sourceLabel = String(label || '').trim();
+            const optionLabel = getMinecraftLocalizedItemLabel(normalizedValue) || sourceLabel || formatPlayerLabel(normalizedValue);
+            const optionAliases = Array.isArray(aliases) ? aliases.slice() : [];
+            if (sourceLabel && sourceLabel !== optionLabel) optionAliases.push(sourceLabel);
             options.push({
                 value: normalizedValue,
                 label: optionLabel,
-                aliases: normalizeMinecraftItemAliases(normalizedValue, optionLabel, aliases)
+                aliases: normalizeMinecraftItemAliases(normalizedValue, optionLabel, optionAliases)
             });
         }
 
@@ -3648,6 +4148,16 @@
             return resolveMinecraftItemIdByAlias(value);
         }
 
+        function getMinecraftLocalizedItemLabel(itemId) {
+            const normalizedItemId = String(itemId || '').trim().toLowerCase().replace(/^minecraft:/, '');
+            return minecraftLocalizedItemLabels.get(normalizedItemId) || '';
+        }
+
+        function getMinecraftLocalizedEnchantmentLabel(enchantmentKey) {
+            const normalizedKey = String(enchantmentKey || '').trim().toLowerCase().replace(/^minecraft:/, '');
+            return minecraftLocalizedEnchantmentLabels.get(normalizedKey) || '';
+        }
+
         function normalizeMinecraftItemIconFile(value) {
             const normalized = String(value || '').trim();
             return /^[a-z0-9_.-]+\.png$/.test(normalized) ? normalized : '';
@@ -3661,6 +4171,50 @@
             }
             const iconUrl = minecraftItemIconBaseUrl + iconFile;
             return minecraftItemIconCacheVersion ? iconUrl + '?v=' + encodeURIComponent(minecraftItemIconCacheVersion) : iconUrl;
+        }
+
+        function formatMinecraftEnchantmentLevel(value) {
+            const level = Number(value);
+            if (!Number.isInteger(level) || level < 1) return '';
+            const numerals = [
+                [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'],
+                [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']
+            ];
+            let remaining = Math.min(level, 3999);
+            let result = '';
+            numerals.forEach(function (entry) {
+                while (remaining >= entry[0]) {
+                    result += entry[1];
+                    remaining -= entry[0];
+                }
+            });
+            return result || String(level);
+        }
+
+        function getMinecraftItemMetadataTexts(item) {
+            const metadata = [];
+            const enchantments = Array.isArray(item && item.enchantments) ? item.enchantments : [];
+            enchantments.forEach(function (enchantment) {
+                const key = String(enchantment && enchantment.key || '').trim().toLowerCase().replace(/^minecraft:/, '');
+                const level = formatMinecraftEnchantmentLevel(enchantment && enchantment.level);
+                if (key) {
+                    const label = getMinecraftLocalizedEnchantmentLabel(key) || formatPlayerLabel(key);
+                    metadata.push(label + (level ? ' ' + level : ''));
+                }
+            });
+            const damage = Number(item && item.damage);
+            const maxDamage = Number(item && item.maxDamage);
+            if (Number.isFinite(damage) && Number.isFinite(maxDamage) && maxDamage > 0) {
+                metadata.push(labels.tradeDurability + ' ' + String(Math.max(0, maxDamage - damage)) + ' / ' + String(maxDamage));
+            }
+            return metadata;
+        }
+
+        function getMinecraftItemDisplayLabel(item) {
+            const itemId = normalizeMinecraftItemId(item && (item.value || item.type));
+            const option = findMinecraftItemOption(itemId);
+            if (item && item.customName && item.label) return String(item.label);
+            return getMinecraftLocalizedItemLabel(itemId) || (option && option.label) || String(item && item.label || '') || formatPlayerLabel(itemId);
         }
 
         function refreshOpenPlayerDetailIfNeeded() {
@@ -3711,7 +4265,7 @@
 
         function renderInventoryEditForm(slot, item) {
             const safeSlot = String(slot || '');
-            const itemType = String((item && item.type) || '');
+            const itemType = item ? getMinecraftItemDisplayLabel(item) : '';
             const amount = Number(item && item.amount);
             const amountValue = Number.isFinite(amount) && amount > 0 ? Math.min(64, Math.round(amount)) : 1;
             const itemMenuId = 'minecraft-inventory-item-menu-' + safeSlot.replace(/[^a-z0-9_-]/gi, '-');
@@ -3729,7 +4283,9 @@
 
         function renderInventorySlot(item, slot, isHeld) {
             const slotKey = String(slot);
-            const title = item ? (item.label || item.type || labels.playerInventory) : labels.playerEmptyInventory;
+            const itemTitle = item ? getMinecraftItemDisplayLabel(item) : labels.playerEmptyInventory;
+            const itemMetadata = item ? getMinecraftItemMetadataTexts(item) : [];
+            const title = itemMetadata.length ? itemTitle + '\n' + itemMetadata.join('\n') : itemTitle;
             const amount = Number(item && item.amount);
             const iconUrl = getMinecraftItemIconUrl(item);
             const classes = [
@@ -3759,6 +4315,22 @@
             return armor.find((item) => item && String(item.slot || '') === slotKey) || null;
         }
 
+        // Bukkit exposes the hotbar as slots 0-8, while Minecraft renders it below slots 9-35.
+        const minecraftInventoryDisplaySlots = [
+            ...Array.from({ length: 27 }, (_, index) => index + 9),
+            ...Array.from({ length: 9 }, (_, index) => index),
+        ];
+
+        function renderMinecraftInventoryGridRows(renderSlot) {
+            const renderRow = (slots, className) => '<div class="' + className + '">' +
+                slots.map((slot) => renderSlot(slot)).join('') +
+                '</div>';
+            return '<div class="minecraft-inventory-grid">' +
+                renderRow(minecraftInventoryDisplaySlots.slice(0, 27), 'minecraft-inventory-grid-row') +
+                renderRow(minecraftInventoryDisplaySlots.slice(27), 'minecraft-inventory-grid-row is-hotbar') +
+                '</div>';
+        }
+
         function renderInventoryGrid(items, heldSlot, includeEditor) {
             const itemMap = new Map();
             if (Array.isArray(items)) {
@@ -3768,11 +4340,9 @@
                     }
                 });
             }
-            let html = '<div class="minecraft-inventory-grid">';
-            for (let slot = 0; slot < 36; slot += 1) {
-                html += renderInventorySlot(itemMap.get(slot), slot, Number(heldSlot) === slot);
-            }
-            html += '</div>';
+            let html = renderMinecraftInventoryGridRows((slot) => (
+                renderInventorySlot(itemMap.get(slot), slot, Number(heldSlot) === slot)
+            ));
             if (includeEditor !== false && isStorageInventorySlot(activeInventoryEditSlot)) {
                 html += renderInventoryEditForm(activeInventoryEditSlot, itemMap.get(Number(activeInventoryEditSlot)));
             }
@@ -3818,6 +4388,228 @@
                 '</section>' +
                 '</div>' +
                 (isSafeInventorySlot(activeInventoryEditSlot) ? renderInventoryEditForm(activeInventoryEditSlot, selectedItem) : '');
+        }
+
+        function getTradeSellPickerPlayer() {
+            const linkedNameKeys = linkedMinecraftNames.length
+                ? new Set(linkedMinecraftNames.map(normalizeMinecraftPlayerName).filter(Boolean))
+                : currentAccountNames;
+            for (const [name, player] of latestPlayersByName.entries()) {
+                if (!linkedNameKeys.has(name) || !player || !player.online || !player.detail) continue;
+                return player;
+            }
+            return null;
+        }
+
+        function getTradeSellField(name) {
+            return tradeFormEl ? tradeFormEl.querySelector('[name="' + String(name) + '"]') : null;
+        }
+
+        function getSelectedTradeSellSlot() {
+            const slotField = getTradeSellField('sellSlot');
+            return slotField ? String(slotField.value || '') : '';
+        }
+
+        function renderTradeInventorySlot(item, slot, isHeld) {
+            const slotKey = String(slot);
+            const itemTitle = item ? getMinecraftItemDisplayLabel(item) : labels.playerEmptyInventory;
+            const itemMetadata = item ? getMinecraftItemMetadataTexts(item) : [];
+            const title = itemMetadata.length ? itemTitle + '\n' + itemMetadata.join('\n') : itemTitle;
+            const amount = Number(item && item.amount);
+            const iconUrl = getMinecraftItemIconUrl(item);
+            const isSelected = item && getSelectedTradeSellSlot() === slotKey;
+            const classes = [
+                'minecraft-inventory-slot',
+                'minecraft-trade-inventory-slot',
+                iconUrl ? 'has-icon' : '',
+                isHeld ? 'is-held' : '',
+                isSelected ? 'is-selected' : '',
+                item && item.enchanted ? 'is-enchanted' : ''
+            ].filter(Boolean).join(' ');
+            return '<button class="' + escapeAttribute(classes) + '" type="button" title="' + escapeAttribute(title) + '" data-inventory-slot="' + escapeAttribute(slotKey) + '" data-trade-sell-slot="' + escapeAttribute(slotKey) + '"' + (item ? '' : ' disabled') + '>' +
+                (iconUrl ? '<img class="minecraft-inventory-icon" src="' + escapeAttribute(iconUrl) + '" alt="" aria-hidden="true" draggable="false">' : '') +
+                (item && !iconUrl ? '<span class="minecraft-inventory-code">' + escapeHtml(getInventoryItemCode(item)) + '</span>' : '') +
+                (item && Number.isFinite(amount) && amount > 1 ? '<span class="minecraft-inventory-amount">' + escapeHtml(String(amount)) + '</span>' : '') +
+                '</button>';
+        }
+
+        function renderTradeInventoryGrid(items, heldSlot) {
+            const itemMap = new Map();
+            if (Array.isArray(items)) {
+                items.forEach(function (item) {
+                    const slot = Number(item && item.slot);
+                    if (Number.isInteger(slot) && slot >= 0 && slot <= 35) itemMap.set(slot, item);
+                });
+            }
+            return renderMinecraftInventoryGridRows((slot) => (
+                renderTradeInventorySlot(itemMap.get(slot), slot, Number(heldSlot) === slot)
+            ));
+        }
+
+        function renderTradeEquipmentGrid(armor, offhand) {
+            const armorMap = new Map();
+            if (Array.isArray(armor)) {
+                armor.forEach(function (item) {
+                    if (item && item.slot) armorMap.set(String(item.slot), item);
+                });
+            }
+            return '<div class="minecraft-equipment-grid">' +
+                ['helmet', 'chestplate', 'leggings', 'boots'].map(function (slot) {
+                    return renderTradeInventorySlot(armorMap.get(slot), slot, false);
+                }).join('') +
+                renderTradeInventorySlot(offhand || null, 'offhand', false) +
+                '</div>';
+        }
+
+        function clearTradeSellItemUnavailableTooltip() {
+            if (!tradeSellItemTriggerEl || !tradeSellItemUnavailableTooltipState) return;
+            const state = tradeSellItemUnavailableTooltipState;
+            if (window.SiteTooltip && typeof window.SiteTooltip.hide === 'function') {
+                window.SiteTooltip.hide();
+            }
+            if (state.hadTooltip) {
+                tradeSellItemTriggerEl.setAttribute('data-site-tooltip', state.tooltip);
+            } else {
+                tradeSellItemTriggerEl.removeAttribute('data-site-tooltip');
+            }
+            if (state.hadImmediateTooltip) {
+                tradeSellItemTriggerEl.setAttribute('data-site-tooltip-immediate', '');
+            } else {
+                tradeSellItemTriggerEl.removeAttribute('data-site-tooltip-immediate');
+            }
+            if (state.hadTitle) {
+                tradeSellItemTriggerEl.setAttribute('title', state.title);
+            } else {
+                tradeSellItemTriggerEl.removeAttribute('title');
+            }
+            if (state.hadAriaLabel) {
+                tradeSellItemTriggerEl.setAttribute('aria-label', state.ariaLabel);
+            } else {
+                tradeSellItemTriggerEl.removeAttribute('aria-label');
+            }
+            tradeSellItemUnavailableTooltipState = null;
+        }
+
+        function showTradeSellItemUnavailableTooltip(message) {
+            if (!tradeSellItemTriggerEl) return;
+            const tooltipMessage = String(message || '').trim();
+            if (!tooltipMessage) return;
+            if (!tradeSellItemUnavailableTooltipState) {
+                tradeSellItemUnavailableTooltipState = {
+                    hadTooltip: tradeSellItemTriggerEl.hasAttribute('data-site-tooltip'),
+                    tooltip: tradeSellItemTriggerEl.getAttribute('data-site-tooltip') || '',
+                    hadImmediateTooltip: tradeSellItemTriggerEl.hasAttribute('data-site-tooltip-immediate'),
+                    hadTitle: tradeSellItemTriggerEl.hasAttribute('title'),
+                    title: tradeSellItemTriggerEl.getAttribute('title') || '',
+                    hadAriaLabel: tradeSellItemTriggerEl.hasAttribute('aria-label'),
+                    ariaLabel: tradeSellItemTriggerEl.getAttribute('aria-label') || ''
+                };
+            }
+            tradeSellItemTriggerEl.removeAttribute('title');
+            tradeSellItemTriggerEl.setAttribute('data-site-tooltip', tooltipMessage);
+            tradeSellItemTriggerEl.setAttribute('data-site-tooltip-immediate', '');
+            if (window.SiteTooltip && typeof window.SiteTooltip.show === 'function') {
+                window.SiteTooltip.show(tradeSellItemTriggerEl);
+            }
+        }
+
+        function renderTradeSellInventoryPicker() {
+            if (!tradeSellItemPickerEl) return;
+            const player = getTradeSellPickerPlayer();
+            if (!player) {
+                tradeSellItemPickerEl.innerHTML = '';
+                showTradeSellItemUnavailableTooltip(labels.tradePlayerOffline);
+                return false;
+            }
+            clearTradeSellItemUnavailableTooltip();
+            const detail = player.detail || {};
+            tradeSellItemPickerEl.innerHTML = '<div class="minecraft-player-inventory-panel">' +
+                '<section class="minecraft-player-inventory-section">' +
+                '<h4 class="minecraft-player-inventory-section-title">' + escapeHtml(labels.playerOffhand + ' / ' + labels.playerArmor) + '</h4>' +
+                renderTradeEquipmentGrid(detail.armor, detail.offhand) +
+                '</section>' +
+                '<section class="minecraft-player-inventory-section">' +
+                '<h4 class="minecraft-player-inventory-section-title">' + escapeHtml(labels.playerInventory) + '</h4>' +
+                renderTradeInventoryGrid(detail.inventory, detail.heldSlot) +
+                '</section>' +
+                '</div>';
+            return true;
+        }
+
+        function positionTradeSellInventoryPicker() {
+            if (!tradeSellItemPickerEl || tradeSellItemPickerEl.hidden || !tradeSellItemTriggerEl) return;
+            const triggerBounds = tradeSellItemTriggerEl.getBoundingClientRect();
+            const viewportPadding = 10;
+            const pickerWidth = Math.min(342, Math.max(0, window.innerWidth - viewportPadding * 2));
+            const left = Math.max(
+                viewportPadding,
+                Math.min(triggerBounds.left, window.innerWidth - pickerWidth - viewportPadding)
+            );
+            const top = Math.min(
+                triggerBounds.bottom + 6,
+                Math.max(viewportPadding, window.innerHeight - 160)
+            );
+            tradeSellItemPickerEl.style.left = Math.round(left) + 'px';
+            tradeSellItemPickerEl.style.top = Math.round(top) + 'px';
+            tradeSellItemPickerEl.style.width = Math.round(pickerWidth) + 'px';
+            tradeSellItemPickerEl.style.maxHeight = Math.max(120, Math.round(window.innerHeight - top - viewportPadding)) + 'px';
+        }
+
+        function setTradeSellInventoryPickerOpen(opened) {
+            if (!tradeSellItemPickerEl || !tradeSellItemTriggerEl) return;
+            const isOpen = Boolean(opened);
+            const hasPickerContent = isOpen && renderTradeSellInventoryPicker();
+            tradeSellItemPickerEl.hidden = !hasPickerContent;
+            tradeSellItemTriggerEl.setAttribute('aria-expanded', hasPickerContent ? 'true' : 'false');
+            if (hasPickerContent) {
+                window.requestAnimationFrame(positionTradeSellInventoryPicker);
+            } else {
+                tradeSellItemPickerEl.style.removeProperty('left');
+                tradeSellItemPickerEl.style.removeProperty('top');
+                tradeSellItemPickerEl.style.removeProperty('width');
+                tradeSellItemPickerEl.style.removeProperty('max-height');
+            }
+        }
+
+        function setSelectedTradeSellItem(slot, item) {
+            const itemId = normalizeMinecraftItemId(item && item.type);
+            if (!itemId || !item || !isSafeInventorySlot(slot)) return;
+            const itemField = getTradeSellField('sellItem');
+            const slotField = getTradeSellField('sellSlot');
+            const amountField = getTradeSellField('sellAmount');
+            const label = getMinecraftItemDisplayLabel(item);
+            const metadata = getMinecraftItemMetadataTexts(item);
+            const maximumAmount = Math.max(1, Math.floor(Number(item.amount) || 1));
+            if (itemField) itemField.value = itemId;
+            if (slotField) slotField.value = String(slot);
+            if (amountField) {
+                amountField.max = String(maximumAmount);
+                if (Number(amountField.value) > maximumAmount || Number(amountField.value) < 1) {
+                    amountField.value = String(maximumAmount);
+                }
+            }
+            if (tradeSellItemTriggerEl) {
+                tradeSellItemTriggerEl.textContent = label;
+                tradeSellItemTriggerEl.removeAttribute('aria-label');
+                tradeSellItemTriggerEl.title = metadata.length ? label + '\n' + metadata.join('\n') : label;
+            }
+            setTradeSellInventoryPickerOpen(false);
+        }
+
+        function resetTradeSellItemSelection() {
+            const itemField = getTradeSellField('sellItem');
+            const slotField = getTradeSellField('sellSlot');
+            const amountField = getTradeSellField('sellAmount');
+            if (itemField) itemField.value = '';
+            if (slotField) slotField.value = '';
+            if (amountField) amountField.removeAttribute('max');
+            if (tradeNpcSellItemInputEl) tradeNpcSellItemInputEl.value = '';
+            if (tradeSellItemTriggerEl) {
+                tradeSellItemTriggerEl.textContent = '';
+                tradeSellItemTriggerEl.setAttribute('aria-label', '{{ minecraft_trade_sell_item_label|escapejs }}');
+                tradeSellItemTriggerEl.removeAttribute('title');
+            }
+            setTradeSellInventoryPickerOpen(false);
         }
 
         function renderPlayerDetail(player) {
@@ -4007,9 +4799,9 @@
             }
             menu.innerHTML = matches.map((option, index) => {
                 const optionId = menu.id + '-option-' + index;
-                return '<button class="minecraft-inventory-item-option" id="' + escapeAttribute(optionId) + '" type="button" role="option" data-item-value="' + escapeAttribute(option.value) + '" data-item-label="' + escapeAttribute(option.label) + '">' +
+                return '<button class="minecraft-inventory-item-option" id="' + escapeAttribute(optionId) + '" type="button" role="option" aria-label="' + escapeAttribute(option.label + ' (' + option.value + ')') + '" title="' + escapeAttribute(option.label + ' (' + option.value + ')') + '" data-item-value="' + escapeAttribute(option.value) + '" data-item-label="' + escapeAttribute(option.label) + '">' +
+                    renderTradeIcon({ value: option.value }) +
                     '<span class="minecraft-inventory-item-option-label">' + escapeHtml(option.label) + '</span>' +
-                    '<span class="minecraft-inventory-item-option-value">' + escapeHtml(option.value) + '</span>' +
                     '</button>';
             }).join('');
             menu.hidden = false;
@@ -4432,6 +5224,12 @@
                 const key = normalizeMinecraftPlayerName(player && player.name);
                 if (key) latestPlayersByName.set(key, player);
             });
+            if (tradeSellItemPickerEl && !tradeSellItemPickerEl.hidden) {
+                renderTradeSellInventoryPicker();
+            }
+            if (tradeSellItemUnavailableTooltipState && getTradeSellPickerPlayer()) {
+                clearTradeSellItemUnavailableTooltip();
+            }
             const onlineCount = Number.isFinite(status.onlineCount) ? status.onlineCount : players.filter((player) => player.online).length;
             const maxPlayers = Number.isFinite(status.maxPlayers) && status.maxPlayers > 0 ? status.maxPlayers : null;
             summaryEl.textContent = status.serverOnline
@@ -4617,15 +5415,24 @@
         }
 
         function buildMinecraftTradeUrl(template, listingId) {
-            const safeId = String(listingId || '').replace(/[^0-9]/g, '');
-            if (!safeId || !template) return '';
-            return template.replace(/\/0\/?$/, '/' + safeId);
+            const safeId = String(listingId || '').trim();
+            if (!/^[1-9]\d*$/.test(safeId) || !template) return '';
+            const url = String(template);
+            const resolvedUrl = url.replace(/\/0(?=\/|$)/, '/' + encodeURIComponent(safeId));
+            return resolvedUrl === url ? '' : resolvedUrl;
         }
 
         function setTradeStatus(message, isError) {
             if (!tradeStatusEl) return;
-            tradeStatusEl.textContent = message || '';
+            const statusMessage = String(message || '');
+            if (tradeStatusEl.hasAttribute('data-site-tooltip') && window.SiteTooltip && typeof window.SiteTooltip.hide === 'function') {
+                window.SiteTooltip.hide();
+            }
+            tradeStatusEl.textContent = statusMessage;
             tradeStatusEl.classList.toggle('is-error', Boolean(isError));
+            tradeStatusEl.removeAttribute('data-site-tooltip');
+            tradeStatusEl.removeAttribute('aria-label');
+            tradeStatusEl.removeAttribute('tabindex');
         }
 
         function setTradeBusy(isBusy) {
@@ -4634,17 +5441,96 @@
             tradePanelEl.querySelectorAll('button, input').forEach((element) => {
                 element.disabled = Boolean(isBusy);
             });
+            if (!isBusy && expandedTradeListingId !== null) {
+                updateTradePayment(expandedTradeListingId);
+            }
         }
 
-        function getTradeErrorLabel(error) {
+        function getTradeFailureReason(error) {
             if (error === 'authentication_required') return labels.tradeLoginRequired;
             if (error === 'minecraft_account_required') return labels.tradeAccountRequired;
             if (error === 'minecraft_account_offline' || error === 'player_offline') return labels.tradePlayerOffline;
             if (error === 'insufficient_item') return labels.tradeInsufficientItem;
             if (error === 'inventory_full') return labels.tradeInventoryFull;
+            if (error === 'own_listing') return labels.tradeOwnListing;
+            if (error === 'not_open' || error === 'not_completed' || error === 'not_found') return labels.tradeUnavailable;
+            if (error === 'nothing_to_claim') return labels.tradeNothingToClaim;
+            if (error === 'nothing_to_settle') return labels.tradeNothingToSettle;
+            if (error === 'escrow_missing') return labels.tradeEscrowMissing;
+            if (error === 'console_unavailable' || error === 'trade_command_no_response' || error === 'escrow_unavailable') {
+                return labels.tradeServerError;
+            }
             if (error === 'non_integral_trade_ratio' || error === 'invalid_purchase_amount' || error === 'partial_trade_disabled') return labels.tradePaymentInvalid;
-            if (error === 'invalid_payload' || error === 'invalid_item' || error === 'invalid_amount') return labels.tradeInvalid;
-            return labels.tradeFailed;
+            if (
+                error === 'invalid_payload' ||
+                error === 'invalid_item' ||
+                error === 'invalid_amount' ||
+                error === 'invalid_sell_item' ||
+                error === 'invalid_sell_slot' ||
+                error === 'invalid_sell_amount' ||
+                error === 'invalid_price_item' ||
+                error === 'invalid_price_amount'
+            ) return labels.tradeInvalid;
+            return labels.tradeServerError;
+        }
+
+        function clearTradeActionFailureTooltip() {
+            if (!tradeActionFailureTooltipState) return;
+            const state = tradeActionFailureTooltipState;
+            const button = state.button;
+            if (window.SiteTooltip && typeof window.SiteTooltip.hide === 'function') {
+                window.SiteTooltip.hide();
+            }
+            if (button && button.isConnected) {
+                if (state.hadTooltip) {
+                    button.setAttribute('data-site-tooltip', state.tooltip);
+                } else {
+                    button.removeAttribute('data-site-tooltip');
+                }
+                if (state.hadImmediateTooltip) {
+                    button.setAttribute('data-site-tooltip-immediate', '');
+                } else {
+                    button.removeAttribute('data-site-tooltip-immediate');
+                }
+                if (state.hadAriaLabel) {
+                    button.setAttribute('aria-label', state.ariaLabel);
+                } else {
+                    button.removeAttribute('aria-label');
+                }
+            }
+            tradeActionFailureTooltipState = null;
+        }
+
+        function showTradeActionFailureTooltip(action, listingId, error) {
+            const button = action === 'create'
+                ? (tradeFormEl ? tradeFormEl.querySelector('button[type="submit"]') : null)
+                : (tradeListEl ? tradeListEl.querySelector(
+                    '[data-trade-action="' + String(action) + '"][data-trade-id="' + String(listingId) + '"]'
+                ) : null);
+            const reason = getTradeFailureReason(error);
+            if (!button || !reason) return false;
+            clearTradeActionFailureTooltip();
+            tradeActionFailureTooltipState = {
+                action: action,
+                button: button,
+                hadTooltip: button.hasAttribute('data-site-tooltip'),
+                tooltip: button.getAttribute('data-site-tooltip') || '',
+                hadImmediateTooltip: button.hasAttribute('data-site-tooltip-immediate'),
+                hadAriaLabel: button.hasAttribute('aria-label'),
+                ariaLabel: button.getAttribute('aria-label') || ''
+            };
+            button.setAttribute('data-site-tooltip', reason);
+            button.setAttribute('data-site-tooltip-immediate', '');
+            button.setAttribute('aria-label', String(button.textContent || '').trim() + ': ' + reason);
+            if (window.SiteTooltip && typeof window.SiteTooltip.show === 'function') {
+                window.SiteTooltip.show(button);
+            }
+            return true;
+        }
+
+        function setTradeFailure(error, action, listingId) {
+            showTradeActionFailureTooltip(action, listingId, error);
+            setTradeStatus('', false);
         }
 
         function getTradeStatusLabel(status) {
@@ -4663,27 +5549,76 @@
         function renderTradeIcon(item) {
             const itemId = normalizeMinecraftItemId(item && (item.value || item.type));
             const iconUrl = getMinecraftItemIconUrl({ type: itemId });
+            const classes = 'minecraft-trade-icon' + (item && item.enchanted ? ' is-enchanted' : '');
             if (iconUrl) {
-                return '<span class="minecraft-trade-icon"><img src="' + escapeAttribute(iconUrl) + '" alt="" aria-hidden="true" draggable="false"></span>';
+                return '<span class="' + classes + '"><img src="' + escapeAttribute(iconUrl) + '" alt="" aria-hidden="true" draggable="false"></span>';
             }
-            return '<span class="minecraft-trade-icon"><span class="minecraft-trade-code">' + escapeHtml(getInventoryItemCode({ type: itemId || '?' })) + '</span></span>';
+            return '<span class="' + classes + '"><span class="minecraft-trade-code">' + escapeHtml(getInventoryItemCode({ type: itemId || '?' })) + '</span></span>';
         }
 
         function renderTradeStack(item) {
             const itemId = normalizeMinecraftItemId(item && (item.value || item.type));
-            const option = findMinecraftItemOption(itemId);
-            const label = (option && option.label) || (item && item.label) || formatPlayerLabel(itemId);
+            const label = getMinecraftItemDisplayLabel(item);
             const amount = Number(item && item.amount);
+            const metadata = getMinecraftItemMetadataTexts(item);
+            const title = metadata.length ? label + '\n' + metadata.join('\n') : label;
             return '<span class="minecraft-trade-stack">' +
-                renderTradeIcon({ value: itemId }) +
-                '<span>' + escapeHtml(label) + (Number.isFinite(amount) ? ' x' + escapeHtml(String(amount)) : '') + '</span>' +
+                renderTradeIcon(item) +
+                '<span title="' + escapeAttribute(title) + '">' + escapeHtml(label) + (Number.isFinite(amount) ? ' x' + escapeHtml(String(amount)) : '') + '</span>' +
                 '</span>';
+        }
+
+        function renderTradeIconStack(item) {
+            const itemId = normalizeMinecraftItemId(item && (item.value || item.type));
+            const label = getMinecraftItemDisplayLabel(item);
+            const amount = Number(item && item.amount);
+            const amountText = Number.isFinite(amount) ? 'x' + String(amount) : '';
+            const tooltipText = [label].concat(getMinecraftItemMetadataTexts(item)).join('\n');
+            return '<span class="minecraft-trade-stack minecraft-trade-icon-stack" data-site-tooltip="' + escapeAttribute(tooltipText) + '" data-site-tooltip-immediate aria-label="' + escapeAttribute(tooltipText.replace(/\n/g, ', ')) + '">' +
+                renderTradeIcon(item) +
+                (amountText ? '<span class="minecraft-trade-amount">' + escapeHtml(amountText) + '</span>' : '') +
+                '</span>';
+        }
+
+        function hideMinecraftTradeItemTooltip() {
+            if (window.SiteTooltip && typeof window.SiteTooltip.hide === 'function') {
+                window.SiteTooltip.hide();
+            }
+        }
+
+        function canUseMinecraftTrade() {
+            return isAuthenticated && currentAccountNames.size > 0;
+        }
+
+        function promptMinecraftTradeAccess() {
+            if (!isAuthenticated) {
+                openLoginModalForMinecraftLink();
+                return false;
+            }
+            setAccountLinkModalOpen(true);
+            return false;
+        }
+
+        function requireMinecraftTradeAccess() {
+            return canUseMinecraftTrade() || promptMinecraftTradeAccess();
+        }
+
+        function isMinecraftTradeRestrictedControl(target) {
+            return Boolean(
+                target &&
+                target.closest &&
+                target.closest(
+                    '#minecraftTradeCreateTrigger, #minecraftTradeSellItemTrigger, #minecraftTradePartialToggle, #minecraftTradeNpcToggle, ' +
+                    '#minecraftTradeForm .minecraft-trade-field, #minecraftTradeForm button[type="submit"], ' +
+                    '.minecraft-trade-purchase-input, [data-trade-action]'
+                )
+            );
         }
 
         function renderTradeActions(listing) {
             const listingId = listing && listing.id;
             const actions = [];
-            if (listing && listing.canBuy) {
+            if (listing && listing.canPurchase) {
                 actions.push('<button class="minecraft-player-edit-button minecraft-trade-action" type="button" data-trade-action="buy" data-trade-id="' + escapeAttribute(listingId) + '">' + escapeHtml(labels.tradeBuy) + '</button>');
             }
             if (listing && listing.canClaim) {
@@ -4730,33 +5665,92 @@
             return { sellAmount: requestedSellAmount, priceAmount: paymentAmount };
         }
 
+        function getClosestTradePurchaseAmounts(listing, rawAmount) {
+            const remainingSellAmount = Number(listing && listing.remainingSellAmount);
+            if (!listing || !Number.isInteger(remainingSellAmount) || remainingSellAmount < 1) return null;
+            if (!listing.allowPartial) return getTradePurchaseAmounts(listing, remainingSellAmount);
+
+            const targetAmount = Number(rawAmount);
+            const target = Number.isFinite(targetAmount)
+                ? targetAmount
+                : Number(listing.minimumPurchaseAmount) || 1;
+            let closest = null;
+            for (let amount = 1; amount <= remainingSellAmount; amount += 1) {
+                const candidate = getTradePurchaseAmounts(listing, amount);
+                if (!candidate) continue;
+                if (
+                    !closest ||
+                    Math.abs(candidate.sellAmount - target) < Math.abs(closest.sellAmount - target) ||
+                    (
+                        Math.abs(candidate.sellAmount - target) === Math.abs(closest.sellAmount - target) &&
+                        candidate.sellAmount < closest.sellAmount
+                    )
+                ) {
+                    closest = candidate;
+                }
+            }
+            return closest;
+        }
+
+        function getInitialTradePurchaseAmount(listing) {
+            const listingId = String(listing && listing.id);
+            const savedValue = tradePurchaseInputValues.get(listingId);
+            const savedAmounts = getTradePurchaseAmounts(listing, savedValue);
+            if (savedAmounts) return savedAmounts.sellAmount;
+            const closestAmounts = savedValue === undefined
+                ? null
+                : getClosestTradePurchaseAmounts(listing, savedValue);
+            if (closestAmounts) return closestAmounts.sellAmount;
+            return listing.allowPartial
+                ? Math.min(Number(listing.minimumPurchaseAmount) || 1, Number(listing.remainingSellAmount) || 1)
+                : Number(listing.remainingSellAmount) || 1;
+        }
+
+        function clearTradePurchaseCorrectionTimer(listingId) {
+            const key = String(listingId);
+            const timer = tradePurchaseCorrectionTimers.get(key);
+            if (timer) window.clearTimeout(timer);
+            tradePurchaseCorrectionTimers.delete(key);
+        }
+
+        function scheduleTradePurchaseCorrection(listingId) {
+            if (!tradeListEl) return;
+            const key = String(listingId);
+            clearTradePurchaseCorrectionTimer(key);
+            const listing = getTradeListingById(key);
+            const input = tradeListEl.querySelector('[data-trade-purchase-input][data-trade-id="' + key + '"]');
+            if (!listing || !input || getTradePurchaseAmounts(listing, input.value)) return;
+            tradePurchaseCorrectionTimers.set(key, window.setTimeout(function () {
+                tradePurchaseCorrectionTimers.delete(key);
+                const currentListing = getTradeListingById(key);
+                const currentInput = tradeListEl.querySelector('[data-trade-purchase-input][data-trade-id="' + key + '"]');
+                if (!currentListing || !currentInput || currentInput.disabled) return;
+                const closest = getClosestTradePurchaseAmounts(currentListing, currentInput.value);
+                if (!closest) return;
+                currentInput.value = String(closest.sellAmount);
+                tradePurchaseInputValues.set(key, currentInput.value);
+                updateTradePayment(key);
+            }, 3000));
+        }
+
         function renderTradeDetail(listing) {
             const listingId = listing && listing.id;
             const actions = renderTradeActions(listing);
-            const remainingText = renderTradeStack(listing.sellItem) +
-                '<span class="minecraft-trade-arrow" aria-hidden="true">&rarr;</span>' +
-                renderTradeStack(listing.priceItem);
             let purchaseControl = '';
-            if (listing && listing.canBuy) {
-                const initialAmount = listing.allowPartial
-                    ? Math.min(Number(listing.minimumPurchaseAmount) || 1, Number(listing.remainingSellAmount) || 1)
-                    : Number(listing.remainingSellAmount) || 1;
+            if (listing && listing.canPurchase) {
+                const initialAmount = getInitialTradePurchaseAmount(listing);
                 purchaseControl = '<div class="minecraft-trade-purchase-row">' +
-                    '<label class="minecraft-trade-field minecraft-trade-purchase-input">' +
-                    '<span class="minecraft-label">' + escapeHtml(labels.tradePurchaseAmount) + '</span>' +
-                    '<input class="minecraft-player-edit-input minecraft-trade-amount-input" data-trade-purchase-input data-trade-id="' + escapeAttribute(listingId) + '" type="text" inputmode="numeric" value="' + escapeAttribute(initialAmount) + '"' + (listing.allowPartial ? '' : ' readonly aria-readonly="true"') + '>' +
-                    '</label>' +
                     '<span class="minecraft-trade-payment">' +
                     '<span class="minecraft-label">' + escapeHtml(labels.tradePaymentAmount) + '</span>' +
                     '<span class="minecraft-trade-payment-value" data-trade-payment-value data-trade-id="' + escapeAttribute(listingId) + '"></span>' +
                     '</span>' +
+                    '<label class="minecraft-trade-field minecraft-trade-purchase-input">' +
+                    '<span class="minecraft-label">' + escapeHtml(labels.tradePurchaseAmount) + '</span>' +
+                    '<input class="minecraft-player-edit-input minecraft-trade-amount-input" data-trade-purchase-input data-trade-id="' + escapeAttribute(listingId) + '" type="text" inputmode="numeric" value="' + escapeAttribute(initialAmount) + '"' + (listing.allowPartial ? '' : ' readonly aria-readonly="true"') + '>' +
+                    '</label>' +
                     '</div>';
             }
             return '<div class="minecraft-trade-detail" data-trade-detail-id="' + escapeAttribute(listingId) + '">' +
-                '<div class="minecraft-trade-detail-meta">' +
-                '<span>' + escapeHtml(labels.tradeRemaining) + '</span>' +
-                '<strong>' + remainingText + '</strong>' +
-                '</div>' +
                 purchaseControl +
                 (actions ? '<div class="minecraft-trade-actions">' + actions + '</div>' : '') +
                 '</div>';
@@ -4764,7 +5758,19 @@
 
         function renderTradeListings(listings) {
             if (!tradeListEl || !tradeEmptyEl) return;
-            const safeListings = Array.isArray(listings) ? listings : [];
+            hideMinecraftTradeItemTooltip();
+            if (!tradeActionFailureTooltipState || tradeActionFailureTooltipState.action !== 'create') {
+                clearTradeActionFailureTooltip();
+            }
+            const safeListings = (Array.isArray(listings) ? listings : []).slice().sort(function (left, right) {
+                const leftPriority = left && left.status === 'open' ? 0 : 1;
+                const rightPriority = right && right.status === 'open' ? 0 : 1;
+                return leftPriority - rightPriority;
+            });
+            const listingIds = new Set(safeListings.map((listing) => String(listing && listing.id)));
+            Array.from(tradePurchaseInputValues.keys()).forEach(function (listingId) {
+                if (!listingIds.has(listingId)) tradePurchaseInputValues.delete(listingId);
+            });
             latestTradeListings = safeListings;
             if (!safeListings.some((listing) => String(listing && listing.id) === String(expandedTradeListingId))) {
                 expandedTradeListingId = null;
@@ -4773,21 +5779,25 @@
                 const sellerName = listing.sellerMinecraftName || listing.sellerUsername || '';
                 const statusText = getTradeStatusLabel(listing.status);
                 const isExpanded = String(expandedTradeListingId) === String(listing.id);
-                return '<li class="minecraft-panel-list-item minecraft-trade-item" data-trade-id="' + escapeAttribute(listing.id) + '">' +
-                    '<button class="minecraft-trade-summary" type="button" data-trade-toggle data-trade-id="' + escapeAttribute(listing.id) + '" aria-expanded="' + (isExpanded ? 'true' : 'false') + '">' +
-                    '<span class="minecraft-trade-item-main">' +
-                    renderTradeStack(listing.sellItem) +
-                    '<span class="minecraft-trade-arrow" aria-hidden="true">&rarr;</span>' +
-                    renderTradeStack(listing.priceItem) +
-                    '</span>' +
-                    '<span class="minecraft-trade-item-meta">' +
-                    '<span class="minecraft-trade-state">' + escapeHtml(statusText) + '</span>' +
-                    '</span>' +
-                    '</button>' +
+                const isCompleted = listing.status === 'completed';
+                const canToggle = !isCompleted || Boolean(listing.viewerIsSeller);
+                return '<li class="minecraft-panel-list-item minecraft-trade-item' + (isCompleted ? ' is-completed' : '') + '" data-trade-id="' + escapeAttribute(listing.id) + '"' + (canToggle ? ' data-trade-toggle' : '') + '>' +
+                    '<div class="minecraft-trade-item-head">' +
                     '<div class="minecraft-trade-seller">' +
                     renderPlayerAvatar({ name: sellerName, headUrl: listing.sellerHeadUrl }, false) +
                     '<span class="minecraft-trade-user">' + escapeHtml(sellerName) + '</span>' +
                     '</div>' +
+                    '<span class="minecraft-trade-item-meta">' +
+                    '<span class="minecraft-trade-state">' + escapeHtml(statusText) + '</span>' +
+                    '</span>' +
+                    '</div>' +
+                    '<button class="minecraft-trade-summary" type="button" data-trade-toggle data-trade-id="' + escapeAttribute(listing.id) + '" aria-expanded="' + (isExpanded ? 'true' : 'false') + '"' + (canToggle ? '' : ' disabled aria-disabled="true"') + '>' +
+                    '<span class="minecraft-trade-item-main">' +
+                    renderTradeIconStack(listing.priceItem) +
+                    '<span class="minecraft-trade-arrow" aria-hidden="true">&rarr;</span>' +
+                    renderTradeIconStack(listing.sellItem) +
+                    '</span>' +
+                    '</button>' +
                     (isExpanded ? renderTradeDetail(listing) : '') +
                     '</li>';
             }).join('');
@@ -4805,10 +5815,8 @@
             const buyButton = tradeListEl.querySelector('[data-trade-action="buy"][data-trade-id="' + String(listingId) + '"]');
             if (!listing || !input || !payment) return;
             const amounts = getTradePurchaseAmounts(listing, input.value);
-            payment.classList.toggle('is-error', !amounts);
-            payment.textContent = amounts
-                ? 'x' + String(amounts.priceAmount)
-                : labels.tradePaymentInvalid;
+            payment.classList.remove('is-error');
+            payment.textContent = amounts ? String(amounts.priceAmount) : '';
             input.setAttribute('aria-invalid', amounts ? 'false' : 'true');
             if (buyButton) buyButton.disabled = !amounts || tradeRequestInFlight;
         }
@@ -4817,9 +5825,10 @@
             const isCreateView = view === 'create';
             if (tradeListViewEl) tradeListViewEl.hidden = isCreateView;
             if (tradeCreateViewEl) tradeCreateViewEl.hidden = !isCreateView;
-            if (isCreateView && tradeFormEl) {
-                const firstInput = tradeFormEl.querySelector('[name="sellItem"]');
-                if (firstInput) firstInput.focus();
+            if (!isCreateView) setTradeSellInventoryPickerOpen(false);
+            if (isCreateView) {
+                const focusTarget = isTradeNpcMode() ? tradeNpcSellItemInputEl : tradeSellItemTriggerEl;
+                if (focusTarget) focusTarget.focus();
             }
         }
 
@@ -4832,6 +5841,27 @@
                 label.textContent = active
                     ? tradePartialToggleEl.dataset.partialLabel || ''
                     : tradePartialToggleEl.dataset.batchLabel || '';
+            }
+        }
+
+        function isTradeNpcMode() {
+            return Boolean(
+                isMinecraftAdmin &&
+                tradeNpcToggleEl &&
+                tradeNpcToggleEl.getAttribute('aria-pressed') === 'true'
+            );
+        }
+
+        function setTradeNpcMode(isNpc) {
+            if (!tradeNpcToggleEl) return;
+            const active = Boolean(isNpc && isMinecraftAdmin);
+            tradeNpcToggleEl.setAttribute('aria-pressed', active ? 'true' : 'false');
+            if (tradeSellItemPickerWrapEl) tradeSellItemPickerWrapEl.hidden = active;
+            if (tradeNpcSellItemComboboxEl) tradeNpcSellItemComboboxEl.hidden = !active;
+            resetTradeSellItemSelection();
+            closeInventoryItemMenus();
+            if (active && tradeNpcSellItemInputEl) {
+                tradeNpcSellItemInputEl.focus({ preventScroll: true });
             }
         }
 
@@ -4862,28 +5892,28 @@
 
         async function loadMinecraftTrades() {
             if (!tradePanelEl || !tradeListUrl) return;
-            if (!isAuthenticated) {
-                setTradeStatus(labels.tradeLoginRequired, false);
-                return;
-            }
             try {
                 const payload = await fetchMinecraftTradeJson(tradeListUrl);
+                linkedMinecraftNames = Array.isArray(payload.linkedMinecraftNames) ? payload.linkedMinecraftNames : [];
                 renderTradeListings(payload.listings || []);
                 setTradeStatus('', false);
             } catch (error) {
-                setTradeStatus(labels.tradeFailed, true);
+                setTradeFailure('console_unavailable');
             }
         }
 
         function getTradeFormPayload() {
             if (!tradeFormEl) return null;
             const formData = new FormData(tradeFormEl);
+            const isNpc = isTradeNpcMode();
             return {
-                sellItem: normalizeMinecraftItemId(formData.get('sellItem')),
+                sellItem: normalizeMinecraftItemId(isNpc && tradeNpcSellItemInputEl ? tradeNpcSellItemInputEl.value : formData.get('sellItem')),
+                sellSlot: isNpc ? '' : String(formData.get('sellSlot') || ''),
                 sellAmount: Number(formData.get('sellAmount')),
                 priceItem: normalizeMinecraftItemId(formData.get('priceItem')),
                 priceAmount: Number(formData.get('priceAmount')),
-                allowPartial: Boolean(tradePartialToggleEl && tradePartialToggleEl.getAttribute('aria-pressed') === 'true')
+                allowPartial: Boolean(tradePartialToggleEl && tradePartialToggleEl.getAttribute('aria-pressed') === 'true'),
+                isNpc: isNpc
             };
         }
 
@@ -4891,6 +5921,7 @@
             return Boolean(
                 payload &&
                 payload.sellItem &&
+                (payload.isNpc || isSafeInventorySlot(payload.sellSlot)) &&
                 payload.priceItem &&
                 Number.isInteger(payload.sellAmount) &&
                 Number.isInteger(payload.priceAmount) &&
@@ -4904,8 +5935,11 @@
         async function submitMinecraftTradeForm(event) {
             event.preventDefault();
             if (!tradeCreateUrl || tradeRequestInFlight) return;
+            if (!requireMinecraftTradeAccess()) return;
+            clearTradeActionFailureTooltip();
             const payload = getTradeFormPayload();
             if (!isValidTradePayload(payload)) {
+                showTradeActionFailureTooltip('create', '', 'invalid_payload');
                 setTradeStatus(labels.tradeInvalid, true);
                 return;
             }
@@ -4913,17 +5947,19 @@
             try {
                 const result = await fetchMinecraftTradeJson(tradeCreateUrl, { method: 'POST', body: payload });
                 if (!result.ok) {
-                    setTradeStatus(getTradeErrorLabel(result.error), true);
+                    setTradeFailure(result.error, 'create');
                     if (result.listing) renderTradeListings([result.listing].concat(latestTradeListings));
                     return;
                 }
                 tradeFormEl.reset();
+                resetTradeSellItemSelection();
                 setTradePartialAllowed(false);
+                setTradeNpcMode(false);
                 setMinecraftTradeView('list');
                 await loadMinecraftTrades();
                 window.setTimeout(loadStatus, 500);
             } catch (error) {
-                setTradeStatus(labels.tradeFailed, true);
+                setTradeFailure('console_unavailable', 'create');
             } finally {
                 setTradeBusy(false);
             }
@@ -4931,6 +5967,8 @@
 
         async function sendMinecraftTradeAction(action, listingId, body) {
             if (tradeRequestInFlight) return;
+            if (!requireMinecraftTradeAccess()) return;
+            clearTradeActionFailureTooltip();
             const template = action === 'buy'
                 ? tradeBuyUrlTemplate
                 : action === 'settle'
@@ -4942,13 +5980,13 @@
             try {
                 const result = await fetchMinecraftTradeJson(url, { method: 'POST', body: body || null });
                 if (!result.ok) {
-                    setTradeStatus(getTradeErrorLabel(result.error), true);
+                    setTradeFailure(result.error, action, listingId);
                     return;
                 }
                 await loadMinecraftTrades();
                 window.setTimeout(loadStatus, 500);
             } catch (error) {
-                setTradeStatus(labels.tradeFailed, true);
+                setTradeFailure('console_unavailable', action, listingId);
             } finally {
                 setTradeBusy(false);
             }
@@ -4956,8 +5994,14 @@
 
         function setupMinecraftTradePanel() {
             if (!tradePanelEl) return;
+            tradePanelEl.addEventListener('pointerdown', function (event) {
+                if (!isMinecraftTradeRestrictedControl(event.target) || canUseMinecraftTrade()) return;
+                event.preventDefault();
+                promptMinecraftTradeAccess();
+            }, true);
             if (tradeCreateTriggerEl) {
                 tradeCreateTriggerEl.addEventListener('click', function () {
+                    if (!requireMinecraftTradeAccess()) return;
                     setTradeStatus('', false);
                     setMinecraftTradeView('create');
                 });
@@ -4970,14 +6014,44 @@
             }
             if (tradePartialToggleEl) {
                 tradePartialToggleEl.addEventListener('click', function () {
+                    if (!requireMinecraftTradeAccess()) return;
                     setTradePartialAllowed(tradePartialToggleEl.getAttribute('aria-pressed') !== 'true');
+                });
+            }
+            if (tradeNpcToggleEl) {
+                tradeNpcToggleEl.addEventListener('click', function () {
+                    if (!isMinecraftAdmin || !requireMinecraftTradeAccess()) return;
+                    setTradeNpcMode(!isTradeNpcMode());
                 });
             }
             if (tradeFormEl) {
                 tradeFormEl.addEventListener('submit', submitMinecraftTradeForm);
             }
+            if (tradeSellItemTriggerEl) {
+                tradeSellItemTriggerEl.addEventListener('click', function () {
+                    if (!requireMinecraftTradeAccess()) return;
+                    setTradeSellInventoryPickerOpen(tradeSellItemPickerEl ? tradeSellItemPickerEl.hidden : true);
+                });
+            }
+            if (tradeSellItemPickerEl) {
+                tradeSellItemPickerEl.addEventListener('click', function (event) {
+                    const slotButton = event.target.closest ? event.target.closest('[data-trade-sell-slot]') : null;
+                    if (!slotButton || !tradeSellItemPickerEl.contains(slotButton) || slotButton.disabled) return;
+                    const player = getTradeSellPickerPlayer();
+                    const detail = player && player.detail ? player.detail : null;
+                    const slot = String(slotButton.dataset.tradeSellSlot || '');
+                    if (!detail || !isSafeInventorySlot(slot)) return;
+                    const item = isStorageInventorySlot(slot)
+                        ? getStorageInventoryItem(detail.inventory, slot)
+                        : getEquipmentInventoryItem(detail.armor, detail.offhand, slot);
+                    setSelectedTradeSellItem(slot, item);
+                });
+                window.addEventListener('resize', positionTradeSellInventoryPicker);
+                document.addEventListener('scroll', positionTradeSellInventoryPicker, true);
+            }
             if (tradeListEl) {
                 tradeListEl.addEventListener('click', function (event) {
+                    if (isMinecraftTradeRestrictedControl(event.target) && !requireMinecraftTradeAccess()) return;
                     const button = event.target.closest ? event.target.closest('[data-trade-action][data-trade-id]') : null;
                     if (button && tradeListEl.contains(button)) {
                         const listing = getTradeListingById(button.dataset.tradeId);
@@ -4988,23 +6062,27 @@
                             )
                             : null;
                         if (button.dataset.tradeAction === 'buy' && !amounts) {
-                            setTradeStatus(labels.tradePaymentInvalid, true);
                             return;
                         }
                         sendMinecraftTradeAction(button.dataset.tradeAction, button.dataset.tradeId, amounts ? { sellAmount: amounts.sellAmount } : null);
                         return;
                     }
-                    const toggle = event.target.closest ? event.target.closest('[data-trade-toggle][data-trade-id]') : null;
-                    if (!toggle || !tradeListEl.contains(toggle)) return;
-                    expandedTradeListingId = String(expandedTradeListingId) === String(toggle.dataset.tradeId)
+                    const interactiveControl = event.target.closest ? event.target.closest('button, a, input, select, textarea, label, [role="button"], [role="link"], [role="textbox"]') : null;
+                    if (interactiveControl && !interactiveControl.matches('[data-trade-toggle][data-trade-id]')) return;
+                    const tradeItem = event.target.closest ? event.target.closest('.minecraft-trade-item[data-trade-toggle][data-trade-id]') : null;
+                    if (!tradeItem || !tradeListEl.contains(tradeItem)) return;
+                    expandedTradeListingId = String(expandedTradeListingId) === String(tradeItem.dataset.tradeId)
                         ? null
-                        : toggle.dataset.tradeId;
+                        : tradeItem.dataset.tradeId;
                     renderTradeListings(latestTradeListings);
                 });
                 tradeListEl.addEventListener('input', function (event) {
                     const input = event.target.closest ? event.target.closest('[data-trade-purchase-input][data-trade-id]') : null;
                     if (!input || !tradeListEl.contains(input)) return;
+                    if (!requireMinecraftTradeAccess()) return;
+                    tradePurchaseInputValues.set(String(input.dataset.tradeId), input.value);
                     updateTradePayment(input.dataset.tradeId);
+                    scheduleTradePurchaseCorrection(input.dataset.tradeId);
                 });
             }
             tradePanelEl.addEventListener('input', handleInventoryItemInput);
@@ -5031,15 +6109,256 @@
                 toggle.addEventListener('click', function (event) {
                     event.stopPropagation();
                     setMinecraftPanelCollapsed(toggle, toggle.getAttribute('aria-expanded') === 'true');
+                    window.requestAnimationFrame(syncMinecraftLayoutSplitters);
                 });
             });
+        }
+
+        const MINECRAFT_PAGE_SPLIT_STORAGE_KEY = 'hanplanet.minecraft.page-split-ratio';
+        const MINECRAFT_SIDE_SPLIT_STORAGE_KEY = 'hanplanet.minecraft.side-split-ratio';
+        const MINECRAFT_PAGE_SPLIT_DEFAULT_RATIO = 0.27;
+        const MINECRAFT_SIDE_SPLIT_DEFAULT_RATIO = 2 / 3;
+        let activeMinecraftSplitterDrag = null;
+
+        function readMinecraftSplitterRatio(storageKey) {
+            try {
+                const value = window.localStorage.getItem(storageKey);
+                const ratio = Number(value);
+                return Number.isFinite(ratio) ? ratio : null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function storeMinecraftSplitterRatio(storageKey, ratio) {
+            if (!Number.isFinite(ratio)) return;
+            try {
+                window.localStorage.setItem(storageKey, ratio.toFixed(4));
+            } catch (error) {
+                // Layout resizing remains available when browser storage is unavailable.
+            }
+        }
+
+        function isMinecraftStackedLayout() {
+            return window.matchMedia('(max-width: 840px), (orientation: portrait)').matches;
+        }
+
+        function clampMinecraftRatio(ratio, minimum, maximum) {
+            const numericRatio = Number(ratio);
+            if (!Number.isFinite(numericRatio) || !Number.isFinite(minimum) || !Number.isFinite(maximum) || maximum < minimum) {
+                return null;
+            }
+            return Math.max(minimum, Math.min(maximum, numericRatio));
+        }
+
+        function getMinecraftPageSplitBounds() {
+            if (!pageLayoutEl || !pageSplitterEl || isMinecraftStackedLayout()) return null;
+            const rect = pageLayoutEl.getBoundingClientRect();
+            const splitterWidth = Math.max(14, pageSplitterEl.getBoundingClientRect().width || 0);
+            if (rect.width <= splitterWidth) return null;
+            const minimumRatio = Math.max(0.23, 300 / rect.width);
+            const maximumRatio = Math.min(0.5, (rect.width - splitterWidth - 320) / rect.width);
+            return maximumRatio >= minimumRatio ? { rect: rect, minimum: minimumRatio, maximum: maximumRatio } : null;
+        }
+
+        function getMinecraftSideSplitBounds() {
+            if (!sideLayoutEl || !sideSplitterEl || !playerPanelEl || isMinecraftStackedLayout() || playerPanelEl.classList.contains('is-collapsed')) return null;
+            const rect = sideLayoutEl.getBoundingClientRect();
+            const splitterHeight = Math.max(8, sideSplitterEl.getBoundingClientRect().height || 0);
+            if (rect.height <= splitterHeight) return null;
+            const minimumRatio = Math.max(0.15, 120 / rect.height);
+            const maximumRatio = Math.min(0.7, (rect.height - splitterHeight - 170) / rect.height);
+            return maximumRatio >= minimumRatio ? { rect: rect, minimum: minimumRatio, maximum: maximumRatio } : null;
+        }
+
+        function updateMinecraftSplitterAria(splitter, orientation, ratio, bounds) {
+            if (!splitter || !bounds || !Number.isFinite(ratio)) return;
+            splitter.setAttribute('aria-orientation', orientation);
+            splitter.setAttribute('aria-valuemin', String(Math.round(bounds.minimum * 100)));
+            splitter.setAttribute('aria-valuemax', String(Math.round(bounds.maximum * 100)));
+            splitter.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
+        }
+
+        function getMinecraftPageSplitRatio() {
+            const bounds = getMinecraftPageSplitBounds();
+            if (!bounds || !sideLayoutEl) return null;
+            return clampMinecraftRatio(sideLayoutEl.getBoundingClientRect().width / bounds.rect.width, bounds.minimum, bounds.maximum);
+        }
+
+        function getMinecraftSideSplitRatio() {
+            const bounds = getMinecraftSideSplitBounds();
+            if (!bounds || !playerPanelEl) return null;
+            return clampMinecraftRatio(playerPanelEl.getBoundingClientRect().height / bounds.rect.height, bounds.minimum, bounds.maximum);
+        }
+
+        function applyMinecraftPageSplitRatio(ratio, persist) {
+            const bounds = getMinecraftPageSplitBounds();
+            if (!bounds || !pageLayoutEl) return null;
+            const normalizedRatio = clampMinecraftRatio(ratio, bounds.minimum, bounds.maximum);
+            if (normalizedRatio === null) return null;
+            pageLayoutEl.style.setProperty('--minecraft-side-layout-size', Math.round(bounds.rect.width * normalizedRatio) + 'px');
+            updateMinecraftSplitterAria(pageSplitterEl, 'vertical', normalizedRatio, bounds);
+            if (persist) storeMinecraftSplitterRatio(MINECRAFT_PAGE_SPLIT_STORAGE_KEY, normalizedRatio);
+            return normalizedRatio;
+        }
+
+        function applyMinecraftSideSplitRatio(ratio, persist) {
+            const bounds = getMinecraftSideSplitBounds();
+            if (!bounds || !sideLayoutEl) return null;
+            const normalizedRatio = clampMinecraftRatio(ratio, bounds.minimum, bounds.maximum);
+            if (normalizedRatio === null) return null;
+            sideLayoutEl.classList.add('has-custom-player-size');
+            sideLayoutEl.style.setProperty('--minecraft-player-panel-size', Math.round(bounds.rect.height * normalizedRatio) + 'px');
+            updateMinecraftSplitterAria(sideSplitterEl, 'horizontal', normalizedRatio, bounds);
+            if (persist) storeMinecraftSplitterRatio(MINECRAFT_SIDE_SPLIT_STORAGE_KEY, normalizedRatio);
+            return normalizedRatio;
+        }
+
+        function syncMinecraftLayoutSplitters() {
+            const pageBounds = getMinecraftPageSplitBounds();
+            if (pageSplitterEl) {
+                pageSplitterEl.hidden = !pageBounds;
+                pageSplitterEl.setAttribute('aria-hidden', pageBounds ? 'false' : 'true');
+                if (pageBounds) {
+                    const storedRatio = readMinecraftSplitterRatio(MINECRAFT_PAGE_SPLIT_STORAGE_KEY);
+                    if (storedRatio !== null) {
+                        applyMinecraftPageSplitRatio(storedRatio, false);
+                    } else {
+                        updateMinecraftSplitterAria(pageSplitterEl, 'vertical', getMinecraftPageSplitRatio() || MINECRAFT_PAGE_SPLIT_DEFAULT_RATIO, pageBounds);
+                    }
+                }
+            }
+
+            const sideBounds = getMinecraftSideSplitBounds();
+            if (sideSplitterEl) {
+                sideSplitterEl.hidden = !sideBounds;
+                sideSplitterEl.setAttribute('aria-hidden', sideBounds ? 'false' : 'true');
+                if (!sideBounds && sideLayoutEl) {
+                    sideLayoutEl.classList.remove('has-custom-player-size');
+                    sideLayoutEl.style.removeProperty('--minecraft-player-panel-size');
+                }
+                if (sideBounds) {
+                    const storedRatio = readMinecraftSplitterRatio(MINECRAFT_SIDE_SPLIT_STORAGE_KEY);
+                    if (storedRatio !== null) {
+                        applyMinecraftSideSplitRatio(storedRatio, false);
+                    } else {
+                        updateMinecraftSplitterAria(sideSplitterEl, 'horizontal', getMinecraftSideSplitRatio() || MINECRAFT_SIDE_SPLIT_DEFAULT_RATIO, sideBounds);
+                    }
+                }
+            }
+        }
+
+        function endMinecraftSplitterDrag(event) {
+            if (!activeMinecraftSplitterDrag || (event && event.pointerId !== activeMinecraftSplitterDrag.pointerId)) return;
+            const completedDrag = activeMinecraftSplitterDrag;
+            if (completedDrag.moved && Number.isFinite(completedDrag.latestRatio)) {
+                storeMinecraftSplitterRatio(completedDrag.storageKey, completedDrag.latestRatio);
+                window.requestAnimationFrame(function () {
+                    window.dispatchEvent(new Event('resize'));
+                });
+            }
+            completedDrag.splitter.classList.remove('is-active');
+            document.body.classList.remove(completedDrag.bodyClass);
+            document.removeEventListener('pointermove', handleMinecraftSplitterPointerMove);
+            document.removeEventListener('pointerup', endMinecraftSplitterDrag);
+            document.removeEventListener('pointercancel', endMinecraftSplitterDrag);
+            activeMinecraftSplitterDrag = null;
+        }
+
+        function handleMinecraftSplitterPointerMove(event) {
+            if (!activeMinecraftSplitterDrag || event.pointerId !== activeMinecraftSplitterDrag.pointerId) return;
+            const drag = activeMinecraftSplitterDrag;
+            const axisDistance = drag.kind === 'page'
+                ? Math.abs(event.clientX - drag.startClientX)
+                : Math.abs(event.clientY - drag.startClientY);
+            if (!drag.moved && axisDistance < 1) return;
+            event.preventDefault();
+            drag.moved = true;
+            const bounds = drag.kind === 'page' ? getMinecraftPageSplitBounds() : getMinecraftSideSplitBounds();
+            if (!bounds) return;
+            const rawRatio = drag.kind === 'page'
+                ? (bounds.rect.right - event.clientX) / bounds.rect.width
+                : (event.clientY - bounds.rect.top) / bounds.rect.height;
+            const ratio = drag.kind === 'page'
+                ? applyMinecraftPageSplitRatio(rawRatio, false)
+                : applyMinecraftSideSplitRatio(rawRatio, false);
+            if (ratio !== null) drag.latestRatio = ratio;
+        }
+
+        function beginMinecraftSplitterDrag(event, kind) {
+            const splitter = kind === 'page' ? pageSplitterEl : sideSplitterEl;
+            const bounds = kind === 'page' ? getMinecraftPageSplitBounds() : getMinecraftSideSplitBounds();
+            if (!splitter || !bounds || (event.button !== undefined && event.button !== 0)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            activeMinecraftSplitterDrag = {
+                bodyClass: kind === 'page' ? 'minecraft-page-split-resizing' : 'minecraft-side-split-resizing',
+                kind: kind,
+                latestRatio: kind === 'page' ? getMinecraftPageSplitRatio() : getMinecraftSideSplitRatio(),
+                moved: false,
+                pointerId: event.pointerId,
+                splitter: splitter,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                storageKey: kind === 'page' ? MINECRAFT_PAGE_SPLIT_STORAGE_KEY : MINECRAFT_SIDE_SPLIT_STORAGE_KEY
+            };
+            splitter.classList.add('is-active');
+            document.body.classList.add(activeMinecraftSplitterDrag.bodyClass);
+            try {
+                splitter.setPointerCapture(event.pointerId);
+            } catch (error) {
+                // Pointer capture may be unavailable for a cancelled browser gesture.
+            }
+            document.addEventListener('pointermove', handleMinecraftSplitterPointerMove, { passive: false });
+            document.addEventListener('pointerup', endMinecraftSplitterDrag);
+            document.addEventListener('pointercancel', endMinecraftSplitterDrag);
+        }
+
+        function handleMinecraftSplitterKeydown(event, kind) {
+            const isPageSplitter = kind === 'page';
+            const decreaseKey = isPageSplitter ? 'ArrowLeft' : 'ArrowUp';
+            const increaseKey = isPageSplitter ? 'ArrowRight' : 'ArrowDown';
+            if (event.key !== decreaseKey && event.key !== increaseKey) return;
+            event.preventDefault();
+            const currentRatio = isPageSplitter
+                ? (getMinecraftPageSplitRatio() || readMinecraftSplitterRatio(MINECRAFT_PAGE_SPLIT_STORAGE_KEY) || MINECRAFT_PAGE_SPLIT_DEFAULT_RATIO)
+                : (getMinecraftSideSplitRatio() || readMinecraftSplitterRatio(MINECRAFT_SIDE_SPLIT_STORAGE_KEY) || MINECRAFT_SIDE_SPLIT_DEFAULT_RATIO);
+            const step = event.shiftKey ? 0.05 : 0.02;
+            const nextRatio = currentRatio + (event.key === increaseKey ? step : -step);
+            if (isPageSplitter) {
+                applyMinecraftPageSplitRatio(nextRatio, true);
+            } else {
+                applyMinecraftSideSplitRatio(nextRatio, true);
+            }
+        }
+
+        function setupMinecraftLayoutSplitters() {
+            syncMinecraftLayoutSplitters();
+            if (pageSplitterEl) {
+                pageSplitterEl.addEventListener('pointerdown', function (event) {
+                    beginMinecraftSplitterDrag(event, 'page');
+                });
+                pageSplitterEl.addEventListener('keydown', function (event) {
+                    handleMinecraftSplitterKeydown(event, 'page');
+                });
+            }
+            if (sideSplitterEl) {
+                sideSplitterEl.addEventListener('pointerdown', function (event) {
+                    beginMinecraftSplitterDrag(event, 'side');
+                });
+                sideSplitterEl.addEventListener('keydown', function (event) {
+                    handleMinecraftSplitterKeydown(event, 'side');
+                });
+            }
+            window.addEventListener('resize', syncMinecraftLayoutSplitters);
         }
 
         function setupMinecraftItemComboboxDismissal() {
             document.addEventListener('mousedown', function (event) {
                 const target = event.target;
-                if (target && target.closest && target.closest('.minecraft-inventory-item-combobox')) return;
+                if (target && target.closest && target.closest('.minecraft-inventory-item-combobox, .minecraft-trade-sell-item-picker')) return;
                 closeInventoryItemMenus();
+                setTradeSellInventoryPickerOpen(false);
             });
         }
 
@@ -5287,6 +6606,7 @@
         setupAccountLinkModal();
         setupBlueMapThemeSync();
         setupMinecraftPanelCollapse();
+        setupMinecraftLayoutSplitters();
         setupMinecraftTradePanel();
         setupMinecraftItemComboboxDismissal();
         setupPlayerDetailModal();

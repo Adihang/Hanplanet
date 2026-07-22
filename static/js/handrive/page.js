@@ -17810,52 +17810,10 @@
             await navigateToDirectory(getParentDirectory(archiveEntry.path), { historyMode: "replace" });
         }
 
-        let commitTooltipEl = null;
-
-        function ensureCommitTooltip() {
-            if (commitTooltipEl) {
-                return commitTooltipEl;
-            }
-            commitTooltipEl = document.createElement("div");
-            commitTooltipEl.className = "handrive-commit-tooltip";
-            commitTooltipEl.hidden = true;
-            commitTooltipEl.setAttribute("role", "tooltip");
-            document.body.appendChild(commitTooltipEl);
-            return commitTooltipEl;
-        }
-
-        function positionCommitTooltip(anchorX, anchorY) {
-            const tooltip = ensureCommitTooltip();
-            const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-            const offset = 14;
-            tooltip.hidden = false;
-            const rect = tooltip.getBoundingClientRect();
-            const placeLeft = anchorX > viewportWidth / 2;
-            const placeAbove = anchorY > viewportHeight / 2;
-            let left = placeLeft ? anchorX - rect.width - offset : anchorX + offset;
-            let top = placeAbove ? anchorY - rect.height - offset : anchorY + offset;
-            left = Math.max(8, Math.min(left, Math.max(8, viewportWidth - rect.width - 8)));
-            top = Math.max(8, Math.min(top, Math.max(8, viewportHeight - rect.height - 8)));
-            tooltip.style.left = String(Math.round(left)) + "px";
-            tooltip.style.top = String(Math.round(top)) + "px";
-        }
-
-        function showCommitTooltip(message, anchorX, anchorY) {
-            const normalizedMessage = String(message || "").trim();
-            if (!normalizedMessage) {
-                return;
-            }
-            const tooltip = ensureCommitTooltip();
-            tooltip.textContent = normalizedMessage;
-            positionCommitTooltip(anchorX, anchorY);
-        }
-
         function hideCommitTooltip() {
-            if (!commitTooltipEl) {
-                return;
+            if (window.SiteTooltip && typeof window.SiteTooltip.hide === "function") {
+                window.SiteTooltip.hide();
             }
-            commitTooltipEl.hidden = true;
         }
 
         function bindCommitTooltip(commitField, commitSubject) {
@@ -17865,13 +17823,7 @@
             }
             commitField.classList.add("has-commit-tooltip");
             commitField.dataset.commitSubject = normalizedSubject;
-            commitField.addEventListener("pointerenter", function (event) {
-                showCommitTooltip(normalizedSubject, event.clientX, event.clientY);
-            });
-            commitField.addEventListener("pointermove", function (event) {
-                showCommitTooltip(normalizedSubject, event.clientX, event.clientY);
-            });
-            commitField.addEventListener("pointerleave", hideCommitTooltip);
+            commitField.setAttribute("data-site-tooltip", normalizedSubject);
         }
 
         function appendEntryMetaColumns(row, entry) {
@@ -24853,8 +24805,8 @@
                     5,
                     "share_url",
                     textByLang("공유 URL", "Share URL"),
-                    textByLang("상단 체크박스로 URL 공유를 켜면 링크 입력줄이 나타납니다.", "Turn on URL sharing with the top checkbox to show the link field."),
-                    textByLang("URL 공유 체크박스와 링크 행을 확인하세요.", "Check the URL sharing checkbox and link row."),
+                    textByLang("상단 토글로 URL 공유를 켜면 링크 입력줄이 나타납니다.", "Turn on URL sharing with the top toggle to show the link field."),
+                    textByLang("URL 공유 토글과 링크 행을 확인하세요.", "Check the URL sharing toggle and link row."),
                     {
                         labelKey: "guest_demo_onboarding_step_share",
                         prepare: function () {
@@ -24902,8 +24854,8 @@
                     5,
                     "share_edit",
                     textByLang("편집권한", "Edit permission"),
-                    textByLang("편집권한 체크박스를 켜면 공유 대상이 파일 내용이나 폴더 하위 파일을 편집할 수 있습니다. 소유자만 공유 설정과 공유 대상 이름 변경을 관리합니다.", "The edit permission checkbox lets share targets edit file contents or folder children. Only the owner manages sharing settings and the shared item name."),
-                    textByLang("편집권한 체크박스 위치를 확인하세요.", "Check the edit permission checkbox location."),
+                    textByLang("편집권한 토글을 켜면 공유 대상이 파일 내용이나 폴더 하위 파일을 편집할 수 있습니다. 소유자만 공유 설정과 공유 대상 이름 변경을 관리합니다.", "The edit-permission toggle lets share targets edit file contents or folder children. Only the owner manages sharing settings and the shared item name."),
+                    textByLang("편집권한 토글 위치를 확인하세요.", "Check the edit-permission toggle location."),
                     {
                         labelKey: "guest_demo_onboarding_step_share",
                         prepare: function () {

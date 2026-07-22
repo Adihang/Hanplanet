@@ -50,6 +50,7 @@
         var shareModal = documentRef.getElementById("handrive-url-share-modal");
         var shareBackdrop = documentRef.getElementById("handrive-url-share-modal-backdrop");
         var shareCheckbox = documentRef.getElementById("handrive-url-share-enabled-checkbox");
+        var shareEnabledToggle = documentRef.getElementById("handrive-url-share-enabled-toggle");
         var shareLinkGroup = shareModal ? shareModal.querySelector(".handrive-url-share-link-group") : null;
         var shareTargets = documentRef.getElementById("handrive-url-share-targets");
         var shareTargetInput = documentRef.getElementById("handrive-url-share-target-input");
@@ -70,6 +71,7 @@
             !shareModal ||
             !shareBackdrop ||
             !shareCheckbox ||
+            !shareEnabledToggle ||
             !shareLinkGroup ||
             !shareTargets ||
             !shareTargetInput ||
@@ -98,6 +100,46 @@
         var currentAllowedUsers = [];
         var currentReadOnly = false;
         var currentShareCanEdit = false;
+        var shareDisclosureCollapseTimer = null;
+
+        function cancelShareDisclosureCollapse() {
+            if (shareDisclosureCollapseTimer !== null) {
+                window.clearTimeout(shareDisclosureCollapseTimer);
+                shareDisclosureCollapseTimer = null;
+            }
+        }
+
+        function setShareLinkGroupExpanded(expanded, onCollapsed) {
+            cancelShareDisclosureCollapse();
+            if (expanded) {
+                shareLinkGroup.hidden = false;
+                shareLinkGroup.classList.remove("is-collapsing");
+                window.requestAnimationFrame(function () {
+                    if (!shareLinkGroup.hidden) {
+                        shareLinkGroup.classList.add("is-expanded");
+                    }
+                });
+                return;
+            }
+
+            if (shareLinkGroup.hidden) {
+                if (typeof onCollapsed === "function") {
+                    onCollapsed();
+                }
+                return;
+            }
+
+            shareLinkGroup.classList.remove("is-expanded");
+            shareLinkGroup.classList.add("is-collapsing");
+            shareDisclosureCollapseTimer = window.setTimeout(function () {
+                shareDisclosureCollapseTimer = null;
+                shareLinkGroup.hidden = true;
+                shareLinkGroup.classList.remove("is-collapsing");
+                if (typeof onCollapsed === "function") {
+                    onCollapsed();
+                }
+            }, 200);
+        }
 
         function removeLanguagePrefixFromShareUrl(url) {
             var rawUrl = String(url || "").trim();
@@ -196,28 +238,42 @@
         function setUrlRowVisible(visible, url, downloadUrl) {
             currentShareUrl = visible ? removeLanguagePrefixFromShareUrl(url) : "";
             currentShareDownloadUrl = visible ? removeLanguagePrefixFromShareUrl(downloadUrl) : "";
-            shareLinkGroup.hidden = !visible;
-            shareTargets.hidden = !visible || currentReadOnly;
-            shareUrlRow.hidden = !visible;
-            shareEditToggle.hidden = !visible || currentReadOnly;
-            shareEditCheckbox.disabled = !visible || currentReadOnly || isToggling || !currentOnToggle;
-            shareDownloadRow.hidden = currentReadOnly || !(visible && currentShareDownloadUrl);
-            shareCopyButton.disabled = !(visible && currentShareUrl);
-            shareCopyDownloadButton.disabled = !(visible && currentShareDownloadUrl);
-            if (shareReadLabel) {
-                shareReadLabel.textContent = currentShareDownloadUrl
-                    ? translate("url_share_read_label", "읽기 URL")
-                    : translate("url_share_label", "URL");
+
+            function updateShareLinkRows(rowsVisible) {
+                shareTargets.hidden = !rowsVisible || currentReadOnly;
+                shareUrlRow.hidden = !rowsVisible;
+                shareEditToggle.hidden = !rowsVisible || currentReadOnly;
+                shareEditCheckbox.disabled = !rowsVisible || currentReadOnly || isToggling || !currentOnToggle;
+                shareDownloadRow.hidden = currentReadOnly || !(rowsVisible && currentShareDownloadUrl);
+                shareCopyButton.disabled = !(rowsVisible && currentShareUrl);
+                shareCopyDownloadButton.disabled = !(rowsVisible && currentShareDownloadUrl);
+                if (shareReadLabel) {
+                    shareReadLabel.textContent = currentShareDownloadUrl
+                        ? translate("url_share_read_label", "읽기 URL")
+                        : translate("url_share_label", "URL");
+                }
+                if (rowsVisible) {
+                    shareInput.value = decodeUrlForDisplay(currentShareUrl);
+                    shareDownloadInput.value = decodeUrlForDisplay(currentShareDownloadUrl);
+                } else {
+                    shareInput.value = "";
+                    shareDownloadInput.value = "";
+                }
+                resetCopyButton(shareCopyButton, "url_share_copy_button", "복사");
+                resetCopyButton(shareCopyDownloadButton, "url_share_copy_download_button", "다운로드 URL 복사");
             }
+
             if (visible) {
-                shareInput.value = decodeUrlForDisplay(currentShareUrl);
-                shareDownloadInput.value = decodeUrlForDisplay(currentShareDownloadUrl);
-            } else {
-                shareInput.value = "";
-                shareDownloadInput.value = "";
+                updateShareLinkRows(true);
+                setShareLinkGroupExpanded(true);
+                return;
             }
-            resetCopyButton(shareCopyButton, "url_share_copy_button", "복사");
-            resetCopyButton(shareCopyDownloadButton, "url_share_copy_download_button", "다운로드 URL 복사");
+
+            shareCopyButton.disabled = true;
+            shareCopyDownloadButton.disabled = true;
+            setShareLinkGroupExpanded(false, function () {
+                updateShareLinkRows(false);
+            });
         }
 
         function normalizeAllowedUsers(users) {
@@ -352,6 +408,7 @@
             }
             var previousCanEdit = currentShareCanEdit;
             isToggling = true;
+            shareModal.classList.add("is-share-updating");
             shareCheckbox.disabled = true;
             setTargetControlsDisabled(true);
             try {
@@ -381,6 +438,7 @@
                 shareCheckbox.disabled = currentReadOnly;
                 isToggling = false;
                 setTargetControlsDisabled(false);
+                shareModal.classList.remove("is-share-updating");
             }
         }
 
@@ -425,6 +483,10 @@
                 return;
             }
             shareModal.hidden = true;
+            cancelShareDisclosureCollapse();
+            shareLinkGroup.hidden = true;
+            shareLinkGroup.classList.remove("is-expanded", "is-collapsing");
+            shareModal.classList.remove("is-share-updating");
             currentOnToggle = null;
             isToggling = false;
             currentReadOnly = false;
@@ -432,7 +494,7 @@
             currentClipboardLabel = "";
             currentAllowedUsers = [];
             shareCheckbox.disabled = false;
-            shareCheckbox.hidden = false;
+            shareEnabledToggle.hidden = false;
             shareEditCheckbox.checked = false;
             shareEditCheckbox.disabled = false;
             shareEditToggle.hidden = true;
@@ -509,7 +571,7 @@
 
             shareCheckbox.checked = isUrlOnly;
             shareCheckbox.disabled = readOnly;
-            shareCheckbox.hidden = readOnly;
+            shareEnabledToggle.hidden = readOnly;
             setTargetControlsDisabled(false);
             setUrlRowVisible(isUrlOnly || readOnly, shareUrl, downloadUrl);
             shareModal.hidden = false;

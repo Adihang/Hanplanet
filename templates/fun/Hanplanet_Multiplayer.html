@@ -176,6 +176,20 @@
                                     <button
                                         class="multiplayer-top-button"
                                         type="button"
+                                        data-game-escape-toggle
+                                        aria-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_esc_menu_button' %}"
+                                        aria-pressed="false"
+                                    >
+                                        <img
+                                            class="multiplayer-top-button-image"
+                                            src="{% static_v 'media/icons/settings-gears.svg' %}"
+                                            alt=""
+                                            aria-hidden="true"
+                                        >
+                                    </button>
+                                    <button
+                                        class="multiplayer-top-button"
+                                        type="button"
                                         data-game-mobile-controls-toggle
                                         aria-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_joystick_toggle' %}"
                                     >

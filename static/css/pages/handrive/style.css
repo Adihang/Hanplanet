@@ -4378,27 +4378,6 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     cursor: help;
 }
 
-.handrive-commit-tooltip {
-    position: fixed;
-    z-index: var(--site-z-popup);
-    max-width: min(420px, calc(100vw - 16px));
-    padding: 7px 9px;
-    border: 1px solid var(--handrive-border);
-    border-radius: 6px;
-    background: var(--handrive-bg);
-    color: var(--handrive-text-strong);
-    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
-    font-size: 12px;
-    line-height: 1.35;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    pointer-events: none;
-}
-
-.handrive-commit-tooltip[hidden] {
-    display: none;
-}
-
 .handrive-item-id {
     grid-column: 5;
     min-width: calc(var(--handrive-col-id) + var(--handrive-meta-gap-id));
@@ -4839,11 +4818,11 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
 
 .handrive-item-type-icon.is-dir::before {
     content: "";
-    background-image: url("/static/media/icons/handrive/type-folder.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-folder.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-dir.is-empty::before {
-    background-image: url("/static/media/icons/handrive/type-folder-empty.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-folder-empty.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-dir.is-trash-empty::before,
@@ -4854,19 +4833,19 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
 }
 
 .handrive-item-type-icon.is-dir.is-trash-empty::before {
-    background-image: url("/static/media/icons/handrive/type-trash-empty.png?v=trash-icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-trash-empty.png?v=trash-icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-dir.is-trash-full::before {
-    background-image: url("/static/media/icons/handrive/type-trash-full.png?v=trash-icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-trash-full.png?v=trash-icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-dir.is-markdown-image-folder::before {
-    background-image: url("/static/media/icons/handrive/type-folder-image.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-folder-image.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-dir.is-youtube-download-folder::before {
-    background-image: url("/static/media/icons/handrive/type-folder-youtube.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-folder-youtube.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-dir.is-root-avatar {
@@ -4975,7 +4954,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
 }
 
 .handrive-item-type-icon.is-dir.is-google-drive::before {
-    background-image: url("/static/media/icons/handrive/type-google-drive.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-google-drive.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-dir.is-github-repo::before {
@@ -5007,25 +4986,25 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-root-avatar::before {
     margin: 0;
     transform: none;
     background-color: transparent;
-    background-image: url("/static/media/icons/handrive/type-github.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-github.png?v=icon-source-20260721-4");
     -webkit-mask-image: none;
     mask-image: none;
 }
 
 body.theme-dark .handrive-item-type-icon.is-dir.is-github-repo::before {
-    background-image: url("/static/media/icons/handrive/type-github-dark.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-github-dark.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-dir.is-repo::before {
-    background-image: url("/static/media/icons/handrive/type-repo.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-repo.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-dir.is-branch::before {
-    background-image: url("/static/media/icons/handrive/type-branch.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-branch.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-dir.is-map::before {
-    background-image: url("/static/media/icons/handrive/type-map.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-map.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file {
@@ -5034,7 +5013,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-github-repo::before {
 }
 
 .handrive-item-type-icon.is-file::before {
-    background-image: url("/static/media/icons/handrive/type-default-file.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-default-file.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic::before {
@@ -5044,155 +5023,158 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-github-repo::before {
     flex-basis: 31px;
     margin: 0;
     transform: none;
-    background-image: url("/static/media/icons/handrive/type-code.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-code.png?v=icon-source-20260721-4");
     background-color: transparent;
     -webkit-mask-image: none;
     mask-image: none;
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="file"]::before {
-    background-image: url("/static/media/icons/handrive/type-file.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-file.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="image"]::before {
-    background-image: url("/static/media/icons/handrive/type-image.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-image.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="video"]::before {
-    background-image: url("/static/media/icons/handrive/type-video.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-video.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="audio"]::before {
-    background-image: url("/static/media/icons/handrive/type-audio.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-audio.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="archive"]::before {
-    background-image: url("/static/media/icons/handrive/type-archive.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-archive.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="pdf"]::before {
-    background-image: url("/static/media/icons/handrive/type-pdf.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-pdf.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="text"]::before {
-    background-image: url("/static/media/icons/handrive/type-text.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-text.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="word"]::before {
-    background-image: url("/static/media/icons/handrive/type-word.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-word.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="excel"]::before {
-    background-image: url("/static/media/icons/handrive/type-excel.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-excel.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="powerpoint"]::before {
-    background-image: url("/static/media/icons/handrive/type-powerpoint.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-powerpoint.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="data"]::before {
-    background-image: url("/static/media/icons/handrive/type-data.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-data.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="js"]::before {
-    background-image: url("/static/media/icons/handrive/type-js.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-js.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="ts"]::before {
-    background-image: url("/static/media/icons/handrive/type-ts.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-ts.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="jsx"]::before {
-    background-image: url("/static/media/icons/handrive/type-jsx.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-jsx.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="py"]::before {
-    background-image: url("/static/media/icons/handrive/type-py.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-py.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="java"]::before {
-    background-image: url("/static/media/icons/handrive/type-java.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-java.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="kotlin"]::before {
-    background-image: url("/static/media/icons/handrive/type-kotlin.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-kotlin.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="swift"]::before {
-    background-image: url("/static/media/icons/handrive/type-swift.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-swift.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="go"]::before {
-    background-image: url("/static/media/icons/handrive/type-go.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-go.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="rust"]::before {
-    background-image: url("/static/media/icons/handrive/type-rust.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-rust.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="ruby"]::before {
-    background-image: url("/static/media/icons/handrive/type-ruby.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-ruby.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="php"]::before {
-    background-image: url("/static/media/icons/handrive/type-php.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-php.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="c"]::before {
-    background-image: url("/static/media/icons/handrive/type-c.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-c.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="cpp"]::before {
-    background-image: url("/static/media/icons/handrive/type-cpp.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-cpp.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="csharp"]::before {
-    background-image: url("/static/media/icons/handrive/type-csharp.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-csharp.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="scala"]::before {
-    background-image: url("/static/media/icons/handrive/type-scala.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-scala.png?v=icon-source-20260721-4");
+}
+
+.handrive-item-type-icon.is-file[data-file-icon="sql"]::before {
+    background-image: url("/static/media/icons/handrive/type-sql.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="shell"]::before {
-    background-image: url("/static/media/icons/handrive/type-shell.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-shell.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="html"]::before {
-    background-image: url("/static/media/icons/handrive/type-html.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-html.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="css"]::before {
-    background-image: url("/static/media/icons/handrive/type-css.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-css.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="code"]::before {
-    background-image: url("/static/media/icons/handrive/type-code.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-code.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="json"]::before {
-    background-image: url("/static/media/icons/handrive/type-data.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-data.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="markdown"]::before {
-    background-image: url("/static/media/icons/handrive/type-text.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-text.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="font"]::before {
-    background-image: url("/static/media/icons/handrive/type-font-light.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-font-light.png?v=icon-source-20260721-4");
 }
 
 .handrive-item-type-icon.is-file[data-file-icon="exe"]::before {
-    background-image: url("/static/media/icons/handrive/type-exe.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-exe.png?v=icon-source-20260721-4");
 }
 
 body.theme-dark .handrive-item-type-icon.is-file.is-generic[data-file-icon="font"]::before {
-    background-image: url("/static/media/icons/handrive/type-font-dark.png?v=icon-source-20260720-9");
+    background-image: url("/static/media/icons/handrive/type-font-dark.png?v=icon-source-20260721-4");
 }
 
 /* Monochrome marks use SVG masks so their contrast follows the active theme. */
 .handrive-item-type-icon.is-dir.is-github-repo::before,
-.handrive-item-type-icon.is-file[data-file-icon="shell"]::before,
 .handrive-item-type-icon.is-file[data-file-icon="rust"]::before,
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="font"]::before {
     --handrive-adaptive-icon-mask-size: 72%;
@@ -5212,10 +5194,6 @@ body.theme-dark .handrive-item-type-icon.is-file.is-generic[data-file-icon="font
     --handrive-adaptive-icon-mask: url("/static/media/icons/handrive/type-github.svg?v=theme-vector-20260720-1");
 }
 
-.handrive-item-type-icon.is-file[data-file-icon="shell"]::before {
-    --handrive-adaptive-icon-mask: url("/static/media/icons/handrive/type-shell.svg?v=theme-vector-20260720-1");
-}
-
 .handrive-item-type-icon.is-file[data-file-icon="rust"]::before {
     --handrive-adaptive-icon-mask: url("/static/media/icons/handrive/rust.svg?v=theme-vector-20260720-1");
 }
@@ -5223,6 +5201,19 @@ body.theme-dark .handrive-item-type-icon.is-file.is-generic[data-file-icon="font
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="font"]::before {
     --handrive-adaptive-icon-mask: url("/static/media/icons/handrive/font.svg?v=theme-vector-20260720-1");
     --handrive-adaptive-icon-mask-size: 125%;
+}
+
+/* Preserve the established Bash mark while serving an explicit dark vector. */
+.handrive-item-type-icon.is-file[data-file-icon="shell"]::before {
+    background-color: transparent;
+    background-image: url("/static/media/icons/handrive/type-shell.svg?v=shell-vector-20260721-1");
+    background-size: 81%;
+    -webkit-mask-image: none;
+    mask-image: none;
+}
+
+body.theme-dark .handrive-item-type-icon.is-file[data-file-icon="shell"]::before {
+    background-image: url("/static/media/icons/handrive/type-shell-dark.svg?v=shell-vector-20260721-1");
 }
 
 body.theme-dark .handrive-item-type-icon.is-dir.is-github-repo::before,
@@ -5537,16 +5528,83 @@ body.handrive-popup-dragging {
     padding-right: 0;
 }
 
-.handrive-folder-create-web-toggle {
-    align-self: center;
+.handrive-url-share-enabled-switch,
+.handrive-url-share-edit-switch {
+    --handrive-url-share-switch-width: 25px;
+    --handrive-url-share-switch-height: 15px;
+    --handrive-url-share-switch-dot-size: 11px;
+    --handrive-url-share-switch-dot-offset: 2px;
+    --handrive-url-share-switch-shift: 10px;
 }
 
-#handrive-url-share-enabled-checkbox {
-    flex: 0 0 auto;
-    width: 25px;
-    height: 25px;
-    margin: 0;
+.handrive-url-share-enabled-switch {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    gap: 8px;
     cursor: pointer;
+}
+
+.handrive-url-share-enabled-switch > input,
+.handrive-url-share-edit-switch > input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.handrive-url-share-switch-knob {
+    position: relative;
+    display: block;
+    width: var(--handrive-url-share-switch-width);
+    height: var(--handrive-url-share-switch-height);
+    border-radius: 999px;
+    background: var(--handrive-border-soft);
+    transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.handrive-url-share-switch-knob::after {
+    content: "";
+    position: absolute;
+    top: var(--handrive-url-share-switch-dot-offset);
+    left: var(--handrive-url-share-switch-dot-offset);
+    width: var(--handrive-url-share-switch-dot-size);
+    height: var(--handrive-url-share-switch-dot-size);
+    border-radius: 50%;
+    background: var(--shared-card-bg);
+    transition: transform 120ms ease;
+}
+
+.handrive-url-share-enabled-switch:has(input:checked) .handrive-url-share-switch-knob,
+.handrive-url-share-edit-switch:has(input:checked) .handrive-url-share-switch-knob {
+    background: var(--theme-accent, var(--handrive-text-stronger));
+}
+
+.handrive-url-share-enabled-switch:has(input:checked) .handrive-url-share-switch-knob::after,
+.handrive-url-share-edit-switch:has(input:checked) .handrive-url-share-switch-knob::after {
+    transform: translateX(var(--handrive-url-share-switch-shift));
+}
+
+.handrive-url-share-enabled-switch:has(input:focus-visible) .handrive-url-share-switch-knob,
+.handrive-url-share-edit-switch:has(input:focus-visible) .handrive-url-share-switch-knob {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--handrive-search-border-focus) 36%, transparent);
+}
+
+.handrive-url-share-enabled-switch:has(input:disabled),
+.handrive-url-share-edit-switch:has(input:disabled) {
+    cursor: default;
+    opacity: 0.58;
+}
+
+#handrive-url-share-modal.is-share-updating .handrive-url-share-enabled-switch:has(input:disabled),
+#handrive-url-share-modal.is-share-updating .handrive-url-share-edit-switch:has(input:disabled),
+.handrive-url-share-link-group.is-collapsing .handrive-url-share-edit-switch:has(input:disabled) {
+    opacity: 1;
 }
 
 .handrive-popup-head .handrive-popup-close-btn,
@@ -5674,14 +5732,37 @@ body.handrive-popup-dragging {
 }
 
 .handrive-url-share-link-group {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    display: grid;
+    grid-template-rows: 0fr;
     min-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+    transition: grid-template-rows 200ms ease, opacity 150ms ease, transform 200ms ease;
 }
 
-.handrive-url-share-link-group:not(:has(> :not([hidden]))) {
+.handrive-url-share-link-group[hidden] {
     display: none;
+}
+
+.handrive-url-share-link-group.is-expanded {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.handrive-url-share-link-group.is-collapsing {
+    pointer-events: none;
+}
+
+.handrive-url-share-link-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    gap: 6px;
 }
 
 .handrive-url-share-targets {
@@ -5725,6 +5806,10 @@ body.handrive-popup-dragging {
 #handrive-url-share-target-input:disabled {
     cursor: default;
     opacity: 0.62;
+}
+
+#handrive-url-share-modal.is-share-updating #handrive-url-share-target-input:disabled {
+    opacity: 1;
 }
 
 .handrive-url-share-target-list {
@@ -5830,7 +5915,7 @@ body.handrive-popup-dragging {
     overflow-wrap: normal;
 }
 
-.handrive-url-share-edit-toggle {
+.handrive-url-share-edit-switch {
     display: inline-flex;
     align-items: center;
     flex: 0 0 auto;
@@ -5847,14 +5932,36 @@ body.handrive-popup-dragging {
     user-select: none;
 }
 
-.handrive-url-share-edit-toggle span {
+.handrive-url-share-edit-switch {
+    --handrive-url-share-switch-width: 20px;
+    --handrive-url-share-switch-height: 12px;
+    --handrive-url-share-switch-dot-size: 8px;
+    --handrive-url-share-switch-dot-offset: 2px;
+    --handrive-url-share-switch-shift: 8px;
+}
+
+.handrive-url-share-edit-switch span {
     font-weight: var(--site-weight-body);
     white-space: nowrap;
     word-break: keep-all;
     overflow-wrap: normal;
 }
 
-.handrive-url-share-edit-toggle input {
+.handrive-folder-create-web-switch {
+    display: inline-flex;
+    align-self: center;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 5px;
+    color: var(--handrive-text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    user-select: none;
+}
+
+.handrive-folder-create-web-switch > input {
     flex: 0 0 auto;
     width: 14px;
     height: 14px;
@@ -5862,19 +5969,11 @@ body.handrive-popup-dragging {
     cursor: pointer;
 }
 
-#handrive-url-share-edit-checkbox {
-    flex-basis: 14px;
-    min-width: 14px;
-    max-width: 14px;
-    inline-size: 14px;
-    box-sizing: border-box;
-    padding: 0;
-}
-
-.handrive-url-share-edit-toggle:has(input:disabled) {
+.handrive-folder-create-web-switch:has(input:disabled) {
     cursor: default;
     opacity: 0.58;
 }
+
 
 .handrive-inline-copy-field,
 .handrive-url-share-input-wrap {

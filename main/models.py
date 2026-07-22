@@ -643,6 +643,7 @@ class MinecraftTradeListing(models.Model):
         verbose_name="판매자",
     )
     seller_minecraft_name = models.CharField("판매자 Minecraft 닉네임", max_length=32)
+    is_npc = models.BooleanField("NPC 거래", default=False)
     buyer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -653,6 +654,7 @@ class MinecraftTradeListing(models.Model):
     )
     buyer_minecraft_name = models.CharField("구매자 Minecraft 닉네임", max_length=32, blank=True, default="")
     sell_item = models.CharField("판매 아이템", max_length=64)
+    sell_item_data = models.JSONField("판매 아이템 상태", default=dict, blank=True)
     sell_amount = models.PositiveIntegerField("판매 수량", validators=[MinValueValidator(1)])
     price_item = models.CharField("대가 아이템", max_length=64)
     price_amount = models.PositiveIntegerField("대가 수량", validators=[MinValueValidator(1)])

@@ -9,6 +9,8 @@ import org.bukkit.OfflinePlayer;
 import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -18,6 +20,7 @@ import org.bukkit.event.weather.ThunderChangeEvent;
 import org.bukkit.event.weather.WeatherChangeEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
@@ -29,8 +32,11 @@ import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -39,11 +45,15 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,12 +61,15 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Listener {
     private static final String ADMIN_PERMISSION = "minecraftstatus.admin";
     private static final int TRADE_MAX_AMOUNT = 2304;
-    private static final String TRADE_MESSAGE_PREFIX = "\u00a76[\uac70\ub798] \u00a7f";
+    private static final String TRADE_MESSAGE_PREFIX = "\u00a76";
     private static final int PLAYER_HEAD_SIZE = 32;
     private static final int SKIN_CONNECT_TIMEOUT_MILLIS = 3500;
     private static final int SKIN_READ_TIMEOUT_MILLIS = 5000;
     private Path statusPath;
     private Path playerHeadsPath;
+    private File tradeEscrowFile;
+    private YamlConfiguration tradeEscrow;
+    private Map<String, String> koreanTradeItemLabels = Collections.emptyMap();
     private long lastNonEmptyAtMillis;
     private final Set<UUID> pendingHeadBuilds = ConcurrentHashMap.newKeySet();
 
@@ -64,6 +77,9 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
     public void onEnable() {
         statusPath = getServer().getWorldContainer().toPath().resolve("web").resolve("status.json");
         playerHeadsPath = statusPath.getParent().resolve("player-heads");
+        tradeEscrowFile = new File(getDataFolder(), "trade-escrow.yml");
+        tradeEscrow = YamlConfiguration.loadConfiguration(tradeEscrowFile);
+        koreanTradeItemLabels = loadKoreanTradeItemLabels();
         lastNonEmptyAtMillis = System.currentTimeMillis();
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getScheduler().runTaskTimer(this, this::writeStatus, 20L, 100L);
@@ -72,6 +88,7 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
 
     @Override
     public void onDisable() {
+        saveTradeEscrow();
         writeOfflineStatus();
     }
 
@@ -143,7 +160,7 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
     }
 
     private boolean handleTradeCommand(CommandSender sender, String[] args) {
-        if (args.length < 5) {
+        if (args.length < 2) {
             sendTradeUsage(sender);
             return true;
         }
@@ -162,6 +179,16 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
                 return handleTradeSettle(sender, args);
             case "exchange":
                 return handleTradeExchange(sender, args);
+            case "npc-exchange":
+                return handleTradeNpcExchange(sender, args);
+            case "reserve-escrow":
+                return handleTradeEscrowReserve(sender, args);
+            case "release-escrow":
+                return handleTradeEscrowRelease(sender, args);
+            case "exchange-escrow":
+                return handleTradeEscrowExchange(sender, args);
+            case "settle-escrow":
+                return handleTradeEscrowSettle(sender, args);
             default:
                 sendTradeUsage(sender);
                 return true;
@@ -190,11 +217,9 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         player.updateInventory();
         writeStatus();
         String saleDescription = formatTradeItem(material, amount);
-        String priceDescription = optionalTradeItemDescription(args, 5, 6);
-        sendTradeMessage(
-            player,
-            "\uac70\ub798\uae00 \ub4f1\ub85d: " + formatTradeSummary(saleDescription, priceDescription) + " \ubcf4\uad00"
-        );
+        String priceDescription = optionalTradeItemDescription(args, 5, 6, "ko");
+        sendTradeNotice(player, "\uac70\ub798 \ub4f1\ub85d", formatTradeExchange(saleDescription, priceDescription));
+        sendTradeNotice(player, "\ubcf4\uad00", saleDescription);
         sendTradeOk(sender, "reserve");
         return true;
     }
@@ -223,6 +248,7 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         Player player = resolveOnlineTradePlayer(sender, "payout", args[2]);
         Material material = resolveTradeMaterial(sender, "payout", args[3]);
         Integer amount = resolveTradeAmount(sender, "payout", args[4]);
+        String uiLang = optionalTradeUiLang(args, 5);
         if (player == null || material == null || amount == null) {
             return true;
         }
@@ -234,7 +260,7 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         addStorageMaterial(player.getInventory(), material, amount);
         player.updateInventory();
         writeStatus();
-        sendTradeMessage(player, "\uac70\ub798 \ub300\uac00 " + formatTradeItem(material, amount) + " \uc218\ub839");
+        sendTradeReceivedItems(player, uiLang, formatTradeItem(material, amount, uiLang));
         sendTradeOk(sender, "payout");
         return true;
     }
@@ -249,6 +275,7 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         Integer priceAmount = resolveTradeAmountAllowZero(sender, "settle", args[4]);
         Material saleMaterial = resolveTradeMaterial(sender, "settle", args[5]);
         Integer saleAmount = resolveTradeAmountAllowZero(sender, "settle", args[6]);
+        String uiLang = optionalTradeUiLang(args, 7);
         if (player == null || priceMaterial == null || priceAmount == null || saleMaterial == null || saleAmount == null) {
             return true;
         }
@@ -269,12 +296,9 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         }
         player.updateInventory();
         writeStatus();
-        String priceDescription = priceAmount > 0 ? formatTradeItem(priceMaterial, priceAmount) : "";
-        String saleDescription = saleAmount > 0 ? formatTradeItem(saleMaterial, saleAmount) : "";
-        sendTradeMessage(
-            player,
-            "\uac70\ub798 \uc885\ub8cc: " + formatTradeSummary(saleDescription, priceDescription) + " \uc218\ub839"
-        );
+        String priceDescription = priceAmount > 0 ? formatTradeItem(priceMaterial, priceAmount, uiLang) : "";
+        String saleDescription = saleAmount > 0 ? formatTradeItem(saleMaterial, saleAmount, uiLang) : "";
+        sendTradeReceivedItems(player, uiLang, saleDescription, priceDescription);
         sendTradeOk(sender, "settle");
         return true;
     }
@@ -303,21 +327,9 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         writeStatus();
         String itemDescription = formatTradeItem(material, amount);
         if (action.equals("return")) {
-            String priceDescription = optionalTradeItemDescription(args, 5, 6);
-            sendTradeMessage(
-                player,
-                "\uac70\ub798 \ucde8\uc18c: " + formatTradeSummary(itemDescription, priceDescription) + " \ubc18\ud658"
-            );
+            sendTradeReceivedItems(player, "ko", itemDescription);
         } else if (action.equals("claim")) {
-            String saleDescription = optionalTradeItemDescription(args, 5, 6);
-            String partnerName = optionalTradePartnerName(args, 7);
-            String heading = partnerName.isEmpty()
-                ? "\uac70\ub798 \uc644\ub8cc"
-                : partnerName + "\ub2d8\uacfc \uac70\ub798 \uc644\ub8cc";
-            sendTradeMessage(
-                player,
-                heading + ": " + formatTradeSummary(saleDescription, itemDescription) + " \uc218\ub839"
-            );
+            sendTradeReceivedItems(player, "ko", itemDescription);
         }
         sendTradeOk(sender, action);
         return true;
@@ -352,19 +364,439 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         addStorageMaterial(inventory, saleMaterial, saleAmount);
         buyer.updateInventory();
         writeStatus();
-        String partnerName = optionalTradePartnerName(args, 7);
-        String heading = partnerName.isEmpty()
-            ? "\uac70\ub798 \uc644\ub8cc"
-            : partnerName + "\ub2d8\uacfc \uac70\ub798 \uc644\ub8cc";
-        sendTradeMessage(
-            buyer,
-            heading + ": " + formatTradeSummary(
-                formatTradeItem(saleMaterial, saleAmount),
-                formatTradeItem(priceMaterial, priceAmount)
-            ) + " \uc218\ub839 / \uc9c0\uae09"
-        );
+        String sellerName = optionalTradePartnerName(args, 7);
+        String buyerUiLang = optionalTradeUiLang(args, 8);
+        String sellerUiLang = optionalTradeUiLang(args, 9);
+        String sellerSaleDescription = formatTradeItem(saleMaterial, saleAmount, sellerUiLang);
+        String sellerPriceDescription = formatTradeItem(priceMaterial, priceAmount, sellerUiLang);
+        String buyerSaleDescription = formatTradeItem(saleMaterial, saleAmount, buyerUiLang);
+        String buyerPriceDescription = formatTradeItem(priceMaterial, priceAmount, buyerUiLang);
+        Player seller = findOnlineTradePlayer(sellerName);
+        if (seller != null) {
+            sendTradeNotice(seller, tradeNoticeCategory("completed", sellerUiLang), formatTradeExchange(sellerSaleDescription, sellerPriceDescription));
+            sendTradeNotice(seller, tradeNoticeCategory("stored", sellerUiLang), sellerPriceDescription);
+        } else {
+            queueTradeNotice(sellerName, tradeNoticeCategory("completed", sellerUiLang), formatTradeExchange(sellerSaleDescription, sellerPriceDescription));
+            queueTradeNotice(sellerName, tradeNoticeCategory("stored", sellerUiLang), sellerPriceDescription);
+        }
+        sendTradeNotice(buyer, tradeNoticeCategory("completed", buyerUiLang), formatTradeExchange(buyerPriceDescription, buyerSaleDescription));
+        sendTradeReceivedItems(buyer, buyerUiLang, buyerSaleDescription);
         sendTradeOk(sender, "exchange");
         return true;
+    }
+
+    private boolean handleTradeNpcExchange(CommandSender sender, String[] args) {
+        if (args.length < 7) {
+            sendTradeUsage(sender);
+            return true;
+        }
+
+        Player buyer = resolveOnlineTradePlayer(sender, "npc-exchange", args[2]);
+        Material priceMaterial = resolveTradeMaterial(sender, "npc-exchange", args[3]);
+        Integer priceAmount = resolveTradeAmount(sender, "npc-exchange", args[4]);
+        Material saleMaterial = resolveTradeMaterial(sender, "npc-exchange", args[5]);
+        Integer saleAmount = resolveTradeAmount(sender, "npc-exchange", args[6]);
+        if (buyer == null || priceMaterial == null || priceAmount == null || saleMaterial == null || saleAmount == null) {
+            return true;
+        }
+
+        PlayerInventory inventory = buyer.getInventory();
+        if (countStorageMaterial(inventory, priceMaterial) < priceAmount) {
+            sendTradeError(sender, "npc-exchange", "insufficient_item");
+            return true;
+        }
+        if (!canFitStorageMaterial(inventory, saleMaterial, saleAmount)) {
+            sendTradeError(sender, "npc-exchange", "inventory_full");
+            return true;
+        }
+
+        removeStorageMaterial(inventory, priceMaterial, priceAmount);
+        addStorageMaterial(inventory, saleMaterial, saleAmount);
+        buyer.updateInventory();
+        writeStatus();
+        String buyerUiLang = optionalTradeUiLang(args, 7);
+        String saleDescription = formatTradeItem(saleMaterial, saleAmount, buyerUiLang);
+        String priceDescription = formatTradeItem(priceMaterial, priceAmount, buyerUiLang);
+        sendTradeNotice(buyer, tradeNoticeCategory("completed", buyerUiLang), formatTradeExchange(priceDescription, saleDescription));
+        sendTradeReceivedItems(buyer, buyerUiLang, saleDescription);
+        sendTradeOk(sender, "npc-exchange");
+        return true;
+    }
+
+    private boolean handleTradeEscrowReserve(CommandSender sender, String[] args) {
+        if (args.length < 6) {
+            sendTradeUsage(sender);
+            return true;
+        }
+
+        String listingId = resolveTradeListingId(sender, "reserve-escrow", args[2]);
+        Player player = resolveOnlineTradePlayer(sender, "reserve-escrow", args[3]);
+        String slot = resolveTradeInventorySlot(sender, "reserve-escrow", args[4]);
+        Integer amount = resolveTradeAmount(sender, "reserve-escrow", args[5]);
+        if (listingId == null || player == null || slot == null || amount == null) {
+            return true;
+        }
+
+        PlayerInventory inventory = player.getInventory();
+        ItemStack sourceItem = getTradeInventoryItem(inventory, slot);
+        if (isEmptyItem(sourceItem) || sourceItem.getAmount() < amount) {
+            sendTradeError(sender, "reserve-escrow", "insufficient_item");
+            return true;
+        }
+
+        ItemStack escrowItem = sourceItem.clone();
+        escrowItem.setAmount(amount);
+        if (!storeTradeEscrowItem(listingId, escrowItem)) {
+            sendTradeError(sender, "reserve-escrow", "escrow_unavailable");
+            return true;
+        }
+
+        int remaining = sourceItem.getAmount() - amount;
+        ItemStack nextItem = remaining > 0 ? sourceItem.clone() : null;
+        if (nextItem != null) {
+            nextItem.setAmount(remaining);
+        }
+        setTradeInventoryItem(inventory, slot, nextItem);
+        player.updateInventory();
+        writeStatus();
+
+        String uiLang = optionalTradeUiLang(args, 8);
+        String saleDescription = formatTradeItem(escrowItem.getType(), amount, uiLang);
+        String priceDescription = optionalTradeItemDescription(args, 6, 7, uiLang);
+        sendTradeNotice(player, tradeNoticeCategory("registered", uiLang), formatTradeExchange(saleDescription, priceDescription));
+        sendTradeNotice(player, tradeNoticeCategory("stored", uiLang), saleDescription);
+        sendTradeItem(sender, "reserve-escrow", listingId, escrowItem);
+        sendTradeOk(sender, "reserve-escrow");
+        return true;
+    }
+
+    private boolean handleTradeEscrowRelease(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            sendTradeUsage(sender);
+            return true;
+        }
+
+        String listingId = resolveTradeListingId(sender, "release-escrow", args[2]);
+        Player player = resolveOnlineTradePlayer(sender, "release-escrow", args[3]);
+        if (listingId == null || player == null) {
+            return true;
+        }
+
+        ItemStack escrowItem = getTradeEscrowItem(listingId);
+        if (isEmptyItem(escrowItem)) {
+            sendTradeError(sender, "release-escrow", "escrow_missing");
+            return true;
+        }
+        if (!canFitStorageItem(player.getInventory(), escrowItem)) {
+            sendTradeError(sender, "release-escrow", "inventory_full");
+            return true;
+        }
+        if (!removeTradeEscrowItem(listingId)) {
+            sendTradeError(sender, "release-escrow", "escrow_unavailable");
+            return true;
+        }
+
+        addStorageItem(player.getInventory(), escrowItem);
+        player.updateInventory();
+        writeStatus();
+        sendTradeReceivedItems(player, "ko", formatTradeItem(escrowItem.getType(), escrowItem.getAmount()));
+        sendTradeOk(sender, "release-escrow");
+        return true;
+    }
+
+    private boolean handleTradeEscrowExchange(CommandSender sender, String[] args) {
+        if (args.length < 7) {
+            sendTradeUsage(sender);
+            return true;
+        }
+
+        String listingId = resolveTradeListingId(sender, "exchange-escrow", args[2]);
+        Player buyer = resolveOnlineTradePlayer(sender, "exchange-escrow", args[3]);
+        Material priceMaterial = resolveTradeMaterial(sender, "exchange-escrow", args[4]);
+        Integer priceAmount = resolveTradeAmount(sender, "exchange-escrow", args[5]);
+        Integer saleAmount = resolveTradeAmount(sender, "exchange-escrow", args[6]);
+        if (listingId == null || buyer == null || priceMaterial == null || priceAmount == null || saleAmount == null) {
+            return true;
+        }
+
+        ItemStack escrowItem = getTradeEscrowItem(listingId);
+        if (isEmptyItem(escrowItem)) {
+            sendTradeError(sender, "exchange-escrow", "escrow_missing");
+            return true;
+        }
+        if (saleAmount > escrowItem.getAmount()) {
+            sendTradeError(sender, "exchange-escrow", "invalid_amount");
+            return true;
+        }
+
+        ItemStack saleItem = escrowItem.clone();
+        saleItem.setAmount(saleAmount);
+        PlayerInventory inventory = buyer.getInventory();
+        if (countStorageMaterial(inventory, priceMaterial) < priceAmount) {
+            sendTradeError(sender, "exchange-escrow", "insufficient_item");
+            return true;
+        }
+        if (!canCompleteEscrowExchange(inventory, priceMaterial, priceAmount, saleItem)) {
+            sendTradeError(sender, "exchange-escrow", "inventory_full");
+            return true;
+        }
+        if (!consumeTradeEscrowItem(listingId, saleAmount)) {
+            sendTradeError(sender, "exchange-escrow", "escrow_unavailable");
+            return true;
+        }
+
+        removeStorageMaterial(inventory, priceMaterial, priceAmount);
+        addStorageItem(inventory, saleItem);
+        buyer.updateInventory();
+        writeStatus();
+        String sellerName = optionalTradePartnerName(args, 7);
+        String buyerUiLang = optionalTradeUiLang(args, 8);
+        String sellerUiLang = optionalTradeUiLang(args, 9);
+        String sellerSaleDescription = formatTradeItem(saleItem.getType(), saleAmount, sellerUiLang);
+        String sellerPriceDescription = formatTradeItem(priceMaterial, priceAmount, sellerUiLang);
+        String buyerSaleDescription = formatTradeItem(saleItem.getType(), saleAmount, buyerUiLang);
+        String buyerPriceDescription = formatTradeItem(priceMaterial, priceAmount, buyerUiLang);
+        Player seller = findOnlineTradePlayer(sellerName);
+        if (seller != null) {
+            sendTradeNotice(seller, tradeNoticeCategory("completed", sellerUiLang), formatTradeExchange(sellerSaleDescription, sellerPriceDescription));
+            sendTradeNotice(seller, tradeNoticeCategory("stored", sellerUiLang), sellerPriceDescription);
+        } else {
+            queueTradeNotice(sellerName, tradeNoticeCategory("completed", sellerUiLang), formatTradeExchange(sellerSaleDescription, sellerPriceDescription));
+            queueTradeNotice(sellerName, tradeNoticeCategory("stored", sellerUiLang), sellerPriceDescription);
+        }
+        sendTradeNotice(buyer, tradeNoticeCategory("completed", buyerUiLang), formatTradeExchange(buyerPriceDescription, buyerSaleDescription));
+        sendTradeReceivedItems(buyer, buyerUiLang, buyerSaleDescription);
+        sendTradeOk(sender, "exchange-escrow");
+        return true;
+    }
+
+    private boolean handleTradeEscrowSettle(CommandSender sender, String[] args) {
+        if (args.length < 6) {
+            sendTradeUsage(sender);
+            return true;
+        }
+
+        String listingId = resolveTradeListingId(sender, "settle-escrow", args[2]);
+        Player player = resolveOnlineTradePlayer(sender, "settle-escrow", args[3]);
+        Material priceMaterial = resolveTradeMaterial(sender, "settle-escrow", args[4]);
+        Integer priceAmount = resolveTradeAmountAllowZero(sender, "settle-escrow", args[5]);
+        String uiLang = optionalTradeUiLang(args, 6);
+        if (listingId == null || player == null || priceMaterial == null || priceAmount == null) {
+            return true;
+        }
+
+        ItemStack escrowItem = getTradeEscrowItem(listingId);
+        if (isEmptyItem(escrowItem)) {
+            sendTradeError(sender, "settle-escrow", "escrow_missing");
+            return true;
+        }
+        boolean canFitSettlementItems = priceAmount > 0
+            ? canFitStorageItems(player.getInventory(), new ItemStack(priceMaterial, priceAmount), escrowItem)
+            : canFitStorageItem(player.getInventory(), escrowItem);
+        if (!canFitSettlementItems) {
+            sendTradeError(sender, "settle-escrow", "inventory_full");
+            return true;
+        }
+        if (!removeTradeEscrowItem(listingId)) {
+            sendTradeError(sender, "settle-escrow", "escrow_unavailable");
+            return true;
+        }
+
+        if (priceAmount > 0) {
+            addStorageMaterial(player.getInventory(), priceMaterial, priceAmount);
+        }
+        addStorageItem(player.getInventory(), escrowItem);
+        player.updateInventory();
+        writeStatus();
+        String priceDescription = priceAmount > 0 ? formatTradeItem(priceMaterial, priceAmount, uiLang) : "";
+        String saleDescription = formatTradeItem(escrowItem.getType(), escrowItem.getAmount(), uiLang);
+        sendTradeReceivedItems(player, uiLang, saleDescription, priceDescription);
+        sendTradeOk(sender, "settle-escrow");
+        return true;
+    }
+
+    private String resolveTradeListingId(CommandSender sender, String action, String value) {
+        String listingId = strOrEmpty(value).trim();
+        if (!listingId.matches("[1-9][0-9]{0,18}")) {
+            sendTradeError(sender, action, "invalid_listing");
+            return null;
+        }
+        return listingId;
+    }
+
+    private String resolveTradeInventorySlot(CommandSender sender, String action, String value) {
+        Integer storageSlot = parseStorageSlot(value);
+        if (storageSlot != null) {
+            return String.valueOf(storageSlot);
+        }
+        String normalized = normalizeInventorySlotLabel(value);
+        switch (normalized) {
+            case "helmet":
+            case "chestplate":
+            case "leggings":
+            case "boots":
+            case "offhand":
+                return normalized;
+            default:
+                sendTradeError(sender, action, "invalid_slot");
+                return null;
+        }
+    }
+
+    private ItemStack getTradeInventoryItem(PlayerInventory inventory, String slot) {
+        Integer storageSlot = parseStorageSlot(slot);
+        if (storageSlot != null) {
+            return inventory.getItem(storageSlot);
+        }
+        switch (normalizeInventorySlotLabel(slot)) {
+            case "helmet":
+                return inventory.getHelmet();
+            case "chestplate":
+                return inventory.getChestplate();
+            case "leggings":
+                return inventory.getLeggings();
+            case "boots":
+                return inventory.getBoots();
+            case "offhand":
+                return inventory.getItemInOffHand();
+            default:
+                return null;
+        }
+    }
+
+    private void setTradeInventoryItem(PlayerInventory inventory, String slot, ItemStack item) {
+        setInventorySlot(inventory, slot, item);
+    }
+
+    private String tradeEscrowPath(String listingId) {
+        return "trades." + listingId + ".item";
+    }
+
+    private String tradeNoticePath(String playerName) {
+        String normalizedName = strOrEmpty(playerName).trim().toLowerCase(Locale.ROOT);
+        String encodedName = Base64.getUrlEncoder().withoutPadding().encodeToString(
+            normalizedName.getBytes(StandardCharsets.UTF_8)
+        );
+        return "pending-notices." + encodedName;
+    }
+
+    private ItemStack getTradeEscrowItem(String listingId) {
+        if (tradeEscrow == null) {
+            return null;
+        }
+        ItemStack item = tradeEscrow.getItemStack(tradeEscrowPath(listingId));
+        return isEmptyItem(item) ? null : item.clone();
+    }
+
+    private boolean storeTradeEscrowItem(String listingId, ItemStack item) {
+        if (tradeEscrow == null || isEmptyItem(item)) {
+            return false;
+        }
+        String path = tradeEscrowPath(listingId);
+        ItemStack previous = tradeEscrow.getItemStack(path);
+        tradeEscrow.set(path, item.clone());
+        if (saveTradeEscrow()) {
+            return true;
+        }
+        tradeEscrow.set(path, previous == null ? null : previous.clone());
+        return false;
+    }
+
+    private boolean consumeTradeEscrowItem(String listingId, int amount) {
+        ItemStack escrowItem = getTradeEscrowItem(listingId);
+        if (isEmptyItem(escrowItem) || amount < 1 || amount > escrowItem.getAmount()) {
+            return false;
+        }
+        String path = tradeEscrowPath(listingId);
+        ItemStack nextItem = escrowItem.getAmount() == amount ? null : escrowItem.clone();
+        if (nextItem != null) {
+            nextItem.setAmount(escrowItem.getAmount() - amount);
+        }
+        tradeEscrow.set(path, nextItem);
+        if (saveTradeEscrow()) {
+            return true;
+        }
+        tradeEscrow.set(path, escrowItem);
+        return false;
+    }
+
+    private boolean removeTradeEscrowItem(String listingId) {
+        ItemStack escrowItem = getTradeEscrowItem(listingId);
+        if (isEmptyItem(escrowItem)) {
+            return false;
+        }
+        String path = tradeEscrowPath(listingId);
+        tradeEscrow.set(path, null);
+        if (saveTradeEscrow()) {
+            return true;
+        }
+        tradeEscrow.set(path, escrowItem);
+        return false;
+    }
+
+    private boolean saveTradeEscrow() {
+        if (tradeEscrowFile == null || tradeEscrow == null) {
+            return false;
+        }
+        try {
+            File parent = tradeEscrowFile.getParentFile();
+            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+                throw new IOException("Failed to create trade escrow directory.");
+            }
+            tradeEscrow.save(tradeEscrowFile);
+            return true;
+        } catch (IOException error) {
+            getLogger().warning("Failed to save trade escrow: " + error.getMessage());
+            return false;
+        }
+    }
+
+    private void queueTradeNotice(String playerName, String category, String message) {
+        String normalizedName = strOrEmpty(playerName).trim();
+        String notice = formatTradeNotice(category, message);
+        if (!normalizedName.matches("[A-Za-z0-9_.-]{1,32}") || notice.isEmpty() || tradeEscrow == null) {
+            return;
+        }
+        String path = tradeNoticePath(normalizedName);
+        List<String> notices = new ArrayList<>(tradeEscrow.getStringList(path));
+        notices.add(notice);
+        tradeEscrow.set(path, notices);
+        if (!saveTradeEscrow()) {
+            notices.remove(notices.size() - 1);
+            tradeEscrow.set(path, notices.isEmpty() ? null : notices);
+            getLogger().warning("Failed to queue offline trade notice for " + normalizedName + ".");
+        }
+    }
+
+    private void deliverQueuedTradeNotices(Player player) {
+        if (player == null || !player.isOnline() || tradeEscrow == null) {
+            return;
+        }
+        String path = tradeNoticePath(player.getName());
+        List<String> notices = new ArrayList<>(tradeEscrow.getStringList(path));
+        if (notices.isEmpty()) {
+            return;
+        }
+        tradeEscrow.set(path, null);
+        if (!saveTradeEscrow()) {
+            tradeEscrow.set(path, notices);
+            getLogger().warning("Failed to deliver queued trade notices for " + player.getName() + ".");
+            return;
+        }
+        for (String notice : notices) {
+            if (!strOrEmpty(notice).isEmpty()) {
+                player.sendMessage(notice);
+            }
+        }
+    }
+
+    private void sendTradeItem(CommandSender sender, String action, String listingId, ItemStack item) {
+        StringBuilder itemJson = new StringBuilder(256);
+        appendItemFieldsJson(itemJson, item, "");
+        String encodedItem = Base64.getUrlEncoder().withoutPadding().encodeToString(
+            itemJson.toString().getBytes(StandardCharsets.UTF_8)
+        );
+        sender.sendMessage("HANPLANET_TRADE_ITEM " + action + " " + listingId + " " + encodedItem);
     }
 
     private Player resolveOnlineTradePlayer(CommandSender sender, String action, String playerName) {
@@ -413,19 +845,7 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
     }
 
     private boolean canFitStorageMaterial(PlayerInventory inventory, Material material, int amount) {
-        int remainingCapacity = 0;
-        int maxStackSize = Math.max(1, material.getMaxStackSize());
-        for (ItemStack item : inventory.getStorageContents()) {
-            if (isEmptyItem(item)) {
-                remainingCapacity += maxStackSize;
-            } else if (item.getType() == material) {
-                remainingCapacity += Math.max(0, maxStackSize - item.getAmount());
-            }
-            if (remainingCapacity >= amount) {
-                return true;
-            }
-        }
-        return false;
+        return canFitStorageItem(inventory, new ItemStack(material, amount));
     }
 
     private boolean canFitStorageMaterials(
@@ -444,15 +864,52 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
             && canAddStorageMaterial(simulatedContents, secondMaterial, secondAmount);
     }
 
-    private boolean canAddStorageMaterial(ItemStack[] contents, Material material, int amount) {
-        int remaining = amount;
-        if (remaining == 0) {
+    private boolean canFitStorageItem(PlayerInventory inventory, ItemStack item) {
+        if (isEmptyItem(item)) {
             return true;
         }
-        int maxStackSize = Math.max(1, material.getMaxStackSize());
+        return canAddStorageItem(copyStorageContents(inventory.getStorageContents()), item);
+    }
+
+    private boolean canFitStorageItems(PlayerInventory inventory, ItemStack firstItem, ItemStack secondItem) {
+        ItemStack[] simulatedContents = copyStorageContents(inventory.getStorageContents());
+        return canAddStorageItem(simulatedContents, firstItem)
+            && canAddStorageItem(simulatedContents, secondItem);
+    }
+
+    private boolean canCompleteEscrowExchange(
+        PlayerInventory inventory,
+        Material priceMaterial,
+        int priceAmount,
+        ItemStack saleItem
+    ) {
+        ItemStack[] simulatedContents = copyStorageContents(inventory.getStorageContents());
+        removeStorageMaterial(simulatedContents, priceMaterial, priceAmount);
+        return canAddStorageItem(simulatedContents, saleItem);
+    }
+
+    private ItemStack[] copyStorageContents(ItemStack[] contents) {
+        ItemStack[] copy = new ItemStack[contents.length];
+        for (int index = 0; index < contents.length; index += 1) {
+            ItemStack item = contents[index];
+            copy[index] = isEmptyItem(item) ? null : item.clone();
+        }
+        return copy;
+    }
+
+    private boolean canAddStorageMaterial(ItemStack[] contents, Material material, int amount) {
+        return canAddStorageItem(contents, new ItemStack(material, amount));
+    }
+
+    private boolean canAddStorageItem(ItemStack[] contents, ItemStack itemToAdd) {
+        if (isEmptyItem(itemToAdd)) {
+            return true;
+        }
+        int remaining = itemToAdd.getAmount();
+        int maxStackSize = Math.max(1, itemToAdd.getMaxStackSize());
         for (ItemStack item : contents) {
-            if (!isEmptyItem(item) && item.getType() == material) {
-                int accepted = Math.min(remaining, Math.max(0, maxStackSize - item.getAmount()));
+            if (!isEmptyItem(item) && item.isSimilar(itemToAdd)) {
+                int accepted = Math.min(remaining, Math.max(0, item.getMaxStackSize() - item.getAmount()));
                 item.setAmount(item.getAmount() + accepted);
                 remaining -= accepted;
                 if (remaining == 0) {
@@ -465,7 +922,9 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
                 continue;
             }
             int stackAmount = Math.min(remaining, maxStackSize);
-            contents[index] = new ItemStack(material, stackAmount);
+            ItemStack nextItem = itemToAdd.clone();
+            nextItem.setAmount(stackAmount);
+            contents[index] = nextItem;
             remaining -= stackAmount;
         }
         return remaining == 0;
@@ -473,6 +932,11 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
 
     private void removeStorageMaterial(PlayerInventory inventory, Material material, int amount) {
         ItemStack[] contents = inventory.getStorageContents();
+        removeStorageMaterial(contents, material, amount);
+        inventory.setStorageContents(contents);
+    }
+
+    private void removeStorageMaterial(ItemStack[] contents, Material material, int amount) {
         int remaining = amount;
         for (int index = 0; index < contents.length && remaining > 0; index += 1) {
             ItemStack item = contents[index];
@@ -488,30 +952,56 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
                 remaining = Math.abs(nextAmount);
             }
         }
-        inventory.setStorageContents(contents);
     }
 
     private void addStorageMaterial(PlayerInventory inventory, Material material, int amount) {
-        int remaining = amount;
-        int maxStackSize = Math.max(1, material.getMaxStackSize());
+        addStorageItem(inventory, new ItemStack(material, amount));
+    }
+
+    private void addStorageItem(PlayerInventory inventory, ItemStack item) {
+        if (isEmptyItem(item)) {
+            return;
+        }
+        int remaining = item.getAmount();
+        int maxStackSize = Math.max(1, item.getMaxStackSize());
         while (remaining > 0) {
             int stackAmount = Math.min(remaining, maxStackSize);
-            inventory.addItem(new ItemStack(material, stackAmount));
+            ItemStack nextItem = item.clone();
+            nextItem.setAmount(stackAmount);
+            inventory.addItem(nextItem);
             remaining -= stackAmount;
         }
     }
 
     private void sendTradeUsage(CommandSender sender) {
         sender.sendMessage(
-            "Usage: minecraftstatus trade <reserve|return|claim|payout|settle|exchange> ..."
+            "Usage: minecraftstatus trade <reserve|return|claim|payout|settle|exchange|npc-exchange|reserve-escrow|release-escrow|exchange-escrow|settle-escrow> ..."
         );
     }
 
     private String formatTradeItem(Material material, int amount) {
-        return material.name().toLowerCase(Locale.ROOT) + " x" + amount;
+        return formatTradeItem(material, amount, "ko");
     }
 
-    private String optionalTradeItemDescription(String[] args, int itemIndex, int amountIndex) {
+    private String formatTradeItem(Material material, int amount, String uiLang) {
+        return formatTradeItemLabel(material, uiLang) + " x" + amount;
+    }
+
+    private String formatTradeItemLabel(Material material, String uiLang) {
+        if (material == null) {
+            return "";
+        }
+        String itemId = material.getKey().getKey();
+        if ("ko".equals(optionalTradeUiLang(uiLang))) {
+            String koreanLabel = koreanTradeItemLabels.get(itemId);
+            if (koreanLabel != null && !koreanLabel.isEmpty()) {
+                return koreanLabel;
+            }
+        }
+        return formatMaterialName(itemId);
+    }
+
+    private String optionalTradeItemDescription(String[] args, int itemIndex, int amountIndex, String uiLang) {
         if (args.length <= amountIndex) {
             return "";
         }
@@ -520,7 +1010,68 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         if (material == null || material.isAir() || !material.isItem() || amount == null || amount < 1 || amount > TRADE_MAX_AMOUNT) {
             return "";
         }
-        return formatTradeItem(material, amount);
+        return formatTradeItem(material, amount, uiLang);
+    }
+
+    private String optionalTradeUiLang(String[] args, int index) {
+        if (args == null || args.length <= index) {
+            return "ko";
+        }
+        return optionalTradeUiLang(args[index]);
+    }
+
+    private String optionalTradeUiLang(String value) {
+        return "en".equalsIgnoreCase(strOrEmpty(value).trim()) ? "en" : "ko";
+    }
+
+    private String tradeNoticeCategory(String category, String uiLang) {
+        boolean english = "en".equals(optionalTradeUiLang(uiLang));
+        switch (strOrEmpty(category)) {
+            case "registered":
+                return english ? "Trade registered" : "거래 등록";
+            case "stored":
+                return english ? "Stored" : "보관";
+            case "completed":
+                return english ? "Trade completed" : "거래 완료";
+            case "received":
+                return english ? "Received" : "수령";
+            default:
+                return "";
+        }
+    }
+
+    private Map<String, String> loadKoreanTradeItemLabels() {
+        Map<String, String> labels = new HashMap<>();
+        try (InputStream input = getResource("trade_item_labels_ko_kr.json")) {
+            if (input == null) {
+                getLogger().warning("Minecraft trade Korean item labels are unavailable.");
+                return Collections.emptyMap();
+            }
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String trimmed = line.trim();
+                    if (!trimmed.startsWith("\"") || !trimmed.endsWith("\",") && !trimmed.endsWith("\"")) {
+                        continue;
+                    }
+                    int keyEnd = trimmed.indexOf('"', 1);
+                    int valueStart = trimmed.indexOf('"', keyEnd + 1);
+                    int valueEnd = trimmed.lastIndexOf('"');
+                    if (keyEnd < 1 || valueStart <= keyEnd || valueEnd <= valueStart) {
+                        continue;
+                    }
+                    String itemId = trimmed.substring(1, keyEnd);
+                    String label = trimmed.substring(valueStart + 1, valueEnd);
+                    if (itemId.matches("[a-z0-9_]{1,64}") && !label.isEmpty()) {
+                        labels.put(itemId, label);
+                    }
+                }
+            }
+        } catch (IOException error) {
+            getLogger().warning("Failed to load Minecraft trade Korean item labels: " + error.getMessage());
+            return Collections.emptyMap();
+        }
+        return Collections.unmodifiableMap(labels);
     }
 
     private String optionalTradePartnerName(String[] args, int index) {
@@ -531,18 +1082,65 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         return playerName.matches("[A-Za-z0-9_.-]{1,32}") ? playerName : "";
     }
 
-    private String formatTradeSummary(String saleDescription, String priceDescription) {
-        if (saleDescription.isEmpty()) {
-            return priceDescription.isEmpty() ? "" : "\ub300\uac00 " + priceDescription;
+    private Player findOnlineTradePlayer(String playerName) {
+        String normalizedName = strOrEmpty(playerName).trim();
+        if (!normalizedName.matches("[A-Za-z0-9_.-]{1,32}")) {
+            return null;
         }
-        if (priceDescription.isEmpty()) {
-            return "\ud310\ub9e4 " + saleDescription;
+        Player exactPlayer = Bukkit.getPlayerExact(normalizedName);
+        if (exactPlayer != null && exactPlayer.isOnline()) {
+            return exactPlayer;
         }
-        return "\ud310\ub9e4 " + saleDescription + " / \ub300\uac00 " + priceDescription;
+        for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
+            if (onlinePlayer.getName().equalsIgnoreCase(normalizedName)) {
+                return onlinePlayer;
+            }
+        }
+        return null;
     }
 
-    private void sendTradeMessage(Player player, String message) {
-        player.sendMessage(TRADE_MESSAGE_PREFIX + message);
+    private String formatTradeExchange(String saleDescription, String priceDescription) {
+        if (saleDescription.isEmpty()) {
+            return priceDescription;
+        }
+        if (priceDescription.isEmpty()) {
+            return saleDescription;
+        }
+        return saleDescription + " -> " + priceDescription;
+    }
+
+    private void sendTradeReceivedItems(Player player, String uiLang, String... itemDescriptions) {
+        StringBuilder message = new StringBuilder();
+        for (String itemDescription : itemDescriptions) {
+            String normalizedDescription = strOrEmpty(itemDescription).trim();
+            if (normalizedDescription.isEmpty()) {
+                continue;
+            }
+            if (message.length() > 0) {
+                message.append(", ");
+            }
+            message.append(normalizedDescription);
+        }
+        if (message.length() > 0) {
+            sendTradeNotice(player, tradeNoticeCategory("received", uiLang), message.toString());
+        }
+    }
+
+    private void sendTradeNotice(Player player, String category, String message) {
+        String notice = formatTradeNotice(category, message);
+        if (player == null || notice.isEmpty()) {
+            return;
+        }
+        player.sendMessage(notice);
+    }
+
+    private String formatTradeNotice(String category, String message) {
+        String normalizedCategory = strOrEmpty(category).trim();
+        String normalizedMessage = strOrEmpty(message).trim();
+        if (normalizedCategory.isEmpty()) {
+            return "";
+        }
+        return TRADE_MESSAGE_PREFIX + "[" + normalizedCategory + "] \u00a7f" + normalizedMessage;
     }
 
     private void sendTradeOk(CommandSender sender, String action) {
@@ -874,6 +1472,11 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
     public void onPlayerJoin(PlayerJoinEvent event) {
         lastNonEmptyAtMillis = System.currentTimeMillis();
         scheduleStatusWrite();
+        getServer().getScheduler().runTaskLater(
+            this,
+            () -> deliverQueuedTradeNotices(event.getPlayer()),
+            10L
+        );
     }
 
     @EventHandler
@@ -1193,15 +1796,45 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
     private void appendItemFieldsJson(StringBuilder json, ItemStack item, String prefixField) {
         Material material = item.getType();
         String type = material.getKey().getKey();
+        ItemMeta meta = item.hasItemMeta() ? item.getItemMeta() : null;
         json.append('{');
         if (!prefixField.isEmpty()) {
             json.append(prefixField).append(',');
         }
         appendJsonField(json, "type", type).append(',');
         appendJsonField(json, "label", getItemLabel(item, type)).append(',');
+        json.append("\"customName\":").append(meta != null && meta.hasDisplayName()).append(',');
         json.append("\"amount\":").append(item.getAmount()).append(',');
-        json.append("\"enchanted\":").append(item.hasItemMeta() && item.getItemMeta() != null && item.getItemMeta().hasEnchants());
+        boolean enchanted = meta != null && meta.hasEnchants();
+        json.append("\"enchanted\":").append(enchanted);
+        if (enchanted) {
+            json.append(',');
+            appendItemEnchantmentsJson(json, meta);
+        }
+        int maxDamage = Math.max(0, material.getMaxDurability());
+        if (maxDamage > 0) {
+            int damage = meta instanceof Damageable ? Math.max(0, ((Damageable) meta).getDamage()) : 0;
+            json.append(",\"damage\":").append(Math.min(damage, maxDamage)).append(',');
+            json.append("\"maxDamage\":").append(maxDamage);
+        }
         json.append('}');
+    }
+
+    private void appendItemEnchantmentsJson(StringBuilder json, ItemMeta meta) {
+        List<Map.Entry<Enchantment, Integer>> enchantments = new ArrayList<>(meta.getEnchants().entrySet());
+        enchantments.sort(Comparator.comparing(entry -> entry.getKey().getKey().getKey()));
+        json.append("\"enchantments\":[");
+        for (int index = 0; index < enchantments.size(); index += 1) {
+            Map.Entry<Enchantment, Integer> enchantment = enchantments.get(index);
+            if (index > 0) {
+                json.append(',');
+            }
+            json.append('{');
+            appendJsonField(json, "key", enchantment.getKey().getKey().getKey()).append(',');
+            json.append("\"level\":").append(Math.max(1, enchantment.getValue()));
+            json.append('}');
+        }
+        json.append(']');
     }
 
     private boolean isEmptyItem(ItemStack item) {

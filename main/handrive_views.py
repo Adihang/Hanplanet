@@ -3169,7 +3169,7 @@ def get_handrive_file_icon_key(path_value: str) -> str:
     if extension == ".scala":
         return "scala"
     if extension == ".sql":
-        return "data"
+        return "sql"
     if extension in {".sh", ".zsh", ".bash"}:
         return "shell"
     if extension in {".html", ".htm"}:

@@ -46,6 +46,7 @@ mkdir -p "$CLASSES_DIR"
   "$PLUGIN_DIR/src/main/java/dev/minecraftstatus/bridge/MinecraftStatusBridgePlugin.java"
 
 cp "$PLUGIN_DIR/src/main/resources/plugin.yml" "$CLASSES_DIR/plugin.yml"
+cp "$REPO_DIR/static/media/icons/minecraft/items/labels_ko_kr.json" "$CLASSES_DIR/trade_item_labels_ko_kr.json"
 "${JAR[@]}" --create --file "$JAR_PATH" -C "$CLASSES_DIR" .
 rm -f "$SERVER_DIR/plugins/HanplanetStatus.jar"
 cp "$JAR_PATH" "$SERVER_DIR/plugins/MinecraftStatusBridge.jar"

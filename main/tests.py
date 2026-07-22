@@ -128,10 +128,12 @@ from .views import (
     extract_minecraft_bedrock_server_version,
     extract_minecraft_server_version,
     get_minecraft_trade_item_options,
+    get_minecraft_korean_item_labels,
     has_excessive_korean_text,
     MINECRAFT_BEDROCK_SERVER_ADDRESS,
     MINECRAFT_META_DESCRIPTION_EN,
     MINECRAFT_META_DESCRIPTION_KO,
+    MINECRAFT_NPC_TRADE_SELLER_HEAD_URL,
     MINECRAFT_SERVER_IMAGE_URL,
     MINECRAFT_WEATHER_ICON_URL,
     WARGAME_META_DESCRIPTION_EN,
@@ -1854,7 +1856,7 @@ class PwaMetadataTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         script = response.content.decode()
-        self.assertIn("hanplanet-static-v60", script)
+        self.assertIn("hanplanet-static-v65", script)
         self.assertIn("hanplanet-page-v15", script)
         self.assertIn("cacheControl.includes('no-store')", script)
         self.assertIn("cacheControl.includes('no-cache')", script)
@@ -1930,6 +1932,16 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(english_option["label"], "Diamond Sword")
         self.assertIn("다이아몬드 검", english_option["aliases"])
         self.assertEqual(normalize_minecraft_trade_item_id("다이아몬드 검"), "diamond_sword")
+
+    def test_minecraft_item_icon_manifest_has_korean_labels(self):
+        icon_dir = Path(settings.BASE_DIR) / "static" / "media" / "icons" / "minecraft" / "items"
+        manifest = json.loads((icon_dir / "manifest.json").read_text(encoding="utf-8"))
+        labels = get_minecraft_korean_item_labels()
+
+        self.assertEqual(
+            [item_id for item_id in manifest["items"] if not labels.get(item_id)],
+            [],
+        )
 
     def test_localized_sub_page_uses_english_context(self):
         response = self.client.get("/en/sub/")
@@ -2266,11 +2278,20 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(response.context["meta_og_description"], MINECRAFT_META_DESCRIPTION_KO)
         self.assertEqual(english_response.context["meta_description"], MINECRAFT_META_DESCRIPTION_EN)
         self.assertEqual(english_response.context["meta_og_description"], MINECRAFT_META_DESCRIPTION_EN)
+        self.assertEqual(response.context["minecraft_account_link_title"], "연동")
+        self.assertEqual(english_response.context["minecraft_account_link_title"], "Link")
         self.assertContains(response, "<title>Minecraft Server | Hanplanet</title>", html=False)
+        self.assertContains(response, 'const minecraftLocalizedItemLabels = new Map(Object.entries(', html=False)
+        self.assertContains(response, 'const minecraftLocalizedEnchantmentLabels = new Map(Object.entries(', html=False)
+        self.assertContains(response, '"iron_ingot": "철 주괴"', html=False)
+        self.assertContains(response, '"sharpness": "날카로움"', html=False)
         self.assertContains(response, f'<meta name="description" content="{MINECRAFT_META_DESCRIPTION_KO}">', html=False)
         self.assertContains(response, f'<meta property="og:description" content="{MINECRAFT_META_DESCRIPTION_KO}">', html=False)
         self.assertContains(english_response, f'<meta name="description" content="{MINECRAFT_META_DESCRIPTION_EN}">', html=False)
         self.assertContains(english_response, f'<meta property="og:description" content="{MINECRAFT_META_DESCRIPTION_EN}">', html=False)
+        self.assertContains(english_response, '>Link</button>', html=False)
+        self.assertNotContains(english_response, '>Account Link</button>', html=False)
+        self.assertNotContains(english_response, '"sharpness": "날카로움"', html=False)
         self.assertContains(response, '<meta property="og:title" content="Minecraft Server | Hanplanet">', html=False)
         self.assertContains(response, '<meta name="twitter:title" content="Minecraft Server | Hanplanet">', html=False)
         self.assertNotContains(
@@ -2623,6 +2644,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertIn('grid-auto-rows: 38px;', minecraft_panel_list_block)
         self.assertIn('align-content: start;', minecraft_panel_list_block)
         self.assertIn('gap: 6px;', minecraft_panel_list_block)
+        self.assertIn('padding: 1px 0;', minecraft_panel_list_block)
         self.assertIn('overflow: auto;', minecraft_panel_list_block)
         self.assertIn('list-style: none;', minecraft_panel_list_block)
         self.assertNotIn('border:', minecraft_panel_list_block)
@@ -2677,6 +2699,10 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertNotIn('height: auto;', minecraft_responsive_page_layout_block)
         self.assertNotIn('min-height: 100%;', minecraft_responsive_page_layout_block)
         self.assertNotIn('overflow: visible;', minecraft_responsive_page_layout_block)
+        self.assertContains(response, 'overflow-x: hidden;', html=False)
+        self.assertContains(response, 'overflow-y: auto;', html=False)
+        self.assertContains(response, 'scrollbar-gutter: stable;', html=False)
+        self.assertContains(response, '.minecraft-player-list {\n            width: 100%;\n            margin: 0;', html=False)
         self.assertIn('height: 100%;', minecraft_responsive_layout_block)
         self.assertIn('min-height: 0;', minecraft_responsive_layout_block)
         self.assertIn('align-content: stretch;', minecraft_responsive_layout_block)
@@ -2705,7 +2731,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertIn('min-height: 0;', minecraft_responsive_map_block)
         self.assertNotIn('height: min(100cqw, 80cqh);', minecraft_responsive_map_block)
         self.assertNotIn('max-height: 80cqh;', minecraft_responsive_map_block)
-        self.assertIn('grid-template-columns: minmax(0, 1fr) minmax(220px, 360px);', minecraft_low_height_page_layout_block)
+        self.assertIn('grid-template-columns: minmax(320px, 1fr) 14px minmax(300px, var(--minecraft-side-layout-size));', minecraft_low_height_page_layout_block)
         self.assertIn('grid-template-rows: minmax(0, 1fr) max-content;', minecraft_low_height_page_layout_block)
         self.assertIn('align-items: stretch;', minecraft_low_height_page_layout_block)
         self.assertIn('height: 100%;', minecraft_low_height_layout_block)
@@ -2719,8 +2745,8 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertIn('min-height: 72px;', minecraft_low_height_map_block)
         self.assertIn('justify-self: stretch;', minecraft_low_height_side_layout_block)
         self.assertIn('width: 100%;', minecraft_low_height_side_layout_block)
-        self.assertIn('min-width: 220px;', minecraft_low_height_side_layout_block)
-        self.assertIn('max-width: 360px;', minecraft_low_height_side_layout_block)
+        self.assertIn('min-width: 0;', minecraft_low_height_side_layout_block)
+        self.assertIn('max-width: none;', minecraft_low_height_side_layout_block)
         self.assertIn('height: 100%;', minecraft_low_height_side_layout_block)
         self.assertIn('min-height: 0;', minecraft_low_height_side_layout_block)
         self.assertIn('overflow: auto;', minecraft_low_height_side_layout_block)
@@ -2919,6 +2945,15 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'overflow: hidden;', html=False)
         self.assertContains(response, 'body.minecraft-page .footer-links', html=False)
         self.assertContains(response, 'class="minecraft-side-layout"', html=False)
+        self.assertContains(response, 'id="minecraftPageSplitter"', html=False)
+        self.assertContains(response, 'id="minecraftSideSplitter"', html=False)
+        self.assertContains(response, 'role="separator"', html=False)
+        self.assertContains(response, 'function setupMinecraftLayoutSplitters()', html=False)
+        self.assertContains(response, 'cursor: col-resize !important;', html=False)
+        self.assertContains(response, 'cursor: row-resize !important;', html=False)
+        self.assertContains(response, "const MINECRAFT_PAGE_SPLIT_STORAGE_KEY = 'hanplanet.minecraft.page-split-ratio';", html=False)
+        self.assertContains(response, "const MINECRAFT_SIDE_SPLIT_STORAGE_KEY = 'hanplanet.minecraft.side-split-ratio';", html=False)
+        self.assertContains(response, 'const MINECRAFT_SIDE_SPLIT_DEFAULT_RATIO = 2 / 3;', html=False)
         self.assertNotContains(response, 'has-server-console', html=False)
         self.assertContains(response, '.minecraft-console-trigger.ui-path-current:hover', html=False)
         self.assertContains(response, 'background: var(--handrive-hover);', html=False)
@@ -3031,6 +3066,13 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, "function filterMinecraftItemOptions(query)", html=False)
         self.assertContains(response, 'role="combobox"', html=False)
         self.assertContains(response, 'class="minecraft-inventory-item-menu"', html=False)
+        self.assertContains(response, ".minecraft-trade-list-view {\n        gap: 8px;\n        overflow: hidden;", html=False)
+        self.assertContains(response, ".minecraft-trade-create-button {\n        flex: 0 0 auto;", html=False)
+        self.assertContains(response, ".minecraft-trade-list {\n        display: grid;\n        flex: 1 1 auto;", html=False)
+        self.assertContains(response, ".minecraft-side-layout > .minecraft-trade-panel {\n        width: 100%;", html=False)
+        self.assertContains(response, ".minecraft-side-layout > .minecraft-trade-panel .minecraft-panel-collapsible-content {\n            overflow: hidden;", html=False)
+        self.assertContains(response, ".minecraft-trade-icon {\n        display: grid;\n        place-items: center;", html=False)
+        self.assertContains(response, "border-radius: 4px;\n        background: transparent;", html=False)
         self.assertContains(response, "playerDetailBodyEl.addEventListener('input', handleInventoryItemInput);", html=False)
         self.assertContains(response, "playerDetailBodyEl.addEventListener('keydown', handleInventoryItemKeydown);", html=False)
         self.assertContains(response, "latestItemOptions = normalizeMinecraftItemOptions(status && status.items);", html=False)
@@ -3440,13 +3482,258 @@ class LanguageUrlRoutingTests(TestCase):
         session.save()
         return user
 
-    def test_minecraft_trade_api_requires_minecraft_host_and_login(self):
-        url = reverse("main:minecraft_trade_list_json")
+    def _login_minecraft_trade_admin(self, client, username, minecraft_name):
+        user = self._login_minecraft_trade_user(client, username, minecraft_name)
+        user.is_staff = True
+        user.is_superuser = True
+        user.save(update_fields=["is_staff", "is_superuser"])
+        return user
 
-        response = self.client.get(url, HTTP_HOST="www.hanplanet.com")
+    @mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30")
+    def test_minecraft_trade_form_selects_sale_item_from_inventory(self, mocked_bedrock_version):
+        self._login_minecraft_trade_user(self.client, "minecraft_trade_picker_user", "PickerMC")
+
+        response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="minecraftTradeSellItemTrigger" type="button" aria-label="판매 아이템"', html=False)
+        self.assertContains(response, 'name="sellSlot" type="hidden"', html=False)
+        self.assertContains(response, 'id="minecraftTradeSellItemPicker" role="dialog" aria-modal="false"', html=False)
+        self.assertNotContains(response, 'id="minecraftTradeNpcToggle"', html=False)
+        self.assertNotContains(response, 'id="minecraftTradeNpcSellItemCombobox"', html=False)
+        self.assertNotContains(response, 'id="minecraftTradeSellItemEmpty"', html=False)
+        self.assertNotContains(response, 'minecraft-trade-sell-picker-empty', html=False)
+        self.assertNotContains(response, 'name="sellItem" type="text"', html=False)
+        self.assertContains(response, 'function showTradeSellItemUnavailableTooltip(message)', html=False)
+        self.assertContains(response, 'window.SiteTooltip.show(tradeSellItemTriggerEl)', html=False)
+        self.assertContains(response, "function setSelectedTradeSellItem(slot, item)", html=False)
+        self.assertContains(response, "function positionTradeSellInventoryPicker()", html=False)
+        page_source = response.content.decode()
+        self.assertIn("const minecraftInventoryDisplaySlots = [", page_source)
+        self.assertLess(
+            page_source.index("(_, index) => index + 9"),
+            page_source.index("(_, index) => index),"),
+        )
+        self.assertContains(response, 'minecraft-inventory-grid-row is-hotbar', html=False)
+        self.assertEqual(page_source.count("renderMinecraftInventoryGridRows((slot) =>"), 2)
+        mocked_bedrock_version.assert_called()
+
+    @mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30")
+    def test_minecraft_trade_form_exposes_npc_controls_only_to_admins(self, mocked_bedrock_version):
+        self._login_minecraft_trade_admin(self.client, "minecraft_trade_npc_admin", "NpcAdminMC")
+
+        response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="minecraftTradeNpcToggle"', html=False)
+        self.assertContains(response, 'id="minecraftTradeNpcSellItemCombobox"', html=False)
+        self.assertContains(response, 'id="minecraftTradeNpcSellItemInput"', html=False)
+        self.assertContains(response, 'class="minecraft-trade-toggle-row"', html=False)
+        self.assertContains(response, "function setTradeNpcMode(isNpc)", html=False)
+        mocked_bedrock_version.assert_called()
+
+    @mock.patch("main.views.get_minecraft_bedrock_server_version", return_value="26.30")
+    def test_minecraft_trade_completed_listings_render_as_seller_only_controls(self, mocked_bedrock_version):
+        self._login_minecraft_trade_user(self.client, "minecraft_trade_completed_seller", "CompletedSellerMC")
+
+        response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, ".minecraft-trade-item.is-completed", html=False)
+        self.assertContains(response, "const isCompleted = listing.status === 'completed';", html=False)
+        self.assertContains(response, "const canToggle = !isCompleted || Boolean(listing.viewerIsSeller);", html=False)
+        self.assertContains(response, "(canToggle ? ' data-trade-toggle' : '')", html=False)
+        self.assertContains(response, ".minecraft-trade-item[data-trade-toggle]", html=False)
+        self.assertContains(response, ".minecraft-trade-item[data-trade-toggle]:hover,", html=False)
+        self.assertContains(response, ".minecraft-trade-item[data-trade-toggle]:active", html=False)
+        self.assertContains(response, "background: var(--handrive-surface-muted-strong);", html=False)
+        self.assertContains(response, "translate: 0 var(--btn-template-hover-lift, -1px);", html=False)
+        self.assertContains(response, "translate: 0 var(--btn-template-active-press-depth, 1px);", html=False)
+        self.assertContains(response, ".minecraft-trade-item[data-trade-toggle] .minecraft-trade-summary:hover,", html=False)
+        self.assertContains(response, "const tradeItem = event.target.closest ? event.target.closest('.minecraft-trade-item[data-trade-toggle][data-trade-id]') : null;", html=False)
+        self.assertContains(response, "if (interactiveControl && !interactiveControl.matches('[data-trade-toggle][data-trade-id]')) return;", html=False)
+        self.assertContains(response, "left && left.status === 'open' ? 0 : 1", html=False)
+        self.assertContains(response, "function showTradeActionFailureTooltip(action, listingId, error)", html=False)
+        self.assertContains(response, "setTradeFailure(result.error, action, listingId);", html=False)
+        self.assertContains(response, "setTradeFailure(result.error, 'create');", html=False)
+        self.assertContains(response, "button.setAttribute('data-site-tooltip', reason);", html=False)
+        self.assertNotContains(response, "setTradeStatus(labels.tradeFailed, true, getTradeFailureReason(error));", html=False)
+        self.assertContains(response, "showTradeActionFailureTooltip(action, listingId, error);\n            setTradeStatus('', false);", html=False)
+        self.assertContains(response, "const tradePurchaseInputValues = new Map();", html=False)
+        self.assertContains(response, "function getInitialTradePurchaseAmount(listing)", html=False)
+        self.assertContains(response, "tradePurchaseInputValues.set(String(input.dataset.tradeId), input.value);", html=False)
+        mocked_bedrock_version.assert_called()
+
+    def test_minecraft_trade_list_keeps_completed_listings_below_open_listings(self):
+        seller = self._login_minecraft_trade_user(self.client, "minecraft_trade_sort_seller", "TradeSortMC")
+        open_listing = MinecraftTradeListing.objects.create(
+            seller=seller,
+            seller_minecraft_name="TradeSortMC",
+            sell_item="diamond",
+            sell_amount=1,
+            price_item="emerald",
+            price_amount=1,
+        )
+        completed_listing = MinecraftTradeListing.objects.create(
+            seller=seller,
+            seller_minecraft_name="TradeSortMC",
+            sell_item="iron_ingot",
+            sell_amount=1,
+            price_item="emerald",
+            price_amount=1,
+            status=MinecraftTradeListing.STATUS_COMPLETED,
+        )
+
+        response = self.client.get(reverse("main:minecraft_trade_list_json"), HTTP_HOST="mc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        listings = response.json()["listings"]
+        self.assertEqual([listing["id"] for listing in listings], [open_listing.id, completed_listing.id])
+        self.assertTrue(listings[1]["viewerIsSeller"])
+
+    @mock.patch("main.views.write_minecraft_console_command")
+    def test_minecraft_trade_admin_can_create_npc_listing_without_escrow(self, mocked_send):
+        admin = self._login_minecraft_trade_admin(self.client, "minecraft_trade_npc_create_admin", "NpcCreateMC")
+
+        response = self.client.post(
+            reverse("main:minecraft_trade_create_json"),
+            data=json.dumps({
+                "isNpc": True,
+                "sellItem": "diamond",
+                "sellAmount": 3,
+                "priceItem": "emerald",
+                "priceAmount": 5,
+            }),
+            content_type="application/json",
+            HTTP_HOST="mc.hanplanet.com",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        listing = MinecraftTradeListing.objects.get()
+        self.assertEqual(listing.seller, admin)
+        self.assertTrue(listing.is_npc)
+        self.assertEqual(listing.seller_minecraft_name, "NPC")
+        self.assertEqual(listing.sell_item_data, {"type": "diamond", "amount": 3})
+        self.assertTrue(response.json()["listing"]["isNpc"])
+        self.assertEqual(response.json()["listing"]["sellerMinecraftName"], "NPC")
+        self.assertEqual(response.json()["listing"]["sellerHeadUrl"], MINECRAFT_NPC_TRADE_SELLER_HEAD_URL)
+        mocked_send.assert_not_called()
+
+    @mock.patch("main.views.write_minecraft_console_command")
+    def test_minecraft_trade_rejects_npc_listing_from_non_admin(self, mocked_send):
+        self._login_minecraft_trade_user(self.client, "minecraft_trade_npc_regular", "NpcRegularMC")
+
+        response = self.client.post(
+            reverse("main:minecraft_trade_create_json"),
+            data=json.dumps({
+                "isNpc": True,
+                "sellItem": "diamond",
+                "sellAmount": 3,
+                "priceItem": "emerald",
+                "priceAmount": 5,
+            }),
+            content_type="application/json",
+            HTTP_HOST="mc.hanplanet.com",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "forbidden")
+        self.assertFalse(MinecraftTradeListing.objects.exists())
+        mocked_send.assert_not_called()
+
+    @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "NpcBuyerMC", "online": True}]})
+    @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_OK npc-exchange")
+    def test_minecraft_trade_buy_npc_listing_uses_npc_exchange_without_seller_credit(self, mocked_send, mocked_status):
+        admin = get_user_model().objects.create_superuser(
+            username="minecraft_trade_npc_listing_admin",
+            email="minecraft-trade-npc-listing-admin@example.com",
+            password="pw123456",
+        )
+        buyer = self._login_minecraft_trade_user(self.client, "minecraft_trade_npc_buyer", "NpcBuyerMC")
+        listing = MinecraftTradeListing.objects.create(
+            seller=admin,
+            seller_minecraft_name="NPC",
+            is_npc=True,
+            sell_item="diamond",
+            sell_item_data={"type": "diamond", "amount": 3},
+            sell_amount=3,
+            price_item="emerald",
+            price_amount=5,
+        )
+
+        response = self.client.post(
+            reverse("main:minecraft_trade_buy_json", kwargs={"listing_id": listing.id}),
+            data="{}",
+            content_type="application/json",
+            HTTP_HOST="mc.hanplanet.com",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["deletedListingId"], listing.id)
+        self.assertFalse(MinecraftTradeListing.objects.filter(pk=listing.id).exists())
+        self.assertFalse(MinecraftTradeFill.objects.filter(listing_id=listing.id).exists())
+        mocked_send.assert_called_once_with("minecraftstatus trade npc-exchange NpcBuyerMC emerald 5 diamond 3 ko")
+        mocked_status.assert_called()
+
+    def test_minecraft_trade_admin_can_close_npc_listing_without_console_command(self):
+        admin = self._login_minecraft_trade_admin(self.client, "minecraft_trade_npc_close_admin", "NpcCloseMC")
+        listing = MinecraftTradeListing.objects.create(
+            seller=admin,
+            seller_minecraft_name="NPC",
+            is_npc=True,
+            sell_item="diamond",
+            sell_amount=3,
+            price_item="emerald",
+            price_amount=5,
+        )
+
+        with mock.patch("main.views.write_minecraft_console_command") as mocked_send:
+            response = self.client.post(
+                reverse("main:minecraft_trade_settle_json", kwargs={"listing_id": listing.id}),
+                data="{}",
+                content_type="application/json",
+                HTTP_HOST="mc.hanplanet.com",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["deletedListingId"], listing.id)
+        self.assertFalse(MinecraftTradeListing.objects.filter(pk=listing.id).exists())
+        mocked_send.assert_not_called()
+
+    def test_minecraft_trade_list_is_public_but_mutations_require_login(self):
+        list_url = reverse("main:minecraft_trade_list_json")
+        create_url = reverse("main:minecraft_trade_create_json")
+        seller = get_user_model().objects.create_user(username="minecraft_trade_public_seller")
+        open_listing = MinecraftTradeListing.objects.create(
+            seller=seller,
+            seller_minecraft_name="PublicSeller",
+            sell_item="diamond",
+            sell_amount=1,
+            price_item="emerald",
+            price_amount=2,
+        )
+        MinecraftTradeListing.objects.create(
+            seller=seller,
+            seller_minecraft_name="ClosedSeller",
+            sell_item="diamond",
+            sell_amount=1,
+            price_item="emerald",
+            price_amount=2,
+            status=MinecraftTradeListing.STATUS_COMPLETED,
+        )
+
+        response = self.client.get(list_url, HTTP_HOST="www.hanplanet.com")
         self.assertEqual(response.status_code, 404)
 
-        response = self.client.get(url, HTTP_HOST="mc.hanplanet.com")
+        response = self.client.get(list_url, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["linkedMinecraftNames"], [])
+        self.assertEqual([listing["id"] for listing in response.json()["listings"]], [open_listing.id])
+        self.assertTrue(response.json()["listings"][0]["canPurchase"])
+        self.assertFalse(response.json()["listings"][0]["canBuy"])
+        self.assertEqual(response.json()["listings"][0]["sellerUsername"], "")
+
+        response = self.client.post(create_url, data="{}", content_type="application/json", HTTP_HOST="mc.hanplanet.com")
         self.assertEqual(response.status_code, 401)
 
     @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "SellerMC", "online": True}]})
@@ -3459,6 +3746,7 @@ class LanguageUrlRoutingTests(TestCase):
             url,
             data=json.dumps({
                 "sellItem": "minecraft:diamond",
+                "sellSlot": "0",
                 "sellAmount": 3,
                 "priceItem": "emerald",
                 "priceAmount": 5,
@@ -3479,8 +3767,103 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(listing.remaining_sell_amount, 3)
         self.assertEqual(listing.remaining_price_amount, 5)
         self.assertEqual(listing.status, MinecraftTradeListing.STATUS_OPEN)
-        mocked_send.assert_called_once_with("minecraftstatus trade reserve SellerMC diamond 3 emerald 5")
+        self.assertEqual(listing.sell_item_data, {"type": "diamond", "amount": 3, "escrowId": str(listing.id)})
+        mocked_send.assert_called_once_with("minecraftstatus trade reserve-escrow 1 SellerMC 0 3 emerald 5 ko")
         mocked_status.assert_called()
+
+    @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "SellerMC", "online": True}]})
+    @mock.patch("main.views.write_minecraft_console_command")
+    def test_minecraft_trade_create_records_escrow_item_metadata(self, mocked_send, mocked_status):
+        def reserve_response(command):
+            listing_id = command.split()[3]
+            item_data = {
+                "type": "diamond_sword",
+                "label": "Diamond Sword",
+                "customName": False,
+                "amount": 1,
+                "enchanted": True,
+                "enchantments": [{"key": "sharpness", "level": 5}],
+                "damage": 81,
+                "maxDamage": 1561,
+            }
+            encoded_item = base64.urlsafe_b64encode(json.dumps(item_data).encode("utf-8")).decode("ascii").rstrip("=")
+            return f"HANPLANET_TRADE_ITEM reserve-escrow {listing_id} {encoded_item}\nHANPLANET_TRADE_OK reserve-escrow"
+
+        mocked_send.side_effect = reserve_response
+        self._login_minecraft_trade_user(self.client, "minecraft_trade_metadata_seller", "SellerMC")
+
+        response = self.client.post(
+            reverse("main:minecraft_trade_create_json"),
+            data=json.dumps({
+                "sellItem": "diamond_sword",
+                "sellSlot": "12",
+                "sellAmount": 1,
+                "priceItem": "emerald",
+                "priceAmount": 5,
+            }),
+            content_type="application/json",
+            HTTP_HOST="mc.hanplanet.com",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        listing = MinecraftTradeListing.objects.get()
+        self.assertEqual(listing.sell_item, "diamond_sword")
+        self.assertEqual(listing.sell_item_data["escrowId"], str(listing.id))
+        self.assertEqual(listing.sell_item_data["enchantments"], [{"key": "sharpness", "level": 5}])
+        self.assertEqual(listing.sell_item_data["damage"], 81)
+        self.assertEqual(response.json()["listing"]["sellItem"]["maxDamage"], 1561)
+        mocked_send.assert_called_once_with("minecraftstatus trade reserve-escrow 1 SellerMC 12 1 emerald 5 ko")
+        mocked_status.assert_called()
+
+    @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_OK reserve-escrow")
+    @mock.patch("main.views.read_minecraft_server_status")
+    def test_minecraft_trade_create_uses_inventory_slot_for_legacy_form(self, mocked_status, mocked_send):
+        mocked_status.return_value = {
+            "players": [{
+                "name": "SellerMC",
+                "online": True,
+                "detail": {
+                    "inventory": [{"slot": 7, "type": "diamond", "amount": 3}],
+                    "armor": [],
+                    "offhand": None,
+                },
+            }],
+        }
+        self._login_minecraft_trade_user(self.client, "minecraft_trade_legacy_seller", "SellerMC")
+
+        response = self.client.post(
+            reverse("main:minecraft_trade_create_json"),
+            data=json.dumps({
+                "sellItem": "diamond",
+                "sellAmount": 3,
+                "priceItem": "emerald",
+                "priceAmount": 5,
+            }),
+            content_type="application/json",
+            HTTP_HOST="mc.hanplanet.com",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        mocked_send.assert_called_once_with("minecraftstatus trade reserve-escrow 1 SellerMC 7 3 emerald 5 ko")
+
+    def test_minecraft_trade_create_identifies_invalid_form_field(self):
+        self._login_minecraft_trade_user(self.client, "minecraft_trade_invalid_form", "SellerMC")
+
+        response = self.client.post(
+            reverse("main:minecraft_trade_create_json"),
+            data=json.dumps({
+                "sellItem": "diamond",
+                "sellSlot": "invalid-slot",
+                "sellAmount": 3,
+                "priceItem": "emerald",
+                "priceAmount": 5,
+            }),
+            content_type="application/json",
+            HTTP_HOST="mc.hanplanet.com",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "invalid_sell_slot")
 
     @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "SellerMC", "online": True}]})
     @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_ERROR reserve insufficient_item")
@@ -3492,6 +3875,7 @@ class LanguageUrlRoutingTests(TestCase):
             url,
             data=json.dumps({
                 "sellItem": "diamond",
+                "sellSlot": "0",
                 "sellAmount": 64,
                 "priceItem": "emerald",
                 "priceAmount": 5,
@@ -3503,7 +3887,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()["error"], "insufficient_item")
         self.assertFalse(MinecraftTradeListing.objects.exists())
-        mocked_send.assert_called_once_with("minecraftstatus trade reserve SellerMC diamond 64 emerald 5")
+        mocked_send.assert_called_once_with("minecraftstatus trade reserve-escrow 1 SellerMC 0 64 emerald 5 ko")
         mocked_status.assert_called()
 
     @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "BuyerMC", "online": True}]})
@@ -3533,7 +3917,67 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(listing.unclaimed_price_amount, 5)
         self.assertIsNotNone(listing.completed_at)
         self.assertTrue(MinecraftTradeFill.objects.filter(listing=listing, buyer=buyer, sell_amount=3, price_amount=5).exists())
-        mocked_send.assert_called_once_with("minecraftstatus trade exchange BuyerMC emerald 5 diamond 3 SellerMC")
+        mocked_send.assert_called_once_with("minecraftstatus trade exchange BuyerMC emerald 5 diamond 3 SellerMC ko ko")
+        mocked_status.assert_called()
+
+    @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "BuyerMC", "online": True}]})
+    @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_OK exchange")
+    def test_minecraft_trade_buy_passes_each_recipient_ui_language(self, mocked_send, mocked_status):
+        seller = get_user_model().objects.create_user(username="minecraft_trade_english_seller", password="pw123456")
+        UserProfile.objects.update_or_create(user=seller, defaults={"preferred_ui_lang": "en"})
+        buyer = self._login_minecraft_trade_user(self.client, "minecraft_trade_korean_buyer", "BuyerMC")
+        UserProfile.objects.filter(user=buyer).update(preferred_ui_lang="ko")
+        listing = MinecraftTradeListing.objects.create(
+            seller=seller,
+            seller_minecraft_name="SellerMC",
+            sell_item="diamond",
+            sell_amount=3,
+            price_item="emerald",
+            price_amount=5,
+        )
+
+        response = self.client.post(
+            reverse("main:minecraft_trade_buy_json", kwargs={"listing_id": listing.id}),
+            data="{}",
+            content_type="application/json",
+            HTTP_HOST="mc.hanplanet.com",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mocked_send.assert_called_once_with("minecraftstatus trade exchange BuyerMC emerald 5 diamond 3 SellerMC ko en")
+        mocked_status.assert_called()
+
+    @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "BuyerMC", "online": True}]})
+    @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_OK exchange-escrow")
+    def test_minecraft_trade_buy_uses_escrow_for_item_stateful_listing(self, mocked_send, mocked_status):
+        seller = get_user_model().objects.create_user(username="minecraft_trade_escrow_seller", password="pw123456")
+        buyer = self._login_minecraft_trade_user(self.client, "minecraft_trade_escrow_buyer", "BuyerMC")
+        listing = MinecraftTradeListing.objects.create(
+            seller=seller,
+            seller_minecraft_name="SellerMC",
+            sell_item="diamond_sword",
+            sell_item_data={"type": "diamond_sword", "escrowId": "1", "damage": 81, "maxDamage": 1561},
+            sell_amount=1,
+            price_item="emerald",
+            price_amount=5,
+        )
+        listing.sell_item_data["escrowId"] = str(listing.id)
+        listing.save(update_fields=["sell_item_data"])
+
+        response = self.client.post(
+            reverse("main:minecraft_trade_buy_json", kwargs={"listing_id": listing.id}),
+            data="{}",
+            content_type="application/json",
+            HTTP_HOST="mc.hanplanet.com",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        listing.refresh_from_db()
+        self.assertEqual(listing.status, MinecraftTradeListing.STATUS_COMPLETED)
+        self.assertEqual(listing.buyer, buyer)
+        mocked_send.assert_called_once_with(
+            "minecraftstatus trade exchange-escrow 1 BuyerMC emerald 5 1 SellerMC ko ko"
+        )
         mocked_status.assert_called()
 
     @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_OK settle")
@@ -3552,12 +3996,9 @@ class LanguageUrlRoutingTests(TestCase):
         response = self.client.post(url, data="{}", content_type="application/json", HTTP_HOST="mc.hanplanet.com")
 
         self.assertEqual(response.status_code, 200)
-        listing.refresh_from_db()
-        self.assertEqual(listing.status, MinecraftTradeListing.STATUS_CANCELLED)
-        self.assertIsNotNone(listing.cancelled_at)
-        self.assertEqual(listing.remaining_sell_amount, 0)
-        self.assertEqual(listing.remaining_price_amount, 0)
-        mocked_send.assert_called_once_with("minecraftstatus trade settle SellerMC emerald 0 diamond 3")
+        self.assertEqual(response.json()["deletedListingId"], listing.id)
+        self.assertFalse(MinecraftTradeListing.objects.filter(pk=listing.id).exists())
+        mocked_send.assert_called_once_with("minecraftstatus trade settle SellerMC emerald 0 diamond 3 ko")
 
     @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_OK payout")
     def test_minecraft_trade_claim_delivers_price_item(self, mocked_send):
@@ -3580,12 +4021,9 @@ class LanguageUrlRoutingTests(TestCase):
         response = self.client.post(url, data="{}", content_type="application/json", HTTP_HOST="mc.hanplanet.com")
 
         self.assertEqual(response.status_code, 200)
-        listing.refresh_from_db()
-        self.assertEqual(listing.status, MinecraftTradeListing.STATUS_CLAIMED)
-        self.assertIsNotNone(listing.claimed_at)
-        self.assertEqual(listing.unclaimed_price_amount, 0)
-        self.assertEqual(listing.claimed_price_amount, 5)
-        mocked_send.assert_called_once_with("minecraftstatus trade payout SellerMC emerald 5")
+        self.assertEqual(response.json()["deletedListingId"], listing.id)
+        self.assertFalse(MinecraftTradeListing.objects.filter(pk=listing.id).exists())
+        mocked_send.assert_called_once_with("minecraftstatus trade payout SellerMC emerald 5 ko")
 
     @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "BuyerMC", "online": True}]})
     @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_OK exchange")
@@ -3616,7 +4054,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(listing.remaining_price_amount, 3)
         self.assertEqual(listing.unclaimed_price_amount, 3)
         self.assertTrue(MinecraftTradeFill.objects.filter(listing=listing, buyer=buyer, sell_amount=2, price_amount=3).exists())
-        mocked_send.assert_called_once_with("minecraftstatus trade exchange BuyerMC emerald 3 diamond 2 SellerMC")
+        mocked_send.assert_called_once_with("minecraftstatus trade exchange BuyerMC emerald 3 diamond 2 SellerMC ko ko")
         mocked_status.assert_called()
 
     @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "BuyerMC", "online": True}]})
@@ -3700,7 +4138,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(listing.status, MinecraftTradeListing.STATUS_OPEN)
         self.assertEqual(listing.unclaimed_price_amount, 0)
         self.assertEqual(listing.claimed_price_amount, 3)
-        mocked_send.assert_called_once_with("minecraftstatus trade payout SellerMC emerald 3")
+        mocked_send.assert_called_once_with("minecraftstatus trade payout SellerMC emerald 3 ko")
 
     @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_OK settle")
     def test_minecraft_trade_seller_can_settle_partial_listing(self, mocked_send):
@@ -3726,12 +4164,9 @@ class LanguageUrlRoutingTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        listing.refresh_from_db()
-        self.assertEqual(listing.status, MinecraftTradeListing.STATUS_CANCELLED)
-        self.assertEqual(listing.remaining_sell_amount, 0)
-        self.assertEqual(listing.unclaimed_price_amount, 0)
-        self.assertEqual(listing.claimed_price_amount, 3)
-        mocked_send.assert_called_once_with("minecraftstatus trade settle SellerMC emerald 3 diamond 2")
+        self.assertEqual(response.json()["deletedListingId"], listing.id)
+        self.assertFalse(MinecraftTradeListing.objects.filter(pk=listing.id).exists())
+        mocked_send.assert_called_once_with("minecraftstatus trade settle SellerMC emerald 3 diamond 2 ko")
 
     @override_settings(MINECRAFT_CONSOLE_TRANSPORT="rcon")
     def test_write_minecraft_console_command_prefers_rcon_transport(self):
@@ -6998,7 +7433,9 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("function createHandriveUrlShareModal(options)", url_share_js)
         self.assertIn("window.HandriveUrlShareModal", url_share_js)
         self.assertIn('var shareLinkGroup = shareModal ? shareModal.querySelector(".handrive-url-share-link-group") : null;', url_share_js)
-        self.assertIn("shareLinkGroup.hidden = !visible;", url_share_js)
+        self.assertIn("function setShareLinkGroupExpanded(expanded, onCollapsed)", url_share_js)
+        self.assertIn("setShareLinkGroupExpanded(true);", url_share_js)
+        self.assertIn("setShareLinkGroupExpanded(false, function () {", url_share_js)
         self.assertIn("url_share_target_remove_label", url_share_js)
         self.assertIn("url_share_copy_download_button", url_share_js)
         self.assertIn("window.HandriveUrlShareModal.create({", page_js)
@@ -7016,12 +7453,14 @@ class HandriveStyleSourceTests(TestCase):
             url_share_template.index('id="handrive-url-share-targets"'),
         )
         self.assertLess(
-            url_share_template.index('id="handrive-url-share-enabled-checkbox"'),
             url_share_template.index('id="handrive-url-share-title"'),
+            url_share_template.index('id="handrive-url-share-enabled-checkbox"'),
         )
+        self.assertIn('id="handrive-url-share-enabled-toggle"', url_share_template)
+        self.assertIn('class="handrive-url-share-switch-knob" aria-hidden="true"', url_share_template)
         self.assertLess(
-            url_share_template.index('id="handrive-url-share-edit-checkbox"'),
             url_share_template.index("{{ handrive_text.url_share_edit_label }}</span>"),
+            url_share_template.index('id="handrive-url-share-edit-checkbox"'),
         )
         self.assertLess(
             url_share_template.index('id="handrive-url-share-targets"'),
@@ -7033,8 +7472,10 @@ class HandriveStyleSourceTests(TestCase):
         )
         self.assertIn("shareTargetList.hidden = true;", url_share_js)
         self.assertIn("shareTargetList.hidden = currentAllowedUsers.length === 0;", url_share_js)
-        self.assertIn(".handrive-url-share-link-group {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;", handrive_css)
-        self.assertIn(".handrive-url-share-link-group:not(:has(> :not([hidden]))) {\n    display: none;\n}", handrive_css)
+        self.assertIn(".handrive-url-share-link-group {\n    display: grid;\n    grid-template-rows: 0fr;", handrive_css)
+        self.assertIn(".handrive-url-share-link-group.is-expanded {\n    grid-template-rows: 1fr;", handrive_css)
+        self.assertIn("transition: grid-template-rows 200ms ease, opacity 150ms ease, transform 200ms ease;", handrive_css)
+        self.assertIn(".handrive-url-share-link-content {\n    display: flex;\n    flex-direction: column;", handrive_css)
         self.assertIn(".handrive-url-share-target-list[hidden] {\n    display: none;\n}", handrive_css)
         self.assertIn(".handrive-url-share-targets {\n    display: flex;\n    flex-direction: column;\n    gap: 7px;\n    margin: 0;", handrive_css)
         self.assertIn(".handrive-url-share-target-card {\n    display: inline-flex;\n    align-items: center;\n    max-width: 100%;\n    min-width: 0;\n    gap: 0;", handrive_css)
@@ -7044,24 +7485,17 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn(".handrive-url-share-target-remove:hover,\n.handrive-url-share-target-remove:focus-visible {\n    background: transparent;", handrive_css)
         self.assertIn(".handrive-url-share-read-head {\n    display: flex;\n    align-items: flex-end;", handrive_css)
         self.assertIn("#handrive-url-share-read-label {\n    align-self: flex-end;", handrive_css)
-        self.assertIn(".handrive-url-share-edit-toggle span {\n    font-weight: var(--site-weight-body);", handrive_css)
+        self.assertIn(".handrive-url-share-edit-switch span {\n    font-weight: var(--site-weight-body);", handrive_css)
         self.assertIn("line-height: 1.2;", handrive_css)
-        self.assertIn("#handrive-url-share-enabled-checkbox {\n    flex: 0 0 auto;\n    width: 25px;\n    height: 25px;", handrive_css)
-        self.assertIn(
-            ".handrive-url-share-edit-toggle input {\n"
-            "    flex: 0 0 auto;\n"
-            "    width: 14px;\n"
-            "    height: 14px;",
-            handrive_css,
-        )
-        self.assertIn(
-            "#handrive-url-share-edit-checkbox {\n"
-            "    flex-basis: 14px;\n"
-            "    min-width: 14px;\n"
-            "    max-width: 14px;\n"
-            "    inline-size: 14px;",
-            handrive_css,
-        )
+        self.assertIn(".handrive-url-share-switch-knob {\n    position: relative;\n    display: block;", handrive_css)
+        self.assertIn(".handrive-url-share-switch-knob::after {\n    content: \"\";", handrive_css)
+        self.assertIn(".handrive-url-share-enabled-switch:has(input:checked) .handrive-url-share-switch-knob,", handrive_css)
+        self.assertIn(".handrive-url-share-edit-switch {\n    --handrive-url-share-switch-width: 20px;", handrive_css)
+        self.assertIn('class="handrive-url-share-enabled-switch"', url_share_template)
+        self.assertIn('class="handrive-url-share-edit-switch"', url_share_template)
+        self.assertIn('shareModal.classList.add("is-share-updating");', url_share_js)
+        self.assertIn('shareModal.classList.remove("is-share-updating");', url_share_js)
+        self.assertIn("#handrive-url-share-modal.is-share-updating .handrive-url-share-enabled-switch:has(input:disabled),", handrive_css)
         self.assertLess(
             assets_template.index("js/handrive/url_share_modal.js"),
             assets_template.index("js/handrive/page.js"),
@@ -7427,7 +7861,7 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('id="handrive-folder-create-modal"', folder_create_template)
         self.assertIn('id="handrive-folder-create-title"', folder_create_template)
         self.assertIn("{{ handrive_text.menu_new_folder }}", folder_create_template)
-        self.assertIn('class="handrive-url-share-edit-toggle handrive-folder-create-web-toggle"', folder_create_template)
+        self.assertIn('class="handrive-folder-create-web-switch"', folder_create_template)
         self.assertIn('id="handrive-folder-create-web-checkbox"', folder_create_template)
         self.assertIn("<span>Web</span>", folder_create_template)
         self.assertLess(
@@ -7439,7 +7873,7 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("folderCreateWebCheckbox.checked = false;", folder_create_open_block)
         self.assertIn("create_web_sample: Boolean(folderCreateWebCheckbox && folderCreateWebCheckbox.checked),", submit_folder_create_block)
         self.assertIn(".handrive-folder-create-title-row,", handrive_css)
-        self.assertIn(".handrive-folder-create-web-toggle", handrive_css)
+        self.assertIn(".handrive-folder-create-web-switch", handrive_css)
         self.assertIn("const targetLabel = getHandrivePathLabel(parentPath);", folder_create_open_block)
         self.assertNotIn('t("create_folder_in_label"', folder_create_open_block)
         self.assertNotIn('": " + getHandrivePathLabel(parentPath)', folder_create_open_block)
@@ -7862,6 +8296,7 @@ class HandriveStyleSourceTests(TestCase):
         handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
         list_render_helpers = (base_dir / "static/js/handrive/list_render_helpers.js").read_text(encoding="utf-8")
         icon_generator = (base_dir / "scripts/regenerate_handrive_type_icons.py").read_text(encoding="utf-8")
+        handrive_views = (base_dir / "main/handrive_views.py").read_text(encoding="utf-8")
         markdown_folder_icon_block = handrive_css[
             handrive_css.index(".handrive-item-type-icon.is-dir.is-markdown-image-folder::before {"):
             handrive_css.index(".handrive-item-type-icon.is-dir.is-youtube-download-folder::before {")
@@ -7885,16 +8320,16 @@ class HandriveStyleSourceTests(TestCase):
         self.assertNotIn("background-image: var(--handrive-file-icon-url);", handrive_css)
         self.assertNotIn("background-image: var(--handrive-text-icon-url);", handrive_css)
         self.assertNotIn("-webkit-mask-image: var(--handrive-data-icon-url);", handrive_css)
-        self.assertIn('url("/static/media/icons/handrive/type-folder.png?v=icon-source-20260720-9")', handrive_css)
-        self.assertIn('url("/static/media/icons/handrive/type-folder-empty.png?v=icon-source-20260720-9")', handrive_css)
-        self.assertIn('url("/static/media/icons/handrive/type-folder-image.png?v=icon-source-20260720-9")', handrive_css)
-        self.assertIn('url("/static/media/icons/handrive/type-folder-youtube.png?v=icon-source-20260720-9")', handrive_css)
-        self.assertIn('url("/static/media/icons/handrive/type-audio.png?v=icon-source-20260720-9")', handrive_css)
-        self.assertIn('url("/static/media/icons/handrive/type-archive.png?v=icon-source-20260720-9")', handrive_css)
-        self.assertIn('url("/static/media/icons/handrive/type-file.png?v=icon-source-20260720-9")', handrive_css)
-        self.assertIn('url("/static/media/icons/handrive/type-text.png?v=icon-source-20260720-9")', handrive_css)
-        self.assertIn('url("/static/media/icons/handrive/type-code.png?v=icon-source-20260720-9")', handrive_css)
-        self.assertIn('url("/static/media/icons/handrive/type-data.png?v=icon-source-20260720-9")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/type-folder.png?v=icon-source-20260721-4")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/type-folder-empty.png?v=icon-source-20260721-4")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/type-folder-image.png?v=icon-source-20260721-4")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/type-folder-youtube.png?v=icon-source-20260721-4")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/type-audio.png?v=icon-source-20260721-4")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/type-archive.png?v=icon-source-20260721-4")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/type-file.png?v=icon-source-20260721-4")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/type-text.png?v=icon-source-20260721-4")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/type-code.png?v=icon-source-20260721-4")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/type-data.png?v=icon-source-20260721-4")', handrive_css)
         self.assertNotIn('type-text-light.png', handrive_css)
         self.assertNotIn('type-text-dark.png', handrive_css)
         self.assertNotIn('type-code-light.png', handrive_css)
@@ -7902,7 +8337,9 @@ class HandriveStyleSourceTests(TestCase):
         self.assertNotIn('type-data-light.png', handrive_css)
         self.assertNotIn('type-data-dark.png', handrive_css)
         self.assertIn('type-github.svg?v=theme-vector-20260720-1', handrive_css)
-        self.assertIn('type-shell.svg?v=theme-vector-20260720-1', handrive_css)
+        self.assertIn('type-shell.svg?v=shell-vector-20260721-1', handrive_css)
+        self.assertIn('type-shell-dark.svg?v=shell-vector-20260721-1', handrive_css)
+        self.assertIn('background-size: 81%;', handrive_css)
         self.assertIn('rust.svg?v=theme-vector-20260720-1', handrive_css)
         self.assertIn('font.svg?v=theme-vector-20260720-1', handrive_css)
         self.assertIn('background-color: var(--handrive-generic-icon-color);', handrive_css)
@@ -7910,8 +8347,13 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('DOCUMENT_BOX = (4.5, 1.2, 26.5, 29.8)', icon_generator)
         self.assertIn('_write_icon("pdf", _draw_pdf_document_icon())', icon_generator)
         self.assertIn('_write_icon("archive", _draw_archive_folder_icon())', icon_generator)
+        self.assertIn('"go": ("go-wordmark.png", (1, 9, 30, 22))', icon_generator)
+        self.assertIn('"sql": ("sql-database.png", (4, 2, 27, 29))', icon_generator)
+        self.assertIn('"image": ("image-picture.png", (4, 4, 27, 27))', icon_generator)
+        self.assertIn('if extension == ".sql":\n        return "sql"', handrive_views)
+        self.assertIn('type-sql.png?v=icon-source-20260721-4', handrive_css)
         self.assertNotIn("data:image/svg+xml", markdown_folder_icon_block)
-        self.assertIn('type-folder-image.png?v=icon-source-20260720-9', markdown_folder_icon_block)
+        self.assertIn('type-folder-image.png?v=icon-source-20260721-4', markdown_folder_icon_block)
         self.assertNotIn("transform: scale", type_icon_block)
         self.assertNotIn("transform: scaleX", type_icon_block)
         self.assertNotIn("background-size: 115%", type_icon_block)
@@ -10682,6 +11124,53 @@ class AccountWeatherApiTests(TestCase):
         self.assertIn(payload["day"]["icon_type"], {"rain", "cloudy", "partly-cloudy", "clear"})
         self.assertEqual(mocked_get.call_args_list[0].args[0], "https://api.open-meteo.com/v1/forecast")
         self.assertEqual(mocked_get.call_args_list[1].args[0], "https://api.met.no/weatherapi/locationforecast/2.0/compact")
+
+
+class SiteTooltipSourceTests(TestCase):
+    def test_site_tooltips_use_the_shared_inline_copy_bubble_style(self):
+        base_dir = Path(settings.BASE_DIR)
+        common_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
+        popup_js = (base_dir / "static/js/common/popup_common.js").read_text(encoding="utf-8")
+        handrive_page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        minecraft_template = (base_dir / "templates/main/minecraft_home.html").read_text(encoding="utf-8")
+        base_template = (base_dir / "templates/base.html").read_text(encoding="utf-8")
+        salvations_template = (base_dir / "templates/fun/Salvations_Edge_4.html").read_text(encoding="utf-8")
+
+        tooltip_start = common_css.index(".site-tooltip {")
+        tooltip_arrow_start = common_css.index(".site-tooltip::after", tooltip_start)
+        tooltip_block = common_css[tooltip_start:tooltip_arrow_start]
+        self.assertIn("min-width: 58px;", tooltip_block)
+        self.assertIn("min-height: 28px;", tooltip_block)
+        self.assertIn("padding: 5px 6px 7px;", tooltip_block)
+        self.assertIn("border: 0;", tooltip_block)
+        self.assertIn("--site-tooltip-bg: var(--site-modal-surface-bg", tooltip_block)
+        self.assertIn("-webkit-backdrop-filter: var(--site-modal-surface-filter", tooltip_block)
+        self.assertIn("backdrop-filter: var(--site-modal-surface-filter", tooltip_block)
+        self.assertIn("box-shadow: var(--site-dropdown-menu-shadow", tooltip_block)
+        self.assertIn(".site-tooltip.is-placement-top::after", common_css)
+        self.assertIn(".site-tooltip.is-placement-bottom::after", common_css)
+        self.assertIn(".site-tooltip.is-placement-left::after", common_css)
+        self.assertIn(".site-tooltip.is-placement-right::after", common_css)
+        self.assertNotIn("function syncSiteTooltipSource(element)", popup_js)
+        self.assertNotIn('element.setAttribute("data-site-tooltip", title);', popup_js)
+        self.assertIn('return element.hasAttribute("data-site-tooltip") &&', popup_js)
+        self.assertIn("function positionSiteTooltip(element, anchor)", popup_js)
+        self.assertIn("const siteTooltipHoverDelayMs = 500;", popup_js)
+        self.assertIn("function scheduleSiteTooltip(anchor)", popup_js)
+        self.assertIn("}, siteTooltipHoverDelayMs);", popup_js)
+        self.assertIn('anchor.hasAttribute("data-site-tooltip-immediate")', popup_js)
+        self.assertIn("scheduleSiteTooltip(findSiteTooltipTarget(event.target));", popup_js)
+        self.assertIn("window.SiteTooltip =", popup_js)
+        self.assertIn('attributeFilter: ["hidden", "class", "style", "aria-hidden", "disabled", "data-site-custom-select"]', popup_js)
+        self.assertIn("commitField.setAttribute(\"data-site-tooltip\", normalizedSubject);", handrive_page_js)
+        self.assertNotIn("handrive-commit-tooltip", handrive_page_js)
+        self.assertIn('data-site-tooltip="\' + escapeAttribute(tooltipText)', minecraft_template)
+        self.assertIn('data-site-tooltip-immediate aria-label="\' + escapeAttribute(tooltipText.replace(/\\n/g, \', \'))', minecraft_template)
+        self.assertIn("button.setAttribute('data-site-tooltip-immediate', '');", minecraft_template)
+        self.assertNotIn("minecraft-trade-item-tooltip", minecraft_template)
+        self.assertNotIn("data-minecraft-trade-tooltip", minecraft_template)
+        self.assertIn("js/common/popup_common.js", base_template)
+        self.assertIn("js/common/popup_common.js", salvations_template)
 
 
 class SiteZIndexLayerTests(TestCase):
@@ -14018,13 +14507,21 @@ class HanplanetMultiplayerPageTests(TestCase):
 
         self.assertIn("data-continue-label", template)
         self.assertIn("multiplayer_continue_button", template)
+        self.assertIn("data-game-escape-toggle", template)
+        self.assertIn("media/icons/settings-gears.svg", template)
+        self.assertIn("multiplayer_esc_menu_button", template)
         self.assertIn('{% elif key == "multiplayer_continue_button" %}Continue', i18n_template)
+        self.assertIn('{% elif key == "multiplayer_esc_menu_button" %}', i18n_template)
 
         for client_name in ("bumpercar_spiky", "raise_speaki"):
             with self.subTest(client=client_name):
                 client_js = (base_dir / f"static/js/fun/{client_name}/multiplayer.js").read_text(encoding="utf-8")
                 self.assertIn("const clearGameplayInputForStartOverlay = function ()", client_js)
                 self.assertIn("const resumeGameFromStartOverlay = function ()", client_js)
+                self.assertIn("const escMenuButton = root.querySelector('[data-game-escape-toggle]')", client_js)
+                self.assertIn("const runEscapeAction = function ()", client_js)
+                self.assertIn("escMenuButton.addEventListener('click'", client_js)
+                self.assertIn("if (runEscapeAction())", client_js)
                 self.assertIn("selectedSkinName !== activeSelfSkinName", client_js)
                 self.assertIn("if (skinChangedSinceConnection) {\n            connect();", client_js)
                 self.assertIn("if (event.key !== 'Escape')", client_js)

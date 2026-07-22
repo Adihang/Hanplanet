@@ -4,6 +4,9 @@
     const viewportPadding = 10;
     const inlineCopyFeedbackFadeMs = 190;
     const inlineCopyFeedbackMinVisibleMs = 700;
+    const siteTooltipFadeMs = 190;
+    // Match the brief dwell time users expect from browser-native tooltips.
+    const siteTooltipHoverDelayMs = 500;
     const popupSelector = ".site-dropdown-menu:not(.site-custom-select-menu), [data-popup-fit-bottom], [data-popup-fit-top]";
     const modalRootSelector = [
         ".root-auth-modal",
@@ -88,6 +91,11 @@
         ? Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")
         : null;
     let activeInlineCopyFeedback = null;
+    let activeSiteTooltip = null;
+    let pendingSiteTooltip = null;
+    let siteTooltipHideTimer = 0;
+    let siteTooltipIdCounter = 0;
+    let lastTooltipPointerDownAt = 0;
 
     function isVisible(element) {
         // Popups are repositioned only when actually visible; hidden-but-mounted nodes
@@ -370,6 +378,236 @@
         if (!(button.matches && button.matches(":hover"))) {
             state.fallbackTimer = window.setTimeout(state.hide, 1400);
         }
+    }
+
+    function isSiteTooltipCandidate(element) {
+        if (!element || element.nodeType !== 1 || !element.tagName) {
+            return false;
+        }
+        return element.hasAttribute("data-site-tooltip") &&
+            !element.hasAttribute("data-site-tooltip-ignore");
+    }
+
+    function findSiteTooltipTarget(source) {
+        let element = source && source.nodeType === 1
+            ? source
+            : (source && source.parentElement ? source.parentElement : null);
+        while (element) {
+            if (element.closest && element.closest("[data-site-tooltip-ignore]")) {
+                return null;
+            }
+            if (isSiteTooltipCandidate(element)) {
+                if (String(element.getAttribute("data-site-tooltip") || "").trim()) {
+                    return element;
+                }
+            }
+            element = element.parentElement;
+        }
+        return null;
+    }
+
+    function getSiteTooltipElement() {
+        let element = document.querySelector(".site-tooltip");
+        if (element) {
+            return element;
+        }
+        element = document.createElement("div");
+        element.className = "site-tooltip";
+        element.id = "site-tooltip-" + String(++siteTooltipIdCounter);
+        element.hidden = true;
+        element.setAttribute("role", "tooltip");
+        document.body.appendChild(element);
+        return element;
+    }
+
+    function linkSiteTooltipDescription(state) {
+        if (!state || !state.anchor || !state.element) {
+            return;
+        }
+        const ids = String(state.anchor.getAttribute("aria-describedby") || "")
+            .split(/\s+/)
+            .filter(Boolean);
+        if (!ids.includes(state.element.id)) {
+            ids.push(state.element.id);
+            state.anchor.setAttribute("aria-describedby", ids.join(" "));
+        }
+    }
+
+    function unlinkSiteTooltipDescription(state) {
+        if (!state || !state.anchor || !state.element) {
+            return;
+        }
+        const ids = String(state.anchor.getAttribute("aria-describedby") || "")
+            .split(/\s+/)
+            .filter(function (id) {
+                return id && id !== state.element.id;
+            });
+        if (ids.length) {
+            state.anchor.setAttribute("aria-describedby", ids.join(" "));
+        } else {
+            state.anchor.removeAttribute("aria-describedby");
+        }
+    }
+
+    function positionSiteTooltip(element, anchor) {
+        const rect = anchor.getBoundingClientRect();
+        const boundary = getInlineCopyFeedbackBoundary(anchor);
+        const tooltipWidth = element.offsetWidth || 70;
+        const tooltipHeight = element.offsetHeight || 28;
+        const arrowInset = 12;
+        const gap = 10;
+        const centerX = rect.left + (rect.width / 2);
+        const centerY = rect.top + (rect.height / 2);
+        const placement = chooseInlineCopyFeedbackPlacement(rect, boundary, tooltipWidth, tooltipHeight);
+        let left = centerX - (tooltipWidth / 2);
+        let top = rect.top - tooltipHeight - gap;
+        let arrowOffset = tooltipWidth / 2;
+
+        element.classList.remove(
+            "is-placement-top",
+            "is-placement-bottom",
+            "is-placement-left",
+            "is-placement-right"
+        );
+        element.classList.add("is-placement-" + placement);
+
+        if (placement === "bottom") {
+            top = rect.bottom + gap;
+        } else if (placement === "right" || placement === "left") {
+            top = centerY - (tooltipHeight / 2);
+            left = placement === "right"
+                ? rect.right + gap
+                : rect.left - tooltipWidth - gap;
+        }
+
+        left = clamp(left, boundary.left, boundary.right - tooltipWidth);
+        top = clamp(top, boundary.top, boundary.bottom - tooltipHeight);
+
+        if (placement === "right" || placement === "left") {
+            arrowOffset = clamp(centerY - top, arrowInset, tooltipHeight - arrowInset);
+            element.style.setProperty("--site-tooltip-arrow-y", Math.round(arrowOffset) + "px");
+            element.style.removeProperty("--site-tooltip-arrow-x");
+        } else {
+            arrowOffset = clamp(centerX - left, arrowInset, tooltipWidth - arrowInset);
+            element.style.setProperty("--site-tooltip-arrow-x", Math.round(arrowOffset) + "px");
+            element.style.removeProperty("--site-tooltip-arrow-y");
+        }
+
+        element.style.left = Math.round(left) + "px";
+        element.style.top = Math.round(top) + "px";
+        syncInlineCopyFeedbackZIndex(element, anchor);
+    }
+
+    function hideSiteTooltip(immediate) {
+        clearPendingSiteTooltip();
+        const state = activeSiteTooltip;
+        activeSiteTooltip = null;
+        if (siteTooltipHideTimer) {
+            window.clearTimeout(siteTooltipHideTimer);
+            siteTooltipHideTimer = 0;
+        }
+        if (state) {
+            unlinkSiteTooltipDescription(state);
+        }
+        const element = state && state.element
+            ? state.element
+            : document.querySelector(".site-tooltip");
+        if (!element) {
+            return;
+        }
+        element.classList.remove("is-visible");
+        const finish = function () {
+            if (activeSiteTooltip || element.classList.contains("is-visible")) {
+                return;
+            }
+            element.hidden = true;
+            element.classList.remove(
+                "is-placement-top",
+                "is-placement-bottom",
+                "is-placement-left",
+                "is-placement-right"
+            );
+            element.style.removeProperty("z-index");
+        };
+        if (immediate) {
+            finish();
+        } else {
+            siteTooltipHideTimer = window.setTimeout(function () {
+                siteTooltipHideTimer = 0;
+                finish();
+            }, siteTooltipFadeMs);
+        }
+    }
+
+    function clearPendingSiteTooltip() {
+        if (!pendingSiteTooltip) {
+            return;
+        }
+        window.clearTimeout(pendingSiteTooltip.timer);
+        pendingSiteTooltip = null;
+    }
+
+    function scheduleSiteTooltip(anchor) {
+        if (!anchor || !anchor.isConnected || !isVisible(anchor)) {
+            return;
+        }
+        if (anchor.hasAttribute("data-site-tooltip-immediate")) {
+            showSiteTooltip(anchor);
+            return;
+        }
+        if (activeSiteTooltip && activeSiteTooltip.anchor === anchor) {
+            positionSiteTooltip(activeSiteTooltip.element, anchor);
+            return;
+        }
+        if (pendingSiteTooltip && pendingSiteTooltip.anchor === anchor) {
+            return;
+        }
+
+        clearPendingSiteTooltip();
+        const state = { anchor: anchor, timer: 0 };
+        pendingSiteTooltip = state;
+        state.timer = window.setTimeout(function () {
+            if (pendingSiteTooltip !== state) {
+                return;
+            }
+            pendingSiteTooltip = null;
+            showSiteTooltip(anchor);
+        }, siteTooltipHoverDelayMs);
+    }
+
+    function showSiteTooltip(anchor) {
+        clearPendingSiteTooltip();
+        if (!anchor || !anchor.isConnected || !isVisible(anchor)) {
+            return;
+        }
+        const message = String(anchor.getAttribute("data-site-tooltip") || "");
+        if (!message.trim()) {
+            return;
+        }
+        if (activeSiteTooltip && activeSiteTooltip.anchor === anchor) {
+            positionSiteTooltip(activeSiteTooltip.element, anchor);
+            return;
+        }
+
+        hideSiteTooltip(true);
+        const element = getSiteTooltipElement();
+        const state = { anchor: anchor, element: element };
+        activeSiteTooltip = state;
+        element.textContent = message;
+        element.hidden = false;
+        element.classList.remove("is-visible");
+        element.style.left = "0px";
+        element.style.top = "0px";
+        linkSiteTooltipDescription(state);
+        positionSiteTooltip(element, anchor);
+
+        window.requestAnimationFrame(function () {
+            if (activeSiteTooltip !== state || !anchor.isConnected) {
+                return;
+            }
+            positionSiteTooltip(element, anchor);
+            element.classList.add("is-visible");
+        });
     }
 
     function getModalRoot(target) {
@@ -1461,6 +1699,9 @@
             enhanceCustomSelects(document);
         }
         selectsToSync.forEach(syncCustomSelect);
+        if (activeSiteTooltip && (!activeSiteTooltip.anchor || !activeSiteTooltip.anchor.isConnected)) {
+            hideSiteTooltip(true);
+        }
         refreshCommonPopupStateDeferred();
     }
 
@@ -1475,11 +1716,13 @@
         scheduleClampDraggableDialogsToViewport();
         positionOpenCustomSelects();
         hideInlineCopyFeedback();
+        hideSiteTooltip();
     });
     window.addEventListener("scroll", function () {
         refreshPopupPositionsDeferred();
         positionOpenCustomSelects();
         hideInlineCopyFeedback();
+        hideSiteTooltip();
     }, true);
 
     if (window.visualViewport) {
@@ -1488,15 +1731,19 @@
             scheduleClampDraggableDialogsToViewport();
             positionOpenCustomSelects();
             hideInlineCopyFeedback();
+            hideSiteTooltip();
         });
         window.visualViewport.addEventListener("scroll", function () {
             refreshPopupPositionsDeferred();
             positionOpenCustomSelects();
             hideInlineCopyFeedback();
+            hideSiteTooltip();
         });
     }
 
     document.addEventListener("pointerdown", function (event) {
+        lastTooltipPointerDownAt = Date.now();
+        hideSiteTooltip(true);
         const customSelectTarget = event.target && event.target.closest
             ? event.target.closest(".site-custom-select, .site-custom-select-menu")
             : null;
@@ -1527,7 +1774,59 @@
         if (root && isVisible(root)) {
             bringModalToFront(root);
         }
+        if (Date.now() - lastTooltipPointerDownAt > 120) {
+            showSiteTooltip(findSiteTooltipTarget(event.target));
+        }
     }, true);
+
+    document.addEventListener("pointerover", function (event) {
+        if (event.pointerType === "touch") {
+            return;
+        }
+        scheduleSiteTooltip(findSiteTooltipTarget(event.target));
+    }, true);
+
+    document.addEventListener("pointerout", function (event) {
+        const target = findSiteTooltipTarget(event.target);
+        if (!target) {
+            return;
+        }
+        if (event.relatedTarget && target.contains(event.relatedTarget)) {
+            return;
+        }
+        if (pendingSiteTooltip && pendingSiteTooltip.anchor === target) {
+            clearPendingSiteTooltip();
+        }
+        if (activeSiteTooltip && activeSiteTooltip.anchor === target) {
+            hideSiteTooltip();
+        }
+    }, true);
+
+    document.addEventListener("focusout", function (event) {
+        const target = findSiteTooltipTarget(event.target);
+        if (!target) {
+            return;
+        }
+        if (event.relatedTarget && target.contains(event.relatedTarget)) {
+            return;
+        }
+        if (pendingSiteTooltip && pendingSiteTooltip.anchor === target) {
+            clearPendingSiteTooltip();
+        }
+        if (activeSiteTooltip && activeSiteTooltip.anchor === target) {
+            hideSiteTooltip();
+        }
+    }, true);
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+            hideSiteTooltip();
+        }
+    });
+
+    window.addEventListener("blur", function () {
+        hideSiteTooltip(true);
+    });
 
     window.SiteModalStack = {
         selector: modalRootSelector,
@@ -1538,6 +1837,19 @@
         enhance: enhanceCustomSelects,
         refresh: syncAllCustomSelects,
         closeAll: closeAllCustomSelects
+    };
+    window.SiteTooltip = {
+        show: function (anchor) {
+            showSiteTooltip(anchor);
+        },
+        hide: function () {
+            hideSiteTooltip(true);
+        },
+        refresh: function (root) {
+            if (activeSiteTooltip && (!activeSiteTooltip.anchor || !activeSiteTooltip.anchor.isConnected)) {
+                hideSiteTooltip(true);
+            }
+        }
     };
     window.showHandriveInlineCopyFeedback = showInlineCopyFeedback;
 
